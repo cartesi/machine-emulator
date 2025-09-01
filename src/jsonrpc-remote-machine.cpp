@@ -909,13 +909,15 @@ static json jsonrpc_machine_collect_mcycle_root_hashes(const json &j, const std:
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"mcycle_phase", "mcycle_period", "period_count"};
-    auto args = parse_args<uint64_t, uint64_t, uint64_t>(j, param_name);
-    auto mcycle_phase = std::get<0>(args);
+    static const char *param_name[] = {"mcycle_end", "mcycle_period", "mcycle_phase", "log2_bundle_mcycle_count"};
+    auto args = parse_args<uint64_t, uint64_t, uint64_t, uint64_t>(j, param_name);
+    auto mcycle_end = std::get<0>(args);
     auto mcycle_period = std::get<1>(args);
-    auto period_count = std::get<2>(args);
+    auto mcycle_phase = std::get<2>(args);
+    auto log2_bundle_mcycle_count = std::get<3>(args);
     cartesi::mcycle_root_hashes result;
-    session->handler->machine->collect_mcycle_root_hashes(mcycle_phase, mcycle_period, period_count, result);
+    session->handler->machine->collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase,
+        log2_bundle_mcycle_count, result);
     return jsonrpc_response_ok(j, result);
 }
 
@@ -928,11 +930,12 @@ static json jsonrpc_machine_collect_uarch_cycle_root_hashes(const json &j,
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"mcycle_count"};
-    auto args = parse_args<uint64_t>(j, param_name);
-    auto mcycle_count = std::get<0>(args);
+    static const char *param_name[] = {"mcycle_end", "log2_bundle_uarch_cycle_count"};
+    auto args = parse_args<uint64_t, uint64_t>(j, param_name);
+    auto mcycle_end = std::get<0>(args);
+    auto log2_bundle_uarch_cycle_count = std::get<1>(args);
     cartesi::uarch_cycle_root_hashes result;
-    session->handler->machine->collect_uarch_cycle_root_hashes(mcycle_count, result);
+    session->handler->machine->collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count, result);
     return jsonrpc_response_ok(j, result);
 }
 

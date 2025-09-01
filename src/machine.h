@@ -201,18 +201,20 @@ public:
     ///  halts.
     interpreter_break_reason run(uint64_t mcycle_end);
 
-    /// \brief Collects the root hashes after every \p mcycle_period machine cycles, for \p period_count periods.
-    /// Returns when done, or if the machine halts or yields.
-    /// \param mcycle_phase Number of machine cycles elapsed since last root hash collected.
+    /// \brief Collects the root hashes after every \p mcycle_period machine cycles
+    /// until mcycle reaches \p mcycle_end, the machine yields, or halts.
+    /// \param mcycle_end Maximum value of mcycle before function returns.
     /// \param mcycle_period Number of machine cycles between root hashes to collect.
-    /// \param period_count Number of hashes to collect.
+    /// \param mcycle_phase Number of machine cycles elapsed since last root hash collected.
+    /// \param log2_bundle_mcycle_count Log base 2 of the amount of mcycle root hashes to bundle.
+    /// If greater than 0, it collects subtree root hashes for 2^log2_bundle_mcycle_count root hashes.
     /// \param result Stores into result.hashes the root hashes after each period.
     /// Stores into result.mcycle_phase the number of machine cycles after last root hash collected.
     /// Stores into result.break_reason the reason the function returned.
     /// \detail The first hash added to \p result.hashes is the root hash after (\p mcycle_period - \p mcycle_phase)
     /// machine cycles (if the function managed to get that far before returning).
-    void collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
-        mcycle_root_hashes &result);
+    void collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
+        uint32_t log2_bundle_mcycle_count, mcycle_root_hashes &result);
 
     /// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
     /// \param mcycle_count Number of mcycles to run the machine for.
@@ -233,15 +235,17 @@ public:
     /// \param uarch_cycle_end uarch_cycle limit
     uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end);
 
-    /// \brief Collects the root hashes after every uarch cycle, for \p mcycle_count machine cycles, implicitly
-    /// resetting the uarch between each machine cycle. Returns when done, or if the machine halts or yields.
-    /// \param mcycle_count Number of machine cycles to execute, uarch cycle by uarch cycle.
+    /// \brief Collects the root hashes after every uarch cycle until mcycle reaches \p mcycle_end,
+    /// the machine yields, or halts. Implicitly resetting the uarch between mcycles.
+    /// \param mcycle_end End machine cycle value to execute, uarch cycle by uarch cycle.
     /// \param result Stores into result.hashes the root hashes after each uarch cycle.
+    /// \param log2_bundle_uarch_cycle_count Log base 2 of the amount of uarch cycle root hashes to bundle.
     /// Stores into result.reset_indices the indices of the root hashes after each implicit uarch reset (i.e., after
     /// each machine cycle). Stores into result.break_reason the reason why the function returned.
     /// \detail The first hash added to \p result.hashes is the root hash after the first uarch cycle, the last is the
     /// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
-    void collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle_root_hashes &result);
+    void collect_uarch_cycle_root_hashes(uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
+        uarch_cycle_root_hashes &result);
 
     /// \brief Advances one micro step and returns a state access log.
     /// \param log_type Type of access log to generate.

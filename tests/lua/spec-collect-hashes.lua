@@ -15,11 +15,10 @@ local function expect_consistent_root_hash(machine)
     expect.equal(external_root_hash, root_hash)
 end
 
-local function expect_mcycle_root_hashes(machine, mcycle_phase, mcycle_period, period_count)
+local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcycle_phase)
     local break_reason
     local hashes = {}
     local mcycle_start = machine:read_reg("mcycle") + mcycle_period - mcycle_phase
-    local mcycle_end = machine:read_reg("mcycle") - mcycle_phase + (period_count * mcycle_period)
     for mcycle_target = mcycle_start, mcycle_end, mcycle_period do
         break_reason = machine:run(mcycle_target)
         expect_consistent_root_hash(machine)
@@ -41,12 +40,11 @@ local function expect_mcycle_root_hashes(machine, mcycle_phase, mcycle_period, p
     }
 end
 
-local function expect_uarch_cycle_root_hashes(machine, mcycle_count)
+local function expect_uarch_cycle_root_hashes(machine, mcycle_end)
     local hashes = {}
     local reset_indices = {}
     local break_reason
     local mcycle_start = machine:read_reg("mcycle")
-    local mcycle_end = mcycle_start + mcycle_count
     for mcycle = mcycle_start + 1, mcycle_end do
         if machine:read_reg("iflags_H") ~= 0 then
             break_reason = cartesi.BREAK_REASON_HALTED
@@ -93,15 +91,19 @@ end
 describe("collect hashes", function()
     it("should fail when collecting with invalid arguments", function()
         local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+        machine:run(1)
         expect.fail(function()
-            machine:collect_mcycle_root_hashes(32, 32, 1)
+            machine:collect_mcycle_root_hashes(32, 32, 32)
         end, "mcycle_phase must be in")
         expect.fail(function()
-            machine:collect_mcycle_root_hashes(0, 0, 1)
+            machine:collect_mcycle_root_hashes(32, 0)
         end, "mcycle_period cannot be 0")
         expect.fail(function()
-            machine:collect_mcycle_root_hashes(1, 32, 1)
-        end, "mcycle_phase cannot be greater than machine mcycle")
+            machine:collect_mcycle_root_hashes(machine:read_reg("mcycle") - 1, 32)
+        end, "mcycle is past")
+        expect.fail(function()
+            machine:collect_uarch_cycle_root_hashes(0)
+        end, "mcycle is past")
     end)
 
     it("should fail when collecting from unsupported machines", function()
@@ -109,13 +111,13 @@ describe("collect hashes", function()
             cartesi.machine({ ram = { length = 4096 }, processor = { registers = { iunrep = 1 } } })
         local soft_machine <close> = cartesi.machine({ ram = { length = 4096 } }, { soft_yield = true })
         expect.fail(function()
-            unrep_machine:collect_mcycle_root_hashes(0, 32, 1)
+            unrep_machine:collect_mcycle_root_hashes(32, 32)
         end, "cannot collect hashes from unreproducible machines")
         expect.fail(function()
             unrep_machine:collect_uarch_cycle_root_hashes(32)
         end, "cannot collect hashes from unreproducible machines")
         expect.fail(function()
-            soft_machine:collect_mcycle_root_hashes(0, 32, 1)
+            soft_machine:collect_mcycle_root_hashes(32, 32)
         end, "cannot collect hashes when soft yield is enabled")
         expect.fail(function()
             soft_machine:collect_uarch_cycle_root_hashes(32)
@@ -125,12 +127,12 @@ describe("collect hashes", function()
     it("should succeed when collecting 0 periods", function()
         local machine <close> = cartesi.machine({ ram = { length = 4096 } })
         machine:run(1)
-        expect.equal(machine:collect_mcycle_root_hashes(1, 32, 0), {
+        expect.equal(machine:collect_mcycle_root_hashes(machine:read_reg("mcycle"), 32, 1), {
             hashes = {},
             break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
             mcycle_phase = 1,
         })
-        expect.equal(machine:collect_uarch_cycle_root_hashes(0), {
+        expect.equal(machine:collect_uarch_cycle_root_hashes(machine:read_reg("mcycle")), {
             hashes = {},
             reset_indices = {},
             break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
@@ -140,10 +142,10 @@ describe("collect hashes", function()
     it("should succeed when collecting from halted machines", function()
         local machine <close> = cartesi.machine({ ram = { length = 4096 } })
         machine:write_reg("iflags_H", 1)
-        expect.equal(machine:collect_mcycle_root_hashes(0, 32, 1), {
+        expect.equal(machine:collect_mcycle_root_hashes(32, 32, 1), {
             hashes = {},
             break_reason = cartesi.BREAK_REASON_HALTED,
-            mcycle_phase = 0,
+            mcycle_phase = 1,
         })
         expect.equal(machine:read_reg("mcycle"), 0)
         expect.equal(machine:collect_uarch_cycle_root_hashes(32), {
@@ -157,10 +159,10 @@ describe("collect hashes", function()
     it("should succeed when collecting from yielded machines", function()
         local machine <close> = cartesi.machine({ ram = { length = 4096 } })
         machine:write_reg("iflags_Y", 1)
-        expect.equal(machine:collect_mcycle_root_hashes(0, 32, 1), {
+        expect.equal(machine:collect_mcycle_root_hashes(32, 32, 1), {
             hashes = {},
             break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
-            mcycle_phase = 0,
+            mcycle_phase = 1,
         })
         expect.equal(machine:read_reg("mcycle"), 0)
         expect.equal(machine:collect_uarch_cycle_root_hashes(32), {
@@ -175,16 +177,16 @@ describe("collect hashes", function()
         local machine <close> = cartesi.machine({ ram = { length = 4096 } })
         local MAX_MCYCLE <const> = -1
         machine:write_reg("mcycle", MAX_MCYCLE - 1)
-        expect.equal(machine:collect_mcycle_root_hashes(machine:read_reg("mcycle") % 32, 32, 1), {
+        expect.equal(machine:collect_mcycle_root_hashes(MAX_MCYCLE, 32, machine:read_reg("mcycle") % 32), {
             hashes = {},
             break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
-            mcycle_phase = 31,
+            mcycle_phase = machine:read_reg("mcycle") % 32,
         })
         expect.equal(machine:read_reg("mcycle"), MAX_MCYCLE)
-        expect.equal(machine:collect_mcycle_root_hashes(machine:read_reg("mcycle") % 32, 32, 1), {
+        expect.equal(machine:collect_mcycle_root_hashes(MAX_MCYCLE, 32, machine:read_reg("mcycle") % 32), {
             hashes = {},
             break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
-            mcycle_phase = 31,
+            mcycle_phase = machine:read_reg("mcycle") % 32,
         })
         expect.equal(machine:read_reg("mcycle"), MAX_MCYCLE)
     end)
@@ -194,11 +196,11 @@ describe("collect hashes", function()
         local MAX_MCYCLE <const> = -1
         machine:write_reg("mcycle", MAX_MCYCLE - 1)
         expect.equal(
-            machine:collect_uarch_cycle_root_hashes(machine:read_reg("mcycle") % 32, 32, 1).break_reason,
+            machine:collect_uarch_cycle_root_hashes(MAX_MCYCLE).break_reason,
             cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
         )
         expect.equal(machine:read_reg("mcycle"), MAX_MCYCLE)
-        expect.equal(machine:collect_uarch_cycle_root_hashes(machine:read_reg("mcycle") % 32, 32, 1), {
+        expect.equal(machine:collect_uarch_cycle_root_hashes(MAX_MCYCLE), {
             hashes = {},
             reset_indices = {},
             break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
@@ -281,8 +283,10 @@ describe("collect hashes", function()
                 expect_consistent_root_hash(machine)
                 expect.equal(machine:get_root_hash(), collect_machine:get_root_hash())
                 local mcycle_phase = machine:read_reg("mcycle") % mcycle_period
-                local collected = collect_machine:collect_mcycle_root_hashes(mcycle_phase, mcycle_period, period_count)
-                local expected_collected = expect_mcycle_root_hashes(machine, mcycle_phase, mcycle_period, period_count)
+                local mcycle_target = machine:read_reg("mcycle") + period_count * mcycle_period
+                local collected = collect_machine:collect_mcycle_root_hashes(mcycle_target, mcycle_period, mcycle_phase)
+                local expected_collected =
+                    expect_mcycle_root_hashes(machine, mcycle_target, mcycle_period, mcycle_phase)
                 local halt_exit_code = machine:read_reg("htif_tohost_data") >> 1
                 expect.equal(collected, expected_collected)
                 expect.equal(collect_machine:get_root_hash(), machine:get_root_hash())
@@ -309,10 +313,11 @@ describe("collect hashes", function()
                 local count_automatic_yields = 0
                 local halt_exit_code
                 for _ = 1, period_count * 2 do
+                    local mcycle_target = machine:read_reg("mcycle") + period_count * mcycle_period
                     local collected =
-                        collect_machine:collect_mcycle_root_hashes(mcycle_phase, mcycle_period, period_count)
+                        collect_machine:collect_mcycle_root_hashes(mcycle_target, mcycle_period, mcycle_phase)
                     local expected_collected =
-                        expect_mcycle_root_hashes(machine, mcycle_phase, mcycle_period, period_count)
+                        expect_mcycle_root_hashes(machine, mcycle_target, mcycle_period, mcycle_phase)
                     expect.equal(collect_machine:read_reg("mcycle"), machine:read_reg("mcycle"))
                     expect.equal(collected, expected_collected)
                     expect.equal(collect_machine:get_root_hash(), machine:get_root_hash())
@@ -354,8 +359,8 @@ describe("collect hashes", function()
                     expect_consistent_root_hash(machine)
                     collect_machine:run(big_last_mcycle - mcycle_count)
                     expect.equal(machine:get_root_hash(), collect_machine:get_root_hash())
-                    local collected = collect_machine:collect_uarch_cycle_root_hashes(mcycle_count)
-                    local expected_collected = expect_uarch_cycle_root_hashes(machine, mcycle_count)
+                    local collected = collect_machine:collect_uarch_cycle_root_hashes(big_last_mcycle)
+                    local expected_collected = expect_uarch_cycle_root_hashes(machine, big_last_mcycle)
                     local halt_exit_code = machine:read_reg("htif_tohost_data") >> 1
                     expect.equal(collected, expected_collected)
                     expect.equal(machine:read_reg("mcycle"), big_last_mcycle)
@@ -385,8 +390,9 @@ describe("collect hashes", function()
                     for _ = 1, period_count * 2 do
                         local mcycles_to_phase0 = mcycle_period
                             - ((machine:read_reg("mcycle") - mcycle_phase_offset) % mcycle_period)
-                        local collected = collect_machine:collect_uarch_cycle_root_hashes(mcycles_to_phase0)
-                        local expected_collected = expect_uarch_cycle_root_hashes(machine, mcycles_to_phase0)
+                        local mcycle_target = machine:read_reg("mcycle") + mcycles_to_phase0
+                        local collected = collect_machine:collect_uarch_cycle_root_hashes(mcycle_target)
+                        local expected_collected = expect_uarch_cycle_root_hashes(machine, mcycle_target)
                         expect.equal(collect_machine:read_reg("mcycle"), machine:read_reg("mcycle"))
                         expect.equal(collected, expected_collected)
                         expect.equal(collect_machine:get_root_hash(), machine:get_root_hash())

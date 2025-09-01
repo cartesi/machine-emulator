@@ -280,8 +280,8 @@
       "summary": "Collect root hashes periodically while running the emulator",
       "params": [
         {
-          "name": "mcycle_phase",
-          "description": "Number of machine cycles elapsed since last root hash collected",
+          "name": "mcycle_end",
+          "description": "End machine cycle value",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
@@ -296,8 +296,16 @@
           }
         },
         {
-          "name": "period_count",
-          "description": "Number of hashes to collect",
+          "name": "mcycle_phase",
+          "description": "Number of machine cycles elapsed since last root hash collected",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "log2_bundle_mcycle_count",
+          "description": "Log base 2 of the amount of mcycle root hashes to bundle",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
@@ -338,8 +346,16 @@
       "summary": "Collect root hashes while running the emulator's uarch",
       "params": [
         {
-          "name": "mcycle_count",
-          "description": "Number of machine cycles to execute, uarch cycle by uarch cycle",
+          "name": "mcycle_end",
+          "description": "End machine cycle value to execute, uarch cycle by uarch cycle",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "log2_bundle_uarch_cycle_count",
+          "description": "Log base 2 of the amount of uarch cycle root hashes to bundle",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"

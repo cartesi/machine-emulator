@@ -645,14 +645,14 @@ cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reaso
     return cm_result_failure();
 }
 
-cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_phase, uint64_t mcycle_period,
-    uint64_t period_count, const char **result) try {
+cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint64_t mcycle_period,
+    uint64_t mcycle_phase, uint32_t log2_bundle_mcycle_count, const char **result) try {
     if (result == nullptr) {
         throw std::invalid_argument("invalid result output");
     }
     auto *cpp_m = convert_from_c(m);
     cartesi::mcycle_root_hashes cpp_res;
-    cpp_m->collect_mcycle_root_hashes(mcycle_phase, mcycle_period, period_count, cpp_res);
+    cpp_m->collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase, log2_bundle_mcycle_count, cpp_res);
     *result = cm_set_temp_string(cartesi::to_json(cpp_res).dump());
     return cm_result_success();
 } catch (...) {
@@ -662,13 +662,14 @@ cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_phase, uin
     return cm_result_failure();
 }
 
-cm_error cm_collect_uarch_cycle_root_hashes(cm_machine *m, uint64_t mcycle_count, const char **result) try {
+cm_error cm_collect_uarch_cycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
+    const char **result) try {
     if (result == nullptr) {
         throw std::invalid_argument("invalid result output");
     }
     auto *cpp_m = convert_from_c(m);
     cartesi::uarch_cycle_root_hashes cpp_res;
-    cpp_m->collect_uarch_cycle_root_hashes(mcycle_count, cpp_res);
+    cpp_m->collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count, cpp_res);
     *result = cm_set_temp_string(cartesi::to_json(cpp_res).dump());
     return cm_result_success();
 } catch (...) {

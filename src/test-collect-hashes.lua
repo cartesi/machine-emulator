@@ -176,7 +176,11 @@ local function get_root_hashes_with_collect(input_count)
             m:send_cmio_response(cartesi.CMIO_YIELD_REASON_ADVANCE_STATE, input)
             index = index + 1
         end
-        local collected = m:collect_mcycle_root_hashes(mcycle_phase, MCYCLE_PERIOD, period_count)
+        local collected = m:collect_mcycle_root_hashes(
+            m:read_reg("mcycle") + period_count * MCYCLE_PERIOD,
+            MCYCLE_PERIOD,
+            mcycle_phase
+        )
         break_reason, mcycle_phase = collected.break_reason, collected.mcycle_phase
         tappend(hashes, collected.hashes)
     end

@@ -1965,18 +1965,23 @@ void machine::write_counter(uint64_t val, const char *name, const char *domain) 
     m_counters[get_counter_key(name, domain)] = val;
 }
 
-void machine::collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
-    mcycle_root_hashes &result) {
-    mcycle_root_hashes next_result;
-    std::swap(next_result, result);
+void machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
+    uint32_t log2_bundle_mcycle_count, mcycle_root_hashes &result) {
+    auto clear_result_on_failure = make_scope_fail([&] {
+        result = mcycle_root_hashes{};
+    });
+    const uint64_t mcycle_start = read_reg(reg::mcycle);
+    if (mcycle_end < mcycle_start) {
+        throw std::runtime_error{"mcycle is past"};
+    }
     if (mcycle_period == 0) {
         throw std::runtime_error{"mcycle_period cannot be 0"};
     }
     if (mcycle_phase >= mcycle_period) {
         throw std::runtime_error{"mcycle_phase must be in {0, ..., mcycle_period-1}"};
     }
-    if (mcycle_phase > read_reg(reg::mcycle)) {
-        throw std::runtime_error{"mcycle_phase cannot be greater than machine mcycle"};
+    if (log2_bundle_mcycle_count != 0) {
+        throw std::runtime_error{"log2_bundle_mcycle_count != 0 is unsupported yet"};
     }
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot collect hashes from unreproducible machines"};
@@ -1995,32 +2000,31 @@ void machine::collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_
             throw std::runtime_error{"microarchitecture is not reset"};
         }
     }
-    next_result.hashes.clear();
-    next_result.mcycle_phase = mcycle_phase;
+    result.hashes.clear();
+    result.mcycle_phase = mcycle_phase;
     // Check halted and yielded break reasons first to behave with same priority as the interpreter
     if (read_reg(reg::iflags_H) != 0) {
-        next_result.break_reason = interpreter_break_reason::halted;
-        std::swap(next_result, result);
+        result.break_reason = interpreter_break_reason::halted;
+        std::swap(result, result);
         return;
     }
     if (read_reg(reg::iflags_Y) != 0) {
-        next_result.break_reason = interpreter_break_reason::yielded_manually;
-        std::swap(next_result, result);
+        result.break_reason = interpreter_break_reason::yielded_manually;
+        std::swap(result, result);
         return;
     }
-    next_result.hashes.reserve(mcycle_period);
-    next_result.break_reason = interpreter_break_reason::reached_target_mcycle;
+    result.hashes.reserve(mcycle_period);
+    result.break_reason = interpreter_break_reason::reached_target_mcycle;
     collect_mcycle_hashes_state_access::context context{};
     context.dirty_pages.reserve(std::clamp<uint64_t>(mcycle_period * 4, 16, 4096));
     const collect_mcycle_hashes_state_access a(context, *this);
     os_silence_putchar(m_r.htif.no_console_putchar);
-    auto mcycle_start = read_reg(reg::mcycle) - mcycle_phase;
-    for (uint64_t period = 0; period < period_count; ++period) {
-        uint64_t mcycle_target{};
-        if (__builtin_add_overflow(mcycle_start, mcycle_period, &mcycle_target)) {
+    uint64_t mcycle_last_phase = mcycle_phase;
+    for (uint64_t mcycle_target = mcycle_start; mcycle_target < mcycle_end;) {
+        if (__builtin_add_overflow(mcycle_target, mcycle_period - mcycle_last_phase, &mcycle_target)) {
             mcycle_target = UINT64_MAX;
         }
-        next_result.break_reason = interpret(a, mcycle_target);
+        result.break_reason = interpret(a, mcycle_target);
         for (const uint64_t paddr_page : context.dirty_pages) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
             auto &ar = const_cast<address_range &>(find_address_range(paddr_page, HASH_TREE_PAGE_SIZE));
@@ -2030,26 +2034,33 @@ void machine::collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_
             throw std::runtime_error{"update hash tree failed"};
         }
         context.dirty_pages.clear();
-        const auto mcycle_end = read_reg(reg::mcycle);
+        const auto mcycle_reached = read_reg(reg::mcycle);
         // If the machine stopped before we asked, we are done
-        if (mcycle_end != mcycle_target || mcycle_target == UINT64_MAX) {
+        if (mcycle_reached != mcycle_target || mcycle_target == UINT64_MAX) {
             break;
         }
-        next_result.hashes.emplace_back(m_ht.get_root_hash());
-        mcycle_start = mcycle_end;
+        result.hashes.emplace_back(m_ht.get_root_hash());
+        mcycle_last_phase = 0;
         // If the machine stopped before we asked, we are done
-        if (next_result.break_reason != interpreter_break_reason::reached_target_mcycle) {
+        if (result.break_reason != interpreter_break_reason::reached_target_mcycle) {
             break;
         }
     }
-    next_result.mcycle_phase = read_reg(reg::mcycle) - mcycle_start;
-    // Commit new result
-    std::swap(next_result, result);
+    result.mcycle_phase = (read_reg(reg::mcycle) - mcycle_start + mcycle_phase) % mcycle_period;
 }
 
-void machine::collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle_root_hashes &result) {
-    uarch_cycle_root_hashes next_result;
-    std::swap(next_result, result);
+void machine::collect_uarch_cycle_root_hashes(uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
+    uarch_cycle_root_hashes &result) {
+    auto clear_result_on_failure = make_scope_fail([&] {
+        result = uarch_cycle_root_hashes{};
+    });
+    const uint64_t mcycle_start = read_reg(reg::mcycle);
+    if (mcycle_end < mcycle_start) {
+        throw std::runtime_error{"mcycle is past"};
+    }
+    if (log2_bundle_uarch_cycle_count != 0) {
+        throw std::runtime_error{"log2_bundle_mcycle_count != 0 is unsupported yet"};
+    }
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot collect hashes from unreproducible machines"};
     }
@@ -2068,22 +2079,21 @@ void machine::collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle
     if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
-    next_result.hashes.clear();
-    next_result.reset_indices.clear();
+    result.hashes.clear();
+    result.reset_indices.clear();
     // Check halted and yielded break reasons first to behave with same priority as the interpreter
     if (read_reg(reg::iflags_H) != 0) {
-        next_result.break_reason = interpreter_break_reason::halted;
-        std::swap(next_result, result);
+        result.break_reason = interpreter_break_reason::halted;
         return;
     }
     if (read_reg(reg::iflags_Y) != 0) {
-        next_result.break_reason = interpreter_break_reason::yielded_manually;
-        std::swap(next_result, result);
+        result.break_reason = interpreter_break_reason::yielded_manually;
         return;
     }
-    next_result.hashes.reserve(mcycle_count * 512);
-    next_result.reset_indices.reserve(mcycle_count);
-    next_result.break_reason = interpreter_break_reason::reached_target_mcycle;
+    const uint64_t mcycle_count = mcycle_end - mcycle_start;
+    result.hashes.reserve(mcycle_count * 512);
+    result.reset_indices.reserve(mcycle_count);
+    result.break_reason = interpreter_break_reason::reached_target_mcycle;
     collect_uarch_cycle_hashes_state_access::context context{};
     context.dirty_words.reserve(8);
     const collect_uarch_cycle_hashes_state_access a(context, *this);
@@ -2091,15 +2101,15 @@ void machine::collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle
     for (uint64_t mcycles = 0; mcycles < mcycle_count; ++mcycles) {
         // If the machine stopped before we asked, we are done
         if (read_reg(reg::iflags_H) != 0) {
-            next_result.break_reason = interpreter_break_reason::halted;
+            result.break_reason = interpreter_break_reason::halted;
             break;
         }
         if (read_reg(reg::iflags_Y) != 0) {
-            next_result.break_reason = interpreter_break_reason::yielded_manually;
+            result.break_reason = interpreter_break_reason::yielded_manually;
             break;
         }
         if (read_reg(reg::iflags_X) != 0 && mcycles > 0) {
-            next_result.break_reason = interpreter_break_reason::yielded_automatically;
+            result.break_reason = interpreter_break_reason::yielded_automatically;
             break;
         }
         uint64_t mcycle_target{};
@@ -2114,32 +2124,30 @@ void machine::collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle
                 break;
             }
             uarch_interpret(a, uarch_cycle_target);
-            const auto uarch_cycle_end = read_reg(reg::uarch_cycle);
+            const auto uarch_cycle_reached = read_reg(reg::uarch_cycle);
             if (!m_ht.update_words(m_ars, context.dirty_words)) {
                 throw std::runtime_error{"update hash tree failed"};
             }
             context.dirty_words.clear();
-            if (uarch_cycle_end != uarch_cycle_target) {
+            if (uarch_cycle_reached != uarch_cycle_target) {
                 break;
             }
-            next_result.hashes.emplace_back(m_ht.get_root_hash());
-            uarch_cycle_start = uarch_cycle_end;
+            result.hashes.emplace_back(m_ht.get_root_hash());
+            uarch_cycle_start = uarch_cycle_reached;
         }
         //??D maybe optimize this?
         reset_uarch();
         if (!update_hash_tree()) {
             throw std::runtime_error{"update hash tree failed"};
         }
-        const auto mcycle_end = read_reg(reg::mcycle);
-        if (mcycle_end != mcycle_target) {
+        const auto mcycle_reached = read_reg(reg::mcycle);
+        if (mcycle_reached != mcycle_target) {
             throw std::runtime_error{"machine did not reach the expected target mcycle"};
         }
         // Add one hash after the uarch reset, and the index where it happened
-        next_result.reset_indices.emplace_back(next_result.hashes.size());
-        next_result.hashes.emplace_back(m_ht.get_root_hash());
+        result.reset_indices.emplace_back(result.hashes.size());
+        result.hashes.emplace_back(m_ht.get_root_hash());
     }
-    // Commit new result
-    std::swap(next_result, result);
 }
 
 } // namespace cartesi

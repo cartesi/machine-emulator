@@ -24,6 +24,7 @@
 #include <iterator>
 #include <limits>
 #include <ranges>
+#include <type_traits>
 
 #include "address-range-constants.h"
 
@@ -67,9 +68,9 @@ protected:
     constexpr positions_range level_positions_view(int level) const {
         if (level >= 0 && level < level_count()) {
             const auto begin = position_iterator::value_type{1} << (level_count() - level - 1);
-            return {begin, 2 * begin};
+            return positions_range{begin, 2 * begin};
         }
-        return {invalid_position, invalid_position};
+        return positions_range{invalid_position, invalid_position};
     }
 
     /// \brief Returns number of levels in tree, from root to leaves
@@ -257,7 +258,7 @@ public:
     i_dirty_page_tree &operator=(i_dirty_page_tree &&other) = default;
 
     // NOLINTNEXTLINE(hicpp-use-equals-default,modernize-use-equals-default)
-    constexpr virtual ~i_dirty_page_tree() {}; // = default; // doesn't work due to bug in gcc
+    constexpr virtual ~i_dirty_page_tree() {} // = default; // doesn't work due to bug in gcc
 
     /// \brief Returns view over the starting offset of all dirty nodes of a given log2_size
     /// \param log2_size Log<sub>2</sub> of node size
@@ -349,7 +350,7 @@ public:
     empty_dirty_page_tree(empty_dirty_page_tree &&other) = default;
     empty_dirty_page_tree &operator=(empty_dirty_page_tree &&other) = default;
     // NOLINTNEXTLINE(hicpp-use-equals-default,modernize-use-equals-default)
-    constexpr ~empty_dirty_page_tree() override {}; // = default; // doesn't work due to bug in gcc
+    constexpr ~empty_dirty_page_tree() override {} // = default; // doesn't work due to bug in gcc
 };
 
 } // namespace cartesi

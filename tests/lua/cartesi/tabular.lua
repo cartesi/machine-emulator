@@ -37,4 +37,17 @@ M.expand = function(metadata, t)
     return expanded_t
 end
 
+function M.clear(t)
+    for k in pairs(t) do
+        t[k] = nil
+    end
+end
+
+function M.append(t, elems)
+    local n = #t
+    for i = 1, #elems do
+        t[n + i] = elems[i]
+    end
+end
+
 return M

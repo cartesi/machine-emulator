@@ -49,6 +49,12 @@
 /* reply */
 #define HTIF_YIELD_REASON_ADVANCE_STATE_DEF 0
 #define HTIF_YIELD_REASON_INSPECT_STATE_DEF 1
+
+// helper for using UINT64_C with defines
+#ifndef EXPAND_UINT64_C
+#define EXPAND_UINT64_C(a) UINT64_C(a)
+#endif
+
 // NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 
 #endif /* end of include guard: HTIF_DEFINES_H */

@@ -17,7 +17,7 @@
 #include "os-features.h"
 
 // Must be included before
-#include "os-posix-compat.h"
+#include "os-posix-compat.h" // IWYU pragma: keep
 
 #include <fcntl.h>    // open
 #include <sys/stat.h> // stat/fstat/mkdir/fchmod
@@ -29,6 +29,7 @@
 #include "is-pristine.h"
 #include "scope-exit.h"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstddef>
@@ -38,6 +39,7 @@
 #include <memory>
 #include <span>
 #include <sstream>
+#include <string>
 #include <system_error>
 #include <tuple>
 #include <utility>

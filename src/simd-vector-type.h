@@ -25,7 +25,7 @@
 #define SIMD_VECTOR_TYPE
 
 #include <cstddef>
-#include <cstdint>
+#include <cstdint> // IWYU pragma: keep
 
 namespace cartesi {
 

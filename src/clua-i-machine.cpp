@@ -509,12 +509,14 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
             {
                 {"hashes", "Base64Array"},
                 {"break_reason", "InterpreterBreakReason"},
+                {"back_tree", "BackMerkleTree"},
             }},
         {"UarchCycleRootHashes",
+            {{"hashes", "Base64Array"}, {"reset_indices", "ArrayArrayIndex"},
+                {"break_reason", "InterpreterBreakReason"}}},
+        {"BackMerkleTree",
             {
-                {"hashes", "Base64Array"},
-                {"reset_indices", "ArrayArrayIndex"},
-                {"break_reason", "InterpreterBreakReason"},
+                {"context", "Base64Array"},
             }},
     };
     return machine_schema_dict;
@@ -991,15 +993,17 @@ static int machine_obj_index_create(lua_State *L) {
 /// \brief This is the machine:collect_mcycle_root_hashes() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_collect_mcycle_root_hashes(lua_State *L) {
-    lua_settop(L, 5);
+    lua_settop(L, 6);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t mcycle_end = luaL_checkinteger(L, 2);
     const uint64_t mcycle_period = luaL_checkinteger(L, 3);
     const uint64_t mcycle_phase = luaL_optinteger(L, 4, 0);
-    const auto log2_bundle_uarch_cycle_count = static_cast<uint32_t>(luaL_optinteger(L, 5, 0));
+    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_optinteger(L, 5, 0));
+    const char *previous_back_tree =
+        !lua_isnil(L, 6) ? clua_check_schemed_json_string(L, 6, "BackMerkleTree") : nullptr;
     const char *result = nullptr;
     if (cm_collect_mcycle_root_hashes(m.get(), mcycle_end, mcycle_period, mcycle_phase, log2_bundle_uarch_cycle_count,
-            &result) != 0) {
+            previous_back_tree, &result) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_schemed_json_table(L, result, "McycleRootHashes");
@@ -1012,7 +1016,7 @@ static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
     lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t mcycle_end = luaL_checkinteger(L, 2);
-    const auto log2_bundle_uarch_cycle_count = static_cast<uint32_t>(luaL_optinteger(L, 3, 0));
+    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_optinteger(L, 3, 0));
     const char *result = nullptr;
     if (cm_collect_uarch_cycle_root_hashes(m.get(), mcycle_end, log2_bundle_uarch_cycle_count, &result) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());

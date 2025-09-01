@@ -209,11 +209,6 @@ jobs:
         run: |
           docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh cartesi-jsonrpc-machine cartesi-machine lua
 
-      - name: Run Merkle tree tests
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-function=keccak256
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-function=sha256
-
       - name: Run C API tests
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-machine-c-api
@@ -377,11 +372,6 @@ jobs:
       - name: Run cmio lua test scripts
         run: |
           docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh cartesi-jsonrpc-machine cartesi-machine lua
-
-      - name: Run Merkle tree tests
-        run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-function=keccak256
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-function=sha256
 
       - name: Run C API tests
         run: |
@@ -554,7 +544,7 @@ jobs:
 
       - name: Run coverage
         run: |
-          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch coverage-report coverage=yes
+          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch coverage-report coverage=yes
           docker cp coverage-report:/usr/src/emulator/tests/build/coverage .
           docker rm coverage-report
 

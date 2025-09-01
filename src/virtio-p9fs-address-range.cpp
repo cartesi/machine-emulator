@@ -36,7 +36,7 @@
 #ifdef HAVE_POSIX_FS
 
 // Must be included before
-#include "os-posix-compat.h"
+#include "os-posix-compat.h" // IWYU pragma: keep
 
 #ifdef __APPLE__
 #include <sys/mount.h>

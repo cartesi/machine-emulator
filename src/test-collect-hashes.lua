@@ -16,39 +16,22 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 local cartesi = require("cartesi")
+local tabular = require("cartesi.tabular")
 --local jsonrpc = require("cartesi.jsonrpc")
 local calldata = require("cartesi.calldata")
 local socket = require("socket")
 
 local function stderr(...) io.stderr:write((string.format(...))) end
 
+local tappend = tabular.append
 local tinsert = table.insert
-
-local function tappend(t, elems)
-    local n = #t
-    for i, v in ipairs(elems) do
-        t[n + i] = v
-    end
-end
 
 local function errorf(fmt, ...) error(string.format(fmt, ...)) end
 
 local config = {
     dtb = {
-        entrypoint = "while true; do rollup accept; done",
-        init = 'echo "\
-         .\
-        / \\\\\
-      /    \\\\\
-\\\\---/---\\\\  /----\\\\\
- \\\\       X       \\\\\
-  \\\\----/  \\\\---/---\\\\\
-       \\\\    / CARTESI\
-        \\\\ /   MACHINE\
-         \'\
-"\
-busybox mkdir -p /run/drive-label && echo "root" > /run/drive-label/pmem0\
-',
+        entrypoint = "while true; do rollup accept >> /dev/null; done",
+        init = 'busybox mkdir -p /run/drive-label && echo "root" > /run/drive-label/pmem0',
     },
     flash_drive = {
         {
@@ -127,21 +110,20 @@ local function get_root_hashes_directly(input_count)
     local hashes
     local m, break_reason = create_machine()
     local mcycle = m:read_reg("mcycle")
-    local target_mcycle
     local index = 0
-    while index < input_count and break_reason ~= halted and break_reason ~= failed do
+    while break_reason ~= halted and break_reason ~= failed do
         if break_reason == yielded_manually then
             if hashes then tinsert(inputs, hashes) end
             hashes = {}
             local input = encode_input(index)
             m:send_cmio_response(cartesi.CMIO_YIELD_REASON_ADVANCE_STATE, input)
             index = index + 1
-            target_mcycle = mcycle + MCYCLE_PERIOD
+            if index >= input_count then break end
         end
+        local target_mcycle = mcycle + MCYCLE_PERIOD
         break_reason = m:run(target_mcycle)
         mcycle = m:read_reg("mcycle")
-        if mcycle == target_mcycle then
-            target_mcycle = mcycle + MCYCLE_PERIOD
+        if mcycle == target_mcycle or break_reason == yielded_manually or break_reason == halted then
             tinsert(hashes, m:get_root_hash())
         end
     end
@@ -166,8 +148,7 @@ local function get_root_hashes_with_collect(input_count)
     local m, break_reason = create_machine()
     local mcycle_phase
     local index = 0
-    local period_count = 7
-    while index < input_count and break_reason ~= halted and break_reason ~= failed do
+    while break_reason ~= halted and break_reason ~= failed do
         if break_reason == yielded_manually then
             if hashes then tinsert(inputs, hashes) end
             hashes = {}
@@ -175,12 +156,9 @@ local function get_root_hashes_with_collect(input_count)
             local input = encode_input(index)
             m:send_cmio_response(cartesi.CMIO_YIELD_REASON_ADVANCE_STATE, input)
             index = index + 1
+            if index >= input_count then break end
         end
-        local collected = m:collect_mcycle_root_hashes(
-            m:read_reg("mcycle") + period_count * MCYCLE_PERIOD,
-            MCYCLE_PERIOD,
-            mcycle_phase
-        )
+        local collected = m:collect_mcycle_root_hashes(cartesi.MCYCLE_MAX, MCYCLE_PERIOD, mcycle_phase)
         break_reason, mcycle_phase = collected.break_reason, collected.mcycle_phase
         tappend(hashes, collected.hashes)
     end
@@ -202,7 +180,7 @@ t = socket.gettime()
 local inputs_directly = get_root_hashes_directly(INPUT_COUNT)
 local directly_time = socket.gettime() - t
 
-stderr("collect in %.2gs, direct in %.2g", collect_time, directly_time)
+stderr("collect in %.2gs, direct in %.2g\n", collect_time, directly_time)
 
 if #inputs_collected ~= #inputs_directly then
     errorf("number of inputs do not match (%u vs %u)", #inputs_collected, #inputs_directly)

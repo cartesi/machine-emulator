@@ -97,6 +97,6 @@ scope_fail<F> make_scope_fail(F &&f) {
     return scope_fail<F>(std::forward<F>(f));
 }
 
-}; // namespace cartesi
+} // namespace cartesi
 
 #endif

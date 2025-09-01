@@ -20,22 +20,26 @@
 /// \file
 /// \brief State access implementation that records state accesses to an access log.
 
-#include <cassert>
 #include <cstdint>
 #include <cstring>
-#include <memory>
+#include <span>
 #include <utility>
 
 #include "access-log.h"
+#include "assert-printf.h"
 #include "hash-tree-constants.h"
 #include "host-addr.h"
 #include "i-accept-scoped-notes.h"
+#include "i-hasher.h"
 #include "i-state-access.h"
 #include "machine-hash.h"
+#include "machine-reg.h"
 #include "machine.h"
 #include "meta.h"
 #include "processor-state.h"
+#include "scoped-note.h"
 #include "shadow-registers.h"
+#include "variant-hasher.h"
 
 namespace cartesi {
 
@@ -85,8 +89,8 @@ private:
         const uint64_t pleaf_aligned = paligned & ~(HASH_TREE_WORD_SIZE - 1);
         access a;
 
-        // We can skip updating the merkle tree while getting the proof because we assume that:
-        // 1) A full merkle tree update was called at the beginning of machine::log_load_cmio_input()
+        // We can skip updating the hash tree while getting the proof because we assume that:
+        // 1) A full hash tree update was called at the beginning of machine::log_load_cmio_input()
         // 2) We called update_hash_tree_page on all write accesses
         const auto proof = m_m.get_proof(pleaf_aligned, HASH_TREE_LOG2_WORD_SIZE, skip_hash_tree_update);
         // We just store the sibling hashes in the access because this is the only missing piece of data needed to
@@ -114,7 +118,7 @@ private:
     /// \param text Textual description of the access.
     void log_before_write(uint64_t paligned, uint64_t val, const char *text) const {
         static_assert(HASH_TREE_LOG2_WORD_SIZE >= log2_size_v<uint64_t>,
-            "Merkle tree word size must be at least as large as a machine word");
+            "hash tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"paligned is not aligned to word size"};
         }
@@ -122,8 +126,8 @@ private:
         const uint64_t pleaf_aligned = paligned & ~(HASH_TREE_WORD_SIZE - 1);
         access a;
 
-        // We can skip updating the merkle tree while getting the proof because we assume that:
-        // 1) A full merkle tree update was called at the beginning of machine::log_load_cmio_input()
+        // We can skip updating the hash tree while getting the proof because we assume that:
+        // 1) A full hash tree update was called at the beginning of machine::log_load_cmio_input()
         // 2) We called update_hash_tree_page on all write accesses
         const auto proof = m_m.get_proof(pleaf_aligned, HASH_TREE_LOG2_WORD_SIZE, skip_hash_tree_update);
         // We just store the sibling hashes in the access because this is the only missing piece of data needed to
@@ -151,7 +155,7 @@ private:
         m_log.push_access(std::move(a), text);
     }
 
-    /// \brief Updates the Merkle tree after the modification of a word in the machine state.
+    /// \brief Updates the hash tree after the modification of a word in the machine state.
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     void update_after_write(uint64_t paligned) const {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
@@ -159,7 +163,7 @@ private:
         assert(updated);
     }
 
-    /// \brief Logs a write access before it happens, writes, and then update the Merkle tree.
+    /// \brief Logs a write access before it happens, writes, and then update the hash tree.
     /// \param paligned Physical address of the word in the machine state (Must be aligned to a 64-bit word).
     /// \param dest Reference to value before writing.
     /// \param val Value to write to \p dest.
@@ -242,7 +246,7 @@ private:
         if (write_length > data_length) {
             m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
         }
-        // we have to update the merkle tree after every write
+        // we have to update the hash tree after every write
         m_m.update_hash_tree();
 
         // log hash and written data
@@ -250,7 +254,8 @@ private:
         a.get_written_hash().emplace();
         variant_hasher h(m_m.get_hash_function());
         const auto offset = paddr - ar.get_start();
-        get_merkle_tree_hash(h, std::span<const unsigned char>{ar.get_host_memory() + offset, write_length},
+        get_merkle_tree_hash(h,
+            std::span<const unsigned char>{ar.get_host_memory() + offset, static_cast<size_t>(write_length)},
             HASH_TREE_WORD_SIZE, a.get_written_hash().value());
         if (m_log.get_log_type().has_large_data()) {
             access_data &data = a.get_written().emplace(write_length);

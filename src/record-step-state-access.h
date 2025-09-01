@@ -17,19 +17,31 @@
 #ifndef RECORD_STEP_STATE_ACCESS_H
 #define RECORD_STEP_STATE_ACCESS_H
 
-#include <cassert>
+#include <array>
+#include <cstdint>
 #include <map>
-#include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
-#include "compiler-defines.h"
+#include "address-range.h"
+#include "assert-printf.h"
+#include "hash-tree-constants.h"
 #include "hash-tree.h"
+#include "host-addr.h"
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
+#include "machine-hash.h"
+#include "machine-reg.h"
 #include "machine.h"
 #include "os-filesystem.h"
+#include "os.h"
+#include "pmas-constants.h"
 #include "pmas.h"
+#include "riscv-constants.h"
+#include "shadow-registers.h"
 #include "shadow-tlb.h"
 #include "unique-c-ptr.h"
 #include "variant-hasher.h"
@@ -174,7 +186,7 @@ private:
         page_indices_type::const_iterator &next_page_index, sibling_hashes_type &sibling_hashes) {
         auto page_count = UINT64_C(1) << page_count_log2_size;
         if (next_page_index == page_indices.cend() || page_index + page_count <= *next_page_index) {
-            // we can skip the merkle tree update, because a full update was done before the recording started
+            // we can skip the hash tree update, because a full update was done before the recording started
             sibling_hashes.push_back(m_m.get_node_hash(page_index << HASH_TREE_LOG2_PAGE_SIZE,
                 page_count_log2_size + HASH_TREE_LOG2_PAGE_SIZE, skip_hash_tree_update));
         } else if (page_count_log2_size > 0) {

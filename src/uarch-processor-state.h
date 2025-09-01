@@ -20,12 +20,8 @@
 /// \file
 /// \brief Cartesi microarchitecture machine processor state structure definition.
 
-#include <array>
 #include <cstdint>
-#include <memory>
 
-#include "memory-address-range.h"
-#include "riscv-constants.h"
 #include "shadow-uarch-state.h"
 
 namespace cartesi {

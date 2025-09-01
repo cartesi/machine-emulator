@@ -15,7 +15,6 @@
 //
 
 #include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <string>
 #include <string_view>
@@ -33,7 +32,6 @@ extern "C" {
 #include "htif-constants.h"
 #include "machine-c-api.h"
 #include "machine-c-version.h"
-#include "machine-hash.h"
 #include "riscv-constants.h"
 #include "uarch-constants.h"
 #include "uarch-pristine.h"
@@ -214,6 +212,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_VERSION_MINOR, "VERSION_MINOR", -1);
     clua_setintegerfield(L, CM_VERSION_PATCH, "VERSION_PATCH", -1);
     clua_setintegerfield(L, CM_HASH_SIZE, "HASH_SIZE", -1);
+    clua_setintegerfield(L, CM_MCYCLE_MAX, "MCYCLE_MAX", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_WORD_SIZE, "TREE_LOG2_WORD_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_PAGE_SIZE, "TREE_LOG2_PAGE_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_ROOT_SIZE, "TREE_LOG2_ROOT_SIZE", -1);

@@ -22,7 +22,9 @@
 #include "address-range-constants.h"
 #include "address-range.h"
 #include "i-device-state-access.h"
-#include "plic-constants.h"
+#include "interpret.h"
+#include "pmas-constants.h"
+#include "pmas.h"
 
 /// \file
 /// \brief Platform-Level Interrupt Controller address range.

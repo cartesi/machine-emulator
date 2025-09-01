@@ -24,11 +24,12 @@
 /// It includes specialized hashers for single data items and concatenated data pairs,
 /// both utilizing queue-based batching to maximize SIMD efficiency.
 
+#include <array>
 #include <cstddef>
 
 #include <boost/container/static_vector.hpp>
 
-#include "compiler-defines.h"
+#include "array2d.h"
 #include "i-hasher.h"
 #include "machine-hash.h"
 

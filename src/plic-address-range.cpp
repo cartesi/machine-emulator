@@ -16,12 +16,12 @@
 
 #include "plic-address-range.h"
 
-#include "assert-printf.h"
 #include <cstdint>
 
+#include "address-range-constants.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
-#include "pmas-constants.h"
+#include "plic-constants.h"
 #include "riscv-constants.h"
 
 // Enable these defines to debug PLIC

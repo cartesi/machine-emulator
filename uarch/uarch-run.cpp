@@ -14,18 +14,16 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "uarch-runtime.h" // must be included first, because of assert
+// Must be included first, because of assert
+#include "uarch-runtime.h" // IWYU pragma: keep
 
 #include "compiler-defines.h"
 #include "interpret.h"
 #include "machine-uarch-bridge-state-access.h"
 #include "mock-address-range.h"
-#include "uarch-constants.h"
 #include "uarch-ecall.h"
 
-#include <array>
 #include <cstdint>
-#include <optional>
 
 using namespace cartesi;
 

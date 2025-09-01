@@ -19,10 +19,13 @@
 
 #include <array>
 #include <cstdint>
-#include <cstring>
 
 #include "address-range.h"
+#include "i-device-state-access.h"
+#include "interpret.h"
 #include "os.h"
+#include "pmas-constants.h"
+#include "pmas.h"
 
 namespace cartesi {
 

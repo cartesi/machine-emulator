@@ -17,7 +17,9 @@
 #ifndef CONCEPTS_H
 #define CONCEPTS_H
 
+#include <concepts>
 #include <ranges>
+#include <type_traits>
 
 /// \file
 /// \brief Concepts helper functions.
@@ -53,12 +55,14 @@ concept ScopedEnum = std::is_enum_v<E> && !std::is_convertible_v<E, std::underly
 template <typename T, typename... Ts>
 concept SameAsAny = (std::same_as<T, Ts> || ...);
 
-// C++20 concept to check if a container is back insertable
-template <typename T>
-concept BackInsertableContainer = std::ranges::range<T> && requires(T container, typename T::value_type value) {
+// C++20 concept to check if a container is back insertable with a value
+template <typename Container, typename T>
+concept BackInsertableWith = std::ranges::range<Container> && requires(Container container, T &&value) {
     { container.empty() } -> std::convertible_to<bool>;
-    { container.back() } -> std::convertible_to<typename T::reference>;
-    container.push_back(value);
+    { container.back() } -> std::convertible_to<typename Container::reference>;
+    container.push_back(std::forward<T>(value));
+    requires std::constructible_from<typename Container::value_type, T &&>;
+    requires std::equality_comparable_with<typename Container::value_type, T>;
 };
 
 } // namespace cartesi

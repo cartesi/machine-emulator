@@ -20,12 +20,14 @@
 /// \file
 /// \brief Hasher interface
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <ranges>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 
 #include "array2d.h"
 #include "concepts.h"
@@ -42,6 +44,9 @@ using const_hash_tree_word_view = std::span<const unsigned char, HASH_TREE_WORD_
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
 template <typename DERIVED>
 class i_hasher { // CRTP
+    i_hasher() = default;
+    friend DERIVED;
+
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {
         return *static_cast<DERIVED *>(this);

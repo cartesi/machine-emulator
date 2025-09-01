@@ -15,11 +15,8 @@
 //
 
 #include "uarch-runtime.h"
-#include "compiler-defines.h"
-#include "uarch-constants.h"
 
 #include <cstddef>
-#include <cstdint>
 
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 extern "C" void __cxa_pure_virtual() {
@@ -83,7 +80,7 @@ extern "C" void *memset(void *ptr, int value, size_t num) {
     return ptr;
 }
 
-extern "C" NO_RETURN void abort() {
+extern "C" NO_RETURN void abort() noexcept {
     // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("ebreak"
         : // no output

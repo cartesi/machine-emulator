@@ -43,10 +43,10 @@
 #ifndef SOFT_FLOAT_H
 #define SOFT_FLOAT_H
 
-#include <cassert>
 #include <cstdint>
 #include <type_traits>
 
+#include "assert-printf.h"
 #include "compiler-defines.h"
 #include "riscv-constants.h"
 #include "uint128.h"

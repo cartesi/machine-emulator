@@ -17,16 +17,10 @@
 #ifndef UARCH_INTERPRET_SOLIDITY_COMPAT_H
 #define UARCH_INTERPRET_SOLIDITY_COMPAT_H
 
-#include <cassert>
-#include <cmath>
 #include <cstdint>
 #include <stdexcept>
 
-#ifdef DUMP_UARCH_INSN
 #include "assert-printf.h"
-#include <cinttypes>
-#endif
-
 #include "shadow-tlb.h"
 
 /// \file

@@ -20,11 +20,13 @@
 #include <cinttypes>
 #include <cstdarg>
 #include <cstdint>
+#include <type_traits>
 
-#include "assert-printf.h"
+#include "assert-printf.h" // IWYU pragma: keep
 #include "i-prefer-shadow-uarch-state.h"
 #include "meta.h"
 #include "shadow-tlb.h"
+#include "shadow-uarch-state.h"
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 #define DEFINE_USA_READ(REG)                                                                                           \

@@ -197,10 +197,6 @@ test-uarch-rv64ui:
 test-uarch-interpreter:
 	$(MAKE) -C ../third-party/riscv-arch-test verify XLEN=64 RISCV_TARGET=cartesi RISCV_ISA=rv64i RISCV_DEVICE=I WORK=$(BUILDDIR)/uarch-riscv-arch-test RUN_ARCH_TEST='$(RUN_ARCH_TEST)'
 
-test-hash:
-	$(LD_PRELOAD_PREFIX) ./build/misc/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=build/misc/test-merkle-tree-hash --hash-function=keccak256
-	$(LD_PRELOAD_PREFIX) ./build/misc/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=build/misc/test-merkle-tree-hash --hash-function=sha256
-
 test-jsonrpc:
 	./scripts/test-jsonrpc-server.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
@@ -216,7 +212,7 @@ test-save-and-load: | $(CARTESI_IMAGES)
 test-yield-and-save: | $(CARTESI_IMAGES)
 	./scripts/test-yield-and-save.sh '$(LUA) ../src/cartesi-machine.lua'
 
-test-misc: test-c-api test-hash test-save-and-load test-yield-and-save
+test-misc: test-c-api test-save-and-load test-yield-and-save
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
 	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs
@@ -254,7 +250,7 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 export LLVM_PROFILE_FILE=coverage-%p.profraw
 endif
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-hash test-cmio test-machine-with-log-step
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step
 
 lint format check-format:
 	@$(MAKE) -C misc $@

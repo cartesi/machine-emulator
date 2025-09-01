@@ -32,6 +32,8 @@ namespace cartesi {
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
 template <typename DERIVED>
 class i_accept_counters { // CRTP
+    i_accept_counters() = default;
+    friend DERIVED;
 
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {

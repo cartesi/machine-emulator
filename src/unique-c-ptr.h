@@ -26,8 +26,6 @@
 #include <tuple>
 #include <type_traits>
 
-#include "os.h"
-
 namespace cartesi {
 
 namespace detail {

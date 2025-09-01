@@ -22,15 +22,17 @@
 #include <cstdint>
 #include <stdexcept>
 
+#include "address-range-constants.h"
 #include "compiler-defines.h"
+#include "hash-tree-constants.h"
 #include "hash-tree.h"
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
 #include "machine.h"
+#include "os.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
-#include "strict-aliasing.h"
 
 namespace cartesi {
 

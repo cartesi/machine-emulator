@@ -20,7 +20,8 @@
 /// \file
 /// \brief Enforcement of the strict aliasing rule
 
-#include "compiler-defines.h"
+#include <cstdint>
+
 #include "strict-aliasing.h"
 
 namespace cartesi {

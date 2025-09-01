@@ -20,22 +20,19 @@
 /// \file
 /// \brief Fast state access implementation
 
-#include <algorithm>
-#include <cassert>
 #include <cstdint>
 #include <stdexcept>
-#include <utility>
 
+#include "address-range.h"
+#include "assert-printf.h"
 #include "compiler-defines.h"
 #include "host-addr.h"
 #include "i-accept-counters.h"
 #include "i-accept-scoped-notes.h"
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"
-#include "interpret.h"
 #include "machine.h"
 #include "os.h"
-#include "pmas-constants.h"
 #include "processor-state.h"
 #include "riscv-constants.h"
 #include "shadow-tlb.h"

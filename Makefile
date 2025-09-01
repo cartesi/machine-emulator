@@ -73,7 +73,7 @@ INSTALL_DIR= cp -RP
 SYMLINK= ln -sf
 CHMOD_EXEC= chmod 0755
 
-EMU_TO_BIN= src/cartesi-jsonrpc-machine src/cartesi-merkle-tree-hash
+EMU_TO_BIN= src/cartesi-jsonrpc-machine src/cartesi-hash-tree-hash
 EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_JSONRPC)
 EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a src/libluacartesi.a src/libluacartesi_jsonrpc.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua
@@ -83,7 +83,7 @@ EMU_TO_LUA_CARTESI_CPATH= src/cartesi/jsonrpc.so
 EMU_TO_INC= $(addprefix src/,jsonrpc-machine-c-api.h machine-c-api.h machine-c-version.h)
 UARCH_TO_SHARE= uarch-ram.bin
 
-TESTS_TO_BIN= tests/build/misc/test-merkle-tree-hash tests/build/misc/test-machine-c-api
+TESTS_TO_BIN= tests/build/misc/test-machine-c-api
 TESTS_LUA_TO_LUA_PATH=tests/lua/cartesi
 TESTS_LUA_TO_TEST_LUA_PATH=$(wildcard tests/lua/*.lua)
 TESTS_SCRIPTS_TO_TEST_SCRIPTS_PATH=$(wildcard tests/scripts/*.sh)

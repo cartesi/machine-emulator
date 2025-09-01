@@ -17,13 +17,16 @@
 #ifndef CLUA_I_MACHINE_H
 #define CLUA_I_MACHINE_H
 
-#include <memory>
 #include <string>
 #include <utility>
 
+#include <json.hpp>
+
+extern "C" {
+#include <lua.h>
+}
+
 #include "clua.h"
-#include "i-machine.h"
-#include "json-util.h"
 #include "machine-c-api.h"
 
 /// \file
@@ -71,7 +74,7 @@ public:
         reset();
         std::swap(m_ptr, other.m_ptr);
         return *this;
-    };
+    }
 
     ~clua_managed_cm_ptr() {
         reset();

@@ -15,10 +15,8 @@
 //
 
 #include "uarch-ecall.h"
-#include "compiler-defines.h"
 #include "uarch-defines.h"
 
-#include <stddef.h>
 #include <stdint.h>
 
 void ua_halt_ECALL() {

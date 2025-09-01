@@ -21,12 +21,13 @@
 /// \brief Microarchitecture-dependent includes for printf and assert
 
 #ifdef MICROARCHITECTURE
-#include "uarch-runtime.h"
+#include "../uarch/uarch-runtime.h" // IWYU pragma: export
 #else
-#include <cassert>
-#include <cstdio>
+#include <cassert> // IWYU pragma: export
+#include <cstdio>  // IWYU pragma: export
 #endif
 
+#include <cinttypes> // IWYU pragma: export
 #include <cstdarg>
 #include <tuple>
 

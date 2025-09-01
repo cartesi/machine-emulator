@@ -17,16 +17,22 @@
 #ifndef COLLECT_MCYCLE_HASHES_STATE_ACCESS_H
 #define COLLECT_MCYCLE_HASHES_STATE_ACCESS_H
 
-#include <cassert>
+#include <cstdint>
 #include <stdexcept>
 
+#include "address-range-constants.h"
+#include "address-range.h"
+#include "assert-printf.h"
 #include "compiler-defines.h"
+#include "hash-tree-constants.h"
 #include "hash-tree.h"
+#include "host-addr.h"
 #include "i-accept-scoped-notes.h"
-#include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "machine.h"
-#include "pmas.h"
+#include "os.h"
+#include "pmas-constants.h"
+#include "riscv-constants.h"
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"
 

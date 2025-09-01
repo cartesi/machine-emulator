@@ -21,6 +21,7 @@
 /// \brief Storage for a hash
 
 #include <array>
+#include <cstddef>
 #include <span>
 #include <vector>
 

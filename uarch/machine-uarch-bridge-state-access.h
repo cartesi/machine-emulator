@@ -19,7 +19,8 @@
 
 #include "uarch-runtime.h" // must be included first, because of assert
 
-#include <optional>
+#include <array>
+#include <variant>
 
 #include "compiler-defines.h"
 #include "i-accept-scoped-notes.h"
@@ -136,8 +137,7 @@ private:
         };
         const uint64_t istart = bridge_read_pma_istart(index);
         const uint64_t ilength = bridge_read_pma_ilength(index);
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        int i = static_cast<int>(index);
+        const auto i = static_cast<size_t>(index);
         if (std::holds_alternative<std::monostate>(m_ars[i])) {
             m_ars[i] = make_mock_address_range(istart, ilength, throw_abort);
         }

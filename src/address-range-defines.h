@@ -56,5 +56,6 @@
 #ifndef EXPAND_UINT64_C
 #define EXPAND_UINT64_C(a) UINT64_C(a)
 #endif
+
 // NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 #endif /* end of include guard: AR_DEFINES_H */

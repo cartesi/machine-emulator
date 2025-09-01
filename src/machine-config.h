@@ -17,13 +17,11 @@
 #ifndef MACHINE_CONFIG_H
 #define MACHINE_CONFIG_H
 
-#include <array>
 #include <cstdint>
 #include <string>
 #include <variant>
 #include <vector>
 
-#include "riscv-constants.h"
 #include "shadow-registers.h"
 #include "shadow-uarch-state.h"
 #include "variant-hasher.h"

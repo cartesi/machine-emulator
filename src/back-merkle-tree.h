@@ -17,106 +17,191 @@
 #ifndef BACK_MERKLE_TREE_H
 #define BACK_MERKLE_TREE_H
 
+#include <algorithm>
 #include <cstdint>
-#include <vector>
+#include <limits>
+#include <stdexcept>
+#include <utility>
 
-#include "hash-tree-proof.h"
 #include "machine-hash.h"
-#include "pristine-merkle-tree.h"
 #include "variant-hasher.h"
 
 /// \file
-/// \brief Back Merkle tree interface.
+/// \brief Back back_hash_tree tree interface.
 
 namespace cartesi {
 
-/// \brief Incremental way of maintaining a Merkle tree for a stream of
-/// leaf hashes
-/// \details This is surprisingly efficient in both time and space.
-/// Adding the next leaf takes O(log(n)) in the worst case, but is
-/// this is amortized to O(1) time when adding n leaves.
-/// Obtaining the proof for the current leaf takes theta(log(n)) time.
-/// Computing the tree root hash also takes theta(log(n)) time.
-/// The class only ever stores log(n) hashes (1 for each tree level).
+/// \brief Incremental hash tree that efficiently maintains hashes for a stream of leaves
+/// \details Space-efficient design stores only O(log n) hashes (one per tree level).
+/// Leaf insertion is O(log n) worst-case but amortizes to O(1) over n operations.
 class back_merkle_tree {
 public:
-    /// \brief Storage for the proof of a word value.
-    using proof_type = hash_tree_proof;
-
-    /// \brief Constructor
-    /// \param log2_root_size Log<sub>2</sub> of root node
-    /// \param log2_leaf_size Log<sub>2</sub> of leaf node
-    /// \param log2_word_size Log<sub>2</sub> of word node
-    back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, hash_function_type hash_function);
+    /// \brief Constructor from an existing leaves context
+    /// \param log2_max_leaves Log base 2 of maximum amount of leaves
+    /// \param hash_function Hash function to use
+    /// \param leaf_count Amount of leaves already added to the tree
+    /// \param context Context representing the leaves hashes
+    back_merkle_tree(int log2_max_leaves, hash_function_type hash_function, uint64_t leaf_count = 0,
+        machine_hashes context = {}) :
+        m_hash_function(hash_function),
+        m_leaf_count{leaf_count},
+        m_context(std::max(1, log2_max_leaves + 1)) {
+        if (log2_max_leaves < 0) {
+            throw std::out_of_range{"log2_max_leaves is negative"};
+        }
+        if (log2_max_leaves >= std::numeric_limits<uint64_t>::digits) {
+            throw std::out_of_range{"log2_max_leaves is too large"};
+        }
+        if (leaf_count >= get_max_leaves()) {
+            throw std::out_of_range{"leaf count is greater than or equal to max leaves"};
+        }
+        // Unpack context
+        size_t j = 0;
+        if (leaf_count > 0) {
+            for (int i = 0; i <= log2_max_leaves; ++i) {
+                const auto i_span = UINT64_C(1) << i;
+                if ((leaf_count & i_span) != 0) {
+                    if (j >= context.size()) {
+                        throw std::out_of_range{"leaves context is incompatible"};
+                    }
+                    m_context[i] = context[j++];
+                }
+            }
+        }
+        if (j != context.size()) {
+            throw std::out_of_range{"leaves context is incompatible"};
+        }
+    }
+    /// \brief Constructor from known root, leaf and word sizes
+    /// \param log2_root_size Log base 2 of root node
+    /// \param log2_leaf_size Log base 2 of leaf node
+    /// \param log2_word_size Log base 2 of word node
+    /// \param hash_function Hash function to use
+    back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, hash_function_type hash_function) :
+        back_merkle_tree(validate_log2_max_leaves_size(log2_root_size, log2_leaf_size, log2_word_size), hash_function) {
+    }
 
     /// \brief Appends a new hash to the tree
     /// \param new_leaf_hash Hash of new leaf data
     /// \details
-    /// Consider the tree down to the leaf level.
-    /// The tree is only complete after 2^(log2_root_size-log2_leaf_size) leaves have been added.
-    /// Before that, when leaf_count leaves have been added, we assume the rest of the leaves are
-    /// filled with zeros (i.e., they are pristine).
-    /// The trick is that we do not need to store the hashes of all leaf_count leaves already added to the stream.
-    /// This is because, whenever a subtree is complete, all we need is its root hash.
-    /// The complete subtrees are disjoint, abutting, and appear in decreasing size.
-    /// In fact, there is exactly one complete subtree for each bit set in leaf_count.
-    /// We only need log2_root_size-log2_leaf_size+1 bits to represent leaf_count.
-    /// So our context is a vector with log2_root_size-log2_leaf_size+1 entries, where entry i contains
-    /// the hash for a complete subtree of size 2^i leaves.
-    /// We will only use the entries i if the corresponding bit is set in leaf_count.
-    /// Adding a new leaf hash exactly like adding 1 to leaf_count.
-    /// We scan from least to most significant bit in leaf_count.
-    /// We start with the right = leaf_hash and i = 0.
-    /// If the bit i is set in leaf_count, we replace context[i] = hash(context[i], right) and move up a bit.
-    /// If the bit is not set, we simply store context[i] = right and break.
-    /// In other words, we can update the context in log time (log2_root_size-log2_leaf_size)
+    /// The algorithm efficiently maintains only the root hashes of complete subtrees.
+    /// Each bit set in leaf_count corresponds to a complete subtree of size 2^i,
+    /// with its hash stored in context[i].
+    ///
+    /// Adding a leaf is equivalent to binary addition: scan bits from LSB to MSB.
+    /// For each set bit i in leaf_count, combine context[i] with the new hash
+    /// and propagate upward. Store the result at the first unset bit position.
+    /// This achieves O(log n) worst-case, O(1) amortized time complexity.
     void push_back(const machine_hash &new_leaf_hash);
 
     /// \brief Appends a number of padding hashes to the tree
-    /// \param leaf_count Number of padding hashes to append
+    /// \param new_leaf_count Number of padding hashes to append
+    /// \param pad_hashes Array containing the padding hashes
     /// \details
-    /// Recall that a bit i set in leaf_count represents a complete subtree
-    /// of size 2^i for which we have a hash in context[i].
-    /// The remaining entries in the context are unused.
-    /// The base case is when the least significant bit set in leaf_count is bigger than new_leaf_count.
-    /// We can simply add to context[j] a pristine subtree of size 2^j for each bit j set in new_leaf_count.
-    /// No used used entry in the context will be overwritten.
-    /// We can then simply add new_leaf_count to leaf_count and we are done.
-    /// In the general case, the least significant bit set i in leaf_count is less than or equal to new_leaf_count.
-    /// Here, we add a pristine subtree of size 2^i to the context and bubble up.
-    /// We add 2^i to leaf_count and subtract 2^i from new_leaf_count.
-    /// Then we repeat this process until we reach the base case.
-    void pad_back(uint64_t new_leaf_count);
+    /// Uses binary representation of leaf counts to efficiently add padding.
+    /// Each set bit i in leaf_count represents a complete subtree of size 2^i.
+    ///
+    /// Base case: When the least significant set bit in leaf_count exceeds new_leaf_count,
+    /// directly place pad subtrees at positions corresponding to bits set in new_leaf_count.
+    ///
+    /// General case: When overlap exists, combine the smallest existing subtree with
+    /// a matching pad subtree, bubble up the result, and repeat until base case is reached.
+    void pad_back(uint64_t new_leaf_count, const machine_hashes &pad_hashes);
 
     /// \brief Returns the root tree hash
     /// \returns Root tree hash
-    /// \details
-    /// We can produce the tree root hash from the context at any time, also in log time
-    /// Ostensibly, we add pristine leaves until the leaf_count hits 2^(log2_root_size-log2_leaf_size)
-    /// To do this in log time, we start by precomputing the hashes for all completely pristine subtree sizes
-    /// If leaf_count is already 2^(log2_root_size-log2_leaf_size), we return context[i].
-    /// Otherwise, we start with i = 0 and root = pristine[i+log2_leaf_size] (i.e., the invariant is that
-    /// root contains the hash of the rightmost subtree whose log size is i + log2_leaf_size)
-    /// If bit i is set, we set root = hash(context[i], root) and move up a bit (i.e., the subtree we
-    /// are growing is to the right of what is in the context)
-    /// If bit i is not set, we set root = hash(root, pristine[i+log2_leaf_size]) and move up a bit
-    /// (i.e., to grow our subtree, we need to pad it on the right with a pristine subtree of the same size)
-    machine_hash get_root_hash() const;
+    /// \details The tree must be complete, otherwise an exception is thrown
+    machine_hash get_root_hash() const {
+        if (!full()) {
+            throw std::runtime_error{"attempt to get root hash of an incomplete back tree"};
+        }
+        return m_context.back();
+    }
 
-    /// \brief Returns proof for the next pristine leaf
-    /// \returns Proof for leaf at given index, or throws exception
-    /// \details This is basically the same algorithm as
-    /// back_merkle_tree::get_root_hash.
-    proof_type get_next_leaf_proof() const;
+    /// \brief Clears the tree, making it empty (as if no leaves were added)
+    void clear() noexcept {
+        m_leaf_count = 0;
+    }
+
+    /// \brief Returns true if the tree is complete (reached maximum amount of leaves)
+    bool full() const noexcept {
+        return m_leaf_count >= get_max_leaves();
+    }
+
+    /// \brief Returns true if the tree is empty (no leaves were added)
+    bool empty() const noexcept {
+        return m_leaf_count == 0;
+    }
+
+    /// \brief Returns log base 2 of maximum amount of leaves that can be held by the tree
+    int get_log2_max_leaves() const noexcept {
+        return static_cast<int>(m_context.size()) - 1;
+    }
+
+    /// \brief Returns maximum amount of leaves that can be held by the tree
+    uint64_t get_max_leaves() const noexcept {
+        return static_cast<uint64_t>(1) << get_log2_max_leaves();
+    }
+
+    /// \brief Returns the hash function used by the tree
+    hash_function_type get_hash_function() const noexcept {
+        return m_hash_function;
+    }
+
+    /// \brief Returns amount of leaves already added to the tree
+    uint64_t get_leaf_count() const noexcept {
+        return m_leaf_count;
+    }
+
+    /// \brief Returns amount of leaves that can yet be added to the tree
+    uint64_t get_remaining_leaf_count() const noexcept {
+        return get_max_leaves() - m_leaf_count;
+    }
+
+    /// \brief Returns the leaves context
+    machine_hashes get_context() const {
+        // Pack context
+        machine_hashes context;
+        if (m_leaf_count > 0) {
+            const int log2_max_leaves = get_log2_max_leaves();
+            for (int i = 0; i <= log2_max_leaves; ++i) {
+                const auto i_span = UINT64_C(1) << i;
+                if ((m_leaf_count & i_span) != 0) {
+                    context.push_back(m_context[i]);
+                }
+            }
+        }
+        return context;
+    }
+
+    /// \brief Creates an array of pad hashes to be used with pad_back()
+    /// \param leaf_hash Hash of the leaf node
+    /// \param log2_max_leaves Log base 2 of maximum amount of leaves
+    /// \param hash_function Hash function to use
+    /// \returns Array of pad hashes
+    static machine_hashes make_pad_hashes(const machine_hash &leaf_hash, int log2_max_leaves,
+        hash_function_type hash_function);
+
+    /// \brief Creates an array of pristine pad hashes to be used with pad_back()
+    /// \param log2_root_size Log base 2 of root node
+    /// \param log2_leaf_size Log base 2 of leaf node
+    /// \param log2_word_size Log base 2 of word node
+    /// \param hash_function Hash function to use
+    /// \returns Array of pad hashes
+    static machine_hashes make_pristine_pad_hashes(int log2_root_size, int log2_leaf_size, int log2_word_size,
+        hash_function_type hash_function);
+
+    /// \brief Validates and computes log2_max_leaves from root, leaf and word sizes
+    /// \param log2_root_size Log base 2 of root node
+    /// \param log2_leaf_size Log base 2 of leaf node
+    /// \param log2_word_size Log base 2 of word node
+    /// \returns Log base 2 of maximum amount of leaves
+    static int validate_log2_max_leaves_size(int log2_root_size, int log2_leaf_size, int log2_word_size);
 
 private:
-    int m_log2_root_size;                   ///< Log<sub>2</sub> of tree size
-    int m_log2_leaf_size;                   ///< Log<sub>2</sub> of leaf size
-    uint64_t m_leaf_count{0};               ///< Number of leaves already added
-    uint64_t m_max_leaves;                  ///< Maximum number of leaves
-    std::vector<machine_hash> m_context;    ///< Hashes of bits set in leaf_count
-    pristine_merkle_tree m_pristine_hashes; ///< Hash of pristine subtrees of all sizes
-    hash_function_type m_hash_function;     ///< Hash function
+    hash_function_type m_hash_function; ///< Hash function
+    uint64_t m_leaf_count;              ///< Number of leaves already added
+    machine_hashes m_context;           ///< Hashes of bits set in leaf_count
 };
 
 } // namespace cartesi

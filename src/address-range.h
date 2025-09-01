@@ -17,6 +17,7 @@
 #ifndef ADDRESS_RANGE_H
 #define ADDRESS_RANGE_H
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cinttypes>
@@ -24,9 +25,11 @@
 #include <tuple>
 #include <utility>
 
+#include "address-range-constants.h"
 #include "assert-printf.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
+#include "pmas-constants.h"
 #include "pmas.h"
 
 #ifndef MICROARCHITECTURE
@@ -63,7 +66,7 @@ public:
     }
 
     // NOLINTNEXTLINE(hicpp-use-equals-default,modernize-use-equals-default)
-    constexpr virtual ~address_range() {}; // = default; // doesn't work due to bug in gcc
+    constexpr virtual ~address_range() {} // = default; // doesn't work due to bug in gcc
 
     template <typename ABRT, size_t N, typename... ARGS>
     [[noreturn]]
@@ -399,4 +402,4 @@ static inline auto make_address_range(const char *description, uint64_t start, u
 
 } // namespace cartesi
 
-#endif // OCCUPIED_ADDRESS_RANGE_H
+#endif // ADDRESS_RANGE_H

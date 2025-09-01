@@ -18,16 +18,19 @@
 #define I_MACHINE_H
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "access-log.h"
 #include "address-range-description.h"
+#include "back-merkle-tree.h"
 #include "hash-tree-proof.h"
 #include "hash-tree-stats.h"
 #include "interpret.h"
 #include "machine-config.h"
 #include "machine-hash.h"
 #include "machine-reg.h"
+#include "machine-runtime-config.h"
 #include "mcycle-root-hashes.h"
 #include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
@@ -89,9 +92,10 @@ public:
 
     /// \brief Collects the root hashes after every \p mcycle_period machine cycles until mcycle reaches \p mcycle_end,
     /// or if the machine halts or yields.
-    void collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
-        uint32_t log2_bundle_mcycle_count, mcycle_root_hashes &result) {
-        do_collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase, log2_bundle_mcycle_count, result);
+    mcycle_root_hashes collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
+        int32_t log2_bundle_mcycle_count, const std::optional<back_merkle_tree> &previous_back_tree) {
+        return do_collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase, log2_bundle_mcycle_count,
+            previous_back_tree);
     }
 
     /// \brief Serialize entire state to directory
@@ -114,22 +118,22 @@ public:
         return do_log_step_uarch(log_type);
     }
 
-    /// \brief Obtains the proof for a node in the Merkle tree.
+    /// \brief Obtains the proof for a node in the hash tree.
     hash_tree_proof get_proof(uint64_t address, int log2_size) const {
         return do_get_proof(address, log2_size);
     }
 
-    /// \brief Obtains the root hash of the Merkle tree.
+    /// \brief Obtains the root hash of the hash tree.
     machine_hash get_root_hash() const {
         return do_get_root_hash();
     }
 
-    /// \brief Obtains the root hash of the Merkle tree.
+    /// \brief Obtains the root hash of the hash tree.
     machine_hash get_node_hash(uint64_t address, int log2_size) const {
         return do_get_node_hash(address, log2_size);
     }
 
-    /// \brief Verifies integrity of Merkle tree.
+    /// \brief Verifies integrity of hash tree.
     bool verify_hash_tree() const {
         return do_verify_hash_tree();
     }
@@ -229,9 +233,9 @@ public:
 
     /// \brief Collects the root hashes after every \p uarch_cycle until \p mcycle_end machine cycle, implicitly
     /// resetting the uarch between mcycles.
-    void collect_uarch_cycle_root_hashes(uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
-        uarch_cycle_root_hashes &result) {
-        do_collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count, result);
+    uarch_cycle_root_hashes collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
+        int32_t log2_bundle_uarch_cycle_count) {
+        return do_collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count);
     }
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
@@ -296,8 +300,9 @@ private:
         const std::string &dir) = 0;
     virtual void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) = 0;
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
-    virtual void do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
-        uint32_t log2_bundle_mcycle_count, mcycle_root_hashes &result) = 0;
+    virtual mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period,
+        uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
+        const std::optional<back_merkle_tree> &previous_back_tree) = 0;
     virtual void do_store(const std::string &dir, sharing_mode sharing) const = 0;
     virtual void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
@@ -323,8 +328,8 @@ private:
     virtual void do_reset_uarch() = 0;
     virtual access_log do_log_reset_uarch(const access_log::type &log_type) = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
-    virtual void do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
-        uarch_cycle_root_hashes &result) = 0;
+    virtual uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
+        int32_t log2_bundle_uarch_cycle_count) = 0;
     virtual address_range_descriptions do_get_address_ranges() const = 0;
     virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) = 0;
     virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,

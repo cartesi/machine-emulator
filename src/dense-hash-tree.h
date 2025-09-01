@@ -17,6 +17,7 @@
 #ifndef DENSE_HASH_TREE_H
 #define DENSE_HASH_TREE_H
 
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -28,7 +29,7 @@
 
 namespace cartesi {
 
-class dense_hash_tree : public i_dense_hash_tree {
+class dense_hash_tree final : public i_dense_hash_tree {
 
     using container_type = std::vector<machine_hash>;
     using size_type = container_type::size_type;

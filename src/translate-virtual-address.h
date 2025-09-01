@@ -67,7 +67,7 @@ static inline bool write_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t val
     const auto faddr = a.get_faddr(paddr, pma_index);
     // log writes to memory
     a.write_memory_word(faddr, pma_index, val);
-    // mark page as dirty so we know to update the Merkle tree
+    // mark page as dirty so we know to update the hash tree
     a.mark_dirty_page(faddr, pma_index);
     return true;
 }

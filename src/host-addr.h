@@ -17,6 +17,8 @@
 #ifndef HOST_ADDR_H
 #define HOST_ADDR_H
 
+#include <cstdint>
+
 #include "strict-aliasing.h"
 
 namespace cartesi {

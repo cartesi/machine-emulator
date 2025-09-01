@@ -34,11 +34,9 @@
 #include <json.hpp>
 
 #include <array>
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <thread>
 
 #include <machine-c-api.h>
 #include <riscv-constants.h>
@@ -439,8 +437,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_inconsistent_tree_test, ordinary_machin
     cm_error error_code = cm_get_proof(_machine, 0, 64, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
-    // merkle tree is always consistent now as it updates on access
-
+    // Hash tree is always consistent now as it updates on access
     error_code = cm_get_proof(_machine, 0, CM_TREE_LOG2_PAGE_SIZE, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }

@@ -17,25 +17,33 @@
 #ifndef JSONRPC_MACHINE_H
 #define JSONRPC_MACHINE_H
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <tuple>
 
 #include "access-log.h"
 #include "address-range-description.h"
+#include "back-merkle-tree.h"
+#include "hash-tree-proof.h"
+#include "hash-tree-stats.h"
 #include "i-machine.h"
 #include "interpret.h"
 #include "jsonrpc-fork-result.h"
 #include "machine-config.h"
+#include "machine-hash.h"
 #include "machine-runtime-config.h"
+#include "mcycle-root-hashes.h"
 #include "semantic-version.h"
+#include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <boost/asio/io_context.hpp>
 #include <boost/beast/core/tcp_stream.hpp>
-#include <boost/container/static_vector.hpp>
 #pragma GCC diagnostic pop
 
 namespace cartesi {
@@ -108,8 +116,8 @@ private:
         const std::string &dir) override;
     void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
-    void do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
-        uint32_t log2_bundle_mcycle_count, mcycle_root_hashes &result) override;
+    mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
+        int32_t log2_bundle_mcycle_count, const std::optional<back_merkle_tree> &previous_back_tree) override;
     interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     void do_store(const std::string &dir, sharing_mode sharing) const override;
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
@@ -136,8 +144,8 @@ private:
     hash_tree_stats do_get_hash_tree_stats(bool clear) override;
     bool do_verify_hash_tree() const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
-    void do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
-        uarch_cycle_root_hashes &result) override;
+    uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
+        int32_t log2_bundle_uarch_cycle_count) override;
     address_range_descriptions do_get_address_ranges() const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,

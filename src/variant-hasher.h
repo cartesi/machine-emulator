@@ -17,11 +17,18 @@
 #ifndef VARIANT_HASHER_H
 #define VARIANT_HASHER_H
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <span>
+#include <stdexcept>
 #include <variant>
 
+#include "array2d.h"
 #include "i-hasher.h"
 #include "keccak-256-hasher.h"
+#include "machine-hash.h"
 #include "sha-256-hasher.h"
 
 namespace cartesi {

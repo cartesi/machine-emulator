@@ -17,6 +17,7 @@
 #ifndef BASE64_H
 #define BASE64_H
 
+#include <cstddef>
 #include <cstdint>
 #include <sstream>
 #include <string>

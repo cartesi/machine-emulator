@@ -26,7 +26,7 @@
 #include <cstdint>
 #include <list>
 #include <memory>
-#include <unordered_set>
+#include <unordered_map>
 
 #include <slirp/libslirp.h>
 #if SLIRP_CONFIG_VERSION_MAX < 3
@@ -36,6 +36,7 @@
 #include "i-device-state-access.h"
 #include "machine-config.h"
 #include "os.h"
+#include "virtio-address-range.h"
 #include "virtio-net-address-range.h"
 
 /// \brief Slirp constants

@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <stdexcept>
 
+#include "address-range.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
 #include "os.h"
@@ -511,7 +512,7 @@ void virtio_address_range::do_prepare_select(select_fd_sets * /*fds*/, uint64_t 
 bool virtio_address_range::do_poll_selected(int /*select_ret*/, select_fd_sets * /*fds*/,
     i_device_state_access * /*da*/) {
     return false;
-};
+}
 
 bool virtio_address_range::poll_nowait(i_device_state_access *da) {
     uint64_t timeout_us = 0;

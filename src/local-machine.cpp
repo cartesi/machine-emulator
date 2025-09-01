@@ -17,15 +17,22 @@
 #include "local-machine.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "access-log.h"
 #include "address-range-description.h"
+#include "back-merkle-tree.h"
+#include "hash-tree-proof.h"
+#include "hash-tree-stats.h"
 #include "i-machine.h"
 #include "interpret.h"
 #include "machine-config.h"
+#include "machine-hash.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
+#include "mcycle-root-hashes.h"
+#include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
 
 namespace cartesi {
@@ -78,10 +85,11 @@ interpreter_break_reason local_machine::do_run(uint64_t mcycle_end) {
     return get_machine()->run(mcycle_end);
 }
 
-void local_machine::do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
-    uint32_t log2_bundle_mcycle_count, mcycle_root_hashes &result) {
-    get_machine()->collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase, log2_bundle_mcycle_count,
-        result);
+mcycle_root_hashes local_machine::do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period,
+    uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
+    const std::optional<back_merkle_tree> &previous_back_tree) {
+    return get_machine()->collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase, log2_bundle_mcycle_count,
+        previous_back_tree);
 }
 
 interpreter_break_reason local_machine::do_log_step(uint64_t mcycle_count, const std::string &filename) {
@@ -181,9 +189,9 @@ uarch_interpreter_break_reason local_machine::do_run_uarch(uint64_t uarch_cycle_
     return get_machine()->run_uarch(uarch_cycle_end);
 }
 
-void local_machine::do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
-    uarch_cycle_root_hashes &result) {
-    get_machine()->collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count, result);
+uarch_cycle_root_hashes local_machine::do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
+    int32_t log2_bundle_uarch_cycle_count) {
+    return get_machine()->collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count);
 }
 
 address_range_descriptions local_machine::do_get_address_ranges() const {

@@ -17,10 +17,11 @@
 #include "os-features.h"
 
 // Must be included first
-#include "os-posix-compat.h"
+#include "os-posix-compat.h" // IWYU pragma: keep
 
 #include "os.h"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -28,14 +29,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <exception>
-#include <functional>
-#include <string>
-#include <system_error>
+#include <stdexcept> // IWYU pragma: keep
 #include <tuple>
-#include <vector>
 
-#include <sys/time.h>
+#include <sys/time.h> // IWYU pragma: keep
 
 #ifdef HAVE_SIGACTION
 #include <csignal>
@@ -70,15 +67,10 @@
 
 #endif // _WIN32
 
-#include "compiler-defines.h"
-#include "unique-c-ptr.h"
-
 // Enable these defines to debug
 // #define DEBUG_OS
 
 namespace cartesi {
-
-using namespace std::string_literals;
 
 #ifdef HAVE_TTY
 /// \brief TTY global state

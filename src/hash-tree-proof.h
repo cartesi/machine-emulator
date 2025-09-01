@@ -22,13 +22,12 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <ranges>
 #include <stdexcept>
-#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "i-hasher.h"
-#include "meta.h"
+#include "machine-hash.h"
 
 namespace cartesi {
 
@@ -250,7 +249,7 @@ private:
     /// \return Index into siblings array, or throws exception if out of bounds
     int log2_size_to_index(int log2_size) const {
         const int index = log2_size - m_log2_target_size;
-        if (index < 0 || index >= static_cast<int>(m_sibling_hashes.size())) {
+        if (index < 0 || std::cmp_greater_equal(index, m_sibling_hashes.size())) {
             throw std::out_of_range{"log2_size is out of range"};
         }
         return index;

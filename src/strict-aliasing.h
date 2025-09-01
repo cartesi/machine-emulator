@@ -17,10 +17,6 @@
 #ifndef STRICT_ALIASING_H
 #define STRICT_ALIASING_H
 
-#include <cstdint>
-#include <cstring>
-#include <type_traits>
-
 /// \file
 /// \brief Enforcement of the strict aliasing rule
 

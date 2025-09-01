@@ -91,25 +91,27 @@
 #include <utility>
 
 #ifdef MICROARCHITECTURE
+#include "../uarch/uarch-runtime.h"
 #include "machine-uarch-bridge-state-access.h"
 #else
-#include "collect-mcycle-hashes-state-access.h"
-#include "record-step-state-access.h"
-#include "replay-step-state-access.h"
-#include "state-access.h"
+#include "collect-mcycle-hashes-state-access.h" // IWYU pragma: keep
+#include "record-step-state-access.h"           // IWYU pragma: keep
+#include "replay-step-state-access.h"           // IWYU pragma: keep
+#include "state-access.h"                       // IWYU pragma: keep
+
 #endif // MICROARCHITECTURE
 
 #include "assert-printf.h"
 #include "compiler-defines.h"
 #include "device-state-access.h"
 #include "find-pma.h"
-#include "hot-tlb.h"
-#include "i-accept-counters.h"
+#include "i-accept-counters.h" // IWYU pragma: keep
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"
 #include "meta.h"
 #include "riscv-constants.h"
 #include "rtc.h"
+#include "shadow-tlb.h"
 #include "soft-float.h"
 #include "translate-virtual-address.h"
 #include "uint128.h"
@@ -871,7 +873,7 @@ static void flush_tlb_slot(const STATE_ACCESS a, uint64_t slot_index) {
     // Make sure a valid page leaving the write TLB is marked as dirty
     // We must do this BEFORE we modify the TLB entries themselves
     // (Otherwise, we could stop uarch before it marks the page dirty but after
-    // the entry is no longer in the TLB, which would cause the Merkle tree to
+    // the entry is no longer in the TLB, which would cause the hash tree to
     // miss a dirty page.)
     if constexpr (SET == TLB_WRITE) {
         const auto old_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
@@ -3154,8 +3156,10 @@ static FORCE_INLINE execute_status execute_SLTI(const STATE_ACCESS a, uint64_t &
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn,
-        [](uint64_t rs1, int32_t imm) -> uint64_t { return static_cast<int64_t>(rs1) < static_cast<int64_t>(imm); });
+    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
+        // NOLINTNEXTLINE(modernize-use-integer-sign-comparison)
+        return static_cast<int64_t>(rs1) < static_cast<int64_t>(imm);
+    });
 }
 
 /// \brief Implementation of the SLTIU instruction.
@@ -3165,8 +3169,10 @@ static FORCE_INLINE execute_status execute_SLTIU(const STATE_ACCESS a, uint64_t 
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn,
-        [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 < static_cast<uint64_t>(imm); });
+    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
+        // NOLINTNEXTLINE(modernize-use-integer-sign-comparison)
+        return rs1 < static_cast<uint64_t>(imm);
+    });
 }
 
 /// \brief Implementation of the XORI instruction.
@@ -6081,12 +6087,12 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
     const uint64_t mcycle = a.read_mcycle();
 
     // If the cpu is halted, we are done
-    if (a.read_iflags_H()) {
+    if (a.read_iflags_H() != 0) {
         return interpreter_break_reason::halted;
     }
 
     // If the cpu has yielded manually, we are done
-    if (a.read_iflags_Y()) {
+    if (a.read_iflags_Y() != 0) {
         return interpreter_break_reason::yielded_manually;
     }
 

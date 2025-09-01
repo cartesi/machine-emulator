@@ -63,18 +63,22 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <type_traits>
+#include <utility>
 
-#include <arpa/inet.h>
+#include <arpa/inet.h> // IWYU pragma: keep
 #include <slirp/libslirp.h>
 #include <sys/select.h>
 
 #include "i-device-state-access.h"
 #include "machine-config.h"
 #include "os.h"
+#include "virtio-address-range.h"
+#include "virtio-net-address-range.h"
 
 using namespace std::string_literals;
 

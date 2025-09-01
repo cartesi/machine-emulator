@@ -22,7 +22,6 @@
 #include "address-range-constants.h"
 #include "htif-constants.h"
 #include "machine-c-version.h"
-#include "pmas-constants.h"
 
 /// \file
 /// \brief RISC-V constants

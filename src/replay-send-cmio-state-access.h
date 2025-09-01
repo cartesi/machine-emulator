@@ -23,19 +23,19 @@
 #include <cstdint>
 #include <cstring>
 #include <ios>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "access-log.h"
-#include "hash-tree.h"
+#include "hash-tree-constants.h"
 #include "i-hasher.h"
 #include "i-state-access.h"
+#include "machine-hash.h"
 #include "machine-reg.h"
 #include "meta.h"
-#include "riscv-constants.h"
-#include "shadow-registers.h"
 #include "unique-c-ptr.h"
 #include "variant-hasher.h"
 
@@ -50,7 +50,7 @@ struct i_state_access_fast_addr<replay_send_cmio_state_access> {
 };
 
 /// \brief Allows replaying a machine::send_cmio_response() from an access log.
-class replay_send_cmio_state_access : public i_state_access<replay_send_cmio_state_access> {
+class replay_send_cmio_state_access final : public i_state_access<replay_send_cmio_state_access> {
 public:
     struct context {
         /// \brief Constructor replay_send_cmio_state_access context
@@ -124,7 +124,7 @@ private:
     /// \returns Value read.
     uint64_t check_read(uint64_t paligned, const char *text) const {
         static_assert(HASH_TREE_LOG2_WORD_SIZE >= log2_size_v<uint64_t>,
-            "Merkle tree word size must be at least as large as a machine word");
+            "Hash tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"address not aligned to word size"};
         }
@@ -181,7 +181,7 @@ private:
     /// \param text Textual description of the access.
     void check_write(uint64_t paligned, uint64_t word, const char *text) const {
         static_assert(HASH_TREE_LOG2_WORD_SIZE >= log2_size_v<uint64_t>,
-            "Merkle tree word size must be at least as large as a machine word");
+            "Hash tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"paligned not aligned to word size"};
         }
@@ -327,8 +327,8 @@ private:
         if (write_length > data_length) {
             memset(scratch.get() + data_length, 0, write_length - data_length);
         }
-        get_merkle_tree_hash(h, std::span<const unsigned char>{scratch.get(), write_length}, HASH_TREE_WORD_SIZE,
-            computed_data_hash);
+        get_merkle_tree_hash(h, std::span<const unsigned char>{scratch.get(), static_cast<size_t>(write_length)},
+            HASH_TREE_WORD_SIZE, computed_data_hash);
         // check if logged written hash matches the computed data hash
         if (written_hash != computed_data_hash) {
             throw std::invalid_argument{"logged written hash of " + text +

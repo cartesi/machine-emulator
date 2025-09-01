@@ -18,8 +18,8 @@
 
 #include <cstdint>
 
-#include "collect-uarch-cycle-hashes-state-access.h"
-#include "uarch-state-access.h"
+#include "collect-uarch-cycle-hashes-state-access.h" // IWYU pragma: keep
+#include "uarch-state-access.h"                      // IWYU pragma: keep
 #include "uarch-step.h"
 
 namespace cartesi {

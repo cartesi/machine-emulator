@@ -16,15 +16,17 @@
 
 #include "memory-address-range.h"
 
-#include <cerrno>
-#include <cstdio>
-#include <cstring>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
 #include <stdexcept>
-#include <system_error>
 
 #include "address-range-constants.h"
-#include "os-filesystem.h"
-#include "unique-c-ptr.h"
+#include "address-range.h"
+#include "machine-config.h"
+#include "os-mmap.h"
+#include "pmas.h"
 
 namespace cartesi {
 
@@ -65,8 +67,8 @@ memory_address_range::memory_address_range(const std::string &description, uint6
     m_host_memory{m_ptr.get()},
     m_config{memory_config},
     m_backing_store{backing_store},
-    m_dpt{get_level_count(length), length >> AR_LOG2_PAGE_SIZE},
-    m_dht{get_level_count(length), length >> AR_LOG2_PAGE_SIZE} {
+    m_dpt{get_level_count(length), static_cast<size_t>(length >> AR_LOG2_PAGE_SIZE)},
+    m_dht{get_level_count(length), static_cast<size_t>(length >> AR_LOG2_PAGE_SIZE)} {
 } catch (const std::exception &e) {
     throw std::invalid_argument{std::string{e.what()}.append(" when initializing ").append(description)};
 } catch (...) {

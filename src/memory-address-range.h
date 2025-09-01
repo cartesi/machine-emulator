@@ -17,14 +17,15 @@
 #ifndef MEMORY_ADDRESS_RANGE_H
 #define MEMORY_ADDRESS_RANGE_H
 
-#include <cassert>
-#include <variant>
+#include <cstdint>
+#include <string>
 
 #include "address-range.h"
 #include "dense-hash-tree.h"
 #include "dirty-page-tree.h"
 #include "machine-config.h"
 #include "os-mmap.h"
+#include "pmas.h"
 
 namespace cartesi {
 
@@ -46,7 +47,7 @@ struct memory_address_range_config {
 /// \file
 /// \brief An address range occupied by memory
 
-class memory_address_range : public address_range {
+class memory_address_range final : public address_range {
     unique_mmap_ptr<unsigned char> m_ptr; ///< Pointer to mapped memory
     unsigned char *m_host_memory;         ///< Start of associated memory region in host.
     memory_address_range_config m_config; ///< Memory configuration passed to constructor.

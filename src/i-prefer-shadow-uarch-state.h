@@ -25,7 +25,6 @@
 #include <type_traits>
 
 #include "meta.h"
-#include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
 
 namespace cartesi {
@@ -36,6 +35,8 @@ namespace cartesi {
 /// \detail This is for state access methods that do not need individualized access to uarch registers.
 template <typename DERIVED>
 class i_prefer_shadow_uarch_state { // CRTP
+    i_prefer_shadow_uarch_state() = default;
+    friend DERIVED;
 
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {

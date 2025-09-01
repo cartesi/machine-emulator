@@ -20,7 +20,6 @@
 #include "machine-address-ranges.h"
 
 #include <algorithm>
-#include <cerrno>
 #include <concepts>
 #include <cstdint>
 #include <cstdio>
@@ -37,14 +36,14 @@
 #include "clint-address-range.h"
 #include "htif-address-range.h"
 #include "machine-config.h"
+#include "machine-runtime-config.h"
 #include "memory-address-range.h"
+#include "meta.h"
 #include "os-filesystem.h"
-#include "os.h"
 #include "plic-address-range.h"
 #include "pmas-constants.h"
 #include "pmas.h"
 #include "processor-state.h"
-#include "scope-exit.h"
 #include "scope-remove.h"
 #include "uarch-pristine.h"
 #include "uarch-processor-state.h"
@@ -238,7 +237,7 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
         prepare_backing_stores(c, remover);
     }
 
-    // Add all address ranges to m_all, and potentially to interpret and merkle
+    // Add all address ranges to m_all, and potentially to interpret and hash
     m_shadow_state_index = static_cast<int>(m_all.size()); // NOLINT(cppcoreguidelines-prefer-member-initializer)
     push_back(make_shadow_state_address_range(c.processor), register_where{.hash_tree = true, .pmas = false});
     m_shadow_uarch_state_index = static_cast<int>(m_all.size()); // NOLINT(cppcoreguidelines-prefer-member-initializer)

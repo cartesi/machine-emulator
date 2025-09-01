@@ -17,10 +17,8 @@
 #ifndef SCOPE_REMOVE_H
 #define SCOPE_REMOVE_H
 
-#include <exception>
 #include <ranges>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "os-filesystem.h"
@@ -87,6 +85,6 @@ private:
     std::vector<std::string> m_dirnames;  ///< List of directories to be removed
 };
 
-}; // namespace cartesi
+} // namespace cartesi
 
 #endif

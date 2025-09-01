@@ -26,7 +26,6 @@
 
 #include "meta.h"
 #include "shadow-registers.h"
-#include "shadow-tlb.h"
 
 namespace cartesi {
 
@@ -36,6 +35,8 @@ namespace cartesi {
 /// \detail This is for state access methods that do not need individualized access to machine registers.
 template <typename DERIVED>
 class i_prefer_shadow_state { // CRTP
+    i_prefer_shadow_state() = default;
+    friend DERIVED;
 
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {

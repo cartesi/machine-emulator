@@ -21,10 +21,10 @@
 
 #include "uarch-reset-state.h"
 
-#include "uarch-record-state-access.h"
-#include "uarch-replay-state-access.h"
+#include "uarch-record-state-access.h" // IWYU pragma: keep
+#include "uarch-replay-state-access.h" // IWYU pragma: keep
 #include "uarch-solidity-compat.h"
-#include "uarch-state-access.h"
+#include "uarch-state-access.h" // IWYU pragma: keep
 
 namespace cartesi {
 

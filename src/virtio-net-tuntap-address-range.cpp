@@ -74,6 +74,8 @@
 
 #include "i-device-state-access.h"
 #include "os.h"
+#include "virtio-address-range.h"
+#include "virtio-net-address-range.h"
 
 // Include TUN/TAP headers
 #ifdef __linux__

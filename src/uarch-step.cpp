@@ -21,10 +21,12 @@
 
 #include "uarch-step.h"
 
-#include "collect-uarch-cycle-hashes-state-access.h"
-#include "uarch-record-state-access.h"
-#include "uarch-replay-state-access.h"
-#include "uarch-state-access.h"
+#include <cstdint>
+
+#include "collect-uarch-cycle-hashes-state-access.h" // IWYU pragma: keep
+#include "uarch-record-state-access.h"               // IWYU pragma: keep
+#include "uarch-replay-state-access.h"               // IWYU pragma: keep
+#include "uarch-state-access.h"                      // IWYU pragma: keep
 
 #include "uarch-constants.h"
 #include "uarch-solidity-compat.h"
@@ -449,8 +451,8 @@ static inline void executeSLTI(const UarchState a, uint32 insn, uint64 pc) {
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     if (rd != 0) {
-        uint64 rs1val = readX(a, rs1);
-        if (int64(rs1val) < imm) {
+        int64 rs1val = int64(readX(a, rs1));
+        if (rs1val < imm) {
             writeX(a, rd, 1);
         } else {
             writeX(a, rd, 0);

@@ -27,7 +27,7 @@
 namespace cartesi {
 
 /// \brief Mapping between CSRs and their relative addresses in CLINT memory
-enum class clint_csr {
+enum class clint_csr : uint64_t {
     msip0 = UINT64_C(0), // Machine software interrupt for hart 0
     mtimecmp = UINT64_C(0x4000),
     mtime = UINT64_C(0xbff8)

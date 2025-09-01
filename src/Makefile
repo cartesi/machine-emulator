@@ -97,7 +97,7 @@ endif
 
 SO_EXT=dylib
 LIBCARTESI_LDFLAGS=-install_name '@rpath/$(LIBCARTESI)'
-LIBCARTESI_MERKLE_TREE_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_MERKLE_TREE)'
+LIBCARTESI_HASH_TREE_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_HASH_TREE)'
 LIBCARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_JSONRPC)' -Wl,-rpath,@loader_path
 LUACARTESI_LDFLAGS=-install_name '@rpath/cartesi.so'
 LUACARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/cartesi/jsonrpc.so' -Wl,-rpath,@loader_path/..
@@ -123,7 +123,7 @@ SLIRP_INC=
 SLIRP_LIB=-lslirp
 SO_EXT=so
 LIBCARTESI_LDFLAGS=
-LIBCARTESI_MERKLE_TREE_LDFLAGS=
+LIBCARTESI_HASH_TREE_LDFLAGS=
 LIBCARTESI_JSONRPC_LDFLAGS=-Wl,-rpath,'$$ORIGIN'
 LUACARTESI_LDFLAGS=
 LUACARTESI_JSONRPC_LDFLAGS=-Wl,-rpath,'$$ORIGIN/..'
@@ -132,7 +132,7 @@ PROFILE_DATA=
 endif
 
 LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
-LIBCARTESI_MERKLE_TREE=libcartesi_merkle_tree-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
+LIBCARTESI_HASH_TREE=libcartesi_hash_tree-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
 LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
 
 ifeq ($(slirp),yes)
@@ -148,18 +148,18 @@ DEFS+=-DNO_SLIRP
 endif
 
 LIBCARTESI_LIBS=$(LIBCARTESI_COMMON_LIBS)
-LIBCARTESI_MERKLE_TREE_LIBS=
+LIBCARTESI_HASH_TREE_LIBS=
 LIBCARTESI_JSONRPC_LIBS=
 LUACARTESI_LIBS=$(LIBCARTESI_COMMON_LIBS)
 LUACARTESI_JSONRPC_LIBS=
 CARTESI_JSONRPC_MACHINE_LIBS=$(LIBCARTESI_COMMON_LIBS)
-CARTESI_MERKLE_TREE_HASH_LIBS=
-
-#DEFS+= -DMT_ALL_DIRTY
+CARTESI_HASH_TREE_HASH_LIBS=
 
 C_WARNS=-Wall -Wextra -Wpedantic
-CXX_WARNS=$(C_WARNS) -Wno-missing-field-initializers
-CLANG_TIDY_WARNS=-Wthread-safety -Wglobal-constructors
+# C_WARNS+=-Wshadow -Wconversion -Wsign-conversion -Wsign-promo -Wuseless-cast -Wformat=2
+CXX_WARNS=$(C_WARNS)
+
+CLANG_TIDY_WARNS=-Wthread-safety -Wglobal-constructors -Wundef -Wredundant-decls -Wextra-semi
 
 # Place our include directories before the system's
 INCS+= \
@@ -285,9 +285,7 @@ PGO_WORKLOAD=\
 	whetstone 25000
 
 LINTER_IGNORE_SOURCES=
-LINTER_IGNORE_HEADERS=interpret-jump-table.h
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
-LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard *.hpp) $(wildcard *.h)))
 
 CLANG_TIDY=clang-tidy
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(LINTER_SOURCES)))
@@ -305,7 +303,6 @@ STYLUA_FLAGS=--indent-type Spaces --collapse-simple-statement Always --respect-i
 
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
-CLANG_TIDY_HEADER_FILTER=$(CURDIR)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 
 ifeq ($(threads),yes)
 CFLAGS+=$(PTHREAD_CFLAGS)
@@ -344,15 +341,15 @@ SOLDFLAGS+=$(MYSOLDFLAGS)
 LIBLDFLAGS+=$(MYLIBLDFLAGS)
 EXELDFLAGS+=$(MYEXELDFLAGS)
 
-all: libcartesi libcartesi_merkle_tree libcartesi_jsonrpc c-api luacartesi cartesi-jsonrpc-machine hash
+all: libcartesi libcartesi_hash_tree libcartesi_jsonrpc c-api luacartesi cartesi-jsonrpc-machine hash
 
 luacartesi: libluacartesi.a cartesi.so libluacartesi_jsonrpc.a cartesi/jsonrpc.so
 
 jsonrpc: cartesi/jsonrpc.so cartesi-jsonrpc-machine
 
-hash: cartesi-merkle-tree-hash
+hash: cartesi-hash-tree-hash
 
-c-api: $(LIBCARTESI) $(LIBCARTESI_MERKLE_TREE) $(LIBCARTESI_JSONRPC)
+c-api: $(LIBCARTESI) $(LIBCARTESI_HASH_TREE) $(LIBCARTESI_JSONRPC)
 
 .PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt
 
@@ -373,7 +370,7 @@ LIBCARTESI_OBJS:= \
 	os-mmap.o \
 	os-filesystem.o \
 	plic-address-range.o \
-	pristine-merkle-tree.o \
+	back-merkle-tree.o \
 	replay-step-state-access-interop.o \
 	send-cmio-response.o \
 	keccak-256-hasher.o \
@@ -404,17 +401,14 @@ LUACARTESI_OBJS:= \
 	clua-cartesi.o \
 	$(CARTESI_CLUA_OBJS)
 
-LIBCARTESI_MERKLE_TREE_OBJS:= \
+LIBCARTESI_HASH_TREE_OBJS:= \
 	keccak-256-hasher.o \
 	sha-256-hasher.o \
 	is-pristine.o \
 	back-merkle-tree.o \
-	pristine-merkle-tree.o \
-	complete-merkle-tree.o \
-	full-merkle-tree.o
 
-CARTESI_MERKLE_TREE_HASH_OBJS:= \
-	merkle-tree-hash.o
+CARTESI_HASH_TREE_HASH_OBJS:= \
+	hash-tree-hash.o
 
 LIBCARTESI_JSONRPC_OBJS:= \
 	jsonrpc-machine.o \
@@ -435,7 +429,7 @@ CARTESI_JSONRPC_MACHINE_OBJS:= \
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
 LIBCARTESI_LIBS+=-lprofiler
-LIBCARTESI_MERKLE_TREE_LIBS+=-lprofiler
+LIBCARTESI_HASH_TREE_LIBS+=-lprofiler
 LIBCARTESI_JSONRPC_LIBS+=-lprofiler
 LUACARTESI_LIBS+=-lprofiler
 LUACARTESI_JSONRPC_LIBS+=-lprofiler
@@ -448,10 +442,10 @@ so-version:
 	@echo $(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 
 libcartesi: libcartesi.a libcartesi.$(SO_EXT)
-libcartesi.$(SO_EXT): $(LIBCARTESI) $(LIBCARTESI_MERKLE_TREE)
+libcartesi.$(SO_EXT): $(LIBCARTESI) $(LIBCARTESI_HASH_TREE)
 	ln -sf $< $@
-libcartesi_merkle_tree: libcartesi_merkle_tree.a libcartesi_merkle_tree.$(SO_EXT)
-libcartesi_merkle_tree.$(SO_EXT): $(LIBCARTESI_MERKLE_TREE)
+libcartesi_hash_tree: libcartesi_hash_tree.a libcartesi_hash_tree.$(SO_EXT)
+libcartesi_hash_tree.$(SO_EXT): $(LIBCARTESI_HASH_TREE)
 	ln -sf $< $@
 libcartesi_jsonrpc: libcartesi_jsonrpc.a libcartesi_jsonrpc.$(SO_EXT)
 libcartesi_jsonrpc.$(SO_EXT): $(LIBCARTESI_JSONRPC)
@@ -460,7 +454,7 @@ libcartesi_jsonrpc.$(SO_EXT): $(LIBCARTESI_JSONRPC)
 libcartesi.a: $(LIBCARTESI_OBJS)
 	$(AR) $@ $^
 
-libcartesi_merkle_tree.a: $(LIBCARTESI_MERKLE_TREE_OBJS)
+libcartesi_hash_tree.a: $(LIBCARTESI_HASH_TREE_OBJS)
 	$(AR) $@ $^
 
 libcartesi_jsonrpc.a: $(LIBCARTESI_JSONRPC_OBJS)
@@ -472,8 +466,8 @@ libluacartesi.a: $(LUACARTESI_OBJS)
 libluacartesi_jsonrpc.a: $(LUACARTESI_JSONRPC_OBJS)
 	$(AR) $@ $^
 
-$(LIBCARTESI_MERKLE_TREE): $(LIBCARTESI_MERKLE_TREE_OBJS)
-	$(CXX) -o $@ $^ $(LIBCARTESI_MERKLE_TREE_LIBS) $(LDFLAGS) $(LIBCARTESI_MERKLE_TREE_LDFLAGS) $(LIBLDFLAGS)
+$(LIBCARTESI_HASH_TREE): $(LIBCARTESI_HASH_TREE_OBJS)
+	$(CXX) -o $@ $^ $(LIBCARTESI_HASH_TREE_LIBS) $(LDFLAGS) $(LIBCARTESI_HASH_TREE_LDFLAGS) $(LIBLDFLAGS)
 
 $(LIBCARTESI): $(LIBCARTESI_OBJS)
 	$(CXX) -o $@ $^ $(LIBCARTESI_LIBS) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) $(LIBLDFLAGS)
@@ -536,8 +530,8 @@ $(PROFILE_DATA):
 	llvm-profdata merge -output=default.profdata default*.profraw
 endif
 
-cartesi-merkle-tree-hash: $(CARTESI_MERKLE_TREE_HASH_OBJS) libcartesi_merkle_tree.a
-	$(CXX) -o $@ $^ $(CARTESI_MERKLE_TREE_HASH_LIBS) $(LDFLAGS) $(EXELDFLAGS)
+cartesi-hash-tree-hash: $(CARTESI_HASH_TREE_HASH_OBJS) libcartesi_hash_tree.a
+	$(CXX) -o $@ $^ $(CARTESI_HASH_TREE_HASH_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
 cartesi-jsonrpc-machine: $(CARTESI_JSONRPC_MACHINE_OBJS) libcartesi_jsonrpc.a libcartesi.a
 	$(CXX) -o $@ $^ $(CARTESI_JSONRPC_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
@@ -556,12 +550,12 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
 %.clang-tidy: %.cpp machine-c-version.h interpret-jump-table.h
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(CLANG_TIDY_WARNS) $(LUA_INC) -DCLANG_TIDY_LINT 2>/dev/null
+	@$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(CLANG_TIDY_WARNS) $(LUA_INC) -DCLANG_TIDY_LINT 2>/dev/null
 	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 %.clang-tidy: %.c
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) $(CLANG_TIDY_WARNS) -DCLANG_TIDY_LINT 2>/dev/null
+	@$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) $(CLANG_TIDY_WARNS) -DCLANG_TIDY_LINT 2>/dev/null
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
@@ -619,7 +613,7 @@ clean-libcartesi: clean-objs
 	@rm -f *.so *.a cartesi/*.so *.dylib
 
 clean-executables:
-	@rm -f cartesi-jsonrpc-machine cartesi-merkle-tree-hash compute-uarch-pristine-hash
+	@rm -f cartesi-jsonrpc-machine cartesi-hash-tree-hash compute-uarch-pristine-hash
 
 clean-coverage:
 	@rm -f *.profdata *.profraw *.gcda *.gcov coverage.info coverage.txt

@@ -319,14 +319,14 @@ where options are:
     this includes anything written to machine's stdout or stderr.
 
   --skip-root-hash-check
-    skip merkle tree root hash check when loading a stored machine.
+    skip hash tree root hash check when loading a stored machine.
     i.e., assume the stored machine files are not corrupt.
     this is only intended to speed up machine loading in emulator tests.
 
     DON'T USE THIS OPTION IN PRODUCTION
 
   --skip-root-hash-store
-    skip merkle tree root hash saving when storing a machine.
+    skip hash tree root hash saving when storing a machine.
     i.e., assume the stored machine will use --skip-root-hash-check when loading.
     this is only intended to speed up machine saving in emulator tests.
 

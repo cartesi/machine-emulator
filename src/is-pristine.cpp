@@ -17,7 +17,6 @@
 #include "is-pristine.h"
 
 #include <cstddef>
-#include <cstdint>
 #include <span>
 
 #include "address-range-constants.h"

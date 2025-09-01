@@ -26,12 +26,6 @@
 
 namespace cartesi {
 
-// helper for using UINT64_C with defines
-#ifndef EXPAND_UINT64_C
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define EXPAND_UINT64_C(a) UINT64_C(a)
-#endif
-
 // Forward declarations
 /// \brief HTIF shifts
 enum HTIF_shifts {

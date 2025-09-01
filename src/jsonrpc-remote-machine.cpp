@@ -32,7 +32,10 @@
 #include <ctime>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -48,23 +51,23 @@
 
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <sys/types.h>
+#include <sys/types.h> // IWYU pragma: keep
 #include <unistd.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include <boost/asio/signal_set.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/http.hpp>
+#include <boost/beast/core.hpp> // IWYU pragma: keep
+#include <boost/beast/http.hpp> // IWYU pragma: keep
 #include <boost/beast/version.hpp>
 #pragma GCC diagnostic pop
 
 #include <json.hpp>
 
 #include "access-log.h"
+#include "back-merkle-tree.h"
 #include "base64.h"
-#include "interpret.h"
 #include "json-util.h"
 #include "jsonrpc-discover.h"
 #include "jsonrpc-fork-result.h"
@@ -73,8 +76,6 @@
 #include "machine-hash.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
-#include "os.h"
-#include "uarch-interpret.h"
 #include "unique-c-ptr.h"
 
 #define SLOG_PREFIX log_prefix
@@ -168,7 +169,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
         // Create a new request parser
         req_parser = std::make_unique<http::request_parser<http::string_body>>();
         req_parser->eager(true);
-        req_parser->body_limit(16777216U); // can receive up to 16MB
+        req_parser->body_limit(std::numeric_limits<uint64_t>::max()); // can receive unlimited amount of data
 
         // Read a request
         http::async_read(stream, buffer, *req_parser,
@@ -363,9 +364,7 @@ private:
         auto session = std::make_shared<http_session>(std::move(socket), shared_from_this());
 
         // Remove previous expired sessions
-        sessions.erase(std::remove_if(sessions.begin(), sessions.end(),
-                           [](const std::weak_ptr<http_session> &weak_session) { return weak_session.expired(); }),
-            sessions.end());
+        std::erase_if(sessions, [](const std::weak_ptr<http_session> &weak_session) { return weak_session.expired(); });
 
         // Keep track of the new session
         sessions.push_back(session);
@@ -909,15 +908,17 @@ static json jsonrpc_machine_collect_mcycle_root_hashes(const json &j, const std:
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"mcycle_end", "mcycle_period", "mcycle_phase", "log2_bundle_mcycle_count"};
-    auto args = parse_args<uint64_t, uint64_t, uint64_t, uint64_t>(j, param_name);
+    static const char *param_name[] = {"mcycle_end", "mcycle_period", "mcycle_phase", "log2_bundle_mcycle_count",
+        "previous_back_tree"};
+    auto args =
+        parse_args<uint64_t, uint64_t, uint64_t, uint64_t, std::optional<cartesi::back_merkle_tree>>(j, param_name);
     auto mcycle_end = std::get<0>(args);
     auto mcycle_period = std::get<1>(args);
     auto mcycle_phase = std::get<2>(args);
     auto log2_bundle_mcycle_count = std::get<3>(args);
-    cartesi::mcycle_root_hashes result;
-    session->handler->machine->collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase,
-        log2_bundle_mcycle_count, result);
+    auto previous_back_tree = std::get<4>(args);
+    const auto result = session->handler->machine->collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase,
+        static_cast<int>(log2_bundle_mcycle_count), previous_back_tree);
     return jsonrpc_response_ok(j, result);
 }
 
@@ -934,8 +935,8 @@ static json jsonrpc_machine_collect_uarch_cycle_root_hashes(const json &j,
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     auto mcycle_end = std::get<0>(args);
     auto log2_bundle_uarch_cycle_count = std::get<1>(args);
-    cartesi::uarch_cycle_root_hashes result;
-    session->handler->machine->collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count, result);
+    const auto result = session->handler->machine->collect_uarch_cycle_root_hashes(mcycle_end,
+        static_cast<int>(log2_bundle_uarch_cycle_count));
     return jsonrpc_response_ok(j, result);
 }
 

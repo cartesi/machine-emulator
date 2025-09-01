@@ -21,14 +21,16 @@
 /// \brief Accept scoped notes interface
 
 #include <cstdarg>
-#include <cstdint>
 #include <type_traits>
 
+#include "meta.h"
+
+#ifdef DUMP_SCOPED_NOTE
 #include "assert-printf.h"
 #include "i-state-access.h"
 #include "i-uarch-state-access.h"
-#include "meta.h"
 #include "scoped-note.h"
+#endif
 
 namespace cartesi {
 
@@ -37,6 +39,8 @@ namespace cartesi {
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
 template <typename DERIVED>
 class i_accept_scoped_notes { // CRTP
+    i_accept_scoped_notes() = default;
+    friend DERIVED;
 
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {

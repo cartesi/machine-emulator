@@ -17,21 +17,42 @@
 #ifndef ALGORITHM_H
 #define ALGORITHM_H
 
+#include <concepts>
+#include <limits>
+#include <type_traits>
+
 #include "concepts.h"
 
-namespace cartesi::algorithm {
+namespace cartesi {
 
 /// \brief Adds new entry to back of container, if not already there
-/// \param value Value to insert.
-template <BackInsertableContainer Container, typename T>
-    requires std::constructible_from<typename Container::value_type, T &&> &&
-    std::equality_comparable_with<typename Container::value_type, T>
+/// \tparam Container Container type
+/// \tparam T Value type
+/// \param container Container to push back into
+/// \param value Value to push back
+template <typename Container, typename T>
+    requires BackInsertableWith<Container, T>
 constexpr void try_push_back(Container &container, T &&value) {
     if (container.empty() || container.back() != value) {
         container.push_back(std::forward<T>(value));
     }
 }
 
-} // namespace cartesi::algorithm
+/// \brief Performs saturating addition of two unsigned integers
+/// \tparam T Unsigned integer type
+/// \param a First addend
+/// \param b Second addend
+/// \param max Maximum value of T (default: std::numeric_limits<T>::max())
+/// \returns The sum of a and b, or the maximum value of T if overflow occurs
+template <typename T>
+    requires std::is_unsigned_v<T>
+static constexpr T saturating_add(T a, T b, T max = std::numeric_limits<T>::max()) noexcept {
+    if (b > max || a > max - b) [[unlikely]] {
+        return max;
+    }
+    return a + b;
+}
+
+} // namespace cartesi
 
 #endif

@@ -17,7 +17,8 @@
 #ifndef I_DENSE_HASH_TREE_H
 #define I_DENSE_HASH_TREE_H
 
-#include "hash-tree-constants.h"
+#include <cstdint>
+
 #include "machine-hash.h"
 
 namespace cartesi {
@@ -56,7 +57,7 @@ private:
     virtual const_machine_hash_view do_root_hash_view() const noexcept = 0;
 };
 
-class empty_dense_hash_tree : public i_dense_hash_tree {
+class empty_dense_hash_tree final : public i_dense_hash_tree {
     const_machine_hash_view do_node_hash_view(uint64_t /*offset*/, int /*log2_size*/) const noexcept override {
         return no_hash_view();
     }

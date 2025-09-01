@@ -25,8 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "compiler-defines.h"
-#include "pmas-constants.h"
+#include "address-range-constants.h"
 #include "riscv-constants.h"
 
 namespace cartesi {

@@ -17,8 +17,14 @@
 #ifndef HASH_TREE_H
 #define HASH_TREE_H
 
+#include <array>
+#include <concepts>
+#include <cstdint>
 #include <iosfwd>
+#include <iterator>
 #include <memory_resource>
+#include <ranges>
+#include <type_traits>
 #include <vector>
 
 #include "unordered_dense.h"
@@ -27,13 +33,17 @@
 #include "hash-tree-constants.h"
 #include "hash-tree-proof.h"
 #include "hash-tree-stats.h"
+#include "i-dense-hash-tree.h"
 #include "machine-address-ranges.h"
 #include "machine-config.h"
 #include "machine-hash.h"
+#include "page-hash-tree-cache-stats.h"
 #include "page-hash-tree-cache.h"
-#include "signposts.h"
-#include "unique-c-ptr.h"
 #include "variant-hasher.h"
+
+#ifdef HAS_SIGNPOSTS
+#include "signposts.h"
+#endif
 
 namespace cartesi {
 
@@ -86,7 +96,7 @@ class hash_tree {
 
     // This is ensures we use the hash_tree_view of machine_address_ranges everywhere
     template <typename MAR>
-    class hash_tree_view : public std::ranges::view_interface<hash_tree_view<MAR>> {
+    class hash_tree_view final : public std::ranges::view_interface<hash_tree_view<MAR>> {
         using V = decltype(std::declval<MAR>().hash_tree_view());
         static_assert(std::ranges::random_access_range<V>, "not a random access range");
         static_assert(std::ranges::view<V>, "not a view");

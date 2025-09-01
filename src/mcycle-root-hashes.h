@@ -18,7 +18,9 @@
 #define MCYCLE_ROOT_HASHES_H
 
 #include <cstdint>
+#include <optional>
 
+#include "back-merkle-tree.h"
 #include "interpret.h"
 #include "machine-hash.h"
 
@@ -26,9 +28,10 @@ namespace cartesi {
 
 /// \brief Collected mcycle root hashes
 struct mcycle_root_hashes {
-    machine_hashes hashes;                   ///< Root hashes collected after each machine cycle period
-    uint64_t mcycle_phase{};                 ///< Machine cycles elapsed since last collected root hash
-    interpreter_break_reason break_reason{}; ///< Reason why function returned
+    machine_hashes hashes;                     ///< Root hashes collected after each machine cycle period
+    uint64_t mcycle_phase{};                   ///< Machine cycles elapsed since last collected root hash
+    interpreter_break_reason break_reason{};   ///< Reason why function returned
+    std::optional<back_merkle_tree> back_tree; ///< Root hashes context
 };
 
 } // namespace cartesi

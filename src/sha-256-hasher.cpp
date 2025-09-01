@@ -15,15 +15,19 @@
 //
 
 #include "sha-256-hasher.h"
-#include "compiler-defines.h"
-#include "i-hasher.h"
-#include "machine-hash.h"
-#include "simd-vector-type.h"
 
+#include <algorithm>
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+
+#include "array2d.h"
+#include "compiler-defines.h"
+#include "i-hasher.h"
+#include "machine-hash.h"
+#include "simd-vector-type.h"
 
 namespace cartesi {
 

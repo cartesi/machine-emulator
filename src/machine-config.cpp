@@ -16,21 +16,21 @@
 
 #include "machine-config.h"
 
-#include <cerrno>
 #include <cstdint>
 #include <exception>
 #include <iomanip>
 #include <ios>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <system_error>
 
 #include <json.hpp>
 
 #include "address-range-constants.h"
 #include "json-util.h"
 #include "os-filesystem.h"
+#include "riscv-constants.h"
 
 static constexpr uint32_t archive_version = 6;
 
@@ -135,7 +135,7 @@ machine_config machine_config::load(const std::string &dir, sharing_mode sharing
         if (!jv.is_number_integer()) {
             throw std::runtime_error("expected integer field \"archive_version\"");
         }
-        if (jv.get<int>() != archive_version) {
+        if (jv.get<uint32_t>() != archive_version) {
             throw std::runtime_error("expected \"archive_version\" " + std::to_string(archive_version) + " (got " +
                 std::to_string(jv.get<int>()) + ")");
         }

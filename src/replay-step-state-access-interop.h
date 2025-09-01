@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <stdexcept>
 
 #include "compiler-defines.h"
 #include "variant-hasher.h"

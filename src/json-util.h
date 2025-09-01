@@ -18,7 +18,6 @@
 #define JSON_UTIL_H
 
 #include <cstdint>
-#include <cstring>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -29,6 +28,7 @@
 
 #include "access-log.h"
 #include "address-range-description.h"
+#include "back-merkle-tree.h"
 #include "bracket-note.h"
 #include "hash-tree-proof.h"
 #include "hash-tree-stats.h"
@@ -41,8 +41,11 @@
 #include "mcycle-root-hashes.h"
 #include "page-hash-tree-cache-stats.h"
 #include "semantic-version.h"
+#include "shadow-registers.h"
+#include "shadow-uarch-state.h"
 #include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
+#include "variant-hasher.h"
 
 namespace cartesi {
 
@@ -601,6 +604,16 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_cycle_root_hashes &value,
     const std::string &path = "params/");
 
+/// \brief Attempts to load an std::optional<back_merkle_tree> object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<back_merkle_tree> &value,
+    const std::string &path = "params/");
+
 /// \brief Attempts to load a vector from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
@@ -681,7 +694,7 @@ class override_to_json {
     const T &m_t; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
-    explicit override_to_json(const T &t) : m_t(t) {};
+    explicit override_to_json(const T &t) : m_t(t) {}
     const T &get() const {
         return m_t;
     }
@@ -736,6 +749,16 @@ void to_json(nlohmann::json &j, const semantic_version &version);
 void to_json(nlohmann::json &j, const std::vector<uint64_t> &uints);
 void to_json(nlohmann::json &j, const mcycle_root_hashes &result);
 void to_json(nlohmann::json &j, const uarch_cycle_root_hashes &result);
+void to_json(nlohmann::json &j, const back_merkle_tree &back_tree);
+
+template <typename T>
+void to_json(nlohmann::json &j, const std::optional<T> &v) {
+    if (v.has_value()) {
+        to_json(j, *v);
+    } else {
+        j = nullptr;
+    }
+}
 
 // Extern template declarations
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, std::string &value,
@@ -938,6 +961,10 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, uarch_cycle_root_hashes &value,
     const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key,
+    std::optional<back_merkle_tree> &value, const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key,
+    std::optional<back_merkle_tree> &value, const std::string &base = "params/");
 
 template <typename T>
 nlohmann::json to_json(const T &v) {

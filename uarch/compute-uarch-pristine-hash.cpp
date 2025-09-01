@@ -65,6 +65,8 @@ Options:
 }
 
 int main(int argc, char *argv[]) try {
+    const auto pristine_pad_hashes = back_merkle_tree::make_pristine_pad_hashes(UARCH_STATE_LOG2_SIZE, log2_page_size,
+        log2_word_size, hash_function_type::keccak256);
     back_merkle_tree tree{UARCH_STATE_LOG2_SIZE, log2_page_size, log2_word_size, hash_function_type::keccak256};
     keccak_256_hasher hasher{};
     machine_hash hash{};
@@ -103,7 +105,7 @@ int main(int argc, char *argv[]) try {
     tree.push_back(hash);
     // Add pristine gap between shadow uarch state and uarch RAM
     if (auto gap = (AR_UARCH_RAM_START - page_size - AR_SHADOW_UARCH_STATE_START) / page_size; gap != 0) {
-        tree.pad_back(gap);
+        tree.pad_back(gap, pristine_pad_hashes);
     }
     // Add all pages of uarch ram to merkle tree
     for (uint32_t p = 0; p < uarch_pristine_ram_len; p += page_size) {
@@ -118,6 +120,7 @@ int main(int argc, char *argv[]) try {
         tree.push_back(hash);
     }
     // Get uarch state hash
+    tree.pad_back(tree.get_remaining_leaf_count(), pristine_pad_hashes);
     auto uarch_state_hash = tree.get_root_hash();
     // Print header
     std::cout << "// This file is auto-generated and should not be modified\n";

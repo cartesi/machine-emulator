@@ -82,7 +82,7 @@ UBFLAGS+=-fno-delete-null-pointer-checks
 endif
 
 # We ignore test-machine-c-api.cpp cause it takes too long.
-LINTER_SOURCES=test-merkle-tree-hash.cpp
+LINTER_SOURCES=
 LINTER_HEADERS=$(wildcard *.h)
 
 CLANG_TIDY=clang-tidy
@@ -104,16 +104,13 @@ ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)
 endif
 
-all: $(BUILDDIR)/test-merkle-tree-hash $(BUILDDIR)/test-machine-c-api
+all: $(BUILDDIR)/test-machine-c-api
 
-../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a:
-	$(info libcartesi.a and/or libcartesi_merkle_tree.a were not found! Build them first.)
+../../src/libcartesi.a ../../src/libcartesi_hash_tree.a:
+	$(info libcartesi.a and/or libcartesi_hash_tree.a were not found! Build them first.)
 	@exit 1
 
-$(BUILDDIR)/test-merkle-tree-hash: test-merkle-tree-hash.o ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
-	$(CXX) -o $@ $^ $(CXXFLAGS)
-
-$(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
+$(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 %.o: %.cpp
@@ -145,6 +142,6 @@ clean-objs:
 	@rm -f *.o *.d
 
 clean: clean-tidy clean-objs
-	@rm -f $(BUILDDIR)/test-merkle-tree-hash $(BUILDDIR)/test-machine-c-api
+	@rm -f $(BUILDDIR)/test-machine-c-api
 
 .SUFFIXES:

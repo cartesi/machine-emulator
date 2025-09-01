@@ -21,7 +21,6 @@
 #include <memory>
 #include <span>
 #include <string>
-#include <system_error>
 #include <utility>
 
 namespace cartesi::os {

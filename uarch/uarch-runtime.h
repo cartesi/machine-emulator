@@ -17,6 +17,11 @@
 #ifndef UARCH_RUNTIME_H
 #define UARCH_RUNTIME_H
 
+// This is redundant, however should fix linter errors when editing source files
+#ifndef MICROARCHITECTURE
+#define MICROARCHITECTURE
+#endif
+
 #include "compiler-defines.h"
 #include "third-party/printf/printf.h"
 
@@ -24,7 +29,7 @@
 #include <cstddef>
 
 #ifndef NDEBUG
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while,modernize-use-std-print)
 #define assert(a)                                                                                                      \
     do {                                                                                                               \
         if (!(a)) {                                                                                                    \
@@ -32,6 +37,7 @@
             abort();                                                                                                   \
         }                                                                                                              \
     } while (0)
+// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while,modernize-use-std-print)
 #else
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define assert(a)
@@ -43,16 +49,6 @@
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define vfprintf(f, fmt, ap) vprintf(fmt, ap)
 
-extern "C" NO_RETURN void abort();
-
-namespace cartesi {
-
-void os_open_tty();
-void os_close_tty();
-bool os_poll_tty(uint64_t /*timeout_us*/);
-int os_getchar();
-void os_putchar(uint8_t ch);
-
-} // namespace cartesi
+extern "C" NO_RETURN void abort() noexcept;
 
 #endif

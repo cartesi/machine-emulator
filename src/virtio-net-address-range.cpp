@@ -15,15 +15,15 @@
 //
 
 #include "virtio-net-address-range.h"
+#include "os-features.h"
 
 #if defined(HAVE_SLIRP) || defined(HAVE_TUNTAP)
 
 #include <cstdint>
-#include <memory>
-#include <utility>
 
 #include "i-device-state-access.h"
 #include "os.h"
+#include "virtio-address-range.h"
 
 namespace cartesi {
 

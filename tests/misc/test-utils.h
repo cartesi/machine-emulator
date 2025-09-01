@@ -26,13 +26,13 @@
 // Calculate root hash for data buffer of log2_size
 namespace detail {
 
-constexpr int WORD_LOG2_SIZE = 5;
-constexpr int MERKLE_PAGE_LOG2_SIZE = 12;
-constexpr int MERKLE_PAGE_SIZE = (UINT64_C(1) << MERKLE_PAGE_LOG2_SIZE);
+constexpr int HASH_TREE_WORD_LOG2_SIZE = 5;
+constexpr int HASH_TREE_PAGE_LOG2_SIZE = 12;
+constexpr int HASH_TREE_PAGE_SIZE = (UINT64_C(1) << HASH_TREE_PAGE_LOG2_SIZE);
 
 static cartesi::machine_hash merkle_hash(cartesi::variant_hasher &h, const std::string_view &data, int log2_size) {
     cartesi::machine_hash result;
-    if (log2_size > WORD_LOG2_SIZE) {
+    if (log2_size > HASH_TREE_WORD_LOG2_SIZE) {
         --log2_size;
         auto half_size = data.size() / 2;
         auto left = merkle_hash(h, std::string_view{data.data() + 0, half_size}, log2_size);
@@ -95,11 +95,13 @@ static cartesi::machine_hash calculate_proof_root_hash(cartesi::variant_hasher &
 
 static cartesi::machine_hash calculate_emulator_hash(cm_machine *machine) {
     const auto hash_function = get_machine_hash_function(machine);
-    cartesi::variant_hasher h(hash_function);
-    cartesi::back_merkle_tree tree(CM_TREE_LOG2_ROOT_SIZE, CM_TREE_LOG2_PAGE_SIZE, CM_TREE_LOG2_WORD_SIZE,
-        hash_function);
+    cartesi::variant_hasher h{hash_function};
+    const auto pristine_pad_hashes = cartesi::back_merkle_tree::make_pristine_pad_hashes(CM_TREE_LOG2_ROOT_SIZE,
+        CM_TREE_LOG2_PAGE_SIZE, CM_TREE_LOG2_WORD_SIZE, hash_function);
+    cartesi::back_merkle_tree tree{CM_TREE_LOG2_ROOT_SIZE, CM_TREE_LOG2_PAGE_SIZE, CM_TREE_LOG2_WORD_SIZE,
+        hash_function};
     std::string page;
-    page.resize(detail::MERKLE_PAGE_SIZE);
+    page.resize(detail::HASH_TREE_PAGE_SIZE);
     const char *ranges_jsonstr{};
     if (cm_get_address_ranges(machine, &ranges_jsonstr) != 0) {
         throw std::runtime_error{cm_get_last_error_message()};
@@ -107,17 +109,18 @@ static cartesi::machine_hash calculate_emulator_hash(cm_machine *machine) {
     const auto mrds = cartesi::from_json<cartesi::address_range_descriptions>(ranges_jsonstr, "memory_ranges");
     uint64_t last = 0;
     for (const auto &m : mrds) {
-        tree.pad_back((m.start - last) >> detail::MERKLE_PAGE_LOG2_SIZE);
+        tree.pad_back((m.start - last) >> detail::HASH_TREE_PAGE_LOG2_SIZE, pristine_pad_hashes);
         auto end = m.start + m.length;
-        for (uint64_t s = m.start; s < end; s += detail::MERKLE_PAGE_SIZE) {
+        for (uint64_t s = m.start; s < end; s += detail::HASH_TREE_PAGE_SIZE) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             if (cm_read_memory(machine, s, reinterpret_cast<unsigned char *>(page.data()), page.size()) != 0) {
                 throw std::runtime_error{cm_get_last_error_message()};
             }
-            auto page_hash = merkle_hash(h, page, detail::MERKLE_PAGE_LOG2_SIZE);
+            auto page_hash = merkle_hash(h, page, detail::HASH_TREE_PAGE_LOG2_SIZE);
             tree.push_back(page_hash);
         }
         last = end;
     }
+    tree.pad_back(tree.get_remaining_leaf_count(), pristine_pad_hashes);
     return tree.get_root_hash();
 }

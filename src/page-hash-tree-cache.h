@@ -20,7 +20,11 @@
 /// \file
 /// \brief Page hash-tree cache interface
 
+#include <algorithm>
+#include <array>
 #include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -28,18 +32,20 @@
 #include <ranges>
 #include <span>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <boost/container/static_vector.hpp>
 #include <boost/intrusive/list.hpp>
+#include <boost/intrusive/list_hook.hpp>
 
-#include "address-range-constants.h"
 #include "algorithm.h"
-#include "compiler-defines.h"
+#include "assert-printf.h"
+#include "concepts.h"
 #include "hash-tree-constants.h"
 #include "i-hasher.h"
 #include "is-pristine.h"
 #include "machine-hash.h"
-#include "meta.h"
 #include "page-hash-tree-cache-stats.h"
 #include "ranges.h"
 #include "signposts.h"
@@ -282,8 +288,7 @@ public:
         /// \brief Enqueues a leaf for hashing
         void enqueue_leaf(const_hash_tree_word_view data, page_hash_tree_view page_tree, int word_index) noexcept {
             m_leaves_queue.enqueue(data, page_tree[word_index]);
-            algorithm::try_push_back(m_dirty_queue,
-                dirty_entry{.page_tree = page_tree, .node_index = entry::parent(word_index)});
+            try_push_back(m_dirty_queue, dirty_entry{.page_tree = page_tree, .node_index = entry::parent(word_index)});
         }
 
         /// \brief Flushes the entire queue
@@ -298,7 +303,7 @@ public:
                     m_concat_queue.enqueue(d.page_tree[entry::left_child(d.node_index)],
                         d.page_tree[entry::right_child(d.node_index)], d.page_tree[d.node_index]);
                     if (d.node_index > 1) [[likely]] {
-                        algorithm::try_push_back(next_dirty_queue,
+                        try_push_back(next_dirty_queue,
                             dirty_entry{.page_tree = d.page_tree, .node_index = entry::parent(d.node_index)});
                     }
                 }
@@ -380,7 +385,7 @@ public:
         while (start != 0) {
             for (int index = start; index < 2 * start; ++index) {
                 const auto node_hash =
-                    get_concat_hash(h, page_tree[e.left_child(index)], page_tree[e.right_child(index)]);
+                    get_concat_hash(h, page_tree[entry::left_child(index)], page_tree[entry::right_child(index)]);
                 if (node_hash != page_tree[index]) {
                     std::cerr << "hash mismatch in index " << std::dec << index << ":" << log2_size << '\n';
                     return false;

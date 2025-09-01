@@ -17,7 +17,7 @@
 #include "os-features.h"
 
 // Must be included before
-#include "os-posix-compat.h"
+#include "os-posix-compat.h" // IWYU pragma: keep
 
 #if defined(HAVE_MMAP)
 #include <fcntl.h>    // open
@@ -37,10 +37,14 @@
 
 #include "scope-exit.h"
 
+#include <algorithm>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <system_error>
+#include <utility>
 
 namespace cartesi {
 

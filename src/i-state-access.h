@@ -24,12 +24,13 @@
 #include <cstdarg>
 #include <cstdint>
 #include <type_traits>
-#include <utility>
 
+#include "address-range.h"
 #include "assert-printf.h"
 #include "i-prefer-shadow-state.h"
 #include "meta.h"
 #include "poor-type-name.h"
+#include "shadow-registers.h"
 #include "shadow-tlb.h"
 
 namespace cartesi {
@@ -337,7 +338,7 @@ public:
     /// \param pma_index Index of PMA where word falls.
     /// \param pval Pointer to word receiving value.
     /// \warning T must not cross page boundary starting from \p faddr.
-    /// \warning T (when A is smaller) may or may not cross a Merkle tree word boundary starting from \p faddr!
+    /// \warning T (when A is smaller) may or may not cross a hash tree word boundary starting from \p faddr!
     template <typename T, typename A = T>
     void read_memory_word(fast_addr faddr, uint64_t pma_index, T *pval) const {
         static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
@@ -354,7 +355,7 @@ public:
     /// \param faddr Implementation-defined fast address.
     /// \param val Value to be written.
     /// \warning T must not cross page boundary starting from \p faddr.
-    /// \warning T (when A is smaller) may or may not cross a Merkle tree word boundary starting from \p faddr!
+    /// \warning T (when A is smaller) may or may not cross a hash tree word boundary starting from \p faddr!
     template <typename T, typename A = T>
     void write_memory_word(fast_addr faddr, uint64_t pma_index, T val) const {
         static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
@@ -421,9 +422,9 @@ public:
     /// \brief Marks a page as dirty
     /// \param faddr Implementation-defined fast address.
     /// \param pma_index Index of PMA where page falls
-    /// \details When there is a host machine, the Merkle tree only updates the hashes for pages that
+    /// \details When there is a host machine, the hash tree only updates the hashes for pages that
     /// have been modified. Pages can only be written to if they appear in the write TLB. Therefore,
-    /// the Merkle tree only considers the pages that are currently in the write TLB and those that
+    /// the hash tree only considers the pages that are currently in the write TLB and those that
     /// have been marked dirty. When a page leaves the write TLB, it is marked dirty.
     /// If the state belongs to a host machine, then this call MUST be forwarded to machine::mark_dirty_page();
     void mark_dirty_page(fast_addr faddr, uint64_t pma_index) const {

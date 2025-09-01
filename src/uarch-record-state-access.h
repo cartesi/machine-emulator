@@ -19,28 +19,25 @@
 
 /// \file
 /// \brief State access implementation that record and logs all accesses
+#include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <stdexcept>
-#include <string>
 #include <utility>
 
 #include "access-log.h"
-#include "host-addr.h"
+#include "hash-tree-constants.h"
 #include "i-accept-scoped-notes.h"
-#include "i-hasher.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
+#include "machine-hash.h"
+#include "machine-reg.h"
 #include "machine.h"
 #include "meta.h"
-#include "riscv-constants.h"
+#include "os.h"
+#include "scoped-note.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
-#include "strict-aliasing.h"
 #include "uarch-constants.h"
-#include "uarch-pristine-state-hash.h"
-#include "uarch-pristine.h"
-#include "uarch-processor-state.h"
 
 namespace cartesi {
 
@@ -68,7 +65,7 @@ public:
 private:
     static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {
         static_assert(cartesi::log2_size_v<uint64_t> <= HASH_TREE_LOG2_WORD_SIZE,
-            "Merkle tree word size must not be smaller than machine word size");
+            "Hash tree word size must not be smaller than machine word size");
         if (((paddr >> log2_size) << log2_size) != paddr) {
             throw std::invalid_argument{"misaligned access"};
         }
@@ -184,7 +181,7 @@ private:
             [this, reg, val]() {
                 m_m.write_reg(reg, val);
                 if (!m_m.update_hash_tree_page(machine_reg_address(reg))) {
-                    throw std::invalid_argument{"error updating Merkle tree"};
+                    throw std::invalid_argument{"error updating hash tree"};
                 };
             },
             machine_reg_get_name(reg));
@@ -218,7 +215,7 @@ private:
             [this, paddr, val]() {
                 m_m.write_word(paddr, val);
                 if (!m_m.update_hash_tree_page(paddr)) {
-                    throw std::invalid_argument{"error updating Merkle tree"};
+                    throw std::invalid_argument{"error updating hash tree"};
                 };
             },
             machine::get_what_name(paddr));
@@ -233,31 +230,31 @@ private:
                 m_m.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
                 // Entire slot is in a single page
                 if (!m_m.update_hash_tree_page(shadow_tlb_get_abs_addr(set_index, slot_index))) {
-                    throw std::invalid_argument{"error updating Merkle tree"};
+                    throw std::invalid_argument{"error updating hash tree"};
                 };
             },
             "tlb.slot");
         // Writes to TLB slots have to be atomic.
-        // We can only do atomic writes of entire Merkle tree nodes.
+        // We can only do atomic writes of entire hash tree nodes.
         // Therefore, TLB slot must have a power-of-two size, or at least be aligned to it.
         static_assert(SHADOW_TLB_SLOT_SIZE == sizeof(shadow_tlb_slot), "shadow TLB slot size is wrong");
         static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE,
             "shadow TLB slot log2 size is wrong");
         static_assert(SHADOW_TLB_SLOT_LOG2_SIZE >= HASH_TREE_LOG2_WORD_SIZE,
-            "shadow TLB slot must fill at least an entire Merkle tree word");
+            "shadow TLB slot must fill at least an entire hash tree word");
     }
 
     void do_reset_uarch() const {
         //??D I'd like to add an static_assert or some other guard mechanism to
         // guarantee that uarch.ram and uarch.shadow are alone in the entire
-        // span of their common Merkle tree parent node
+        // span of their common hash tree parent node
         log_write_access(
             UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE,
             [this]() {
                 m_m.reset_uarch();
                 // reset_uarch() marks all modified pages as dirty
                 if (!m_m.update_hash_tree()) {
-                    throw std::invalid_argument{"error updating Merkle tree"};
+                    throw std::invalid_argument{"error updating hash tree"};
                 }
             },
             "uarch.state");
@@ -294,11 +291,6 @@ private:
     auto do_make_scoped_note(const char *text) const {
         return scoped_note{*this, text};
     }
-
-    // -----
-    // i_prefer_shadow_uarch_state interface implementation
-    // -----
-    friend i_prefer_shadow_uarch_state<uarch_record_state_access>;
 };
 
 } // namespace cartesi

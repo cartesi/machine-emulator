@@ -26,6 +26,7 @@
 
 #include "address-range-constants.h"
 #include "fdt-builder.h"
+#include "htif-constants.h"
 #include "machine-c-version.h"
 #include "machine-config.h"
 #include "plic-constants.h"

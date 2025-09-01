@@ -20,17 +20,17 @@
 /// \file
 /// \brief Cartesi machine interface
 
+#include <algorithm>
 #include <cstdint>
-#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 
 #include "access-log.h"
-#include "address-range-description.h"
 #include "address-range.h"
+#include "back-merkle-tree.h"
 #include "hash-tree-stats.h"
 #include "hash-tree.h"
 #include "host-addr.h"
@@ -38,11 +38,11 @@
 #include "interpret.h"
 #include "machine-address-ranges.h"
 #include "machine-config.h"
+#include "machine-hash.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
 #include "mcycle-root-hashes.h"
 #include "os.h"
-#include "pmas-constants.h"
 #include "processor-state.h"
 #include "scope-remove.h"
 #include "shadow-tlb.h"
@@ -50,7 +50,6 @@
 #include "uarch-interpret.h"
 #include "uarch-processor-state.h"
 #include "variant-hasher.h"
-#include "virtio-address-range.h"
 
 namespace cartesi {
 
@@ -174,6 +173,14 @@ public:
         return m_ars.find(paddr, length);
     }
 
+    /// \brief Returns address range that covers a given physical memory region
+    /// \param paddr Target physical address of start of region.
+    /// \param length Length of region, in bytes.
+    /// \returns Corresponding address range if found, or an empty sentinel otherwise.
+    address_range &find_address_range(uint64_t paddr, uint64_t length) noexcept {
+        return m_ars.find(paddr, length);
+    }
+
     /// \brief No default constructor
     machine() = delete;
     /// \brief No copy constructor
@@ -208,13 +215,16 @@ public:
     /// \param mcycle_phase Number of machine cycles elapsed since last root hash collected.
     /// \param log2_bundle_mcycle_count Log base 2 of the amount of mcycle root hashes to bundle.
     /// If greater than 0, it collects subtree root hashes for 2^log2_bundle_mcycle_count root hashes.
-    /// \param result Stores into result.hashes the root hashes after each period.
+    /// \param previous_back_tree Optional context to continue collecting bundled root hashes.
+    /// \returns The collected mcycle root hashes.
+    /// Stores into result.hashes the root hashes after each period.
     /// Stores into result.mcycle_phase the number of machine cycles after last root hash collected.
     /// Stores into result.break_reason the reason the function returned.
+    /// Stores into result.back_tree the back tree context to continue collecting bundled root hashes.
     /// \detail The first hash added to \p result.hashes is the root hash after (\p mcycle_period - \p mcycle_phase)
     /// machine cycles (if the function managed to get that far before returning).
-    void collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
-        uint32_t log2_bundle_mcycle_count, mcycle_root_hashes &result);
+    mcycle_root_hashes collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
+        int32_t log2_bundle_mcycle_count, const std::optional<back_merkle_tree> &previous_back_tree = {});
 
     /// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
     /// \param mcycle_count Number of mcycles to run the machine for.
@@ -238,14 +248,15 @@ public:
     /// \brief Collects the root hashes after every uarch cycle until mcycle reaches \p mcycle_end,
     /// the machine yields, or halts. Implicitly resetting the uarch between mcycles.
     /// \param mcycle_end End machine cycle value to execute, uarch cycle by uarch cycle.
-    /// \param result Stores into result.hashes the root hashes after each uarch cycle.
     /// \param log2_bundle_uarch_cycle_count Log base 2 of the amount of uarch cycle root hashes to bundle.
-    /// Stores into result.reset_indices the indices of the root hashes after each implicit uarch reset (i.e., after
-    /// each machine cycle). Stores into result.break_reason the reason why the function returned.
+    /// \returns The collected uarch cycle root hashes.
+    /// Stores into result.hashes the root hashes after each uarch cycle.
+    /// Stores into result.reset_indices the indices of the root hashes after each implicit uarch reset
+    /// (i.e., after each machine cycle).
+    /// Stores into result.break_reason the reason why the function returned.
     /// \detail The first hash added to \p result.hashes is the root hash after the first uarch cycle, the last is the
     /// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
-    void collect_uarch_cycle_root_hashes(uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
-        uarch_cycle_root_hashes &result);
+    uarch_cycle_root_hashes collect_uarch_cycle_root_hashes(uint64_t mcycle_end, int32_t log2_bundle_uarch_cycle_count);
 
     /// \brief Advances one micro step and returns a state access log.
     /// \param log_type Type of access log to generate.

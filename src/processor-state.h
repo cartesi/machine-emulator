@@ -20,14 +20,11 @@
 /// \file
 /// \brief Cartesi machine processor state structure definition.
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
-#include "address-range.h"
+#include "address-range-constants.h"
 #include "hot-tlb.h"
-#include "riscv-constants.h"
 #include "shadow-registers.h"
 #include "shadow-tlb.h"
 

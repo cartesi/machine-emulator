@@ -1,13 +1,10 @@
 Checks: >-
   boost*,
-  -boost-use-ranges,
   bugprone*,
   -bugprone-easily-swappable-parameters,
-  -bugprone-crtp-constructor-accessibility,
   cert*,
   -cert-int09-c,
   clang-analyzer*,
-  -clang-analyzer-optin.cplusplus.VirtualCall,
   cppcoreguidelines*,
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-owning-memory,
@@ -33,8 +30,6 @@ Checks: >-
   -modernize-use-nodiscard,
   -modernize-use-trailing-return-type,
   -modernize-avoid-c-arrays,
-  -modernize-use-ranges,
-  -modernize-use-integer-sign-comparison,
   performance*,
   -performance-enum-size,
   portability*,
@@ -43,6 +38,5 @@ Checks: >-
   -readability-identifier-length,
   -readability-magic-numbers,
   -readability-enum-initial-value,
-  -readability-static-accessed-through-instance,
 WarningsAsErrors: >-
   *

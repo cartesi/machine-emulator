@@ -17,9 +17,12 @@
 #ifndef MACHINE_ADDRESS_RANGES_H
 #define MACHINE_ADDRESS_RANGES_H
 
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <ranges>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -30,7 +33,6 @@
 #include "address-range.h"
 #include "machine-config.h"
 #include "machine-runtime-config.h"
-#include "meta.h"
 #include "scope-remove.h"
 #include "virtio-address-range.h"
 
@@ -98,7 +100,6 @@ public:
         if (index >= m_pmas.size()) [[unlikely]] {
             return m_sentinel;
         }
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         return *m_all[static_cast<size_t>(m_pmas[static_cast<size_t>(index)])];
     }
 

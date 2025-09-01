@@ -21,9 +21,7 @@
 /// \brief State access log implementation
 
 #include <algorithm>
-#include <cassert>
 #include <cstdint>
-#include <cstring>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -32,7 +30,9 @@
 
 #include <boost/container/small_vector.hpp>
 
+#include "assert-printf.h"
 #include "bracket-note.h"
+#include "hash-tree-constants.h"
 #include "hash-tree.h"
 #include "machine-c-api.h"
 #include "machine-hash.h"
@@ -173,10 +173,10 @@ public:
     /// \param root_hash Hash to be used as the root of the proof.
     /// \return The corresponding proof
     proof_type make_proof(const machine_hash root_hash) const {
-        // the access can be of data smaller than the merkle tree word size
-        // however, the proof must be at least as big as the merkle tree word size
+        // the access can be of data smaller than the hash tree word size
+        // however, the proof must be at least as big as the hash tree word size
         const int proof_log2_size = std::max(m_log2_size, HASH_TREE_LOG2_WORD_SIZE);
-        // the proof address is the access address aligned to the merkle tree word size
+        // the proof address is the access address aligned to the hash tree word size
         const uint64_t proof_address = m_address & ~(HASH_TREE_WORD_SIZE - 1);
         if (!m_sibling_hashes.has_value()) {
             throw std::runtime_error("can't make proof if access doesn't have sibling hashes");

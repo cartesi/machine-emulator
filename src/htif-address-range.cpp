@@ -20,6 +20,7 @@
 
 #include "htif-constants.h"
 #include "i-device-state-access.h"
+#include "interpret.h"
 
 namespace cartesi {
 

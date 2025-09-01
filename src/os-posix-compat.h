@@ -173,7 +173,7 @@
 
 #endif // _WIN32
 
-#include <fcntl.h>
+#include <fcntl.h> // IWYU pragma: keep
 
 #ifndef O_BINARY
 #define O_BINARY 0 // NOLINT(cppcoreguidelines-macro-usage)

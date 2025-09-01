@@ -20,8 +20,10 @@
 #include <span>
 #include <type_traits>
 
-#include "hash-tree.h"
+#include "hash-tree-constants.h"
 #include "i-hasher.h"
+#include "machine-hash.h"
+#include "variant-hasher.h"
 
 using namespace cartesi;
 

@@ -21,22 +21,23 @@
 /// \brief Dirty map as a complete tree
 
 #include <algorithm>
-#include <cassert>
-#include <concepts>
 #include <cstdint>
+#include <initializer_list>
 #include <iostream>
-#include <iterator>
+#include <limits>
 #include <ranges>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
+#include "assert-printf.h"
 #include "i-dirty-page-tree.h"
 #include "ranges.h"
 
 namespace cartesi {
 
 /// \brief Dirty page tree
-class dirty_page_tree : public i_dirty_page_tree {
+class dirty_page_tree final : public i_dirty_page_tree {
 public:
     /// \brief Each node in tree is either clean or dirty
     enum class status_type : uint8_t { clean, dirty };

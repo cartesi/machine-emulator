@@ -35,18 +35,27 @@
 
 #include "access-log.h"
 #include "address-range-description.h"
+#include "back-merkle-tree.h"
 #include "base64.h"
 #include "bracket-note.h"
-#include "hash-tree.h"
+#include "hash-tree-constants.h"
+#include "hash-tree-proof.h"
+#include "hash-tree-stats.h"
 #include "interpret.h"
 #include "jsonrpc-fork-result.h"
 #include "machine-config.h"
 #include "machine-hash.h"
+#include "machine-reg.h"
 #include "machine-runtime-config.h"
-#include "machine.h"
-#include "meta.h"
+#include "mcycle-root-hashes.h"
+#include "page-hash-tree-cache-stats.h"
+#include "ranges.h"
 #include "semantic-version.h"
+#include "shadow-registers.h"
+#include "shadow-uarch-state.h"
+#include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
+#include "variant-hasher.h"
 
 namespace cartesi {
 
@@ -1904,6 +1913,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, mcycle_root_hashes 
     ju_get_vector_like_field(jconfig, "hashes"s, value.hashes, new_path);
     ju_get_field(jconfig, "mcycle_phase"s, value.mcycle_phase, new_path);
     ju_get_field(jconfig, "break_reason"s, value.break_reason, new_path);
+    ju_get_opt_field(jconfig, "back_tree"s, value.back_tree, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, mcycle_root_hashes &value,
@@ -1920,7 +1930,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_cycle_root_ha
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
     ju_get_vector_like_field(jconfig, "hashes"s, value.hashes, new_path);
-    ju_get_vector_like_field(jconfig, "reset_indices"s, value.hashes, new_path);
+    ju_get_vector_like_field(jconfig, "reset_indices"s, value.reset_indices, new_path);
     ju_get_field(jconfig, "break_reason"s, value.break_reason, new_path);
 }
 
@@ -1929,6 +1939,35 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
     uarch_cycle_root_hashes &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<back_merkle_tree> &value,
+    const std::string &path) {
+    value = {};
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    if (jconfig.is_null()) {
+        return;
+    }
+    const auto new_path = path + to_string(key) + "/";
+    uint64_t log2_max_leaves{};
+    hash_function_type hash_function{};
+    uint64_t leaf_count{};
+    machine_hashes context;
+    ju_get_field(jconfig, "log2_max_leaves"s, log2_max_leaves, new_path);
+    ju_get_field(jconfig, "hash_function"s, hash_function, new_path);
+    ju_get_field(jconfig, "leaf_count"s, leaf_count, new_path);
+    ju_get_vector_like_field(jconfig, "context"s, context, new_path);
+    value = back_merkle_tree{static_cast<int>(log2_max_leaves), hash_function, leaf_count, context};
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
+    std::optional<back_merkle_tree> &value, const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    std::optional<back_merkle_tree> &value, const std::string &path);
 
 void to_json(nlohmann::json &j, const machine_reg &reg) {
     j = reg_to_name(reg);
@@ -2320,11 +2359,20 @@ void to_json(nlohmann::json &j, const std::vector<uint64_t> &ints) {
 void to_json(nlohmann::json &j, const mcycle_root_hashes &result) {
     j = nlohmann::json{{"hashes", base64_machine_hashes(result.hashes)}, {"mcycle_phase", result.mcycle_phase},
         {"break_reason", result.break_reason}};
+    if (result.back_tree.has_value()) {
+        j["back_tree"] = result.back_tree;
+    }
 }
 
 void to_json(nlohmann::json &j, const uarch_cycle_root_hashes &result) {
     j = nlohmann::json{{"hashes", base64_machine_hashes(result.hashes)}, {"reset_indices", result.reset_indices},
         {"break_reason", result.break_reason}};
+}
+
+void to_json(nlohmann::json &j, const back_merkle_tree &back_tree) {
+    j = nlohmann::json{{"log2_max_leaves", back_tree.get_log2_max_leaves()},
+        {"hash_function", hash_function_to_name(back_tree.get_hash_function())},
+        {"leaf_count", back_tree.get_leaf_count()}, {"context", base64_machine_hashes(back_tree.get_context())}};
 }
 
 } // namespace cartesi

@@ -18,28 +18,30 @@
 #define REPLAY_STEP_STATE_ACCESS_H
 
 #include <algorithm>
-#include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
-#include <optional>
 #include <ranges>
+#include <variant>
 
+#include "address-range-constants.h"
+#include "address-range.h"
+#include "assert-printf.h"
 #include "compiler-defines.h"
 #include "host-addr.h"
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
+#include "machine-hash.h"
 #include "machine-reg.h"
 #include "mock-address-range.h"
+#include "pmas-constants.h"
 #include "pmas.h"
 #include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
 #include "shadow-registers.h"
 #include "shadow-tlb.h"
-#include "shadow-uarch-state.h"
 #include "strict-aliasing.h"
-#include "uarch-constants.h"
-#include "uarch-defines.h"
 #include "variant-hasher.h"
 
 namespace cartesi {
@@ -472,8 +474,7 @@ private:
         // ilength in its implementation of read_pmas_entry.
         const uint64_t istart = read_pmas_istart(index);
         const uint64_t ilength = read_pmas_ilength(index);
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        const int i = static_cast<int>(index);
+        const auto i = static_cast<size_t>(index);
         const auto abrt = [](const char *err) { interop_throw_runtime_error(err); };
         if (std::holds_alternative<std::monostate>(m_context.ars[i])) {
             m_context.ars[i] = make_mock_address_range(istart, ilength, abrt);

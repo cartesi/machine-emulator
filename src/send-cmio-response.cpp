@@ -17,17 +17,16 @@
 /// \file
 /// \brief This file is be converted to Solidity by the machine-solidity-step.
 
-// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)
-
 #include "send-cmio-response.h"
 
+#include "address-range-constants.h"
 #include "hash-tree-constants.h"
-#include "pmas-constants.h"
-#include "record-send-cmio-state-access.h"
-#include "replay-send-cmio-state-access.h"
-#include "state-access.h"
+#include "record-send-cmio-state-access.h" // IWYU pragma: keep
+#include "replay-send-cmio-state-access.h" // IWYU pragma: keep
+#include "state-access.h"                  // IWYU pragma: keep
 #include "uarch-solidity-compat.h"
 
+// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)
 namespace cartesi {
 
 template <typename STATE_ACCESS>

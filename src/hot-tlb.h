@@ -22,7 +22,6 @@
 /// \details The Translation Lookaside Buffer is a small cache used to speed up translation between address spaces.
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
 
 #include "host-addr.h"

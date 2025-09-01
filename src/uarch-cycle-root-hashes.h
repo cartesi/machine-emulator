@@ -18,6 +18,7 @@
 #define UARCH_CYCLE_ROOT_HASHES_H
 
 #include <cstdint>
+#include <vector>
 
 #include "interpret.h"
 #include "machine-hash.h"

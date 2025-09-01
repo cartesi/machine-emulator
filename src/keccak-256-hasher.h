@@ -19,12 +19,11 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <span>
-#include <type_traits>
 
 #include "array2d.h"
 #include "compiler-defines.h"
+#include "hash-tree-constants.h"
 #include "i-hasher.h"
 #include "machine-hash.h"
 
@@ -92,6 +91,8 @@ MULTIVERSION_AMD64_AVX512_BMI_BMI2 void keccak_256_hash_2x8(const array2d<const_
 
 class keccak_256_hasher final : public i_hasher<keccak_256_hasher> {
 public:
+    keccak_256_hasher() = default;
+
     static constexpr int MAX_LANE_COUNT = 8;
 
     template <size_t ConcatCount, size_t LaneCount, size_t Extent>

@@ -35,6 +35,7 @@
 /// mappings, and synchronization of file-backed memory regions.
 /// \}
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -95,7 +96,7 @@ namespace detail {
 
 struct mmap_deleter {
     os_mmapd m_mmapd;
-    explicit mmap_deleter(os_mmapd mmapd) : m_mmapd(mmapd) {};
+    explicit mmap_deleter(os_mmapd mmapd) : m_mmapd(mmapd) {}
     template <typename T>
     void operator()(T * /*ptr*/) const noexcept {
         os_munmap(m_mmapd);

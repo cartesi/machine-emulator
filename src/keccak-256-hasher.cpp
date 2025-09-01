@@ -15,16 +15,20 @@
 //
 
 #include "keccak-256-hasher.h"
+
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <span>
+
+#include "array2d.h"
 #include "compiler-defines.h"
 #include "i-hasher.h"
 #include "keccakf.h"
 #include "machine-hash.h"
 #include "simd-vector-type.h"
-
-#include <bit>
-#include <cstddef>
-#include <cstdint>
-#include <span>
 
 namespace cartesi {
 

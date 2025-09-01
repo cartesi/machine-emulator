@@ -17,10 +17,11 @@
 #ifndef UARCH_CONSTANTS_H
 #define UARCH_CONSTANTS_H
 
-#include "address-range-constants.h"
-#include "uarch-defines.h"
-
 #include <cstdint>
+
+#include "address-range-constants.h"
+#include "address-range-defines.h"
+#include "uarch-defines.h"
 
 namespace cartesi {
 
@@ -29,16 +30,17 @@ enum uarch_state_constants : uint64_t {
     UARCH_STATE_START_ADDRESS =
         EXPAND_UINT64_C(UARCH_STATE_START_ADDRESS_DEF), ///< Start address of the uarch state: shadow + ram
     UARCH_STATE_LOG2_SIZE = EXPAND_UINT64_C(UARCH_STATE_LOG2_SIZE_DEF), ///< Log2 size of the uarch state: shadow + ram
+    UARCH_STATE_LENGTH = UINT64_C(1) << UARCH_STATE_LOG2_SIZE,          ///< Size of the uarch state: shadow + ram
     UARCH_STATE_CHILD_LOG2_SIZE = UARCH_STATE_LOG2_SIZE - 1, ///< Log2 size of a uarch state child: shadow or ram
     UARCH_SHADOW_START_ADDRESS =
         EXPAND_UINT64_C(AR_SHADOW_UARCH_STATE_START_DEF), ///< Start address of the shadow uarch state
-    UARCH_SHADOW_LENGTH = EXPAND_UINT64_C(AR_SHADOW_UARCH_STATE_LENGTH_DEF),    ///< Length of the shadow uarch state
-    UARCH_RAM_START_ADDRESS = EXPAND_UINT64_C(AR_UARCH_RAM_START_DEF),          ///< Start address of the uarch ram
-    UARCH_RAM_LENGTH = EXPAND_UINT64_C(AR_UARCH_RAM_LENGTH_DEF),                ///< Length of the uarch ram
-    UARCH_STATE_ALIGN_MASK = (EXPAND_UINT64_C(1) << UARCH_STATE_LOG2_SIZE) - 1, ///< Mask for uarch state alignment
-    UARCH_STATE_MASK = ~UARCH_STATE_ALIGN_MASK,                                 ///< Mask for uarch state address space
+    UARCH_SHADOW_LENGTH = EXPAND_UINT64_C(AR_SHADOW_UARCH_STATE_LENGTH_DEF), ///< Length of the shadow uarch state
+    UARCH_RAM_START_ADDRESS = EXPAND_UINT64_C(AR_UARCH_RAM_START_DEF),       ///< Start address of the uarch ram
+    UARCH_RAM_LENGTH = EXPAND_UINT64_C(AR_UARCH_RAM_LENGTH_DEF),             ///< Length of the uarch ram
+    UARCH_STATE_ALIGN_MASK = (UINT64_C(1) << UARCH_STATE_LOG2_SIZE) - 1,     ///< Mask for uarch state alignment
+    UARCH_STATE_MASK = ~UARCH_STATE_ALIGN_MASK,                              ///< Mask for uarch state address space
     UARCH_STATE_CHILD_ALIGN_MASK =
-        (EXPAND_UINT64_C(1) << UARCH_STATE_CHILD_LOG2_SIZE) - 1 ///< Mask for uarch state child alignment
+        (UINT64_C(1) << UARCH_STATE_CHILD_LOG2_SIZE) - 1 ///< Mask for uarch state child alignment
 };
 
 static_assert((UARCH_STATE_START_ADDRESS & UARCH_STATE_ALIGN_MASK) == 0,

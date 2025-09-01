@@ -18,23 +18,29 @@
 #define LOCAL_MACHINE_H
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "access-log.h"
 #include "address-range-description.h"
+#include "back-merkle-tree.h"
+#include "hash-tree-proof.h"
+#include "hash-tree-stats.h"
 #include "i-machine.h"
 #include "interpret.h"
 #include "machine-config.h"
 #include "machine-hash.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
+#include "mcycle-root-hashes.h"
+#include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
 
 namespace cartesi {
 
 /// \class local_machine
 /// \brief i_machine implementation pointing to a local machine instance
-class local_machine : public i_machine {
+class local_machine final : public i_machine {
 public:
     local_machine() = default;
     local_machine(const local_machine &other) = delete;
@@ -50,8 +56,8 @@ private:
         const std::string &dir) override;
     void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
-    void do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
-        uint32_t log2_bundle_mcycle_count, mcycle_root_hashes &result) override;
+    mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
+        int32_t log2_bundle_mcycle_count, const std::optional<back_merkle_tree> &previous_back_tree) override;
     interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     void do_store(const std::string &directory, sharing_mode sharing) const override;
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
@@ -78,8 +84,8 @@ private:
     void do_reset_uarch() override;
     access_log do_log_reset_uarch(const access_log::type &log_type) override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
-    void do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
-        uarch_cycle_root_hashes &result) override;
+    uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
+        int32_t log2_bundle_uarch_cycle_count) override;
     address_range_descriptions do_get_address_ranges() const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,

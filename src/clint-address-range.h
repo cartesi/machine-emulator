@@ -21,6 +21,10 @@
 
 #include "address-range-constants.h"
 #include "address-range.h"
+#include "i-device-state-access.h"
+#include "interpret.h"
+#include "pmas-constants.h"
+#include "pmas.h"
 
 /// \file
 /// \brief Core-Local Interruptor device.

@@ -20,20 +20,25 @@
 /// \file
 /// \brief State access implementation that replays recorded state accesses
 
+#include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <ios>
+#include <span>
 #include <sstream>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "access-log.h"
+#include "hash-tree-constants.h"
 #include "hash-tree.h"
 #include "i-accept-scoped-notes.h"
 #include "i-hasher.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
 #include "keccak-256-hasher.h"
+#include "machine-hash.h"
 #include "machine-reg.h"
 #include "machine.h"
 #include "meta.h"
@@ -130,7 +135,7 @@ private:
 
     static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {
         static_assert(cartesi::log2_size_v<uint64_t> <= HASH_TREE_LOG2_WORD_SIZE,
-            "Merkle tree word size must not be smaller than machine word size");
+            "Hash tree word size must not be smaller than machine word size");
         const auto log2_word_size = HASH_TREE_LOG2_WORD_SIZE;
         const auto log2_access_size = std::max(log2_size, log2_word_size);
         const auto access_paddr = (paddr >> log2_access_size) << log2_access_size;
@@ -293,13 +298,13 @@ private:
 
     auto get_write_tlb_slot_hash(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index) const {
         // Writes to TLB slots have to be atomic.
-        // We can only do atomic writes of entire Merkle tree nodes.
+        // We can only do atomic writes of entire hash tree nodes.
         // Therefore, TLB slot must have a power-of-two size, or at least be aligned to it.
         static_assert(SHADOW_TLB_SLOT_SIZE == sizeof(shadow_tlb_slot), "shadow TLB slot size is wrong");
         static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE,
             "shadow TLB slot log2 size is wrong");
         static_assert(SHADOW_TLB_SLOT_LOG2_SIZE >= HASH_TREE_LOG2_WORD_SIZE,
-            "shadow TLB slot must fill at least an entire Merkle tree word");
+            "shadow TLB slot must fill at least an entire hash tree word");
         shadow_tlb_slot slot_data{};
         shadow_tlb_fill_slot(vaddr_page, vp_offset, pma_index, slot_data);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -359,11 +364,6 @@ private:
     constexpr const char *do_get_name() const {
         return "uarch_replay_state_access";
     }
-
-    // -----
-    // i_prefer_shadow_uarch_state interface implementation
-    // -----
-    friend i_prefer_shadow_uarch_state<uarch_replay_state_access>;
 
     // -----
     // i_accept_scoped_notes interface implementation

@@ -14,7 +14,6 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cassert>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
@@ -23,10 +22,13 @@
 #include <cstring>
 #include <exception>
 #include <iostream>
+#include <span>
 #include <tuple>
 
+#include "assert-printf.h"
 #include "back-merkle-tree.h"
 #include "i-hasher.h"
+#include "machine-hash.h"
 #include "unique-c-ptr.h"
 #include "variant-hasher.h"
 
@@ -119,13 +121,13 @@ static void get_word_hash(variant_hasher &h, const unsigned char *word, int log2
     h.hash(std::span<const unsigned char>(word, 1 << log2_word_size), hash);
 }
 
-/// \brief Computes the Merkle hash of a leaf of data
+/// \brief Computes the hash tree hash of a leaf of data
 /// \param h Hasher object
 /// \param leaf_data Pointer to buffer containing leaf data with
 /// at least 2^log2_leaf_size bytes
 /// \param log2_leaf_size Log<sub>2</sub> of leaf size
 /// \param log2_word_size Log<sub>2</sub> of word size
-/// \returns Merkle hash of leaf data
+/// \returns Hash tree hash of leaf data
 static machine_hash get_leaf_hash(variant_hasher &h, const unsigned char *leaf_data, int log2_leaf_size,
     int log2_word_size) {
     assert(log2_word_size >= 1);
@@ -148,7 +150,7 @@ static void help(const char *name) {
 
   %s --log2-root-size=<integer> [options]
 
-Computes the Merkle tree root hash of 2^log2_root_size bytes read from
+Computes the hash tree root hash of 2^log2_root_size bytes read from
 a file. If the file contains fewer than 2^log2_root_size bytes, it is
 ostensibly padded with zeros to 2^log2_root_size bytes.
 
@@ -159,7 +161,7 @@ with 2^(log2_node_size-1) bytes.
 The node hash corresponding to word with 2^log2_word_size bytes is simply
 the hash of the data in the range.
 
-The Merkle tree root hash is simply the node hash corresponding to the
+The hash tree root hash is simply the node hash corresponding to the
 entire 2^log2_root_size range.
 
 The hash function used is Keccak-256.
@@ -178,6 +180,9 @@ Options:
   (> 0 and <= log2_root_size)
   The granularity in which bytes are read from the input file.
 
+  --hash-function=<string>              default: keccak256
+  The hash function to use, can be "keccak256" or "sha256".
+
   --help
   Prints this message and returns.
 )",
@@ -187,6 +192,7 @@ Options:
 
 int main(int argc, char *argv[]) try {
     const char *input_name = nullptr;
+    const char *hash_function_name = "keccak256";
     int log2_word_size = 3;
     int log2_leaf_size = 12;
     int log2_root_size = 0;
@@ -195,6 +201,7 @@ int main(int argc, char *argv[]) try {
         if (strcmp(argv[i], "--help") == 0) {
             help(argv[0]);
         } else if (stringval("--input=", argv[i], &input_name) ||
+            stringval("--hash-function=", argv[i], &hash_function_name) ||
             intval("--log2-word-size=", argv[i], &log2_word_size) ||
             intval("--log2-leaf-size=", argv[i], &log2_leaf_size) ||
             intval("--log2-root-size=", argv[i], &log2_root_size)) {
@@ -215,6 +222,14 @@ int main(int argc, char *argv[]) try {
             log2_leaf_size, log2_root_size);
         return 1;
     }
+    hash_function_type hash_function{};
+    if (std::string{hash_function_name} == "keccak256") {
+        hash_function = hash_function_type::keccak256;
+    } else if (std::string{hash_function_name} == "sha256") {
+        hash_function = hash_function_type::sha256;
+    } else {
+        error("invalid hash function name '%s'\n", hash_function_name);
+    }
     // Read from stdin if no input name was given
     auto input_file = unique_file_ptr{stdin};
     if (input_name != nullptr) {
@@ -233,7 +248,8 @@ int main(int argc, char *argv[]) try {
         return 1;
     }
 
-    const auto hash_function = hash_function_type::keccak256;
+    const auto pristine_pad_hashes =
+        back_merkle_tree::make_pristine_pad_hashes(log2_root_size, log2_leaf_size, log2_word_size, hash_function);
     back_merkle_tree back_tree{log2_root_size, log2_leaf_size, log2_word_size, hash_function};
     variant_hasher h{hash_function};
 
@@ -262,6 +278,7 @@ int main(int argc, char *argv[]) try {
         // proof-by-proof tree
         ++leaf_count;
     }
+    back_tree.pad_back(back_tree.get_remaining_leaf_count(), pristine_pad_hashes);
     print_hash(back_tree.get_root_hash(), stdout);
     return 0;
 } catch (const std::exception &e) {

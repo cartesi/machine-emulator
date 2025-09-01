@@ -20,7 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "compiler-defines.h"
+#include "address-range-constants.h"
 #include "riscv-constants.h"
 
 /// \file

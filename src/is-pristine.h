@@ -19,14 +19,11 @@
 
 #include "compiler-defines.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <ranges>
 #include <span>
 
 #include "address-range-constants.h"
 #include "concepts.h"
-#include "meta.h"
 
 namespace cartesi {
 

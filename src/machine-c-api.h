@@ -527,13 +527,13 @@ CM_API cm_error cm_get_initial_config(const cm_machine *m, const char **config);
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_address_ranges(const cm_machine *m, const char **ranges);
 
-/// \brief Obtains the root hash of the Merkle tree.
+/// \brief Obtains the root hash of the hash tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param hash Valid pointer to cm_hash structure that receives the hash.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 
-/// \brief Obtains the hash of a node in the Merkle tree.
+/// \brief Obtains the hash of a node in the hash tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param address Address of node.
 /// \param log2_size Log<sub>2</sub> of node size.
@@ -541,7 +541,7 @@ CM_API cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_node_hash(const cm_machine *m, uint64_t address, int32_t log2_size, cm_hash *hash);
 
-/// \brief Obtains the proof for a node in the machine state Merkle tree.
+/// \brief Obtains the proof for a node in the machine state hash tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param address Address of target node. Must be aligned to a 2^log2_size boundary.
 /// \param log2_size The log base 2 of the size subtended by the target node.
@@ -651,25 +651,41 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// \param mcycle_phase Number of machine cycles elapsed since last root hash collected.
 /// \param log2_bundle_mcycle_count Log base 2 of the amount of mcycle root hashes to bundle.
 /// If greater than 0, it collects subtree root hashes for 2^log2_bundle_mcycle_count root hashes.
+/// \param previous_back_tree Optional context to continue collecting bundled root hashes.
+/// If not NULL, it must be a JSON object as a string containing the back tree.
 /// \param result Receives a JSON object as a string, guaranteed to remain valid only until
 /// the next CM_API function is called from the same thread.
 /// The field "hashes" is an array of root hashes (as base64-encoded strings) after each period.
 /// The field "mcycle_phase" is the number of machine cycles elapsed since last root hash collected.
 /// The field "break_reason" is a string with the reason why the function returned.
 /// (Set to "failed" on failure.)
+/// The optional field "back_tree" is the back tree context to continue collecting bundled root hashes.
 /// For example:
 /// ```json
 /// {
 ///     "hashes": ["2av44Q3TaHKREgULA/iMoNe+btxCr+ja+hHGtXxaGjM=", ..., "FMAHn7mc2f+I30UjiywbAtOkw99iOa3NWS6fWql3UNU="],
 ///     "mcycle_phase": 1278,
-///     "break_reason": "yielded_manually"
+///     "break_reason": "yielded_manually",
+///     "back_tree": { ... },
 /// }
 /// ```
 /// \returns 0 for success, non zero code for error.
-/// \detail The first hash added to \p result.hashes is the root hash after (\p mcycle_period - \p mcycle_phase)
+/// \detail The first hash added to "hashes" is the root hash after (\p mcycle_period - \p mcycle_phase)
 /// machine cycles (if the function managed to get that far before returning).
+///
+/// If "break_reason" is "yielded_manually", "halted", or if mcycle reaches CM_MCYCLE_MAX (maximum mcycle value),
+/// this means that execution stopped at a fixed point.
+///
+/// When \p log2_bundle_mcycle_count is greater than 0 and execution stops at a fixed point, then
+/// the next-to-last hash in "hashes" represents a bundle that is completed by padding with repetitions of the final
+/// root hash, and the last hash in "hashes" represents a bundle consisting entirely of repetitions of that same final
+/// root hash.
+///
+/// When execution stops at a mcycle_period boundary or at a fixed point, the "back_tree" field is omitted.
+/// Otherwise the "back_tree" field is included in the result and contains partial root hashes as its context,
+/// and must be passed a subsequent function call to continue bundling root hashes properly.
 CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint64_t mcycle_period,
-    uint64_t mcycle_phase, uint32_t log2_bundle_mcycle_count, const char **result);
+    uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count, const char *previous_back_tree, const char **result);
 
 /// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
@@ -683,13 +699,13 @@ CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_b
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param mcycle_end End machine cycle value to execute, uarch cycle by uarch cycle.
 /// \param log2_bundle_uarch_cycle_count Log base 2 of the amount of uarch cycle root hashes to bundle.
-/// If greater than 0, it collects subtree root hashes for 2^log2_bundle_mcycle_count root hashes.
+/// If greater than 0, it collects subtree root hashes for 2^log2_bundle_uarch_cycle_count root hashes.
 /// \param result Receives an JSON object as a string, guaranteed to remain valid only until
 /// the next CM_API function is called from the same thread.
 /// The field "hashes" is an array (of hashes as base64-encoded strings) with the root hashes after each uarch cycle.
 /// The field "reset_indices" is an array with indices of the root hashes after each implicit uarch reset
 /// (i.e., after each machine cycle).
-/// The field "break_reason" is an integer with the reason why the function returned.
+/// The field "break_reason" is a string with the reason why the function returned.
 /// (Set to "failed" on failure.)
 /// For example:
 /// ```json
@@ -700,10 +716,23 @@ CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_b
 /// }
 /// ```
 /// \returns 0 for success, non zero code for error.
-/// \detail The first hash added to \p hashes is the root hash after the first uarch cycle, the last is the
+/// \detail The first hash added to "hashes" is the root hash after the first uarch cycle, the last is the
 /// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
+///
+/// If \p log2_bundle_uarch_cycle_count is greater than zero, the "hashes" array contains bundles of root hashes.
+/// For each reset_index value in the "reset_indices" array:
+///   - hashes[reset_index - 1] contains a bundle representing repeated root hashes at the point where the uarch halted
+///     just before the uarch reset.
+///   - hashes[reset_index] contains a bundle representing repeated root hashes at the point where the uarch halted,
+///     followed by a single root hash immediately after the uarch reset.
+///
+/// If "break_reason" is "yielded_manually", "halted", or if mcycle reaches CM_MCYCLE_MAX (maximum mcycle value),
+/// this means that execution stopped at a fixed point.
+/// In these cases, the function will attempt to execute one additional mcycle at this fixed point,
+/// and collect the resulting root hashes as well. As a result, all root hashes collected after the next-to-last
+/// reset index correspond to this fixed point.
 CM_API cm_error cm_collect_uarch_cycle_root_hashes(cm_machine *m, uint64_t mcycle_end,
-    uint32_t log2_bundle_uarch_cycle_count, const char **result);
+    int32_t log2_bundle_uarch_cycle_count, const char **result);
 
 /// \brief Resets the entire microarchitecture state to pristine values.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).

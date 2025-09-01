@@ -23,10 +23,14 @@
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -50,11 +54,11 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#include <boost/asio/connect.hpp>
+#include <boost/asio/connect.hpp> // IWYU pragma: keep
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/http.hpp>
+#include <boost/beast/core.hpp> // IWYU pragma: keep
+#include <boost/beast/http.hpp> // IWYU pragma: keep
 #include <boost/beast/version.hpp>
 #pragma GCC diagnostic pop
 
@@ -62,17 +66,23 @@
 
 #include "access-log.h"
 #include "address-range-description.h"
+#include "back-merkle-tree.h"
 #include "base64.h"
+#include "hash-tree-proof.h"
+#include "hash-tree-stats.h"
 #include "i-machine.h"
 #include "interpret.h"
 #include "json-util.h"
 #include "jsonrpc-fork-result.h"
 #include "jsonrpc-version.h"
 #include "machine-config.h"
+#include "machine-hash.h"
 #include "machine-runtime-config.h"
+#include "mcycle-root-hashes.h"
 #include "os.h"
 #include "scope-exit.h"
 #include "semantic-version.h"
+#include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
 
 using namespace std::string_literals;
@@ -231,7 +241,7 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
         beast::flat_buffer buffer;
         http::response_parser<http::string_body> res_parser;
         res_parser.eager(true);
-        res_parser.body_limit(16777216U); // can receive up to 16MB
+        res_parser.body_limit(std::numeric_limits<uint64_t>::max()); // can receive unlimited amount of data
 
         // Receive the HTTP response, we perform an asynchronous operation in order to support timeouts
         http::async_read(stream, buffer, res_parser, [&](beast::error_code ec, std::size_t /*bytes_transferred*/) {
@@ -583,7 +593,7 @@ i_machine *jsonrpc_machine::do_clone_empty() const {
         throw;
     }
     return clone;
-};
+}
 
 void jsonrpc_machine::do_create(const machine_config &config, const machine_runtime_config &runtime,
     const std::string &dir) {
@@ -645,10 +655,13 @@ interpreter_break_reason jsonrpc_machine::do_run(uint64_t mcycle_end) {
     return result;
 }
 
-void jsonrpc_machine::do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
-    uint32_t log2_bundle_mcycle_count, mcycle_root_hashes &result) {
+mcycle_root_hashes jsonrpc_machine::do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period,
+    uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
+    const std::optional<back_merkle_tree> &previous_back_tree) {
+    mcycle_root_hashes result;
     request("machine.collect_mcycle_root_hashes",
-        std::tie(mcycle_end, mcycle_period, mcycle_phase, log2_bundle_mcycle_count), result);
+        std::tie(mcycle_end, mcycle_period, mcycle_phase, log2_bundle_mcycle_count, previous_back_tree), result);
+    return result;
 }
 
 interpreter_break_reason jsonrpc_machine::do_log_step(uint64_t mcycle_count, const std::string &filename) {
@@ -817,9 +830,11 @@ uarch_interpreter_break_reason jsonrpc_machine::do_run_uarch(uint64_t uarch_cycl
     return result;
 }
 
-void jsonrpc_machine::do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end, uint32_t log2_bundle_uarch_cycle_count,
-    uarch_cycle_root_hashes &result) {
+uarch_cycle_root_hashes jsonrpc_machine::do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
+    int32_t log2_bundle_uarch_cycle_count) {
+    uarch_cycle_root_hashes result;
     request("machine.collect_uarch_cycle_root_hashes", std::tie(mcycle_end, log2_bundle_uarch_cycle_count), result);
+    return result;
 }
 
 address_range_descriptions jsonrpc_machine::do_get_address_ranges() const {

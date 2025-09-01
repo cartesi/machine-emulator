@@ -77,9 +77,6 @@ EMULATOR_SOURCES=\
 COMPUTE_SOURCES=\
 	compute-uarch-pristine-hash.cpp \
 	$(EMULATOR_SRC_DIR)/back-merkle-tree.cpp \
-	$(EMULATOR_SRC_DIR)/pristine-merkle-tree.cpp \
-	$(EMULATOR_SRC_DIR)/complete-merkle-tree.cpp \
-	$(EMULATOR_SRC_DIR)/full-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/keccak-256-hasher.cpp \
 	$(EMULATOR_SRC_DIR)/sha-256-hasher.cpp \
 	$(EMULATOR_SRC_DIR)/is-pristine.cpp \
@@ -90,10 +87,8 @@ EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,
 COMPUTE_OBJS = $(patsubst %.c,%.compute_c.o,$(patsubst %.cpp,%.compute_cpp.o,$(COMPUTE_SOURCES)))
 
 LINTER_SOURCES=$(strip $(wildcard uarch-*.cpp))
-LINTER_HEADERS=$(strip $(wildcard uarch-*.h))
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
-CLANG_TIDY_HEADER_FILTER=$(CURDIR)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 CLANG_TIDY=clang-tidy
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(LINTER_SOURCES))
 CLANG_TIDY_FLAGS=--warnings-as-errors=*
@@ -156,7 +151,7 @@ uarch-ram-entry.o: uarch-ram-entry.S
 	grep -v '^#' $@.tmp > $@
 
 %.clang-tidy: %.cpp
-	$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- -target riscv64-linux-gnu $(CFLAGS) $(CXXFLAGS) $(CLANG_TIDY_WARNS) 2>/dev/null
+	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- -target riscv64-linux-gnu $(CFLAGS) $(CXXFLAGS) $(CLANG_TIDY_WARNS) 2>/dev/null
 	@touch $@
 
 lint: $(CLANG_TIDY_TARGETS)

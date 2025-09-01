@@ -17,18 +17,14 @@
 #ifndef UARCH_STATE_ACCESS_H
 #define UARCH_STATE_ACCESS_H
 
-#include <cassert>
 #include <cstdint>
-#include <stdexcept>
 
-#include "host-addr.h"
+#include "assert-printf.h"
 #include "i-accept-scoped-notes.h"
 #include "i-uarch-state-access.h"
 #include "machine.h"
 #include "os.h"
-#include "riscv-constants.h"
-#include "strict-aliasing.h"
-#include "uarch-pristine.h"
+#include "shadow-tlb.h"
 
 namespace cartesi {
 

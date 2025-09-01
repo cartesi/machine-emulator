@@ -13,7 +13,7 @@
 build
 third-party/downloads
 src/cartesi-jsonrpc-machine
-src/cartesi-merkle-tree-hash
+src/cartesi-hash-tree-hash
 
 doc/html
 doc/api.md

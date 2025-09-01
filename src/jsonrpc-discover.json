@@ -2329,6 +2329,9 @@
           },
           "break_reason": {
             "$ref": "#/components/schemas/InterpreterBreakReason"
+          },
+          "back_tree": {
+            "$ref": "#/components/schemas/BackMerkleTree"
           }
         },
         "required": ["hashes", "mcycle_phase", "break_reason"]
@@ -2348,6 +2351,30 @@
           }
         },
         "required": ["hashes", "reset_indices", "break_reason"]
+      },
+      "BackMerkleTree": {
+        "title": "BackMerkleTree",
+        "type": "object",
+        "properties": {
+          "log2_max_leaves": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "hash_function": {
+            "$ref": "#/components/schemas/HashFunctionType"
+          },
+          "leaf_count": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "context": {
+            "$ref": "#/components/schemas/Base64HashArray"
+          }
+        },
+        "required": [
+          "log2_max_leaves",
+          "hash_function",
+          "leaf_count",
+          "context"
+        ]
       }
     }
   }

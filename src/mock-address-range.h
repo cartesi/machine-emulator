@@ -18,6 +18,9 @@
 #define MOCK_ADDRESS_RANGE_H
 
 #include <array>
+#include <concepts>
+#include <cstdint>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -25,6 +28,7 @@
 #include "clint-address-range.h"
 #include "htif-address-range.h"
 #include "plic-address-range.h"
+#include "pmas-constants.h"
 #include "pmas.h"
 
 namespace cartesi {
@@ -70,7 +74,7 @@ static inline mock_address_range make_mock_address_range(uint64_t istart, uint64
             __builtin_trap();
             return std::monostate{};
     }
-};
+}
 
 template <typename ABRT>
 address_range &get_mock_address_range(mock_address_range &mock, ABRT abrt) {

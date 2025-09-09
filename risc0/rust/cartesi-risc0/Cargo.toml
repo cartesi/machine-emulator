@@ -21,3 +21,4 @@ sha2 = "0.10"
 bincode = "1.3"
 serde = "1.0"
 cartesi_risc0_shared = { path = "../shared" }
+ethabi = "18.0"

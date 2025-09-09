@@ -53,6 +53,29 @@ pub fn prove(root_hash_before: &MachineHash, log_file_path: &str, mcycle_count: 
     receipt
 }
 
+/// Generate proof for contract consumption
+/// Returns (seal, journal) as byte vectors ready for ABI encoding
+pub fn prove_for_contract(root_hash_before: &MachineHash, log_file_path: &str, mcycle_count: u64, root_hash_after: &MachineHash) -> (Vec<u8>, Vec<u8>) {
+    let receipt = prove(root_hash_before, log_file_path, mcycle_count, root_hash_after);
+    
+    // Extract seal bytes from receipt
+    let seal = receipt.inner.groth16().unwrap().seal.clone();
+    
+    // Decode the journal to get the struct
+    let journal: Journal = receipt.journal.decode().unwrap();
+    
+    // ABI encode the journal fields for the contract
+    // Contract expects: abi.decode(journal, (bytes32, uint64, bytes32))
+    use ethabi::{encode, Token};
+    let journal_abi_encoded = encode(&[
+        Token::FixedBytes(journal.root_hash_before.to_vec()),
+        Token::Uint(ethabi::Uint::from(journal.mcycle_count)),
+        Token::FixedBytes(journal.root_hash_after.to_vec()),
+    ]);
+    
+    (seal, journal_abi_encoded)
+}
+
 
 // todo: return propper error
 pub fn verify(receipt: &Receipt,  root_hash_before: &MachineHash, mcycle_count: u64, root_hash_after: &MachineHash)  {

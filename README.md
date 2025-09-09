@@ -140,6 +140,26 @@ sudo port install clang boost181 wget pkgconfig lua54 libslirp
 brew install llvm boost wget pkg-config lua libslirp
 ```
 
+##### RISC Zero Requirements
+
+Requirements to build the RISC Zero prover/verifier.
+
+- Cargo
+- rzup (RISC Zero version manager)
+- cargo-risczero 2.0.2
+- r0vm 2.0.2  
+- rust 1.85.0
+
+Installation instructions:
+
+```sh
+cargo install --git https://github.com/risc0/risc0 rzup
+rzup install cargo-risczero 2.0.2
+rzup install r0vm 2.0.2
+rzup install rust 1.85.0
+rzup install cpp 2024.1.5
+```
+
 #### Build
 
 First, make sure to have all the system requirements, then run the following to build and install a stable release of the machine:

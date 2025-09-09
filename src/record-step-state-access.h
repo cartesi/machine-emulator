@@ -41,17 +41,20 @@ public:
     using address_type = machine_merkle_tree::address_type;
     using page_data_type = std::array<uint8_t, TREE_PAGE_SIZE>;
     using pages_type = std::map<address_type, page_data_type>;
-    using hash_type = machine_merkle_tree::hash_type;
-    using sibling_hashes_type = std::vector<hash_type>;
+    using sibling_hashes_type = std::vector<machine_hash>;
     using page_indices_type = std::vector<address_type>;
 
     struct context {
         /// \brief Constructor of record step state access context
         /// \param filename where to save the log
-        explicit context(std::string filename) : filename(std::move(filename)) {
+        /// \param hash_tree_target hash tree target
+        explicit context(std::string filename, hash_tree_target target) :
+            filename(std::move(filename)),
+            target{target} {
             ;
         }
         std::string filename;             ///<  where to save the log
+        hash_tree_target target;          ///<  saved in the log file so the replay can recreate a compatible hasher
         mutable pages_type touched_pages; ///<  copy of all pages touched during execution
     };
 
@@ -81,11 +84,16 @@ public:
 
         // Write log file.
         // The log format is as follows:
-        // page_count, [(page_index, data, scratch_area), ...], sibling_count, [sibling_hash, ...]
+        // hash_tree_target, page_count, [(page_index, data, scratch_area), ...], sibling_count, [sibling_hash, ...]
         // We store the page index, instead of the page address.
         // Scratch area is used by the replay to store page hashes, which change during replay
         // This is to work around the lack of dynamic memory allocation when replaying the log in microarchitectures
         auto fp = unique_fopen(m_context.filename.c_str(), "wb");
+        // write the hash tree target so the hasher can be recreated by the replay
+        auto hash_tree_target = static_cast<uint64_t>(m_context.target);
+        if (fwrite(&hash_tree_target, sizeof(hash_tree_target), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write hash tree target to log file");
+        }
         if (fwrite(&page_count, sizeof(page_count), 1, fp.get()) != 1) {
             throw std::runtime_error("Could not write page count to log file");
         }
@@ -97,7 +105,7 @@ public:
             if (fwrite(data.data(), data.size(), 1, fp.get()) != 1) {
                 throw std::runtime_error("Could not write page data to log file");
             }
-            static const hash_type all_zeros{};
+            static const machine_hash all_zeros{};
             if (fwrite(all_zeros.data(), sizeof(all_zeros), 1, fp.get()) != 1) {
                 throw std::runtime_error("Could not write page hash scratch to log file");
             }

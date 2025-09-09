@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "keccak-256-hasher.h"
+#include "i-hasher.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
 
@@ -33,30 +33,25 @@ namespace cartesi {
 /// \details This class implements a full merkle tree
 class full_merkle_tree {
 public:
-    /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
-
-    /// \brief Storage for a hash.
-    using hash_type = hasher_type::hash_type;
-
     /// \brief Storage for an address.
     using address_type = uint64_t;
 
     /// \brief Storage for a proof.
-    using proof_type = merkle_tree_proof<hash_type, address_type>;
+    using proof_type = merkle_tree_proof;
 
     /// \brief Constructor for a pristine tree
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size);
+    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, i_hasher hasher);
 
     /// \brief Constructor for list of consecutive leaf hashes
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
     /// \param leaves List of leaf hashes
-    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, const std::vector<hash_type> &leaves);
+    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, i_hasher hasher,
+        const std::vector<machine_hash> &leaves);
 
     /// \brief Returns log<sub>2</sub> of size of tree
     int get_log2_root_size() const {
@@ -70,14 +65,14 @@ public:
 
     /// \brief Returns the tree's root hash
     /// \returns Root hash
-    const hash_type &get_root_hash() const {
+    const machine_hash &get_root_hash() const {
         return get_node_hash(0, get_log2_root_size());
     }
 
     /// \brief Returns the hash of a node at a given address of a given size
     /// \param address Node address
     /// \param log2_size Log<sub>2</sub> size subintended by node
-    const hash_type &get_node_hash(address_type address, int log2_size) const {
+    const machine_hash &get_node_hash(address_type address, int log2_size) const {
         return m_tree[get_node_index(address, log2_size)];
     }
 
@@ -118,24 +113,25 @@ private:
     /// \param log2_size Log<sub>2</sub> size of root at index
     /// \details The nodes corresponding to subtrees of size log2_leaf_size
     /// are assumed to have already been set prior to calling this function
-    void init_subtree(hasher_type &h, int index, int log2_size);
+    void init_subtree(i_hasher &h, int index, int log2_size);
 
     /// \brief Initialize tree from a list of consecutive page hashes
     /// \param leaves List of page hashes
     /// \details The page hashes in leaves are copied to the appropriate
     /// subtree nodes, in order, and the rest are filled with pristine
     /// page hashes
-    void init_tree(const pristine_merkle_tree &pristine, const std::vector<hash_type> &leaves);
+    void init_tree(const pristine_merkle_tree &pristine, const std::vector<machine_hash> &leaves);
 
     /// \brief Returns index of a node in the tree array
     /// \param address Node address
     /// \param log2_size
     address_type get_node_index(address_type address, int log2_size) const;
 
-    int m_log2_root_size;          ///< Log<sub>2</sub> of tree size
-    int m_log2_leaf_size;          ///< Log<sub>2</sub> of leaf size
-    address_type m_max_leaves;     ///< Maximum number of leaves
-    std::vector<hash_type> m_tree; ///< Binary heap with tree node hashes
+    int m_log2_root_size;             ///< Log<sub>2</sub> of tree size
+    int m_log2_leaf_size;             ///< Log<sub>2</sub> of leaf size
+    mutable i_hasher m_hasher;        ///< Hasher object
+    address_type m_max_leaves;        ///< Maximum number of leaves
+    std::vector<machine_hash> m_tree; ///< Binary heap with tree node hashes
 };
 
 } // namespace cartesi

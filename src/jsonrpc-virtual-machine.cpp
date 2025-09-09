@@ -73,7 +73,6 @@
 
 using namespace std::string_literals;
 using json = nlohmann::json;
-using hash_type = cartesi::machine_merkle_tree::hash_type;
 
 namespace beast = boost::beast; // from <boost/beast.hpp>
 namespace http = beast::http;   // from <boost/beast/http.hpp>
@@ -734,7 +733,7 @@ access_log jsonrpc_virtual_machine::do_log_reset_uarch(const access_log::type &l
     return std::move(result).value();
 }
 
-void jsonrpc_virtual_machine::do_get_root_hash(hash_type &hash) const {
+void jsonrpc_virtual_machine::do_get_root_hash(machine_hash &hash) const {
     request("machine.get_root_hash", std::tie(), hash);
 }
 
@@ -825,8 +824,8 @@ machine_config jsonrpc_virtual_machine::do_get_default_config() const {
     return result;
 }
 
-interpreter_break_reason jsonrpc_virtual_machine::do_verify_step(const hash_type &root_hash_before,
-    const std::string &log_filename, uint64_t mcycle_count, const hash_type &root_hash_after) const {
+interpreter_break_reason jsonrpc_virtual_machine::do_verify_step(const machine_hash &root_hash_before,
+    const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const {
     interpreter_break_reason result = interpreter_break_reason::failed;
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
@@ -835,16 +834,16 @@ interpreter_break_reason jsonrpc_virtual_machine::do_verify_step(const hash_type
     return result;
 }
 
-void jsonrpc_virtual_machine::do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) const {
+void jsonrpc_virtual_machine::do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
     bool result = false;
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
     request("machine.verify_step_uarch", std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
 }
 
-void jsonrpc_virtual_machine::do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) const {
+void jsonrpc_virtual_machine::do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
     bool result = false;
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
@@ -852,7 +851,7 @@ void jsonrpc_virtual_machine::do_verify_reset_uarch(const hash_type &root_hash_b
 }
 
 void jsonrpc_virtual_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
+    const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const {
     bool result = false;
     std::string b64_data = cartesi::encode_base64(data, length);
     auto b64_root_hash_before = encode_base64(root_hash_before);

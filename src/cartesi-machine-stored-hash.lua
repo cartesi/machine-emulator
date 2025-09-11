@@ -16,12 +16,11 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
+local cartesi = require("cartesi")
 local util = require("cartesi.util")
 
-local f = assert(
-    io.open(assert(arg[1], "missing machine name") .. "/hash", "rb"),
-    string.format("unable to open machine '%s'", tostring(arg[1]))
-)
-local h = assert(f:read("a"), "unable to read hash")
-f:close()
-print(util.hexhash(h))
+local dir = assert(arg[1], "missing machine directory")
+local machine <close> = cartesi.machine(dir)
+local root_hash = machine:get_root_hash()
+local hex_root_hash = util.hexhash(root_hash)
+print(hex_root_hash)

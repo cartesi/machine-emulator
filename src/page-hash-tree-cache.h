@@ -31,11 +31,11 @@
 #include <optional>
 #include <ranges>
 #include <span>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <boost/container/static_vector.hpp>
+#include <boost/interprocess/offset_ptr.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/list_hook.hpp>
 
@@ -46,11 +46,13 @@
 #include "i-hasher.h"
 #include "is-pristine.h"
 #include "machine-hash.h"
+#include "os-mmap.h"
 #include "page-hash-tree-cache-stats.h"
 #include "ranges.h"
 #include "signposts.h"
 #include "simd-hasher.h"
 #include "strict-aliasing.h"
+#include "unordered_dense.h"
 
 namespace cartesi {
 
@@ -78,14 +80,17 @@ public:
 
     /// \class entry
     /// \brief Page hash-tree cache entry implementation
-    class entry : public boost::intrusive::list_base_hook<> {
+    class alignas(sizeof(uint64_t)) entry final :
+        public boost::intrusive::list_base_hook<boost::intrusive::void_pointer<
+            boost::interprocess::offset_ptr<void, int64_t, uint64_t, sizeof(uint64_t)>>> {
+        using ref = std::reference_wrapper<entry>;
 
         page m_page{};                ///< Page data for entry
         page_hash_tree m_hash_tree{}; ///< Hash-tree of data
 
         // First hash is not used, so we use its storage for some fields
         static constexpr uint64_t m_paddr_page_offset = 0;              ///< Offset where paddr_page is stored
-        static constexpr uint64_t m_borrowed_offset = sizeof(uint64_t); ///< Offset where borrowee flag is stored
+        static constexpr uint64_t m_borrowed_offset = sizeof(uint64_t); ///< Offset where borrowed flag is stored
 
         friend page_hash_tree_cache;
 
@@ -129,38 +134,31 @@ public:
         /// \brief Make entry's page and hash tree pristine, clear page address and borrowed flag
         /// \param pristine Pristine hash tree
         void clear(const page_hash_tree &pristine) noexcept {
-            clear_hash_tree(pristine);
             clear_page();
-            set_borrowed(false);
+            clear_hash_tree(pristine);
             set_paddr_page(0);
+            set_borrowed(false);
         }
 
         /// \brief Returns index of left child of node in page hash tree
         /// \param i Node index
         /// \returns Index of node's left child
-        static int left_child(int i) {
+        static constexpr int left_child(int i) noexcept {
             return 2 * i;
         }
 
         /// \brief Returns index of right child of node in page hash tree
         /// \param i Node index
         /// \returns Index of node's right child
-        static int right_child(int i) {
+        static constexpr int right_child(int i) noexcept {
             return (2 * i) + 1;
         }
 
         /// \brief Returns index of parent of node in page hash tree
         /// \param i Node index
         /// \returns Index of node's parent
-        static int parent(int i) {
+        static constexpr int parent(int i) noexcept {
             return i / 2;
-        }
-
-        /// \brief Returns the log2 level of a node in the page hash tree (its height in the tree)
-        /// \param i Node index
-        /// \returns Log 2 level of the node
-        static int log2_level(int i) {
-            return std::countl_zero(static_cast<uint32_t>(i)) - 24;
         }
 
         /// \brief Returns a pristine page tree for a given hasher
@@ -185,14 +183,11 @@ public:
         }
 
     public:
-        /// \brief Constructor from pristine page
-        /// \param pristine Pristine page hash tree for hasher in use
-        explicit entry(const page_hash_tree &pristine) : m_hash_tree{pristine} {}
-
-        entry(const entry &other) = default;
-        entry(entry &&other) = default;
-        entry &operator=(const entry &other) = default;
-        entry &operator=(entry &&other) = default;
+        entry() = default;
+        entry(const entry &other) = delete;
+        entry(entry &&other) = delete;
+        entry &operator=(const entry &other) = delete;
+        entry &operator=(entry &&other) = delete;
         ~entry() = default;
 
         /// \brief Returns page address for entry
@@ -250,6 +245,18 @@ public:
             return m_hash_tree[start + index];
         }
     };
+
+    /// \brief Doubly-linked list of cache entries used for LRU (Least Recently Used) management.
+    /// \details The underlying data structure maintains three uint64_t values:
+    /// - An offset pointer to the list head
+    /// - An offset pointer to the list tail
+    /// - The current size of the list
+    using lru = boost::intrusive::list<entry, boost::intrusive::size_type<uint64_t>>;
+
+    // Ensure LRU and entry sizes are the same across all platforms we support
+    static_assert(sizeof(lru) == 3 * sizeof(uint64_t), "unexpected LRU size");
+    static_assert(sizeof(entry) == ((2 * sizeof(uint64_t)) + m_page_size + (m_page_hash_tree_size * MACHINE_HASH_SIZE)),
+        "unexpected entry size");
 
     template <IHasher hasher_type>
     class simd_page_hasher {
@@ -326,7 +333,7 @@ public:
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
     bool enqueue_hash_entry(page_hash_tree_cache::simd_page_hasher<H> &queue, D &&d, entry &e,
         page_hash_tree_cache_stats &stats) noexcept {
-        if (std::ranges::size(d) != m_page_size) {
+        if (std::ranges::size(d) != m_page_size) [[unlikely]] {
             return false;
         }
         {
@@ -411,11 +418,16 @@ public:
         m_spid_pristine_update{os_signpost_id_generate(m_log)},
         m_spid_non_pristine_update{os_signpost_id_generate(m_log)},
 #endif
-        m_pristine_page_hash_tree{entry::get_pristine_page_hash_tree(std::forward<H>(h))},
-        m_entries{num_entries, entry{m_pristine_page_hash_tree}} {
-        m_map.reserve(num_entries);
+        m_mapped_memory{make_unique_mmap<unsigned char>(sizeof(lru) + (num_entries * sizeof(entry)))},
+        m_lru{*new(m_mapped_memory.get()) lru},
+        m_entries{new(m_mapped_memory.get() + sizeof(lru)) entry[num_entries], num_entries},
+        m_pristine_page_hash_tree{entry::get_pristine_page_hash_tree(std::forward<H>(h))} {
         if (num_entries == 0) {
             throw std::invalid_argument{"page hash-tree cache must have at least one entry"};
+        }
+        m_map.reserve(num_entries);
+        for (auto &e : m_entries) {
+            e.clear_hash_tree(m_pristine_page_hash_tree);
         }
     }
 
@@ -427,10 +439,10 @@ public:
     /// \brief Tries to borrow a cache entry
     /// \param paddr_page Target physical address of page to borrow
     /// \returns Entry for page if in cache, nothing otherwise
-    std::optional<std::reference_wrapper<entry>> borrow_entry_if_hit(address_type paddr_page) {
+    std::optional<entry::ref> borrow_entry_if_hit(address_type paddr_page) {
         // Found entry for page in map?
         if (auto it = m_map.find(paddr_page); it != m_map.end()) {
-            entry &e = it->second.second;
+            entry &e = it->second;
             if (e.get_borrowed()) {
                 throw std::runtime_error{"page hash-tree cache entry already borrowed"};
             }
@@ -444,16 +456,16 @@ public:
     /// \param paddr_page Target physical address of page to borrow
     /// \param hit Receives true if page was found in cache, false if another page was evicted and its entry returned
     /// \returns Entry for page, nothing if all pages have already been borrowed
-    std::optional<std::reference_wrapper<entry>> borrow_entry(address_type paddr_page, bool &hit) {
+    std::optional<entry::ref> borrow_entry(address_type paddr_page, bool &hit) {
         SCOPED_SIGNPOST(m_log, m_spid_borrow, "phtc: borrow", "");
         // Found entry for page in map?
         if (auto it = m_map.find(paddr_page); it != m_map.end()) {
-            entry &e = it->second.second;
+            entry &e = it->second;
             if (e.get_borrowed()) {
                 throw std::runtime_error{"page hash-tree cache entry already borrowed"};
             }
             // Make it most recently used
-            m_lru.splice(m_lru.begin(), m_lru, it->second.first);
+            m_lru.splice(m_lru.begin(), m_lru, m_lru.iterator_to(e));
             hit = true;
             ++m_stats.page_hits;
             // Return borrowed entry
@@ -461,14 +473,14 @@ public:
         }
         hit = false;
         // Not in map, but we still have unused entries to lend
-        if (m_used < m_entries.size()) {
+        if (m_lru.size() < m_entries.size()) {
             ++m_stats.page_misses;
-            entry &e = m_entries[m_used++];
+            entry &e = m_entries[m_lru.size()];
             if (e.get_borrowed()) {
                 throw std::runtime_error{"page hash-tree cache entry already borrowed"};
             }
             m_lru.push_front(e);
-            m_map.emplace(paddr_page, map_value{m_lru.begin(), e});
+            m_map.emplace(paddr_page, e);
             // Return borrowed
             return std::ref(e.set_borrowed(true).set_paddr_page(paddr_page));
         }
@@ -482,7 +494,7 @@ public:
         m_map.erase(e.get_paddr_page());
         m_lru.pop_back();
         m_lru.push_front(e);
-        m_map.emplace(paddr_page, map_value{m_lru.begin(), e});
+        m_map.emplace(paddr_page, e);
         return std::ref(e.set_borrowed(true).set_paddr_page(paddr_page));
     }
 
@@ -516,25 +528,17 @@ public:
         for (auto &e : m_entries) {
             e.clear(m_pristine_page_hash_tree);
         }
-        m_used = 0;
     }
 
     /// \brief Returns current statistics
     /// \param clear Whether to clear statistics after retrieving them
     /// \returns Statistics
     page_hash_tree_cache_stats get_stats(bool clear = false) noexcept {
-        auto s = m_stats;
+        auto stats = m_stats;
         if (clear) {
-            m_stats.page_hits = 0;
-            m_stats.page_misses = 0;
-            m_stats.word_hits = 0;
-            m_stats.word_misses = 0;
-            m_stats.page_changes = 0;
-            m_stats.inner_page_hashes = 0;
-            m_stats.pristine_pages = 0;
-            m_stats.non_pristine_pages = 0;
+            m_stats = page_hash_tree_cache_stats{};
         }
-        return s;
+        return stats;
     }
 
     page_hash_tree_cache_stats &get_stats_ref() noexcept {
@@ -606,20 +610,18 @@ private:
     os_signpost_id_t m_spid_non_pristine_update;
 #endif
 
-    using lru = boost::intrusive::list<entry>;           ///< Least-recently-used container type
-    using map_value = std::pair<lru::iterator, entry &>; ///< Value type for map
-    const page_hash_tree m_pristine_page_hash_tree;      ///< Pristine page hash tree for hasher in use
-    //??D Replace std::vector so entries can live on disk
-    std::vector<entry> m_entries; ///< Array of page hash-tree cache entries
-    //??D Replace the boost intrusive list with index-based implementation so list can live on disk as well
-    lru m_lru; ///< Least-recently-used list of entries
-    //??D Only the map will be reloaded from disk
-    //??D We *could* also replace the implementation, but I think this would be overkill
-    std::unordered_map<address_type, map_value> m_map; ///< Map from page addresses to corresponding entries
-    size_t m_used{0};                                  ///< How many entries have already been used
+    unique_mmap_ptr<unsigned char> m_mapped_memory; ///< Mapped memory containing the LRU and entries
 
-    // Statistics
-    page_hash_tree_cache_stats m_stats;
+    // The following fields may already be initialized by existing mapped memory
+    lru &m_lru;                 ///< Recently used entries
+    std::span<entry> m_entries; ///< Array of page hash-tree cache entries
+
+    // The following fields are always initialized from scratch
+    ankerl::unordered_dense::map<address_type, entry::ref> m_map; ///< Map from page addresses to corresponding entries
+    page_hash_tree_cache_stats m_stats;                           ///< Statistics
+
+    // ??(edubart): we could compute this on demand (on first use)
+    const page_hash_tree m_pristine_page_hash_tree; ///< Pristine page hash tree for hasher in use
 };
 
 } // namespace cartesi

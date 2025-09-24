@@ -333,7 +333,8 @@ private:
 
     positions_range m_leaf_positions;  // Bounds on leaf positions
     positions_range m_valid_positions; // Bounds on all positions
-    container_type m_tree;             // Complete tree of flags
+    //??(edubart): convert to std::span over mapped memory
+    container_type m_tree; // Complete tree of flags
 };
 
 } // namespace cartesi

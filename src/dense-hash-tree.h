@@ -104,6 +104,7 @@ private:
     }
 
     int m_level_count;
+    //??(edubart): convert to std::span over mapped memory
     std::vector<machine_hash> m_storage;
 };
 

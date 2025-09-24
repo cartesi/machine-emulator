@@ -22,14 +22,14 @@
 namespace cartesi {
 
 struct page_hash_tree_cache_stats {
-    uint64_t page_hits{0};          ///\< Number of pages looked up and found in cache
-    uint64_t page_misses{0};        ///\< Number of pages looked up but missing from cache
-    uint64_t word_hits{0};          ///\< Number of words equal to corresponding word in cache entry
-    uint64_t word_misses{0};        ///\< Number of words differing from corresponding word in cache entry
-    uint64_t page_changes{0};       ///\< Number of pages changes during updates
-    uint64_t inner_page_hashes{0};  ///\< Number of inner page hashing operations performed
-    uint64_t pristine_pages{0};     ///\< Number of pages found to be pristine during updates
-    uint64_t non_pristine_pages{0}; ///\< Number of pages found not to be pristine during updates
+    uint64_t page_hits{0};          ///< Number of pages looked up and found in cache
+    uint64_t page_misses{0};        ///< Number of pages looked up but missing from cache
+    uint64_t word_hits{0};          ///< Number of words equal to corresponding word in cache entry
+    uint64_t word_misses{0};        ///< Number of words differing from corresponding word in cache entry
+    uint64_t page_changes{0};       ///< Number of pages changes during updates
+    uint64_t inner_page_hashes{0};  ///< Number of inner page hashing operations performed
+    uint64_t pristine_pages{0};     ///< Number of pages found to be pristine during updates
+    uint64_t non_pristine_pages{0}; ///< Number of pages found not to be pristine during updates
 };
 
 } // namespace cartesi

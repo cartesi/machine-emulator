@@ -201,6 +201,7 @@ private:
 
     mutable page_hash_tree_cache m_page_cache;
     //??D Replace std::vector so entries can live on disk
+    //??(edubart): convert to a std::span over mmapped memory
     nodes_type m_sparse_nodes;
     const pristine_hashes m_pristine_hashes;
     int m_concurrency;

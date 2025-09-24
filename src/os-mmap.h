@@ -52,7 +52,7 @@ namespace cartesi {
 struct os_mmap_flags {
     bool read_only{false};  ///< Mark mapped memory as read-only
     bool shared{false};     ///< Share mapped memory with the backing file
-    bool no_reserve{false}; ///< Do not reserve sawp memory for the mapping
+    bool no_reserve{false}; ///< Do not reserve swap memory for the mapping
 };
 
 /// \brief Structure representing a memory-mapped region.

@@ -570,6 +570,8 @@ static std::string uarch_interpreter_break_reason_to_name(uarch_interpreter_brea
             return "uarch_halted";
         case R::reached_target_cycle:
             return "reached_target_cycle";
+        case R::cycle_overflow:
+            return "cycle_overflow";
     }
     throw std::domain_error{"invalid uarch interpreter break reason"};
 }
@@ -607,13 +609,14 @@ static interpreter_break_reason interpreter_break_reason_from_name(const std::st
 
 static uarch_interpreter_break_reason uarch_interpreter_break_reason_from_name(const std::string &name) {
     using uibr = uarch_interpreter_break_reason;
-    if (name == "reached_target_cycle") {
-        return uibr::reached_target_cycle;
+    const static std::unordered_map<std::string, uibr> g_uibr_name = {
+        {"reached_target_cycle", uibr::reached_target_cycle}, {"uarch_halted", uibr::uarch_halted},
+        {"cycle_overflow", uibr::cycle_overflow}};
+    auto got = g_uibr_name.find(name);
+    if (got == g_uibr_name.end()) {
+        throw std::domain_error{"invalid uarch interpreter break reason"};
     }
-    if (name == "uarch_halted") {
-        return uibr::uarch_halted;
-    }
-    throw std::domain_error{"invalid uarch interpreter break reason"};
+    return got->second;
 }
 
 static hash_function_type hash_function_from_name(const std::string &name) {

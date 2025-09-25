@@ -24,8 +24,7 @@ local jsonrpc
 -- run on the same computer and cartesi-jsonrpc-machine execution path
 -- must be provided
 
--- There is no UINT64_MAX in Lua, so we have to use the signed representation
-local MAX_MCYCLE = -1
+local MAX_MCYCLE = cartesi.MCYCLE_MAX
 
 local remote_address
 local test_path = "/tmp/"

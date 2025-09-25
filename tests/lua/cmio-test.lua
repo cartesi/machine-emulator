@@ -108,8 +108,7 @@ if machine_type == "jsonrpc" then
     to_shutdown = jsonrpc.connect_server(remote_address):set_cleanup_call(jsonrpc.SHUTDOWN)
 end
 
--- There is no UINT64_MAX in Lua, so we have to use the signed representation
-local MAX_MCYCLE = -1
+local MAX_MCYCLE = cartesi.MCYCLE_MAX
 
 local function load_machine(name)
     local runtime = {

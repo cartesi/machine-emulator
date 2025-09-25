@@ -19,9 +19,8 @@
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 
--- There is no UINT64_MAX in Lua, so we have to use the signed representation
-local MAX_MCYCLE = -1
-local MAX_UARCH_CYCLE = -1
+local MAX_MCYCLE = cartesi.MCYCLE_MAX
+local MAX_UARCH_CYCLE = cartesi.UARCH_CYCLE_MAX
 
 local function build_machine()
     local config = {

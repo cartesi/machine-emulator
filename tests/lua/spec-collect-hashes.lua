@@ -370,13 +370,12 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                expect.equal(machine:collect_uarch_cycle_root_hashes(mcycle_period), {
-                    hashes = {},
-                    reset_indices = {},
-                    break_reason = cartesi.BREAK_REASON_HALTED,
-                })
+                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
+                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_HALTED)
+                expect.equal(#collected_uarch.reset_indices, 1)
+                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[1]], expected_root_hash)
             end)
 
             it("should break as yielded when collecting with a yielded machine", function()
@@ -396,13 +395,12 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                expect.equal(machine:collect_uarch_cycle_root_hashes(mcycle_period), {
-                    hashes = {},
-                    reset_indices = {},
-                    break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
-                })
+                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
+                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
+                expect.equal(#collected_uarch.reset_indices, 1)
+                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[1]], expected_root_hash)
             end)
 
             it("should break as halted when collecting up to the same mcycle with a halted machine", function()
@@ -421,13 +419,11 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                expect.equal(machine:collect_uarch_cycle_root_hashes(mcycle_end), {
-                    hashes = {},
-                    reset_indices = {},
-                    break_reason = cartesi.BREAK_REASON_HALTED,
-                })
-                expect.equal(machine:read_reg("mcycle"), mcycle_end)
+                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
+                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_HALTED)
+                expect.equal(#collected_uarch.reset_indices, 1)
+                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[1]], expected_root_hash)
             end)
 
             it("should break as yielded when collecting up to the same mcycle with a yielded machine", function()
@@ -446,13 +442,11 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                expect.equal(machine:collect_uarch_cycle_root_hashes(mcycle_end), {
-                    hashes = {},
-                    reset_indices = {},
-                    break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
-                })
-                expect.equal(machine:read_reg("mcycle"), mcycle_end)
+                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
+                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
+                expect.equal(#collected_uarch.reset_indices, 1)
+                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[1]], expected_root_hash)
             end)
 
             it("should collect mcycles during mcycle overflow", function()
@@ -497,12 +491,11 @@ describe("collect hashes", function()
                 expect.equal(#collected_uarch.reset_indices, 2)
                 expect.equal(machine:read_reg("mcycle"), cartesi.MCYCLE_MAX)
 
-                expect.equal(machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX), {
-                    hashes = {},
-                    reset_indices = {},
-                    break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
-                })
-                expect.equal(machine:read_reg("mcycle"), cartesi.MCYCLE_MAX)
+                collected_uarch = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX)
+                expect.equal(machine:get_root_hash(), expected_root_hash)
+                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+                expect.equal(#collected_uarch.reset_indices, 1)
+                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[1]], expected_root_hash)
             end)
 
             local add_machine_config = {

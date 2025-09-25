@@ -81,7 +81,6 @@
 #include "uarch-constants.h"
 #include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
-#include "uarch-pristine-state-hash.h"
 #include "uarch-pristine.h"
 #include "uarch-record-state-access.h"
 #include "uarch-replay-state-access.h"
@@ -1851,12 +1850,8 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
 }
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
-    if (m_c.hash_tree.hash_function == hash_function_type::keccak256) {
-        // Ensure that the microarchitecture is reset
-        auto current_uarch_state_hash = get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE);
-        if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
-            throw std::runtime_error{"microarchitecture is not reset"};
-        }
+    if (read_reg(reg::uarch_cycle) != 0) {
+        throw std::runtime_error{"microarchitecture is not reset"};
     }
     auto root_hash_before = get_root_hash();
     record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
@@ -1988,14 +1983,12 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    if (m_c.hash_tree.hash_function == hash_function_type::keccak256) {
-        if (get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update) !=
-            get_uarch_pristine_state_hash()) {
-            throw std::runtime_error{"microarchitecture is not reset"};
-        }
+    if (read_reg(reg::uarch_cycle) != 0) {
+        throw std::runtime_error{"microarchitecture is not reset"};
     }
 
-    // Reset fields in the result that are meant for output only
+    // If the collection loop does not advance mcycle, keep the original mcycle_phase
+    // and set the break reason to indicate the target mcycle was reached
     mcycle_root_hashes result;
     result.mcycle_phase = mcycle_phase;
     result.break_reason = interpreter_break_reason::reached_target_mcycle;
@@ -2018,20 +2011,26 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     }
     auto &back_tree = result.back_tree.value();
 
-    // Reserve space before entering the loop to minimize allocations
-    result.hashes.reserve(mcycle_period);
     collect_mcycle_hashes_state_access::context context{};
-    context.dirty_pages.reserve(std::clamp<uint64_t>(mcycle_period * 4, 16, 4096));
     const collect_mcycle_hashes_state_access a(context, *this);
     os_silence_putchar(m_r.htif.no_console_putchar);
+
+    // Reserve space before entering the loop to minimize dynamic memory allocations,
+    // the reserved sizes below are based on empirical benchmarks to balance performance and memory usage,
+    // and are clamped to avoid over-allocation
+    const uint64_t max_result_hashes =
+        ((mcycle_end - mcycle_start) / (mcycle_period * (UINT64_C(1) << log2_bundle_mcycle_count))) + 1;
+    result.hashes.reserve(std::clamp<uint64_t>(max_result_hashes, 1, 16384));
+    context.dirty_pages.reserve(std::clamp<uint64_t>(mcycle_period * 4, 16, 4096));
 
     // The first iteration will target the next mcycle_period boundary,
     // but will not exceed mcycle_end if that limit is reached first
     uint64_t mcycle_target = saturating_add(mcycle_start, mcycle_period - mcycle_phase, mcycle_end);
+    uint64_t mcycle_reached = read_reg(reg::mcycle);
     bool at_fixed_point = false;
 
     // Run until reaching next mcycle target
-    while (read_reg(reg::mcycle) < mcycle_target) {
+    while (mcycle_reached < mcycle_target) {
         assert(!at_fixed_point);
 
         // Attempt to execute until finishing this period
@@ -2049,21 +2048,20 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
             throw std::runtime_error{"update hash tree failed"};
         }
 
+        mcycle_reached = read_reg(reg::mcycle);
+
         // Check if we reached a fixed point
-        const auto mcycle_reached = read_reg(reg::mcycle);
-        // ??(edubart): maybe we should create a machine method or pseudo register to check if we are at fixed point?
         at_fixed_point = result.break_reason == interpreter_break_reason::halted ||
             result.break_reason == interpreter_break_reason::yielded_manually || mcycle_reached == UINT64_MAX;
 
         // Compute the new phase
-        result.mcycle_phase = saturating_add(mcycle_reached - mcycle_start, mcycle_phase) % mcycle_period;
+        result.mcycle_phase = (((mcycle_reached - mcycle_start) % mcycle_period) + mcycle_phase) % mcycle_period;
 
         // Add the current root hash to the back tree whenever we reach a period boundary or a fixed point
         // This ensures we only append at the correct intervals, even when mcycle_end does not align with the period
         if (result.mcycle_phase == 0 || at_fixed_point) {
-            const auto root_hash = m_ht.get_root_hash();
             // Append root hash relative to this period to the result
-            back_tree.push_back(root_hash);
+            back_tree.push_back(m_ht.get_root_hash());
 
             // When back tree is full, we can append the bundled root hash and reset it
             if (back_tree.full()) {
@@ -2129,61 +2127,59 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    if (get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update) !=
-        get_uarch_pristine_state_hash()) {
+    if (read_reg(reg::uarch_cycle) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
 
-    // Reset fields in the result that are meant for output only
+    // If the collection loop does not advance mcycle, set the break reason to indicate the target mcycle was reached
     uarch_cycle_root_hashes result;
     result.break_reason = interpreter_break_reason::reached_target_mcycle;
-
-    // Check halted and yielded break reasons, to behave with same priority as the interpreter
-    if (read_reg(reg::iflags_H) != 0) {
-        result.break_reason = interpreter_break_reason::halted;
-        return result;
-    }
-    if (read_reg(reg::iflags_Y) != 0) {
-        result.break_reason = interpreter_break_reason::yielded_manually;
-        return result;
-    }
 
     // Initialize back tree
     back_merkle_tree back_tree(log2_bundle_uarch_cycle_count, m_c.hash_tree.hash_function);
 
-    // Reserve space before entering the loop to minimize allocations
-    const uint64_t mcycle_count = mcycle_end - mcycle_start;
     hash_tree::dirty_words_type reset_dirty_words;
-    reset_dirty_words.reserve(64);
-    result.hashes.reserve(mcycle_count * 512);
-    result.reset_indices.reserve(mcycle_count);
     collect_uarch_cycle_hashes_state_access::context context{};
-    context.dirty_words.reserve(8);
     const collect_uarch_cycle_hashes_state_access a(context, *this);
     os_silence_putchar(m_r.htif.no_console_putchar);
+
+    // Reserve space before entering the loop to minimize dynamic memory allocations,
+    // the reserved sizes below are based on empirical benchmarks to balance performance and memory usage
+    const uint64_t mcycle_count = mcycle_end - mcycle_start;
+    result.hashes.reserve(mcycle_count * 512);
+    result.reset_indices.reserve(mcycle_count);
+    context.dirty_words.reserve(8);
+    reset_dirty_words.reserve(64);
 
     // The first iteration will target the next mcycle,
     // but will not exceed mcycle_end if that limit is reached first
     uint64_t mcycle_target = saturating_add(mcycle_start, UINT64_C(1), mcycle_end);
-    bool at_fixed_point = false;
+    uint64_t mcycle_reached = read_reg(reg::mcycle);
+
+    // In case we start at fixed point, we will attempt to execute one extra mcycle which
+    bool at_fixed_point = read_reg(reg::iflags_H) != 0 || read_reg(reg::iflags_Y) != 0 || mcycle_start == UINT64_MAX;
+    if (at_fixed_point) {
+        mcycle_target = mcycle_reached;
+    }
 
     // Run until reaching next mcycle target, or one more time when at a fixed point
-    while (read_reg(reg::mcycle) < mcycle_target || at_fixed_point) {
+    while (mcycle_reached < mcycle_target || at_fixed_point) {
+        uint64_t uarch_cycle_reached = read_reg(reg::uarch_cycle);
         assert(back_tree.empty());
-        assert(read_reg(reg::uarch_cycle) == 0);
+        assert(uarch_cycle_reached == 0);
 
         // Add one hash after each uarch cycle
-        for (uint64_t uarch_cycle_target = 1;                // First uarch cycle target  should always be 1
-            read_reg(reg::uarch_cycle) < uarch_cycle_target; // Run until reaching uarch cycle target
-            uarch_cycle_target = saturating_add(uarch_cycle_target, UINT64_C(1))) {
+        for (uint64_t uarch_cycle_target = 1;         // First uarch cycle target  should always be 1
+            uarch_cycle_reached < uarch_cycle_target; // Run until reaching uarch cycle target
+            ++uarch_cycle_target) {
             // Attempt to advance to the next uarch cycle
-            uarch_interpret(a, uarch_cycle_target);
+            const auto uarch_break_reason = uarch_interpret(a, uarch_cycle_target);
+            uarch_cycle_reached = read_reg(reg::uarch_cycle);
 
             // Update hash tree and retrieve root hash
             if (!m_ht.update_words(m_ars, context.dirty_words)) {
                 throw std::runtime_error{"update hash tree failed"};
             }
-            const auto root_hash = m_ht.get_root_hash();
 
             // Track dirty uarch words to be reset later
             for (auto word_paddr : context.dirty_words) {
@@ -2194,13 +2190,21 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
             }
             context.dirty_words.clear();
 
-            // Stop if we cannot advance more uarch cycles
-            if (read_reg(reg::uarch_cycle) != uarch_cycle_target) {
+            // If the uarch cycle counter overflows, this is catastrophic and machine execution cannot continue
+            if (uarch_break_reason == uarch_interpreter_break_reason::cycle_overflow) {
+                throw std::runtime_error{"uarch reached its maximum cycle and cannot advance more uarch cycles"};
+            }
+            // If the uarch is halted, we can break the loop
+            if (uarch_break_reason == uarch_interpreter_break_reason::uarch_halted) {
                 break;
             }
 
+            // Sanity check to ensure the loop is working correctly, this should always be true
+            assert(uarch_cycle_reached == uarch_cycle_target);
+            assert(uarch_break_reason == uarch_interpreter_break_reason::reached_target_cycle);
+
             // Append root hash to the result
-            back_tree.push_back(root_hash);
+            back_tree.push_back(m_ht.get_root_hash());
 
             // When back tree is full, we can append the bundled root hash and reset it
             if (back_tree.full()) {
@@ -2209,10 +2213,9 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
             }
         }
 
-        // Ensure we uarch is really halted
-        if (read_reg(reg::uarch_halt_flag) == 0) {
-            throw std::runtime_error{"uarch is not halted after mcycle advance"};
-        }
+        // Sanity check to ensure the loop is working correctly, this should always be true
+        assert(read_reg(reg::uarch_halt_flag) != 0);
+
         const auto halt_root_hash = m_ht.get_root_hash();
 
         // Perform reset uarch directly (as an optimization), we need to only revert dirty words in its state
@@ -2222,21 +2225,19 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
         auto &uram = find_address_range(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH);
         for (auto word_paddr : reset_dirty_words) {
             if (word_paddr >= AR_UARCH_RAM_START && word_paddr - AR_UARCH_RAM_START < AR_UARCH_RAM_LENGTH) {
-                const uint64_t uram_start_offset = word_paddr - AR_UARCH_RAM_START;
-                const uint64_t uram_end_offset =
-                    std::min<uint64_t>(uram_start_offset + HASH_TREE_WORD_SIZE, AR_UARCH_RAM_LENGTH);
-                const uint64_t size = uram_end_offset - uram_start_offset;
-                // Handle the portion that needs to be copied from uarch_pristine_ram
-                const uint64_t copy_size = (uram_start_offset < uarch_pristine_ram_len) ?
-                    std::min<uint64_t>(size, uarch_pristine_ram_len - uram_start_offset) :
-                    0;
-                if (copy_size > 0) {
-                    std::memcpy(uram.get_host_memory() + uram_start_offset, uarch_pristine_ram + uram_start_offset,
-                        copy_size);
-                }
-                // Handle the portion that needs to be zeroed
-                if (copy_size < size) {
-                    std::memset(uram.get_host_memory() + uram_start_offset + copy_size, 0, size - copy_size);
+                const uint64_t word_start_offset = word_paddr - AR_UARCH_RAM_START;
+                // Word is aligned and inside range, there can be no overflow
+                const uint64_t word_end_offset = word_start_offset + HASH_TREE_WORD_SIZE;
+                if (word_end_offset <= uarch_pristine_ram_len) { // Word is entirely inside pristine uarch ram image
+                    std::memcpy(uram.get_host_memory() + word_start_offset, uarch_pristine_ram + word_start_offset,
+                        HASH_TREE_WORD_SIZE);
+                } else if (word_start_offset >= uarch_pristine_ram_len) { // Word is entirely outside image
+                    std::memset(uram.get_host_memory() + word_start_offset, 0, HASH_TREE_WORD_SIZE);
+                } else { // Word stradles image boundary
+                    std::memcpy(uram.get_host_memory() + word_start_offset, uarch_pristine_ram + word_start_offset,
+                        uarch_pristine_ram_len - word_start_offset);
+                    std::memset(uram.get_host_memory() + uarch_pristine_ram_len, 0,
+                        word_end_offset - uarch_pristine_ram_len);
                 }
             }
         }
@@ -2281,40 +2282,36 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
             result.reset_indices.emplace_back(result.hashes.size() - 1);
         }
 
-        // Ensure the machine really reached mcycle target
-        if (read_reg(reg::mcycle) != mcycle_target) {
-            throw std::runtime_error{"machine did not reach the expected target mcycle"};
+        mcycle_reached = read_reg(reg::mcycle);
+
+        // Sanity check to ensure the loop is working correctly, this should always be true
+        assert(mcycle_reached == mcycle_target);
+
+        // Retrieve break reason
+        if (read_reg(reg::iflags_H) != 0) {
+            result.break_reason = interpreter_break_reason::halted;
+        } else if (read_reg(reg::iflags_Y) != 0) {
+            result.break_reason = interpreter_break_reason::yielded_manually;
+        } else if (read_reg(reg::iflags_X) != 0) {
+            result.break_reason = interpreter_break_reason::yielded_automatically;
+            break;
         }
 
-        // If we already attempt to advance one mcycle over a fixed point, we are done
+        // If we already attempted to advance one mcycle over a fixed point, we are done
         if (at_fixed_point) {
             break;
         }
 
         // If the machine halted, yielded manuallly or reached mcycle UINT64_MAX,
         // then we are at a fixed point and should always attempt to advance one more mcycle
-        if (read_reg(reg::iflags_H) != 0) {
-            result.break_reason = interpreter_break_reason::halted;
-            at_fixed_point = true;
-            continue;
-        }
-        if (read_reg(reg::iflags_Y) != 0) {
-            result.break_reason = interpreter_break_reason::yielded_manually;
-            at_fixed_point = true;
-            continue;
-        }
-        if (read_reg(reg::mcycle) == UINT64_MAX) { // Reached maximum mcycle
-            at_fixed_point = true;
-            continue;
-        }
-        if (read_reg(reg::iflags_X) != 0) {
-            result.break_reason = interpreter_break_reason::yielded_automatically;
-            break;
-        }
+        at_fixed_point = result.break_reason == interpreter_break_reason::halted ||
+            result.break_reason == interpreter_break_reason::yielded_manually || mcycle_reached == UINT64_MAX;
 
-        // The next iteration will target the next mcycle successor,
-        // but will not exceed mcycle_end if that limit is reached first
-        mcycle_target = saturating_add(mcycle_target, UINT64_C(1), mcycle_end);
+        if (!at_fixed_point) {
+            // The next iteration will target the next mcycle successor,
+            // but will not exceed mcycle_end if that limit is reached first
+            mcycle_target = saturating_add(mcycle_target, UINT64_C(1), mcycle_end);
+        }
     }
 
     assert(back_tree.empty());

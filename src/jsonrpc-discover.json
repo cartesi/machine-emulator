@@ -1975,7 +1975,7 @@
       },
       "UarchInterpreterBreakReason": {
         "title": "UarchInterpreterBreakReason",
-        "enum": ["reached_target_cycle", "uarch_halted"]
+        "enum": ["reached_target_cycle", "uarch_halted", "cycle_overflow"]
       },
       "Base64String": {
         "title": "Base64String",

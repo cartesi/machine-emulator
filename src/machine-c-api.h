@@ -37,6 +37,7 @@ extern "C" {
 #endif
 
 #define CM_MCYCLE_MAX UINT64_MAX
+#define CM_UARCH_CYCLE_MAX UINT64_C(1048576)
 
 // -----------------------------------------------------------------------------
 // API enums and structures
@@ -101,6 +102,7 @@ typedef enum cm_break_reason {
 typedef enum cm_uarch_break_reason {
     CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
+    CM_UARCH_BREAK_REASON_CYCLE_OVERFLOW,
     CM_UARCH_BREAK_REASON_FAILED,
 } cm_uarch_break_reason;
 

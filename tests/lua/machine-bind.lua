@@ -27,9 +27,8 @@ local concurrency_update_hash_tree = util.parse_number(os.getenv("CARTESI_CONCUR
 
 local lua_cmd = arg[-1] .. " -e "
 
--- There is no UINT64_MAX in Lua, so we have to use the signed representation
-local MAX_MCYCLE = -1
-local MAX_UARCH_CYCLE = -1
+local MAX_MCYCLE = cartesi.MCYCLE_MAX
+local MAX_UARCH_CYCLE = cartesi.UARCH_CYCLE_MAX
 
 -- Print help and exit
 local function help()
@@ -686,6 +685,17 @@ do_test("do not advance micro cycle if uarch is halted", function(machine)
     local status = machine:run_uarch(1)
     assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED, "run_uarch should return UARCH_BREAK_REASON_UARCH_HALTED")
     assert(machine:read_reg("uarch_cycle") == 0, "uarch cycle should still be 0")
+end)
+
+do_test("do not advance micro cycle if uarch cycle overflows", function(machine)
+    machine:write_reg("uarch_cycle", cartesi.UARCH_CYCLE_MAX)
+    assert(machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX, "uarch cycle should be 0")
+    local status = machine:run_uarch(cartesi.UARCH_CYCLE_MAX + 1)
+    assert(
+        status == cartesi.UARCH_BREAK_REASON_CYCLE_OVERFLOW,
+        "run_uarch should return UARCH_BREAK_REASON_CYCLE_OVERFLOW"
+    )
+    assert(machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX, "uarch cycle should still be 0")
 end)
 
 do_test("advance micro cycles until halt", function(machine)
@@ -1812,9 +1822,7 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
             check_error_find(err, "page count is zero")
             -- override page count to overflow
             copy_step_log(filename1, filename2, function(log_data)
-                -- There is no UINT64_MAX in Lua, so we have to use the signed representation
-                local MAX_MCYCLE_COUNT = -1
-                log_data.override_page_count = MAX_MCYCLE_COUNT
+                log_data.override_page_count = cartesi.MCYCLE_MAX
             end)
             _, err = pcall(function()
                 machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)

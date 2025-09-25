@@ -25,6 +25,9 @@
 /// \brief Log2 size of the entire uarch memory range: shadow and ram
 #define UARCH_STATE_LOG2_SIZE_DEF 22
 
+/// \brief Log2 of the expected maximum uarch cycle
+#define UARCH_LOG2_MAX_CYCLE_DEF 20
+
 // microarchitecture ecall function codes
 #define UARCH_ECALL_FN_HALT_DEF 1            // halt uarch
 #define UARCH_ECALL_FN_PUTCHAR_DEF 2         // putchar

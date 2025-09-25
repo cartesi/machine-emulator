@@ -38,11 +38,8 @@ uarch_interpreter_break_reason uarch_interpret(const STATE_ACCESS a, uint64_t cy
                 break;
             case UArchStepStatus::UArchHalted:
                 return uarch_interpreter_break_reason::uarch_halted;
-            // LCOV_EXCL_START
             case UArchStepStatus::CycleOverflow:
-                // Prior condition ensures that this case is unreachable. but linter may complain about missing it
-                return uarch_interpreter_break_reason::reached_target_cycle;
-                // LCOV_EXCL_STOP
+                return uarch_interpreter_break_reason::cycle_overflow;
         }
     }
     return uarch_interpreter_break_reason::reached_target_cycle;

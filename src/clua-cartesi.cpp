@@ -213,6 +213,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_VERSION_PATCH, "VERSION_PATCH", -1);
     clua_setintegerfield(L, CM_HASH_SIZE, "HASH_SIZE", -1);
     clua_setintegerfield(L, CM_MCYCLE_MAX, "MCYCLE_MAX", -1);
+    clua_setintegerfield(L, CM_UARCH_CYCLE_MAX, "UARCH_CYCLE_MAX", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_WORD_SIZE, "TREE_LOG2_WORD_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_PAGE_SIZE, "TREE_LOG2_PAGE_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_ROOT_SIZE, "TREE_LOG2_ROOT_SIZE", -1);
@@ -224,6 +225,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_BREAK_REASON_REACHED_TARGET_MCYCLE, "BREAK_REASON_REACHED_TARGET_MCYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE, "UARCH_BREAK_REASON_REACHED_TARGET_CYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_UARCH_HALTED, "UARCH_BREAK_REASON_UARCH_HALTED", -1);
+    clua_setintegerfield(L, CM_UARCH_BREAK_REASON_CYCLE_OVERFLOW, "UARCH_BREAK_REASON_CYCLE_OVERFLOW", -1);
     clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_ANNOTATIONS, "ACCESS_LOG_TYPE_ANNOTATIONS", -1);
     clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_LARGE_DATA, "ACCESS_LOG_TYPE_LARGE_DATA", -1);
     clua_setintegerfield(L, CM_CMIO_YIELD_COMMAND_AUTOMATIC, "CMIO_YIELD_COMMAND_AUTOMATIC", -1);

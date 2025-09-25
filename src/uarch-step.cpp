@@ -21,8 +21,6 @@
 
 #include "uarch-step.h"
 
-#include <cstdint>
-
 #include "collect-uarch-cycle-hashes-state-access.h" // IWYU pragma: keep
 #include "uarch-record-state-access.h"               // IWYU pragma: keep
 #include "uarch-replay-state-access.h"               // IWYU pragma: keep
@@ -1098,7 +1096,7 @@ UArchStepStatus uarch_step(const UarchState a) {
     // This must be the first read in order to match the first log access in machine::verify_step_uarch
     uint64 cycle = readCycle(a);
     // do not advance if cycle will overflow
-    if (cycle == UINT64_MAX) {
+    if (cycle >= UARCH_MAX_CYCLE) {
         return UArchStepStatus::CycleOverflow;
     }
     // do not advance if machine is halted

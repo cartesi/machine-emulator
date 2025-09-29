@@ -108,6 +108,11 @@ public:
         do_clone_stored(from_dir, to_dir);
     }
 
+    /// \brief Removes a stored machine from a directory
+    void remove_stored(const std::string &dir) const {
+        do_remove_stored(dir);
+    }
+
     /// \brief  Runs the machine for the given mcycle count and generates a log file of accessed pages and proof data.
     interpreter_break_reason log_step(uint64_t mcycle_count, const std::string &filename) {
         return do_log_step(mcycle_count, filename);
@@ -305,6 +310,7 @@ private:
         const std::optional<back_merkle_tree> &previous_back_tree) = 0;
     virtual void do_store(const std::string &dir, sharing_mode sharing) const = 0;
     virtual void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
+    virtual void do_remove_stored(const std::string &dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
     virtual hash_tree_proof do_get_proof(uint64_t address, int log2_size) const = 0;

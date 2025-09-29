@@ -165,6 +165,10 @@ public:
     /// \param to_dir Path to the destination directory where the cloned machine will be stored.
     static void clone_stored(const std::string &from_dir, const std::string &to_dir);
 
+    /// \brief Removes all files and the directory of a previously stored machine.
+    /// \param dir Path to the directory containing the stored machine to be removed.
+    static void remove_stored(const std::string &dir);
+
     /// \brief Returns address range that covers a given physical memory region
     /// \param paddr Target physical address of start of region.
     /// \param length Length of region, in bytes.

@@ -489,6 +489,32 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     remover.retain_all();
 }
 
+void machine::remove_stored(const std::string &dir) {
+    if (dir.empty()) {
+        throw std::invalid_argument{"directory name cannot be empty"};
+    }
+    const auto config = machine_config::load(dir);
+
+    // Remove all address ranges
+    os::remove_file(config.processor.backing_store.data_filename);
+    os::remove_file(config.pmas.backing_store.data_filename);
+    os::remove_file(config.dtb.backing_store.data_filename);
+    os::remove_file(config.ram.backing_store.data_filename);
+    os::remove_file(config.cmio.rx_buffer.backing_store.data_filename);
+    os::remove_file(config.cmio.tx_buffer.backing_store.data_filename);
+    os::remove_file(config.uarch.processor.backing_store.data_filename);
+    os::remove_file(config.uarch.ram.backing_store.data_filename);
+    for (const auto &f : config.flash_drive) {
+        os::remove_file(f.backing_store.data_filename);
+    }
+
+    // Remove config
+    os::remove_file(machine_config::get_config_filename(dir));
+
+    // Remove directory
+    os::remove_directory(dir);
+}
+
 void machine::dump_insn_hist() {
 #ifdef DUMP_INSN_HIST
     d_printf("\nInstruction Histogram:\n");

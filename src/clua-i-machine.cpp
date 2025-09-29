@@ -811,6 +811,17 @@ static int machine_obj_index_clone_stored(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:remove_stored() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_remove_stored(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const char *dir = luaL_checkstring(L, 2);
+    if (cm_remove_stored(m.get(), dir) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    return 0;
+}
+
 /// \brief This is the machine:verify_hash_tree() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_verify_hash_tree(lua_State *L) {
@@ -1177,6 +1188,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"set_runtime_config", machine_obj_index_set_runtime_config},
     {"store", machine_obj_index_store},
     {"clone_stored", machine_obj_index_clone_stored},
+    {"remove_stored", machine_obj_index_remove_stored},
     {"swap", machine_obj_index_swap},
     {"translate_virtual_address", machine_obj_index_translate_virtual_address},
     {"verify_hash_tree", machine_obj_index_verify_hash_tree},

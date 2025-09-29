@@ -468,6 +468,15 @@ CM_API cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode s
 /// The source directory machine must not have a running instance.
 CM_API cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const char *to_dir);
 
+/// \brief Removes all files and the directory of a previously stored machine.
+/// \param m Pointer to a machine object. Can be NULL (for local machines).
+/// \param dir Path to the directory containing the stored machine to be removed.
+/// \returns 0 for success, non zero code for error.
+/// \details The stored machine must not be in use.
+/// On success, the entire directory and all machine files are deleted.
+/// On failure, some files or the directory may remain.
+CM_API cm_error cm_remove_stored(const cm_machine *m, const char *dir);
+
 /// \brief Destroy a machine instance and remove it from the object.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \returns 0 for success, non zero code for error.

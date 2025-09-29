@@ -255,6 +255,27 @@
       }
     },
     {
+      "name": "machine.remove_stored",
+      "summary": "Removes a stored machine instance from a directory",
+      "params": [
+        {
+          "name": "dir",
+          "description": "Directory to stored machine instance",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
       "name": "machine.run",
       "summary": "Runs the emulator until a given cycle",
       "params": [

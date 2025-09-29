@@ -1009,6 +1009,20 @@ static json jsonrpc_machine_clone_stored_handler(const json &j, const std::share
     return jsonrpc_response_ok(j);
 }
 
+/// \brief JSONRPC handler for the machine.remove_stored method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_remove_stored_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"dir"};
+    auto args = parse_args<std::string>(j, param_name);
+    cartesi::machine::remove_stored(std::get<0>(args));
+    return jsonrpc_response_ok(j);
+}
+
 /// \brief JSONRPC handler for the machine.run method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1543,6 +1557,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.destroy", jsonrpc_machine_destroy_handler},
         {"machine.store", jsonrpc_machine_store_handler},
         {"machine.clone_stored", jsonrpc_machine_clone_stored_handler},
+        {"machine.remove_stored", jsonrpc_machine_remove_stored_handler},
         {"machine.run", jsonrpc_machine_run_handler},
         {"machine.log_step", jsonrpc_machine_log_step_handler},
         {"machine.run_uarch", jsonrpc_machine_run_uarch_handler},

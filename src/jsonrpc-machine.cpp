@@ -680,6 +680,11 @@ void jsonrpc_machine::do_clone_stored(const std::string &from_dir, const std::st
     request("machine.clone_stored", std::tie(from_dir, to_dir), result);
 }
 
+void jsonrpc_machine::do_remove_stored(const std::string &dir) const {
+    bool result = false;
+    request("machine.remove_stored", std::tie(dir), result);
+}
+
 uint64_t jsonrpc_machine::do_read_reg(reg r) const {
     uint64_t result = 0;
     request("machine.read_reg", std::tie(r), result);

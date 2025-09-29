@@ -33,7 +33,7 @@
 #include <sys/file.h> // flock
 #endif
 
-#include "os-mmap.h"
+#include "os-mapped-memory.h"
 
 #include "scope-exit.h"
 
@@ -41,18 +41,21 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
 
-namespace cartesi {
+namespace cartesi::os {
 
 using namespace std::string_literals;
 
 constexpr uint64_t DEFAULT_MMAP_PAGE_SIZE = 4096;
 
-uint64_t os_get_mmap_page_size() {
+/// \brief Retrieves the system's memory page size.
+/// \details Typically 4KB, but may vary (e.g., 8KB on Solaris, 16KB on macOS arm64).
+static uint64_t os_get_mmap_page_size() {
 #ifdef HAVE_MMAP
     const auto page_size = sysconf(_SC_PAGESIZE);
     if (page_size < 0) {
@@ -71,8 +74,11 @@ uint64_t os_get_mmap_page_size() {
 #endif // HAVE_MMAP
 }
 
-os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string &backing_filename,
-    uint64_t backing_length) {
+mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, const std::string &backing_filename,
+    std::optional<uint64_t> backing_length) :
+    m_length(length),
+    m_backing_filename(backing_filename),
+    m_flags(flags) {
     // Check some preconditions
     if (backing_filename.empty() && flags.shared) {
         throw std::invalid_argument{"backing filename must be specified"s};
@@ -80,8 +86,13 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
     if (length == 0) {
         throw std::invalid_argument{"memory map length cannot be zero"s};
     }
-    if (length < backing_length) {
-        throw std::invalid_argument{"length must be greater or equal than max backing length"s};
+    if (backing_length.has_value()) {
+        if (length < backing_length.value()) {
+            throw std::invalid_argument{"length must be greater or equal than max backing length"s};
+        }
+        m_backing_length = backing_length.value();
+    } else if (!backing_filename.empty()) {
+        m_backing_length = length;
     }
     const bool shared_write = flags.shared && !flags.read_only;
 
@@ -135,11 +146,11 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         backing_file_length = static_cast<uint64_t>(statbuf.st_size);
 
         // Check backing file length mismatch
-        if (backing_file_length != backing_length) {
+        if (backing_file_length != m_backing_length) {
             if (flags.shared) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
-                    std::to_string(backing_length) + ")"s};
+                    std::to_string(m_backing_length) + ")"s};
             }
             // Backing file length may be less than desired backing length,
             // but this is fine, as we are not sharing the file.
@@ -224,11 +235,10 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         }
     }
 
-    return os_mmapd{.host_memory = host_memory,
-        .length = length,
-        .flags = flags,
-        .backing_sync_length = shared_write ? backing_length : 0,
-        .backing_fd = backing_fd};
+    // Commit state
+    m_host_memory = host_memory;
+    m_backing_sync_length = shared_write ? m_backing_length : 0;
+    m_backing_fd = backing_fd;
 
 #elif defined(_WIN32)
     HANDLE backing_fh = INVALID_HANDLE_VALUE;
@@ -296,13 +306,13 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         backing_file_length = static_cast<uint64_t>(size.QuadPart);
 
         // Check backing file length mismatch
-        if (backing_file_length != backing_length) {
+        if (backing_file_length != m_backing_length) {
             if (flags.shared) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
-                    std::to_string(backing_length) + ")"s};
+                    std::to_string(m_backing_length) + ")"s};
 
-                backing_file_length = backing_length;
+                backing_file_length = m_backing_length;
             }
             // Backing file length may be less than desired backing length,
             // but this is fine, as we are not sharing the file.
@@ -371,14 +381,12 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         std::memcpy(host_memory, backing_host_memory, backing_file_length);
     }
 
-    return os_mmapd{.host_memory = host_memory,
-        .length = length,
-        .flags = flags,
-        .backing_sync_length = shared_write ? backing_length : 0,
-        .memory_mapping = static_cast<void *>(memory_mapping),
-        .backing_host_memory = backing_host_memory,
-        .backing_mapping = backing_mapping,
-        .backing_fh = static_cast<void *>(backing_fh)};
+    // Commit state
+    m_host_memory = host_memory;
+    m_backing_sync_length = shared_write ? m_backing_length : 0;
+    m_memory_mapping = static_cast<void *>(memory_mapping), m_backing_host_memory = backing_host_memory,
+    m_backing_mapping = backing_mapping, m_backing_fh = static_cast<void *>(backing_fh)
+};
 
 #else  // Fallback implementation using standard C APIs
     // Over-allocate to ensure we can align the pointer and store the original pointer.
@@ -444,18 +452,18 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
             throw std::system_error{errno, std::generic_category(),
                 "unable to seek to beginning of backing file '"s + backing_filename + "'"s};
         }
-        const auto copy_length = std::min(backing_file_length, backing_length);
+        const auto copy_length = std::min(backing_file_length, m_backing_length);
         if (static_cast<uint64_t>(std::fread(host_memory, 1, copy_length, backing_fp)) != copy_length) {
             throw std::system_error{errno, std::generic_category(),
                 "unable to read from backing file '"s + backing_filename + "'"s};
         }
 
         // Check backing file length mismatch
-        if (backing_file_length != backing_length) {
+        if (backing_file_length != m_backing_length) {
             if (flags.shared) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
-                    std::to_string(backing_length) + ")"s};
+                    std::to_string(m_backing_length) + ")"s};
             }
             // Backing file length may be less than desired backing length,
             // but this is fine, as we are not sharing the file.
@@ -469,73 +477,92 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         }
     }
 
-    return os_mmapd{.host_memory = host_memory,
-        .length = length,
-        .flags = flags,
-        .backing_sync_length = shared_write ? backing_length : 0,
-        .backing_fp = backing_fp,
-        .unaligned_host_memory = unaligned_host_memory};
+    // Commit state
+    m_host_memory = host_memory;
+    m_backing_sync_length = shared_write ? m_backing_length : 0;
+    m_backing_fp = backing_fp;
+    m_unaligned_host_memory = unaligned_host_memory;
 #endif // HAVE_MMAP
 }
 
-void os_munmap(const os_mmapd &mmapd) noexcept {
+mapped_memory::mapped_memory(mapped_memory &&other) noexcept : mapped_memory() {
+    std::swap(m_host_memory, other.m_host_memory);
+    std::swap(m_length, other.m_length);
+    std::swap(m_backing_filename, other.m_backing_filename);
+    std::swap(m_backing_length, other.m_backing_length);
+    std::swap(m_backing_sync_length, other.m_backing_sync_length);
+    std::swap(m_flags, other.m_flags);
 #ifdef HAVE_MMAP
-    if (mmapd.host_memory != nullptr && mmapd.length > 0) {
+    std::swap(m_backing_fd, other.m_backing_fd);
+#elif defined(_WIN32)
+    std::swap(m_memory_mapping, other.m_memory_mapping);
+    std::swap(m_backing_host_memory, other.m_backing_host_memory);
+    std::swap(m_backing_mapping, other.m_backing_mapping);
+    std::swap(m_backing_fh, other.m_backing_fh);
+#else
+    std::swap(m_backing_fp, other.m_backing_fp);
+    std::swap(m_unaligned_host_memory, other.m_unaligned_host_memory);
+#endif
+}
+
+mapped_memory::~mapped_memory() noexcept {
+#ifdef HAVE_MMAP
+    if (m_host_memory != nullptr && m_length > 0) {
         // Asynchronously flush mapped memory to disk to help prevent data loss
-        if (mmapd.backing_sync_length > 0) {
-            std::ignore = msync(mmapd.host_memory, mmapd.backing_sync_length, MS_ASYNC);
+        if (m_backing_sync_length > 0) {
+            std::ignore = msync(m_host_memory, m_backing_sync_length, MS_ASYNC);
         }
-        std::ignore = munmap(mmapd.host_memory, mmapd.length);
+        std::ignore = munmap(m_host_memory, m_length);
     }
-    if (mmapd.backing_fd != -1) {
+    if (m_backing_fd != -1) {
         // Closing a file will also release file locks
-        while (close(mmapd.backing_fd) != 0 && errno == EINTR) {
+        while (close(m_backing_fd) != 0 && errno == EINTR) {
             // Interrupted by signal, retry
         };
     }
 
 #elif defined(_WIN32) // Windows implementation
     // Flush changes to disk if necessary
-    if (mmapd.backing_sync_length > 0 && mmapd.host_memory != nullptr) {
+    if (m_backing_sync_length > 0 && m_host_memory != nullptr) {
         // Asynchronously flush mapped memory to disk to help prevent data loss
-        if (mmapd.backing_host_memory != nullptr) {
-            std::memcpy(mmapd.backing_host_memory, mmapd.host_memory, mmapd.backing_sync_length);
-            std::ignore = FlushViewOfFile(mmapd.backing_host_memory, mmapd.backing_sync_length);
+        if (m_backing_host_memory != nullptr) {
+            std::memcpy(m_backing_host_memory, m_host_memory, m_backing_sync_length);
+            std::ignore = FlushViewOfFile(m_backing_host_memory, m_backing_sync_length);
         } else {
-            std::ignore = FlushViewOfFile(mmapd.host_memory, mmapd.backing_sync_length);
+            std::ignore = FlushViewOfFile(m_host_memory, m_backing_sync_length);
         }
     }
-    if (mmapd.host_memory != nullptr) {
-        std::ignore = UnmapViewOfFile(mmapd.host_memory);
+    if (m_host_memory != nullptr) {
+        std::ignore = UnmapViewOfFile(m_host_memory);
     }
-    if (mmapd.backing_host_memory != nullptr) {
-        std::ignore = UnmapViewOfFile(mmapd.backing_host_memory);
+    if (m_backing_host_memory != nullptr) {
+        std::ignore = UnmapViewOfFile(m_backing_host_memory);
     }
-    if (mmapd.memory_mapping != nullptr) {
-        std::ignore = CloseHandle(static_cast<HANDLE>(mmapd.memory_mapping));
+    if (m_memory_mapping != nullptr) {
+        std::ignore = CloseHandle(static_cast<HANDLE>(m_memory_mapping));
     }
-    if (mmapd.backing_mapping != nullptr) {
-        std::ignore = CloseHandle(static_cast<HANDLE>(mmapd.backing_mapping));
+    if (m_backing_mapping != nullptr) {
+        std::ignore = CloseHandle(static_cast<HANDLE>(m_backing_mapping));
     }
-    if (mmapd.backing_fh != nullptr && mmapd.backing_fh != INVALID_HANDLE_VALUE) {
+    if (m_backing_fh != nullptr && m_backing_fh != INVALID_HANDLE_VALUE) {
         OVERLAPPED overlapped{};
-        std::ignore = UnlockFileEx(static_cast<HANDLE>(mmapd.backing_fh), 0, MAXDWORD, MAXDWORD, &overlapped);
-        std::ignore = CloseHandle(static_cast<HANDLE>(mmapd.backing_fh));
+        std::ignore = UnlockFileEx(static_cast<HANDLE>(m_backing_fh), 0, MAXDWORD, MAXDWORD, &overlapped);
+        std::ignore = CloseHandle(static_cast<HANDLE>(m_backing_fh));
     }
 
 #else // Fallback implementation using standard C APIs
-    if (mmapd.backing_sync_length > 0 && mmapd.host_memory != nullptr && mmapd.backing_fp != nullptr) {
+    if (m_backing_sync_length > 0 && m_host_memory != nullptr && m_backing_fp != nullptr) {
         // Write back changes to backing file
-        std::ignore = std::fwrite(mmapd.host_memory, 1, mmapd.backing_sync_length, mmapd.backing_fp);
+        std::ignore = std::fwrite(m_host_memory, 1, m_backing_sync_length, m_backing_fp);
     }
-    if (mmapd.unaligned_host_memory != nullptr) {
-        std::free(mmapd.unaligned_host_memory); // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
+    if (m_unaligned_host_memory != nullptr) {
+        std::free(m_unaligned_host_memory); // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
     }
-    if (mmapd.backing_fp != nullptr) {
-        std::ignore = std::fclose(mmapd.backing_fp);
+    if (m_backing_fp != nullptr) {
+        std::ignore = std::fclose(m_backing_fp);
     }
 
 #endif // HAVE_MMAP
 }
 
-} // namespace cartesi
+} // namespace cartesi::os

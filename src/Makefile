@@ -367,7 +367,7 @@ LIBCARTESI_OBJS:= \
 	machine-address-ranges.o \
 	memory-address-range.o \
 	os.o \
-	os-mmap.o \
+	os-mapped-memory.o \
 	os-filesystem.o \
 	plic-address-range.o \
 	back-merkle-tree.o \

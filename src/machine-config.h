@@ -193,7 +193,7 @@ struct machine_config final {
     /// \brief Get the name where dense hash-tree for an address range will be stored in a directory
     static std::string get_dht_filename(const std::string &dir, uint64_t start, uint64_t length);
 
-    /// \brief Get the name where dirty-page -tree for an address range will be stored in a directory
+    /// \brief Get the name where dirty page-tree for an address range will be stored in a directory
     static std::string get_dpt_filename(const std::string &dir, uint64_t start, uint64_t length);
 
     /// \brief Get the name where global sparse hash-tree will be stored in a directory

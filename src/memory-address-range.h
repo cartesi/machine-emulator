@@ -24,7 +24,7 @@
 #include "dense-hash-tree.h"
 #include "dirty-page-tree.h"
 #include "machine-config.h"
-#include "os-mmap.h"
+#include "os-mapped-memory.h"
 #include "pmas.h"
 
 namespace cartesi {
@@ -48,8 +48,7 @@ struct memory_address_range_config {
 /// \brief An address range occupied by memory
 
 class memory_address_range final : public address_range {
-    unique_mmap_ptr<unsigned char> m_ptr; ///< Pointer to mapped memory
-    unsigned char *m_host_memory;         ///< Start of associated memory region in host.
+    os::mapped_memory m_mapped;           ///< Pointer to mapped memory
     memory_address_range_config m_config; ///< Memory configuration passed to constructor.
     backing_store_config m_backing_store; ///< Backing store configuration passed to constructor.
     dirty_page_tree m_dpt;                ///< Tree of dirty pages.
@@ -81,11 +80,11 @@ public:
 
 private:
     unsigned char *do_get_host_memory() noexcept override {
-        return m_host_memory;
+        return m_mapped.get_ptr();
     }
 
     const unsigned char *do_get_host_memory() const noexcept override {
-        return m_host_memory;
+        return m_mapped.get_ptr();
     }
 
     bool do_is_host_read_only() const noexcept override {

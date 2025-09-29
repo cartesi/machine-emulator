@@ -23,7 +23,6 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
-#include <memory>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -58,7 +57,7 @@
 #include "machine-runtime-config.h"
 #include "mcycle-root-hashes.h"
 #include "os-filesystem.h"
-#include "os-mmap.h"
+#include "os-mapped-memory.h"
 #include "os.h"
 #include "pmas-constants.h"
 #include "pmas.h"
@@ -394,7 +393,7 @@ static void store_address_range(const backing_store_config &from_config, const a
         throw std::runtime_error{"attempt to store non-memory address range "s.append(ar.get_description())};
     }
     // Write the memory data to a file
-    const std::string &data_filename = machine_config::get_data_filename(dir, ar.get_start(), ar.get_length());
+    const std::string data_filename = machine_config::get_data_filename(dir, ar.get_start(), ar.get_length());
     if (sharing == sharing_mode::all || (sharing == sharing_mode::config && from_config.shared)) {
         os::create_file(data_filename, std::span{ar.get_host_memory(), static_cast<size_t>(ar.get_length())});
     } else { // Copy unshared backing store
@@ -1894,9 +1893,9 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
 interpreter_break_reason machine::verify_step(const machine_hash &root_hash_before, const std::string &filename,
     uint64_t mcycle_count, const machine_hash &root_hash_after) {
     auto data_length = os::file_size(filename);
-    auto data = make_unique_mmap<unsigned char>(data_length, os_mmap_flags{}, filename, data_length);
+    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
     replay_step_state_access::context context;
-    replay_step_state_access a(context, data.get(), data_length, root_hash_before);
+    replay_step_state_access a(context, mapped_data.get_ptr(), data_length, root_hash_before);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     auto break_reason = interpret(a, mcycle_end);
     a.finish(root_hash_after);

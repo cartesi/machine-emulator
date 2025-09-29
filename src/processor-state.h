@@ -61,7 +61,7 @@ static_assert(sizeof(shadow_state) == AR_SHADOW_STATE_LENGTH, "unexpected shadow
 
 // The size of the shadow state should align with the largest page size used by the supported operating systems.
 // For instance, macOS on arm64 currently utilizes a page size of 16KB.
-// Doing this ensures that memory allocations made with os_mmap()
+// Doing this ensures that memory allocations made with os::mapped_memory()
 // result in the backing shadow file occupying whole pages, avoiding partial page mappings.
 static_assert(sizeof(shadow_state) % 16384 == 0, "shadow state size must be multiple of a 16KB");
 

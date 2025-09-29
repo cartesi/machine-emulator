@@ -25,14 +25,14 @@
 #include "address-range-constants.h"
 #include "address-range.h"
 #include "machine-config.h"
-#include "os-mmap.h"
+#include "os-mapped-memory.h"
 #include "pmas.h"
 
 namespace cartesi {
 
 using namespace std::string_literals;
 
-static os_mmap_flags check_mmap_flags(const pmas_flags &flags, const backing_store_config &backing_store,
+static os::mapped_memory_flags check_mmap_flags(const pmas_flags &flags, const backing_store_config &backing_store,
     const memory_address_range_config &memory_config) {
     if (!flags.M) {
         throw std::invalid_argument{"memory address range must be flagged memory"};
@@ -49,7 +49,7 @@ static os_mmap_flags check_mmap_flags(const pmas_flags &flags, const backing_sto
     if (memory_config.host_read_only && flags.W) {
         throw std::invalid_argument{"backing store for writable memory address range cannot be read-only"};
     }
-    return os_mmap_flags{
+    return os::mapped_memory_flags{
         .read_only = memory_config.host_read_only && !backing_store.newly_created(),
         .shared = backing_store.shared,
         .no_reserve = memory_config.host_no_reserve,
@@ -62,9 +62,8 @@ memory_address_range::memory_address_range(const std::string &description, uint6
     const pmas_flags &flags, const backing_store_config &backing_store,
     const memory_address_range_config &memory_config) try :
     address_range(description.c_str(), start, length, flags, throw_invalid_argument),
-    m_ptr{make_unique_mmap<unsigned char>(std::max(memory_config.host_length, length),
-        check_mmap_flags(flags, backing_store, memory_config), backing_store.data_filename, length)},
-    m_host_memory{m_ptr.get()},
+    m_mapped{std::max(memory_config.host_length, length), check_mmap_flags(flags, backing_store, memory_config),
+        backing_store.data_filename, length},
     m_config{memory_config},
     m_backing_store{backing_store},
     m_dpt{get_level_count(length), static_cast<size_t>(length >> AR_LOG2_PAGE_SIZE)},

@@ -44,26 +44,22 @@ std::string machine_config::get_data_filename(const std::string &dir, uint64_t s
 
 std::string machine_config::get_dht_filename(const std::string &dir, uint64_t start, uint64_t length) {
     std::ostringstream sout;
-    // dense hash tree
     sout << dir << "/" << std::hex << std::setw(16) << std::setfill('0') << start << "-" << length << ".dht";
     return sout.str();
 }
 
 std::string machine_config::get_dpt_filename(const std::string &dir, uint64_t start, uint64_t length) {
     std::ostringstream sout;
-    // dense hash tree
     sout << dir << "/" << std::hex << std::setw(16) << std::setfill('0') << start << "-" << length << ".dpt";
     return sout.str();
 }
 
 std::string machine_config::get_sht_filename(const std::string &dir) {
-    // sparse hash tree
     return dir + "/global.sht";
 }
 
 std::string machine_config::get_phtc_filename(const std::string &dir) {
-    // sparse hash tree
-    return dir + "/global.phc";
+    return dir + "/global.phtc";
 }
 
 std::string machine_config::get_config_filename(const std::string &dir) {
@@ -96,6 +92,10 @@ void machine_config::adjust_backing_store_config(uint64_t start, uint64_t length
 }
 
 void machine_config::adjust_hash_tree_config(const std::string &dir, hash_tree_config &c) {
+    // Strip create and truncate since backing store should be already created
+    c.create = false;
+    c.truncate = false;
+
     c.sht_filename = machine_config::get_sht_filename(dir);
     c.phtc_filename = machine_config::get_phtc_filename(dir);
 }

@@ -46,7 +46,7 @@
 #include "i-hasher.h"
 #include "is-pristine.h"
 #include "machine-hash.h"
-#include "os-mmap.h"
+#include "os-mapped-memory.h"
 #include "page-hash-tree-cache-stats.h"
 #include "ranges.h"
 #include "signposts.h"
@@ -418,9 +418,9 @@ public:
         m_spid_pristine_update{os_signpost_id_generate(m_log)},
         m_spid_non_pristine_update{os_signpost_id_generate(m_log)},
 #endif
-        m_mapped_memory{make_unique_mmap<unsigned char>(sizeof(lru) + (num_entries * sizeof(entry)))},
-        m_lru{*new(m_mapped_memory.get()) lru},
-        m_entries{new(m_mapped_memory.get() + sizeof(lru)) entry[num_entries], num_entries},
+        m_mapped_memory{sizeof(lru) + (num_entries * sizeof(entry))},
+        m_lru{*new(m_mapped_memory.get_ptr()) lru},
+        m_entries{new(m_mapped_memory.get_ptr() + sizeof(lru)) entry[num_entries], num_entries},
         m_pristine_page_hash_tree{entry::get_pristine_page_hash_tree(std::forward<H>(h))} {
         if (num_entries == 0) {
             throw std::invalid_argument{"page hash-tree cache must have at least one entry"};
@@ -610,7 +610,7 @@ private:
     os_signpost_id_t m_spid_non_pristine_update;
 #endif
 
-    unique_mmap_ptr<unsigned char> m_mapped_memory; ///< Mapped memory containing the LRU and entries
+    os::mapped_memory m_mapped_memory; ///< Mapped memory containing the LRU and entries
 
     // The following fields may already be initialized by existing mapped memory
     lru &m_lru;                 ///< Recently used entries

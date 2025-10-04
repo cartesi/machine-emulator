@@ -49,7 +49,7 @@ class machine_address_ranges {
     address_range_descriptions m_descrs;               ///< Address range descriptions for users
     int m_shadow_state_index;                          ///< Index of shadow state address range
     int m_shadow_uarch_state_index;                    ///< Index of shadow uarch state address range
-    address_range m_sentinel{make_empty_address_range("sentinel")};
+    address_range m_sentinel{"sentinel"};
 
 public:
     /// \brief Constructor
@@ -190,8 +190,8 @@ private:
     /// The \p where parameter tells whether to register the address range with the hash tree and/or as a PMA.
     /// Finally, the "virtio" subset lists every VirtIO address range that has been registered.
     template <typename AR>
-        requires std::is_rvalue_reference_v<AR &&> && std::derived_from<AR, address_range>
-    AR &push_back(AR &&ar, register_where where);
+        requires std::derived_from<AR, address_range>
+    AR &push_back(std::unique_ptr<AR> &&ar_ptr, register_where where);
 
     /// \brief Adds uarch RAM address range
     /// \param c uarch RAM configuration

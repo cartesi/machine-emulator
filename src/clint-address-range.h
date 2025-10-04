@@ -64,11 +64,6 @@ private:
         uint64_t val) noexcept override;
 };
 
-template <typename ABRT>
-static inline clint_address_range make_clint_address_range(ABRT abrt) {
-    return clint_address_range{abrt};
-}
-
 } // namespace cartesi
 
 #endif

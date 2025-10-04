@@ -24,7 +24,6 @@
 #include <new>
 #include <system_error>
 #include <tuple>
-#include <type_traits>
 
 namespace cartesi {
 
@@ -80,13 +79,6 @@ static inline auto make_unique_fopen(const char *pathname, const char *mode) {
 
 static inline auto make_unique_fopen(const char *pathname, const char *mode, const std::nothrow_t & /*tag*/) {
     return unique_file_ptr{fopen(pathname, mode)};
-}
-
-template <typename T>
-static auto inline make_moved_unique(T &&t)
-    requires std::is_rvalue_reference_v<T &&>
-{
-    return std::make_unique<T>(std::forward<T>(t));
 }
 
 } // namespace cartesi

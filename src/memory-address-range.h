@@ -71,12 +71,13 @@ public:
     memory_address_range(const std::string &description, uint64_t start, uint64_t length, const pmas_flags &flags,
         const backing_store_config &backing_store = {}, const memory_address_range_config &memory_config = {});
 
-    memory_address_range(const memory_address_range &) = delete;
-    memory_address_range &operator=(const memory_address_range &) = delete;
-    memory_address_range &operator=(memory_address_range &&) noexcept = delete;
-
     ~memory_address_range() override = default;
-    memory_address_range(memory_address_range &&) noexcept = default;
+
+    // No copy or move constructors or assignments
+    memory_address_range(const memory_address_range &) = delete;
+    memory_address_range(memory_address_range &&) = delete;
+    memory_address_range &operator=(const memory_address_range &) = delete;
+    memory_address_range &operator=(memory_address_range &&) = delete;
 
 private:
     unsigned char *do_get_host_memory() noexcept override {

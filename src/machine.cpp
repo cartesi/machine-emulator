@@ -2327,7 +2327,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
             break;
         }
 
-        // If the machine halted, yielded manuallly or reached mcycle UINT64_MAX,
+        // If the machine halted, yielded manually or reached mcycle UINT64_MAX,
         // then we are at a fixed point and should always attempt to advance one more mcycle
         at_fixed_point = result.break_reason == interpreter_break_reason::halted ||
             result.break_reason == interpreter_break_reason::yielded_manually || mcycle_reached == UINT64_MAX;

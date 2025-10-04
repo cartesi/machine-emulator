@@ -72,11 +72,6 @@ private:
         uint64_t val) noexcept override;
 };
 
-template <typename ABRT>
-static inline plic_address_range make_plic_address_range(ABRT abrt) {
-    return plic_address_range{abrt};
-}
-
 } // namespace cartesi
 
 #endif

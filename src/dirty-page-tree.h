@@ -109,6 +109,15 @@ public:
         build_from_leaves();
     }
 
+    // No copy or move constructors or assignments
+    dirty_page_tree(const dirty_page_tree &) = delete;
+    dirty_page_tree &operator=(const dirty_page_tree &) = delete;
+    dirty_page_tree(dirty_page_tree &&) = delete;
+    dirty_page_tree &operator=(dirty_page_tree &&) = delete;
+
+    /// \brief Destructor
+    ~dirty_page_tree() override = default;
+
     // Dump tree in DOT format
     void dump() const {
         std::cout << "digraph HashTree {\n";

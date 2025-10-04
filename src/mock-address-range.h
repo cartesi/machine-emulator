@@ -56,19 +56,19 @@ static inline mock_address_range make_mock_address_range(uint64_t istart, uint64
     uint64_t start{};
     auto flags = pmas_unpack_istart(istart, start);
     if (flags.M) {
-        return check_mock_address_range(make_address_range(pmas_get_DID_name(flags.DID), start, ilength, flags, abrt),
-            start, ilength, flags, abrt);
+        return check_mock_address_range(address_range{pmas_get_DID_name(flags.DID), start, ilength, flags, abrt}, start,
+            ilength, flags, abrt);
     }
     if (ilength == 0) {
-        return check_mock_address_range(make_empty_address_range("empty"), start, ilength, flags, abrt);
+        return check_mock_address_range(address_range{"empty"}, start, ilength, flags, abrt);
     }
     switch (flags.DID) {
         case PMA_ISTART_DID::CLINT:
-            return check_mock_address_range(make_clint_address_range(abrt), start, ilength, flags, abrt);
+            return check_mock_address_range(clint_address_range{abrt}, start, ilength, flags, abrt);
         case PMA_ISTART_DID::PLIC:
-            return check_mock_address_range(make_plic_address_range(abrt), start, ilength, flags, abrt);
+            return check_mock_address_range(plic_address_range{abrt}, start, ilength, flags, abrt);
         case PMA_ISTART_DID::HTIF:
-            return check_mock_address_range(make_htif_address_range(abrt), start, ilength, flags, abrt);
+            return check_mock_address_range(htif_address_range{abrt}, start, ilength, flags, abrt);
         default:
             abrt("unhandled mock address range");
             __builtin_trap();
@@ -90,7 +90,7 @@ address_range &get_mock_address_range(mock_address_range &mock, ABRT abrt) {
         case 4:
             return std::get<4>(mock);
         default: {
-            static auto unhandled = make_empty_address_range("unhandled mock address range");
+            static auto unhandled = address_range{"unhandled mock address range"};
             abrt("unhandled mock address range");
             __builtin_trap();
             return unhandled;

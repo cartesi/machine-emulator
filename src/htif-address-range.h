@@ -64,11 +64,6 @@ private:
         uint64_t val) noexcept override;
 };
 
-template <typename ABRT>
-static inline htif_address_range make_htif_address_range(ABRT abrt) {
-    return htif_address_range{abrt};
-}
-
 } // namespace cartesi
 
 #endif

@@ -485,26 +485,6 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
 #endif // HAVE_MMAP
 }
 
-mapped_memory::mapped_memory(mapped_memory &&other) noexcept : mapped_memory() {
-    std::swap(m_host_memory, other.m_host_memory);
-    std::swap(m_length, other.m_length);
-    std::swap(m_backing_filename, other.m_backing_filename);
-    std::swap(m_backing_length, other.m_backing_length);
-    std::swap(m_backing_sync_length, other.m_backing_sync_length);
-    std::swap(m_flags, other.m_flags);
-#ifdef HAVE_MMAP
-    std::swap(m_backing_fd, other.m_backing_fd);
-#elif defined(_WIN32)
-    std::swap(m_memory_mapping, other.m_memory_mapping);
-    std::swap(m_backing_host_memory, other.m_backing_host_memory);
-    std::swap(m_backing_mapping, other.m_backing_mapping);
-    std::swap(m_backing_fh, other.m_backing_fh);
-#else
-    std::swap(m_backing_fp, other.m_backing_fp);
-    std::swap(m_unaligned_host_memory, other.m_unaligned_host_memory);
-#endif
-}
-
 mapped_memory::~mapped_memory() noexcept {
 #ifdef HAVE_MMAP
     if (m_host_memory != nullptr && m_length > 0) {

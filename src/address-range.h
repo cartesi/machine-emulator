@@ -389,17 +389,6 @@ private:
 #endif
 };
 
-template <size_t N>
-constexpr static auto make_empty_address_range(const char (&description)[N]) {
-    return address_range{description};
-}
-
-template <typename ABRT>
-static inline auto make_address_range(const char *description, uint64_t start, uint64_t length, pmas_flags f,
-    ABRT abrt) {
-    return address_range{description, start, length, f, abrt};
-}
-
 } // namespace cartesi
 
 #endif // ADDRESS_RANGE_H

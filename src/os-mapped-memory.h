@@ -89,17 +89,13 @@ public:
     explicit mapped_memory(uint64_t length, const mapped_memory_flags &flags = {},
         const std::string &backing_filename = {}, std::optional<uint64_t> backing_length = {});
 
-    /// \brief Move constructor.
-    mapped_memory(mapped_memory &&other) noexcept;
-
     /// \brief Destructor.
     ~mapped_memory() noexcept;
 
-    // No copy constructor or copy assignment
+    // No copy or move constructors or assignments
     mapped_memory(const mapped_memory &other) = delete;
     mapped_memory &operator=(const mapped_memory &other) = delete;
-
-    // No move assignment
+    mapped_memory(mapped_memory &&other) noexcept = delete;
     mapped_memory &operator=(mapped_memory &&other) noexcept = delete;
 
     /// \brief Returns a pointer to the mapped memory region.

@@ -61,6 +61,13 @@ public:
         m_level_count{check_level_count(level_count, leaf_count)},
         m_storage{size_type{1} << level_count} {}
 
+    dense_hash_tree(const dense_hash_tree &) = delete;
+    dense_hash_tree &operator=(const dense_hash_tree &) = delete;
+    dense_hash_tree(dense_hash_tree &&) = delete;
+    dense_hash_tree &operator=(dense_hash_tree &&) = delete;
+
+    ~dense_hash_tree() override = default;
+
     machine_hash_view do_node_hash_view(uint64_t offset, int log2_size) noexcept override {
         if (auto index = to_index(offset, log2_size); index != invalid_index) {
             return machine_hash_view{m_storage[index]};

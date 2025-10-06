@@ -27,6 +27,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "os-mapped-memory.h"
 #include "unordered_dense.h"
 
 #include "address-range.h"
@@ -131,10 +132,12 @@ public:
     using dirty_words_type = ankerl::unordered_dense::set<uint64_t>;
     using dirty_pages_type = ankerl::unordered_dense::set<uint64_t>;
     using nodes_type = std::vector<node_type>;
+    using nodes_view_type = std::span<node_type>;
     using sibling_hashes_type = std::vector<machine_hash>;
 
-    hash_tree(const hash_tree_config &config, uint64_t concurrency, const_address_ranges ars,
-        hash_function_type hash_function);
+    hash_tree(const hash_tree_config &config, uint64_t concurrency, const nodes_type &init_sparse_nodes);
+    hash_tree(const hash_tree_config &config, uint64_t concurrency, machine_address_ranges &mars,
+        const std::string &dir, scope_remove &remover);
 
     hash_tree(const hash_tree &other) = delete;
     hash_tree(hash_tree &&other) = delete;
@@ -142,6 +145,22 @@ public:
     hash_tree &operator=(const hash_tree &other) = delete;
 
     ~hash_tree();
+
+    static uint64_t get_sht_storage_length(const_address_ranges ars) {
+        return create_nodes(ars).size() * sizeof(node_type);
+    }
+
+    static uint64_t get_phtc_storage_length(const hash_tree_config &config) {
+        return page_hash_tree_cache::get_storage_length(config.phtc_size);
+    }
+
+    std::span<const unsigned char> get_sht_storage_data() const noexcept {
+        return m_mapped_memory.get_storage_data();
+    }
+
+    std::span<const unsigned char> get_phtc_storage_data() const noexcept {
+        return m_page_cache.get_storage_data();
+    }
 
     bool update(address_ranges ars);
 
@@ -186,7 +205,7 @@ private:
         requires(std::same_as<std::remove_cvref_t<std::iter_reference_t<Iter>>, address_range> &&
             std::is_reference_v<std::iter_reference_t<Iter>>)
     static index_type append_nodes(uint64_t begin_page_index, uint64_t log2_page_count, Iter &ar_curr /* modifiable! */,
-        Iter ar_begin, Sent ar_sent, hash_tree::nodes_type &nodes, index_type parent);
+        Iter ar_begin, Sent ar_sent, nodes_type &nodes, index_type parent);
 
     static nodes_type create_nodes(const_address_ranges ars);
     static void check_address_ranges(const_address_ranges ars);
@@ -200,9 +219,8 @@ private:
 #endif
 
     mutable page_hash_tree_cache m_page_cache;
-    //??D Replace std::vector so entries can live on disk
-    //??(edubart): convert to a std::span over mmapped memory
-    nodes_type m_sparse_nodes;
+    os::mapped_memory m_mapped_memory;
+    nodes_view_type m_sparse_nodes;
     const pristine_hashes m_pristine_hashes;
     int m_concurrency;
     hash_function_type m_hash_function;

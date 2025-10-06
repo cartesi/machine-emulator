@@ -18,6 +18,7 @@
 #define I_DENSE_HASH_TREE_H
 
 #include <cstdint>
+#include <span>
 
 #include "machine-hash.h"
 
@@ -33,6 +34,9 @@ public:
     }
     const_machine_hash_view root_hash_view() const noexcept {
         return do_root_hash_view();
+    }
+    std::span<const unsigned char> get_storage_data() const noexcept {
+        return do_get_storage_data();
     }
 
     i_dense_hash_tree() = default;
@@ -55,6 +59,7 @@ private:
     virtual const_machine_hash_view do_node_hash_view(uint64_t offset, int log2_size) const noexcept = 0;
     virtual machine_hash_view do_node_hash_view(uint64_t offset, int log2_size) noexcept = 0;
     virtual const_machine_hash_view do_root_hash_view() const noexcept = 0;
+    virtual std::span<const unsigned char> do_get_storage_data() const noexcept = 0;
 };
 
 class empty_dense_hash_tree final : public i_dense_hash_tree {
@@ -66,6 +71,9 @@ class empty_dense_hash_tree final : public i_dense_hash_tree {
     }
     const_machine_hash_view do_root_hash_view() const noexcept override {
         return no_hash_view();
+    }
+    std::span<const unsigned char> do_get_storage_data() const noexcept override {
+        return {};
     }
 };
 

@@ -24,6 +24,7 @@
 #include <iterator>
 #include <limits>
 #include <ranges>
+#include <span>
 #include <type_traits>
 
 #include "address-range-constants.h"
@@ -183,9 +184,16 @@ protected:
     /// \returns True if node is dirty, false otherwise
     virtual bool do_is_dirty_position(position_iterator pos) const noexcept = 0;
 
+    /// \brief Tells if the dirty page tree is clean
+    /// \returns True if root node is clean, false otherwise
+    virtual bool do_is_clean() const noexcept = 0;
+
     /// \brief Cleans entire tree
     /// \detail The derived class is free to ignore the operation
     virtual void do_clean() noexcept = 0;
+
+    /// \brief Gets storage data
+    virtual std::span<const unsigned char> do_get_storage_data() const noexcept = 0;
 
     /// Non-Virtual Interface (NVI) pattern for do_is_dirty_position()
     bool is_dirty_position(position_iterator pos) const noexcept {
@@ -286,6 +294,17 @@ public:
         do_clean();
     }
 
+    /// \brief Tells if the dirty page tree is clean
+    /// \returns True if root node is clean, false otherwise
+    bool is_clean() const noexcept {
+        return do_is_clean();
+    }
+
+    /// \brief Gets storage data
+    std::span<const unsigned char> get_storage_data() const noexcept {
+        return do_get_storage_data();
+    }
+
     /// \brief Marks a page clean (and all its ancestors that only have clean descendants)
     /// \param offset Offset within page
     /// \detail The derived class is free to ignore the operation
@@ -337,8 +356,16 @@ class empty_dirty_page_tree final : public i_dirty_page_tree {
         return true;
     }
 
+    bool do_is_clean() const noexcept override {
+        return true;
+    }
+
     void do_clean() noexcept override {
         ;
+    }
+
+    std::span<const unsigned char> do_get_storage_data() const noexcept override {
+        return {};
     }
 
 public:

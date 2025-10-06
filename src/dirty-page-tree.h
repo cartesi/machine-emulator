@@ -28,22 +28,20 @@
 #include <ranges>
 #include <span>
 #include <stdexcept>
-#include <vector>
 
 #include "assert-printf.h"
 #include "i-dirty-page-tree.h"
+#include "os-mapped-memory.h"
 #include "ranges.h"
 
 namespace cartesi {
 
 /// \brief Dirty page tree
 class dirty_page_tree final : public i_dirty_page_tree {
-public:
     /// \brief Each node in tree is either clean or dirty
-    enum class status_type : uint8_t { clean, dirty };
+    enum class status_type : uint8_t { clean = 0, dirty = 1 };
 
-private:
-    using container_type = std::vector<status_type>;
+    using container_type = std::span<status_type>;
 
     /// \brief Checks if we can represent a tree with this many levels
     static int check_level_count(int level_count, size_type leaf_count) {
@@ -57,7 +55,7 @@ private:
             throw std::invalid_argument{"too many leaves for level count"};
         }
         // Make sure we can allocate a vector of size 1 << level_count
-        if ((container_type{}.max_size() >> level_count) == 0) {
+        if ((std::numeric_limits<container_type::size_type>::max() >> level_count) == 0) {
             throw std::invalid_argument{"too many levels"};
         }
         // Make sure we can address position 1 << level_count
@@ -78,35 +76,43 @@ private:
         }
     }
 
+    /// \brief Tells if the tree has been initialized
+    /// \returns True if initialized, false otherwise
+    bool is_initialized() const {
+        // Use tree position 0 as initialization flag, if it's not clean, then the tree is initialized
+        return m_tree[*position_iterator{0}] != status_type::clean;
+    }
+
+    /// \brief Marks the tree as initialized
+    void set_initialized() const {
+        // Use tree position 0 as initialization flag, marking it as dirty makes the tree initialized
+        m_tree[*position_iterator{0}] = status_type::dirty;
+    }
+
 public:
     /// \brief Constructor for leaves marked the same way
     /// \param leaf_count Number of leaves in tree. This is rounded up to the next power of 2.
     /// \param init Status of the first \p leaf_count leaves (the ones past leaf_count start clean)
-    explicit dirty_page_tree(int level_count, size_type leaf_count, status_type init = status_type::dirty) :
+    explicit dirty_page_tree(int level_count, size_type leaf_count, const std::string &backing_filename, bool shared,
+        status_type init = status_type::dirty) :
         i_dirty_page_tree{check_level_count(level_count, leaf_count)},
         m_leaf_positions{level_positions_view(0)},
         m_valid_positions{position_iterator(1), position_iterator(position_iterator::value_type{1} << level_count)},
-        m_tree{typename container_type::size_type{1} << level_count, status_type::clean} {
-        const auto lp = m_leaf_positions;
-        const auto first_leaf = *lp.begin();
-        const auto first_pad = first_leaf + leaf_count;
-        const auto pad_count = *lp.end() - first_pad;
-        std::ranges::fill(std::span(m_tree).subspan(first_leaf, leaf_count), init);
-        std::ranges::fill(std::span(m_tree).subspan(first_pad, pad_count), status_type::dirty);
-        build_from_leaves();
-    }
-
-    /// \brief Constructor from initializer list
-    /// \param leaves Status of first few leaves in tree.
-    /// \details This is a constructor mostly used in simple tests
-    explicit dirty_page_tree(int level_count, std::initializer_list<status_type> leaves) :
-        i_dirty_page_tree{check_level_count(level_count, leaves.size())},
-        m_leaf_positions{level_positions_view(0)},
-        m_valid_positions{position_iterator(1), position_iterator(position_iterator::value_type{1} << level_count)},
-        m_tree{typename container_type::size_type{1} << level_count, status_type::clean} {
-        const auto lp = m_leaf_positions;
-        std::ranges::copy(leaves, &m_tree[*lp.begin()]);
-        build_from_leaves();
+        m_mapped_memory{get_storage_length(level_count, leaf_count), os::mapped_memory_flags{.shared = shared},
+            backing_filename},
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        m_tree{reinterpret_cast<status_type *>(m_mapped_memory.get_ptr()), size_type{1} << level_count} {
+        if (!is_initialized()) {
+            const auto lp = m_leaf_positions;
+            const auto first_leaf = *lp.begin();
+            const auto first_pad = first_leaf + leaf_count;
+            const auto pad_count = *lp.end() - first_pad;
+            std::ranges::fill(m_tree, status_type::clean);
+            std::ranges::fill(m_tree.subspan(first_leaf, leaf_count), init);
+            std::ranges::fill(m_tree.subspan(first_pad, pad_count), status_type::dirty);
+            build_from_leaves();
+            set_initialized();
+        }
     }
 
     // No copy or move constructors or assignments
@@ -117,6 +123,10 @@ public:
 
     /// \brief Destructor
     ~dirty_page_tree() override = default;
+
+    static uint64_t get_storage_length(int level_count, size_type leaf_count) {
+        return (UINT64_C(1) << check_level_count(level_count, leaf_count)) * sizeof(status_type);
+    }
 
     // Dump tree in DOT format
     void dump() const {
@@ -328,6 +338,11 @@ private:
         return m_tree[*pos] == status_type::dirty;
     }
 
+    /// \brief Tells if the dirty page tree is clean
+    bool do_is_clean() const noexcept override {
+        return m_tree[*get_root_position()] == status_type::clean;
+    }
+
     /// \brief Clean entire tree
     void do_clean() noexcept override {
         for (auto pos : dirty_positions_view(leaf_positions_view())) {
@@ -336,14 +351,19 @@ private:
         assert(m_tree[*get_root_position()] == status_type::clean);
     }
 
+    /// \brief Gets storage data
+    std::span<const unsigned char> do_get_storage_data() const noexcept override {
+        return m_mapped_memory.get_storage_data();
+    }
+
     // -----
     // Fields
     // -----
 
-    positions_range m_leaf_positions;  // Bounds on leaf positions
-    positions_range m_valid_positions; // Bounds on all positions
-    //??(edubart): convert to std::span over mapped memory
-    container_type m_tree; // Complete tree of flags
+    positions_range m_leaf_positions;  ///< Bounds on leaf positions
+    positions_range m_valid_positions; ///< Bounds on all positions
+    os::mapped_memory m_mapped_memory; ///< Mapped memory for tree storage
+    container_type m_tree;             ///< Complete tree of flags
 };
 
 } // namespace cartesi

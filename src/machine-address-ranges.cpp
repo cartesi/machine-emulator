@@ -150,64 +150,113 @@ AR &machine_address_ranges::push_back(std::unique_ptr<AR> &&ar_ptr, register_whe
     return ar_ref; // Return reference to object in heap
 }
 
-static void prepare_backing_store(const backing_store_config &backing_store, uint64_t length, scope_remove &remover) {
-    if (!backing_store.data_filename.empty() && backing_store.shared) {
-        if (backing_store.create) { // Create new file
-            os::truncate_file(backing_store.data_filename, length, true);
-            remover.add_file(backing_store.data_filename);
-        } else if (backing_store.truncate) { // Truncate existing file
-            os::truncate_file(backing_store.data_filename, length, false);
+static void prepare_ar_backing_store(const backing_store_config &c, uint64_t length, scope_remove &remover) {
+    if (!c.shared) {
+        return;
+    }
+
+    // Create data storage
+    if (!c.data_filename.empty()) {
+        if (c.create) { // Create new file
+            os::truncate_file(c.data_filename, length, true);
+            remover.add_file(c.data_filename);
+        } else if (c.truncate) { // Truncate existing file
+            os::truncate_file(c.data_filename, length, false);
         }
     }
+
+    // Create dht storage only if needed
+    if (!c.dht_filename.empty() && (c.create || !os::exists(c.dht_filename))) {
+        os::truncate_file(c.dht_filename, memory_address_range::get_dht_storage_length(length), true);
+        remover.add_file(c.dht_filename);
+    }
+
+    // Create dpt storage only if needed
+    if (!c.dpt_filename.empty() && (c.create || !os::exists(c.dpt_filename))) {
+        os::truncate_file(c.dpt_filename, memory_address_range::get_dpt_storage_length(length), true);
+        remover.add_file(c.dpt_filename);
+    }
 }
 
-static void prepare_backing_store_for_share(const backing_store_config &from, backing_store_config &to, uint64_t length,
-    bool read_only, scope_remove &remover) {
-    to.shared = true;
-    if (from.newly_created()) { // Nothing to copy
-        os::truncate_file(to.data_filename, length, true);
-        remover.add_file(to.data_filename);
+static void prepare_ar_backing_store_for_share(const backing_store_config &from_c, backing_store_config &to_c,
+    uint64_t length, bool read_only, scope_remove &remover) {
+    to_c.shared = true;
+    const uint64_t dht_length = memory_address_range::get_dht_storage_length(length);
+    const uint64_t dpt_length = memory_address_range::get_dpt_storage_length(length);
+    if (from_c.newly_created()) { // Nothing to copy
+        // Prepare data storage
+        os::truncate_file(to_c.data_filename, length, true);
+        remover.add_file(to_c.data_filename);
+
+        // Prepare dht storage
+        os::truncate_file(to_c.dht_filename, dht_length, true);
+        remover.add_file(to_c.dht_filename);
+
+        // Prepare dpt storage
+        os::truncate_file(to_c.dpt_filename, dpt_length, true);
+        remover.add_file(to_c.dpt_filename);
+
         // Necessary, so the memory is always mapped as writeable in memory address range constructor
-        to.create = true;
+        to_c.create = true;
     } else {
-        os::copy_file(from.data_filename, to.data_filename, length);
-        remover.add_file(to.data_filename);
+        // Prepare data storage
+        os::copy_file(from_c.data_filename, to_c.data_filename, length);
+        remover.add_file(to_c.data_filename);
+
+        // Prepare dht storage
+        if (os::exists(from_c.dht_filename) && os::file_size(from_c.dht_filename) == dht_length) {
+            os::copy_file(from_c.dht_filename, to_c.dht_filename, dht_length);
+        } else {
+            os::truncate_file(to_c.dht_filename, dht_length, true);
+        }
+        remover.add_file(to_c.dht_filename);
+
+        // Prepare dpt storage
+        if (os::exists(from_c.dpt_filename) && os::file_size(from_c.dpt_filename) == dpt_length) {
+            os::copy_file(from_c.dpt_filename, to_c.dpt_filename, dpt_length);
+        } else {
+            os::truncate_file(to_c.dpt_filename, dpt_length, true);
+        }
+        remover.add_file(to_c.dpt_filename);
     }
-    os::change_writable(to.data_filename, !read_only);
+    os::change_writable(to_c.data_filename, !read_only);
 }
 
-static void prepare_backing_stores(const machine_config &c, scope_remove &remover) {
-    prepare_backing_store(c.processor.backing_store, AR_SHADOW_STATE_LENGTH, remover);
-    prepare_backing_store(c.pmas.backing_store, AR_PMAS_LENGTH, remover);
-    prepare_backing_store(c.dtb.backing_store, AR_DTB_LENGTH, remover);
-    prepare_backing_store(c.ram.backing_store, c.ram.length, remover);
-    prepare_backing_store(c.cmio.rx_buffer.backing_store, AR_CMIO_RX_BUFFER_LENGTH, remover);
-    prepare_backing_store(c.cmio.tx_buffer.backing_store, AR_CMIO_TX_BUFFER_LENGTH, remover);
-    prepare_backing_store(c.uarch.processor.backing_store, AR_SHADOW_UARCH_STATE_LENGTH, remover);
-    prepare_backing_store(c.uarch.ram.backing_store, AR_UARCH_RAM_LENGTH, remover);
+static void prepare_ar_backing_stores(const machine_config &c, scope_remove &remover) {
+    prepare_ar_backing_store(c.processor.backing_store, AR_SHADOW_STATE_LENGTH, remover);
+    prepare_ar_backing_store(c.pmas.backing_store, AR_PMAS_LENGTH, remover);
+    prepare_ar_backing_store(c.dtb.backing_store, AR_DTB_LENGTH, remover);
+    prepare_ar_backing_store(c.ram.backing_store, c.ram.length, remover);
+    prepare_ar_backing_store(c.cmio.rx_buffer.backing_store, AR_CMIO_RX_BUFFER_LENGTH, remover);
+    prepare_ar_backing_store(c.cmio.tx_buffer.backing_store, AR_CMIO_TX_BUFFER_LENGTH, remover);
+    prepare_ar_backing_store(c.uarch.processor.backing_store, AR_SHADOW_UARCH_STATE_LENGTH, remover);
+    prepare_ar_backing_store(c.uarch.ram.backing_store, AR_UARCH_RAM_LENGTH, remover);
     for (const auto &f : c.flash_drive) {
-        prepare_backing_store(f.backing_store, f.length, remover);
+        prepare_ar_backing_store(f.backing_store, f.length, remover);
     }
 }
 
-static void create_backing_stores_for_share(const machine_config &from_c, machine_config &to_c, scope_remove &remover) {
-    prepare_backing_store_for_share(from_c.processor.backing_store, to_c.processor.backing_store,
+static void prepare_ar_backing_stores_for_share(const machine_config &from_c, machine_config &to_c,
+    scope_remove &remover) {
+    prepare_ar_backing_store_for_share(from_c.processor.backing_store, to_c.processor.backing_store,
         AR_SHADOW_STATE_LENGTH, false, remover);
-    prepare_backing_store_for_share(from_c.pmas.backing_store, to_c.pmas.backing_store, AR_PMAS_LENGTH, false, remover);
-    prepare_backing_store_for_share(from_c.dtb.backing_store, to_c.dtb.backing_store, AR_DTB_LENGTH, false, remover);
-    prepare_backing_store_for_share(from_c.ram.backing_store, to_c.ram.backing_store, to_c.ram.length, false, remover);
-    prepare_backing_store_for_share(from_c.cmio.rx_buffer.backing_store, to_c.cmio.rx_buffer.backing_store,
+    prepare_ar_backing_store_for_share(from_c.pmas.backing_store, to_c.pmas.backing_store, AR_PMAS_LENGTH, false,
+        remover);
+    prepare_ar_backing_store_for_share(from_c.dtb.backing_store, to_c.dtb.backing_store, AR_DTB_LENGTH, false, remover);
+    prepare_ar_backing_store_for_share(from_c.ram.backing_store, to_c.ram.backing_store, to_c.ram.length, false,
+        remover);
+    prepare_ar_backing_store_for_share(from_c.cmio.rx_buffer.backing_store, to_c.cmio.rx_buffer.backing_store,
         AR_CMIO_RX_BUFFER_LENGTH, false, remover);
-    prepare_backing_store_for_share(from_c.cmio.tx_buffer.backing_store, to_c.cmio.tx_buffer.backing_store,
+    prepare_ar_backing_store_for_share(from_c.cmio.tx_buffer.backing_store, to_c.cmio.tx_buffer.backing_store,
         AR_CMIO_TX_BUFFER_LENGTH, false, remover);
-    prepare_backing_store_for_share(from_c.uarch.processor.backing_store, to_c.uarch.processor.backing_store,
+    prepare_ar_backing_store_for_share(from_c.uarch.processor.backing_store, to_c.uarch.processor.backing_store,
         AR_SHADOW_UARCH_STATE_LENGTH, false, remover);
-    prepare_backing_store_for_share(from_c.uarch.ram.backing_store, to_c.uarch.ram.backing_store, AR_UARCH_RAM_LENGTH,
-        false, remover);
+    prepare_ar_backing_store_for_share(from_c.uarch.ram.backing_store, to_c.uarch.ram.backing_store,
+        AR_UARCH_RAM_LENGTH, false, remover);
     for (size_t i = 0; i < to_c.flash_drive.size(); ++i) {
         const auto &from_f = from_c.flash_drive[i];
         auto &to_f = to_c.flash_drive[i];
-        prepare_backing_store_for_share(from_f.backing_store, to_f.backing_store, from_f.length, from_f.read_only,
+        prepare_ar_backing_store_for_share(from_f.backing_store, to_f.backing_store, from_f.length, from_f.read_only,
             remover);
     }
 }
@@ -217,7 +266,7 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
     // Copy config
     machine_config c = config;
 
-    // Prepare backing stores
+    // Prepare address ranges backing stores
     if (!dir.empty()) { // Machine that it's fully on-disk
         if (config.processor.registers.iunrep != 0) {
             throw std::invalid_argument{"fully on-disk machines must not be unreproducible"s};
@@ -230,10 +279,10 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
         // Store config
         remover.add_file(c.store(dir));
         // Copy backing stores and mark them as shared
-        create_backing_stores_for_share(config, c, remover);
+        prepare_ar_backing_stores_for_share(config, c, remover);
     } else { // A machine that may be partially or fully in-memory
         // Create and truncate backing stores as necessary
-        prepare_backing_stores(c, remover);
+        prepare_ar_backing_stores(c, remover);
     }
 
     // Add all address ranges to m_all, and potentially to interpret and hash

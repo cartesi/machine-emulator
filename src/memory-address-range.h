@@ -61,7 +61,7 @@ public:
     /// \param length Length of address range
     /// \param flags Address range flags
     /// \param backing_store Configuration for underlying file backing.
-    /// \param config Additional configuration for memory address range.
+    /// \param memory_config Additional configuration for memory address range.
     /// \p config.host_length Length of host memory to be mapped.
     /// If set to 0, use \p length.
     /// Otherwise, \p host_length cannot be smaller than \p length.
@@ -78,6 +78,16 @@ public:
     memory_address_range(memory_address_range &&) = delete;
     memory_address_range &operator=(const memory_address_range &) = delete;
     memory_address_range &operator=(memory_address_range &&) = delete;
+
+    static uint64_t get_dht_storage_length(uint64_t length) {
+        return dense_hash_tree::get_storage_length(get_level_count(length),
+            static_cast<size_t>(length >> AR_LOG2_PAGE_SIZE));
+    }
+
+    static uint64_t get_dpt_storage_length(uint64_t length) {
+        return dirty_page_tree::get_storage_length(get_level_count(length),
+            static_cast<size_t>(length >> AR_LOG2_PAGE_SIZE));
+    }
 
 private:
     unsigned char *do_get_host_memory() noexcept override {

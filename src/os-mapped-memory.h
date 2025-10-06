@@ -50,9 +50,10 @@ namespace cartesi::os {
 
 /// \brief Flags for memory mapping operations.
 struct mapped_memory_flags {
-    bool read_only{false};  ///< Mark mapped memory as read-only
-    bool shared{false};     ///< Share mapped memory with the backing file
-    bool no_reserve{false}; ///< Do not reserve swap memory for the mapping
+    bool read_only{false};   ///< Mark mapped memory as read-only
+    bool shared{false};      ///< Share mapped memory with the backing file
+    bool backing_gap{false}; ///< Map anonnymous memory to complete backing file length in non-shared mappings
+    bool no_reserve{false};  ///< Do not reserve swap memory for the mapping
 };
 
 /// \brief Represents a memory-mapped region, optionally backed by a file.
@@ -60,7 +61,6 @@ class mapped_memory final {
     void *m_host_memory{nullptr};      ///< Pointer to the mapped memory region
     uint64_t m_length{0};              ///< The total size of the mapped memory
     std::string m_backing_filename;    ///< Path to the backing file
-    uint64_t m_backing_length{0};      ///< Backing file length in bytes
     uint64_t m_backing_sync_length{0}; ///< Length of file-backed portion for which memory sync is needed
     mapped_memory_flags m_flags;       ///< Flags used for the mapping
 #ifdef HAVE_MMAP
@@ -99,39 +99,27 @@ public:
     mapped_memory &operator=(mapped_memory &&other) noexcept = delete;
 
     /// \brief Returns a pointer to the mapped memory region.
-    unsigned char *get_ptr() {
+    unsigned char *get_ptr() noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return reinterpret_cast<unsigned char *>(m_host_memory);
     };
 
     /// \brief Returns a pointer to the mapped memory region.
-    const unsigned char *get_ptr() const {
+    const unsigned char *get_ptr() const noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return reinterpret_cast<const unsigned char *>(m_host_memory);
     };
 
     /// \brief Returns a span representing the mapped memory region.
-    std::span<unsigned char> get_span() noexcept {
+    std::span<unsigned char> get_storage_data() noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return std::span<unsigned char>{reinterpret_cast<unsigned char *>(m_host_memory), m_length};
     }
 
     /// \brief Returns a span representing the mapped memory region.
-    std::span<const unsigned char> get_span() const noexcept {
+    std::span<const unsigned char> get_storage_data() const noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return std::span<const unsigned char>{reinterpret_cast<const unsigned char *>(m_host_memory), m_length};
-    }
-
-    /// \brief Returns a span representing the backing portion of the mapped memory region.
-    std::span<unsigned char> get_backing_span() noexcept {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        return std::span<unsigned char>{reinterpret_cast<unsigned char *>(m_host_memory), m_backing_length};
-    }
-
-    /// \brief Returns a span representing the backing portion of the mapped memory region.
-    std::span<const unsigned char> get_backing_span() const noexcept {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        return std::span<const unsigned char>{reinterpret_cast<const unsigned char *>(m_host_memory), m_backing_length};
     }
 
     /// \brief Returns the total length of the mapped memory region.
@@ -139,9 +127,8 @@ public:
         return m_length;
     }
 
-    /// \brief Returns the length of the backing file portion of the mapped memory region.
-    uint64_t get_backing_length() const noexcept {
-        return m_backing_length;
+    const std::string &get_backing_filename() {
+        return m_backing_filename;
     }
 
     /// \brief Returns the flags used for the mapping.

@@ -163,12 +163,11 @@ struct uarch_config final {
 
 /// \brief Hash tree config
 struct hash_tree_config final {
-    bool shared{false};        ///< Should changes be reflected in backing store?
-    bool create{false};        ///< Should backing store be created?
-    bool truncate{false};      ///< Should backing store be truncated to correct size?
-    std::string sht_filename;  ///< Backing storage for sparse hash-tree
-    std::string phtc_filename; ///< Backing storage for page hash-tree cache
-    uint64_t phtc_size{8192};  ///< Max number of pages in page hash-tree cache
+    bool shared{false};                                              ///< Should changes be reflected in backing store?
+    bool create{false};                                              ///< Should backing store be created?
+    std::string sht_filename;                                        ///< Backing storage for sparse hash-tree
+    std::string phtc_filename;                                       ///< Backing storage for page hash-tree cache
+    uint64_t phtc_size{4096};                                        ///< Max number of pages in page hash-tree cache
     hash_function_type hash_function{hash_function_type::keccak256}; ///< Hash function type to use in the hash-tree
 };
 
@@ -202,10 +201,10 @@ struct machine_config final {
     /// \brief Get the name where global page hash-tree cache will be stored in a directory
     static std::string get_phtc_filename(const std::string &dir);
 
-    static void adjust_backing_store_config(uint64_t start, uint64_t length, const std::string &dir,
+    static void adjust_ar_backing_store_config(uint64_t start, uint64_t length, const std::string &dir,
         sharing_mode sharing, backing_store_config &c);
 
-    static void adjust_hash_tree_config(const std::string &dir, hash_tree_config &c);
+    static void adjust_ht_backing_store_config(const std::string &dir, sharing_mode sharing, hash_tree_config &c);
 
     /// \brief Adjusts the machine config filling in default values
     machine_config &adjust_defaults();

@@ -66,7 +66,7 @@ std::string machine_config::get_config_filename(const std::string &dir) {
     return dir + "/config.json";
 }
 
-void machine_config::adjust_backing_store_config(uint64_t start, uint64_t length, const std::string &dir,
+void machine_config::adjust_ar_backing_store_config(uint64_t start, uint64_t length, const std::string &dir,
     sharing_mode sharing, backing_store_config &c) {
     // Convert sharing mode
     switch (sharing) {
@@ -91,31 +91,44 @@ void machine_config::adjust_backing_store_config(uint64_t start, uint64_t length
     c.dpt_filename = machine_config::get_dpt_filename(dir, start, length);
 }
 
-void machine_config::adjust_hash_tree_config(const std::string &dir, hash_tree_config &c) {
-    // Strip create and truncate since backing store should be already created
+void machine_config::adjust_ht_backing_store_config(const std::string &dir, sharing_mode sharing, hash_tree_config &c) {
+    // Convert sharing mode
+    switch (sharing) {
+        case sharing_mode::none:
+            c.shared = false;
+            break;
+        case sharing_mode::config:
+            // Preserve the shared setting as specified in the configuration
+            break;
+        case sharing_mode::all:
+            c.shared = true;
+            break;
+    }
+
+    // Strip create since backing store should be already created
     c.create = false;
-    c.truncate = false;
 
     c.sht_filename = machine_config::get_sht_filename(dir);
     c.phtc_filename = machine_config::get_phtc_filename(dir);
 }
 
 machine_config &machine_config::adjust_backing_stores(const std::string &dir, sharing_mode sharing) {
-    adjust_backing_store_config(AR_RAM_START, ram.length, dir, sharing, ram.backing_store);
-    adjust_backing_store_config(AR_DTB_START, AR_DTB_LENGTH, dir, sharing, dtb.backing_store);
+    adjust_ar_backing_store_config(AR_RAM_START, ram.length, dir, sharing, ram.backing_store);
+    adjust_ar_backing_store_config(AR_DTB_START, AR_DTB_LENGTH, dir, sharing, dtb.backing_store);
     for (auto &f : flash_drive) {
-        adjust_backing_store_config(f.start, f.length, dir, sharing, f.backing_store);
+        adjust_ar_backing_store_config(f.start, f.length, dir, sharing, f.backing_store);
     }
-    adjust_backing_store_config(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH, dir, sharing, processor.backing_store);
-    adjust_backing_store_config(AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH, dir, sharing,
+    adjust_ar_backing_store_config(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH, dir, sharing,
+        processor.backing_store);
+    adjust_ar_backing_store_config(AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH, dir, sharing,
         cmio.rx_buffer.backing_store);
-    adjust_backing_store_config(AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH, dir, sharing,
+    adjust_ar_backing_store_config(AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH, dir, sharing,
         cmio.tx_buffer.backing_store);
-    adjust_backing_store_config(AR_PMAS_START, AR_PMAS_LENGTH, dir, sharing, pmas.backing_store);
-    adjust_backing_store_config(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH, dir, sharing,
+    adjust_ar_backing_store_config(AR_PMAS_START, AR_PMAS_LENGTH, dir, sharing, pmas.backing_store);
+    adjust_ar_backing_store_config(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH, dir, sharing,
         uarch.processor.backing_store);
-    adjust_backing_store_config(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, dir, sharing, uarch.ram.backing_store);
-    adjust_hash_tree_config(dir, hash_tree);
+    adjust_ar_backing_store_config(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, dir, sharing, uarch.ram.backing_store);
+    adjust_ht_backing_store_config(dir, sharing, hash_tree);
     return *this;
 }
 

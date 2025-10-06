@@ -202,7 +202,9 @@ public:
     /// \brief Returns hash-tree statistics
     /// \param clear Clear all statistics after collecting them
     /// \returns Structure containing all statistics
-    hash_tree_stats get_hash_tree_stats(bool clear = false) noexcept;
+    hash_tree_stats get_hash_tree_stats(bool clear = false) noexcept {
+        return m_ht.get_stats(clear);
+    }
 
     /// \brief Runs the machine until mcycle reaches mcycle_end, the machine halts or yields.
     /// \param mcycle_end Maximum value of mcycle before function returns.

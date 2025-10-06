@@ -34,6 +34,7 @@
 #include <utility>
 #include <vector>
 
+#include "machine-address-ranges.h"
 #include "os-features.h" // IWYU pragma: keep
 
 #ifdef HAVE_OPENMP
@@ -452,21 +453,16 @@ bool hash_tree::update_dense_trees(address_ranges ars, const changed_address_ran
 
 bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ranges &changed_ars) {
     SCOPED_SIGNPOST(m_log, m_spid_update_sparse_tree, "hash-tree: update sparse tree", "");
-    // If there no changed address ranges, we are done
-    // Otherwise, allocate a fifo that holds at most one entry per changed address-range leaf-node
+    // Allocate a fifo that holds at most one entry per changed address-range leaf-node
     // For each changed address-range leaf-node,
     //     Copy the hash from the root of the address-range dense hash tree to the leaf-node
     //     Enqueue its sparse node's parent for update
     // Until the queue is empty
     //     Update the hash of the node at the front from the hash of its children nodes
     //     If node is not the root, enqueue its parent for update
-    auto changed_count = std::ranges::size(changed_ars);
-    if (changed_count == 0) {
-        return true;
-    }
     using E = std::pair<int, int>;
     std::pmr::vector<E> changed_backing{&m_memory_pool};
-    changed_backing.reserve(changed_count);
+    changed_backing.reserve(std::ranges::size(changed_ars));
     std::priority_queue<E, decltype(changed_backing), std::greater<>> changed(std::greater<>{},
         std::move(changed_backing));
     for (auto ar_index : changed_ars) {
@@ -479,6 +475,23 @@ bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ran
             ar_parent_node.marked = 1;
             changed.emplace(ar_parent_node.log2_size, ar_node.parent);
         }
+    }
+    // Ensure all sparse leaf node hashes match their corresponding dense tree root hashes.
+    // This is necessary because sparse and dense trees can become unsynchronized,
+    // for example after constructing the hash tree from clean dense trees or swapping address ranges.
+    for (int ar_index = 0; const auto &ar : ars) {
+        auto ar_node_index = get_ar_sparse_node_index(ar_index);
+        auto &ar_node = m_sparse_nodes[ar_node_index];
+        auto ar_root_hash_view = ar.get_dense_hash_tree().root_hash_view();
+        if (!std::ranges::equal(ar_root_hash_view, ar_node.hash)) {
+            std::ranges::copy(ar_root_hash_view, ar_node.hash.begin());
+            auto &ar_parent_node = m_sparse_nodes[ar_node.parent];
+            if (ar_parent_node.marked == 0) {
+                ar_parent_node.marked = 1;
+                changed.emplace(ar_parent_node.log2_size, ar_node.parent);
+            }
+        }
+        ++ar_index;
     }
     variant_hasher h{m_hash_function};
     simd_concat_hasher<variant_hasher, const_machine_hash_view> queue(h);
@@ -862,23 +875,72 @@ static int get_concurrency([[maybe_unused]] int value) {
 #endif
 }
 
-hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, const_address_ranges ars,
-    hash_function_type hash_function) :
+hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, const nodes_type &init_sparse_nodes) :
 #ifdef HAS_SIGNPOSTS
     m_log{os_log_create("io.cartesi.machine-emulator", "hash-tree")},
     m_spid_update{os_signpost_id_generate(m_log)},
     m_spid_update_page_hashes{os_signpost_id_generate(m_log)},
     m_spid_update_dense_trees{os_signpost_id_generate(m_log)},
     m_spid_update_sparse_tree{os_signpost_id_generate(m_log)},
-    m_page_cache{m_log, variant_hasher{hash_function}, config.phtc_size},
+    m_page_cache{m_log, variant_hasher{config.hash_function}, static_cast<size_t>(config.phtc_size),
+        config.phtc_filename, config.shared},
 #else
-    m_page_cache{variant_hasher{hash_function}, static_cast<size_t>(config.phtc_size)},
+    m_page_cache{variant_hasher{config.hash_function}, static_cast<size_t>(config.phtc_size), config.phtc_filename,
+        config.shared},
 #endif
-    m_sparse_nodes{create_nodes(ars)},
-    m_pristine_hashes{get_pristine_hashes(hash_function)},
+    m_mapped_memory{init_sparse_nodes.size() * sizeof(node_type), os::mapped_memory_flags{.shared = config.shared},
+        config.sht_filename},
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    m_sparse_nodes{reinterpret_cast<node_type *>(m_mapped_memory.get_ptr()), init_sparse_nodes.size()},
+    m_pristine_hashes{get_pristine_hashes(config.hash_function)},
     m_concurrency{get_concurrency(static_cast<int>(concurrency))},
-    m_hash_function{hash_function} {
+    m_hash_function{config.hash_function} {
+    if (init_sparse_nodes.size() != m_sparse_nodes.size()) {
+        throw std::runtime_error{"inconsistent amount of sparse hash tree nodes"};
+    }
+    // If root node log2_size is zero, then sparse nodes are not initialized yet
+    if (m_sparse_nodes[1].log2_size == 0) {
+        // Initialize sparse nodes in case of newly created memory mapping
+        std::ranges::copy(init_sparse_nodes, m_sparse_nodes.begin());
+    } else {
+        // Validate sparse nodes consistency
+        for (const auto &[node, init_node] : std::views::zip(m_sparse_nodes, init_sparse_nodes)) {
+            if (node.left != init_node.left || node.right != init_node.right || node.parent != init_node.parent ||
+                node.log2_size != init_node.log2_size || node.marked > 1) {
+                throw std::runtime_error{"inconsistent sparse hash tree nodes"};
+            }
+        }
+    }
 }
+
+hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, machine_address_ranges &mars,
+    const std::string &dir, scope_remove &remover) :
+    hash_tree(
+        [&] { // Create hash tree backing stores if needed
+            hash_tree_config c = config;
+            if (!dir.empty()) {
+                // Prepare hash tree backing store
+                c.shared = true;
+                c.create = true;
+                c.sht_filename = machine_config::get_sht_filename(dir);
+                c.phtc_filename = machine_config::get_phtc_filename(dir);
+            }
+
+            // Create sht storage
+            if (!c.sht_filename.empty() && c.shared && c.create) { // Create new file
+                os::truncate_file(c.sht_filename, hash_tree::get_sht_storage_length(mars), true);
+                remover.add_file(c.sht_filename);
+            }
+
+            // Create phtc storage
+            if (!c.phtc_filename.empty() && c.shared && c.create) { // Create new file
+                os::truncate_file(c.phtc_filename, hash_tree::get_phtc_storage_length(c), true);
+                remover.add_file(c.phtc_filename);
+            }
+
+            return c;
+        }(),
+        concurrency, create_nodes(mars)) {}
 
 void hash_tree::check_address_ranges(const_address_ranges ars) {
     for (int ar_i = 0; auto &&ar : ars) {

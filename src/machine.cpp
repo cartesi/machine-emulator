@@ -43,7 +43,6 @@
 #include "device-state-access.h"
 #include "dtb.h"
 #include "hash-tree-constants.h"
-#include "hash-tree-stats.h"
 #include "hash-tree.h"
 #include "host-addr.h"
 #include "hot-tlb.h"
@@ -51,11 +50,13 @@
 #include "i-device-state-access.h"
 #include "interpret.h"
 #include "is-pristine.h"
+#include "machine-address-ranges.h"
 #include "machine-config.h"
 #include "machine-hash.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
 #include "mcycle-root-hashes.h"
+#include "memory-address-range.h"
 #include "os-filesystem.h"
 #include "os-mapped-memory.h"
 #include "os.h"
@@ -100,10 +101,6 @@ static_assert(static_cast<int>(AR_LOG2_PAGE_SIZE) == static_cast<int>(HASH_TREE_
     "address range page size must match hash-tree page size");
 
 using namespace std::string_literals;
-
-hash_tree_stats machine::get_hash_tree_stats(bool clear) noexcept {
-    return m_ht.get_stats(clear);
-}
 
 void machine::init_uarch_processor(const uarch_processor_config &p) {
     if (p.backing_store.newly_created()) {
@@ -295,7 +292,7 @@ machine::machine(machine_config c, machine_runtime_config r, const std::string &
     m_c{std::move(c).adjust_defaults()}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_r{std::move(r)},                   // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_ars{m_c, m_r, dir, remover},
-    m_ht{m_c.hash_tree, m_r.concurrency.update_hash_tree, m_ars, m_c.hash_tree.hash_function},
+    m_ht{m_c.hash_tree, m_r.concurrency.update_hash_tree, m_ars, dir, remover},
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     m_s{reinterpret_cast<processor_state *>(
         m_ars.find(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH).get_host_memory())},
@@ -384,34 +381,6 @@ void machine::set_runtime_config(machine_runtime_config r) {
     m_r = std::move(r); // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
 }
 
-static void store_address_range(const backing_store_config &from_config, const address_range &ar, bool read_only,
-    const std::string &dir, sharing_mode sharing, scope_remove &remover) {
-    if (ar.is_empty()) {
-        throw std::runtime_error{"attempt to store empty address range "s.append(ar.get_description())};
-    }
-    if (!ar.is_memory() || ar.get_host_memory() == nullptr) {
-        throw std::runtime_error{"attempt to store non-memory address range "s.append(ar.get_description())};
-    }
-    // Write the memory data to a file
-    const std::string data_filename = machine_config::get_data_filename(dir, ar.get_start(), ar.get_length());
-    if (sharing == sharing_mode::all || (sharing == sharing_mode::config && from_config.shared)) {
-        os::create_file(data_filename, std::span{ar.get_host_memory(), static_cast<size_t>(ar.get_length())});
-    } else { // Copy unshared backing store
-        if (from_config.data_filename.empty()) {
-            throw std::runtime_error{"attempt to restore unbacked address range "s.append(ar.get_description())};
-        }
-        if (from_config.shared) {
-            throw std::runtime_error{"attempt to restore shared address range "s.append(ar.get_description())};
-        }
-        os::copy_file(from_config.data_filename, data_filename, ar.get_length());
-    }
-    remover.add_file(data_filename);
-    if (read_only) {
-        // Mark host read-only ranges as read-only
-        os::change_writable(data_filename, false);
-    }
-}
-
 void machine::store(const std::string &dir, sharing_mode sharing) const {
     if (dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
@@ -420,36 +389,85 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
         throw std::runtime_error{"cannot store unreproducible machines"};
     }
     scope_remove remover;
+
     // Create directory
     os::create_directory(dir);
     remover.add_directory(dir);
+
     // Store config
     remover.add_file(m_c.store(dir, sharing));
+
     // Store all address ranges
-    store_address_range(m_c.processor.backing_store, m_ars.find<uint64_t>(AR_SHADOW_STATE_START), false, dir, sharing,
-        remover);
-    store_address_range(m_c.pmas.backing_store, m_ars.find<uint64_t>(AR_PMAS_START), true, dir, sharing, remover);
-    store_address_range(m_c.dtb.backing_store, m_ars.find<uint64_t>(AR_DTB_START), false, dir, sharing, remover);
-    store_address_range(m_c.ram.backing_store, m_ars.find<uint64_t>(AR_RAM_START), false, dir, sharing, remover);
-    store_address_range(m_c.cmio.rx_buffer.backing_store, m_ars.find<uint64_t>(AR_CMIO_RX_BUFFER_START), false, dir,
-        sharing, remover);
-    store_address_range(m_c.cmio.tx_buffer.backing_store, m_ars.find<uint64_t>(AR_CMIO_TX_BUFFER_START), false, dir,
-        sharing, remover);
-    store_address_range(m_c.uarch.processor.backing_store, m_ars.find<uint64_t>(AR_SHADOW_UARCH_STATE_START), false,
-        dir, sharing, remover);
-    store_address_range(m_c.uarch.ram.backing_store, m_ars.find<uint64_t>(AR_UARCH_RAM_START), false, dir, sharing,
-        remover);
+    auto store_address_range = [&](const backing_store_config &c, const address_range &ar, bool read_only) {
+        if (ar.is_empty()) {
+            throw std::runtime_error{"attempt to store empty address range "s.append(ar.get_description())};
+        }
+        if (!ar.is_memory() || ar.get_host_memory() == nullptr) {
+            throw std::runtime_error{"attempt to store non-memory address range "s.append(ar.get_description())};
+        }
+        // Write the memory data to a file
+        const std::string data_filename = machine_config::get_data_filename(dir, ar.get_start(), ar.get_length());
+        const std::string dht_filename = machine_config::get_dht_filename(dir, ar.get_start(), ar.get_length());
+        const std::string dpt_filename = machine_config::get_dpt_filename(dir, ar.get_start(), ar.get_length());
+        if (sharing == sharing_mode::all || (sharing == sharing_mode::config && c.shared)) {
+            os::create_file(data_filename, std::span{ar.get_host_memory(), static_cast<size_t>(ar.get_length())});
+            remover.add_file(data_filename);
+            os::create_file(dht_filename, ar.get_dense_hash_tree().get_storage_data());
+            remover.add_file(dht_filename);
+            os::create_file(dpt_filename, ar.get_dirty_page_tree().get_storage_data());
+            remover.add_file(dpt_filename);
+        } else { // Copy unshared backing store
+            if (c.data_filename.empty()) {
+                throw std::runtime_error{"attempt to restore unbacked address range "s.append(ar.get_description())};
+            }
+            if (c.shared) {
+                throw std::runtime_error{"attempt to restore shared address range "s.append(ar.get_description())};
+            }
+            os::copy_file(c.data_filename, data_filename, ar.get_length());
+            remover.add_file(data_filename);
+            if (!c.dht_filename.empty()) {
+                os::copy_file(c.dht_filename, dht_filename);
+                remover.add_file(dht_filename);
+            }
+            if (!c.dpt_filename.empty()) {
+                os::copy_file(c.dpt_filename, dpt_filename);
+                remover.add_file(dpt_filename);
+            }
+        }
+        if (read_only) {
+            // Mark host read-only ranges as read-only
+            os::change_writable(data_filename, false);
+        }
+    };
+    store_address_range(m_c.processor.backing_store, m_ars.find<uint64_t>(AR_SHADOW_STATE_START), false);
+    store_address_range(m_c.pmas.backing_store, m_ars.find<uint64_t>(AR_PMAS_START), true);
+    store_address_range(m_c.dtb.backing_store, m_ars.find<uint64_t>(AR_DTB_START), false);
+    store_address_range(m_c.ram.backing_store, m_ars.find<uint64_t>(AR_RAM_START), false);
+    store_address_range(m_c.cmio.rx_buffer.backing_store, m_ars.find<uint64_t>(AR_CMIO_RX_BUFFER_START), false);
+    store_address_range(m_c.cmio.tx_buffer.backing_store, m_ars.find<uint64_t>(AR_CMIO_TX_BUFFER_START), false);
+    store_address_range(m_c.uarch.processor.backing_store, m_ars.find<uint64_t>(AR_SHADOW_UARCH_STATE_START), false);
+    store_address_range(m_c.uarch.ram.backing_store, m_ars.find<uint64_t>(AR_UARCH_RAM_START), false);
     for (const auto &f : m_c.flash_drive) {
-        store_address_range(f.backing_store, m_ars.find<uint64_t>(f.start), f.read_only, dir, sharing, remover);
+        store_address_range(f.backing_store, m_ars.find<uint64_t>(f.start), f.read_only);
     }
+
+    // Store hash tree
+    const std::string sht_filename = machine_config::get_sht_filename(dir);
+    const std::string phtc_filename = machine_config::get_phtc_filename(dir);
+    if (sharing == sharing_mode::all || (sharing == sharing_mode::config && m_c.hash_tree.shared)) {
+        os::create_file(sht_filename, m_ht.get_sht_storage_data());
+        remover.add_file(sht_filename);
+        os::create_file(phtc_filename, m_ht.get_phtc_storage_data());
+        remover.add_file(phtc_filename);
+    } else {
+        os::truncate_file(sht_filename, m_ht.get_sht_storage_data().size(), true);
+        remover.add_file(sht_filename);
+        os::truncate_file(sht_filename, m_ht.get_phtc_storage_data().size(), true);
+        remover.add_file(sht_filename);
+    }
+
     // Retain all stored files
     remover.retain_all();
-}
-
-static void clone_address_range(const backing_store_config &from, const backing_store_config &to,
-    scope_remove &remover) {
-    os::clone_file(from.data_filename, to.data_filename);
-    remover.add_file(to.data_filename);
 }
 
 void machine::clone_stored(const std::string &from_dir, const std::string &to_dir) {
@@ -472,17 +490,31 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     remover.add_file(to_config_filename);
 
     // Clone all address ranges
-    clone_address_range(from_c.processor.backing_store, to_c.processor.backing_store, remover);
-    clone_address_range(from_c.pmas.backing_store, to_c.pmas.backing_store, remover);
-    clone_address_range(from_c.dtb.backing_store, to_c.dtb.backing_store, remover);
-    clone_address_range(from_c.ram.backing_store, to_c.ram.backing_store, remover);
-    clone_address_range(from_c.cmio.rx_buffer.backing_store, to_c.cmio.rx_buffer.backing_store, remover);
-    clone_address_range(from_c.cmio.tx_buffer.backing_store, to_c.cmio.tx_buffer.backing_store, remover);
-    clone_address_range(from_c.uarch.processor.backing_store, to_c.uarch.processor.backing_store, remover);
-    clone_address_range(from_c.uarch.ram.backing_store, to_c.uarch.ram.backing_store, remover);
+    auto clone_ar_backing_store = [&](const backing_store_config &from_bs, const backing_store_config &to_bs) {
+        os::clone_file(from_bs.data_filename, to_bs.data_filename);
+        remover.add_file(to_bs.data_filename);
+        os::clone_file(from_bs.dht_filename, to_bs.dht_filename);
+        remover.add_file(to_bs.dht_filename);
+        os::clone_file(from_bs.dpt_filename, to_bs.dpt_filename);
+        remover.add_file(to_bs.dpt_filename);
+    };
+    clone_ar_backing_store(from_c.processor.backing_store, to_c.processor.backing_store);
+    clone_ar_backing_store(from_c.pmas.backing_store, to_c.pmas.backing_store);
+    clone_ar_backing_store(from_c.dtb.backing_store, to_c.dtb.backing_store);
+    clone_ar_backing_store(from_c.ram.backing_store, to_c.ram.backing_store);
+    clone_ar_backing_store(from_c.cmio.rx_buffer.backing_store, to_c.cmio.rx_buffer.backing_store);
+    clone_ar_backing_store(from_c.cmio.tx_buffer.backing_store, to_c.cmio.tx_buffer.backing_store);
+    clone_ar_backing_store(from_c.uarch.processor.backing_store, to_c.uarch.processor.backing_store);
+    clone_ar_backing_store(from_c.uarch.ram.backing_store, to_c.uarch.ram.backing_store);
     for (size_t i = 0; i < to_c.flash_drive.size(); ++i) {
-        clone_address_range(from_c.flash_drive[i].backing_store, to_c.flash_drive[i].backing_store, remover);
+        clone_ar_backing_store(from_c.flash_drive[i].backing_store, to_c.flash_drive[i].backing_store);
     }
+
+    // Clone hash tree
+    os::clone_file(from_c.hash_tree.sht_filename, to_c.hash_tree.sht_filename);
+    remover.add_file(to_c.hash_tree.sht_filename);
+    os::clone_file(from_c.hash_tree.phtc_filename, to_c.hash_tree.phtc_filename);
+    remover.add_file(to_c.hash_tree.phtc_filename);
 
     // Retain all stored files
     remover.retain_all();
@@ -496,16 +528,38 @@ void machine::remove_stored(const std::string &dir) {
 
     // Remove all address ranges
     os::remove_file(config.processor.backing_store.data_filename);
+    os::remove_file(config.processor.backing_store.dht_filename);
+    os::remove_file(config.processor.backing_store.dpt_filename);
     os::remove_file(config.pmas.backing_store.data_filename);
+    os::remove_file(config.pmas.backing_store.dht_filename);
+    os::remove_file(config.pmas.backing_store.dpt_filename);
     os::remove_file(config.dtb.backing_store.data_filename);
+    os::remove_file(config.dtb.backing_store.dht_filename);
+    os::remove_file(config.dtb.backing_store.dpt_filename);
     os::remove_file(config.ram.backing_store.data_filename);
+    os::remove_file(config.ram.backing_store.dht_filename);
+    os::remove_file(config.ram.backing_store.dpt_filename);
     os::remove_file(config.cmio.rx_buffer.backing_store.data_filename);
+    os::remove_file(config.cmio.rx_buffer.backing_store.dht_filename);
+    os::remove_file(config.cmio.rx_buffer.backing_store.dpt_filename);
     os::remove_file(config.cmio.tx_buffer.backing_store.data_filename);
+    os::remove_file(config.cmio.tx_buffer.backing_store.dht_filename);
+    os::remove_file(config.cmio.tx_buffer.backing_store.dpt_filename);
     os::remove_file(config.uarch.processor.backing_store.data_filename);
+    os::remove_file(config.uarch.processor.backing_store.dht_filename);
+    os::remove_file(config.uarch.processor.backing_store.dpt_filename);
     os::remove_file(config.uarch.ram.backing_store.data_filename);
+    os::remove_file(config.uarch.ram.backing_store.dht_filename);
+    os::remove_file(config.uarch.ram.backing_store.dpt_filename);
     for (const auto &f : config.flash_drive) {
         os::remove_file(f.backing_store.data_filename);
+        os::remove_file(f.backing_store.dht_filename);
+        os::remove_file(f.backing_store.dpt_filename);
     }
+
+    // Remove hash tree files
+    os::remove_file(config.hash_tree.sht_filename);
+    os::remove_file(config.hash_tree.phtc_filename);
 
     // Remove config
     os::remove_file(machine_config::get_config_filename(dir));

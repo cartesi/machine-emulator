@@ -79,6 +79,8 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
     m_length(length),
     m_backing_filename(backing_filename),
     m_flags(flags) {
+    const uint64_t desired_backing_length = backing_length.has_value() ? backing_length.value() : length;
+
     // Check some preconditions
     if (backing_filename.empty() && flags.shared) {
         throw std::invalid_argument{"backing filename must be specified"s};
@@ -86,13 +88,8 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
     if (length == 0) {
         throw std::invalid_argument{"memory map length cannot be zero"s};
     }
-    if (backing_length.has_value()) {
-        if (length < backing_length.value()) {
-            throw std::invalid_argument{"length must be greater or equal than max backing length"s};
-        }
-        m_backing_length = backing_length.value();
-    } else if (!backing_filename.empty()) {
-        m_backing_length = length;
+    if (length < desired_backing_length) {
+        throw std::invalid_argument{"length must be greater or equal than max backing length"s};
     }
     const bool shared_write = flags.shared && !flags.read_only;
 
@@ -146,11 +143,11 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
         backing_file_length = static_cast<uint64_t>(statbuf.st_size);
 
         // Check backing file length mismatch
-        if (backing_file_length != m_backing_length) {
-            if (flags.shared) {
+        if (backing_file_length != desired_backing_length) {
+            if (flags.shared || !flags.backing_gap) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
-                    std::to_string(m_backing_length) + ")"s};
+                    std::to_string(desired_backing_length) + ")"s};
             }
             // Backing file length may be less than desired backing length,
             // but this is fine, as we are not sharing the file.
@@ -237,7 +234,7 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
 
     // Commit state
     m_host_memory = host_memory;
-    m_backing_sync_length = shared_write ? m_backing_length : 0;
+    m_backing_sync_length = shared_write ? desired_backing_length : 0;
     m_backing_fd = backing_fd;
 
 #elif defined(_WIN32)
@@ -306,13 +303,11 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
         backing_file_length = static_cast<uint64_t>(size.QuadPart);
 
         // Check backing file length mismatch
-        if (backing_file_length != m_backing_length) {
-            if (flags.shared) {
+        if (backing_file_length != desired_backing_length) {
+            if (flags.shared || !flags.backing_gap) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
-                    std::to_string(m_backing_length) + ")"s};
-
-                backing_file_length = m_backing_length;
+                    std::to_string(desired_backing_length) + ")"s};
             }
             // Backing file length may be less than desired backing length,
             // but this is fine, as we are not sharing the file.
@@ -383,7 +378,7 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
 
     // Commit state
     m_host_memory = host_memory;
-    m_backing_sync_length = shared_write ? m_backing_length : 0;
+    m_backing_sync_length = shared_write ? desired_backing_length : 0;
     m_memory_mapping = static_cast<void *>(memory_mapping), m_backing_host_memory = backing_host_memory,
     m_backing_mapping = backing_mapping, m_backing_fh = static_cast<void *>(backing_fh)
 };
@@ -452,18 +447,18 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
             throw std::system_error{errno, std::generic_category(),
                 "unable to seek to beginning of backing file '"s + backing_filename + "'"s};
         }
-        const auto copy_length = std::min(backing_file_length, m_backing_length);
+        const auto copy_length = std::min(backing_file_length, desired_backing_length);
         if (static_cast<uint64_t>(std::fread(host_memory, 1, copy_length, backing_fp)) != copy_length) {
             throw std::system_error{errno, std::generic_category(),
                 "unable to read from backing file '"s + backing_filename + "'"s};
         }
 
         // Check backing file length mismatch
-        if (backing_file_length != m_backing_length) {
-            if (flags.shared) {
+        if (backing_file_length != desired_backing_length) {
+            if (flags.shared || !flags.backing_gap) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
-                    std::to_string(m_backing_length) + ")"s};
+                    std::to_string(desired_backing_length) + ")"s};
             }
             // Backing file length may be less than desired backing length,
             // but this is fine, as we are not sharing the file.
@@ -479,7 +474,7 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
 
     // Commit state
     m_host_memory = host_memory;
-    m_backing_sync_length = shared_write ? m_backing_length : 0;
+    m_backing_sync_length = shared_write ? desired_backing_length : 0;
     m_backing_fp = backing_fp;
     m_unaligned_host_memory = unaligned_host_memory;
 #endif // HAVE_MMAP

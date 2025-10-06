@@ -106,6 +106,7 @@ where options are:
         length:<number>
         data_filename:<filename>
         dht_filename:<filename>
+        dpt_filename:<filename>
         shared
         create
         truncate
@@ -137,6 +138,10 @@ where options are:
         (this is the part of the hash tree that subintends the entire address
         range for the drive, down to one hash per page.)
         when omitted or set to the empty, the hash tree will be built from scratch.
+
+        dpt_filename (optional)
+        gives the name of the file containing the dirty page tree for the flash drive.
+        when omitted or set to the empty, the dirty page tree will be built from scratch.
 
         shared (optional)
         target modifications to flash drive modify the memory and hash tree files.
@@ -185,6 +190,7 @@ where options are:
         length:<number>
         data_filename:<filename>
         dht_filename:<filename>
+        dpt_filename:<filename>
         shared
 
     semantics are the same as for the --flash-drive option with the following
@@ -204,6 +210,7 @@ where options are:
     <key>:<value> is one of
         data_filename:<filename>
         dht_filename:<filename>
+        dpt_filename:<filename>
         shared
         create
         truncate
@@ -667,6 +674,7 @@ local default_config = cartesi.machine:get_default_config()
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local flash_data_filename = { root = images_path .. "rootfs.ext2" }
 local flash_dht_filename = {}
+local flash_dpt_filename = {}
 local flash_label_order = { "root" }
 local flash_shared = {}
 local flash_create = {}
@@ -689,6 +697,7 @@ local ram = {
     backing_store = {
         data_filename = images_path .. "linux.bin",
         dht_filename = "",
+        dpt_filename = "",
     },
 }
 local init_splash = true
@@ -722,12 +731,14 @@ local uarch = {
         backing_store = {
             data_filename = "",
             dht_filename = "",
+            dpt_filename = "",
         },
     },
     ram = {
         backing_store = {
             data_filename = "",
             dht_filename = "",
+            dpt_filename = "",
         },
     },
 }
@@ -774,6 +785,7 @@ local function parse_memory_range(opts, all)
     local f = util.parse_options(opts, all, {
         data_filename = "string",
         dht_filename = "string",
+        dpt_filename = "string",
         shared = "boolean",
         create = "boolean",
         truncate = "boolean",
@@ -783,12 +795,14 @@ local function parse_memory_range(opts, all)
     f.backing_store = {
         data_filename = f.data_filename or "",
         dht_filename = f.dht_filename or "",
+        dpt_filename = f.dpt_filename or "",
         shared = f.shared,
         create = f.create,
         truncate = f.truncate,
     }
     f.data_filename = nil
     f.dht_filename = nil
+    f.dpt_filename = nil
     f.shared = nil
     f.create = nil
     f.truncate = nil
@@ -799,6 +813,7 @@ local function parse_backing_store(opts, all, def)
     local f = util.parse_options(opts, all, {
         data_filename = "string",
         dht_filename = "string",
+        dpt_filename = "string",
         shared = "boolean",
         create = "boolean",
         truncate = "boolean",
@@ -1225,6 +1240,7 @@ local options = {
                 label = "string",
                 data_filename = "string",
                 dht_filename = "string",
+                dpt_filename = "string",
                 shared = "boolean",
                 create = "boolean",
                 truncate = "boolean",
@@ -1238,6 +1254,7 @@ local options = {
             if f.label == nil then f.label = "drive" .. #flash_label_order end
             f.data_filename = f.data_filename or ""
             f.dht_filename = f.dht_filename or ""
+            f.dpt_filename = f.dpt_filename or ""
             if f.mke2fs == nil then f.mke2fs = f.data_filename == "" end
             if f.mount == nil then
                 -- mount only if there is a file backing
@@ -1258,6 +1275,7 @@ local options = {
             end
             flash_data_filename[d] = f.data_filename or flash_data_filename[d]
             flash_dht_filename[d] = f.dht_filename or flash_dht_filename[d]
+            flash_dpt_filename[d] = f.dpt_filename or flash_dpt_filename[d]
             flash_start[d] = f.start or flash_start[d]
             flash_length[d] = f.length or flash_length[d]
             flash_shared[d] = f.shared or flash_shared[d]
@@ -1965,6 +1983,7 @@ echo "
             backing_store = {
                 data_filename = flash_data_filename[label],
                 dht_filename = flash_dht_filename[label],
+                dpt_filename = flash_dpt_filename[label],
                 shared = flash_shared[label],
                 create = flash_create[label],
                 truncate = flash_truncate[label],

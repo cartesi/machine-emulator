@@ -1512,7 +1512,6 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_config &v
     const auto new_path = path + to_string(key) + "/";
     ju_get_opt_field(jconfig, "shared"s, value.shared, new_path);
     ju_get_opt_field(jconfig, "create"s, value.create, new_path);
-    ju_get_opt_field(jconfig, "truncate"s, value.truncate, new_path);
     ju_get_opt_field(jconfig, "sht_filename"s, value.sht_filename, new_path);
     ju_get_opt_field(jconfig, "phtc_filename"s, value.phtc_filename, new_path);
     ju_get_opt_field(jconfig, "phtc_size"s, value.phtc_size, new_path);
@@ -2085,8 +2084,8 @@ void to_json(nlohmann::json &j, const memory_range_config &config) {
 }
 
 void to_json(nlohmann::json &j, const hash_tree_config &config) {
-    j = nlohmann::json{{"shared", config.shared}, {"create", config.create}, {"truncate", config.truncate},
-        {"sht_filename", config.sht_filename}, {"phtc_filename", config.phtc_filename}, {"phtc_size", config.phtc_size},
+    j = nlohmann::json{{"shared", config.shared}, {"create", config.create}, {"sht_filename", config.sht_filename},
+        {"phtc_filename", config.phtc_filename}, {"phtc_size", config.phtc_size},
         {"hash_function", hash_function_to_name(config.hash_function)}};
 }
 

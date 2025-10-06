@@ -52,6 +52,7 @@ static os::mapped_memory_flags check_mmap_flags(const pmas_flags &flags, const b
     return os::mapped_memory_flags{
         .read_only = memory_config.host_read_only && !backing_store.newly_created(),
         .shared = backing_store.shared,
+        .backing_gap = !backing_store.shared,
         .no_reserve = memory_config.host_no_reserve,
     };
 }
@@ -66,8 +67,12 @@ memory_address_range::memory_address_range(const std::string &description, uint6
         backing_store.data_filename, length},
     m_config{memory_config},
     m_backing_store{backing_store},
-    m_dpt{get_level_count(length), static_cast<size_t>(length >> AR_LOG2_PAGE_SIZE)},
-    m_dht{get_level_count(length), static_cast<size_t>(length >> AR_LOG2_PAGE_SIZE)} {
+    // TODO(edubart): as an optimization we could detect newly created backing stores and pre-initialize
+    // dirty hash tree as clean without even touching or causing page faults to the mapped memory
+    m_dpt{get_level_count(length), static_cast<size_t>(length >> AR_LOG2_PAGE_SIZE), backing_store.dpt_filename,
+        !backing_store.dpt_filename.empty() && backing_store.shared},
+    m_dht{get_level_count(length), static_cast<size_t>(length >> AR_LOG2_PAGE_SIZE), backing_store.dht_filename,
+        !backing_store.dht_filename.empty() && backing_store.shared} {
 } catch (const std::exception &e) {
     throw std::invalid_argument{std::string{e.what()}.append(" when initializing ").append(description)};
 } catch (...) {

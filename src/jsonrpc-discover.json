@@ -1906,9 +1906,6 @@
           "create": {
             "type": "boolean"
           },
-          "truncate": {
-            "type": "boolean"
-          },
           "sht_filename": {
             "type": "string"
           },

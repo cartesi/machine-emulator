@@ -78,6 +78,11 @@ public:
     static_assert(POD<machine_hash>, "machine_hash must be trivially copyable and standard layout");
     static_assert(POD<page_hash_tree>, "page_hash_tree must be trivially copyable and standard layout");
 
+    enum initialized_tag : uint64_t {
+        uninitialized = 0,
+        initialized = 0x50485443, // PHCT
+    };
+
     /// \class entry
     /// \brief Page hash-tree cache entry implementation
     class alignas(sizeof(uint64_t)) entry final :
@@ -409,25 +414,81 @@ public:
     /// \param num_entries Number of entries in cache
     template <IHasher H>
 #ifndef HAS_SIGNPOSTS
-    page_hash_tree_cache(H &&h, size_t num_entries) :
+    page_hash_tree_cache(H &&h, size_t num_entries, const std::string &backing_filename, bool shared) :
 #else
-    page_hash_tree_cache(os_log_t log, H &&h, size_t num_entries) :
+    page_hash_tree_cache(os_log_t log, H &&h, size_t num_entries, const std::string &backing_filename, bool shared) :
         m_log{log},
         m_spid_borrow{os_signpost_id_generate(m_log)},
         m_spid_pristine_check_and_update{os_signpost_id_generate(m_log)},
         m_spid_pristine_update{os_signpost_id_generate(m_log)},
         m_spid_non_pristine_update{os_signpost_id_generate(m_log)},
 #endif
-        m_mapped_memory{sizeof(lru) + (num_entries * sizeof(entry))},
-        m_lru{*new(m_mapped_memory.get_ptr()) lru},
-        m_entries{new(m_mapped_memory.get_ptr() + sizeof(lru)) entry[num_entries], num_entries},
+        m_mapped_memory{get_storage_length(num_entries), os::mapped_memory_flags{.shared = shared}, backing_filename},
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        m_initialized{*reinterpret_cast<initialized_tag *>(m_mapped_memory.get_ptr())},
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        m_lru{*reinterpret_cast<lru *>(m_mapped_memory.get_ptr() + sizeof(initialized_tag))},
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        m_entries{reinterpret_cast<entry *>(m_mapped_memory.get_ptr() + sizeof(initialized_tag) + sizeof(lru)),
+            num_entries},
         m_pristine_page_hash_tree{entry::get_pristine_page_hash_tree(std::forward<H>(h))} {
         if (num_entries == 0) {
             throw std::invalid_argument{"page hash-tree cache must have at least one entry"};
         }
         m_map.reserve(num_entries);
-        for (auto &e : m_entries) {
-            e.clear_hash_tree(m_pristine_page_hash_tree);
+
+        // Initialize mapped memory if needed
+        if (m_initialized == initialized_tag::uninitialized) {
+            // Use placement new to explicit initialize boost instrusive list internal fields
+            new (&m_lru) lru;
+            new (m_entries.data()) entry[num_entries];
+            // Set all entries hashes to pristine page
+            for (auto &e : m_entries) {
+                e.clear_hash_tree(m_pristine_page_hash_tree);
+            }
+            m_initialized = initialized_tag::initialized;
+        } else {
+            // Validate if the file type is correct
+            if (m_initialized != initialized_tag::initialized) {
+                throw std::runtime_error{"corrupted page hash-tree cache: file tag mismatch"};
+            }
+
+            // Validate list size
+            if (m_lru.size() > num_entries) {
+                throw std::runtime_error{"corrupted page hash-tree cache: LRU size exceeds capacity"};
+            }
+
+            // The mapped memory contains relative (offset) pointers.
+            // To ensure safety, we must validate all pointers before using them.
+            // Otherwise, dereferencing invalid pointers from corrupted files could result in undefined behavior.
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            const auto entries_begin = reinterpret_cast<uintptr_t>(m_entries.data());
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            const auto entries_end = reinterpret_cast<uintptr_t>(m_entries.data() + m_entries.size());
+            uint64_t list_size = 0;
+            // Validate that all entries in LRU are within the valid entries array range
+            for (auto &e : m_lru) {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                const auto entry_addr = reinterpret_cast<uintptr_t>(&e);
+                // Check if entry pointer is within valid range
+                if (entry_addr < entries_begin || entry_addr >= entries_end) {
+                    throw std::runtime_error{"corrupted page hash-tree cache: LRU contains invalid entry pointer"};
+                }
+                // Check if entry is properly aligned
+                if ((entry_addr & (alignof(entry) - 1)) != 0) {
+                    throw std::runtime_error{"corrupted page hash-tree cache: LRU contains unaligned entry pointer"};
+                }
+                list_size++;
+            }
+            // Validate actual list size
+            if (m_lru.size() != list_size) {
+                throw std::runtime_error{"corrupted page hash-tree cache: LRU size mismatch"};
+            }
+
+            // Reconstruct entries map
+            for (auto &e : m_lru) {
+                m_map.emplace(e.get_paddr_page(), e);
+            }
         }
     }
 
@@ -435,6 +496,14 @@ public:
     page_hash_tree_cache(page_hash_tree_cache &&other) = delete;
     page_hash_tree_cache &operator=(const page_hash_tree_cache &other) = delete;
     page_hash_tree_cache &operator=(page_hash_tree_cache &&other) = delete;
+
+    static uint64_t get_storage_length(size_t num_entries) {
+        return sizeof(lru) + (num_entries * sizeof(entry));
+    }
+
+    std::span<const unsigned char> get_storage_data() const noexcept {
+        return m_mapped_memory.get_storage_data();
+    }
 
     /// \brief Tries to borrow a cache entry
     /// \param paddr_page Target physical address of page to borrow
@@ -613,8 +682,9 @@ private:
     os::mapped_memory m_mapped_memory; ///< Mapped memory containing the LRU and entries
 
     // The following fields may already be initialized by existing mapped memory
-    lru &m_lru;                 ///< Recently used entries
-    std::span<entry> m_entries; ///< Array of page hash-tree cache entries
+    initialized_tag &m_initialized; ///< Whether cache has been initialized
+    lru &m_lru;                     ///< Recently used entries
+    std::span<entry> m_entries;     ///< Array of page hash-tree cache entries
 
     // The following fields are always initialized from scratch
     ankerl::unordered_dense::map<address_type, entry::ref> m_map; ///< Map from page addresses to corresponding entries

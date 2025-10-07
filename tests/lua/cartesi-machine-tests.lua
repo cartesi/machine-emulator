@@ -622,9 +622,9 @@ local function build_machine(ram_image)
     }
     if remote_address then
         local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))
-        return assert(jsonrpc_machine(config, runtime):set_cleanup_call(jsonrpc.SHUTDOWN))
+        return jsonrpc_machine:fork_server():set_cleanup_call(jsonrpc.SHUTDOWN):create(config, runtime)
     end
-    return assert(cartesi.machine(config, runtime))
+    return cartesi.machine(config, runtime)
 end
 
 local function print_machine(test_name, expected_cycles)

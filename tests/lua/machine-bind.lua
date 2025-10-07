@@ -250,9 +250,9 @@ local function build_machine(type, config_options)
     local new_machine
     if type ~= "local" then
         local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))
-        new_machine = assert(jsonrpc_machine(config, runtime):set_cleanup_call(jsonrpc.SHUTDOWN))
+        new_machine = jsonrpc_machine:fork_server():set_cleanup_call(jsonrpc.SHUTDOWN):create(config, runtime)
     else
-        new_machine = assert(cartesi.machine(config, runtime))
+        new_machine = cartesi.machine(config, runtime)
     end
     if config.uarch.ram and config.uarch.ram.backing_store and config.uarch.ram.backing_store.data_filename then
         os.remove(config.uarch.ram.backing_store.data_filename)

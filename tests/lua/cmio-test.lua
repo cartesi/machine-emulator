@@ -118,9 +118,9 @@ local function load_machine(name)
     }
     if machine_type ~= "local" then
         local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))
-        return assert(jsonrpc_machine(MACHINES_DIR .. name, runtime):set_cleanup_call(jsonrpc.SHUTDOWN))
+        return jsonrpc_machine:fork_server():set_cleanup_call(jsonrpc.SHUTDOWN):load(MACHINES_DIR .. name, runtime)
     else
-        return assert(cartesi.machine(MACHINES_DIR .. name, runtime))
+        return cartesi.machine(MACHINES_DIR .. name, runtime)
     end
 end
 

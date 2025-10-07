@@ -138,9 +138,9 @@ local function build_machine(type, config, runtime_config)
     }
     if type ~= "local" then
         local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))
-        return assert(jsonrpc_machine(config, runtime_config):set_cleanup_call(jsonrpc.SHUTDOWN))
+        return jsonrpc_machine:fork_server():set_cleanup_call(jsonrpc.SHUTDOWN):create(config, runtime_config)
     else
-        return assert(cartesi.machine(config, runtime_config))
+        return cartesi.machine(config, runtime_config)
     end
 end
 

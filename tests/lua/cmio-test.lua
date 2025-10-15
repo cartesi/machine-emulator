@@ -115,8 +115,6 @@ local function load_machine(name)
         concurrency = {
             update_hash_tree = 0,
         },
-        skip_root_hash_check = true,
-        skip_root_hash_store = true,
     }
     if machine_type ~= "local" then
         local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))

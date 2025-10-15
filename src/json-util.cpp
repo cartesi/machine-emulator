@@ -907,8 +907,6 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_con
     }
     ju_get_opt_field(j[key], "concurrency"s, value.concurrency, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "htif"s, value.htif, path + to_string(key) + "/");
-    ju_get_opt_field(j[key], "skip_root_hash_check"s, value.skip_root_hash_check, path + to_string(key) + "/");
-    ju_get_opt_field(j[key], "skip_root_hash_store"s, value.skip_root_hash_store, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_version_check"s, value.skip_version_check, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "soft_yield"s, value.soft_yield, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "no_reserve"s, value.no_reserve, path + to_string(key) + "/");
@@ -2300,8 +2298,6 @@ void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
     j = nlohmann::json{
         {"concurrency", runtime.concurrency},
         {"htif", runtime.htif},
-        {"skip_root_hash_check", runtime.skip_root_hash_check},
-        {"skip_root_hash_store", runtime.skip_root_hash_store},
         {"skip_version_check", runtime.skip_version_check},
         {"soft_yield", runtime.soft_yield},
         {"no_reserve", runtime.no_reserve},

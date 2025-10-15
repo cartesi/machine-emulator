@@ -318,20 +318,6 @@ where options are:
     suppress any console output during machine run.
     this includes anything written to machine's stdout or stderr.
 
-  --skip-root-hash-check
-    skip hash tree root hash check when loading a stored machine.
-    i.e., assume the stored machine files are not corrupt.
-    this is only intended to speed up machine loading in emulator tests.
-
-    DON'T USE THIS OPTION IN PRODUCTION
-
-  --skip-root-hash-store
-    skip hash tree root hash saving when storing a machine.
-    i.e., assume the stored machine will use --skip-root-hash-check when loading.
-    this is only intended to speed up machine saving in emulator tests.
-
-    DON'T USE THIS OPTION IN PRODUCTION
-
   --skip-version-check
     skip emulator version check when loading a stored machine.
     i.e., assume the stored machine is compatible with current emulator version.
@@ -750,8 +736,6 @@ local hash_tree = {
     hash_function = default_config.hash_tree.hash_function,
 }
 local concurrency_update_hash_tree = 0
-local skip_root_hash_check = false
-local skip_root_hash_store = false
 local skip_version_check = false
 local no_reserve = false
 local htif_no_console_putchar = false
@@ -1371,22 +1355,6 @@ local options = {
         end,
     },
     {
-        "^%-%-skip%-root%-hash%-check$",
-        function(all)
-            if not all then return false end
-            skip_root_hash_check = true
-            return true
-        end,
-    },
-    {
-        "^%-%-skip%-root%-hash%-store$",
-        function(all)
-            if not all then return false end
-            skip_root_hash_store = true
-            return true
-        end,
-    },
-    {
         "^%-%-skip%-version%-check$",
         function(all)
             if not all then return false end
@@ -1936,8 +1904,6 @@ local runtime_config = {
     htif = {
         no_console_putchar = htif_no_console_putchar,
     },
-    skip_root_hash_check = skip_root_hash_check,
-    skip_root_hash_store = skip_root_hash_store,
     skip_version_check = skip_version_check,
     no_reserve = no_reserve,
 }

@@ -218,8 +218,9 @@ static void prepare_ar_backing_store_for_share(const backing_store_config &from_
             os::truncate_file(to_c.dpt_filename, dpt_length, true);
         }
         remover.add_file(to_c.dpt_filename);
+
+        os::change_writable(to_c.data_filename, !read_only);
     }
-    os::change_writable(to_c.data_filename, !read_only);
 }
 
 static void prepare_ar_backing_stores(const machine_config &c, scope_remove &remover) {

@@ -144,6 +144,11 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
 
         // Check backing file length mismatch
         if (backing_file_length != desired_backing_length) {
+            if (backing_file_length > desired_backing_length) {
+                throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
+                    std::to_string(backing_file_length) + ") cannot be less than desired backing length ("s +
+                    std::to_string(desired_backing_length) + ")"s};
+            }
             if (flags.shared || !flags.backing_gap) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
@@ -214,7 +219,7 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
             if (flags.read_only) {
                 // We can't write on read-only mappings.
                 // This kind of mapping is unlikely to happen, so there is no need to support it.
-                throw std::system_error{errno, std::generic_category(),
+                throw std::runtime_error{
                     "possible non zero partial page when mapping backing file '"s + backing_filename + "' to memory"s};
             }
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -304,6 +309,11 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
 
         // Check backing file length mismatch
         if (backing_file_length != desired_backing_length) {
+            if (backing_file_length > desired_backing_length) {
+                throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
+                    std::to_string(backing_file_length) + ") cannot be less than desired backing length ("s +
+                    std::to_string(desired_backing_length) + ")"s};
+            }
             if (flags.shared || !flags.backing_gap) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
@@ -455,6 +465,11 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
 
         // Check backing file length mismatch
         if (backing_file_length != desired_backing_length) {
+            if (backing_file_length > desired_backing_length) {
+                throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
+                    std::to_string(backing_file_length) + ") cannot be less than desired backing length ("s +
+                    std::to_string(desired_backing_length) + ")"s};
+            }
             if (flags.shared || !flags.backing_gap) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +

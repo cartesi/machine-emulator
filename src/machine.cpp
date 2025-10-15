@@ -395,7 +395,7 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
     remover.add_directory(dir);
 
     // Store config
-    remover.add_file(m_c.store(dir, sharing));
+    remover.add_file(m_c.store(dir));
 
     // Store all address ranges
     auto store_address_range = [&](const backing_store_config &c, const address_range &ar, bool read_only) {
@@ -418,10 +418,10 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
             remover.add_file(dpt_filename);
         } else { // Copy unshared backing store
             if (c.data_filename.empty()) {
-                throw std::runtime_error{"attempt to restore unbacked address range "s.append(ar.get_description())};
+                throw std::runtime_error{"attempt to rollback unbacked address range "s.append(ar.get_description())};
             }
             if (c.shared) {
-                throw std::runtime_error{"attempt to restore shared address range "s.append(ar.get_description())};
+                throw std::runtime_error{"attempt to rollback shared address range "s.append(ar.get_description())};
             }
             os::copy_file(c.data_filename, data_filename, ar.get_length());
             remover.add_file(data_filename);
@@ -462,8 +462,8 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
     } else {
         os::truncate_file(sht_filename, m_ht.get_sht_storage_data().size(), true);
         remover.add_file(sht_filename);
-        os::truncate_file(sht_filename, m_ht.get_phtc_storage_data().size(), true);
-        remover.add_file(sht_filename);
+        os::truncate_file(phtc_filename, m_ht.get_phtc_storage_data().size(), true);
+        remover.add_file(phtc_filename);
     }
 
     // Retain all stored files

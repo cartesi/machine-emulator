@@ -2068,7 +2068,7 @@ echo "
 end
 
 for _, r in ipairs(memory_range_replace) do
-    main_machine:replace_memory_range(r.start, r.length, r.shared, r.image_filename)
+    main_machine:replace_memory_range(r)
 end
 
 local function dump_config(what, whatdef, out, indent)

@@ -25,8 +25,10 @@ local MAX_UARCH_CYCLE = cartesi.UARCH_CYCLE_MAX
 local function build_machine()
     local config = {
         ram = {
-            image_filename = test_util.tests_path .. "mcycle_overflow.bin",
             length = 32 << 20,
+            backing_store = {
+                data_filename = test_util.tests_path .. "mcycle_overflow.bin",
+            },
         },
     }
     local machine = cartesi.machine(config)

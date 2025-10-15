@@ -14,12 +14,12 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
--- module to convert array tables into key-value tables
-local M = {}
+-- Module with helpers for table manipulations.
+local tabular = {}
 
--- convert a table with indexed rows into a table with named rows. e.g.
+-- Convert a table with indexed rows into a table with named rows. e.g.
 -- {"foo", 999} -> {name = "foo", cycles = 999} with keys described by md
-local function expand_row(metadata, row)
+function tabular.expand_row(metadata, row)
     local expanded_row = {}
     for key, val in ipairs(metadata) do
         expanded_row[val] = row[key]
@@ -27,27 +27,66 @@ local function expand_row(metadata, row)
     return expanded_row
 end
 
--- apply `expand_row` for each row of `t`. e.g.
+-- Apply `expand_row` for each row of `t`. e.g.
 -- {{ "foo", 999 }} -> {{name = "foo", cycles = 999}} with keys described by md
-M.expand = function(metadata, t)
+function tabular.expand(metadata, t)
     local expanded_t = {}
     for _, row in ipairs(t) do
-        expanded_t[#expanded_t + 1] = expand_row(metadata, row)
+        expanded_t[#expanded_t + 1] = tabular.expand_row(metadata, row)
     end
     return expanded_t
 end
 
-function M.clear(t)
+-- Clear all key-value pairs from table `t`.
+function tabular.clear(t)
     for k in pairs(t) do
         t[k] = nil
     end
 end
 
-function M.append(t, elems)
+-- Append all elements from `elems` to the end of table `t`.
+function tabular.append(t, elems)
     local n = #t
     for i = 1, #elems do
         t[n + i] = elems[i]
     end
 end
 
-return M
+local function deep_traverse_iter(t, path)
+    path = path or {}
+    for k, v in pairs(t) do
+        local current_path = {}
+        for i = 1, #path do
+            current_path[i] = path[i]
+        end
+        current_path[#current_path + 1] = k
+        if type(v) == "table" then
+            deep_traverse_iter(v, current_path)
+        else
+            coroutine.yield(current_path, k, v)
+        end
+    end
+end
+
+-- Iterator that recursively traverses all key-value pairs in table `t`,
+-- yielding the path to each value, its key, and the value itself.
+function tabular.deep_traverse(t)
+    return coroutine.wrap(function()
+        deep_traverse_iter(t)
+    end)
+end
+
+-- Recursively copy a table `t` and all its subtables.
+function tabular.deep_copy(t)
+    local copy = {}
+    for k, v in pairs(t) do
+        if type(v) == "table" then
+            copy[k] = tabular.deep_copy(v)
+        else
+            copy[k] = v
+        end
+    end
+    return copy
+end
+
+return tabular

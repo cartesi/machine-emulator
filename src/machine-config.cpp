@@ -55,11 +55,11 @@ std::string machine_config::get_dpt_filename(const std::string &dir, uint64_t st
 }
 
 std::string machine_config::get_sht_filename(const std::string &dir) {
-    return dir + "/global.sht";
+    return dir + "/hash_tree.sht";
 }
 
 std::string machine_config::get_phtc_filename(const std::string &dir) {
-    return dir + "/global.phtc";
+    return dir + "/hash_tree.phtc";
 }
 
 std::string machine_config::get_config_filename(const std::string &dir) {

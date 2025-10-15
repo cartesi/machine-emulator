@@ -210,6 +210,8 @@ struct machine_config final {
     machine_config &adjust_defaults();
 
     /// \brief Adjust backing stores to point to the directory
+    /// \param dir Directory where "config" is stored
+    /// \param sharing Sharing mode conversion policy to use for backing stores
     machine_config &adjust_backing_stores(const std::string &dir, sharing_mode sharing = sharing_mode::config);
 
     /// \brief Loads a machine config from a directory

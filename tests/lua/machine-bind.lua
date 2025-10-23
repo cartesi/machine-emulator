@@ -357,6 +357,20 @@ do_test("should provide proof for values in registers", function(machine)
     end
 end)
 
+print("\n\ntesting revert root hash")
+do_test("should write/read revert root hash", function(machine)
+    local before_root_hash = machine:get_root_hash()
+    machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, before_root_hash)
+    assert(
+        machine:read_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, cartesi.HASH_SIZE) == before_root_hash,
+        "unexpected revert root hash"
+    )
+    local after_root_hash = machine:get_root_hash()
+    assert(before_root_hash ~= after_root_hash)
+    machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, string.rep("\x00", 32))
+    assert(before_root_hash == machine:get_root_hash())
+end)
+
 print("\n\ntesting get_reg_address function binding")
 do_test("should return address value for registers", function(machine)
     -- Check register address

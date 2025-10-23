@@ -1600,7 +1600,10 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
         init_hot_tlb_contents();
         return;
     }
-    if (pmas_is_protected(ar.get_driver_id())) {
+    // Allow special case for writing the revert root hash
+    if (paddr == AR_SHADOW_REVERT_ROOT_HASH_START && length == sizeof(machine_hash)) {
+        ;
+    } else if (pmas_is_protected(ar.get_driver_id())) {
         throw std::invalid_argument{"attempted write to protected memory range "s.append(ar_descr)};
     }
     //??D In C++23, change this to use std::span and std::views::chunk std::views::drop/take and std::views::chain

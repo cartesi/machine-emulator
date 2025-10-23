@@ -25,6 +25,7 @@
 
 #include "address-range-constants.h"
 #include "hot-tlb.h"
+#include "machine-hash.h"
 #include "shadow-registers.h"
 #include "shadow-tlb.h"
 
@@ -34,7 +35,8 @@ namespace cartesi {
 /// \details It's stored in the processor backing file.
 struct shadow_state final {
     registers_state registers;          ///< Registers state
-    uint64_t registers_padding_[406]{}; ///< Padding to align next field to a page boundary
+    uint64_t registers_padding_[402]{}; ///< Padding to align next field to a page boundary
+    machine_hash revert_root_hash{};    ///< Revert root hash
     shadow_tlb_state tlb;               ///< Shadow TLB state
     uint64_t tlb_padding_[512]{};       ///< Padding to align next field to a page boundary
 };
@@ -55,6 +57,8 @@ struct processor_state final {
 static_assert(offsetof(shadow_state, tlb) % AR_PAGE_SIZE == 0, "shadow tlb state must be aligned to a page boundary");
 static_assert(offsetof(processor_state, penumbra) % AR_PAGE_SIZE == 0,
     "penumbra state must be aligned to a page boundary");
+static_assert(offsetof(shadow_state, revert_root_hash) == AR_SHADOW_REVERT_ROOT_HASH_START,
+    "unexpected shadow revert root hash start");
 
 static_assert(sizeof(processor_state) % AR_PAGE_SIZE == 0, "processor state size must be multiple of a page size");
 static_assert(sizeof(shadow_state) == AR_SHADOW_STATE_LENGTH, "unexpected shadow state size");

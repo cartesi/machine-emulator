@@ -57,6 +57,7 @@ typedef enum cm_pmas_constant {
     CM_AR_CMIO_RX_BUFFER_LOG2_SIZE = 21,
     CM_AR_CMIO_TX_BUFFER_START = 0x60800000,
     CM_AR_CMIO_TX_BUFFER_LOG2_SIZE = 21,
+    CM_AR_SHADOW_REVERT_ROOT_HASH_START = 0xfe0,
     CM_AR_RAM_START = 0x80000000,
 } cm_pmas_constant;
 

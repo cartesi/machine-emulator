@@ -29,12 +29,14 @@ enum AR_ranges : uint64_t {
     AR_SHADOW_STATE_LENGTH = EXPAND_UINT64_C(AR_SHADOW_STATE_LENGTH_DEF),         ///< Length of shadow state range
     AR_SHADOW_REGISTERS_START = EXPAND_UINT64_C(AR_SHADOW_REGISTERS_START_DEF),   ///< Start of shadow registers range
     AR_SHADOW_REGISTERS_LENGTH = EXPAND_UINT64_C(AR_SHADOW_REGISTERS_LENGTH_DEF), ///< Length of shadow registers range
-    AR_SHADOW_TLB_START = EXPAND_UINT64_C(AR_SHADOW_TLB_START_DEF),               ///< Start of shadow TLB range
-    AR_SHADOW_TLB_LENGTH = EXPAND_UINT64_C(AR_SHADOW_TLB_LENGTH_DEF),             ///< Length of shadow TLB range
-    AR_PMAS_START = EXPAND_UINT64_C(AR_PMAS_START_DEF),                           ///< Start of PMAS list range
-    AR_PMAS_LENGTH = EXPAND_UINT64_C(AR_PMAS_LENGTH_DEF),                         ///< Length of PMAS list range
-    AR_DTB_START = EXPAND_UINT64_C(AR_DTB_START_DEF),                             ///< Start of DTB range
-    AR_DTB_LENGTH = EXPAND_UINT64_C(AR_DTB_LENGTH_DEF),                           ///< Length of DTB range
+    AR_SHADOW_REVERT_ROOT_HASH_START =
+        EXPAND_UINT64_C(AR_SHADOW_REVERT_ROOT_HASH_START_DEF),        ///< Start of revert root hash range
+    AR_SHADOW_TLB_START = EXPAND_UINT64_C(AR_SHADOW_TLB_START_DEF),   ///< Start of shadow TLB range
+    AR_SHADOW_TLB_LENGTH = EXPAND_UINT64_C(AR_SHADOW_TLB_LENGTH_DEF), ///< Length of shadow TLB range
+    AR_PMAS_START = EXPAND_UINT64_C(AR_PMAS_START_DEF),               ///< Start of PMAS list range
+    AR_PMAS_LENGTH = EXPAND_UINT64_C(AR_PMAS_LENGTH_DEF),             ///< Length of PMAS list range
+    AR_DTB_START = EXPAND_UINT64_C(AR_DTB_START_DEF),                 ///< Start of DTB range
+    AR_DTB_LENGTH = EXPAND_UINT64_C(AR_DTB_LENGTH_DEF),               ///< Length of DTB range
     AR_SHADOW_UARCH_STATE_START =
         EXPAND_UINT64_C(AR_SHADOW_UARCH_STATE_START_DEF), ///< Start of uarch shadow state range
     AR_SHADOW_UARCH_STATE_LENGTH =

@@ -75,7 +75,8 @@ private:
         static_assert(shadow_uarch_state_get_what(AR_SHADOW_UARCH_STATE_START) ==
                 shadow_uarch_state_what::uarch_halt_flag,
             "code assumes halt_flag is the first shadow uarch register");
-        const auto *regs = &m_m.get_uarch_state().registers.halt_flag;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto *regs = reinterpret_cast<uint64_t *>(&m_m.get_uarch_state().registers);
         return regs[(static_cast<uint64_t>(what) - AR_SHADOW_UARCH_STATE_START) / sizeof(uint64_t)];
     }
 
@@ -84,7 +85,8 @@ private:
         static_assert(shadow_uarch_state_get_what(AR_SHADOW_UARCH_STATE_START) ==
                 shadow_uarch_state_what::uarch_halt_flag,
             "code assumes halt_flag is the first shadow uarch register");
-        auto *regs = &m_m.get_uarch_state().registers.halt_flag;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        auto *regs = reinterpret_cast<uint64_t *>(&m_m.get_uarch_state().registers);
         regs[(static_cast<uint64_t>(what) - AR_SHADOW_UARCH_STATE_START) / sizeof(uint64_t)] = val;
         mark_dirty_word(static_cast<uint64_t>(what));
     }

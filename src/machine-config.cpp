@@ -191,7 +191,7 @@ machine_config &machine_config::adjust_defaults() {
         const std::string flash_description = "flash drive "s + std::to_string(i);
         // Auto detect flash drive start address
         if (f.start == UINT64_C(-1)) {
-            f.start = AR_DRIVE_START + AR_DRIVE_OFFSET * i;
+            f.start = AR_DRIVE_START + (AR_DRIVE_OFFSET * i);
         }
         // Auto detect flash drive image length
         if (f.length == UINT64_C(-1)) {

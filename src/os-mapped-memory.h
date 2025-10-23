@@ -113,13 +113,15 @@ public:
     /// \brief Returns a span representing the mapped memory region.
     std::span<unsigned char> get_storage_data() noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        return std::span<unsigned char>{reinterpret_cast<unsigned char *>(m_host_memory), m_length};
+        return std::span<unsigned char>{reinterpret_cast<unsigned char *>(m_host_memory),
+            static_cast<size_t>(m_length)};
     }
 
     /// \brief Returns a span representing the mapped memory region.
     std::span<const unsigned char> get_storage_data() const noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        return std::span<const unsigned char>{reinterpret_cast<const unsigned char *>(m_host_memory), m_length};
+        return std::span<const unsigned char>{reinterpret_cast<const unsigned char *>(m_host_memory),
+            static_cast<size_t>(m_length)};
     }
 
     /// \brief Returns the total length of the mapped memory region.

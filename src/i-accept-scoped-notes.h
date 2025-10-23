@@ -94,7 +94,7 @@ public:
 
     /// \brief Adds annotations to the state, bracketing a scope
     /// \param text String with the text for the annotation
-    /// \returns An object that, when constructed and destroyed issues an annonation.
+    /// \returns An object that, when constructed and destroyed issues an annotation.
     auto make_scoped_note(const char *text) const {
         return derived().do_make_scoped_note(text);
     }

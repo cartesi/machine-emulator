@@ -1120,7 +1120,7 @@ bool virtio_p9fs_address_range::op_statfs(virtq_unserializer &&mmsg, uint16_t ta
 #endif
 #ifndef _WIN32
     // Get the fid state
-    p9_fid_state *fidp = get_fid_state(fid);
+    const p9_fid_state *fidp = get_fid_state(fid);
     if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
@@ -1326,7 +1326,7 @@ bool virtio_p9fs_address_range::op_symlink(virtq_unserializer &&mmsg, uint16_t t
         return send_error(msg, tag, P9_ENOENT);
     }
     // Get the fid state
-    p9_fid_state *dfidp = get_fid_state(dfid);
+    const p9_fid_state *dfidp = get_fid_state(dfid);
     if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
@@ -1383,7 +1383,7 @@ bool virtio_p9fs_address_range::op_mknod(virtq_unserializer &&mmsg, uint16_t tag
         return send_error(msg, tag, P9_ENOENT);
     }
     // Get the fid state
-    p9_fid_state *dfidp = get_fid_state(dfid);
+    const p9_fid_state *dfidp = get_fid_state(dfid);
     if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
@@ -1727,7 +1727,7 @@ bool virtio_p9fs_address_range::op_lock(virtq_unserializer &&mmsg, uint16_t tag)
         return send_error(msg, tag, P9_EINVAL);
     }
     // Get the fid state
-    p9_fid_state *fidp = get_fid_state(fid);
+    const p9_fid_state *fidp = get_fid_state(fid);
     if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
@@ -1779,7 +1779,7 @@ bool virtio_p9fs_address_range::op_getlock(virtq_unserializer &&mmsg, uint16_t t
 #endif
 #if defined(F_SETLK) && defined(F_SETLKW)
     // Get the fid state
-    p9_fid_state *fidp = get_fid_state(fid);
+    const p9_fid_state *fidp = get_fid_state(fid);
     if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
@@ -1925,7 +1925,7 @@ bool virtio_p9fs_address_range::op_fsync(virtq_unserializer &&mmsg, uint16_t tag
     std::ignore = fprintf(stderr, "p9fs fsync: tag=%d fid=%d\n", tag, fid);
 #endif
     // Get the fid state
-    p9_fid_state *fidp = get_fid_state(fid);
+    const p9_fid_state *fidp = get_fid_state(fid);
     if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
@@ -1954,8 +1954,8 @@ bool virtio_p9fs_address_range::op_link(virtq_unserializer &&mmsg, uint16_t tag)
         return send_error(msg, tag, P9_ENOENT);
     }
     // Get the fid state
-    p9_fid_state *dfidp = get_fid_state(dfid);
-    p9_fid_state *fidp = get_fid_state(fid);
+    const p9_fid_state *dfidp = get_fid_state(dfid);
+    const p9_fid_state *fidp = get_fid_state(fid);
     if ((dfidp == nullptr) || (fidp == nullptr)) {
         return send_error(msg, tag, P9_EPROTO);
     }
@@ -1992,7 +1992,7 @@ bool virtio_p9fs_address_range::op_mkdir(virtq_unserializer &&mmsg, uint16_t tag
         return send_error(msg, tag, P9_ENOENT);
     }
     // Get the fid state
-    p9_fid_state *dfidp = get_fid_state(dfid);
+    const p9_fid_state *dfidp = get_fid_state(dfid);
     if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }

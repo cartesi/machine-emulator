@@ -72,7 +72,7 @@ extern "C" void *memcpy(void *dest, const void *src, size_t n) {
 }
 
 extern "C" void *memset(void *ptr, int value, size_t num) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,misc-const-correctness)
     volatile unsigned char *p = reinterpret_cast<unsigned char *>(ptr);
     while (num-- != 0) {
         *p++ = value;

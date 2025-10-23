@@ -380,7 +380,7 @@ private:
 //------------------------------------------------------------------------------
 
 /// \brief Names for JSONRPC error codes
-enum jsonrpc_error_code : int {
+enum class jsonrpc_error_code : int {
     parse_error = -32700,      ///< When the request failed to parse
     invalid_request = -32600,  ///< When the request was invalid (missing fields, wrong types etc)
     method_not_found = -32601, ///< When the method was not found
@@ -647,7 +647,7 @@ static std::tuple<ARGS...> parse_array_args(const json &j) {
 /// \param param_name Name of each parameter
 /// \returns tuple with arguments
 template <typename... ARGS, size_t... I>
-static std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[sizeof...(ARGS)],
+static std::tuple<ARGS...> parse_object_args(const json &j, const char *const (&param_name)[sizeof...(ARGS)],
     std::index_sequence<I...> /*unused*/) {
     std::tuple<ARGS...> tp;
     (cartesi::ju_get_field(j, std::string(param_name[I]), std::get<I>(tp)), ...);
@@ -660,7 +660,7 @@ static std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_
 /// \param param_name Name of each parameter
 /// \returns tuple with arguments
 template <typename... ARGS>
-static std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[sizeof...(ARGS)]) {
+static std::tuple<ARGS...> parse_object_args(const json &j, const char *const (&param_name)[sizeof...(ARGS)]) {
     return parse_object_args<ARGS...>(j, param_name, std::make_index_sequence<sizeof...(ARGS)>{});
 }
 
@@ -670,7 +670,7 @@ static std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_
 /// \param param_name Name of each parameter
 /// \returns tuple with arguments
 template <typename... ARGS>
-static std::tuple<ARGS...> parse_args(const json &j, const char *(&param_name)[sizeof...(ARGS)]) {
+static std::tuple<ARGS...> parse_args(const json &j, const char *const (&param_name)[sizeof...(ARGS)]) {
     constexpr auto mandatory_params = count_mandatory_params<ARGS...>();
     if (!j.contains("params")) {
         if constexpr (mandatory_params == 0) {
@@ -825,7 +825,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
 /// \details Changes the address the server is listening to.
 /// After this call, all new connections should be established using the new server address.
 static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    static const char *param_name[] = {"address"};
+    static const char *const param_name[] = {"address"};
     auto args = parse_args<std::string>(j, param_name);
     const std::string new_server_address = std::get<0>(args);
     const tcp::endpoint new_local_endpoint = address_to_endpoint(new_server_address);
@@ -848,7 +848,7 @@ static json jsonrpc_machine_load_handler(const json &j, const std::shared_ptr<ht
     if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
-    static const char *param_name[] = {"directory", "runtime_config", "sharing"};
+    static const char *const param_name[] = {"directory", "runtime_config", "sharing"};
     auto args = parse_args<std::string, cartesi::optional_param<cartesi::machine_runtime_config>,
         cartesi::optional_param<cartesi::sharing_mode>>(j, param_name);
     switch (count_args(args)) {
@@ -878,7 +878,7 @@ static json jsonrpc_machine_create_handler(const json &j, const std::shared_ptr<
     if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
-    static const char *param_name[] = {"config", "runtime_config", "directory"};
+    static const char *const param_name[] = {"config", "runtime_config", "directory"};
     auto args = parse_args<cartesi::machine_config, cartesi::optional_param<cartesi::machine_runtime_config>,
         cartesi::optional_param<std::string>>(j, param_name);
     switch (count_args(args)) {
@@ -908,7 +908,7 @@ static json jsonrpc_machine_collect_mcycle_root_hashes(const json &j, const std:
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"mcycle_end", "mcycle_period", "mcycle_phase", "log2_bundle_mcycle_count",
+    static const char *const param_name[] = {"mcycle_end", "mcycle_period", "mcycle_phase", "log2_bundle_mcycle_count",
         "previous_back_tree"};
     auto args =
         parse_args<uint64_t, uint64_t, uint64_t, uint64_t, std::optional<cartesi::back_merkle_tree>>(j, param_name);
@@ -931,7 +931,7 @@ static json jsonrpc_machine_collect_uarch_cycle_root_hashes(const json &j,
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"mcycle_end", "log2_bundle_uarch_cycle_count"};
+    static const char *const param_name[] = {"mcycle_end", "log2_bundle_uarch_cycle_count"};
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     auto mcycle_end = std::get<0>(args);
     auto log2_bundle_uarch_cycle_count = std::get<1>(args);
@@ -956,7 +956,7 @@ static json jsonrpc_machine_destroy_handler(const json &j, const std::shared_ptr
 /// \returns JSON response object
 /// \details This method causes the server to sleep for a number of milliseconds before the next call
 static json jsonrpc_delay_next_request_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    static const char *param_name[] = {"ms"};
+    static const char *const param_name[] = {"ms"};
     auto args = parse_args<uint64_t>(j, param_name);
     session->handler->delay = std::get<0>(args);
     return jsonrpc_response_ok(j);
@@ -989,7 +989,7 @@ static json jsonrpc_machine_store_handler(const json &j, const std::shared_ptr<h
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"directory", "sharing"};
+    static const char *const param_name[] = {"directory", "sharing"};
     auto args = parse_args<std::string, cartesi::sharing_mode>(j, param_name);
     session->handler->machine->store(std::get<0>(args), std::get<1>(args));
     return jsonrpc_response_ok(j);
@@ -1003,7 +1003,7 @@ static json jsonrpc_machine_clone_stored_handler(const json &j, const std::share
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"from_dir", "to_dir"};
+    static const char *const param_name[] = {"from_dir", "to_dir"};
     auto args = parse_args<std::string, std::string>(j, param_name);
     cartesi::machine::clone_stored(std::get<0>(args), std::get<1>(args));
     return jsonrpc_response_ok(j);
@@ -1017,7 +1017,7 @@ static json jsonrpc_machine_remove_stored_handler(const json &j, const std::shar
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"dir"};
+    static const char *const param_name[] = {"dir"};
     auto args = parse_args<std::string>(j, param_name);
     cartesi::machine::remove_stored(std::get<0>(args));
     return jsonrpc_response_ok(j);
@@ -1031,7 +1031,7 @@ static json jsonrpc_machine_run_handler(const json &j, const std::shared_ptr<htt
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"mcycle_end"};
+    static const char *const param_name[] = {"mcycle_end"};
     auto args = parse_args<uint64_t>(j, param_name);
     auto reason = session->handler->machine->run(std::get<0>(args));
     return jsonrpc_response_ok(j, reason);
@@ -1045,7 +1045,7 @@ static json jsonrpc_machine_log_step_handler(const json &j, const std::shared_pt
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"mcycle_count", "filename"};
+    static const char *const param_name[] = {"mcycle_count", "filename"};
     auto args = parse_args<uint64_t, std::string>(j, param_name);
     auto reason = session->handler->machine->log_step(std::get<0>(args), std::get<1>(args));
     return jsonrpc_response_ok(j, reason);
@@ -1059,7 +1059,7 @@ static json jsonrpc_machine_run_uarch_handler(const json &j, const std::shared_p
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"uarch_cycle_end"};
+    static const char *const param_name[] = {"uarch_cycle_end"};
     auto args = parse_args<uint64_t>(j, param_name);
     auto reason = session->handler->machine->run_uarch(std::get<0>(args));
     return jsonrpc_response_ok(j, reason);
@@ -1073,7 +1073,7 @@ static json jsonrpc_machine_log_step_uarch_handler(const json &j, const std::sha
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"log_type"};
+    static const char *const param_name[] = {"log_type"};
     auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log::type>>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     return jsonrpc_response_ok(j, session->handler->machine->log_step_uarch(std::get<0>(args).value()));
@@ -1087,7 +1087,7 @@ static json jsonrpc_machine_log_reset_uarch_handler(const json &j, const std::sh
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"log_type"};
+    static const char *const param_name[] = {"log_type"};
     auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log::type>>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     return jsonrpc_response_ok(j, session->handler->machine->log_reset_uarch(std::get<0>(args).value()));
@@ -1099,7 +1099,7 @@ static json jsonrpc_machine_log_reset_uarch_handler(const json &j, const std::sh
 /// \returns JSON response object
 static json jsonrpc_machine_verify_step_handler(const json &j, const std::shared_ptr<http_session> &session) {
     (void) session;
-    static const char *param_name[] = {"root_hash_before", "filename", "mcycle_count", "root_hash_after"};
+    static const char *const param_name[] = {"root_hash_before", "filename", "mcycle_count", "root_hash_after"};
     auto args = parse_args<cartesi::machine_hash, std::string, uint64_t, cartesi::machine_hash>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     auto reason =
@@ -1113,7 +1113,7 @@ static json jsonrpc_machine_verify_step_handler(const json &j, const std::shared
 /// \returns JSON response object
 static json jsonrpc_machine_verify_step_uarch_handler(const json &j,
     const std::shared_ptr<http_session> & /*session*/) {
-    static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
+    static const char *const param_name[] = {"root_hash_before", "log", "root_hash_after"};
     auto args = parse_args<cartesi::machine_hash, cartesi::not_default_constructible<cartesi::access_log>,
         cartesi::machine_hash>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
@@ -1127,7 +1127,7 @@ static json jsonrpc_machine_verify_step_uarch_handler(const json &j,
 /// \returns JSON response object
 static json jsonrpc_machine_verify_reset_uarch_handler(const json &j,
     const std::shared_ptr<http_session> & /*session*/) {
-    static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
+    static const char *const param_name[] = {"root_hash_before", "log", "root_hash_after"};
     auto args = parse_args<cartesi::machine_hash, cartesi::not_default_constructible<cartesi::access_log>,
         cartesi::machine_hash>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
@@ -1143,7 +1143,7 @@ static json jsonrpc_machine_get_proof_handler(const json &j, const std::shared_p
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"address", "log2_size"};
+    static const char *const param_name[] = {"address", "log2_size"};
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     if (std::get<1>(args) > INT_MAX) {
         throw std::domain_error("log2_size is out of range");
@@ -1160,7 +1160,7 @@ static json jsonrpc_machine_get_hash_tree_stats_handler(const json &j, const std
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"clear"};
+    static const char *const param_name[] = {"clear"};
     auto args = parse_args<bool>(j, param_name);
     return jsonrpc_response_ok(j, session->handler->machine->get_hash_tree_stats(std::get<0>(args)));
 }
@@ -1198,7 +1198,7 @@ static json jsonrpc_machine_get_node_hash_handler(const json &j, const std::shar
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"address", "log2_size"};
+    static const char *const param_name[] = {"address", "log2_size"};
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     if (std::get<1>(args) > INT_MAX) {
         throw std::domain_error("log2_size is out of range");
@@ -1215,7 +1215,7 @@ static json jsonrpc_machine_read_word_handler(const json &j, const std::shared_p
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"address"};
+    static const char *const param_name[] = {"address"};
     auto args = parse_args<uint64_t>(j, param_name);
     auto address = std::get<0>(args);
     return jsonrpc_response_ok(j, session->handler->machine->read_word(address));
@@ -1229,7 +1229,7 @@ static json jsonrpc_machine_write_word_handler(const json &j, const std::shared_
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"address", "value"};
+    static const char *const param_name[] = {"address", "value"};
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     auto address = std::get<0>(args);
     auto value = std::get<1>(args);
@@ -1245,7 +1245,7 @@ static json jsonrpc_machine_read_memory_handler(const json &j, const std::shared
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"address", "length"};
+    static const char *const param_name[] = {"address", "length"};
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     auto address = std::get<0>(args);
     auto length = std::get<1>(args);
@@ -1262,7 +1262,7 @@ static json jsonrpc_machine_write_memory_handler(const json &j, const std::share
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"address", "data"};
+    static const char *const param_name[] = {"address", "data"};
     auto args = parse_args<uint64_t, std::string>(j, param_name);
     auto address = std::get<0>(args);
     auto bin = cartesi::decode_base64(std::get<1>(args));
@@ -1279,7 +1279,7 @@ static json jsonrpc_machine_read_virtual_memory_handler(const json &j, const std
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"address", "length"};
+    static const char *const param_name[] = {"address", "length"};
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     auto address = std::get<0>(args);
     auto length = std::get<1>(args);
@@ -1296,7 +1296,7 @@ static json jsonrpc_machine_write_virtual_memory_handler(const json &j, const st
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"address", "data"};
+    static const char *const param_name[] = {"address", "data"};
     auto args = parse_args<uint64_t, std::string>(j, param_name);
     auto address = std::get<0>(args);
     auto bin = cartesi::decode_base64(std::get<1>(args));
@@ -1314,7 +1314,7 @@ static json jsonrpc_machine_translate_virtual_address_handler(const json &j,
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"vaddr"};
+    static const char *const param_name[] = {"vaddr"};
     auto args = parse_args<uint64_t>(j, param_name);
     auto vaddr = std::get<0>(args);
     return jsonrpc_response_ok(j, session->handler->machine->translate_virtual_address(vaddr));
@@ -1328,7 +1328,7 @@ static json jsonrpc_machine_replace_memory_range_handler(const json &j, const st
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"range"};
+    static const char *const param_name[] = {"range"};
     auto args = parse_args<cartesi::memory_range_config>(j, param_name);
     session->handler->machine->replace_memory_range(std::get<0>(args));
     return jsonrpc_response_ok(j);
@@ -1342,7 +1342,7 @@ static json jsonrpc_machine_read_reg_handler(const json &j, const std::shared_pt
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"reg"};
+    static const char *const param_name[] = {"reg"};
     auto args = parse_args<cartesi::machine::reg>(j, param_name);
     return jsonrpc_response_ok(j, session->handler->machine->read_reg(std::get<0>(args)));
 }
@@ -1355,7 +1355,7 @@ static json jsonrpc_machine_write_reg_handler(const json &j, const std::shared_p
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"reg", "value"};
+    static const char *const param_name[] = {"reg", "value"};
     auto args = parse_args<cartesi::machine::reg, uint64_t>(j, param_name);
     session->handler->machine->write_reg(std::get<0>(args), std::get<1>(args));
     return jsonrpc_response_ok(j);
@@ -1366,7 +1366,7 @@ static json jsonrpc_machine_write_reg_handler(const json &j, const std::shared_p
 /// \param session HTTP session
 /// \returns JSON response object
 static json jsonrpc_machine_get_reg_address_handler(const json &j, const std::shared_ptr<http_session> & /*session*/) {
-    static const char *param_name[] = {"reg"};
+    static const char *const param_name[] = {"reg"};
     auto args = parse_args<cartesi::machine::reg>(j, param_name);
     return jsonrpc_response_ok(j, cartesi::machine::get_reg_address(std::get<0>(args)));
 }
@@ -1416,7 +1416,7 @@ static json jsonrpc_machine_set_runtime_config_handler(const json &j, const std:
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"runtime_config"};
+    static const char *const param_name[] = {"runtime_config"};
     auto args = parse_args<cartesi::machine_runtime_config>(j, param_name);
     session->handler->machine->set_runtime_config(std::get<0>(args));
     return jsonrpc_response_ok(j);
@@ -1452,7 +1452,7 @@ static json jsonrpc_machine_send_cmio_response_handler(const json &j, const std:
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"reason", "data"};
+    static const char *const param_name[] = {"reason", "data"};
     auto args = parse_args<uint16_t, std::string>(j, param_name);
     auto bin = cartesi::decode_base64(std::get<1>(args));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -1466,7 +1466,7 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"reason", "data", "log_type"};
+    static const char *const param_name[] = {"reason", "data", "log_type"};
     auto args =
         parse_args<uint16_t, std::string, cartesi::not_default_constructible<cartesi::access_log::type>>(j, param_name);
     auto bin = cartesi::decode_base64(std::get<1>(args));
@@ -1485,7 +1485,7 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
 /// \returns JSON response object
 static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
     const std::shared_ptr<http_session> & /*session*/) {
-    static const char *param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after"};
+    static const char *const param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after"};
     auto args = parse_args<uint16_t, std::string, cartesi::machine_hash,
         cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_hash>(j, param_name);
 

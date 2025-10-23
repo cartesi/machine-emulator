@@ -641,7 +641,7 @@ struct i_sfloat {
             a_exp--;
             a_mant <<= 1;
         }
-        a_exp = (a_exp >> 1) + EXP_MASK / 2;
+        a_exp = (a_exp >> 1) + (EXP_MASK / 2);
         a_mant <<= (F_SIZE - 4 - MANT_SIZE);
         if (sqrtrem_u(&a_mant, a_mant, static_cast<F_UINT>(0))) {
             a_mant |= 1;

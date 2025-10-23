@@ -38,5 +38,6 @@ Checks: >-
   -readability-identifier-length,
   -readability-magic-numbers,
   -readability-enum-initial-value,
+  -readability-use-concise-preprocessor-directives,
 WarningsAsErrors: >-
   *

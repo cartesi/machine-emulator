@@ -121,7 +121,7 @@ static int new_ttyfd(const char *path) {
 }
 
 static int get_ttyfd() {
-    char *path{};
+    const char *path{};
     path = ttyname(STDERR_FILENO);
     if (path != nullptr) {
         return new_ttyfd(path);

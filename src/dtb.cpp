@@ -51,7 +51,7 @@ static std::string misa_to_isa_string(uint64_t misa) {
 
 void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_length) {
     using namespace std::string_literals;
-    enum : uint32_t { INTC_PHANDLE = 1, PLIC_PHANDLE };
+    enum : uint32_t { INTC_PHANDLE = 1, PLIC_PHANDLE }; // NOLINT(cppcoreguidelines-use-enum-class)
     constexpr uint32_t X_HOST = 13;
     constexpr uint32_t BOOTARGS_MAX_LEN = 4096;
 

@@ -21,6 +21,7 @@
 /// \brief Dirty map as a complete tree
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <iostream>
@@ -101,7 +102,7 @@ public:
         m_mapped_memory{get_storage_length(level_count, leaf_count), os::mapped_memory_flags{.shared = shared},
             backing_filename},
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        m_tree{reinterpret_cast<status_type *>(m_mapped_memory.get_ptr()), size_type{1} << level_count} {
+        m_tree{reinterpret_cast<status_type *>(m_mapped_memory.get_ptr()), size_t{1} << level_count} {
         if (!is_initialized()) {
             const auto lp = m_leaf_positions;
             const auto first_leaf = *lp.begin();

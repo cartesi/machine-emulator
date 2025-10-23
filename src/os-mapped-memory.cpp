@@ -27,6 +27,7 @@
 #else
 #include <cstdio>  // fopen/fclose/fread/fwrite/fflush
 #include <cstdlib> // calloc/free
+#include <memory>  // align
 #endif
 
 #if defined(HAVE_FLOCK)
@@ -389,9 +390,10 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
     // Commit state
     m_host_memory = host_memory;
     m_backing_sync_length = shared_write ? desired_backing_length : 0;
-    m_memory_mapping = static_cast<void *>(memory_mapping), m_backing_host_memory = backing_host_memory,
-    m_backing_mapping = backing_mapping, m_backing_fh = static_cast<void *>(backing_fh)
-};
+    m_memory_mapping = static_cast<void *>(memory_mapping);
+    m_backing_host_memory = backing_host_memory;
+    m_backing_mapping = backing_mapping;
+    m_backing_fh = static_cast<void *>(backing_fh);
 
 #else  // Fallback implementation using standard C APIs
     // Over-allocate to ensure we can align the pointer and store the original pointer.

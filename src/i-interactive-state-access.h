@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #include "meta.h"
 
@@ -59,8 +60,8 @@ public:
     }
 
     /// \brief Reads a character from the console
-    /// \returns Character read if any, -1 otherwise
-    int getchar() const {
+    /// \returns Character read (-1 if none), followed by a bool indicating if the input needs refilling.
+    std::pair<int, bool> getchar() const {
         return derived().do_getchar();
     }
 };

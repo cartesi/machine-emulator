@@ -32,6 +32,7 @@ struct mcycle_root_hashes {
     uint64_t mcycle_phase{};                   ///< Machine cycles elapsed since last collected root hash
     interpreter_break_reason break_reason{};   ///< Reason why function returned
     std::optional<back_merkle_tree> back_tree; ///< Root hashes context
+    std::string console_io_error;              ///< Console I/O error message, if any
 };
 
 } // namespace cartesi

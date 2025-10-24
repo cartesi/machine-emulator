@@ -46,18 +46,13 @@ public:
 
 private:
     void do_net_reset() override;
-    void do_net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) override;
-    bool do_net_poll_selected(int select_ret, select_fd_sets *fds) override;
+    void do_net_prepare_select(os::select_fd_sets *fds, uint64_t *timeout_us) override;
+    bool do_net_poll_selected(int select_ret, os::select_fd_sets *fds) override;
     bool do_net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx, uint32_t read_avail_len,
         uint32_t *pread_len) override;
     bool do_net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx, uint32_t write_avail_len,
         uint32_t *pwritten_len) override;
 };
-
-static inline auto make_virtio_net_tuntap_address_range(uint64_t start, uint64_t length, uint32_t virtio_idx,
-    const std::string &tap_name) {
-    return virtio_net_tuntap_address_range{start, length, virtio_idx, tap_name};
-}
 
 } // namespace cartesi
 

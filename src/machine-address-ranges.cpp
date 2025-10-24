@@ -37,6 +37,7 @@
 #include "clint-address-range.h"
 #include "htif-address-range.h"
 #include "machine-config.h"
+#include "machine-console.h"
 #include "machine-runtime-config.h"
 #include "memory-address-range.h"
 #include "meta.h"
@@ -263,7 +264,8 @@ static void prepare_ar_backing_stores_for_share(const machine_config &from_c, ma
 }
 
 machine_address_ranges::machine_address_ranges(const machine_config &config,
-    const machine_runtime_config &runtime_config, const std::string &dir, scope_remove &remover) {
+    const machine_runtime_config &runtime_config, machine_console &console, const std::string &dir,
+    scope_remove &remover) {
     // Copy config
     machine_config c = config;
 
@@ -304,7 +306,7 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
     push_back(std::make_unique<plic_address_range>(throw_invalid_argument),
         register_where{.hash_tree = false, .pmas = true});
     push_back(make_pmas_address_range(c.pmas), register_where{.hash_tree = true, .pmas = true});
-    push_back_virtio(c.virtio, c.processor.registers.iunrep);
+    push_back_virtio(c.virtio, c.processor.registers.iunrep, console);
 
     // Sort indices visible to hash tree by the start of corresponding address range
     std::ranges::sort(
@@ -414,7 +416,7 @@ void machine_address_ranges::push_back_flash_drives(const flash_drive_configs &f
     }
 }
 
-void machine_address_ranges::push_back_virtio(const virtio_configs &virtio, uint64_t iunrep) {
+void machine_address_ranges::push_back_virtio(const virtio_configs &virtio, uint64_t iunrep, machine_console &console) {
     if (virtio.empty()) {
         return;
     }
@@ -429,9 +431,10 @@ void machine_address_ranges::push_back_virtio(const virtio_configs &virtio, uint
     for (const auto &c : virtio) {
         const auto where = register_where{.hash_tree = false, .pmas = true};
         const auto visitor = overloads{
-            [this, virtio_idx, where](const virtio_console_config &) {
+            [this, virtio_idx, where, &console](const virtio_console_config &) {
                 const auto start = AR_FIRST_VIRTIO_START + (virtio_idx * AR_VIRTIO_LENGTH);
-                push_back(std::make_unique<virtio_console_address_range>(start, AR_VIRTIO_LENGTH, virtio_idx), where);
+                push_back(std::make_unique<virtio_console_address_range>(start, AR_VIRTIO_LENGTH, virtio_idx, console),
+                    where);
             },
             [this, virtio_idx, where](const virtio_p9fs_config &c) {
 #ifdef HAVE_POSIX_FS

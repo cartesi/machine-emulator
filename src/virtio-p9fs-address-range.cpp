@@ -1016,7 +1016,7 @@ void virtio_p9fs_address_range::do_on_device_ok(i_device_state_access * /*a*/) {
 }
 
 bool virtio_p9fs_address_range::do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx,
-    uint16_t desc_idx, uint32_t /*read_avail_len*/, uint32_t /*write_avail_len*/) {
+    uint16_t desc_idx, uint32_t /*read_avail_len*/, uint32_t /*write_avail_len*/, virtq_event & /*e*/) {
     // We are only interested in queue 0 notifications
     if (queue_idx != 0) {
         return false;

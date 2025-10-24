@@ -457,7 +457,7 @@ bool virtio_address_range::consume_queue(i_device_state_access *a, uint32_t queu
     return vq.consume_desc(a, desc_idx, written_len, used_flags);
 }
 
-void virtio_address_range::on_device_queue_notify(i_device_state_access *a, uint32_t queue_idx) {
+void virtio_address_range::on_device_queue_notify(i_device_state_access *a, uint32_t queue_idx, virtq_event &e) {
     // The device MUST NOT consume buffers or notify the driver before DRIVER_OK
     if (!driver_ok) {
         return;
@@ -498,7 +498,7 @@ void virtio_address_range::on_device_queue_notify(i_device_state_access *a, uint
             virtio_idx, queue_idx, last_avail_idx, last_used_idx, desc_idx, read_avail_len, write_avail_len);
 #endif
         // Process the queue
-        if (!on_device_queue_available(a, queue_idx, desc_idx, read_avail_len, write_avail_len)) {
+        if (!on_device_queue_available(a, queue_idx, desc_idx, read_avail_len, write_avail_len, e)) {
             // The device doesn't want to continue consuming this queue
             break;
         }
@@ -507,18 +507,18 @@ void virtio_address_range::on_device_queue_notify(i_device_state_access *a, uint
     }
 }
 
-void virtio_address_range::do_prepare_select(select_fd_sets * /*fds*/, uint64_t * /*timeout_us*/) {}
+void virtio_address_range::do_prepare_select(os::select_fd_sets * /*fds*/, uint64_t * /*timeout_us*/) {}
 
-bool virtio_address_range::do_poll_selected(int /*select_ret*/, select_fd_sets * /*fds*/,
+bool virtio_address_range::do_poll_selected(int /*select_ret*/, os::select_fd_sets * /*fds*/,
     i_device_state_access * /*da*/) {
     return false;
 }
 
 bool virtio_address_range::poll_nowait(i_device_state_access *da) {
     uint64_t timeout_us = 0;
-    return os_select_fds(
-        [&](select_fd_sets *fds, uint64_t *timeout_us) -> void { this->prepare_select(fds, timeout_us); },
-        [&](int select_ret, select_fd_sets *fds) -> bool { return this->poll_selected(select_ret, fds, da); },
+    return os::select_fds(
+        [&](os::select_fd_sets *fds, uint64_t *timeout_us) -> void { this->prepare_select(fds, timeout_us); },
+        [&](int select_ret, os::select_fd_sets *fds) -> bool { return this->poll_selected(select_ret, fds, da); },
         &timeout_us);
 }
 
@@ -727,7 +727,11 @@ execute_status virtio_address_range::mmio_write(i_device_state_access *a, uint64
             // Writing a value to this register notifies the device that there are new buffers to process in a queue.
             // The value written should be the queue index.
             if (val < VIRTIO_QUEUE_COUNT) {
-                on_device_queue_notify(a, val);
+                virtq_event e;
+                on_device_queue_notify(a, val, e);
+                if (e.flush_console_output) {
+                    return execute_status::success_and_console_output;
+                }
             }
             // Most of times we will need to serve interrupts due to either used buffer or config change
             // notification

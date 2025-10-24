@@ -433,8 +433,9 @@ public:
 
     /// \brief Writes a character to the console
     /// \param c Character to output
-    void putchar(uint8_t c) const {
-        derived().do_putchar(c);
+    /// \returns True if console output should be flushed.
+    bool putchar(uint8_t c) const {
+        return derived().do_putchar(c);
     }
 
     constexpr const char *get_name() const {

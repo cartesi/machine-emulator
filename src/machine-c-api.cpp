@@ -1010,6 +1010,34 @@ cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *p
     return cm_result_failure();
 }
 
+cm_error cm_read_console_output(cm_machine *m, uint8_t *data, uint64_t max_length, uint64_t *read_len) try {
+    if (read_len == nullptr) {
+        throw std::invalid_argument("invalid read_len output");
+    }
+    auto *cpp_m = convert_from_c(m);
+    *read_len = cpp_m->read_console_output(data, max_length);
+    return cm_result_success();
+} catch (...) {
+    if (read_len != nullptr) {
+        *read_len = 0;
+    }
+    return cm_result_failure();
+}
+
+cm_error cm_write_console_input(cm_machine *m, const uint8_t *data, uint64_t length, uint64_t *written_len) try {
+    if (written_len == nullptr) {
+        throw std::invalid_argument("invalid written_len output");
+    }
+    auto *cpp_m = convert_from_c(m);
+    *written_len = cpp_m->write_console_input(data, length);
+    return cm_result_success();
+} catch (...) {
+    if (written_len != nullptr) {
+        *written_len = 0;
+    }
+    return cm_result_failure();
+}
+
 cm_error cm_get_initial_config(const cm_machine *m, const char **config) try {
     if (config == nullptr) {
         throw std::invalid_argument("invalid config output");

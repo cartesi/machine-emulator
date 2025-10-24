@@ -18,6 +18,7 @@
 #define I_DEVICE_STATE_ACCESS_H
 
 #include <cstdint>
+#include <utility>
 
 namespace cartesi {
 
@@ -192,13 +193,14 @@ public:
 
     /// \brief Writes a character to the console
     /// \param c Character to output
-    void putchar(uint8_t c) {
-        do_putchar(c);
+    /// \returns True if console output should be flushed.
+    bool putchar(uint8_t c) {
+        return do_putchar(c);
     }
 
     /// \brief Reads a character from the console
-    /// \returns Character read if any, -1 otherwise
-    int getchar() {
+    /// \returns Character read (-1 if none), followed by a bool indicating if the input needs refilling.
+    std::pair<int, bool> getchar() {
         return do_getchar();
     }
 
@@ -225,8 +227,8 @@ private:
     virtual uint64_t do_read_htif_iyield() = 0;
     virtual bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) = 0;
     virtual bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) = 0;
-    virtual void do_putchar(uint8_t c) = 0;
-    virtual int do_getchar() = 0;
+    virtual bool do_putchar(uint8_t c) = 0;
+    virtual std::pair<int, bool> do_getchar() = 0;
 };
 
 } // namespace cartesi

@@ -334,8 +334,8 @@ private:
         m_m.mark_dirty_page(haddr, pma_index);
     }
 
-    void do_putchar(uint8_t c) const { // NOLINT(readability-convert-member-functions-to-static)
-        os_putchar(c);
+    bool do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)
+        return false;
     }
 
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)

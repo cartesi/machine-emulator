@@ -178,6 +178,16 @@ public:
         return do_translate_virtual_address(vaddr);
     }
 
+    /// \brief Reads console output buffer data
+    uint64_t read_console_output(uint8_t *data, uint64_t max_length) {
+        return do_read_console_output(data, max_length);
+    }
+
+    /// \brief Writes console input buffer data
+    uint64_t write_console_input(const uint8_t *data, uint64_t length) {
+        return do_write_console_input(data, length);
+    }
+
     /// \brief Replaces a flash drive.
     void replace_memory_range(const memory_range_config &new_range) {
         do_replace_memory_range(new_range);
@@ -323,6 +333,8 @@ private:
     virtual void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) = 0;
     virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) = 0;
     virtual uint64_t do_translate_virtual_address(uint64_t vaddr) = 0;
+    virtual uint64_t do_read_console_output(uint8_t *data, uint64_t max_length) = 0;
+    virtual uint64_t do_write_console_input(const uint8_t *data, uint64_t length) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
     virtual void do_write_word(uint64_t address, uint64_t value) = 0;

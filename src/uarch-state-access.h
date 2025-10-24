@@ -23,7 +23,6 @@
 #include "i-accept-scoped-notes.h"
 #include "i-uarch-state-access.h"
 #include "machine.h"
-#include "os.h"
 #include "shadow-tlb.h"
 
 namespace cartesi {
@@ -90,8 +89,10 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_putchar(uint8_t c) const {
-        os_putchar(c);
+    bool do_putchar(uint8_t c) const {
+        // Forward to machine for debugging purposes, however ignore its return to keep determinism
+        std::ignore = m_m.putchar(c);
+        return false;
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

@@ -30,7 +30,6 @@
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
 #include "machine.h"
-#include "os.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
 
@@ -119,8 +118,8 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_putchar(uint8_t c) const {
-        os_putchar(c);
+    bool do_putchar(uint8_t /*c*/) const {
+        return false;
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

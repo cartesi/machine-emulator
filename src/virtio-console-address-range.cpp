@@ -18,17 +18,28 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include "i-device-state-access.h"
+#include "machine-console.h"
 #include "os.h"
 #include "virtio-address-range.h"
 
 namespace cartesi {
 
-virtio_console_address_range::virtio_console_address_range(uint64_t start, uint64_t length, uint32_t virtio_idx) :
+constexpr size_t VIRTIO_CONSOLE_IO_BUF_SIZE = 4096;
+
+virtio_console_address_range::virtio_console_address_range(uint64_t start, uint64_t length, uint32_t virtio_idx,
+    machine_console &console) :
     virtio_address_range("VirtIO Console", start, length, virtio_idx, VIRTIO_DEVICE_CONSOLE, VIRTIO_CONSOLE_F_SIZE,
-        sizeof(virtio_console_config_space)) {}
+        sizeof(virtio_console_config_space)),
+    m_console{console} {
+    if (console.available_output_buffer_space() < VIRTIO_CONSOLE_IO_BUF_SIZE) {
+        throw std::invalid_argument{"console output buffer space is too small for VirtIO console"};
+    }
+}
 
 void virtio_console_address_range::do_on_device_reset() {
     m_stdin_ready = false;
@@ -40,24 +51,24 @@ void virtio_console_address_range::do_on_device_ok(i_device_state_access *a) {
 }
 
 bool virtio_console_address_range::do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx,
-    uint16_t desc_idx, uint32_t read_avail_len, uint32_t /*write_avail_len*/) {
+    uint16_t desc_idx, uint32_t read_avail_len, uint32_t /*write_avail_len*/, virtq_event &e) {
     if (queue_idx == VIRTIO_CONSOLE_RECEIVEQ) { // Guest has a new slot available in the write queue
         // Do nothing, host stdin characters will be written to the guest in the next poll
         return false;
     }
     if (queue_idx == VIRTIO_CONSOLE_TRANSMITQ) { // Guest sent new characters to the host
         // Write guest characters to host stdout
-        return write_next_chars_to_host(a, queue_idx, desc_idx, read_avail_len);
+        return write_next_chars_to_host(a, queue_idx, desc_idx, read_avail_len, e);
     } // Other queues are unexpected
     notify_device_needs_reset(a);
     return false;
 }
 
 bool virtio_console_address_range::write_next_chars_to_host(i_device_state_access *a, uint32_t queue_idx,
-    uint16_t desc_idx, uint32_t read_avail_len) {
+    uint16_t desc_idx, uint32_t read_avail_len, virtq_event &e) {
     const virtq &vq = queue[queue_idx];
     // Read stdout characters from queue buffer in chunks
-    std::array<uint8_t, TTY_BUF_SIZE> chunk{};
+    std::array<uint8_t, VIRTIO_CONSOLE_IO_BUF_SIZE> chunk{};
     for (uint32_t off = 0; off < read_avail_len; off += chunk.size()) {
         // Read from queue buffer
         const uint32_t chunk_len = std::min<uint32_t>(chunk.size(), read_avail_len - off);
@@ -66,7 +77,9 @@ bool virtio_console_address_range::write_next_chars_to_host(i_device_state_acces
             return false;
         }
         // Write to stdout
-        os_putchars(chunk.data(), chunk_len);
+        e.flush_console_output |= m_console.putchars(std::span<const uint8_t>{chunk.data(), chunk_len});
+        // Console output should always have space for a new VirtIO queue submission to not truncate characters
+        e.flush_console_output |= m_console.available_output_buffer_space() < VIRTIO_CONSOLE_IO_BUF_SIZE;
     }
     // Consume the queue and notify the driver
     if (!consume_queue(a, queue_idx, desc_idx)) {
@@ -95,8 +108,9 @@ bool virtio_console_address_range::write_next_chars_to_guest(i_device_state_acce
         return false;
     }
     // Read from stdin
-    std::array<uint8_t, TTY_BUF_SIZE> chunk{};
-    const uint32_t chunk_len = os_getchars(chunk.data(), std::min<uint32_t>(write_avail_len, chunk.size()));
+    std::array<uint8_t, VIRTIO_CONSOLE_IO_BUF_SIZE> chunk{};
+    const auto [chunk_len, _] =
+        m_console.getchars(std::span<uint8_t>{chunk.data(), std::min<uint32_t>(write_avail_len, chunk.size())});
     // Chunk length is zero when there are no more characters available to write
     if (chunk_len == 0) {
         return false;
@@ -118,21 +132,19 @@ bool virtio_console_address_range::write_next_chars_to_guest(i_device_state_acce
 
 bool virtio_console_address_range::notify_console_size_to_guest(i_device_state_access *a) {
     // Get current console size
-    uint16_t cols{};
-    uint16_t rows{};
-    os_get_tty_size(&cols, &rows);
+    const auto [cols, rows] = m_console.get_size();
     virtio_console_config_space *config = get_config();
     // Notify the driver only when console size changes
     if (cols == config->cols && rows == config->rows) {
         return false;
     }
-    config->rows = rows;
     config->cols = cols;
+    config->rows = rows;
     notify_config_change(a);
     return true;
 }
 
-void virtio_console_address_range::do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
+void virtio_console_address_range::do_prepare_select(os::select_fd_sets *fds, uint64_t *timeout_us) {
     // Ignore if driver is not initialized
     if (!driver_ok) {
         return;
@@ -152,21 +164,32 @@ void virtio_console_address_range::do_prepare_select(select_fd_sets *fds, uint64
             return;
         }
     }
-    os_prepare_tty_select(fds);
+    m_console.prepare_select(fds);
 }
 
-bool virtio_console_address_range::do_poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
+bool virtio_console_address_range::do_poll_selected(int select_ret, os::select_fd_sets *fds,
+    i_device_state_access *da) {
     // Ignore if driver is not initialized or stdin is not ready
-
     if (!driver_ok || !m_stdin_ready) {
         return false;
     }
+
+    // Notify if console size changed
     bool interrupt_requested = notify_console_size_to_guest(da);
-    if (os_poll_selected_tty(select_ret, fds)) {
+
+    // Forward inputs that are ready from host to guest
+    if (m_console.is_input_ready()) {
         while (write_next_chars_to_guest(da)) {
-            interrupt_requested = true;
+            interrupt_requested |= true;
         }
     }
+
+    // Trigger console refill if input characters are available to be read, but not yet ready
+    if (m_console.poll_selected(select_ret, fds) && !m_console.is_input_ready()) {
+        // Interpreter will detect this during WFI instruction and break the interpreter to refill console input
+        interrupt_requested |= true;
+    }
+
     return interrupt_requested;
 }
 

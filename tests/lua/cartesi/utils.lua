@@ -20,7 +20,13 @@ local utils = {}
 -- Executes a callback when the scope exits.
 -- REMARKS: Use <close> on its returned value to make it behave deterministically.
 function utils.scope_exit(callback)
-    return setmetatable({}, { __gc = callback, __close = callback })
+    local function do_callback()
+        if callback then
+            callback()
+            callback = nil
+        end
+    end
+    return setmetatable({}, { __gc = do_callback, __close = do_callback })
 end
 
 return utils

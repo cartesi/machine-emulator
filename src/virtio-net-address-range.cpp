@@ -40,7 +40,7 @@ void virtio_net_address_range::do_on_device_ok(i_device_state_access * /*a*/) {
 }
 
 bool virtio_net_address_range::do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx,
-    uint16_t desc_idx, uint32_t read_avail_len, uint32_t /*write_avail_len*/) {
+    uint16_t desc_idx, uint32_t read_avail_len, uint32_t /*write_avail_len*/, virtq_event & /*e*/) {
     if (queue_idx == VIRTIO_NET_RECEIVEQ) { // Guest has a new slot available in the write queue
         // Write any pending packets from host to guest
         return poll_nowait(a);
@@ -59,14 +59,14 @@ bool virtio_net_address_range::do_on_device_queue_available(i_device_state_acces
     return false;
 }
 
-void virtio_net_address_range::do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
+void virtio_net_address_range::do_prepare_select(os::select_fd_sets *fds, uint64_t *timeout_us) {
     if (!driver_ok) {
         return;
     }
     net_prepare_select(fds, timeout_us);
 }
 
-bool virtio_net_address_range::do_poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
+bool virtio_net_address_range::do_poll_selected(int select_ret, os::select_fd_sets *fds, i_device_state_access *da) {
     if (!driver_ok) {
         return false;
     }

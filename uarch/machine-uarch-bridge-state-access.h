@@ -171,8 +171,9 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_putchar(uint8_t c) const {
+    bool do_putchar(uint8_t c) const {
         ua_putchar_ECALL(c);
+        return false;
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

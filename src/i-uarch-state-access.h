@@ -147,8 +147,8 @@ public:
         return derived().do_reset_uarch();
     }
 
-    void putchar(uint8_t c) const {
-        derived().do_putchar(c);
+    bool putchar(uint8_t c) const {
+        return derived().do_putchar(c);
     }
 
     void mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {

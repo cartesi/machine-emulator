@@ -33,7 +33,6 @@
 #include "machine-reg.h"
 #include "machine.h"
 #include "meta.h"
-#include "os.h"
 #include "scoped-note.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
@@ -261,8 +260,8 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_putchar(uint8_t c) const {
-        os_putchar(c);
+    bool do_putchar(uint8_t /*c*/) const {
+        return false;
     }
 
     void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {

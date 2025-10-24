@@ -408,7 +408,7 @@ jsonrpc_machine::jsonrpc_machine(std::string address, int64_t connect_timeout_ms
     m_stream(new boost::beast::tcp_stream(*m_ioc)),
     m_address(std::move(address)) {
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
-    os_disable_sigpipe();
+    os::disable_sigpipe();
 
     // Determine connection timeout time
     const auto timeout_at = connect_timeout_ms >= 0 ?
@@ -424,7 +424,7 @@ jsonrpc_machine::jsonrpc_machine(std::string address) :
     m_stream(new boost::beast::tcp_stream(*m_ioc)),
     m_address(std::move(address)) {
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
-    os_disable_sigpipe();
+    os::disable_sigpipe();
 }
 
 #ifdef HAVE_FORK
@@ -524,7 +524,7 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
 
     // Install signal handler to ignore SIGPIPE signals that would otherwise
     // terminate the process when writing to a closed socket connection
-    os_disable_sigpipe();
+    os::disable_sigpipe();
 
     // Verify server compatibility by checking its version against our expected version
     check_server_version(timeout_at);
@@ -749,6 +749,38 @@ void jsonrpc_machine::do_write_virtual_memory(uint64_t address, const unsigned c
 uint64_t jsonrpc_machine::do_translate_virtual_address(uint64_t vaddr) {
     uint64_t result = 0;
     request("machine.translate_virtual_address", std::tie(vaddr), result);
+    return result;
+}
+
+uint64_t jsonrpc_machine::do_read_console_output(uint8_t *data, uint64_t max_length) {
+    uint64_t read_len{0};
+    if (data == nullptr || max_length == 0) { // Query mode
+        uint64_t result = 0;
+        request("machine.read_console_output", std::tie(), result);
+        read_len = result;
+    } else {
+        std::string result;
+        request("machine.read_console_output", std::tie(max_length), result);
+        std::string bin = cartesi::decode_base64(result);
+        if (bin.length() > max_length) {
+            throw std::runtime_error("jsonrpc server error: invalid decoded base64 data length");
+        }
+        if (!bin.empty()) {
+            std::memcpy(data, bin.data(), bin.length()); // NOLINT(bugprone-not-null-terminated-result)
+        }
+        read_len = bin.length();
+    }
+    return read_len;
+}
+
+uint64_t jsonrpc_machine::do_write_console_input(const uint8_t *data, uint64_t length) {
+    uint64_t result = 0;
+    if (data == nullptr || length == 0) { // Query mode
+        request("machine.write_console_input", std::tie(), result);
+    } else {
+        std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
+        request("machine.write_console_input", std::tie(b64), result);
+    }
     return result;
 }
 

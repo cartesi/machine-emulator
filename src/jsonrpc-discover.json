@@ -736,6 +736,65 @@
       }
     },
     {
+      "name": "machine.read_console_output",
+      "summary": "Reads and consumes data from the console output buffer",
+      "params": [
+        {
+          "name": "max_length",
+          "description": "Maximum number of bytes to read",
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "description": "Console output data or available read length",
+        "schema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Base64String"
+                }
+              },
+              "required": ["data"]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "read_len": {
+                  "$ref": "#/components/schemas/UnsignedInteger"
+                }
+              },
+              "required": ["read_len"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "machine.write_console_input",
+      "summary": "Writes data to the console input buffer",
+      "params": [
+        {
+          "name": "data",
+          "description": "Data to write to console input buffer",
+          "schema": {
+            "$ref": "#/components/schemas/Base64String"
+          }
+        }
+      ],
+      "result": {
+        "name": "written_len",
+        "description": "Number of bytes actually written",
+        "schema": {
+          "$ref": "#/components/schemas/UnsignedInteger"
+        }
+      }
+    },
+    {
       "name": "machine.replace_memory_range",
       "summary": "Replaces a memory range",
       "params": [
@@ -1143,21 +1202,76 @@
           }
         }
       },
+      "ConsoleOutputDestination": {
+        "title": "ConsoleOutputDestination",
+        "enum": [
+          "to_null",
+          "to_stdout",
+          "to_stderr",
+          "to_fd",
+          "to_file",
+          "to_buffer"
+        ]
+      },
+      "ConsoleFlushMode": {
+        "title": "ConsoleFlushMode",
+        "enum": ["when_full", "every_char", "every_line"]
+      },
+      "ConsoleInputSource": {
+        "title": "ConsoleInputSource",
+        "enum": [
+          "from_null",
+          "from_stdin",
+          "from_fd",
+          "from_file",
+          "from_buffer"
+        ]
+      },
+      "ConsoleRuntimeConfig": {
+        "title": "ConsoleRuntimeConfig",
+        "type": "object",
+        "properties": {
+          "output_destination": {
+            "$ref": "#/components/schemas/ConsoleOutputDestination"
+          },
+          "output_flush_mode": {
+            "$ref": "#/components/schemas/ConsoleFlushMode"
+          },
+          "output_buffer_size": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "output_fd": {
+            "type": "integer"
+          },
+          "output_filename": {
+            "type": "string"
+          },
+          "input_source": {
+            "$ref": "#/components/schemas/ConsoleInputSource"
+          },
+          "input_buffer_size": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "input_fd": {
+            "type": "integer"
+          },
+          "input_filename": {
+            "type": "string"
+          },
+          "tty_cols": {
+            "type": "integer"
+          },
+          "tty_rows": {
+            "type": "integer"
+          }
+        }
+      },
       "ConcurrencyRuntimeConfig": {
         "title": "ConcurrencyRuntimeConfig",
         "type": "object",
         "properties": {
           "update_hash_tree": {
             "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      },
-      "HTIFRuntimeConfig": {
-        "title": "HTIFRuntimeConfig",
-        "type": "object",
-        "properties": {
-          "no_console_putchar": {
-            "type": "boolean"
           }
         }
       },
@@ -1217,11 +1331,11 @@
         "title": "MachineRuntimeConfig",
         "type": "object",
         "properties": {
+          "console": {
+            "$ref": "#/components/schemas/ConsoleRuntimeConfig"
+          },
           "concurrency": {
             "$ref": "#/components/schemas/ConcurrencyRuntimeConfig"
-          },
-          "htif": {
-            "$ref": "#/components/schemas/HTIFRuntimeConfig"
           },
           "skip_version_check": {
             "type": "boolean"
@@ -1982,7 +2096,9 @@
           "yielded_manually",
           "yielded_automatically",
           "yielded_softly",
-          "reached_target_mcycle"
+          "reached_target_mcycle",
+          "console_output",
+          "console_input"
         ]
       },
       "UarchInterpreterBreakReason": {
@@ -2344,6 +2460,9 @@
           },
           "back_tree": {
             "$ref": "#/components/schemas/BackMerkleTree"
+          },
+          "console_io_error": {
+            "type": "string"
           }
         },
         "required": ["hashes", "mcycle_phase", "break_reason"]

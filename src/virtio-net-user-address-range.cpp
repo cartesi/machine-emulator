@@ -274,7 +274,7 @@ static int slirp_get_revents_cb(int fd, void *opaque) {
     return event;
 }
 
-void virtio_net_user_address_range::do_net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
+void virtio_net_user_address_range::do_net_prepare_select(os::select_fd_sets *fds, uint64_t *timeout_us) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -293,7 +293,7 @@ void virtio_net_user_address_range::do_net_prepare_select(select_fd_sets *fds, u
     }
 }
 
-bool virtio_net_user_address_range::do_net_poll_selected(int select_ret, select_fd_sets *fds) {
+bool virtio_net_user_address_range::do_net_poll_selected(int select_ret, os::select_fd_sets *fds) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)

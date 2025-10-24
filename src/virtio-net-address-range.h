@@ -74,12 +74,12 @@ public:
     }
 
     /// \brief Fill file descriptors to be polled by select().
-    void net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
+    void net_prepare_select(os::select_fd_sets *fds, uint64_t *timeout_us) {
         do_net_prepare_select(fds, timeout_us);
     }
 
     /// \brief Poll file descriptors that were marked as ready by select().
-    bool net_poll_selected(int select_ret, select_fd_sets *fds) {
+    bool net_poll_selected(int select_ret, os::select_fd_sets *fds) {
         return do_net_poll_selected(select_ret, fds);
     }
 
@@ -113,13 +113,13 @@ private:
     void do_on_device_reset() override;
     void do_on_device_ok(i_device_state_access *a) override;
     bool do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-        uint32_t read_avail_len, uint32_t write_avail_len) override;
-    void do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) override;
-    bool do_poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) override;
+        uint32_t read_avail_len, uint32_t write_avail_len, virtq_event &e) override;
+    void do_prepare_select(os::select_fd_sets *fds, uint64_t *timeout_us) override;
+    bool do_poll_selected(int select_ret, os::select_fd_sets *fds, i_device_state_access *da) override;
 
     virtual void do_net_reset() = 0;
-    virtual void do_net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) = 0;
-    virtual bool do_net_poll_selected(int select_ret, select_fd_sets *fds) = 0;
+    virtual void do_net_prepare_select(os::select_fd_sets *fds, uint64_t *timeout_us) = 0;
+    virtual bool do_net_poll_selected(int select_ret, os::select_fd_sets *fds) = 0;
     virtual bool do_net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
         uint32_t read_avail_len, uint32_t *pread_len) = 0;
     virtual bool do_net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,

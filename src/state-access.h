@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <stdexcept>
+#include <utility>
 
 #include "address-range.h"
 #include "assert-printf.h"
@@ -482,8 +483,8 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_putchar(uint8_t c) const {
-        os_putchar(c);
+    bool do_putchar(uint8_t c) const {
+        return m_m.putchar(c);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -505,9 +506,8 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    int do_getchar() const {
-        os_poll_tty(0);
-        return os_getchar();
+    std::pair<int, bool> do_getchar() const {
+        return m_m.getchar();
     }
 
     // -----

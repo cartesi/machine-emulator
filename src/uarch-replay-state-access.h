@@ -339,8 +339,8 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_putchar(uint8_t /*c*/) const {
-        ; // do nothing
+    bool do_putchar(uint8_t /*c*/) const {
+        return false;
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

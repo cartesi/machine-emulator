@@ -30,7 +30,6 @@
 #include "i-accept-scoped-notes.h"
 #include "i-state-access.h"
 #include "machine.h"
-#include "os.h"
 #include "pmas-constants.h"
 #include "riscv-constants.h"
 #include "shadow-tlb.h"
@@ -488,8 +487,8 @@ private:
 
     void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) const {}
 
-    void do_putchar(uint8_t c) const { // NOLINT(readability-convert-member-functions-to-static)
-        os_putchar(c);
+    bool do_putchar(uint8_t c) const { // NOLINT(readability-convert-member-functions-to-static)
+        return m_m.putchar(c);
     }
 
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)

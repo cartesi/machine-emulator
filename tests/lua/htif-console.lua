@@ -37,7 +37,7 @@ local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local expected_final_mcycle = 2137
+local expected_final_mcycle = 2144
 local expected_exit_payload = 42
 
 local function test(config, console_getchar_enable)

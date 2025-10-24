@@ -40,24 +40,24 @@ _start:
 
     call wait_0x400; /* wait for IO to start working */
 
-    // Test console getchar
+    // Test console getchar/putchar
     htif_console_getchar();
     check_console_getchar('C');
+    htif_console_putchar('C');
 
     htif_console_getchar();
     check_console_getchar('T');
+    htif_console_putchar('T');
 
     htif_console_getchar();
     check_console_getchar('S');
+    htif_console_putchar('S');
 
     htif_console_getchar();
     check_console_getchar('I');
-
-    // Test console putchar
-    htif_console_putchar('C');
-    htif_console_putchar('T');
-    htif_console_putchar('S');
     htif_console_putchar('I');
+
+    htif_console_putchar('\n');
 
     htif_exit(42);
 

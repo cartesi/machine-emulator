@@ -527,8 +527,8 @@ private:
         check_write_tlb(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
     }
 
-    void do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)
-        ;                                  // do nothing
+    bool do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)
+        return false;
     }
 
     void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) const {

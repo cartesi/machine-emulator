@@ -175,6 +175,11 @@ enum virtq_avail_flags : uint16_t {
         1, ///< The driver uses this in avail flags to advise the device: don't interrupt me when you consume a buffer.
 };
 
+/// \brief Virtqueue events
+struct virtq_event {
+    bool flush_console_output{false}; ///< Console output should be flushed
+};
+
 /// \brief Virtqueue buffer descriptor
 struct virtq_desc {
     uint64_t paddr; ///< Guest physical address
@@ -348,7 +353,7 @@ public:
 
     /// \brief Process driver notification for pending available queue's descriptors.
     /// \params queue_idx Index for the queue that is has an available descriptor to be processed.
-    void on_device_queue_notify(i_device_state_access *a, uint32_t queue_idx);
+    void on_device_queue_notify(i_device_state_access *a, uint32_t queue_idx, virtq_event &e);
 
     /// \brief Called when driver notifies that a queue descriptor is available to be processed.
     /// \param queue_idx Queue index that has at least one available descriptor.
@@ -356,14 +361,14 @@ public:
     /// \param read_avail_len Total readable length in the descriptor buffer.
     /// \param write_avail_len Total writable length in the descriptor buffer.
     bool on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-        uint32_t read_avail_len, uint32_t write_avail_len) {
-        return do_on_device_queue_available(a, queue_idx, desc_idx, read_avail_len, write_avail_len);
+        uint32_t read_avail_len, uint32_t write_avail_len, virtq_event &e) {
+        return do_on_device_queue_available(a, queue_idx, desc_idx, read_avail_len, write_avail_len, e);
     }
 
     /// \brief Fill file descriptors to be polled by select().
     /// \param fds Pointer to sets of read, write and except file descriptors to be updated.
     /// \param timeout_us Maximum amount of time to wait, this may be updated (always to lower values).
-    void prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
+    void prepare_select(os::select_fd_sets *fds, uint64_t *timeout_us) {
         do_prepare_select(fds, timeout_us);
     }
 
@@ -372,7 +377,7 @@ public:
     /// \param fds Pointer to sets of read, write and except file descriptors to be checked.
     /// \returns True if an interrupt was requested, false otherwise.
     /// \details This function process pending events and trigger interrupt requests (if any).
-    bool poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
+    bool poll_selected(int select_ret, os::select_fd_sets *fds, i_device_state_access *da) {
         return do_poll_selected(select_ret, fds, da);
     }
 
@@ -446,11 +451,11 @@ private:
     virtual void do_on_device_ok(i_device_state_access *a) = 0;
 
     virtual bool do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-        uint32_t read_avail_len, uint32_t write_avail_len) = 0;
+        uint32_t read_avail_len, uint32_t write_avail_len, virtq_event &e) = 0;
 
-    virtual void do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us);
+    virtual void do_prepare_select(os::select_fd_sets *fds, uint64_t *timeout_us);
 
-    virtual bool do_poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da);
+    virtual bool do_poll_selected(int select_ret, os::select_fd_sets *fds, i_device_state_access *da);
 };
 
 } // namespace cartesi

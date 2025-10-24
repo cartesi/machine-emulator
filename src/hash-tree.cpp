@@ -34,7 +34,6 @@
 #include <utility>
 #include <vector>
 
-#include "machine-address-ranges.h"
 #include "os-features.h" // IWYU pragma: keep
 
 #ifdef HAVE_OPENMP
@@ -46,9 +45,12 @@
 #include "hash-tree-constants.h"
 #include "hash-tree-stats.h"
 #include "i-hasher.h"
+#include "machine-address-ranges.h"
 #include "machine-config.h"
 #include "machine-hash.h"
+#include "os-filesystem.h"
 #include "page-hash-tree-cache-stats.h"
+#include "scope-remove.h"
 #include "signposts.h"
 #include "simd-hasher.h"
 #include "variant-hasher.h"

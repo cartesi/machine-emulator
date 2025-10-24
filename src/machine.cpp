@@ -52,6 +52,7 @@
 #include "is-pristine.h"
 #include "machine-address-ranges.h"
 #include "machine-config.h"
+#include "machine-console.h"
 #include "machine-hash.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
@@ -291,7 +292,8 @@ void machine::init_dtb_contents(const machine_config &config) {
 machine::machine(machine_config c, machine_runtime_config r, const std::string &dir, scope_remove remover) :
     m_c{std::move(c).adjust_defaults()}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_r{std::move(r)},                   // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
-    m_ars{m_c, m_r, dir, remover},
+    m_console{m_r.console},
+    m_ars{m_c, m_r, m_console, dir, remover},
     m_ht{m_c.hash_tree, m_r.concurrency.update_hash_tree, m_ars, dir, remover},
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     m_s{reinterpret_cast<processor_state *>(
@@ -304,23 +306,21 @@ machine::machine(machine_config c, machine_runtime_config r, const std::string &
     init_pmas_contents(m_c.pmas);
     init_hot_tlb_contents();
     init_dtb_contents(m_c);
-    init_tty();
+    init_console();
     // Disable SIGPIPE handler, because this signal can be raised and terminate the emulator process
     // when calling write() on closed file descriptors.
     // This can happen with the stdout console file descriptors or network file descriptors.
-    os_disable_sigpipe();
+    os::disable_sigpipe();
     // Construction succeeded, keep all created files and directories
     remover.retain_all();
 }
 
-void machine::init_tty() {
+void machine::init_console() {
     // Initialize TTY if console input is enabled
-    if (has_htif_console() || has_virtio_console()) {
+    if (has_htif_console() || has_virtio_console() || m_r.console.input_source != console_input_source::from_null) {
         if (read_reg(reg::iunrep) == 0) {
             throw std::invalid_argument{"TTY stdin is only supported in unreproducible machines"};
         }
-        os_open_tty();
-        m_tty_opened = true;
     }
 }
 
@@ -329,14 +329,14 @@ machine::machine(const std::string &dir, machine_runtime_config r, sharing_mode 
     // NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
     machine{machine_config::load(dir, sharing), std::move(r)} {}
 
-void machine::prepare_virtio_devices_select(select_fd_sets *fds, uint64_t *timeout_us) {
+void machine::prepare_virtio_devices_select(os::select_fd_sets *fds, uint64_t *timeout_us) {
     for (auto &v : m_ars.virtio_view()) {
         v.prepare_select(fds, timeout_us);
     }
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-bool machine::poll_selected_virtio_devices(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
+bool machine::poll_selected_virtio_devices(int select_ret, os::select_fd_sets *fds, i_device_state_access *da) {
     bool interrupt_requested = false; // NOLINT(misc-const-correctness)
     for (auto &v : m_ars.virtio_view()) {
         interrupt_requested |= v.poll_selected(select_ret, fds, da);
@@ -346,9 +346,11 @@ bool machine::poll_selected_virtio_devices(int select_ret, select_fd_sets *fds, 
 
 // NOLINTNEXTLINE(readability-non-const-parameter)
 bool machine::poll_virtio_devices(uint64_t *timeout_us, i_device_state_access *da) {
-    return os_select_fds(
-        [&](select_fd_sets *fds, uint64_t *timeout_us) -> void { prepare_virtio_devices_select(fds, timeout_us); },
-        [&](int select_ret, select_fd_sets *fds) -> bool { return poll_selected_virtio_devices(select_ret, fds, da); },
+    return os::select_fds(
+        [&](os::select_fd_sets *fds, uint64_t *timeout_us) -> void { prepare_virtio_devices_select(fds, timeout_us); },
+        [&](int select_ret, os::select_fd_sets *fds) -> bool {
+            return poll_selected_virtio_devices(select_ret, fds, da);
+        },
         timeout_us);
 }
 
@@ -378,7 +380,11 @@ const machine_runtime_config &machine::get_runtime_config() const {
 
 /// \brief Changes the machine runtime config.
 void machine::set_runtime_config(machine_runtime_config r) {
-    m_r = std::move(r); // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
+    // Update console configuration
+    m_console.set_config(r.console);
+
+    // Set runtime configuration last, as previous operations may fail
+    m_r = std::move(r);
 }
 
 void machine::store(const std::string &dir, sharing_mode sharing) const {
@@ -623,9 +629,6 @@ void machine::dump_stats() {
 }
 
 machine::~machine() {
-    if (m_tty_opened) {
-        os_close_tty();
-    }
     dump_insn_hist();
     dump_stats();
 }
@@ -1723,6 +1726,14 @@ uint64_t machine::translate_virtual_address(uint64_t vaddr) {
     return paddr;
 }
 
+uint64_t machine::read_console_output(uint8_t *data, uint64_t max_length) {
+    return m_console.read_output(data, max_length);
+}
+
+uint64_t machine::write_console_input(const uint8_t *data, uint64_t length) {
+    return m_console.write_input(data, length);
+}
+
 uint64_t machine::read_word(uint64_t paddr) const {
     // Make sure address is aligned
     if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
@@ -1891,7 +1902,6 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
     }
     // Verify access log before returning
     auto root_hash_after = get_root_hash();
-    os_silence_putchar(m_r.htif.no_console_putchar);
     verify_step_uarch(root_hash_before, log, root_hash_after);
     return log;
 }
@@ -1927,8 +1937,31 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
     const uarch_state_access a(*this);
-    os_silence_putchar(m_r.htif.no_console_putchar);
     return uarch_interpret(a, uarch_cycle_end);
+}
+
+template <typename STATE_ACCESS>
+static interpreter_break_reason interpret_with_console(STATE_ACCESS &a, machine_console &console, uint64_t mcycle_end) {
+    // Console IO must be handled outside the interpreter to handle host I/O errors
+    while (true) {
+        const auto break_reason = interpret(a, mcycle_end);
+
+        // If the interpreter breaks due to a console I/O host operation,
+        // perform the required operation on the host and resume the interpreter
+        if (break_reason == interpreter_break_reason::console_output) {
+            if (console.get_output_destination() == console_output_destination::to_buffer) {
+                return break_reason; // Console output must be consumed manually from outside
+            }
+            console.flush_output(); // May throw an exception
+        } else if (break_reason == interpreter_break_reason::console_input) {
+            if (console.get_input_source() == console_input_source::from_buffer) {
+                return break_reason; // Console input must be refilled manually from outside
+            }
+            console.refill_input(); // May throw an exception
+        } else {
+            return break_reason;
+        }
+    }
 }
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
@@ -1939,7 +1972,6 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     record_step_state_access a(context, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
-    os_silence_putchar(m_r.htif.no_console_putchar);
     auto break_reason = interpret(a, mcycle_end);
     a.finish();
     auto root_hash_after = get_root_hash();
@@ -1969,46 +2001,54 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
         throw std::invalid_argument{"microarchitecture is not reset"};
     }
     const state_access a(*this);
-    os_silence_putchar(m_r.htif.no_console_putchar);
-    return interpret(a, mcycle_end);
+    return interpret_with_console(a, m_console, mcycle_end);
 }
 
-//??D How come this function seems to never signal we have an inteerrupt???
 std::pair<uint64_t, execute_status> machine::poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-    const auto status = execute_status::success;
+    bool serve_interrupts = false;
+    bool refill_console_input = false;
     // Only poll external interrupts if we are in unreproducible mode
     if (unlikely(m_s->shadow.registers.iunrep)) {
         // Convert the relative interval of cycles we can wait to the interval of host time we can wait
         uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
         int64_t start_us = 0;
         if (timeout_us > 0) {
-            start_us = os_now_us();
+            start_us = os::now_us();
         }
         const state_access a(*this);
         device_state_access da(a, mcycle);
         // Poll virtio for events (e.g console stdin, network sockets)
         // Timeout may be decremented in case a device has deadline timers (e.g network device)
         if (has_virtio_devices() && has_virtio_console()) { // VirtIO + VirtIO console
-            poll_virtio_devices(&timeout_us, &da);
-            // VirtIO console device will poll TTY
+            serve_interrupts |= poll_virtio_devices(&timeout_us, &da);
+            // Break interpreter loop to refill VirtIO console input if needed
+            if (serve_interrupts) {
+                refill_console_input |= m_console.poll(0);
+            }
         } else if (has_virtio_devices()) { // VirtIO without a console
-            poll_virtio_devices(&timeout_us, &da);
+            serve_interrupts |= poll_virtio_devices(&timeout_us, &da);
             if (has_htif_console()) { // VirtIO + HTIF console
-                // Poll tty without waiting more time, because the pool above should have waited enough time
-                os_poll_tty(0);
+                // Poll console without waiting more time, because the pool above should have waited enough time
+                m_console.poll(0);
             }
         } else if (has_htif_console()) { // Only HTIF console
-            os_poll_tty(timeout_us);
+            m_console.poll(timeout_us);
         } else if (timeout_us > 0) { // No interrupts to check, just keep the CPU idle
-            os_sleep_us(timeout_us);
+            os::sleep_us(timeout_us);
         }
         // If timeout is greater than zero, we should also increment mcycle relative to the elapsed time
         if (timeout_us > 0) {
-            const int64_t end_us = os_now_us();
+            const int64_t end_us = os::now_us();
             const uint64_t elapsed_us = static_cast<uint64_t>(std::max<int64_t>(end_us - start_us, 0));
             const uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
             mcycle = std::min(std::max(next_mcycle, mcycle), mcycle_max);
         }
+    }
+    execute_status status = execute_status::success;
+    if (refill_console_input) {
+        status = execute_status::success_and_console_input;
+    } else if (serve_interrupts) {
+        status = execute_status::success_and_serve_interrupts;
     }
     return {mcycle, status};
 }
@@ -2095,7 +2135,6 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
 
     collect_mcycle_hashes_state_access::context context{};
     const collect_mcycle_hashes_state_access a(context, *this);
-    os_silence_putchar(m_r.htif.no_console_putchar);
 
     // Reserve space before entering the loop to minimize dynamic memory allocations,
     // the reserved sizes below are based on empirical benchmarks to balance performance and memory usage,
@@ -2116,7 +2155,22 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
         assert(!at_fixed_point);
 
         // Attempt to execute until finishing this period
-        result.break_reason = interpret(a, mcycle_target);
+        try {
+            result.break_reason = interpret_with_console(a, m_console, mcycle_target);
+        } catch (const machine_console_exception &e) {
+            // Only console output errors can occur here, since machines with console input cannot collect hashes
+
+            // Report only the first console I/O error
+            if (result.console_io_error.empty()) {
+                result.console_io_error = e.what();
+            }
+
+            // Clear console output to allow new outputs without triggering an immediate flush
+            m_console.clear_output();
+
+            // Retry running the interpreter
+            continue;
+        }
 
         // Mark dirty pages tracked by the context
         for (const uint64_t paddr_page : context.dirty_pages) {
@@ -2223,7 +2277,6 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     hash_tree::dirty_words_type reset_dirty_words;
     collect_uarch_cycle_hashes_state_access::context context{};
     const collect_uarch_cycle_hashes_state_access a(context, *this);
-    os_silence_putchar(m_r.htif.no_console_putchar);
 
     // Reserve space before entering the loop to minimize dynamic memory allocations,
     // the reserved sizes below are based on empirical benchmarks to balance performance and memory usage

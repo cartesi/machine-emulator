@@ -6,12 +6,14 @@ local lester = require("cartesi.third-party.lester")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
 local tabular = require("cartesi.tabular")
-local util = require("cartesi.tests.util")
+local utils = require("cartesi.utils")
+local tests_util = require("cartesi.tests.util")
+local has_posix, unistd = pcall(require, "posix.unistd")
 
 local function expect_consistent_root_hash(machine)
     local root_hash = machine:get_root_hash()
     local node_hash = machine:get_node_hash(0, cartesi.HASH_TREE_LOG2_ROOT_SIZE)
-    local external_root_hash = util.calculate_emulator_hash(machine)
+    local external_root_hash = tests_util.calculate_emulator_hash(machine)
     expect.equal(root_hash, node_hash)
     expect.equal(external_root_hash, root_hash)
     return root_hash
@@ -41,6 +43,9 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
         mcycle_phase = 0
         table.insert(hashes, machine:get_root_hash())
         if break_reason ~= cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
+            if break_reason == cartesi.BREAK_REASON_HALTED or break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
+                at_fixed_point = true
+            end
             break
         end
     end
@@ -502,7 +507,7 @@ describe("collect hashes", function()
                 ram = {
                     length = 4096, -- non power of 2 on purpose to exercise address range boundaries
                     backing_store = {
-                        data_filename = util.tests_path .. "rv64ui-p-add.bin",
+                        data_filename = tests_util.tests_path .. "rv64ui-p-add.bin",
                     },
                 },
             }
@@ -510,7 +515,15 @@ describe("collect hashes", function()
                 ram = {
                     length = 8191 * 4096, -- non power of 2 on purpose to exercise address range boundaries
                     backing_store = {
-                        data_filename = util.tests_path .. "htif_yield.bin",
+                        data_filename = tests_util.tests_path .. "htif_yield.bin",
+                    },
+                },
+            }
+            local console_machine_config = {
+                ram = {
+                    length = 65536,
+                    backing_store = {
+                        data_filename = tests_util.tests_path .. "htif_console.bin",
                     },
                 },
             }
@@ -544,6 +557,86 @@ describe("collect hashes", function()
                     expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
                 end
             end)
+
+            it("should bundle mcycle root hashes while flushing console output", function()
+                local log2_bundle_mcycle_count = 5
+                local mcycle_start = 1
+                local mcycle_period = 64
+                local mcycle_end = mcycle_period * (1 << log2_bundle_mcycle_count) * 2
+                local mcycle_phase = mcycle_start % mcycle_period
+                local runtime_config = { console = { output_flush_mode = "every_char" } }
+                local machine <close> = create_machine(console_machine_config, runtime_config)
+                local compare_machine <close> = cartesi.machine(console_machine_config)
+                machine:run(mcycle_start)
+                compare_machine:run(mcycle_start)
+                local collected = machine:collect_mcycle_root_hashes(
+                    mcycle_end,
+                    mcycle_period,
+                    mcycle_phase,
+                    log2_bundle_mcycle_count
+                )
+                expect.not_exist(collected.back_tree)
+                local expected_collected = expect_mcycle_root_hashes(
+                    compare_machine,
+                    mcycle_end,
+                    mcycle_period,
+                    mcycle_phase,
+                    log2_bundle_mcycle_count
+                )
+                expect.equal(machine:read_reg("mcycle"), compare_machine:read_reg("mcycle"))
+                expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+                expect.equal(collected, expected_collected)
+            end)
+
+            if has_posix and desc.name == "local" then
+                it("should bundle mcycle root hashes while failing console output flush", function()
+                    local log2_bundle_mcycle_count = 5
+                    local mcycle_start = 1
+                    local mcycle_period = 64
+                    local mcycle_end = mcycle_period * (1 << log2_bundle_mcycle_count) * 2
+                    local mcycle_phase = mcycle_start % mcycle_period
+                    local out_r, out_w = assert(unistd.pipe())
+                    local _ <close> = utils.scope_exit(function()
+                        unistd.close(out_r)
+                        if out_w then
+                            unistd.close(out_w)
+                        end
+                    end)
+                    local runtime_config = {
+                        console = {
+                            output_flush_mode = "every_char",
+                            output_destination = "to_fd",
+                            output_fd = out_r, -- use the read end of the pipe to intentionally cause a write failure
+                        },
+                    }
+                    local machine <close> = create_machine(console_machine_config, runtime_config)
+                    unistd.close(out_w) -- close write end of the pipe
+                    out_w = nil
+                    local compare_machine <close> = cartesi.machine(console_machine_config)
+                    machine:run(mcycle_start)
+                    compare_machine:run(mcycle_start)
+                    local collected = machine:collect_mcycle_root_hashes(
+                        mcycle_end,
+                        mcycle_period,
+                        mcycle_phase,
+                        log2_bundle_mcycle_count
+                    )
+                    expect.exist(collected.console_io_error)
+                    expect.truthy(collected.console_io_error:find("console output flush failed"))
+                    collected.console_io_error = nil
+                    expect.not_exist(collected.back_tree)
+                    local expected_collected = expect_mcycle_root_hashes(
+                        compare_machine,
+                        mcycle_end,
+                        mcycle_period,
+                        mcycle_phase,
+                        log2_bundle_mcycle_count
+                    )
+                    expect.equal(machine:read_reg("mcycle"), compare_machine:read_reg("mcycle"))
+                    expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+                    expect.equal(collected, expected_collected)
+                end)
+            end
 
             it("should bundle mcycle root hashes leaving a back tree context when last bundle is incomplete", function()
                 local max_log2_bundle_mcycle_count = 3
@@ -706,7 +799,7 @@ describe("collect hashes", function()
                 ram = {
                     length = 8191 * 4096, -- non power of 2 on purpose to exercise address range boundaries
                     backing_store = {
-                        data_filename = util.images_path .. "linux.bin",
+                        data_filename = tests_util.images_path .. "linux.bin",
                     },
                 },
                 flash_drive = {
@@ -730,7 +823,7 @@ describe("collect hashes", function()
                 ram = {
                     length = 8191 * 4096, -- non power of 2 on purpose to exercise address range boundaries
                     backing_store = {
-                        data_filename = util.tests_path .. "htif_yield.bin",
+                        data_filename = tests_util.tests_path .. "htif_yield.bin",
                     },
                 },
                 hash_tree = {

@@ -464,7 +464,8 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
                 {"yielded_manually", CM_BREAK_REASON_YIELDED_MANUALLY},
                 {"yielded_automatically", CM_BREAK_REASON_YIELDED_AUTOMATICALLY},
                 {"yielded_softly", CM_BREAK_REASON_YIELDED_SOFTLY},
-                {"reached_target_mcycle", CM_BREAK_REASON_REACHED_TARGET_MCYCLE}}},
+                {"reached_target_mcycle", CM_BREAK_REASON_REACHED_TARGET_MCYCLE},
+                {"console_output", CM_BREAK_REASON_CONSOLE_OUTPUT}, {"console_input", CM_BREAK_REASON_CONSOLE_INPUT}}},
         {"ArrayIndex", "ArrayIndex"},
         {"Base64Array",
             {
@@ -894,6 +895,80 @@ static int machine_obj_index_translate_virtual_address(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:read_console_output() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_read_console_output(lua_State *L) {
+    lua_settop(L, 2);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    uint64_t max_length = luaL_optinteger(L, 2, 0);
+    const bool retrieve_available_size = lua_isinteger(L, 2) != 0 && max_length == 0;
+    const bool retrieve_full_buffer = lua_isnil(L, 2);
+
+    // Retrieve the available length if needed
+    if (retrieve_available_size || retrieve_full_buffer) {
+        if (cm_read_console_output(m.get(), nullptr, 0, &max_length) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    }
+
+    // If only the available length is requested, return it
+    if (retrieve_available_size) {
+        lua_pushinteger(L, static_cast<lua_Integer>(max_length));
+        return 1;
+    }
+
+    // Read the console output data
+    if (max_length > 0) {
+        unsigned char *buffer{};
+        try {
+            buffer = new unsigned char[max_length];
+        } catch (const std::bad_alloc &e) {
+            luaL_error(L, "failed to allocate memory for buffer");
+        }
+
+        auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(buffer));
+        uint64_t read_len{0};
+
+        if (cm_read_console_output(m.get(), managed_data.get(), max_length, &read_len) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        lua_pushlstring(L, reinterpret_cast<const char *>(managed_data.get()), read_len);
+        managed_data.reset();
+    } else {
+        lua_pushlstring(L, "", 0);
+    }
+
+    return 1;
+}
+
+/// \brief This is the machine:write_console_input() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_write_console_input(lua_State *L) {
+    lua_settop(L, 2);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const bool retrieve_available_space = lua_isnil(L, 2);
+
+    uint64_t written_len{0};
+    if (retrieve_available_space) {
+        if (cm_write_console_input(m.get(), nullptr, 0, &written_len) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    } else {
+        size_t length{0};
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
+        if (length > 0) {
+            if (cm_write_console_input(m.get(), data, length, &written_len) != 0) {
+                return luaL_error(L, "%s", cm_get_last_error_message());
+            }
+        }
+    }
+    lua_pushinteger(L, static_cast<lua_Integer>(written_len));
+    return 1;
+}
+
 /// \brief Replaces a memory range.
 /// \param L Lua state.
 static int machine_obj_index_replace_memory_range(lua_State *L) {
@@ -1175,6 +1250,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"log_send_cmio_response", machine_obj_index_log_send_cmio_response},
     {"log_step", machine_obj_index_log_step},
     {"log_step_uarch", machine_obj_index_log_step_uarch},
+    {"read_console_output", machine_obj_index_read_console_output},
     {"read_memory", machine_obj_index_read_memory},
     {"read_reg", machine_obj_index_read_reg},
     {"read_virtual_memory", machine_obj_index_read_virtual_memory},
@@ -1196,6 +1272,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_send_cmio_response", machine_obj_index_verify_send_cmio_response},
     {"verify_step", machine_obj_index_verify_step},
     {"verify_step_uarch", machine_obj_index_verify_step_uarch},
+    {"write_console_input", machine_obj_index_write_console_input},
     {"write_memory", machine_obj_index_write_memory},
     {"write_reg", machine_obj_index_write_reg},
     {"write_virtual_memory", machine_obj_index_write_virtual_memory},

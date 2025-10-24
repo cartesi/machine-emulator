@@ -32,6 +32,7 @@
 #include "address-range-description.h"
 #include "address-range.h"
 #include "machine-config.h"
+#include "machine-console.h"
 #include "machine-runtime-config.h"
 #include "scope-remove.h"
 #include "virtio-address-range.h"
@@ -58,7 +59,7 @@ public:
     /// \param dir Directory for backing store files (can be empty)
     /// \param remover Scope remove object to remove created files on failure
     explicit machine_address_ranges(const machine_config &config, const machine_runtime_config &runtime_config,
-        const std::string &dir, scope_remove &remover);
+        machine_console &console, const std::string &dir, scope_remove &remover);
 
     /// \brief Const view of all address ranges
     auto all() const {
@@ -210,7 +211,8 @@ private:
     /// \brief Adds virtio address ranges
     /// \param virtio VirtIO configurations
     /// \param iunrep Initial value of iunrep CSR
-    void push_back_virtio(const virtio_configs &virtio, uint64_t iunrep);
+    /// \param console Machine console
+    void push_back_virtio(const virtio_configs &virtio, uint64_t iunrep, machine_console &console);
 
     /// \brief Adds CMIO address ranges
     /// \param c CMIO configuration

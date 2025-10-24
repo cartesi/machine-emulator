@@ -6052,7 +6052,13 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         if (likely(status == execute_status::success_and_serve_interrupts)) {
                             // We have to break the inner loop to check and serve any pending interrupt immediately
                             break;
-                        } // execute_status::success_and_yield or execute_status::success_and_halt
+                        }
+                        // Else is one of the following:
+                        // - execute_status::success_and_yield
+                        // - execute_status::success_and_halt
+                        // - execute_status::success_and_console_output
+                        // - execute_status::success_and_console_input
+
                         // Commit machine state
                         a.write_pc(pc);
                         a.write_mcycle(mcycle);
@@ -6120,7 +6126,14 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
     }
     if (status == execute_status::success_and_yield) {
         return interpreter_break_reason::yielded_softly;
-    } // Reached mcycle_end
+    }
+    if (status == execute_status::success_and_console_output) {
+        return interpreter_break_reason::console_output;
+    }
+    if (status == execute_status::success_and_console_input) {
+        return interpreter_break_reason::console_input;
+    }
+    // Else, reached mcycle_end
     assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
     return interpreter_break_reason::reached_target_mcycle;
 }

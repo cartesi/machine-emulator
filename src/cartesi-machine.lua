@@ -324,9 +324,61 @@ where options are:
         when omitted or defined as 0, the number of hardware threads is used if
         it can be identified or else a single thread is used.
 
-  --htif-no-console-putchar
-    suppress any console output during machine run.
-    this includes anything written to machine's stdout or stderr.
+    --console-io=<key>:<value>[,<key>:<value>[,...]...]
+        console input/output runtime options,
+        allowing console redirection to pipes or files.
+
+        <key>:<value> is one of
+            output_destination:<string>
+            output_flush_mode:<string>
+            output_fd:<number>
+            output_filename:<filename>
+            input_source:<string>
+            input_fd:<number>
+            input_filename:<filename>
+            tty_rows:<number>
+            tty_cols:<number>
+
+            output_destination (default: "to_stdout")
+            the console output destination, can be one of:
+                - "to_null", write to nowhere (no console output)
+                - "to_stdout", write to host's stdout
+                - "to_stderr", write to host's stderr
+                - "to_fd", write to a host's file descriptor
+                - "to_file", write to a host's file
+
+            output_flush_mode (default: "every_line" if non-interactive, otherwise "every_char")
+            the console output flush mode, can be one of:
+                - "when_full", flush when buffer is full
+                - "every_char", flush after every new character
+                - "every_line", flush after every new line (or when buffer is full)
+
+            output_fd (default: -1)
+            host's file descriptor to write the console output,
+            this option automatically sets output destination to "to_fd".
+
+            output_filename (default: "")
+            host's file name to append the console output,
+            this option automatically sets output destination to "to_file".
+
+            input_source (default: "from_null" if non-interactive, otherwise "from_stdin")
+            the console input source, can be one of:
+                - "from_null", read from nowhere (no console input)
+                - "from_stdin", read from host's stdin
+                - "from_fd", read from a host's file descriptor
+                - "from_file", read from a host's file
+
+            input_fd (default: -1)
+            host's file descriptor to feed to the console input,
+            this option automatically sets input source to "from_fd".
+
+            input_filename (default: "")
+            host's file name to feed to the console input,
+            this option automatically sets input source to "from_file".
+
+            tty_rows (default: 80)
+            tty_cols (default: 25)
+            terminal size, only relevant when input source is different from stdin.
 
   --skip-version-check
     skip emulator version check when loading a stored machine.
@@ -749,10 +801,10 @@ local pmas = {}
 local hash_tree = {
     hash_function = default_config.hash_tree.hash_function,
 }
+local console = {}
 local concurrency_update_hash_tree = 0
 local skip_version_check = false
 local no_reserve = false
-local htif_no_console_putchar = false
 local initial_hash = false
 local final_hash = false
 local initial_proof = {}
@@ -860,6 +912,8 @@ end
 local function handle_htif_console_getchar()
     processor.registers.htif.iconsole = processor.registers.htif.iconsole | cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK
     processor.registers.iunrep = 1
+    console.input_source = console.input_source or "from_stdin"
+    console.output_flush_mode = console.output_flush_mode or "every_char"
     return true
 end
 
@@ -964,6 +1018,8 @@ end
 local function handle_virtio_console()
     if has_virtio_console then return true end
     processor.registers.iunrep = 1
+    console.input_source = console.input_source or "from_stdin"
+    console.output_flush_mode = console.output_flush_mode or "every_char"
     has_virtio_console = true
     -- Switch from HTIF Console (hvc0) to VirtIO console (hvc1)
     dtb.bootargs = dtb.bootargs:gsub("console=hvc0", "console=hvc1")
@@ -1235,6 +1291,61 @@ local options = {
         handle_interactive,
     },
     {
+        "^(%-%-console%-io%=(.+))$",
+        function(all, opts)
+            local c = util.parse_options(opts, all, {
+                output_destination = "string",
+                output_flush_mode = "string",
+                output_buffer_size = "number",
+                output_fd = "number",
+                output_filename = "string",
+                input_source = "string",
+                input_buffer_size = "number",
+                input_fd = "number",
+                input_filename = "string",
+                tty_cols = "number",
+                tty_rows = "number",
+            })
+            if c.output_fd then
+                assert(
+                    c.output_destination == nil or c.output_destination == "to_fd",
+                    "conflicting console output destination option"
+                )
+                c.output_destination = "to_fd"
+                console.output_fd = c.output_fd
+            end
+            if c.output_filename then
+                assert(
+                    c.output_destination == nil or c.output_destination == "to_file",
+                    "conflicting console output destination option"
+                )
+                c.output_destination = "to_file"
+                console.output_filename = c.output_filename
+            end
+            if c.input_fd then
+                assert(c.input_source == nil or c.input_source == "from_fd", "conflicting console input source option")
+                c.input_source = "from_fd"
+                console.input_fd = c.input_fd
+            end
+            if c.input_filename then
+                assert(
+                    c.input_source == nil or c.input_source == "from_file",
+                    "conflicting console input source option"
+                )
+                c.input_source = "from_file"
+                console.input_filename = c.input_filename
+            end
+            if c.output_destination then console.output_destination = c.output_destination end
+            if c.output_flush_mode then console.output_flush_mode = c.output_flush_mode end
+            if c.output_buffer_size then console.output_buffer_size = c.output_buffer_size end
+            if c.input_source then console.input_source = c.input_source end
+            if c.input_buffer_size then console.input_buffer_size = c.input_buffer_size end
+            if c.tty_cols then console.tty_cols = c.tty_cols end
+            if c.tty_rows then console.tty_rows = c.tty_rows end
+            return true
+        end,
+    },
+    {
         "^%-%-no%-htif%-yield%-manual$",
         function(all)
             if not all then return false end
@@ -1378,14 +1489,6 @@ local options = {
             })
             c.update_hash_tree = assert(c.update_hash_tree, "invalid update_hash_tree number in " .. all)
             concurrency_update_hash_tree = c.update_hash_tree
-            return true
-        end,
-    },
-    {
-        "^%-%-htif%-no%-console%-putchar$",
-        function(all)
-            if not all then return false end
-            htif_no_console_putchar = true
             return true
         end,
     },
@@ -1936,9 +2039,7 @@ local runtime_config = {
     concurrency = {
         update_hash_tree = concurrency_update_hash_tree,
     },
-    htif = {
-        no_console_putchar = htif_no_console_putchar,
-    },
+    console = console,
     skip_version_check = skip_version_check,
     no_reserve = no_reserve,
 }

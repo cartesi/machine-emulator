@@ -591,6 +591,10 @@ static std::string interpreter_break_reason_to_name(interpreter_break_reason rea
             return "yielded_softly";
         case R::reached_target_mcycle:
             return "reached_target_mcycle";
+        case R::console_output:
+            return "console_output";
+        case R::console_input:
+            return "console_input";
     }
     throw std::domain_error{"invalid interpreter break reason"};
 }
@@ -599,7 +603,8 @@ static interpreter_break_reason interpreter_break_reason_from_name(const std::st
     using ibr = interpreter_break_reason;
     const static std::unordered_map<std::string, ibr> g_ibr_name = {{"failed", ibr::failed}, {"halted", ibr::halted},
         {"yielded_manually", ibr::yielded_manually}, {"yielded_automatically", ibr::yielded_automatically},
-        {"yielded_softly", ibr::yielded_softly}, {"reached_target_mcycle", ibr::reached_target_mcycle}};
+        {"yielded_softly", ibr::yielded_softly}, {"reached_target_mcycle", ibr::reached_target_mcycle},
+        {"console_output", ibr::console_output}, {"console_input", ibr::console_input}};
     auto got = g_ibr_name.find(name);
     if (got == g_ibr_name.end()) {
         throw std::domain_error{"invalid interpreter break reason"};
@@ -667,6 +672,87 @@ static bracket_type bracket_type_from_name(const std::string &name) {
         return bracket_type::end;
     }
     throw std::domain_error{"invalid bracket type"};
+}
+
+static std::string console_output_destination_to_name(console_output_destination dest) {
+    switch (dest) {
+        case console_output_destination::to_null:
+            return "to_null";
+        case console_output_destination::to_stdout:
+            return "to_stdout";
+        case console_output_destination::to_stderr:
+            return "to_stderr";
+        case console_output_destination::to_fd:
+            return "to_fd";
+        case console_output_destination::to_file:
+            return "to_file";
+        case console_output_destination::to_buffer:
+            return "to_buffer";
+    }
+    throw std::domain_error{"invalid console output destination"};
+}
+
+static console_output_destination console_output_destination_from_name(const std::string &name) {
+    const static std::unordered_map<std::string, console_output_destination> g_console_output_destination_name = {
+        {"to_null", console_output_destination::to_null}, {"to_stdout", console_output_destination::to_stdout},
+        {"to_stderr", console_output_destination::to_stderr}, {"to_fd", console_output_destination::to_fd},
+        {"to_file", console_output_destination::to_file}, {"to_buffer", console_output_destination::to_buffer}};
+    auto got = g_console_output_destination_name.find(name);
+    if (got == g_console_output_destination_name.end()) {
+        throw std::domain_error{"invalid console output destination"};
+    }
+    return got->second;
+}
+
+static std::string console_flush_mode_to_name(console_flush_mode mode) {
+    switch (mode) {
+        case console_flush_mode::when_full:
+            return "when_full";
+        case console_flush_mode::every_char:
+            return "every_char";
+        case console_flush_mode::every_line:
+            return "every_line";
+    }
+    throw std::domain_error{"invalid console flush mode"};
+}
+
+static console_flush_mode console_flush_mode_from_name(const std::string &name) {
+    const static std::unordered_map<std::string, console_flush_mode> g_console_flush_mode_name = {
+        {"when_full", console_flush_mode::when_full}, {"every_char", console_flush_mode::every_char},
+        {"every_line", console_flush_mode::every_line}};
+    auto got = g_console_flush_mode_name.find(name);
+    if (got == g_console_flush_mode_name.end()) {
+        throw std::domain_error{"invalid console flush mode"};
+    }
+    return got->second;
+}
+
+static std::string console_input_source_to_name(console_input_source source) {
+    switch (source) {
+        case console_input_source::from_null:
+            return "from_null";
+        case console_input_source::from_stdin:
+            return "from_stdin";
+        case console_input_source::from_fd:
+            return "from_fd";
+        case console_input_source::from_file:
+            return "from_file";
+        case console_input_source::from_buffer:
+            return "from_buffer";
+    }
+    throw std::domain_error{"invalid console input source"};
+}
+
+static console_input_source console_input_source_from_name(const std::string &name) {
+    const static std::unordered_map<std::string, console_input_source> g_console_input_source_name = {
+        {"from_null", console_input_source::from_null}, {"from_stdin", console_input_source::from_stdin},
+        {"from_fd", console_input_source::from_fd}, {"from_file", console_input_source::from_file},
+        {"from_buffer", console_input_source::from_buffer}};
+    auto got = g_console_input_source_name.find(name);
+    if (got == g_console_input_source_name.end()) {
+        throw std::domain_error{"invalid console input source"};
+    }
+    return got->second;
 }
 
 template <typename K>
@@ -738,6 +824,35 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, int64_t &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_number_integer() && !jk.is_number_float()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not an integer");
+    }
+    if (jk.is_number_float()) {
+        auto f = jk.template get<nlohmann::json::number_float_t>();
+        if (f < static_cast<nlohmann::json::number_float_t>(INT64_MIN) ||
+            f > static_cast<nlohmann::json::number_float_t>(INT64_MAX) ||
+            std::fmod(f, static_cast<nlohmann::json::number_float_t>(1.0)) != 0) {
+            throw std::invalid_argument("\""s + path + to_string(key) + "\" not an integer");
+        }
+        value = static_cast<int64_t>(f);
+        return;
+    }
+    auto i = jk.template get<nlohmann::json::number_integer_t>();
+    value = static_cast<int64_t>(i);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, int64_t &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, int64_t &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uint32_t &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
@@ -748,6 +863,19 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint32_t &value, co
         throw std::invalid_argument("\""s + path + to_string(key) + "\" out of range");
     }
     value = static_cast<uint32_t>(value64);
+}
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, int32_t &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    int64_t value64 = 0;
+    ju_get_field(j, key, value64, path);
+    if (value64 < INT32_MIN || value64 > INT32_MAX) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" out of range");
+    }
+    value = static_cast<int32_t>(value64);
 }
 
 template <typename K>
@@ -766,10 +894,16 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint16_t &value, co
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uint32_t &value,
     const std::string &path);
 
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, int32_t &value,
+    const std::string &path);
+
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uint16_t &value,
     const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uint32_t &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, int32_t &value,
     const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uint16_t &value,
@@ -872,6 +1006,85 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     uarch_interpreter_break_reason &value, const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, console_output_destination &value,
+    const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
+    }
+    value = console_output_destination_from_name(jk.template get<std::string>());
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
+    console_output_destination &value, const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    console_output_destination &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, console_flush_mode &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
+    }
+    value = console_flush_mode_from_name(jk.template get<std::string>());
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, console_flush_mode &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, console_flush_mode &value,
+    const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, console_input_source &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
+    }
+    value = console_input_source_from_name(jk.template get<std::string>());
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, console_input_source &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    console_input_source &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, console_runtime_config &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    ju_get_opt_field(j[key], "output_destination"s, value.output_destination, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "output_flush_mode"s, value.output_flush_mode, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "output_buffer_size"s, value.output_buffer_size, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "output_fd"s, value.output_fd, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "output_filename"s, value.output_filename, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "input_source"s, value.input_source, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "input_buffer_size"s, value.input_buffer_size, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "input_fd"s, value.input_fd, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "input_filename"s, value.input_filename, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "tty_cols"s, value.tty_cols, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "tty_rows"s, value.tty_rows, path + to_string(key) + "/");
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, console_runtime_config &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    console_runtime_config &value, const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, concurrency_runtime_config &value,
     const std::string &path) {
     if (!contains(j, key, path)) {
@@ -887,26 +1100,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     concurrency_runtime_config &value, const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_runtime_config &value, const std::string &path) {
-    if (!contains(j, key, path)) {
-        return;
-    }
-    ju_get_opt_field(j[key], "no_console_putchar"s, value.no_console_putchar, path + to_string(key) + "/");
-}
-
-template void ju_get_opt_field<bool>(const nlohmann::json &j, const bool &key, htif_runtime_config &value,
-    const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, htif_runtime_config &value,
-    const std::string &path);
-
-template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_config &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
+    ju_get_opt_field(j[key], "console"s, value.console, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "concurrency"s, value.concurrency, path + to_string(key) + "/");
-    ju_get_opt_field(j[key], "htif"s, value.htif, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_version_check"s, value.skip_version_check, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "soft_yield"s, value.soft_yield, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "no_reserve"s, value.no_reserve, path + to_string(key) + "/");
@@ -1914,6 +2113,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, mcycle_root_hashes 
     ju_get_field(jconfig, "mcycle_phase"s, value.mcycle_phase, new_path);
     ju_get_field(jconfig, "break_reason"s, value.break_reason, new_path);
     ju_get_opt_field(jconfig, "back_tree"s, value.back_tree, new_path);
+    ju_get_opt_field(jconfig, "console_io_error"s, value.console_io_error, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, mcycle_root_hashes &value,
@@ -2281,22 +2481,44 @@ void to_json(nlohmann::json &j, const machine_config &config) {
     };
 }
 
+void to_json(nlohmann::json &j, const console_output_destination &dest) {
+    j = console_output_destination_to_name(dest);
+}
+
+void to_json(nlohmann::json &j, const console_flush_mode &mode) {
+    j = console_flush_mode_to_name(mode);
+}
+
+void to_json(nlohmann::json &j, const console_input_source &source) {
+    j = console_input_source_to_name(source);
+}
+
+void to_json(nlohmann::json &j, const console_runtime_config &config) {
+    j = nlohmann::json{
+        {"output_destination", config.output_destination},
+        {"output_flush_mode", config.output_flush_mode},
+        {"output_buffer_size", config.output_buffer_size},
+        {"output_fd", config.output_fd},
+        {"output_filename", config.output_filename},
+        {"input_source", config.input_source},
+        {"input_buffer_size", config.input_buffer_size},
+        {"input_fd", config.input_fd},
+        {"input_filename", config.input_filename},
+        {"tty_cols", config.tty_cols},
+        {"tty_rows", config.tty_rows},
+    };
+}
+
 void to_json(nlohmann::json &j, const concurrency_runtime_config &config) {
     j = nlohmann::json{
         {"update_hash_tree", config.update_hash_tree},
     };
 }
 
-void to_json(nlohmann::json &j, const htif_runtime_config &config) {
-    j = nlohmann::json{
-        {"no_console_putchar", config.no_console_putchar},
-    };
-}
-
 void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
     j = nlohmann::json{
+        {"console", runtime.console},
         {"concurrency", runtime.concurrency},
-        {"htif", runtime.htif},
         {"skip_version_check", runtime.skip_version_check},
         {"soft_yield", runtime.soft_yield},
         {"no_reserve", runtime.no_reserve},
@@ -2359,6 +2581,9 @@ void to_json(nlohmann::json &j, const mcycle_root_hashes &result) {
         {"break_reason", result.break_reason}};
     if (result.back_tree.has_value()) {
         j["back_tree"] = result.back_tree;
+    }
+    if (!result.console_io_error.empty()) {
+        j["console_io_error"] = result.console_io_error;
     }
 }
 

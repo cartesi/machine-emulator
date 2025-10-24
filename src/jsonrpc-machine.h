@@ -129,6 +129,8 @@ private:
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) override;
     void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     uint64_t do_translate_virtual_address(uint64_t vaddr) override;
+    uint64_t do_read_console_output(uint8_t *data, uint64_t max_length) override;
+    uint64_t do_write_console_input(const uint8_t *data, uint64_t length) override;
     void do_reset_uarch() override;
     access_log do_log_reset_uarch(const access_log::type &log_type) override;
     machine_hash do_get_root_hash() const override;

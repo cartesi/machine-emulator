@@ -148,6 +148,14 @@ uint64_t local_machine::do_translate_virtual_address(uint64_t vaddr) {
     return get_machine()->translate_virtual_address(vaddr);
 }
 
+uint64_t local_machine::do_read_console_output(uint8_t *data, uint64_t max_length) {
+    return get_machine()->read_console_output(data, max_length);
+}
+
+uint64_t local_machine::do_write_console_input(const uint8_t *data, uint64_t length) {
+    return get_machine()->write_console_input(data, length);
+}
+
 void local_machine::do_replace_memory_range(const memory_range_config &new_range) {
     get_machine()->replace_memory_range(new_range);
 }

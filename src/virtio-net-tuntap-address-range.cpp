@@ -125,14 +125,14 @@ void virtio_net_tuntap_address_range::do_net_reset() {
     // Nothing to do.
 }
 
-void virtio_net_tuntap_address_range::do_net_prepare_select(select_fd_sets *fds, uint64_t * /*timeout_us*/) {
+void virtio_net_tuntap_address_range::do_net_prepare_select(os::select_fd_sets *fds, uint64_t * /*timeout_us*/) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     FD_SET(m_tapfd, readfds);
     fds->maxfd = std::max(m_tapfd, fds->maxfd);
 }
 
-bool virtio_net_tuntap_address_range::do_net_poll_selected(int select_ret, select_fd_sets *fds) {
+bool virtio_net_tuntap_address_range::do_net_poll_selected(int select_ret, os::select_fd_sets *fds) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     return select_ret > 0 && FD_ISSET(m_tapfd, readfds);

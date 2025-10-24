@@ -20,18 +20,25 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <span>
+#include <utility>
 
 /// \file
-/// \brief System-specific OS handling operations
+/// \brief System-specific OS operations
 
-namespace cartesi {
+namespace cartesi::os {
 
-/// \brief TTY console constants
-enum TTY_constants : uint32_t {
-    TTY_BUF_SIZE = 4096,   ///< Number of characters in TTY input buffer
-    TTY_DEFAULT_COLS = 80, ///< Default width (columns)
-    TTY_DEFAULT_ROWS = 25, ///< Default height (rows)
-    TTY_CTRL_D = 4,        ///< End of session character (Ctrl+D)
+/// \brief TTY console constants.
+enum tty_constants : uint32_t {
+    TTY_BUF_SIZE = 4096,   ///< Number of characters in TTY input buffer.
+    TTY_DEFAULT_COLS = 80, ///< Default width (columns).
+    TTY_DEFAULT_ROWS = 25, ///< Default height (rows).
+};
+
+/// \brief TTY output.
+enum class tty_output {
+    to_stderr,
+    to_stdout,
 };
 
 /// \brief Set of file descriptions to be polled with select().
@@ -42,75 +49,100 @@ struct select_fd_sets {
     void *exceptfds;
 };
 
-/// \brief Initialize console
-void os_open_tty();
+// Callbacks used by select_fds().
+using select_before_callback = std::function<void(select_fd_sets *fds, uint64_t *timeout_us)>;
+using select_after_callback = std::function<bool(int select_ret, select_fd_sets *fds)>;
 
-/// \brief Cleanup console initialization
-void os_close_tty();
+/// \brief Open TTY.
+/// \throw std::system_error on error.
+void open_tty();
+
+/// \brief Close TTY.
+void close_tty() noexcept;
 
 /// \brief Fill file descriptors to be polled by select() with TTY's file descriptors.
 /// \param fds Pointer to sets of read, write and except file descriptors to be updated.
-void os_prepare_tty_select(select_fd_sets *fds);
+void prepare_tty_select(select_fd_sets *fds) noexcept;
 
 /// \brief Poll TTY's file descriptors that were marked as ready by select().
 /// \param select_ret Return value from the most recent select() call.
 /// \param fds Pointer to sets of read, write and except file descriptors to be checked.
 /// \returns True if there are pending TTY characters available to be read, false otherwise.
-bool os_poll_selected_tty(int select_ret, select_fd_sets *fds);
+bool poll_selected_tty(int select_ret, select_fd_sets *fds) noexcept;
 
-/// \brief Polls console for input characters
-/// \param wait Timeout to wait for characters in microseconds
-bool os_poll_tty(uint64_t timeout_us);
+/// \brief Fill file descriptors to be polled by select() with a given file descriptor for reading.
+/// \param fds Pointer to sets of read, write and except file descriptors to be updated.
+/// \param fd File descriptor to add to the read set.
+void prepare_fd_select(select_fd_sets *fds, int fd) noexcept;
 
-/// \brief Get console size.
-/// \param pwidth Receives the console width (number of columns).
-/// \param pheight Receives the console height (amount of rows).
-void os_get_tty_size(uint16_t *pwidth, uint16_t *pheight);
+/// \brief Poll a file descriptor that was marked as ready by select().
+/// \param select_ret Return value from the most recent select() call.
+/// \param fds Pointer to sets of read, write and except file descriptors to be checked.
+/// \param fd File descriptor to check.
+/// \returns True if the file descriptor is ready to be read, false otherwise.
+bool poll_selected_fd(int select_ret, select_fd_sets *fds, int fd) noexcept;
 
-/// \brief Reads a character from the console input.
-/// \return Character read from console, it may be -1 if there is no character.
-int os_getchar();
+/// \brief Polls TTY console for input characters
+/// \param timeout_us Timeout to wait for characters in microseconds
+/// \returns True if there are pending TTY characters available to be read, false otherwise.
+bool poll_tty(uint64_t timeout_us) noexcept;
 
-/// \brief Reads multiple characters from the console input.
-/// \param data Buffer to receive the console characters.
-/// \param max_leng Maximum buffer length.
-/// \returns Length of characters read, 0 if no characters were available.
-size_t os_getchars(unsigned char *data, size_t max_len);
+/// \brief Get TTY console size.
+/// \returns TTY console size as a pair of [columns, rows].
+std::pair<uint16_t, uint16_t> get_tty_size() noexcept;
 
-/// \brief Writes a character to the console output.
-/// \param ch Character to write
-void os_putchar(uint8_t ch);
+/// \brief Reads multiple characters from the TTY console input.
+/// \param buf Buffer to receive the console characters.
+/// \returns Number of characters read, 0 if no characters were available, or -1 on error and errno is set.
+/// \details This function is non-blocking and may return fewer characters than requested.
+/// Use `poll_tty` to wait until characters are available before calling this function.
+ptrdiff_t getchars(std::span<uint8_t> buf) noexcept;
 
-/// \brief Writes multiple characters to the console output.
-/// \param data Buffer of characters to write.
-/// \param len Length of buffer.
-void os_putchars(const uint8_t *data, size_t len);
+/// \brief Writes multiple characters to the TTY console output.
+/// \param buf Buffer of characters to write.
+/// \returns Number of characters actually written, or -1 on error and `errno` is set.
+ptrdiff_t putchars(std::span<const uint8_t> buf, tty_output output = tty_output::to_stdout) noexcept;
 
-/// \brief Silences putchar (and putchars) output
-/// \param yes If true, putchar is silenced
-void os_silence_putchar(bool yes);
+/// \brief Duplicates a file descriptor.
+/// \param fd File descriptor to duplicate.
+/// \returns A new valid file descriptor referring to the same file as fd.
+/// \throws std::system_error on error.
+int dup_fd(int fd);
 
-/// \brief Get time elapsed since its first call with microsecond precision
-int64_t os_now_us();
+/// \brief Closes a file descriptor.
+/// \param fd File descriptor to close.
+void close_fd(int fd) noexcept;
 
-// Callbacks used by os_select_fds().
-using os_select_before_callback = std::function<void(select_fd_sets *fds, uint64_t *timeout_us)>;
-using os_select_after_callback = std::function<bool(int select_ret, select_fd_sets *fds)>;
+/// \brief Writes data to a file descriptor.
+/// \param fd File descriptor to write to.
+/// \param buf Buffer of data to write.
+/// \returns Number of bytes actually written, or -1 on error and `errno` is set.
+ptrdiff_t write_fd(int fd, std::span<const uint8_t> buf) noexcept;
+
+/// \brief Reads data from a file descriptor.
+/// \param fd File descriptor to read from.
+/// \param buf Buffer to receive data.
+/// \returns Number of bytes actually read, or -1 on error and `errno` is set.
+ptrdiff_t read_fd(int fd, std::span<uint8_t> buf) noexcept;
 
 /// \brief Poll file descriptions for events.
 /// \param before_cb Callback called before calling select().
 /// \param after_cb Callback called after calling select().
 /// \param timeout_us Maximum amount of time in microseconds to wait for an event,
 /// this value may be updated in case a before_cb() has an deadline timer before the timeout.
-bool os_select_fds(const os_select_before_callback &before_cb, const os_select_after_callback &after_cb,
-    uint64_t *timeout_us);
+/// \returns True if after_cb() reported any event, false otherwise.
+bool select_fds(const select_before_callback &before_cb, const select_after_callback &after_cb, uint64_t *timeout_us);
 
-/// \brief Disable sigpipe
-void os_disable_sigpipe();
+/// \brief Get time elapsed since its first call with microsecond precision.
+/// \returns Time in microseconds.
+int64_t now_us() noexcept;
 
-/// \brief Sleep until timeout_us microseconds elapsed
-void os_sleep_us(uint64_t timeout_us);
+/// \brief Sleep until timeout_us microseconds elapsed.
+void sleep_us(uint64_t timeout_us) noexcept;
 
-} // namespace cartesi
+/// \brief Disable sigpipe.
+void disable_sigpipe() noexcept;
+
+} // namespace cartesi::os
 
 #endif

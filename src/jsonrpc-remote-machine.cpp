@@ -231,6 +231,11 @@ struct http_session : std::enable_shared_from_this<http_session> {
             return;
         }
 
+        // The stream may have been closed due to a signal
+        if (!stream.socket().is_open()) {
+            return;
+        }
+
         if (keep_alive) {
             // Read next request for this session
             do_read_request();
@@ -1320,6 +1325,69 @@ static json jsonrpc_machine_translate_virtual_address_handler(const json &j,
     return jsonrpc_response_ok(j, session->handler->machine->translate_virtual_address(vaddr));
 }
 
+/// \brief JSONRPC handler for the machine.read_console_output method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_read_console_output_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *const param_name[] = {"max_length"};
+    auto args = parse_args<cartesi::optional_param<uint64_t>>(j, param_name);
+    switch (count_args(args)) {
+        case 0: {
+            const uint64_t read_len = session->handler->machine->read_console_output(nullptr, 0);
+            return jsonrpc_response_ok(j, read_len);
+        }
+        case 1: {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            const auto max_length = std::get<0>(args).value();
+            if (max_length == 0) { // Nothing to read
+                return jsonrpc_response_ok(j, "");
+            }
+            std::vector<uint8_t> buffer(max_length);
+            const uint64_t read_len = session->handler->machine->read_console_output(buffer.data(), max_length);
+            const std::string b64_data = cartesi::encode_base64(std::span<const uint8_t>{buffer.data(), read_len});
+            return jsonrpc_response_ok(j, b64_data);
+        }
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
+    }
+}
+
+/// \brief JSONRPC handler for the machine.write_console_input method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_write_console_input_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *const param_name[] = {"data"};
+    auto args = parse_args<cartesi::optional_param<std::string>>(j, param_name);
+    switch (count_args(args)) {
+        case 0: {
+            const uint64_t written_len = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                session->handler->machine->write_console_input(nullptr, 0);
+            return jsonrpc_response_ok(j, written_len);
+        }
+        case 1: {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            std::string bin = cartesi::decode_base64(std::get<0>(args).value());
+            if (bin.empty()) { // Nothing to write
+                return jsonrpc_response_ok(j, 0);
+            }
+            const uint64_t written_len = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                session->handler->machine->write_console_input(reinterpret_cast<const uint8_t *>(bin.data()),
+                    bin.size());
+            return jsonrpc_response_ok(j, written_len);
+        }
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
+    }
+}
+
 /// \brief JSONRPC handler for the machine.replace_memory_range method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1577,6 +1645,8 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.read_virtual_memory", jsonrpc_machine_read_virtual_memory_handler},
         {"machine.write_virtual_memory", jsonrpc_machine_write_virtual_memory_handler},
         {"machine.translate_virtual_address", jsonrpc_machine_translate_virtual_address_handler},
+        {"machine.read_console_output", jsonrpc_machine_read_console_output_handler},
+        {"machine.write_console_input", jsonrpc_machine_write_console_input_handler},
         {"machine.replace_memory_range", jsonrpc_machine_replace_memory_range_handler},
         {"machine.read_reg", jsonrpc_machine_read_reg_handler},
         {"machine.write_reg", jsonrpc_machine_write_reg_handler},

@@ -365,6 +365,7 @@ LIBCARTESI_OBJS:= \
 	machine-config.o \
 	machine.o \
 	machine-address-ranges.o \
+	machine-console.o \
 	memory-address-range.o \
 	os.o \
 	os-mapped-memory.o \
@@ -544,6 +545,7 @@ machine-c-version.h: ../tools/template/machine-c-version.h.template
 jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo '// This file is auto-generated and should not be modified' > jsonrpc-discover.cpp
 	echo 'namespace cartesi {' >> jsonrpc-discover.cpp
+	echo '// NOLINTNEXTLINE(clang-diagnostic-overlength-strings)' >> jsonrpc-discover.cpp
 	echo 'extern char const *const jsonrpc_discover_json = R"json(' >> jsonrpc-discover.cpp
 	cat jsonrpc-discover.json >> jsonrpc-discover.cpp
 	echo ')json";' >> jsonrpc-discover.cpp

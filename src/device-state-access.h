@@ -21,6 +21,7 @@
 /// \brief Virtual state access implementation
 
 #include <cstdint>
+#include <utility>
 
 #include "i-device-state-access.h"
 #include "i-interactive-state-access.h"
@@ -145,15 +146,15 @@ private:
         return m_a.write_memory(paddr, data, length);
     }
 
-    void do_putchar(uint8_t c) override {
+    bool do_putchar(uint8_t c) override {
         return m_a.putchar(c);
     }
 
-    int do_getchar() override {
+    std::pair<int, bool> do_getchar() override {
         if constexpr (is_an_i_interactive_state_access_v<STATE_ACCESS>) {
             return m_a.getchar();
         }
-        return -1;
+        return {-1, false};
     }
 };
 

@@ -20,8 +20,16 @@
 #include <cstdint>
 #include <cstdio>
 
+#ifndef STDIN_FILENO
+#define STDIN_FILENO 0
+#endif
+
 #ifndef STDOUT_FILENO
-#define STDOUT_FILENO 0
+#define STDOUT_FILENO 1
+#endif
+
+#ifndef STDERR_FILENO
+#define STDERR_FILENO 2
 #endif
 
 #define UTIME_NOW -1
@@ -37,6 +45,14 @@
 
 #ifndef read
 #define read _read
+#endif
+
+#ifndef close
+#define close _close
+#endif
+
+#ifndef dup
+#define dup _dup
 #endif
 
 #define lstat stat

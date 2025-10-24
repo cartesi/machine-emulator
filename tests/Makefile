@@ -218,14 +218,17 @@ test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
 	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs
 	tar -czf uarch-riscv-tests-json-logs.tar.gz -C $(BUILDDIR) uarch-riscv-tests-json-logs
 
-coverage-machine:
+test-interactive:
+	echo uname -a | $(LUA) ../src/cartesi-machine.lua --quiet --no-init-splash -it sh | grep -q "riscv64 GNU/Linux"
+	echo uname -a | $(LUA) ../src/cartesi-machine.lua --quiet --no-init-splash -i sh | grep -q "riscv64 GNU/Linux"
+
+test-workload:
 	$(LUA) ../src/cartesi-machine.lua -- "$(COVERAGE_WORKLOAD)"
-	# Test interactive mode (to cover mcycle overwriting)
-	echo uname | $(LUA) ../src/cartesi-machine.lua -i sh
-	# Test max mcycle (to cover max mcycle branch)
+
+test-coverage-machine: test-interactive test-workload
 	$(LUA) ../src/cartesi-machine.lua --max-mcycle=1
 
-coverage-uarch:
+test-coverage-uarch:
 	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" run_uarch
 	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" run_host_and_uarch
 	$(LUA) ./lua/htif-yield.lua --uarch

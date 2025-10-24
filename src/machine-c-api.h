@@ -99,6 +99,8 @@ typedef enum cm_break_reason {
     CM_BREAK_REASON_YIELDED_AUTOMATICALLY,
     CM_BREAK_REASON_YIELDED_SOFTLY,
     CM_BREAK_REASON_REACHED_TARGET_MCYCLE,
+    CM_BREAK_REASON_CONSOLE_OUTPUT,
+    CM_BREAK_REASON_CONSOLE_INPUT,
 } cm_break_reason;
 
 /// \brief Reasons for the machine to break from call to cm_run_uarch.
@@ -650,6 +652,30 @@ CM_API cm_error cm_write_virtual_memory(cm_machine *m, uint64_t address, const u
 /// \details The translation is based on the current mapping, as defined in CM_REG_SATP.
 CM_API cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr);
 
+/// \brief Reads and consumes data from the console output buffer.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param data Buffer to receive console output data. Must be at least \p max_length bytes long.
+/// \param max_length Maximum number of bytes to read.
+/// \param read_len Receives the number of bytes actually read.
+/// If \p max_length is zero or \p data is NULL, \p read_len receives the available size that could be read.
+/// \returns 0 for success, non zero code for error.
+/// \details Requires the runtime console output destination to be set to buffer.
+/// Reads up to \p max_length bytes, or all available data if less is available.
+/// Read data is consumed and removed from the buffer.
+CM_API cm_error cm_read_console_output(cm_machine *m, uint8_t *data, uint64_t max_length, uint64_t *read_len);
+
+/// \brief Writes data to the console input buffer.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param data Buffer containing data to write. Must be at least \p length bytes long.
+/// \param length Number of bytes to write.
+/// \param written_len Receives the number of bytes actually written.
+/// If \p length is zero or \p data is NULL, \p written_len receives the available space size that could be written.
+/// \returns 0 for success, non zero code for error.
+/// \details Requires the runtime console input destination to be set to buffer.
+/// Writes up to \p length bytes, or less if the buffer lacks space.
+/// If the buffer is full, \p written_len is set to zero.
+CM_API cm_error cm_write_console_input(cm_machine *m, const uint8_t *data, uint64_t length, uint64_t *written_len);
+
 // ------------------------------------
 // Running
 // ------------------------------------
@@ -686,6 +712,7 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 ///     "mcycle_phase": 1278,
 ///     "break_reason": "yielded_manually",
 ///     "back_tree": { ... },
+///     "console_io_error": "...",
 /// }
 /// ```
 /// \returns 0 for success, non zero code for error.
@@ -703,6 +730,11 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// When execution stops at a mcycle_period boundary or at a fixed point, the "back_tree" field is omitted.
 /// Otherwise the "back_tree" field is included in the result and contains partial root hashes as its context,
 /// and must be passed a subsequent function call to continue bundling root hashes properly.
+///
+/// If a console I/O error occurs during execution, it does NOT cause the operation to stop or fail.
+/// Instead, the machine continues running until completion. Any console I/O error message is returned
+/// in the "console_io_error" field of the result JSON object. This allows you to detect and handle
+/// console I/O issues without interrupting the main execution flow.
 CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint64_t mcycle_period,
     uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count, const char *previous_back_tree, const char **result);
 

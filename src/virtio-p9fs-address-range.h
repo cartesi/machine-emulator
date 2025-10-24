@@ -457,13 +457,8 @@ private:
     void do_on_device_reset() override;
     void do_on_device_ok(i_device_state_access *a) override;
     bool do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-        uint32_t read_avail_len, uint32_t write_avail_len) override;
+        uint32_t read_avail_len, uint32_t write_avail_len, virtq_event &e) override;
 };
-
-static inline auto make_virtio_p9fs_address_range(uint64_t start, uint64_t length, uint32_t virtio_idx,
-    const std::string &mount_tag, const std::string &root_path) {
-    return virtio_p9fs_address_range{start, length, virtio_idx, mount_tag, root_path};
-}
 
 } // namespace cartesi
 

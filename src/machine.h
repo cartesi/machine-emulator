@@ -38,6 +38,7 @@
 #include "interpret.h"
 #include "machine-address-ranges.h"
 #include "machine-config.h"
+#include "machine-console.h"
 #include "machine-hash.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
@@ -67,13 +68,13 @@ class machine final {
 private:
     const machine_config m_c;             ///< Copy of initialization config
     machine_runtime_config m_r;           ///< Copy of initialization runtime config
+    machine_console m_console;            ///< Console instance
     mutable machine_address_ranges m_ars; ///< Address ranges
     mutable hash_tree m_ht;               ///< Top level hash tree
     processor_state *m_s;                 ///< Big machine processor state
     uarch_processor_state *m_us;          ///< Microarchitecture processor state
 
     std::unordered_map<std::string, uint64_t> m_counters; ///< Counters used for statistics collection
-    bool m_tty_opened{false};                             ///< Whether tty was opened
 
     /// \brief Returns offset that converts between machine host addresses and target physical addresses
     /// \param pma_index Index of the memory PMA for the desired offset
@@ -96,8 +97,8 @@ private:
     /// \param c Microarchitecture processor configuration
     void init_uarch_processor(const uarch_processor_config &p);
 
-    /// \brief Initializes TTY if needed
-    void init_tty();
+    /// \brief Initializes console if needed
+    void init_console();
 
     /// \brief Initializes contents of the shadow PMAs memory
     /// \param pmas_config PMAs configuration
@@ -334,14 +335,14 @@ public:
     /// \param fds Pointer to sets of read, write and except file descriptors to be updated.
     /// \param timeout_us Maximum amount of time to wait in microseconds, this may be updated (always to lower
     /// values).
-    void prepare_virtio_devices_select(select_fd_sets *fds, uint64_t *timeout_us);
+    void prepare_virtio_devices_select(os::select_fd_sets *fds, uint64_t *timeout_us);
 
     /// \brief Poll file descriptors that were marked as ready by select() for all VirtIO devices.
     /// \param select_ret Return value from the most recent select() call.
     /// \param fds Pointer to sets of read, write and except file descriptors to be checked.
     /// \returns True if an interrupt was requested, false otherwise.
     /// \details This function process pending events and trigger interrupt requests (if any).
-    bool poll_selected_virtio_devices(int select_ret, select_fd_sets *fds, i_device_state_access *da);
+    bool poll_selected_virtio_devices(int select_ret, os::select_fd_sets *fds, i_device_state_access *da);
 
     /// \brief Poll file descriptors through select() for all VirtIO devices.
     /// \details Basically call prepare_virtio_devices_select(), select() and poll_selected_virtio_devices().
@@ -474,6 +475,22 @@ public:
     /// \param vaddr Virtual address to translate.
     /// \returns The corresponding physical address.
     uint64_t translate_virtual_address(uint64_t vaddr);
+
+    /// \brief Reads console output buffer data.
+    /// \param data Pointer to buffer receiving the console output data.
+    /// \param max_length Maximum number of bytes to read.
+    /// If 0, no data is read, only the available size is returned.
+    /// \returns Number of bytes actually read from the buffer.
+    /// \details Reads up to max_length bytes from the console output buffer and removes the read data.
+    uint64_t read_console_output(uint8_t *data, uint64_t max_length);
+
+    /// \brief Writes console input buffer data.
+    /// \param data Pointer to data to write to the console input buffer.
+    /// \param length Number of bytes to write.
+    /// If 0, no data is written, only the available space size is returned.
+    /// \returns Number of bytes actually written to the buffer.
+    /// \details Writes up to length bytes to the console input buffer.
+    uint64_t write_console_input(const uint8_t *data, uint64_t length);
 
     /// \brief Returns the address range associated to the PMA at a given index
     /// \param index Index of desired address range
@@ -673,6 +690,22 @@ public:
     /// \brief Returns whether the machine contains a shared address range
     bool has_shared_address_range() const {
         return std::ranges::any_of(m_ars.all(), [](const auto &ar) { return ar.is_backing_store_shared(); });
+    }
+
+    /// \brief Writes a character to console output.
+    /// \param ch Character to write.
+    /// \returns True if console output should be flushed externally.
+    bool putchar(uint8_t ch) noexcept {
+        return m_console.putchar(ch);
+    }
+
+    /// \brief Reads a character from console input.
+    /// \returns The character read as an unsigned 8-bit integer (0-255),
+    /// or -1 if no character is available (input is idle),
+    /// or END_OF_TRANSMISSION_CHAR (value 4) if the input has been closed (EOF).
+    /// Followed by a bool indicating if the input needs refilling.
+    std::pair<int, bool> getchar() noexcept {
+        return m_console.getchar();
     }
 };
 

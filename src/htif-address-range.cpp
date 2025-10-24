@@ -89,23 +89,30 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
 }
 
 static execute_status htif_console(i_device_state_access *a, uint64_t cmd, uint64_t data) {
+    auto status = execute_status::success;
     // If console command is enabled, perform it and acknowledge
     if (cmd < 64 && (((a->read_htif_iconsole() >> cmd) & 1) != 0)) {
         if (cmd == HTIF_CONSOLE_CMD_PUTCHAR) {
             const uint8_t ch = data & 0xff;
-            a->putchar(ch);
+            const bool should_flush_output = a->putchar(ch);
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, 0));
+            if (should_flush_output) {
+                status = execute_status::success_and_console_output;
+            }
         } else if (cmd == HTIF_CONSOLE_CMD_GETCHAR) {
             // In blockchain, this command will never be enabled as there is no way to input the same character
             // to every participant in a dispute: where would c come from? So if the code reached here in the
             // blockchain, there must be some serious bug
             // In interactive mode, we just get the next character from the console and send it back in the ack
-            const int c = a->getchar() + 1;
-            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, static_cast<uint32_t>(c)));
+            const auto [c, should_refill_input] = a->getchar();
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, static_cast<uint32_t>(c + 1)));
+            if (should_refill_input) {
+                status = execute_status::success_and_console_input;
+            }
         }
     }
     // Otherwise, silently ignore it
-    return execute_status::success;
+    return status;
 }
 
 static execute_status htif_write_tohost(i_device_state_access *a, uint64_t tohost) {

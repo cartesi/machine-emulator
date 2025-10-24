@@ -42,6 +42,7 @@ function tabular.clear(t)
     for k in pairs(t) do
         t[k] = nil
     end
+    return t
 end
 
 -- Append all elements from `elems` to the end of table `t`.
@@ -50,6 +51,7 @@ function tabular.append(t, elems)
     for i = 1, #elems do
         t[n + i] = elems[i]
     end
+    return t
 end
 
 local function deep_traverse_iter(t, path)
@@ -87,6 +89,28 @@ function tabular.deep_copy(t)
         end
     end
     return copy
+end
+
+-- Recursively merge all key-value pairs from table `src_t` into table `t`.
+function tabular.deep_merge(t, src_t)
+    for k, v in pairs(src_t) do
+        if type(v) == "table" then
+            if type(t[k]) == "table" then
+                tabular.deep_merge(t[k], v)
+            else
+                t[k] = tabular.deep_copy(v)
+            end
+        else
+            t[k] = v
+        end
+    end
+    return t
+end
+
+-- Recursively copy all key-value pairs from table `src_t` into a deep copy of
+-- table `t`, returning the new table.
+function tabular.deep_copy_and_merge(t, src_t)
+    return tabular.deep_merge(tabular.deep_copy(t), src_t)
 end
 
 return tabular

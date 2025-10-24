@@ -34,6 +34,8 @@ enum execute_status : uint64_t {
                                   // immediately
     success_and_yield, // Instruction execution succeed, the interpreter must stop and handle a yield externally
     success_and_halt,  // Instruction execution succeed, the interpreter must stop because the machine cannot continue
+    success_and_console_output, // Instruction execution succeed, the interpreter must stop to flush the console output
+    success_and_console_input,  // Instruction execution succeed, the interpreter must stop to refill the console input
 };
 
 /// \brief Reasons for interpreter loop interruption
@@ -43,7 +45,9 @@ enum class interpreter_break_reason {
     yielded_manually,
     yielded_automatically,
     yielded_softly,
-    reached_target_mcycle
+    reached_target_mcycle,
+    console_output,
+    console_input,
 };
 
 /// \brief Tries to run the interpreter until mcycle hits a target

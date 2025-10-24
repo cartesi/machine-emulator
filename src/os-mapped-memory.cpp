@@ -56,7 +56,7 @@ constexpr uint64_t DEFAULT_MMAP_PAGE_SIZE = 4096;
 
 /// \brief Retrieves the system's memory page size.
 /// \details Typically 4KB, but may vary (e.g., 8KB on Solaris, 16KB on macOS arm64).
-static uint64_t os_get_mmap_page_size() {
+static uint64_t get_mmap_page_size() {
 #ifdef HAVE_MMAP
     const auto page_size = sysconf(_SC_PAGESIZE);
     if (page_size < 0) {
@@ -96,7 +96,7 @@ mapped_memory::mapped_memory(uint64_t length, const mapped_memory_flags &flags, 
 
     // Ensure mapped pages are 4096-byte aligned for compatibility with
     // routines using efficient SIMD operations on memory pages.
-    const uint64_t page_size = os_get_mmap_page_size();
+    const uint64_t page_size = get_mmap_page_size();
     if (page_size < DEFAULT_MMAP_PAGE_SIZE) {
         throw std::runtime_error{"system memory page size is less than "s + std::to_string(DEFAULT_MMAP_PAGE_SIZE)};
     }

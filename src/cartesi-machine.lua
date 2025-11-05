@@ -45,6 +45,9 @@ where options are:
   --version-json
     display cartesi machine semantic version and exit.
 
+  --assert-version=<major>.<minor>[.<patch>]
+    exit with failure in case the cartesi machine emulator version mismatches
+
   --remote-spawn
     spawns a remote cartesi machine,
     when --remote-address is specified, it listens on the specified address,
@@ -1024,22 +1027,36 @@ local options = {
             print(string.format('  "version_label": "%s",', cartesi.VERSION_LABEL))
             print(string.format('  "marchid": %d,', cartesi.MARCHID))
             print(string.format('  "mimpid": %d,', cartesi.MIMPID))
-            -- the following works only when luaposix is available in the system
-            local ok, stdlib = pcall(require, "posix.stdlib")
-            if ok and stdlib then
-                -- use realpath to get images real filenames,
-                -- tools could use this information to detect linux/rootfs versions
-                local ram_image = stdlib.realpath(images_path .. "linux.bin")
-                local rootfs_image = stdlib.realpath(images_path .. "rootfs.ext2")
-                if ram_image then print(string.format('  "default_ram_image": "%s",', ram_image)) end
-                if rootfs_image then print(string.format('  "default_rootfs_image": "%s",', rootfs_image)) end
-            end
             if cartesi.GIT_COMMIT then print(string.format('  "git_commit": "%s",', cartesi.GIT_COMMIT)) end
             if cartesi.BUILD_TIME then print(string.format('  "build_time": "%s",', cartesi.BUILD_TIME)) end
             print(string.format('  "compiler": "%s",', cartesi.COMPILER))
             print(string.format('  "platform": "%s"', cartesi.PLATFORM))
             print("}")
             os.exit()
+            return true
+        end,
+    },
+    {
+        "^%-%-assert%-version%=(%d+)%.(%d+)%.?(%d*)$",
+        function(major, minor, patch)
+            major, minor, patch = tonumber(major), tonumber(minor), tonumber(patch)
+            if
+                major ~= cartesi.VERSION_MAJOR
+                or minor ~= cartesi.VERSION_MINOR
+                or (patch and patch ~= cartesi.VERSION_PATCH)
+            then
+                error(
+                    string.format(
+                        "emulator version mismatch, expected (%d.%d.%s) but got (%d.%d.%d)",
+                        major,
+                        minor,
+                        patch or "x",
+                        cartesi.VERSION_MAJOR,
+                        cartesi.VERSION_MINOR,
+                        cartesi.VERSION_PATCH
+                    )
+                )
+            end
             return true
         end,
     },

@@ -111,8 +111,8 @@ enum virtio_status : uint32_t {
     VIRTIO_STATUS_DRIVER_OK = (1 << 2),   ///< The driver is set up and ready to drive the device.
     VIRTIO_STATUS_FEATURES_OK =
         (1 << 3), ///< The driver has acknowledged all the features it understands, and feature negotiation is complete.
-    VIRTIO_STATUS_DEVICE_NEEDS_RESET = (1 << 4), ///< Device has experienced an error from which it can't recover.
-    VIRTIO_STATUS_FAILED = (1 << 5), ///< Something went wrong in the guest, and it has given up on the device. This
+    VIRTIO_STATUS_DEVICE_NEEDS_RESET = (1 << 6), ///< Device has experienced an error from which it can't recover.
+    VIRTIO_STATUS_FAILED = (1 << 7), ///< Something went wrong in the guest, and it has given up on the device. This
                                      ///< could be an internal error, or the driver didn't like the device for some
                                      ///< reason, or even a fatal error during device operation.
 };

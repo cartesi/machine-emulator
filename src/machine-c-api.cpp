@@ -48,6 +48,7 @@
 #include "keccak-256-hasher.h"
 #include "local-machine.h"
 #include "machine-c-api-internal.h"
+#include "machine-c-version.h"
 #include "machine-config.h"
 #include "machine-hash.h"
 #include "machine-reg.h"
@@ -77,6 +78,10 @@ static_assert(HTIF_YIELD_MANUAL_REASON_RX_REJECTED_DEF == CM_CMIO_YIELD_MANUAL_R
 static_assert(HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION_DEF == CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION);
 static_assert(HTIF_YIELD_REASON_ADVANCE_STATE_DEF == CM_CMIO_YIELD_REASON_ADVANCE_STATE);
 static_assert(HTIF_YIELD_REASON_INSPECT_STATE_DEF == CM_CMIO_YIELD_REASON_INSPECT_STATE);
+
+uint64_t cm_get_version() {
+    return CM_VERSION_NUM;
+}
 
 const char *cm_get_last_error_message() {
     return get_last_err_msg_storage().c_str();

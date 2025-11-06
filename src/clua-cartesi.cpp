@@ -208,6 +208,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     // Set public C API constants
     clua_setstringfield(L, CM_VERSION_LABEL, "VERSION_LABEL", -1);
     clua_setstringfield(L, CM_VERSION, "VERSION", -1);
+    clua_setintegerfield(L, CM_VERSION_NUM, "VERSION_NUM", -1);
     clua_setintegerfield(L, CM_VERSION_MAJOR, "VERSION_MAJOR", -1);
     clua_setintegerfield(L, CM_VERSION_MINOR, "VERSION_MINOR", -1);
     clua_setintegerfield(L, CM_VERSION_PATCH, "VERSION_PATCH", -1);

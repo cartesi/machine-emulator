@@ -320,6 +320,11 @@ typedef struct cm_machine cm_machine;
 // API functions
 // -----------------------------------------------------------------------------
 
+/// \brief Returns the machine emulator semantic version at runtime.
+/// \returns Version as a 64-bit integer encoded as `(major * 1000000) + (minor * 1000) + patch`.
+/// For example, version 0.18.1 is encoded as 18001.
+CM_API uint64_t cm_get_version();
+
 /// \brief Returns the error message set by the very last C API call.
 /// \returns A C string, guaranteed to remain valid only until the next CM_API function call.
 /// \details The string returned by this function must not be changed nor deallocated, and remains valid until

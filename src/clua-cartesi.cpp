@@ -214,9 +214,9 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_HASH_SIZE, "HASH_SIZE", -1);
     clua_setintegerfield(L, CM_MCYCLE_MAX, "MCYCLE_MAX", -1);
     clua_setintegerfield(L, CM_UARCH_CYCLE_MAX, "UARCH_CYCLE_MAX", -1);
-    clua_setintegerfield(L, CM_TREE_LOG2_WORD_SIZE, "TREE_LOG2_WORD_SIZE", -1);
-    clua_setintegerfield(L, CM_TREE_LOG2_PAGE_SIZE, "TREE_LOG2_PAGE_SIZE", -1);
-    clua_setintegerfield(L, CM_TREE_LOG2_ROOT_SIZE, "TREE_LOG2_ROOT_SIZE", -1);
+    clua_setintegerfield(L, CM_HASH_TREE_LOG2_WORD_SIZE, "HASH_TREE_LOG2_WORD_SIZE", -1);
+    clua_setintegerfield(L, CM_HASH_TREE_LOG2_PAGE_SIZE, "HASH_TREE_LOG2_PAGE_SIZE", -1);
+    clua_setintegerfield(L, CM_HASH_TREE_LOG2_ROOT_SIZE, "HASH_TREE_LOG2_ROOT_SIZE", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_FAILED, "BREAK_REASON_FAILED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_HALTED, "BREAK_REASON_HALTED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_MANUALLY, "BREAK_REASON_YIELDED_MANUALLY", -1);
@@ -243,10 +243,12 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_SHARING_ALL, "SHARING_ALL", -1);
     clua_setintegerfield(L, CM_AR_CMIO_RX_BUFFER_START, "AR_CMIO_RX_BUFFER_START", -1);
     clua_setintegerfield(L, CM_AR_CMIO_RX_BUFFER_LOG2_SIZE, "AR_CMIO_RX_BUFFER_LOG2_SIZE", -1);
+    clua_setintegerfield(L, CM_AR_SHADOW_TLB_LENGTH, "AR_SHADOW_TLB_LENGTH", -1);
     clua_setintegerfield(L, CM_AR_CMIO_TX_BUFFER_START, "AR_CMIO_TX_BUFFER_START", -1);
     clua_setintegerfield(L, CM_AR_CMIO_TX_BUFFER_LOG2_SIZE, "AR_CMIO_TX_BUFFER_LOG2_SIZE", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_REVERT_ROOT_HASH_START, "AR_SHADOW_REVERT_ROOT_HASH_START", -1);
     clua_setintegerfield(L, CM_AR_RAM_START, "AR_RAM_START", -1);
+    clua_setintegerfield(L, CM_AR_SHADOW_TLB_START, "AR_SHADOW_TLB_START", -1);
     // HTIF masks
     clua_setintegerfield(L, HTIF_HALT_CMD_HALT_MASK, "HTIF_HALT_CMD_HALT_MASK", -1);
     clua_setintegerfield(L, HTIF_CONSOLE_CMD_GETCHAR_MASK, "HTIF_CONSOLE_CMD_GETCHAR_MASK", -1);
@@ -262,6 +264,8 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, UARCH_RAM_START_ADDRESS, "UARCH_RAM_START_ADDRESS", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_HALT, "UARCH_ECALL_FN_HALT", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_PUTCHAR, "UARCH_ECALL_FN_PUTCHAR", -1);
+    clua_setintegerfield(L, UARCH_ECALL_FN_MARK_DIRTY_PAGE, "UARCH_ECALL_FN_MARK_DIRTY_PAGE", -1);
+    clua_setintegerfield(L, UARCH_ECALL_FN_WRITE_TLB, "UARCH_ECALL_FN_WRITE_TLB", -1);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     clua_setlstringfield(L, reinterpret_cast<const char *>(uarch_pristine_hash), uarch_pristine_hash_len,
         "UARCH_PRISTINE_STATE_HASH", -1);

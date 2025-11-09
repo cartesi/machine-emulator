@@ -233,7 +233,8 @@ local function accessdatastring(data, data_hash, data_log2_size, address)
         if data_size < #data then
             -- access data is  smaller than the tree leaf size
             -- the logged data is the entire tree leaf, but we only need the data that was accessed
-            local leaf_aligned_address = (address >> cartesi.TREE_LOG2_WORD_SIZE) << cartesi.TREE_LOG2_WORD_SIZE
+            local leaf_aligned_address = (address >> cartesi.HASH_TREE_LOG2_WORD_SIZE)
+                << cartesi.HASH_TREE_LOG2_WORD_SIZE
             local word_offset = address - leaf_aligned_address
             data = data:sub(word_offset + 1, word_offset + data_size)
         end

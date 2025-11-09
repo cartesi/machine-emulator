@@ -26,7 +26,7 @@
 #define UARCH_STATE_LOG2_SIZE_DEF 22
 
 /// \brief Log2 of the expected maximum uarch cycle
-#define UARCH_LOG2_MAX_CYCLE_DEF 20
+#define UARCH_LOG2_CYCLE_MAX_DEF 20
 
 // microarchitecture ecall function codes
 #define UARCH_ECALL_FN_HALT_DEF 1            // halt uarch

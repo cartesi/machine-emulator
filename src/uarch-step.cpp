@@ -1096,7 +1096,7 @@ UArchStepStatus uarch_step(const UarchState a) {
     // This must be the first read in order to match the first log access in machine::verify_step_uarch
     uint64 cycle = readCycle(a);
     // do not advance if cycle will overflow
-    if (cycle >= UARCH_MAX_CYCLE) {
+    if (cycle >= UARCH_CYCLE_MAX) {
         return UArchStepStatus::CycleOverflow;
     }
     // do not advance if machine is halted
@@ -1121,7 +1121,7 @@ template UArchStepStatus uarch_step(const uarch_record_state_access a);
 // Explicit instantiation for uarch_replay_state_access
 template UArchStepStatus uarch_step(const uarch_replay_state_access a);
 
-// Explicit instantiation for uarch_replay_state_access
+// Explicit instantiation for collect_uarch_cycle_hashes_state_access
 template UArchStepStatus uarch_step(const collect_uarch_cycle_hashes_state_access a);
 
 } // namespace cartesi

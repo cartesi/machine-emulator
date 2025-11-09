@@ -350,7 +350,7 @@ do_test("should provide proof for values in registers", function(machine)
     -- Check proofs
     local hash_fn = machine:get_initial_config().hash_tree.hash_function
     for _, v in pairs(initial_reg_values) do
-        for el = cartesi.TREE_LOG2_WORD_SIZE, cartesi.TREE_LOG2_ROOT_SIZE - 1 do
+        for el = cartesi.HASH_TREE_LOG2_WORD_SIZE, cartesi.HASH_TREE_LOG2_ROOT_SIZE - 1 do
             local a = test_util.align(v, el)
             assert(test_util.check_proof(assert(machine:get_proof(a, el), "no proof"), hash_fn), "proof failed")
         end
@@ -1581,7 +1581,7 @@ test_util.make_do_test(build_machine, machine_type, {
         },
     },
 })("Log of word access unaligned to hash tree leaf ", function(machine)
-    local leaf_size = 1 << cartesi.TREE_LOG2_WORD_SIZE
+    local leaf_size = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
     local word_size = 8
     local t0 = 5 -- x5 register
     local t1 = t0 + 1 -- x6 register
@@ -1594,7 +1594,7 @@ test_util.make_do_test(build_machine, machine_type, {
     -- write initial leaf data
     local leaf_data = make_leaf("\x11", "\x22", "\x33", "\x44")
     assert(#leaf_data == leaf_size)
-    local leaf_address = cartesi.UARCH_RAM_START_ADDRESS + (1 << cartesi.TREE_LOG2_WORD_SIZE)
+    local leaf_address = cartesi.UARCH_RAM_START_ADDRESS + (1 << cartesi.HASH_TREE_LOG2_WORD_SIZE)
     machine:write_memory(leaf_address, leaf_data, leaf_size)
 
     -- step and log one instruction that stores the word in t0 to the address in t1

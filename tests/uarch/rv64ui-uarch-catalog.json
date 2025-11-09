@@ -50,5 +50,8 @@
     { "path": "rv64ui-uarch-xor.bin", "cycle": 544},
     { "path": "rv64ui-uarch-xori.bin", "cycle": 178},
     { "path": "rv64ui-uarch-fence.bin", "cycle": 13},
-    { "path": "rv64ui-uarch-ecall-putchar.bin", "cycle": 15}
+    { "path": "rv64ui-uarch-ecall-putchar.bin", "cycle": 15},
+    { "path": "rv64ui-uarch-ecall-mark-page-dirty.bin", "cycle": 15},
+    { "path": "rv64ui-uarch-ecall-write-tlb.bin", "cycle": 26}
+
 ]

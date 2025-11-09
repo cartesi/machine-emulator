@@ -10,7 +10,7 @@ local util = require("cartesi.tests.util")
 
 local function expect_consistent_root_hash(machine)
     local root_hash = machine:get_root_hash()
-    local node_hash = machine:get_node_hash(0, cartesi.TREE_LOG2_ROOT_SIZE)
+    local node_hash = machine:get_node_hash(0, cartesi.HASH_TREE_LOG2_ROOT_SIZE)
     local external_root_hash = util.calculate_emulator_hash(machine)
     expect.equal(root_hash, node_hash)
     expect.equal(external_root_hash, root_hash)

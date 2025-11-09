@@ -46,9 +46,9 @@ extern "C" {
 /// \brief Constants.
 typedef enum cm_constant {
     CM_HASH_SIZE = 32,
-    CM_TREE_LOG2_WORD_SIZE = 5,
-    CM_TREE_LOG2_PAGE_SIZE = 12,
-    CM_TREE_LOG2_ROOT_SIZE = 64,
+    CM_HASH_TREE_LOG2_WORD_SIZE = 5,
+    CM_HASH_TREE_LOG2_PAGE_SIZE = 12,
+    CM_HASH_TREE_LOG2_ROOT_SIZE = 64,
 } cm_constant;
 
 /// \brief Physical memory addresses (only the most useful are exposed in the API).
@@ -59,6 +59,8 @@ typedef enum cm_pmas_constant {
     CM_AR_CMIO_TX_BUFFER_LOG2_SIZE = 21,
     CM_AR_SHADOW_REVERT_ROOT_HASH_START = 0xfe0,
     CM_AR_RAM_START = 0x80000000,
+    CM_AR_SHADOW_TLB_START = 0x1000,
+    CM_AR_SHADOW_TLB_LENGTH = 0x6000,
 } cm_pmas_constant;
 
 /// \brief Error codes returned from the C API.
@@ -557,7 +559,7 @@ CM_API cm_error cm_get_node_hash(const cm_machine *m, uint64_t address, int32_t 
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param address Address of target node. Must be aligned to a 2^log2_size boundary.
 /// \param log2_size The log base 2 of the size subtended by the target node.
-/// Must be between CM_TREE_LOG2_WORD_SIZE (for a word) and CM_TREE_LOG2_ROOT_SIZE
+/// Must be between CM_HASH_TREE_LOG2_WORD_SIZE (for a word) and CM_HASH_TREE_LOG2_ROOT_SIZE
 /// (for the entire address space), inclusive.
 /// \param proof Receives the proof as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.

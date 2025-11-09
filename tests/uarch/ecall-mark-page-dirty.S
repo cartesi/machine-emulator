@@ -21,8 +21,9 @@
 RVTEST_RV64U
 RVTEST_CODE_BEGIN
 
-  li a7, UARCH_ECALL_FN_PUTCHAR_DEF
-  li a0, 'X' // char to print
+  li a7, UARCH_ECALL_FN_MARK_DIRTY_PAGE_DEF
+  li a0, 0   // physical address in page to be marked dirty
+  li a1, 0   // index of PMA where page falls
   ecall
 
 RVTEST_PASS

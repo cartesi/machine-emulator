@@ -42,8 +42,8 @@ enum uarch_state_constants : uint64_t {
     UARCH_STATE_MASK = ~UARCH_STATE_ALIGN_MASK,                              ///< Mask for uarch state address space
     UARCH_STATE_CHILD_ALIGN_MASK =
         (UINT64_C(1) << UARCH_STATE_CHILD_LOG2_SIZE) - 1, ///< Mask for uarch state child alignment
-    UARCH_LOG2_MAX_CYCLE = EXPAND_UINT64_C(UARCH_LOG2_MAX_CYCLE_DEF),
-    UARCH_MAX_CYCLE = (UINT64_C(1) << UARCH_LOG2_MAX_CYCLE),
+    UARCH_LOG2_CYCLE_MAX = EXPAND_UINT64_C(UARCH_LOG2_CYCLE_MAX_DEF),
+    UARCH_CYCLE_MAX = (UINT64_C(1) << UARCH_LOG2_CYCLE_MAX),
 };
 
 static_assert((UARCH_STATE_START_ADDRESS & UARCH_STATE_ALIGN_MASK) == 0,
@@ -64,7 +64,7 @@ static_assert(UARCH_SHADOW_START_ADDRESS < UARCH_RAM_START_ADDRESS,
     "UARCH_SHADOW_START_ADDRESS must be smaller than UARCH_RAN_START_ADDRESS");
 static_assert((UARCH_SHADOW_LENGTH & (AR_PAGE_SIZE - 1)) == 0, "UARCH_SHADOW_LENGTH must be multiple of AR_PAGE_SIZE");
 static_assert((UARCH_RAM_LENGTH & (AR_PAGE_SIZE - 1)) == 0, "UARCH_RAM_LENGTH must be multiple of AR_PAGE_SIZE");
-static_assert(UARCH_MAX_CYCLE == CM_UARCH_CYCLE_MAX, "CM_UARCH_CYCLE_MAX must be equal to UARCH_MAX_CYCLE");
+static_assert(UARCH_CYCLE_MAX == CM_UARCH_CYCLE_MAX, "CM_UARCH_CYCLE_MAX must be equal to UARCH_CYCLE_MAX");
 
 /// \brief ecall function codes
 enum uarch_ecall_functions : uint64_t {

@@ -96,10 +96,10 @@ static cartesi::machine_hash calculate_proof_root_hash(cartesi::variant_hasher &
 static cartesi::machine_hash calculate_emulator_hash(cm_machine *machine) {
     const auto hash_function = get_machine_hash_function(machine);
     cartesi::variant_hasher h{hash_function};
-    const auto pristine_pad_hashes = cartesi::back_merkle_tree::make_pristine_pad_hashes(CM_TREE_LOG2_ROOT_SIZE,
-        CM_TREE_LOG2_PAGE_SIZE, CM_TREE_LOG2_WORD_SIZE, hash_function);
-    cartesi::back_merkle_tree tree{CM_TREE_LOG2_ROOT_SIZE, CM_TREE_LOG2_PAGE_SIZE, CM_TREE_LOG2_WORD_SIZE,
-        hash_function};
+    const auto pristine_pad_hashes = cartesi::back_merkle_tree::make_pristine_pad_hashes(CM_HASH_TREE_LOG2_ROOT_SIZE,
+        CM_HASH_TREE_LOG2_PAGE_SIZE, CM_HASH_TREE_LOG2_WORD_SIZE, hash_function);
+    cartesi::back_merkle_tree tree{CM_HASH_TREE_LOG2_ROOT_SIZE, CM_HASH_TREE_LOG2_PAGE_SIZE,
+        CM_HASH_TREE_LOG2_WORD_SIZE, hash_function};
     std::string page;
     page.resize(detail::HASH_TREE_PAGE_SIZE);
     const char *ranges_jsonstr{};

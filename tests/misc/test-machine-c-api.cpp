@@ -438,7 +438,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_inconsistent_tree_test, ordinary_machin
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     // Hash tree is always consistent now as it updates on access
-    error_code = cm_get_proof(_machine, 0, CM_TREE_LOG2_PAGE_SIZE, &proof);
+    error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_PAGE_SIZE, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 

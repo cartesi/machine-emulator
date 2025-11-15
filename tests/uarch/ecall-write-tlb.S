@@ -28,6 +28,10 @@ RVTEST_CODE_BEGIN
   .equ vp_offset,   7
   .equ pma_index,   3
 
+  // ----------------------------------------------
+  // Test writing a TLB entry
+  // ----------------------------------------------
+
   li a7, UARCH_ECALL_FN_WRITE_TLB_DEF
   li a0, set_index
   li a1, slot_index
@@ -57,6 +61,41 @@ RVTEST_CODE_BEGIN
   bne t2, t3, test_fail
 
   // Check pma_index
+  ld t2, 16(t0)
+  li t3, pma_index
+  bne t2, t3, test_fail
+
+  // check padding is zero
+  ld t2, 24(t0)
+  bnez t2, test_fail
+
+  // ----------------------------------------------
+  // Tst invalidation of TLB entry
+  // ----------------------------------------------
+
+  .equ TLB_INVALID_PAGE, 0xFFFFFFFFFFFFFFFF
+
+  li a7, UARCH_ECALL_FN_WRITE_TLB_DEF
+  li a0, set_index
+  li a1, slot_index
+  li a2, TLB_INVALID_PAGE
+  li a3, vp_offset
+  li a4, pma_index
+  ecall
+
+  // t0 still contains the slot address that was computed earlier
+
+  // Check vaddr_page is set to invalid
+  ld t2, 0(t0)
+  li t3, TLB_INVALID_PAGE
+  bne t2, t3, test_fail
+
+  // Check vp_offset is zeroed out
+  ld t2, 8(t0)
+  li t3, vp_offset
+  bne t2, t3, test_fail
+
+  // Check pma_index is set to invalid
   ld t2, 16(t0)
   li t3, pma_index
   bne t2, t3, test_fail

@@ -25,7 +25,12 @@
 #include <cstdint>
 #include <ranges>
 #include <span>
+#ifdef RISC0ARCHITECTURE
+#include "replay-step-state-access-interop.h"
+#else
 #include <stdexcept>
+#endif
+
 #include <type_traits>
 #include <utility>
 
@@ -194,7 +199,11 @@ inline static void get_merkle_tree_hash(H &&h, D &&data, uint64_t leaf_length, m
     const auto size = std::ranges::size(data);
     if (size > leaf_length) {
         if (size & 1) {
+            #ifdef RISC0ARCHITECTURE
+            interop_throw_runtime_error("data size must be a power of 2 multiple of leaf_length");
+            #else   
             throw std::invalid_argument("data size must be a power of 2 multiple of leaf_length");
+            #endif
         }
         machine_hash left;
         const auto half_size = size >> 1;
@@ -204,7 +213,11 @@ inline static void get_merkle_tree_hash(H &&h, D &&data, uint64_t leaf_length, m
         get_concat_hash(h, left, result, result);
     } else {
         if (size != leaf_length) {
+            #ifdef RISC0ARCHITECTURE
+            interop_throw_runtime_error("data size must be a power of 2 multiple of leaf length");
+            #else
             throw std::invalid_argument("data size must be a power of 2 multiple of leaf length");
+            #endif
         }
         //??D we use universal references so the function works with non-const l- and r-value references
         //??D forwarding just to silence linter.

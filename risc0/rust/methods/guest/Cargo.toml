@@ -1,0 +1,14 @@
+[package]
+name = "replay_step"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+# If you want to try (experimental) std support, add `features = [ "std" ]` to risc0-zkvm
+risc0-zkvm = { version = "2.0.2", default-features = true }
+cartesi_risc0_shared = { path = "../../shared" }
+
+[build-dependencies]
+cc = "1.0"

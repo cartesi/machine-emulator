@@ -90,16 +90,19 @@
 #include <type_traits>
 #include <utility>
 
-#ifdef MICROARCHITECTURE
+#if defined(MICROARCHITECTURE)
 #include "../uarch/uarch-runtime.h"
 #include "machine-uarch-bridge-state-access.h"
+#elif defined(ZKARCHITECTURE)
+#include "replay-step-state-access.h" // IWYU pragma: keep
+#include "risc0-runtime.h"            // IWYU pragma: export
 #else
 #include "collect-mcycle-hashes-state-access.h" // IWYU pragma: keep
 #include "record-step-state-access.h"           // IWYU pragma: keep
 #include "replay-step-state-access.h"           // IWYU pragma: keep
 #include "state-access.h"                       // IWYU pragma: keep
 
-#endif // MICROARCHITECTURE
+#endif
 
 #include "assert-printf.h"
 #include "compiler-defines.h"
@@ -6154,9 +6157,12 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
     return interpreter_break_reason::reached_target_mcycle;
 }
 
-#ifdef MICROARCHITECTURE
+#if defined(MICROARCHITECTURE)
 // Explicit instantiation for machine_uarch_bridge_state_access
 template interpreter_break_reason interpret(machine_uarch_bridge_state_access a, uint64_t mcycle_end);
+#elif defined(ZKARCHITECTURE)
+// Explicit instantiation for replay_step_state_access (by reference)
+template interpreter_break_reason interpret(replay_step_state_access &a, uint64_t mcycle_end);
 #else
 // Explicit instantiation for state_access
 template interpreter_break_reason interpret(state_access a, uint64_t mcycle_end);

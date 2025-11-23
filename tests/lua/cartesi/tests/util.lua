@@ -45,6 +45,7 @@ local test_util = {
     images_path = adjust_path(os.getenv("CARTESI_IMAGES_PATH") or get_script_path(5) .. "/src"),
     tests_path = adjust_path(os.getenv("CARTESI_TESTS_PATH") or get_script_path(4) .. "/build/machine"),
     cmio_path = adjust_path(os.getenv("CARTESI_CMIO_PATH") or get_script_path(4) .. "/build/cmio"),
+    step_logs_path = adjust_path(os.getenv("CARTESI_STEP_LOGS_PATH") or get_script_path(4) .. "/build/step-logs"),
     tests_uarch_path = adjust_path(os.getenv("CARTESI_TESTS_UARCH_PATH") or get_script_path(4) .. "/build/uarch"),
 }
 
@@ -344,6 +345,15 @@ function test_util.new_temp_file()
     self.file_name = os.tmpname()
     self.file = io.open(self.file_name, "w+")
     return setmetatable(self, temp_file_meta)
+end
+
+-- Builds step log filename: step-<initial_hash>-<mcycle_count>-<final_hash>[-<suffix>].log
+function test_util.step_log_filename(initial_hash, mcycle_count, final_hash, suffix)
+    local name = "step-" .. test_util.tohex(initial_hash) .. "-" .. mcycle_count .. "-" .. test_util.tohex(final_hash)
+    if suffix then
+        name = name .. "-" .. suffix
+    end
+    return name .. ".log"
 end
 
 return test_util

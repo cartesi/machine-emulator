@@ -22,7 +22,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <stdexcept>
 #include <variant>
 
 #include "array2d.h"
@@ -30,6 +29,7 @@
 #include "keccak-256-hasher.h"
 #include "machine-hash.h"
 #include "sha-256-hasher.h"
+#include "throw.h"
 
 namespace cartesi {
 
@@ -54,7 +54,7 @@ public:
                 m_hasher_impl = sha_256_hasher{};
                 break;
             default:
-                throw std::invalid_argument("unsupported hash function type");
+                THROW(std::invalid_argument, "unsupported hash function type");
         }
     }
 

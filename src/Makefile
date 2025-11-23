@@ -377,7 +377,6 @@ LIBCARTESI_OBJS:= \
 	os-filesystem.o \
 	plic-address-range.o \
 	back-merkle-tree.o \
-	replay-step-state-access-interop.o \
 	send-cmio-response.o \
 	keccak-256-hasher.o \
 	sha-256-hasher.o \

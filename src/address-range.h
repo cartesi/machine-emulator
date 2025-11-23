@@ -33,8 +33,10 @@
 #include "pmas.h"
 
 #ifndef MICROARCHITECTURE
+#ifndef ZKARCHITECTURE
 #include "i-dense-hash-tree.h"
 #include "i-dirty-page-tree.h"
+#endif
 #endif
 
 namespace cartesi {
@@ -71,9 +73,11 @@ public:
     template <typename ABRT, size_t N, typename... ARGS>
     [[noreturn]]
     static void ABRTF(ABRT abrt, const char (&fmt)[N], ARGS... args) {
+#ifndef ZKARCHITECTURE
         char buf[256]{};
         std::ignore = snprintf(buf, std::size(buf), fmt, args...);
         abrt(buf);
+#endif
         __builtin_trap();
     }
 
@@ -249,6 +253,7 @@ public:
     }
 
 #ifndef MICROARCHITECTURE
+#ifndef ZKARCHITECTURE
     /// \brief Returns reference to dirty page tree.
     i_dirty_page_tree &get_dirty_page_tree() noexcept {
         return do_get_dirty_page_tree();
@@ -268,6 +273,7 @@ public:
     const i_dense_hash_tree &get_dense_hash_tree() const noexcept {
         return do_get_dense_hash_tree();
     }
+#endif
 #endif
 
     // -----
@@ -365,6 +371,7 @@ private:
     }
 
 #ifndef MICROARCHITECTURE
+#ifndef ZKARCHITECTURE
     // Default implemenationt returns always dirty tree
     virtual const i_dirty_page_tree &do_get_dirty_page_tree() const noexcept {
         const static empty_dirty_page_tree no_dirty{};
@@ -386,6 +393,7 @@ private:
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
         return const_cast<i_dense_hash_tree &>(std::as_const(*this).do_get_dense_hash_tree());
     }
+#endif
 #endif
 };
 

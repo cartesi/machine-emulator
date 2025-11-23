@@ -46,6 +46,7 @@ In particular, it can be scripted in Lua, for fast prototyping and testing.
   - **WebAssembly compatibility**, bringing all capabilities to browser environments.
   - **Freestanding compilation**, suitable for embedding in other applications (e.g., in a zkVM).
   - **Minimal runtime dependencies**, ensuring easy installation and integration.
+  - **RISC Zero zkVM integration**, enabling zero-knowledge proofs of machine state transitions.
 
 ## Overview
 
@@ -121,6 +122,7 @@ brew install cartesi-machine
 - Boost >= 1.83
 - Lua >= 5.4.6 (optional, required for scripting support and interactive terminal)
 - Libslirp >= 4.6.0 (optional, required for networking support)
+- Rust and RISC Zero toolchain (optional, required for building the RISC Zero prover)
 
 ###### Debian Requirements
 
@@ -139,6 +141,19 @@ sudo port install clang libomp boost181 wget pkgconfig lua54 libslirp
 ```sh
 brew install llvm libomp boost wget pkg-config lua libslirp
 ```
+
+###### RISC Zero Requirements (optional)
+
+If you want to build the RISC Zero prover, you'll need Rust and the RISC Zero toolchain. First install Rust via [rustup](https://rustup.rs/), then install the RISC Zero toolchain manager:
+
+```sh
+cargo install --git https://github.com/risc0/risc0 rzup
+rzup install cargo-risczero 2.3.2
+rzup install r0vm 2.3.2
+rzup install cpp 2024.1.5
+```
+
+Then build with `make risc0`.
 
 #### Build
 

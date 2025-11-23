@@ -54,6 +54,7 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WAR
 	-mcmodel=medany -static -fvisibility=hidden \
 	-I. \
 	-I$(THIRD_PARTY_DIR)/llvm-flang-uint128 \
+	-I$(THIRD_PARTY_DIR) \
 	-I$(EMULATOR_SRC_DIR) \
 	$(UARCH_DEFS) \
 	$(TOOLCHAIN_INCS)
@@ -63,10 +64,12 @@ CXXFLAGS := -std=c++23 -fno-rtti \
 	-fno-use-cxa-atexit
 
 UARCH_SOURCES=\
-	third-party/printf/printf.c \
 	uarch-run.cpp \
 	uarch-ecall.c \
 	uarch-runtime.cpp
+
+UARCH_THIRDPARTY_SOURCES_C=\
+	$(THIRD_PARTY_DIR)/printf/printf.c
 
 EMULATOR_SOURCES=\
 	$(EMULATOR_SRC_DIR)/interpret.cpp \
@@ -83,6 +86,7 @@ COMPUTE_SOURCES=\
 	uarch-pristine-ram.c
 
 UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_SOURCES)))
+UARCH_THIRDPARTY_OBJS = $(patsubst %.c,%.uarch_thirdparty_c.o,$(UARCH_THIRDPARTY_SOURCES_C))
 EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))
 COMPUTE_OBJS = $(patsubst %.c,%.compute_c.o,$(patsubst %.cpp,%.compute_cpp.o,$(COMPUTE_SOURCES)))
 
@@ -125,8 +129,8 @@ validate-instruction-set: uarch-ram.elf.insn.txt
 		false;\
 	fi
 
-uarch-ram.elf: $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o uarch-ram.ld
-	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld  -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o $(TOOLCHAIN_LIBS)
+uarch-ram.elf: $(EMULATOR_OBJS) $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) uarch-ram-entry.o uarch-ram.ld
+	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld  -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) uarch-ram-entry.o $(TOOLCHAIN_LIBS)
 
 uarch-ram-entry.o: uarch-ram-entry.S
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -146,6 +150,9 @@ uarch-ram-entry.o: uarch-ram-entry.S
 %.uarch_cpp.o: %.cpp
 	$(CXX) $(CFLAGS) $(CXXFLAGS) -c -o $@ $<
 
+%.uarch_thirdparty_c.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 %.ld: %.ld.in
 	$(CC) -o $(@F).tmp -x c $(CFLAGS) -E $(^F)
 	grep -v '^#' $@.tmp > $@
@@ -163,4 +170,4 @@ clean-auto-generated:
 	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp *.o *.clang-tidy *.insn.txt *.objdump $(UARCH_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS)
+	@rm -f *.ld *.elf *.bin *.tmp *.o *.clang-tidy *.insn.txt *.objdump $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS)

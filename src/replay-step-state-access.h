@@ -25,9 +25,9 @@
 #include <variant>
 
 #include "address-range-constants.h"
-#include "address-range.h"
 #include "assert-printf.h"
 #include "compiler-defines.h"
+#include "hash-tree-constants.h"
 #include "host-addr.h"
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
@@ -37,17 +37,53 @@
 #include "mock-address-range.h"
 #include "pmas-constants.h"
 #include "pmas.h"
-#include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
 #include "shadow-registers.h"
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"
+#include "throw.h"
 #include "variant-hasher.h"
 
 namespace cartesi {
 
-// \file this code is designed to be compiled for a free-standing environment.
-// Environment-specific functions have the prefix "interop_" and are declared in "replay-step-state-access-interop.h"
+using hash_type = unsigned char (*)[MACHINE_HASH_SIZE];
+using const_hash_type = const unsigned char (*)[MACHINE_HASH_SIZE];
+
+#ifdef ZKARCHITECTURE
+
+extern "C" void zk_merkle_tree_hash(hash_function_type hash_function, const unsigned char *data, size_t size,
+    hash_type hash);
+
+extern "C" void zk_concat_hash(hash_function_type hash_function, const_hash_type left, const_hash_type right,
+    hash_type result);
+
+static void merkle_tree_hash(hash_function_type hash_function, const unsigned char *data, size_t size, hash_type hash) {
+    zk_merkle_tree_hash(hash_function, data, size, hash);
+}
+
+static void concat_hash(hash_function_type hash_function, const_hash_type left, const_hash_type right,
+    hash_type result) {
+    zk_concat_hash(hash_function, left, right, result);
+}
+
+#else
+
+static void merkle_tree_hash(hash_function_type hash_function, const unsigned char *data, size_t size, hash_type hash) {
+    variant_hasher h{hash_function};
+    get_merkle_tree_hash(h, std::span<const unsigned char>{data, size}, HASH_TREE_WORD_SIZE,
+        machine_hash_view{*hash, MACHINE_HASH_SIZE});
+}
+
+static void concat_hash(hash_function_type hash_function, const_hash_type left, const_hash_type right,
+    hash_type result) {
+    variant_hasher h{hash_function};
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+    get_concat_hash(h, *reinterpret_cast<const machine_hash *>(left), *reinterpret_cast<const machine_hash *>(right),
+        *reinterpret_cast<machine_hash *>(result));
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+}
+
+#endif
 
 class replay_step_state_access;
 
@@ -84,7 +120,6 @@ class replay_step_state_access :
 public:
     using address_type = uint64_t;
     using data_type = unsigned char[AR_PAGE_SIZE];
-    static_assert(sizeof(machine_hash) == interop_machine_hash_byte_size);
 
     struct PACKED page_type {
         address_type index;
@@ -124,7 +159,7 @@ public:
         // hash function type
         uint64_t temp_hash_function{};
         if (!validate_and_advance_offset(log_size, 0, sizeof(temp_hash_function), 1, &page_count_offset)) {
-            interop_throw_runtime_error("hash function type past end of step log");
+            THROW(std::runtime_error, "hash function type past end of step log");
         }
         temp_hash_function = aliased_aligned_read<uint64_t, uint8_t>(log_image + 0);
         switch (temp_hash_function) {
@@ -135,22 +170,22 @@ public:
                 m_context.hash_function = hash_function_type::sha256;
                 break;
             default:
-                interop_throw_runtime_error("invalid log format: unsupported hash function type");
+                THROW(std::runtime_error, "invalid log format: unsupported hash function type");
         }
 
         // set page count
         if (!validate_and_advance_offset(log_size, page_count_offset, sizeof(m_context.page_count), 1,
                 &first_page_offset)) {
-            interop_throw_runtime_error("page count past end of step log");
+            THROW(std::runtime_error, "page count past end of step log");
         }
         m_context.page_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + page_count_offset);
         if (m_context.page_count == 0) {
-            interop_throw_runtime_error("page count is zero");
+            THROW(std::runtime_error, "page count is zero");
         }
         // set page data
         if (!validate_and_advance_offset(log_size, first_page_offset, sizeof(page_type), m_context.page_count,
                 &sibling_count_offset)) {
-            interop_throw_runtime_error("page data past end of step log");
+            THROW(std::runtime_error, "page data past end of step log");
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         m_context.pages = reinterpret_cast<page_type *>(log_image + first_page_offset);
@@ -158,21 +193,21 @@ public:
         // set sibling count and hashes
         if (!validate_and_advance_offset(log_size, sibling_count_offset, sizeof(m_context.sibling_count), 1,
                 &first_sibling_offset)) {
-            interop_throw_runtime_error("sibling count past end of step log");
+            THROW(std::runtime_error, "sibling count past end of step log");
         }
         m_context.sibling_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + sibling_count_offset);
 
         // set sibling hashes
         if (!validate_and_advance_offset(log_size, first_sibling_offset, sizeof(machine_hash), m_context.sibling_count,
                 &end_offset)) {
-            interop_throw_runtime_error("sibling hashes past end of step log");
+            THROW(std::runtime_error, "sibling hashes past end of step log");
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         m_context.sibling_hashes = reinterpret_cast<machine_hash *>(log_image + first_sibling_offset);
 
         // ensure that we read exactly the expected log size
         if (end_offset != log_size) {
-            interop_throw_runtime_error("extra data at end of step log");
+            THROW(std::runtime_error, "extra data at end of step log");
         }
 
         // ensure that the page indexes are in increasing order
@@ -180,22 +215,22 @@ public:
         static const machine_hash all_zeros{};
         for (uint64_t i = 0; i < m_context.page_count; i++) {
             if (i > 0 && m_context.pages[i - 1].index >= m_context.pages[i].index) {
-                interop_throw_runtime_error("invalid log format: page index is not in increasing order");
+                THROW(std::runtime_error, "invalid log format: page index is not in increasing order");
             }
             // In the current implementation, this check is unnecessary
             // But we may in the future change the data field to point to independently allocated pages
             // This would break the code that uses binary search to find the page based on the address of its data
             if (i > 0 && +m_context.pages[i - 1].data >= +m_context.pages[i].data) {
-                interop_throw_runtime_error("invalid log format: page data is not in increasing order");
+                THROW(std::runtime_error, "invalid log format: page data is not in increasing order");
             }
             if (m_context.pages[i].hash != all_zeros) {
-                interop_throw_runtime_error("invalid log format: page scratch hash area is not zero");
+                THROW(std::runtime_error, "invalid log format: page scratch hash area is not zero");
             }
         }
         // compute  and check the machine root hash before the replay
         auto computed_root_hash_before = compute_root_hash();
         if (computed_root_hash_before != root_hash_before) {
-            interop_throw_runtime_error("initial root hash mismatch");
+            THROW(std::runtime_error, "initial root hash mismatch");
         }
         // relocate all tlb vh offsets into the logged page data
         relocate_tlb_vp_offset_to_vh_offset<TLB_CODE>();
@@ -215,7 +250,7 @@ public:
         // compute and check machine root hash after the replay
         auto computed_final_root_hash = compute_root_hash();
         if (computed_final_root_hash != root_hash_after) {
-            interop_throw_runtime_error("final root hash mismatch");
+            THROW(std::runtime_error, "final root hash mismatch");
         }
     }
 
@@ -325,7 +360,7 @@ private:
     page_type *find_page(uint64_t paddr_page) const {
         auto *page_log = try_find_page(paddr_page);
         if (page_log == nullptr) {
-            interop_throw_runtime_error("required page not found");
+            THROW(std::runtime_error, "required page not found");
         }
         return page_log;
     }
@@ -333,7 +368,7 @@ private:
     page_type *find_page(host_addr haddr_page) const {
         auto *page_log = try_find_page(haddr_page);
         if (page_log == nullptr) {
-            interop_throw_runtime_error("required page not found");
+            THROW(std::runtime_error, "required page not found");
         }
         return page_log;
     }
@@ -345,18 +380,19 @@ private:
         //??D But in the end, we should only update those pages that we touched
         //??D May improve performance when we are running this on ZK
         for (uint64_t i = 0; i < m_context.page_count; i++) {
-            interop_merkle_tree_hash(m_context.hash_function, m_context.pages[i].data, AR_PAGE_SIZE,
+            merkle_tree_hash(m_context.hash_function, m_context.pages[i].data, AR_PAGE_SIZE,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                reinterpret_cast<interop_hash_type>(&m_context.pages[i].hash));
+                reinterpret_cast<hash_type>(&m_context.pages[i].hash));
         }
         size_t next_page = 0;
         size_t next_sibling = 0;
-        auto root_hash = compute_root_hash_impl(0, interop_log2_root_size - AR_LOG2_PAGE_SIZE, next_page, next_sibling);
+        auto root_hash =
+            compute_root_hash_impl(0, HASH_TREE_LOG2_ROOT_SIZE - AR_LOG2_PAGE_SIZE, next_page, next_sibling);
         if (next_page != m_context.page_count) {
-            interop_throw_runtime_error("too many pages in log");
+            THROW(std::runtime_error, "too many pages in log");
         }
         if (next_sibling != m_context.sibling_count) {
-            interop_throw_runtime_error("too many sibling hashes in log");
+            THROW(std::runtime_error, "too many sibling hashes in log");
         }
         return root_hash;
     }
@@ -373,7 +409,7 @@ private:
         auto page_count = UINT64_C(1) << log2_page_count;
         if (next_page >= m_context.page_count || page_index + page_count <= m_context.pages[next_page].index) {
             if (next_sibling >= m_context.sibling_count) {
-                interop_throw_runtime_error("too few sibling hashes in log");
+                THROW(std::runtime_error, "too few sibling hashes in log");
             }
             return m_context.sibling_hashes[next_sibling++];
         }
@@ -382,15 +418,15 @@ private:
             const auto halfway_page_index = page_index + (page_count >> 1);
             auto right = compute_root_hash_impl(halfway_page_index, log2_page_count - 1, next_page, next_sibling);
             machine_hash hash{};
-            interop_concat_hash(m_context.hash_function, reinterpret_cast<interop_hash_type>(&left),
-                reinterpret_cast<interop_hash_type>(&right), reinterpret_cast<interop_hash_type>(&hash));
+            concat_hash(m_context.hash_function, reinterpret_cast<hash_type>(&left),
+                reinterpret_cast<hash_type>(&right), reinterpret_cast<hash_type>(&hash));
             return hash;
         }
         if (m_context.pages[next_page].index == page_index) {
             return m_context.pages[next_page++].hash;
         }
         if (next_sibling >= m_context.sibling_count) {
-            interop_throw_runtime_error("too few sibling hashes in log");
+            THROW(std::runtime_error, "too few sibling hashes in log");
         }
         return m_context.sibling_hashes[next_sibling++];
         // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
@@ -475,7 +511,7 @@ private:
         const uint64_t istart = read_pmas_istart(index);
         const uint64_t ilength = read_pmas_ilength(index);
         const auto i = static_cast<size_t>(index);
-        const auto abrt = [](const char *err) { interop_throw_runtime_error(err); };
+        const auto abrt = [](const char *err) { THROW(std::runtime_error, err); };
         if (std::holds_alternative<std::monostate>(m_context.ars[i])) {
             m_context.ars[i] = make_mock_address_range(istart, ilength, abrt);
         }

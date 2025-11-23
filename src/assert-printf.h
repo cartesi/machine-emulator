@@ -20,8 +20,10 @@
 /// \file
 /// \brief Microarchitecture-dependent includes for printf and assert
 
-#ifdef MICROARCHITECTURE
+#if defined(MICROARCHITECTURE)
 #include "../uarch/uarch-runtime.h" // IWYU pragma: export
+#elif defined(ZKARCHITECTURE)
+#include "risc0-runtime.h" // IWYU pragma: export
 #else
 #include <cassert> // IWYU pragma: export
 #include <cstdio>  // IWYU pragma: export

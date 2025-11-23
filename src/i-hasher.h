@@ -25,7 +25,6 @@
 #include <cstdint>
 #include <ranges>
 #include <span>
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -34,6 +33,7 @@
 #include "hash-tree-constants.h"
 #include "machine-hash.h"
 #include "meta.h"
+#include "throw.h"
 
 namespace cartesi {
 
@@ -194,7 +194,7 @@ inline static void get_merkle_tree_hash(H &&h, D &&data, uint64_t leaf_length, m
     const auto size = std::ranges::size(data);
     if (size > leaf_length) {
         if (size & 1) {
-            throw std::invalid_argument("data size must be a power of 2 multiple of leaf_length");
+            THROW(std::invalid_argument, "data size must be a power of 2 multiple of leaf_length");
         }
         machine_hash left;
         const auto half_size = size >> 1;
@@ -204,7 +204,7 @@ inline static void get_merkle_tree_hash(H &&h, D &&data, uint64_t leaf_length, m
         get_concat_hash(h, left, result, result);
     } else {
         if (size != leaf_length) {
-            throw std::invalid_argument("data size must be a power of 2 multiple of leaf length");
+            THROW(std::invalid_argument, "data size must be equal to leaf length");
         }
         //??D we use universal references so the function works with non-const l- and r-value references
         //??D forwarding just to silence linter.

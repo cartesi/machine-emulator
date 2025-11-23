@@ -347,6 +347,12 @@ where options are:
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
 
+  --save-step-logs=<dir>
+    save step logs to <dir> (run_step only)
+
+  --hash-function=<keccak256|sha256>
+    hash function for machine (default: keccak256)
+
 and command can be:
 
   run
@@ -396,6 +402,8 @@ local periodic_action = false
 local periodic_action_period = math.maxinteger
 local periodic_action_start = 0
 local concurrency_update_hash_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_HASH_TREE")) or 0
+local save_step_logs_dir
+local hash_function
 
 -- List of supported options
 -- Options are processed in order
@@ -541,6 +549,29 @@ local options = {
         end,
     },
     {
+        "^%-%-save%-step%-logs%=(.*)$",
+        function(o)
+            if not o or #o < 1 then
+                return false
+            end
+            save_step_logs_dir = o
+            return true
+        end,
+    },
+    {
+        "^%-%-hash%-function%=(.*)$",
+        function(o)
+            if not o or #o < 1 then
+                return false
+            end
+            if o ~= "keccak256" and o ~= "sha256" then
+                error("invalid hash function: " .. o)
+            end
+            hash_function = o
+            return true
+        end,
+    },
+    {
         ".*",
         function(all)
             error("unrecognized option " .. all)
@@ -614,6 +645,9 @@ local function build_machine(ram_image)
     }
     if uarch then
         config.uarch = uarch
+    end
+    if hash_function then
+        config.hash_tree = { hash_function = hash_function }
     end
     local runtime = {
         concurrency = {
@@ -933,10 +967,13 @@ end
 
 local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
     local log_filename = os.tmpname()
+    local delete_temp = true
     local deleter = {}
     setmetatable(deleter, {
         __gc = function()
-            os.remove(log_filename)
+            if delete_temp then
+                os.remove(log_filename)
+            end
         end,
     })
     os.remove(log_filename)
@@ -956,6 +993,14 @@ local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
         fatal("%s: failed. Final hash does not match reference machine\n", ctx.ram_image)
     end
     ctx.read_htif_tohost_data = machine:read_reg("htif_tohost_data")
+    -- save step log if requested
+    if save_step_logs_dir then
+        local suffix = ctx.ram_image:match("^(.+)%.bin$") or ctx.ram_image
+        local final_name = test_util.step_log_filename(root_hash_before, mcycle_count, root_hash_after, suffix)
+        local final_path = save_step_logs_dir:gsub("/*$", "/") .. final_name
+        -- use cp instead of rename to handle cross-filesystem copies
+        assert(os.execute("cp " .. log_filename .. " " .. final_path), "failed to copy step log to " .. final_path)
+    end
 end
 
 local failures = nil

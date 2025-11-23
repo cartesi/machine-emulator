@@ -154,7 +154,6 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
     if ((static_cast<int64_t>(vaddr << vaddr_bits) >> vaddr_bits) != static_cast<int64_t>(vaddr)) [[unlikely]] {
         return false;
     }
-
     // Initialize pte_addr with the base address for the root page table
     uint64_t pte_addr = (satp & SATP_PPN_MASK) << LOG2_PAGE_SIZE;
     for (int i = 0; i < levels; i++) {

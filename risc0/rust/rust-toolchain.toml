@@ -1,0 +1,4 @@
+[toolchain]
+channel = "1.85.0"  # The specific version that works
+components = ["rustfmt", "rust-src"]
+profile = "minimal"

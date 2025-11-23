@@ -14,29 +14,17 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef MACHINE_HASH_H
-#define MACHINE_HASH_H
+use serde::{Deserialize, Serialize};
 
-/// \file
-/// \brief Storage for a hash
+pub type MachineHash = [u8; 32];
 
-#include <array>
-#include <cstddef>
-#include <span>
-#ifndef ZKARCHITECTURE
-#include <vector>
-#endif
+/// Verified public information stored in the receipt.journal
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Journal {
+    pub root_hash_before: MachineHash,
+    pub mcycle_count: u64,
+    pub root_hash_after: MachineHash,
+}
 
-namespace cartesi {
+// todo: error types.
 
-static constexpr size_t MACHINE_HASH_SIZE = 32;
-using machine_hash = std::array<unsigned char, MACHINE_HASH_SIZE>;
-using machine_hash_view = std::span<unsigned char, MACHINE_HASH_SIZE>;
-using const_machine_hash_view = std::span<const unsigned char, MACHINE_HASH_SIZE>;
-#ifndef ZKARCHITECTURE
-using machine_hashes = std::vector<machine_hash>;
-#endif
-
-} // namespace cartesi
-
-#endif

@@ -23,7 +23,7 @@
 #endif
 
 #include "compiler-defines.h"
-#include "third-party/printf/printf.h"
+#include "printf/printf.h"
 
 #include <cinttypes>
 #include <cstddef>

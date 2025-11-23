@@ -15,6 +15,7 @@
 //
 
 #include "uarch-runtime.h"
+#include "uarch-ecall.h"
 
 #include <cstddef>
 
@@ -89,4 +90,8 @@ extern "C" NO_RETURN void abort() noexcept {
     );
     // execution will never reach this point
     __builtin_trap();
+}
+
+void _putchar(char character) {
+    ua_putchar_ECALL(character);
 }

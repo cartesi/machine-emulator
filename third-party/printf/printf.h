@@ -48,7 +48,6 @@ extern "C" {
  */
 void _putchar(char character);
 
-
 /**
  * Tiny printf implementation
  * You have to implement _putchar if you use printf()

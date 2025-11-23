@@ -14,29 +14,4 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef MACHINE_HASH_H
-#define MACHINE_HASH_H
-
-/// \file
-/// \brief Storage for a hash
-
-#include <array>
-#include <cstddef>
-#include <span>
-#ifndef ZKARCHITECTURE
-#include <vector>
-#endif
-
-namespace cartesi {
-
-static constexpr size_t MACHINE_HASH_SIZE = 32;
-using machine_hash = std::array<unsigned char, MACHINE_HASH_SIZE>;
-using machine_hash_view = std::span<unsigned char, MACHINE_HASH_SIZE>;
-using const_machine_hash_view = std::span<const unsigned char, MACHINE_HASH_SIZE>;
-#ifndef ZKARCHITECTURE
-using machine_hashes = std::vector<machine_hash>;
-#endif
-
-} // namespace cartesi
-
-#endif
+include!(concat!(env!("OUT_DIR"), "/methods.rs"));

@@ -94,6 +94,7 @@ void os_silence_putchar(bool yes);
 int64_t os_now_us();
 
 // Callbacks used by os_select_fds().
+#ifndef RISC0ARCHITECTURE
 using os_select_before_callback = std::function<void(select_fd_sets *fds, uint64_t *timeout_us)>;
 using os_select_after_callback = std::function<bool(int select_ret, select_fd_sets *fds)>;
 
@@ -104,6 +105,7 @@ using os_select_after_callback = std::function<bool(int select_ret, select_fd_se
 /// this value may be updated in case a before_cb() has an deadline timer before the timeout.
 bool os_select_fds(const os_select_before_callback &before_cb, const os_select_after_callback &after_cb,
     uint64_t *timeout_us);
+#endif
 
 /// \brief Disable sigpipe
 void os_disable_sigpipe();

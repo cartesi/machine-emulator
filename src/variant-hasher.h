@@ -22,7 +22,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#ifndef RISC0ARCHITECTURE
 #include <stdexcept>
+#else
+#include "replay-step-state-access-interop.h"
+#endif
 #include <variant>
 
 #include "array2d.h"
@@ -54,7 +58,12 @@ public:
                 m_hasher_impl = sha_256_hasher{};
                 break;
             default:
+#ifndef RISC0ARCHITECTURE
                 throw std::invalid_argument("unsupported hash function type");
+#else
+            abort();
+#endif
+
         }
     }
 

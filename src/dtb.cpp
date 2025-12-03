@@ -20,7 +20,6 @@
 #include "dtb.h"
 
 #include <cstdint>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -37,17 +36,6 @@
 using namespace std::string_literals;
 
 namespace cartesi {
-
-static std::string misa_to_isa_string(uint64_t misa) {
-    std::ostringstream ss;
-    ss << "rv64";
-    for (int i = 0; i < 26; i++) {
-        if ((misa & (1 << i)) != 0) {
-            ss << static_cast<char>('a' + i);
-        }
-    }
-    return ss.str();
-}
 
 void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_length) {
     using namespace std::string_literals;
@@ -98,8 +86,8 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
                 fdt.prop_u32("reg", 0);
                 fdt.prop_string("status", "okay");
                 fdt.prop_string("compatible", "riscv");
-                fdt.prop_string("riscv,isa", misa_to_isa_string(c.processor.registers.misa));
-                fdt.prop_string("mmu-type", "riscv,sv39");
+                fdt.prop_string("riscv,isa", ISA_string);
+                fdt.prop_string("mmu-type", "riscv,sv48");
                 fdt.prop_u32("clock-frequency", RTC_CLOCK_FREQ);
                 { // interrupt-controller
                     fdt.begin_node("interrupt-controller");

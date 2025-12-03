@@ -132,6 +132,10 @@ enum MISA_shifts {
     MISA_MXL_SHIFT = (XLEN - 2)
 };
 
+/// \brief Supported RISC-V ISA extensions, used by the Device Tree during boot.
+/// \details See also https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/devicetree/bindings/riscv/extensions.yaml
+constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba";
+
 /// \brief misa masks
 enum MISA_masks : uint64_t {
     MISA_EXT_S_MASK = UINT64_C(1) << MISA_EXT_S_SHIFT, ///< Supervisor mode implemented
@@ -659,16 +663,21 @@ enum insn_ADD_MUL_SUB_funct7 : uint32_t { ADD = 0b0000000, MUL = 0b0000001, SUB 
 /// \brief funct7 constants for SLL, MULH instructions
 enum insn_SLL_MULH_funct7 : uint32_t { SLL = 0b0000000, MULH = 0b0000001 };
 
-/// \brief funct7 constants for SLT, MULHSU instructions
-enum insn_SLT_MULHSU_funct7 : uint32_t { SLT = 0b0000000, MULHSU = 0b0000001 };
+/// \brief funct7 constants for SLT, MULHSU, SH1ADD instructions
+enum insn_SLT_MULHSU_SH1ADD_funct7 : uint32_t {
+    SLT = 0b0000000,
+    MULHSU = 0b0000001,
+    SH1ADD = 0b0010000,
+};
 
 /// \brief funct7 constants for SLTU, MULHU instructions
 enum insn_SLTU_MULHU_funct7 : uint32_t { SLTU = 0b0000000, MULHU = 0b0000001 };
 
-/// \brief funct7 constants for XOR, DIV instructions
-enum insn_XOR_DIV_funct7 : uint32_t {
+/// \brief funct7 constants for XOR, DIV, SH2ADD instructions
+enum insn_XOR_DIV_SH2ADD_funct7 : uint32_t {
     XOR = 0b0000000,
     DIV = 0b0000001,
+    SH2ADD = 0b0010000,
 };
 
 /// \brief funct7 constants for SRL, DIVU, SRA instructions
@@ -740,17 +749,48 @@ enum insn_FCMP_funct3_000000000000 : uint32_t {
     EQ = 0b010000000000000,
 };
 
-/// \brief funct7 constants for OR, REM instructions
-enum insn_OR_REM_funct7 : uint32_t { OR = 0b0000000, REM = 0b0000001 };
+/// \brief funct7 constants for OR, REM, SH3ADD instructions
+enum insn_OR_REM_SH3ADD_funct7 : uint32_t {
+    OR = 0b0000000,
+    REM = 0b0000001,
+    SH3ADD = 0b0010000,
+};
 
 /// \brief funct7 constants for AND, REMU instructions
 enum insn_AND_REMU_funct7 : uint32_t { AND = 0b0000000, REMU = 0b0000001 };
 
-/// \brief funct7 constants for ADDW, MULW, SUBW instructions
-enum insn_ADDW_MULW_SUBW_funct7 : uint32_t { ADDW = 0b0000000, MULW = 0b0000001, SUBW = 0b0100000 };
+/// \brief funct7 constants for ADDW, SUBW, MULW, ADD.UW instructions
+enum insn_ADDW_SUBW_MULW_ADD_UW_funct7 : uint32_t {
+    ADDW = 0b0000000,
+    SUBW = 0b0100000,
+    MULW = 0b0000001,
+    ADD_UW = 0b0000100,
+};
 
 /// \brief funct7 constants for SRLW, DIVUW, SRAW instructions
 enum insn_SRLW_DIVUW_SRAW_funct7 : uint32_t { SRLW = 0b0000000, DIVUW = 0b0000001, SRAW = 0b0100000 };
+
+/// \brief funct7 constants for DIVW, SH2ADD.UW instructions
+enum insn_DIVW_SH2ADD_UW_funct7 : uint32_t {
+    DIVW = 0b0000001,
+    SH2ADD_UW = 0b0010000,
+};
+
+/// \brief funct7 constants for REMW, SH3ADD.UW instructions
+enum insn_REMW_SH3ADD_UW_funct7 : uint32_t {
+    REMW = 0b0000001,
+    SH3ADD_UW = 0b0010000,
+};
+
+/// \brief funct7 constants for SLLIW instructions
+enum insn_SLLIW_funct7 : uint32_t {
+    SLLIW = 0b0000000,
+};
+
+/// \brief funct7_sr1 constants for SLLI.UW instruction
+enum insn_SLLI_UW_funct7_sr1 : uint32_t {
+    SLLI_UW = 0b000010,
+};
 
 /// \brief Privileged instructions, except for SFENCE.VMA, have no parameters
 enum class insn_privileged : uint32_t {

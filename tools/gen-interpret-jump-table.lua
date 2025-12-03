@@ -88,6 +88,16 @@ local insns = {
     { bits = "0000001__________110_____0111011", name = "REMW", rd0_special = true },
     { bits = "0000001__________111_____0111011", name = "REMUW", rd0_special = true },
 
+    -- Zba extension
+    { bits = "0000100__________000_____0111011", name = "ADD.UW", rd0_special = true },
+    { bits = "0010000__________010_____0110011", name = "SH1ADD", rd0_special = true },
+    { bits = "0010000__________010_____0111011", name = "SH1ADD.UW", rd0_special = true },
+    { bits = "0010000__________100_____0110011", name = "SH2ADD", rd0_special = true },
+    { bits = "0010000__________100_____0111011", name = "SH2ADD.UW", rd0_special = true },
+    { bits = "0010000__________110_____0110011", name = "SH3ADD", rd0_special = true },
+    { bits = "0010000__________110_____0111011", name = "SH3ADD.UW", rd0_special = true },
+    { bits = "000010___________001_____0011011", name = "SLLI.UW", rd0_special = true },
+
     -- RV32A
     { bits = "00010__00000_____010_____0101111", name = "LR.W" },
     { bits = "00011____________010_____0101111", name = "SC.W" },
@@ -401,7 +411,6 @@ end
 local group_names = {
     -- I
     ["ADD|SUB|MUL"] = "ADD_MUL_SUB",
-    ["ADDW|SUBW|MULW"] = "ADDW_MULW_SUBW",
     ["SRL|SRA|DIVU"] = "SRL_DIVU_SRA",
     ["SRLW|SRAW|DIVUW"] = "SRLW_DIVUW_SRAW",
     -- A
@@ -480,7 +489,7 @@ for i = 0, ((1 << mask_bits) - 1) do
             table.insert(labels, { name = name, i = firstindex * 10 })
         end
     end
-    assert(#name < 18, namekey)
+    assert(#name < 32, namekey)
     for rd = 0, 31 do
         local ename = name
         if rd0_special then

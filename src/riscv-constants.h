@@ -133,8 +133,9 @@ enum MISA_shifts {
 };
 
 /// \brief Supported RISC-V ISA extensions, used by the Device Tree during boot.
-/// \details See also https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/devicetree/bindings/riscv/extensions.yaml
-constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba";
+/// \details See also
+/// https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/devicetree/bindings/riscv/extensions.yaml
+constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba_zbs";
 
 /// \brief misa masks
 enum MISA_masks : uint64_t {
@@ -634,12 +635,26 @@ enum class CSR_address : uint32_t {
     tdata3 = 0x7a3,
 };
 
-/// \brief The result of insn >> 26 (6 most significant bits of funct7) can be
-/// used to identify the SRI instructions
-enum insn_SRLI_SRAI_funct7_sr1 : uint32_t { SRLI = 0b000000, SRAI = 0b010000 };
+/// \brief funct7_sr1 constants for SRLI, SRAI, BEXTI instructions
+enum insn_SRLI_SRAI_BEXTI_funct7_sr1 : uint32_t {
+    SRLI = 0b000000,
+    SRAI = 0b010000,
+    BEXTI = 0b010010,
+};
 
-/// \brief funct7 constants for SRW instructions
-enum insn_SRLIW_SRAIW_funct7 : uint32_t { SRLIW = 0b0000000, SRAIW = 0b0100000 };
+/// \brief funct7_sr1 constants for SLLI, BCLRI, BINVI, BSETI instructions
+enum insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1 : uint32_t {
+    SLLI = 0b000000,
+    BCLRI = 0b010010,
+    BINVI = 0b011010,
+    BSETI = 0b001010,
+};
+
+/// \brief funct7 constants for SRLIW, SRAIW instructions
+enum insn_SRLIW_SRAIW_funct7 : uint32_t {
+    SRLIW = 0b0000000,
+    SRAIW = 0b0100000,
+};
 
 /// \brief The result of insn >> 27 (5 most significant bits of funct7) can be
 /// used to identify the atomic operation
@@ -660,8 +675,14 @@ enum insn_AMO_funct7_sr2 : uint32_t {
 /// \brief funct7 constants for ADD, MUL, SUB instructions
 enum insn_ADD_MUL_SUB_funct7 : uint32_t { ADD = 0b0000000, MUL = 0b0000001, SUB = 0b0100000 };
 
-/// \brief funct7 constants for SLL, MULH instructions
-enum insn_SLL_MULH_funct7 : uint32_t { SLL = 0b0000000, MULH = 0b0000001 };
+/// \brief funct7 constants for SLL, MULH, BCLR, BINV, BSET instructions
+enum insn_SLL_MULH_BCLR_BINV_BSET_funct7 : uint32_t {
+    SLL = 0b0000000,
+    MULH = 0b0000001,
+    BCLR = 0b0100100,
+    BINV = 0b0110100,
+    BSET = 0b0010100,
+};
 
 /// \brief funct7 constants for SLT, MULHSU, SH1ADD instructions
 enum insn_SLT_MULHSU_SH1ADD_funct7 : uint32_t {
@@ -680,11 +701,12 @@ enum insn_XOR_DIV_SH2ADD_funct7 : uint32_t {
     SH2ADD = 0b0010000,
 };
 
-/// \brief funct7 constants for SRL, DIVU, SRA instructions
-enum insn_SRL_DIVU_SRA_funct7 : uint32_t {
+/// \brief funct7 constants for SRL, SRA, DIVU, BEXT instructions
+enum insn_SRL_SRA_DIVU_BEXT_funct7 : uint32_t {
     SRL = 0b0000000,
-    DIVU = 0b0000001,
     SRA = 0b0100000,
+    DIVU = 0b0000001,
+    BEXT = 0b0100100,
 };
 
 /// \brief funct7 constants for floating-point instructions

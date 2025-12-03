@@ -3292,9 +3292,6 @@ static FORCE_INLINE execute_status execute_ANDI(const STATE_ACCESS a, uint64_t &
 /// \brief Implementation of the SLLI instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLLI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
-    if (unlikely((insn & (0b111111 << 26)) != 0)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "slli");
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
@@ -3371,6 +3368,102 @@ static FORCE_INLINE execute_status execute_SRAIW(const STATE_ACCESS a, uint64_t 
         const int32_t rs1w = static_cast<int32_t>(rs1) >> (uimm & 0b11111);
         return static_cast<uint64_t>(rs1w);
     });
+}
+
+/// \brief Implementation of the BCLR instruction from Zbs extension.
+/// \details Single-Bit Clear (Register)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_BCLR(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bclr");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn,
+        [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 & ~(uint64_t{1} << (rs2 & (XLEN - 1))); });
+}
+
+/// \brief Implementation of the BCLRI instruction from Zbs extension.
+/// \details Single-Bit Clear (Immediate)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_BCLRI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bclri");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic_uimmediate(a, pc, insn,
+        [](uint64_t rs1, uint32_t uimm) -> uint64_t { return rs1 & ~(uint64_t{1} << (uimm & (XLEN - 1))); });
+}
+
+/// \brief Implementation of the BEXT instruction from Zbs extension.
+/// \details Single-Bit Extract (Register)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_BEXT(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bext");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn,
+        [](uint64_t rs1, uint64_t rs2) -> uint64_t { return (rs1 >> (rs2 & (XLEN - 1))) & uint64_t{1}; });
+}
+
+/// \brief Implementation of the BEXTI instruction from Zbs extension.
+/// \details Single-Bit Extract (Immediate)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_BEXTI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bexti");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic_uimmediate(a, pc, insn,
+        [](uint64_t rs1, uint32_t uimm) -> uint64_t { return (rs1 >> (uimm & (XLEN - 1))) & 1; });
+}
+
+/// \brief Implementation of the BINV instruction from Zbs extension.
+/// \details Single-Bit Invert (Register)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_BINV(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "binv");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn,
+        [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 ^ (uint64_t{1} << (rs2 & (XLEN - 1))); });
+}
+
+/// \brief Implementation of the BINVI instruction from Zbs extension.
+/// \details Single-Bit Invert (Immediate)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_BINVI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "binvi");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic_uimmediate(a, pc, insn,
+        [](uint64_t rs1, uint32_t uimm) -> uint64_t { return rs1 ^ (uint64_t{1} << (uimm & (XLEN - 1))); });
+}
+
+/// \brief Implementation of the BSET instruction from Zbs extension.
+/// \details Single-Bit Set (Register)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_BSET(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bset");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn,
+        [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 | (uint64_t{1} << (rs2 & (XLEN - 1))); });
+}
+
+/// \brief Implementation of the BSETI instruction from Zbs extension.
+/// \details Single-Bit Set (Immediate)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_BSETI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bseti");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic_uimmediate(a, pc, insn,
+        [](uint64_t rs1, uint32_t uimm) -> uint64_t { return rs1 | (uint64_t{1} << (uimm & (XLEN - 1))); });
 }
 
 template <typename T, typename STATE_ACCESS>
@@ -3650,14 +3743,36 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(const STATE_ACCESS a, uint
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SRLI_SRAI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLLI_BCLRI_BINVI_BSETI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7_sr1 = static_cast<insn_SRLI_SRAI_funct7_sr1>(insn_get_funct7_sr1(insn));
-    if (funct7_sr1 == insn_SRLI_SRAI_funct7_sr1::SRLI) {
+    const auto funct7_sr1 = static_cast<insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1>(insn_get_funct7_sr1(insn));
+    if (funct7_sr1 == insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1::SLLI) {
+        return execute_SLLI<rd_kind>(a, pc, insn);
+    }
+    if (funct7_sr1 == insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1::BCLRI) {
+        return execute_BCLRI<rd_kind>(a, pc, insn);
+    }
+    if (funct7_sr1 == insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1::BINVI) {
+        return execute_BINVI<rd_kind>(a, pc, insn);
+    }
+    if (funct7_sr1 == insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1::BSETI) {
+        return execute_BSETI<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_SRLI_SRAI_BEXTI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7_sr1 = static_cast<insn_SRLI_SRAI_BEXTI_funct7_sr1>(insn_get_funct7_sr1(insn));
+    if (funct7_sr1 == insn_SRLI_SRAI_BEXTI_funct7_sr1::SRLI) {
         return execute_SRLI<rd_kind>(a, pc, insn);
     }
-    if (funct7_sr1 == insn_SRLI_SRAI_funct7_sr1::SRAI) {
+    if (funct7_sr1 == insn_SRLI_SRAI_BEXTI_funct7_sr1::SRAI) {
         return execute_SRAI<rd_kind>(a, pc, insn);
+    }
+    if (funct7_sr1 == insn_SRLI_SRAI_BEXTI_funct7_sr1::BEXTI) {
+        return execute_BEXTI<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -3752,14 +3867,20 @@ static FORCE_INLINE execute_status execute_ADD_MUL_SUB(const STATE_ACCESS a, uin
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SLL_MULH(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLL_MULH_BCLR_BINV_BSET(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_SLL_MULH_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_SLL_MULH_funct7::SLL) {
-        return execute_SLL<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_SLL_MULH_funct7::MULH) {
-        return execute_MULH<rd_kind>(a, pc, insn);
+    const auto funct7 = static_cast<insn_SLL_MULH_BCLR_BINV_BSET_funct7>(insn_get_funct7(insn));
+    switch (funct7) {
+        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::SLL:
+            return execute_SLL<rd_kind>(a, pc, insn);
+        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::MULH:
+            return execute_MULH<rd_kind>(a, pc, insn);
+        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::BCLR:
+            return execute_BCLR<rd_kind>(a, pc, insn);
+        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::BINV:
+            return execute_BINV<rd_kind>(a, pc, insn);
+        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::BSET:
+            return execute_BSET<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -3810,17 +3931,20 @@ static FORCE_INLINE execute_status execute_XOR_DIV_SH2ADD(const STATE_ACCESS a, 
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SRL_DIVU_SRA(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRL_SRA_DIVU_BEXT(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_SRL_DIVU_SRA_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_SRL_DIVU_SRA_funct7::SRL) {
+    const auto funct7 = static_cast<insn_SRL_SRA_DIVU_BEXT_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SRL_SRA_DIVU_BEXT_funct7::SRL) {
         return execute_SRL<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_SRL_DIVU_SRA_funct7::SRA) {
+    if (funct7 == insn_SRL_SRA_DIVU_BEXT_funct7::SRA) {
         return execute_SRA<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_SRL_DIVU_SRA_funct7::DIVU) {
+    if (funct7 == insn_SRL_SRA_DIVU_BEXT_funct7::DIVU) {
         return execute_DIVU<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SRL_SRA_DIVU_BEXT_funct7::BEXT) {
+        return execute_BEXT<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -5792,17 +5916,17 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(ANDI_rdN):
                         status = execute_ANDI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLI_rdN):
-                        status = execute_SLLI<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SLLI_BCLRI_BINVI_BSETI_rdN):
+                        status = execute_SLLI_BCLRI_BINVI_BSETI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLI_SRAI_rdN):
-                        status = execute_SRLI_SRAI<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SRLI_SRAI_BEXTI_rdN):
+                        status = execute_SRLI_SRAI_BEXTI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADD_MUL_SUB_rdN):
                         status = execute_ADD_MUL_SUB<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLL_MULH_rdN):
-                        status = execute_SLL_MULH<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SLL_MULH_BCLR_BINV_BSET_rdN):
+                        status = execute_SLL_MULH_BCLR_BINV_BSET<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(SLT_MULHSU_SH1ADD_rdN):
                         status = execute_SLT_MULHSU_SH1ADD<rd_kind::xN>(a, pc, insn);
@@ -5813,8 +5937,8 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(XOR_DIV_SH2ADD_rdN):
                         status = execute_XOR_DIV_SH2ADD<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRL_DIVU_SRA_rdN):
-                        status = execute_SRL_DIVU_SRA<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SRL_SRA_DIVU_BEXT_rdN):
+                        status = execute_SRL_SRA_DIVU_BEXT<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(OR_REM_SH3ADD_rdN):
                         status = execute_OR_REM_SH3ADD<rd_kind::xN>(a, pc, insn);
@@ -6087,17 +6211,17 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(ANDI_rd0):
                         status = execute_ANDI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLI_rd0):
-                        status = execute_SLLI<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SLLI_BCLRI_BINVI_BSETI_rd0):
+                        status = execute_SLLI_BCLRI_BINVI_BSETI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLI_SRAI_rd0):
-                        status = execute_SRLI_SRAI<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SRLI_SRAI_BEXTI_rd0):
+                        status = execute_SRLI_SRAI_BEXTI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADD_MUL_SUB_rd0):
                         status = execute_ADD_MUL_SUB<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLL_MULH_rd0):
-                        status = execute_SLL_MULH<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SLL_MULH_BCLR_BINV_BSET_rd0):
+                        status = execute_SLL_MULH_BCLR_BINV_BSET<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(SLT_MULHSU_SH1ADD_rd0):
                         status = execute_SLT_MULHSU_SH1ADD<rd_kind::x0>(a, pc, insn);
@@ -6108,8 +6232,8 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(XOR_DIV_SH2ADD_rd0):
                         status = execute_XOR_DIV_SH2ADD<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRL_DIVU_SRA_rd0):
-                        status = execute_SRL_DIVU_SRA<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SRL_SRA_DIVU_BEXT_rd0):
+                        status = execute_SRL_SRA_DIVU_BEXT<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(OR_REM_SH3ADD_rd0):
                         status = execute_OR_REM_SH3ADD<rd_kind::x0>(a, pc, insn);

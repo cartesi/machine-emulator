@@ -98,6 +98,16 @@ local insns = {
     { bits = "0010000__________110_____0111011", name = "SH3ADD.UW", rd0_special = true },
     { bits = "000010___________001_____0011011", name = "SLLI.UW", rd0_special = true },
 
+    -- Zbs extension
+    { bits = "0100100__________001_____0110011", name = "BCLR", rd0_special = true },
+    { bits = "010010___________001_____0010011", name = "BCLRI", rd0_special = true },
+    { bits = "0100100__________101_____0110011", name = "BEXT", rd0_special = true },
+    { bits = "010010___________101_____0010011", name = "BEXTI", rd0_special = true },
+    { bits = "0110100__________001_____0110011", name = "BINV", rd0_special = true },
+    { bits = "011010___________001_____0010011", name = "BINVI", rd0_special = true },
+    { bits = "0010100__________001_____0110011", name = "BSET", rd0_special = true },
+    { bits = "001010___________001_____0010011", name = "BSETI", rd0_special = true },
+
     -- RV32A
     { bits = "00010__00000_____010_____0101111", name = "LR.W" },
     { bits = "00011____________010_____0101111", name = "SC.W" },

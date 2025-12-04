@@ -3370,6 +3370,63 @@ static FORCE_INLINE execute_status execute_SRAIW(const STATE_ACCESS a, uint64_t 
     });
 }
 
+/// \brief Implementation of the CLMUL instruction from Zbc extension.
+/// \details Carry-less multiply (low-part)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CLMUL(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "clmul");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        uint64_t val = 0;
+        for (uint32_t i = 0; i < XLEN; ++i) {
+            // Use a mask to make the algorithm branchless
+            const auto mask = -((rs2 >> i) & uint64_t{1});
+            val ^= (rs1 << i) & mask;
+        }
+        return val;
+    });
+}
+
+/// \brief Implementation of the CLMULH instruction from Zbc extension.
+/// \details Carry-less multiply (high-part)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CLMULH(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "clmulh");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        uint64_t val = 0;
+        for (uint32_t i = 1; i < XLEN; ++i) {
+            // Use a mask to make the algorithm branchless
+            const auto mask = -((rs2 >> i) & uint64_t{1});
+            val ^= (rs1 >> (XLEN - i)) & mask;
+        }
+        return val;
+    });
+}
+
+/// \brief Implementation of the CLMULR instruction from Zbc extension.
+/// \details Carry-less multiply (reversed)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CLMULR(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "clmulr");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        uint64_t val = 0;
+        for (uint32_t i = 0; i < XLEN; ++i) {
+            // Use a mask to make the algorithm branchless
+            const auto mask = -((rs2 >> i) & uint64_t{1});
+            val ^= (rs1 >> (XLEN - i - 1)) & mask;
+        }
+        return val;
+    });
+}
+
 /// \brief Implementation of the BCLR instruction from Zbs extension.
 /// \details Single-Bit Clear (Register)
 template <rd_kind rd_kind, typename STATE_ACCESS>
@@ -3867,49 +3924,58 @@ static FORCE_INLINE execute_status execute_ADD_MUL_SUB(const STATE_ACCESS a, uin
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SLL_MULH_BCLR_BINV_BSET(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLL_MULH_CLMUL_BCLR_BINV_BSET(const STATE_ACCESS a, uint64_t &pc,
+    uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_SLL_MULH_BCLR_BINV_BSET_funct7>(insn_get_funct7(insn));
+    const auto funct7 = static_cast<insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7>(insn_get_funct7(insn));
     switch (funct7) {
-        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::SLL:
+        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::SLL:
             return execute_SLL<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::MULH:
+        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::MULH:
             return execute_MULH<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::BCLR:
+        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::BCLR:
             return execute_BCLR<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::BINV:
+        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::BINV:
             return execute_BINV<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_BCLR_BINV_BSET_funct7::BSET:
+        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::BSET:
             return execute_BSET<rd_kind>(a, pc, insn);
+        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::CLMUL:
+            return execute_CLMUL<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SLT_MULHSU_SH1ADD(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLT_MULHSU_SH1ADD_CLMULR(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_SLT_MULHSU_SH1ADD_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_SLT_MULHSU_SH1ADD_funct7::SLT) {
+    const auto funct7 = static_cast<insn_SLT_MULHSU_SH1ADD_CLMULR_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SLT_MULHSU_SH1ADD_CLMULR_funct7::SLT) {
         return execute_SLT<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_SLT_MULHSU_SH1ADD_funct7::MULHSU) {
+    if (funct7 == insn_SLT_MULHSU_SH1ADD_CLMULR_funct7::MULHSU) {
         return execute_MULHSU<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_SLT_MULHSU_SH1ADD_funct7::SH1ADD) {
+    if (funct7 == insn_SLT_MULHSU_SH1ADD_CLMULR_funct7::SH1ADD) {
         return execute_SH1ADD<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SLT_MULHSU_SH1ADD_CLMULR_funct7::CLMULR) {
+        return execute_CLMULR<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SLTU_MULHU(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLTU_MULHU_CLMULH(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_SLTU_MULHU_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_SLTU_MULHU_funct7::SLTU) {
+    const auto funct7 = static_cast<insn_SLTU_MULHU_CLMULH_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SLTU_MULHU_CLMULH_funct7::SLTU) {
         return execute_SLTU<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_SLTU_MULHU_funct7::MULHU) {
+    if (funct7 == insn_SLTU_MULHU_CLMULH_funct7::MULHU) {
         return execute_MULHU<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SLTU_MULHU_CLMULH_funct7::CLMULH) {
+        return execute_CLMULH<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -5925,14 +5991,14 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(ADD_MUL_SUB_rdN):
                         status = execute_ADD_MUL_SUB<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLL_MULH_BCLR_BINV_BSET_rdN):
-                        status = execute_SLL_MULH_BCLR_BINV_BSET<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SLL_MULH_CLMUL_BCLR_BINV_BSET_rdN):
+                        status = execute_SLL_MULH_CLMUL_BCLR_BINV_BSET<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLT_MULHSU_SH1ADD_rdN):
-                        status = execute_SLT_MULHSU_SH1ADD<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SLT_MULHSU_SH1ADD_CLMULR_rdN):
+                        status = execute_SLT_MULHSU_SH1ADD_CLMULR<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLTU_MULHU_rdN):
-                        status = execute_SLTU_MULHU<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SLTU_MULHU_CLMULH_rdN):
+                        status = execute_SLTU_MULHU_CLMULH<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(XOR_DIV_SH2ADD_rdN):
                         status = execute_XOR_DIV_SH2ADD<rd_kind::xN>(a, pc, insn);
@@ -6220,14 +6286,14 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(ADD_MUL_SUB_rd0):
                         status = execute_ADD_MUL_SUB<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLL_MULH_BCLR_BINV_BSET_rd0):
-                        status = execute_SLL_MULH_BCLR_BINV_BSET<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SLL_MULH_CLMUL_BCLR_BINV_BSET_rd0):
+                        status = execute_SLL_MULH_CLMUL_BCLR_BINV_BSET<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLT_MULHSU_SH1ADD_rd0):
-                        status = execute_SLT_MULHSU_SH1ADD<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SLT_MULHSU_SH1ADD_CLMULR_rd0):
+                        status = execute_SLT_MULHSU_SH1ADD_CLMULR<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLTU_MULHU_rd0):
-                        status = execute_SLTU_MULHU<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SLTU_MULHU_CLMULH_rd0):
+                        status = execute_SLTU_MULHU_CLMULH<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(XOR_DIV_SH2ADD_rd0):
                         status = execute_XOR_DIV_SH2ADD<rd_kind::x0>(a, pc, insn);

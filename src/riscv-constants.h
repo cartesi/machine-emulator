@@ -135,7 +135,7 @@ enum MISA_shifts {
 /// \brief Supported RISC-V ISA extensions, used by the Device Tree during boot.
 /// \details See also
 /// https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/devicetree/bindings/riscv/extensions.yaml
-constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba_zbs";
+constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba_zbc_zbs";
 
 /// \brief misa masks
 enum MISA_masks : uint64_t {
@@ -675,24 +675,30 @@ enum insn_AMO_funct7_sr2 : uint32_t {
 /// \brief funct7 constants for ADD, MUL, SUB instructions
 enum insn_ADD_MUL_SUB_funct7 : uint32_t { ADD = 0b0000000, MUL = 0b0000001, SUB = 0b0100000 };
 
-/// \brief funct7 constants for SLL, MULH, BCLR, BINV, BSET instructions
-enum insn_SLL_MULH_BCLR_BINV_BSET_funct7 : uint32_t {
+/// \brief funct7 constants for SLL, MULH, CLMUL, BCLR, BINV, BSET instructions
+enum insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7 : uint32_t {
     SLL = 0b0000000,
     MULH = 0b0000001,
+    CLMUL = 0b0000101,
     BCLR = 0b0100100,
     BINV = 0b0110100,
     BSET = 0b0010100,
 };
 
-/// \brief funct7 constants for SLT, MULHSU, SH1ADD instructions
-enum insn_SLT_MULHSU_SH1ADD_funct7 : uint32_t {
+/// \brief funct7 constants for SLT, MULHSU, SH1ADD, CLMULR instructions
+enum insn_SLT_MULHSU_SH1ADD_CLMULR_funct7 : uint32_t {
     SLT = 0b0000000,
     MULHSU = 0b0000001,
     SH1ADD = 0b0010000,
+    CLMULR = 0b0000101,
 };
 
-/// \brief funct7 constants for SLTU, MULHU instructions
-enum insn_SLTU_MULHU_funct7 : uint32_t { SLTU = 0b0000000, MULHU = 0b0000001 };
+/// \brief funct7 constants for SLTU, MULHU, CLMULH instructions
+enum insn_SLTU_MULHU_CLMULH_funct7 : uint32_t {
+    SLTU = 0b0000000,
+    MULHU = 0b0000001,
+    CLMULH = 0b0000101,
+};
 
 /// \brief funct7 constants for XOR, DIV, SH2ADD instructions
 enum insn_XOR_DIV_SH2ADD_funct7 : uint32_t {

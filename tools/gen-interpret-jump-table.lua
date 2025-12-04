@@ -98,6 +98,11 @@ local insns = {
     { bits = "0010000__________110_____0111011", name = "SH3ADD.UW", rd0_special = true },
     { bits = "000010___________001_____0011011", name = "SLLI.UW", rd0_special = true },
 
+    -- Zbc extension
+    { bits = "0000101__________001_____0110011", name = "CLMUL", rd0_special = true },
+    { bits = "0000101__________011_____0110011", name = "CLMULH", rd0_special = true },
+    { bits = "0000101__________010_____0110011", name = "CLMULR", rd0_special = true },
+
     -- Zbs extension
     { bits = "0100100__________001_____0110011", name = "BCLR", rd0_special = true },
     { bits = "010010___________001_____0010011", name = "BCLRI", rd0_special = true },

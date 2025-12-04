@@ -32,12 +32,10 @@ namespace cartesi {
 #define NO_SATP_MODE_SV57 // NOLINT(cppcoreguidelines-macro-usage)
 
 /// \brief Global RISC-V constants
-enum RISCV_constants {
-    XLEN = 64,   ///< Maximum XLEN
-    FLEN = 64,   ///< Maximum FLEN
-    ASIDLEN = 0, ///< Number of implemented ASID bits
-    ASIDMAX = 16 ///< Maximum number of implemented ASID bits
-};
+constexpr uint32_t XLEN = 64;    ///< Maximum XLEN
+constexpr uint32_t FLEN = 64;    ///< Maximum FLEN
+constexpr uint32_t ASIDLEN = 0;  ///< Number of implemented ASID bits
+constexpr uint32_t ASIDMAX = 16; ///< Maximum number of implemented ASID bits
 
 /// \brief Register counts
 enum REG_COUNT { X_REG_COUNT = 32, F_REG_COUNT = 32, UARCH_X_REG_COUNT = 32 };
@@ -128,6 +126,7 @@ enum MISA_shifts {
     MISA_EXT_F_SHIFT = ('F' - 'A'),
     MISA_EXT_D_SHIFT = ('D' - 'A'),
     MISA_EXT_C_SHIFT = ('C' - 'A'),
+    MISA_EXT_B_SHIFT = ('B' - 'A'),
 
     MISA_MXL_SHIFT = (XLEN - 2)
 };
@@ -135,7 +134,8 @@ enum MISA_shifts {
 /// \brief Supported RISC-V ISA extensions, used by the Device Tree during boot.
 /// \details See also
 /// https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/devicetree/bindings/riscv/extensions.yaml
-constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba_zbc_zbs";
+/// https://gcc.gnu.org/git/?p=gcc.git;a=blob;f=gcc/config/riscv/riscv-profiles.def;hb=HEAD
+constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba_zbb_zbc_zbs";
 
 /// \brief misa masks
 enum MISA_masks : uint64_t {
@@ -147,6 +147,7 @@ enum MISA_masks : uint64_t {
     MISA_EXT_F_MASK = UINT64_C(1) << MISA_EXT_F_SHIFT, ///< Single-precision floating-point extension
     MISA_EXT_D_MASK = UINT64_C(1) << MISA_EXT_D_SHIFT, ///< Double-precision floating-point extension
     MISA_EXT_C_MASK = UINT64_C(1) << MISA_EXT_C_SHIFT, ///< Compressed extension
+    MISA_EXT_B_MASK = UINT64_C(1) << MISA_EXT_B_SHIFT, ///< Bitmanip extension
 };
 
 /// \brief misa constants
@@ -445,8 +446,8 @@ enum CARTESI_init : uint64_t {
     MCAUSE_INIT = UINT64_C(0),                                                         ///< Initial value for mcause
     MTVAL_INIT = UINT64_C(0),                                                          ///< Initial value for mtval
     MISA_INIT = (MISA_MXL_VALUE << MISA_MXL_SHIFT) | MISA_EXT_S_MASK | MISA_EXT_U_MASK | MISA_EXT_I_MASK |
-        MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK |
-        MISA_EXT_C_MASK,                                                      ///< Initial value for misa
+        MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK | MISA_EXT_C_MASK |
+        MISA_EXT_B_MASK,                                                      ///< Initial value for misa
     MIE_INIT = UINT64_C(0),                                                   ///< Initial value for mie
     MIP_INIT = UINT64_C(0),                                                   ///< Initial value for mip
     MEDELEG_INIT = UINT64_C(0),                                               ///< Initial value for medeleg
@@ -635,30 +636,53 @@ enum class CSR_address : uint32_t {
     tdata3 = 0x7a3,
 };
 
-/// \brief funct7_sr1 constants for SRLI, SRAI, BEXTI instructions
-enum insn_SRLI_SRAI_BEXTI_funct7_sr1 : uint32_t {
+/// \brief funct7_sr1 constants for SRLI, SRAI, RORI, ORC_B, REV8, BEXTI instructions
+enum class insn_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_funct7_sr1 : uint32_t {
     SRLI = 0b000000,
     SRAI = 0b010000,
+    RORI = 0b011000,
+    ORC_B = 0b001010,
+    REV8 = 0b011010,
     BEXTI = 0b010010,
 };
 
-/// \brief funct7_sr1 constants for SLLI, BCLRI, BINVI, BSETI instructions
-enum insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1 : uint32_t {
+/// \brief funct7_rs2 constants for ORC_B instructions
+enum class insn_ORC_B_funct7_rs2 : uint32_t {
+    ORC_B = 0b001010000111,
+};
+
+/// \brief funct7_rs2 constants for REV8 instructions
+enum class insn_REV8_funct7_rs2 : uint32_t {
+    REV8 = 0b011010111000,
+};
+
+/// \brief funct7_sr1 constants for SLLI, CLZ, CTZ, CPOP, SEXT.B, SEXT.H, BCLRI, BINVI, BSETI instructions
+enum class insn_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI_funct7_sr1 : uint32_t {
     SLLI = 0b000000,
+    CLZ_CTZ_CPOP_SEXT_B_SEXT_H = 0b011000,
     BCLRI = 0b010010,
     BINVI = 0b011010,
     BSETI = 0b001010,
 };
 
-/// \brief funct7 constants for SRLIW, SRAIW instructions
-enum insn_SRLIW_SRAIW_funct7 : uint32_t {
-    SRLIW = 0b0000000,
-    SRAIW = 0b0100000,
+/// \brief funct7_rs2 constants for CLZ, CTZ, CPOP, SEXT.B, SEXT.H instructions
+enum class insn_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_funct7_rs2 : uint32_t {
+    CLZ = 0b0110000'00000,
+    CTZ = 0b0110000'00001,
+    CPOP = 0b0110000'00010,
+    SEXT_B = 0b0110000'00100,
+    SEXT_H = 0b0110000'00101,
 };
 
-/// \brief The result of insn >> 27 (5 most significant bits of funct7) can be
-/// used to identify the atomic operation
-enum insn_AMO_funct7_sr2 : uint32_t {
+/// \brief funct7 constants for SRLIW, SRAIW, RORIW instructions
+enum class insn_SRLIW_SRAIW_RORIW_funct7 : uint32_t {
+    SRLIW = 0b0000000,
+    SRAIW = 0b0100000,
+    RORIW = 0b0110000,
+};
+
+/// \brief funct7_sr2 constants for AMO instructions
+enum class insn_AMO_funct7_sr2 : uint32_t {
     AMOADD = 0b00000,
     AMOSWAP = 0b00001,
     LR = 0b00010,
@@ -672,13 +696,18 @@ enum insn_AMO_funct7_sr2 : uint32_t {
     AMOMAXU = 0b11100
 };
 
-/// \brief funct7 constants for ADD, MUL, SUB instructions
-enum insn_ADD_MUL_SUB_funct7 : uint32_t { ADD = 0b0000000, MUL = 0b0000001, SUB = 0b0100000 };
+/// \brief funct7 constants for ADD, SUB, MUL instructions
+enum class insn_ADD_SUB_MUL_funct7 : uint32_t {
+    ADD = 0b0000000,
+    MUL = 0b0000001,
+    SUB = 0b0100000,
+};
 
-/// \brief funct7 constants for SLL, MULH, CLMUL, BCLR, BINV, BSET instructions
-enum insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7 : uint32_t {
+/// \brief funct7 constants for SLL, MULH, ROL, CLMUL, BCLR, BINV, BSET instructions
+enum class insn_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_funct7 : uint32_t {
     SLL = 0b0000000,
     MULH = 0b0000001,
+    ROL = 0b0110000,
     CLMUL = 0b0000101,
     BCLR = 0b0100100,
     BINV = 0b0110100,
@@ -686,7 +715,7 @@ enum insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7 : uint32_t {
 };
 
 /// \brief funct7 constants for SLT, MULHSU, SH1ADD, CLMULR instructions
-enum insn_SLT_MULHSU_SH1ADD_CLMULR_funct7 : uint32_t {
+enum class insn_SLT_MULHSU_SH1ADD_CLMULR_funct7 : uint32_t {
     SLT = 0b0000000,
     MULHSU = 0b0000001,
     SH1ADD = 0b0010000,
@@ -694,29 +723,33 @@ enum insn_SLT_MULHSU_SH1ADD_CLMULR_funct7 : uint32_t {
 };
 
 /// \brief funct7 constants for SLTU, MULHU, CLMULH instructions
-enum insn_SLTU_MULHU_CLMULH_funct7 : uint32_t {
+enum class insn_SLTU_MULHU_CLMULH_funct7 : uint32_t {
     SLTU = 0b0000000,
     MULHU = 0b0000001,
     CLMULH = 0b0000101,
 };
 
-/// \brief funct7 constants for XOR, DIV, SH2ADD instructions
-enum insn_XOR_DIV_SH2ADD_funct7 : uint32_t {
+/// \brief funct7 constants for XOR, DIV, SH2ADD, XNOR, MIN instructions
+enum class insn_XOR_DIV_SH2ADD_XNOR_MIN_funct7 : uint32_t {
     XOR = 0b0000000,
     DIV = 0b0000001,
     SH2ADD = 0b0010000,
+    XNOR = 0b0100000,
+    MIN = 0b0000101,
 };
 
-/// \brief funct7 constants for SRL, SRA, DIVU, BEXT instructions
-enum insn_SRL_SRA_DIVU_BEXT_funct7 : uint32_t {
+/// \brief funct7 constants for SRL, SRA, DIVU, MINU, ROR, BEXT instructions
+enum class insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7 : uint32_t {
     SRL = 0b0000000,
     SRA = 0b0100000,
     DIVU = 0b0000001,
+    MINU = 0b0000101,
+    ROR = 0b0110000,
     BEXT = 0b0100100,
 };
 
 /// \brief funct7 constants for floating-point instructions
-enum insn_FD_funct7 : uint32_t {
+enum class insn_FD_funct7 : uint32_t {
     FADD_S = 0b0000000,
     FADD_D = 0b0000001,
     FSUB_S = 0b0000100,
@@ -736,7 +769,7 @@ enum insn_FD_funct7 : uint32_t {
 };
 
 /// \brief funct7_rs2 constants for floating-point instructions
-enum insn_FD_funct7_rs2 : uint32_t {
+enum class insn_FD_funct7_rs2 : uint32_t {
     FCVT_W_S = 0b110000000000,
     FCVT_WU_S = 0b110000000001,
     FCVT_L_S = 0b110000000010,
@@ -761,62 +794,93 @@ enum insn_FD_funct7_rs2 : uint32_t {
     FMV_FCLASS_D = 0b111000100000
 };
 
-/// \brief rm constants for FSGNJ floating-point instructions
-enum insn_FSGN_funct3_000000000000 : uint32_t { J = 0b000000000000000, JN = 0b001000000000000, JX = 0b010000000000000 };
+/// \brief rm constants for FSGN floating-point instructions
+enum class insn_FSGN_funct3_000000000000 : uint32_t {
+    J = 0b000000000000000,
+    JN = 0b001000000000000,
+    JX = 0b010000000000000,
+};
 
 /// \brief rm constants for FMIN and FMAX floating-point instructions
-enum insn_FMIN_FMAX_funct3_000000000000 : uint32_t {
-    MIN = 0b000000000000000,
-    MAX = 0b001000000000000,
+enum class insn_FMIN_FMAX_funct3_000000000000 : uint32_t {
+    FMIN = 0b000000000000000,
+    FMAX = 0b001000000000000,
 };
 
 /// \brief rm constants for FLE, FLT, and FEQ floating-point instructions
-enum insn_FCMP_funct3_000000000000 : uint32_t {
+enum class insn_FCMP_funct3_000000000000 : uint32_t {
     LE = 0b000000000000000,
     LT = 0b001000000000000,
     EQ = 0b010000000000000,
 };
 
-/// \brief funct7 constants for OR, REM, SH3ADD instructions
-enum insn_OR_REM_SH3ADD_funct7 : uint32_t {
+/// \brief funct7 constants for OR, REM, SH3ADD, ORN, MAX instructions
+enum class insn_OR_REM_SH3ADD_ORN_MAX_funct7 : uint32_t {
     OR = 0b0000000,
     REM = 0b0000001,
     SH3ADD = 0b0010000,
+    ORN = 0b0100000,
+    MAX = 0b0000101,
 };
 
-/// \brief funct7 constants for AND, REMU instructions
-enum insn_AND_REMU_funct7 : uint32_t { AND = 0b0000000, REMU = 0b0000001 };
+/// \brief funct7 constants for AND, REMU, ANDN, MAXU instructions
+enum class insn_AND_REMU_ANDN_MAXU_funct7 : uint32_t {
+    AND = 0b0000000,
+    REMU = 0b0000001,
+    ANDN = 0b0100000,
+    MAXU = 0b0000101,
+};
 
 /// \brief funct7 constants for ADDW, SUBW, MULW, ADD.UW instructions
-enum insn_ADDW_SUBW_MULW_ADD_UW_funct7 : uint32_t {
+enum class insn_ADDW_SUBW_MULW_ADD_UW_funct7 : uint32_t {
     ADDW = 0b0000000,
     SUBW = 0b0100000,
     MULW = 0b0000001,
     ADD_UW = 0b0000100,
 };
 
-/// \brief funct7 constants for SRLW, DIVUW, SRAW instructions
-enum insn_SRLW_DIVUW_SRAW_funct7 : uint32_t { SRLW = 0b0000000, DIVUW = 0b0000001, SRAW = 0b0100000 };
+/// \brief funct7 constants for SRLW, SRAW, DIVUW, RORW instructions
+enum class insn_SRLW_SRAW_DIVUW_RORW_funct7 : uint32_t {
+    SRLW = 0b0000000,
+    SRAW = 0b0100000,
+    DIVUW = 0b0000001,
+    RORW = 0b0110000,
+};
 
-/// \brief funct7 constants for DIVW, SH2ADD.UW instructions
-enum insn_DIVW_SH2ADD_UW_funct7 : uint32_t {
+/// \brief funct7 constants for DIVW, SH2ADD.UW, ZEXT.H instructions
+enum class insn_DIVW_SH2ADD_UW_ZEXT_H_funct7 : uint32_t {
     DIVW = 0b0000001,
     SH2ADD_UW = 0b0010000,
+    ZEXT_H = 0b0000100,
 };
 
 /// \brief funct7 constants for REMW, SH3ADD.UW instructions
-enum insn_REMW_SH3ADD_UW_funct7 : uint32_t {
+enum class insn_REMW_SH3ADD_UW_funct7 : uint32_t {
     REMW = 0b0000001,
     SH3ADD_UW = 0b0010000,
 };
 
-/// \brief funct7 constants for SLLIW instructions
-enum insn_SLLIW_funct7 : uint32_t {
+/// \brief funct7 constants for SLLW, ROLW instructions
+enum class insn_SLLW_ROLW_funct7 : uint32_t {
+    SLLW = 0b0000000,
+    ROLW = 0b0110000,
+};
+
+/// \brief funct7 constants for SLLIW, CLZW, CTZW, CPOPW instructions
+enum class insn_SLLIW_CLZW_CTZW_CPOPW_funct7 : uint32_t {
     SLLIW = 0b0000000,
+    CLZW_CTZW_CPOPW = 0b0110000,
+};
+
+/// \brief rs2 constants for CLZW, CTZW, CPOPW instructions
+enum class insn_CLZW_CTZW_CPOPW_rs2 : uint32_t {
+    CLZW = 0b00000,
+    CTZW = 0b00001,
+    CPOPW = 0b00010,
 };
 
 /// \brief funct7_sr1 constants for SLLI.UW instruction
-enum insn_SLLI_UW_funct7_sr1 : uint32_t {
+enum class insn_SLLI_UW_funct7_sr1 : uint32_t {
     SLLI_UW = 0b000010,
 };
 
@@ -830,13 +894,16 @@ enum class insn_privileged : uint32_t {
 };
 
 /// \brief funct2 constants for FMADD, FMSUB, FNMADD, FMNSUB instructions
-enum insn_FM_funct2_0000000000000000000000000 : uint32_t {
+enum class insn_FM_funct2_0000000000000000000000000 : uint32_t {
     S = 0b000000000000000000000000000,
     D = 0b010000000000000000000000000
 };
 
 /// \brief rm constants for FMV and FCLASS instructions
-enum insn_FMV_FCLASS_funct3_000000000000 : uint32_t { FMV = 0b000000000000000, FCLASS = 0b001000000000000 };
+enum class insn_FMV_FCLASS_funct3_000000000000 : uint32_t {
+    FMV = 0b000000000000000,
+    FCLASS = 0b001000000000000,
+};
 
 } // namespace cartesi
 

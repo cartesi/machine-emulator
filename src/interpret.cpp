@@ -1223,6 +1223,44 @@ static FORCE_INLINE execute_status execute_jump(STATE_ACCESS /*a*/, uint64_t &pc
     return execute_status::success;
 }
 
+template <typename STATE_ACCESS, typename F>
+static FORCE_INLINE execute_status execute_unary(const STATE_ACCESS a, uint64_t &pc, uint32_t insn, const F &f) {
+    const uint32_t rd = insn_get_rd(insn);
+    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    a.write_x(rd, f(rs1));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS, typename F>
+static FORCE_INLINE execute_status execute_arithmetic(const STATE_ACCESS a, uint64_t &pc, uint32_t insn, const F &f) {
+    const uint32_t rd = insn_get_rd(insn);
+    // Load rs1 and rs2 separately to ensure evaluation order before calling f()
+    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    const uint64_t rs2 = a.read_x(insn_get_rs2(insn));
+    a.write_x(rd, f(rs1, rs2));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS, typename F>
+static FORCE_INLINE execute_status execute_arithmetic_immediate(const STATE_ACCESS a, uint64_t &pc, uint32_t insn,
+    const F &f) {
+    const uint32_t rd = insn_get_rd(insn);
+    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    const int32_t imm = insn_I_get_imm(insn);
+    a.write_x(rd, f(rs1, imm));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS, typename F>
+static FORCE_INLINE execute_status execute_arithmetic_uimmediate(const STATE_ACCESS a, uint64_t &pc, uint32_t insn,
+    const F &f) {
+    const uint32_t rd = insn_get_rd(insn);
+    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    const uint32_t uimm = insn_I_get_uimm(insn);
+    a.write_x(rd, f(rs1, uimm));
+    return advance_to_next_insn(a, pc);
+}
+
 /// \brief Execute the LR instruction.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
@@ -1566,16 +1604,12 @@ static FORCE_INLINE execute_status execute_SUBW(const STATE_ACCESS a, uint64_t &
 /// \brief Implementation of the SLLW instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLLW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
-    if (unlikely((insn & 0b11111110000000000111000001111111) != 0b00000000000000000001000000111011)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "sllw");
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        const auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (rs2 & 31));
-        return static_cast<uint64_t>(rs1w);
+        return static_cast<uint64_t>(static_cast<int32_t>(static_cast<uint32_t>(rs1) << (rs2 & 0b11111)));
     });
 }
 
@@ -1587,8 +1621,7 @@ static FORCE_INLINE execute_status execute_SRLW(const STATE_ACCESS a, uint64_t &
         return advance_to_next_insn(a, pc);
     }
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (rs2 & 31));
-        return static_cast<uint64_t>(rs1w);
+        return static_cast<uint64_t>(static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (rs2 & 0b11111)));
     });
 }
 
@@ -1600,8 +1633,7 @@ static FORCE_INLINE execute_status execute_SRAW(const STATE_ACCESS a, uint64_t &
         return advance_to_next_insn(a, pc);
     }
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        const int32_t rs1w = static_cast<int32_t>(rs1) >> (rs2 & 31);
-        return static_cast<uint64_t>(rs1w);
+        return static_cast<uint64_t>(static_cast<int32_t>(rs1) >> (rs2 & 0b11111));
     });
 }
 
@@ -1696,6 +1728,369 @@ static FORCE_INLINE execute_status execute_REMUW(const STATE_ACCESS a, uint64_t 
         }
         return static_cast<uint64_t>(static_cast<int32_t>(rs1w % rs2w));
     });
+}
+
+/// \brief Implementation of the ANDN instruction from Zbb extension.
+/// \details AND with inverted operand
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_ANDN(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "andn");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 & ~rs2; });
+}
+
+/// \brief Implementation of the ORN instruction from Zbb extension.
+/// \details OR with inverted operand
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_ORN(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "orn");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 | ~rs2; });
+}
+
+/// \brief Implementation of the XNOR instruction from Zbb extension.
+/// \details Exclusive NOR
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_XNOR(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "xnor");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t { return ~(rs1 ^ rs2); });
+}
+
+/// \brief Implementation of the CLZ instruction from Zbb extension.
+/// \details Count leading zero bits
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CLZ(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "clz");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn, [](uint64_t rs1) -> uint64_t {
+        if (rs1 == 0) [[unlikely]] {
+            return XLEN;
+        }
+        return static_cast<uint64_t>(__builtin_clzll(rs1));
+    });
+}
+
+/// \brief Implementation of the CLZW instruction from Zbb extension.
+/// \details Count leading zero bits in word
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CLZW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "clzw");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn, [](uint64_t rs1) -> uint64_t {
+        const auto rs1w = static_cast<uint32_t>(rs1);
+        if (rs1w == 0) [[unlikely]] {
+            return 32;
+        }
+        return static_cast<uint64_t>(__builtin_clz(rs1w));
+    });
+}
+
+/// \brief Implementation of the CTZ instruction from Zbb extension.
+/// \details Count trailing zero bits
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CTZ(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "ctz");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn, [](uint64_t rs1) -> uint64_t {
+        if (rs1 == 0) [[unlikely]] {
+            return XLEN;
+        }
+        return static_cast<uint64_t>(__builtin_ctzll(rs1));
+    });
+}
+
+/// \brief Implementation of the CTZW instruction from Zbb extension.
+/// \details Count trailing zero bits in word
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CTZW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "ctzw");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn, [](uint64_t rs1) -> uint64_t {
+        const auto rs1w = static_cast<uint32_t>(rs1);
+        if (rs1w == 0) [[unlikely]] {
+            return 32;
+        }
+        return static_cast<uint64_t>(__builtin_ctz(rs1w));
+    });
+}
+
+/// \brief Implementation of the CPOP instruction from Zbb extension.
+/// \details Count set bits
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CPOP(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "cpop");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn,
+        [](uint64_t rs1) -> uint64_t { return static_cast<uint64_t>(__builtin_popcountll(rs1)); });
+}
+
+/// \brief Implementation of the CPOPW instruction from Zbb extension.
+/// \details Count set bits in word
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CPOPW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "cpopw");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn,
+        [](uint64_t rs1) -> uint64_t { return static_cast<uint64_t>(__builtin_popcount(static_cast<uint32_t>(rs1))); });
+}
+
+/// \brief Implementation of the MAX instruction from Zbb extension.
+/// \details Signed maximum
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_MAX(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "max");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        if (static_cast<int64_t>(rs1) > static_cast<int64_t>(rs2)) {
+            return rs1;
+        }
+        return rs2;
+    });
+}
+
+/// \brief Implementation of the MAXU instruction from Zbb extension.
+/// \details Unsigned maximum
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_MAXU(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "maxu");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        if (rs1 > rs2) {
+            return rs1;
+        }
+        return rs2;
+    });
+}
+
+/// \brief Implementation of the MIN instruction from Zbb extension.
+/// \details Signed minimum
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_MIN(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "min");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        if (static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2)) {
+            return rs1;
+        }
+        return rs2;
+    });
+}
+
+/// \brief Implementation of the MINU instruction from Zbb extension.
+/// \details Unsigned minimum
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_MINU(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "minu");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        if (rs1 < rs2) {
+            return rs1;
+        }
+        return rs2;
+    });
+}
+
+/// \brief Implementation of the SEXT.B instruction from Zbb extension.
+/// \details Sign-extend byte
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_SEXT_B(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "sext.b");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn,
+        [](uint64_t rs1) -> uint64_t { return static_cast<uint64_t>(static_cast<int8_t>(rs1)); });
+}
+
+/// \brief Implementation of the SEXT.H instruction from Zbb extension.
+/// \details Sign-extend halfword
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_SEXT_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "sext.h");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn,
+        [](uint64_t rs1) -> uint64_t { return static_cast<uint64_t>(static_cast<int16_t>(rs1)); });
+}
+
+/// \brief Implementation of the ZEXT.H instruction from Zbb extension.
+/// \details Zero-extend halfword
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_ZEXT_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "zext.h");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn,
+        [](uint64_t rs1) -> uint64_t { return static_cast<uint64_t>(static_cast<uint16_t>(rs1)); });
+}
+
+/// \brief Implementation of the ROL instruction from Zbb extension.
+/// \details Rotate left (Register)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_ROL(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "rol");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        const auto shamt = rs2 & (XLEN - 1);
+        if (shamt == 0) [[unlikely]] {
+            return rs1;
+        }
+        return (rs1 << shamt) | (rs1 >> (XLEN - shamt));
+    });
+}
+
+/// \brief Implementation of the ROLW instruction from Zbb extension.
+/// \details Rotate Left Word (Register)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_ROLW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "rolw");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        const auto rs1w = static_cast<uint32_t>(rs1);
+        const auto shamt = rs2 & 0b11111;
+        if (shamt == 0) [[unlikely]] {
+            return static_cast<uint64_t>(static_cast<int32_t>(rs1w));
+        }
+        return static_cast<uint64_t>(static_cast<int32_t>((rs1w << shamt) | (rs1w >> (32 - shamt))));
+    });
+}
+
+/// \brief Implementation of the ROR instruction from Zbb extension.
+/// \details Rotate right (Register)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_ROR(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "ror");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        const auto shamt = rs2 & (XLEN - 1);
+        if (shamt == 0) [[unlikely]] {
+            return rs1;
+        }
+        return (rs1 >> shamt) | (rs1 << (XLEN - shamt));
+    });
+}
+
+/// \brief Implementation of the RORI instruction from Zbb extension.
+/// \details Rotate right (Immediate)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_RORI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "rori");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic_uimmediate(a, pc, insn, [](uint64_t rs1, uint32_t uimm) -> uint64_t {
+        const auto shamt = uimm & (XLEN - 1);
+        if (shamt == 0) [[unlikely]] {
+            return rs1;
+        }
+        return (rs1 >> shamt) | (rs1 << (XLEN - shamt));
+    });
+}
+
+/// \brief Implementation of the RORIW instruction from Zbb extension.
+/// \details Rotate right word (Immediate)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_RORIW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "roriw");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic_uimmediate(a, pc, insn, [](uint64_t rs1, uint32_t uimm) -> uint64_t {
+        const auto rs1w = static_cast<uint32_t>(rs1);
+        const auto shamt = uimm & 0b11111;
+        if (shamt == 0) [[unlikely]] {
+            return static_cast<uint64_t>(static_cast<int32_t>(rs1w));
+        }
+        return static_cast<uint64_t>(static_cast<int32_t>((rs1w >> shamt) | (rs1w << (32 - shamt))));
+    });
+}
+
+/// \brief Implementation of the RORW instruction from Zbb extension.
+/// \details Rotate right Word (Register)
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_RORW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "rorw");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        const auto rs1w = static_cast<uint32_t>(rs1);
+        const auto shamt = rs2 & 0b11111;
+        if (shamt == 0) [[unlikely]] {
+            return static_cast<uint64_t>(static_cast<int32_t>(rs1w));
+        }
+        return static_cast<uint64_t>(static_cast<int32_t>((rs1w >> shamt) | (rs1w << (32 - shamt))));
+    });
+}
+
+/// \brief Implementation of the ORC.B instruction from Zbb extension.
+/// \details Bitwise OR-Combine, byte granule
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_ORC_B(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "orc.b");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn, [](uint64_t rs1) -> uint64_t {
+        // Efficient implementation without branches or loops
+        // Compress each byte to single bit
+        uint64_t val = rs1;
+        val |= val >> 4;
+        val |= val >> 2;
+        val |= val >> 1;
+        val &= UINT64_C(0x0101010101010101);
+        // Uncompress each byte
+        val |= val << 1;
+        val |= val << 2;
+        val |= val << 4;
+        return val;
+    });
+}
+
+/// \brief Implementation of the REV8 instruction from Zbb extension.
+/// \details Byte-reverse register
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_REV8(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "rev8");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_unary(a, pc, insn, [](uint64_t rs1) -> uint64_t { return __builtin_bswap64(rs1); });
 }
 
 /// \brief Implementation of the SH1ADD instruction from Zba extension.
@@ -2929,18 +3324,6 @@ static FORCE_INLINE execute_status execute_FENCE_I(const STATE_ACCESS a, uint64_
     return advance_to_next_insn(a, pc);
 }
 
-template <typename STATE_ACCESS, typename F>
-static FORCE_INLINE execute_status execute_arithmetic(const STATE_ACCESS a, uint64_t &pc, uint32_t insn, const F &f) {
-    const uint32_t rd = insn_get_rd(insn);
-    // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
-    // the order of evaluation of arguments in a function call is undefined.
-    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-    const uint64_t rs2 = a.read_x(insn_get_rs2(insn));
-    // Now we can safely invoke f()
-    a.write_x(rd, f(rs1, rs2));
-    return advance_to_next_insn(a, pc);
-}
-
 /// \brief Implementation of the ADD instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_ADD(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
@@ -3176,26 +3559,6 @@ static FORCE_INLINE execute_status execute_REMU(const STATE_ACCESS a, uint64_t &
     });
 }
 
-template <typename STATE_ACCESS, typename F>
-static FORCE_INLINE execute_status execute_arithmetic_immediate(const STATE_ACCESS a, uint64_t &pc, uint32_t insn,
-    const F &f) {
-    const uint32_t rd = insn_get_rd(insn);
-    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-    const int32_t imm = insn_I_get_imm(insn);
-    a.write_x(rd, f(rs1, imm));
-    return advance_to_next_insn(a, pc);
-}
-
-template <typename STATE_ACCESS, typename F>
-static FORCE_INLINE execute_status execute_arithmetic_uimmediate(const STATE_ACCESS a, uint64_t &pc, uint32_t insn,
-    const F &f) {
-    const uint32_t rd = insn_get_rd(insn);
-    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-    const uint32_t uimm = insn_I_get_uimm(insn);
-    a.write_x(rd, f(rs1, uimm));
-    return advance_to_next_insn(a, pc);
-}
-
 /// \brief Implementation of the SRLI instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRLI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
@@ -3365,8 +3728,7 @@ static FORCE_INLINE execute_status execute_SRAIW(const STATE_ACCESS a, uint64_t 
         return advance_to_next_insn(a, pc);
     }
     return execute_arithmetic_uimmediate(a, pc, insn, [](uint64_t rs1, uint32_t uimm) -> uint64_t {
-        const int32_t rs1w = static_cast<int32_t>(rs1) >> (uimm & 0b11111);
-        return static_cast<uint64_t>(rs1w);
+        return static_cast<uint64_t>(static_cast<int32_t>(rs1) >> (uimm & 0b11111));
     });
 }
 
@@ -3800,49 +4162,82 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(const STATE_ACCESS a, uint
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SLLI_BCLRI_BINVI_BSETI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
-    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7_sr1 = static_cast<insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1>(insn_get_funct7_sr1(insn));
-    if (funct7_sr1 == insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1::SLLI) {
-        return execute_SLLI<rd_kind>(a, pc, insn);
-    }
-    if (funct7_sr1 == insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1::BCLRI) {
-        return execute_BCLRI<rd_kind>(a, pc, insn);
-    }
-    if (funct7_sr1 == insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1::BINVI) {
-        return execute_BINVI<rd_kind>(a, pc, insn);
-    }
-    if (funct7_sr1 == insn_SLLI_BCLRI_BINVI_BSETI_funct7_sr1::BSETI) {
-        return execute_BSETI<rd_kind>(a, pc, insn);
+static FORCE_INLINE execute_status execute_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI(const STATE_ACCESS a,
+    uint64_t &pc, uint32_t insn) {
+    const auto funct7_sr1 =
+        static_cast<insn_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI_funct7_sr1>(insn_get_funct7_sr1(insn));
+    switch (funct7_sr1) {
+        case insn_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI_funct7_sr1::SLLI:
+            return execute_SLLI<rd_kind>(a, pc, insn);
+        case insn_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI_funct7_sr1::CLZ_CTZ_CPOP_SEXT_B_SEXT_H: {
+            const auto funct7_rs2 = static_cast<insn_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_funct7_rs2>(insn_get_funct7_rs2(insn));
+            switch (funct7_rs2) {
+                case insn_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_funct7_rs2::CLZ:
+                    return execute_CLZ<rd_kind>(a, pc, insn);
+                case insn_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_funct7_rs2::CTZ:
+                    return execute_CTZ<rd_kind>(a, pc, insn);
+                case insn_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_funct7_rs2::CPOP:
+                    return execute_CPOP<rd_kind>(a, pc, insn);
+                case insn_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_funct7_rs2::SEXT_B:
+                    return execute_SEXT_B<rd_kind>(a, pc, insn);
+                case insn_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_funct7_rs2::SEXT_H:
+                    return execute_SEXT_H<rd_kind>(a, pc, insn);
+            }
+            break;
+        }
+        case insn_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI_funct7_sr1::BCLRI:
+            return execute_BCLRI<rd_kind>(a, pc, insn);
+        case insn_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI_funct7_sr1::BINVI:
+            return execute_BINVI<rd_kind>(a, pc, insn);
+        case insn_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI_funct7_sr1::BSETI:
+            return execute_BSETI<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SRLI_SRAI_BEXTI(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
-    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7_sr1 = static_cast<insn_SRLI_SRAI_BEXTI_funct7_sr1>(insn_get_funct7_sr1(insn));
-    if (funct7_sr1 == insn_SRLI_SRAI_BEXTI_funct7_sr1::SRLI) {
-        return execute_SRLI<rd_kind>(a, pc, insn);
-    }
-    if (funct7_sr1 == insn_SRLI_SRAI_BEXTI_funct7_sr1::SRAI) {
-        return execute_SRAI<rd_kind>(a, pc, insn);
-    }
-    if (funct7_sr1 == insn_SRLI_SRAI_BEXTI_funct7_sr1::BEXTI) {
-        return execute_BEXTI<rd_kind>(a, pc, insn);
+static FORCE_INLINE execute_status execute_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI(const STATE_ACCESS a, uint64_t &pc,
+    uint32_t insn) {
+    const auto funct7_sr1 = static_cast<insn_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_funct7_sr1>(insn_get_funct7_sr1(insn));
+    switch (funct7_sr1) {
+        case insn_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_funct7_sr1::SRLI:
+            return execute_SRLI<rd_kind>(a, pc, insn);
+        case insn_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_funct7_sr1::SRAI:
+            return execute_SRAI<rd_kind>(a, pc, insn);
+        case insn_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_funct7_sr1::RORI:
+            return execute_RORI<rd_kind>(a, pc, insn);
+        case insn_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_funct7_sr1::ORC_B: {
+            const auto funct7_rs2 = static_cast<insn_ORC_B_funct7_rs2>(insn_get_funct7_rs2(insn));
+            if (funct7_rs2 == insn_ORC_B_funct7_rs2::ORC_B) {
+                return execute_ORC_B<rd_kind>(a, pc, insn);
+            }
+            break;
+        }
+        case insn_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_funct7_sr1::REV8: {
+            const auto funct7_rs2 = static_cast<insn_REV8_funct7_rs2>(insn_get_funct7_rs2(insn));
+            if (funct7_rs2 == insn_REV8_funct7_rs2::REV8) {
+                return execute_REV8<rd_kind>(a, pc, insn);
+            }
+            break;
+        }
+        case insn_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_funct7_sr1::BEXTI:
+            return execute_BEXTI<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SRLIW_SRAIW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRLIW_SRAIW_RORIW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_SRLIW_SRAIW_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_SRLIW_SRAIW_funct7::SRLIW) {
+    const auto funct7 = static_cast<insn_SRLIW_SRAIW_RORIW_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SRLIW_SRAIW_RORIW_funct7::SRLIW) {
         return execute_SRLIW<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_SRLIW_SRAIW_funct7::SRAIW) {
+    if (funct7 == insn_SRLIW_SRAIW_RORIW_funct7::SRAIW) {
         return execute_SRAIW<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SRLIW_SRAIW_RORIW_funct7::RORIW) {
+        return execute_RORIW<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -3872,9 +4267,8 @@ static FORCE_INLINE execute_status execute_AMO_W(const STATE_ACCESS a, uint64_t 
             return execute_AMOMINU_W(a, pc, mcycle, insn);
         case insn_AMO_funct7_sr2::AMOMAXU:
             return execute_AMOMAXU_W(a, pc, mcycle, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -3902,45 +4296,45 @@ static FORCE_INLINE execute_status execute_AMO_D(const STATE_ACCESS a, uint64_t 
             return execute_AMOMINU_D(a, pc, mcycle, insn);
         case insn_AMO_funct7_sr2::AMOMAXU:
             return execute_AMOMAXU_D(a, pc, mcycle, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_ADD_MUL_SUB(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_ADD_SUB_MUL(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_ADD_MUL_SUB_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_ADD_MUL_SUB_funct7::ADD) {
+    const auto funct7 = static_cast<insn_ADD_SUB_MUL_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_ADD_SUB_MUL_funct7::ADD) {
         return execute_ADD<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_ADD_MUL_SUB_funct7::MUL) {
+    if (funct7 == insn_ADD_SUB_MUL_funct7::MUL) {
         return execute_MUL<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_ADD_MUL_SUB_funct7::SUB) {
+    if (funct7 == insn_ADD_SUB_MUL_funct7::SUB) {
         return execute_SUB<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SLL_MULH_CLMUL_BCLR_BINV_BSET(const STATE_ACCESS a, uint64_t &pc,
+static FORCE_INLINE execute_status execute_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET(const STATE_ACCESS a, uint64_t &pc,
     uint32_t insn) {
-    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7>(insn_get_funct7(insn));
+    const auto funct7 = static_cast<insn_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_funct7>(insn_get_funct7(insn));
     switch (funct7) {
-        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::SLL:
+        case insn_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_funct7::SLL:
             return execute_SLL<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::MULH:
+        case insn_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_funct7::MULH:
             return execute_MULH<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::BCLR:
-            return execute_BCLR<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::BINV:
-            return execute_BINV<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::BSET:
-            return execute_BSET<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_CLMUL_BCLR_BINV_BSET_funct7::CLMUL:
+        case insn_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_funct7::ROL:
+            return execute_ROL<rd_kind>(a, pc, insn);
+        case insn_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_funct7::CLMUL:
             return execute_CLMUL<rd_kind>(a, pc, insn);
+        case insn_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_funct7::BCLR:
+            return execute_BCLR<rd_kind>(a, pc, insn);
+        case insn_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_funct7::BINV:
+            return execute_BINV<rd_kind>(a, pc, insn);
+        case insn_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_funct7::BSET:
+            return execute_BSET<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -3981,65 +4375,77 @@ static FORCE_INLINE execute_status execute_SLTU_MULHU_CLMULH(const STATE_ACCESS 
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_XOR_DIV_SH2ADD(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
-    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_XOR_DIV_SH2ADD_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_XOR_DIV_SH2ADD_funct7::XOR) {
-        return execute_XOR<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_XOR_DIV_SH2ADD_funct7::DIV) {
-        return execute_DIV<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_XOR_DIV_SH2ADD_funct7::SH2ADD) {
-        return execute_SH2ADD<rd_kind>(a, pc, insn);
-    }
-    return raise_illegal_insn_exception(a, pc, insn);
-}
-
-template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SRL_SRA_DIVU_BEXT(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
-    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_SRL_SRA_DIVU_BEXT_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_SRL_SRA_DIVU_BEXT_funct7::SRL) {
-        return execute_SRL<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_SRL_SRA_DIVU_BEXT_funct7::SRA) {
-        return execute_SRA<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_SRL_SRA_DIVU_BEXT_funct7::DIVU) {
-        return execute_DIVU<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_SRL_SRA_DIVU_BEXT_funct7::BEXT) {
-        return execute_BEXT<rd_kind>(a, pc, insn);
+static FORCE_INLINE execute_status execute_XOR_DIV_SH2ADD_XNOR_MIN(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    const auto funct7 = static_cast<insn_XOR_DIV_SH2ADD_XNOR_MIN_funct7>(insn_get_funct7(insn));
+    switch (funct7) {
+        case insn_XOR_DIV_SH2ADD_XNOR_MIN_funct7::XOR:
+            return execute_XOR<rd_kind>(a, pc, insn);
+        case insn_XOR_DIV_SH2ADD_XNOR_MIN_funct7::DIV:
+            return execute_DIV<rd_kind>(a, pc, insn);
+        case insn_XOR_DIV_SH2ADD_XNOR_MIN_funct7::SH2ADD:
+            return execute_SH2ADD<rd_kind>(a, pc, insn);
+        case insn_XOR_DIV_SH2ADD_XNOR_MIN_funct7::XNOR:
+            return execute_XNOR<rd_kind>(a, pc, insn);
+        case insn_XOR_DIV_SH2ADD_XNOR_MIN_funct7::MIN:
+            return execute_MIN<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_OR_REM_SH3ADD(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
-    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_OR_REM_SH3ADD_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_OR_REM_SH3ADD_funct7::OR) {
-        return execute_OR<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_OR_REM_SH3ADD_funct7::REM) {
-        return execute_REM<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_OR_REM_SH3ADD_funct7::SH3ADD) {
-        return execute_SH3ADD<rd_kind>(a, pc, insn);
+static FORCE_INLINE execute_status execute_SRL_SRA_DIVU_MINU_ROR_BEXT(const STATE_ACCESS a, uint64_t &pc,
+    uint32_t insn) {
+    const auto funct7 = static_cast<insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7>(insn_get_funct7(insn));
+    switch (funct7) {
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::SRL:
+            return execute_SRL<rd_kind>(a, pc, insn);
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::SRA:
+            return execute_SRA<rd_kind>(a, pc, insn);
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::DIVU:
+            return execute_DIVU<rd_kind>(a, pc, insn);
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::MINU:
+            return execute_MINU<rd_kind>(a, pc, insn);
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::ROR:
+            return execute_ROR<rd_kind>(a, pc, insn);
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::BEXT:
+            return execute_BEXT<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AND_REMU(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_OR_REM_SH3ADD_ORN_MAX(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    const auto funct7 = static_cast<insn_OR_REM_SH3ADD_ORN_MAX_funct7>(insn_get_funct7(insn));
+    switch (funct7) {
+        case insn_OR_REM_SH3ADD_ORN_MAX_funct7::OR:
+            return execute_OR<rd_kind>(a, pc, insn);
+        case insn_OR_REM_SH3ADD_ORN_MAX_funct7::REM:
+            return execute_REM<rd_kind>(a, pc, insn);
+        case insn_OR_REM_SH3ADD_ORN_MAX_funct7::SH3ADD:
+            return execute_SH3ADD<rd_kind>(a, pc, insn);
+        case insn_OR_REM_SH3ADD_ORN_MAX_funct7::ORN:
+            return execute_ORN<rd_kind>(a, pc, insn);
+        case insn_OR_REM_SH3ADD_ORN_MAX_funct7::MAX:
+            return execute_MAX<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_AND_REMU_ANDN_MAXU(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_AND_REMU_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_AND_REMU_funct7::AND) {
+    const auto funct7 = static_cast<insn_AND_REMU_ANDN_MAXU_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_AND_REMU_ANDN_MAXU_funct7::AND) {
         return execute_AND<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_AND_REMU_funct7::REMU) {
+    if (funct7 == insn_AND_REMU_ANDN_MAXU_funct7::REMU) {
         return execute_REMU<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_AND_REMU_ANDN_MAXU_funct7::ANDN) {
+        return execute_ANDN<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_AND_REMU_ANDN_MAXU_funct7::MAXU) {
+        return execute_MAXU<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -4064,30 +4470,49 @@ static FORCE_INLINE execute_status execute_ADDW_SUBW_MULW_ADD_UW(const STATE_ACC
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SRLW_DIVUW_SRAW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLLW_ROLW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_SRLW_DIVUW_SRAW_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_SRLW_DIVUW_SRAW_funct7::SRLW) {
-        return execute_SRLW<rd_kind>(a, pc, insn);
+    const auto funct7 = static_cast<insn_SLLW_ROLW_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SLLW_ROLW_funct7::SLLW) {
+        return execute_SLLW<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_SRLW_DIVUW_SRAW_funct7::DIVUW) {
-        return execute_DIVUW<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_SRLW_DIVUW_SRAW_funct7::SRAW) {
-        return execute_SRAW<rd_kind>(a, pc, insn);
+    if (funct7 == insn_SLLW_ROLW_funct7::ROLW) {
+        return execute_ROLW<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_DIVW_SH2ADD_UW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SRLW_SRAW_DIVUW_RORW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_DIVW_SH2ADD_UW_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_DIVW_SH2ADD_UW_funct7::DIVW) {
+    const auto funct7 = static_cast<insn_SRLW_SRAW_DIVUW_RORW_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SRLW_SRAW_DIVUW_RORW_funct7::SRLW) {
+        return execute_SRLW<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SRLW_SRAW_DIVUW_RORW_funct7::SRAW) {
+        return execute_SRAW<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SRLW_SRAW_DIVUW_RORW_funct7::DIVUW) {
+        return execute_DIVUW<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SRLW_SRAW_DIVUW_RORW_funct7::RORW) {
+        return execute_RORW<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_DIVW_SH2ADD_UW_ZEXT_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_DIVW_SH2ADD_UW_ZEXT_H_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_DIVW_SH2ADD_UW_ZEXT_H_funct7::DIVW) {
         return execute_DIVW<rd_kind>(a, pc, insn);
     }
-    if (funct7 == insn_DIVW_SH2ADD_UW_funct7::SH2ADD_UW) {
+    if (funct7 == insn_DIVW_SH2ADD_UW_ZEXT_H_funct7::SH2ADD_UW) {
         return execute_SH2ADD_UW<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_DIVW_SH2ADD_UW_ZEXT_H_funct7::ZEXT_H) {
+        return execute_ZEXT_H<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -4106,15 +4531,29 @@ static FORCE_INLINE execute_status execute_REMW_SH3ADD_UW(const STATE_ACCESS a, 
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SLLIW_SLLI_UW(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SLLIW_SLLI_UW_CLZW_CTZW_CPOPW(const STATE_ACCESS a, uint64_t &pc,
+    uint32_t insn) {
     // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7_sr1 = insn_get_funct7_sr1(insn);
-    if (funct7_sr1 == insn_SLLI_UW_funct7_sr1::SLLI_UW) {
-        return execute_SLLI_UW<rd_kind>(a, pc, insn);
-    }
-    const auto funct7 = insn_get_funct7(insn);
-    if (funct7 == insn_SLLIW_funct7::SLLIW) {
+    const auto funct7 = static_cast<insn_SLLIW_CLZW_CTZW_CPOPW_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SLLIW_CLZW_CTZW_CPOPW_funct7::SLLIW) {
         return execute_SLLIW<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SLLIW_CLZW_CTZW_CPOPW_funct7::CLZW_CTZW_CPOPW) {
+        const auto rs2 = static_cast<insn_CLZW_CTZW_CPOPW_rs2>(insn_get_rs2(insn));
+        if (rs2 == insn_CLZW_CTZW_CPOPW_rs2::CLZW) {
+            return execute_CLZW<rd_kind>(a, pc, insn);
+        }
+        if (rs2 == insn_CLZW_CTZW_CPOPW_rs2::CTZW) {
+            return execute_CTZW<rd_kind>(a, pc, insn);
+        }
+        if (rs2 == insn_CLZW_CTZW_CPOPW_rs2::CPOPW) {
+            return execute_CPOPW<rd_kind>(a, pc, insn);
+        }
+    } else {
+        const auto funct7_sr1 = static_cast<insn_SLLI_UW_funct7_sr1>(insn_get_funct7_sr1(insn));
+        if (funct7_sr1 == insn_SLLI_UW_funct7_sr1::SLLI_UW) {
+            return execute_SLLI_UW<rd_kind>(a, pc, insn);
+        }
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -4349,9 +4788,8 @@ static FORCE_INLINE execute_status execute_FMADD(const STATE_ACCESS a, uint64_t 
             return execute_FMADD_S(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FMADD_D(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -4383,9 +4821,8 @@ static FORCE_INLINE execute_status execute_FMSUB(const STATE_ACCESS a, uint64_t 
             return execute_FMSUB_S(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FMSUB_D(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -4419,9 +4856,8 @@ static FORCE_INLINE execute_status execute_FNMADD(const STATE_ACCESS a, uint64_t
             return execute_FNMADD_S(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FNMADD_D(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -4453,9 +4889,8 @@ static FORCE_INLINE execute_status execute_FNMSUB(const STATE_ACCESS a, uint64_t
             return execute_FNMSUB_S(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FNMSUB_D(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -4611,9 +5046,8 @@ static FORCE_INLINE execute_status execute_FSGN_S(const STATE_ACCESS a, uint64_t
             return execute_FSGNJN_S(a, pc, insn);
         case insn_FSGN_funct3_000000000000::JX:
             return execute_FSGNJX_S(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -4652,9 +5086,8 @@ static FORCE_INLINE execute_status execute_FSGN_D(const STATE_ACCESS a, uint64_t
             return execute_FSGNJN_D(a, pc, insn);
         case insn_FSGN_funct3_000000000000::JX:
             return execute_FSGNJX_D(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -4674,13 +5107,12 @@ static FORCE_INLINE execute_status execute_FMAX_S(const STATE_ACCESS a, uint64_t
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMINMAX_S(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     switch (static_cast<insn_FMIN_FMAX_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
-        case insn_FMIN_FMAX_funct3_000000000000::MIN:
+        case insn_FMIN_FMAX_funct3_000000000000::FMIN:
             return execute_FMIN_S(a, pc, insn);
-        case insn_FMIN_FMAX_funct3_000000000000::MAX:
+        case insn_FMIN_FMAX_funct3_000000000000::FMAX:
             return execute_FMAX_S(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -4700,13 +5132,12 @@ static FORCE_INLINE execute_status execute_FMAX_D(const STATE_ACCESS a, uint64_t
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMINMAX_D(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     switch (static_cast<insn_FMIN_FMAX_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
-        case insn_FMIN_FMAX_funct3_000000000000::MIN:
+        case insn_FMIN_FMAX_funct3_000000000000::FMIN:
             return execute_FMIN_D(a, pc, insn);
-        case insn_FMIN_FMAX_funct3_000000000000::MAX:
+        case insn_FMIN_FMAX_funct3_000000000000::FMAX:
             return execute_FMAX_D(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename ST, typename DT, typename STATE_ACCESS, typename F>
@@ -4838,9 +5269,8 @@ static FORCE_INLINE execute_status execute_FCMP_S(const STATE_ACCESS a, uint64_t
             return execute_FLE_S(a, pc, insn);
         case insn_FCMP_funct3_000000000000::EQ:
             return execute_FEQ_S(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -4876,9 +5306,8 @@ static FORCE_INLINE execute_status execute_FCMP_D(const STATE_ACCESS a, uint64_t
             return execute_FLE_D(a, pc, insn);
         case insn_FCMP_funct3_000000000000::EQ:
             return execute_FEQ_D(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -5072,9 +5501,8 @@ static FORCE_INLINE execute_status execute_FMV_FCLASS_S(const STATE_ACCESS a, ui
             return execute_FMV_X_W(a, pc, insn);
         case insn_FMV_FCLASS_funct3_000000000000::FCLASS:
             return execute_FCLASS_S(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -5102,9 +5530,8 @@ static FORCE_INLINE execute_status execute_FMV_FCLASS_D(const STATE_ACCESS a, ui
             return execute_FMV_X_D(a, pc, insn);
         case insn_FMV_FCLASS_funct3_000000000000::FCLASS:
             return execute_FCLASS_D(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -5154,9 +5581,8 @@ static FORCE_INLINE execute_status execute_FCVT_FMV_FCLASS(const STATE_ACCESS a,
             return execute_FMV_FCLASS_S(a, pc, insn);
         case insn_FD_funct7_rs2::FMV_FCLASS_D:
             return execute_FMV_FCLASS_D(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
     }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -5982,17 +6408,17 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(ANDI_rdN):
                         status = execute_ANDI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLI_BCLRI_BINVI_BSETI_rdN):
-                        status = execute_SLLI_BCLRI_BINVI_BSETI<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI_rdN):
+                        status = execute_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLI_SRAI_BEXTI_rdN):
-                        status = execute_SRLI_SRAI_BEXTI<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_rdN):
+                        status = execute_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(ADD_MUL_SUB_rdN):
-                        status = execute_ADD_MUL_SUB<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(ADD_SUB_MUL_rdN):
+                        status = execute_ADD_SUB_MUL<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLL_MULH_CLMUL_BCLR_BINV_BSET_rdN):
-                        status = execute_SLL_MULH_CLMUL_BCLR_BINV_BSET<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_rdN):
+                        status = execute_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(SLT_MULHSU_SH1ADD_CLMULR_rdN):
                         status = execute_SLT_MULHSU_SH1ADD_CLMULR<rd_kind::xN>(a, pc, insn);
@@ -6000,38 +6426,38 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(SLTU_MULHU_CLMULH_rdN):
                         status = execute_SLTU_MULHU_CLMULH<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(XOR_DIV_SH2ADD_rdN):
-                        status = execute_XOR_DIV_SH2ADD<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(XOR_DIV_SH2ADD_XNOR_MIN_rdN):
+                        status = execute_XOR_DIV_SH2ADD_XNOR_MIN<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRL_SRA_DIVU_BEXT_rdN):
-                        status = execute_SRL_SRA_DIVU_BEXT<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SRL_SRA_DIVU_MINU_ROR_BEXT_rdN):
+                        status = execute_SRL_SRA_DIVU_MINU_ROR_BEXT<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(OR_REM_SH3ADD_rdN):
-                        status = execute_OR_REM_SH3ADD<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(OR_REM_SH3ADD_ORN_MAX_rdN):
+                        status = execute_OR_REM_SH3ADD_ORN_MAX<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(AND_REMU_rdN):
-                        status = execute_AND_REMU<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(AND_REMU_ANDN_MAXU_rdN):
+                        status = execute_AND_REMU_ANDN_MAXU<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADDIW_rdN):
                         status = execute_ADDIW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLIW_SLLI_UW_rdN):
-                        status = execute_SLLIW_SLLI_UW<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SLLIW_SLLI_UW_CLZW_CTZW_CPOPW_rdN):
+                        status = execute_SLLIW_SLLI_UW_CLZW_CTZW_CPOPW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLIW_SRAIW_rdN):
-                        status = execute_SRLIW_SRAIW<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SRLIW_SRAIW_RORIW_rdN):
+                        status = execute_SRLIW_SRAIW_RORIW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADDW_SUBW_MULW_ADD_UW_rdN):
                         status = execute_ADDW_SUBW_MULW_ADD_UW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLW_rdN):
-                        status = execute_SLLW<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SLLW_ROLW_rdN):
+                        status = execute_SLLW_ROLW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLW_DIVUW_SRAW_rdN):
-                        status = execute_SRLW_DIVUW_SRAW<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SRLW_SRAW_DIVUW_RORW_rdN):
+                        status = execute_SRLW_SRAW_DIVUW_RORW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(DIVW_SH2ADD_UW_rdN):
-                        status = execute_DIVW_SH2ADD_UW<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(DIVW_SH2ADD_UW_ZEXT_H_rdN):
+                        status = execute_DIVW_SH2ADD_UW_ZEXT_H<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(REMW_SH3ADD_UW_rdN):
                         status = execute_REMW_SH3ADD_UW<rd_kind::xN>(a, pc, insn);
@@ -6277,17 +6703,17 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(ANDI_rd0):
                         status = execute_ANDI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLI_BCLRI_BINVI_BSETI_rd0):
-                        status = execute_SLLI_BCLRI_BINVI_BSETI<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI_rd0):
+                        status = execute_SLLI_CLZ_CTZ_CPOP_SEXT_B_SEXT_H_BCLRI_BINVI_BSETI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLI_SRAI_BEXTI_rd0):
-                        status = execute_SRLI_SRAI_BEXTI<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SRLI_SRAI_RORI_ORC_B_REV8_BEXTI_rd0):
+                        status = execute_SRLI_SRAI_RORI_ORC_B_REV8_BEXTI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(ADD_MUL_SUB_rd0):
-                        status = execute_ADD_MUL_SUB<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(ADD_SUB_MUL_rd0):
+                        status = execute_ADD_SUB_MUL<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLL_MULH_CLMUL_BCLR_BINV_BSET_rd0):
-                        status = execute_SLL_MULH_CLMUL_BCLR_BINV_BSET<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET_rd0):
+                        status = execute_SLL_MULH_ROL_CLMUL_BCLR_BINV_BSET<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(SLT_MULHSU_SH1ADD_CLMULR_rd0):
                         status = execute_SLT_MULHSU_SH1ADD_CLMULR<rd_kind::x0>(a, pc, insn);
@@ -6295,38 +6721,38 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(SLTU_MULHU_CLMULH_rd0):
                         status = execute_SLTU_MULHU_CLMULH<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(XOR_DIV_SH2ADD_rd0):
-                        status = execute_XOR_DIV_SH2ADD<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(XOR_DIV_SH2ADD_XNOR_MIN_rd0):
+                        status = execute_XOR_DIV_SH2ADD_XNOR_MIN<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRL_SRA_DIVU_BEXT_rd0):
-                        status = execute_SRL_SRA_DIVU_BEXT<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SRL_SRA_DIVU_MINU_ROR_BEXT_rd0):
+                        status = execute_SRL_SRA_DIVU_MINU_ROR_BEXT<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(OR_REM_SH3ADD_rd0):
-                        status = execute_OR_REM_SH3ADD<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(OR_REM_SH3ADD_ORN_MAX_rd0):
+                        status = execute_OR_REM_SH3ADD_ORN_MAX<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(AND_REMU_rd0):
-                        status = execute_AND_REMU<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(AND_REMU_ANDN_MAXU_rd0):
+                        status = execute_AND_REMU_ANDN_MAXU<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADDIW_rd0):
                         status = execute_ADDIW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLIW_SLLI_UW_rd0):
-                        status = execute_SLLIW_SLLI_UW<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SLLIW_SLLI_UW_CLZW_CTZW_CPOPW_rd0):
+                        status = execute_SLLIW_SLLI_UW_CLZW_CTZW_CPOPW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLIW_SRAIW_rd0):
-                        status = execute_SRLIW_SRAIW<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SRLIW_SRAIW_RORIW_rd0):
+                        status = execute_SRLIW_SRAIW_RORIW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADDW_SUBW_MULW_ADD_UW_rd0):
                         status = execute_ADDW_SUBW_MULW_ADD_UW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLW_rd0):
-                        status = execute_SLLW<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SLLW_ROLW_rd0):
+                        status = execute_SLLW_ROLW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLW_DIVUW_SRAW_rd0):
-                        status = execute_SRLW_DIVUW_SRAW<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SRLW_SRAW_DIVUW_RORW_rd0):
+                        status = execute_SRLW_SRAW_DIVUW_RORW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(DIVW_SH2ADD_UW_rd0):
-                        status = execute_DIVW_SH2ADD_UW<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(DIVW_SH2ADD_UW_ZEXT_H_rd0):
+                        status = execute_DIVW_SH2ADD_UW_ZEXT_H<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(REMW_SH3ADD_UW_rd0):
                         status = execute_REMW_SH3ADD_UW<rd_kind::x0>(a, pc, insn);

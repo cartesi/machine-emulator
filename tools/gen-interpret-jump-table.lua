@@ -98,6 +98,32 @@ local insns = {
     { bits = "0010000__________110_____0111011", name = "SH3ADD.UW", rd0_special = true },
     { bits = "000010___________001_____0011011", name = "SLLI.UW", rd0_special = true },
 
+    -- Zbb extension
+    { bits = "0100000__________111_____0110011", name = "ANDN", rd0_special = true },
+    { bits = "0100000__________110_____0110011", name = "ORN", rd0_special = true },
+    { bits = "0100000__________100_____0110011", name = "XNOR", rd0_special = true },
+    { bits = "011000000000_____001_____0010011", name = "CLZ", rd0_special = true },
+    { bits = "011000000000_____001_____0011011", name = "CLZW", rd0_special = true },
+    { bits = "011000000001_____001_____0010011", name = "CTZ", rd0_special = true },
+    { bits = "011000000001_____001_____0011011", name = "CTZW", rd0_special = true },
+    { bits = "011000000010_____001_____0010011", name = "CPOP", rd0_special = true },
+    { bits = "011000000010_____001_____0011011", name = "CPOPW", rd0_special = true },
+    { bits = "0000101__________110_____0110011", name = "MAX", rd0_special = true },
+    { bits = "0000101__________111_____0110011", name = "MAXU", rd0_special = true },
+    { bits = "0000101__________100_____0110011", name = "MIN", rd0_special = true },
+    { bits = "0000101__________101_____0110011", name = "MINU", rd0_special = true },
+    { bits = "011000000100_____001_____0010011", name = "SEXT.B", rd0_special = true },
+    { bits = "011000000101_____001_____0010011", name = "SEXT.H", rd0_special = true },
+    { bits = "000010000000_____100_____0111011", name = "ZEXT.H", rd0_special = true },
+    { bits = "0110000__________001_____0110011", name = "ROL", rd0_special = true },
+    { bits = "0110000__________001_____0111011", name = "ROLW", rd0_special = true },
+    { bits = "0110000__________101_____0110011", name = "ROR", rd0_special = true },
+    { bits = "011000___________101_____0010011", name = "RORI", rd0_special = true },
+    { bits = "0110000__________101_____0011011", name = "RORIW", rd0_special = true },
+    { bits = "0110000__________101_____0111011", name = "RORW", rd0_special = true },
+    { bits = "001010000111_____101_____0010011", name = "ORC.B", rd0_special = true },
+    { bits = "011010111000_____101_____0010011", name = "REV8", rd0_special = true },
+
     -- Zbc extension
     { bits = "0000101__________001_____0110011", name = "CLMUL", rd0_special = true },
     { bits = "0000101__________011_____0110011", name = "CLMULH", rd0_special = true },
@@ -424,10 +450,6 @@ end
 
 -- Table use to rename a group of instructions to a single name.
 local group_names = {
-    -- I
-    ["ADD|SUB|MUL"] = "ADD_MUL_SUB",
-    ["SRL|SRA|DIVU"] = "SRL_DIVU_SRA",
-    ["SRLW|SRAW|DIVUW"] = "SRLW_DIVUW_SRAW",
     -- A
     ["LR.W|SC.W|AMOSWAP.W|AMOADD.W|AMOXOR.W|AMOAND.W|AMOOR.W|AMOMIN.W|AMOMAX.W|AMOMINU.W|AMOMAXU.W"] = "AMO_W",
     ["LR.D|SC.D|AMOSWAP.D|AMOADD.D|AMOXOR.D|AMOAND.D|AMOOR.D|AMOMIN.D|AMOMAX.D|AMOMINU.D|AMOMAXU.D"] = "AMO_D",
@@ -504,7 +526,7 @@ for i = 0, ((1 << mask_bits) - 1) do
             table.insert(labels, { name = name, i = firstindex * 10 })
         end
     end
-    assert(#name < 32, namekey)
+    assert(#name < 64, namekey)
     for rd = 0, 31 do
         local ename = name
         if rd0_special then

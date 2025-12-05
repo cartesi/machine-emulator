@@ -5450,11 +5450,27 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, uint32_t &insn,
     uint64_t &last_vaddr_page, i_state_access_fast_addr_t<STATE_ACCESS> &last_vf_offset, uint64_t &last_pma_index) {
     [[maybe_unused]] auto note = a.make_scoped_note("fetch_insn");
+    // The following if efficiently checks that the current pc is in the same page as the last pc fetch
+    // and that it's not crossing a page boundary simultaneously.
+    // This is the hot path and most fetches will fall through inside this if block.
+    // This early check is not strictly necessary for correctness,
+    // but it makes the fetch use just about 5 instructions on a x86_64 hardware.
+    if (likely((pc ^ last_vaddr_page) < (PAGE_OFFSET_MASK - 1))) {
+        // Here we are sure that reading 4 bytes won't cross a page boundary.
+        // However pc may not be 4-byte aligned, at worst it could be only 2-byte aligned,
+        // therefore we must perform a misaligned 4-byte read on a 2-byte aligned pointer.
+        // In case pc holds a compressed instruction, insn will store 2 additional bytes,
+        // but this is fine because later the instruction decoder will discard them.
+        a.template read_memory_word<uint32_t, uint16_t>(pc + last_vf_offset, last_pma_index, &insn);
+        return fetch_status::success;
+    }
+    // Otherwise, it's the slow path, fetch pc is either not the same as last cache or crossing a page boundary.
+
     i_state_access_fast_addr_t<STATE_ACCESS> faddr{0};
     const uint64_t pc_vaddr_page = tlb_addr_page(pc);
     // If pc is in the same page as the last pc fetch,
     // we can just reuse last fetch translation, skipping TLB or slow address translation altogether.
-    if (likely(pc_vaddr_page == last_vaddr_page)) {
+    if (unlikely(pc_vaddr_page == last_vaddr_page)) {
         faddr = pc + last_vf_offset;
     } else {
         // Not in the same page as last the fetch, we need to perform address translation

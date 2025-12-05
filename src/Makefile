@@ -229,11 +229,16 @@ HASH_CFLAGS=-O3 -DNDEBUG -funroll-loops -fno-stack-protector
 
 # Optimization flags for the interpreter
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
+# Enable strict aliasing otherwise the optimizer may generate indirections to the jump table
+# This is fine, because the interpreter is written to comply with strict aliasing rules
+INTERPRET_CXXFLAGS+=-fstrict-aliasing
+# Ensure frame pointers are omited to free an extra register (some distributions enable them by default)
+INTERPTER_CXXFLAGS+=-fomit-frame-pointer
 ifneq (,$(findstring gcc,$(CC)))
 # The following improves computed goto dispatch as stated in GCC manual
 INTERPRET_CXXFLAGS+=-fno-gcse
 # The following remove extra jumps in the computed goto dispatch
-# INTERPRET_CXXFLAGS+=-fno-crossjumping
+INTERPRET_CXXFLAGS+=-fno-crossjumping
 # The interpreter dispatch loop performs better as a big inlined function
 INTERPRET_CXXFLAGS+=-finline-limit=1024
 # The interpreter hot loop is big and puts pressure on register allocation, this improves register use

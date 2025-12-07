@@ -71,8 +71,8 @@ private:
     machine_console m_console;            ///< Console instance
     mutable machine_address_ranges m_ars; ///< Address ranges
     mutable hash_tree m_ht;               ///< Top level hash tree
-    processor_state *m_s;                 ///< Big machine processor state
-    uarch_processor_state *m_us;          ///< Microarchitecture processor state
+    processor_state *const m_s;           ///< Big machine processor state
+    uarch_processor_state *const m_us;    ///< Microarchitecture processor state
 
     std::unordered_map<std::string, uint64_t> m_counters; ///< Counters used for statistics collection
 

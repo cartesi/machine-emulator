@@ -4599,7 +4599,7 @@ static inline uint64_t float_box(T val) {
 template <typename T>
 static inline T float_unbox(uint64_t val) {
     constexpr uint64_t TLEN = sizeof(T) * 8;
-    static_assert(TLEN == 32 || TLEN == 64, "unsupported soft float length");
+    static_assert(TLEN == 16 || TLEN == 32 || TLEN == 64, "unsupported soft float length");
     if constexpr (TLEN < FLEN) {
         // Floating-point operations on narrower n-bit operations (n < FLEN),
         // must check if the input operands are correctly NaN-boxed, i.e., all upper FLEN−n bits are 1.
@@ -4608,7 +4608,9 @@ static inline T float_unbox(uint64_t val) {
         if ((val >> TLEN) != (UINT64_C(-1) >> TLEN)) {
             // The canonical NaN has a positive sign and all significant bits clear except the MSB,
             // a.k.a. the quiet bit.
-            if constexpr (TLEN == 32) {
+            if constexpr (TLEN == 16) {
+                return i_sfloat16::F_QNAN;
+            } else if constexpr (TLEN == 32) {
                 return i_sfloat32::F_QNAN;
             } else if constexpr (TLEN == 64) {
                 return i_sfloat64::F_QNAN;
@@ -4704,6 +4706,16 @@ static FORCE_INLINE execute_status execute_FS(const STATE_ACCESS a, uint64_t &pc
 }
 
 template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FSH(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsh");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    return execute_FS<uint16_t>(a, pc, mcycle, insn);
+}
+
+template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSW(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsw");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
@@ -4740,6 +4752,16 @@ static FORCE_INLINE execute_status execute_FL(const STATE_ACCESS a, uint64_t &pc
 }
 
 template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FLH(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "flh");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+    return execute_FL<uint16_t>(a, pc, mcycle, insn);
+}
+
+template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FLW(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "flw");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
@@ -4757,6 +4779,15 @@ static FORCE_INLINE execute_status execute_FLD(const STATE_ACCESS a, uint64_t &p
         return raise_illegal_insn_exception(a, pc, insn);
     }
     return execute_FL<uint64_t>(a, pc, mcycle, insn);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FMADD_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmadd.h");
+    return execute_float_ternary_op_rm<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint16_t s3, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return i_sfloat16::fma(s1, s2, s3, static_cast<FRM_modes>(rm), fflags);
+        });
 }
 
 template <typename STATE_ACCESS>
@@ -4784,12 +4815,23 @@ static FORCE_INLINE execute_status execute_FMADD(const STATE_ACCESS a, uint64_t 
         return raise_illegal_insn_exception(a, pc, insn);
     }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
+        case insn_FM_funct2_0000000000000000000000000::H:
+            return execute_FMADD_H(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FMADD_S(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FMADD_D(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FMSUB_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmsub.h");
+    return execute_float_ternary_op_rm<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint16_t s3, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return i_sfloat16::fma(s1, s2, s3 ^ i_sfloat16::SIGN_MASK, static_cast<FRM_modes>(rm), fflags);
+        });
 }
 
 template <typename STATE_ACCESS>
@@ -4817,12 +4859,24 @@ static FORCE_INLINE execute_status execute_FMSUB(const STATE_ACCESS a, uint64_t 
         return raise_illegal_insn_exception(a, pc, insn);
     }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
+        case insn_FM_funct2_0000000000000000000000000::H:
+            return execute_FMSUB_H(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FMSUB_S(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FMSUB_D(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FNMADD_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fnmadd.h");
+    return execute_float_ternary_op_rm<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint16_t s3, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return i_sfloat16::fma(s1 ^ i_sfloat16::SIGN_MASK, s2, s3 ^ i_sfloat16::SIGN_MASK,
+                static_cast<FRM_modes>(rm), fflags);
+        });
 }
 
 template <typename STATE_ACCESS>
@@ -4852,12 +4906,23 @@ static FORCE_INLINE execute_status execute_FNMADD(const STATE_ACCESS a, uint64_t
         return raise_illegal_insn_exception(a, pc, insn);
     }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
+        case insn_FM_funct2_0000000000000000000000000::H:
+            return execute_FNMADD_H(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FNMADD_S(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FNMADD_D(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FNMSUB_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fnmsub.h");
+    return execute_float_ternary_op_rm<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint16_t s3, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return i_sfloat16::fma(s1 ^ i_sfloat16::SIGN_MASK, s2, s3, static_cast<FRM_modes>(rm), fflags);
+        });
 }
 
 template <typename STATE_ACCESS>
@@ -4885,12 +4950,23 @@ static FORCE_INLINE execute_status execute_FNMSUB(const STATE_ACCESS a, uint64_t
         return raise_illegal_insn_exception(a, pc, insn);
     }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
+        case insn_FM_funct2_0000000000000000000000000::H:
+            return execute_FNMSUB_H(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FNMSUB_S(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
             return execute_FNMSUB_D(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FADD_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fadd.h");
+    return execute_float_binary_op_rm<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return i_sfloat16::add(s1, s2, static_cast<FRM_modes>(rm), fflags);
+        });
 }
 
 template <typename STATE_ACCESS>
@@ -4908,6 +4984,15 @@ static FORCE_INLINE execute_status execute_FADD_D(const STATE_ACCESS a, uint64_t
     return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
             return i_sfloat64::add(s1, s2, static_cast<FRM_modes>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FSUB_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsub.h");
+    return execute_float_binary_op_rm<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return i_sfloat16::add(s1, s2 ^ i_sfloat16::SIGN_MASK, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -4930,6 +5015,15 @@ static FORCE_INLINE execute_status execute_FSUB_D(const STATE_ACCESS a, uint64_t
 }
 
 template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FMUL_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmul.h");
+    return execute_float_binary_op_rm<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return i_sfloat16::mul(s1, s2, static_cast<FRM_modes>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMUL_S(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmul.s");
     return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
@@ -4944,6 +5038,14 @@ static FORCE_INLINE execute_status execute_FMUL_D(const STATE_ACCESS a, uint64_t
     return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
         [](uint64_t s1, uint64_t s2, uint32_t rm, uint32_t *fflags) -> uint64_t {
             return i_sfloat64::mul(s1, s2, static_cast<FRM_modes>(rm), fflags);
+        });
+}
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FDIV_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fdiv.h");
+    return execute_float_binary_op_rm<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return i_sfloat16::div(s1, s2, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -5008,6 +5110,46 @@ static FORCE_INLINE execute_status execute_float_cmp_op(const STATE_ACCESS a, ui
     }
     a.write_x(rd, val);
     return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FSGNJ_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsgnj.h");
+    return execute_float_binary_op<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, const uint32_t * /*fflags*/) -> uint16_t {
+            return (s1 & ~i_sfloat16::SIGN_MASK) | (s2 & i_sfloat16::SIGN_MASK);
+        });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FSGNJN_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsgnjn.h");
+    return execute_float_binary_op<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, const uint32_t * /*fflags*/) -> uint16_t {
+            return (s1 & ~i_sfloat16::SIGN_MASK) | ((s2 & i_sfloat16::SIGN_MASK) ^ i_sfloat16::SIGN_MASK);
+        });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FSGNJX_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsgnjx.h");
+    return execute_float_binary_op<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, const uint32_t * /*fflags*/) -> uint16_t {
+            return s1 ^ (s2 & i_sfloat16::SIGN_MASK);
+        });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FSGN_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    switch (static_cast<insn_FSGN_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FSGN_funct3_000000000000::J:
+            return execute_FSGNJ_H(a, pc, insn);
+        case insn_FSGN_funct3_000000000000::JN:
+            return execute_FSGNJN_H(a, pc, insn);
+        case insn_FSGN_funct3_000000000000::JX:
+            return execute_FSGNJX_H(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -5086,6 +5228,31 @@ static FORCE_INLINE execute_status execute_FSGN_D(const STATE_ACCESS a, uint64_t
             return execute_FSGNJN_D(a, pc, insn);
         case insn_FSGN_funct3_000000000000::JX:
             return execute_FSGNJX_D(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FMIN_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmin.h");
+    return execute_float_binary_op<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint32_t *fflags) -> uint16_t { return i_sfloat16::min(s1, s2, fflags); });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FMAX_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmax.h");
+    return execute_float_binary_op<uint16_t>(a, pc, insn,
+        [](uint16_t s1, uint16_t s2, uint32_t *fflags) -> uint16_t { return i_sfloat16::max(s1, s2, fflags); });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FMINMAX_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    switch (static_cast<insn_FMIN_FMAX_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FMIN_FMAX_funct3_000000000000::FMIN:
+            return execute_FMIN_H(a, pc, insn);
+        case insn_FMIN_FMAX_funct3_000000000000::FMAX:
+            return execute_FMAX_H(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -5202,11 +5369,47 @@ static FORCE_INLINE execute_status execute_FCVT_F_X(const STATE_ACCESS a, uint64
 }
 
 template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_H_S(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.h.s");
+    return execute_FCVT_F_F<uint32_t, uint16_t>(a, pc, insn,
+        [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return sfloat_cvt_f_f<i_sfloat32, i_sfloat16>(s1, static_cast<FRM_modes>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_S_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.s.h");
+    return execute_FCVT_F_F<uint16_t, uint32_t>(a, pc, insn,
+        [](uint16_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
+            return sfloat_cvt_f_f<i_sfloat16, i_sfloat32>(s1, static_cast<FRM_modes>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_H_D(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.h.d");
+    return execute_FCVT_F_F<uint64_t, uint16_t>(a, pc, insn,
+        [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint16_t {
+            return sfloat_cvt_f_f<i_sfloat64, i_sfloat16>(s1, static_cast<FRM_modes>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_D_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.d.h");
+    return execute_FCVT_F_F<uint16_t, uint64_t>(a, pc, insn,
+        [](uint16_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return sfloat_cvt_f_f<i_sfloat16, i_sfloat64>(s1, static_cast<FRM_modes>(rm), fflags);
+        });
+}
+
+template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_S_D(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.s.d");
     return execute_FCVT_F_F<uint64_t, uint32_t>(a, pc, insn,
         [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return sfloat_cvt_f64_f32(s1, static_cast<FRM_modes>(rm), fflags);
+            return sfloat_cvt_f_f<i_sfloat64, i_sfloat32>(s1, static_cast<FRM_modes>(rm), fflags);
         });
 }
 
@@ -5214,10 +5417,17 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_D_S(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.d.s");
     return execute_FCVT_F_F<uint32_t, uint64_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t /*rm*/, uint32_t *fflags) -> uint64_t {
-            // FCVT.D.S will never round, since it's a widen operation.
-            return sfloat_cvt_f32_f64(s1, fflags);
+        [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+            return sfloat_cvt_f_f<i_sfloat32, i_sfloat64>(s1, static_cast<FRM_modes>(rm), fflags);
         });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FSQRT_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsqrt.h");
+    return execute_float_unary_op_rm<uint16_t>(a, pc, insn, [](uint16_t s1, uint32_t rm, uint32_t *fflags) -> uint16_t {
+        return i_sfloat16::sqrt(s1, static_cast<FRM_modes>(rm), fflags);
+    });
 }
 
 template <typename STATE_ACCESS>
@@ -5234,6 +5444,43 @@ static FORCE_INLINE execute_status execute_FSQRT_D(const STATE_ACCESS a, uint64_
     return execute_float_unary_op_rm<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
         return i_sfloat64::sqrt(s1, static_cast<FRM_modes>(rm), fflags);
     });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FLE_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fle.h");
+    return execute_float_cmp_op<uint16_t>(a, pc, insn, [](uint16_t s1, uint16_t s2, uint32_t *fflags) -> uint64_t {
+        return static_cast<uint64_t>(i_sfloat16::le(s1, s2, fflags));
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FLT_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "flt.h");
+    return execute_float_cmp_op<uint16_t>(a, pc, insn, [](uint16_t s1, uint16_t s2, uint32_t *fflags) -> uint64_t {
+        return static_cast<uint64_t>(i_sfloat16::lt(s1, s2, fflags));
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FEQ_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "feq.h");
+    return execute_float_cmp_op<uint16_t>(a, pc, insn, [](uint16_t s1, uint16_t s2, uint32_t *fflags) -> uint64_t {
+        return static_cast<uint64_t>(i_sfloat16::eq(s1, s2, fflags));
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCMP_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    switch (static_cast<insn_FCMP_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FCMP_funct3_000000000000::LT:
+            return execute_FLT_H(a, pc, insn);
+        case insn_FCMP_funct3_000000000000::LE:
+            return execute_FLE_H(a, pc, insn);
+        case insn_FCMP_funct3_000000000000::EQ:
+            return execute_FEQ_H(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -5308,6 +5555,75 @@ static FORCE_INLINE execute_status execute_FCMP_D(const STATE_ACCESS a, uint64_t
             return execute_FEQ_D(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_H_W(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.h.w");
+    return execute_FCVT_F_X<uint16_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint16_t {
+        return i_sfloat16::cvt_i_f(static_cast<int32_t>(s1), static_cast<FRM_modes>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_H_WU(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.h.wu");
+    return execute_FCVT_F_X<uint16_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint16_t {
+        return i_sfloat16::cvt_i_f(static_cast<uint32_t>(s1), static_cast<FRM_modes>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_H_L(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.h.l");
+    return execute_FCVT_F_X<uint16_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint16_t {
+        return i_sfloat16::cvt_i_f(static_cast<int64_t>(s1), static_cast<FRM_modes>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_H_LU(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.h.lu");
+    return execute_FCVT_F_X<uint16_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint16_t {
+        return i_sfloat16::cvt_i_f(s1, static_cast<FRM_modes>(rm), fflags);
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_W_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.w.h");
+    return execute_FCVT_X_F<uint16_t>(a, pc, insn, [](uint16_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        const auto val = i_sfloat16::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        // For XLEN > 32, FCVT.W.H sign-extends the 32-bit result.
+        return static_cast<uint64_t>(static_cast<int64_t>(val));
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_WU_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.wu.h");
+    return execute_FCVT_X_F<uint16_t>(a, pc, insn, [](uint16_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        const auto val = i_sfloat16::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        // For XLEN > 32, FCVT.WU.H sign-extends the 32-bit result.
+        return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_L_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.l.h");
+    return execute_FCVT_X_F<uint16_t>(a, pc, insn, [](uint16_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        const auto val = i_sfloat16::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        return static_cast<uint64_t>(val);
+    });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCVT_LU_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.lu.h");
+    return execute_FCVT_X_F<uint16_t>(a, pc, insn, [](uint16_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        return i_sfloat16::cvt_f_i<uint64_t>(s1, static_cast<FRM_modes>(rm), fflags);
+    });
 }
 
 template <typename STATE_ACCESS>
@@ -5462,6 +5778,12 @@ static FORCE_INLINE execute_status execute_FMV_F_X(const STATE_ACCESS a, uint64_
 }
 
 template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FMV_H_X(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmv.h.x");
+    return execute_FMV_F_X<uint16_t>(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_W_X(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmv.w.x");
     return execute_FMV_F_X<uint32_t>(a, pc, insn);
@@ -5471,6 +5793,38 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_D_X(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmv.d.x");
     return execute_FMV_F_X<uint64_t>(a, pc, insn);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FCLASS_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fclass.h");
+    return execute_FCLASS<uint16_t>(a, pc, insn, [](uint16_t s1) -> uint64_t { return i_sfloat16::fclass(s1); });
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FMV_X_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmv.x.h");
+    const uint32_t rd = insn_get_rd(insn);
+    if (unlikely(rd == 0)) {
+        return advance_to_next_insn(a, pc);
+    }
+    const auto val = static_cast<uint16_t>(a.read_f(insn_get_rs1(insn)));
+    // For RV64, the higher 48 bits of the destination register are
+    // filled with copies of the floating-point number’s sign bit.
+    // We can perform this with a sign extension.
+    a.write_x(rd, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(val))));
+    return advance_to_next_insn(a, pc);
+}
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_FMV_FCLASS_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    switch (static_cast<insn_FMV_FCLASS_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+        case insn_FMV_FCLASS_funct3_000000000000::FMV:
+            return execute_FMV_X_H(a, pc, insn);
+        case insn_FMV_FCLASS_funct3_000000000000::FCLASS:
+            return execute_FCLASS_H(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -5536,93 +5890,137 @@ static FORCE_INLINE execute_status execute_FMV_FCLASS_D(const STATE_ACCESS a, ui
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_FMV_FCLASS(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_FD_funct7_rs2>(insn_get_funct7_rs2(insn))) {
-        case insn_FD_funct7_rs2::FCVT_W_S:
-            return execute_FCVT_W_S(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_WU_S:
-            return execute_FCVT_WU_S(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_L_S:
-            return execute_FCVT_L_S(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_LU_S:
-            return execute_FCVT_LU_S(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_W_D:
-            return execute_FCVT_W_D(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_WU_D:
-            return execute_FCVT_WU_D(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_L_D:
-            return execute_FCVT_L_D(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_LU_D:
-            return execute_FCVT_LU_D(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_S_D:
+    switch (static_cast<insn_FDZfh_funct7_rs2>(insn_get_funct7_rs2(insn))) {
+        case insn_FDZfh_funct7_rs2::FCVT_H_S:
+            return execute_FCVT_H_S(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_S_H:
+            return execute_FCVT_S_H(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_H_D:
+            return execute_FCVT_H_D(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_D_H:
+            return execute_FCVT_D_H(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_S_D:
             return execute_FCVT_S_D(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_S_W:
-            return execute_FCVT_S_W(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_S_WU:
-            return execute_FCVT_S_WU(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_S_L:
-            return execute_FCVT_S_L(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_S_LU:
-            return execute_FCVT_S_LU(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_D_S:
+        case insn_FDZfh_funct7_rs2::FCVT_D_S:
             return execute_FCVT_D_S(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_D_W:
+        case insn_FDZfh_funct7_rs2::FCVT_W_H:
+            return execute_FCVT_W_H(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_WU_H:
+            return execute_FCVT_WU_H(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_L_H:
+            return execute_FCVT_L_H(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_LU_H:
+            return execute_FCVT_LU_H(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_W_S:
+            return execute_FCVT_W_S(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_WU_S:
+            return execute_FCVT_WU_S(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_L_S:
+            return execute_FCVT_L_S(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_LU_S:
+            return execute_FCVT_LU_S(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_W_D:
+            return execute_FCVT_W_D(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_WU_D:
+            return execute_FCVT_WU_D(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_L_D:
+            return execute_FCVT_L_D(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_LU_D:
+            return execute_FCVT_LU_D(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_H_W:
+            return execute_FCVT_H_W(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_H_WU:
+            return execute_FCVT_H_WU(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_H_L:
+            return execute_FCVT_H_L(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_H_LU:
+            return execute_FCVT_H_LU(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_S_W:
+            return execute_FCVT_S_W(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_S_WU:
+            return execute_FCVT_S_WU(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_S_L:
+            return execute_FCVT_S_L(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_S_LU:
+            return execute_FCVT_S_LU(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FCVT_D_W:
             return execute_FCVT_D_W(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_D_WU:
+        case insn_FDZfh_funct7_rs2::FCVT_D_WU:
             return execute_FCVT_D_WU(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_D_L:
+        case insn_FDZfh_funct7_rs2::FCVT_D_L:
             return execute_FCVT_D_L(a, pc, insn);
-        case insn_FD_funct7_rs2::FCVT_D_LU:
+        case insn_FDZfh_funct7_rs2::FCVT_D_LU:
             return execute_FCVT_D_LU(a, pc, insn);
-        case insn_FD_funct7_rs2::FMV_W_X:
+        case insn_FDZfh_funct7_rs2::FMV_H_X:
+            return execute_FMV_H_X(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FMV_W_X:
             return execute_FMV_W_X(a, pc, insn);
-        case insn_FD_funct7_rs2::FMV_D_X:
+        case insn_FDZfh_funct7_rs2::FMV_D_X:
             return execute_FMV_D_X(a, pc, insn);
-        case insn_FD_funct7_rs2::FMV_FCLASS_S:
+        case insn_FDZfh_funct7_rs2::FMV_FCLASS_H:
+            return execute_FMV_FCLASS_H(a, pc, insn);
+        case insn_FDZfh_funct7_rs2::FMV_FCLASS_S:
             return execute_FMV_FCLASS_S(a, pc, insn);
-        case insn_FD_funct7_rs2::FMV_FCLASS_D:
+        case insn_FDZfh_funct7_rs2::FMV_FCLASS_D:
             return execute_FMV_FCLASS_D(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_FD(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FDZfh(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    switch (static_cast<insn_FD_funct7>(insn_get_funct7(insn))) {
-        case insn_FD_funct7::FADD_S:
+    switch (static_cast<insn_FDZfh_funct7>(insn_get_funct7(insn))) {
+        case insn_FDZfh_funct7::FADD_H:
+            return execute_FADD_H(a, pc, insn);
+        case insn_FDZfh_funct7::FADD_S:
             return execute_FADD_S(a, pc, insn);
-        case insn_FD_funct7::FADD_D:
+        case insn_FDZfh_funct7::FADD_D:
             return execute_FADD_D(a, pc, insn);
-        case insn_FD_funct7::FSUB_S:
+        case insn_FDZfh_funct7::FSUB_H:
+            return execute_FSUB_H(a, pc, insn);
+        case insn_FDZfh_funct7::FSUB_S:
             return execute_FSUB_S(a, pc, insn);
-        case insn_FD_funct7::FSUB_D:
+        case insn_FDZfh_funct7::FSUB_D:
             return execute_FSUB_D(a, pc, insn);
-        case insn_FD_funct7::FMUL_S:
+        case insn_FDZfh_funct7::FMUL_H:
+            return execute_FMUL_H(a, pc, insn);
+        case insn_FDZfh_funct7::FMUL_S:
             return execute_FMUL_S(a, pc, insn);
-        case insn_FD_funct7::FMUL_D:
+        case insn_FDZfh_funct7::FMUL_D:
             return execute_FMUL_D(a, pc, insn);
-        case insn_FD_funct7::FDIV_S:
+        case insn_FDZfh_funct7::FDIV_H:
+            return execute_FDIV_H(a, pc, insn);
+        case insn_FDZfh_funct7::FDIV_S:
             return execute_FDIV_S(a, pc, insn);
-        case insn_FD_funct7::FDIV_D:
+        case insn_FDZfh_funct7::FDIV_D:
             return execute_FDIV_D(a, pc, insn);
-        case insn_FD_funct7::FSGN_S:
+        case insn_FDZfh_funct7::FSGN_H:
+            return execute_FSGN_H(a, pc, insn);
+        case insn_FDZfh_funct7::FSGN_S:
             return execute_FSGN_S(a, pc, insn);
-        case insn_FD_funct7::FSGN_D:
+        case insn_FDZfh_funct7::FSGN_D:
             return execute_FSGN_D(a, pc, insn);
-        case insn_FD_funct7::FMINMAX_S:
+        case insn_FDZfh_funct7::FMINMAX_H:
+            return execute_FMINMAX_H(a, pc, insn);
+        case insn_FDZfh_funct7::FMINMAX_S:
             return execute_FMINMAX_S(a, pc, insn);
-        case insn_FD_funct7::FMINMAX_D:
+        case insn_FDZfh_funct7::FMINMAX_D:
             return execute_FMINMAX_D(a, pc, insn);
-        case insn_FD_funct7::FSQRT_S:
+        case insn_FDZfh_funct7::FSQRT_H:
+            return execute_FSQRT_H(a, pc, insn);
+        case insn_FDZfh_funct7::FSQRT_S:
             return execute_FSQRT_S(a, pc, insn);
-        case insn_FD_funct7::FSQRT_D:
+        case insn_FDZfh_funct7::FSQRT_D:
             return execute_FSQRT_D(a, pc, insn);
-        case insn_FD_funct7::FCMP_S:
+        case insn_FDZfh_funct7::FCMP_H:
+            return execute_FCMP_H(a, pc, insn);
+        case insn_FDZfh_funct7::FCMP_S:
             return execute_FCMP_S(a, pc, insn);
-        case insn_FD_funct7::FCMP_D:
+        case insn_FDZfh_funct7::FCMP_D:
             return execute_FCMP_D(a, pc, insn);
         default:
             return execute_FCVT_FMV_FCLASS(a, pc, insn);
@@ -6614,9 +7012,9 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(C_EBREAK):
                         status = execute_C_EBREAK(a, pc, insn);
                         INSN_BREAK();
-                    // FD extensions
-                    INSN_CASE(FD):
-                        status = execute_FD(a, pc, insn);
+                    // F, D, Zfh extensions
+                    INSN_CASE(FDZfh):
+                        status = execute_FDZfh(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(FLD):
                         status = execute_FLD(a, pc, mcycle, insn);
@@ -6624,11 +7022,17 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(FLW):
                         status = execute_FLW(a, pc, mcycle, insn);
                         INSN_BREAK();
+                    INSN_CASE(FLH):
+                        status = execute_FLH(a, pc, mcycle, insn);
+                        INSN_BREAK();
                     INSN_CASE(FSD):
                         status = execute_FSD(a, pc, mcycle, insn);
                         INSN_BREAK();
                     INSN_CASE(FSW):
                         status = execute_FSW(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FSH):
+                        status = execute_FSH(a, pc, mcycle, insn);
                         INSN_BREAK();
                     INSN_CASE(FMADD):
                         status = execute_FMADD(a, pc, insn);

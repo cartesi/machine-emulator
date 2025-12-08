@@ -135,7 +135,7 @@ enum MISA_shifts {
 /// \details See also
 /// https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/devicetree/bindings/riscv/extensions.yaml
 /// https://gcc.gnu.org/git/?p=gcc.git;a=blob;f=gcc/config/riscv/riscv-profiles.def;hb=HEAD
-constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba_zbb_zbc_zbs";
+constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba_zbb_zbc_zbs_zfh";
 
 /// \brief misa masks
 enum MISA_masks : uint64_t {
@@ -749,27 +749,45 @@ enum class insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7 : uint32_t {
 };
 
 /// \brief funct7 constants for floating-point instructions
-enum class insn_FD_funct7 : uint32_t {
+enum class insn_FDZfh_funct7 : uint32_t {
+    FADD_H = 0b0000010,
     FADD_S = 0b0000000,
     FADD_D = 0b0000001,
+    FSUB_H = 0b0000110,
     FSUB_S = 0b0000100,
     FSUB_D = 0b0000101,
+    FMUL_H = 0b0001010,
     FMUL_S = 0b0001000,
     FMUL_D = 0b0001001,
+    FDIV_H = 0b0001110,
     FDIV_S = 0b0001100,
     FDIV_D = 0b0001101,
+    FSGN_H = 0b0010010,
     FSGN_S = 0b0010000,
     FSGN_D = 0b0010001,
+    FMINMAX_H = 0b0010110,
     FMINMAX_S = 0b0010100,
     FMINMAX_D = 0b0010101,
+    FSQRT_H = 0b0101110,
     FSQRT_S = 0b0101100,
     FSQRT_D = 0b0101101,
+    FCMP_H = 0b1010010,
     FCMP_S = 0b1010000,
-    FCMP_D = 0b1010001
+    FCMP_D = 0b1010001,
 };
 
 /// \brief funct7_rs2 constants for floating-point instructions
-enum class insn_FD_funct7_rs2 : uint32_t {
+enum class insn_FDZfh_funct7_rs2 : uint32_t {
+    FCVT_H_S = 0b010001000000,
+    FCVT_S_H = 0b010000000010,
+    FCVT_H_D = 0b010001000001,
+    FCVT_D_H = 0b010000100010,
+    FCVT_S_D = 0b010000000001,
+    FCVT_D_S = 0b010000100000,
+    FCVT_W_H = 0b110001000000,
+    FCVT_WU_H = 0b110001000001,
+    FCVT_L_H = 0b110001000010,
+    FCVT_LU_H = 0b110001000011,
     FCVT_W_S = 0b110000000000,
     FCVT_WU_S = 0b110000000001,
     FCVT_L_S = 0b110000000010,
@@ -778,20 +796,24 @@ enum class insn_FD_funct7_rs2 : uint32_t {
     FCVT_WU_D = 0b110000100001,
     FCVT_L_D = 0b110000100010,
     FCVT_LU_D = 0b110000100011,
-    FCVT_S_D = 0b010000000001,
+    FCVT_H_W = 0b110101000000,
+    FCVT_H_WU = 0b110101000001,
+    FCVT_H_L = 0b110101000010,
+    FCVT_H_LU = 0b110101000011,
     FCVT_S_W = 0b110100000000,
     FCVT_S_WU = 0b110100000001,
     FCVT_S_L = 0b110100000010,
     FCVT_S_LU = 0b110100000011,
-    FCVT_D_S = 0b010000100000,
     FCVT_D_W = 0b110100100000,
     FCVT_D_WU = 0b110100100001,
     FCVT_D_L = 0b110100100010,
     FCVT_D_LU = 0b110100100011,
+    FMV_H_X = 0b111101000000,
     FMV_W_X = 0b111100000000,
     FMV_D_X = 0b111100100000,
+    FMV_FCLASS_H = 0b111001000000,
     FMV_FCLASS_S = 0b111000000000,
-    FMV_FCLASS_D = 0b111000100000
+    FMV_FCLASS_D = 0b111000100000,
 };
 
 /// \brief rm constants for FSGN floating-point instructions
@@ -895,6 +917,7 @@ enum class insn_privileged : uint32_t {
 
 /// \brief funct2 constants for FMADD, FMSUB, FNMADD, FMNSUB instructions
 enum class insn_FM_funct2_0000000000000000000000000 : uint32_t {
+    H = 0b100000000000000000000000000,
     S = 0b000000000000000000000000000,
     D = 0b010000000000000000000000000
 };

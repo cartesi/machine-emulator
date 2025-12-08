@@ -59,6 +59,11 @@ template <typename UINT>
 static inline int clz(UINT x);
 
 template <>
+inline int clz(uint16_t x) {
+    return x == 0 ? 16 : (__builtin_clz(x) - 16);
+}
+
+template <>
 inline int clz(uint32_t x) {
     return x == 0 ? 32 : __builtin_clz(x);
 }
@@ -71,6 +76,11 @@ inline int clz(uint64_t x) {
 /// \brief Retrieves an unsigned type with double width.
 template <typename U>
 struct make_long_uint {};
+
+template <>
+struct make_long_uint<uint16_t> {
+    using type = uint32_t;
+};
 
 template <>
 struct make_long_uint<uint32_t> {
@@ -152,23 +162,17 @@ template <typename T, int MANT, int EXP>
 struct i_sfloat {
     using F_UINT = T;
 
-    /// \brief soft float constants
-    enum SFLOAT_constants : int {
-        MANT_SIZE = MANT,
-        EXP_SIZE = EXP,
-        F_SIZE = sizeof(F_UINT) * 8,
-        IMANT_SIZE = (F_SIZE - 2), // internal mantissa size
-        RND_SIZE = (IMANT_SIZE - MANT_SIZE)
-    };
-
-    /// \brief soft float masks
-    enum SFLOAT_masks : F_UINT {
-        EXP_MASK = ((static_cast<F_UINT>(1) << EXP_SIZE) - 1),
-        MANT_MASK = ((static_cast<F_UINT>(1) << MANT_SIZE) - 1),
-        SIGN_MASK = (static_cast<F_UINT>(1) << (F_SIZE - 1)),
-        QNAN_MASK = (static_cast<F_UINT>(1) << (MANT_SIZE - 1)),
-        F_QNAN = ((EXP_MASK << MANT_SIZE) | (static_cast<F_UINT>(1) << (MANT_SIZE - 1)))
-    };
+    /// Soft float constants
+    static constexpr int MANT_SIZE = MANT;
+    static constexpr int EXP_SIZE = EXP;
+    static constexpr int F_SIZE = sizeof(F_UINT) * 8;
+    static constexpr int IMANT_SIZE = F_SIZE - 2; // internal mantissa size
+    static constexpr int RND_SIZE = IMANT_SIZE - MANT_SIZE;
+    static constexpr F_UINT EXP_MASK = (static_cast<F_UINT>(1) << EXP_SIZE) - 1;
+    static constexpr F_UINT MANT_MASK = (static_cast<F_UINT>(1) << MANT_SIZE) - 1;
+    static constexpr F_UINT SIGN_MASK = static_cast<F_UINT>(1) << (F_SIZE - 1);
+    static constexpr F_UINT QNAN_MASK = static_cast<F_UINT>(1) << (MANT_SIZE - 1);
+    static constexpr F_UINT F_QNAN = (EXP_MASK << MANT_SIZE) | (static_cast<F_UINT>(1) << (MANT_SIZE - 1));
 
     /// \brief Packs a float to its binary representation.
     static F_UINT pack(uint32_t a_sign, uint32_t a_exp, F_UINT a_mant) {
@@ -410,7 +414,7 @@ struct i_sfloat {
         }
         const int32_t r_exp = a_exp + b_exp - (1 << (EXP_SIZE - 1)) + 2;
         F_UINT r_mant_low = 0;
-        F_UINT r_mant = mul_u(&r_mant_low, a_mant << RND_SIZE, b_mant << (RND_SIZE + 1));
+        F_UINT r_mant = mul_u<F_UINT>(&r_mant_low, a_mant << RND_SIZE, b_mant << (RND_SIZE + 1));
         r_mant |= (r_mant_low != 0);
         return normalize(r_sign, r_exp, r_mant, rm, pfflags);
     }
@@ -472,7 +476,7 @@ struct i_sfloat {
         // multiply
         int32_t r_exp = a_exp + b_exp - (1 << (EXP_SIZE - 1)) + 3;
         F_UINT r_mant0 = 0;
-        F_UINT r_mant1 = mul_u(&r_mant0, a_mant << RND_SIZE, b_mant << RND_SIZE);
+        F_UINT r_mant1 = mul_u<F_UINT>(&r_mant0, a_mant << RND_SIZE, b_mant << RND_SIZE);
         // normalize to F_SIZE - 3
         if (r_mant1 < (static_cast<F_UINT>(1) << (F_SIZE - 3))) {
             r_mant1 = (r_mant1 << 1) | (r_mant0 >> (F_SIZE - 1));
@@ -595,7 +599,7 @@ struct i_sfloat {
         }
         const int32_t r_exp = a_exp - b_exp + (1 << (EXP_SIZE - 1)) - 1;
         F_UINT r = 0;
-        F_UINT r_mant = divrem_u(&r, a_mant, static_cast<F_UINT>(0), b_mant << 2);
+        F_UINT r_mant = divrem_u<F_UINT>(&r, a_mant, static_cast<F_UINT>(0), b_mant << 2);
         if (r != 0) {
             r_mant |= 1;
         }
@@ -763,6 +767,16 @@ struct i_sfloat {
         if (a_exp == EXP_MASK && a_mant != 0) {
             a_sign = 0; // NaN is like +infinity
         }
+        ICVT_UINT r_max = 0;
+        if constexpr (IS_UNSIGNED) {
+            r_max = static_cast<ICVT_UINT>(a_sign) - 1;
+        } else {
+            r_max = (static_cast<ICVT_UINT>(1) << (ICVT_SIZE - 1)) - static_cast<ICVT_UINT>(a_sign ^ 1);
+        }
+        if (unlikely(a_exp == EXP_MASK)) {
+            *pfflags |= FFLAGS_NV_MASK;
+            return r_max;
+        }
         if (a_exp == 0) {
             a_exp = 1;
         } else {
@@ -770,12 +784,6 @@ struct i_sfloat {
         }
         a_mant <<= RND_SIZE;
         a_exp = a_exp - (EXP_MASK / 2) - MANT_SIZE;
-        ICVT_UINT r_max = 0;
-        if constexpr (IS_UNSIGNED) {
-            r_max = static_cast<ICVT_UINT>(a_sign) - 1;
-        } else {
-            r_max = (static_cast<ICVT_UINT>(1) << (ICVT_SIZE - 1)) - static_cast<ICVT_UINT>(a_sign ^ 1);
-        }
         ICVT_UINT r = 0;
         if (a_exp >= 0) {
             if (likely(a_exp <= (ICVT_SIZE - 1 - MANT_SIZE))) {
@@ -844,7 +852,7 @@ struct i_sfloat {
                 r = -static_cast<ICVT_UINT>(a);
             }
         }
-        int32_t a_exp = (EXP_MASK / 2) + F_SIZE - 2;
+        int32_t a_exp = (EXP_MASK / 2) + IMANT_SIZE;
         // need to reduce range before generic float normalization
         const int l = ICVT_SIZE - clz<ICVT_UINT>(r) - (F_SIZE - 1);
         if (l > 0) {
@@ -857,65 +865,68 @@ struct i_sfloat {
     }
 };
 
+using i_sfloat16 = i_sfloat<uint16_t, 10, 5>;  // Interface for half-precision floating-point
 using i_sfloat32 = i_sfloat<uint32_t, 23, 8>;  // Interface for single-precision floating-point
 using i_sfloat64 = i_sfloat<uint64_t, 52, 11>; // Interface for double-precision floating-point
 
-/// \brief Conversion from float32 to float64.
-static NO_INLINE uint64_t sfloat_cvt_f32_f64(uint32_t a, uint32_t *pfflags) {
-    uint32_t a_sign = 0;
-    int32_t a_exp = 0;
-    i_sfloat64::F_UINT a_mant = i_sfloat32::unpack(&a_sign, &a_exp, a);
-    if (unlikely(a_exp == 0xff)) {
-        if (a_mant != 0) { // NaN
-            if (i_sfloat32::issignan(a)) {
-                *pfflags |= FFLAGS_NV_MASK;
-            }
-            return i_sfloat64::F_QNAN;
-        } // infinity
-        return i_sfloat64::pack(a_sign, i_sfloat64::EXP_MASK, 0);
-    }
-    if (a_exp == 0) {
-        if (a_mant == 0) { // zero
-            return i_sfloat64::pack(a_sign, 0, 0);
+/// \brief Conversion between float formats
+template <typename SFLOAT_SRC, typename SFLOAT_DST>
+static NO_INLINE SFLOAT_DST::F_UINT sfloat_cvt_f_f(typename SFLOAT_SRC::F_UINT a, FRM_modes rm, uint32_t *pfflags) {
+    if constexpr (SFLOAT_DST::F_SIZE > SFLOAT_SRC::F_SIZE) { // Widen operation
+        uint32_t a_sign = 0;
+        int32_t a_exp = 0;
+        typename SFLOAT_DST::F_UINT a_mant = SFLOAT_SRC::unpack(&a_sign, &a_exp, a);
+        if (unlikely(a_exp == SFLOAT_SRC::EXP_MASK)) {
+            if (a_mant != 0) { // NaN
+                if (SFLOAT_SRC::issignan(a)) {
+                    *pfflags |= FFLAGS_NV_MASK;
+                }
+                return SFLOAT_DST::F_QNAN;
+            } // infinity
+            return SFLOAT_DST::pack(a_sign, SFLOAT_DST::EXP_MASK, 0);
         }
-        a_mant = i_sfloat32::mant_normalize_subnormal(&a_exp, a_mant);
-    }
-    // convert the exponent value
-    a_exp = a_exp - 0x7f + (static_cast<int32_t>(i_sfloat64::EXP_MASK) / 2);
-    // shift the mantissa
-    a_mant <<= i_sfloat64::MANT_SIZE - 23;
-    // we assume the target float is large enough to that no
-    // normalization is necessary
-    return i_sfloat64::pack(a_sign, a_exp, a_mant);
-}
-
-/// \brief Conversion from float64 to float32.
-static NO_INLINE uint32_t sfloat_cvt_f64_f32(uint64_t a, FRM_modes rm, uint32_t *pfflags) {
-    uint32_t a_sign = 0;
-    int32_t a_exp = 0;
-    i_sfloat64::F_UINT a_mant = i_sfloat64::unpack(&a_sign, &a_exp, a);
-    if (unlikely(a_exp == i_sfloat64::EXP_MASK)) {
-        if (a_mant != 0) { // nan
-            if (i_sfloat64::issignan(a)) {
-                *pfflags |= FFLAGS_NV_MASK;
+        if (a_exp == 0) {
+            if (a_mant == 0) { // zero
+                return SFLOAT_DST::pack(a_sign, 0, 0);
             }
-            return i_sfloat32::F_QNAN;
-        } // infinity
-        return i_sfloat32::pack(a_sign, 0xff, 0);
-    }
-    if (a_exp == 0) {
-        if (a_mant == 0) { // zero
-            return i_sfloat32::pack(a_sign, 0, 0);
+            a_mant = SFLOAT_SRC::mant_normalize_subnormal(&a_exp, a_mant);
         }
-        i_sfloat64::mant_normalize_subnormal(&a_exp, a_mant);
+        // convert the exponent value
+        a_exp += static_cast<int32_t>(SFLOAT_DST::EXP_MASK - SFLOAT_SRC::EXP_MASK) / 2;
+        // shift the mantissa
+        a_mant <<= SFLOAT_DST::MANT_SIZE - SFLOAT_SRC::MANT_SIZE;
+        // we assume the target float is large enough to that no
+        // normalization is necessary
+        return SFLOAT_DST::pack(a_sign, a_exp, a_mant);
+    } else if constexpr (SFLOAT_DST::F_SIZE < SFLOAT_SRC::F_SIZE) { // Narrow operation
+        uint32_t a_sign = 0;
+        int32_t a_exp = 0;
+        auto a_mant = SFLOAT_SRC::unpack(&a_sign, &a_exp, a);
+        if (unlikely(a_exp == SFLOAT_SRC::EXP_MASK)) {
+            if (a_mant != 0) { // nan
+                if (SFLOAT_SRC::issignan(a)) {
+                    *pfflags |= FFLAGS_NV_MASK;
+                }
+                return SFLOAT_DST::F_QNAN;
+            } // infinity
+            return SFLOAT_DST::pack(a_sign, SFLOAT_DST::EXP_MASK, 0);
+        }
+        if (a_exp == 0) {
+            if (a_mant == 0) { // zero
+                return SFLOAT_DST::pack(a_sign, 0, 0);
+            }
+            SFLOAT_SRC::mant_normalize_subnormal(&a_exp, a_mant);
+        } else {
+            a_mant |= static_cast<SFLOAT_SRC::F_UINT>(1) << SFLOAT_SRC::MANT_SIZE;
+        }
+        // convert the exponent value
+        a_exp += static_cast<int32_t>(SFLOAT_DST::EXP_MASK - SFLOAT_SRC::EXP_MASK) / 2;
+        // shift the mantissa
+        a_mant = SFLOAT_SRC::mant_rshift_rnd(a_mant, SFLOAT_SRC::MANT_SIZE - SFLOAT_DST::IMANT_SIZE);
+        return SFLOAT_DST::normalize(a_sign, a_exp, static_cast<SFLOAT_DST::F_UINT>(a_mant), rm, pfflags);
     } else {
-        a_mant |= static_cast<i_sfloat64::F_UINT>(1) << i_sfloat64::MANT_SIZE;
+        return a;
     }
-    // convert the exponent value
-    a_exp = a_exp - (static_cast<int32_t>(i_sfloat64::EXP_MASK) / 2) + 0x7f;
-    // shift the mantissa
-    a_mant = i_sfloat64::mant_rshift_rnd(a_mant, i_sfloat64::MANT_SIZE - (32 - 2));
-    return i_sfloat32::normalize(a_sign, a_exp, a_mant, rm, pfflags);
 }
 
 } // namespace cartesi

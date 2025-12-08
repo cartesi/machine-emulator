@@ -353,34 +353,34 @@ local riscv_tests = {
     { "rv64uzbs-v-binvi.bin", 8048 },
     { "rv64uzbs-v-bset.bin", 14294 },
     { "rv64uzbs-v-bseti.bin", 8091 },
+    { "rv64uzfh-p-fadd.bin", 214 },
+    { "rv64uzfh-p-fclass.bin", 151 },
+    { "rv64uzfh-p-fcmp.bin", 156 },
+    { "rv64uzfh-p-fcvt.bin", 184 },
+    { "rv64uzfh-p-fcvt_w.bin", 554 },
+    { "rv64uzfh-p-fdiv.bin", 175 },
+    { "rv64uzfh-p-fmadd.bin", 240 },
+    { "rv64uzfh-p-fmin.bin", 318 },
+    { "rv64uzfh-p-ldst.bin", 114 },
+    { "rv64uzfh-p-move.bin", 247 },
+    { "rv64uzfh-p-recoding.bin", 117 },
+    { "rv64uzfh-v-fadd.bin", 13869 },
+    { "rv64uzfh-v-fclass.bin", 7941 },
+    { "rv64uzfh-v-fcmp.bin", 13811 },
+    { "rv64uzfh-v-fcvt.bin", 13839 },
+    { "rv64uzfh-v-fcvt_w.bin", 20074 },
+    { "rv64uzfh-v-fdiv.bin", 13830 },
+    { "rv64uzfh-v-fmadd.bin", 13895 },
+    { "rv64uzfh-v-fmin.bin", 13973 },
+    { "rv64uzfh-v-ldst.bin", 13314 },
+    { "rv64uzfh-v-move.bin", 8037 },
+    { "rv64uzfh-v-recoding.bin", 13772 },
 
     -- extensions that are built, but unsupported yet
     -- { "rv64mi-p-pmpaddr.bin", 10000 },
     -- { "rv64mzicbo-p-zero.bin", 10000 },
     -- { "rv64ui-p-ma_data.bin", 10000 },
     -- { "rv64ui-v-ma_data.bin", 10000 },
-    -- { "rv64uzfh-p-fadd.bin", 10000 },
-    -- { "rv64uzfh-p-fclass.bin", 10000 },
-    -- { "rv64uzfh-p-fcmp.bin", 10000 },
-    -- { "rv64uzfh-p-fcvt.bin", 10000 },
-    -- { "rv64uzfh-p-fcvt_w.bin", 10000 },
-    -- { "rv64uzfh-p-fdiv.bin", 10000 },
-    -- { "rv64uzfh-p-fmadd.bin", 10000 },
-    -- { "rv64uzfh-p-fmin.bin", 10000 },
-    -- { "rv64uzfh-p-ldst.bin", 10000 },
-    -- { "rv64uzfh-p-move.bin", 10000 },
-    -- { "rv64uzfh-p-recoding.bin", 10000 },
-    -- { "rv64uzfh-v-fadd.bin", 10000 },
-    -- { "rv64uzfh-v-fclass.bin", 10000 },
-    -- { "rv64uzfh-v-fcmp.bin", 10000 },
-    -- { "rv64uzfh-v-fcvt.bin", 10000 },
-    -- { "rv64uzfh-v-fcvt_w.bin", 10000 },
-    -- { "rv64uzfh-v-fdiv.bin", 10000 },
-    -- { "rv64uzfh-v-fmadd.bin", 10000 },
-    -- { "rv64uzfh-v-fmin.bin", 10000 },
-    -- { "rv64uzfh-v-ldst.bin", 10000 },
-    -- { "rv64uzfh-v-move.bin", 10000 },
-    -- { "rv64uzfh-v-recoding.bin", 10000 },
 
     -- cartesi tests
     { "access.bin", 97 },
@@ -786,7 +786,13 @@ local function check_and_print_result(machine, ctx)
     local halt_payload = machine:read_reg("htif_tohost_data") >> 1
     local expected_halt_payload = ctx.expected_halt_payload or 0
     if halt_payload ~= expected_halt_payload then
-        fatal("%s: failed. returned halt payload %d, expected %d\n", ctx.ram_image, halt_payload, expected_halt_payload)
+        fatal(
+            "%s: failed. halted at mcycle = %d with payload %d, expected %d\n",
+            ctx.ram_image,
+            cycles,
+            halt_payload,
+            expected_halt_payload
+        )
     end
 
     -- print(string.format([[{ "%s", %d },]], ctx.ram_image, cycles))

@@ -3885,6 +3885,38 @@ static FORCE_INLINE execute_status execute_BSETI(const STATE_ACCESS a, uint64_t 
         [](uint64_t rs1, uint32_t uimm) -> uint64_t { return rs1 | (uint64_t{1} << (uimm & (XLEN - 1))); });
 }
 
+/// \brief Implementation of the CZERO.EQZ instruction from Zicond extension.
+/// \details Moves zero to a register rd, if the condition rs2 is equal to zero, otherwise moves rs1 to rd.
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CZERO_EQZ(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "czero.eqz");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        if (rs2 == 0) {
+            return 0;
+        }
+        return rs1;
+    });
+}
+
+/// \brief Implementation of the CZERO.NEZ instruction from Zicond extension.
+/// \details Moves zero to a register rd, if the condition rs2 is nonzero, otherwise moves rs1 to rd.
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_CZERO_NEZ(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, insn, "czero.nez");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
+    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+        if (rs2 != 0) {
+            return 0;
+        }
+        return rs1;
+    });
+}
+
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_S(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
@@ -4393,22 +4425,24 @@ static FORCE_INLINE execute_status execute_XOR_DIV_SH2ADD_XNOR_MIN(const STATE_A
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SRL_SRA_DIVU_MINU_ROR_BEXT(const STATE_ACCESS a, uint64_t &pc,
+static FORCE_INLINE execute_status execute_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ(const STATE_ACCESS a, uint64_t &pc,
     uint32_t insn) {
-    const auto funct7 = static_cast<insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7>(insn_get_funct7(insn));
+    const auto funct7 = static_cast<insn_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_funct7>(insn_get_funct7(insn));
     switch (funct7) {
-        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::SRL:
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_funct7::SRL:
             return execute_SRL<rd_kind>(a, pc, insn);
-        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::SRA:
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_funct7::SRA:
             return execute_SRA<rd_kind>(a, pc, insn);
-        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::DIVU:
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_funct7::DIVU:
             return execute_DIVU<rd_kind>(a, pc, insn);
-        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::MINU:
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_funct7::MINU:
             return execute_MINU<rd_kind>(a, pc, insn);
-        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::ROR:
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_funct7::ROR:
             return execute_ROR<rd_kind>(a, pc, insn);
-        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7::BEXT:
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_funct7::BEXT:
             return execute_BEXT<rd_kind>(a, pc, insn);
+        case insn_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_funct7::CZERO_EQZ:
+            return execute_CZERO_EQZ<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -4432,20 +4466,20 @@ static FORCE_INLINE execute_status execute_OR_REM_SH3ADD_ORN_MAX(const STATE_ACC
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AND_REMU_ANDN_MAXU(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
-    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
-    const auto funct7 = static_cast<insn_AND_REMU_ANDN_MAXU_funct7>(insn_get_funct7(insn));
-    if (funct7 == insn_AND_REMU_ANDN_MAXU_funct7::AND) {
-        return execute_AND<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_AND_REMU_ANDN_MAXU_funct7::REMU) {
-        return execute_REMU<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_AND_REMU_ANDN_MAXU_funct7::ANDN) {
-        return execute_ANDN<rd_kind>(a, pc, insn);
-    }
-    if (funct7 == insn_AND_REMU_ANDN_MAXU_funct7::MAXU) {
-        return execute_MAXU<rd_kind>(a, pc, insn);
+static FORCE_INLINE execute_status execute_AND_REMU_ANDN_MAXU_CZERO_NEZ(const STATE_ACCESS a, uint64_t &pc,
+    uint32_t insn) {
+    const auto funct7 = static_cast<insn_AND_REMU_ANDN_MAXU_CZERO_NEZ_funct7>(insn_get_funct7(insn));
+    switch (funct7) {
+        case insn_AND_REMU_ANDN_MAXU_CZERO_NEZ_funct7::AND:
+            return execute_AND<rd_kind>(a, pc, insn);
+        case insn_AND_REMU_ANDN_MAXU_CZERO_NEZ_funct7::REMU:
+            return execute_REMU<rd_kind>(a, pc, insn);
+        case insn_AND_REMU_ANDN_MAXU_CZERO_NEZ_funct7::ANDN:
+            return execute_ANDN<rd_kind>(a, pc, insn);
+        case insn_AND_REMU_ANDN_MAXU_CZERO_NEZ_funct7::MAXU:
+            return execute_MAXU<rd_kind>(a, pc, insn);
+        case insn_AND_REMU_ANDN_MAXU_CZERO_NEZ_funct7::CZERO_NEZ:
+            return execute_CZERO_NEZ<rd_kind>(a, pc, insn);
     }
     return raise_illegal_insn_exception(a, pc, insn);
 }
@@ -6827,14 +6861,14 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(XOR_DIV_SH2ADD_XNOR_MIN_rdN):
                         status = execute_XOR_DIV_SH2ADD_XNOR_MIN<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRL_SRA_DIVU_MINU_ROR_BEXT_rdN):
-                        status = execute_SRL_SRA_DIVU_MINU_ROR_BEXT<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_rdN):
+                        status = execute_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(OR_REM_SH3ADD_ORN_MAX_rdN):
                         status = execute_OR_REM_SH3ADD_ORN_MAX<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(AND_REMU_ANDN_MAXU_rdN):
-                        status = execute_AND_REMU_ANDN_MAXU<rd_kind::xN>(a, pc, insn);
+                    INSN_CASE(AND_REMU_ANDN_MAXU_CZERO_NEZ_rdN):
+                        status = execute_AND_REMU_ANDN_MAXU_CZERO_NEZ<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADDIW_rdN):
                         status = execute_ADDIW<rd_kind::xN>(a, pc, insn);
@@ -7128,14 +7162,14 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(XOR_DIV_SH2ADD_XNOR_MIN_rd0):
                         status = execute_XOR_DIV_SH2ADD_XNOR_MIN<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRL_SRA_DIVU_MINU_ROR_BEXT_rd0):
-                        status = execute_SRL_SRA_DIVU_MINU_ROR_BEXT<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_rd0):
+                        status = execute_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(OR_REM_SH3ADD_ORN_MAX_rd0):
                         status = execute_OR_REM_SH3ADD_ORN_MAX<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(AND_REMU_ANDN_MAXU_rd0):
-                        status = execute_AND_REMU_ANDN_MAXU<rd_kind::x0>(a, pc, insn);
+                    INSN_CASE(AND_REMU_ANDN_MAXU_CZERO_NEZ_rd0):
+                        status = execute_AND_REMU_ANDN_MAXU_CZERO_NEZ<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADDIW_rd0):
                         status = execute_ADDIW<rd_kind::x0>(a, pc, insn);

@@ -738,14 +738,15 @@ enum class insn_XOR_DIV_SH2ADD_XNOR_MIN_funct7 : uint32_t {
     MIN = 0b0000101,
 };
 
-/// \brief funct7 constants for SRL, SRA, DIVU, MINU, ROR, BEXT instructions
-enum class insn_SRL_SRA_DIVU_MINU_ROR_BEXT_funct7 : uint32_t {
+/// \brief funct7 constants for SRL, SRA, DIVU, MINU, ROR, BEXT, CZERO.EQZ instructions
+enum class insn_SRL_SRA_DIVU_MINU_ROR_BEXT_CZERO_EQZ_funct7 : uint32_t {
     SRL = 0b0000000,
     SRA = 0b0100000,
     DIVU = 0b0000001,
     MINU = 0b0000101,
     ROR = 0b0110000,
     BEXT = 0b0100100,
+    CZERO_EQZ = 0b0000111,
 };
 
 /// \brief funct7 constants for floating-point instructions
@@ -845,12 +846,13 @@ enum class insn_OR_REM_SH3ADD_ORN_MAX_funct7 : uint32_t {
     MAX = 0b0000101,
 };
 
-/// \brief funct7 constants for AND, REMU, ANDN, MAXU instructions
-enum class insn_AND_REMU_ANDN_MAXU_funct7 : uint32_t {
+/// \brief funct7 constants for AND, REMU, ANDN, MAXU, CZERO.NEZ instructions
+enum class insn_AND_REMU_ANDN_MAXU_CZERO_NEZ_funct7 : uint32_t {
     AND = 0b0000000,
     REMU = 0b0000001,
     ANDN = 0b0100000,
     MAXU = 0b0000101,
+    CZERO_NEZ = 0b0000111,
 };
 
 /// \brief funct7 constants for ADDW, SUBW, MULW, ADD.UW instructions

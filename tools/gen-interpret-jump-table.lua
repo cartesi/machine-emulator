@@ -139,6 +139,10 @@ local insns = {
     { bits = "0010100__________001_____0110011", name = "BSET", rd0_special = true },
     { bits = "001010___________001_____0010011", name = "BSETI", rd0_special = true },
 
+    -- Zicond
+    { bits = "0000111__________101_____0110011", name = "CZERO.EQZ", rd0_special = true },
+    { bits = "0000111__________111_____0110011", name = "CZERO.NEZ", rd0_special = true },
+
     -- RV32A
     { bits = "00010__00000_____010_____0101111", name = "LR.W" },
     { bits = "00011____________010_____0101111", name = "SC.W" },

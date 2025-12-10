@@ -386,7 +386,7 @@ local riscv_tests = {
     { "access.bin", 97 },
     { "amo.bin", 166 },
     { "clint_ops.bin", 133 },
-    { "compressed.bin", 410 },
+    { "compressed.bin", 374 },
     { "csr_counters.bin", 737 },
     { "csr_semantics.bin", 378 },
     { "dont_write_x0.bin", 64 },

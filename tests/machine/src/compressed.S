@@ -140,11 +140,6 @@ test_illegal_insns:
     // Invalid instruction (no bit set)
     TEST_RAWC_ILLEGAL_INSN(0x0)
 
-    // Reserved ranges
-    TEST_RAWC_ILLEGAL_INSN((0b100 << SHIFT_C_FUNCT3) | (0 << SHIFT_C_OPCODE))
-    TEST_RAWC_ILLEGAL_INSN((0b100 << SHIFT_C_FUNCT3) | (0b111 << 10) | (0b10 << 5) | (1 << SHIFT_C_OPCODE))
-    TEST_RAWC_ILLEGAL_INSN((0b100 << SHIFT_C_FUNCT3) | (0b111 << 10) | (0b11 << 5) | (1 << SHIFT_C_OPCODE))
-
     // Quadrant 0
     TEST_RAWC_ILLEGAL_INSN((0 << SHIFT_C_FUNCT3) | (1 << SHIFT_C_Q0_RD) | (0 << SHIFT_C_OPCODE)) // C.ADDI4SPN with imm=0
 

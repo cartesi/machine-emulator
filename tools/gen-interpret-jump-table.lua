@@ -335,6 +335,42 @@ do
             add_c_insn({ bits = "110" .. tobase2(mid, 11) .. "00", name = "C.SW" })
             add_c_insn({ bits = "111" .. tobase2(mid, 11) .. "00", name = "C.SD" })
         end
+
+        -- Zcb quadrant 0
+        for rs1 = 0, (1 << 3) - 1 do
+            for rs2 = 0, (1 << 3) - 1 do
+                for uimm = 0, (1 << 2) - 1 do
+                    add_c_insn({
+                        bits = "100010" .. tobase2(rs1, 3) .. tobase2(uimm, 2) .. tobase2(rs2, 3) .. "00",
+                        name = "C.SB",
+                    })
+                end
+                for uimm = 0, 1 do
+                    add_c_insn({
+                        bits = "100011" .. tobase2(rs1, 3) .. "0" .. tobase2(uimm, 1) .. tobase2(rs2, 3) .. "00",
+                        name = "C.SH",
+                    })
+                end
+            end
+            for rd = 0, (1 << 3) - 1 do
+                for uimm = 0, (1 << 2) - 1 do
+                    add_c_insn({
+                        bits = "100000" .. tobase2(rs1, 3) .. tobase2(uimm, 2) .. tobase2(rd, 3) .. "00",
+                        name = "C.LBU",
+                    })
+                end
+                for uimm = 0, 1 do
+                    add_c_insn({
+                        bits = "100001" .. tobase2(rs1, 3) .. "0" .. tobase2(uimm, 1) .. tobase2(rd, 3) .. "00",
+                        name = "C.LHU",
+                    })
+                    add_c_insn({
+                        bits = "100001" .. tobase2(rs1, 3) .. "1" .. tobase2(uimm, 1) .. tobase2(rd, 3) .. "00",
+                        name = "C.LH",
+                    })
+                end
+            end
+        end
     end
 
     do -- quadrant 1
@@ -408,6 +444,19 @@ do
             add_c_insn({ bits = "101" .. tobase2(mid, 11) .. "01", name = "C.J" })
             add_c_insn({ bits = "110" .. tobase2(mid, 11) .. "01", name = "C.BEQZ" })
             add_c_insn({ bits = "111" .. tobase2(mid, 11) .. "01", name = "C.BNEZ" })
+        end
+
+        -- Zcb quadrant 1
+        for rs1 = 0, (1 << 3) - 1 do
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "000" .. "01", name = "C.ZEXT.B" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "001" .. "01", name = "C.SEXT.B" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "010" .. "01", name = "C.ZEXT.H" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "011" .. "01", name = "C.SEXT.H" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "100" .. "01", name = "C.ZEXT.W" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "101" .. "01", name = "C.NOT" })
+            for rs2 = 0, (1 << 3) - 1 do
+                add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "10" .. tobase2(rs2, 3) .. "01", name = "C.MUL" })
+            end
         end
     end
 

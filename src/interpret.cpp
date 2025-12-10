@@ -804,6 +804,20 @@ static FORCE_INLINE int32_t insn_get_C_LW_C_SW_imm(uint32_t insn) {
     return static_cast<int32_t>(((insn >> (10 - 3)) & 0x38) | ((insn >> (6 - 2)) & 0x4) | ((insn << (6 - 5)) & 0x40));
 }
 
+/// \brief Obtains the immediate value from C.LBU and C.SB instructions (Zcb extension).
+/// \param insn Instruction.
+/// \details This function is forced to be inline because GCC may not always inline it.
+static FORCE_INLINE uint32_t insn_get_C_LS_B_uimm(uint32_t insn) {
+    return ((insn >> 6) & 0b1) | ((insn >> 4) & 0b10);
+}
+
+/// \brief Obtains the immediate value from C.LHU, C.LH, and C.SH instructions (Zcb extension).
+/// \param insn Instruction.
+/// \details This function is forced to be inline because GCC may not always inline it.
+static FORCE_INLINE uint32_t insn_get_C_LS_H_uimm(uint32_t insn) {
+    return (insn >> 4) & 0b10;
+}
+
 /// \brief Obtains the immediate value from a CIW-type instruction.
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
@@ -851,14 +865,12 @@ static FORCE_INLINE int32_t insn_get_C_LWSP_imm(uint32_t insn) {
 
 /// \brief Obtains the immediate value from a C.FSDSP and C.SDSP instructions.
 /// \param insn Instruction.
-/// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_get_C_FSDSP_SDSP_imm(uint32_t insn) {
     return static_cast<int32_t>(((insn >> (10 - 3)) & 0x38) | ((insn >> (7 - 6)) & 0x1c0));
 }
 
 /// \brief Obtains the immediate value from a C.SWSP instruction.
 /// \param insn Instruction.
-/// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_get_C_SWSP_imm(uint32_t insn) {
     return static_cast<int32_t>(((insn >> (9 - 2)) & 0x3c) | ((insn >> (7 - 6)) & 0xc0));
 }
@@ -6061,9 +6073,9 @@ static FORCE_INLINE execute_status execute_FDZfh(const STATE_ACCESS a, uint64_t 
     }
 }
 
-template <typename T, typename STATE_ACCESS>
+template <typename T, typename U, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_L(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t rd,
-    uint32_t rs1, int32_t imm) {
+    uint32_t rs1, U imm) {
     const uint64_t vaddr = a.read_x(rs1);
     T val = 0;
     if (unlikely(!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val))) {
@@ -6078,9 +6090,9 @@ static FORCE_INLINE execute_status execute_C_L(const STATE_ACCESS a, uint64_t &p
     return advance_to_next_insn<2>(a, pc);
 }
 
-template <typename T, typename STATE_ACCESS>
+template <typename T, typename U, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_S(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t rs2,
-    uint32_t rs1, int32_t imm) {
+    uint32_t rs1, U imm) {
     const uint64_t vaddr = a.read_x(rs1);
     const uint64_t val = a.read_x(rs2);
     const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
@@ -6387,6 +6399,127 @@ static FORCE_INLINE execute_status execute_C_ADDW(const STATE_ACCESS a, uint64_t
         auto rs2w = static_cast<int32_t>(rs2_value);
         int32_t val = 0;
         __builtin_add_overflow(rs1w, rs2w, &val);
+        return static_cast<uint64_t>(val);
+    });
+}
+
+/// \brief Implementation of the C.LBU instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_LBU(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lbu");
+    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t uimm = insn_get_C_LS_B_uimm(insn);
+    return execute_C_L<uint8_t>(a, pc, mcycle, rd, rs1, uimm);
+}
+
+/// \brief Implementation of the C.LHU instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_LHU(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lhu");
+    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t uimm = insn_get_C_LS_H_uimm(insn);
+    return execute_C_L<uint16_t>(a, pc, mcycle, rd, rs1, uimm);
+}
+
+/// \brief Implementation of the C.LH instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_LH(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lh");
+    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto imm = static_cast<int32_t>(insn_get_C_LS_H_uimm(insn));
+    return execute_C_L<int16_t>(a, pc, mcycle, rd, rs1, imm);
+}
+
+/// \brief Implementation of the C.SB instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_SB(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sb");
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const uint32_t uimm = insn_get_C_LS_B_uimm(insn);
+    return execute_C_S<uint8_t>(a, pc, mcycle, rs2, rs1, uimm);
+}
+
+/// \brief Implementation of the C.SH instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_SH(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sh");
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const uint32_t uimm = insn_get_C_LS_H_uimm(insn);
+    return execute_C_S<uint16_t>(a, pc, mcycle, rs2, rs1, uimm);
+}
+
+/// \brief Implementation of the C.ZEXT.B instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_ZEXT_B(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.zext.b");
+    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint64_t rs1_value = a.read_x(rd);
+    a.write_x(rd, static_cast<uint8_t>(rs1_value));
+    return advance_to_next_insn<2>(a, pc);
+}
+
+/// \brief Implementation of the C.SEXT.B instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_SEXT_B(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sext.b");
+    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint64_t rs1_value = a.read_x(rd);
+    a.write_x(rd, static_cast<uint64_t>(static_cast<int8_t>(rs1_value)));
+    return advance_to_next_insn<2>(a, pc);
+}
+
+/// \brief Implementation of the C.ZEXT.H instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_ZEXT_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.zext.h");
+    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint64_t rs1_value = a.read_x(rd);
+    a.write_x(rd, static_cast<uint16_t>(rs1_value));
+    return advance_to_next_insn<2>(a, pc);
+}
+
+/// \brief Implementation of the C.SEXT.H instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_SEXT_H(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sext.h");
+    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint64_t rs1_value = a.read_x(rd);
+    a.write_x(rd, static_cast<uint64_t>(static_cast<int16_t>(rs1_value)));
+    return advance_to_next_insn<2>(a, pc);
+}
+
+/// \brief Implementation of the C.ZEXT.W instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_ZEXT_W(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.zext.w");
+    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint64_t rs1_value = a.read_x(rd);
+    a.write_x(rd, static_cast<uint64_t>(static_cast<uint32_t>(rs1_value)));
+    return advance_to_next_insn<2>(a, pc);
+}
+
+/// \brief Implementation of the C.NOT instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_NOT(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.not");
+    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint64_t rs1_value = a.read_x(rd);
+    a.write_x(rd, ~rs1_value);
+    return advance_to_next_insn<2>(a, pc);
+}
+
+/// \brief Implementation of the C.MUL instruction (Zcb extension).
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_C_MUL(const STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
+    [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.mul");
+    return execute_C_arithmetic(a, pc, insn, [](uint64_t rs1_value, uint64_t rs2_value) -> uint64_t {
+        int64_t val = 0;
+        __builtin_mul_overflow(static_cast<int64_t>(rs1_value), static_cast<int64_t>(rs2_value), &val);
         return static_cast<uint64_t>(val);
     });
 }
@@ -7045,6 +7178,43 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         INSN_BREAK();
                     INSN_CASE(C_EBREAK):
                         status = execute_C_EBREAK(a, pc, insn);
+                        INSN_BREAK();
+                    // Zcb extension
+                    INSN_CASE(C_LBU):
+                        status = execute_C_LBU(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_LHU):
+                        status = execute_C_LHU(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_LH):
+                        status = execute_C_LH(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_SB):
+                        status = execute_C_SB(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_SH):
+                        status = execute_C_SH(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_ZEXT_B):
+                        status = execute_C_ZEXT_B(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_SEXT_B):
+                        status = execute_C_SEXT_B(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_ZEXT_H):
+                        status = execute_C_ZEXT_H(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_SEXT_H):
+                        status = execute_C_SEXT_H(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_ZEXT_W):
+                        status = execute_C_ZEXT_W(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_NOT):
+                        status = execute_C_NOT(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_MUL):
+                        status = execute_C_MUL(a, pc, insn);
                         INSN_BREAK();
                     // F, D, Zfh extensions
                     INSN_CASE(FDZfh):

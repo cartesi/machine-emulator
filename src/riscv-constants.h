@@ -135,7 +135,7 @@ enum MISA_shifts {
 /// \details See also
 /// https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/devicetree/bindings/riscv/extensions.yaml
 /// https://gcc.gnu.org/git/?p=gcc.git;a=blob;f=gcc/config/riscv/riscv-profiles.def;hb=HEAD
-constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba_zbb_zbc_zbs_zfh";
+constexpr const char ISA_string[] = "rv64imafdcsu_zicntr_zicsr_zifencei_zihpm_zba_zbb_zbc_zbs_zcb_zfh";
 
 /// \brief misa masks
 enum MISA_masks : uint64_t {

@@ -204,7 +204,7 @@ describe("collect hashes", function()
         local create_machine = desc.create_machine
         describe(desc.name, function()
             it("should fail when collecting with invalid arguments", function()
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:run(1)
                 expect.fail(function()
                     machine:collect_mcycle_root_hashes(32, 32, 32)
@@ -221,7 +221,7 @@ describe("collect hashes", function()
             end)
 
             it("should fail when collecting with incompatible back trees", function()
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 expect.fail(function()
                     machine:collect_mcycle_root_hashes(32, 32, 0, 0, {
                         log2_max_leaves = 1,
@@ -244,8 +244,8 @@ describe("collect hashes", function()
 
             it("should fail when collecting with unsupported machines", function()
                 local unrep_machine <close> =
-                    create_machine({ ram = { length = 4096 }, processor = { registers = { iunrep = 1 } } })
-                local soft_machine <close> = create_machine({ ram = { length = 4096 } }, { soft_yield = true })
+                    create_machine({ ram = { length = 0x10000 }, processor = { registers = { iunrep = 1 } } })
+                local soft_machine <close> = create_machine({ ram = { length = 0x10000 } }, { soft_yield = true })
                 expect.fail(function()
                     unrep_machine:collect_mcycle_root_hashes(32, 32)
                 end, "cannot collect hashes from unreproducible machines")
@@ -265,7 +265,7 @@ describe("collect hashes", function()
                 local mcycle_end = 1
                 local mcycle_period = 32
                 local mcycle_phase = 1
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:run(mcycle_start)
                 local log2_bundle_mcycle_count = 0
                 expect.equal(
@@ -312,7 +312,7 @@ describe("collect hashes", function()
                 local mcycle_end = 4
                 local mcycle_period = 4
                 local mcycle_phase = 1
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:run(mcycle_start)
                 local collected = machine:collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase)
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
@@ -322,7 +322,7 @@ describe("collect hashes", function()
                     mcycle_phase = 0,
                 })
 
-                local machine_uarch <close> = create_machine({ ram = { length = 4096 } })
+                local machine_uarch <close> = create_machine({ ram = { length = 0x10000 } })
                 machine_uarch:run(mcycle_start)
                 local collected_uarch = machine_uarch:collect_uarch_cycle_root_hashes(mcycle_end)
                 expect.equal(machine_uarch:read_reg("mcycle"), mcycle_end)
@@ -340,13 +340,13 @@ describe("collect hashes", function()
                 local mcycle_period = 4
                 local mcycle_start = mcycle_period
                 local mcycle_phase = 1
-                local compare_machine <close> = cartesi.machine({ ram = { length = 4096 } })
+                local compare_machine <close> = cartesi.machine({ ram = { length = 0x10000 } })
                 compare_machine:run(mcycle_start)
                 local expected_root_hash_period = compare_machine:get_root_hash()
                 compare_machine:run(mcycle_end)
                 local expected_root_hash_final = compare_machine:get_root_hash()
 
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:run(1)
                 local collected = machine:collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase)
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
@@ -363,7 +363,7 @@ describe("collect hashes", function()
                 local mcycle_end = 32
                 local mcycle_period = 32
                 local mcycle_phase = 1
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:write_reg("iflags_H", 1)
                 local expected_root_hash = machine:get_root_hash()
 
@@ -388,7 +388,7 @@ describe("collect hashes", function()
                 local mcycle_end = 32
                 local mcycle_period = 32
                 local mcycle_phase = 1
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:write_reg("iflags_Y", 1)
                 local expected_root_hash = machine:get_root_hash()
 
@@ -412,7 +412,7 @@ describe("collect hashes", function()
                 local mcycle_end = 0
                 local mcycle_period = 32
                 local mcycle_phase = 1
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:write_reg("iflags_H", 1)
                 local expected_root_hash = machine:get_root_hash()
 
@@ -435,7 +435,7 @@ describe("collect hashes", function()
                 local mcycle_end = 0
                 local mcycle_period = 32
                 local mcycle_phase = 1
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:write_reg("iflags_Y", 1)
                 local expected_root_hash = machine:get_root_hash()
 
@@ -456,7 +456,7 @@ describe("collect hashes", function()
 
             it("should collect mcycles during mcycle overflow", function()
                 local mcycle_period = 32
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:write_reg("mcycle", cartesi.MCYCLE_MAX - 1)
                 local collected = machine:collect_mcycle_root_hashes(
                     cartesi.MCYCLE_MAX,
@@ -486,7 +486,7 @@ describe("collect hashes", function()
             end)
 
             it("should collect uarch cycles during mcycle overflows", function()
-                local machine <close> = create_machine({ ram = { length = 4096 } })
+                local machine <close> = create_machine({ ram = { length = 0x10000 } })
                 machine:write_reg("mcycle", cartesi.MCYCLE_MAX - 1)
                 local collected_uarch = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
@@ -505,7 +505,7 @@ describe("collect hashes", function()
 
             local add_machine_config = {
                 ram = {
-                    length = 4096, -- non power of 2 on purpose to exercise address range boundaries
+                    length = 0x10000,
                     backing_store = {
                         data_filename = tests_util.tests_path .. "rv64ui-p-add.bin",
                     },
@@ -513,7 +513,7 @@ describe("collect hashes", function()
             }
             local yield_machine_config = {
                 ram = {
-                    length = 8191 * 4096, -- non power of 2 on purpose to exercise address range boundaries
+                    length = 0x10000,
                     backing_store = {
                         data_filename = tests_util.tests_path .. "htif_yield.bin",
                     },
@@ -814,7 +814,7 @@ describe("collect hashes", function()
                 },
             }
             local empty_machine_config = {
-                ram = { length = 4096 },
+                ram = { length = 0x10000 },
                 hash_tree = {
                     hash_function = hash_function,
                 },

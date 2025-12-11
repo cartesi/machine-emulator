@@ -88,6 +88,61 @@ local insns = {
     { bits = "0000001__________110_____0111011", name = "REMW", rd0_special = true },
     { bits = "0000001__________111_____0111011", name = "REMUW", rd0_special = true },
 
+    -- Zba extension
+    { bits = "0000100__________000_____0111011", name = "ADD.UW", rd0_special = true },
+    { bits = "0010000__________010_____0110011", name = "SH1ADD", rd0_special = true },
+    { bits = "0010000__________010_____0111011", name = "SH1ADD.UW", rd0_special = true },
+    { bits = "0010000__________100_____0110011", name = "SH2ADD", rd0_special = true },
+    { bits = "0010000__________100_____0111011", name = "SH2ADD.UW", rd0_special = true },
+    { bits = "0010000__________110_____0110011", name = "SH3ADD", rd0_special = true },
+    { bits = "0010000__________110_____0111011", name = "SH3ADD.UW", rd0_special = true },
+    { bits = "000010___________001_____0011011", name = "SLLI.UW", rd0_special = true },
+
+    -- Zbb extension
+    { bits = "0100000__________111_____0110011", name = "ANDN", rd0_special = true },
+    { bits = "0100000__________110_____0110011", name = "ORN", rd0_special = true },
+    { bits = "0100000__________100_____0110011", name = "XNOR", rd0_special = true },
+    { bits = "011000000000_____001_____0010011", name = "CLZ", rd0_special = true },
+    { bits = "011000000000_____001_____0011011", name = "CLZW", rd0_special = true },
+    { bits = "011000000001_____001_____0010011", name = "CTZ", rd0_special = true },
+    { bits = "011000000001_____001_____0011011", name = "CTZW", rd0_special = true },
+    { bits = "011000000010_____001_____0010011", name = "CPOP", rd0_special = true },
+    { bits = "011000000010_____001_____0011011", name = "CPOPW", rd0_special = true },
+    { bits = "0000101__________110_____0110011", name = "MAX", rd0_special = true },
+    { bits = "0000101__________111_____0110011", name = "MAXU", rd0_special = true },
+    { bits = "0000101__________100_____0110011", name = "MIN", rd0_special = true },
+    { bits = "0000101__________101_____0110011", name = "MINU", rd0_special = true },
+    { bits = "011000000100_____001_____0010011", name = "SEXT.B", rd0_special = true },
+    { bits = "011000000101_____001_____0010011", name = "SEXT.H", rd0_special = true },
+    { bits = "000010000000_____100_____0111011", name = "ZEXT.H", rd0_special = true },
+    { bits = "0110000__________001_____0110011", name = "ROL", rd0_special = true },
+    { bits = "0110000__________001_____0111011", name = "ROLW", rd0_special = true },
+    { bits = "0110000__________101_____0110011", name = "ROR", rd0_special = true },
+    { bits = "011000___________101_____0010011", name = "RORI", rd0_special = true },
+    { bits = "0110000__________101_____0011011", name = "RORIW", rd0_special = true },
+    { bits = "0110000__________101_____0111011", name = "RORW", rd0_special = true },
+    { bits = "001010000111_____101_____0010011", name = "ORC.B", rd0_special = true },
+    { bits = "011010111000_____101_____0010011", name = "REV8", rd0_special = true },
+
+    -- Zbc extension
+    { bits = "0000101__________001_____0110011", name = "CLMUL", rd0_special = true },
+    { bits = "0000101__________011_____0110011", name = "CLMULH", rd0_special = true },
+    { bits = "0000101__________010_____0110011", name = "CLMULR", rd0_special = true },
+
+    -- Zbs extension
+    { bits = "0100100__________001_____0110011", name = "BCLR", rd0_special = true },
+    { bits = "010010___________001_____0010011", name = "BCLRI", rd0_special = true },
+    { bits = "0100100__________101_____0110011", name = "BEXT", rd0_special = true },
+    { bits = "010010___________101_____0010011", name = "BEXTI", rd0_special = true },
+    { bits = "0110100__________001_____0110011", name = "BINV", rd0_special = true },
+    { bits = "011010___________001_____0010011", name = "BINVI", rd0_special = true },
+    { bits = "0010100__________001_____0110011", name = "BSET", rd0_special = true },
+    { bits = "001010___________001_____0010011", name = "BSETI", rd0_special = true },
+
+    -- Zicond
+    { bits = "0000111__________101_____0110011", name = "CZERO.EQZ", rd0_special = true },
+    { bits = "0000111__________111_____0110011", name = "CZERO.NEZ", rd0_special = true },
+
     -- RV32A
     { bits = "00010__00000_____010_____0101111", name = "LR.W" },
     { bits = "00011____________010_____0101111", name = "SC.W" },
@@ -183,6 +238,42 @@ local insns = {
     { bits = "110100100011_____________1010011", name = "FCVT.D.LU", rm = true },
     { bits = "111100100000_____000_____1010011", name = "FMV.D.X" },
 
+    -- Zfh
+    { bits = "_________________001_____0000111", name = "FLH" },
+    { bits = "_________________001_____0100111", name = "FSH" },
+    { bits = "_____10__________________1000011", name = "FMADD.H", rm = true },
+    { bits = "_____10__________________1000111", name = "FMSUB.H", rm = true },
+    { bits = "_____10__________________1001011", name = "FNMSUB.H", rm = true },
+    { bits = "_____10__________________1001111", name = "FNMADD.H", rm = true },
+    { bits = "0000010__________________1010011", name = "FADD.H", rm = true },
+    { bits = "0000110__________________1010011", name = "FSUB.H", rm = true },
+    { bits = "0001010__________________1010011", name = "FMUL.H", rm = true },
+    { bits = "0001110__________________1010011", name = "FDIV.H", rm = true },
+    { bits = "010111000000_____________1010011", name = "FSQRT.H", rm = true },
+    { bits = "0010010__________000_____1010011", name = "FSGNJ.H" },
+    { bits = "0010010__________001_____1010011", name = "FSGNJN.H" },
+    { bits = "0010010__________010_____1010011", name = "FSGNJX.H" },
+    { bits = "0010110__________000_____1010011", name = "FMIN.H" },
+    { bits = "0010110__________001_____1010011", name = "FMAX.H" },
+    { bits = "010000000010_____________1010011", name = "FCVT.S.H", rm = true },
+    { bits = "010001000000_____________1010011", name = "FCVT.H.S", rm = true },
+    { bits = "010000100010_____________1010011", name = "FCVT.D.H", rm = true },
+    { bits = "010001000001_____________1010011", name = "FCVT.H.D", rm = true },
+    { bits = "1010010__________010_____1010011", name = "FEQ.H" },
+    { bits = "1010010__________001_____1010011", name = "FLT.H" },
+    { bits = "1010010__________000_____1010011", name = "FLE.H" },
+    { bits = "111001000000_____001_____1010011", name = "FCLASS.H" },
+    { bits = "110001000000_____________1010011", name = "FCVT.W.H", rm = true },
+    { bits = "110001000001_____________1010011", name = "FCVT.WU.H", rm = true },
+    { bits = "111001000000_____000_____1010011", name = "FMV.X.H" },
+    { bits = "110101000000_____________1010011", name = "FCVT.H.W", rm = true },
+    { bits = "110101000001_____________1010011", name = "FCVT.H.WU", rm = true },
+    { bits = "111101000000_____000_____1010011", name = "FMV.H.X" },
+    { bits = "110001000010_____________1010011", name = "FCVT.L.H", rm = true },
+    { bits = "110001000011_____________1010011", name = "FCVT.LU.H", rm = true },
+    { bits = "110101000010_____________1010011", name = "FCVT.H.L", rm = true },
+    { bits = "110101000011_____________1010011", name = "FCVT.H.LU", rm = true },
+
     -- Zifencei extension
     { bits = "_________________001_____0001111", name = "FENCE.I" },
 
@@ -243,6 +334,42 @@ do
             add_c_insn({ bits = "101" .. tobase2(mid, 11) .. "00", name = "C.FSD" })
             add_c_insn({ bits = "110" .. tobase2(mid, 11) .. "00", name = "C.SW" })
             add_c_insn({ bits = "111" .. tobase2(mid, 11) .. "00", name = "C.SD" })
+        end
+
+        -- Zcb quadrant 0
+        for rs1 = 0, (1 << 3) - 1 do
+            for rs2 = 0, (1 << 3) - 1 do
+                for uimm = 0, (1 << 2) - 1 do
+                    add_c_insn({
+                        bits = "100010" .. tobase2(rs1, 3) .. tobase2(uimm, 2) .. tobase2(rs2, 3) .. "00",
+                        name = "C.SB",
+                    })
+                end
+                for uimm = 0, 1 do
+                    add_c_insn({
+                        bits = "100011" .. tobase2(rs1, 3) .. "0" .. tobase2(uimm, 1) .. tobase2(rs2, 3) .. "00",
+                        name = "C.SH",
+                    })
+                end
+            end
+            for rd = 0, (1 << 3) - 1 do
+                for uimm = 0, (1 << 2) - 1 do
+                    add_c_insn({
+                        bits = "100000" .. tobase2(rs1, 3) .. tobase2(uimm, 2) .. tobase2(rd, 3) .. "00",
+                        name = "C.LBU",
+                    })
+                end
+                for uimm = 0, 1 do
+                    add_c_insn({
+                        bits = "100001" .. tobase2(rs1, 3) .. "0" .. tobase2(uimm, 1) .. tobase2(rd, 3) .. "00",
+                        name = "C.LHU",
+                    })
+                    add_c_insn({
+                        bits = "100001" .. tobase2(rs1, 3) .. "1" .. tobase2(uimm, 1) .. tobase2(rd, 3) .. "00",
+                        name = "C.LH",
+                    })
+                end
+            end
         end
     end
 
@@ -317,6 +444,19 @@ do
             add_c_insn({ bits = "101" .. tobase2(mid, 11) .. "01", name = "C.J" })
             add_c_insn({ bits = "110" .. tobase2(mid, 11) .. "01", name = "C.BEQZ" })
             add_c_insn({ bits = "111" .. tobase2(mid, 11) .. "01", name = "C.BNEZ" })
+        end
+
+        -- Zcb quadrant 1
+        for rs1 = 0, (1 << 3) - 1 do
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "000" .. "01", name = "C.ZEXT.B" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "001" .. "01", name = "C.SEXT.B" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "010" .. "01", name = "C.ZEXT.H" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "011" .. "01", name = "C.SEXT.H" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "100" .. "01", name = "C.ZEXT.W" })
+            add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "11" .. "101" .. "01", name = "C.NOT" })
+            for rs2 = 0, (1 << 3) - 1 do
+                add_c_insn({ bits = "100111" .. tobase2(rs1, 3) .. "10" .. tobase2(rs2, 3) .. "01", name = "C.MUL" })
+            end
         end
     end
 
@@ -399,23 +539,18 @@ end
 
 -- Table use to rename a group of instructions to a single name.
 local group_names = {
-    -- I
-    ["ADD|SUB|MUL"] = "ADD_MUL_SUB",
-    ["ADDW|SUBW|MULW"] = "ADDW_MULW_SUBW",
-    ["SRL|SRA|DIVU"] = "SRL_DIVU_SRA",
-    ["SRLW|SRAW|DIVUW"] = "SRLW_DIVUW_SRAW",
     -- A
     ["LR.W|SC.W|AMOSWAP.W|AMOADD.W|AMOXOR.W|AMOAND.W|AMOOR.W|AMOMIN.W|AMOMAX.W|AMOMINU.W|AMOMAXU.W"] = "AMO_W",
     ["LR.D|SC.D|AMOSWAP.D|AMOADD.D|AMOXOR.D|AMOAND.D|AMOOR.D|AMOMIN.D|AMOMAX.D|AMOMINU.D|AMOMAXU.D"] = "AMO_D",
     -- FD
-    ["FMADD.S|FMADD.D"] = "FMADD",
-    ["FMSUB.S|FMSUB.D"] = "FMSUB",
-    ["FNMADD.S|FNMADD.D"] = "FNMADD",
-    ["FNMSUB.S|FNMSUB.D"] = "FNMSUB",
-    ["FADD.S|FSUB.S|FMUL.S|FDIV.S|FSQRT.S|FSGNJ.S|FMIN.S|FCVT.W.S|FCVT.WU.S|FMV.X.W|FLE.S|FCVT.S.W|FCVT.S.WU|FMV.W.X|FCVT.L.S|FCVT.LU.S|FCVT.S.L|FCVT.S.LU|FADD.D|FSUB.D|FMUL.D|FDIV.D|FSQRT.D|FSGNJ.D|FMIN.D|FCVT.S.D|FCVT.D.S|FLE.D|FCLASS.D|FCVT.W.D|FCVT.WU.D|FCVT.D.W|FCVT.D.WU|FCVT.L.D|FCVT.LU.D|FMV.X.D|FCVT.D.L|FCVT.D.LU|FMV.D.X"] = "FD",
-    ["FSGNJN.S|FMAX.S|FLT.S|FCLASS.S|FSGNJN.D|FMAX.D|FLT.D|FADD.S|FSUB.S|FMUL.S|FDIV.S|FSQRT.S|FCVT.W.S|FCVT.WU.S|FCVT.S.W|FCVT.S.WU|FCVT.L.S|FCVT.LU.S|FCVT.S.L|FCVT.S.LU|FADD.D|FSUB.D|FMUL.D|FDIV.D|FSQRT.D|FCVT.S.D|FCVT.D.S|FCLASS.D|FCVT.W.D|FCVT.WU.D|FCVT.D.W|FCVT.D.WU|FCVT.L.D|FCVT.LU.D|FCVT.D.L|FCVT.D.LU"] = "FD",
-    ["FSGNJX.S|FEQ.S|FSGNJX.D|FEQ.D|FADD.S|FSUB.S|FMUL.S|FDIV.S|FSQRT.S|FCVT.W.S|FCVT.WU.S|FCVT.S.W|FCVT.S.WU|FCVT.L.S|FCVT.LU.S|FCVT.S.L|FCVT.S.LU|FADD.D|FSUB.D|FMUL.D|FDIV.D|FSQRT.D|FCVT.S.D|FCVT.D.S|FCLASS.D|FCVT.W.D|FCVT.WU.D|FCVT.D.W|FCVT.D.WU|FCVT.L.D|FCVT.LU.D|FCVT.D.L|FCVT.D.LU"] = "FD",
-    ["FADD.S|FSUB.S|FMUL.S|FDIV.S|FSQRT.S|FCVT.W.S|FCVT.WU.S|FCVT.S.W|FCVT.S.WU|FCVT.L.S|FCVT.LU.S|FCVT.S.L|FCVT.S.LU|FADD.D|FSUB.D|FMUL.D|FDIV.D|FSQRT.D|FCVT.S.D|FCVT.D.S|FCLASS.D|FCVT.W.D|FCVT.WU.D|FCVT.D.W|FCVT.D.WU|FCVT.L.D|FCVT.LU.D|FCVT.D.L|FCVT.D.LU"] = "FD",
+    ["FMADD.S|FMADD.D|FMADD.H"] = "FMADD",
+    ["FMSUB.S|FMSUB.D|FMSUB.H"] = "FMSUB",
+    ["FNMADD.S|FNMADD.D|FNMADD.H"] = "FNMADD",
+    ["FNMSUB.S|FNMSUB.D|FNMSUB.H"] = "FNMSUB",
+    ["FADD.S|FSUB.S|FMUL.S|FDIV.S|FSQRT.S|FSGNJ.S|FMIN.S|FCVT.W.S|FCVT.WU.S|FMV.X.W|FLE.S|FCVT.S.W|FCVT.S.WU|FMV.W.X|FCVT.L.S|FCVT.LU.S|FCVT.S.L|FCVT.S.LU|FADD.D|FSUB.D|FMUL.D|FDIV.D|FSQRT.D|FSGNJ.D|FMIN.D|FCVT.S.D|FCVT.D.S|FLE.D|FCLASS.D|FCVT.W.D|FCVT.WU.D|FCVT.D.W|FCVT.D.WU|FCVT.L.D|FCVT.LU.D|FMV.X.D|FCVT.D.L|FCVT.D.LU|FMV.D.X|FADD.H|FSUB.H|FMUL.H|FDIV.H|FSQRT.H|FSGNJ.H|FMIN.H|FCVT.S.H|FCVT.H.S|FCVT.D.H|FCVT.H.D|FLE.H|FCVT.W.H|FCVT.WU.H|FMV.X.H|FCVT.H.W|FCVT.H.WU|FMV.H.X|FCVT.L.H|FCVT.LU.H|FCVT.H.L|FCVT.H.LU"] = "FDZfh",
+    ["FSGNJN.S|FMAX.S|FLT.S|FCLASS.S|FSGNJN.D|FMAX.D|FLT.D|FSGNJN.H|FMAX.H|FLT.H|FCLASS.H|FADD.S|FSUB.S|FMUL.S|FDIV.S|FSQRT.S|FCVT.W.S|FCVT.WU.S|FCVT.S.W|FCVT.S.WU|FCVT.L.S|FCVT.LU.S|FCVT.S.L|FCVT.S.LU|FADD.D|FSUB.D|FMUL.D|FDIV.D|FSQRT.D|FCVT.S.D|FCVT.D.S|FCLASS.D|FCVT.W.D|FCVT.WU.D|FCVT.D.W|FCVT.D.WU|FCVT.L.D|FCVT.LU.D|FCVT.D.L|FCVT.D.LU|FADD.H|FSUB.H|FMUL.H|FDIV.H|FSQRT.H|FCVT.S.H|FCVT.H.S|FCVT.D.H|FCVT.H.D|FCVT.W.H|FCVT.WU.H|FCVT.H.W|FCVT.H.WU|FCVT.L.H|FCVT.LU.H|FCVT.H.L|FCVT.H.LU"] = "FDZfh",
+    ["FSGNJX.S|FEQ.S|FSGNJX.D|FEQ.D|FSGNJX.H|FEQ.H|FADD.S|FSUB.S|FMUL.S|FDIV.S|FSQRT.S|FCVT.W.S|FCVT.WU.S|FCVT.S.W|FCVT.S.WU|FCVT.L.S|FCVT.LU.S|FCVT.S.L|FCVT.S.LU|FADD.D|FSUB.D|FMUL.D|FDIV.D|FSQRT.D|FCVT.S.D|FCVT.D.S|FCLASS.D|FCVT.W.D|FCVT.WU.D|FCVT.D.W|FCVT.D.WU|FCVT.L.D|FCVT.LU.D|FCVT.D.L|FCVT.D.LU|FADD.H|FSUB.H|FMUL.H|FDIV.H|FSQRT.H|FCVT.S.H|FCVT.H.S|FCVT.D.H|FCVT.H.D|FCVT.W.H|FCVT.WU.H|FCVT.H.W|FCVT.H.WU|FCVT.L.H|FCVT.LU.H|FCVT.H.L|FCVT.H.LU"] = "FDZfh",
+    ["FADD.S|FSUB.S|FMUL.S|FDIV.S|FSQRT.S|FCVT.W.S|FCVT.WU.S|FCVT.S.W|FCVT.S.WU|FCVT.L.S|FCVT.LU.S|FCVT.S.L|FCVT.S.LU|FADD.D|FSUB.D|FMUL.D|FDIV.D|FSQRT.D|FCVT.S.D|FCVT.D.S|FCLASS.D|FCVT.W.D|FCVT.WU.D|FCVT.D.W|FCVT.D.WU|FCVT.L.D|FCVT.LU.D|FCVT.D.L|FCVT.D.LU|FADD.H|FSUB.H|FMUL.H|FDIV.H|FSQRT.H|FCVT.S.H|FCVT.H.S|FCVT.D.H|FCVT.H.D|FCVT.W.H|FCVT.WU.H|FCVT.H.W|FCVT.H.WU|FCVT.L.H|FCVT.LU.H|FCVT.H.L|FCVT.H.LU"] = "FDZfh",
     -- privileged
     ["ECALL|EBREAK|SRET|MRET|MNRET|WFI|SFENCE.VMA"] = "PRIVILEGED",
     ["SFENCE.VMA"] = "PRIVILEGED",
@@ -480,7 +615,7 @@ for i = 0, ((1 << mask_bits) - 1) do
             table.insert(labels, { name = name, i = firstindex * 10 })
         end
     end
-    assert(#name < 18, namekey)
+    assert(#name < 64, namekey)
     for rd = 0, 31 do
         local ename = name
         if rd0_special then

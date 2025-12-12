@@ -20,7 +20,6 @@
 #include <cstdint>
 
 #include "address-range.h"
-#include "compiler-defines.h"
 
 namespace cartesi {
 
@@ -40,7 +39,7 @@ address_range &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
         // The pmas array always contain a sentinel.
         // It is an entry with zero length.
         // If we hit it, return it
-        if (unlikely(ar.is_empty())) {
+        if (ar.is_empty()) [[unlikely]] {
             return ar;
         }
         if (ar.contains_absolute(paddr, sizeof(T))) {

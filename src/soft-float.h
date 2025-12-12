@@ -330,7 +330,7 @@ struct i_sfloat {
         uint32_t b_exp = (b >> MANT_SIZE) & EXP_MASK;
         F_UINT a_mant = (a & MANT_MASK) << 3;
         F_UINT b_mant = (b & MANT_MASK) << 3;
-        if (unlikely(a_exp == EXP_MASK)) {
+        if (a_exp == EXP_MASK) [[unlikely]] {
             if (a_mant != 0) { // NaN result
                 if (!(a_mant & (QNAN_MASK << 3)) || issignan(b)) {
                     *pfflags |= FFLAGS_NV_MASK;
@@ -378,7 +378,7 @@ struct i_sfloat {
         int32_t b_exp = (b >> MANT_SIZE) & EXP_MASK;
         F_UINT a_mant = a & MANT_MASK;
         F_UINT b_mant = b & MANT_MASK;
-        if (unlikely(a_exp == EXP_MASK || b_exp == EXP_MASK)) {
+        if (a_exp == EXP_MASK || b_exp == EXP_MASK) [[unlikely]] {
             if (isnan(a) || isnan(b)) {
                 if (issignan(a) || issignan(b)) {
                     *pfflags |= FFLAGS_NV_MASK;
@@ -427,7 +427,7 @@ struct i_sfloat {
         F_UINT a_mant = a & MANT_MASK;
         F_UINT b_mant = b & MANT_MASK;
         F_UINT c_mant = c & MANT_MASK;
-        if (unlikely(a_exp == EXP_MASK || b_exp == EXP_MASK || c_exp == EXP_MASK)) {
+        if (a_exp == EXP_MASK || b_exp == EXP_MASK || c_exp == EXP_MASK) [[unlikely]] {
             // The fused multiply-add instructions must set the invalid operation exception flag
             // when the multiplicands are infinite and zero, even when the addend is a quiet NaN.
             if (((a_exp == EXP_MASK && a_mant == 0) && (b_exp == 0 && b_mant == 0)) ||
@@ -550,7 +550,7 @@ struct i_sfloat {
         int32_t b_exp = (b >> MANT_SIZE) & EXP_MASK;
         F_UINT a_mant = a & MANT_MASK;
         F_UINT b_mant = b & MANT_MASK;
-        if (unlikely(a_exp == EXP_MASK)) {
+        if (a_exp == EXP_MASK) [[unlikely]] {
             if (a_mant != 0 || isnan(b)) {
                 if (issignan(a) || issignan(b)) {
                     *pfflags |= FFLAGS_NV_MASK;
@@ -563,7 +563,7 @@ struct i_sfloat {
             }
             return pack(r_sign, EXP_MASK, 0);
         }
-        if (unlikely(b_exp == EXP_MASK)) {
+        if (b_exp == EXP_MASK) [[unlikely]] {
             if (b_mant != 0) {
                 if (issignan(b)) {
                     *pfflags |= FFLAGS_NV_MASK;
@@ -573,7 +573,7 @@ struct i_sfloat {
             return pack(r_sign, 0, 0);
         }
         if (b_exp == 0) {
-            if (unlikely(b_mant == 0)) { // zero
+            if (b_mant == 0) [[unlikely]] { // zero
                 if (a_exp == 0 && a_mant == 0) {
                     *pfflags |= FFLAGS_NV_MASK;
                     return F_QNAN;
@@ -607,7 +607,7 @@ struct i_sfloat {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         F_UINT a_mant = a & MANT_MASK;
-        if (unlikely(a_exp == EXP_MASK)) {
+        if (a_exp == EXP_MASK) [[unlikely]] {
             if (a_mant != 0) {
                 if (issignan(a)) {
                     *pfflags |= FFLAGS_NV_MASK;
@@ -621,7 +621,7 @@ struct i_sfloat {
             return a;
         }
         if (a_sign != 0) {
-            if (likely(a_exp == 0 && a_mant == 0)) { // zero
+            if (a_exp == 0 && a_mant == 0) [[likely]] { // zero
                 return a;
             }
             *pfflags |= FFLAGS_NV_MASK;
@@ -691,7 +691,7 @@ struct i_sfloat {
 
     /// \brief Equal operation.
     static NO_INLINE bool eq(F_UINT a, F_UINT b, uint32_t *pfflags) {
-        if (unlikely(isnan(a) || isnan(b))) {
+        if (isnan(a) || isnan(b)) [[unlikely]] {
             if (issignan(a) || issignan(b)) {
                 *pfflags |= FFLAGS_NV_MASK;
             }
@@ -705,7 +705,7 @@ struct i_sfloat {
 
     /// \brief Less or equal than operation.
     static NO_INLINE bool le(F_UINT a, F_UINT b, uint32_t *pfflags) {
-        if (unlikely(isnan(a) || isnan(b))) {
+        if (isnan(a) || isnan(b)) [[unlikely]] {
             *pfflags |= FFLAGS_NV_MASK;
             return false;
         }
@@ -719,7 +719,7 @@ struct i_sfloat {
 
     /// \brief Less than operation.
     static NO_INLINE bool lt(F_UINT a, F_UINT b, uint32_t *pfflags) { // NOLINT(misc-confusable-identifiers)
-        if (unlikely(isnan(a) || isnan(b))) {
+        if (isnan(a) || isnan(b)) [[unlikely]] {
             *pfflags |= FFLAGS_NV_MASK;
             return false;
         }
@@ -736,7 +736,7 @@ struct i_sfloat {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         const F_UINT a_mant = a & MANT_MASK;
-        if (unlikely(a_exp == EXP_MASK)) {
+        if (a_exp == EXP_MASK) [[unlikely]] {
             if (a_mant != 0) {
                 return (a_mant & QNAN_MASK) ? FCLASS_QNAN : FCLASS_SNAN;
             }
@@ -778,9 +778,9 @@ struct i_sfloat {
         }
         ICVT_UINT r = 0;
         if (a_exp >= 0) {
-            if (likely(a_exp <= (ICVT_SIZE - 1 - MANT_SIZE))) {
+            if (a_exp <= (ICVT_SIZE - 1 - MANT_SIZE)) [[likely]] {
                 r = static_cast<ICVT_UINT>(a_mant >> RND_SIZE) << a_exp;
-                if (unlikely(r > r_max)) {
+                if (r > r_max) [[unlikely]] {
                     *pfflags |= FFLAGS_NV_MASK;
                     return r_max;
                 }
@@ -815,7 +815,7 @@ struct i_sfloat {
             if (rm == FRM_RNE && rnd_bits == (1 << (RND_SIZE - 1))) {
                 a_mant &= ~static_cast<F_UINT>(1);
             }
-            if (unlikely(a_mant > r_max)) {
+            if (a_mant > r_max) [[unlikely]] {
                 *pfflags |= FFLAGS_NV_MASK;
                 return r_max;
             }
@@ -865,7 +865,7 @@ static NO_INLINE uint64_t sfloat_cvt_f32_f64(uint32_t a, uint32_t *pfflags) {
     uint32_t a_sign = 0;
     int32_t a_exp = 0;
     i_sfloat64::F_UINT a_mant = i_sfloat32::unpack(&a_sign, &a_exp, a);
-    if (unlikely(a_exp == 0xff)) {
+    if (a_exp == 0xff) [[unlikely]] {
         if (a_mant != 0) { // NaN
             if (i_sfloat32::issignan(a)) {
                 *pfflags |= FFLAGS_NV_MASK;
@@ -894,7 +894,7 @@ static NO_INLINE uint32_t sfloat_cvt_f64_f32(uint64_t a, FRM_modes rm, uint32_t 
     uint32_t a_sign = 0;
     int32_t a_exp = 0;
     i_sfloat64::F_UINT a_mant = i_sfloat64::unpack(&a_sign, &a_exp, a);
-    if (unlikely(a_exp == i_sfloat64::EXP_MASK)) {
+    if (a_exp == i_sfloat64::EXP_MASK) [[unlikely]] {
         if (a_mant != 0) { // nan
             if (i_sfloat64::issignan(a)) {
                 *pfflags |= FFLAGS_NV_MASK;

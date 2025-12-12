@@ -31,10 +31,6 @@
 
 #define NO_RETURN [[noreturn]]
 
-// These macros are used only in very hot code paths (such as TLB hit checks).
-#define likely(x) __builtin_expect((x), 1)
-#define unlikely(x) __builtin_expect((x), 0)
-
 #define PACKED __attribute__((packed))
 
 // Helper macros for stringification

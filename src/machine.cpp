@@ -39,7 +39,6 @@
 #include "back-merkle-tree.h"
 #include "collect-mcycle-hashes-state-access.h"
 #include "collect-uarch-cycle-hashes-state-access.h"
-#include "compiler-defines.h"
 #include "device-state-access.h"
 #include "dtb.h"
 #include "hash-tree-constants.h"
@@ -2008,7 +2007,7 @@ std::pair<uint64_t, execute_status> machine::poll_external_interrupts(uint64_t m
     bool serve_interrupts = false;
     bool refill_console_input = false;
     // Only poll external interrupts if we are in unreproducible mode
-    if (unlikely(m_s->shadow.registers.iunrep)) {
+    if (m_s->shadow.registers.iunrep != 0) [[unlikely]] {
         // Convert the relative interval of cycles we can wait to the interval of host time we can wait
         uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
         int64_t start_us = 0;

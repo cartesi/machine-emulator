@@ -357,8 +357,15 @@ install-bins: $(BIN_INSTALL_PATH)
 	$(INSTALL_EXEC) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
 
 install-lua-bins: $(BIN_INSTALL_PATH)
-	cat tools/template/cartesi-machine.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_IMAGES_PATH|$(IMAGES_RUNTIME_PATH)|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine
-	cat tools/template/cartesi-machine-stored-hash.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
+	sed -e "s|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g" \
+	    -e "s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g" \
+	    -e "s|ARG_IMAGES_PATH|$(IMAGES_RUNTIME_PATH)|g" \
+	    -e "s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g" \
+	    tools/template/cartesi-machine.template > $(BIN_INSTALL_PATH)/cartesi-machine
+	sed -e "s|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g" \
+	    -e "s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g" \
+	    -e "s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g" \
+	    tools/template/cartesi-machine-stored-hash.template > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
 	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
 
 install-shared-files: $(IMAGES_INSTALL_PATH)
@@ -372,7 +379,9 @@ install-uarch: install $(UARCH_INSTALL_PATH)
 debian-package: install
 	mkdir -p $(DESTDIR)/DEBIAN $(DOC_INSTALL_PATH)
 	$(INSTALL_FILE) COPYING $(DOC_INSTALL_PATH)/copyright
-	sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' tools/template/control.template > $(DESTDIR)/DEBIAN/control
+	sed -e "s|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g" \
+	    -e "s|ARG_ARCH|$(DEB_ARCH)|g" \
+	    tools/template/control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(DEB_FILENAME)
 
 install-tests-data: | $(TESTS_DATA_INSTALL_PATH)
@@ -383,20 +392,32 @@ install-tests: | $(LUA_INSTALL_PATH) $(BIN_INSTALL_PATH) $(TESTS_SCRIPTS_INSTALL
 	$(INSTALL_DIR) $(TESTS_LUA_TO_LUA_PATH) $(LUA_INSTALL_PATH)
 	$(INSTALL_DIR) $(TESTS_LUA_TO_TEST_LUA_PATH) $(TESTS_LUA_INSTALL_PATH)
 	$(INSTALL_DIR) $(TESTS_SCRIPTS_TO_TEST_SCRIPTS_PATH) $(TESTS_SCRIPTS_INSTALL_PATH)
-	sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(TESTS_LUA_RUNTIME_PATH)|g;s|ARG_TESTS_PATH|$(TESTS_DATA_RUNTIME_PATH)/machine|g' tools/template/cartesi-machine-tests.template > $(BIN_INSTALL_PATH)/cartesi-machine-tests
-	sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(TESTS_LUA_RUNTIME_PATH)|g;s|ARG_TESTS_UARCH_PATH|$(TESTS_DATA_RUNTIME_PATH)/uarch|g' tools/template/uarch-riscv-tests.template > $(BIN_INSTALL_PATH)/uarch-riscv-tests
+	sed -e "s|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g" \
+	    -e "s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g" \
+	    -e "s|ARG_LUA_RUNTIME_PATH|$(TESTS_LUA_RUNTIME_PATH)|g" \
+	    -e "s|ARG_TESTS_PATH|$(TESTS_DATA_RUNTIME_PATH)/machine|g" \
+	    tools/template/cartesi-machine-tests.template > $(BIN_INSTALL_PATH)/cartesi-machine-tests
+	sed -e "s|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g" \
+	    -e "s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g" \
+	    -e "s|ARG_LUA_RUNTIME_PATH|$(TESTS_LUA_RUNTIME_PATH)|g" \
+	    -e "s|ARG_TESTS_UARCH_PATH|$(TESTS_DATA_RUNTIME_PATH)/uarch|g" \
+	    tools/template/uarch-riscv-tests.template > $(BIN_INSTALL_PATH)/uarch-riscv-tests
 	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine-tests $(BIN_INSTALL_PATH)/uarch-riscv-tests
 
 tests-data-debian-package: install-tests-data
 	mkdir -p $(DESTDIR)/DEBIAN $(TESTS_DATA_DOC_INSTALL_PATH)
 	$(INSTALL_FILE) tools/template/tests-data-copyright.template $(TESTS_DATA_DOC_INSTALL_PATH)/tests-data-copyright
-	sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' tools/template/tests-data-control.template > $(DESTDIR)/DEBIAN/control
+	sed -e "s|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g" \
+	    -e "s|ARG_ARCH|$(DEB_ARCH)|g" \
+	    tools/template/tests-data-control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(TESTS_DATA_DEB_FILENAME)
 
 tests-debian-package: install-tests
 	mkdir -p $(DESTDIR)/DEBIAN $(TESTS_DOC_INSTALL_PATH)
 	$(INSTALL_FILE) tools/template/tests-copyright.template $(TESTS_DOC_INSTALL_PATH)/copyright
-	sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' tools/template/tests-control.template > $(DESTDIR)/DEBIAN/control
+	sed -e "s|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g" \
+	    -e "s|ARG_ARCH|$(DEB_ARCH)|g" \
+	    tools/template/tests-control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(TESTS_DEB_FILENAME)
 
 create-generated-files-patch: $(ADD_GENERATED_FILES_DIFF)

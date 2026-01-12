@@ -61,8 +61,6 @@ PICCFLAGS=-fPIC
 SOLDFLAGS=-dynamiclib -undefined dynamic_lookup
 LIBLDFLAGS=-dynamiclib
 EXELDFLAGS=
-PTHREAD_CFLAGS=-I/opt/local/include/libomp -fopenmp
-PTHREAD_LDFLAGS=-L/opt/local/lib/libomp -lgomp
 CC=clang
 CXX=clang++
 AR=libtool -static -o
@@ -82,6 +80,8 @@ BOOST_LIB_DIR=-L$(BREW_PREFIX)/lib
 BOOST_INC=-I$(BREW_PREFIX)/include
 SLIRP_LIB=-L$(BREW_PREFIX)/lib -lslirp
 SLIRP_INC=-I$(BREW_PREFIX)/libslirp/include
+PTHREAD_CFLAGS=-I$(BREW_PREFIX)/opt/libomp/include -fopenmp
+PTHREAD_LDFLAGS=-L$(BREW_PREFIX)/opt/libomp/lib -lomp
 
 # Macports installation
 else ifneq (,$(PORT_PREFIX))
@@ -90,6 +90,8 @@ BOOST_LIB_DIR=-L$(INSTALL_PREFIX)/libexec/boost/1.87/lib
 BOOST_INC=-I$(INSTALL_PREFIX)/libexec/boost/1.87/include
 SLIRP_LIB=-L$(INSTALL_PREFIX)/lib -lslirp
 SLIRP_INC=-I$(INSTALL_PREFIX)/include
+PTHREAD_CFLAGS=-I$(INSTALL_PREFIX)/include/libomp -fopenmp
+PTHREAD_LDFLAGS=-L$(INSTALL_PREFIX)/lib/libomp -lgomp
 
 else
 $(warning Neither Homebrew nor MacPorts prefix found)

@@ -19,6 +19,8 @@
 #define BOOST_ASIO_DISABLE_EPOLL
 #define BOOST_ASIO_DISABLE_EVENTFD
 
+#include "os-features.h"
+
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -64,6 +66,10 @@
 #pragma GCC diagnostic pop
 
 #include <json.hpp>
+
+#ifdef HAVE_OPENMP
+#include <omp.h>
+#endif
 
 #include "access-log.h"
 #include "back-merkle-tree.h"
@@ -793,6 +799,10 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     const std::string new_server_address = endpoint_to_string(acceptor.local_endpoint());
     // Notify ASIO that we are about to fork
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
+#ifdef HAVE_OPENMP
+    // OpenMP don't play nicely with fork(), we have to pause it before forking
+    omp_pause_resource_all(omp_pause_hard);
+#endif
     // Done initializing, so we fork
     const auto pid = fork();
     if (pid == 0) { // Child process and fork() succeeded

@@ -1,0 +1,11 @@
+# Generated test inputs
+inputs/
+
+# Proof outputs
+outputs/
+
+# Backup of research phase
+batch-test.bak/
+
+# macOS
+.DS_Store

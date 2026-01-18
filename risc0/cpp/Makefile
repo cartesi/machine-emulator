@@ -15,7 +15,7 @@ THIRD_PARTY_DIR ?= $(abspath ../../third-party)
 
 BOOST_INC_DIR = /usr/include/boost
 ifeq ($(UNAME),Darwin)
-HOST_CXX := clang++
+HO-DZK_RUNTIME_HEADER=\"$(ZK_RUNTIME_HEADER)\" \ST_CXX := clang++
 # Homebrew installation
 ifneq (,$(wildcard /usr/local/opt/boost/lib))
 BOOST_INC_DIR =/usr/local/opt/boost/include
@@ -55,6 +55,7 @@ endif
 UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks
 
 CFLAGS := -march=rv32im -mabi=ilp32 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
+-DZK_RUNTIME_HEADER=\"risc0-runtime.h\" \
 	-DZKARCHITECTURE=1 \
 	$(DUMP_DEFS) \
 	-DAVOID_NATIVE_UINT128_T=1 \

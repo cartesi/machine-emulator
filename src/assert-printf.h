@@ -23,7 +23,7 @@
 #if defined(MICROARCHITECTURE)
 #include "../uarch/uarch-runtime.h" // IWYU pragma: export
 #elif defined(ZKARCHITECTURE)
-#include "risc0-runtime.h" // IWYU pragma: export
+#include ZK_RUNTIME_HEADER // IWYU pragma: export
 #else
 #include <cassert> // IWYU pragma: export
 #include <cstdio>  // IWYU pragma: export

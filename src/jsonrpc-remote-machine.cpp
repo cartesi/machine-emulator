@@ -1116,7 +1116,6 @@ static json jsonrpc_machine_verify_step_handler(const json &j, const std::shared
     (void) session;
     static const char *const param_name[] = {"root_hash_before", "filename", "mcycle_count", "root_hash_after"};
     auto args = parse_args<cartesi::machine_hash, std::string, uint64_t, cartesi::machine_hash>(j, param_name);
-    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     auto reason =
         cartesi::machine::verify_step(std::get<0>(args), std::get<1>(args), std::get<2>(args), std::get<3>(args));
     return jsonrpc_response_ok(j, reason);

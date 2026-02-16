@@ -128,6 +128,9 @@ public:
     };
 
     struct context {
+        machine_hash logged_root_hash_before{}; ///< Root hash before the step (from log header)
+        uint64_t logged_mcycle_count{0};        ///< Number of mcycles in the step (from log header)
+        machine_hash logged_root_hash_after{};  ///< Root hash after the step (from log header)
         hash_function_type hash_function{hash_function_type::keccak256}; ///< Hash function used for the step log
         uint64_t page_count{0};                                          ///< Number of pages in the step log
         page_type *pages{nullptr};                                       ///< Array of page data
@@ -140,28 +143,47 @@ private:
     context &m_context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
-    // \brief Construct a replay_step_state_access object from a log image and expected initial root hash
+    // \brief Construct a replay_step_state_access object from a log image
     // \param context The context object to be filled with the replay step log data
     // \param log_image Image of the step log file
     // \param log_size The size of the log data
-    // \param root_hash_before The expected machine root hash before the replay
     // \throw runtime_error if the initial root hash does not match or the log data is invalid
-    replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size,
-        const machine_hash &root_hash_before) :
-        m_context(context) {
+    replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size) : m_context(context) {
         // relevant offsets in the log data
+        uint64_t mcycle_count_offset{};
+        uint64_t root_hash_after_offset{};
+        uint64_t hash_function_offset{};
         uint64_t page_count_offset{};
         uint64_t first_page_offset{};
         uint64_t first_sibling_offset{};
         uint64_t sibling_count_offset{};
         uint64_t end_offset{}; // end of the log data
-
+        // read root_hash_before
+        if (!validate_and_advance_offset(log_size, 0, sizeof(m_context.logged_root_hash_before), 1,
+                &mcycle_count_offset)) {
+            THROW(std::runtime_error, "root hash before past end of step log");
+        }
+        std::copy_n(log_image, sizeof(m_context.logged_root_hash_before), m_context.logged_root_hash_before.data());
+        // read mcycle_count
+        if (!validate_and_advance_offset(log_size, mcycle_count_offset, sizeof(m_context.logged_mcycle_count), 1,
+                &root_hash_after_offset)) {
+            THROW(std::runtime_error, "mcycle count past end of step log");
+        }
+        m_context.logged_mcycle_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + mcycle_count_offset);
+        // read root_hash_after
+        if (!validate_and_advance_offset(log_size, root_hash_after_offset, sizeof(m_context.logged_root_hash_after), 1,
+                &hash_function_offset)) {
+            THROW(std::runtime_error, "root hash after past end of step log");
+        }
+        std::copy_n(log_image + root_hash_after_offset, sizeof(m_context.logged_root_hash_after),
+            m_context.logged_root_hash_after.data());
         // hash function type
         uint64_t temp_hash_function{};
-        if (!validate_and_advance_offset(log_size, 0, sizeof(temp_hash_function), 1, &page_count_offset)) {
+        if (!validate_and_advance_offset(log_size, hash_function_offset, sizeof(temp_hash_function), 1,
+                &page_count_offset)) {
             THROW(std::runtime_error, "hash function type past end of step log");
         }
-        temp_hash_function = aliased_aligned_read<uint64_t, uint8_t>(log_image + 0);
+        temp_hash_function = aliased_aligned_read<uint64_t, uint8_t>(log_image + hash_function_offset);
         switch (temp_hash_function) {
             case static_cast<uint64_t>(hash_function_type::keccak256):
                 m_context.hash_function = hash_function_type::keccak256;
@@ -227,9 +249,9 @@ public:
                 THROW(std::runtime_error, "invalid log format: page scratch hash area is not zero");
             }
         }
-        // compute  and check the machine root hash before the replay
+        // compute and check the machine root hash before the replay
         auto computed_root_hash_before = compute_root_hash();
-        if (computed_root_hash_before != root_hash_before) {
+        if (computed_root_hash_before != m_context.logged_root_hash_before) {
             THROW(std::runtime_error, "initial root hash mismatch");
         }
         // relocate all tlb vh offsets into the logged page data
@@ -239,9 +261,8 @@ public:
     }
 
     // \brief Finish the replay and check the final machine root hash
-    // \param final_root_hash The expected final machine root hash
-    // \throw runtime_error if the final root hash does not match
-    void finish(const machine_hash &root_hash_after) {
+    // \throw runtime_error if the final root hash does not match the logged final root hash
+    void finish() {
         // reset all tlb vh offsets to zero
         // this is to mimic peek behavior of tlb pma device
         relocate_tlb_vh_offset_to_vp_offset<TLB_CODE>();
@@ -249,7 +270,7 @@ public:
         relocate_tlb_vh_offset_to_vp_offset<TLB_WRITE>();
         // compute and check machine root hash after the replay
         auto computed_final_root_hash = compute_root_hash();
-        if (computed_final_root_hash != root_hash_after) {
+        if (computed_final_root_hash != m_context.logged_root_hash_after) {
             THROW(std::runtime_error, "final root hash mismatch");
         }
     }

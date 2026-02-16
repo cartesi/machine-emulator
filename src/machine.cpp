@@ -1972,8 +1972,8 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     record_step_state_access a(context, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     auto break_reason = interpret(a, mcycle_end);
-    a.finish();
     auto root_hash_after = get_root_hash();
+    a.finish(root_hash_before, mcycle_count, root_hash_after);
     verify_step(root_hash_before, filename, mcycle_count, root_hash_after);
     return break_reason;
 }
@@ -1983,10 +1983,22 @@ interpreter_break_reason machine::verify_step(const machine_hash &root_hash_befo
     auto data_length = os::file_size(filename);
     auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
     replay_step_state_access::context context;
-    replay_step_state_access a(context, mapped_data.get_ptr(), data_length, root_hash_before);
-    const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
+    // Constructor reads log header, validates computed initial hash == logged initial hash
+    replay_step_state_access a(context, mapped_data.get_ptr(), data_length);
+    // logged initial hash matches computed initial hash
+    if (context.logged_root_hash_before != root_hash_before) {
+        throw std::runtime_error("root hash before mismatch: argument does not match step log header");
+    }
+    if (context.logged_mcycle_count != mcycle_count) {
+        throw std::runtime_error("mcycle count mismatch: argument does not match step log header");
+    }
+    const uint64_t mcycle_end = saturating_add(a.read_mcycle(), context.logged_mcycle_count);
     auto break_reason = interpret(a, mcycle_end);
-    a.finish(root_hash_after);
+    // finish() validates computed final hash == logged final hash
+    a.finish();
+    if (context.logged_root_hash_after != root_hash_after) {
+        throw std::runtime_error("root hash after mismatch: argument does not match step log header");
+    }
     return break_reason;
 }
 

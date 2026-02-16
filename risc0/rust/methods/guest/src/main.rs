@@ -16,15 +16,22 @@
 
 #![no_main]
 use risc0_zkvm::guest::env;
-use std::ffi::{CStr};
+use std::ffi::CStr;
+use std::io::Read;
 risc0_zkvm::guest::entry!(main);
 use std::os::raw::{c_char, c_ulong, c_ulonglong};
 use risc0_zkvm::sha::{Impl, Sha256};
-use cartesi_risc0_shared::{ Journal, MachineHash};
+type MachineHash = [u8; 32];
 
 extern "C" {
-    /// this is the C++ compiled code that will be called to replay the logged step
-    pub fn risc0_replay_steps(root_hash_before: *const c_char, raw_log_data: *const c_char, raw_log_size: c_ulonglong, mcycle_count: c_ulonglong, root_hash_after: *const c_char) -> c_ulonglong;
+    /// C++ code that replays the logged step and returns verified header values via output params
+    pub fn risc0_replay_steps(
+        raw_log_data: *const u8,
+        raw_log_size: c_ulonglong,
+        out_root_hash_before: *mut u8,
+        out_mcycle_count: *mut u64,
+        out_root_hash_after: *mut u8,
+    );
 }
 
 
@@ -85,22 +92,28 @@ pub extern "C" fn zk_concat_hash(hash_tree_target: u64, left: *const c_char, rig
 }
 
 fn main() {
-    let mcycle_count: u64 = env::read();
-    let root_hash_before : MachineHash = env::read();
-    let root_hash_after : MachineHash = env::read();
-    let raw_log_length : u64 = env::read();
-    let mut raw_log: Vec<u8> = vec![0; raw_log_length as usize];
-    for i in (0..raw_log_length).step_by(1) {
-        raw_log[i as usize] = env::read();
-    }
+    let mut log_data = Vec::<u8>::new();
+    env::stdin().read_to_end(&mut log_data).unwrap();
+
+    let mut root_hash_before: MachineHash = [0; 32];
+    let mut mcycle_count: u64 = 0;
+    let mut root_hash_after: MachineHash = [0; 32];
+
     unsafe {
-        risc0_replay_steps(root_hash_before.as_ptr() as *const c_char, raw_log.as_ptr() as *const c_char, raw_log_length, mcycle_count, root_hash_after.as_ptr() as *const c_char);
+        risc0_replay_steps(
+            log_data.as_ptr(),
+            log_data.len() as c_ulonglong,
+            root_hash_before.as_mut_ptr(),
+            &mut mcycle_count,
+            root_hash_after.as_mut_ptr(),
+        );
     }
-    // Collect the verified public information into the journal.
-    let journal = Journal {
-        root_hash_before: root_hash_before,
-        mcycle_count: mcycle_count,
-        root_hash_after: root_hash_after,
-    };
-    env::commit(&journal);
+
+    // ABI-encode journal as abi.encode(bytes32, uint64, bytes32) — 96 bytes
+    let mut journal_bytes = Vec::with_capacity(96);
+    journal_bytes.extend_from_slice(&root_hash_before);
+    journal_bytes.extend_from_slice(&[0u8; 24]);
+    journal_bytes.extend_from_slice(&mcycle_count.to_be_bytes());
+    journal_bytes.extend_from_slice(&root_hash_after);
+    env::commit_slice(&journal_bytes);
 }

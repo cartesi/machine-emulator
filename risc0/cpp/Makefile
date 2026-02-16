@@ -93,10 +93,13 @@ EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,
 
 all: risc0-replay-steps.o
 
-%.emulator_cpp.o: $(EMULATOR_SRC_DIR)/%.cpp
+# Generated headers must exist before any emulator source compiles (-j safe)
+GENERATED_HEADERS := $(EMULATOR_SRC_DIR)/machine-c-version.h $(EMULATOR_SRC_DIR)/interpret-jump-table.h
+
+%.emulator_cpp.o: $(EMULATOR_SRC_DIR)/%.cpp | $(GENERATED_HEADERS)
 	$(CXX) $(CXXFLAGS) $(CFLAGS) -c -o $@ $(EMULATOR_SRC_DIR)/$(<F)
 
-%.emulator_c.o: $(EMULATOR_SRC_DIR)/%.c
+%.emulator_c.o: $(EMULATOR_SRC_DIR)/%.c | $(GENERATED_HEADERS)
 	$(CC) $(CFLAGS) -c -o $@ $(EMULATOR_SRC_DIR)/$(<F)
 
 

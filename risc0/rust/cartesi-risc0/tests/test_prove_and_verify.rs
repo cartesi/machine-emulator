@@ -1,5 +1,5 @@
-use cartesi_risc0:: { prove, verify };
-use cartesi_risc0_shared::MachineHash;
+use cartesi_risc0::{prove, verify, REPLAY_STEP_ELF, REPLAY_STEP_ID};
+use cartesi_risc0::MachineHash;
 use std::fs;
 use std::path::Path;
 
@@ -53,11 +53,7 @@ fn test_prove_and_verify() {
             file_name, root_hash_before, mcycle_count, root_hash_after
         );
 
-        let receipt = prove(&root_hash_before, path.to_str().unwrap(), mcycle_count, &root_hash_after);
-        verify(&receipt, &root_hash_before, mcycle_count, &root_hash_after);
-        
-        // TODO: Ensure that verify fails when the hash is wrong
-        // let bad_hash : [u8; 32] = [0; 32];
-        // verify(&receipt, &bad_hash, mcycle_count, &root_hash_after);
+        let receipt = prove(REPLAY_STEP_ELF, &root_hash_before, path.to_str().unwrap(), mcycle_count, &root_hash_after, false);
+        verify(&REPLAY_STEP_ID, &receipt, &root_hash_before, mcycle_count, &root_hash_after);
     }
 }

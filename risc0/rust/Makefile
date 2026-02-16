@@ -16,17 +16,30 @@
 
 RISC0_DEV_MODE ?= 1
 CARTESI_STEP_LOGS_PATH ?= $(abspath ../../tests/build/step-logs)
+ARTIFACTS_DIR ?= $(abspath ../artifacts)
+RISC0_FEATURES ?=
 
 export RISC0_DEV_MODE
 export CARTESI_STEP_LOGS_PATH
 
+ifneq ($(RISC0_FEATURES),)
+CARGO_FEATURES = --features "$(RISC0_FEATURES)"
+endif
+
 all:
-	cargo build
+	cargo build $(CARGO_FEATURES)
 
 test:
-	cargo test
+	cargo test $(CARGO_FEATURES)
+
+export-artifacts: all
+	cargo run --bin cartesi-risc0-cli -- export-artifacts $(ARTIFACTS_DIR)
+
+image-id:
+	@cargo run --quiet --bin cartesi-risc0-cli -- image-id
 
 clean:
 	@if command -v cargo >/dev/null 2>&1; then cargo clean; fi
+	@rm -rf $(ARTIFACTS_DIR)
 
-.PHONY: all test clean
+.PHONY: all test clean export-artifacts image-id

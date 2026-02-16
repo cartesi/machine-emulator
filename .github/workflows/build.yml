@@ -631,7 +631,7 @@ jobs:
 
   publish_artifacts:
     name: Publish artifacts
-    needs: [build, static-analysis, coverage, sanitize, test_amd64, test_arm64]
+    needs: [build, static-analysis, coverage, sanitize, test_amd64, test_arm64, risc0]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout emulator source code
@@ -710,6 +710,8 @@ jobs:
             tests-amd64/machine-emulator-tests-data.deb
             tests-amd64/machine-emulator-tests_*.deb
             tests-arm64/machine-emulator-tests_*.deb
+            risc0-artifacts/cartesi-risc0-guest-step-prover.bin
+            risc0-artifacts/cartesi-risc0-guest-step-prover-image-id.txt
 
   risc0:
     name: RISC Zero
@@ -805,10 +807,10 @@ jobs:
       - name: Install rzup
         run: |
           cargo install --git https://github.com/risc0/risc0 rzup
-          rzup install cargo-risczero 2.3.2
-          rzup install r0vm 2.3.2
-          rzup install rust 1.85.0
+          rzup install cargo-risczero 3.0.5
+          rzup install r0vm 3.0.5
           rzup install cpp 2024.1.5
+          rzup install rust
           rzup show
 
       - name: Build interpret-jump-table.h
@@ -819,3 +821,14 @@ jobs:
 
       - name : Run risc0 tests
         run: CARTESI_STEP_LOGS_PATH=/tmp/cartesi-machine/tests/data/step-logs make test-risc0
+
+      - name: Export RISC0 artifacts
+        run: make -C risc0 export-artifacts
+
+      - name: Upload RISC0 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: risc0-artifacts
+          path: |
+            risc0/artifacts/cartesi-risc0-guest-step-prover.bin
+            risc0/artifacts/cartesi-risc0-guest-step-prover-image-id.txt

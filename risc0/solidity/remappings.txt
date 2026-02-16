@@ -1,0 +1,2 @@
+forge-std/=lib/risc0-ethereum/lib/forge-std/src/
+risc0/=lib/risc0-ethereum/contracts/src/

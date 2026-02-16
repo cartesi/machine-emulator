@@ -14,17 +14,15 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-use serde::{Deserialize, Serialize};
+pragma solidity ^0.8.20;
 
-pub type MachineHash = [u8; 32];
-
-/// Verified public information stored in the receipt.journal
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Journal {
-    pub root_hash_before: MachineHash,
-    pub mcycle_count: u64,
-    pub root_hash_after: MachineHash,
+/// @notice Image ID for the Cartesi RISC0 step verification guest program.
+/// @dev Generated from the reproducible Docker build of the guest binary.
+///      This value must match the Image ID produced by `make -C risc0 image-id`.
+///      Update this constant whenever the guest program or RISC0 version changes.
+///
+///      Current value from RISC0 v3.0.5 with Docker reproducible build (r0.1.88.0).
+library ImageID {
+    bytes32 public constant CARTESI_STEP_VERIFIER_ID =
+        bytes32(0xadddf33feec474903934d62f6b7e56d12029a63a4f1ded6117626d7033db5fb6);
 }
-
-// todo: error types.
-

@@ -25,8 +25,14 @@ cpp:
 test: rust
 	@$(MAKE) -C rust test
 
+export-artifacts: rust
+	@$(MAKE) -C rust export-artifacts
+
+image-id: rust
+	@$(MAKE) -C rust image-id
+
 clean:
 	-@$(MAKE) -C cpp clean
 	-@$(MAKE) -C rust clean
 
-.PHONY: all cpp rust clean test
+.PHONY: all cpp rust clean test export-artifacts image-id

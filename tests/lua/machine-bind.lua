@@ -1681,9 +1681,20 @@ end)
 -- helper function to load a step log file into a table
 local function read_step_log_file(filename)
     local file <close> = assert(io.open(filename, "rb"))
+    -- read 72-byte header: root_hash_before[32] + mcycle_count[8] + root_hash_after[32]
+    local root_hash_before = file:read(32)
+    local mcycle_count = string.unpack("<I8", file:read(8))
+    local root_hash_after = file:read(32)
     local hash_function = string.unpack("<I8", file:read(8))
     local page_count = string.unpack("<I8", file:read(8))
-    local log = { hash_function = hash_function, pages = {}, siblings = {} }
+    local log = {
+        root_hash_before = root_hash_before,
+        mcycle_count = mcycle_count,
+        root_hash_after = root_hash_after,
+        hash_function = hash_function,
+        pages = {},
+        siblings = {},
+    }
     for i = 1, page_count do
         log.pages[i] = {
             index = string.unpack("<I8", file:read(8)),
@@ -1701,6 +1712,10 @@ end
 -- helper function to write a step log file from a table
 local function write_step_log_file(logdata, filename)
     local file <close> = assert(io.open(filename, "wb"))
+    -- write 72-byte header: root_hash_before[32] + mcycle_count[8] + root_hash_after[32]
+    file:write(logdata.root_hash_before)
+    file:write(string.pack("<I8", logdata.mcycle_count))
+    file:write(logdata.root_hash_after)
     local page_count = #logdata.pages
     if logdata.override_page_count then
         page_count = logdata.override_page_count
@@ -1772,11 +1787,40 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
             _, err = pcall(function()
                 machine:verify_step(bad_hash, filename1, mcycle_count, root_hash_after)
             end)
-            check_error_find(err, "initial root hash mismatch")
+            check_error_find(err, "root hash before mismatch")
             _, err = pcall(function()
                 machine:verify_step(root_hash_before, filename1, mcycle_count, bad_hash)
             end)
+            check_error_find(err, "root hash after mismatch")
+            -- with incorrect mcycle_count arg, verify step should fail (Layer 2)
+            _, err = pcall(function()
+                machine:verify_step(root_hash_before, filename1, mcycle_count + 1, root_hash_after)
+            end)
+            check_error_find(err, "mcycle count mismatch")
+            -- corrupt header root_hash_before, verify step should fail (Layer 1 - log integrity)
+            copy_step_log(filename1, filename2, function(log_data)
+                log_data.root_hash_before = bad_hash
+            end)
+            _, err = pcall(function()
+                machine:verify_step(bad_hash, filename2, mcycle_count, root_hash_after)
+            end)
+            check_error_find(err, "initial root hash mismatch")
+            -- corrupt header root_hash_after, verify step should fail (Layer 1 - log integrity)
+            copy_step_log(filename1, filename2, function(log_data)
+                log_data.root_hash_after = bad_hash
+            end)
+            _, err = pcall(function()
+                machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+            end)
             check_error_find(err, "final root hash mismatch")
+            -- corrupt header mcycle_count, verify step should fail (Layer 2 - header vs arg)
+            copy_step_log(filename1, filename2, function(log_data)
+                log_data.mcycle_count = mcycle_count + 1
+            end)
+            _, err = pcall(function()
+                machine:verify_step(root_hash_before, filename2, mcycle_count, root_hash_after)
+            end)
+            check_error_find(err, "mcycle count mismatch")
             -- ensure that copy_step_log() works
             copy_step_log(filename1, filename2, function()
                 -- copy original file without modifications

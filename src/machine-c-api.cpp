@@ -40,6 +40,7 @@
 #include "address-range-defines.h"
 #include "address-range-description.h"
 #include "back-merkle-tree.h"
+#include "base64.h"
 #include "htif-constants.h"
 #include "htif-defines.h"
 #include "i-machine.h"
@@ -776,20 +777,14 @@ cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log) tr
     return cm_result_failure();
 }
 
-cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
-    uint64_t mcycle_count, const cm_hash *root_hash_after, cm_break_reason *break_reason) try {
+cm_error cm_verify_step(const cm_hash *root_hash_before, const char *log_filename, uint64_t mcycle_count,
+    const cm_hash *root_hash_after, cm_break_reason *break_reason) try {
     if (log_filename == nullptr) {
         throw std::invalid_argument("invalid log_filename");
     }
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine_hash cpp_root_hash_after = convert_from_c(root_hash_after);
-    cartesi::interpreter_break_reason status{};
-    if (m != nullptr) {
-        const auto *cpp_m = convert_from_c(m);
-        status = cpp_m->verify_step(cpp_root_hash_before, log_filename, mcycle_count, cpp_root_hash_after);
-    } else {
-        status = cartesi::machine::verify_step(cpp_root_hash_before, log_filename, mcycle_count, cpp_root_hash_after);
-    }
+    auto status = cartesi::machine::verify_step(cpp_root_hash_before, log_filename, mcycle_count, cpp_root_hash_after);
     if (break_reason != nullptr) {
         *break_reason = static_cast<cm_break_reason>(status);
     }

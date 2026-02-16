@@ -100,7 +100,7 @@ public:
     }
 
     /// \brief Finish recording and save the log file
-    void finish() {
+    void finish(const machine_hash &root_hash_before, uint64_t mcycle_count, const machine_hash &root_hash_after) {
         // get sibling hashes of all touched pages
         auto sibling_hashes = get_sibling_hashes();
         uint64_t page_count = m_context.touched_pages.size();
@@ -108,11 +108,22 @@ public:
 
         // Write log file.
         // The log format is as follows:
+        // root_hash_before, mcycle_count, root_hash_after,
         // hash_function, page_count, [(page_index, data, scratch_area), ...], sibling_count, [sibling_hash, ...]
         // We store the page index, instead of the page address.
         // Scratch area is used by the replay to store page hashes, which change during replay
         // This is to work around the lack of dynamic memory allocation when replaying the log in microarchitectures
         auto fp = make_unique_fopen(m_context.filename.c_str(), "wb");
+        // write root hash before, mcycle count, and root hash after
+        if (fwrite(root_hash_before.data(), root_hash_before.size(), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write root hash before to log file");
+        }
+        if (fwrite(&mcycle_count, sizeof(mcycle_count), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write mcycle count to log file");
+        }
+        if (fwrite(root_hash_after.data(), root_hash_after.size(), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write root hash after to log file");
+        }
         // write the hash function type so the hasher can be recreated by the replay
         auto hash_function = static_cast<uint64_t>(m_context.hash_function);
         if (fwrite(&hash_function, sizeof(hash_function), 1, fp.get()) != 1) {

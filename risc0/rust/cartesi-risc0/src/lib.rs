@@ -14,83 +14,130 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-use cartesi_risc0_shared::{ Journal, MachineHash};
-use memmap2::MmapOptions;
-use std::fs::{File};
-use methods::{
-    REPLAY_STEP_ELF, REPLAY_STEP_ID
-    
-};
+use std::fs;
+
+pub type MachineHash = [u8; 32];
 use risc0_zkvm::{
-        default_prover, 
-        ExecutorEnv,
-        Receipt
-    };
-   
-pub fn prove(root_hash_before: &MachineHash, log_file_path: &str, mcycle_count: u64, root_hash_after: &MachineHash) -> Receipt {
-    // mmap the step log file
-    let log_file = File::open(log_file_path).expect("Could not open log file");
-    let log_file_len = log_file.metadata().expect("Could not get metadata").len();
-    let log_file = unsafe {
-        MmapOptions::new()
-            .len(log_file_len as usize)
-            .map(&log_file)
-            .expect("Could not memory map log file")
-    };
-    let mut builder = ExecutorEnv::builder();
-    builder.write(&mcycle_count).unwrap();
-    builder.write(&root_hash_before).unwrap();
-    builder.write(&root_hash_after).unwrap();
-    builder.write(&log_file_len).unwrap();
-    for i in (0..log_file_len).step_by(1) {
-        builder.write(&log_file[i as usize]).unwrap();
-    }
-    let env = builder.build().unwrap();
-    let prover = default_prover();
-    let receipt = prover
-        .prove(env, REPLAY_STEP_ELF)
-        .unwrap().receipt;
-    receipt
+    default_prover, ExecutorEnv, Groth16Receipt, Groth16ReceiptVerifierParameters,
+    InnerReceipt, MaybePruned, ProverOpts, Receipt, ReceiptClaim,
+    sha::{Digest, Digestible},
+};
+
+pub use methods::{REPLAY_STEP_ELF, REPLAY_STEP_ID};
+
+/// Step log header layout:
+/// - root_hash_before: 32 bytes
+/// - mcycle_count: 8 bytes (u64 little-endian)
+/// - root_hash_after: 32 bytes
+pub const STEP_LOG_HEADER_SIZE: usize = 32 + 8 + 32;
+
+/// Journal layout (ABI-encoded, 96 bytes):
+/// - root_hash_before: bytes32 (32 bytes)
+/// - mcycle_count: uint64 padded to 32 bytes (24 zero bytes + 8 bytes big-endian)
+/// - root_hash_after: bytes32 (32 bytes)
+///
+/// This matches Solidity's `abi.encode(bytes32, uint64, bytes32)`.
+pub const JOURNAL_SIZE: usize = 96;
+
+/// Decode the ABI-encoded journal bytes (96 bytes) into its components.
+fn decode_journal(bytes: &[u8]) -> (MachineHash, u64, MachineHash) {
+    assert!(bytes.len() == JOURNAL_SIZE, "Journal must be {} bytes (abi.encode format), got {}", JOURNAL_SIZE, bytes.len());
+    let mut root_hash_before = [0u8; 32];
+    root_hash_before.copy_from_slice(&bytes[0..32]);
+    let mcycle_count = u64::from_be_bytes(bytes[56..64].try_into().unwrap());
+    let mut root_hash_after = [0u8; 32];
+    root_hash_after.copy_from_slice(&bytes[64..96]);
+    (root_hash_before, mcycle_count, root_hash_after)
 }
 
-/// Generate proof for contract consumption
-/// Returns (seal, journal) as byte vectors ready for ABI encoding
-pub fn prove_for_contract(root_hash_before: &MachineHash, log_file_path: &str, mcycle_count: u64, root_hash_after: &MachineHash) -> (Vec<u8>, Vec<u8>) {
-    let receipt = prove(root_hash_before, log_file_path, mcycle_count, root_hash_after);
-    
-    // Extract seal bytes from receipt
-    let seal = receipt.inner.groth16().unwrap().seal.clone();
-    
-    // Decode the journal to get the struct
-    let journal: Journal = receipt.journal.decode().unwrap();
-    
-    // ABI encode the journal fields for the contract
-    // Contract expects: abi.decode(journal, (bytes32, uint64, bytes32))
-    use ethabi::{encode, Token};
-    let journal_abi_encoded = encode(&[
-        Token::FixedBytes(journal.root_hash_before.to_vec()),
-        Token::Uint(ethabi::Uint::from(journal.mcycle_count)),
-        Token::FixedBytes(journal.root_hash_after.to_vec()),
-    ]);
-    
-    (seal, journal_abi_encoded)
+/// Compute the Image ID from a guest binary (R0BF format).
+pub fn guest_image_id(guest_elf: &[u8]) -> [u32; 8] {
+    risc0_binfmt::compute_image_id(guest_elf)
+        .expect("Failed to compute image ID from guest ELF")
+        .into()
 }
 
-
-// todo: return propper error
-pub fn verify(receipt: &Receipt,  root_hash_before: &MachineHash, mcycle_count: u64, root_hash_after: &MachineHash)  {
-    receipt
-        .verify(REPLAY_STEP_ID)
+pub fn prove(
+    guest_elf: &[u8],
+    root_hash_before: &MachineHash,
+    log_file_path: &str,
+    mcycle_count: u64,
+    root_hash_after: &MachineHash,
+    groth16: bool,
+) -> Receipt {
+    let log_data = fs::read(log_file_path).expect("Could not read log file");
+    let env = ExecutorEnv::builder()
+        .write_slice(&log_data)
+        .build()
         .unwrap();
-    let journal: Journal = receipt.journal.decode().unwrap();
-    if journal.root_hash_before != *root_hash_before {
-        panic!("root_hash_before mismatch");
-    }
-    if journal.root_hash_after != *root_hash_after {
-        panic!("root_hash_after mismatch");
-    }
-    if journal.mcycle_count != mcycle_count {
-        panic!("mcycle_count mismatch");
-    }
+
+    let prover = default_prover();
+    let opts = if groth16 { ProverOpts::groth16() } else { ProverOpts::default() };
+    let receipt = prover.prove_with_opts(env, guest_elf, &opts).unwrap().receipt;
+
+    let (j_hash_before, j_mcycle, j_hash_after) = decode_journal(&receipt.journal.bytes);
+    assert!(j_hash_before == *root_hash_before, "root_hash_before mismatch: argument does not match journal");
+    assert!(j_mcycle == mcycle_count, "mcycle_count mismatch: argument does not match journal");
+    assert!(j_hash_after == *root_hash_after, "root_hash_after mismatch: argument does not match journal");
+
+    receipt
 }
-  
+
+/// Encode a Groth16 receipt into (seal, journal_bytes) for Solidity contract consumption.
+/// The seal is prefixed with a 4-byte verifier selector (derived from Groth16ReceiptVerifierParameters)
+/// that the on-chain Verifier Router uses to route to the correct proof system.
+pub fn encode_receipt_for_solidity(receipt: &Receipt) -> (Vec<u8>, Vec<u8>) {
+    let raw_seal = receipt.inner.groth16().unwrap().seal.clone();
+    let params_digest = Groth16ReceiptVerifierParameters::default().digest();
+    let selector = &params_digest.as_bytes()[..4];
+    let mut seal = Vec::with_capacity(4 + raw_seal.len());
+    seal.extend_from_slice(selector);
+    seal.extend_from_slice(&raw_seal);
+    (seal, receipt.journal.bytes.clone())
+}
+
+/// Reconstruct and verify a Groth16 receipt from seal and journal bytes.
+/// Accepts seal with (260 bytes) or without (256 bytes) the 4-byte selector prefix.
+pub fn verify_groth16(
+    image_id: &[u32; 8],
+    seal: &[u8],
+    journal_bytes: &[u8],
+    root_hash_before: &MachineHash,
+    mcycle_count: u64,
+    root_hash_after: &MachineHash,
+) -> (MachineHash, u64, MachineHash) {
+    let raw_seal = if seal.len() == 260 { &seal[4..] } else { seal };
+    let image_id_digest: Digest = (*image_id).into();
+    let claim = ReceiptClaim::ok(image_id_digest, journal_bytes.to_vec());
+    let verifier_parameters = Groth16ReceiptVerifierParameters::default().digest();
+    let groth16_receipt = Groth16Receipt::new(
+        raw_seal.to_vec(),
+        MaybePruned::Value(claim),
+        verifier_parameters,
+    );
+    let receipt = Receipt::new(
+        InnerReceipt::Groth16(groth16_receipt),
+        journal_bytes.to_vec(),
+    );
+    receipt.verify(*image_id).unwrap();
+    let (j_hash_before, j_mcycle, j_hash_after) = decode_journal(journal_bytes);
+    assert!(j_hash_before == *root_hash_before, "root_hash_before mismatch: argument does not match journal");
+    assert!(j_mcycle == mcycle_count, "mcycle_count mismatch: argument does not match journal");
+    assert!(j_hash_after == *root_hash_after, "root_hash_after mismatch: argument does not match journal");
+    (j_hash_before, j_mcycle, j_hash_after)
+}
+
+pub fn verify(
+    image_id: &[u32; 8],
+    receipt: &Receipt,
+    root_hash_before: &MachineHash,
+    mcycle_count: u64,
+    root_hash_after: &MachineHash,
+) -> (MachineHash, u64, MachineHash) {
+    receipt.verify(*image_id).unwrap();
+    let (j_hash_before, j_mcycle, j_hash_after) = decode_journal(&receipt.journal.bytes);
+    assert!(j_hash_before == *root_hash_before, "root_hash_before mismatch: argument does not match journal");
+    assert!(j_mcycle == mcycle_count, "mcycle_count mismatch: argument does not match journal");
+    assert!(j_hash_after == *root_hash_after, "root_hash_after mismatch: argument does not match journal");
+    (j_hash_before, j_mcycle, j_hash_after)
+}

@@ -179,9 +179,9 @@ host binary is compiled natively.
 
 **What if I can't run Docker (e.g., inside a container)?**
 
-Build with `RISC0_USE_DOCKER=0` to use native guest compilation:
+Build with `RISC0_REPRODUCIBLE_BUILD=0` to use native guest compilation:
 
-    RISC0_USE_DOCKER=0 make -C risc0
+    RISC0_REPRODUCIBLE_BUILD=0 make -C risc0
 
 Then, to get the canonical Image ID at **runtime**, use `--guest-elf` with
 a Docker-built guest binary:
@@ -243,9 +243,9 @@ identical. Check:
 
 1. Same `risc0-build` version in `risc0/rust/methods/Cargo.toml` (currently 3.0.5)
 2. Docker is running and available (`docker version`)
-3. Neither machine has `RISC0_USE_DOCKER=0` set
+3. Neither machine has `RISC0_REPRODUCIBLE_BUILD=0` set
 
-If one machine uses `RISC0_USE_DOCKER=0` (native build), the Image ID
+If one machine uses `RISC0_REPRODUCIBLE_BUILD=0` (native build), the Image ID
 will differ — this is expected. Native builds produce platform-specific
 output.
 

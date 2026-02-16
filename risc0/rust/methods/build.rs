@@ -18,12 +18,12 @@ fn main() {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
-    println!("cargo:rerun-if-env-changed=RISC0_USE_DOCKER");
+    println!("cargo:rerun-if-env-changed=RISC0_REPRODUCIBLE_BUILD");
 
-    // Use Docker by default for reproducible builds (same Image ID on all platforms).
-    // Set RISC0_USE_DOCKER=0 for environments without Docker (e.g., RunPod containers).
-    // Native builds produce a platform-specific Image ID that differs from the canonical one.
-    let use_docker = std::env::var("RISC0_USE_DOCKER")
+    // Build the guest inside Docker by default to guarantee the same Image ID on every
+    // platform. Set RISC0_REPRODUCIBLE_BUILD=0 for environments without Docker (e.g.,
+    // GPU containers). Native builds produce a platform-specific Image ID.
+    let use_docker = std::env::var("RISC0_REPRODUCIBLE_BUILD")
         .map(|v| v != "0")
         .unwrap_or(true);
 

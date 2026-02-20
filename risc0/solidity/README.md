@@ -36,17 +36,8 @@ router on a Sepolia fork and checks:
     # Regenerate src/ImageID.sol from the guest build
     make image-id
 
-    # Generate a step log
-    make step-log
-
-    # Check the step log header values
-    make step-log-info
-
-    # Generate Groth16 fixtures (takes several minutes)
-    make fixtures \
-        HASH_BEFORE=<root_hash_before from step-log-info> \
-        MCYCLE_COUNT=<mcycle_count from step-log-info> \
-        HASH_AFTER=<root_hash_after from step-log-info>
+    # Generate Groth16 fixtures (generates step log, then proves — takes several minutes)
+    make fixtures
 
     # Run tests against Sepolia fork
     make test

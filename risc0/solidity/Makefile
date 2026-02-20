@@ -12,11 +12,7 @@ LUA_BIN          ?= lua5.4
 LUA              ?= $(LUA_BIN)
 STEP_LOG_UTIL    := $(abspath ../step-log-util.lua)
 
-# Step log and its header values (must be provided for 'make fixtures')
 STEP_LOG         ?= $(FIXTURES_DIR)/step.log
-HASH_BEFORE      ?=
-MCYCLE_COUNT     ?=
-HASH_AFTER       ?=
 
 .PHONY: deps build test fixtures step-log step-log-info image-id clean help
 
@@ -25,8 +21,7 @@ help:
 	@echo ""
 	@echo "  make step-log                        Generate a step log for testing"
 	@echo "  make step-log-info                   Display step log header values"
-	@echo "  make fixtures HASH_BEFORE=... \\      Generate Groth16 seal + journal"
-	@echo "       MCYCLE_COUNT=... HASH_AFTER=..."
+	@echo "  make fixtures                        Generate Groth16 seal + journal"
 	@echo "  make image-id                        Regenerate src/ImageID.sol from guest build"
 	@echo "  make test                            Run integration tests (Sepolia fork)"
 	@echo "  make deps                            Install Foundry dependencies"
@@ -60,19 +55,14 @@ step-log-info:
 
 # ── Test Fixtures ────────────────────────────────────────────
 # Generate a Groth16 seal and journal from a step log.
+# Header values are extracted automatically from the step log.
 # Requires: Docker running, RISC0_DEV_MODE=0
-#
-# Usage:
-#   make step-log                           # generate step log
-#   make step-log-info                      # discover the header values
-#   make fixtures HASH_BEFORE=<hex> MCYCLE_COUNT=<n> HASH_AFTER=<hex>
 
-fixtures:
-	@test -f "$(STEP_LOG)" || { echo "Error: $(STEP_LOG) not found. Run 'make step-log' first."; exit 1; }
-	@test -n "$(HASH_BEFORE)" || { echo "Error: HASH_BEFORE not set. Run 'make step-log-info' to discover it."; exit 1; }
-	@test -n "$(MCYCLE_COUNT)" || { echo "Error: MCYCLE_COUNT not set. Run 'make step-log-info' to discover it."; exit 1; }
-	@test -n "$(HASH_AFTER)" || { echo "Error: HASH_AFTER not set. Run 'make step-log-info' to discover it."; exit 1; }
-	@mkdir -p $(FIXTURES_DIR)
+fixtures: $(STEP_LOG)
+	$(eval HASH_BEFORE := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-before $(STEP_LOG)))
+	$(eval MCYCLE_COUNT := $(shell $(LUA) $(STEP_LOG_UTIL) mcycle-count $(STEP_LOG)))
+	$(eval HASH_AFTER := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-after $(STEP_LOG)))
+	@$(LUA) $(STEP_LOG_UTIL) info $(STEP_LOG)
 	RISC0_DEV_MODE=0 cartesi-risc0-cli prove-groth16 \
 		"$(HASH_BEFORE)" $(STEP_LOG) "$(MCYCLE_COUNT)" "$(HASH_AFTER)" \
 		$(FIXTURES_DIR)/seal.bin $(FIXTURES_DIR)/journal.bin

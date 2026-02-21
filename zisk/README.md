@@ -45,6 +45,27 @@ macOS (MacPorts):
     sudo port install llvm-20
     export LLVM20_DIR=/opt/local/libexec/llvm-20
 
+Linux (Ubuntu/Debian):
+
+    wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 20
+    sudo apt-get install -y libc++-20-dev
+    export LLVM20_DIR=/usr/lib/llvm-20
+
+Note: the `libc++-20-dev` package provides the freestanding C++ headers
+needed for cross-compilation. It is not installed by default with LLVM.
+
+### Additional build dependencies (Linux)
+
+The ZisK Rust guest depends on `lib-c` from the ZisK repository, which
+requires `nasm` and `libgmp-dev` for finite field assembly:
+
+    sudo apt-get install -y nasm libgmp-dev
+
+The pre-built `cargo-zisk` binary also needs `libomp5` (OpenMP runtime)
+and `libopenmpi-dev` (MPI for distributed proving):
+
+    sudo apt-get install -y libomp5 libopenmpi-dev
+
 ### Rust
 
 Install via [rustup](https://rustup.rs/).

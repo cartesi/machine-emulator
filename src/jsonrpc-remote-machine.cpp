@@ -814,6 +814,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         session->handler->rebind(std::move(acceptor));
         SLOG(trace) << session->handler->local_endpoint << " fork child";
     } else { // Parent process, fork() may have succeeded or failed
+        const int fork_errno = errno;
         // Notify to ASIO that we are the parent
         session->handler->ioc.notify_fork(asio::io_context::fork_parent);
         // Note that the parent doesn't need the server that will be used by the child,
@@ -821,8 +822,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         beast::error_code ec;
         std::ignore = acceptor.close(ec);
         if (pid < 0) { // Fork failed
-            SLOG(error) << session->handler->local_endpoint << " fork failed (" << strerror(errno) << ")";
-            return jsonrpc_response_server_error(j, "fork failed ("s + strerror(errno) + ")"s);
+            SLOG(error) << session->handler->local_endpoint << " fork failed (" << strerror(fork_errno) << ")";
+            return jsonrpc_response_server_error(j, "fork failed ("s + strerror(fork_errno) + ")"s);
         }
         SLOG(trace) << session->handler->local_endpoint << " fork parent";
     }

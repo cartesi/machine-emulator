@@ -26,7 +26,7 @@ Before starting, you need:
 
 - Cartesi Machine Emulator built and working
 - RISC0 prover built (`make -C risc0`)
-- `jq`, `curl`, `xxd` (typically pre-installed)
+- `jq`, `curl` (typically pre-installed)
 - [Foundry](https://getfoundry.sh) installed (`cast` CLI) — optional, for balance checks
 - [Boundless CLI](#installing-the-boundless-cli) installed
 - A Sepolia wallet funded with testnet ETH

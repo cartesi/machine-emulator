@@ -11,10 +11,12 @@ FIXTURES_DIR     := test/fixtures
 LUA_BIN          ?= lua5.4
 LUA              ?= $(LUA_BIN)
 STEP_LOG_UTIL    := $(abspath ../step-log-util.lua)
+CARTESI_RISC0_CLI ?= $(abspath ../rust/target/debug/cartesi-risc0-cli)
+CARTESI_MACHINE  ?= cartesi-machine.lua
 
 STEP_LOG         ?= $(FIXTURES_DIR)/step.log
 
-.PHONY: deps build test fixtures step-log step-log-info image-id clean help
+.PHONY: dep build test fixtures step-log step-log-info image-id clean help
 
 help:
 	@echo "Groth16 Integration Test"
@@ -24,11 +26,11 @@ help:
 	@echo "  make fixtures                        Generate Groth16 seal + journal"
 	@echo "  make image-id                        Regenerate src/ImageID.sol from guest build"
 	@echo "  make test                            Run integration tests (Sepolia fork)"
-	@echo "  make deps                            Install Foundry dependencies"
+	@echo "  make dep                             Install Foundry dependencies"
 	@echo "  make clean                           Remove build artifacts and fixtures"
 
 # ── Dependencies ─────────────────────────────────────────────
-deps:
+dep:
 	@if [ ! -d lib/risc0-ethereum ]; then \
 		forge install risc0/risc0-ethereum --no-commit; \
 	else \
@@ -44,7 +46,7 @@ step-log: $(FIXTURES_DIR)/step.log
 $(FIXTURES_DIR)/step.log:
 	@mkdir -p $(FIXTURES_DIR)
 	@echo "Generating step log ($(STEP_LOG_MCYCLES) mcycle)..."
-	cartesi-machine.lua \
+	$(CARTESI_MACHINE) \
 		--hash-tree=hash_function:sha256 \
 		--max-mcycle=0 \
 		--log-step=$(STEP_LOG_MCYCLES),$@
@@ -63,7 +65,7 @@ fixtures: $(STEP_LOG)
 	$(eval MCYCLE_COUNT := $(shell $(LUA) $(STEP_LOG_UTIL) mcycle-count $(STEP_LOG)))
 	$(eval HASH_AFTER := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-after $(STEP_LOG)))
 	@$(LUA) $(STEP_LOG_UTIL) info $(STEP_LOG)
-	RISC0_DEV_MODE=0 cartesi-risc0-cli prove-groth16 \
+	RISC0_DEV_MODE=0 $(CARTESI_RISC0_CLI) prove-groth16 \
 		"$(HASH_BEFORE)" $(STEP_LOG) "$(MCYCLE_COUNT)" "$(HASH_AFTER)" \
 		$(FIXTURES_DIR)/seal.bin $(FIXTURES_DIR)/journal.bin
 	@echo ""
@@ -95,10 +97,10 @@ image-id: FORCE
 FORCE:
 
 # ── Build & Test ─────────────────────────────────────────────
-build: deps
+build: dep
 	forge build
 
-test: deps
+test: dep
 	@test -f $(FIXTURES_DIR)/seal.bin || { echo "Error: test fixtures not found. Run 'make fixtures' first."; exit 1; }
 	forge test --fork-url $(ETH_RPC_URL) -vvv
 

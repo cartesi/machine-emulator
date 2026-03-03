@@ -71,14 +71,14 @@ without recompilation.
 
 ### Dev Mode (fake proofs, for development)
 
-    RISC0_DEV_MODE=1 cartesi-risc0-cli prove step.log
+    RISC0_DEV_MODE=1 cartesi-risc0-cli prove <hash_before> step.log <mcycle> <hash_after> receipt.bin
 
 Returns instantly with a fake receipt. Useful for development and testing.
 The receipt is NOT verifiable on-chain.
 
 ### Local Proving (real proofs)
 
-    cartesi-risc0-cli prove step.log
+    cartesi-risc0-cli prove <hash_before> step.log <mcycle> <hash_after> receipt.bin
 
 Generates a real ZK proof by delegating to the `r0vm` binary installed
 by `rzup`.
@@ -88,7 +88,7 @@ no build flags or configuration needed.
 
 ### Groth16 Proving (for on-chain verification)
 
-    cartesi-risc0-cli prove-groth16 step.log
+    cartesi-risc0-cli prove-groth16 <hash_before> step.log <mcycle> <hash_after> seal.bin journal.bin
 
 Generates a Groth16 seal (260 bytes) and ABI-encoded journal (96 bytes)
 that can be verified on-chain by a Solidity contract. The `prove-groth16`
@@ -102,11 +102,11 @@ no Rosetta or x86 emulation needed.
 
 To generate a full receipt with Groth16 (instead of separate seal/journal):
 
-    cartesi-risc0-cli --groth16 prove step.log
+    cartesi-risc0-cli --groth16 prove <hash_before> step.log <mcycle> <hash_after> receipt.bin
 
 To verify a Groth16 seal and journal locally before submitting on-chain:
 
-    cartesi-risc0-cli verify-groth16 seal.bin journal.bin <root_hash_before> <mcycle_count> <root_hash_after>
+    cartesi-risc0-cli verify-groth16 seal.bin journal.bin <hash_before> <mcycle> <hash_after>
 
 ## Building with CUDA (NVIDIA GPU)
 
@@ -133,9 +133,9 @@ Outputs to `risc0/artifacts/`:
 
 ## On-Chain Verification
 
-Once a Groth16 seal is generated, there are two ways to get it verified
-on-chain. These are **not interchangeable** — each uses a different
-smart contract and a different verification mechanism.
+There are two ways to get a step proof verified on-chain. These are
+**not interchangeable** — each uses a different smart contract, a
+different verification mechanism, and a different proving workflow.
 
 ### Path 1: Direct Groth16 (`solidity/`)
 

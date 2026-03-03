@@ -31,7 +31,7 @@ router on a Sepolia fork and checks:
 ## Quick Start
 
     # Install Foundry dependencies
-    make deps
+    make dep
 
     # Regenerate src/ImageID.sol from the guest build
     make image-id

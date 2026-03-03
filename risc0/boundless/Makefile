@@ -36,6 +36,7 @@ RAMP_UP_PERIOD          ?= 300
 # Lua
 LUA_BIN                 ?= lua5.4
 LUA                     ?= $(LUA_BIN)
+CARTESI_MACHINE         ?= cartesi-machine.lua
 
 # Paths
 BUILD_DIR               := $(abspath build)
@@ -99,7 +100,7 @@ step-log: $(STEP_LOG)
 
 $(STEP_LOG):
 	@mkdir -p $(BUILD_DIR)
-	cartesi-machine.lua \
+	$(CARTESI_MACHINE) \
 		--hash-tree=hash_function:sha256 \
 		--max-mcycle=0 \
 		--log-step=$(STEP_LOG_MCYCLES),$(STEP_LOG)

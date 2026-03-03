@@ -33,29 +33,33 @@
 --   step-log-util.lua root-hash-after <step-log>   Hex hash (no newline)
 --   step-log-util.lua hex-encode <string>           Hex-encode (no newline)
 
+local cartesi = require("cartesi")
+local util = require("cartesi.util")
+
+local HASH_SIZE = cartesi.HASH_SIZE
+local PAGE_LOG2_SIZE = cartesi.HASH_TREE_LOG2_PAGE_SIZE
+local PAGE_DATA_SIZE = 1 << PAGE_LOG2_SIZE
 local HEADER_SIZE = 72 -- root_hash_before(32) + mcycle_count(8) + root_hash_after(32)
 local METADATA_SIZE = 16 -- hash_function(8) + page_count(8)
-local PAGE_DATA_SIZE = 4096 -- AR_PAGE_SIZE
-local HASH_SIZE = 32 -- machine_hash
 local PAGE_ENTRY_SIZE = 8 + PAGE_DATA_SIZE + HASH_SIZE -- page_index(8) + data(4096) + scratch(32)
-local PAGE_LOG2_SIZE = 12
 
--- Well-known Cartesi machine address regions for page classification
 local REGIONS = {
-    { name = "shadow_regs",      start = 0x0,              length = 0x1000 },
-    { name = "shadow_tlb",       start = 0x1000,           length = 0x6000 },
-    { name = "shadow_pma",       start = 0x10000,          length = 0x1000 },
-    { name = "shadow_uarch",     start = 0x400000,         length = 0x1000 },
-    { name = "uarch_ram",        start = 0x600000,         length = 0x200000 },
-    { name = "clint",            start = 0x2000000,        length = 0xC0000 },
-    { name = "htif",             start = 0x40008000,       length = 0x1000 },
-    { name = "plic",             start = 0x40100000,       length = 0x400000 },
-    { name = "cmio_rx",          start = 0x60000000,       length = 0x200000 },
-    { name = "cmio_tx",          start = 0x60800000,       length = 0x200000 },
-    { name = "dtb",              start = 0x7FF00000,       length = 0x100000 },
-    { name = "ram",              start = 0x80000000,       length = 0x100000000 }, -- 4 GB max
-    { name = "flash",            start = 0x80000000000000, length = 0x100000000000000 },
+    { name = "shadow_regs",  start = 0x0,                                    length = 0x1000 },
+    { name = "shadow_tlb",   start = cartesi.AR_SHADOW_TLB_START,            length = cartesi.AR_SHADOW_TLB_LENGTH },
+    { name = "shadow_pma",   start = 0x10000,                                length = 0x1000 },
+    { name = "shadow_uarch", start = cartesi.UARCH_SHADOW_START_ADDRESS,     length = cartesi.UARCH_SHADOW_LENGTH },
+    { name = "uarch_ram",    start = cartesi.UARCH_RAM_START_ADDRESS,        length = cartesi.UARCH_RAM_LENGTH },
+    { name = "clint",        start = 0x2000000,                              length = 0xC0000 },
+    { name = "htif",         start = 0x40008000,                             length = 0x1000 },
+    { name = "plic",         start = 0x40100000,                             length = 0x400000 },
+    { name = "cmio_rx",      start = cartesi.AR_CMIO_RX_BUFFER_START,       length = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE },
+    { name = "cmio_tx",      start = cartesi.AR_CMIO_TX_BUFFER_START,       length = 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE },
+    { name = "dtb",          start = 0x7FF00000,                             length = 0x100000 },
+    { name = "ram",          start = cartesi.AR_RAM_START,                   length = 0x100000000 }, -- 4 GB max
+    { name = "flash",        start = 0x80000000000000,                       length = 0x100000000000000 },
 }
+
+local hexstring = util.hexstring
 
 local function classify_address(addr)
     for _, r in ipairs(REGIONS) do
@@ -64,10 +68,6 @@ local function classify_address(addr)
         end
     end
     return "unknown"
-end
-
-local function hexstring(s)
-    return (s:gsub(".", function(c) return string.format("%02x", c:byte()) end))
 end
 
 local function format_size(bytes)
@@ -99,8 +99,6 @@ local function read_header(path)
     return root_hash_before, mcycle_count, root_hash_after
 end
 
---- Read the full step log structure (header + metadata + page indices + sibling count)
---- Does NOT read page data (skips over it), so it's efficient even for large logs.
 local function read_full(path)
     local f, err = io.open(path, "rb")
     if not f then
@@ -110,7 +108,6 @@ local function read_full(path)
     local file_size = f:seek("end")
     f:seek("set", 0)
 
-    -- Read header
     local header_data = f:read(HEADER_SIZE)
     if not header_data or #header_data < HEADER_SIZE then
         f:close()
@@ -122,7 +119,6 @@ local function read_full(path)
     local mcycle_count = string.unpack("<I8", header_data, 33)
     local root_hash_after = hexstring(header_data:sub(41, 72))
 
-    -- Read metadata
     local meta_data = f:read(METADATA_SIZE)
     if not meta_data or #meta_data < METADATA_SIZE then
         f:close()
@@ -132,7 +128,6 @@ local function read_full(path)
     local hash_function = string.unpack("<I8", meta_data, 1)
     local page_count = string.unpack("<I8", meta_data, 9)
 
-    -- Read page indices (skip page data and scratch areas)
     local page_indices = {}
     for i = 1, page_count do
         local idx_data = f:read(8)
@@ -143,11 +138,9 @@ local function read_full(path)
         end
         local page_index = string.unpack("<I8", idx_data)
         page_indices[i] = page_index
-        -- Skip page data (4096) + scratch area (32)
         f:seek("cur", PAGE_DATA_SIZE + HASH_SIZE)
     end
 
-    -- Read sibling count
     local sc_data = f:read(8)
     local sibling_count = 0
     if sc_data and #sc_data == 8 then
@@ -156,10 +149,9 @@ local function read_full(path)
 
     f:close()
 
-    -- Compute size breakdown
     local header_bytes = HEADER_SIZE + METADATA_SIZE
     local pages_bytes = page_count * PAGE_ENTRY_SIZE
-    local siblings_bytes = 8 + sibling_count * HASH_SIZE -- sibling_count field + hashes
+    local siblings_bytes = 8 + sibling_count * HASH_SIZE
 
     return {
         path = path,
@@ -193,14 +185,12 @@ local function print_stats(info)
     print(string.format("  file_size:        %s (%d bytes)", format_size(info.file_size), info.file_size))
     print(string.format("  breakdown:        header=%s  pages=%s  siblings=%s",
         format_size(info.header_bytes), format_size(info.pages_bytes), format_size(info.siblings_bytes)))
-    -- Classify pages by memory region
     local region_counts = {}
     for _, idx in ipairs(info.page_indices) do
         local addr = idx << PAGE_LOG2_SIZE
         local region = classify_address(addr)
         region_counts[region] = (region_counts[region] or 0) + 1
     end
-    -- Sort regions for consistent output
     local region_list = {}
     for name, count in pairs(region_counts) do
         region_list[#region_list + 1] = { name = name, count = count }
@@ -213,7 +203,6 @@ local function print_stats(info)
     print(string.format("  page_regions:     %s", table.concat(parts, "  ")))
 end
 
---- Print a compact CSV-like summary line for batch output
 local function print_stats_row(info)
     print(string.format("%-12d %-6d %-8d %-12s %s",
         info.mcycle_count, info.page_count, info.sibling_count,
@@ -281,7 +270,6 @@ commands["batch-stats"] = function(args)
         io.stderr:write("usage: step-log-util.lua batch-stats <dir>\n")
         os.exit(1)
     end
-    -- Collect step log files
     local files = {}
     local pipe = io.popen(string.format('ls -1 "%s"/*.log 2>/dev/null', dir))
     if pipe then
@@ -296,11 +284,9 @@ commands["batch-stats"] = function(args)
     end
     table.sort(files)
 
-    -- Print header
     print(string.format("%-12s %-6s %-8s %-12s %s", "mcycles", "pages", "siblings", "size", "path"))
     print(string.rep("-", 80))
 
-    -- Collect stats for summary
     local total_pages, total_siblings, total_size = 0, 0, 0
     local max_pages, max_siblings, max_size = 0, 0, 0
     local max_pages_file, max_siblings_file, max_size_file = "", "", ""

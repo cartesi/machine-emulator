@@ -30,8 +30,8 @@ _M.bint = bint
 
 -- Appends to 'output' the entire contents of 'more'
 local function tappend(output, more)
-    for _, v in ipairs(more) do
-        tinsert(output, v)
+    for i = 1, #more do
+        tinsert(output, more[i])
     end
 end
 
@@ -41,10 +41,22 @@ local function errorf(fmt, ...) error(string.format(fmt, ...)) end
 -- Converts 'value' (a bint) to a its 256-bit big-endian representation as a string
 local function tobe(value) return bint.tobe(value):sub(bint_extra / 8 + 1) end
 
+-- Rounds up to multiple or 32
+local function ceil32(n) return 32 * ((n + 31) // 32) end
+
+-- Converts bint to Lua unsigned integer detecting overflows
+local function check_lua_uint(value, what)
+    if not bint.eq(value >> 63, 0) then
+        errorf("%s %s too large for Lua integer", what, bint.tobase(value, 16, true))
+    end
+    return bint.touinteger(value)
+end
+
 -- Converts 'hex' (an hex-encoded sequence of bytes) to the corresponding decoded string
 local function fromhex(hex)
     if not hex then return nil, "missing hex string" end
     if type(hex) ~= "string" then return nil, "hex not a string" end
+    if hex:find("%s") then return nil, "hex string cannot contain whitespace" end
     if string.lower(hex:sub(1, 2)) ~= "0x" then return nil, 'hex string must start with "0x"' end
     if #hex % 2 ~= 0 then return nil, "hex string length must be even" end
     local invalid
@@ -239,7 +251,7 @@ local function append_canonic_type_sig(output, parsed_type_spec)
         tinsert(output, ")")
     else
         -- luacov: disable
-        error("unknown type name: " .. tostring(tn))
+        errorf("unknown type name: %s", tostring(tn))
         -- luacov: enable
     end
 end
@@ -295,13 +307,9 @@ local function mark_dynamic_types(parsed_type_spec)
     if tn == "string" then
         parsed_type_spec.is_dynamic = true
     elseif tn == "bytes" then
-        if parsed_type_spec.size then
-            parsed_type_spec.is_dynamic = false
-            parsed_type_spec.static_size = 32
-        else
-            parsed_type_spec.is_dynamic = true
-        end
-        parsed_type_spec.is_dynamic = not parsed_type_spec.size
+        local n = parsed_type_spec.size
+        parsed_type_spec.static_size = n and 32 or nil
+        parsed_type_spec.is_dynamic = (n == nil)
     elseif tn == "array" then
         mark_dynamic_types(parsed_type_spec.element_type)
         parsed_type_spec.is_dynamic = parsed_type_spec.element_type.is_dynamic or not parsed_type_spec.size
@@ -408,12 +416,9 @@ local function append_encoded_uint(output, value, size) tinsert(output, encoded_
 local function append_encoded_int(output, value, size)
     size = size or 256
     value = assert(bint.new(value), "value not an integer")
-    local m1 = bint.one() << (size - 1)
-    if value < 0 then
-        assert(bint.ule(m1, value), "integer value does not fit in target type")
-    else
-        assert(bint.ult(value, m1), "integer value does not fit in target type")
-    end
+    local intmax = bint.one() << (size - 1)
+    local intmin = (-bint.one()) << (size - 1)
+    assert(value >= intmin and value < intmax, "integer value does not fit in target type")
     tinsert(output, tobe(value))
 end
 
@@ -442,7 +447,7 @@ local function append_encoded_bool(output, value) append_encoded_uint(output, ch
 
 -- appends 0-padding to the 'output' table
 local function append_padding(output, len)
-    local padded_len = 32 * ((len + 31) // 32)
+    local padded_len = ceil32(len)
     if padded_len > len then tinsert(output, string.rep("\0", padded_len - len)) end
 end
 
@@ -590,7 +595,7 @@ function append_encoded_value(output, value, parsed_type_spec)
         append_encoded_tuple(output, value, parsed_type_spec)
     else
         -- luacov: disable
-        error("unknown type name: " .. tostring(tn))
+        errorf("unknown type name: %s", tostring(tn))
         -- luacov: enable
     end
 end
@@ -647,7 +652,7 @@ local function decode_int(calldata, offset, size)
     if bint.eq(value >> 255, 1) then value = value | sign_ext end
     local intmax = bint.one() << (size - 1)
     local intmin = (-bint.one()) << (size - 1)
-    if value < intmin or value >= intmax then error("integer value does not fit in target type") end
+    assert(value >= intmin and value < intmax, "integer value does not fit in target type")
     return value, offset + 32
 end
 
@@ -675,8 +680,8 @@ end
 -- reads a string value from 'calldata' at 'offset'
 local function decode_string(calldata, offset, prefer)
     local length, new_offset = decode_uint(calldata, offset)
-    local len = bint.tonumber(length)
-    local padded_len = 32 * ((len + 31) // 32)
+    local len = check_lua_uint(length, "string length")
+    local padded_len = ceil32(len)
     if new_offset + padded_len > #calldata then errorf("insufficient calldata for string of length %d", len) end
     local str_data = calldata:sub(new_offset + 1, new_offset + len)
     if prefer == "hex" then str_data = tohex(str_data) end
@@ -686,7 +691,7 @@ end
 
 local function decode_bytes_sized(calldata, offset, size, prefer)
     -- Fixed-size bytes
-    local padded_len = 32 * ((size + 31) // 32)
+    local padded_len = ceil32(size)
     if offset + padded_len > #calldata then errorf("insufficient calldata for bytes%d", size) end
     local bytes_data = calldata:sub(offset + 1, offset + size)
     if prefer ~= "raw" then bytes_data = tohex(bytes_data) end
@@ -698,8 +703,8 @@ local function decode_bytes(calldata, offset, size, prefer)
     if not size then
         -- Dynamic bytes (same as string but return as hex by default)
         local length, new_offset = decode_uint(calldata, offset)
-        local len = bint.tonumber(length)
-        local padded_len = 32 * ((len + 31) // 32)
+        local len = check_lua_uint(length, "bytes length")
+        local padded_len = ceil32(len)
         if new_offset + padded_len > #calldata then errorf("insufficient calldata for bytes of length %d", len) end
         local bytes_data = calldata:sub(new_offset + 1, new_offset + len)
         if prefer ~= "raw" then bytes_data = tohex(bytes_data) end
@@ -718,22 +723,21 @@ local function decode_array(calldata, offset, parsed_type_spec, prefer)
         -- Dynamic array - read length first
         local size_val
         size_val, new_offset = decode_uint(calldata, new_offset)
-        size = bint.touinteger(size_val)
+        size = check_lua_uint(size_val, "array size")
         array_data_start = new_offset -- Array data starts after the length field
     end
     local result = {}
     local is_dynamic_element = is_dynamic_type(element_type)
     if is_dynamic_element then
+        local last_offset
         -- Dynamic elements: read offset and decode immediately
         for i = 1, size do
             local offset_val = decode_uint(calldata, new_offset + (i - 1) * 32)
             -- Offsets are relative to the start of the array data section
-            local element_offset = array_data_start + bint.touinteger(offset_val)
-            result[i] = decode_value(calldata, element_offset, element_type, prefer)
+            local element_offset = array_data_start + check_lua_uint(offset_val, "array offset")
+            result[i], last_offset = decode_value(calldata, element_offset, element_type, prefer)
         end
-        -- Set new_offset to after all the offset fields
-        new_offset = new_offset + (size * 32)
-        return result, new_offset
+        return result, last_offset
     else
         -- Static elements: read sequentially
         for i = 1, size do
@@ -758,7 +762,7 @@ local function decode_tuple(calldata, offset, parsed_type_spec, prefer)
             local offset_val
             offset_val, static_offset = decode_uint(calldata, static_offset)
             -- Offsets are relative to the start of the tuple
-            local dynamic_offset = tuple_start + bint.touinteger(offset_val)
+            local dynamic_offset = tuple_start + check_lua_uint(offset_val, "tuple offset")
             result[i], new_offset = decode_value(calldata, dynamic_offset, comp_type, prefer)
         else
             result[i], static_offset = decode_value(calldata, static_offset, comp_type, prefer)
@@ -790,7 +794,7 @@ function decode_value(calldata, offset, parsed_type_spec, prefer)
         return decode_tuple(calldata, offset, parsed_type_spec, prefer)
     else
         -- luacov: disable
-        error("unknown type name: " .. tostring(tn))
+        errorf("unknown type name: %s", tostring(tn))
         -- luacov: enable
     end
 end
@@ -813,7 +817,9 @@ function _M.decode_calldata(func_sig_str, calldata_raw, prefer)
         errorf("function selector mismatch (expected %s, got %s)", tohex(func_sel), tohex(calldata_func_sel))
     end
     assert(#parsed_sig.params.components ~= 0 or #calldata_raw == 4, "calldata too long")
-    return decode_value(calldata_raw, 4, parsed_sig.params, prefer)
+    local value, offset = decode_value(calldata_raw, 4, parsed_sig.params, prefer)
+    assert(offset == #calldata_raw, "calldata too long")
+    return value
 end
 
 -- Returns the decoded arguments table for a function signature and hex-encoded calldata

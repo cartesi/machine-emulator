@@ -106,6 +106,12 @@ local function strdiff(a, b)
     return nil
 end
 
+local function check_decode_calldata_hex_error(s, cd, expected_err)
+    local ret, err = pcall(calldata.decode_calldata_hex, s, cd)
+    assert(not ret, "expected error")
+    assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
+end
+
 local function check_encode_decode_calldata_hex(s, args, expected_cd, prefer)
     local cd = assert(calldata.encode_calldata_hex(s, args))
     if cd ~= expected_cd then
@@ -119,16 +125,11 @@ local function check_encode_decode_calldata_hex(s, args, expected_cd, prefer)
         ptab(decoded_args)
         error(err)
     end
+    check_decode_calldata_hex_error(s, cd .. "deadbeef", "calldata too long")
 end
 
 local function check_encode_calldata_hex_error(s, args, expected_err)
     local ret, err = pcall(calldata.encode_calldata_hex, s, args)
-    assert(not ret, "expected error")
-    assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
-end
-
-local function check_decode_calldata_hex_error(s, cd, expected_err)
-    local ret, err = pcall(calldata.decode_calldata_hex, s, cd)
     assert(not ret, "expected error")
     assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
@@ -162,7 +163,7 @@ local function check_decode_hex_error(s, expected_err)
     assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
 
--- luacheck: push no max line length
+-- luacheck: push ignore 631
 
 -- check hex encoding/decoding
 check_encode_hex("", "0x")
@@ -190,6 +191,9 @@ check_decode_hex_error("", 'hex string must start with "0x"')
 check_decode_hex_error("0", 'hex string must start with "0x"')
 check_decode_hex_error("0x0", "hex string length must be even")
 check_decode_hex_error("0x0m", 'hex string cannot contain "0m"')
+check_decode_hex_error("0x000102 ", "hex string cannot contain whitespace")
+check_decode_hex_error("0x0001 02", "hex string cannot contain whitespace")
+check_decode_hex_error("0x00\t01", "hex string cannot contain whitespace")
 -- check int types
 check_parse_type_spec("int", { type_name = "int", size = 256 })
 check_parse_type_spec("uint", { type_name = "uint", size = 256 })
@@ -291,7 +295,6 @@ local empty_tuple = make_tuple({})
 local function make_address(data_location, name)
     return { type_name = "address", name = name, data_location = data_location }
 end
-
 local function make_bool(data_location, name) return { type_name = "bool", name = name, data_location = data_location } end
 
 -- check
@@ -410,6 +413,7 @@ check_encode_decode_calldata_hex(
     "0x6a2b4692ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff80"
 )
 check_encode_calldata_hex_error("_(int8)", { 0xff }, "integer value does not fit in target type")
+check_encode_calldata_hex_error("_(int8)", { -129 }, "integer value does not fit in target type")
 check_encode_calldata_hex_error("_(uint8)", { 0x100 }, "integer value does not fit in target type")
 check_encode_calldata_hex_error("_(uint8)", { -1 }, "integer value does not fit in target type")
 check_encode_decode_calldata_hex(
@@ -423,6 +427,7 @@ check_encode_decode_calldata_hex(
     "0x69ebd716ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff8000"
 )
 check_encode_calldata_hex_error("_(int16)", { 0xffff }, "integer value does not fit in target type")
+check_encode_calldata_hex_error("_(int16)", { -32769 }, "integer value does not fit in target type")
 check_encode_calldata_hex_error("_(uint16)", { 0x10000 }, "integer value does not fit in target type")
 check_encode_calldata_hex_error("_(uint16)", { -1 }, "integer value does not fit in target type")
 check_encode_decode_calldata_hex(
@@ -540,6 +545,11 @@ check_encode_decode_calldata_hex(
 -- check strings and bytes
 check_encode_decode_calldata_hex(
     "_(string)",
+    { "" },
+    "0x6aedeb1300000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000"
+)
+check_encode_decode_calldata_hex(
+    "_(string)",
     { "hello world" },
     "0x6aedeb130000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000b68656c6c6f20776f726c64000000000000000000000000000000000000000000"
 )
@@ -567,6 +577,12 @@ check_encode_decode_calldata_hex(
     "_(bytes)",
     { calldata.encode_hex("hello") },
     "0x9366a78b0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000568656c6c6f000000000000000000000000000000000000000000000000000000"
+)
+
+check_encode_decode_calldata_hex(
+    "_(bytes)",
+    { "0x" },
+    "0x9366a78b00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000"
 )
 
 check_encode_decode_calldata_hex(

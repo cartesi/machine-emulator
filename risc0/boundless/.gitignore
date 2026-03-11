@@ -1,9 +1,0 @@
-# Build outputs
-build/
-
-# Secrets
-.env
-wallet/
-
-# Temporary files
-*.tmp

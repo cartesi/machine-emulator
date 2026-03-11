@@ -74,7 +74,6 @@ fn export_artifacts(guest_elf: &[u8], image_id: &[u32; 8], output_dir: &str) -> 
     fs::create_dir_all(output_path)?;
 
     // Write guest binary (R0BF format - RISC0's bundled ELF format)
-    // This is what RISC0 provers (Boundless) expect
     let elf_path = output_path.join("cartesi-risc0-guest-step-prover.bin");
     fs::write(&elf_path, guest_elf)?;
     println!("Guest binary written to: {}", elf_path.display());

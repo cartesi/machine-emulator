@@ -1,15 +1,9 @@
-# Groth16 On-Chain Verification (Direct Path)
+# Groth16 On-Chain Verification
 
 Solidity contracts and tests for verifying Cartesi step proofs on-chain
 via **direct Groth16 verification**. The prover generates a Groth16 seal
 locally (or on a GPU), and the on-chain contract verifies it by calling
 the RISC Zero Verifier Router (~300k gas).
-
-This is the **direct verification path**. For the alternative aggregated
-path via Boundless (~50k gas, different contract interface), see
-[`../boundless/`](../boundless/). The two paths are **not
-interchangeable** — see the
-[comparison in the parent README](../README.md#on-chain-verification).
 
 ## What This Tests
 
@@ -47,9 +41,8 @@ router on a Sepolia fork and checks:
 The tests verify against the RISC Zero verifier router on Sepolia:
 `0x925d8331ddc0a1F0d96E68CF073DFE1d92b69187`
 
-This is the same contract that Boundless provers submit proofs to.
 The router delegates to the appropriate verifier based on the seal's
-4-byte selector prefix (Groth16 or SetVerifier).
+4-byte selector prefix.
 
 ## Journal Format
 

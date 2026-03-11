@@ -34,3 +34,4 @@ doc/xml/
 *.dylib
 *.dtb
 .DS_Store
+.claude/

@@ -39,8 +39,7 @@ on-chain.
 
 A smart contract receives the seal and journal, reconstructs the
 expected journal digest, and calls the RISC Zero Verifier Router to
-verify the Groth16 proof on Ethereum. See [`solidity/`](solidity/) for
-direct verification and [`boundless/`](boundless/) for aggregated proofs.
+verify the Groth16 proof on Ethereum. See [`solidity/`](solidity/).
 
     verifier.verify(seal, imageId, sha256(journal))   // Solidity
 
@@ -133,12 +132,6 @@ Outputs to `risc0/artifacts/`:
 
 ## On-Chain Verification
 
-There are two ways to get a step proof verified on-chain. These are
-**not interchangeable** — each uses a different smart contract, a
-different verification mechanism, and a different proving workflow.
-
-### Path 1: Direct Groth16 (`solidity/`)
-
 The dispute contract submits the Groth16 seal (260 bytes) directly to the
 RISC Zero Verifier Router, which runs an `ecPairing` precompile on-chain.
 
@@ -146,21 +139,6 @@ RISC Zero Verifier Router, which runs an `ecPairing` precompile on-chain.
 - Gas cost: ~300k per proof
 - Trust model: fully self-contained, no external dependencies
 - Tooling: `cartesi-risc0-cli prove-groth16` then submit to `CartesiStepVerifier`
-
-### Path 2: Boundless Aggregated Proofs (`boundless/`)
-
-Instead of verifying each proof individually, the step log is submitted
-to the Boundless marketplace. A Boundless prover generates the ZK proof
-off-chain and **batches** it with other proofs (from any RISC Zero
-application, not just Cartesi) into a single aggregated Groth16 proof.
-That one proof is posted on-chain, creating a Merkle tree of verified
-computations. To check that a specific step was verified, you provide a
-Merkle inclusion path against the tree root.
-
-- Contract call: `setVerifier.verify(merkleProof, root, leaf)`
-- Gas cost: ~50k per proof (Merkle inclusion only)
-- Trust model: depends on the Boundless prover network
-- Tooling: `boundless/Makefile` submits to the Boundless marketplace
 
 
 ## FAQ

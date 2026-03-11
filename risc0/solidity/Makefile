@@ -16,7 +16,7 @@ CARTESI_MACHINE  ?= cartesi-machine.lua
 
 STEP_LOG         ?= $(FIXTURES_DIR)/step.log
 
-.PHONY: dep build test fixtures step-log step-log-info image-id clean help
+.PHONY: dep build test step-log step-log-info image-id clean help
 
 help:
 	@echo "Groth16 Integration Test"
@@ -24,7 +24,6 @@ help:
 	@echo "  make step-log                        Generate a step log for testing"
 	@echo "  make step-log-info                   Display step log header values"
 	@echo "  make fixtures                        Generate Groth16 seal + journal"
-	@echo "  make image-id                        Regenerate src/ImageID.sol from guest build"
 	@echo "  make test                            Run integration tests (Sepolia fork)"
 	@echo "  make dep                             Install Foundry dependencies"
 	@echo "  make clean                           Remove build artifacts and fixtures"
@@ -60,7 +59,9 @@ step-log-info:
 # Header values are extracted automatically from the step log.
 # Requires: Docker running, RISC0_DEV_MODE=0
 
-fixtures: $(STEP_LOG)
+fixtures: $(FIXTURES_DIR)/seal.bin
+
+$(FIXTURES_DIR)/seal.bin: $(STEP_LOG)
 	$(eval HASH_BEFORE := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-before $(STEP_LOG)))
 	$(eval MCYCLE_COUNT := $(shell $(LUA) $(STEP_LOG_UTIL) mcycle-count $(STEP_LOG)))
 	$(eval HASH_AFTER := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-after $(STEP_LOG)))
@@ -90,20 +91,18 @@ src/ImageID.sol:
 	@echo "}" >> $@
 	@echo "Generated src/ImageID.sol (Image ID: $(IMAGE_ID))"
 
-image-id: FORCE
+image-id:
 	@rm -f src/ImageID.sol
 	@$(MAKE) src/ImageID.sol
-
-FORCE:
 
 # ── Build & Test ─────────────────────────────────────────────
 build: dep
 	forge build
 
-test: dep
-	@test -f $(FIXTURES_DIR)/seal.bin || { echo "Error: test fixtures not found. Run 'make fixtures' first."; exit 1; }
+test: dep src/ImageID.sol fixtures
 	forge test --fork-url $(ETH_RPC_URL) -vvv
 
 clean:
 	forge clean
-	rm -rf $(FIXTURES_DIR)
+	rm -rf cache $(FIXTURES_DIR)
+	rm -f src/ImageID.sol

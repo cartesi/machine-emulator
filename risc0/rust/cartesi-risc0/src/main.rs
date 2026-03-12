@@ -61,7 +61,6 @@ fn hash_to_hex(hash: &[u8; 32]) -> String {
     hash.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-/// Convert Image ID ([u32; 8]) to hex string (64 chars)
 fn image_id_to_hex(id: &[u32; 8]) -> String {
     id.iter()
         .flat_map(|word| word.to_le_bytes())

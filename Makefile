@@ -77,7 +77,8 @@ EMU_TO_BIN= src/cartesi-jsonrpc-machine src/cartesi-hash-tree-hash
 EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_JSONRPC)
 EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a src/libluacartesi.a src/libluacartesi_jsonrpc.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua
-EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/gdbstub.lua
+EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/gdbstub.lua src/cartesi/evmu.lua
+EMU_TO_LUA_THIRD_PARTY_PATH= src/cartesi/third-party/bint.lua
 EMU_TO_LUA_CPATH= src/cartesi.so
 EMU_TO_LUA_CARTESI_CPATH= src/cartesi/jsonrpc.so
 EMU_TO_INC= $(addprefix src/,jsonrpc-machine-c-api.h machine-c-api.h machine-c-version.h)
@@ -333,7 +334,7 @@ uarch-with-toolchain:
 	@$(MAKE) toolchain-exec CONTAINER_COMMAND="make uarch"
 
 # Create install directories
-$(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH) $(TESTS_DATA_INSTALL_PATH) $(TESTS_SCRIPTS_INSTALL_PATH) $(TESTS_LUA_INSTALL_PATH):
+$(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(LUA_INSTALL_PATH)/cartesi/third-party $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH) $(TESTS_DATA_INSTALL_PATH) $(TESTS_SCRIPTS_INSTALL_PATH) $(TESTS_LUA_INSTALL_PATH):
 	mkdir -m 0755 -p $@
 
 install-headers: $(INC_INSTALL_PATH)
@@ -347,9 +348,10 @@ install-shared-libs: $(LIB_INSTALL_PATH)
 	$(SYMLINK) $(LIBCARTESI_SO) $(LIB_INSTALL_PATH)/$(LIBCARTESI)
 	$(SYMLINK) $(LIBCARTESI_SO_JSONRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_JSONRPC)
 
-install-lua-libs: $(LUA_INSTALL_PATH)/cartesi $(LUA_INSTALL_CPATH)/cartesi
+install-lua-libs: $(LUA_INSTALL_PATH)/cartesi $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi/third-party
 	$(INSTALL_FILE) $(EMU_LUA_TO_BIN) $(LUA_INSTALL_PATH)
 	$(INSTALL_FILE) $(EMU_TO_LUA_PATH) $(LUA_INSTALL_PATH)/cartesi
+	$(INSTALL_FILE) $(EMU_TO_LUA_THIRD_PARTY_PATH) $(LUA_INSTALL_PATH)/cartesi/third-party
 	$(INSTALL_EXEC) $(EMU_TO_LUA_CPATH) $(LUA_INSTALL_CPATH)
 	$(INSTALL_EXEC) $(EMU_TO_LUA_CARTESI_CPATH) $(LUA_INSTALL_CPATH)/cartesi
 

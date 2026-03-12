@@ -1,4 +1,4 @@
-local calldata = require("cartesi.calldata")
+local evmu = require("cartesi.evmu")
 
 local function ptab(output, indent)
     indent = indent or 0
@@ -15,8 +15,10 @@ local function ptab(output, indent)
         else
             key_str = "[" .. tostring(k) .. "]"
         end
-        if calldata.is_raw(v) or calldata.is_hex(v) then v = tostring(v) end
-        if type(v) == "table" and not calldata.bint.isintegral(v) then
+        if evmu.is_raw(v) or evmu.is_hex(v) then
+            v = tostring(v)
+        end
+        if type(v) == "table" and not evmu.bint.isintegral(v) then
             print(spaces .. "  " .. key_str .. " = ")
             ptab(v, indent + 1)
         else
@@ -33,42 +35,60 @@ local function ptab(output, indent)
 end
 
 local function tv(a)
-    if a == nil then return "nil" end
+    if a == nil then
+        return "nil"
+    end
     return string.format("%s %s", type(a), tostring(a))
 end
 
 -- checks that table a is a subset of table b
 local function subtab(a, b, path)
     path = path or "/"
-    if calldata.bint.isintegral(a) or calldata.bint.isintegral(b) then
-        local ai = calldata.bint.new(a)
-        local bi = b and calldata.bint.new(b)
-        if not calldata.bint.eq(ai, bi) then
+    if evmu.bint.isintegral(a) or evmu.bint.isintegral(b) then
+        local ai = evmu.bint.new(a)
+        local bi = b and evmu.bint.new(b)
+        if not evmu.bint.eq(ai, bi) then
             return nil, string.format("%s value differs (%s vs %s)", path, tostring(a), tostring(b))
         end
         return 1
     end
-    if calldata.is_raw(a) then a = calldata.get_raw(a) end
-    if calldata.is_hex(a) then a = calldata.get_hex(a) end
-    if calldata.is_raw(b) then b = calldata.get_raw(b) end
-    if calldata.is_hex(b) then a = calldata.get_hex(b) end
+    if evmu.is_raw(a) then
+        a = evmu.get_raw(a)
+    end
+    if evmu.is_hex(a) then
+        a = evmu.get_hex(a)
+    end
+    if evmu.is_raw(b) then
+        b = evmu.get_raw(b)
+    end
+    if evmu.is_hex(b) then
+        a = evmu.get_hex(b)
+    end
     local ta, tb = type(a), type(b)
-    if ta ~= tb then return nil, string.format("%s type differs (%s vs %s)", path, tv(a), tv(b)) end
+    if ta ~= tb then
+        return nil, string.format("%s type differs (%s vs %s)", path, tv(a), tv(b))
+    end
     if ta ~= "table" then
-        if a ~= b then return nil, string.format("%s value differs (%s vs %s)", path, tostring(a), tostring(b)) end
+        if a ~= b then
+            return nil, string.format("%s value differs (%s vs %s)", path, tostring(a), tostring(b))
+        end
         return 1
     end
     for i, va in pairs(a) do
         local ev, err = subtab(va, b[i], string.format(path .. tostring(i) .. "/"))
-        if not ev then return nil, err end
+        if not ev then
+            return nil, err
+        end
     end
     return 1
 end
 
-local function check_parse_type_spec(s, output) assert(subtab(calldata.parse_type_spec(s), output)) end
+local function check_parse_type_spec(s, output)
+    assert(subtab(evmu.parse_type_spec(s), output))
+end
 
 local function check_parse_func_sig(s, expected_output)
-    local output = calldata.parse_func_sig(s)
+    local output = evmu.parse_func_sig(s)
     local ret, err = subtab(expected_output, output)
     if not ret then
         ptab(expected_output)
@@ -77,10 +97,12 @@ local function check_parse_func_sig(s, expected_output)
     end
 end
 
-local function is_suffix(suffix, s) return s:sub(-#suffix) == suffix end
+local function is_suffix(suffix, s)
+    return s:sub(-#suffix) == suffix
+end
 
 local function check_parse_func_sig_error(s, expected_err)
-    local ret, err = pcall(calldata.parse_func_sig, s)
+    local ret, err = pcall(evmu.parse_func_sig, s)
     assert(not ret, "expected function to fail")
     assert(
         is_suffix(expected_err, err),
@@ -89,7 +111,7 @@ local function check_parse_func_sig_error(s, expected_err)
 end
 
 local function check_parse_type_spec_error(s, expected_err)
-    local ret, err = pcall(calldata.parse_type_spec, s)
+    local ret, err = pcall(evmu.parse_type_spec, s)
     assert(not ret, "expected error")
     assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
@@ -102,23 +124,25 @@ local function strdiff(a, b)
     while i <= min_len and a:byte(i) == b:byte(i) do
         i = i + 1
     end
-    if i <= math.max(a_len, b_len) then return i, a:sub(i), b:sub(i) end
+    if i <= math.max(a_len, b_len) then
+        return i, a:sub(i), b:sub(i)
+    end
     return nil
 end
 
 local function check_decode_calldata_hex_error(s, cd, expected_err)
-    local ret, err = pcall(calldata.decode_calldata_hex, s, cd)
+    local ret, err = pcall(evmu.decode_calldata_hex, s, cd)
     assert(not ret, "expected error")
     assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
 
 local function check_encode_decode_calldata_hex(s, args, expected_cd, prefer)
-    local cd = assert(calldata.encode_calldata_hex(s, args))
+    local cd = assert(evmu.encode_calldata_hex(s, args))
     if cd ~= expected_cd then
         local i, rest_cd, rest_expected_cd = strdiff(cd, expected_cd)
         error(string.format("calldata differs starting at %d (expected '%s', got '%s')", i, rest_expected_cd, rest_cd))
     end
-    local decoded_args = assert(calldata.decode_calldata_hex(s, cd, prefer))
+    local decoded_args = assert(evmu.decode_calldata_hex(s, cd, prefer))
     local ret, err = subtab(args, decoded_args)
     if not ret then
         ptab(args)
@@ -129,13 +153,13 @@ local function check_encode_decode_calldata_hex(s, args, expected_cd, prefer)
 end
 
 local function check_encode_calldata_hex_error(s, args, expected_err)
-    local ret, err = pcall(calldata.encode_calldata_hex, s, args)
+    local ret, err = pcall(evmu.encode_calldata_hex, s, args)
     assert(not ret, "expected error")
     assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
 
 local function check_encode_hex(s, expected_hex)
-    local hex = assert(calldata.encode_hex(s))
+    local hex = assert(evmu.encode_hex(s))
     if hex ~= expected_hex then
         local i, rest_hex, rest_expected_hex = strdiff(hex, expected_hex)
         error(
@@ -150,7 +174,7 @@ local function check_encode_hex(s, expected_hex)
 end
 
 local function check_decode_hex(hex, expected_s)
-    local s = assert(calldata.decode_hex(hex))
+    local s = assert(evmu.decode_hex(hex))
     if s ~= expected_s then
         local i, rest_s, rest_expected_s = strdiff(s, expected_s)
         error(string.format("hex decoding differs starting at %d (expected %q, got %q)", i, rest_expected_s, rest_s))
@@ -158,7 +182,7 @@ local function check_decode_hex(hex, expected_s)
 end
 
 local function check_decode_hex_error(s, expected_err)
-    local ret, err = calldata.decode_hex(s)
+    local ret, err = evmu.decode_hex(s)
     assert(not ret, "expected error")
     assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
@@ -295,7 +319,9 @@ local empty_tuple = make_tuple({})
 local function make_address(data_location, name)
     return { type_name = "address", name = name, data_location = data_location }
 end
-local function make_bool(data_location, name) return { type_name = "bool", name = name, data_location = data_location } end
+local function make_bool(data_location, name)
+    return { type_name = "bool", name = name, data_location = data_location }
+end
 
 -- check
 check_parse_func_sig("_()", { name = "_", params = empty_tuple, returns = empty_tuple })
@@ -555,27 +581,27 @@ check_encode_decode_calldata_hex(
 )
 check_encode_decode_calldata_hex(
     "_(string)",
-    { calldata.hex(calldata.encode_hex("hello world")) },
+    { evmu.hex(evmu.encode_hex("hello world")) },
     "0x6aedeb130000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000b68656c6c6f20776f726c64000000000000000000000000000000000000000000",
     "hex"
 )
 check_encode_decode_calldata_hex(
     "_(bytes5)",
-    { calldata.raw("hello") },
+    { evmu.raw("hello") },
     "0x63fa429c68656c6c6f000000000000000000000000000000000000000000000000000000",
     "raw"
 )
 
 check_encode_decode_calldata_hex(
     "_(bytes)",
-    { calldata.raw("hello") },
+    { evmu.raw("hello") },
     "0x9366a78b0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000568656c6c6f000000000000000000000000000000000000000000000000000000",
     "raw"
 )
 
 check_encode_decode_calldata_hex(
     "_(bytes)",
-    { calldata.encode_hex("hello") },
+    { evmu.encode_hex("hello") },
     "0x9366a78b0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000568656c6c6f000000000000000000000000000000000000000000000000000000"
 )
 
@@ -607,13 +633,13 @@ check_encode_decode_calldata_hex(
 )
 check_encode_decode_calldata_hex(
     "_(address)",
-    { calldata.raw(calldata.decode_hex("0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d")) },
+    { evmu.raw(evmu.decode_hex("0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d")) },
     "0xd4aa26ba000000000000000000000000491604c0fdf08347dd1fa4ee062a822a5dd06b5d",
     "raw"
 )
 check_encode_calldata_hex_error(
     "_(address)",
-    { calldata.decode_hex("0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d") },
+    { evmu.decode_hex("0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d") },
     'hex string must start with "0x"'
 )
 check_encode_calldata_hex_error(
@@ -623,12 +649,12 @@ check_encode_calldata_hex_error(
 )
 check_encode_calldata_hex_error(
     "_(address)",
-    { calldata.raw(calldata.decode_hex("0x491604c0fdf08347dd1fa4ee062a822a5dd06b")) },
+    { evmu.raw(evmu.decode_hex("0x491604c0fdf08347dd1fa4ee062a822a5dd06b")) },
     "invalid address length (expected 20 bytes, got 19 bytes)"
 )
 check_encode_calldata_hex_error(
     "_(address)",
-    { calldata.decode_hex("0x491604c0fdf08347dd1fa4ee062a822a5dd06b") },
+    { evmu.decode_hex("0x491604c0fdf08347dd1fa4ee062a822a5dd06b") },
     'hex string must start with "0x"'
 )
 -- check bool
@@ -655,11 +681,11 @@ check_encode_calldata_hex_error(nil, nil, "expected function signature string")
 check_encode_calldata_hex_error("_(int[])", nil, "expected arguments table")
 check_encode_calldata_hex_error("_(int)", {}, "missing tuple component at index 1")
 check_encode_calldata_hex_error("_(int[])", { 1 }, "array values not in table")
-check_encode_calldata_hex_error("_(int[])", { calldata.bint.new(1) }, "array values not in table")
+check_encode_calldata_hex_error("_(int[])", { evmu.bint.new(1) }, "array values not in table")
 check_encode_calldata_hex_error("_(int[2])", { 1 }, "array values not in table")
-check_encode_calldata_hex_error("_(int[2])", { calldata.bint.new(1) }, "array values not in table")
+check_encode_calldata_hex_error("_(int[2])", { evmu.bint.new(1) }, "array values not in table")
 check_encode_calldata_hex_error("_((int,int))", { 1 }, "tuple values not in table")
-check_encode_calldata_hex_error("_((int,int))", { calldata.bint.new(1) }, "tuple values not in table")
+check_encode_calldata_hex_error("_((int,int))", { evmu.bint.new(1) }, "tuple values not in table")
 
 check_decode_calldata_hex_error(1, "0x", "expected function signature string")
 check_decode_calldata_hex_error({}, "0x", "expected function signature string")

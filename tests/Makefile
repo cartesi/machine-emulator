@@ -211,6 +211,9 @@ test-uarch-interpreter:
 test-jsonrpc:
 	./scripts/test-jsonrpc-server.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
+test-evmu:
+	$(LUA) lua/test-evmu.lua
+
 test-lua: | $(CARTESI_IMAGES)
 	./scripts/run-lua-tests.sh '$(LUA)'
 
@@ -264,7 +267,7 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 export LLVM_PROFILE_FILE=coverage-%p.profraw
 endif
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step test-evmu
 
 lint format check-format:
 	@$(MAKE) -C misc $@

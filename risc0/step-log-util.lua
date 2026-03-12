@@ -16,23 +16,6 @@
 -- limitations under the License.
 --
 
--- Step log utility for Cartesi Machine RISC0 workflows.
---
--- Reads and analyzes step log binary files. Supports both header-only
--- extraction (for Makefile pipelines) and full structural analysis
--- (for investigating step log sizes and page access patterns).
---
--- Usage:
---   step-log-util.lua info <step-log>              Human-readable header
---   step-log-util.lua stats <step-log>             Full statistics (pages, siblings, sizes)
---   step-log-util.lua stats <step-log> ...         Stats for multiple files
---   step-log-util.lua batch-stats <dir>             Stats for all step logs in a directory
---   step-log-util.lua pages <step-log>             List page indices and addresses
---   step-log-util.lua root-hash-before <step-log>  Hex hash (no newline)
---   step-log-util.lua mcycle-count <step-log>       Decimal (no newline)
---   step-log-util.lua root-hash-after <step-log>   Hex hash (no newline)
---   step-log-util.lua hex-encode <string>           Hex-encode (no newline)
-
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
 
@@ -59,8 +42,6 @@ local REGIONS = {
     { name = "flash",        start = 0x80000000000000,                       length = 0x100000000000000 },
 }
 
-local hexstring = util.hexstring
-
 local function classify_address(addr)
     for _, r in ipairs(REGIONS) do
         if addr >= r.start and addr < r.start + r.length then
@@ -81,61 +62,37 @@ local function format_size(bytes)
 end
 
 local function read_header(path)
-    local f, err = io.open(path, "rb")
-    if not f then
-        io.stderr:write("error: " .. err .. "\n")
-        os.exit(1)
-    end
+    local f <close> = assert(io.open(path, "rb"))
     local data = f:read(HEADER_SIZE)
-    f:close()
-    if not data or #data < HEADER_SIZE then
-        io.stderr:write(string.format("error: step log too small (got %d bytes, need %d)\n",
-            data and #data or 0, HEADER_SIZE))
-        os.exit(1)
-    end
-    local root_hash_before = hexstring(data:sub(1, 32))
+    assert(data and #data >= HEADER_SIZE,
+        string.format("step log too small (got %d bytes, need %d)", data and #data or 0, HEADER_SIZE))
+    local root_hash_before = util.hexhash(data:sub(1, 32))
     local mcycle_count = string.unpack("<I8", data, 33)
-    local root_hash_after = hexstring(data:sub(41, 72))
+    local root_hash_after = util.hexhash(data:sub(41, 72))
     return root_hash_before, mcycle_count, root_hash_after
 end
 
 local function read_full(path)
-    local f, err = io.open(path, "rb")
-    if not f then
-        io.stderr:write("error: " .. err .. "\n")
-        os.exit(1)
-    end
+    local f <close> = assert(io.open(path, "rb"))
     local file_size = f:seek("end")
     f:seek("set", 0)
 
     local header_data = f:read(HEADER_SIZE)
-    if not header_data or #header_data < HEADER_SIZE then
-        f:close()
-        io.stderr:write(string.format("error: step log too small (got %d bytes, need %d)\n",
-            header_data and #header_data or 0, HEADER_SIZE))
-        os.exit(1)
-    end
-    local root_hash_before = hexstring(header_data:sub(1, 32))
+    assert(header_data and #header_data >= HEADER_SIZE,
+        string.format("step log too small (got %d bytes, need %d)", header_data and #header_data or 0, HEADER_SIZE))
+    local root_hash_before = util.hexhash(header_data:sub(1, 32))
     local mcycle_count = string.unpack("<I8", header_data, 33)
-    local root_hash_after = hexstring(header_data:sub(41, 72))
+    local root_hash_after = util.hexhash(header_data:sub(41, 72))
 
     local meta_data = f:read(METADATA_SIZE)
-    if not meta_data or #meta_data < METADATA_SIZE then
-        f:close()
-        io.stderr:write("error: step log missing metadata\n")
-        os.exit(1)
-    end
+    assert(meta_data and #meta_data >= METADATA_SIZE, "step log missing metadata")
     local hash_function = string.unpack("<I8", meta_data, 1)
     local page_count = string.unpack("<I8", meta_data, 9)
 
     local page_indices = {}
     for i = 1, page_count do
         local idx_data = f:read(8)
-        if not idx_data or #idx_data < 8 then
-            f:close()
-            io.stderr:write(string.format("error: step log truncated at page %d/%d\n", i, page_count))
-            os.exit(1)
-        end
+        assert(idx_data and #idx_data >= 8, string.format("step log truncated at page %d/%d", i, page_count))
         local page_index = string.unpack("<I8", idx_data)
         page_indices[i] = page_index
         f:seek("cur", PAGE_DATA_SIZE + HASH_SIZE)
@@ -146,8 +103,6 @@ local function read_full(path)
     if sc_data and #sc_data == 8 then
         sibling_count = string.unpack("<I8", sc_data)
     end
-
-    f:close()
 
     local header_bytes = HEADER_SIZE + METADATA_SIZE
     local pages_bytes = page_count * PAGE_ENTRY_SIZE
@@ -210,11 +165,7 @@ local function print_stats_row(info)
 end
 
 function commands.info(args)
-    local path = args[1]
-    if not path then
-        io.stderr:write("usage: step-log-util.lua info <step-log>\n")
-        os.exit(1)
-    end
+    local path = assert(args[1], "usage: step-log-util.lua info <step-log>")
     local hash_before, mcycle, hash_after = read_header(path)
     print("Step log: " .. path)
     print("  root_hash_before: " .. hash_before)
@@ -223,40 +174,25 @@ function commands.info(args)
 end
 
 commands["root-hash-before"] = function(args)
-    local path = args[1]
-    if not path then
-        io.stderr:write("usage: step-log-util.lua root-hash-before <step-log>\n")
-        os.exit(1)
-    end
+    local path = assert(args[1], "usage: step-log-util.lua root-hash-before <step-log>")
     local hash_before = read_header(path)
     io.write(hash_before)
 end
 
 commands["mcycle-count"] = function(args)
-    local path = args[1]
-    if not path then
-        io.stderr:write("usage: step-log-util.lua mcycle-count <step-log>\n")
-        os.exit(1)
-    end
+    local path = assert(args[1], "usage: step-log-util.lua mcycle-count <step-log>")
     local _, mcycle = read_header(path)
     io.write(tostring(mcycle))
 end
 
 commands["root-hash-after"] = function(args)
-    local path = args[1]
-    if not path then
-        io.stderr:write("usage: step-log-util.lua root-hash-after <step-log>\n")
-        os.exit(1)
-    end
+    local path = assert(args[1], "usage: step-log-util.lua root-hash-after <step-log>")
     local _, _, hash_after = read_header(path)
     io.write(hash_after)
 end
 
 function commands.stats(args)
-    if #args == 0 then
-        io.stderr:write("usage: step-log-util.lua stats <step-log> [step-log ...]\n")
-        os.exit(1)
-    end
+    assert(#args > 0, "usage: step-log-util.lua stats <step-log> [step-log ...]")
     for i, path in ipairs(args) do
         local info = read_full(path)
         print_stats(info)
@@ -265,11 +201,7 @@ function commands.stats(args)
 end
 
 commands["batch-stats"] = function(args)
-    local dir = args[1]
-    if not dir then
-        io.stderr:write("usage: step-log-util.lua batch-stats <dir>\n")
-        os.exit(1)
-    end
+    local dir = assert(args[1], "usage: step-log-util.lua batch-stats <dir>")
     local files = {}
     local pipe = io.popen(string.format('ls -1 "%s"/*.log 2>/dev/null', dir))
     if pipe then
@@ -278,10 +210,7 @@ commands["batch-stats"] = function(args)
         end
         pipe:close()
     end
-    if #files == 0 then
-        io.stderr:write("error: no .log files found in " .. dir .. "\n")
-        os.exit(1)
-    end
+    assert(#files > 0, "no .log files found in " .. dir)
     table.sort(files)
 
     print(string.format("%-12s %-6s %-8s %-12s %s", "mcycles", "pages", "siblings", "size", "path"))
@@ -325,11 +254,7 @@ commands["batch-stats"] = function(args)
 end
 
 function commands.pages(args)
-    local path = args[1]
-    if not path then
-        io.stderr:write("usage: step-log-util.lua pages <step-log>\n")
-        os.exit(1)
-    end
+    local path = assert(args[1], "usage: step-log-util.lua pages <step-log>")
     local info = read_full(path)
     print(string.format("%-8s %-18s %s", "index", "address", "region"))
     print(string.rep("-", 50))
@@ -340,33 +265,78 @@ function commands.pages(args)
     end
 end
 
-commands["hex-encode"] = function(args)
-    local s = args[1]
-    if not s then
-        io.stderr:write("usage: step-log-util.lua hex-encode <string>\n")
-        os.exit(1)
-    end
-    io.write(hexstring(s))
+-- Print help and exit
+local function help()
+    io.stderr:write(string.format(
+        [=[
+Usage:
+
+  %s <command> [args...]
+
+Commands:
+
+  info <step-log>              Print step log header fields
+  stats <step-log> [...]       Full statistics (pages, siblings, sizes)
+  batch-stats <dir>            Stats table for all .log files in a directory
+  pages <step-log>             List page indices, addresses, and regions
+  root-hash-before <step-log>  Print root hash before (hex)
+  mcycle-count <step-log>       Print mcycle count (decimal)
+  root-hash-after <step-log>   Print root hash after (hex)
+
+]=],
+        arg[0]
+    ))
+    os.exit()
 end
 
-local cmd_name = arg[1]
-if not cmd_name or not commands[cmd_name] then
-    io.stderr:write("usage: step-log-util.lua <command> [args...]\n")
-    io.stderr:write("\nCommands:\n")
-    io.stderr:write("  info <step-log>              Print step log header fields\n")
-    io.stderr:write("  stats <step-log> [...]       Full statistics (pages, siblings, sizes)\n")
-    io.stderr:write("  batch-stats <dir>            Stats table for all .log files in a directory\n")
-    io.stderr:write("  pages <step-log>             List page indices, addresses, and regions\n")
-    io.stderr:write("  root-hash-before <step-log>  Print root hash before (hex)\n")
-    io.stderr:write("  mcycle-count <step-log>       Print mcycle count (decimal)\n")
-    io.stderr:write("  root-hash-after <step-log>   Print root hash after (hex)\n")
-    io.stderr:write("  hex-encode <string>           Hex-encode a string\n")
-    os.exit(1)
+-- For each option,
+--   first entry is the pattern to match
+--   second entry is a callback
+--     if callback returns true, the option is accepted.
+--     if callback returns false, the option is rejected.
+local options = {
+    {
+        "^%-h$",
+        function(all)
+            if not all then return false end
+            help()
+        end,
+    },
+    {
+        "^%-%-help$",
+        function(all)
+            if not all then return false end
+            help()
+        end,
+    },
+    {
+        ".*",
+        function(all)
+            error("unrecognized option " .. all)
+        end,
+    },
+}
+
+-- Process command line options
+local values = {}
+for _, argument in ipairs(arg) do
+    if argument:sub(1, 1) == "-" then
+        for _, option in ipairs(options) do
+            if option[2](argument:match(option[1])) then
+                break
+            end
+        end
+    else
+        values[#values + 1] = argument
+    end
 end
+
+local cmd_name = assert(values[1], "missing command, use --help for usage")
+assert(commands[cmd_name], "unknown command '" .. cmd_name .. "', use --help for usage")
 
 local cmd_args = {}
-for i = 2, #arg do
-    cmd_args[i - 1] = arg[i]
+for i = 2, #values do
+    cmd_args[i - 1] = values[i]
 end
 
 commands[cmd_name](cmd_args)

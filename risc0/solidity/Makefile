@@ -66,8 +66,11 @@ $(FIXTURES_DIR)/seal.bin: $(STEP_LOG)
 	$(eval MCYCLE_COUNT := $(shell $(LUA) $(STEP_LOG_UTIL) mcycle-count $(STEP_LOG)))
 	$(eval HASH_AFTER := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-after $(STEP_LOG)))
 	@$(LUA) $(STEP_LOG_UTIL) info $(STEP_LOG)
-	RISC0_DEV_MODE=0 $(CARTESI_RISC0_CLI) prove-groth16 \
+	RISC0_DEV_MODE=0 $(CARTESI_RISC0_CLI) prove \
 		"$(HASH_BEFORE)" $(STEP_LOG) "$(MCYCLE_COUNT)" "$(HASH_AFTER)" \
+		$(FIXTURES_DIR)/receipt.bin
+	RISC0_DEV_MODE=0 $(CARTESI_RISC0_CLI) compress \
+		$(FIXTURES_DIR)/receipt.bin \
 		$(FIXTURES_DIR)/seal.bin $(FIXTURES_DIR)/journal.bin
 	@echo ""
 	@echo "Fixtures ready:"

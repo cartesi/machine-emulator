@@ -1,6 +1,6 @@
 # Cartesi RISC0 Prover
 
-Proves Cartesi Machine state transitions using RISC Zero's zkVM.
+Proves Cartesi Machine state transitions using RISC Zero's zkvm.
 Given a step log, generates a zero-knowledge proof that the
 state transition is valid.
 
@@ -11,28 +11,27 @@ state transition is valid.
 Docker is required -- the guest binary is built inside a container
 to ensure all machines produce the same Image ID.
 
-## Proving Modes
+## Pipeline
+
+1. Prove a step log (produces a STARK receipt):
+
+       cartesi-risc0-cli prove <hash_before> step.log <mcycle> <hash_after> receipt.bin
+
+2. Verify the receipt:
+
+       cartesi-risc0-cli verify receipt.bin <hash_before> <mcycle> <hash_after>
+
+3. Compress the receipt to Groth16 (produces seal + journal for on-chain verification):
+
+       cartesi-risc0-cli compress receipt.bin seal.bin journal.bin
+
+4. Verify the seal:
+
+       cartesi-risc0-cli verify-seal seal.bin journal.bin <hash_before> <mcycle> <hash_after>
 
 Dev mode (fake proofs, for development):
 
     RISC0_DEV_MODE=1 cartesi-risc0-cli prove <hash_before> step.log <mcycle> <hash_after> receipt.bin
-
-Local proving (real proofs, Metal GPU automatic on Apple Silicon):
-
-    cartesi-risc0-cli prove <hash_before> step.log <mcycle> <hash_after> receipt.bin
-
-Groth16 (for on-chain verification, requires Docker):
-
-    cartesi-risc0-cli prove-groth16 <hash_before> step.log <mcycle> <hash_after> seal.bin journal.bin
-
-Verify:
-
-    cartesi-risc0-cli verify receipt.bin <hash_before> <mcycle> <hash_after>
-    cartesi-risc0-cli verify-groth16 seal.bin journal.bin <hash_before> <mcycle> <hash_after>
-
-To get a full Groth16 receipt (instead of separate seal/journal):
-
-    cartesi-risc0-cli --groth16 prove <hash_before> step.log <mcycle> <hash_after> receipt.bin
 
 ## Building with CUDA
 
@@ -64,11 +63,6 @@ Without Docker, different platforms produce different RISC-V output.
 Build with `RISC0_REPRODUCIBLE_BUILD=0` to skip Docker (native Image
 ID, valid for testing but not on-chain). Use `--guest-elf` at runtime
 to override with a Docker-built guest when needed.
-
-**Is `RISC0_DEV_MODE` a build flag?**
-
-No. Runtime environment variable, checked each time you prove.
-No recompilation needed to switch modes.
 
 **Image ID mismatch between machines?**
 

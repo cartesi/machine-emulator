@@ -63,7 +63,6 @@ pub fn prove(
     log_file_path: &str,
     mcycle_count: u64,
     root_hash_after: &MachineHash,
-    groth16: bool,
 ) -> Receipt {
     let log_data = fs::read(log_file_path).expect("Could not read log file");
     let env = ExecutorEnv::builder()
@@ -72,8 +71,7 @@ pub fn prove(
         .unwrap();
 
     let prover = default_prover();
-    let opts = if groth16 { ProverOpts::groth16() } else { ProverOpts::default() };
-    let receipt = prover.prove_with_opts(env, guest_elf, &opts).unwrap().receipt;
+    let receipt = prover.prove_with_opts(env, guest_elf, &ProverOpts::default()).unwrap().receipt;
 
     let (j_hash_before, j_mcycle, j_hash_after) = decode_journal(&receipt.journal.bytes);
     assert!(j_hash_before == *root_hash_before, "root_hash_before mismatch: argument does not match journal");
@@ -83,10 +81,18 @@ pub fn prove(
     receipt
 }
 
-/// Encode a Groth16 receipt into (seal, journal_bytes) for Solidity contract consumption.
+/// Compress a receipt to Groth16 and encode it for Solidity contract consumption.
+/// Returns (seal_with_selector, journal_bytes).
+pub fn compress(receipt: &Receipt) -> (Vec<u8>, Vec<u8>) {
+    let prover = default_prover();
+    let compressed = prover.compress(&ProverOpts::groth16(), receipt).unwrap();
+    encode_seal_and_journal(&compressed)
+}
+
+/// Extract the Groth16 seal and journal from a compressed receipt.
 /// The seal is prefixed with a 4-byte verifier selector (derived from Groth16ReceiptVerifierParameters)
 /// that the on-chain Verifier Router uses to route to the correct proof system.
-pub fn encode_receipt_for_solidity(receipt: &Receipt) -> (Vec<u8>, Vec<u8>) {
+pub fn encode_seal_and_journal(receipt: &Receipt) -> (Vec<u8>, Vec<u8>) {
     let raw_seal = receipt.inner.groth16().unwrap().seal.clone();
     let params_digest = Groth16ReceiptVerifierParameters::default().digest();
     let selector = &params_digest.as_bytes()[..4];
@@ -98,7 +104,7 @@ pub fn encode_receipt_for_solidity(receipt: &Receipt) -> (Vec<u8>, Vec<u8>) {
 
 /// Reconstruct and verify a Groth16 receipt from seal and journal bytes.
 /// Accepts seal with (260 bytes) or without (256 bytes) the 4-byte selector prefix.
-pub fn verify_groth16(
+pub fn verify_seal(
     image_id: &[u32; 8],
     seal: &[u8],
     journal_bytes: &[u8],

@@ -331,7 +331,8 @@ for _, argument in ipairs(arg) do
     end
 end
 
-local cmd_name = assert(values[1], "missing command, use --help for usage")
+if not values[1] then help() end
+local cmd_name = values[1]
 assert(commands[cmd_name], "unknown command '" .. cmd_name .. "', use --help for usage")
 
 local cmd_args = {}

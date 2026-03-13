@@ -34,5 +34,6 @@ image-id: rust
 clean:
 	-@$(MAKE) -C cpp clean
 	-@$(MAKE) -C rust clean
+	-@$(MAKE) -C solidity clean
 
 .PHONY: all cpp rust clean test export-artifacts image-id

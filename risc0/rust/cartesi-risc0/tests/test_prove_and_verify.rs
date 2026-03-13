@@ -53,7 +53,7 @@ fn test_prove_and_verify() {
             file_name, root_hash_before, mcycle_count, root_hash_after
         );
 
-        let receipt = prove(REPLAY_STEP_ELF, &root_hash_before, path.to_str().unwrap(), mcycle_count, &root_hash_after, false);
+        let receipt = prove(REPLAY_STEP_ELF, &root_hash_before, path.to_str().unwrap(), mcycle_count, &root_hash_after);
         verify(&REPLAY_STEP_ID, &receipt, &root_hash_before, mcycle_count, &root_hash_after);
     }
 }

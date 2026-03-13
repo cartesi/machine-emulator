@@ -810,9 +810,9 @@ machine_hash jsonrpc_machine::do_get_node_hash(uint64_t address, int log2_size) 
     return hash;
 }
 
-hash_tree_proof jsonrpc_machine::do_get_proof(uint64_t address, int log2_size) const {
+hash_tree_proof jsonrpc_machine::do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const {
     not_default_constructible<hash_tree_proof> result;
-    request("machine.get_proof", std::tie(address, log2_size), result);
+    request("machine.get_proof", std::tie(address, log2_target_size, log2_root_size), result);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
     }

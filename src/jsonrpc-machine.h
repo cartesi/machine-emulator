@@ -135,7 +135,7 @@ private:
     access_log do_log_reset_uarch(const access_log::type &log_type) override;
     machine_hash do_get_root_hash() const override;
     machine_hash do_get_node_hash(uint64_t address, int log2_size) const override;
-    hash_tree_proof do_get_proof(uint64_t address, int log2_size) const override;
+    hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
     machine_runtime_config do_get_runtime_config() const override;

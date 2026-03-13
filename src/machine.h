@@ -31,6 +31,7 @@
 #include "access-log.h"
 #include "address-range.h"
 #include "back-merkle-tree.h"
+#include "hash-tree-constants.h"
 #include "hash-tree-stats.h"
 #include "hash-tree.h"
 #include "host-addr.h"
@@ -363,25 +364,27 @@ public:
     }
 
     /// \brief Obtains the proof for a node in the hash-tree.
-    /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
-    /// \param log2_size log<sub>2</sub> of size subintended by target node.
-    /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
+    /// \param address Address of target node. Must be aligned to a 2<sup>log2_target_size</sup> boundary.
+    /// \param log2_target_size log<sub>2</sub> of size subintended by target node.
+    /// Must be between 5 (for a 32-byte word) and log2_root_size, inclusive.
+    /// \param log2_root_Size log<sub>2</sub> of size subintended by root node.
+    /// Must be between 5 (for a 32-byte word) and 64 (for the entire address space).
     /// \param proof Receives the proof.
-    /// \details If the node is
-    /// smaller than a page size, then it must lie entirely inside the same PMA range.
-    proof_type get_proof(uint64_t address, int log2_size) const;
+    /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
+    proof_type get_proof(uint64_t address, int log2_target_size, int log2_root_size = HASH_TREE_LOG2_ROOT_SIZE) const;
 
     /// \brief Obtains the proof for a node in the hash-tree without making any modifications to the tree.
-    /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
-    /// \param log2_size log<sub>2</sub> of size subintended by target node.
-    /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
+    /// \param address Address of target node. Must be aligned to a 2<sup>log2_target_size</sup> boundary.
+    /// \param log2_target_size log<sub>2</sub> of size subintended by target node.
+    /// Must be between 5 (for a 32-byte word) and log2_root_size, inclusive.
+    /// \param log2_root_Size log<sub>2</sub> of size subintended by root node.
+    /// Must be between 5 (for a 32-byte word) and 64 (for the entire address space).
     /// \param proof Receives the proof.
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
     /// This overload is used to optimize proof generation when the caller knows that the tree is already up to
     /// date.
-    proof_type get_proof(uint64_t address, int log2_size, skip_hash_tree_update_t /*unused*/) const {
-        return m_ht.get_proof(m_ars, address, log2_size);
-    }
+    proof_type get_proof(skip_hash_tree_update_t /*unused*/, uint64_t address, int log2_target_size,
+        int log2_root_size = HASH_TREE_LOG2_ROOT_SIZE) const;
 
     /// \brief Obtains the root hash of the hash-tree.
     /// \returns The hash.

@@ -92,7 +92,7 @@ private:
         // We can skip updating the hash tree while getting the proof because we assume that:
         // 1) A full hash tree update was called at the beginning of machine::log_load_cmio_input()
         // 2) We called update_hash_tree_page on all write accesses
-        const auto proof = m_m.get_proof(pleaf_aligned, HASH_TREE_LOG2_WORD_SIZE, skip_hash_tree_update);
+        const auto proof = m_m.get_proof(skip_hash_tree_update, pleaf_aligned, HASH_TREE_LOG2_WORD_SIZE);
         // We just store the sibling hashes in the access because this is the only missing piece of data needed to
         // reconstruct the proof
         a.set_sibling_hashes(proof.get_sibling_hashes());
@@ -129,7 +129,7 @@ private:
         // We can skip updating the hash tree while getting the proof because we assume that:
         // 1) A full hash tree update was called at the beginning of machine::log_load_cmio_input()
         // 2) We called update_hash_tree_page on all write accesses
-        const auto proof = m_m.get_proof(pleaf_aligned, HASH_TREE_LOG2_WORD_SIZE, skip_hash_tree_update);
+        const auto proof = m_m.get_proof(skip_hash_tree_update, pleaf_aligned, HASH_TREE_LOG2_WORD_SIZE);
         // We just store the sibling hashes in the access because this is the only missing piece of data needed to
         // reconstruct the proof
         a.set_sibling_hashes(proof.get_sibling_hashes());

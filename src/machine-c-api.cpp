@@ -856,12 +856,13 @@ cm_error cm_get_hash_tree_stats(cm_machine *m, bool clear, const char **stats) t
     return cm_result_failure();
 }
 
-cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, const char **proof) try {
+cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_target_size, int log2_root_size,
+    const char **proof) try {
     if (proof == nullptr) {
         throw std::invalid_argument("invalid proof output");
     }
     const auto *cpp_m = convert_from_c(m);
-    const auto cpp_proof = cpp_m->get_proof(address, log2_size);
+    const auto cpp_proof = cpp_m->get_proof(address, log2_target_size, log2_root_size);
     *proof = cm_set_temp_string(cartesi::to_json(cpp_proof).dump());
     return cm_result_success();
 } catch (...) {

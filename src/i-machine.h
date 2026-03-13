@@ -24,6 +24,7 @@
 #include "access-log.h"
 #include "address-range-description.h"
 #include "back-merkle-tree.h"
+#include "hash-tree-constants.h"
 #include "hash-tree-proof.h"
 #include "hash-tree-stats.h"
 #include "interpret.h"
@@ -124,8 +125,9 @@ public:
     }
 
     /// \brief Obtains the proof for a node in the hash tree.
-    hash_tree_proof get_proof(uint64_t address, int log2_size) const {
-        return do_get_proof(address, log2_size);
+    hash_tree_proof get_proof(uint64_t address, int log2_target_size,
+        int log2_root_size = HASH_TREE_LOG2_ROOT_SIZE) const {
+        return do_get_proof(address, log2_target_size, log2_root_size);
     }
 
     /// \brief Obtains the root hash of the hash tree.
@@ -323,7 +325,7 @@ private:
     virtual void do_remove_stored(const std::string &dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
-    virtual hash_tree_proof do_get_proof(uint64_t address, int log2_size) const = 0;
+    virtual hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const = 0;
     virtual machine_hash do_get_root_hash() const = 0;
     virtual machine_hash do_get_node_hash(uint64_t address, int log2_size) const = 0;
     virtual uint64_t do_read_reg(reg r) const = 0;

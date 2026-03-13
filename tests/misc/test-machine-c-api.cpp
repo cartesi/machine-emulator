@@ -401,17 +401,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_machine_hash_test, ordinary_machine
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_proof_null_machine_test) {
     const char *proof{};
-    cm_error error_code = cm_get_proof(nullptr, 0, 12, &proof);
+    cm_error error_code = cm_get_proof(nullptr, 0, CM_HASH_TREE_LOG2_PAGE_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_address_test, ordinary_machine_fixture) {
     const char *proof{};
-    cm_error error_code = cm_get_proof(_machine, 1, 12, &proof);
+    cm_error error_code = cm_get_proof(_machine, 1, CM_HASH_TREE_LOG2_PAGE_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("address not aligned to log2_size");
+    std::string origin("address not aligned to log2_target_size");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -419,37 +419,53 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_log2_test, ordinary_machine_fix
     const char *proof{};
 
     // log2_root_size = 64
-    cm_error error_code = cm_get_proof(_machine, 0, 65, &proof);
+    cm_error error_code =
+        cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_ROOT_SIZE + 1, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
     std::string result = cm_get_last_error_message();
-    std::string origin("invalid log2_size");
-    BOOST_CHECK_EQUAL(origin, result);
+    BOOST_CHECK_EQUAL(std::string("log2_target_size is larger than log2_root_size"), result);
 
-    // log2_word_size = 5
-    error_code = cm_get_proof(_machine, 0, 2, &proof);
+    error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_WORD_SIZE + 1, CM_HASH_TREE_LOG2_WORD_SIZE, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
     result = cm_get_last_error_message();
-    BOOST_CHECK_EQUAL(origin, result);
+    BOOST_CHECK_EQUAL(std::string("log2_target_size is larger than log2_root_size"), result);
+
+    // log2_word_size = 5
+    error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_WORD_SIZE - 1, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
+    result = cm_get_last_error_message();
+    BOOST_CHECK_EQUAL(std::string("log2_target_size is too small"), result);
+
+    error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_WORD_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE + 1, &proof);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
+    result = cm_get_last_error_message();
+    BOOST_CHECK_EQUAL(std::string("log2_root_size is too large"), result);
+
+    error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_WORD_SIZE, CM_HASH_TREE_LOG2_WORD_SIZE - 1, &proof);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
+    result = cm_get_last_error_message();
+    BOOST_CHECK_EQUAL(std::string("log2_root_size is too small"), result);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_inconsistent_tree_test, ordinary_machine_fixture) {
     const char *proof{};
-    cm_error error_code = cm_get_proof(_machine, 0, 64, &proof);
+    cm_error error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_ROOT_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     // Hash tree is always consistent now as it updates on access
-    error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_PAGE_SIZE, &proof);
+    error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_PAGE_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_proof_test, ordinary_machine_fixture) {
-    cm_error error_code = cm_get_proof(_machine, 0, 12, nullptr);
+    cm_error error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_PAGE_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fixture) {
     const char *proof_str{};
-    cm_error error_code = cm_get_proof(_machine, 0, 12, &proof_str);
+    cm_error error_code =
+        cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_PAGE_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -1568,7 +1584,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_hash_tree_root_updates_test, ordin
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_hash_tree_proof_updates_test, ordinary_machine_fixture) {
     const char *proof_str{};
-    cm_error error_code = cm_get_proof(_machine, 0, 12, &proof_str);
+    cm_error error_code =
+        cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_PAGE_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     auto proof =
@@ -1586,7 +1603,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_hash_tree_proof_updates_test, ordi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    error_code = cm_get_proof(_machine, 0, 12, &proof_str);
+    error_code = cm_get_proof(_machine, 0, CM_HASH_TREE_LOG2_PAGE_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     proof =

@@ -104,8 +104,8 @@ access_log local_machine::do_log_step_uarch(const access_log::type &log_type) {
     return get_machine()->log_step_uarch(log_type);
 }
 
-hash_tree_proof local_machine::do_get_proof(uint64_t address, int log2_size) const {
-    return get_machine()->get_proof(address, log2_size);
+hash_tree_proof local_machine::do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const {
+    return get_machine()->get_proof(address, log2_target_size, log2_root_size);
 }
 
 machine_hash local_machine::do_get_root_hash() const {

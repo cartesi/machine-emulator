@@ -89,7 +89,7 @@ private:
 
     void log_access_siblings_and_read_hash(access &a, uint64_t paddr, int log2_size) const {
         // Since the tree was updated before we started collecting the log, we only update after writes
-        const auto proof = m_m.get_proof(paddr, log2_size, skip_hash_tree_update);
+        const auto proof = m_m.get_proof(skip_hash_tree_update, paddr, log2_size);
         // The only pieces of data we use from the proof are the target hash and the siblings
         a.set_sibling_hashes(proof.get_sibling_hashes());
         a.set_read_hash(proof.get_target_hash());

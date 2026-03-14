@@ -511,11 +511,24 @@
           }
         },
         {
-          "name": "log2_size",
-          "description": "Log2 of size of range",
+          "name": "log2_target_size",
+          "description": "Log2 of size of target range",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
+            "$ref": "#/components/schemas/UnsignedInteger",
+            "minimum": 5,
+            "maximum": 64
+          }
+        },
+        {
+          "name": "log2_root_size",
+          "description": "Log2 of size of enclosing range",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger",
+            "minimum": 5,
+            "maximum": 64,
+            "default": 64
           }
         }
       ],

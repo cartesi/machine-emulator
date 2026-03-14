@@ -63,7 +63,7 @@ private:
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
     void do_remove_stored(const std::string &dir) const override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
-    hash_tree_proof do_get_proof(uint64_t address, int log2_size) const override;
+    hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const override;
     machine_hash do_get_root_hash() const override;
     machine_hash do_get_node_hash(uint64_t address, int log2_size) const override;
     bool do_verify_hash_tree() const override;

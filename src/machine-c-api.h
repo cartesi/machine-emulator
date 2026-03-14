@@ -564,14 +564,17 @@ CM_API cm_error cm_get_node_hash(const cm_machine *m, uint64_t address, int32_t 
 
 /// \brief Obtains the proof for a node in the machine state hash tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param address Address of target node. Must be aligned to a 2^log2_size boundary.
-/// \param log2_size The log base 2 of the size subtended by the target node.
+/// \param address Address of target node. Must be aligned to a 2^log2_target_size boundary.
+/// \param log2_target_size The log base 2 of the size subtended by the target node.
+/// Must be between CM_HASH_TREE_LOG2_WORD_SIZE (for a word) and \p log2_root_size, inclusive.
+/// \param log2_root_size The log base 2 of the size subtended by the subtree root.
 /// Must be between CM_HASH_TREE_LOG2_WORD_SIZE (for a word) and CM_HASH_TREE_LOG2_ROOT_SIZE
 /// (for the entire address space), inclusive.
 /// \param proof Receives the proof as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, const char **proof);
+CM_API cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_target_size, int log2_root_size,
+    const char **proof);
 
 // ------------------------------------
 // Reading and writing

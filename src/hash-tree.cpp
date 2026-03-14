@@ -75,10 +75,15 @@ const_machine_hash_view hash_tree::get_sparse_node_hash_view(index_type node_ind
 
 void hash_tree::get_pristine_proof(int curr_log2_size, proof_type &proof) const {
     const auto log2_target_size = proof.get_log2_target_size();
-    for (int log2_size = curr_log2_size - 1; log2_size >= log2_target_size; --log2_size) {
+    const auto log2_root_size = proof.get_log2_root_size();
+    const auto start_log2_size = std::min(log2_root_size, curr_log2_size) - 1;
+    for (int log2_size = start_log2_size; log2_size >= log2_target_size; --log2_size) {
         proof.set_sibling_hash(m_pristine_hashes[log2_size], log2_size);
     }
     proof.set_target_hash(m_pristine_hashes[log2_target_size]);
+    if (log2_root_size <= curr_log2_size) {
+        proof.set_root_hash(m_pristine_hashes[log2_root_size]);
+    }
 }
 
 static inline uint64_t get_sibling_address(uint64_t address, int log2_size) {
@@ -103,24 +108,34 @@ void hash_tree::get_page_proof(address_range &ar, uint64_t address, proof_type &
         update_dirty_page(ar, opt_br->get(), changed);
     }
     const auto log2_target_size = proof.get_log2_target_size();
+    const auto log2_root_size = proof.get_log2_root_size();
     assert(log2_target_size >= HASH_TREE_LOG2_WORD_SIZE && "log2_size is too small");
     const auto &entry = opt_br->get();
     const auto node_offset = address & (HASH_TREE_PAGE_SIZE - 1);
-    for (int log2_size = HASH_TREE_LOG2_PAGE_SIZE - 1; log2_size >= log2_target_size; --log2_size) {
+    const auto start_log2_size = std::min(log2_root_size, HASH_TREE_LOG2_PAGE_SIZE) - 1;
+    for (int log2_size = start_log2_size; log2_size >= log2_target_size; --log2_size) {
         proof.set_sibling_hash(entry.node_hash_view(get_sibling_address(node_offset, log2_size), log2_size), log2_size);
     }
     proof.set_target_hash(entry.node_hash_view(node_offset, log2_target_size));
+    if (log2_root_size <= HASH_TREE_LOG2_PAGE_SIZE) {
+        proof.set_root_hash(entry.node_hash_view(get_aligned_address(node_offset, log2_root_size), log2_root_size));
+    }
     page_hash_tree_cache::return_entry(*opt_br);
 }
 
 void hash_tree::get_dense_proof(address_range &ar, int ar_log2_size, uint64_t address, proof_type &proof) {
     const auto &dht = ar.get_dense_hash_tree();
     const auto log2_target_size = proof.get_log2_target_size();
+    const auto log2_root_size = proof.get_log2_root_size();
     const auto dht_end = std::max<int>(HASH_TREE_LOG2_PAGE_SIZE, log2_target_size);
     const auto node_offset = address - ar.get_start();
-    for (int log2_size = ar_log2_size - 1; log2_size >= dht_end; --log2_size) {
+    const auto start_log2_size = std::min(log2_root_size, ar_log2_size) - 1;
+    for (int log2_size = start_log2_size; log2_size >= dht_end; --log2_size) {
         const auto sibling_offset = get_sibling_address(node_offset, log2_size);
         proof.set_sibling_hash(dht.node_hash_view(sibling_offset, log2_size), log2_size);
+    }
+    if (log2_root_size >= HASH_TREE_LOG2_PAGE_SIZE && log2_root_size <= ar_log2_size) {
+        proof.set_root_hash(dht.node_hash_view(get_aligned_address(node_offset, log2_root_size), log2_root_size));
     }
     if (log2_target_size >= HASH_TREE_LOG2_PAGE_SIZE) {
         proof.set_target_hash(dht.node_hash_view(node_offset, log2_target_size));
@@ -129,20 +144,29 @@ void hash_tree::get_dense_proof(address_range &ar, int ar_log2_size, uint64_t ad
     }
 }
 
-hash_tree::proof_type hash_tree::get_proof(address_ranges ars, uint64_t address, int log2_size) {
-    if (log2_size < HASH_TREE_LOG2_WORD_SIZE || log2_size > HASH_TREE_LOG2_ROOT_SIZE) {
-        throw std::domain_error{"invalid log2_size"};
+hash_tree::proof_type hash_tree::get_proof(address_ranges ars, uint64_t address, int log2_target_size,
+    int log2_root_size) {
+    if (log2_root_size < HASH_TREE_LOG2_WORD_SIZE) {
+        throw std::domain_error{"log2_root_size is too small"};
     }
-    if (log2_size == HASH_TREE_LOG2_ROOT_SIZE) {
+    if (log2_root_size > HASH_TREE_LOG2_ROOT_SIZE) {
+        throw std::domain_error{"log2_root_size is too large"};
+    }
+    if (log2_target_size < HASH_TREE_LOG2_WORD_SIZE) {
+        throw std::domain_error{"log2_target_size is too small"};
+    }
+    if (log2_target_size > log2_root_size) {
+        throw std::domain_error{"log2_target_size is larger than log2_root_size"};
+    }
+    if (log2_target_size == HASH_TREE_LOG2_ROOT_SIZE) {
         if (address != 0) {
-            throw std::domain_error{"address not aligned to log2_size"};
+            throw std::domain_error{"address not aligned to log2_target_size"};
         }
-    } else if (((address >> log2_size) << log2_size) != address) {
-        throw std::domain_error{"address not aligned to log2_size"};
+    } else if (((address >> log2_target_size) << log2_target_size) != address) {
+        throw std::domain_error{"address not aligned to log2_target_size"};
     }
-    proof_type proof{HASH_TREE_LOG2_ROOT_SIZE, log2_size};
+    proof_type proof{log2_root_size, log2_target_size};
     proof.set_target_address(address);
-    proof.set_root_hash(get_root_hash());
     index_type node_index = 1;
     int curr_log2_size = HASH_TREE_LOG2_ROOT_SIZE;
     for (;;) {
@@ -152,9 +176,13 @@ hash_tree::proof_type hash_tree::get_proof(address_ranges ars, uint64_t address,
             break;
         }
         const auto &node = m_sparse_nodes[node_index];
+        // found node corresponding to root along the way
+        if (curr_log2_size == proof.get_log2_root_size()) {
+            proof.set_root_hash(node.hash);
+        }
         assert(std::cmp_equal(node.log2_size, curr_log2_size) && "incorrect node log2_size");
-        // hit sparse tree node
-        if (curr_log2_size == log2_size) {
+        // hit target at a sparse tree node
+        if (curr_log2_size == proof.get_log2_target_size()) {
             proof.set_target_hash(node.hash);
             break;
         }
@@ -169,10 +197,14 @@ hash_tree::proof_type hash_tree::get_proof(address_ranges ars, uint64_t address,
         // go down left or right on sparse tree depending on address
         --curr_log2_size;
         if ((address & (UINT64_C(1) << curr_log2_size)) == 0) {
-            proof.set_sibling_hash(get_sparse_node_hash_view(node.right, curr_log2_size), curr_log2_size);
+            if (curr_log2_size < log2_root_size && curr_log2_size >= log2_target_size) {
+                proof.set_sibling_hash(get_sparse_node_hash_view(node.right, curr_log2_size), curr_log2_size);
+            }
             node_index = node.left;
         } else {
-            proof.set_sibling_hash(get_sparse_node_hash_view(node.left, curr_log2_size), curr_log2_size);
+            if (curr_log2_size < log2_root_size && curr_log2_size >= log2_target_size) {
+                proof.set_sibling_hash(get_sparse_node_hash_view(node.left, curr_log2_size), curr_log2_size);
+            }
             node_index = node.right;
         }
     }
@@ -1061,6 +1093,10 @@ hash_tree::nodes_type hash_tree::create_nodes(const_address_ranges ars) {
 }
 
 // LCOV_EXCL_START
+#if defined(__GNUC__) && __GNUC__ >= 13
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-reference"
+#endif
 void hash_tree::dump(const_address_ranges ars, std::ostream &out) {
     out << "digraph HashTree {\n";
     out << "  rankdir=TB;\n";
@@ -1130,6 +1166,9 @@ void hash_tree::dump(const_address_ranges ars, std::ostream &out) {
     }
     out << "}\n";
 }
+#if defined(__GNUC__) && __GNUC__ >= 13
+#pragma GCC diagnostic pop
+#endif
 // LCOV_EXCL_STOP
 
 } // namespace cartesi

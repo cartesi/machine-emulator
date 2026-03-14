@@ -172,7 +172,8 @@ public:
 
     machine_hash get_root_hash() const noexcept;
     machine_hash get_node_hash(address_ranges ars, uint64_t address, int log2_size);
-    proof_type get_proof(address_ranges ars, uint64_t address, int log2_size);
+    proof_type get_proof(address_ranges ars, uint64_t address, int log2_target_size,
+        int log2_root_size = HASH_TREE_LOG2_ROOT_SIZE);
 
     void dump(const_address_ranges ars, std::ostream &out);
 

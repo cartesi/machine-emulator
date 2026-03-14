@@ -120,6 +120,14 @@ static std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
 using namespace std::string_literals;
 using json = nlohmann::json;
 
+/// \brief Checks if uint64_t value can be converted to integer
+static int check_int(uint64_t val, const char *what) {
+    if (val > INT_MAX) {
+        throw std::domain_error{std::string("value ").append(what).append(" is out of range")};
+    }
+    return static_cast<int>(val);
+}
+
 /// \brief Installs a signal handler
 template <typename HANDLER>
 static void install_signal_handler(int signum, HANDLER handler) {
@@ -1158,13 +1166,19 @@ static json jsonrpc_machine_get_proof_handler(const json &j, const std::shared_p
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *const param_name[] = {"address", "log2_size"};
-    auto args = parse_args<uint64_t, uint64_t>(j, param_name);
-    if (std::get<1>(args) > INT_MAX) {
-        throw std::domain_error("log2_size is out of range");
+    static const char *const param_name[] = {"address", "log2_target_size", "log2_root_size"};
+    auto args = parse_args<uint64_t, uint64_t, cartesi::optional_param<uint64_t>>(j, param_name);
+    switch (count_args(args)) {
+        case 2:
+            return jsonrpc_response_ok(j,
+                session->handler->machine->get_proof(std::get<0>(args), check_int(std::get<1>(args), param_name[1])));
+        case 3:
+            return jsonrpc_response_ok(j,
+                session->handler->machine->get_proof(std::get<0>(args), check_int(std::get<1>(args), param_name[1]),
+                    check_int(std::get<2>(args).value(), param_name[2]))); // NOLINT(bugprone-unchecked-optional-access)
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
     }
-    return jsonrpc_response_ok(j,
-        session->handler->machine->get_proof(std::get<0>(args), static_cast<int>(std::get<1>(args))));
 }
 
 /// \brief JSONRPC handler for the machine.get_hash_tree_stats method

@@ -1468,11 +1468,16 @@ bool machine::verify_hash_tree() const {
     return m_ht.verify(m_ars);
 }
 
-machine::proof_type machine::get_proof(uint64_t address, int log2_size) const {
+machine::proof_type machine::get_proof(uint64_t address, int log2_target_size, int log2_root_size) const {
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    return get_proof(address, log2_size, skip_hash_tree_update);
+    return get_proof(skip_hash_tree_update, address, log2_target_size, log2_root_size);
+}
+
+machine::proof_type machine::get_proof(skip_hash_tree_update_t /*unused*/, uint64_t address, int log2_target_size,
+    int log2_root_size) const {
+    return m_ht.get_proof(m_ars, address, log2_target_size, log2_root_size);
 }
 
 template <typename F>

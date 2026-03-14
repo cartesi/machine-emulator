@@ -36,6 +36,7 @@ extern "C" {
 
 #include "base64.h"
 #include "clua.h"
+#include "hash-tree-constants.h"
 #include "machine-c-api.h"
 
 namespace cartesi {
@@ -548,12 +549,13 @@ void clua_push_schemed_json_table(lua_State *L, const char *s, const std::string
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_get_proof(lua_State *L) {
-    lua_settop(L, 3);
+    lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
-    const int log2_size = static_cast<int>(luaL_checkinteger(L, 3));
+    const int log2_target_size = static_cast<int>(luaL_checkinteger(L, 3));
+    const int log2_root_size = static_cast<int>(luaL_optinteger(L, 4, cartesi::HASH_TREE_LOG2_ROOT_SIZE));
     const char *proof = nullptr;
-    if (cm_get_proof(m.get(), address, log2_size, &proof) != 0) {
+    if (cm_get_proof(m.get(), address, log2_target_size, log2_root_size, &proof) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_schemed_json_table(L, proof, "Proof");

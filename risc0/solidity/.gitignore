@@ -1,6 +1,5 @@
 out/
 cache/
 lib/
-test/fixtures/
-.env
+src/ImageID.sol
 .DS_Store

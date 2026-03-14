@@ -816,10 +816,21 @@ jobs:
       - name: Build interpret-jump-table.h
         run: docker run --rm -v .:/this-dir -t cartesi/machine-emulator:tests /this-dir/tools/gen-interpret-jump-table.lua > src/interpret-jump-table.h
 
+      - name: Install lua5.4
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
       - name: Build risc0 prover/verifier
         run: make risc0
 
-      - name : Run risc0 tests
+      - name: Copy step log fixture for RISC0 tests
+        run: |
+          mkdir -p risc0/test/fixtures
+          cp /tmp/cartesi-machine/tests/data/step-logs/step-0.log risc0/test/fixtures/step.log
+
+      - name: Run risc0 tests
         run: CARTESI_STEP_LOGS_PATH=/tmp/cartesi-machine/tests/data/step-logs make test-risc0
 
       - name: Export RISC0 artifacts

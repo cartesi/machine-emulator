@@ -3,9 +3,8 @@ src = "src"
 out = "out"
 libs = ["lib"]
 test = "test"
-script = "script"
 
-fs_permissions = [{ access = "read", path = "test/fixtures" }]
+fs_permissions = [{ access = "read", path = "../test/fixtures" }]
 
 [fmt]
 line_length = 120

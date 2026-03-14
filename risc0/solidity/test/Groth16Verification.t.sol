@@ -30,8 +30,8 @@ contract Groth16VerificationTest is Test {
 
     function setUp() public {
         stepVerifier = new CartesiStepVerifier(IRiscZeroVerifier(VERIFIER_ROUTER));
-        seal = vm.readFileBinary("test/fixtures/seal.bin");
-        journal = vm.readFileBinary("test/fixtures/journal.bin");
+        seal = vm.readFileBinary("../test/fixtures/seal.bin");
+        journal = vm.readFileBinary("../test/fixtures/journal.bin");
     }
 
     function test_validProofVerifies() public view {

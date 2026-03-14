@@ -347,13 +347,4 @@ function test_util.new_temp_file()
     return setmetatable(self, temp_file_meta)
 end
 
--- Builds step log filename: step-<initial_hash>-<mcycle_count>-<final_hash>[-<suffix>].log
-function test_util.step_log_filename(initial_hash, mcycle_count, final_hash, suffix)
-    local name = "step-" .. test_util.tohex(initial_hash) .. "-" .. mcycle_count .. "-" .. test_util.tohex(final_hash)
-    if suffix then
-        name = name .. "-" .. suffix
-    end
-    return name .. ".log"
-end
-
 return test_util

@@ -54,6 +54,25 @@ The Groth16 seal (260 bytes) is submitted to the RISC Zero Verifier
 Router on-chain, which runs an `ecPairing` precompile (~300k gas).
 See [`solidity/`](solidity/) for the contract and integration tests.
 
+## Testing
+
+    make -C risc0 test
+
+This runs:
+
+1. Dev-mode interpreter tests (cargo test with RISC0_DEV_MODE=1) -- always runs
+2. Full proving pipeline (prove -> verify -> compress -> verify-seal) -- real proofs
+3. Solidity integration tests (forge test against Sepolia fork)
+
+Steps 2-3 are slow (~3 min on M4 Pro) because they generate real proofs.
+To skip them during development:
+
+    RISC0_TEST_DEV_ONLY=1 make -C risc0 test
+
+Fixtures (step log, receipt, seal, journal) are generated once in
+`risc0/test/fixtures/` and reused across pipeline and Solidity tests.
+Run `make -C risc0 clean` to regenerate them.
+
 ## FAQ
 
 **Why does the build require Docker?**

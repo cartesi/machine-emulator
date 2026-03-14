@@ -17,10 +17,9 @@
 --
 
 -- This script creates a set of step log files to be used as test fixtures.
--- Each step log file name has the following format:
---    step-<start-mcycle>-<root_hash_before>-<mcycle_count>--<root_hash_after>.log
--- These files are stored in the directory specified by the command line argument.
--- This directory is created if it does not exist.
+-- Files are named step-<start-mcycle>.log. Values (hashes, mcycle count) are
+-- in the step log header and can be extracted with risc0/step-log-util.lua.
+-- Files are stored in CARTESI_STEP_LOGS_PATH.
 
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
@@ -98,12 +97,10 @@ local function create_step_log(mcycle_count, command, start_mcycle)
     local machine <close> = create_machine(command)
     machine:run(start_mcycle)
     assert(machine:read_reg("mcycle") == start_mcycle)
-    local root_hash_before = machine:get_root_hash()
     machine:log_step(mcycle_count, temp_filename)
-    local root_hash_after = machine:get_root_hash()
-    local final_filename = STEP_LOGS_PATH
-        .. test_util.step_log_filename(root_hash_before, mcycle_count, root_hash_after)
-    os.execute("cp " .. temp_filename .. " " .. final_filename)
+    local final_filename = STEP_LOGS_PATH .. string.format("step-%d.log", start_mcycle)
+    assert(os.execute(string.format("cp '%s' '%s'", temp_filename, final_filename)),
+        "failed to copy step log to " .. final_filename)
     print("Created step log:" .. final_filename)
     remove_temp_file()
 end
@@ -118,6 +115,11 @@ local max_step_count = 1000
 local mcycle_count = mcycle_stride > max_step_count and max_step_count or mcycle_stride
 
 create_directory(STEP_LOGS_PATH)
-for start_mcycle = 0, max_mcycle, mcycle_stride do
+
+-- Create a 1-mcycle fixture (step-0.log) for risc0 pipeline tests
+create_step_log(1, command, 0)
+
+-- Create additional fixtures at regular intervals (skipping 0, already created above)
+for start_mcycle = mcycle_stride, max_mcycle, mcycle_stride do
     create_step_log(mcycle_count, command, start_mcycle)
 end

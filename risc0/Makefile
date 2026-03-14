@@ -14,6 +14,23 @@
 # limitations under the License.
 #
 
+# Set RISC0_TEST_DEV_ONLY=1 to skip the full proving pipeline tests.
+# By default, `make test` runs both dev-mode interpreter tests and the
+# full pipeline (prove -> verify -> compress -> verify-seal -> solidity).
+RISC0_TEST_DEV_ONLY ?= 0
+
+LUA_BIN          ?= lua5.4
+LUA              ?= $(LUA_BIN)
+STEP_LOG_UTIL    := $(abspath step-log-util.lua)
+CARTESI_RISC0_CLI := $(abspath rust/target/debug/cartesi-risc0-cli)
+CARTESI_MACHINE  ?= cartesi-machine.lua
+
+FIXTURES_DIR     := test/fixtures
+STEP_LOG         := $(FIXTURES_DIR)/step.log
+RECEIPT          := $(FIXTURES_DIR)/receipt.bin
+SEAL             := $(FIXTURES_DIR)/seal.bin
+JOURNAL          := $(FIXTURES_DIR)/journal.bin
+
 all: rust
 
 rust: cpp
@@ -22,8 +39,50 @@ rust: cpp
 cpp:
 	@$(MAKE) -C $@
 
-test: rust
+test: rust test-dev-mode
+ifneq ($(RISC0_TEST_DEV_ONLY),1)
+test: test-pipeline test-solidity
+endif
+
+test-dev-mode:
 	@$(MAKE) -C rust test
+
+test-pipeline: $(SEAL)
+	@echo "--- Verifying receipt ---"
+	$(eval HASH_BEFORE := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-before $(STEP_LOG)))
+	$(eval MCYCLE_COUNT := $(shell $(LUA) $(STEP_LOG_UTIL) mcycle-count $(STEP_LOG)))
+	$(eval HASH_AFTER := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-after $(STEP_LOG)))
+	$(CARTESI_RISC0_CLI) verify \
+		$(RECEIPT) "$(HASH_BEFORE)" "$(MCYCLE_COUNT)" "$(HASH_AFTER)"
+	@echo "--- Verifying seal ---"
+	$(CARTESI_RISC0_CLI) verify-seal \
+		$(SEAL) $(JOURNAL) "$(HASH_BEFORE)" "$(MCYCLE_COUNT)" "$(HASH_AFTER)"
+	@echo "--- Pipeline test passed ---"
+
+test-solidity:
+	@$(MAKE) -C solidity test
+
+$(STEP_LOG):
+	@mkdir -p $(FIXTURES_DIR)
+	@echo "--- Generating step log ---"
+	$(CARTESI_MACHINE) \
+		--hash-tree=hash_function:sha256 \
+		--max-mcycle=0 \
+		--log-step=1,$@
+
+$(RECEIPT): $(STEP_LOG)
+	$(eval HASH_BEFORE := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-before $(STEP_LOG)))
+	$(eval MCYCLE_COUNT := $(shell $(LUA) $(STEP_LOG_UTIL) mcycle-count $(STEP_LOG)))
+	$(eval HASH_AFTER := $(shell $(LUA) $(STEP_LOG_UTIL) root-hash-after $(STEP_LOG)))
+	@echo "--- Proving step log ---"
+	$(CARTESI_RISC0_CLI) prove \
+		"$(HASH_BEFORE)" $(STEP_LOG) "$(MCYCLE_COUNT)" "$(HASH_AFTER)" \
+		$(RECEIPT)
+
+$(SEAL): $(RECEIPT)
+	@echo "--- Compressing receipt to Groth16 ---"
+	$(CARTESI_RISC0_CLI) compress \
+		$(RECEIPT) $(SEAL) $(JOURNAL)
 
 export-artifacts: rust
 	@$(MAKE) -C rust export-artifacts
@@ -35,5 +94,6 @@ clean:
 	-@$(MAKE) -C cpp clean
 	-@$(MAKE) -C rust clean
 	-@$(MAKE) -C solidity clean
+	rm -rf $(FIXTURES_DIR)
 
-.PHONY: all cpp rust clean test export-artifacts image-id
+.PHONY: all cpp rust clean test test-dev-mode test-pipeline test-solidity export-artifacts image-id

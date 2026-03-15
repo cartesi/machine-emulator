@@ -18,7 +18,7 @@
 #include <cstdio>
 #include <stdint.h>
 
-#include "risc0-runtime.h"
+#include "zk-runtime.h"
 
 extern "C" void __cxa_pure_virtual() {
     abort();

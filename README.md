@@ -144,16 +144,23 @@ brew install llvm libomp boost wget pkg-config lua libslirp
 
 ###### RISC Zero Requirements (optional)
 
-If you want to build the RISC Zero prover, you'll need Rust and the RISC Zero toolchain. First install Rust via [rustup](https://rustup.rs/), then install the RISC Zero toolchain manager:
+If you want to build the RISC Zero prover, you'll need Rust and the RISC Zero toolchain. First install Rust via [rustup](https://rustup.rs/), then:
 
 ```sh
-cargo install --git https://github.com/risc0/risc0 rzup
-rzup install cargo-risczero 2.3.2
-rzup install r0vm 2.3.2
-rzup install cpp 2024.1.5
+cargo install rzup
+rzup install rust
+rzup install cpp
+rzup install r0vm
 ```
 
 Then build with `make risc0`.
+
+###### Foundry Requirements (optional, for Solidity tests only)
+
+```sh
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
+```
 
 #### Build
 

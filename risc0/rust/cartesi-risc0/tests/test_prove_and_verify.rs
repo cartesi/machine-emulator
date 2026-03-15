@@ -1,22 +1,35 @@
-use cartesi_risc0:: { prove, verify };
-use cartesi_risc0_shared::MachineHash;
+use cartesi_risc0::{prove, verify, REPLAY_STEP_ELF, REPLAY_STEP_ID};
+use cartesi_risc0::MachineHash;
 use std::fs;
 use std::path::Path;
+use std::io::Read;
 
-fn parse_hash(hex: &str) -> Result<MachineHash, String> {
-    let bytes = hex::decode(hex).map_err(|_| format!("Invalid hex string: {}", hex))?;
-    if bytes.len() != 32 {
-        return Err(format!("Expected 32-byte hash, got {} bytes", bytes.len()));
-    }
-    let mut array = [0; 32];
-    array.copy_from_slice(&bytes);
-    Ok(array)
+fn read_step_log_header(path: &str) -> Result<(MachineHash, u64, MachineHash), String> {
+    let mut file = fs::File::open(path)
+        .map_err(|e| format!("Failed to open step log: {}", e))?;
+
+    let mut header = [0u8; 72];
+    file.read_exact(&mut header)
+        .map_err(|e| format!("Failed to read step log header: {}", e))?;
+
+    let mut root_hash_before = [0u8; 32];
+    root_hash_before.copy_from_slice(&header[0..32]);
+
+    let mcycle_count = u64::from_le_bytes([
+        header[32], header[33], header[34], header[35],
+        header[36], header[37], header[38], header[39],
+    ]);
+
+    let mut root_hash_after = [0u8; 32];
+    root_hash_after.copy_from_slice(&header[40..72]);
+
+    Ok((root_hash_before, mcycle_count, root_hash_after))
 }
 
 #[test]
 fn test_prove_and_verify() {
     let fixtures_dir = Path::new(env!("CARTESI_STEP_LOGS_PATH"));
-    
+
     assert!(fixtures_dir.exists(), "Fixtures directory does not exist: {}", fixtures_dir.display());
 
     let dir_entries = fs::read_dir(&fixtures_dir)
@@ -36,28 +49,17 @@ fn test_prove_and_verify() {
         if !file_name.starts_with("step-") || !file_name.ends_with(".log") {
             continue;
         }
-        // Filename format: step-<initial_hash>-<mcycle_count>-<final_hash>[-<suffix>].log
-        let base_name = file_name.strip_suffix(".log").unwrap_or(file_name);
-        let parts: Vec<&str> = base_name.split('-').collect();
-        if parts.len() < 4 {
-            panic!("Invalid step log file name: {}", file_name);
-        }
-        let root_hash_before = parse_hash(parts[1]).expect("Failed to parse root hash before");
-        let mcycle_count = parts[2].parse::<u64>()
-            .expect(&format!("Invalid mcycle count in filename: {}", file_name));
-        let root_hash_after = parse_hash(parts[3])
-            .expect("Failed to parse root hash after");
+
+        let (root_hash_before, mcycle_count, root_hash_after) =
+            read_step_log_header(path.to_str().unwrap())
+                .expect(&format!("Failed to read step log header from {}", file_name));
 
         eprintln!(
-            "Verifying step file: {}\nStart hash: {:x?}, Cycle count: {}, End hash: {:x?}",
+            "Verifying step file: {}\nStart hash: {:02x?}, Cycle count: {}, End hash: {:02x?}",
             file_name, root_hash_before, mcycle_count, root_hash_after
         );
 
-        let receipt = prove(&root_hash_before, path.to_str().unwrap(), mcycle_count, &root_hash_after);
-        verify(&receipt, &root_hash_before, mcycle_count, &root_hash_after);
-        
-        // TODO: Ensure that verify fails when the hash is wrong
-        // let bad_hash : [u8; 32] = [0; 32];
-        // verify(&receipt, &bad_hash, mcycle_count, &root_hash_after);
+        let receipt = prove(REPLAY_STEP_ELF, &root_hash_before, path.to_str().unwrap(), mcycle_count, &root_hash_after);
+        verify(&REPLAY_STEP_ID, &receipt, &root_hash_before, mcycle_count, &root_hash_after);
     }
 }

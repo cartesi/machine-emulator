@@ -995,11 +995,11 @@ local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
     ctx.read_htif_tohost_data = machine:read_reg("htif_tohost_data")
     -- save step log if requested
     if save_step_logs_dir then
-        local suffix = ctx.ram_image:match("^(.+)%.bin$") or ctx.ram_image
-        local final_name = test_util.step_log_filename(root_hash_before, mcycle_count, root_hash_after, suffix)
+        local test_name = ctx.ram_image:match("^(.+)%.bin$") or ctx.ram_image
+        local final_name = string.format("step-%s.log", test_name)
         local final_path = save_step_logs_dir:gsub("/*$", "/") .. final_name
-        -- use cp instead of rename to handle cross-filesystem copies
-        assert(os.execute("cp " .. log_filename .. " " .. final_path), "failed to copy step log to " .. final_path)
+        local cmd = string.format("cp '%s' '%s'", log_filename, final_path)
+        assert(os.execute(cmd), "failed to copy step log to " .. final_path)
     end
 end
 

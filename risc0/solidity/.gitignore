@@ -1,0 +1,5 @@
+out/
+cache/
+lib/
+src/ImageID.sol
+.DS_Store

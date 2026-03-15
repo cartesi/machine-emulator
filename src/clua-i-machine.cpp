@@ -1156,13 +1156,12 @@ static int machine_obj_index_get_reg_address(lua_State *L) {
 /// \brief This is the machine.verify_step() method implementation.
 static int machine_obj_index_verify_step(lua_State *L) {
     lua_settop(L, 5);
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 2, &root_hash_before);
     cm_hash root_hash_after{};
     clua_check_cm_hash(L, 5, &root_hash_after);
     cm_break_reason break_reason{};
-    if (cm_verify_step(m.get(), &root_hash_before, luaL_checkstring(L, 3), luaL_checkinteger(L, 4), &root_hash_after,
+    if (cm_verify_step(&root_hash_before, luaL_checkstring(L, 3), luaL_checkinteger(L, 4), &root_hash_after,
             &break_reason) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }

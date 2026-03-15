@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef RISC0_RUNTIME_H
-#define RISC0_RUNTIME_H
+#ifndef ZK_RUNTIME_H
+#define ZK_RUNTIME_H
 
 // Include third-party printf FIRST - provides printf/snprintf/vprintf/etc
 // These must be defined before any code that expects them

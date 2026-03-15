@@ -95,7 +95,7 @@
 #include "machine-uarch-bridge-state-access.h"
 #elif defined(ZKARCHITECTURE)
 #include "replay-step-state-access.h" // IWYU pragma: keep
-#include "risc0-runtime.h"            // IWYU pragma: export
+#include "zk-runtime.h"               // IWYU pragma: export
 #else
 #include "collect-mcycle-hashes-state-access.h" // IWYU pragma: keep
 #include "record-step-state-access.h"           // IWYU pragma: keep

@@ -865,15 +865,14 @@ CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const 
 // ------------------------------------
 
 /// \brief Checks the validity of a step log file.
-/// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before step.
 /// \param log_filename Path to the step log file to be verified.
 /// \param mcycle_count Number of mcycles in the step.
 /// \param root_hash_after State hash after step.
 /// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
-    uint64_t mcycle_count, const cm_hash *root_hash_after, cm_break_reason *break_reason);
+CM_API cm_error cm_verify_step(const cm_hash *root_hash_before, const char *log_filename, uint64_t mcycle_count,
+    const cm_hash *root_hash_after, cm_break_reason *break_reason);
 
 /// \brief Checks the validity of a state transition produced by cm_log_step_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).

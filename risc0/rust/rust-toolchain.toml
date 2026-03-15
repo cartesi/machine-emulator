@@ -1,4 +1,4 @@
 [toolchain]
-channel = "1.85.0"  # The specific version that works
+channel = "1.89.0"  # Required by risc0-zkvm 3.0.5 (slice::split_off stabilized in 1.87)
 components = ["rustfmt", "rust-src"]
 profile = "minimal"

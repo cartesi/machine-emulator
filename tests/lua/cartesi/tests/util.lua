@@ -243,6 +243,48 @@ function test_util.check_proof(proof, hash_fn)
     return hash == proof.root_hash
 end
 
+function test_util.slice_proof(proof, new_log2_root_size, new_log2_target_size, hash_fn)
+    assert(hash_fn, "hash_fn is nil")
+    assert(new_log2_root_size <= proof.log2_root_size, "log2_root_size is too large")
+    assert(new_log2_target_size >= proof.log2_target_size, "log2_target_size is too small")
+    assert(new_log2_target_size <= new_log2_root_size, "log2_target_size > log2_root_size")
+    -- Bubble up from original target to new target size
+    local hash = proof.target_hash
+    for log2_size = proof.log2_target_size, new_log2_target_size - 1 do
+        local bit = (proof.target_address & (1 << log2_size)) ~= 0
+        local first, second
+        if bit then
+            first, second = proof.sibling_hashes[log2_size - proof.log2_target_size + 1], hash
+        else
+            first, second = hash, proof.sibling_hashes[log2_size - proof.log2_target_size + 1]
+        end
+        hash = cartesi[hash_fn](first, second)
+    end
+    local sliced = {
+        log2_root_size = new_log2_root_size,
+        log2_target_size = new_log2_target_size,
+        target_hash = hash,
+        target_address = (proof.target_address >> new_log2_target_size) << new_log2_target_size,
+        sibling_hashes = {},
+    }
+    -- Copy sibling hashes and continue bubbling up to compute root hash
+    for log2_size = new_log2_target_size, new_log2_root_size - 1 do
+        local sibling = proof.sibling_hashes[log2_size - proof.log2_target_size + 1]
+        sliced.sibling_hashes[log2_size - new_log2_target_size + 1] = sibling
+        local bit = (proof.target_address & (1 << log2_size)) ~= 0
+        local first, second
+        if bit then
+            first, second = sibling, hash
+        else
+            first, second = hash, sibling
+        end
+        hash = cartesi[hash_fn](first, second)
+    end
+    sliced.root_hash = hash
+    assert(test_util.check_proof(sliced, hash_fn), "produced invalid sliced proof")
+    return sliced
+end
+
 function test_util.align(v, el)
     return (v >> el << el)
 end

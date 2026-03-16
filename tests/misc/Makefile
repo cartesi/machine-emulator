@@ -111,7 +111,7 @@ all: $(BUILDDIR)/test-machine-c-api
 	@exit 1
 
 $(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
-	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

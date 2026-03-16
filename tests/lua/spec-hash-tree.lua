@@ -266,6 +266,44 @@ describe("hash tree", function()
                 end
             end)
 
+            it("should have consistent sliced proofs", function()
+                local word_index = 0
+                for _, p in ipairs(interesting_pages) do
+                    local page, range = table.unpack(p)
+                    local range_log2_size = math.ceil(math.log(bit_ceil(range.length), 2))
+                    local interesting_sizes = {
+                        LOG2_WORD_SIZE,
+                        LOG2_WORD_SIZE + 1,
+                        LOG2_PAGE_SIZE - 1,
+                        LOG2_PAGE_SIZE,
+                        LOG2_PAGE_SIZE + 1,
+                        range_log2_size - 1,
+                        range_log2_size,
+                        range_log2_size + 1,
+                        LOG2_ROOT_SIZE,
+                    }
+                    local address = get_aligned_address(page + (word_index * WORD_SIZE % PAGE_SIZE), LOG2_WORD_SIZE)
+                    word_index = word_index + 17
+                    local full_proof = machine:get_proof(address, LOG2_WORD_SIZE)
+                    for _, log2_root_size in ipairs(interesting_sizes) do
+                        for _, log2_target_size in ipairs(interesting_sizes) do
+                            if
+                                log2_target_size >= LOG2_WORD_SIZE
+                                and log2_root_size > log2_target_size
+                                and log2_root_size <= LOG2_ROOT_SIZE
+                            then
+                                local sproof =
+                                    util.slice_proof(full_proof, log2_root_size, log2_target_size, hash_function)
+                                expect_consistent_proof(sproof, hash_function)
+                                local aligned = get_aligned_address(address, log2_target_size)
+                                local mproof = machine:get_proof(aligned, log2_target_size, log2_root_size)
+                                expect.equal(sproof, mproof)
+                            end
+                        end
+                    end
+                end
+            end)
+
             it("should have consistent proofs for all words (and up) in a few pages", function()
                 local clone_machine <close> = make_machine({ phtc_size = 1 })
                 clone_machine:run()

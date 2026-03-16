@@ -202,7 +202,7 @@ relwithdebinfo=yes
 endif
 
 ifeq ($(coverage),yes)
-OPTFLAGS+=-Og -g -fno-omit-frame-pointer -fno-dce -fno-inline
+OPTFLAGS+=-Og -g -fno-omit-frame-pointer -fno-inline
 DEFS+=-DCODE_COVERAGE
 else ifeq ($(relwithdebinfo),yes)
 OPTFLAGS+=-O2 -g
@@ -327,7 +327,7 @@ ifeq ($(coverage),yes)
 ifeq ($(COVERAGE_TOOLCHAIN),gcc)
 CC=gcc
 CXX=g++
-CXXFLAGS+=--coverage
+CXXFLAGS+=--coverage -fno-dce
 LDFLAGS+=--coverage
 else ifeq ($(COVERAGE_TOOLCHAIN),clang)
 CC=clang

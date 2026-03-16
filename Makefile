@@ -117,16 +117,18 @@ debug?=no
 relwithdebinfo?=no
 release?=no
 sanitize?=no
+fuzz?=no
 coverage?=no
 git_commit?=
 
 # If not build type is chosen, set the default to release with debug information,
 # so the emulator is packaged correctly by default.
-ifeq (,$(filter yes,$(relwithdebinfo) $(release) $(debug) $(sanitize)))
+ifeq (,$(filter yes,$(relwithdebinfo) $(release) $(debug) $(sanitize) $(fuzz)))
 relwithdebinfo=yes
 endif
 
 export sanitize
+export fuzz
 export debug
 export relwithdebinfo
 export release
@@ -173,10 +175,12 @@ help:
 	@echo '  build-tests-uarch-with-toolchain    - Build microarchitecture rv64i instruction tests using the rv64ima-lp64 toolchain docker image'
 	@echo '  build-tests-misc                    - Build miscellaneous tests'
 	@echo '  build-tests-misc-with-builder-image - Build miscellaneous tests using the cartesi/machine-emulator:builder image'
+	@echo '  build-tests-fuzz                    - Build fuzz test targets (requires Clang with libFuzzer)'
 	@echo '  test-machine                        - Run machine emulator tests'
 	@echo '  test-uarch                          - Run uarch tests'
 	@echo '  test-risc0                         - Run risc0 tests'
 	@echo '  test-misc                           - Run miscellaneous tests'
+	@echo '  test-fuzz                           - Run fuzz tests (requires Clang with libFuzzer)'
 	@echo '  test                                - Run all tests'
 	@echo '  doc                                 - Build the doxygen documentation (requires doxygen)'
 	@echo 'Docker images targets:'

@@ -39,6 +39,7 @@ UARCH_PRISTINE_HASH_C ?= ../uarch/uarch-pristine-hash.c
 # Code instrumentation
 release?=no
 sanitize?=no
+fuzz?=no
 coverage?=no
 threads?=yes
 slirp?=yes
@@ -197,7 +198,7 @@ export UARCH_DEFS += $(DUMP_DEFS)
 
 # By default we compile in release with debug information,
 # so the emulator is packaged correctly by default.
-ifeq (,$(filter yes,$(relwithdebinfo) $(release) $(debug) $(coverage) $(sanitize)))
+ifeq (,$(filter yes,$(relwithdebinfo) $(release) $(debug) $(coverage) $(sanitize) $(fuzz)))
 relwithdebinfo=yes
 endif
 
@@ -217,6 +218,9 @@ OPTFLAGS+=-D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection -fs
 else ifeq ($(sanitize),yes)
 OPTFLAGS+=-O1 -g -fno-omit-frame-pointer
 OPTFLAGS+=-D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection -fstack-protector-strong
+else ifeq ($(fuzz),yes)
+OPTFLAGS+=-O1 -g -fno-omit-frame-pointer
+OPTFLAGS+=-D_GLIBCXX_ASSERTIONS
 endif
 
 # Git commit hash (for releases)
@@ -267,6 +271,12 @@ LIBSTDCPP_SO=$(shell realpath `$(CC) -print-file-name=libstdc++.so`)
 LD_PRELOAD="$(LIBASAN_SO) $(LIBSTDCPP_SO)"
 LD_PRELOAD_PREFIX=LD_PRELOAD=$(LD_PRELOAD)
 LUA=$(LD_PRELOAD_PREFIX) $(LUA_BIN)
+else ifeq ($(fuzz),yes)
+# Enable address, undefined, and fuzzer sanitizers (requires Clang)
+UBCFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
+UBLDFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
+LD_PRELOAD_PREFIX=
+LUA=$(LUA_BIN)
 else
 # Flags to minimize undefined behavior
 UBCFLAGS+=-fno-strict-aliasing

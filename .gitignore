@@ -10,6 +10,8 @@
 *.tmp
 
 build
+tests/fuzz/seed-corpus
+tests/fuzz/corpus
 pkg
 third-party/downloads
 src/cartesi-jsonrpc-machine

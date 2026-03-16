@@ -5547,6 +5547,15 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
     // Read machine program counter
     uint64_t pc = a.read_pc();
 
+    // Check PC alignment before entering the interpreter loop.
+    // The RISC-V spec requires PC to be 2-byte aligned; once this invariant holds at entry,
+    // the interpreter preserves it (all branches/jumps produce even targets).
+    // If misaligned (only possible via external API), raise the appropriate exception
+    // so the trap vector handles it, then proceed normally.
+    if ((pc & 1) != 0) {
+        pc = raise_exception(a, pc, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
+    }
+
     // Initialize fetch address translation cache invalidated
     uint64_t fetch_vaddr_page = TLB_INVALID_PAGE;
     uint64_t fetch_pma_index = TLB_INVALID_PMA_INDEX;

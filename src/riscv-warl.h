@@ -66,12 +66,16 @@ constexpr uint64_t WARL_mip(uint64_t val) {
     return val & MIP_RW_MASK;
 }
 
+constexpr uint64_t WARL_xtvec(uint64_t val) {
+    return val & ~UINT64_C(3);
+}
+
 constexpr uint64_t WARL_mtvec(uint64_t val) {
-    return val & ~UINT64_C(1);
+    return WARL_xtvec(val);
 }
 
 constexpr uint64_t WARL_stvec(uint64_t val) {
-    return val & ~UINT64_C(1);
+    return WARL_xtvec(val);
 }
 
 constexpr uint64_t WARL_mepc(uint64_t val) {

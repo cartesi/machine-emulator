@@ -579,19 +579,6 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
     return ilog2(v); // LCOV_EXCL_LINE
 }
 
-/// \brief Raises an interrupt if any are enabled and pending.
-/// \param a Machine state accessor object.
-/// \param pc Machine current program counter.
-template <typename STATE_ACCESS>
-static inline uint64_t raise_interrupt_if_any(const STATE_ACCESS a, uint64_t pc) {
-    const uint32_t mask = get_pending_irq_mask(a);
-    if (mask != 0) [[unlikely]] {
-        const uint64_t irq_num = get_highest_priority_irq_num(mask);
-        return raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
-    }
-    return pc;
-}
-
 /// \brief At every tick, set interrupt as pending if the timer is expired
 /// \param a Machine state accessor object.
 /// \param mcycle Machine current cycle.
@@ -5366,6 +5353,21 @@ enum class fetch_status : int {
     success    ///< Instruction fetch succeeded: proceed to execute
 };
 
+/// \brief Ensures address will fail fetch cache
+/// \param pc Current pc
+/// \returns Sentinel value page guaranteed to fail fast cache test
+static FORCE_INLINE auto ensure_fetch_cache_miss(uint64_t pc) {
+    return ~pc;
+}
+
+/// \brief Checks if pc is in same page as last fetch
+/// \param pc Current pc
+/// \param last_vaddr_page Virtual address of last page fetched from
+/// \returns True if hit, false if miss
+static FORCE_INLINE auto fetch_cache_is_hit(uint64_t pc, uint64_t last_vaddr_page) {
+    return ((pc ^ last_vaddr_page) < (PAGE_OFFSET_MASK - 1));
+}
+
 /// \brief Translate fetch pc to a host pointer (slow path that goes through virtual address translation).
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
@@ -5373,15 +5375,17 @@ enum class fetch_status : int {
 /// \param vaddr Virtual address to be fetched.
 /// \param vf_offset Receives vf_offset in the TLB slot
 /// \param pma_index Receives the index of PMA where vaddr falls
+/// \param last_vaddr_page Receives and updates vaddr_page for cache
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, uint64_t &pc, uint64_t vaddr,
-    i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index) {
+    i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index, uint64_t &last_vaddr_page) {
     uint64_t paddr{};
     // Walk page table and obtain the physical address
     if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_X_SHIFT)) [[unlikely]] {
         pc = raise_exception(a, pc, MCAUSE_FETCH_PAGE_FAULT, vaddr);
+        last_vaddr_page = ensure_fetch_cache_miss(pc);
         return fetch_status::exception;
     }
     // Walk memory map to find the range that contains the physical address
@@ -5390,6 +5394,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, u
     // If the range is not memory or not executable, this as a PMA violation
     if (!ar.is_memory() || !ar.is_executable()) [[unlikely]] {
         pc = raise_exception(a, pc, MCAUSE_INSN_ACCESS_FAULT, vaddr);
+        last_vaddr_page = ensure_fetch_cache_miss(pc);
         return fetch_status::exception;
     }
     replace_tlb_entry<TLB_CODE>(a, vaddr, paddr, pma_index, vf_offset);
@@ -5403,18 +5408,19 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, u
 /// \param vaddr Virtual address to be fetched.
 /// \param vf_offset Receives vf_offset in the TLB slot
 /// \param pma_index Receives the index of PMA where vaddr falls
+/// \param last_vaddr_page Receives and updates vaddr_page for cache
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_translate_pc(const STATE_ACCESS a, uint64_t &pc, uint64_t vaddr,
-    i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index) {
+    i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index, uint64_t &last_vaddr_page) {
     // Try to perform the address translation via TLB first
     const uint64_t slot_index = tlb_slot_index(vaddr);
     const uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
     if (!tlb_is_hit<uint16_t>(slot_vaddr_page, vaddr)) [[unlikely]] {
         DUMP_STATS_INCR(a, "tlb.cmiss");
         // Outline the slow path into a function call to minimize host CPU code cache pressure
-        return fetch_translate_pc_slow(a, pc, vaddr, vf_offset, pma_index);
+        return fetch_translate_pc_slow(a, pc, vaddr, vf_offset, pma_index, last_vaddr_page);
     }
     vf_offset = a.template read_tlb_vf_offset<TLB_CODE>(slot_index);
     pma_index = a.template read_tlb_pma_index<TLB_CODE>(slot_index);
@@ -5441,7 +5447,7 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
     // This is the hot path and most fetches will fall through inside this if block.
     // This early check is not strictly necessary for correctness,
     // but it makes the fetch use just about 5 instructions on a x86_64 hardware.
-    if ((pc ^ last_vaddr_page) < (PAGE_OFFSET_MASK - 1)) [[likely]] {
+    if (fetch_cache_is_hit(pc, last_vaddr_page)) [[likely]] {
         // Here we are sure that reading 4 bytes won't cross a page boundary.
         // However pc may not be 4-byte aligned, at worst it could be only 2-byte aligned,
         // therefore we must perform a misaligned 4-byte read on a 2-byte aligned pointer.
@@ -5462,7 +5468,8 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
         // Not in the same page as last the fetch, we need to perform address translation
         i_state_access_fast_addr_t<STATE_ACCESS> pc_vf_offset{};
         uint64_t pc_pma_index{};
-        if (fetch_translate_pc(a, pc, pc, pc_vf_offset, pc_pma_index) == fetch_status::exception) [[unlikely]] {
+        if (fetch_translate_pc(a, pc, pc, pc_vf_offset, pc_pma_index, last_vaddr_page) == fetch_status::exception)
+            [[unlikely]] {
             return fetch_status::exception;
         }
         // Update fetch address translation cache
@@ -5471,7 +5478,8 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
         last_pma_index = pc_pma_index;
         faddr = pc + pc_vf_offset;
     }
-    // The following code assumes pc is always 2-byte aligned, this is guaranteed by RISC-V spec.
+    // The following code assumes pc is always 2-byte aligned, this is a RISC-V invariant.
+    // (And we make sure it holds when we enter interpret)
     // If pc is pointing to the very last 2 bytes of a page, it's crossing a page boundary.
     if (((~pc & PAGE_OFFSET_MASK) >> 1) == 0) [[unlikely]] {
         // Here we are crossing page boundary, this is unlikely (1 in 2048 possible cases)
@@ -5484,7 +5492,8 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
             const uint64_t pc2 = pc + 2;
             i_state_access_fast_addr_t<STATE_ACCESS> pc2_vf_offset{};
             uint64_t pc2_pma_index{};
-            if (fetch_translate_pc(a, pc, pc2, pc2_vf_offset, pc2_pma_index) == fetch_status::exception) [[unlikely]] {
+            if (fetch_translate_pc(a, pc, pc2, pc2_vf_offset, pc2_pma_index, last_vaddr_page) ==
+                fetch_status::exception) [[unlikely]] {
                 return fetch_status::exception;
             }
             last_vaddr_page = tlb_addr_page(pc2);
@@ -5515,6 +5524,22 @@ static void assert_no_brk([[maybe_unused]] const STATE_ACCESS a) {
     assert(a.read_iflags_H() == 0);       // LCOV_EXCL_LINE
 }
 
+/// \brief Raises an interrupt if any are enabled and pending.
+/// \param a Machine state accessor object.
+/// \param pc Machine current program counter.
+/// \param last_vaddr_page Receives and updates vaddr_page for cache
+template <typename STATE_ACCESS>
+static inline uint64_t raise_interrupt_if_any(const STATE_ACCESS a, uint64_t pc, uint64_t &fetch_vaddr_page) {
+    const uint32_t mask = get_pending_irq_mask(a);
+    if (mask != 0) [[unlikely]] {
+        const uint64_t irq_num = get_highest_priority_irq_num(mask);
+        const uint64_t new_pc = raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
+        fetch_vaddr_page = ensure_fetch_cache_miss(new_pc);
+        return new_pc;
+    }
+    return pc;
+}
+
 /// \brief Interpreter hot loop
 template <typename STATE_ACCESS>
 static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mcycle_end, uint64_t mcycle) {
@@ -5540,7 +5565,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
     }
 
     // Initialize fetch address translation cache invalidated
-    uint64_t fetch_vaddr_page = TLB_INVALID_PAGE;
+    uint64_t fetch_vaddr_page = ensure_fetch_cache_miss(pc);
     uint64_t fetch_pma_index = TLB_INVALID_PMA_INDEX;
     i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset{};
 
@@ -5563,7 +5588,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
         }
 
         // Raise the highest priority pending interrupt, if any
-        pc = raise_interrupt_if_any(a, pc);
+        pc = raise_interrupt_if_any(a, pc, fetch_vaddr_page);
 
 #ifndef NDEBUG
         // After raising any exception for a given interrupt, we expect no pending break
@@ -6054,7 +6079,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     // due to MRET/SRET instructions (execute_status::success_and_serve_interrupts)
                     // As a simplification (and optimization), the next line will also invalidate in more cases,
                     // but this it's fine.
-                    fetch_vaddr_page = TLB_INVALID_PAGE;
+                    fetch_vaddr_page = ensure_fetch_cache_miss(pc);
                     // All status above execute_status::success_and_serve_interrupts will require breaking the loop
                     if (status >= execute_status::success_and_serve_interrupts) [[unlikely]] {
                         // Increment the cycle counter mcycle

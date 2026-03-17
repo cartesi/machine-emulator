@@ -54,12 +54,15 @@ enum MIP_shifts {
 
 /// \brief MIP masks
 enum MIP_masks : uint64_t {
-    MIP_SSIP_MASK = UINT64_C(1) << MIP_SSIP_SHIFT, ///< Supervisor software interrupt
-    MIP_MSIP_MASK = UINT64_C(1) << MIP_MSIP_SHIFT, ///< Machine software interrupt
-    MIP_STIP_MASK = UINT64_C(1) << MIP_STIP_SHIFT, ///< Supervisor timer interrupt
-    MIP_MTIP_MASK = UINT64_C(1) << MIP_MTIP_SHIFT, ///< Machine timer interrupt
-    MIP_SEIP_MASK = UINT64_C(1) << MIP_SEIP_SHIFT, ///< Supervisor external interrupt
-    MIP_MEIP_MASK = UINT64_C(1) << MIP_MEIP_SHIFT  ///< Machine external interrupt
+    MIP_SSIP_MASK = UINT64_C(1) << MIP_SSIP_SHIFT,                 ///< Supervisor software interrupt
+    MIP_MSIP_MASK = UINT64_C(1) << MIP_MSIP_SHIFT,                 ///< Machine software interrupt
+    MIP_STIP_MASK = UINT64_C(1) << MIP_STIP_SHIFT,                 ///< Supervisor timer interrupt
+    MIP_MTIP_MASK = UINT64_C(1) << MIP_MTIP_SHIFT,                 ///< Machine timer interrupt
+    MIP_SEIP_MASK = UINT64_C(1) << MIP_SEIP_SHIFT,                 ///< Supervisor external interrupt
+    MIP_MEIP_MASK = UINT64_C(1) << MIP_MEIP_SHIFT,                 ///< Machine external interrupt
+    MIP_S_RW_MASK = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK, ///< Supervisor delegatable bits
+    MIP_RW_MASK = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_MEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK |
+        MIP_SEIP_MASK ///< All valid interrupt bits
 };
 
 /// \brief mcause for exceptions
@@ -232,6 +235,7 @@ enum SATP_masks : uint64_t {
     SATP_PPN_MASK = (UINT64_C(1) << SATP_ASID_SHIFT) - 1,
     SATP_ASID_MASK = ((UINT64_C(1) << ASIDLEN) - 1) << SATP_ASID_SHIFT,
     SATP_MODE_MASK = UINT64_C(15) << SATP_MODE_SHIFT,
+    SATP_RW_MASK = SATP_PPN_MASK | SATP_ASID_MASK | SATP_MODE_MASK,
 };
 
 /// \brief satp modes

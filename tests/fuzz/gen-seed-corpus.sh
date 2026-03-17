@@ -12,7 +12,7 @@
 set -euo pipefail
 
 SEED_DIR="${1:?Usage: gen-seed-corpus.sh <output-dir>}"
-ISA_BIN_DIR="../../tests/build/riscv-tests/isa"
+ISA_BIN_DIR="${ISA_BIN_DIR:-../../tests/build/riscv-tests/isa}"
 
 mkdir -p "$SEED_DIR"
 

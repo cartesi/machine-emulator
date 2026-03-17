@@ -1752,7 +1752,7 @@ static inline uint64_t read_csr_sstatus(const STATE_ACCESS a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_senvcfg(const STATE_ACCESS a, bool *status) {
-    return read_csr_success(a.read_senvcfg() & SENVCFG_R_MASK, status);
+    return read_csr_success(a.read_senvcfg(), status);
 }
 
 template <typename STATE_ACCESS>
@@ -1814,12 +1814,12 @@ static inline uint64_t read_csr_satp(const STATE_ACCESS a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_mstatus(const STATE_ACCESS a, bool *status) {
-    return read_csr_success(a.read_mstatus() & MSTATUS_R_MASK, status);
+    return read_csr_success(a.read_mstatus(), status);
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_menvcfg(const STATE_ACCESS a, bool *status) {
-    return read_csr_success(a.read_menvcfg() & MENVCFG_R_MASK, status);
+    return read_csr_success(a.read_menvcfg(), status);
 }
 
 template <typename STATE_ACCESS>
@@ -2107,8 +2107,7 @@ static execute_status write_csr_sstatus(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_senvcfg(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t senvcfg = a.read_senvcfg();
-    a.write_senvcfg((senvcfg & ~SENVCFG_W_MASK) | (val & SENVCFG_W_MASK));
+    a.write_senvcfg(val);
     return execute_status::success;
 }
 
@@ -2123,13 +2122,13 @@ static execute_status write_csr_sie(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_stvec(const STATE_ACCESS a, uint64_t val) {
-    a.write_stvec(val & ~1);
+    a.write_stvec(val);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_scounteren(const STATE_ACCESS a, uint64_t val) {
-    a.write_scounteren(val & SCOUNTEREN_RW_MASK);
+    a.write_scounteren(val);
     return execute_status::success;
 }
 
@@ -2141,7 +2140,7 @@ static execute_status write_csr_sscratch(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sepc(const STATE_ACCESS a, uint64_t val) {
-    a.write_sepc(val & ~1);
+    a.write_sepc(val);
     return execute_status::success;
 }
 
@@ -2296,50 +2295,37 @@ static NO_INLINE execute_status write_csr_mstatus(const STATE_ACCESS a, uint64_t
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_menvcfg(const STATE_ACCESS a, uint64_t val) {
-    uint64_t menvcfg = a.read_menvcfg() & MENVCFG_R_MASK;
-
-    // Modify only bits that can be written to
-    menvcfg = (menvcfg & ~MENVCFG_W_MASK) | (val & MENVCFG_W_MASK);
-    // Store results
-    a.write_menvcfg(menvcfg);
+    a.write_menvcfg(val);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_medeleg(const STATE_ACCESS a, uint64_t val) {
-    // For exceptions that cannot occur in less privileged modes,
-    // the corresponding medeleg bits should be read-only zero
-    a.write_medeleg((a.read_medeleg() & ~MEDELEG_W_MASK) | (val & MEDELEG_W_MASK));
+    a.write_medeleg(val);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mideleg(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    uint64_t mideleg = a.read_mideleg();
-    mideleg = (mideleg & ~mask) | (val & mask);
-    a.write_mideleg(mideleg);
+    a.write_mideleg(val);
     return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mie(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_MEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    uint64_t mie = a.read_mie();
-    mie = (mie & ~mask) | (val & mask);
-    a.write_mie(mie);
+    a.write_mie(val);
     return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mtvec(const STATE_ACCESS a, uint64_t val) {
-    a.write_mtvec(val & ~1);
+    a.write_mtvec(val);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mcounteren(const STATE_ACCESS a, uint64_t val) {
-    a.write_mcounteren(val & MCOUNTEREN_RW_MASK);
+    a.write_mcounteren(val);
     return execute_status::success;
 }
 
@@ -2371,7 +2357,7 @@ static execute_status write_csr_mscratch(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mepc(const STATE_ACCESS a, uint64_t val) {
-    a.write_mepc(val & ~1);
+    a.write_mepc(val);
     return execute_status::success;
 }
 
@@ -2389,10 +2375,8 @@ static execute_status write_csr_mtval(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mip(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    auto mip = a.read_mip();
-    mip = (mip & ~mask) | (val & mask);
-    a.write_mip(mip);
+    const uint64_t mip = a.read_mip();
+    a.write_mip((mip & ~MIP_S_RW_MASK) | (val & MIP_S_RW_MASK));
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -2427,8 +2411,7 @@ static inline execute_status write_csr_fcsr(const STATE_ACCESS a, uint64_t val) 
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
         return execute_status::failure;
     }
-    const uint64_t fcsr = val & FCSR_RW_MASK;
-    a.write_fcsr(fcsr);
+    a.write_fcsr(val);
     return execute_status::success;
 }
 

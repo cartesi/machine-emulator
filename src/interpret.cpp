@@ -579,19 +579,6 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
     return ilog2(v); // LCOV_EXCL_LINE
 }
 
-/// \brief Raises an interrupt if any are enabled and pending.
-/// \param a Machine state accessor object.
-/// \param pc Machine current program counter.
-template <typename STATE_ACCESS>
-static inline uint64_t raise_interrupt_if_any(const STATE_ACCESS a, uint64_t pc) {
-    const uint32_t mask = get_pending_irq_mask(a);
-    if (mask != 0) [[unlikely]] {
-        const uint64_t irq_num = get_highest_priority_irq_num(mask);
-        return raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
-    }
-    return pc;
-}
-
 /// \brief At every tick, set interrupt as pending if the timer is expired
 /// \param a Machine state accessor object.
 /// \param mcycle Machine current cycle.
@@ -5545,10 +5532,10 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
     // taking this into account in any instruction execution code.
 
     // Read machine program counter
-    uint64_t pc = a.read_pc();
+    uint64_t pc = a.read_pc() & ~UINT64_C(1);
 
     // Initialize fetch address translation cache invalidated
-    uint64_t fetch_vaddr_page = TLB_INVALID_PAGE;
+    uint64_t fetch_vaddr_page = ~pc;
     uint64_t fetch_pma_index = TLB_INVALID_PMA_INDEX;
     i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset{};
 
@@ -5571,7 +5558,12 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
         }
 
         // Raise the highest priority pending interrupt, if any
-        pc = raise_interrupt_if_any(a, pc);
+        const uint32_t mask = get_pending_irq_mask(a);
+        if (mask != 0) [[unlikely]] {
+            const uint64_t irq_num = get_highest_priority_irq_num(mask);
+            pc = raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
+            fetch_vaddr_page = ~pc;
+        }
 
 #ifndef NDEBUG
         // After raising any exception for a given interrupt, we expect no pending break
@@ -6062,7 +6054,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     // due to MRET/SRET instructions (execute_status::success_and_serve_interrupts)
                     // As a simplification (and optimization), the next line will also invalidate in more cases,
                     // but this it's fine.
-                    fetch_vaddr_page = TLB_INVALID_PAGE;
+                    fetch_vaddr_page = ~pc;
                     // All status above execute_status::success_and_serve_interrupts will require breaking the loop
                     if (status >= execute_status::success_and_serve_interrupts) [[unlikely]] {
                         // Increment the cycle counter mcycle

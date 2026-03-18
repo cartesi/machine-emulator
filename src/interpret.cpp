@@ -5515,13 +5515,28 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
     return fetch_status::success;
 }
 
-/// \brief Checks that false brk is consistent with rest of state
+/// \brief Checks that false brk is consistent with rest of state.
+/// \details After an exception, xIE is cleared for the destination privilege level,
+/// so no interrupts at that level can be pending. However, higher-priority interrupts
+/// may still be pending (e.g. M-mode interrupts while in S/U-mode). These are expected
+/// and will be serviced by the outer loop's raise_interrupt_if_any.
 template <typename STATE_ACCESS>
 static void assert_no_brk([[maybe_unused]] const STATE_ACCESS a) {
-    assert(get_pending_irq_mask(a) == 0); // LCOV_EXCL_LINE
-    assert(a.read_iflags_X() == 0);       // LCOV_EXCL_LINE
-    assert(a.read_iflags_Y() == 0);       // LCOV_EXCL_LINE
-    assert(a.read_iflags_H() == 0);       // LCOV_EXCL_LINE
+    const auto pending = get_pending_irq_mask(a); // LCOV_EXCL_LINE
+    // In M-mode, there is no higher privilege level, so nothing can be deferred:
+    // all pending interrupts must have been serviced.
+    if (a.read_iprv() >= PRV_M) { // LCOV_EXCL_LINE
+        assert(pending == 0);     // LCOV_EXCL_LINE
+    } else {                      // LCOV_EXCL_LINE
+        // In S/U-mode, non-delegated interrupts (bits clear in mideleg) are M-mode
+        // interrupts that will be serviced by the outer loop — those are allowed.
+        // Delegated interrupts (bits set in mideleg) are S-mode interrupts that
+        // should have been handled or masked (SIE=0 after an exception to S-mode).
+        assert((pending & static_cast<uint32_t>(a.read_mideleg())) == 0); // LCOV_EXCL_LINE
+    } // LCOV_EXCL_LINE
+    assert(a.read_iflags_X() == 0); // LCOV_EXCL_LINE
+    assert(a.read_iflags_Y() == 0); // LCOV_EXCL_LINE
+    assert(a.read_iflags_H() == 0); // LCOV_EXCL_LINE
 }
 
 /// \brief Raises an interrupt if any are enabled and pending.

@@ -866,7 +866,10 @@ static void flush_tlb_slot(const STATE_ACCESS a, uint64_t slot_index) {
     // the entry is no longer in the TLB, which would cause the hash tree to
     // miss a dirty page.)
     if constexpr (SET == TLB_WRITE) {
-        const auto old_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
+        auto old_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
+        if (old_vaddr_page == TLB_UNVERIFIED_PAGE) {
+            old_vaddr_page = a.template init_hot_tlb_slot<TLB_WRITE>(slot_index);
+        }
         if (old_vaddr_page != TLB_INVALID_PAGE) {
             auto old_pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
             const auto old_faddr_page = old_vaddr_page + a.template read_tlb_vf_offset<TLB_WRITE>(slot_index);
@@ -1027,8 +1030,32 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, uint64_t &pc,
     [[maybe_unused]] auto note = a.make_scoped_note("read_virtual_memory");
     // Try hitting the TLB
     const auto slot_index = tlb_slot_index(vaddr);
-    const auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
+    auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
     if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
+        // A STATE_ACCESS that does lazy intialization / fast address translation maintains an out-of-state hot
+        // slot it uses to check for hits and to perform the translation itself.
+        // At startup, all slot_vaddr_page are initialized to cause a first miss.
+        // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
+        // slot and use it to initialize the hot slot.
+        slot_vaddr_page = a.template init_hot_tlb_slot<TLB_READ>(slot_index);
+        if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) {
+            // If we still have a miss after that, we replace the entry.
+            // Outline the slow path into a function call to minimize host CPU code cache pressure
+            T val = 0; // Don't pass pval reference directly so the compiler can store it in a register
+            DUMP_STATS_INCR(a, "tlb.rmiss");
+            auto [status, new_pc] =
+                read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, mcycle, vaddr, &val);
+            *pval = val;
+            pc = new_pc;
+            return status;
+        }
+        // If the slot was previously uninitialized, it passed initialization, and we ended up with a hit, we
+        // fall through.
+    }
+    // In contrast, a STATE_ACCESS that does not have access to hot out-of-state slots cannot mark TLB slots
+    // as not-yet-initialized.
+    // We must verify the cold slot at every hit and treat inconsistent entries as misses
+    if (!a.template verify_cold_tlb_slot<TLB_READ>(slot_index)) [[unlikely]] {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         T val = 0; // Don't pass pval reference directly so the compiler can store it in a register
         DUMP_STATS_INCR(a, "tlb.rmiss");
@@ -1038,6 +1065,7 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, uint64_t &pc,
         pc = new_pc;
         return status;
     }
+    // Now we finally know we have a verified hit
     const auto pma_index = a.template read_tlb_pma_index<TLB_READ>(slot_index);
     const auto vf_offset = a.template read_tlb_vf_offset<TLB_READ>(slot_index);
     const auto faddr = vaddr + vf_offset;
@@ -1112,8 +1140,28 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, ui
     [[maybe_unused]] auto note = a.make_scoped_note("write_virtual_memory");
     // Try hitting the TLB
     const uint64_t slot_index = tlb_slot_index(vaddr);
-    const uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
+    uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
     if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
+        // A STATE_ACCESS that does lazy intialization / fast address translation maintains an out-of-state hot
+        // slot it uses to check for hits and to perform the translation itself.
+        // At startup, all slot_vaddr_page are initialized to cause a first miss.
+        // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
+        // slot and use it to initialize the hot slot.
+        slot_vaddr_page = a.template init_hot_tlb_slot<TLB_WRITE>(slot_index);
+        if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) {
+            // If we still have a miss after that, we replace the entry.
+            // Outline the slow path into a function call to minimize host CPU code cache pressure
+            DUMP_STATS_INCR(a, "tlb.wmiss");
+            auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
+            pc = new_pc;
+            return status;
+        }
+        // Otherwise, we fall through with a hit
+    }
+    // In contrast, a STATE_ACCESS that does not have access to out-of-state storage cannot do mark TLB slots
+    // as not-yet-initialized.
+    // We must verify entry at every hit and treat inconsistent entries as misses
+    if (!a.template verify_cold_tlb_slot<TLB_WRITE>(slot_index)) [[unlikely]] {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         DUMP_STATS_INCR(a, "tlb.wmiss");
         auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
@@ -5416,8 +5464,26 @@ static FORCE_INLINE fetch_status fetch_translate_pc(const STATE_ACCESS a, uint64
     i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index, uint64_t &last_vaddr_page) {
     // Try to perform the address translation via TLB first
     const uint64_t slot_index = tlb_slot_index(vaddr);
-    const uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
+    uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
     if (!tlb_is_hit<uint16_t>(slot_vaddr_page, vaddr)) [[unlikely]] {
+        // A STATE_ACCESS that does lazy intialization / fast address translation maintains an out-of-state hot
+        // slot it uses to check for hits and to perform the translation itself.
+        // At startup, all slot_vaddr_page are initialized to cause a first miss.
+        // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
+        // slot and use it to initialize the hot slot.
+        slot_vaddr_page = a.template init_hot_tlb_slot<TLB_CODE>(slot_index);
+        if (!tlb_is_hit<uint16_t>(slot_vaddr_page, vaddr)) {
+            // If we still have a miss after that, we replace the entry.
+            DUMP_STATS_INCR(a, "tlb.cmiss");
+            // Outline the slow path into a function call to minimize host CPU code cache pressure
+            return fetch_translate_pc_slow(a, pc, vaddr, vf_offset, pma_index, last_vaddr_page);
+        }
+        // Otherwise, we fall through with a hit
+    }
+    // In contrast, a STATE_ACCESS that does not have access to out-of-state storage cannot do mark TLB slots
+    // as not-yet-initialized.
+    // We must verify entry at every hit and treat inconsistent entries as misses
+    if (!a.template verify_cold_tlb_slot<TLB_CODE>(slot_index)) [[unlikely]] {
         DUMP_STATS_INCR(a, "tlb.cmiss");
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         return fetch_translate_pc_slow(a, pc, vaddr, vf_offset, pma_index, last_vaddr_page);

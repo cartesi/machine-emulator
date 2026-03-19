@@ -241,40 +241,36 @@ void machine::init_pmas_contents(const pmas_config &config) {
 void machine::init_hot_tlb_contents() {
     for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
         for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-            const auto &shadow_slot = m_s->shadow.tlb[set_index][slot_index];
-            const auto vaddr_page = shadow_slot.vaddr_page;
-            const auto vp_offset = shadow_slot.vp_offset;
-            const auto pma_index = shadow_slot.pma_index;
-            const auto zero_padding_ = shadow_slot.zero_padding_;
-            host_addr vh_offset{};
-            if (zero_padding_ != 0) {
-                throw std::domain_error{"stored TLB is corrupt: inconsistent padding"};
-            }
-            if (vaddr_page != TLB_INVALID_PAGE) {
-                const auto &ar = read_pma(pma_index);
-                if (!ar.is_memory()) {
-                    throw std::invalid_argument{"stored TLB is corrupt: pma_index does not point to memory range"s};
-                }
-                if ((vaddr_page & PAGE_OFFSET_MASK) != 0) {
-                    throw std::invalid_argument{"stored TLB is corrupt: vaddr_page is not aligned"s};
-                }
-                const auto paddr_page = vaddr_page + vp_offset;
-                if ((paddr_page & PAGE_OFFSET_MASK) != 0) {
-                    throw std::invalid_argument{"stored TLB is corrupt: vp_offset is not aligned"s};
-                }
-                const auto pmas_end = ar.get_start() + (ar.get_length() - AR_PAGE_SIZE);
-                if (paddr_page < ar.get_start() || paddr_page > pmas_end) {
-                    throw std::invalid_argument{"stored TLB is corrupt: vp_offset is inconsistent with pma_index"s};
-                }
-                vh_offset = get_host_addr(paddr_page, pma_index) - vaddr_page;
-            } else if (pma_index != TLB_INVALID_PMA_INDEX || vp_offset != 0) {
-                throw std::domain_error{"stored TLB is corrupt: inconsistent empty slot"};
-            }
             auto &hot_slot = m_s->penumbra.tlb[set_index][slot_index];
-            hot_slot.vaddr_page = vaddr_page;
-            hot_slot.vh_offset = vh_offset;
+            hot_slot.vaddr_page = TLB_UNVERIFIED_PAGE;
+            hot_slot.vh_offset = host_addr{0};
         }
     }
+}
+
+uint64_t machine::init_hot_tlb_slot(TLB_set_index set_index, uint64_t slot_index) const {
+    auto &hot_slot = m_s->penumbra.tlb[set_index][slot_index];
+    // Only act on unverified entries
+    if (hot_slot.vaddr_page != TLB_UNVERIFIED_PAGE) {
+        return hot_slot.vaddr_page;
+    }
+    // Read shadow entry
+    const auto &shadow_slot = m_s->shadow.tlb[set_index][slot_index];
+    const auto vaddr_page = shadow_slot.vaddr_page;
+    const auto vp_offset = shadow_slot.vp_offset;
+    const auto pma_index = shadow_slot.pma_index;
+    const auto zero_padding = shadow_slot.zero_padding_;
+    const auto &ar = read_pma(pma_index);
+    if (shadow_tlb_verify_slot(vaddr_page, vp_offset, zero_padding, ar) == TLB_INVALID_PAGE) {
+        hot_slot.vaddr_page = TLB_INVALID_PAGE;
+        return TLB_INVALID_PAGE;
+    }
+    // Verification passed -- promote to hot entry
+    const auto paddr_page = vaddr_page + vp_offset;
+    const auto vh_offset = get_host_addr(paddr_page, pma_index) - vaddr_page;
+    hot_slot.vaddr_page = vaddr_page;
+    hot_slot.vh_offset = vh_offset;
+    return vaddr_page;
 }
 
 void machine::init_dtb_contents(const machine_config &config) {
@@ -1400,18 +1396,19 @@ uint64_t machine::get_reg_address(reg r) {
 }
 
 void machine::mark_write_tlb_dirty_pages() const {
-    auto &hot_set = m_s->penumbra.tlb[TLB_WRITE];
-    auto &shadow_set = m_s->shadow.tlb[TLB_WRITE];
     for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-        const auto &hot_slot = hot_set[slot_index];
-        if (hot_slot.vaddr_page != TLB_INVALID_PAGE) {
-            const auto &shadow_slot = shadow_set[slot_index];
+        auto vaddr_page = m_s->penumbra.tlb[TLB_WRITE][slot_index].vaddr_page;
+        if (vaddr_page == TLB_UNVERIFIED_PAGE) {
+            vaddr_page = init_hot_tlb_slot(TLB_WRITE, slot_index);
+        }
+        if (vaddr_page != TLB_INVALID_PAGE) {
+            const auto &shadow_slot = m_s->shadow.tlb[TLB_WRITE][slot_index];
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
             auto &ar = const_cast<address_range &>(read_pma(shadow_slot.pma_index));
             if (!ar.is_memory()) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }
-            auto paddr_page = hot_slot.vaddr_page + shadow_slot.vp_offset;
+            auto paddr_page = vaddr_page + shadow_slot.vp_offset;
             if (!ar.contains_absolute(paddr_page, AR_PAGE_SIZE)) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }
@@ -1973,6 +1970,7 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
         throw std::runtime_error{"microarchitecture is not reset"};
     }
     auto root_hash_before = get_root_hash();
+    init_hot_tlb_contents();
     record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     record_step_state_access a(context, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);

@@ -109,7 +109,7 @@ private:
         mark_dirty_word(shadow_tlb_get_abs_addr(set_index, slot_index, shadow_tlb_what::vaddr_page));
         mark_dirty_word(shadow_tlb_get_abs_addr(set_index, slot_index, shadow_tlb_what::vp_offset));
         mark_dirty_word(shadow_tlb_get_abs_addr(set_index, slot_index, shadow_tlb_what::pma_index));
-        m_m.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
+        m_m.write_unverified_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

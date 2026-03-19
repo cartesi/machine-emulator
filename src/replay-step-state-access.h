@@ -29,6 +29,7 @@
 #include "compiler-defines.h"
 #include "hash-tree-constants.h"
 #include "host-addr.h"
+#include "hot-tlb.h"
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
@@ -137,6 +138,7 @@ public:
         uint64_t sibling_count{0};                                       ///< Number of sibling hashes in the step log
         machine_hash *sibling_hashes{nullptr};                           ///< Array of sibling hashes
         mock_address_ranges ars{};                                       ///< Array of address ranges
+        hot_tlb_state tlb{};                                             ///< Hot TLB cache for validated entries
     };
 
 private:
@@ -254,20 +256,19 @@ public:
         if (computed_root_hash_before != m_context.logged_root_hash_before) {
             THROW(std::runtime_error, "initial root hash mismatch");
         }
-        // relocate all tlb vh offsets into the logged page data
-        relocate_tlb_vp_offset_to_vh_offset<TLB_CODE>();
-        relocate_tlb_vp_offset_to_vh_offset<TLB_READ>();
-        relocate_tlb_vp_offset_to_vh_offset<TLB_WRITE>();
+        // initialize hot TLB entries as unverified
+        for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
+            for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+                m_context.tlb[set_index][slot_index].vaddr_page = TLB_UNVERIFIED_PAGE;
+                m_context.tlb[set_index][slot_index].vh_offset = host_addr{0};
+            }
+        }
     }
 
     // \brief Finish the replay and check the final machine root hash
-    // \throw runtime_error if the final root hash does not match the logged final root hash
+    // \param final_root_hash The expected final machine root hash
+    // \throw runtime_error if the final root hash does not match
     void finish() {
-        // reset all tlb vh offsets to zero
-        // this is to mimic peek behavior of tlb pma device
-        relocate_tlb_vh_offset_to_vp_offset<TLB_CODE>();
-        relocate_tlb_vh_offset_to_vp_offset<TLB_READ>();
-        relocate_tlb_vh_offset_to_vp_offset<TLB_WRITE>();
         // compute and check machine root hash after the replay
         auto computed_final_root_hash = compute_root_hash();
         if (computed_final_root_hash != m_context.logged_root_hash_after) {
@@ -301,81 +302,6 @@ private:
             return &(*it);
         }
         return nullptr;
-    }
-
-    // \brief Relocate all TLB vp_offset fields to vh_offset
-    // \details This makes the translation point directly to logged page data
-    template <TLB_set_index SET>
-    void relocate_tlb_vp_offset_to_vh_offset() {
-        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-            const auto vp_offset_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vp_offset);
-            auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
-            const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
-            auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
-            // If vp_offset was accessed during record, both it and vaddr_page will appear in the log
-            // (record_step_state_access makes sure of it)
-            // Otherwise, we do not need to translate
-            if (vp_offset_log == nullptr || vaddr_page_log == nullptr) {
-                continue;
-            }
-            const auto vaddr_page_field_haddr =
-                cast_ptr_to_host_addr(vaddr_page_log->data) + (vaddr_page_field_addr & PAGE_OFFSET_MASK);
-            const auto vaddr_page = aliased_aligned_read<uint64_t>(vaddr_page_field_haddr);
-            // If, moreover, the slot was valid, the corresponding page will also appear in the log
-            // (record_step_state_access makes sure of it)
-            // Otherwise, we do not need to translate
-            if (vaddr_page != TLB_INVALID_PAGE) {
-                const auto vp_offset_field_haddr =
-                    cast_ptr_to_host_addr(vp_offset_log->data) + (vp_offset_field_addr & PAGE_OFFSET_MASK);
-                const auto vp_offset = aliased_aligned_read<uint64_t>(vp_offset_field_haddr);
-                const auto paddr_page = vaddr_page + vp_offset;
-                auto *page_log = try_find_page(paddr_page);
-                if (page_log == nullptr) {
-                    continue;
-                }
-                const auto haddr_page = cast_ptr_to_host_addr(page_log->data);
-                const auto vh_offset = haddr_page - vaddr_page;
-                aliased_aligned_write<host_addr>(vp_offset_field_haddr, vh_offset);
-            }
-        }
-    }
-
-    // \brief Reverses changes to TLB so we have vp_offset fields again instead of vh_offset
-    // \details This makes the translation point back to target physical addresses
-    template <TLB_set_index SET>
-    void relocate_tlb_vh_offset_to_vp_offset() {
-        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-            const auto vp_offset_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vp_offset);
-            auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
-            const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
-            auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
-            // If vp_offset was accessed during record, both it and vaddr_page will appear in the log
-            // (record_step_state_access makes sure of it)
-            // Otherwise, we do not need to translate
-            if (vp_offset_log == nullptr || vaddr_page_log == nullptr) {
-                continue;
-            }
-            const auto vaddr_page_field_haddr =
-                cast_ptr_to_host_addr(vaddr_page_log->data) + (vaddr_page_field_addr & PAGE_OFFSET_MASK);
-            const auto vaddr_page = aliased_aligned_read<uint64_t>(vaddr_page_field_haddr);
-            // If, moreover, the slot was valid, the corresponding page will also appear in the log
-            // (record_step_state_access makes sure of it)
-            // Otherwise, we do not need to translate
-            // We also don't need to translate back if it is no longer valid
-            if (vaddr_page != TLB_INVALID_PAGE) {
-                const auto vp_offset_field_haddr =
-                    cast_ptr_to_host_addr(vp_offset_log->data) + (vp_offset_field_addr & PAGE_OFFSET_MASK);
-                const auto vh_offset = aliased_aligned_read<host_addr>(vp_offset_field_haddr);
-                const auto haddr_page = vaddr_page + vh_offset;
-                auto *page_log = try_find_page(haddr_page);
-                if (page_log == nullptr) {
-                    continue;
-                }
-                const auto paddr_page = page_log->index << AR_LOG2_PAGE_SIZE;
-                const auto vp_offset = paddr_page - vaddr_page;
-                aliased_aligned_write<uint64_t>(vp_offset_field_haddr, vp_offset);
-            }
-        }
     }
 
     page_type *find_page(uint64_t paddr_page) const {
@@ -526,7 +452,10 @@ private:
     }
 
     address_range &do_read_pma(uint64_t index) const {
-        assert(index < PMA_MAX);
+        if (index >= PMA_MAX) [[unlikely]] {
+            static address_range sentinel{"sentinel"};
+            return sentinel;
+        }
         // record_step_state_access will have recorded the access to istart and
         // ilength in its implementation of read_pmas_entry.
         const uint64_t istart = read_pmas_istart(index);
@@ -558,12 +487,12 @@ private:
 
     template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
-        return check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::vaddr_page);
+        return m_context.tlb[SET][slot_index].vaddr_page;
     }
 
     template <TLB_set_index SET>
     host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
-        return check_read_tlb<host_addr>(SET, slot_index, shadow_tlb_what::vp_offset);
+        return m_context.tlb[SET][slot_index].vh_offset;
     }
 
     template <TLB_set_index SET>
@@ -578,10 +507,52 @@ private:
     }
 
     template <TLB_set_index SET>
+    uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
+        auto &hot_slot = m_context.tlb[SET][slot_index];
+        // Only act on unverified entries
+        if (hot_slot.vaddr_page != TLB_UNVERIFIED_PAGE) {
+            return hot_slot.vaddr_page;
+        }
+        // Read shadow entry from the log
+        const auto vaddr_page = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::vaddr_page);
+        const auto vp_offset = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::vp_offset);
+        const auto pma_index = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
+        const auto zero_padding = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::zero_padding_);
+        const auto &ar = do_read_pma(pma_index);
+        if (shadow_tlb_verify_slot(vaddr_page, vp_offset, zero_padding, ar) == TLB_INVALID_PAGE) {
+            hot_slot.vaddr_page = TLB_INVALID_PAGE;
+            return TLB_INVALID_PAGE;
+        }
+        // Find the target page in the log and compute vh_offset pointing into log data
+        const auto paddr_page = vaddr_page + vp_offset;
+        const auto haddr_page = cast_ptr_to_host_addr(find_page(paddr_page)->data);
+        const auto vh_offset = haddr_page - vaddr_page;
+        // Verification passed -- promote to hot entry
+        hot_slot.vaddr_page = vaddr_page;
+        hot_slot.vh_offset = vh_offset;
+        return vaddr_page;
+    }
+
+    template <TLB_set_index SET>
+    constexpr bool do_verify_cold_tlb_slot(uint64_t /*slot_index*/) const {
+        return true;
+    }
+
+    template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
+        assert(vaddr_page != TLB_UNVERIFIED_PAGE);
         check_write_tlb(SET, slot_index, shadow_tlb_what::vaddr_page, vaddr_page);
-        check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, vh_offset);
+        if (vaddr_page != TLB_INVALID_PAGE) {
+            // Convert vh_offset to vp_offset for the log (shadow stores vp_offset)
+            const auto paddr_page = find_page(vaddr_page + vh_offset)->index << AR_LOG2_PAGE_SIZE;
+            check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, paddr_page - vaddr_page);
+        } else {
+            check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, static_cast<uint64_t>(vh_offset));
+        }
         check_write_tlb(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
+        // Mark hot entry as unverified so next access re-validates from the log
+        m_context.tlb[SET][slot_index].vaddr_page = TLB_UNVERIFIED_PAGE;
+        m_context.tlb[SET][slot_index].vh_offset = host_addr{0};
     }
 
     bool do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)

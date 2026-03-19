@@ -390,7 +390,7 @@ public:
     }
 
     /// \brief Reads TLB's vaddr_page
-    /// \tparam USE TLB set
+    /// \tparam SET TLB set
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
@@ -402,7 +402,7 @@ public:
     }
 
     /// \brief Reads TLB's vf_offset
-    /// \tparam USE TLB set
+    /// \tparam SET TLB set
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
@@ -415,7 +415,7 @@ public:
     }
 
     /// \brief Reads TLB's pma_index
-    /// \tparam USE TLB set
+    /// \tparam SET TLB set
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
@@ -427,7 +427,7 @@ public:
     }
 
     /// \brief Writes to a TLB slot
-    /// \tparam USE TLB set
+    /// \tparam SET TLB set
     /// \param slot_index Slot index
     /// \param vaddr_page Value to write
     /// \param vf_offset Value to write
@@ -440,6 +440,29 @@ public:
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
         dsa_printf("%s::write_tlb<%" PRIu64 ">(%" PRIu64 ", 0x%" PRIx64 ", %s{0x%" PRIx64 "}, %" PRIu64 ")\n",
             get_name(), SET, slot_index, vaddr_page, fast_addr_name, static_cast<uint64_t>(vf_offset), pma_index);
+    }
+
+    /// \brief Verifies shadow TLB slot and initializes hot TLB slot
+    /// \tparam SET TLB set
+    /// \param slot_index Slot index
+    /// \returns Slot's vaddr page if successful. TLB_INVALID_PAGE otherwise.
+    /// \detail The idea is that, if initialization fails, the returned value forces a miss so the slot is replaced.
+    template <TLB_set_index SET>
+    uint64_t init_hot_tlb_slot(uint64_t slot_index) const {
+        const uint64_t val = derived().template do_init_hot_tlb_slot<SET>(slot_index);
+        dsa_printf("%s::init_hot_tlb_slot<%" PRIu64 ">(%" PRIu64 ") = %" PRIx64 "\n", get_name(), SET, slot_index, val);
+        return val;
+    }
+
+    /// \brief Verify consistency of hot TLB slot
+    /// \tparam SET TLB set
+    /// \param slot_index Slot index
+    /// \returns True if slot passes verification. False if it fails.
+    template <TLB_set_index SET>
+    bool verify_cold_tlb_slot(uint64_t slot_index) const {
+        const bool val = derived().template do_verify_cold_tlb_slot<SET>(slot_index);
+        dsa_printf("%s::verify_cold_tlb_slot<%" PRIu64 ">(%" PRIu64 ") = %d\n", get_name(), SET, slot_index, val);
+        return val;
     }
 
     /// \brief Marks a page as dirty

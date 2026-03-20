@@ -142,7 +142,8 @@ public:
     };
 
 private:
-    context &m_context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+    context &m_context;                             // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+    mutable page_type *m_shadow_regs_page{nullptr}; ///< cache shadow registers page
 
 public:
     // \brief Construct a replay_step_state_access object from a log image
@@ -327,6 +328,18 @@ private:
         return page_log;
     }
 
+    static_assert(sizeof(shadow_registers_state) <= AR_PAGE_SIZE, "shadow registers must fit in a single page");
+
+    host_addr get_shadow_reg_host_addr(shadow_registers_what what) const {
+        const auto paddr = static_cast<uint64_t>(what);
+        const auto page = paddr & ~PAGE_OFFSET_MASK;
+        const auto offset = paddr & PAGE_OFFSET_MASK;
+        if (m_shadow_regs_page == nullptr) {
+            m_shadow_regs_page = find_page(page);
+        }
+        return cast_ptr_to_host_addr(m_shadow_regs_page->data) + offset;
+    }
+
     // \brief Compute the current machine root hash
     machine_hash compute_root_hash() {
         //??D Here we should only do this for dirty pages, right?
@@ -396,20 +409,12 @@ private:
         // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
     }
 
-    //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
-    // We can do this by caching the vh_offset translation of the registers shadow page. This is easy if
-    // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
-    uint64_t check_read_reg(machine_reg reg) const {
-        const auto haddr = do_get_faddr(machine_reg_address(reg));
-        return aliased_aligned_read<uint64_t>(haddr);
+    uint64_t check_read_reg(shadow_registers_what what) const {
+        return aliased_aligned_read<uint64_t>(get_shadow_reg_host_addr(what));
     }
 
-    //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
-    // We can do this by caching the vh_offset translation of the registers shadow page. This is easy if
-    // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
-    void check_write_reg(machine_reg reg, uint64_t val) const {
-        const auto haddr = do_get_faddr(machine_reg_address(reg));
-        aliased_aligned_write<uint64_t>(haddr, val);
+    void check_write_reg(shadow_registers_what what, uint64_t val) const {
+        aliased_aligned_write<uint64_t>(get_shadow_reg_host_addr(what), val);
     }
 
     uint64_t read_pmas_istart(uint64_t index) const {
@@ -428,11 +433,11 @@ private:
     friend i_prefer_shadow_state<replay_step_state_access>;
 
     uint64_t do_read_shadow_register(shadow_registers_what what) const {
-        return check_read_reg(machine_reg_enum(what));
+        return check_read_reg(what);
     }
 
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
-        check_write_reg(machine_reg_enum(what), val);
+        check_write_reg(what, val);
     }
 
     // -----

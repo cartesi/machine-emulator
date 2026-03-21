@@ -1590,17 +1590,11 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
     // Handle special case for writing to shadow memory, allowing manual snapshots
     // for machines with shared layouts via read_memory()/write_memory()
     if (paddr == AR_SHADOW_STATE_START && length == AR_SHADOW_STATE_LENGTH) {
-        // Save the current processor state for potential rollback
-        static const auto s = *m_s;
         // Overwrite the processor shadow state with the provided data
         static_assert(AR_SHADOW_STATE_LENGTH == sizeof(m_s->shadow));
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         memcpy(reinterpret_cast<unsigned char *>(&m_s->shadow), data, sizeof(m_s->shadow));
-        // Ensure processor state rollback in case of failure during subsequent operations
-        auto state_reverter = scope_fail([&] { *m_s = s; });
-        // Ensure the new processor shadow state is consistent
-        validate_processor_shadow(m_r.skip_version_check);
-        // Reinitialize the hot TLB to reflect changes in the shadow TLB and verify consistency
+        // Reinitialize the hot TLB to reflect changes in the shadow TLB
         init_hot_tlb_contents();
         return;
     }

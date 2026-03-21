@@ -5,7 +5,7 @@
 # Generates seed corpus files for the fuzz-interpret harness.
 #
 # Each seed file has the layout expected by the harness:
-#   [1B priv] [1B flags] [128B CSRs] [256B GPRs] [256B FPRs] [code...]
+#   [1B priv] [1B flags] [848B registers_state] [code...]
 #
 # Usage: gen-seed-corpus.sh <output-dir>
 
@@ -25,9 +25,7 @@ make_seed_from_bin() {
     printf "\\x$(printf '%02x' "$priv")" > "$outfile"
     printf "\\x$(printf '%02x' "$flags")" >> "$outfile"
 
-    dd if=/dev/zero bs=1 count=128 >> "$outfile" 2>/dev/null  # CSRs
-    dd if=/dev/zero bs=1 count=256 >> "$outfile" 2>/dev/null  # GPRs
-    dd if=/dev/zero bs=1 count=256 >> "$outfile" 2>/dev/null  # FPRs
+    dd if=/dev/zero bs=1 count=848 >> "$outfile" 2>/dev/null  # registers_state
 
     # Append binary code (first 4096 bytes max to keep seeds small)
     dd if="$binfile" bs=1 count=4096 >> "$outfile" 2>/dev/null

@@ -24,11 +24,14 @@
 #define FUZZ_COMMON_H
 
 #include <machine-c-api.h>
+#include <pmas.h>
+#include <processor-state.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include <json.hpp>
 
@@ -86,65 +89,143 @@ struct fuzz_reader {
     }
 };
 
-// CSR block layout (128 bytes)
-
-struct csr_block {
-    uint64_t mstatus;
-    uint64_t medeleg;
-    uint64_t mideleg;
-    uint64_t mie;
-    uint64_t mip;
-    uint64_t mtvec;
-    uint64_t mscratch;
-    uint64_t mepc;
-    uint64_t mcause;
-    uint64_t mtval;
-    uint64_t stvec;
-    uint64_t sscratch;
-    uint64_t sepc;
-    uint64_t scause;
-    uint64_t stval;
-    uint64_t menvcfg;
-};
-static_assert(sizeof(csr_block) == 128);
-
-/// \brief Creates a machine with fuzzed state from the fuzz input.
-/// \param r Fuzz reader positioned after any target-specific control bytes.
-/// \returns Pointer to the new machine, or nullptr on failure.
-/// \details Consumes the fuzz input to set up control flags, CSRs, GPRs, FPRs,
-/// page tables, and code. The caller is responsible for calling cm_delete().
-static cm_machine *fuzz_create_machine(fuzz_reader &r) {
-    // 1. Control bytes
-
+/// \brief Reads fuzzed register state from the input.
+/// \param r Fuzz reader to consume bytes from.
+/// \param regs Output registers_state, filled from fuzz data.
+/// \param enable_vm Output flag: whether virtual memory should be enabled.
+/// \details Reads a registers_state directly from the fuzz input, then
+/// derives control flags (privilege level, VM mode, MPRV, SUM, MXR, FS)
+/// from the first two bytes of the input, adjusting mstatus accordingly.
+/// The struct layout matches the shadow state exactly, so the same bytes
+/// can be used both for cm_write_reg (fuzz-interpret) and for direct
+/// shadow state writes (fuzz-shadow-state).
+static void fuzz_read_registers(fuzz_reader &r, cartesi::registers_state &regs, bool &enable_vm) {
+    // Read the control bytes first (consumed before registers)
     const uint8_t priv_byte = r.read<uint8_t>();
     const uint8_t flags_byte = r.read<uint8_t>();
 
-    // Privilege level: 0=U, 1=S, 3=M
+    // Read the entire registers_state from fuzz input
+    r.read_bytes(&regs, sizeof(regs));
+
+    // Derive control flags
     static constexpr uint64_t priv_map[] = {0 /*U*/, 1 /*S*/, 3 /*M*/, 3 /*M*/};
     const uint64_t priv = priv_map[priv_byte & 0x3];
 
-    const bool enable_vm = (flags_byte & 0x01) != 0;
+    enable_vm = (flags_byte & 0x01) != 0;
     const bool enable_mprv = (flags_byte & 0x02) != 0;
     const bool enable_sum = (flags_byte & 0x04) != 0;
     const bool enable_mxr = (flags_byte & 0x08) != 0;
-    const bool enable_fs = (flags_byte & 0x10) != 0; // floating-point dirty state
+    const bool enable_fs = (flags_byte & 0x10) != 0;
 
-    // 2. CSR block (128 bytes)
+    // Apply control flags to mstatus
+    regs.mstatus = (regs.mstatus & ~(UINT64_C(3) << 11)) | (priv << 11);
+    if (enable_mprv) {
+        regs.mstatus |= (UINT64_C(1) << 17);
+    } else {
+        regs.mstatus &= ~(UINT64_C(1) << 17);
+    }
+    if (enable_sum) {
+        regs.mstatus |= (UINT64_C(1) << 18);
+    } else {
+        regs.mstatus &= ~(UINT64_C(1) << 18);
+    }
+    if (enable_mxr) {
+        regs.mstatus |= (UINT64_C(1) << 19);
+    } else {
+        regs.mstatus &= ~(UINT64_C(1) << 19);
+    }
+    if (enable_fs) {
+        regs.mstatus |= (UINT64_C(3) << 13);
+    }
 
-    const auto csrs = r.read<csr_block>();
+    // Set privilege level
+    regs.iprv = priv;
 
-    // 3. GPR block (256 bytes)
+    // PC always points to the code region
+    regs.pc = CODE_START;
 
-    uint64_t gprs[32] = {};
-    r.read_bytes(gprs, sizeof(gprs));
+    // mcycle starts at 0
+    regs.mcycle = 0;
 
-    // 4. FPR block (256 bytes)
+    // Ensure the machine is not halted or yielded, otherwise cm_run returns immediately
+    regs.iflags.H = 0;
+    regs.iflags.Y = 0;
+}
 
-    uint64_t fprs[32] = {};
-    r.read_bytes(fprs, sizeof(fprs));
+/// \brief Writes registers from a registers_state to a machine via cm_write_reg.
+/// \param machine Target machine.
+/// \param regs Source register values.
+static void fuzz_write_registers_to_machine(cm_machine *machine, const cartesi::registers_state &regs) {
+    // GPRs (x0 is read-only, skip it)
+    for (int i = 1; i < 32; i++) {
+        cm_write_reg(machine, static_cast<cm_reg>(CM_REG_X0 + i), regs.x[i]);
+    }
 
-    // 5. Page table entries (when VM enabled)
+    // FPRs
+    for (int i = 0; i < 32; i++) {
+        cm_write_reg(machine, static_cast<cm_reg>(CM_REG_F0 + i), regs.f[i]);
+    }
+    cm_write_reg(machine, CM_REG_FCSR, regs.fcsr);
 
+    // CSRs
+    cm_write_reg(machine, CM_REG_MSTATUS, regs.mstatus);
+    cm_write_reg(machine, CM_REG_MEDELEG, regs.medeleg);
+    cm_write_reg(machine, CM_REG_MIDELEG, regs.mideleg);
+    cm_write_reg(machine, CM_REG_MIE, regs.mie);
+    cm_write_reg(machine, CM_REG_MIP, regs.mip);
+    cm_write_reg(machine, CM_REG_MTVEC, regs.mtvec);
+    cm_write_reg(machine, CM_REG_MSCRATCH, regs.mscratch);
+    cm_write_reg(machine, CM_REG_MEPC, regs.mepc);
+    cm_write_reg(machine, CM_REG_MCAUSE, regs.mcause);
+    cm_write_reg(machine, CM_REG_MTVAL, regs.mtval);
+    cm_write_reg(machine, CM_REG_MENVCFG, regs.menvcfg);
+    cm_write_reg(machine, CM_REG_STVEC, regs.stvec);
+    cm_write_reg(machine, CM_REG_SSCRATCH, regs.sscratch);
+    cm_write_reg(machine, CM_REG_SEPC, regs.sepc);
+    cm_write_reg(machine, CM_REG_SCAUSE, regs.scause);
+    cm_write_reg(machine, CM_REG_STVAL, regs.stval);
+    cm_write_reg(machine, CM_REG_SENVCFG, regs.senvcfg);
+    cm_write_reg(machine, CM_REG_MCOUNTEREN, regs.mcounteren);
+    cm_write_reg(machine, CM_REG_SCOUNTEREN, regs.scounteren);
+    cm_write_reg(machine, CM_REG_SATP, regs.satp);
+
+    // Cartesi-specific
+    cm_write_reg(machine, CM_REG_IPRV, regs.iprv);
+    cm_write_reg(machine, CM_REG_PC, regs.pc);
+    cm_write_reg(machine, CM_REG_MCYCLE, regs.mcycle);
+    cm_write_reg(machine, CM_REG_ILRSC, regs.ilrsc);
+    cm_write_reg(machine, CM_REG_ICYCLEINSTRET, regs.icycleinstret);
+    cm_write_reg(machine, CM_REG_IUNREP, regs.iunrep);
+
+    // iflags
+    cm_write_reg(machine, CM_REG_IFLAGS_H, regs.iflags.H);
+    cm_write_reg(machine, CM_REG_IFLAGS_Y, regs.iflags.Y);
+    cm_write_reg(machine, CM_REG_IFLAGS_X, regs.iflags.X);
+
+    // CLINT
+    cm_write_reg(machine, CM_REG_CLINT_MTIMECMP, regs.clint.mtimecmp);
+
+    // PLIC
+    cm_write_reg(machine, CM_REG_PLIC_GIRQPEND, regs.plic.girqpend);
+    cm_write_reg(machine, CM_REG_PLIC_GIRQSRVD, regs.plic.girqsrvd);
+
+    // HTIF
+    cm_write_reg(machine, CM_REG_HTIF_TOHOST, regs.htif.tohost);
+    cm_write_reg(machine, CM_REG_HTIF_FROMHOST, regs.htif.fromhost);
+    cm_write_reg(machine, CM_REG_HTIF_IHALT, regs.htif.ihalt);
+    cm_write_reg(machine, CM_REG_HTIF_ICONSOLE, regs.htif.iconsole);
+    cm_write_reg(machine, CM_REG_HTIF_IYIELD, regs.htif.iyield);
+}
+
+/// \brief Creates a machine with fuzzed state from the fuzz input.
+/// \param r Fuzz reader to consume bytes from.
+/// \param regs Register state (already read via fuzz_read_registers).
+/// \param enable_vm Whether to set up SV39 virtual memory.
+/// \returns Pointer to the new machine, or nullptr on failure.
+/// \details Sets up RAM (page tables + code), writes registers via cm_write_reg.
+/// The caller is responsible for calling cm_delete().
+static cm_machine *fuzz_create_machine(fuzz_reader &r, const cartesi::registers_state &regs, bool enable_vm) {
+    // Page table entries (when VM enabled)
     uint8_t pt_data[PAGE_TABLE_REGION] = {};
     size_t pt_data_size = 0;
     if (enable_vm) {
@@ -152,8 +233,7 @@ static cm_machine *fuzz_create_machine(fuzz_reader &r) {
         r.read_bytes(pt_data, pt_data_size);
     }
 
-    // 6. Remaining = code/data
-
+    // Remaining = code/data
     const uint8_t *code_data = r.data;
     const size_t code_size = r.remaining;
 
@@ -162,7 +242,6 @@ static cm_machine *fuzz_create_machine(fuzz_reader &r) {
     }
 
     // Create machine
-
     nlohmann::json config;
     config["ram"]["length"] = RAM_LENGTH;
     const auto config_str = config.dump();
@@ -173,7 +252,6 @@ static cm_machine *fuzz_create_machine(fuzz_reader &r) {
     }
 
     // Write page tables into RAM
-
     if (enable_vm && pt_data_size > 0) {
         cm_write_memory(machine, RAM_START, pt_data, pt_data_size);
 
@@ -199,77 +277,171 @@ static cm_machine *fuzz_create_machine(fuzz_reader &r) {
     }
 
     // Write code into RAM
-
     const auto write_len = std::min(code_size, static_cast<size_t>(RAM_LENGTH - PAGE_TABLE_REGION));
     if (write_len > 0) {
         cm_write_memory(machine, CODE_START, code_data, write_len);
     }
 
-    // Set CSRs
-
-    uint64_t mstatus = csrs.mstatus;
-    mstatus = (mstatus & ~(UINT64_C(3) << 11)) | (priv << 11);
-    if (enable_mprv) {
-        mstatus |= (UINT64_C(1) << 17);
-    } else {
-        mstatus &= ~(UINT64_C(1) << 17);
-    }
-    if (enable_sum) {
-        mstatus |= (UINT64_C(1) << 18);
-    } else {
-        mstatus &= ~(UINT64_C(1) << 18);
-    }
-    if (enable_mxr) {
-        mstatus |= (UINT64_C(1) << 19);
-    } else {
-        mstatus &= ~(UINT64_C(1) << 19);
-    }
-    if (enable_fs) {
-        mstatus |= (UINT64_C(3) << 13);
-    }
-
-    cm_write_reg(machine, CM_REG_MSTATUS, mstatus);
-    cm_write_reg(machine, CM_REG_MEDELEG, csrs.medeleg);
-    cm_write_reg(machine, CM_REG_MIDELEG, csrs.mideleg);
-    cm_write_reg(machine, CM_REG_MIE, csrs.mie);
-    cm_write_reg(machine, CM_REG_MIP, csrs.mip);
-    cm_write_reg(machine, CM_REG_MTVEC, csrs.mtvec);
-    cm_write_reg(machine, CM_REG_MSCRATCH, csrs.mscratch);
-    cm_write_reg(machine, CM_REG_MEPC, csrs.mepc);
-    cm_write_reg(machine, CM_REG_MCAUSE, csrs.mcause);
-    cm_write_reg(machine, CM_REG_MTVAL, csrs.mtval);
-    cm_write_reg(machine, CM_REG_STVEC, csrs.stvec);
-    cm_write_reg(machine, CM_REG_SSCRATCH, csrs.sscratch);
-    cm_write_reg(machine, CM_REG_SEPC, csrs.sepc);
-    cm_write_reg(machine, CM_REG_SCAUSE, csrs.scause);
-    cm_write_reg(machine, CM_REG_STVAL, csrs.stval);
-    cm_write_reg(machine, CM_REG_MENVCFG, csrs.menvcfg);
-
-    cm_write_reg(machine, CM_REG_SENVCFG, csrs.menvcfg ^ csrs.mstatus);
-    cm_write_reg(machine, CM_REG_MCOUNTEREN, csrs.medeleg & 0xFFFFFFFF);
-    cm_write_reg(machine, CM_REG_SCOUNTEREN, csrs.mideleg & 0xFFFFFFFF);
-
-    // Set privilege level
-    cm_write_reg(machine, CM_REG_IPRV, priv);
-
-    // Set GPRs
-
-    for (int i = 1; i < 32; i++) {
-        cm_write_reg(machine, static_cast<cm_reg>(CM_REG_X0 + i), gprs[i]);
-    }
-
-    // Set FPRs
-
-    for (int i = 0; i < 32; i++) {
-        cm_write_reg(machine, static_cast<cm_reg>(CM_REG_F0 + i), fprs[i]);
-    }
-    cm_write_reg(machine, CM_REG_FCSR, fprs[0] & 0xFF);
-
-    // Set PC
-
-    cm_write_reg(machine, CM_REG_PC, CODE_START);
+    // Write registers
+    fuzz_write_registers_to_machine(machine, regs);
 
     return machine;
+}
+
+/// \brief Info about a PMA discovered from the machine's PMA array.
+struct pma_info {
+    uint64_t index;  ///< PMA index (for shadow TLB slot)
+    uint64_t start;  ///< Physical start address
+    uint64_t length; ///< Length in bytes
+    bool is_memory;  ///< True if memory-backed (M flag set)
+};
+
+/// \brief Reads the PMA array from a machine and returns info about all non-empty PMAs.
+static std::vector<pma_info> fuzz_discover_pmas(cm_machine *machine) {
+    using namespace cartesi;
+    pmas_state pmas{};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    cm_read_memory(machine, AR_PMAS_START_DEF, reinterpret_cast<uint8_t *>(&pmas), sizeof(pmas));
+
+    std::vector<pma_info> result;
+    for (uint64_t i = 0; i < PMA_MAX; i++) {
+        uint64_t start = 0;
+        const auto flags = pmas_unpack_istart(pmas[i].istart, start);
+        const uint64_t length = pmas[i].ilength;
+        if (length == 0 && start == 0) {
+            continue;
+        }
+        result.push_back({i, start, length, flags.M});
+    }
+    return result;
+}
+
+/// \brief Crafts a single TLB slot entry targeting a specific PMA.
+/// \param slot_index The TLB slot index — vaddr_page is crafted to match it.
+/// \param vaddr_bits Fuzz-provided upper bits for the virtual address.
+/// \param page_select Fuzz-provided value to select a page within the PMA.
+/// \param pma Target PMA to map to.
+/// \returns A shadow_tlb_slot that will pass verification for memory PMAs.
+static cartesi::shadow_tlb_slot fuzz_craft_valid_tlb_slot(uint64_t slot_index, uint64_t vaddr_bits,
+    uint64_t page_select, const pma_info &pma) {
+    const uint64_t vaddr_page = ((vaddr_bits >> 20) << 20) | (slot_index << LOG2_PAGE_SIZE);
+    const uint64_t num_pages = pma.length / PAGE_SIZE;
+    const uint64_t target_page = num_pages > 0 ? (page_select % num_pages) * PAGE_SIZE : 0;
+    const uint64_t paddr_page = pma.start + target_page;
+    return {vaddr_page, paddr_page - vaddr_page, pma.index, 0};
+}
+
+/// \brief Crafts a TLB slot for a known virtual address (e.g. CODE_START or a GPR value).
+/// \param vaddr The virtual address to create a mapping for.
+/// \param pma Target PMA to map to.
+/// \param page_select Fuzz-provided value to select a page within the PMA.
+/// \returns A shadow_tlb_slot whose vaddr_page matches tlb_slot_index(vaddr).
+static cartesi::shadow_tlb_slot fuzz_craft_targeted_tlb_slot(uint64_t vaddr, const pma_info &pma,
+    uint64_t page_select) {
+    const uint64_t vaddr_page = vaddr & ~static_cast<uint64_t>(cartesi::PAGE_OFFSET_MASK);
+    const uint64_t num_pages = pma.length / PAGE_SIZE;
+    const uint64_t target_page = num_pages > 0 ? (page_select % num_pages) * PAGE_SIZE : 0;
+    const uint64_t paddr_page = pma.start + target_page;
+    return {vaddr_page, paddr_page - vaddr_page, pma.index, 0};
+}
+
+/// \brief Fills a shadow TLB state with fuzz-driven entries targeting discovered PMAs.
+/// \param r Fuzz reader for TLB control data.
+/// \param regs Register state — GPR values are used to create targeted TLB entries
+///        for addresses the interpreter will actually access.
+/// \param pmas Discovered PMAs from the machine.
+/// \param tlb Output TLB state to fill.
+/// \details
+/// The code TLB (set 0) gets a targeted entry for CODE_START's page (controlled by
+/// a fuzz bit — sometimes omitted to exercise instruction fetch page walks).
+///
+/// The read and write TLB sets (sets 1-2) get targeted entries for pages derived
+/// from GPR values, since those are addresses load/store instructions will use.
+/// A fuzz bit per GPR controls whether an entry is placed (hit) or omitted (miss).
+///
+/// Remaining slots are filled based on a fuzz byte selector:
+///   0x00-0xAF (68.75%): valid memory-backed PMA entry
+///   0xB0-0xCF (12.5%): non-memory PMA entry (should fail verification)
+///   0xD0-0xDF (6.25%): out-of-bounds pma_index (tests bounds checking)
+///   0xE0-0xFF (12.5%): completely raw fuzz bytes (various validation failures)
+static void fuzz_fill_tlb(fuzz_reader &r, const cartesi::registers_state &regs,
+    const std::vector<pma_info> &pmas, cartesi::shadow_tlb_state &tlb) {
+    // Separate memory and non-memory PMAs
+    std::vector<const pma_info *> mem_pmas;
+    std::vector<const pma_info *> dev_pmas;
+    for (const auto &p : pmas) {
+        if (p.is_memory && p.length >= PAGE_SIZE) {
+            mem_pmas.push_back(&p);
+        } else if (!p.is_memory) {
+            dev_pmas.push_back(&p);
+        }
+    }
+
+    // Control bits for targeted entries
+    const uint64_t control = r.read<uint64_t>();
+
+    // Code TLB (set 0): targeted entry for CODE_START
+    if ((control & 1) && !mem_pmas.empty()) {
+        const auto slot_idx = cartesi::tlb_slot_index(CODE_START);
+        const auto *pma = mem_pmas[r.read<uint8_t>() % mem_pmas.size()];
+        tlb[cartesi::TLB_CODE][slot_idx] = fuzz_craft_targeted_tlb_slot(CODE_START, *pma, r.read<uint64_t>());
+    }
+
+    // Read/Write TLB (sets 1-2): targeted entries for GPR-derived addresses
+    for (int xi = 1; xi < 32; xi++) {
+        if (!((control >> xi) & 1) || mem_pmas.empty()) {
+            continue;
+        }
+        const uint64_t vaddr = regs.x[xi];
+        const auto slot_idx = cartesi::tlb_slot_index(vaddr);
+        const auto *pma = mem_pmas[r.read<uint8_t>() % mem_pmas.size()];
+        const uint64_t page_sel = r.read<uint64_t>();
+        // Place in both read and write TLB sets
+        tlb[cartesi::TLB_READ][slot_idx] = fuzz_craft_targeted_tlb_slot(vaddr, *pma, page_sel);
+        tlb[cartesi::TLB_WRITE][slot_idx] = fuzz_craft_targeted_tlb_slot(vaddr, *pma, page_sel);
+    }
+
+    // Fill remaining empty slots with fuzz-driven entries
+    for (auto &set : tlb) {
+        for (uint64_t i = 0; i < set.size(); i++) {
+            auto &slot = set[i];
+            // Skip slots already populated by targeted entries
+            if (slot.vaddr_page != cartesi::TLB_INVALID_PAGE) {
+                continue;
+            }
+
+            const uint8_t selector = r.read<uint8_t>();
+            const uint64_t vaddr_bits = r.read<uint64_t>();
+            const uint64_t page_select = r.read<uint64_t>();
+
+            if (selector < 0xB0 && !mem_pmas.empty()) {
+                // Valid memory-backed entry
+                const auto *pma = mem_pmas[selector % mem_pmas.size()];
+                slot = fuzz_craft_valid_tlb_slot(i, vaddr_bits, page_select, *pma);
+            } else if (selector < 0xD0 && !dev_pmas.empty()) {
+                // Non-memory PMA — should be rejected by verification
+                const auto *pma = dev_pmas[selector % dev_pmas.size()];
+                const uint64_t vaddr_page = ((vaddr_bits >> 20) << 20) | (i << LOG2_PAGE_SIZE);
+                slot.vaddr_page = vaddr_page;
+                slot.vp_offset = pma->start - vaddr_page;
+                slot.pma_index = pma->index;
+                slot.zero_padding_ = 0;
+            } else if (selector < 0xE0) {
+                // Out-of-bounds pma_index
+                const uint64_t vaddr_page = ((vaddr_bits >> 20) << 20) | (i << LOG2_PAGE_SIZE);
+                slot.vaddr_page = vaddr_page;
+                slot.vp_offset = page_select;
+                slot.pma_index = 0xFF + selector;
+                slot.zero_padding_ = 0;
+            } else {
+                // Completely raw — random bytes, various validation failures
+                slot.vaddr_page = vaddr_bits;
+                slot.vp_offset = page_select;
+                slot.pma_index = selector;
+                slot.zero_padding_ = vaddr_bits & 0xFF;
+            }
+        }
+    }
 }
 
 #endif // FUZZ_COMMON_H

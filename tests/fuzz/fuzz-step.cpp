@@ -86,8 +86,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
     fuzz_reader r{data, size};
 
-    // Create machine with fuzzed state
-    cm_machine *m0 = fuzz_create_machine(r);
+    // Read register state and create machine with fuzzed state
+    cartesi::registers_state regs{};
+    bool enable_vm = false;
+    fuzz_read_registers(r, regs, enable_vm);
+    cm_machine *m0 = fuzz_create_machine(r, regs, enable_vm);
     if (!m0) {
         return 0;
     }

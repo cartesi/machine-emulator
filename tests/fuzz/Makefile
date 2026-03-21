@@ -31,7 +31,13 @@
 #                     3. cm_log/verify_step_uarch() cycle-by-cycle — uarch fraud proofs
 #                     4. cm_log/verify_step()  — page-based fraud proofs
 #
-# Both targets share the same input format and corpus directory. Run
+#   fuzz-shadow-state  Shadow state bulk write fuzzer. Sets up a plausible machine
+#                   via fuzz_create_machine(), then overwrites the entire shadow
+#                   state (registers + TLB) with raw fuzz data via cm_write_memory().
+#                   Exercises shadow state validation, hot TLB reinitialization,
+#                   and lazy TLB verification with hostile inputs.
+#
+# All targets share the same input format and corpus directory. Run
 # fuzz-interpret first to build up the corpus quickly, then run fuzz-step
 # to verify all execution paths agree on the discovered inputs.
 #
@@ -89,9 +95,9 @@ endif
 endif
 
 # Fuzz targets
-FUZZ_TARGETS = $(BUILDDIR)/fuzz-interpret $(BUILDDIR)/fuzz-step
+FUZZ_TARGETS = $(BUILDDIR)/fuzz-interpret $(BUILDDIR)/fuzz-step $(BUILDDIR)/fuzz-shadow-state
 
-.PHONY: all clean run-fuzz run-fuzz-interpret run-fuzz-step fuzz-seed-corpus
+.PHONY: all clean run-fuzz run-fuzz-interpret run-fuzz-step run-fuzz-shadow-state fuzz-seed-corpus fuzz-coverage fuzz-coverage-clean
 
 all: $(FUZZ_TARGETS)
 
@@ -112,6 +118,9 @@ $(BUILDDIR)/fuzz-interpret: fuzz-interpret.cpp fuzz-common.h $(SRCDIR)/libcartes
 $(BUILDDIR)/fuzz-step: fuzz-step.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
 	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
 
+$(BUILDDIR)/fuzz-shadow-state: fuzz-shadow-state.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
+	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
+
 # -- Run targets --------------------------------------------------------------
 
 # All fuzz targets share a single corpus directory. Inputs discovered by the
@@ -119,10 +128,11 @@ $(BUILDDIR)/fuzz-step: fuzz-step.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCD
 CORPUS_DIR = corpus
 FUZZ_INTERPRET_ARGS ?=
 FUZZ_STEP_ARGS ?=
+FUZZ_SHADOW_STATE_ARGS ?=
 
 # Recommended entry point: runs fuzz-interpret to build up the corpus,
 # then fuzz-step to verify all 4 execution paths agree.
-run-fuzz: run-fuzz-interpret run-fuzz-step
+run-fuzz: run-fuzz-interpret run-fuzz-step run-fuzz-shadow-state
 
 run-fuzz-interpret: $(BUILDDIR)/fuzz-interpret fuzz-seed-corpus
 	@mkdir -p $(CORPUS_DIR)
@@ -132,11 +142,15 @@ run-fuzz-step: $(BUILDDIR)/fuzz-step fuzz-seed-corpus
 	@mkdir -p $(CORPUS_DIR)
 	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-step $(CORPUS_DIR) seed-corpus/ $(FUZZ_STEP_ARGS)
 
+run-fuzz-shadow-state: $(BUILDDIR)/fuzz-shadow-state fuzz-seed-corpus
+	@mkdir -p $(CORPUS_DIR)
+	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-shadow-state $(CORPUS_DIR) seed-corpus/ $(FUZZ_SHADOW_STATE_ARGS)
+
 # -- Seed corpus --------------------------------------------------------------
 #
 # Builds seed inputs from the riscv-tests ISA binaries. Each seed is a file
 # structured as the harness expects:
-#   [2 control bytes] [128 CSR bytes] [256 GPR bytes] [256 FP bytes] [code...]
+#   [2 control bytes] [848 registers_state bytes] [code...]
 #
 # Requires riscv-tests to be built first (make build-tests-machine in tests/).
 
@@ -149,8 +163,53 @@ $(SEED_DIR)/.stamp: gen-seed-corpus.sh
 	@bash gen-seed-corpus.sh $(SEED_DIR)
 	@touch $@
 
+# -- Coverage report ----------------------------------------------------------
+#
+# Builds coverage-instrumented binaries, replays the corpus to collect
+# profile data, and generates an HTML coverage report.
+#
+# Usage:
+#   make fuzz-coverage TARGET=fuzz-shadow-state   # default target
+#   make fuzz-coverage TARGET=fuzz-interpret
+#   open cov-report/index.html
+
+TARGET ?= fuzz-shadow-state
+COV_BUILDDIR = $(BUILDDIR)/cov
+COV_FLAGS = -fprofile-instr-generate -fcoverage-mapping
+COV_CXXFLAGS = $(CXXFLAGS) $(COV_FLAGS)
+COV_LINK = $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a $(LDFLAGS) $(COV_FLAGS) $(LIBS)
+
+# Coverage report for a fuzz target. Replays the corpus through a
+# coverage-instrumented binary and generates an HTML report.
+#
+# Prerequisites: rebuild libcartesi with coverage instrumentation:
+#   make -C ../../src clean
+#   make -C ../../src CC=clang CXX=clang++ fuzz=yes coverage=yes COVERAGE_TOOLCHAIN=clang
+#
+# Usage:
+#   make fuzz-coverage TARGET=fuzz-shadow-state
+#   make fuzz-coverage TARGET=fuzz-interpret
+#   open cov-report/index.html
+
+$(COV_BUILDDIR)/$(TARGET): $(TARGET).cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
+	@mkdir -p $(COV_BUILDDIR)
+	$(CXX) $(COV_CXXFLAGS) -o $@ $< $(COV_LINK)
+
+fuzz-coverage: $(COV_BUILDDIR)/$(TARGET) fuzz-seed-corpus
+	@mkdir -p $(CORPUS_DIR)
+	ASAN_OPTIONS=detect_container_overflow=0 LLVM_PROFILE_FILE=$(COV_BUILDDIR)/fuzz.profraw \
+		$(COV_BUILDDIR)/$(TARGET) $(CORPUS_DIR) seed-corpus/ -runs=0
+	llvm-profdata merge -sparse $(COV_BUILDDIR)/fuzz.profraw -o $(COV_BUILDDIR)/fuzz.profdata
+	llvm-cov report $(COV_BUILDDIR)/$(TARGET) -instr-profile=$(COV_BUILDDIR)/fuzz.profdata
+	llvm-cov show $(COV_BUILDDIR)/$(TARGET) -instr-profile=$(COV_BUILDDIR)/fuzz.profdata \
+		--format=html -output-dir=cov-report
+	@echo "Coverage report: cov-report/index.html"
+
+fuzz-coverage-clean:
+	rm -rf $(COV_BUILDDIR) cov-report
+
 # -- Clean --------------------------------------------------------------------
 
-clean:
+clean: fuzz-coverage-clean
 	rm -f $(FUZZ_TARGETS)
 	rm -rf corpus/ $(SEED_DIR)/

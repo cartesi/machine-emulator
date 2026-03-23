@@ -461,7 +461,7 @@ bool hash_tree::update_dense_trees(address_ranges ars, const changed_address_ran
     batch.reserve(batch_size);
     // Get maximum log2_size of all address ranges
     const auto max_level_count = std::ranges::max(
-        changed_ars | std::views::transform([ars](auto ar_index) { return ars[ar_index].get_level_count(); }));
+        std::views::transform(changed_ars, [ars](auto ar_index) { return ars[ar_index].get_level_count(); }));
     // Go from page size up until we have updated all dirty nodes of all all dense trees
     for (int level = 1; level < max_level_count; ++level) {
         auto log2_size = HASH_TREE_LOG2_PAGE_SIZE + level;

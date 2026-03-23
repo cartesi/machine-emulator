@@ -292,4 +292,34 @@ describe("fuzzer bugs", function()
         local br = machine:run(4)
         expect.equal(br, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     end)
+
+    -- Bug 5: iunrep read from mutable shadow state at runtime
+    --
+    -- poll_external_interrupts reads iunrep from the shadow state register on
+    -- every call. If iunrep is set to non-zero (e.g., via write_reg or a
+    -- corrupted shadow state), the machine enters unreproducible mode. WFI then
+    -- advances mcycle up to rtc_time_to_cycle(clint_mtimecmp), which can exceed
+    -- mcycle_end, triggering an assertion failure.
+    --
+    -- Fix: poll_external_interrupts uses the config value (set at construction)
+    -- instead of the shadow register. WFI clamps mcycle_max to mcycle_end.
+    it("should not overshoot mcycle_end when iunrep is set in shadow state", function()
+        -- WFI instruction: 0x10500073
+        local WFI_INSN = string.pack("<I4", 0x10500073)
+        local machine <close> = cartesi.machine({ ram = { length = 1 << 20 } })
+        machine:write_memory(RAM_START, WFI_INSN .. string.rep(NOP, 16))
+        machine:write_reg("pc", RAM_START)
+        -- Set iunrep to non-zero via write_reg (corrupts shadow state)
+        machine:write_reg("iunrep", 1)
+        -- Set a large clint_mtimecmp so WFI's mcycle_max is huge
+        machine:write_reg("clint_mtimecmp", 0xFFFFFFFFFFFFFFFF)
+        -- Enable M-mode interrupts so WFI doesn't just trap
+        machine:write_reg("mstatus", MSTATUS_MIE | MSTATUS_FS_DIRTY)
+        machine:write_reg("mie", MIP_MTIP)
+        -- Before the fix, this triggers:
+        --   assert(a.read_mcycle() == mcycle_end)
+        -- because mcycle overshoots mcycle_end via poll_external_interrupts.
+        local br = machine:run(4)
+        expect.equal(br, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    end)
 end)

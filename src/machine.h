@@ -684,6 +684,12 @@ public:
         return m_counters;
     }
 
+    /// \brief Returns whether the machine is in unreproducible mode.
+    /// \details Determined at construction from the config, never changes at runtime.
+    bool is_unreproducible() const {
+        return m_c.processor.registers.iunrep != 0;
+    }
+
     /// \brief Returns whether runtime soft yields are enabled
     bool get_soft_yield() const {
         return m_r.soft_yield;

@@ -139,9 +139,11 @@ $(BUILDDIR)/fuzz-shadow-state-step: fuzz-shadow-state-step.cpp fuzz-common.h $(S
 
 # -- Run targets --------------------------------------------------------------
 
-# All fuzz targets share a single corpus directory. Inputs discovered by the
-# fast fuzz-interpret target serve as seeds for the slower step targets.
-CORPUS_DIR = corpus
+# Interpret and shadow-state fuzzers use separate corpus directories because
+# REDUCE trims trailing bytes that the other fuzzer family needs (TLB data).
+# Each family's fast fuzzer shares its corpus with the corresponding step fuzzer.
+INTERPRET_CORPUS_DIR = corpus-interpret
+SHADOW_STATE_CORPUS_DIR = corpus-shadow-state
 FUZZ_INTERPRET_ARGS ?=
 FUZZ_INTERPRET_STEP_ARGS ?=
 FUZZ_SHADOW_STATE_ARGS ?=
@@ -151,20 +153,20 @@ FUZZ_SHADOW_STATE_STEP_ARGS ?=
 run-fuzz: run-fuzz-interpret run-fuzz-interpret-step run-fuzz-shadow-state run-fuzz-shadow-state-step
 
 run-fuzz-interpret: $(BUILDDIR)/fuzz-interpret fuzz-seed-corpus
-	@mkdir -p $(CORPUS_DIR)
-	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-interpret $(CORPUS_DIR) seed-corpus/ $(FUZZ_INTERPRET_ARGS)
+	@mkdir -p $(INTERPRET_CORPUS_DIR)
+	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-interpret $(INTERPRET_CORPUS_DIR) seed-corpus/ $(FUZZ_INTERPRET_ARGS)
 
 run-fuzz-interpret-step: $(BUILDDIR)/fuzz-interpret-step fuzz-seed-corpus
-	@mkdir -p $(CORPUS_DIR)
-	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-interpret-step $(CORPUS_DIR) seed-corpus/ $(FUZZ_INTERPRET_STEP_ARGS)
+	@mkdir -p $(INTERPRET_CORPUS_DIR)
+	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-interpret-step $(INTERPRET_CORPUS_DIR) seed-corpus/ $(FUZZ_INTERPRET_STEP_ARGS)
 
 run-fuzz-shadow-state: $(BUILDDIR)/fuzz-shadow-state fuzz-seed-corpus
-	@mkdir -p $(CORPUS_DIR)
-	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-shadow-state $(CORPUS_DIR) seed-corpus/ $(FUZZ_SHADOW_STATE_ARGS)
+	@mkdir -p $(SHADOW_STATE_CORPUS_DIR)
+	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-shadow-state $(SHADOW_STATE_CORPUS_DIR) $(INTERPRET_CORPUS_DIR) seed-corpus/ $(FUZZ_SHADOW_STATE_ARGS)
 
 run-fuzz-shadow-state-step: $(BUILDDIR)/fuzz-shadow-state-step fuzz-seed-corpus
-	@mkdir -p $(CORPUS_DIR)
-	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-shadow-state-step $(CORPUS_DIR) seed-corpus/ $(FUZZ_SHADOW_STATE_STEP_ARGS)
+	@mkdir -p $(SHADOW_STATE_CORPUS_DIR)
+	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-shadow-state-step $(SHADOW_STATE_CORPUS_DIR) $(INTERPRET_CORPUS_DIR) seed-corpus/ $(FUZZ_SHADOW_STATE_STEP_ARGS)
 
 # -- Seed corpus --------------------------------------------------------------
 #
@@ -208,9 +210,9 @@ $(COV_BUILDDIR)/$(TARGET): $(TARGET).cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(
 	$(CXX) $(COV_CXXFLAGS) -o $@ $< $(COV_LINK)
 
 fuzz-coverage: $(COV_BUILDDIR)/$(TARGET) fuzz-seed-corpus
-	@mkdir -p $(CORPUS_DIR)
+	@mkdir -p $(INTERPRET_CORPUS_DIR) $(SHADOW_STATE_CORPUS_DIR)
 	ASAN_OPTIONS=detect_container_overflow=0 LLVM_PROFILE_FILE=$(COV_BUILDDIR)/fuzz.profraw \
-		$(COV_BUILDDIR)/$(TARGET) $(CORPUS_DIR) seed-corpus/ -runs=0
+		$(COV_BUILDDIR)/$(TARGET) $(INTERPRET_CORPUS_DIR) $(SHADOW_STATE_CORPUS_DIR) seed-corpus/ -runs=0
 	llvm-profdata merge -sparse $(COV_BUILDDIR)/fuzz.profraw -o $(COV_BUILDDIR)/fuzz.profdata
 	llvm-cov report $(COV_BUILDDIR)/$(TARGET) -instr-profile=$(COV_BUILDDIR)/fuzz.profdata
 	llvm-cov show $(COV_BUILDDIR)/$(TARGET) -instr-profile=$(COV_BUILDDIR)/fuzz.profdata \
@@ -225,6 +227,8 @@ fuzz-coverage-clean:
 clean: fuzz-coverage-clean
 	rm -f $(FUZZ_TARGETS)
 	rm -rf $(SEED_DIR)/
+	rm -rf $(FUZZ_TARGETS:=.dSYM)
+	rm -f crash-* fuzz-*.log
 
 distclean: clean
-	rm -rf $(CORPUS_DIR)/
+	rm -rf $(INTERPRET_CORPUS_DIR)/ $(SHADOW_STATE_CORPUS_DIR)/

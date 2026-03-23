@@ -2832,7 +2832,8 @@ static FORCE_INLINE execute_status execute_MRET(const STATE_ACCESS a, uint64_t &
 /// \brief Implementation of the WFI instruction.
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_WFI(const STATE_ACCESS a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_WFI(const STATE_ACCESS a, uint64_t &pc, uint64_t &mcycle,
+    uint64_t mcycle_end, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "wfi");
     auto status = execute_status::success;
     // Check privileges and do nothing else
@@ -2842,8 +2843,8 @@ static FORCE_INLINE execute_status execute_WFI(const STATE_ACCESS a, uint64_t &p
     if (prv == PRV_U || (prv < PRV_M && (mstatus & MSTATUS_TW_MASK))) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    // We wait for interrupts until the next timer interrupt.
-    const uint64_t mcycle_max = rtc_time_to_cycle(a.read_clint_mtimecmp());
+    // We wait for interrupts until the next timer interrupt, but never past mcycle_end.
+    const uint64_t mcycle_max = std::min(rtc_time_to_cycle(a.read_clint_mtimecmp()), mcycle_end);
     if constexpr (is_an_i_interactive_state_access_v<STATE_ACCESS>) {
         if (mcycle_max > mcycle) {
             // Poll for external interrupts (e.g console or network),
@@ -3816,7 +3817,7 @@ static FORCE_INLINE execute_status execute_SRLW_DIVUW_SRAW(const STATE_ACCESS a,
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_privileged(const STATE_ACCESS a, uint64_t &pc, uint64_t &mcycle,
-    uint32_t insn) {
+    uint64_t mcycle_end, uint32_t insn) {
     switch (static_cast<insn_privileged>(insn)) {
         case insn_privileged::ECALL:
             return execute_ECALL(a, pc, insn);
@@ -3827,7 +3828,7 @@ static FORCE_INLINE execute_status execute_privileged(const STATE_ACCESS a, uint
         case insn_privileged::MRET:
             return execute_MRET(a, pc, insn);
         case insn_privileged::WFI:
-            return execute_WFI(a, pc, mcycle, insn);
+            return execute_WFI(a, pc, mcycle, mcycle_end, insn);
         default:
             return execute_SFENCE_VMA(a, pc, insn);
     }
@@ -6023,7 +6024,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         status = execute_FENCE_I(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(PRIVILEGED):
-                        status = execute_privileged(a, pc, mcycle, insn);
+                        status = execute_privileged(a, pc, mcycle, mcycle_end, insn);
                         INSN_BREAK();
                     // Instructions with hints where rd=0
                     INSN_CASE(LUI_rd0):

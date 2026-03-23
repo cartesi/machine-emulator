@@ -207,6 +207,10 @@ void machine::validate_processor_shadow(bool skip_version_check) const {
     if (m_s->shadow.registers.x[0] != 0) {
         throw std::invalid_argument{"x0 register is corrupt"};
     }
+    // Ensure iunrep in shadow state matches the config value
+    if (m_s->shadow.registers.iunrep != m_c.processor.registers.iunrep) {
+        throw std::invalid_argument{"iunrep mismatch between shadow state and config"};
+    }
     // Ensure padding bytes are consistent
     if (!is_pristine(std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             reinterpret_cast<unsigned char *>(&m_s->shadow.registers_padding_[0]),
@@ -313,7 +317,7 @@ machine::machine(machine_config c, machine_runtime_config r, const std::string &
 void machine::init_console() {
     // Initialize TTY if console input is enabled
     if (has_htif_console() || has_virtio_console() || m_r.console.input_source != console_input_source::from_null) {
-        if (read_reg(reg::iunrep) == 0) {
+        if (!is_unreproducible()) {
             throw std::invalid_argument{"TTY stdin is only supported in unreproducible machines"};
         }
     }
@@ -386,7 +390,7 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
     if (dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
-    if (read_reg(reg::iunrep) != 0) {
+    if (is_unreproducible()) {
         throw std::runtime_error{"cannot store unreproducible machines"};
     }
     scope_remove remover;
@@ -1880,7 +1884,7 @@ void machine::verify_reset_uarch(const machine_hash &root_hash_before, const acc
 extern template UArchStepStatus uarch_step(uarch_record_state_access &a);
 
 access_log machine::log_step_uarch(const access_log::type &log_type) {
-    if (read_reg(reg::iunrep) != 0) {
+    if (is_unreproducible()) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
@@ -1928,7 +1932,7 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
         throw std::runtime_error{
             "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
     }
-    if (read_reg(reg::iunrep) != 0) {
+    if (is_unreproducible()) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
     const uarch_state_access a(*this);
@@ -2015,7 +2019,7 @@ std::pair<uint64_t, execute_status> machine::poll_external_interrupts(uint64_t m
     bool serve_interrupts = false;
     bool refill_console_input = false;
     // Only poll external interrupts if we are in unreproducible mode
-    if (m_s->shadow.registers.iunrep != 0) [[unlikely]] {
+    if (is_unreproducible()) [[unlikely]] {
         // Convert the relative interval of cycles we can wait to the interval of host time we can wait
         uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
         int64_t start_us = 0;
@@ -2103,7 +2107,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
             previous_back_tree->get_hash_function() != m_c.hash_tree.hash_function)) {
         throw std::runtime_error{"back tree context is incompatible"};
     }
-    if (read_reg(reg::iunrep) != 0) {
+    if (is_unreproducible()) {
         throw std::runtime_error{"cannot collect hashes from unreproducible machines"};
     }
     if (m_r.soft_yield) {
@@ -2257,7 +2261,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     if (mcycle_end < mcycle_start) {
         throw std::runtime_error{"mcycle is past"};
     }
-    if (read_reg(reg::iunrep) != 0) {
+    if (is_unreproducible()) {
         throw std::runtime_error{"cannot collect hashes from unreproducible machines"};
     }
     if (m_r.soft_yield) {

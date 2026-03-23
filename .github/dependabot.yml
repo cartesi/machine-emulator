@@ -2,8 +2,12 @@ version: 2
 updates:
   - package-ecosystem: "cargo"
     directory: "/risc0/rust"
+    schedule:
+      interval: "weekly"
     open-pull-requests-limit: 0
 
   - package-ecosystem: "cargo"
     directory: "/risc0/rust/methods/guest"
+    schedule:
+      interval: "weekly"
     open-pull-requests-limit: 0

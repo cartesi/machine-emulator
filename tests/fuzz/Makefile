@@ -97,7 +97,7 @@ endif
 # Fuzz targets
 FUZZ_TARGETS = $(BUILDDIR)/fuzz-interpret $(BUILDDIR)/fuzz-step $(BUILDDIR)/fuzz-shadow-state
 
-.PHONY: all clean run-fuzz run-fuzz-interpret run-fuzz-step run-fuzz-shadow-state fuzz-seed-corpus fuzz-coverage fuzz-coverage-clean
+.PHONY: all clean distclean run-fuzz run-fuzz-interpret run-fuzz-step run-fuzz-shadow-state fuzz-seed-corpus fuzz-coverage fuzz-coverage-clean
 
 all: $(FUZZ_TARGETS)
 
@@ -212,4 +212,7 @@ fuzz-coverage-clean:
 
 clean: fuzz-coverage-clean
 	rm -f $(FUZZ_TARGETS)
-	rm -rf corpus/ $(SEED_DIR)/
+	rm -rf $(SEED_DIR)/
+
+distclean: clean
+	rm -rf $(CORPUS_DIR)/

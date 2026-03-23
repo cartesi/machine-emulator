@@ -23,7 +23,7 @@
 #   fuzz-interpret  Fast interpreter fuzzer. Exercises the RISC-V interpreter
 #                   with fuzzed registers, CSRs, page tables, and code.
 #
-#   fuzz-step       Differential step verification fuzzer. For each fuzzed
+#   fuzz-interpret-step  Differential step verification fuzzer. For each fuzzed
 #                   machine state, runs a single big-machine step through four
 #                   independent paths and asserts all produce the same root hash:
 #                     1. cm_run()              — fast interpreter
@@ -33,23 +33,29 @@
 #
 #   fuzz-shadow-state  Shadow state bulk write fuzzer. Sets up a plausible machine
 #                   via fuzz_create_machine(), then overwrites the entire shadow
-#                   state (registers + TLB) with raw fuzz data via cm_write_memory().
+#                   state (registers + TLB) with hostile data via cm_write_memory().
 #                   Exercises shadow state validation, hot TLB reinitialization,
 #                   and lazy TLB verification with hostile inputs.
 #
+#   fuzz-shadow-state-step  Combines shadow state fuzzing with 4-path differential
+#                   step verification. Same as fuzz-interpret-step but with hostile
+#                   shadow state (registers + TLB) written via cm_write_memory().
+#
 # All targets share the same input format and corpus directory. Run
-# fuzz-interpret first to build up the corpus quickly, then run fuzz-step
-# to verify all execution paths agree on the discovered inputs.
+# fuzz-interpret first to build up the corpus quickly, then run the step
+# fuzzers to verify all execution paths agree on the discovered inputs.
 #
 # Usage:
-#   make                          # build all fuzz targets
-#   make run-fuzz-interpret       # run the interpreter fuzzer
-#   make run-fuzz-step            # run the step verification fuzzer
-#   make run-fuzz                 # run fuzz-interpret then fuzz-step (recommended)
-#   make fuzz-seed-corpus         # build seed corpus from test binaries
+#   make                                # build all fuzz targets
+#   make run-fuzz-interpret             # run the interpreter fuzzer
+#   make run-fuzz-interpret-step        # run the step verification fuzzer
+#   make run-fuzz-shadow-state          # run the shadow state fuzzer
+#   make run-fuzz-shadow-state-step     # run the shadow state step fuzzer
+#   make run-fuzz                       # run all fuzzers (recommended)
+#   make fuzz-seed-corpus               # build seed corpus from test binaries
 #
 # Pass per-target libFuzzer flags:
-#   make run-fuzz FUZZ_INTERPRET_ARGS="-max_total_time=60" FUZZ_STEP_ARGS="-max_total_time=300"
+#   make run-fuzz FUZZ_INTERPRET_ARGS="-max_total_time=60" FUZZ_INTERPRET_STEP_ARGS="-max_total_time=300"
 
 TARGET_OS ?= $(shell uname)
 
@@ -95,9 +101,16 @@ endif
 endif
 
 # Fuzz targets
-FUZZ_TARGETS = $(BUILDDIR)/fuzz-interpret $(BUILDDIR)/fuzz-step $(BUILDDIR)/fuzz-shadow-state
+FUZZ_TARGETS = \
+	$(BUILDDIR)/fuzz-interpret \
+	$(BUILDDIR)/fuzz-interpret-step \
+	$(BUILDDIR)/fuzz-shadow-state \
+	$(BUILDDIR)/fuzz-shadow-state-step
 
-.PHONY: all clean distclean run-fuzz run-fuzz-interpret run-fuzz-step run-fuzz-shadow-state fuzz-seed-corpus fuzz-coverage fuzz-coverage-clean
+.PHONY: all clean distclean run-fuzz \
+	run-fuzz-interpret run-fuzz-interpret-step \
+	run-fuzz-shadow-state run-fuzz-shadow-state-step \
+	fuzz-seed-corpus fuzz-coverage fuzz-coverage-clean
 
 all: $(FUZZ_TARGETS)
 
@@ -115,36 +128,43 @@ FUZZ_LINK = $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a $(LDFLAGS) $
 $(BUILDDIR)/fuzz-interpret: fuzz-interpret.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
 	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
 
-$(BUILDDIR)/fuzz-step: fuzz-step.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
+$(BUILDDIR)/fuzz-interpret-step: fuzz-interpret-step.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
 	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
 
 $(BUILDDIR)/fuzz-shadow-state: fuzz-shadow-state.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
 	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
 
+$(BUILDDIR)/fuzz-shadow-state-step: fuzz-shadow-state-step.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
+	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
+
 # -- Run targets --------------------------------------------------------------
 
 # All fuzz targets share a single corpus directory. Inputs discovered by the
-# fast fuzz-interpret target serve as seeds for the slower fuzz-step target.
+# fast fuzz-interpret target serve as seeds for the slower step targets.
 CORPUS_DIR = corpus
 FUZZ_INTERPRET_ARGS ?=
-FUZZ_STEP_ARGS ?=
+FUZZ_INTERPRET_STEP_ARGS ?=
 FUZZ_SHADOW_STATE_ARGS ?=
+FUZZ_SHADOW_STATE_STEP_ARGS ?=
 
-# Recommended entry point: runs fuzz-interpret to build up the corpus,
-# then fuzz-step to verify all 4 execution paths agree.
-run-fuzz: run-fuzz-interpret run-fuzz-step run-fuzz-shadow-state
+# Recommended entry point: runs all fuzzers in sequence.
+run-fuzz: run-fuzz-interpret run-fuzz-interpret-step run-fuzz-shadow-state run-fuzz-shadow-state-step
 
 run-fuzz-interpret: $(BUILDDIR)/fuzz-interpret fuzz-seed-corpus
 	@mkdir -p $(CORPUS_DIR)
 	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-interpret $(CORPUS_DIR) seed-corpus/ $(FUZZ_INTERPRET_ARGS)
 
-run-fuzz-step: $(BUILDDIR)/fuzz-step fuzz-seed-corpus
+run-fuzz-interpret-step: $(BUILDDIR)/fuzz-interpret-step fuzz-seed-corpus
 	@mkdir -p $(CORPUS_DIR)
-	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-step $(CORPUS_DIR) seed-corpus/ $(FUZZ_STEP_ARGS)
+	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-interpret-step $(CORPUS_DIR) seed-corpus/ $(FUZZ_INTERPRET_STEP_ARGS)
 
 run-fuzz-shadow-state: $(BUILDDIR)/fuzz-shadow-state fuzz-seed-corpus
 	@mkdir -p $(CORPUS_DIR)
 	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-shadow-state $(CORPUS_DIR) seed-corpus/ $(FUZZ_SHADOW_STATE_ARGS)
+
+run-fuzz-shadow-state-step: $(BUILDDIR)/fuzz-shadow-state-step fuzz-seed-corpus
+	@mkdir -p $(CORPUS_DIR)
+	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-shadow-state-step $(CORPUS_DIR) seed-corpus/ $(FUZZ_SHADOW_STATE_STEP_ARGS)
 
 # -- Seed corpus --------------------------------------------------------------
 #
@@ -165,11 +185,15 @@ $(SEED_DIR)/.stamp: gen-seed-corpus.sh
 
 # -- Coverage report ----------------------------------------------------------
 #
-# Builds coverage-instrumented binaries, replays the corpus to collect
-# profile data, and generates an HTML coverage report.
+# Replays the corpus through a coverage-instrumented binary and generates
+# an HTML coverage report.
+#
+# Prerequisites: rebuild libcartesi with coverage instrumentation:
+#   make -C ../../src clean
+#   make -C ../../src fuzz=yes coverage=yes
 #
 # Usage:
-#   make fuzz-coverage TARGET=fuzz-shadow-state   # default target
+#   make fuzz-coverage TARGET=fuzz-shadow-state
 #   make fuzz-coverage TARGET=fuzz-interpret
 #   open cov-report/index.html
 
@@ -178,18 +202,6 @@ COV_BUILDDIR = $(BUILDDIR)/cov
 COV_FLAGS = -fprofile-instr-generate -fcoverage-mapping
 COV_CXXFLAGS = $(CXXFLAGS) $(COV_FLAGS)
 COV_LINK = $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a $(LDFLAGS) $(COV_FLAGS) $(LIBS)
-
-# Coverage report for a fuzz target. Replays the corpus through a
-# coverage-instrumented binary and generates an HTML report.
-#
-# Prerequisites: rebuild libcartesi with coverage instrumentation:
-#   make -C ../../src clean
-#   make -C ../../src CC=clang CXX=clang++ fuzz=yes coverage=yes COVERAGE_TOOLCHAIN=clang
-#
-# Usage:
-#   make fuzz-coverage TARGET=fuzz-shadow-state
-#   make fuzz-coverage TARGET=fuzz-interpret
-#   open cov-report/index.html
 
 $(COV_BUILDDIR)/$(TARGET): $(TARGET).cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
 	@mkdir -p $(COV_BUILDDIR)

@@ -274,14 +274,9 @@ LUA=$(LD_PRELOAD_PREFIX) $(LUA_BIN)
 else ifeq ($(fuzz),yes)
 # Enable address, undefined, and fuzzer sanitizers (requires Clang)
 UBCFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
+# Coverage instrumentation so libFuzzer can track edges inside libcartesi
+UBCFLAGS+=-fsanitize=fuzzer-no-link
 UBLDFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
-# Coverage instrumentation for libFuzzer edge tracking.
-# By default all files are instrumented. Set FUZZ_FOCUS to a list of source
-# files (without path, e.g. "interpret.cpp machine.cpp") to restrict coverage
-# instrumentation to only those files, so the fuzzer focuses on them.
-FUZZ_COV_FLAGS=-fsanitize=fuzzer-no-link
-FUZZ_FOCUS ?= $(LIBCARTESI_OBJS)
-$(FUZZ_FOCUS): CXXFLAGS += $(FUZZ_COV_FLAGS)
 LD_PRELOAD_PREFIX=
 LUA=$(LUA_BIN)
 else

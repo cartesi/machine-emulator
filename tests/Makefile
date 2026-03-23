@@ -58,7 +58,11 @@ ifeq ($(coverage),yes)
 NUM_JOBS = 1
 endif
 
+ifeq ($(TARGET_OS),Darwin)
+COVERAGE_TOOLCHAIN?=clang
+else
 COVERAGE_TOOLCHAIN?=gcc
+endif
 COVERAGE_OUTPUT_DIR=$(BUILDDIR)/coverage
 COVERAGE_WORKLOAD=stress-ng --cpu 1 --cpu-ops 1
 COVERAGE_SOURCES=$(wildcard ../src/*.h) $(wildcard ../src/*.cpp)

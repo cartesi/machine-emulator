@@ -92,6 +92,9 @@ STYLUA_FLAGS=--indent-type Spaces --respect-ignores
 build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH) $(CARTESI_STEP_LOGS_PATH)
 
 build-tests-machine: machine riscv-tests
+ifneq (yes,$(sanitize))
+	@$(MAKE) -C fuzz fuzz-seed-corpus
+endif
 
 build-tests-uarch: uarch riscv-arch-test
 

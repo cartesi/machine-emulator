@@ -33,10 +33,15 @@
 
 #include "fuzz-common.h"
 
+#include <address-range-defines.h>
+
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <unistd.h>
+
+static constexpr uint64_t SHADOW_STATE_START = AR_SHADOW_STATE_START_DEF;
+static constexpr uint64_t SHADOW_STATE_LENGTH = AR_SHADOW_STATE_LENGTH_DEF;
 
 /// \brief RAII wrapper for a temporary directory tree.
 /// Creates a base directory; subdirectories are created by the caller.
@@ -72,12 +77,6 @@ struct tmp_dir_tree {
     }
 };
 
-/// \brief Abort with a message (signals a bug to libFuzzer).
-[[noreturn]] static void fuzz_abort(const char *msg) {
-    fprintf(stderr, "FUZZ BUG: %s\n", msg);
-    abort();
-}
-
 // Entry point
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size < 8) {
@@ -90,10 +89,26 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     cartesi::registers_state regs{};
     bool enable_vm = false;
     fuzz_read_registers(r, regs, enable_vm);
-    cm_machine *m0 = fuzz_create_machine(r, regs, enable_vm);
+    cm_machine *m0 = fuzz_create_machine(r, enable_vm);
     if (!m0) {
         return 0;
     }
+
+    // Build shadow state: registers + crafted TLB entries
+    const auto pmas = fuzz_discover_pmas(m0);
+    cartesi::shadow_state shadow{};
+    shadow.registers = regs;
+    if (enable_vm) {
+        shadow.registers.satp = SATP_MODE_SV39 | (RAM_START >> LOG2_PAGE_SIZE);
+    }
+    shadow.registers.mcycle = 0;
+    shadow.registers.iflags.H = 0;
+    shadow.registers.iflags.Y = 0;
+    fuzz_fill_tlb(r, regs, pmas, shadow.tlb);
+
+    // Write full shadow state (triggers hot TLB reinitialization)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    cm_write_memory(m0, SHADOW_STATE_START, reinterpret_cast<const uint8_t *>(&shadow), SHADOW_STATE_LENGTH);
 
     // Set up temporary directory tree for storage
     tmp_dir_tree tmpdir;
@@ -103,33 +118,34 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     }
 
     const auto store_dir = tmpdir.sub("base");
+    const auto dir1 = tmpdir.sub("m1");
     const auto dir2 = tmpdir.sub("m2");
     const auto dir3 = tmpdir.sub("m3");
     const auto dir4 = tmpdir.sub("m4");
     const auto log_file = tmpdir.sub("step.log");
 
-    // Store machine state to disk so we can clone it.
-    // SHARING_ALL is required because the machine was created in-memory (no backing files).
-    // This does not modify m0's in-memory state.
+    // Store machine state to disk so we can clone it
     if (cm_store(m0, store_dir.c_str(), CM_SHARING_ALL) != CM_ERROR_OK) {
         cm_delete(m0);
         return 0;
     }
+    cm_delete(m0);
 
-    // Clone to 3 directories; reuse m0 as path 1
-    if (cm_clone_stored(nullptr, store_dir.c_str(), dir2.c_str()) != CM_ERROR_OK ||
+    // Clone to 4 directories
+    if (cm_clone_stored(nullptr, store_dir.c_str(), dir1.c_str()) != CM_ERROR_OK ||
+        cm_clone_stored(nullptr, store_dir.c_str(), dir2.c_str()) != CM_ERROR_OK ||
         cm_clone_stored(nullptr, store_dir.c_str(), dir3.c_str()) != CM_ERROR_OK ||
         cm_clone_stored(nullptr, store_dir.c_str(), dir4.c_str()) != CM_ERROR_OK) {
-        cm_delete(m0);
         return 0;
     }
 
-    // Reuse original as path 1; load 3 independent clones for paths 2-4
-    cm_machine *m1 = m0;
+    // Load 4 independent machines
+    cm_machine *m1 = nullptr;
     cm_machine *m2 = nullptr;
     cm_machine *m3 = nullptr;
     cm_machine *m4 = nullptr;
-    if (cm_load_new(dir2.c_str(), nullptr, CM_SHARING_NONE, &m2) != CM_ERROR_OK ||
+    if (cm_load_new(dir1.c_str(), nullptr, CM_SHARING_NONE, &m1) != CM_ERROR_OK ||
+        cm_load_new(dir2.c_str(), nullptr, CM_SHARING_NONE, &m2) != CM_ERROR_OK ||
         cm_load_new(dir3.c_str(), nullptr, CM_SHARING_NONE, &m3) != CM_ERROR_OK ||
         cm_load_new(dir4.c_str(), nullptr, CM_SHARING_NONE, &m4) != CM_ERROR_OK) {
         cm_delete(m1);

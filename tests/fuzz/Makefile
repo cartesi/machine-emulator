@@ -93,10 +93,11 @@ endif
 # Fuzz targets
 FUZZ_TARGETS = \
 	$(BUILDDIR)/fuzz-interpret \
-	$(BUILDDIR)/fuzz-interpret-step
+	$(BUILDDIR)/fuzz-interpret-step \
+	$(BUILDDIR)/fuzz-config
 
 .PHONY: all clean distclean run-fuzz \
-	run-fuzz-interpret run-fuzz-interpret-step \
+	run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config \
 	check-seed-corpus fuzz-seed-corpus fuzz-coverage fuzz-coverage-clean
 
 all: $(FUZZ_TARGETS)
@@ -118,14 +119,19 @@ $(BUILDDIR)/fuzz-interpret: fuzz-interpret.cpp fuzz-common.h $(SRCDIR)/libcartes
 $(BUILDDIR)/fuzz-interpret-step: fuzz-interpret-step.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
 	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
 
+$(BUILDDIR)/fuzz-config: fuzz-config.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
+	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
+
 # -- Run targets --------------------------------------------------------------
 
 CORPUS_DIR = corpus
+CONFIG_CORPUS_DIR = corpus-config
 FUZZ_INTERPRET_ARGS ?=
 FUZZ_INTERPRET_STEP_ARGS ?=
+FUZZ_CONFIG_ARGS ?=
 
 # Recommended entry point: runs all fuzzers in sequence.
-run-fuzz: run-fuzz-interpret run-fuzz-interpret-step
+run-fuzz: run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config
 
 check-seed-corpus:
 	@test -d $(SEED_DIR) && test "$$(ls -A $(SEED_DIR) 2>/dev/null)" || \
@@ -141,6 +147,10 @@ run-fuzz-interpret: $(BUILDDIR)/fuzz-interpret check-seed-corpus
 run-fuzz-interpret-step: $(BUILDDIR)/fuzz-interpret-step check-seed-corpus
 	@mkdir -p $(CORPUS_DIR)
 	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-interpret-step $(CORPUS_DIR) $(SEED_DIR)/ $(FUZZ_INTERPRET_STEP_ARGS)
+
+run-fuzz-config: $(BUILDDIR)/fuzz-config
+	@mkdir -p $(CONFIG_CORPUS_DIR)
+	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-config $(CONFIG_CORPUS_DIR) $(FUZZ_CONFIG_ARGS)
 
 # -- Seed corpus --------------------------------------------------------------
 #

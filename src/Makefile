@@ -44,8 +44,6 @@ coverage?=no
 threads?=yes
 slirp?=yes
 
-COVERAGE_TOOLCHAIN?=gcc
-
 CARTESI_TESTS_PATH?=../tests/build/machine
 
 # So we can use gcc to check if there are unused symbols
@@ -66,6 +64,7 @@ PTHREAD_CFLAGS=-I/opt/local/include/libomp -fopenmp
 PTHREAD_LDFLAGS=-L/opt/local/lib/libomp -lgomp
 CC=clang
 CXX=clang++
+COVERAGE_TOOLCHAIN?=clang
 AR=libtool -static -o
 INCS=
 
@@ -116,6 +115,7 @@ PTHREAD_CFLAGS=-fopenmp
 PTHREAD_LDFLAGS=-fopenmp
 CC=gcc
 CXX=g++
+COVERAGE_TOOLCHAIN?=gcc
 AR=ar rcs
 INCS=
 

@@ -135,27 +135,28 @@ export release
 export coverage
 export git_commit
 
-COVERAGE_TOOLCHAIN?=gcc
-export COVERAGE_TOOLCHAIN
-
 # Mac OS X specific settings
 ifeq ($(TARGET_OS),Darwin)
 export CC = clang
 export CXX = clang++
+COVERAGE_TOOLCHAIN?=clang
 LIBRARY_PATH = "export DYLD_LIBRARY_PATH="
 
 # Linux specific settings
 else ifeq ($(TARGET_OS),Linux)
 export CC=gcc
 export CXX=g++
+COVERAGE_TOOLCHAIN?=gcc
 LIBRARY_PATH = "export LD_LIBRARY_PATH=$(SRCDIR)"
 
 # Other system
 else
 export CC=gcc
 export CXX=g++
+COVERAGE_TOOLCHAIN?=gcc
 
 endif
+export COVERAGE_TOOLCHAIN
 
 GENERATED_FILES= uarch/uarch-pristine-hash.c uarch/uarch-pristine-ram.c src/machine-c-version.h src/interpret-jump-table.h
 ADD_GENERATED_FILES_DIFF= add-generated-files.diff

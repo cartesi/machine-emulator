@@ -579,19 +579,6 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
     return ilog2(v); // LCOV_EXCL_LINE
 }
 
-/// \brief Raises an interrupt if any are enabled and pending.
-/// \param a Machine state accessor object.
-/// \param pc Machine current program counter.
-template <typename STATE_ACCESS>
-static inline uint64_t raise_interrupt_if_any(const STATE_ACCESS a, uint64_t pc) {
-    const uint32_t mask = get_pending_irq_mask(a);
-    if (mask != 0) [[unlikely]] {
-        const uint64_t irq_num = get_highest_priority_irq_num(mask);
-        return raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
-    }
-    return pc;
-}
-
 /// \brief At every tick, set interrupt as pending if the timer is expired
 /// \param a Machine state accessor object.
 /// \param mcycle Machine current cycle.
@@ -879,7 +866,10 @@ static void flush_tlb_slot(const STATE_ACCESS a, uint64_t slot_index) {
     // the entry is no longer in the TLB, which would cause the hash tree to
     // miss a dirty page.)
     if constexpr (SET == TLB_WRITE) {
-        const auto old_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
+        auto old_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
+        if (old_vaddr_page == TLB_UNVERIFIED_PAGE) {
+            old_vaddr_page = a.template init_hot_tlb_slot<TLB_WRITE>(slot_index);
+        }
         if (old_vaddr_page != TLB_INVALID_PAGE) {
             auto old_pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
             const auto old_faddr_page = old_vaddr_page + a.template read_tlb_vf_offset<TLB_WRITE>(slot_index);
@@ -1040,8 +1030,32 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, uint64_t &pc,
     [[maybe_unused]] auto note = a.make_scoped_note("read_virtual_memory");
     // Try hitting the TLB
     const auto slot_index = tlb_slot_index(vaddr);
-    const auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
+    auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
     if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
+        // A STATE_ACCESS that does lazy intialization / fast address translation maintains an out-of-state hot
+        // slot it uses to check for hits and to perform the translation itself.
+        // At startup, all slot_vaddr_page are initialized to cause a first miss.
+        // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
+        // slot and use it to initialize the hot slot.
+        slot_vaddr_page = a.template init_hot_tlb_slot<TLB_READ>(slot_index);
+        if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) {
+            // If we still have a miss after that, we replace the entry.
+            // Outline the slow path into a function call to minimize host CPU code cache pressure
+            T val = 0; // Don't pass pval reference directly so the compiler can store it in a register
+            DUMP_STATS_INCR(a, "tlb.rmiss");
+            auto [status, new_pc] =
+                read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, mcycle, vaddr, &val);
+            *pval = val;
+            pc = new_pc;
+            return status;
+        }
+        // If the slot was previously uninitialized, it passed initialization, and we ended up with a hit, we
+        // fall through.
+    }
+    // In contrast, a STATE_ACCESS that does not have access to hot out-of-state slots cannot mark TLB slots
+    // as not-yet-initialized.
+    // We must verify the cold slot at every hit and treat inconsistent entries as misses
+    if (!a.template verify_cold_tlb_slot<TLB_READ>(slot_index)) [[unlikely]] {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         T val = 0; // Don't pass pval reference directly so the compiler can store it in a register
         DUMP_STATS_INCR(a, "tlb.rmiss");
@@ -1051,6 +1065,7 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, uint64_t &pc,
         pc = new_pc;
         return status;
     }
+    // Now we finally know we have a verified hit
     const auto pma_index = a.template read_tlb_pma_index<TLB_READ>(slot_index);
     const auto vf_offset = a.template read_tlb_vf_offset<TLB_READ>(slot_index);
     const auto faddr = vaddr + vf_offset;
@@ -1125,8 +1140,28 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, ui
     [[maybe_unused]] auto note = a.make_scoped_note("write_virtual_memory");
     // Try hitting the TLB
     const uint64_t slot_index = tlb_slot_index(vaddr);
-    const uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
+    uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
     if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
+        // A STATE_ACCESS that does lazy intialization / fast address translation maintains an out-of-state hot
+        // slot it uses to check for hits and to perform the translation itself.
+        // At startup, all slot_vaddr_page are initialized to cause a first miss.
+        // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
+        // slot and use it to initialize the hot slot.
+        slot_vaddr_page = a.template init_hot_tlb_slot<TLB_WRITE>(slot_index);
+        if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) {
+            // If we still have a miss after that, we replace the entry.
+            // Outline the slow path into a function call to minimize host CPU code cache pressure
+            DUMP_STATS_INCR(a, "tlb.wmiss");
+            auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
+            pc = new_pc;
+            return status;
+        }
+        // Otherwise, we fall through with a hit
+    }
+    // In contrast, a STATE_ACCESS that does not have access to out-of-state storage cannot do mark TLB slots
+    // as not-yet-initialized.
+    // We must verify entry at every hit and treat inconsistent entries as misses
+    if (!a.template verify_cold_tlb_slot<TLB_WRITE>(slot_index)) [[unlikely]] {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         DUMP_STATS_INCR(a, "tlb.wmiss");
         auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
@@ -1752,7 +1787,7 @@ static inline uint64_t read_csr_sstatus(const STATE_ACCESS a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_senvcfg(const STATE_ACCESS a, bool *status) {
-    return read_csr_success(a.read_senvcfg() & SENVCFG_R_MASK, status);
+    return read_csr_success(a.read_senvcfg(), status);
 }
 
 template <typename STATE_ACCESS>
@@ -1814,12 +1849,12 @@ static inline uint64_t read_csr_satp(const STATE_ACCESS a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_mstatus(const STATE_ACCESS a, bool *status) {
-    return read_csr_success(a.read_mstatus() & MSTATUS_R_MASK, status);
+    return read_csr_success(a.read_mstatus(), status);
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_menvcfg(const STATE_ACCESS a, bool *status) {
-    return read_csr_success(a.read_menvcfg() & MENVCFG_R_MASK, status);
+    return read_csr_success(a.read_menvcfg(), status);
 }
 
 template <typename STATE_ACCESS>
@@ -2107,8 +2142,7 @@ static execute_status write_csr_sstatus(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_senvcfg(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t senvcfg = a.read_senvcfg();
-    a.write_senvcfg((senvcfg & ~SENVCFG_W_MASK) | (val & SENVCFG_W_MASK));
+    a.write_senvcfg(val);
     return execute_status::success;
 }
 
@@ -2123,13 +2157,13 @@ static execute_status write_csr_sie(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_stvec(const STATE_ACCESS a, uint64_t val) {
-    a.write_stvec(val & ~1);
+    a.write_stvec(val);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_scounteren(const STATE_ACCESS a, uint64_t val) {
-    a.write_scounteren(val & SCOUNTEREN_RW_MASK);
+    a.write_scounteren(val);
     return execute_status::success;
 }
 
@@ -2141,7 +2175,7 @@ static execute_status write_csr_sscratch(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sepc(const STATE_ACCESS a, uint64_t val) {
-    a.write_sepc(val & ~1);
+    a.write_sepc(val);
     return execute_status::success;
 }
 
@@ -2296,50 +2330,37 @@ static NO_INLINE execute_status write_csr_mstatus(const STATE_ACCESS a, uint64_t
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_menvcfg(const STATE_ACCESS a, uint64_t val) {
-    uint64_t menvcfg = a.read_menvcfg() & MENVCFG_R_MASK;
-
-    // Modify only bits that can be written to
-    menvcfg = (menvcfg & ~MENVCFG_W_MASK) | (val & MENVCFG_W_MASK);
-    // Store results
-    a.write_menvcfg(menvcfg);
+    a.write_menvcfg(val);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_medeleg(const STATE_ACCESS a, uint64_t val) {
-    // For exceptions that cannot occur in less privileged modes,
-    // the corresponding medeleg bits should be read-only zero
-    a.write_medeleg((a.read_medeleg() & ~MEDELEG_W_MASK) | (val & MEDELEG_W_MASK));
+    a.write_medeleg(val);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mideleg(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    uint64_t mideleg = a.read_mideleg();
-    mideleg = (mideleg & ~mask) | (val & mask);
-    a.write_mideleg(mideleg);
+    a.write_mideleg(val);
     return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mie(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t mask = MIP_MSIP_MASK | MIP_MTIP_MASK | MIP_MEIP_MASK | MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    uint64_t mie = a.read_mie();
-    mie = (mie & ~mask) | (val & mask);
-    a.write_mie(mie);
+    a.write_mie(val);
     return execute_status::success_and_serve_interrupts;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mtvec(const STATE_ACCESS a, uint64_t val) {
-    a.write_mtvec(val & ~1);
+    a.write_mtvec(val);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mcounteren(const STATE_ACCESS a, uint64_t val) {
-    a.write_mcounteren(val & MCOUNTEREN_RW_MASK);
+    a.write_mcounteren(val);
     return execute_status::success;
 }
 
@@ -2371,7 +2392,7 @@ static execute_status write_csr_mscratch(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mepc(const STATE_ACCESS a, uint64_t val) {
-    a.write_mepc(val & ~1);
+    a.write_mepc(val);
     return execute_status::success;
 }
 
@@ -2389,10 +2410,8 @@ static execute_status write_csr_mtval(const STATE_ACCESS a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mip(const STATE_ACCESS a, uint64_t val) {
-    const uint64_t mask = MIP_SSIP_MASK | MIP_STIP_MASK | MIP_SEIP_MASK;
-    auto mip = a.read_mip();
-    mip = (mip & ~mask) | (val & mask);
-    a.write_mip(mip);
+    const uint64_t mip = a.read_mip();
+    a.write_mip((mip & ~MIP_S_RW_MASK) | (val & MIP_S_RW_MASK));
     return execute_status::success_and_serve_interrupts;
 }
 
@@ -2427,8 +2446,7 @@ static inline execute_status write_csr_fcsr(const STATE_ACCESS a, uint64_t val) 
     if ((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
         return execute_status::failure;
     }
-    const uint64_t fcsr = val & FCSR_RW_MASK;
-    a.write_fcsr(fcsr);
+    a.write_fcsr(val);
     return execute_status::success;
 }
 
@@ -2814,7 +2832,8 @@ static FORCE_INLINE execute_status execute_MRET(const STATE_ACCESS a, uint64_t &
 /// \brief Implementation of the WFI instruction.
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_WFI(const STATE_ACCESS a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_WFI(const STATE_ACCESS a, uint64_t &pc, uint64_t &mcycle,
+    uint64_t mcycle_end, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "wfi");
     auto status = execute_status::success;
     // Check privileges and do nothing else
@@ -2824,8 +2843,8 @@ static FORCE_INLINE execute_status execute_WFI(const STATE_ACCESS a, uint64_t &p
     if (prv == PRV_U || (prv < PRV_M && (mstatus & MSTATUS_TW_MASK))) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    // We wait for interrupts until the next timer interrupt.
-    const uint64_t mcycle_max = rtc_time_to_cycle(a.read_clint_mtimecmp());
+    // We wait for interrupts until the next timer interrupt, but never past mcycle_end.
+    const uint64_t mcycle_max = std::min(rtc_time_to_cycle(a.read_clint_mtimecmp()), mcycle_end);
     if constexpr (is_an_i_interactive_state_access_v<STATE_ACCESS>) {
         if (mcycle_max > mcycle) {
             // Poll for external interrupts (e.g console or network),
@@ -3798,7 +3817,7 @@ static FORCE_INLINE execute_status execute_SRLW_DIVUW_SRAW(const STATE_ACCESS a,
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_privileged(const STATE_ACCESS a, uint64_t &pc, uint64_t &mcycle,
-    uint32_t insn) {
+    uint64_t mcycle_end, uint32_t insn) {
     switch (static_cast<insn_privileged>(insn)) {
         case insn_privileged::ECALL:
             return execute_ECALL(a, pc, insn);
@@ -3809,7 +3828,7 @@ static FORCE_INLINE execute_status execute_privileged(const STATE_ACCESS a, uint
         case insn_privileged::MRET:
             return execute_MRET(a, pc, insn);
         case insn_privileged::WFI:
-            return execute_WFI(a, pc, mcycle, insn);
+            return execute_WFI(a, pc, mcycle, mcycle_end, insn);
         default:
             return execute_SFENCE_VMA(a, pc, insn);
     }
@@ -5383,6 +5402,21 @@ enum class fetch_status : int {
     success    ///< Instruction fetch succeeded: proceed to execute
 };
 
+/// \brief Ensures address will fail fetch cache
+/// \param pc Current pc
+/// \returns Sentinel value page guaranteed to fail fast cache test
+static FORCE_INLINE auto ensure_fetch_cache_miss(uint64_t pc) {
+    return ~pc;
+}
+
+/// \brief Checks if pc is in same page as last fetch
+/// \param pc Current pc
+/// \param last_vaddr_page Virtual address of last page fetched from
+/// \returns True if hit, false if miss
+static FORCE_INLINE auto fetch_cache_is_hit(uint64_t pc, uint64_t last_vaddr_page) {
+    return ((pc ^ last_vaddr_page) < (PAGE_OFFSET_MASK - 1));
+}
+
 /// \brief Translate fetch pc to a host pointer (slow path that goes through virtual address translation).
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
@@ -5390,15 +5424,17 @@ enum class fetch_status : int {
 /// \param vaddr Virtual address to be fetched.
 /// \param vf_offset Receives vf_offset in the TLB slot
 /// \param pma_index Receives the index of PMA where vaddr falls
+/// \param last_vaddr_page Receives and updates vaddr_page for cache
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, uint64_t &pc, uint64_t vaddr,
-    i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index) {
+    i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index, uint64_t &last_vaddr_page) {
     uint64_t paddr{};
     // Walk page table and obtain the physical address
     if (!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_X_SHIFT)) [[unlikely]] {
         pc = raise_exception(a, pc, MCAUSE_FETCH_PAGE_FAULT, vaddr);
+        last_vaddr_page = ensure_fetch_cache_miss(pc);
         return fetch_status::exception;
     }
     // Walk memory map to find the range that contains the physical address
@@ -5407,6 +5443,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, u
     // If the range is not memory or not executable, this as a PMA violation
     if (!ar.is_memory() || !ar.is_executable()) [[unlikely]] {
         pc = raise_exception(a, pc, MCAUSE_INSN_ACCESS_FAULT, vaddr);
+        last_vaddr_page = ensure_fetch_cache_miss(pc);
         return fetch_status::exception;
     }
     replace_tlb_entry<TLB_CODE>(a, vaddr, paddr, pma_index, vf_offset);
@@ -5420,18 +5457,37 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, u
 /// \param vaddr Virtual address to be fetched.
 /// \param vf_offset Receives vf_offset in the TLB slot
 /// \param pma_index Receives the index of PMA where vaddr falls
+/// \param last_vaddr_page Receives and updates vaddr_page for cache
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_translate_pc(const STATE_ACCESS a, uint64_t &pc, uint64_t vaddr,
-    i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index) {
+    i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index, uint64_t &last_vaddr_page) {
     // Try to perform the address translation via TLB first
     const uint64_t slot_index = tlb_slot_index(vaddr);
-    const uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
+    uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
     if (!tlb_is_hit<uint16_t>(slot_vaddr_page, vaddr)) [[unlikely]] {
+        // A STATE_ACCESS that does lazy intialization / fast address translation maintains an out-of-state hot
+        // slot it uses to check for hits and to perform the translation itself.
+        // At startup, all slot_vaddr_page are initialized to cause a first miss.
+        // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
+        // slot and use it to initialize the hot slot.
+        slot_vaddr_page = a.template init_hot_tlb_slot<TLB_CODE>(slot_index);
+        if (!tlb_is_hit<uint16_t>(slot_vaddr_page, vaddr)) {
+            // If we still have a miss after that, we replace the entry.
+            DUMP_STATS_INCR(a, "tlb.cmiss");
+            // Outline the slow path into a function call to minimize host CPU code cache pressure
+            return fetch_translate_pc_slow(a, pc, vaddr, vf_offset, pma_index, last_vaddr_page);
+        }
+        // Otherwise, we fall through with a hit
+    }
+    // In contrast, a STATE_ACCESS that does not have access to out-of-state storage cannot do mark TLB slots
+    // as not-yet-initialized.
+    // We must verify entry at every hit and treat inconsistent entries as misses
+    if (!a.template verify_cold_tlb_slot<TLB_CODE>(slot_index)) [[unlikely]] {
         DUMP_STATS_INCR(a, "tlb.cmiss");
         // Outline the slow path into a function call to minimize host CPU code cache pressure
-        return fetch_translate_pc_slow(a, pc, vaddr, vf_offset, pma_index);
+        return fetch_translate_pc_slow(a, pc, vaddr, vf_offset, pma_index, last_vaddr_page);
     }
     vf_offset = a.template read_tlb_vf_offset<TLB_CODE>(slot_index);
     pma_index = a.template read_tlb_pma_index<TLB_CODE>(slot_index);
@@ -5458,7 +5514,7 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
     // This is the hot path and most fetches will fall through inside this if block.
     // This early check is not strictly necessary for correctness,
     // but it makes the fetch use just about 5 instructions on a x86_64 hardware.
-    if ((pc ^ last_vaddr_page) < (PAGE_OFFSET_MASK - 1)) [[likely]] {
+    if (fetch_cache_is_hit(pc, last_vaddr_page)) [[likely]] {
         // Here we are sure that reading 4 bytes won't cross a page boundary.
         // However pc may not be 4-byte aligned, at worst it could be only 2-byte aligned,
         // therefore we must perform a misaligned 4-byte read on a 2-byte aligned pointer.
@@ -5479,7 +5535,8 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
         // Not in the same page as last the fetch, we need to perform address translation
         i_state_access_fast_addr_t<STATE_ACCESS> pc_vf_offset{};
         uint64_t pc_pma_index{};
-        if (fetch_translate_pc(a, pc, pc, pc_vf_offset, pc_pma_index) == fetch_status::exception) [[unlikely]] {
+        if (fetch_translate_pc(a, pc, pc, pc_vf_offset, pc_pma_index, last_vaddr_page) == fetch_status::exception)
+            [[unlikely]] {
             return fetch_status::exception;
         }
         // Update fetch address translation cache
@@ -5488,7 +5545,8 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
         last_pma_index = pc_pma_index;
         faddr = pc + pc_vf_offset;
     }
-    // The following code assumes pc is always 2-byte aligned, this is guaranteed by RISC-V spec.
+    // The following code assumes pc is always 2-byte aligned, this is a RISC-V invariant.
+    // (And we make sure it holds when we enter interpret)
     // If pc is pointing to the very last 2 bytes of a page, it's crossing a page boundary.
     if (((~pc & PAGE_OFFSET_MASK) >> 1) == 0) [[unlikely]] {
         // Here we are crossing page boundary, this is unlikely (1 in 2048 possible cases)
@@ -5501,7 +5559,8 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
             const uint64_t pc2 = pc + 2;
             i_state_access_fast_addr_t<STATE_ACCESS> pc2_vf_offset{};
             uint64_t pc2_pma_index{};
-            if (fetch_translate_pc(a, pc, pc2, pc2_vf_offset, pc2_pma_index) == fetch_status::exception) [[unlikely]] {
+            if (fetch_translate_pc(a, pc, pc2, pc2_vf_offset, pc2_pma_index, last_vaddr_page) ==
+                fetch_status::exception) [[unlikely]] {
                 return fetch_status::exception;
             }
             last_vaddr_page = tlb_addr_page(pc2);
@@ -5523,13 +5582,44 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
     return fetch_status::success;
 }
 
-/// \brief Checks that false brk is consistent with rest of state
+/// \brief Checks that false brk is consistent with rest of state.
+/// \details After an exception, xIE is cleared for the destination privilege level,
+/// so no interrupts at that level can be pending. However, higher-priority interrupts
+/// may still be pending (e.g. M-mode interrupts while in S/U-mode). These are expected
+/// and will be serviced by the outer loop's raise_interrupt_if_any.
 template <typename STATE_ACCESS>
 static void assert_no_brk([[maybe_unused]] const STATE_ACCESS a) {
-    assert(get_pending_irq_mask(a) == 0); // LCOV_EXCL_LINE
-    assert(a.read_iflags_X() == 0);       // LCOV_EXCL_LINE
-    assert(a.read_iflags_Y() == 0);       // LCOV_EXCL_LINE
-    assert(a.read_iflags_H() == 0);       // LCOV_EXCL_LINE
+    const auto pending = get_pending_irq_mask(a); // LCOV_EXCL_LINE
+    // In M-mode, there is no higher privilege level, so nothing can be deferred:
+    // all pending interrupts must have been serviced.
+    if (a.read_iprv() >= PRV_M) { // LCOV_EXCL_LINE
+        assert(pending == 0);     // LCOV_EXCL_LINE
+    } else {                      // LCOV_EXCL_LINE
+        // In S/U-mode, non-delegated interrupts (bits clear in mideleg) are M-mode
+        // interrupts that will be serviced by the outer loop — those are allowed.
+        // Delegated interrupts (bits set in mideleg) are S-mode interrupts that
+        // should have been handled or masked (SIE=0 after an exception to S-mode).
+        assert((pending & static_cast<uint32_t>(a.read_mideleg())) == 0); // LCOV_EXCL_LINE
+    } // LCOV_EXCL_LINE
+    assert(a.read_iflags_X() == 0); // LCOV_EXCL_LINE
+    assert(a.read_iflags_Y() == 0); // LCOV_EXCL_LINE
+    assert(a.read_iflags_H() == 0); // LCOV_EXCL_LINE
+}
+
+/// \brief Raises an interrupt if any are enabled and pending.
+/// \param a Machine state accessor object.
+/// \param pc Machine current program counter.
+/// \param last_vaddr_page Receives and updates vaddr_page for cache
+template <typename STATE_ACCESS>
+static inline uint64_t raise_interrupt_if_any(const STATE_ACCESS a, uint64_t pc, uint64_t &fetch_vaddr_page) {
+    const uint32_t mask = get_pending_irq_mask(a);
+    if (mask != 0) [[unlikely]] {
+        const uint64_t irq_num = get_highest_priority_irq_num(mask);
+        const uint64_t new_pc = raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
+        fetch_vaddr_page = ensure_fetch_cache_miss(new_pc);
+        return new_pc;
+    }
+    return pc;
 }
 
 /// \brief Interpreter hot loop
@@ -5547,8 +5637,17 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
     // Read machine program counter
     uint64_t pc = a.read_pc();
 
+    // Check PC alignment before entering the interpreter loop.
+    // The RISC-V spec requires PC to be 2-byte aligned; once this invariant holds at entry,
+    // the interpreter preserves it (all branches/jumps produce even targets).
+    // If misaligned (only possible via external API), raise the appropriate exception
+    // so the trap vector handles it, then proceed normally.
+    if ((pc & 1) != 0) {
+        pc = raise_exception(a, pc, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
+    }
+
     // Initialize fetch address translation cache invalidated
-    uint64_t fetch_vaddr_page = TLB_INVALID_PAGE;
+    uint64_t fetch_vaddr_page = ensure_fetch_cache_miss(pc);
     uint64_t fetch_pma_index = TLB_INVALID_PMA_INDEX;
     i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset{};
 
@@ -5571,7 +5670,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
         }
 
         // Raise the highest priority pending interrupt, if any
-        pc = raise_interrupt_if_any(a, pc);
+        pc = raise_interrupt_if_any(a, pc, fetch_vaddr_page);
 
 #ifndef NDEBUG
         // After raising any exception for a given interrupt, we expect no pending break
@@ -5925,7 +6024,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         status = execute_FENCE_I(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(PRIVILEGED):
-                        status = execute_privileged(a, pc, mcycle, insn);
+                        status = execute_privileged(a, pc, mcycle, mcycle_end, insn);
                         INSN_BREAK();
                     // Instructions with hints where rd=0
                     INSN_CASE(LUI_rd0):
@@ -6062,7 +6161,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     // due to MRET/SRET instructions (execute_status::success_and_serve_interrupts)
                     // As a simplification (and optimization), the next line will also invalidate in more cases,
                     // but this it's fine.
-                    fetch_vaddr_page = TLB_INVALID_PAGE;
+                    fetch_vaddr_page = ensure_fetch_cache_miss(pc);
                     // All status above execute_status::success_and_serve_interrupts will require breaking the loop
                     if (status >= execute_status::success_and_serve_interrupts) [[unlikely]] {
                         // Increment the cycle counter mcycle

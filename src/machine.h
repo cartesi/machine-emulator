@@ -571,13 +571,13 @@ public:
         ar.get_dirty_page_tree().mark_dirty_page_and_up(paddr - ar.get_start());
     }
 
-    /// \brief Updates a TLB slot
+    /// \brief Updates a TLB slot in the shadow and populates the hot entry
     /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
     /// \param slot_index Index of slot to update
     /// \param vaddr_page Virtual address of page to map
-    /// \param vh_offset Offset from target virtual addresses to host addresses within page
+    /// \param vh_offset Offset from target virtual address to host address within page
     /// \param pma_index Index of PMA where address falls
-    void write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
+    void write_verified_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
         uint64_t pma_index) {
         m_s->penumbra.tlb[set_index][slot_index].vaddr_page = vaddr_page;
         m_s->penumbra.tlb[set_index][slot_index].vh_offset = vh_offset;
@@ -585,32 +585,36 @@ public:
         if (vaddr_page != TLB_INVALID_PAGE) [[likely]] {
             m_s->shadow.tlb[set_index][slot_index].vp_offset = get_paddr(vh_offset, pma_index);
         } else {
-            // simply store the vh_offset as vp_offset when vaddr_page is invalid
-            // so that the uarch replay can compute the same written hash.
             m_s->shadow.tlb[set_index][slot_index].vp_offset = static_cast<uint64_t>(vh_offset);
         }
         m_s->shadow.tlb[set_index][slot_index].pma_index = pma_index;
         m_s->shadow.tlb[set_index][slot_index].zero_padding_ = 0;
     }
 
-    /// \brief Updates a TLB slot
+    /// \brief Updates a TLB slot in the shadow and marks the hot entry as unverified
     /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
     /// \param slot_index Index of slot to update
     /// \param vaddr_page Virtual address of page to map
     /// \param vp_offset Offset from target virtual addresses to target physical addresses within page
     /// \param pma_index Index of PMA where address falls
-    void write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+    void write_unverified_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index) {
-        if (vaddr_page != TLB_INVALID_PAGE) [[likely]] {
-            auto paddr_page = vaddr_page + vp_offset;
-            const auto vh_offset = get_host_addr(paddr_page, pma_index) - vaddr_page;
-            write_tlb(set_index, slot_index, vaddr_page, vh_offset, pma_index);
-        } else {
-            // vp_offset is unused when vaddr_page is invalid but its value needs to be stored in the shadow TLB
-            // so that the uarch replay can compute the same written hash.
-            write_tlb(set_index, slot_index, TLB_INVALID_PAGE, static_cast<host_addr>(vp_offset), pma_index);
+        if (slot_index >= TLB_SET_SIZE) {
+            throw std::out_of_range{"TLB slot index out of bounds"};
         }
+        m_s->penumbra.tlb[set_index][slot_index].vaddr_page = TLB_UNVERIFIED_PAGE;
+        m_s->penumbra.tlb[set_index][slot_index].vh_offset = host_addr{0};
+        m_s->shadow.tlb[set_index][slot_index].vaddr_page = vaddr_page;
+        m_s->shadow.tlb[set_index][slot_index].vp_offset = vp_offset;
+        m_s->shadow.tlb[set_index][slot_index].pma_index = pma_index;
+        m_s->shadow.tlb[set_index][slot_index].zero_padding_ = 0;
     }
+
+    /// \brief Validates a shadow TLB slot and promotes it to a hot entry
+    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
+    /// \param slot_index Index of slot to validate
+    /// \returns Slot's vaddr_page if valid. TLB_INVALID_PAGE otherwise (forces a miss).
+    uint64_t init_hot_tlb_slot(TLB_set_index set_index, uint64_t slot_index) const;
 
     /// \brief Reads a TLB register
     /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
@@ -678,6 +682,12 @@ public:
     /// \brief Returns all counters
     const auto &get_counters() {
         return m_counters;
+    }
+
+    /// \brief Returns whether the machine is in unreproducible mode.
+    /// \details Determined at construction from the config, never changes at runtime.
+    bool is_unreproducible() const {
+        return m_c.processor.registers.iunrep != 0;
     }
 
     /// \brief Returns whether runtime soft yields are enabled

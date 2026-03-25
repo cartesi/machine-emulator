@@ -30,6 +30,7 @@
 #include "i-prefer-shadow-state.h"
 #include "meta.h"
 #include "poor-type-name.h"
+#include "riscv-warl.h"
 #include "shadow-registers.h"
 #include "shadow-tlb.h"
 
@@ -58,6 +59,28 @@ using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCES
 
 #define DEFINE_SA_WRITE(REG)                                                                                           \
     void write_##REG(uint64_t val) const {                                                                             \
+        if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {                                                       \
+            derived().do_write_##REG(val);                                                                             \
+            dsa_printf("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                      \
+        } else {                                                                                                       \
+            prefer_write_shadow_register(shadow_registers_what::REG, val);                                             \
+        }                                                                                                              \
+    }
+
+#define DEFINE_SA_WARL_READ(REG)                                                                                       \
+    uint64_t read_##REG() const {                                                                                      \
+        if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {                                                       \
+            const auto val = WARL_##REG(derived().do_read_##REG());                                                    \
+            dsa_printf("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                    \
+            return val;                                                                                                \
+        } else {                                                                                                       \
+            return WARL_##REG(prefer_read_shadow_register(shadow_registers_what::REG));                                \
+        }                                                                                                              \
+    }
+
+#define DEFINE_SA_WARL_WRITE(REG)                                                                                      \
+    void write_##REG(uint64_t val) const {                                                                             \
+        val = WARL_##REG(val);                                                                                         \
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {                                                       \
             derived().do_write_##REG(val);                                                                             \
             dsa_printf("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                      \
@@ -194,8 +217,8 @@ public:
     // NOLINTBEGIN(cppcoreguidelines-macro-usage)
     DEFINE_SA_READ(pc)
     DEFINE_SA_WRITE(pc)
-    DEFINE_SA_READ(fcsr)
-    DEFINE_SA_WRITE(fcsr)
+    DEFINE_SA_WARL_READ(fcsr)
+    DEFINE_SA_WARL_WRITE(fcsr)
     DEFINE_SA_READ(mvendorid)
     DEFINE_SA_WRITE(mvendorid)
     DEFINE_SA_READ(marchid)
@@ -206,48 +229,48 @@ public:
     DEFINE_SA_WRITE(mcycle)
     DEFINE_SA_READ(icycleinstret)
     DEFINE_SA_WRITE(icycleinstret)
-    DEFINE_SA_READ(mstatus)
-    DEFINE_SA_WRITE(mstatus)
-    DEFINE_SA_READ(mtvec)
-    DEFINE_SA_WRITE(mtvec)
+    DEFINE_SA_WARL_READ(mstatus)
+    DEFINE_SA_WARL_WRITE(mstatus)
+    DEFINE_SA_WARL_READ(mtvec)
+    DEFINE_SA_WARL_WRITE(mtvec)
     DEFINE_SA_READ(mscratch)
     DEFINE_SA_WRITE(mscratch)
-    DEFINE_SA_READ(mepc)
-    DEFINE_SA_WRITE(mepc)
+    DEFINE_SA_WARL_READ(mepc)
+    DEFINE_SA_WARL_WRITE(mepc)
     DEFINE_SA_READ(mcause)
     DEFINE_SA_WRITE(mcause)
     DEFINE_SA_READ(mtval)
     DEFINE_SA_WRITE(mtval)
     DEFINE_SA_READ(misa)
     DEFINE_SA_WRITE(misa)
-    DEFINE_SA_READ(mie)
-    DEFINE_SA_WRITE(mie)
-    DEFINE_SA_READ(mip)
-    DEFINE_SA_WRITE(mip)
-    DEFINE_SA_READ(medeleg)
-    DEFINE_SA_WRITE(medeleg)
-    DEFINE_SA_READ(mideleg)
-    DEFINE_SA_WRITE(mideleg)
-    DEFINE_SA_READ(mcounteren)
-    DEFINE_SA_WRITE(mcounteren)
-    DEFINE_SA_READ(menvcfg)
-    DEFINE_SA_WRITE(menvcfg)
-    DEFINE_SA_READ(stvec)
-    DEFINE_SA_WRITE(stvec)
+    DEFINE_SA_WARL_READ(mie)
+    DEFINE_SA_WARL_WRITE(mie)
+    DEFINE_SA_WARL_READ(mip)
+    DEFINE_SA_WARL_WRITE(mip)
+    DEFINE_SA_WARL_READ(medeleg)
+    DEFINE_SA_WARL_WRITE(medeleg)
+    DEFINE_SA_WARL_READ(mideleg)
+    DEFINE_SA_WARL_WRITE(mideleg)
+    DEFINE_SA_WARL_READ(mcounteren)
+    DEFINE_SA_WARL_WRITE(mcounteren)
+    DEFINE_SA_WARL_READ(menvcfg)
+    DEFINE_SA_WARL_WRITE(menvcfg)
+    DEFINE_SA_WARL_READ(stvec)
+    DEFINE_SA_WARL_WRITE(stvec)
     DEFINE_SA_READ(sscratch)
     DEFINE_SA_WRITE(sscratch)
-    DEFINE_SA_READ(sepc)
-    DEFINE_SA_WRITE(sepc)
+    DEFINE_SA_WARL_READ(sepc)
+    DEFINE_SA_WARL_WRITE(sepc)
     DEFINE_SA_READ(scause)
     DEFINE_SA_WRITE(scause)
     DEFINE_SA_READ(stval)
     DEFINE_SA_WRITE(stval)
-    DEFINE_SA_READ(satp)
-    DEFINE_SA_WRITE(satp)
-    DEFINE_SA_READ(scounteren)
-    DEFINE_SA_WRITE(scounteren)
-    DEFINE_SA_READ(senvcfg)
-    DEFINE_SA_WRITE(senvcfg)
+    DEFINE_SA_WARL_READ(satp)
+    DEFINE_SA_WARL_WRITE(satp)
+    DEFINE_SA_WARL_READ(scounteren)
+    DEFINE_SA_WARL_WRITE(scounteren)
+    DEFINE_SA_WARL_READ(senvcfg)
+    DEFINE_SA_WARL_WRITE(senvcfg)
     DEFINE_SA_READ(ilrsc)
     DEFINE_SA_WRITE(ilrsc)
     DEFINE_SA_READ(iprv)
@@ -367,7 +390,7 @@ public:
     }
 
     /// \brief Reads TLB's vaddr_page
-    /// \tparam USE TLB set
+    /// \tparam SET TLB set
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
@@ -379,7 +402,7 @@ public:
     }
 
     /// \brief Reads TLB's vf_offset
-    /// \tparam USE TLB set
+    /// \tparam SET TLB set
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
@@ -392,7 +415,7 @@ public:
     }
 
     /// \brief Reads TLB's pma_index
-    /// \tparam USE TLB set
+    /// \tparam SET TLB set
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
@@ -404,7 +427,7 @@ public:
     }
 
     /// \brief Writes to a TLB slot
-    /// \tparam USE TLB set
+    /// \tparam SET TLB set
     /// \param slot_index Slot index
     /// \param vaddr_page Value to write
     /// \param vf_offset Value to write
@@ -417,6 +440,29 @@ public:
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
         dsa_printf("%s::write_tlb<%" PRIu64 ">(%" PRIu64 ", 0x%" PRIx64 ", %s{0x%" PRIx64 "}, %" PRIu64 ")\n",
             get_name(), SET, slot_index, vaddr_page, fast_addr_name, static_cast<uint64_t>(vf_offset), pma_index);
+    }
+
+    /// \brief Verifies shadow TLB slot and initializes hot TLB slot
+    /// \tparam SET TLB set
+    /// \param slot_index Slot index
+    /// \returns Slot's vaddr page if successful. TLB_INVALID_PAGE otherwise.
+    /// \detail The idea is that, if initialization fails, the returned value forces a miss so the slot is replaced.
+    template <TLB_set_index SET>
+    uint64_t init_hot_tlb_slot(uint64_t slot_index) const {
+        const uint64_t val = derived().template do_init_hot_tlb_slot<SET>(slot_index);
+        dsa_printf("%s::init_hot_tlb_slot<%" PRIu64 ">(%" PRIu64 ") = %" PRIx64 "\n", get_name(), SET, slot_index, val);
+        return val;
+    }
+
+    /// \brief Verify consistency of hot TLB slot
+    /// \tparam SET TLB set
+    /// \param slot_index Slot index
+    /// \returns True if slot passes verification. False if it fails.
+    template <TLB_set_index SET>
+    bool verify_cold_tlb_slot(uint64_t slot_index) const {
+        const bool val = derived().template do_verify_cold_tlb_slot<SET>(slot_index);
+        dsa_printf("%s::verify_cold_tlb_slot<%" PRIu64 ">(%" PRIu64 ") = %d\n", get_name(), SET, slot_index, val);
+        return val;
     }
 
     /// \brief Marks a page as dirty

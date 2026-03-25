@@ -50,8 +50,8 @@ struct penumbra_state final {
 /// \brief Machine processor state.
 /// \details Contains the registers and TLB state of a machine.
 struct processor_state final {
-    shadow_state shadow;     ///< Shadow state
-    penumbra_state penumbra; ///< Penumbra state
+    shadow_state shadow;             ///< Shadow state
+    mutable penumbra_state penumbra; ///< Penumbra state (mutable: out-of-state runtime cache)
 };
 
 static_assert(offsetof(shadow_state, tlb) % AR_PAGE_SIZE == 0, "shadow tlb state must be aligned to a page boundary");

@@ -21,6 +21,7 @@ local lester = require("cartesi.third-party.lester")
 -- Parse arguments from command line.
 lester.parse_args()
 
+require("spec-fuzzer-bugs")
 require("spec-hash-functions")
 require("spec-hash-tree")
 require("spec-collect-hashes")

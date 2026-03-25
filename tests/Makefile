@@ -58,7 +58,11 @@ ifeq ($(coverage),yes)
 NUM_JOBS = 1
 endif
 
+ifeq ($(TARGET_OS),Darwin)
+COVERAGE_TOOLCHAIN?=clang
+else
 COVERAGE_TOOLCHAIN?=gcc
+endif
 COVERAGE_OUTPUT_DIR=$(BUILDDIR)/coverage
 COVERAGE_WORKLOAD=stress-ng --cpu 1 --cpu-ops 1
 COVERAGE_SOURCES=$(wildcard ../src/*.h) $(wildcard ../src/*.cpp)
@@ -88,10 +92,16 @@ STYLUA_FLAGS=--indent-type Spaces --respect-ignores
 build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH) $(CARTESI_STEP_LOGS_PATH)
 
 build-tests-machine: machine riscv-tests
+ifneq (yes,$(sanitize))
+	@$(MAKE) -C fuzz fuzz-seed-corpus
+endif
 
 build-tests-uarch: uarch riscv-arch-test
 
 build-tests-misc: misc
+
+build-tests-fuzz:
+	@$(MAKE) -C fuzz CC=clang CXX=clang++ fuzz=yes all
 
 build-tests-images: images
 
@@ -132,6 +142,7 @@ clean:
 	@D=../third-party/riscv-arch-test/riscv-target/cartesi; \
 		if [ -d $$D ]; then $(MAKE) -C $$D clean; fi
 	@$(MAKE) -C misc clean
+	@$(MAKE) -C fuzz clean
 	@rm -f *.profdata *.profraw *.gcda *.gcov
 	@rm -rf $(BUILDDIR)
 
@@ -226,6 +237,9 @@ test-save-and-load: | $(CARTESI_IMAGES)
 test-yield-and-save: | $(CARTESI_IMAGES)
 	./scripts/test-yield-and-save.sh '$(LUA) ../src/cartesi-machine.lua'
 
+test-fuzz: build-tests-fuzz
+	@$(MAKE) -C fuzz CC=clang CXX=clang++ fuzz=yes run-fuzz-interpret
+
 test-misc: test-c-api test-save-and-load test-yield-and-save
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
@@ -281,4 +295,4 @@ check-format-lua:
 check-lua:
 	luacheck lua/
 
-.PHONY: machine uarch misc riscv-tests riscv-arch-test
+.PHONY: machine uarch misc riscv-tests riscv-arch-test build-tests-fuzz test-fuzz

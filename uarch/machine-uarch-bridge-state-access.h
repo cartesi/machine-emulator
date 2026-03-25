@@ -131,6 +131,10 @@ private:
     }
 
     address_range &do_read_pma(uint64_t index) const {
+        if (index >= PMA_MAX) [[unlikely]] {
+            static address_range sentinel{"sentinel"};
+            return sentinel;
+        }
         constexpr const auto throw_abort = [](const char * /*err*/) {
             assert(false && "read_address_range() failed");
             abort();
@@ -163,6 +167,22 @@ private:
     template <TLB_set_index SET>
     uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
         return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
+    }
+
+    template <TLB_set_index SET>
+    uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
+        // No hot TLB -- just return the shadow vaddr_page
+        return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
+    }
+
+    template <TLB_set_index SET>
+    bool do_verify_cold_tlb_slot(uint64_t slot_index) const {
+        const auto vaddr_page = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
+        const auto vp_offset = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
+        const auto pma_index = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
+        const auto zero_padding = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::zero_padding_);
+        const auto &ar = do_read_pma(pma_index);
+        return shadow_tlb_verify_slot(vaddr_page, vp_offset, zero_padding, ar) != TLB_INVALID_PAGE;
     }
 
     template <TLB_set_index SET>

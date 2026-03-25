@@ -260,7 +260,10 @@ private:
     }
 
     address_range &do_read_pma(uint64_t index) const {
-        assert(index < PMA_MAX);
+        if (index >= PMA_MAX) [[unlikely]] {
+            static address_range sentinel{"sentinel"};
+            return sentinel;
+        }
         // replay_step_state_access reconstructs a mock_address_range from the
         // corresponding istart and ilength fields in the shadow pmas
         // so we mark the page where they live here
@@ -283,7 +286,11 @@ private:
 
     template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
-        return log_read_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
+        // Must read from the hot TLB (not shadow) so that TLB_UNVERIFIED_PAGE sentinels
+        // set by init_hot_tlb_contents() are visible and force init_hot_tlb_slot() to run,
+        // which populates vh_offset. The shadow page is still touched by init_hot_tlb_slot
+        // (on miss) or verify_cold_tlb_slot (on hit).
+        return m_m.get_state().penumbra.tlb[SET][slot_index].vaddr_page;
     }
 
     template <TLB_set_index SET>
@@ -291,37 +298,47 @@ private:
         return log_read_tlb(SET, slot_index, shadow_tlb_what::pma_index);
     }
 
-    //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
     host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
-        // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
-        // At deinitialization, it translates them back
-        // To do that, it needs the corresponding paddr_page = vaddr_page + vp_offset, and page data itself
-        // It will only do the translation if the slot is valid and the log has all required fields
-        // Obviously, the slot we are reading will be needed during replay
-        // vaddr_page, vp_offset, and pma_index are on the same page, so we only need touch one of them.
+        // Touch the shadow page so replay has the TLB slot data
         touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
-        // We still need to touch the page data
-        // Writes to the TLB slot are atomic, so we know the values in a slot are ALWAYS internally consistent.
-        // This means we can safely use all other fields to find paddr_page.
-        const auto vaddr_page = m_m.get_state().penumbra.tlb[SET][slot_index].vaddr_page;
-        const auto vh_offset = m_m.get_state().penumbra.tlb[SET][slot_index].vh_offset;
+        // Return the vh_offset from the hot entry
+        return m_m.get_state().penumbra.tlb[SET][slot_index].vh_offset;
+    }
+
+    template <TLB_set_index SET>
+    uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
+        // Touch the shadow page so replay has the TLB slot data
+        touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
+        // If the slot is valid, also touch the target page and PMA pages so replay can find them
+        const auto vaddr_page = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
         if (vaddr_page != TLB_INVALID_PAGE) {
-            const auto vp_offset = m_m.get_state().shadow.tlb[SET][slot_index].vp_offset;
+            const auto vp_offset = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
+            const auto pma_index = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
             const auto paddr_page = vaddr_page + vp_offset;
             touch_page(paddr_page);
+            // Touch PMA istart/ilength pages so replay's do_read_pma can reconstruct the address range
+            touch_page(pmas_get_abs_addr(pma_index, pmas_what::istart));
+            touch_page(pmas_get_abs_addr(pma_index, pmas_what::ilength));
         }
-        return vh_offset;
+        // Return the vaddr_page from the hot entry (promoted by machine::init_hot_tlb_slot)
+        return m_m.init_hot_tlb_slot(SET, slot_index);
+    }
+
+    template <TLB_set_index SET>
+    bool do_verify_cold_tlb_slot(uint64_t slot_index) const {
+        const auto vaddr_page = log_read_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
+        const auto vp_offset = log_read_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
+        const auto pma_index = log_read_tlb(SET, slot_index, shadow_tlb_what::pma_index);
+        const auto zero_padding = log_read_tlb(SET, slot_index, shadow_tlb_what::zero_padding_);
+        const auto &ar = do_read_pma(pma_index);
+        return shadow_tlb_verify_slot(vaddr_page, vp_offset, zero_padding, ar) != TLB_INVALID_PAGE;
     }
 
     //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
-        // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
-        // At deinitialization, it translates them back
-        // To do that, it needs the corresponding paddr_page = vaddr_page + vp_offset, and page data itself
-        // It will only do the translation if the slot is valid and the log has all required fields
-        // Obviously, the slot we are writing will be needed during replay
+        // replay_step_state_access needs the TLB slot page and the target page data
         // vaddr_page, vp_offset, and pma_index are on the same page, so we only need touch one of them.
         touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
         // We still need to touch the page data
@@ -330,7 +347,7 @@ private:
             const auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
             touch_page(paddr_page);
         }
-        m_m.write_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
+        m_m.write_verified_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
     }
 
     fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {

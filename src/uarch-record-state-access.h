@@ -226,7 +226,7 @@ private:
         log_write_access(
             slot_paddr, SHADOW_TLB_SLOT_LOG2_SIZE,
             [this, set_index, slot_index, vaddr_page, vp_offset, pma_index]() {
-                m_m.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
+                m_m.write_unverified_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
                 // Entire slot is in a single page
                 if (!m_m.update_hash_tree_page(shadow_tlb_get_abs_addr(set_index, slot_index))) {
                     throw std::invalid_argument{"error updating hash tree"};

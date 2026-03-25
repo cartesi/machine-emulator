@@ -37,6 +37,7 @@ enum TLB_set_index : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE, TLB_LAST_ = TLB_W
 enum TLB_constants : uint64_t {
     TLB_SET_SIZE = 256,
     TLB_INVALID_PAGE = UINT64_C(-1),
+    TLB_UNVERIFIED_PAGE = UINT64_C(-2),
     TLB_INVALID_PMA_INDEX = UINT64_C(-1),
 };
 
@@ -140,6 +141,44 @@ static constexpr const char *shadow_tlb_get_what_name(shadow_tlb_what what) {
             return "tlb.unknown_";
     }
     return "tlb.unknown_";
+}
+
+/// \brief Verifies a shadow TLB slot against PMA bounds
+/// \param vaddr_page Virtual address of page start
+/// \param vp_offset Offset from virtual to physical address
+/// \param zero_padding Padding field (must be zero)
+/// \param ar Address range for the PMA where physical page falls
+/// \returns vaddr_page if valid, TLB_INVALID_PAGE otherwise
+template <typename ADDRESS_RANGE>
+[[maybe_unused]] static uint64_t shadow_tlb_verify_slot(uint64_t vaddr_page, uint64_t vp_offset, uint64_t zero_padding,
+    const ADDRESS_RANGE &ar) {
+    // Invalid entry
+    if (vaddr_page == TLB_INVALID_PAGE) {
+        return TLB_INVALID_PAGE;
+    }
+    // Stored TLB is corrupt: inconsistent padding
+    if (zero_padding != 0) {
+        return TLB_INVALID_PAGE;
+    }
+    // Stored TLB is corrupt: vaddr_page is not aligned
+    if ((vaddr_page & PAGE_OFFSET_MASK) != 0) {
+        return TLB_INVALID_PAGE;
+    }
+    const auto paddr_page = vaddr_page + vp_offset;
+    // Stored TLB is corrupt: vp_offset is not aligned
+    if ((paddr_page & PAGE_OFFSET_MASK) != 0) {
+        return TLB_INVALID_PAGE;
+    }
+    // Stored TLB is corrupt: pma_index does not point to memory range
+    if (!ar.is_memory()) {
+        return TLB_INVALID_PAGE;
+    }
+    const auto pmas_end = ar.get_start() + (ar.get_length() - AR_PAGE_SIZE);
+    // Stored TLB is corrupt: vp_offset is inconsistent with pma_index
+    if (paddr_page < ar.get_start() || paddr_page > pmas_end) {
+        return TLB_INVALID_PAGE;
+    }
+    return vaddr_page;
 }
 
 [[maybe_unused]] static void shadow_tlb_fill_slot(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index,

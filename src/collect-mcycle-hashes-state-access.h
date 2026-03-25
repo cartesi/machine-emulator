@@ -474,12 +474,22 @@ private:
         return m_s.penumbra.tlb[SET][slot_index].vh_offset;
     }
 
+    template <TLB_set_index SET>
+    uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
+        return m_m.init_hot_tlb_slot(SET, slot_index);
+    }
+
+    template <TLB_set_index SET>
+    constexpr bool do_verify_cold_tlb_slot(uint64_t /*slot_index*/) const {
+        return true;
+    }
+
     //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
         // Marking only one slot field suffices because mark_dirty_word actually marks pages
         mark_dirty_word(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
-        m_m.write_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
+        m_m.write_verified_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
     }
 
     fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {

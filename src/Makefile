@@ -544,7 +544,11 @@ cartesi-jsonrpc-machine: $(CARTESI_JSONRPC_MACHINE_OBJS) libcartesi_jsonrpc.a li
 clua-%.o clua.o: CXXFLAGS += $(LUA_INC)
 
 machine-c-version.h: ../tools/template/machine-c-version.h.template
-	sed "s|EMULATOR_MARCHID|$(EMULATOR_MARCHID)|g;s|EMULATOR_VERSION_MAJOR|$(EMULATOR_VERSION_MAJOR)|g;s|EMULATOR_VERSION_MINOR|$(EMULATOR_VERSION_MINOR)|g;s|EMULATOR_VERSION_PATCH|$(EMULATOR_VERSION_PATCH)|g;s|EMULATOR_VERSION_LABEL|$(EMULATOR_VERSION_LABEL)|g" $< > $@
+	sed -e "s|EMULATOR_MARCHID|$(EMULATOR_MARCHID)|g" \
+	    -e "s|EMULATOR_VERSION_MAJOR|$(EMULATOR_VERSION_MAJOR)|g" \
+	    -e "s|EMULATOR_VERSION_MINOR|$(EMULATOR_VERSION_MINOR)|g" \
+	    -e "s|EMULATOR_VERSION_PATCH|$(EMULATOR_VERSION_PATCH)|g" \
+	    -e "s|EMULATOR_VERSION_LABEL|$(EMULATOR_VERSION_LABEL)|g" $< > $@
 
 jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo '// This file is auto-generated and should not be modified' > jsonrpc-discover.cpp

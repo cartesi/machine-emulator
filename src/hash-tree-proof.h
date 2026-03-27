@@ -197,6 +197,8 @@ public:
         return hash;
     }
 
+    /// \note The target_address in the returned proof preserves the absolute address from the original proof.
+    /// To obtain the offset relative to the subtree root, compute target_address % (1 << new_log2_root_size).
     template <IHasher H>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
     hash_tree_proof slice(H &&h, int new_log2_root_size, int new_log2_target_size) const {

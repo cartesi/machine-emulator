@@ -573,6 +573,9 @@ CM_API cm_error cm_get_node_hash(const cm_machine *m, uint64_t address, int32_t 
 /// \param proof Receives the proof as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
+/// \note The target_address in the returned proof is the absolute machine address, even when
+/// log2_root_size is smaller than CM_HASH_TREE_LOG2_ROOT_SIZE. To obtain the offset relative to
+/// the subtree root, compute target_address % (1 << log2_root_size).
 CM_API cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_target_size, int log2_root_size,
     const char **proof);
 

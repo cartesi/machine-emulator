@@ -125,6 +125,9 @@ public:
     }
 
     /// \brief Obtains the proof for a node in the hash tree.
+    /// \note The target_address in the returned proof is the absolute machine address, even when
+    /// log2_root_size is smaller than HASH_TREE_LOG2_ROOT_SIZE. To obtain the offset relative to
+    /// the subtree root, compute target_address % (1 << log2_root_size).
     hash_tree_proof get_proof(uint64_t address, int log2_target_size,
         int log2_root_size = HASH_TREE_LOG2_ROOT_SIZE) const {
         return do_get_proof(address, log2_target_size, log2_root_size);

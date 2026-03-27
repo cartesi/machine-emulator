@@ -371,6 +371,9 @@ public:
     /// Must be between 5 (for a 32-byte word) and 64 (for the entire address space).
     /// \param proof Receives the proof.
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
+    /// \note The target_address in the returned proof is the absolute machine address, even when
+    /// log2_root_size is smaller than HASH_TREE_LOG2_ROOT_SIZE. To obtain the offset relative to
+    /// the subtree root, compute target_address % (1 << log2_root_size).
     proof_type get_proof(uint64_t address, int log2_target_size, int log2_root_size = HASH_TREE_LOG2_ROOT_SIZE) const;
 
     /// \brief Obtains the proof for a node in the hash-tree without making any modifications to the tree.
@@ -383,6 +386,9 @@ public:
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
     /// This overload is used to optimize proof generation when the caller knows that the tree is already up to
     /// date.
+    /// \note The target_address in the returned proof is the absolute machine address, even when
+    /// log2_root_size is smaller than HASH_TREE_LOG2_ROOT_SIZE. To obtain the offset relative to
+    /// the subtree root, compute target_address % (1 << log2_root_size).
     proof_type get_proof(skip_hash_tree_update_t /*unused*/, uint64_t address, int log2_target_size,
         int log2_root_size = HASH_TREE_LOG2_ROOT_SIZE) const;
 

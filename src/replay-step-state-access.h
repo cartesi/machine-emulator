@@ -266,7 +266,6 @@ public:
     }
 
     // \brief Finish the replay and check the final machine root hash
-    // \param final_root_hash The expected final machine root hash
     // \throw runtime_error if the final root hash does not match
     void finish() {
         // compute and check machine root hash after the replay

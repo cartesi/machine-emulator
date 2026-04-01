@@ -1032,7 +1032,7 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, uint64_t &pc,
     const auto slot_index = tlb_slot_index(vaddr);
     auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
     if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
-        // A STATE_ACCESS that does lazy intialization / fast address translation maintains an out-of-state hot
+        // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
         // slot it uses to check for hits and to perform the translation itself.
         // At startup, all slot_vaddr_page are initialized to cause a first miss.
         // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
@@ -1142,7 +1142,7 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, ui
     const uint64_t slot_index = tlb_slot_index(vaddr);
     uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
     if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
-        // A STATE_ACCESS that does lazy intialization / fast address translation maintains an out-of-state hot
+        // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
         // slot it uses to check for hits and to perform the translation itself.
         // At startup, all slot_vaddr_page are initialized to cause a first miss.
         // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
@@ -5467,7 +5467,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc(const STATE_ACCESS a, uint64
     const uint64_t slot_index = tlb_slot_index(vaddr);
     uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
     if (!tlb_is_hit<uint16_t>(slot_vaddr_page, vaddr)) [[unlikely]] {
-        // A STATE_ACCESS that does lazy intialization / fast address translation maintains an out-of-state hot
+        // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
         // slot it uses to check for hits and to perform the translation itself.
         // At startup, all slot_vaddr_page are initialized to cause a first miss.
         // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold

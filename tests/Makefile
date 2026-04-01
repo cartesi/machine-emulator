@@ -89,7 +89,7 @@ CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --respect-ignores
 
-build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain build-tests-fuzz-seed-corpus images $(CARTESI_CMIO_PATH) $(CARTESI_STEP_LOGS_PATH)
+build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH) $(CARTESI_STEP_LOGS_PATH)
 
 build-tests-machine: machine riscv-tests
 
@@ -100,7 +100,7 @@ endif
 
 build-tests-uarch: uarch riscv-arch-test
 
-build-tests-misc: misc
+build-tests-misc: misc build-tests-fuzz-seed-corpus
 
 build-tests-fuzz:
 	@$(MAKE) -C fuzz CC=clang CXX=clang++ fuzz=yes all

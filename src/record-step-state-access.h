@@ -310,19 +310,19 @@ private:
     uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
         // Touch the shadow page so replay has the TLB slot data
         touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
-        // If the slot is valid, also touch the target page and PMA pages so replay can find them
-        const auto vaddr_page = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
-        if (vaddr_page != TLB_INVALID_PAGE) {
+        // Touch PMA page so replay's do_read_pma can validate the entry (even if corrupt)
+        const auto pma_index = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
+        touch_page(pmas_get_abs_addr(pma_index, pmas_what::istart));
+        // Validate and promote the slot; corrupt entries return TLB_INVALID_PAGE
+        const auto validated_vaddr_page = m_m.init_hot_tlb_slot(SET, slot_index);
+        // Only touch target page itself after validation confirms the entry is sound
+        if (validated_vaddr_page != TLB_INVALID_PAGE) {
             const auto vp_offset = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
-            const auto pma_index = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
-            const auto paddr_page = vaddr_page + vp_offset;
+            const auto paddr_page = validated_vaddr_page + vp_offset;
+            // replay's do_init_hot_tlb_slot needs the page there so promote the hot entry
             touch_page(paddr_page);
-            // Touch PMA istart/ilength pages so replay's do_read_pma can reconstruct the address range
-            touch_page(pmas_get_abs_addr(pma_index, pmas_what::istart));
-            touch_page(pmas_get_abs_addr(pma_index, pmas_what::ilength));
         }
-        // Return the vaddr_page from the hot entry (promoted by machine::init_hot_tlb_slot)
-        return m_m.init_hot_tlb_slot(SET, slot_index);
+        return validated_vaddr_page;
     }
 
     template <TLB_set_index SET>

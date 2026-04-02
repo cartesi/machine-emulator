@@ -224,9 +224,13 @@ void machine::validate_processor_shadow(bool skip_version_check) const {
 void machine::init_pmas_contents(const pmas_config &config) {
     static_assert(sizeof(pmas_state) == PMA_MAX * 2 * sizeof(uint64_t), "inconsistent PMAs state length");
     static_assert(AR_PMAS_LENGTH >= sizeof(pmas_state), "PMAs address range too short");
+    static_assert(PMA_MAX < AR_PMAS_LENGTH / sizeof(pmas_entry), "no room for PMA sentinel entry");
     auto &pmas = m_ars.find(AR_PMAS_START, AR_PMAS_LENGTH);
     if (!pmas.is_memory()) {
         throw std::runtime_error{"initialization error: PMAs memory address range not found"};
+    }
+    if (std::ranges::size(m_ars.pmas_view()) > PMA_MAX) {
+        throw std::runtime_error{"too many PMAs"};
     }
     pmas_state pmas_state{};
     std::ranges::transform(m_ars.pmas_view(), pmas_state.begin(),

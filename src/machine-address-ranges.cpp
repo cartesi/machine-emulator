@@ -140,6 +140,9 @@ AR &machine_address_ranges::push_back(std::unique_ptr<AR> &&ar_ptr, register_whe
     const auto index = m_all.size();    // Get index the new address range will occupy
     m_all.push_back(std::move(ar_ptr)); // Move ptr to list of address ranges
     if (where.pmas) {                   // Register as a PMA
+        if (m_pmas.size() >= PMA_MAX) {
+            throw std::invalid_argument{"too many PMAs"};
+        }
         m_pmas.push_back(index);
     }
     if (where.hash_tree) { // Register with the hash tree

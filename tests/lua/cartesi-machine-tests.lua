@@ -399,7 +399,7 @@ or a left shift (e.g., 2 << 20).
 end
 
 local test_path = test_util.tests_path
-local prepost_path = os.getenv("CARTESI_TESTS_PREPOST_PATH") or arg[0]:match("(.*/)" ) or "./"
+local prepost_path = os.getenv("CARTESI_TESTS_PREPOST_PATH") or arg[0]:match("(.*/)") or "./"
 local test_pattern = ".*"
 local remote_address
 local output

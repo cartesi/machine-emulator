@@ -549,6 +549,7 @@ private:
             check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, static_cast<uint64_t>(vh_offset));
         }
         check_write_tlb(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
+        check_write_tlb(SET, slot_index, shadow_tlb_what::zero_padding_, UINT64_C(0));
         // Mark hot entry as unverified so next access re-validates from the log
         m_context.tlb[SET][slot_index].vaddr_page = TLB_UNVERIFIED_PAGE;
         m_context.tlb[SET][slot_index].vh_offset = host_addr{0};

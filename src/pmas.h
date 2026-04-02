@@ -126,10 +126,11 @@ enum class pmas_what : uint64_t {
 };
 
 /// \brief Obtains the absolute address of a PMA entry.
-/// \param p Index of desired PMA entry
+/// \param p Index of desired PMA entry (clamped to sentinel if out of range)
 /// \returns The address.
 static constexpr uint64_t pmas_get_abs_addr(uint64_t p) {
-    return AR_PMAS_START + (p * sizeof(pmas_entry));
+    static_assert(PMA_MAX < AR_PMAS_LENGTH / sizeof(pmas_entry), "no room for PMA sentinel entry");
+    return AR_PMAS_START + ((p < PMA_MAX ? p : PMA_MAX) * sizeof(pmas_entry));
 }
 
 /// \brief Obtains the absolute address of a PMA entry.

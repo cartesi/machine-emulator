@@ -24,7 +24,7 @@ local parallel = require("cartesi.parallel")
 local jsonrpc
 
 -- Tests Cases
--- format {"ram_image_file", number_of_cycles, halt_payload}
+-- format {"ram_image_file", number_of_cycles, halt_payload, { "pre.lua", "post.lua" } }
 local riscv_tests = {
     { "rv64mi-p-access.bin", 140 },
     { "rv64mi-p-breakpoint.bin", 111 },
@@ -293,6 +293,8 @@ local riscv_tests = {
     { "clint_ops.bin", 133 },
     { "shadow_ops.bin", 78 },
     { "compressed.bin", 410 },
+    { "thrash-tlb.bin", 3363 },
+    { "thrash-tlb.bin", 3363, nil, { "pre-thrash-tlb.lua", "post-thrash-tlb.lua" } },
 }
 
 local log_annotations = false
@@ -313,6 +315,10 @@ where options are:
   --test-path=<dir>
     path to test binaries
     (default: environment $CARTESI_TESTS_PATH)
+
+  --test-prepost-path=<dir>
+    path to pre/post Lua scripts for tests
+    (default: environment $CARTESI_TESTS_PREPOST_PATH)
 
   --test=<pattern>
     select tests to run based on a Lua string <pattern>
@@ -393,6 +399,7 @@ or a left shift (e.g., 2 << 20).
 end
 
 local test_path = test_util.tests_path
+local prepost_path = os.getenv("CARTESI_TESTS_PREPOST_PATH") or arg[0]:match("(.*/)" ) or "./"
 local test_pattern = ".*"
 local remote_address
 local output
@@ -468,6 +475,16 @@ local options = {
                 return false
             end
             test_path = o
+            return true
+        end,
+    },
+    {
+        "^%-%-test%-prepost%-path%=(.*)$",
+        function(o)
+            if not o or #o < 1 then
+                return false
+            end
+            prepost_path = o
             return true
         end,
     },
@@ -601,6 +618,22 @@ local to_shutdown -- luacheck: no unused
 if remote_address then
     jsonrpc = require("cartesi.jsonrpc")
     to_shutdown = jsonrpc.connect_server(remote_address):set_cleanup_call(jsonrpc.SHUTDOWN)
+end
+
+local function noop(...) end -- luacheck: no unused
+
+local function load_prepost(prepost)
+    local pre_fn = noop
+    local post_fn = noop
+    if prepost then
+        if prepost[1] then
+            pre_fn = assert(loadfile(prepost_path .. "/" .. prepost[1]))()
+        end
+        if prepost[2] then
+            post_fn = assert(loadfile(prepost_path .. "/" .. prepost[2]))()
+        end
+    end
+    return pre_fn, post_fn
 end
 
 local function advance_machine(machine, max_mcycle)
@@ -1004,34 +1037,48 @@ local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
 end
 
 local failures = nil
-local contexts = tabular.expand({ "ram_image", "expected_cycles", "expected_halt_payload" }, selected_tests)
+local contexts = tabular.expand({ "ram_image", "expected_cycles", "expected_halt_payload", "prepost" }, selected_tests)
 
 if #selected_tests < 1 then
     error("no test selected")
 elseif command == "run" then
     failures = parallel.run(contexts, jobs, function(row)
+        local pre_fn, post_fn = load_prepost(row.prepost)
         local machine <close> = build_machine(row.ram_image)
+        local pre_ctx = pre_fn(machine)
         run_machine(machine, row, 2 * row.expected_cycles)
         check_and_print_result(machine, row)
+        post_fn(machine, pre_ctx)
     end)
 elseif command == "run_step" then
     failures = parallel.run(contexts, jobs, function(row)
+        local pre_fn, post_fn = load_prepost(row.prepost)
         local machine <close> = build_machine(row.ram_image)
         local reference_machine <close> = build_machine(row.ram_image)
+        local pre_ctx = pre_fn(machine)
+        pre_fn(reference_machine)
         run_machine_step(machine, reference_machine, row, row.expected_cycles)
         check_and_print_result(machine, row)
+        post_fn(machine, pre_ctx)
     end)
 elseif command == "run_uarch" then
     failures = parallel.run(contexts, jobs, function(row)
+        local pre_fn, post_fn = load_prepost(row.prepost)
         local machine <close> = build_machine(row.ram_image)
+        local pre_ctx = pre_fn(machine)
         run_machine_with_uarch(machine, row, 2 * row.expected_cycles)
         check_and_print_result(machine, row)
+        post_fn(machine, pre_ctx)
     end)
 elseif command == "run_host_and_uarch" then
     failures = parallel.run(contexts, jobs, function(row)
+        local pre_fn, post_fn = load_prepost(row.prepost)
         local host_machine <close> = build_machine(row.ram_image)
         local uarch_machine <close> = build_machine(row.ram_image)
+        local pre_ctx = pre_fn(host_machine)
+        pre_fn(uarch_machine)
         run_host_and_uarch_machines(host_machine, uarch_machine, row, 2 * row.expected_cycles)
+        post_fn(host_machine, pre_ctx)
     end)
 elseif command == "hash" then
     hash(selected_tests)

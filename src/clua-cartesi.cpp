@@ -251,7 +251,11 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_AR_CMIO_TX_BUFFER_LOG2_SIZE, "AR_CMIO_TX_BUFFER_LOG2_SIZE", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_REVERT_ROOT_HASH_START, "AR_SHADOW_REVERT_ROOT_HASH_START", -1);
     clua_setintegerfield(L, CM_AR_RAM_START, "AR_RAM_START", -1);
+    clua_setintegerfield(L, CM_AR_SHADOW_STATE_START, "AR_SHADOW_STATE_START", -1);
+    clua_setintegerfield(L, CM_AR_SHADOW_STATE_LENGTH, "AR_SHADOW_STATE_LENGTH", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_TLB_START, "AR_SHADOW_TLB_START", -1);
+    clua_setintegerfield(L, CM_AR_PMAS_START, "AR_PMAS_START", -1);
+    clua_setintegerfield(L, CM_AR_PMAS_LENGTH, "AR_PMAS_LENGTH", -1);
     // HTIF masks
     clua_setintegerfield(L, HTIF_HALT_CMD_HALT_MASK, "HTIF_HALT_CMD_HALT_MASK", -1);
     clua_setintegerfield(L, HTIF_CONSOLE_CMD_GETCHAR_MASK, "HTIF_CONSOLE_CMD_GETCHAR_MASK", -1);

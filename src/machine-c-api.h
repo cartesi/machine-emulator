@@ -59,8 +59,12 @@ typedef enum cm_pmas_constant {
     CM_AR_CMIO_TX_BUFFER_LOG2_SIZE = 21,
     CM_AR_SHADOW_REVERT_ROOT_HASH_START = 0xfe0,
     CM_AR_RAM_START = 0x80000000,
+    CM_AR_SHADOW_STATE_START = 0x0,
+    CM_AR_SHADOW_STATE_LENGTH = 0x8000,
     CM_AR_SHADOW_TLB_START = 0x1000,
     CM_AR_SHADOW_TLB_LENGTH = 0x6000,
+    CM_AR_PMAS_START = 0x10000,
+    CM_AR_PMAS_LENGTH = 0x1000,
 } cm_pmas_constant;
 
 /// \brief Error codes returned from the C API.

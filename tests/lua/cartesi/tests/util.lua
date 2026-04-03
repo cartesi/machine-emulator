@@ -25,12 +25,16 @@ local function adjust_path(path)
     return string.gsub(path or ".", "/*$", "") .. "/"
 end
 
+local has_posix_stdlib, posix_stdlib = pcall(require, "posix.stdlib")
+
 -- Returns the directory absolute path at level `dirlevel` for the calling script at level `calllevel`.
 local function get_script_path(dirlevel, calllevel)
     local info = debug.getinfo(calllevel or 1, "S")
     local path = info and info.source and info.source:match("^@([^\n\r]+)")
     assert(path, "could not retrieve calling script path")
-    path = require("posix.stdlib").realpath(path)
+    if has_posix_stdlib then
+        path = posix_stdlib.realpath(path)
+    end
     if dirlevel and dirlevel > 0 then
         local segments = {}
         for segment in path:gmatch("[^/]+") do

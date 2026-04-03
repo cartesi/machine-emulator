@@ -126,20 +126,30 @@ private:
         static_assert(HASH_TREE_LOG2_WORD_SIZE >= log2_size_v<uint64_t>,
             "Hash tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
+            // This is never reached by coverage because replay only uses check_read to check iflags_Y
+            // LCOV_EXCL_START
             throw std::invalid_argument{"address not aligned to word size"};
+            // LCOV_EXCL_END
         }
         if (m_context.next_access >= m_context.accesses.size()) {
+            // This is never reached by coverage because replay checks one read and its the first access
+            // If we truncate before the read, there will be zero accesses and another error triggers first
+            // LCOV_EXCL_START
             throw std::invalid_argument{"too few accesses in log"};
+            // LCOV_EXCL_END
         }
         const auto &access = m_context.accesses[m_context.next_access];
         if (access.get_type() != access_type::read) {
             throw std::invalid_argument{"expected " + access_to_report() + " to read " + text};
         }
         if (access.get_address() != paligned) {
+            // This is never reached by coverage because we only use check_read to check iflags_Y
+            // LCOV_EXCL_START
             std::ostringstream err;
             err << "expected " << access_to_report() << " to read " << text << " address 0x" << std::hex << paligned
                 << "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
+            // LCOV_EXCL_END
         }
         if (access.get_log2_size() != log2_size_v<uint64_t>) {
             throw std::invalid_argument{"expected " + access_to_report() + " to read 2^" +
@@ -321,7 +331,7 @@ private:
         machine_hash computed_data_hash{};
         auto scratch = make_unique_calloc<unsigned char>(write_length, std::nothrow_t{});
         if (!scratch) {
-            throw std::runtime_error("Could not allocate scratch memory");
+            throw std::runtime_error("failed to allocate scratch memory");
         }
         memcpy(scratch.get(), data, data_length);
         if (write_length > data_length) {

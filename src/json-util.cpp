@@ -1337,12 +1337,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     access.set_type(type);
     uint64_t log2_size = 0;
     ju_get_field(jk, "log2_size"s, log2_size, new_path);
-    if (log2_size >= 64) {
-        throw std::domain_error("\""s + new_path + "log2_size\" is out of bounds");
-    }
     access.set_log2_size(static_cast<int>(log2_size));
-    // Minimum logged data size is hash-tree word size
-    const uint64_t data_log2_size = std::max(log2_size, static_cast<uint64_t>(HASH_TREE_LOG2_WORD_SIZE));
     uint64_t address = 0;
     ju_get_field(jk, "address"s, address, new_path);
     access.set_address(address);
@@ -1359,30 +1354,18 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     std::optional<access_data> read;
     ju_get_opt_field(jk, "read"s, read, new_path);
     if (read.has_value()) {
-        if (read.value().size() != (UINT64_C(1) << data_log2_size)) {
-            throw std::invalid_argument("\""s + new_path + "written\" has wrong length");
-        }
         access.set_read(std::move(read.value()));
     }
-    if (type == access_type::write) {
-        std::optional<access_data> written;
-        ju_get_opt_field(jk, "written"s, written, new_path);
-        if (written.has_value()) {
-            if (written.value().size() != (UINT64_C(1) << data_log2_size)) {
-                throw std::invalid_argument("\""s + new_path + "written\" has wrong length");
-            }
-            access.set_written(std::move(written.value()));
-        }
+    std::optional<access_data> written;
+    ju_get_opt_field(jk, "written"s, written, new_path);
+    if (written.has_value()) {
+        access.set_written(std::move(written.value()));
     }
     if (contains(jk, "sibling_hashes", new_path)) {
         access.get_sibling_hashes().emplace();
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         auto &sibling_hashes = access.get_sibling_hashes().value();
         ju_get_vector_like_field(jk, "sibling_hashes"s, sibling_hashes, new_path);
-        auto expected_depth = static_cast<size_t>(HASH_TREE_LOG2_ROOT_SIZE - data_log2_size);
-        if (sibling_hashes.size() != expected_depth) {
-            throw std::invalid_argument("\""s + new_path + "sibling_hashes\" has wrong length");
-        }
     }
 }
 

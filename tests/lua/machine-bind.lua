@@ -1160,7 +1160,7 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
         log.accesses[1].address = 0
     end)
 
-    assert_error('"log/accesses/0/log2_size" is out of bounds', function(log)
+    assert_error("expected 1st access to uarch.state to write 2^22 bytes", function(log)
         log.accesses[1].log2_size = 64
     end)
 
@@ -1176,7 +1176,7 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
     assert_error("missing written hash of uarch.state in 1st access", function(log)
         log.accesses[#log.accesses].written_hash = nil
     end)
-    assert_error('"log/accesses/0/written" has wrong length', function(log)
+    assert_error("access written data size is inconsistent with proof size", function(log)
         log.accesses[#log.accesses].written = "\0"
     end)
     assert_error("written data for uarch.state does not match written hash in 1st access", function(log)
@@ -1207,13 +1207,13 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
     assert_error("expected 1st access to uarch.cycle to read 2^3 bytes", function(log)
         log.accesses[1].log2_size = 2
     end)
-    assert_error("is out of bounds", function(log)
+    assert_error("expected 1st access to uarch.cycle to read 2^3 bytes", function(log)
         log.accesses[1].log2_size = 65
     end)
     assert_error("missing read data for uarch.cycle in 1st access", function(log)
         log.accesses[1].read = nil
     end)
-    assert_error("has wrong length", function(log)
+    assert_error("access read data size is inconsistent with proof size", function(log)
         log.accesses[1].read = "\0"
     end)
     assert_error("siblings and read hash do not match root hash before 1st access to uarch.cycle", function(log)
@@ -1228,7 +1228,7 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
     assert_error("missing written hash of uarch.cycle in 7th access", function(log)
         log.accesses[#log.accesses].written_hash = nil
     end)
-    assert_error("has wrong length", function(log)
+    assert_error("access written data size is inconsistent with proof size", function(log)
         log.accesses[#log.accesses].written = "\0"
     end)
     assert_error("written data for uarch.cycle does not match written hash in 7th access", function(log)

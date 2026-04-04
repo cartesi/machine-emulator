@@ -244,9 +244,11 @@ public:
             // In the current implementation, this check is unnecessary
             // But we may in the future change the data field to point to independently allocated pages
             // This would break the code that uses binary search to find the page based on the address of its data
+            // LCOV_EXCL_START
             if (i > 0 && +m_context.pages[i - 1].data >= +m_context.pages[i].data) {
                 THROW(std::runtime_error, "invalid log format: page data is not in increasing order");
             }
+            // LCOV_EXCL_STOP
             if (m_context.pages[i].hash != all_zeros) {
                 THROW(std::runtime_error, "invalid log format: page scratch hash area is not zero");
             }
@@ -313,9 +315,15 @@ private:
 
     page_type *find_page(host_addr haddr_page) const {
         auto *page_log = try_find_page(haddr_page);
+        // The only caller is do_write_tlb, which receives vh_offset from the interpreter's page walk.
+        // The interpreter computes vh_offset from do_get_faddr, which already called find_page(uint64_t)
+        // successfully for the same page. Since vaddr_page + vh_offset points to that page's data,
+        // the host_addr lookup will always find it.
+        // LCOV_EXCL_START
         if (page_log == nullptr) {
             THROW(std::runtime_error, "required page not found");
         }
+        // LCOV_EXCL_STOP
         return page_log;
     }
 
@@ -334,6 +342,8 @@ private:
         size_t next_sibling = 0;
         auto root_hash =
             compute_root_hash_impl(0, HASH_TREE_LOG2_ROOT_SIZE - AR_LOG2_PAGE_SIZE, next_page, next_sibling);
+        // In the current implementation, recursion is guided by the pages, so they are always consumed
+        // So this can never happen.
         if (next_page != m_context.page_count) {
             THROW(std::runtime_error, "too many pages in log");
         }
@@ -371,10 +381,18 @@ private:
         if (m_context.pages[next_page].index == page_index) {
             return m_context.pages[next_page++].hash;
         }
+        // To reach here, we need all three conditions at leaf level (log2_page_count == 0):
+        // 1. Line 360 false: pages[next_page].index <= page_index
+        // 2. Line 366 false: log2_page_count == 0 (leaf)
+        // 3. Line 375 false: pages[next_page].index != page_index
+        // That requires pages[next_page].index < page_index. But with sorted pages consumed left-to-right,
+        // that can't happen -- the next unconsumed page always has index >= current leaf's page_index.
+        // LCOV_EXCL_START
         if (next_sibling >= m_context.sibling_count) {
             THROW(std::runtime_error, "too few sibling hashes in log");
         }
         return m_context.sibling_hashes[next_sibling++];
+        // LCOV_EXCL_STOP
         // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
     }
 
@@ -434,6 +452,7 @@ private:
         return cast_ptr_to_host_addr(page_log->data) + offset;
     }
 
+    // LCOV_EXCL_START
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool do_read_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         (void) paddr;
@@ -441,7 +460,9 @@ private:
         (void) length;
         return false;
     }
+    // LCOV_EXCL_STOP
 
+    // LCOV_EXCL_START
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         (void) paddr;
@@ -449,6 +470,7 @@ private:
         (void) length;
         return false;
     }
+    // LCOV_EXCL_STOP
 
     address_range &do_read_pma(uint64_t index) const {
         if (index >= PMA_MAX) [[unlikely]] {
@@ -555,9 +577,11 @@ private:
         m_context.tlb[SET][slot_index].vh_offset = host_addr{0};
     }
 
+    // LCOV_EXCL_START
     bool do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)
         return false;
     }
+    // LCOV_EXCL_STOP
 
     void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) const {
         // this is a noop since we have no host machine

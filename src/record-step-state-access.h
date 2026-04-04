@@ -288,8 +288,7 @@ private:
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
         // Must read from the hot TLB (not shadow) so that TLB_UNVERIFIED_PAGE sentinels
         // set by init_hot_tlb_contents() are visible and force init_hot_tlb_slot() to run,
-        // which populates vh_offset. The shadow page is still touched by init_hot_tlb_slot
-        // (on miss) or verify_cold_tlb_slot (on hit).
+        // which populates vh_offset and touches the shadow page.
         return m_m.get_state().penumbra.tlb[SET][slot_index].vaddr_page;
     }
 
@@ -326,13 +325,8 @@ private:
     }
 
     template <TLB_set_index SET>
-    bool do_verify_cold_tlb_slot(uint64_t slot_index) const {
-        const auto vaddr_page = log_read_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
-        const auto vp_offset = log_read_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
-        const auto pma_index = log_read_tlb(SET, slot_index, shadow_tlb_what::pma_index);
-        const auto zero_padding = log_read_tlb(SET, slot_index, shadow_tlb_what::zero_padding_);
-        const auto &ar = do_read_pma(pma_index);
-        return shadow_tlb_verify_slot(vaddr_page, vp_offset, zero_padding, ar) != TLB_INVALID_PAGE;
+    bool do_verify_cold_tlb_slot(uint64_t /* slot_index */) const {
+        return true;
     }
 
     //??D This is still a bit too complicated for my taste

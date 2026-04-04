@@ -129,14 +129,14 @@ private:
             // This is never reached by coverage because replay only uses check_read to check iflags_Y
             // LCOV_EXCL_START
             throw std::invalid_argument{"address not aligned to word size"};
-            // LCOV_EXCL_END
+            // LCOV_EXCL_STOP
         }
         if (m_context.next_access >= m_context.accesses.size()) {
             // This is never reached by coverage because replay checks one read and its the first access
             // If we truncate before the read, there will be zero accesses and another error triggers first
             // LCOV_EXCL_START
             throw std::invalid_argument{"too few accesses in log"};
-            // LCOV_EXCL_END
+            // LCOV_EXCL_STOP
         }
         const auto &access = m_context.accesses[m_context.next_access];
         if (access.get_type() != access_type::read) {
@@ -149,7 +149,7 @@ private:
             err << "expected " << access_to_report() << " to read " << text << " address 0x" << std::hex << paligned
                 << "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
-            // LCOV_EXCL_END
+            // LCOV_EXCL_STOP
         }
         if (access.get_log2_size() != log2_size_v<uint64_t>) {
             throw std::invalid_argument{"expected " + access_to_report() + " to read 2^" +

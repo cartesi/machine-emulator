@@ -344,8 +344,8 @@ LDFLAGS+=--coverage
 else ifeq ($(COVERAGE_TOOLCHAIN),clang)
 CC=clang
 CXX=clang++
-CXXFLAGS+=-fprofile-instr-generate -fcoverage-mapping
-LDFLAGS+=-fprofile-instr-generate -fcoverage-mapping
+CXXFLAGS+=--coverage -fno-inline
+LDFLAGS+=--coverage
 else ifneq ($(COVERAGE_TOOLCHAIN),)
 $(error invalid value for COVERAGE_TOOLCHAIN: $(COVERAGE_TOOLCHAIN))
 endif
@@ -610,9 +610,9 @@ is-pristine.o: is-pristine.cpp
 generate-uarch-pristine: machine-c-version.h interpret-jump-table.h
 ifeq (,$(wildcard ../uarch/uarch-pristine-hash.c))
 	@if [ "$(DEV_ENV_HAS_TOOLCHAIN)" = "yes" ]; then \
-		$(MAKE) -C .. uarch; \
+		$(MAKE) -C .. uarch coverage=$(coverage); \
 	else \
-		$(MAKE) -C .. uarch-with-toolchain; \
+		$(MAKE) -C .. uarch-with-toolchain coverage=$(coverage); \
 	fi
 endif
 

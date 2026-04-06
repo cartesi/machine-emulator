@@ -336,7 +336,7 @@ toolchain-exec: check-toolchain
 		cartesi/machine-emulator:toolchain /bin/bash -c "$(CONTAINER_COMMAND)"
 
 uarch-with-toolchain:
-	@$(MAKE) toolchain-exec CONTAINER_COMMAND="make uarch"
+	@$(MAKE) toolchain-exec CONTAINER_COMMAND="make uarch coverage=$(coverage)"
 
 # Create install directories
 $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(LUA_INSTALL_PATH)/cartesi/third-party $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH) $(TESTS_DATA_INSTALL_PATH) $(TESTS_SCRIPTS_INSTALL_PATH) $(TESTS_LUA_INSTALL_PATH):

@@ -544,7 +544,7 @@ jobs:
 
       - name: Run coverage
         run: |
-          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-lua test-jsonrpc test-c-api test-coverage-machine test-uarch-rv64ui test-uarch-interpreter test-coverage-uarch test-machine-with-log-step coverage-report coverage=yes
+          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-lua test-jsonrpc test-c-api test-coverage-machine test-uarch-rv64ui test-uarch-interpreter test-coverage-uarch test-coverage-uarch-pcs test-machine-with-log-step coverage-report coverage=yes
           docker cp coverage-report:/usr/src/emulator/tests/build/coverage .
           docker rm coverage-report
 

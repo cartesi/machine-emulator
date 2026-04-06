@@ -359,6 +359,9 @@ where options are:
   --hash-function=<keccak256|sha256>
     hash function for machine (default: keccak256)
 
+  --uarch-pc-output-dir=<dir>
+    save collected uarch PCs to <dir> (run_uarch_coverage only)
+
 and command can be:
 
   run
@@ -369,6 +372,9 @@ and command can be:
 
   run_uarch
     run test in the microarchitecture and report if payload and cycles match expected
+
+  run_uarch_coverage
+    like run_uarch but collects executed uarch PCs into --uarch-pc-output-dir
 
   run_host_and_uarch
     run test in two machines: host and microarchitecture based; checking if root hashes match after each mcycle.
@@ -411,6 +417,7 @@ local periodic_action_start = 0
 local concurrency_update_hash_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_HASH_TREE")) or 0
 local save_step_logs_dir
 local hash_function
+local uarch_pc_output_dir
 
 -- List of supported options
 -- Options are processed in order
@@ -576,6 +583,16 @@ local options = {
         end,
     },
     {
+        "^%-%-uarch%-pc%-output%-dir%=(.*)$",
+        function(o)
+            if not o or #o < 1 then
+                return false
+            end
+            uarch_pc_output_dir = o
+            return true
+        end,
+    },
+    {
         "^%-%-hash%-function%=(.*)$",
         function(o)
             if not o or #o < 1 then
@@ -661,6 +678,38 @@ end
 
 local function run_machine_with_uarch(machine, ctx, max_mcycle)
     run_machine(machine, ctx, max_mcycle, advance_machine_with_uarch)
+end
+
+local function prepost_suffix(prepost)
+    if not prepost then
+        return ""
+    end
+    local h = cartesi.keccak256(table.concat(prepost))
+    return string.format(".%s", string.sub(util.hexhash(h), 1, 8))
+end
+
+local function advance_machine_with_uarch_coverage(machine, pc_set)
+    while true do
+        pc_set[machine:read_reg("uarch_pc")] = true
+        local status = machine:run_uarch(machine:read_reg("uarch_cycle") + 1)
+        if status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
+            pc_set[machine:read_reg("uarch_pc")] = true
+            machine:reset_uarch()
+            return
+        end
+    end
+end
+
+local function run_machine_with_uarch_coverage(machine, ctx, max_mcycle, pc_set)
+    local mcycle = machine:read_reg("mcycle")
+    while math.ult(mcycle, max_mcycle) do
+        advance_machine_with_uarch_coverage(machine, pc_set)
+        mcycle = machine:read_reg("mcycle")
+        if machine:read_reg("iflags_H") ~= 0 then
+            break
+        end
+    end
+    ctx.read_htif_tohost_data = machine:read_reg("htif_tohost_data")
 end
 
 local function build_machine(ram_image)
@@ -1069,6 +1118,23 @@ elseif command == "run_uarch" then
         run_machine_with_uarch(machine, row, 2 * row.expected_cycles)
         check_and_print_result(machine, row)
         post_fn(machine, pre_ctx)
+    end)
+elseif command == "run_uarch_coverage" then
+    assert(uarch_pc_output_dir, "run_uarch_coverage requires --uarch-pc-output-dir=<dir>")
+    failures = parallel.run(contexts, jobs, function(row)
+        local pre_fn, post_fn = load_prepost(row.prepost)
+        local machine <close> = build_machine(row.ram_image)
+        local pre_ctx = pre_fn(machine)
+        local pc_set = {}
+        run_machine_with_uarch_coverage(machine, row, 2 * row.expected_cycles, pc_set)
+        check_and_print_result(machine, row)
+        post_fn(machine, pre_ctx)
+        local base = row.ram_image:gsub("%.bin$", "")
+        local f = assert(io.open(uarch_pc_output_dir .. "/" .. base .. prepost_suffix(row.prepost) .. ".pcs", "w"))
+        for pc, _ in pairs(pc_set) do
+            f:write(string.format("0x%x\n", pc))
+        end
+        f:close()
     end)
 elseif command == "run_host_and_uarch" then
     failures = parallel.run(contexts, jobs, function(row)

@@ -35,6 +35,10 @@ SUPPORTED_UARCH_INSN := add|addi|addiw|addw|and|andi|auipc|beq|bge|bgeu|blt|bltu
 	subw|sw|xor|xori
 
 OPTFLAGS=-O2 -g0
+GC_SECTIONS=-Wl,--gc-sections
+
+COV_OPTFLAGS=-O0 -g -DCODE_COVERAGE -Wno-stringop-overread
+COV_GC_SECTIONS=
 
 # Asserts are always enabled by now, but in the far future we should disable them
 # OPTFLAGS+=-DNDEBUG
@@ -43,7 +47,7 @@ OPTFLAGS=-O2 -g0
 UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks
 WARNFLAGS := -Wall -Wextra -Wpedantic -Wno-array-bounds -Werror
 
-CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WARNFLAGS) \
+BASEFLAGS := -march=rv64i -mabi=lp64 $(UBFLAGS) $(WARNFLAGS) \
 	-DMICROARCHITECTURE=1 \
 	-DAVOID_NATIVE_UINT128_T=1 \
 	-ffreestanding \
@@ -58,6 +62,8 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WAR
 	-I$(EMULATOR_SRC_DIR) \
 	$(UARCH_DEFS) \
 	$(TOOLCHAIN_INCS)
+
+CFLAGS := $(BASEFLAGS) $(GC_SECTIONS) $(OPTFLAGS)
 
 CXXFLAGS := -std=c++23 -fno-rtti \
 	-fno-threadsafe-statics \
@@ -100,7 +106,13 @@ CLANG_TIDY_WARNS=-Wthread-safety -Wglobal-constructors -Wno-unused-command-line-
 
 .PHONY: all clean validate-instruction-set
 
+coverage?=no
+
+ifeq ($(coverage),yes)
+all: uarch-ram.bin uarch-ram-coverage.bin uarch-pristine-ram.c uarch-pristine-hash.c validate-instruction-set
+else
 all: uarch-ram.bin uarch-pristine-ram.c uarch-pristine-hash.c validate-instruction-set
+endif
 
 compute-uarch-pristine-hash: $(COMPUTE_OBJS)
 	$(HOST_CXX) $(HOST_CFLAGS) $(HOST_CXXFLAGS) -o $@ $^
@@ -163,6 +175,29 @@ uarch-ram-entry.o: uarch-ram-entry.S
 
 lint: $(CLANG_TIDY_TARGETS)
 
+# Coverage build: separate object files with -O0 -g and no gc-sections,
+# for use with uarch PC coverage collection.
+COV_CFLAGS := $(BASEFLAGS) $(COV_GC_SECTIONS) $(COV_OPTFLAGS)
+
+COV_UARCH_OBJS = $(patsubst %.c,%.cov_c.o,$(patsubst %.cpp,%.cov_cpp.o,$(UARCH_SOURCES)))
+COV_EMULATOR_OBJS = $(patsubst %.c,%.cov_c.o,$(patsubst %.cpp,%.cov_cpp.o,$(EMULATOR_SOURCES)))
+COV_THIRDPARTY_OBJS = $(patsubst %.c,%.cov_c.o,$(UARCH_THIRDPARTY_SOURCES_C))
+
+%.cov_cpp.o: %.cpp
+	$(CXX) $(COV_CFLAGS) $(CXXFLAGS) -c -o $@ $<
+
+%.cov_c.o: %.c
+	$(CC) $(COV_CFLAGS) -c -o $@ $<
+
+uarch-ram-coverage-entry.o: uarch-ram-entry.S
+	$(CC) $(COV_CFLAGS) -c -o $@ $<
+
+uarch-ram-coverage.elf: $(COV_EMULATOR_OBJS) $(COV_UARCH_OBJS) $(COV_THIRDPARTY_OBJS) uarch-ram-coverage-entry.o uarch-ram.ld
+	$(CXX) $(COV_CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld -o $@ $(COV_EMULATOR_OBJS) $(COV_UARCH_OBJS) $(COV_THIRDPARTY_OBJS) uarch-ram-coverage-entry.o $(TOOLCHAIN_LIBS)
+
+uarch-ram-coverage.bin: uarch-ram-coverage.elf
+	$(OBJCOPY) -S -O binary $^ $@
+
 clean-executables:
 	@rm -f compute-uarch-pristine-hash
 
@@ -170,4 +205,4 @@ clean-auto-generated:
 	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp *.o *.clang-tidy *.insn.txt *.objdump $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS)
+	@rm -f *.ld *.elf *.bin *.tmp *.o *.clang-tidy *.insn.txt *.objdump $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) $(COV_UARCH_OBJS) $(COV_EMULATOR_OBJS) $(COV_THIRDPARTY_OBJS)

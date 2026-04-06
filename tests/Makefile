@@ -63,6 +63,7 @@ COVERAGE_TOOLCHAIN?=clang
 else
 COVERAGE_TOOLCHAIN?=gcc
 endif
+export COVERAGE_TOOLCHAIN
 COVERAGE_OUTPUT_DIR=$(BUILDDIR)/coverage
 COVERAGE_WORKLOAD=stress-ng --cpu 1 --cpu-ops 1
 COVERAGE_SOURCES=$(wildcard ../src/*.h) $(wildcard ../src/*.cpp)
@@ -94,7 +95,7 @@ build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-
 build-tests-machine: machine riscv-tests
 
 build-tests-fuzz-seed-corpus:
-ifneq (yes,$(sanitize))
+ifneq (yes,$(filter yes,$(sanitize) $(coverage)))
 	@$(MAKE) -C fuzz fuzz-seed-corpus
 endif
 
@@ -258,30 +259,47 @@ test-workload:
 test-coverage-machine: test-interactive test-workload
 	$(LUA) ../src/cartesi-machine.lua --max-mcycle=1
 
+UARCH_PCS_DIR=$(BUILDDIR)/uarch-pcs
+UARCH_COV_ELF=../uarch/uarch-ram-coverage.elf
+UARCH_COV_BIN=../uarch/uarch-ram-coverage.bin
+
 test-coverage-uarch:
-	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" run_uarch
 	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" run_host_and_uarch
 	$(LUA) ./lua/htif-yield.lua --uarch
 
+test-coverage-uarch-pcs:
+	mkdir -p $(UARCH_PCS_DIR)
+	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" --uarch-ram-image=$(UARCH_COV_BIN) --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
+	$(LUA) ./lua/cartesi-machine-tests.lua --test="thrash%-tlb.bin" --uarch-ram-image=$(UARCH_COV_BIN) --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
+
+ifeq ($(COVERAGE_TOOLCHAIN),clang)
+export LLVM_PROFILE_FILE=coverage-%p.profraw
+endif
+
 ifeq ($(COVERAGE_TOOLCHAIN),gcc)
-GCOVR_FLAGS=--gcov-ignore-parse-errors
-coverage-report: $(COVERAGE_OUTPUT_DIR)
-	cd ../src && gcov --demangled-names --relative-only --branch-probabilities *.gcda
-	mkdir -p $(COVERAGE_OUTPUT_DIR)/gcc
-	gcovr $(GCOVR_FLAGS) --root ../src --html-details $(COVERAGE_OUTPUT_DIR)/gcc/index.html
-	gcovr $(GCOVR_FLAGS) --print-summary | tee $(COVERAGE_OUTPUT_DIR)/coverage.txt
+GCOV=gcov
 else ifeq ($(COVERAGE_TOOLCHAIN),clang)
-coverage-report: $(COVERAGE_OUTPUT_DIR)
-	llvm-profdata merge -sparse $(shell find . -name 'coverage*.profraw') -o coverage.profdata
-	llvm-cov show -format=html -output-dir=$(COVERAGE_OUTPUT_DIR)/clang -instr-profile=coverage.profdata \
-		../src/cartesi.so \
-		-object ../src/cartesi/jsonrpc.so \
-		-object ../src/$(LIBCARTESI_SO) \
-		-object ../src/cartesi-jsonrpc-machine \
-		$(COVERAGE_SOURCES)
+GCOV=llvm-cov gcov
 
 export LLVM_PROFILE_FILE=coverage-%p.profraw
 endif
+
+ifeq ($(DEV_ENV_HAS_TOOLCHAIN),yes)
+UARCH_PCS_TO_GCOV_CMD=$(LUA) ./scripts/uarch-pcs-to-gcov.lua $(UARCH_COV_ELF) $(UARCH_PCS_DIR) ../src
+else
+UARCH_PCS_TO_GCOV_CMD=$(MAKE) toolchain-exec CONTAINER_COMMAND='/bin/bash -c "lua5.4 ./scripts/uarch-pcs-to-gcov.lua $(UARCH_COV_ELF) build/uarch-pcs ../src"'
+endif
+
+GCOVR_FLAGS=--gcov-ignore-parse-errors --use-gcov-files \
+	--exclude-unreachable-branches --exclude-function-lines \
+	--exclude-noncode-lines --exclude-throw-branches \
+	--exclude-lines-by-pattern '\s*contract_assert.*'
+
+coverage-report: $(COVERAGE_OUTPUT_DIR)
+	$(LUA) ./scripts/run-gcov.lua ../src '$(GCOV)'
+	$(UARCH_PCS_TO_GCOV_CMD)
+	mkdir -p $(COVERAGE_OUTPUT_DIR)/gcc
+	cd ../src && gcovr $(GCOVR_FLAGS) --root . --filter '$(abspath ../src)' --filter '$(abspath ../uarch)' --html-details $(COVERAGE_OUTPUT_DIR)/gcc/index.html --txt $(COVERAGE_OUTPUT_DIR)/coverage.txt --print-summary
 
 test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step test-evmu
 

@@ -64,8 +64,8 @@ CXXFLAGS+=-g -Og -fno-dce -fno-inline -DCODE_COVERAGE --coverage
 LDFLAGS+=--coverage
 else ifeq ($(COVERAGE_TOOLCHAIN),clang)
 CXX=clang++
-CXXFLAGS+=-g -O0 -DCODE_COVERAGE -fprofile-instr-generate -fcoverage-mapping
-LDFLAGS+=-fprofile-instr-generate -fcoverage-mapping
+CXXFLAGS+=-g -O0 -DCODE_COVERAGE --coverage -fno-inline
+LDFLAGS+=--coverage
 else ifneq ($(COVERAGE_TOOLCHAIN),)
 $(error invalid value for COVERAGE_TOOLCHAIN: $(COVERAGE_TOOLCHAIN))
 endif

@@ -6,6 +6,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-04-09
+## Added
+- Added RISC0 zkVM integration for fraud proof verification, with C++, Rust, and Solidity implementations
+- Added `cm_collect_mcycle_root_hashes` and `cm_collect_uarch_cycle_root_hashes` C API functions for bulk hash collection with subtree bundling support
+- Added `cm_get_version` C API function to retrieve emulator semantic version at runtime
+- Added `cm_write_word` C API function to write a word by physical address
+- Added `cm_get_node_hash` C API function to get hash of a specific node in the hash tree
+- Added `cm_clone_stored` and `cm_remove_stored` C API functions to clone and remove stored machines
+- Added `cm_read_console_output` and `cm_write_console_input` C API functions for buffered console I/O
+- Added `cm_get_hash` and `cm_get_concat_hash` C API functions for general-purpose hashing
+- Added `cm_get_hash_tree_stats` C API function to retrieve hash tree statistics
+- Added `cm_sharing_mode` enum (`CM_SHARING_NONE`, `CM_SHARING_CONFIG`, `CM_SHARING_ALL`) to control on-disk vs in-memory machine state
+- Added `cm_hash_function` enum (`CM_HASH_KECCAK256`, `CM_HASH_SHA256`) to select the hash function used in the hash tree
+- Added `CM_BREAK_REASON_CONSOLE_OUTPUT` and `CM_BREAK_REASON_CONSOLE_INPUT` break reasons
+- Added `CM_UARCH_BREAK_REASON_CYCLE_OVERFLOW` break reason and `CM_UARCH_CYCLE_MAX` constant
+- Added `CM_AR_SHADOW_STATE_START`, `CM_AR_SHADOW_STATE_LENGTH`, `CM_AR_SHADOW_REVERT_ROOT_HASH_START`, `CM_AR_SHADOW_TLB_START`, `CM_AR_SHADOW_TLB_LENGTH`, `CM_AR_PMAS_START`, and `CM_AR_PMAS_LENGTH` address range constants
+- Added `--no-reserve` command line option to skip reserving swap memory for flash drives
+- Added `--assert-version` command line option to verify emulator version on startup
+- Added `--create=<directory>` command line option to create machines with fully on-disk state
+- Added `--console-io=<key>:<value>` command line option for console input/output redirection (to/from null, stdout, stderr, file descriptor, file, or buffer)
+- Added `--dense-uarch-hashes` command line option to print root hash at every uarch cycle
+- Added `--processor`, `--ram`, `--dtb`, `--pmas`, `--uarch-ram`, and `--uarch-processor` command line options with backing store configuration
+- Added `--hash-tree` command line option to configure hash function (`keccak256` or `sha256`), sparse hash-tree and page hash-tree cache backing files
+- Added sharing mode support (`none`, `config`, `all`) to `--load` and `--store` command line options
+- Added `clone` option to `--load` for efficient machine cloning using reflinks/hardlinks
+- Added `mke2fs` option to `--flash-drive` for automatic ext2 filesystem formatting on init (defaults to true when no backing file is provided)
+- Added `read_only` option to `--flash-drive` to mark flash drives as read-only to host and guest
+- Added vectorized SIMD Keccak-256 and SHA-256 hashers with AVX2, AVX-512, and ARM NEON support
+- Added on-disk persistence for hash tree state via sparse hash-tree and page hash-tree cache files
+- Added backing store support for processor, DTB, and CMIO address ranges (previously only RAM and flash drives)
+- Added revert root hash to the shadow address range
+- Added lazy verification of TLB slots, hardening against attacker-crafted TLB state
+- Added computation of coverage for code run inside uarch
+- Added Cartesi EVM utility Lua API (`evmu.lua`) for encoding EVM call data
+- Added fuzzing infrastructure with LLVM libFuzzer, including fuzzers for machine config, shadow-state, and step verification
+- Added `ankerl::unordered_dense` third-party library for high-performance hash maps
+- Added bundled third-party pure Lua libraries: BINT big integer and Lester testing framework
+
+## Fixed
+- Fixed linting errors and compiler warnings with recent Clang
+- Fixed `cm_jsonrpc_spawn_server` not respecting the specific bind address
+- Fixed zombie processes left behind by Lua tests
+- Fixed interpreter PC alignment invariant not enforced at startup
+- Fixed interpreter fetch cache not being properly invalidated in some edge cases
+- Fixed `iunrep` coupled to mutable shadow state
+- Fixed `assert_no_brk` incorrectly asserting no pending interrupts when higher-privilege interrupts are expected
+- Fixed `errno` code not shown on `fork()` errors
+- Fixed issues with `likely`/`unlikely` macros by replacing them with C++20 `[[likely]]`/`[[unlikely]]` attributes
+
+## Changed
+- Bumped C++ standard from C++20 to C++23
+- Bumped base Docker image from Debian 12 (Bookworm) to Debian 13 (Trixie)
+- Bumped MARCHID version to 20
+- Bumped GCC RISC-V cross-compiler from 12 to 14
+- Bumped Boost library to 1.87 on macOS for compatibility
+- Bumped test rootfs to guest tools 0.17.2
+- Renamed `cartesi-merkle-tree-hash` binary to `cartesi-hash-tree-hash`
+- Renamed `libcartesi_merkle_tree` library to `libcartesi_hash_tree` (both static and shared)
+- Renamed `--flash-drive` option key `filename` to `data_filename`
+- Renamed `image_filename` to `data_filename` across all configs and CLI options
+- Renamed `update_merkle_tree` concurrency key to `update_hash_tree`
+- Renamed `CM_TREE_LOG2_*` constants to `CM_HASH_TREE_LOG2_*`
+- Renamed `CM_PMA_*` constants to `CM_AR_*` and enum from `cm_pma_constant` to `cm_pmas_constant`
+- Renamed `cm_verify_merkle_tree` to `cm_verify_hash_tree`
+- Renamed `cm_get_memory_ranges` to `cm_get_address_ranges`
+- Changed `cm_create` / `cm_create_new` signatures to accept a `dir` parameter for on-disk machine creation
+- Changed `cm_load` / `cm_load_new` signatures to accept a `cm_sharing_mode` parameter
+- Changed `cm_store` signature to accept a `cm_sharing_mode` parameter
+- Changed `cm_replace_memory_range` to accept a JSON config string instead of individual parameters
+- Changed `cm_read_memory` to allow reading across the entire address space (previously restricted to a single memory range)
+- Changed `cm_get_proof` signature to accept a `log2_root_size` parameter for proof slicing
+- Changed `cm_verify_step` to no longer require a machine pointer (now a static function)
+- Changed processor JSON config to nest register fields under `processor.registers` sub-object
+- Changed stored machine directory layout: new `.dht`, `.dpt` files per address range, new `hash_tree.sht` and `hash_tree.phtc` global files, and `hash` file is no longer generated
+- Changed `cartesi-machine-stored-hash` to compute hash by loading the full machine instead of reading the `hash` file
+- Changed flash drive `label` from mandatory to optional (defaults to `driveX`)
+- Changed step log format to include root hashes and mcycle count in the header for self-contained verification
+- Changed CSR registers to enforce WARL (Write Any Read Legal) semantics through a centralized legalization layer on reads and writes
+- Changed WFI instruction to clamp wait time to `mcycle_end`, preventing cycle overshooting
+- Replaced the Merkle tree implementation with a new hash tree supporting configurable hash functions
+- Replaced `image_filename` / `shared` fields with unified `backing_store_config` structure (`data_filename`, `dht_filename`, `dpt_filename`, `shared`, `create`, `truncate`)
+- Replaced `htif_runtime_config` with `console_runtime_config` supporting full I/O redirection
+- Replaced PMA naming throughout the codebase by "address range" / AR
+- Optimized SQRT instruction using digit-by-digit calculation
+- Optimized hash tree computation using OpenMP for threading and vectorized hashing
+- Optimized shadow register access in replay step by using caches
+
+## Removed
+- Removed `hash` file from stored machine snapshot directories (root hash is now computed on demand from the hash tree)
+- Removed `default_ram_image` and `default_rootfs_image` fields from `--version-json` output
+- Removed `--htif-no-console-putchar` command line option (replaced by `--console-io=output_destination:to_null`)
+- Removed `--skip-root-hash-check` and `--skip-root-hash-store` command line options
+- Removed `cm_verify_dirty_page_maps` C API function
+- Removed `tlb_config`, `clint_config`, `plic_config`, and `htif_config` from machine configuration
+- Removed `tiny_sha3` third-party library (replaced by built-in Keccak-256 hasher)
+- Removed `proof.lua` Lua module
+- Removed `circular_buffer` implementation in favor of standard containers
+- Removed old Merkle tree implementation (`complete-merkle-tree`, `full-merkle-tree`, `machine-merkle-tree`, `pristine-merkle-tree`)
+
 ## [0.19.0] - 2024-05-27
 ## Added
 - Added `libluacartesi.a` and `libluacartesi_jsonrpc.a` static libraries when installing to allow packaging statically linked Lua programs
@@ -557,7 +656,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/cartesi/machine-emulator/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.19.0
 [0.18.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.18.1
 [0.18.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.18.0

@@ -168,11 +168,11 @@ First, make sure to have all the system requirements, then run the following to 
 
 ```sh
 # clone a stable branch of the emulator
-git clone --branch v0.19.0 https://github.com/cartesi/machine-emulator.git
+git clone --branch v0.20.0 https://github.com/cartesi/machine-emulator.git
 cd machine-emulator
 
 # patch the sources with required generated files
-wget https://github.com/cartesi/machine-emulator/releases/download/v0.19.0/add-generated-files.diff
+wget https://github.com/cartesi/machine-emulator/releases/download/v0.20.0/add-generated-files.diff
 git apply add-generated-files.diff
 
 # compile
@@ -190,8 +190,8 @@ sudo make install PREFIX=/usr/local
 
 After installation, to boot a Linux system with the `cartesi-machine` command, you will need to also download:
 
-- Guest [Linux image](https://github.com/cartesi/machine-linux-image) and place it at `$PREFIX/cartesi/images/linux.bin`
-- Guest [rootfs image](https://github.com/cartesi/machine-rootfs-image) and place it at `$PREFIX/cartesi/images/rootfs.ext2`.
+- Guest [Linux image](https://github.com/cartesi/machine-linux-image) and place it at `$PREFIX/share/cartesi/images/linux.bin`
+- Guest [rootfs image](https://github.com/cartesi/machine-rootfs-image) and place it at `$PREFIX/share/cartesi/images/rootfs.ext2`.
 
 ### Usage
 

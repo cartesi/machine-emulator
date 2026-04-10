@@ -16,12 +16,12 @@
 
 #include <string>
 
-#include <back-merkle-tree.h>
-#include <hash-tree-proof.h>
-#include <json-util.h>
-#include <machine-c-api.h>
-#include <machine-hash.h>
-#include <variant-hasher.h>
+#include <back-merkle-tree.hpp>
+#include <cm.h>
+#include <hash-tree-proof.hpp>
+#include <json-util.hpp>
+#include <machine-hash.hpp>
+#include <variant-hasher.hpp>
 
 // Calculate root hash for data buffer of log2_size
 namespace detail {

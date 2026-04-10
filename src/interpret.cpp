@@ -81,7 +81,7 @@
 ///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Arrays-and-pointers-implementation.html#Arrays-and-pointers-implementation
 /// \}
 
-#include "interpret.h"
+#include "interpret.hpp"
 
 #include <algorithm>
 #include <array>
@@ -91,33 +91,33 @@
 #include <utility>
 
 #if defined(MICROARCHITECTURE)
-#include "../uarch/uarch-runtime.h"
-#include "machine-uarch-bridge-state-access.h"
+#include "../uarch/uarch-bridge-state-access.hpp"
+#include "../uarch/uarch-runtime.hpp"
 #elif defined(ZKARCHITECTURE)
-#include "replay-step-state-access.h" // IWYU pragma: keep
-#include "zk-runtime.h"               // IWYU pragma: export
+#include "replay-step-state-access.hpp" // IWYU pragma: keep
+#include "zk-runtime.hpp"               // IWYU pragma: export
 #else
-#include "collect-mcycle-hashes-state-access.h" // IWYU pragma: keep
-#include "record-step-state-access.h"           // IWYU pragma: keep
-#include "replay-step-state-access.h"           // IWYU pragma: keep
-#include "state-access.h"                       // IWYU pragma: keep
+#include "collect-mcycle-hashes-state-access.hpp" // IWYU pragma: keep
+#include "record-step-state-access.hpp"           // IWYU pragma: keep
+#include "replay-step-state-access.hpp"           // IWYU pragma: keep
+#include "state-access.hpp"                       // IWYU pragma: keep
 
 #endif
 
-#include "assert-printf.h"
-#include "compiler-defines.h"
-#include "device-state-access.h"
-#include "find-pma.h"
-#include "i-accept-counters.h" // IWYU pragma: keep
-#include "i-interactive-state-access.h"
-#include "i-state-access.h"
-#include "meta.h"
-#include "riscv-constants.h"
-#include "rtc.h"
-#include "shadow-tlb.h"
-#include "soft-float.h"
-#include "translate-virtual-address.h"
-#include "uint128.h"
+#include "assert-printf.hpp"
+#include "compiler-defines.hpp"
+#include "device-state-access.hpp"
+#include "find-pma.hpp"
+#include "i-accept-counters.hpp" // IWYU pragma: keep
+#include "i-interactive-state-access.hpp"
+#include "i-state-access.hpp"
+#include "meta.hpp"
+#include "riscv-constants.hpp"
+#include "rtc.hpp"
+#include "shadow-tlb.hpp"
+#include "soft-float.hpp"
+#include "translate-virtual-address.hpp"
+#include "uint128.hpp"
 
 namespace cartesi {
 
@@ -5696,7 +5696,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
 
                 // This header define the instruction jump table table, which is very large.
                 // It also defines the jump table related macros used in the next big switch.
-                #include "interpret-jump-table.h"
+                #include "interpret-jump-table.hpp"
 
                 // This will use computed goto on supported compilers,
                 // otherwise normal switch in unsupported platforms.
@@ -6257,8 +6257,8 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
 }
 
 #if defined(MICROARCHITECTURE)
-// Explicit instantiation for machine_uarch_bridge_state_access
-template interpreter_break_reason interpret(machine_uarch_bridge_state_access a, uint64_t mcycle_end);
+// Explicit instantiation for uarch_bridge_state_access
+template interpreter_break_reason interpret(uarch_bridge_state_access a, uint64_t mcycle_end);
 #elif defined(ZKARCHITECTURE)
 // Explicit instantiation for replay_step_state_access (by reference)
 template interpreter_break_reason interpret(replay_step_state_access &a, uint64_t mcycle_end);

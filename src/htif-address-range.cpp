@@ -14,13 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "htif-address-range.h"
+#include "htif-address-range.hpp"
 
 #include <cstdint>
 
-#include "htif-constants.h"
-#include "i-device-state-access.h"
-#include "interpret.h"
+#include "htif-constants.hpp"
+#include "i-device-state-access.hpp"
+#include "interpret.hpp"
 
 namespace cartesi {
 

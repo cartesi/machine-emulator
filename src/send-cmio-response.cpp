@@ -17,14 +17,14 @@
 /// \file
 /// \brief This file is be converted to Solidity by the machine-solidity-step.
 
-#include "send-cmio-response.h"
+#include "send-cmio-response.hpp"
 
-#include "address-range-constants.h"
-#include "hash-tree-constants.h"
-#include "record-send-cmio-state-access.h" // IWYU pragma: keep
-#include "replay-send-cmio-state-access.h" // IWYU pragma: keep
-#include "state-access.h"                  // IWYU pragma: keep
-#include "uarch-solidity-compat.h"
+#include "address-range-constants.hpp"
+#include "hash-tree-constants.hpp"
+#include "record-send-cmio-state-access.hpp" // IWYU pragma: keep
+#include "replay-send-cmio-state-access.hpp" // IWYU pragma: keep
+#include "state-access.hpp"                  // IWYU pragma: keep
+#include "uarch-solidity-compat.hpp"
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)
 namespace cartesi {

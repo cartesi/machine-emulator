@@ -52,7 +52,7 @@
 
 // #define DEBUG_VIRTIO_ERRORS
 
-#include "virtio-net-tuntap-address-range.h"
+#include "virtio-net-tuntap-address-range.hpp"
 
 #ifdef HAVE_TUNTAP
 
@@ -72,10 +72,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "i-device-state-access.h"
-#include "os.h"
-#include "virtio-address-range.h"
-#include "virtio-net-address-range.h"
+#include "i-device-state-access.hpp"
+#include "os.hpp"
+#include "virtio-address-range.hpp"
+#include "virtio-net-address-range.hpp"
 
 // Include TUN/TAP headers
 #ifdef __linux__

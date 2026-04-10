@@ -231,7 +231,7 @@ You can check the `cartesi-machine --help` for more information on how to use th
 
 ### Library
 
-You can use the emulator as library in other applications, its `libcartesi` library provides a [C API](src/machine-c-api.h) that is very simple to use.
+You can use the emulator as library in other applications, its `libcartesi` library provides a [C API](src/cm.h) that is very simple to use.
 
 Check the following wiki guides on how to use with different languages:
 - [C/C++](https://github.com/cartesi/machine-emulator/wiki/Using-the-C-API)

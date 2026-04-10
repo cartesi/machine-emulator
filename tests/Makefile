@@ -66,7 +66,7 @@ endif
 export COVERAGE_TOOLCHAIN
 COVERAGE_OUTPUT_DIR=$(BUILDDIR)/coverage
 COVERAGE_WORKLOAD=stress-ng --cpu 1 --cpu-ops 1
-COVERAGE_SOURCES=$(wildcard ../src/*.h) $(wildcard ../src/*.cpp)
+COVERAGE_SOURCES=$(wildcard ../src/*.h) $(wildcard ../src/*.hpp) $(wildcard ../src/*.cpp)
 
 ifeq ($(sanitize),yes)
 ifeq ($(TARGET_OS),Darwin)

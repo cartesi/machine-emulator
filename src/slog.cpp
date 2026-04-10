@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "slog.h"
+#include "slog.hpp"
 
 #include <cstring>
 

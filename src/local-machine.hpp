@@ -1,0 +1,116 @@
+// Copyright Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU Lesser General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option) any
+// later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+// PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along
+// with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
+//
+
+#ifndef LOCAL_MACHINE_HPP
+#define LOCAL_MACHINE_HPP
+
+#include <cstdint>
+#include <optional>
+#include <string>
+
+#include "access-log.hpp"
+#include "address-range-description.hpp"
+#include "back-merkle-tree.hpp"
+#include "hash-tree-proof.hpp"
+#include "hash-tree-stats.hpp"
+#include "i-machine.hpp"
+#include "interpret.hpp"
+#include "machine-config.hpp"
+#include "machine-fwd.hpp"
+#include "machine-hash.hpp"
+#include "machine-runtime-config.hpp"
+#include "mcycle-root-hashes.hpp"
+#include "uarch-cycle-root-hashes.hpp"
+#include "uarch-interpret.hpp"
+
+namespace cartesi {
+
+/// \class local_machine
+/// \brief i_machine implementation pointing to a local machine instance
+class local_machine final : public i_machine {
+public:
+    local_machine() = default;
+    local_machine(const local_machine &other) = delete;
+    local_machine(local_machine &&other) noexcept = delete;
+    local_machine &operator=(const local_machine &other) = delete;
+    local_machine &operator=(local_machine &&other) noexcept = delete;
+    ~local_machine() override;
+
+private:
+    i_machine *do_clone_empty() const override;
+    bool do_is_empty() const override;
+    void do_create(const machine_config &config, const machine_runtime_config &runtime,
+        const std::string &dir) override;
+    void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) override;
+    interpreter_break_reason do_run(uint64_t mcycle_end) override;
+    mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
+        int32_t log2_bundle_mcycle_count, const std::optional<back_merkle_tree> &previous_back_tree) override;
+    interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
+    void do_store(const std::string &directory, sharing_mode sharing) const override;
+    void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
+    void do_remove_stored(const std::string &dir) const override;
+    access_log do_log_step_uarch(const access_log::type &log_type) override;
+    hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const override;
+    machine_hash do_get_root_hash() const override;
+    machine_hash do_get_node_hash(uint64_t address, int log2_size) const override;
+    bool do_verify_hash_tree() const override;
+    uint64_t do_read_reg(reg r) const override;
+    void do_write_reg(reg w, uint64_t val) override;
+    void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
+    void do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
+    void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) override;
+    void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
+    uint64_t do_translate_virtual_address(uint64_t vaddr) override;
+    uint64_t do_read_console_output(uint8_t *data, uint64_t max_length) override;
+    uint64_t do_write_console_input(const uint8_t *data, uint64_t length) override;
+    void do_replace_memory_range(const memory_range_config &new_range) override;
+    uint64_t do_read_word(uint64_t address) const override;
+    void do_write_word(uint64_t address, uint64_t value) override;
+    machine_config do_get_initial_config() const override;
+    hash_tree_stats do_get_hash_tree_stats(bool clear) override;
+    machine_runtime_config do_get_runtime_config() const override;
+    void do_set_runtime_config(const machine_runtime_config &r) override;
+    void do_destroy() override;
+    void do_reset_uarch() override;
+    access_log do_log_reset_uarch(const access_log::type &log_type) override;
+    uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
+    uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
+        int32_t log2_bundle_uarch_cycle_count) override;
+    address_range_descriptions do_get_address_ranges() const override;
+    void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
+    access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const access_log::type &log_type) override;
+    uint64_t do_get_reg_address(reg r) const override;
+    machine_config do_get_default_config() const override;
+    interpreter_break_reason do_verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const machine_hash &root_hash_after) const override;
+    void do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const override;
+    void do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const override;
+    void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const override;
+
+    machine *get_machine();
+    const machine *get_machine() const;
+
+    machine *m_machine = nullptr;
+};
+
+} // namespace cartesi
+
+#endif // LOCAL_MACHINE_HPP

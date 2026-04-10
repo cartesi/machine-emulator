@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "machine-console.h"
+#include "machine-console.hpp"
 
 #include <algorithm>
 #include <array>
@@ -27,9 +27,9 @@
 #include <stdexcept>
 #include <utility>
 
-#include "machine-runtime-config.h"
-#include "os.h"
-#include "unique-c-ptr.h"
+#include "machine-runtime-config.hpp"
+#include "os.hpp"
+#include "unique-c-ptr.hpp"
 
 namespace cartesi {
 

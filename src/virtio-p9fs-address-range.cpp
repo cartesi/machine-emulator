@@ -32,11 +32,11 @@
 // Enable this define to debug VirtIO Plan 9 filesystem operations
 // #define DEBUG_VIRTIO_P9FS
 
-#include "os-features.h"
+#include "os-features.hpp"
 #ifdef HAVE_POSIX_FS
 
 // Must be included before
-#include "os-posix-compat.h" // IWYU pragma: keep
+#include "os-posix-compat.hpp" // IWYU pragma: keep
 
 #ifdef __APPLE__
 #include <sys/mount.h>
@@ -52,7 +52,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "virtio-p9fs-address-range.h"
+#include "virtio-p9fs-address-range.hpp"
 
 #include <algorithm>
 #include <array>
@@ -67,9 +67,9 @@
 #include <tuple>
 #include <utility>
 
-#include "i-device-state-access.h"
-#include "virtio-address-range.h"
-#include "virtio-serializer.h"
+#include "i-device-state-access.hpp"
+#include "virtio-address-range.hpp"
+#include "virtio-serializer.hpp"
 
 namespace cartesi {
 

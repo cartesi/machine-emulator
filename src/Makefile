@@ -310,10 +310,10 @@ CLANG_TIDY=clang-tidy
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(LINTER_SOURCES)))
 
 CLANG_FORMAT=clang-format
-CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp) $(wildcard ../uarch/*.h)
+CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp) $(wildcard ../uarch/*.h) $(wildcard ../uarch/*.hpp)
 CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UARCH_FILES)))
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
-CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.h
+CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.hpp
 CLANG_FORMAT_FILES:=$(strip $(CLANG_FORMAT_FILES))
 CLANG_FORMAT_FILES:=$(filter-out $(CLANG_FORMAT_IGNORE_FILES),$(strip $(CLANG_FORMAT_FILES)))
 
@@ -380,7 +380,7 @@ LIBCARTESI_OBJS:= \
 	htif-address-range.o \
 	interpret.o \
 	json-util.o \
-	machine-c-api.o \
+	cm.o \
 	machine-config.o \
 	machine.o \
 	machine-address-ranges.o \
@@ -432,7 +432,7 @@ CARTESI_HASH_TREE_HASH_OBJS:= \
 LIBCARTESI_JSONRPC_OBJS:= \
 	jsonrpc-machine.o \
 	os.o \
-	jsonrpc-machine-c-api.o \
+	cm-jsonrpc.o \
 	base64.o \
 	json-util.o
 
@@ -557,7 +557,7 @@ cartesi-jsonrpc-machine: $(CARTESI_JSONRPC_MACHINE_OBJS) libcartesi_jsonrpc.a li
 
 clua-%.o clua.o: CXXFLAGS += $(LUA_INC)
 
-machine-c-version.h: ../tools/template/machine-c-version.h.template
+cm-version.h: ../tools/template/cm-version.h.template
 	sed "s|EMULATOR_MARCHID|$(EMULATOR_MARCHID)|g;s|EMULATOR_VERSION_MAJOR|$(EMULATOR_VERSION_MAJOR)|g;s|EMULATOR_VERSION_MINOR|$(EMULATOR_VERSION_MINOR)|g;s|EMULATOR_VERSION_PATCH|$(EMULATOR_VERSION_PATCH)|g;s|EMULATOR_VERSION_LABEL|$(EMULATOR_VERSION_LABEL)|g" $< > $@
 
 jsonrpc-discover.cpp: jsonrpc-discover.json
@@ -569,7 +569,7 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo ')json";' >> jsonrpc-discover.cpp
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
-%.clang-tidy: %.cpp machine-c-version.h interpret-jump-table.h
+%.clang-tidy: %.cpp cm-version.h interpret-jump-table.hpp
 	@$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(CLANG_TIDY_WARNS) $(LUA_INC) -DCLANG_TIDY_LINT 2>/dev/null
 	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
@@ -586,10 +586,10 @@ uarch-pristine-ram.o: $(UARCH_PRISTINE_RAM_C)
 uarch-pristine-hash.o: $(UARCH_PRISTINE_HASH_C)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-interpret-jump-table.h: ../tools/gen-interpret-jump-table.lua
+interpret-jump-table.hpp: ../tools/gen-interpret-jump-table.lua
 	$< > $@
 
-interpret.o: interpret.cpp machine-c-version.h interpret-jump-table.h
+interpret.o: interpret.cpp cm-version.h interpret-jump-table.hpp
 	$(CXX) $(CXXFLAGS) $(INTERPRET_CXXFLAGS) -c -o $@ $<
 
 keccak-256-hasher.o: keccak-256-hasher.cpp
@@ -601,7 +601,7 @@ sha-256-hasher.o: sha-256-hasher.cpp
 is-pristine.o: is-pristine.cpp
 	$(CXX) $(CXXFLAGS) $(HASH_CFLAGS) -c -o $@ $<
 
-%.o: %.cpp machine-c-version.h
+%.o: %.cpp cm-version.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 %.o: %.c
@@ -609,7 +609,7 @@ is-pristine.o: is-pristine.cpp
 
 ../uarch/uarch-pristine-ram.c ../uarch/uarch-pristine-hash.c: generate-uarch-pristine
 
-generate-uarch-pristine: machine-c-version.h interpret-jump-table.h
+generate-uarch-pristine: cm-version.h interpret-jump-table.hpp
 ifeq (,$(wildcard ../uarch/uarch-pristine-hash.c))
 	@if [ "$(DEV_ENV_HAS_TOOLCHAIN)" = "yes" ]; then \
 		$(MAKE) -C .. uarch coverage=$(coverage); \
@@ -621,7 +621,7 @@ endif
 clean: clean-auto-generated clean-coverage clean-profile clean-tidy clean-libcartesi clean-executables
 
 clean-auto-generated:
-	@rm -f jsonrpc-discover.cpp machine-c-version.h interpret-jump-table.h
+	@rm -f jsonrpc-discover.cpp cm-version.h interpret-jump-table.hpp
 
 clean-tidy:
 	@rm -f *.clang-tidy

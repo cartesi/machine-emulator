@@ -14,16 +14,16 @@
 // along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 //
 
-#include "virtio-net-address-range.h"
-#include "os-features.h"
+#include "virtio-net-address-range.hpp"
+#include "os-features.hpp"
 
 #if defined(HAVE_SLIRP) || defined(HAVE_TUNTAP)
 
 #include <cstdint>
 
-#include "i-device-state-access.h"
-#include "os.h"
-#include "virtio-address-range.h"
+#include "i-device-state-access.hpp"
+#include "os.hpp"
+#include "virtio-address-range.hpp"
 
 namespace cartesi {
 

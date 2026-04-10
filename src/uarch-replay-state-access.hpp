@@ -1,0 +1,376 @@
+// Copyright Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU Lesser General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option) any
+// later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+// PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along
+// with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
+//
+
+#ifndef UARCH_REPLAY_STATE_ACCESS_HPP
+#define UARCH_REPLAY_STATE_ACCESS_HPP
+
+/// \file
+/// \brief State access implementation that replays recorded state accesses
+
+#include <algorithm>
+#include <cstdint>
+#include <ios>
+#include <span>
+#include <sstream>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#include "access-log.hpp"
+#include "hash-tree-constants.hpp"
+#include "hash-tree.hpp"
+#include "i-accept-scoped-notes.hpp"
+#include "i-hasher.hpp"
+#include "i-prefer-shadow-uarch-state.hpp"
+#include "i-uarch-state-access.hpp"
+#include "keccak-256-hasher.hpp"
+#include "machine-hash.hpp"
+#include "machine-reg.hpp"
+#include "machine.hpp"
+#include "meta.hpp"
+#include "shadow-tlb.hpp"
+#include "shadow-uarch-state.hpp"
+#include "uarch-constants.hpp"
+#include "uarch-pristine-state-hash.hpp"
+
+namespace cartesi {
+
+class uarch_replay_state_access :
+    public i_uarch_state_access<uarch_replay_state_access>,
+    public i_accept_scoped_notes<uarch_replay_state_access>,
+    public i_prefer_shadow_uarch_state<uarch_replay_state_access> {
+
+    using proof_type = hash_tree::proof_type;
+
+public:
+    struct context {
+        /// \brief Constructor replay_send_cmio_state_access context
+        /// \param log Access log to be replayed
+        /// \param initial_hash Initial root hash
+        context(const access_log &log, const machine_hash &initial_hash) :
+            accesses(log.get_accesses()),
+            root_hash(initial_hash) {
+            ;
+        }
+        const std::vector<access> &accesses; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+        ///< Index of next access to ne consumed
+        unsigned int next_access{};
+        ///< Root hash before next access
+        machine_hash root_hash;
+        ///< Hasher needed to verify proofs
+        keccak_256_hasher hasher;
+    };
+
+private:
+    context &m_context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+
+public:
+    /// \brief Constructor from log of word accesses.
+    explicit uarch_replay_state_access(uarch_replay_state_access::context &context) : m_context{context} {
+        ;
+    }
+
+    void finish() {
+        if (m_context.next_access != m_context.accesses.size()) {
+            throw std::invalid_argument{"access log was not fully consumed"};
+        }
+    }
+
+    machine_hash get_root_hash() const {
+        return m_context.root_hash;
+    }
+
+private:
+    template <IHasher H>
+    static auto get_hash(H &h, const access_data &data) {
+        machine_hash hash{};
+        get_merkle_tree_hash(h, std::span<const unsigned char>{data.data(), data.size()}, HASH_TREE_WORD_SIZE, hash);
+        return hash;
+    }
+
+    std::string access_to_report() const {
+        auto index = m_context.next_access + 1;
+        auto digit = index % 10;
+        const char *suffix = nullptr;
+        switch (digit) {
+            case 1:
+                suffix = "st";
+                break;
+            case 2:
+                suffix = "nd";
+                break;
+            case 3:
+                suffix = "rd";
+                break;
+            default:
+                suffix = "th";
+                break;
+        }
+        return std::to_string(index) + suffix + " access";
+    }
+
+    static constexpr const char *access_type_name(access_type type) {
+        switch (type) {
+            case access_type::read:
+                return "read";
+            case access_type::write:
+                return "write";
+        }
+        return "unknown_";
+    }
+
+    static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {
+        static_assert(cartesi::log2_size_v<uint64_t> <= HASH_TREE_LOG2_WORD_SIZE,
+            "Hash tree word size must not be smaller than machine word size");
+        const auto log2_word_size = HASH_TREE_LOG2_WORD_SIZE;
+        const auto log2_access_size = std::max(log2_size, log2_word_size);
+        const auto access_paddr = (paddr >> log2_access_size) << log2_access_size;
+        return {access_paddr, log2_access_size};
+    }
+
+    const access &check_access(const char *text) const {
+        if (m_context.next_access >= m_context.accesses.size()) {
+            throw std::invalid_argument{"log is missing access " + access_to_report() + " to " + text};
+        }
+        return m_context.accesses[m_context.next_access];
+    }
+
+    void check_access_type(const access &a, access_type type, const char *text) const {
+        if (a.get_type() != type) {
+            throw std::invalid_argument{
+                "expected " + access_to_report() + " to " + access_type_name(type) + " " + text};
+        }
+        if (type == access_type::read) {
+            if (a.get_written().has_value()) {
+                throw std::invalid_argument{
+                    "unexpected written data in " + access_to_report() + " read access to " + text};
+            }
+            if (a.get_written_hash().has_value()) {
+                throw std::invalid_argument{
+                    "unexpected written hash in " + access_to_report() + " read access to " + text};
+            }
+        }
+    }
+
+    void check_access_range(const access &a, access_type type, uint64_t paddr, uint64_t log2_size,
+        const char *text) const {
+        if (a.get_address() != paddr) {
+            std::ostringstream err;
+            err << "expected " << access_to_report() << " to " << access_type_name(type) << " " << text
+                << " at address 0x" << std::hex << paddr << "(" << std::dec << paddr << ")";
+            throw std::invalid_argument{err.str()};
+        }
+        if (a.get_log2_size() != static_cast<int>(log2_size)) {
+            throw std::invalid_argument{"expected " + access_to_report() + " to " + text + " to " +
+                access_type_name(type) + " 2^" + std::to_string(log2_size) + " bytes"};
+        }
+    }
+
+    auto check_access_siblings_and_read_hash(const access &a, const char *text) const {
+        const auto proof = a.make_proof(m_context.root_hash);
+        if (!proof.verify(m_context.hasher)) {
+            throw std::invalid_argument{
+                "siblings and read hash do not match root hash before " + access_to_report() + " to " + text};
+        }
+        return proof;
+    }
+
+    const auto &check_written_hash(const access &a, const machine_hash &expected_hash, const char *text) const {
+        if (!a.get_written_hash().has_value()) {
+            throw std::invalid_argument{"missing written hash of " + std::string(text) + " in " + access_to_report()};
+        }
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
+        if (a.get_written_hash().value() != expected_hash) {
+            throw std::invalid_argument{
+                "written hash for " + std::string(text) + " does not match expected hash in " + access_to_report()};
+        }
+        return a.get_written_hash().value();
+        // NOLINTEND(bugprone-unchecked-optional-access)
+    }
+
+    const auto &check_read_data(const access &a, const char *text) const {
+        if (!a.get_read().has_value()) {
+            throw std::invalid_argument{"missing read data for " + std::string(text) + " in " + access_to_report()};
+        }
+        // check if logged read data hashes to the logged read hash
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
+        const auto computed_read_hash = get_hash(m_context.hasher, a.get_read().value());
+        if (a.get_read_hash() != computed_read_hash) {
+            throw std::invalid_argument{
+                "read data for " + std::string(text) + " does not match read hash in " + access_to_report()};
+        }
+        return a.get_read().value();
+        // NOLINTEND(bugprone-unchecked-optional-access)
+    }
+
+    void check_written_data_if_there(const access &a, const machine_hash &written_hash, const char *text) const {
+        if (!a.get_written().has_value()) {
+            return;
+        }
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
+        if (written_hash != get_hash(m_context.hasher, a.get_written().value())) {
+            throw std::invalid_argument{
+                "written data for " + std::string(text) + " does not match written hash in " + access_to_report()};
+        }
+        // NOLINTEND(bugprone-unchecked-optional-access)
+    }
+
+    void check_read_data_if_there(const access &a, const char *text) const {
+        if (!a.get_read().has_value()) {
+            return;
+        }
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
+        if (a.get_read_hash() != get_hash(m_context.hasher, a.get_read().value())) {
+            throw std::invalid_argument{
+                "read data for " + std::string(text) + " does not match read hash in " + access_to_report()};
+        }
+        // NOLINTEND(bugprone-unchecked-optional-access)
+    }
+
+    void update_root_hash(const proof_type &proof, const machine_hash &written_hash) const {
+        m_context.root_hash = proof.bubble_up(m_context.hasher, written_hash);
+    }
+
+    void check_write_access(uint64_t paddr, uint64_t log2_size, const machine_hash &expected_hash,
+        const char *text) const {
+        const auto &a = check_access(text);
+        check_access_type(a, access_type::write, text);
+        check_access_range(a, access_type::write, paddr, log2_size, text);
+        const auto proof = check_access_siblings_and_read_hash(a, text);
+        const auto &written_hash = check_written_hash(a, expected_hash, text);
+        check_read_data_if_there(a, text);
+        check_written_data_if_there(a, written_hash, text);
+        update_root_hash(proof, written_hash);
+        m_context.next_access++;
+    }
+
+    void check_write_word_access(uint64_t paddr, uint64_t val, const char *text) const {
+        const auto log2_size = log2_size_v<uint64_t>;
+        const auto &a = check_access(text);
+        check_access_type(a, access_type::write, text);
+        check_access_range(a, access_type::write, paddr, log2_size, text);
+        const auto proof = check_access_siblings_and_read_hash(a, text);
+        auto written_data = check_read_data(a, text);
+        [[maybe_unused]] const auto [access_paddr, access_log2_size] = adjust_access(paddr, log2_size);
+        const auto val_offset = paddr - access_paddr;
+        replace_word_access_data(val, written_data, val_offset);
+        const auto &written_hash = check_written_hash(a, get_hash(m_context.hasher, written_data), text);
+        check_written_data_if_there(a, written_hash, text);
+        update_root_hash(proof, written_hash);
+        m_context.next_access++;
+    }
+
+    void check_write_reg_access(machine_reg reg, uint64_t val) const {
+        check_write_word_access(machine_reg_address(reg), val, machine_reg_get_name(reg));
+    }
+
+    uint64_t check_read_word_access(uint64_t paddr, const char *text) const {
+        const auto log2_size = log2_size_v<uint64_t>;
+        const auto &a = check_access(text);
+        check_access_type(a, access_type::read, text);
+        check_access_range(a, access_type::read, paddr, log2_size, text);
+        std::ignore = check_access_siblings_and_read_hash(a, text);
+        const auto &read_data = check_read_data(a, text);
+        [[maybe_unused]] const auto [access_paddr, access_log2_size] = adjust_access(paddr, log2_size);
+        const auto val_offset = paddr - access_paddr;
+        const auto val = get_word_access_data(read_data, val_offset);
+        m_context.next_access++;
+        return val;
+    }
+
+    uint64_t check_read_reg_access(machine_reg reg) const {
+        return check_read_word_access(machine_reg_address(reg), machine_reg_get_name(reg));
+    }
+
+    auto get_write_tlb_slot_hash(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index) const {
+        // Writes to TLB slots have to be atomic.
+        // We can only do atomic writes of entire hash tree nodes.
+        // Therefore, TLB slot must have a power-of-two size, or at least be aligned to it.
+        static_assert(SHADOW_TLB_SLOT_SIZE == sizeof(shadow_tlb_slot), "shadow TLB slot size is wrong");
+        static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE,
+            "shadow TLB slot log2 size is wrong");
+        static_assert(SHADOW_TLB_SLOT_LOG2_SIZE >= HASH_TREE_LOG2_WORD_SIZE,
+            "shadow TLB slot must fill at least an entire hash tree word");
+        shadow_tlb_slot slot_data{};
+        shadow_tlb_fill_slot(vaddr_page, vp_offset, pma_index, slot_data);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const std::span<const unsigned char> slot_data_span{reinterpret_cast<uint8_t *>(&slot_data), sizeof(slot_data)};
+        return get_merkle_tree_hash(m_context.hasher, slot_data_span, HASH_TREE_WORD_SIZE);
+    }
+
+    // -----
+    // i_prefer_shadow_uarch_state interface implementation
+    // -----
+    friend i_prefer_shadow_uarch_state<uarch_replay_state_access>;
+
+    uint64_t do_read_shadow_uarch_state(shadow_uarch_state_what what) const {
+        return check_read_reg_access(machine_reg_enum(what));
+    }
+
+    void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
+        check_write_reg_access(machine_reg_enum(what), val);
+    }
+
+    // -----
+    // i_uarch_state_access interface implementation
+    // -----
+    friend i_uarch_state_access<uarch_replay_state_access>;
+
+    uint64_t do_read_word(uint64_t paddr) const {
+        return check_read_word_access(paddr, machine::get_what_name(paddr));
+    }
+
+    void do_write_word(uint64_t paddr, uint64_t val) const {
+        check_write_word_access(paddr, val, machine::get_what_name(paddr));
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    bool do_putchar(uint8_t /*c*/) const {
+        return false;
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    void do_mark_dirty_page(uint64_t /*paddr*/, uint64_t /*pma_index*/) const {
+        ; // do nothing
+    }
+
+    void do_reset_uarch() const {
+        check_write_access(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, get_uarch_pristine_state_hash(),
+            "uarch.state");
+    }
+
+    void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+        uint64_t pma_index) const {
+        const auto slot_paddr = shadow_tlb_get_abs_addr(set_index, slot_index);
+        const auto slot_hash = get_write_tlb_slot_hash(vaddr_page, vp_offset, pma_index);
+        check_write_access(slot_paddr, SHADOW_TLB_SLOT_LOG2_SIZE, slot_hash, "tlb.slot");
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    constexpr const char *do_get_name() const {
+        return "uarch_replay_state_access";
+    }
+
+    // -----
+    // i_accept_scoped_notes interface implementation
+    // -----
+    friend i_accept_scoped_notes<uarch_replay_state_access>;
+};
+
+} // namespace cartesi
+
+#endif

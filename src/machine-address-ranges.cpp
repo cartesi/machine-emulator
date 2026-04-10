@@ -17,7 +17,7 @@
 /// \file
 /// \brief Cartesi machine address ranges.
 
-#include "machine-address-ranges.h"
+#include "machine-address-ranges.hpp"
 
 #include <algorithm>
 #include <concepts>
@@ -31,29 +31,29 @@
 #include <string>
 #include <variant>
 
-#include "address-range-constants.h"
-#include "address-range-description.h"
-#include "address-range.h"
-#include "clint-address-range.h"
-#include "htif-address-range.h"
-#include "machine-config.h"
-#include "machine-console.h"
-#include "machine-runtime-config.h"
-#include "memory-address-range.h"
-#include "meta.h"
-#include "os-filesystem.h"
-#include "plic-address-range.h"
-#include "pmas-constants.h"
-#include "pmas.h"
-#include "processor-state.h"
-#include "scope-remove.h"
-#include "uarch-pristine.h"
-#include "uarch-processor-state.h"
-#include "virtio-address-range.h"
-#include "virtio-console-address-range.h"
-#include "virtio-net-tuntap-address-range.h"
-#include "virtio-net-user-address-range.h"
-#include "virtio-p9fs-address-range.h"
+#include "address-range-constants.hpp"
+#include "address-range-description.hpp"
+#include "address-range.hpp"
+#include "clint-address-range.hpp"
+#include "htif-address-range.hpp"
+#include "machine-config.hpp"
+#include "machine-console.hpp"
+#include "machine-runtime-config.hpp"
+#include "memory-address-range.hpp"
+#include "meta.hpp"
+#include "os-filesystem.hpp"
+#include "plic-address-range.hpp"
+#include "pmas-constants.hpp"
+#include "pmas.hpp"
+#include "processor-state.hpp"
+#include "scope-remove.hpp"
+#include "uarch-pristine.hpp"
+#include "uarch-processor-state.hpp"
+#include "virtio-address-range.hpp"
+#include "virtio-console-address-range.hpp"
+#include "virtio-net-tuntap-address-range.hpp"
+#include "virtio-net-user-address-range.hpp"
+#include "virtio-p9fs-address-range.hpp"
 
 namespace cartesi {
 

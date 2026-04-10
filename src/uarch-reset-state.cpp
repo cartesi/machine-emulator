@@ -19,12 +19,12 @@
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
 
-#include "uarch-reset-state.h"
+#include "uarch-reset-state.hpp"
 
-#include "uarch-record-state-access.h" // IWYU pragma: keep
-#include "uarch-replay-state-access.h" // IWYU pragma: keep
-#include "uarch-solidity-compat.h"
-#include "uarch-state-access.h" // IWYU pragma: keep
+#include "uarch-record-state-access.hpp" // IWYU pragma: keep
+#include "uarch-replay-state-access.hpp" // IWYU pragma: keep
+#include "uarch-solidity-compat.hpp"
+#include "uarch-state-access.hpp" // IWYU pragma: keep
 
 namespace cartesi {
 

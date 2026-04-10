@@ -7,5 +7,5 @@
 compile_flags.txt
 coverage*
 jsonrpc-discover.cpp
-machine-c-version.h
-interpret-jump-table.h
+cm-version.h
+interpret-jump-table.hpp

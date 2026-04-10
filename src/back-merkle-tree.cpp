@@ -17,7 +17,7 @@
 /// \file
 /// \brief Back merkle tree implementation.
 
-#include "back-merkle-tree.h"
+#include "back-merkle-tree.hpp"
 
 #include <cassert>
 #include <cstddef>
@@ -26,8 +26,8 @@
 #include <stdexcept>
 #include <vector>
 
-#include "machine-hash.h"
-#include "variant-hasher.h"
+#include "machine-hash.hpp"
+#include "variant-hasher.hpp"
 
 namespace cartesi {
 

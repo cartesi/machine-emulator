@@ -18,14 +18,14 @@
 #include <iomanip>
 #include <iostream>
 
-#include <back-merkle-tree.h>
-#include <hash-tree-constants.h>
-#include <keccak-256-hasher.h>
-#include <shadow-uarch-state.h>
-#include <uarch-constants.h>
-#include <uarch-pristine.h>
-#include <uarch-processor-state.h>
-#include <unique-c-ptr.h>
+#include <back-merkle-tree.hpp>
+#include <hash-tree-constants.hpp>
+#include <keccak-256-hasher.hpp>
+#include <shadow-uarch-state.hpp>
+#include <uarch-constants.hpp>
+#include <uarch-pristine.hpp>
+#include <uarch-processor-state.hpp>
+#include <unique-c-ptr.hpp>
 
 /// \file
 /// \brief This program computes the hash of the pristine uarch state ad writes it to stdout

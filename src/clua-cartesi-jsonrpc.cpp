@@ -21,10 +21,10 @@ extern "C" {
 #include <lua.h>
 }
 
-#include "clua-i-machine.h"
-#include "clua.h"
-#include "jsonrpc-machine-c-api.h"
-#include "machine-c-api.h"
+#include "clua-i-machine.hpp"
+#include "clua.hpp"
+#include "cm-jsonrpc.h"
+#include "cm.h"
 
 namespace cartesi {
 

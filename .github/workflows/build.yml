@@ -96,8 +96,8 @@ jobs:
             uarch-ram.bin
             uarch-pristine-ram.c
             uarch-pristine-hash.c
-            machine-c-version.h
-            interpret-jump-table.h
+            cm-version.h
+            interpret-jump-table.hpp
             machine-emulator_amd64.deb
             machine-emulator_arm64.deb
 
@@ -691,8 +691,8 @@ jobs:
       - name: Create generated files patch
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          mv artifacts/machine-c-version.h src
-          mv artifacts/interpret-jump-table.h src
+          mv artifacts/cm-version.h src
+          mv artifacts/interpret-jump-table.hpp src
           mv artifacts/uarch-pristine-ram.c uarch
           mv artifacts/uarch-pristine-hash.c uarch
           make create-generated-files-patch
@@ -813,8 +813,8 @@ jobs:
           rzup install rust
           rzup show
 
-      - name: Build interpret-jump-table.h
-        run: docker run --rm -v .:/this-dir -t cartesi/machine-emulator:tests /this-dir/tools/gen-interpret-jump-table.lua > src/interpret-jump-table.h
+      - name: Build interpret-jump-table.hpp
+        run: docker run --rm -v .:/this-dir -t cartesi/machine-emulator:tests /this-dir/tools/gen-interpret-jump-table.lua > src/interpret-jump-table.hpp
 
       - name: Install lua5.4
         run: sudo apt-get update && sudo apt-get install -y lua5.4

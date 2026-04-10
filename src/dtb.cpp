@@ -17,22 +17,22 @@
 /// \file
 /// \brief Device Tree Blob
 
-#include "dtb.h"
+#include "dtb.hpp"
 
 #include <cstdint>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 
-#include "address-range-constants.h"
-#include "fdt-builder.h"
-#include "htif-constants.h"
-#include "machine-c-version.h"
-#include "machine-config.h"
-#include "plic-constants.h"
-#include "riscv-constants.h"
-#include "rng-seed.h"
-#include "rtc.h"
+#include "address-range-constants.hpp"
+#include "cm-version.h"
+#include "fdt-builder.hpp"
+#include "htif-constants.hpp"
+#include "machine-config.hpp"
+#include "plic-constants.hpp"
+#include "riscv-constants.hpp"
+#include "rng-seed.hpp"
+#include "rtc.hpp"
 
 using namespace std::string_literals;
 

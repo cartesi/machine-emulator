@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "machine-config.h"
+#include "machine-config.hpp"
 
 #include <cstdint>
 #include <exception>
@@ -27,10 +27,10 @@
 
 #include <json.hpp>
 
-#include "address-range-constants.h"
-#include "json-util.h"
-#include "os-filesystem.h"
-#include "riscv-constants.h"
+#include "address-range-constants.hpp"
+#include "json-util.hpp"
+#include "os-filesystem.hpp"
+#include "riscv-constants.hpp"
 
 static constexpr uint32_t archive_version = 6;
 

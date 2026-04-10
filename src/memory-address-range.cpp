@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "memory-address-range.h"
+#include "memory-address-range.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -22,11 +22,11 @@
 #include <exception>
 #include <stdexcept>
 
-#include "address-range-constants.h"
-#include "address-range.h"
-#include "machine-config.h"
-#include "os-mapped-memory.h"
-#include "pmas.h"
+#include "address-range-constants.hpp"
+#include "address-range.hpp"
+#include "machine-config.hpp"
+#include "os-mapped-memory.hpp"
+#include "pmas.hpp"
 
 namespace cartesi {
 

@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "uarch-runtime.h"
+#include "uarch-runtime.hpp"
 #include "uarch-ecall.h"
 
 #include <cstddef>

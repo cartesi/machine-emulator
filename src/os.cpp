@@ -14,14 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "os-features.h"
+#include "os-features.hpp"
 
 // Must be included first
-#include "os-posix-compat.h" // IWYU pragma: keep
+#include "os-posix-compat.hpp" // IWYU pragma: keep
 
-#include "os.h"
+#include "os.hpp"
 
-#include "scope-exit.h"
+#include "scope-exit.hpp"
 
 #include <algorithm>
 #include <array>

@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef AR_DEFINES_H
-#define AR_DEFINES_H
+#ifndef ADDRESS_RANGE_DEFINES_H
+#define ADDRESS_RANGE_DEFINES_H
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 #define AR_SHADOW_STATE_START_DEF 0x0              ///< Shadow start address
@@ -59,4 +59,4 @@
 #endif
 
 // NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
-#endif /* end of include guard: AR_DEFINES_H */
+#endif /* end of include guard: ADDRESS_RANGE_DEFINES_H */

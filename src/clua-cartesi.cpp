@@ -26,15 +26,15 @@ extern "C" {
 #include <lua.h>
 }
 
-#include "base64.h"
-#include "clua-i-machine.h"
-#include "clua.h"
-#include "htif-constants.h"
-#include "machine-c-api.h"
-#include "machine-c-version.h"
-#include "riscv-constants.h"
-#include "uarch-constants.h"
-#include "uarch-pristine.h"
+#include "base64.hpp"
+#include "clua-i-machine.hpp"
+#include "clua.hpp"
+#include "cm-version.h"
+#include "cm.h"
+#include "htif-constants.hpp"
+#include "riscv-constants.hpp"
+#include "uarch-constants.hpp"
+#include "uarch-pristine.hpp"
 
 /// \file
 /// \brief Scripting interface for the Cartesi SDK.

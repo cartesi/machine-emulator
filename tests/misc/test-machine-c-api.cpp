@@ -38,14 +38,19 @@
 #include <fstream>
 #include <iostream>
 
-#include <machine-c-api.h>
-#include <riscv-constants.h>
-#include <uarch-constants.h>
+#include <cm.h>
+#include <riscv-constants.hpp>
+#include <uarch-constants.hpp>
 
 #include "test-utils.h"
-#include "uarch-solidity-compat.h"
+#include "uarch-solidity-compat.hpp"
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)
+
+// Boost uses __COUNTER__ which Clang flags as a C2y extension
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wc2y-extensions"
+#endif
 
 // NOLINTNEXTLINE
 #define BOOST_AUTO_TEST_CASE_NOLINT(...) BOOST_AUTO_TEST_CASE(__VA_ARGS__)

@@ -14,13 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "is-pristine.h"
+#include "is-pristine.hpp"
 
 #include <cstddef>
 #include <span>
 
-#include "address-range-constants.h"
-#include "compiler-defines.h"
+#include "address-range-constants.hpp"
+#include "compiler-defines.hpp"
 
 namespace cartesi {
 

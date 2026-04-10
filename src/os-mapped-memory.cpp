@@ -14,10 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "os-features.h"
+#include "os-features.hpp"
 
 // Must be included before
-#include "os-posix-compat.h" // IWYU pragma: keep
+#include "os-posix-compat.hpp" // IWYU pragma: keep
 
 #if defined(HAVE_MMAP)
 #include <fcntl.h>    // open
@@ -34,9 +34,9 @@
 #include <sys/file.h> // flock
 #endif
 
-#include "os-mapped-memory.h"
+#include "os-mapped-memory.hpp"
 
-#include "scope-exit.h"
+#include "scope-exit.hpp"
 
 #include <algorithm>
 #include <cerrno>

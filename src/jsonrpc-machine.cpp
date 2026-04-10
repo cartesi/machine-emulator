@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "jsonrpc-machine.h"
-#include "os-features.h"
+#include "jsonrpc-machine.hpp"
+#include "os-features.hpp"
 
 #include <cassert>
 #include <cerrno>
@@ -64,26 +64,26 @@
 
 #include <json.hpp>
 
-#include "access-log.h"
-#include "address-range-description.h"
-#include "back-merkle-tree.h"
-#include "base64.h"
-#include "hash-tree-proof.h"
-#include "hash-tree-stats.h"
-#include "i-machine.h"
-#include "interpret.h"
-#include "json-util.h"
-#include "jsonrpc-fork-result.h"
-#include "jsonrpc-version.h"
-#include "machine-config.h"
-#include "machine-hash.h"
-#include "machine-runtime-config.h"
-#include "mcycle-root-hashes.h"
-#include "os.h"
-#include "scope-exit.h"
-#include "semantic-version.h"
-#include "uarch-cycle-root-hashes.h"
-#include "uarch-interpret.h"
+#include "access-log.hpp"
+#include "address-range-description.hpp"
+#include "back-merkle-tree.hpp"
+#include "base64.hpp"
+#include "hash-tree-proof.hpp"
+#include "hash-tree-stats.hpp"
+#include "i-machine.hpp"
+#include "interpret.hpp"
+#include "json-util.hpp"
+#include "jsonrpc-fork-result.hpp"
+#include "jsonrpc-version.hpp"
+#include "machine-config.hpp"
+#include "machine-hash.hpp"
+#include "machine-runtime-config.hpp"
+#include "mcycle-root-hashes.hpp"
+#include "os.hpp"
+#include "scope-exit.hpp"
+#include "semantic-version.hpp"
+#include "uarch-cycle-root-hashes.hpp"
+#include "uarch-interpret.hpp"
 
 using namespace std::string_literals;
 using json = nlohmann::json;

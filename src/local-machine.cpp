@@ -14,26 +14,26 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "local-machine.h"
+#include "local-machine.hpp"
 
 #include <cstdint>
 #include <optional>
 #include <string>
 
-#include "access-log.h"
-#include "address-range-description.h"
-#include "back-merkle-tree.h"
-#include "hash-tree-proof.h"
-#include "hash-tree-stats.h"
-#include "i-machine.h"
-#include "interpret.h"
-#include "machine-config.h"
-#include "machine-hash.h"
-#include "machine-runtime-config.h"
-#include "machine.h"
-#include "mcycle-root-hashes.h"
-#include "uarch-cycle-root-hashes.h"
-#include "uarch-interpret.h"
+#include "access-log.hpp"
+#include "address-range-description.hpp"
+#include "back-merkle-tree.hpp"
+#include "hash-tree-proof.hpp"
+#include "hash-tree-stats.hpp"
+#include "i-machine.hpp"
+#include "interpret.hpp"
+#include "machine-config.hpp"
+#include "machine-hash.hpp"
+#include "machine-runtime-config.hpp"
+#include "machine.hpp"
+#include "mcycle-root-hashes.hpp"
+#include "uarch-cycle-root-hashes.hpp"
+#include "uarch-interpret.hpp"
 
 namespace cartesi {
 

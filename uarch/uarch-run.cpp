@@ -15,12 +15,12 @@
 //
 
 // Must be included first, because of assert
-#include "uarch-runtime.h" // IWYU pragma: keep
+#include "uarch-runtime.hpp" // IWYU pragma: keep
 
-#include "compiler-defines.h"
-#include "interpret.h"
-#include "machine-uarch-bridge-state-access.h"
-#include "mock-address-range.h"
+#include "compiler-defines.hpp"
+#include "interpret.hpp"
+#include "mock-address-range.hpp"
+#include "uarch-bridge-state-access.hpp"
 #include "uarch-ecall.h"
 
 #include <cstdint>
@@ -30,7 +30,7 @@ using namespace cartesi;
 namespace cartesi {
 
 // Declaration of explicit instantiation in module interpret.cpp when compiled with microarchitecture
-extern template interpreter_break_reason interpret(machine_uarch_bridge_state_access a, uint64_t mcycle_end);
+extern template interpreter_break_reason interpret(uarch_bridge_state_access a, uint64_t mcycle_end);
 
 } // namespace cartesi
 
@@ -39,7 +39,7 @@ extern template interpreter_break_reason interpret(machine_uarch_bridge_state_ac
 extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
     // Let the state accessor be on static memory storage to speed up uarch initialization
     static mock_address_ranges ars;
-    const machine_uarch_bridge_state_access a(ars);
+    const uarch_bridge_state_access a(ars);
     const uint64_t mcycle_end = a.read_mcycle() + 1;
     interpret(a, mcycle_end);
     // Finished executing a whole mcycle: halt the microarchitecture

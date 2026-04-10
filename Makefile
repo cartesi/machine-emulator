@@ -81,7 +81,7 @@ EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/gdbstub.lua src/cartesi/evmu.l
 EMU_TO_LUA_THIRD_PARTY_PATH= src/cartesi/third-party/bint.lua
 EMU_TO_LUA_CPATH= src/cartesi.so
 EMU_TO_LUA_CARTESI_CPATH= src/cartesi/jsonrpc.so
-EMU_TO_INC= $(addprefix src/,jsonrpc-machine-c-api.h machine-c-api.h machine-c-version.h)
+EMU_TO_INC= $(addprefix src/,cm-jsonrpc.h cm.h cm-version.h)
 UARCH_TO_SHARE= uarch-ram.bin
 
 TESTS_TO_BIN= tests/build/misc/test-machine-c-api
@@ -158,7 +158,7 @@ COVERAGE_TOOLCHAIN?=gcc
 endif
 export COVERAGE_TOOLCHAIN
 
-GENERATED_FILES= uarch/uarch-pristine-hash.c uarch/uarch-pristine-ram.c src/machine-c-version.h src/interpret-jump-table.h
+GENERATED_FILES= uarch/uarch-pristine-hash.c uarch/uarch-pristine-ram.c src/cm-version.h src/interpret-jump-table.hpp
 ADD_GENERATED_FILES_DIFF= add-generated-files.diff
 
 all: source-default
@@ -256,17 +256,17 @@ lint-% check-format-% format-% check-format-lua-% check-lua-% format-lua-%:
 source-default:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
 
-uarch: $(SRCDIR)/machine-c-version.h $(SRCDIR)/interpret-jump-table.h
+uarch: $(SRCDIR)/cm-version.h $(SRCDIR)/interpret-jump-table.hpp
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
 
-risc0: $(SRCDIR)/machine-c-version.h
+risc0: $(SRCDIR)/cm-version.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C risc0
 
-$(SRCDIR)/machine-c-version.h:
-	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) machine-c-version.h
+$(SRCDIR)/cm-version.h:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) cm-version.h
 
-$(SRCDIR)/interpret-jump-table.h:
-	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) interpret-jump-table.h
+$(SRCDIR)/interpret-jump-table.hpp:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) interpret-jump-table.hpp
 
 build-emulator-builder-image:
 	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
@@ -299,8 +299,8 @@ copy-tests-debian-packages:
 copy:
 	docker create --name uarch-ram-bin $(DOCKER_PLATFORM) $(DEBIAN_IMG)
 	docker cp uarch-ram-bin:/usr/src/emulator/$(DEB_FILENAME) .
-	docker cp uarch-ram-bin:/usr/src/emulator/src/machine-c-version.h .
-	docker cp uarch-ram-bin:/usr/src/emulator/src/interpret-jump-table.h .
+	docker cp uarch-ram-bin:/usr/src/emulator/src/cm-version.h .
+	docker cp uarch-ram-bin:/usr/src/emulator/src/interpret-jump-table.hpp .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-ram.bin .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-ram.c .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-hash.c .

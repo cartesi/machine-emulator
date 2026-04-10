@@ -16,10 +16,10 @@
 
 //#define ZKARCHITECTURE 1
 
-#include "zk-runtime.h"
-#include "machine-hash.h"
-#include "interpret.h"
-#include "replay-step-state-access.h"
+#include "zk-runtime.hpp"
+#include "machine-hash.hpp"
+#include "interpret.hpp"
+#include "replay-step-state-access.hpp"
 #include <cinttypes>
 #include <cstring>
 

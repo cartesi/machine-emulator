@@ -53,7 +53,7 @@
 
 // #define DEBUG_VIRTIO_ERRORS
 
-#include "virtio-net-user-address-range.h"
+#include "virtio-net-user-address-range.hpp"
 
 #ifdef HAVE_SLIRP
 
@@ -74,11 +74,11 @@
 #include <slirp/libslirp.h>
 #include <sys/select.h>
 
-#include "i-device-state-access.h"
-#include "machine-config.h"
-#include "os.h"
-#include "virtio-address-range.h"
-#include "virtio-net-address-range.h"
+#include "i-device-state-access.hpp"
+#include "machine-config.hpp"
+#include "os.hpp"
+#include "virtio-address-range.hpp"
+#include "virtio-net-address-range.hpp"
 
 using namespace std::string_literals;
 

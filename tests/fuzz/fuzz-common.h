@@ -42,9 +42,9 @@
 #ifndef FUZZ_COMMON_H
 #define FUZZ_COMMON_H
 
-#include <machine-c-api.h>
-#include <pmas.h>
-#include <processor-state.h>
+#include <cm.h>
+#include <pmas.hpp>
+#include <processor-state.hpp>
 
 #include <algorithm>
 #include <cstdint>

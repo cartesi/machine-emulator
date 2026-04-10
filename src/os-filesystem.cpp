@@ -14,20 +14,20 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "os-features.h"
+#include "os-features.hpp"
 
 // Must be included before
-#include "os-posix-compat.h" // IWYU pragma: keep
+#include "os-posix-compat.hpp" // IWYU pragma: keep
 
 #include <fcntl.h>    // open
 #include <sys/stat.h> // stat/fstat/mkdir/fchmod
 #include <unistd.h>   // unlink/rmdir/close/ftruncate/pread/pwrite
 
-#include "os-filesystem.h"
+#include "os-filesystem.hpp"
 
-#include "address-range-constants.h"
-#include "is-pristine.h"
-#include "scope-exit.h"
+#include "address-range-constants.hpp"
+#include "is-pristine.hpp"
+#include "scope-exit.hpp"
 
 #include <algorithm>
 #include <array>

@@ -14,15 +14,15 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-/// \file simd_vector_type.h
+/// \file simd-vector-type.hpp
 /// \brief Defines SIMD vector type traits for uint64_t and uint32_t operations
 ///
 /// This header provides template specializations that map lane counts to appropriate
 /// SIMD vector types with their corresponding alignment requirements.
 /// It supports both scalar (single lane) and vector operations for efficient SIMD computations.
 
-#ifndef SIMD_VECTOR_TYPE
-#define SIMD_VECTOR_TYPE
+#ifndef SIMD_VECTOR_TYPE_HPP
+#define SIMD_VECTOR_TYPE_HPP
 
 #include <cstddef>
 #include <cstdint> // IWYU pragma: keep

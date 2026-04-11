@@ -19,19 +19,19 @@
 // #define DEBUG_VIRTIO_MMIO
 // #define DEBUG_VIRTIO_ERRORS
 
-#include "virtio-address-range.h"
+#include "virtio-address-range.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <stdexcept>
 
-#include "address-range.h"
-#include "i-device-state-access.h"
-#include "interpret.h"
-#include "os.h"
-#include "plic-address-range.h"
-#include "strict-aliasing.h"
+#include "address-range.hpp"
+#include "i-device-state-access.hpp"
+#include "interpret.hpp"
+#include "os.hpp"
+#include "plic-address-range.hpp"
+#include "strict-aliasing.hpp"
 
 namespace cartesi {
 

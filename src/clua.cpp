@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "clua.h"
+#include "clua.hpp"
 
 #include <cstddef>
 #include <cstdint>

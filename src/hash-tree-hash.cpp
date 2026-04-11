@@ -25,12 +25,12 @@
 #include <span>
 #include <tuple>
 
-#include "assert-printf.h"
-#include "back-merkle-tree.h"
-#include "i-hasher.h"
-#include "machine-hash.h"
-#include "unique-c-ptr.h"
-#include "variant-hasher.h"
+#include "assert-printf.hpp"
+#include "back-merkle-tree.hpp"
+#include "i-hasher.hpp"
+#include "machine-hash.hpp"
+#include "unique-c-ptr.hpp"
+#include "variant-hasher.hpp"
 
 using namespace cartesi;
 

@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "base64.h"
+#include "base64.hpp"
 
 #include <cstddef>
 #include <cstdint>

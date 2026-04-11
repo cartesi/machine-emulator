@@ -14,15 +14,15 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "plic-address-range.h"
+#include "plic-address-range.hpp"
 
 #include <cstdint>
 
-#include "address-range-constants.h"
-#include "i-device-state-access.h"
-#include "interpret.h"
-#include "plic-constants.h"
-#include "riscv-constants.h"
+#include "address-range-constants.hpp"
+#include "i-device-state-access.hpp"
+#include "interpret.hpp"
+#include "plic-constants.hpp"
+#include "riscv-constants.hpp"
 
 // Enable these defines to debug PLIC
 // #define DEBUG_PLIC

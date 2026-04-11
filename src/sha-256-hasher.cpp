@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "sha-256-hasher.h"
+#include "sha-256-hasher.hpp"
 
 #include <algorithm>
 #include <array>
@@ -23,11 +23,11 @@
 #include <cstdint>
 #include <span>
 
-#include "array2d.h"
-#include "compiler-defines.h"
-#include "i-hasher.h"
-#include "machine-hash.h"
-#include "simd-vector-type.h"
+#include "array2d.hpp"
+#include "compiler-defines.hpp"
+#include "i-hasher.hpp"
+#include "machine-hash.hpp"
+#include "simd-vector-type.hpp"
 
 namespace cartesi {
 

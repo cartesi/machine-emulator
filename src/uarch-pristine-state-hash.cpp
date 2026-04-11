@@ -14,12 +14,12 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "uarch-pristine-state-hash.h"
+#include "uarch-pristine-state-hash.hpp"
 
 #include <cstddef>
 
-#include "machine-hash.h"
-#include "uarch-pristine.h"
+#include "machine-hash.hpp"
+#include "uarch-pristine.hpp"
 
 namespace cartesi {
 

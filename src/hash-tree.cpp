@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "hash-tree.h"
+#include "hash-tree.hpp"
 
 #include <algorithm>
 #include <array>
@@ -34,26 +34,26 @@
 #include <utility>
 #include <vector>
 
-#include "os-features.h" // IWYU pragma: keep
+#include "os-features.hpp" // IWYU pragma: keep
 
 #ifdef HAVE_OPENMP
 #include <omp.h>
 #endif
 
-#include "address-range.h"
-#include "algorithm.h"
-#include "hash-tree-constants.h"
-#include "hash-tree-stats.h"
-#include "i-hasher.h"
-#include "machine-address-ranges.h"
-#include "machine-config.h"
-#include "machine-hash.h"
-#include "os-filesystem.h"
-#include "page-hash-tree-cache-stats.h"
-#include "scope-remove.h"
-#include "signposts.h"
-#include "simd-hasher.h"
-#include "variant-hasher.h"
+#include "address-range.hpp"
+#include "algorithm.hpp"
+#include "hash-tree-constants.hpp"
+#include "hash-tree-stats.hpp"
+#include "i-hasher.hpp"
+#include "machine-address-ranges.hpp"
+#include "machine-config.hpp"
+#include "machine-hash.hpp"
+#include "os-filesystem.hpp"
+#include "page-hash-tree-cache-stats.hpp"
+#include "scope-remove.hpp"
+#include "signposts.hpp"
+#include "simd-hasher.hpp"
+#include "variant-hasher.hpp"
 
 namespace cartesi {
 

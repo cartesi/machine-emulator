@@ -1,0 +1,370 @@
+// Copyright Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU Lesser General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option) any
+// later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+// PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License along
+// with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
+//
+
+#ifndef RECORD_STEP_STATE_ACCESS_HPP
+#define RECORD_STEP_STATE_ACCESS_HPP
+
+#include <array>
+#include <cstdint>
+#include <map>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "address-range.hpp"
+#include "assert-printf.hpp"
+#include "hash-tree-constants.hpp"
+#include "hash-tree.hpp"
+#include "host-addr.hpp"
+#include "i-accept-scoped-notes.hpp"
+#include "i-prefer-shadow-state.hpp"
+#include "i-state-access.hpp"
+#include "machine-hash.hpp"
+#include "machine-reg.hpp"
+#include "machine.hpp"
+#include "os-filesystem.hpp"
+#include "os.hpp"
+#include "pmas-constants.hpp"
+#include "pmas.hpp"
+#include "riscv-constants.hpp"
+#include "shadow-registers.hpp"
+#include "shadow-tlb.hpp"
+#include "unique-c-ptr.hpp"
+#include "variant-hasher.hpp"
+
+namespace cartesi {
+
+class record_step_state_access;
+
+// Type trait that should return the fast_addr type for a state access class
+template <>
+struct i_state_access_fast_addr<record_step_state_access> {
+    using type = host_addr;
+};
+
+/// \class record_step_state_access
+/// \brief Records machine state access into a step log file
+class record_step_state_access :
+    public i_state_access<record_step_state_access>,
+    public i_accept_scoped_notes<record_step_state_access>,
+    public i_prefer_shadow_state<record_step_state_access> {
+
+    using page_data_type = std::array<uint8_t, HASH_TREE_PAGE_SIZE>;
+    using pages_type = std::map<uint64_t, page_data_type>;
+    using sibling_hashes_type = hash_tree::sibling_hashes_type;
+    using page_indices_type = std::vector<uint64_t>;
+
+public:
+    struct context {
+        /// \brief Constructor of record step state access context
+        /// \param filename where to save the log
+        explicit context(std::string filename, hash_function_type hash_function) :
+            filename(std::move(filename)),
+            hash_function(hash_function) {
+            ;
+        }
+        std::string filename;             ///<  where to save the log
+        hash_function_type hash_function; ///<  hash function type to use for the log
+        mutable pages_type touched_pages; ///<  copy of all pages touched during execution
+    };
+
+private:
+    // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
+    context &m_context; ///<  context for the recording
+    machine &m_m;       ///<  reference to machine
+    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
+
+public:
+    /// \brief Constructor of record step state access
+    /// \param context Context for the recording with the log filename
+    /// \param m reference to machine
+    /// \details The log file is saved when finish() is called
+    record_step_state_access(context &context, machine &m) : m_context(context), m_m(m) {
+        if (os::exists(m_context.filename)) {
+            throw std::runtime_error("file already exists");
+        }
+    }
+
+    /// \brief Finish recording and save the log file
+    void finish(const machine_hash &root_hash_before, uint64_t mcycle_count, const machine_hash &root_hash_after) {
+        // get sibling hashes of all touched pages
+        auto sibling_hashes = get_sibling_hashes();
+        uint64_t page_count = m_context.touched_pages.size();
+        uint64_t sibling_count = sibling_hashes.size();
+
+        // Write log file.
+        // The log format is as follows:
+        // root_hash_before, mcycle_count, root_hash_after,
+        // hash_function, page_count, [(page_index, data, scratch_area), ...], sibling_count, [sibling_hash, ...]
+        // We store the page index, instead of the page address.
+        // Scratch area is used by the replay to store page hashes, which change during replay
+        // This is to work around the lack of dynamic memory allocation when replaying the log in microarchitectures
+        auto fp = make_unique_fopen(m_context.filename.c_str(), "wb");
+        // write root hash before, mcycle count, and root hash after
+        if (fwrite(root_hash_before.data(), root_hash_before.size(), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write root hash before to log file");
+        }
+        if (fwrite(&mcycle_count, sizeof(mcycle_count), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write mcycle count to log file");
+        }
+        if (fwrite(root_hash_after.data(), root_hash_after.size(), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write root hash after to log file");
+        }
+        // write the hash function type so the hasher can be recreated by the replay
+        auto hash_function = static_cast<uint64_t>(m_context.hash_function);
+        if (fwrite(&hash_function, sizeof(hash_function), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write hash function type to log file");
+        }
+        if (fwrite(&page_count, sizeof(page_count), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write page count to log file");
+        }
+        for (auto &[address, data] : m_context.touched_pages) {
+            const auto page_index = address >> HASH_TREE_LOG2_PAGE_SIZE;
+            if (fwrite(&page_index, sizeof(page_index), 1, fp.get()) != 1) {
+                throw std::runtime_error("Could not write page index to log file");
+            }
+            if (fwrite(data.data(), data.size(), 1, fp.get()) != 1) {
+                throw std::runtime_error("Could not write page data to log file");
+            }
+            static const machine_hash all_zeros{};
+            if (fwrite(all_zeros.data(), sizeof(all_zeros), 1, fp.get()) != 1) {
+                throw std::runtime_error("Could not write page hash scratch to log file");
+            }
+        }
+        if (fwrite(&sibling_count, sizeof(sibling_count), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write sibling count to log file");
+        }
+        for (auto &hash : sibling_hashes) {
+            if (fwrite(hash.data(), sizeof(hash), 1, fp.get()) != 1) {
+                throw std::runtime_error("Could not write sibling hash to log file");
+            }
+        }
+    }
+
+private:
+    using fast_addr_type = host_addr;
+
+    /// \brief Mark a page as touched and save its contents
+    /// \param address address of the page
+    void touch_page(uint64_t address) const {
+        auto page = address & ~PAGE_OFFSET_MASK;
+        if (m_context.touched_pages.contains(page)) {
+            return; // already saved
+        }
+        auto [it, _] = m_context.touched_pages.emplace(page, page_data_type());
+        m_m.read_memory(page, it->second.data(), it->second.size());
+    }
+
+    /// \brief Get the sibling hashes of all touched pages
+    sibling_hashes_type get_sibling_hashes() {
+        sibling_hashes_type sibling_hashes{};
+        // page address are converted to page indices, in order to avoid overflows
+        page_indices_type page_indices{};
+        // iterate in ascending order of page addresses (the container is ordered by key)
+        for (const auto &[address, _] : m_context.touched_pages) {
+            page_indices.push_back(address >> HASH_TREE_LOG2_PAGE_SIZE);
+        }
+        auto next_page_index = page_indices.cbegin();
+        get_sibling_hashes_impl(0, HASH_TREE_LOG2_ROOT_SIZE - HASH_TREE_LOG2_PAGE_SIZE, page_indices, next_page_index,
+            sibling_hashes);
+        if (next_page_index != page_indices.cend()) {
+            throw std::runtime_error("get_sibling_hashes failed to consume all pages");
+        }
+        return sibling_hashes;
+    }
+
+    /// \brief Recursively get the sibling hashes of all touched pages
+    /// \param page_index index of 1st page in range
+    /// \param page_count_log2_size log2 of the number of pages in range
+    /// \param page_indices indices of all pages
+    /// \param next_page_index smallest page index not visited yet
+    /// \param sibling_hashes stores the collected sibling hashes during the recursion
+    void get_sibling_hashes_impl(uint64_t page_index, int page_count_log2_size, page_indices_type &page_indices,
+        page_indices_type::const_iterator &next_page_index, sibling_hashes_type &sibling_hashes) {
+        auto page_count = UINT64_C(1) << page_count_log2_size;
+        if (next_page_index == page_indices.cend() || page_index + page_count <= *next_page_index) {
+            // we can skip the hash tree update, because a full update was done before the recording started
+            sibling_hashes.push_back(m_m.get_node_hash(page_index << HASH_TREE_LOG2_PAGE_SIZE,
+                page_count_log2_size + HASH_TREE_LOG2_PAGE_SIZE, skip_hash_tree_update));
+        } else if (page_count_log2_size > 0) {
+            get_sibling_hashes_impl(page_index, page_count_log2_size - 1, page_indices, next_page_index,
+                sibling_hashes);
+            get_sibling_hashes_impl(page_index + (UINT64_C(1) << (page_count_log2_size - 1)), page_count_log2_size - 1,
+                page_indices, next_page_index, sibling_hashes);
+        } else {
+            ++next_page_index;
+        }
+    }
+
+    uint64_t log_read_reg(machine_reg reg) const {
+        touch_page(machine_reg_address(reg));
+        return m_m.read_reg(reg);
+    }
+
+    void log_write_reg(machine_reg reg, uint64_t val) const {
+        touch_page(machine_reg_address(reg));
+        m_m.write_reg(reg, val);
+    }
+
+    uint64_t log_read_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) const {
+        touch_page(shadow_tlb_get_abs_addr(set_index, slot_index, what));
+        return m_m.read_shadow_tlb(set_index, slot_index, what);
+    }
+
+    // -----
+    // i_prefer_shadow_state interface implementation
+    // -----
+    friend i_prefer_shadow_state<record_step_state_access>;
+
+    uint64_t do_read_shadow_register(shadow_registers_what what) const {
+        return log_read_reg(machine_reg_enum(what));
+    }
+
+    void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
+        log_write_reg(machine_reg_enum(what), val);
+    }
+
+    // -----
+    // i_state_access interface implementation
+    // -----
+    friend i_state_access<record_step_state_access>;
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    bool do_read_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
+        (void) paddr;
+        (void) data;
+        (void) length;
+        throw std::runtime_error("unexpected call to record_step_state_access::read_memory");
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
+        (void) paddr;
+        (void) data;
+        (void) length;
+        throw std::runtime_error("unexpected call to record_step_state_access::write_memory");
+    }
+
+    address_range &do_read_pma(uint64_t index) const {
+        if (index >= PMA_MAX) [[unlikely]] {
+            static address_range sentinel{"sentinel"};
+            return sentinel;
+        }
+        // replay_step_state_access reconstructs a mock_address_range from the
+        // corresponding istart and ilength fields in the shadow pmas
+        // so we mark the page where they live here
+        touch_page(pmas_get_abs_addr(index, pmas_what::istart));
+        touch_page(pmas_get_abs_addr(index, pmas_what::ilength));
+        return m_m.read_pma(index);
+    }
+
+    template <typename T, typename A>
+    void do_read_memory_word(host_addr haddr, uint64_t pma_index, T *pval) const {
+        touch_page(m_m.get_paddr(haddr, pma_index));
+        *pval = aliased_aligned_read<T, A>(haddr);
+    }
+
+    template <typename T, typename A>
+    void do_write_memory_word(host_addr haddr, uint64_t pma_index, T val) const {
+        touch_page(m_m.get_paddr(haddr, pma_index));
+        aliased_aligned_write<T, A>(haddr, val);
+    }
+
+    template <TLB_set_index SET>
+    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
+        // Must read from the hot TLB (not shadow) so that TLB_UNVERIFIED_PAGE sentinels
+        // set by init_hot_tlb_contents() are visible and force init_hot_tlb_slot() to run,
+        // which populates vh_offset and touches the shadow page.
+        return m_m.get_state().penumbra.tlb[SET][slot_index].vaddr_page;
+    }
+
+    template <TLB_set_index SET>
+    uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
+        return log_read_tlb(SET, slot_index, shadow_tlb_what::pma_index);
+    }
+
+    template <TLB_set_index SET>
+    host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
+        // Touch the shadow page so replay has the TLB slot data
+        touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
+        // Return the vh_offset from the hot entry
+        return m_m.get_state().penumbra.tlb[SET][slot_index].vh_offset;
+    }
+
+    template <TLB_set_index SET>
+    uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
+        // Touch the shadow page so replay has the TLB slot data
+        touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
+        // Touch PMA page so replay's do_read_pma can validate the entry (even if corrupt)
+        const auto pma_index = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
+        touch_page(pmas_get_abs_addr(pma_index, pmas_what::istart));
+        // Validate and promote the slot; corrupt entries return TLB_INVALID_PAGE
+        const auto validated_vaddr_page = m_m.init_hot_tlb_slot(SET, slot_index);
+        // Only touch target page itself after validation confirms the entry is sound
+        if (validated_vaddr_page != TLB_INVALID_PAGE) {
+            const auto vp_offset = m_m.read_shadow_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
+            const auto paddr_page = validated_vaddr_page + vp_offset;
+            // replay's do_init_hot_tlb_slot needs the page there so promote the hot entry
+            touch_page(paddr_page);
+        }
+        return validated_vaddr_page;
+    }
+
+    template <TLB_set_index SET>
+    bool do_verify_cold_tlb_slot(uint64_t /* slot_index */) const {
+        return true;
+    }
+
+    //??D This is still a bit too complicated for my taste
+    template <TLB_set_index SET>
+    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
+        // replay_step_state_access needs the TLB slot page and the target page data
+        // vaddr_page, vp_offset, and pma_index are on the same page, so we only need touch one of them.
+        touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
+        // We still need to touch the page data
+        if (vaddr_page != TLB_INVALID_PAGE) {
+            const auto haddr_page = vaddr_page + vh_offset;
+            const auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
+            touch_page(paddr_page);
+        }
+        m_m.write_verified_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
+    }
+
+    fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {
+        // replay_step_state_access needs the corresponding page to perform a
+        // translation between paddr and its own haddr, so we touch the page here
+        touch_page(paddr);
+        return m_m.get_host_addr(paddr, pma_index);
+    }
+
+    void do_mark_dirty_page(host_addr haddr, uint64_t pma_index) const {
+        // this is a noop in replay_step_state_access, so we do nothing else
+        m_m.mark_dirty_page(haddr, pma_index);
+    }
+
+    bool do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)
+        return false;
+    }
+
+    constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
+        return "record_step_state_access";
+    }
+};
+
+} // namespace cartesi
+
+#endif

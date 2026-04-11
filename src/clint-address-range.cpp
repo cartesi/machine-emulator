@@ -14,15 +14,15 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "clint-address-range.h"
+#include "clint-address-range.hpp"
 
 #include <cstdint>
 
-#include "address-range-constants.h"
-#include "i-device-state-access.h"
-#include "interpret.h"
-#include "riscv-constants.h"
-#include "rtc.h"
+#include "address-range-constants.hpp"
+#include "i-device-state-access.hpp"
+#include "interpret.hpp"
+#include "riscv-constants.hpp"
+#include "rtc.hpp"
 
 namespace cartesi {
 

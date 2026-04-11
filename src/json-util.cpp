@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "json-util.h"
+#include "json-util.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -33,29 +33,29 @@
 
 #include <json.hpp>
 
-#include "access-log.h"
-#include "address-range-description.h"
-#include "back-merkle-tree.h"
-#include "base64.h"
-#include "bracket-note.h"
-#include "hash-tree-constants.h"
-#include "hash-tree-proof.h"
-#include "hash-tree-stats.h"
-#include "interpret.h"
-#include "jsonrpc-fork-result.h"
-#include "machine-config.h"
-#include "machine-hash.h"
-#include "machine-reg.h"
-#include "machine-runtime-config.h"
-#include "mcycle-root-hashes.h"
-#include "page-hash-tree-cache-stats.h"
-#include "ranges.h"
-#include "semantic-version.h"
-#include "shadow-registers.h"
-#include "shadow-uarch-state.h"
-#include "uarch-cycle-root-hashes.h"
-#include "uarch-interpret.h"
-#include "variant-hasher.h"
+#include "access-log.hpp"
+#include "address-range-description.hpp"
+#include "back-merkle-tree.hpp"
+#include "base64.hpp"
+#include "bracket-note.hpp"
+#include "hash-tree-constants.hpp"
+#include "hash-tree-proof.hpp"
+#include "hash-tree-stats.hpp"
+#include "interpret.hpp"
+#include "jsonrpc-fork-result.hpp"
+#include "machine-config.hpp"
+#include "machine-hash.hpp"
+#include "machine-reg.hpp"
+#include "machine-runtime-config.hpp"
+#include "mcycle-root-hashes.hpp"
+#include "page-hash-tree-cache-stats.hpp"
+#include "ranges.hpp"
+#include "semantic-version.hpp"
+#include "shadow-registers.hpp"
+#include "shadow-uarch-state.hpp"
+#include "uarch-cycle-root-hashes.hpp"
+#include "uarch-interpret.hpp"
+#include "variant-hasher.hpp"
 
 namespace cartesi {
 

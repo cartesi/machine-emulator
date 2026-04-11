@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "virtio-console-address-range.h"
+#include "virtio-console-address-range.hpp"
 
 #include <algorithm>
 #include <array>
@@ -22,10 +22,10 @@
 #include <cstdint>
 #include <span>
 
-#include "i-device-state-access.h"
-#include "machine-console.h"
-#include "os.h"
-#include "virtio-address-range.h"
+#include "i-device-state-access.hpp"
+#include "machine-console.hpp"
+#include "os.hpp"
+#include "virtio-address-range.hpp"
 
 namespace cartesi {
 

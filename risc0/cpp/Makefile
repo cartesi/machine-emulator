@@ -93,7 +93,7 @@ EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,
 
 all: risc0-replay-steps.o
 
-GENERATED_HEADERS := $(EMULATOR_SRC_DIR)/machine-c-version.h $(EMULATOR_SRC_DIR)/interpret-jump-table.h
+GENERATED_HEADERS := $(EMULATOR_SRC_DIR)/cm-version.h $(EMULATOR_SRC_DIR)/interpret-jump-table.hpp
 
 %.emulator_cpp.o: $(EMULATOR_SRC_DIR)/%.cpp | $(GENERATED_HEADERS)
 	$(CXX) $(CXXFLAGS) $(CFLAGS) -c -o $@ $(EMULATOR_SRC_DIR)/$(<F)
@@ -102,10 +102,10 @@ GENERATED_HEADERS := $(EMULATOR_SRC_DIR)/machine-c-version.h $(EMULATOR_SRC_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $(EMULATOR_SRC_DIR)/$(<F)
 
 
-$(EMULATOR_SRC_DIR)/machine-c-version.h:
-	make -C $(EMULATOR_SRC_DIR) machine-c-version.h
+$(EMULATOR_SRC_DIR)/cm-version.h:
+	make -C $(EMULATOR_SRC_DIR) cm-version.h
 
-$(EMULATOR_SRC_DIR)/interpret-jump-table.h: $(EMULATOR_TOOLS_DIR)/gen-interpret-jump-table.lua
+$(EMULATOR_SRC_DIR)/interpret-jump-table.hpp: $(EMULATOR_TOOLS_DIR)/gen-interpret-jump-table.lua
 	$< > $@
 
 %.risc0arch_cpp.o: %.cpp
@@ -117,7 +117,7 @@ $(EMULATOR_SRC_DIR)/interpret-jump-table.h: $(EMULATOR_TOOLS_DIR)/gen-interpret-
 %.risc0_thirdparty_c.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-risc0-replay-steps.o: $(EMULATOR_SRC_DIR)/machine-c-version.h $(EMULATOR_SRC_DIR)/interpret-jump-table.h $(EMULATOR_OBJS) $(RISC0ARCH_OBJS) $(RISC0_THIRDPARTY_OBJS)
+risc0-replay-steps.o: $(EMULATOR_SRC_DIR)/cm-version.h $(EMULATOR_SRC_DIR)/interpret-jump-table.hpp $(EMULATOR_OBJS) $(RISC0ARCH_OBJS) $(RISC0_THIRDPARTY_OBJS)
 	$(LD) -relocatable $(EMULATOR_OBJS) $(RISC0ARCH_OBJS) $(RISC0_THIRDPARTY_OBJS) -o $@
 
 clean:

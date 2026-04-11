@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "clua-i-machine.h"
+#include "clua-i-machine.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -34,10 +34,10 @@ extern "C" {
 #include <lua.h>
 }
 
-#include "base64.h"
-#include "clua.h"
-#include "hash-tree-constants.h"
-#include "machine-c-api.h"
+#include "base64.hpp"
+#include "clua.hpp"
+#include "cm.h"
+#include "hash-tree-constants.hpp"
 
 namespace cartesi {
 

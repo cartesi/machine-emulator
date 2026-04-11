@@ -19,7 +19,7 @@
 #define BOOST_ASIO_DISABLE_EPOLL
 #define BOOST_ASIO_DISABLE_EVENTFD
 
-#include "os-features.h"
+#include "os-features.hpp"
 
 #include <algorithm>
 #include <array>
@@ -71,21 +71,21 @@
 #include <omp.h>
 #endif
 
-#include "access-log.h"
-#include "back-merkle-tree.h"
-#include "base64.h"
-#include "json-util.h"
-#include "jsonrpc-discover.h"
-#include "jsonrpc-fork-result.h"
-#include "jsonrpc-version.h"
-#include "machine-config.h"
-#include "machine-hash.h"
-#include "machine-runtime-config.h"
-#include "machine.h"
-#include "unique-c-ptr.h"
+#include "access-log.hpp"
+#include "back-merkle-tree.hpp"
+#include "base64.hpp"
+#include "json-util.hpp"
+#include "jsonrpc-discover.hpp"
+#include "jsonrpc-fork-result.hpp"
+#include "jsonrpc-version.hpp"
+#include "machine-config.hpp"
+#include "machine-hash.hpp"
+#include "machine-runtime-config.hpp"
+#include "machine.hpp"
+#include "unique-c-ptr.hpp"
 
 #define SLOG_PREFIX log_prefix
-#include "slog.h"
+#include "slog.hpp"
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PROGRAM_NAME "cartesi-jsonrpc-machine"

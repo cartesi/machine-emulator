@@ -14,13 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "uarch-interpret.h"
+#include "uarch-interpret.hpp"
 
 #include <cstdint>
 
-#include "collect-uarch-cycle-hashes-state-access.h" // IWYU pragma: keep
-#include "uarch-state-access.h"                      // IWYU pragma: keep
-#include "uarch-step.h"
+#include "collect-uarch-cycle-hashes-state-access.hpp" // IWYU pragma: keep
+#include "uarch-state-access.hpp"                      // IWYU pragma: keep
+#include "uarch-step.hpp"
 
 namespace cartesi {
 

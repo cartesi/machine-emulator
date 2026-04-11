@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef PMA_DEFINES_H
-#define PMA_DEFINES_H
+#ifndef PMAS_DEFINES_H
+#define PMAS_DEFINES_H
 // NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 
 #define PMA_MAX_DEF 32 ///< Maximum number of PMAs
@@ -38,4 +38,4 @@
 #endif
 
 // NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
-#endif /* end of include guard: PMA_DEFINES_H */
+#endif /* end of include guard: PMAS_DEFINES_H */

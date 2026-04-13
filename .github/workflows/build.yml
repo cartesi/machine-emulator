@@ -13,7 +13,7 @@ jobs:
           sudo tar -xzf /tmp/${TAR} -C /usr/local/bin
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
@@ -27,28 +27,28 @@ jobs:
     name: Check Format
     runs-on: ubuntu-latest-8-cores
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -77,7 +77,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout machine emulator source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
 
@@ -85,23 +85,23 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -117,7 +117,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build debian package (amd64)
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -137,7 +137,7 @@ jobs:
         run: make copy BUILD_PLATFORM=linux/amd64 DEB_ARCH=amd64 DEBIAN_IMG=cartesi/machine-emulator:amd64_deb
 
       - name: Build debian package (arm64)
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -157,7 +157,7 @@ jobs:
         run: make copy BUILD_PLATFORM=linux/arm64 DEB_ARCH=arm64 DEBIAN_IMG=cartesi/machine-emulator:arm64_deb
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: artifacts
           path: |
@@ -175,7 +175,7 @@ jobs:
     runs-on: ubuntu-latest-8-cores
     steps:
       - name: Checkout machine emulator source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
 
@@ -183,23 +183,23 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build machine-emulator "builder" docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -216,7 +216,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build machine-emulator docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -232,7 +232,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
@@ -300,14 +300,14 @@ jobs:
           docker rm uarch-logs
 
       - name: Upload uarch json logs to be used to test the Solidity based microarchitecture interpreter
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: uarch-logs
           path: uarch-riscv-tests-json-logs.tar.gz
           compression-level: 0
 
       - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
@@ -328,7 +328,7 @@ jobs:
         run: make copy-tests-debian-packages
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: tests-amd64
           path: |
@@ -341,7 +341,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout machine emulator source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
 
@@ -349,24 +349,24 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build docker image
         id: docker_build
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -383,7 +383,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build machine-emulator docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -399,7 +399,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
@@ -458,7 +458,7 @@ jobs:
           docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --concurrency=update_hash_tree:1 --jobs=$(nproc) run_host_and_uarch
 
       - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
@@ -479,7 +479,7 @@ jobs:
         run: make copy-tests-debian-packages BUILD_PLATFORM=linux/arm64 DEB_ARCH=arm64
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: tests-arm64
           path: |
@@ -490,28 +490,28 @@ jobs:
     needs: [check-format, check-commits]
     runs-on: ubuntu-latest-8-cores
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -536,7 +536,7 @@ jobs:
     needs: [check-format, check-commits]
     runs-on: ubuntu-latest-8-cores
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
 
@@ -544,24 +544,24 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build docker image
         id: docker_build
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -580,7 +580,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
@@ -609,7 +609,7 @@ jobs:
         run: grep -F -e "=====:" -e "#####:" coverage/gcc/*.gcov
 
       - name: Upload coverage detailed report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: coverage-report
           path: coverage
@@ -619,12 +619,12 @@ jobs:
     needs: [check-format, check-commits]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -633,18 +633,18 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build docker image
         id: docker_build
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -662,7 +662,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
@@ -689,7 +689,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout emulator source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
 
@@ -697,13 +697,13 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -711,7 +711,7 @@ jobs:
 
       - name: Setup debian docker image tags
         id: docker_image_tags
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           images: |
             ghcr.io/${{ github.repository_owner }}/machine-emulator
@@ -721,10 +721,10 @@ jobs:
             type=semver,pattern={{version}},enable=${{startsWith(github.ref, 'refs/tags/v')}}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build debian based docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -739,7 +739,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Create generated files patch
@@ -752,7 +752,7 @@ jobs:
           make create-generated-files-patch
 
       - name: Upload products to GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         with:
           draft: true
@@ -773,7 +773,7 @@ jobs:
     runs-on: ubuntu-latest-8-cores
     steps:
       - name: Checkout machine emulator source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
       
@@ -781,23 +781,23 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build machine-emulator "builder" docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -814,7 +814,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build machine-emulator docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -830,7 +830,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
@@ -875,7 +875,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.4
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
 
       - name: Build risc0 prover/verifier
         run: make risc0
@@ -892,7 +892,7 @@ jobs:
         run: make -C risc0 export-artifacts
 
       - name: Upload RISC0 artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: risc0-artifacts
           path: |

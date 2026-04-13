@@ -854,10 +854,9 @@ jobs:
           ls -l /tmp/cartesi-machine/tests/data/step-logs
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
         with:
           toolchain: stable
-          override: true
 
       - name: Install rzup
         run: |

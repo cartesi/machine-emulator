@@ -532,10 +532,9 @@ public:
 
     /// \brief Replaces a memory address range.
     /// \param config Configuration of the new memory address range.
-    /// \details A memory address range matching the start and length specified in the config must exist.
-    void replace_memory_range(const memory_range_config &config) {
-        m_ars.replace(config);
-    }
+    /// \details The range can be identified by label, by start and length, or both.
+    /// When both label and start/length are given, they must be consistent.
+    void replace_memory_range(const memory_range_config &config);
 
     /// \brief Sends cmio response
     /// \param reason Reason for sending response.

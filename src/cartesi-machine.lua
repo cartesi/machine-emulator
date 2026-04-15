@@ -120,7 +120,11 @@ where options are:
 
         label (optional)
         identifies the flash drive. init attempts to mount it as /mnt/<label>.
-        if omitted, the label is set to "driveX", where X starts at 1.
+        the label is written into the device tree and can be used to identify
+        the flash drive in --replace-flash-drive and --replace-memory-range.
+        labels must contain only alphanumeric characters, hyphens, and underscores,
+        and must not start with "ctsi" (reserved for internal use).
+        if omitted, the machine auto-generates a label "flashdriveN".
 
         start (optional)
         sets the starting physical memory offset for flash drive in bytes.
@@ -189,6 +193,7 @@ where options are:
     (typically used in conjunction with the --load=<directory> option.)
 
     <key>:<value> is one of
+        label:<string>
         start:<number>
         length:<number>
         data_filename:<filename>
@@ -196,9 +201,10 @@ where options are:
         dpt_filename:<filename>
         shared
 
-    semantics are the same as for the --flash-drive option with the following
-    difference: start and length are mandatory, and must match those of a
-    previously existing memory range (e.g., flash drive, cmio buffer, etc).
+    the memory range can be identified by label, by start and length, or both.
+    when both label and start/length are given, they must be consistent with
+    the existing memory range. when only label is given, start and length are
+    resolved from the machine's initial configuration.
 
   --ram=<key>:<value>[,<key>:<value>[,...]...]
   --dtb=<key>:<value>[,<key>:<value>[,...]...]
@@ -727,10 +733,11 @@ local remote_destroy = true
 local perform_rollbacks = true
 local default_config = cartesi.machine:get_default_config()
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
-local flash_data_filename = { root = images_path .. "rootfs.ext2" }
+local flash_label_to_index = { root = 1 }
+local flash_label = { "root" }
+local flash_data_filename = { images_path .. "rootfs.ext2" }
 local flash_dht_filename = {}
 local flash_dpt_filename = {}
-local flash_label_order = { "root" }
 local flash_shared = {}
 local flash_create = {}
 local flash_truncate = {}
@@ -740,6 +747,7 @@ local flash_mke2fs = {}
 local flash_user = {}
 local flash_start = {}
 local flash_length = {}
+local flash_count = 1
 local virtio = {}
 local virtio_net_user_config
 local virtio_volume_count = 0
@@ -838,6 +846,7 @@ local log_step_filename
 
 local function parse_memory_range(opts, all)
     local f = util.parse_options(opts, all, {
+        label = "string",
         data_filename = "string",
         dht_filename = "string",
         dpt_filename = "string",
@@ -1379,7 +1388,6 @@ local options = {
                 length = "number",
                 start = "number",
             })
-            if f.label == nil then f.label = "drive" .. #flash_label_order end
             f.data_filename = f.data_filename or ""
             f.dht_filename = f.dht_filename or ""
             f.dpt_filename = f.dpt_filename or ""
@@ -1387,33 +1395,45 @@ local options = {
             if f.mount == nil then
                 -- mount only if there is a file backing
                 if f.data_filename ~= "" or f.mke2fs then
-                    f.mount = "/mnt/" .. f.label
+                    if f.label then
+                        f.mount = "/mnt/" .. f.label
+                    else
+                        f.mount = false
+                    end
                 else
                     f.mount = false
                 end
             elseif f.mount == "true" then
-                f.mount = "/mnt/" .. f.label
+                if f.label then
+                    f.mount = "/mnt/" .. f.label
+                else
+                    f.mount = false
+                end
             elseif f.mount == "false" then
                 f.mount = false
             end
-            local d = f.label
-            if not flash_data_filename[d] then
-                flash_label_order[#flash_label_order + 1] = d
-                flash_data_filename[d] = ""
+            local idx
+            if f.label and flash_label_to_index[f.label] then
+                idx = flash_label_to_index[f.label]
+            else
+                flash_count = flash_count + 1
+                idx = flash_count
+                if f.label then flash_label_to_index[f.label] = idx end
             end
-            flash_data_filename[d] = f.data_filename or flash_data_filename[d]
-            flash_dht_filename[d] = f.dht_filename or flash_dht_filename[d]
-            flash_dpt_filename[d] = f.dpt_filename or flash_dpt_filename[d]
-            flash_start[d] = f.start or flash_start[d]
-            flash_length[d] = f.length or flash_length[d]
-            flash_shared[d] = f.shared or flash_shared[d]
-            flash_create[d] = f.create or flash_create[d]
-            flash_truncate[d] = f.truncate or flash_truncate[d]
-            flash_read_only[d] = f.read_only or flash_read_only[d]
-            flash_mount[d] = f.mount or flash_mount[d]
-            flash_mke2fs[d] = f.mke2fs or flash_mke2fs[d]
-            flash_user[d] = f.user or flash_user[d]
-            if d == "root" and f.read_only then -- Mount root filesystem as read-only
+            flash_label[idx] = f.label or flash_label[idx]
+            flash_data_filename[idx] = f.data_filename or flash_data_filename[idx]
+            flash_dht_filename[idx] = f.dht_filename or flash_dht_filename[idx]
+            flash_dpt_filename[idx] = f.dpt_filename or flash_dpt_filename[idx]
+            flash_start[idx] = f.start or flash_start[idx]
+            flash_length[idx] = f.length or flash_length[idx]
+            flash_shared[idx] = f.shared or flash_shared[idx]
+            flash_create[idx] = f.create or flash_create[idx]
+            flash_truncate[idx] = f.truncate or flash_truncate[idx]
+            flash_read_only[idx] = f.read_only or flash_read_only[idx]
+            flash_mount[idx] = f.mount or flash_mount[idx]
+            flash_mke2fs[idx] = f.mke2fs or flash_mke2fs[idx]
+            flash_user[idx] = f.user or flash_user[idx]
+            if f.label == "root" and f.read_only then -- Mount root filesystem as read-only
                 dtb.bootargs = dtb.bootargs:gsub("rw", "ro")
             end
             return true
@@ -1541,15 +1561,16 @@ local options = {
         "^%-%-no%-root%-flash%-drive$",
         function(all)
             if not all then return false end
-            assert(flash_data_filename.root and flash_label_order[1] == "root", "no root flash drive to remove")
-            flash_data_filename.root = nil
-            flash_start.root = nil
-            flash_length.root = nil
-            flash_shared.root = nil
-            flash_create.root = nil
-            flash_truncate.root = nil
-            flash_read_only.root = nil
-            table.remove(flash_label_order, 1)
+            assert(flash_label[1] == "root", "no root flash drive to remove")
+            flash_label[1] = nil
+            flash_data_filename[1] = nil
+            flash_start[1] = nil
+            flash_length[1] = nil
+            flash_shared[1] = nil
+            flash_create[1] = nil
+            flash_truncate[1] = nil
+            flash_read_only[1] = nil
+            flash_label_to_index.root = nil
             dtb.bootargs = dtb.bootargs:gsub(" root=$", "")
             return true
         end,
@@ -2095,67 +2116,71 @@ echo "
 ]]):gsub("\\", "\\\\")
     end
 
-    for _, label in ipairs(flash_label_order) do
-        local devname = "pmem" .. #config.flash_drive
-        config.flash_drive[#config.flash_drive + 1] = {
-            backing_store = {
-                data_filename = flash_data_filename[label],
-                dht_filename = flash_dht_filename[label],
-                dpt_filename = flash_dpt_filename[label],
-                shared = flash_shared[label],
-                create = flash_create[label],
-                truncate = flash_truncate[label],
-            },
-            read_only = flash_read_only[label],
-            start = flash_start[label],
-            length = flash_length[label] or -1,
-        }
-        -- auto mount
-        local mke2fs = flash_mke2fs[label]
-        if label ~= "root" and mke2fs then -- format filesystem
-            local cmd = table.concat({
-                'busybox mke2fs -F -b 4096 -I 256 -L "',
-                label,
-                '" /dev/',
-                devname,
-                " > /dev/null",
-            })
-            config.dtb.init = config.dtb.init .. cmd .. "\n"
-        end
-        local mount = flash_mount[label]
-        local chownpath = "/dev/" .. devname
-        if label ~= "root" and mount then -- mount filesystem
-            local cmd = table.concat({
-                'busybox mkdir -p "',
-                mount,
-                '" && busybox mount /dev/',
-                devname,
-                ' "',
-                mount,
-                '"',
-            })
-            config.dtb.init = config.dtb.init .. cmd .. "\n"
-            chownpath = mount
-        end
-        -- change permission
-        local user = flash_user[label]
-        if label ~= "root" and user then
-            local cmd = table.concat({
-                "busybox chown ",
-                user,
-                ": ",
-                chownpath,
-            })
-            config.dtb.init = config.dtb.init .. cmd .. "\n"
-        end
-        do -- create a map of the label in /run/drive-label for flashdrive tool
-            local cmd = table.concat({
-                'busybox mkdir -p /run/drive-label && echo "',
-                label,
-                '" > /run/drive-label/',
-                devname,
-            })
-            config.dtb.init = config.dtb.init .. cmd .. "\n"
+    for idx = 1, flash_count do
+        if flash_data_filename[idx] ~= nil then -- skip removed drives (e.g. --no-root-flash-drive)
+            local label = flash_label[idx]
+            local devname = "pmem" .. #config.flash_drive
+            config.flash_drive[#config.flash_drive + 1] = {
+                label = label,
+                backing_store = {
+                    data_filename = flash_data_filename[idx],
+                    dht_filename = flash_dht_filename[idx],
+                    dpt_filename = flash_dpt_filename[idx],
+                    shared = flash_shared[idx],
+                    create = flash_create[idx],
+                    truncate = flash_truncate[idx],
+                },
+                read_only = flash_read_only[idx],
+                start = flash_start[idx],
+                length = flash_length[idx] or -1,
+            }
+            -- auto mount
+            local mke2fs = flash_mke2fs[idx]
+            if label ~= "root" and mke2fs then -- format filesystem
+                local cmd = table.concat({
+                    'busybox mke2fs -F -b 4096 -I 256 -L "',
+                    label,
+                    '" /dev/',
+                    devname,
+                    " > /dev/null",
+                })
+                config.dtb.init = config.dtb.init .. cmd .. "\n"
+            end
+            local mount = flash_mount[idx]
+            local chownpath = "/dev/" .. devname
+            if label ~= "root" and mount then -- mount filesystem
+                local cmd = table.concat({
+                    'busybox mkdir -p "',
+                    mount,
+                    '" && busybox mount /dev/',
+                    devname,
+                    ' "',
+                    mount,
+                    '"',
+                })
+                config.dtb.init = config.dtb.init .. cmd .. "\n"
+                chownpath = mount
+            end
+            -- change permission
+            local user = flash_user[idx]
+            if label ~= "root" and user then
+                local cmd = table.concat({
+                    "busybox chown ",
+                    user,
+                    ": ",
+                    chownpath,
+                })
+                config.dtb.init = config.dtb.init .. cmd .. "\n"
+            end
+            do -- create a map of the label in /run/drive-label for flashdrive tool
+                local cmd = table.concat({
+                    'busybox mkdir -p /run/drive-label && echo "',
+                    label,
+                    '" > /run/drive-label/',
+                    devname,
+                })
+                config.dtb.init = config.dtb.init .. cmd .. "\n"
+            end
         end
     end
 
@@ -2183,10 +2208,6 @@ echo "
     end
 
     main_machine = main_machine:create(config, runtime_config, create_dir)
-end
-
-for _, r in ipairs(memory_range_replace) do
-    main_machine:replace_memory_range(r)
 end
 
 local function dump_config(what, whatdef, out, indent)
@@ -2231,6 +2252,10 @@ end
 
 -- obtain config from instantiated machine
 local main_config = main_machine:get_initial_config()
+
+for _, r in ipairs(memory_range_replace) do
+    main_machine:replace_memory_range(r)
+end
 
 if type(store_config) == "string" then
     local f <close> = assert(io.open(store_config, "w"))

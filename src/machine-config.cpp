@@ -189,6 +189,10 @@ machine_config &machine_config::adjust_defaults() {
     int i = 0; // NOLINT(misc-const-correctness)
     for (auto &f : flash_drive) {
         const std::string flash_description = "flash drive "s + std::to_string(i);
+        // Auto detect flash drive label
+        if (f.label.empty()) {
+            f.label = "flashdrive"s + std::to_string(i);
+        }
         // Auto detect flash drive start address
         if (f.start == UINT64_C(-1)) {
             f.start = AR_DRIVE_START + (AR_DRIVE_OFFSET * i);

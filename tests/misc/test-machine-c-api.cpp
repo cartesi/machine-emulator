@@ -150,8 +150,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_mach
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomplete_machine_fixture) {
-    _machine_config["flash_drive"] = nlohmann::json{{{"start", 0x80000000000000}, {"length", 0x3c00000}},
-        {{"start", 0x7ffffffffff000}, {"length", 0x2000}}};
+    _machine_config["flash_drive"] =
+        nlohmann::json{{{"label", "flash0"}, {"start", 0x80000000000000}, {"length", 0x3c00000}},
+            {{"label", "flash1"}, {"start", 0x7ffffffffff000}, {"length", 0x2000}}};
     const auto dumped_config = _machine_config.dump();
 
     cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
@@ -165,10 +166,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomp
 class machine_flash_simple_fixture : public incomplete_machine_fixture {
 public:
     machine_flash_simple_fixture() {
-        _machine_config["flash_drive"] = {{{"start", 0x80000000000000}, {"length", 0x3c00000}, {"read_only", false},
-            {"backing_store",
-                {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""}, {"dht_filename", ""},
-                    {"dpt_filename", ""}}}}};
+        _machine_config["flash_drive"] = {
+            {{"label", "flashdrive0"}, {"start", 0x80000000000000}, {"length", 0x3c00000}, {"read_only", false},
+                {"backing_store",
+                    {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""},
+                        {"dht_filename", ""}, {"dpt_filename", ""}}}}};
     }
     ~machine_flash_simple_fixture() = default;
 

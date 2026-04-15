@@ -87,6 +87,7 @@ struct dtb_config final {
 
 /// \brief Memory range config
 struct memory_range_config final {
+    std::string label;                     ///< Label for identification
     uint64_t start{0xffffffffffffffffUL};  ///< Memory range start position, default is to auto detect
     uint64_t length{0xffffffffffffffffUL}; ///< Memory range length, default is to auto detect
     bool read_only{false};                 ///< Make memory range read-only to host

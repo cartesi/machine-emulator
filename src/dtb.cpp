@@ -186,6 +186,7 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             fdt.prop_string("compatible", "pmem-region");
             fdt.prop_u64_list<2>("reg", {f.start, f.length});
             fdt.prop_empty("volatile");
+            fdt.prop_string("ctsi,label", f.label);
             fdt.end_node();
         }
 

@@ -1655,6 +1655,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, memory_range_config
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "label"s, value.label, new_path);
     ju_get_opt_field(jconfig, "start"s, value.start, new_path);
     ju_get_opt_field(jconfig, "length"s, value.length, new_path);
     ju_get_opt_field(jconfig, "read_only"s, value.read_only, new_path);
@@ -2262,8 +2263,8 @@ void to_json(nlohmann::json &j, const backing_store_config_only &config) {
 }
 
 void to_json(nlohmann::json &j, const memory_range_config &config) {
-    j = nlohmann::json{{"start", config.start}, {"length", config.length}, {"read_only", config.read_only},
-        {"backing_store", config.backing_store}};
+    j = nlohmann::json{{"label", config.label}, {"start", config.start}, {"length", config.length},
+        {"read_only", config.read_only}, {"backing_store", config.backing_store}};
 }
 
 void to_json(nlohmann::json &j, const hash_tree_config &config) {

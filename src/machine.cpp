@@ -577,6 +577,34 @@ void machine::remove_stored(const std::string &dir) {
     os::remove_directory(dir);
 }
 
+void machine::replace_memory_range(const memory_range_config &config) {
+    auto resolved = config;
+    if (!config.label.empty()) {
+        // Find the flash drive with the matching label
+        const memory_range_config *found = nullptr;
+        for (const auto &f : m_c.flash_drive) {
+            if (f.label == config.label) {
+                found = &f;
+                break;
+            }
+        }
+        if (found == nullptr) {
+            throw std::invalid_argument{"no flash drive with label \""s + config.label + "\""};
+        }
+        if (config.start != UINT64_C(-1) && config.start != found->start) {
+            throw std::invalid_argument{"flash drive label \""s + config.label + "\" start mismatch: expected "s +
+                std::to_string(found->start) + ", got "s + std::to_string(config.start)};
+        }
+        if (config.length != UINT64_C(-1) && config.length != found->length) {
+            throw std::invalid_argument{"flash drive label \""s + config.label + "\" length mismatch: expected "s +
+                std::to_string(found->length) + ", got "s + std::to_string(config.length)};
+        }
+        resolved.start = found->start;
+        resolved.length = found->length;
+    }
+    m_ars.replace(resolved);
+}
+
 void machine::dump_insn_hist() {
 #ifdef DUMP_INSN_HIST
     d_printf("\nInstruction Histogram:\n");

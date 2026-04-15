@@ -396,6 +396,29 @@ void machine_address_ranges::push_back_flash_drives(const flash_drive_configs &f
     if (flash_drive.size() > FLASH_DRIVE_MAX) {
         throw std::invalid_argument{"too many flash drives"};
     }
+    // Validate flash drive labels
+    for (size_t i = 0; i < flash_drive.size(); ++i) {
+        const auto &label = flash_drive[i].label;
+        if (label.empty()) {
+            throw std::invalid_argument{"flash drive "s + std::to_string(i) + " has empty label"};
+        }
+        for (const auto c : label) {
+            if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_') {
+                throw std::invalid_argument{
+                    "flash drive "s + std::to_string(i) + " label contains invalid character '" + c + "'"};
+            }
+        }
+        if (label.starts_with("ctsi")) {
+            throw std::invalid_argument{
+                "flash drive "s + std::to_string(i) + " label must not start with reserved prefix \"ctsi\""};
+        }
+        for (size_t j = 0; j < i; ++j) {
+            if (flash_drive[j].label == label) {
+                throw std::invalid_argument{
+                    "flash drive "s + std::to_string(i) + " has duplicate label \"" + label + "\""};
+            }
+        }
+    }
     // Register all flash drives
     int i = 0; // NOLINT(misc-const-correctness)
     for (const auto &f : flash_drive) {

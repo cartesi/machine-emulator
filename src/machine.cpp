@@ -620,6 +620,18 @@ void machine::replace_memory_range(const memory_range_config &config) {
         }
         resolved.start = found->start;
         resolved.length = found->length;
+    } else {
+        const bool missing_start = config.start == UINT64_C(-1);
+        const bool missing_length = config.length == UINT64_C(-1);
+        if (missing_start && missing_length) {
+            throw std::invalid_argument{"memory range replacement requires either a label or both start and length"};
+        }
+        if (missing_start) {
+            throw std::invalid_argument{"memory range replacement without a label requires start"};
+        }
+        if (missing_length) {
+            throw std::invalid_argument{"memory range replacement without a label requires length"};
+        }
     }
     m_ars.replace(resolved);
 }

@@ -120,11 +120,14 @@ where options are:
 
         label (optional)
         identifies the flash drive. init attempts to mount it as /mnt/<label>.
-        the label is written into the device tree and can be used to identify
-        the flash drive in --replace-flash-drive and --replace-memory-range.
-        labels must contain only alphanumeric characters, hyphens, and underscores,
-        and must not start with "ctsi" (reserved for internal use).
-        if omitted, the machine auto-generates a label "flashdriveN".
+        the machine always assigns the internal label "_flashdriveN" (where N
+        is the zero-based index). the user label is an optional additional name
+        that can be used to refer to the flash drive in --replace-memory-range.
+        user labels must contain only alphanumeric characters, hyphens, and
+        underscores, must not start with an underscore (reserved for internal
+        use), must be unique across all flash drives and NVRAMs, and must be
+        at most 64 characters long.
+        if omitted, no user label is set.
 
         start (optional)
         sets the starting physical memory offset for flash drive in bytes.
@@ -206,10 +209,14 @@ where options are:
         user:<string>
 
         label (optional)
-        identifies the NVRAM. labels must contain only alphanumeric characters,
-        hyphens, and underscores, and must not start with "ctsi" (reserved for
-        internal use). labels must be unique across flash drives and NVRAMs.
-        if omitted, the machine auto-generates a label "nvramN".
+        the machine always assigns the internal label "_nvramN" (where N is
+        the zero-based index). the user label is an optional additional name
+        that can be used to refer to the NVRAM in --replace-memory-range.
+        user labels must contain only alphanumeric characters, hyphens, and
+        underscores, must not start with an underscore (reserved for internal
+        use), must be unique across all flash drives and NVRAMs, and must be
+        at most 64 characters long.
+        if omitted, no user label is set.
 
         start (required)
         sets the starting physical memory offset for the NVRAM in bytes.
@@ -228,7 +235,6 @@ where options are:
         user (optional)
         changes the user ownership of the /dev/uioN device.
 
-  --replace-flash-drive=<key>:<value>[,<key>:<value>[,...]...]
   --replace-memory-range=<key>:<value>[,<key>:<value>[,...]...]
     replaces an existing memory range right after machine instantiation.
     (typically used in conjunction with the --load=<directory> option.)
@@ -779,7 +785,7 @@ local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 -- Extra keys (mount, mke2fs, user) are stored alongside and ignored by the machine config.
 local function merge_memory_range_opts(entry, opts)
     entry.label = opts.label or entry.label
-    entry.read_only = opts.read_only or entry.read_only
+    entry.read_only = opts.read_only == nil and entry.read_only or opts.read_only
     entry.start = opts.start or entry.start
     entry.length = opts.length or entry.length
     entry.user = opts.user or entry.user
@@ -787,9 +793,9 @@ local function merge_memory_range_opts(entry, opts)
     entry.backing_store.data_filename = opts.data_filename or entry.backing_store.data_filename
     entry.backing_store.dht_filename = opts.dht_filename or entry.backing_store.dht_filename
     entry.backing_store.dpt_filename = opts.dpt_filename or entry.backing_store.dpt_filename
-    entry.backing_store.shared = opts.shared or entry.backing_store.shared
-    entry.backing_store.create = opts.create or entry.backing_store.create
-    entry.backing_store.truncate = opts.truncate or entry.backing_store.truncate
+    entry.backing_store.shared = opts.shared == nil and entry.backing_store.shared or opts.shared
+    entry.backing_store.create = opts.create == nil and entry.backing_store.create or opts.create
+    entry.backing_store.truncate = opts.truncate == nil and entry.backing_store.truncate or opts.truncate
 end
 
 local flash_label_to_index = { root = 1 }
@@ -1518,13 +1524,6 @@ local options = {
         end,
     },
     {
-        "^(%-%-replace%-flash%-drive%=(.+))$",
-        function(all, opts)
-            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, all)
-            return true
-        end,
-    },
-    {
         "^(%-%-replace%-memory%-range%=(.+))$",
         function(all, opts)
             memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, all)
@@ -1642,7 +1641,7 @@ local options = {
             assert(flash_drives[1] and flash_drives[1].label == "root", "no root flash drive to remove")
             flash_drives[1] = nil
             flash_label_to_index.root = nil
-            dtb.bootargs = dtb.bootargs:gsub(" root=$", "")
+            dtb.bootargs = dtb.bootargs:gsub("^root=[^%s]+%s*", ""):gsub("%s+root=[^%s]+", "", 1)
             return true
         end,
     },

@@ -37,10 +37,11 @@ enum class sharing_mode {
 
 /// \brief Machine config constants
 enum machine_config_constants {
-    FLASH_DRIVE_MAX = 8,     ///< Maximum number of flash drives
-    NVRAM_MAX = 8,           ///< Maximum number of NVRAMs
-    VIRTIO_DEVICE_MAX = 16,  ///< Maximum number of virtio devices
-    VIRTIO_HOSTFWD_MAX = 16, ///< Maximum number of virtio net user host forward ports
+    FLASH_DRIVE_MAX = 8,         ///< Maximum number of flash drives
+    NVRAM_MAX = 8,               ///< Maximum number of NVRAMs
+    VIRTIO_DEVICE_MAX = 16,      ///< Maximum number of virtio devices
+    VIRTIO_HOSTFWD_MAX = 16,     ///< Maximum number of virtio net user host forward ports
+    MEMORY_RANGE_LABEL_MAX = 64, ///< Maximum length of a memory range user label
 };
 
 /// \brief Backing store config

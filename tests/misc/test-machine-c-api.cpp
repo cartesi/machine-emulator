@@ -206,6 +206,220 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machin
     BOOST_CHECK_EQUAL(origin, result);
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_empty_label_success_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = {{{"label", ""}, {"start", 0x80000000000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    cm_delete(_machine);
+    _machine = nullptr;
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_underscore_label_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = {{{"label", "_reserved"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("flash drive 0 label must not start with underscore (reserved for internal use)");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_invalid_char_label_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = {{{"label", "foo@bar"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("flash drive 0 label contains invalid character '@'");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_too_long_label_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = {
+        {{"label", std::string(CM_MEMORY_RANGE_LABEL_MAX + 1, 'a')}, {"start", 0x80000000000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin(
+        "flash drive 0 label is too long (max " + std::to_string(CM_MEMORY_RANGE_LABEL_MAX) + " characters)");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_duplicate_label_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = {{{"label", "same"}, {"start", 0x80000000000000}, {"length", 0x1000}},
+        {{"label", "same"}, {"start", 0x90000000000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("flash drive 1 has duplicate label \"same\"");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_label_at_max_length_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = {
+        {{"label", std::string(CM_MEMORY_RANGE_LABEL_MAX, 'a')}, {"start", 0x80000000000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    cm_delete(_machine);
+    _machine = nullptr;
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_valid_label_chars_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = {{{"label", "My-Drive0"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    cm_delete(_machine);
+    _machine = nullptr;
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_too_many_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = nlohmann::json::array();
+    for (int i = 0; i <= CM_FLASH_DRIVE_MAX; ++i) {
+        _machine_config["flash_drive"].push_back({{"label", "fd" + std::to_string(i)},
+            {"start", 0x80000000000000 + static_cast<uint64_t>(i) * 0x1000}, {"length", 0x1000}});
+    }
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    BOOST_CHECK_EQUAL(std::string("too many flash drives"), result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_start_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+    std::string result = cm_get_last_error_message();
+    std::string origin("nvram 0 has no start address");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_length_no_file_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"start", 0x70000000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+    std::string result = cm_get_last_error_message();
+    std::string origin("nvram 0 has no length");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_too_many_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = nlohmann::json::array();
+    for (int i = 0; i < CM_NVRAM_MAX + 1; ++i) {
+        _machine_config["nvram"].push_back({{"start", 0x70000000 + i * 0x1000}, {"length", 0x1000}});
+    }
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("too many NVRAMs");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_underscore_label_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"label", "_reserved"}, {"start", 0x70000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("nvram 0 label must not start with underscore (reserved for internal use)");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_invalid_char_label_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"label", "nv@ram"}, {"start", 0x70000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("nvram 0 label contains invalid character '@'");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_too_long_label_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {
+        {{"label", std::string(CM_MEMORY_RANGE_LABEL_MAX + 1, 'x')}, {"start", 0x70000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("nvram 0 label is too long (max " + std::to_string(CM_MEMORY_RANGE_LABEL_MAX) + " characters)");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_duplicate_label_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"label", "samenvram"}, {"start", 0x70000000}, {"length", 0x1000}},
+        {{"label", "samenvram"}, {"start", 0x71000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("nvram 1 has duplicate label \"samenvram\"");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_duplicate_label_with_flash_drive_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] = {{{"label", "shared-label"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
+    _machine_config["nvram"] = {{{"label", "shared-label"}, {"start", 0x70000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("nvram 0 has duplicate label \"shared-label\"");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_create_success_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"label", "myram"}, {"start", 0x70000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    cm_delete(_machine);
+    _machine = nullptr;
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_label_at_max_length_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {
+        {{"label", std::string(CM_MEMORY_RANGE_LABEL_MAX, 'a')}, {"start", 0x70000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    cm_delete(_machine);
+    _machine = nullptr;
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_valid_label_chars_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"label", "My-Ram0"}, {"start", 0x70000000}, {"length", 0x1000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    cm_delete(_machine);
+    _machine = nullptr;
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_read_only_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"label", "roram"}, {"start", 0x70000000}, {"length", 0x1000}, {"read_only", true}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    cm_delete(_machine);
+    _machine = nullptr;
+}
+
 class ordinary_machine_fixture : public incomplete_machine_fixture {
 public:
     ordinary_machine_fixture() {
@@ -1004,6 +1218,153 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_basic_test, flash_drive_mach
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
     BOOST_CHECK_EQUAL(_flash_data, read_string);
+}
+
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
+class nvram_machine_fixture : public incomplete_machine_fixture {
+public:
+    nvram_machine_fixture() : _nvram_size{0x1000}, _nvram_file{"/tmp/nvram_test.bin"}, _nvram_data(0x1000, 'N') {
+        _machine_config["nvram"] = {
+            {{"label", "nvramtest"}, {"start", 0x70000000}, {"length", _nvram_size}, {"read_only", false},
+                {"backing_store",
+                    {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""},
+                        {"dht_filename", ""}, {"dpt_filename", ""}}}}};
+        const auto dumped_config = _machine_config.dump();
+        cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+        BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+
+        std::ofstream nvram_stream(_nvram_file, std::ios::binary);
+        nvram_stream.write(_nvram_data.c_str(), static_cast<std::streamsize>(_nvram_data.size()));
+        nvram_stream.close();
+    }
+
+    ~nvram_machine_fixture() {
+        cm_delete(_machine);
+        std::filesystem::remove(_nvram_file);
+    }
+
+protected:
+    size_t _nvram_size{};
+    std::string _nvram_file;
+    std::string _nvram_data;
+};
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_by_nvram_label_test, nvram_machine_fixture) {
+    const auto dumped_range =
+        nlohmann::json{{"label", "nvramtest"}, {"backing_store", {{"shared", true}, {"data_filename", _nvram_file}}}}
+            .dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+
+    std::array<uint8_t, 4> read_data{};
+    error_code = cm_read_memory(_machine, 0x70000000, read_data.data(), read_data.size());
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
+    BOOST_CHECK_EQUAL(std::string(4, 'N'), read_string);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_unknown_label_test, nvram_machine_fixture) {
+    const auto dumped_range =
+        nlohmann::json{{"label", "nonexistent"}, {"backing_store", {{"shared", true}, {"data_filename", _nvram_file}}}}
+            .dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("no memory range with label \"nonexistent\"");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_no_label_no_start_no_length_test, nvram_machine_fixture) {
+    const auto dumped_range = nlohmann::json{{"backing_store", {{"shared", false}}}}.dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("memory range replacement requires either a label or both start and length");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_no_label_no_start_test, nvram_machine_fixture) {
+    const auto dumped_range = nlohmann::json{{"length", 0x1000}, {"backing_store", {{"shared", false}}}}.dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("memory range replacement without a label requires start");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_no_label_no_length_test, nvram_machine_fixture) {
+    const auto dumped_range = nlohmann::json{{"start", 0x70000000}, {"backing_store", {{"shared", false}}}}.dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("memory range replacement without a label requires length");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_nvram_label_start_mismatch_test, nvram_machine_fixture) {
+    const auto dumped_range = nlohmann::json{{"label", "nvramtest"}, {"start", 0x70001000},
+        {"backing_store", {{"shared", true}, {"data_filename", _nvram_file}}}}
+                                  .dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("memory range label \"nvramtest\" start mismatch: expected " +
+        std::to_string(UINT64_C(0x70000000)) + ", got " + std::to_string(UINT64_C(0x70001000)));
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_nvram_label_length_mismatch_test, nvram_machine_fixture) {
+    const auto dumped_range = nlohmann::json{{"label", "nvramtest"}, {"length", 0x2000},
+        {"backing_store", {{"shared", true}, {"data_filename", _nvram_file}}}}
+                                  .dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    std::string origin("memory range label \"nvramtest\" length mismatch: expected " +
+        std::to_string(UINT64_C(0x1000)) + ", got " + std::to_string(UINT64_C(0x2000)));
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
+class serde_nvram_fixture : public nvram_machine_fixture {
+public:
+    serde_nvram_fixture() : _machine_dir_path{(std::filesystem::temp_directory_path() / "serde_nvram_test").string()} {}
+    ~serde_nvram_fixture() {
+        std::filesystem::remove_all(_machine_dir_path);
+    }
+    serde_nvram_fixture(const serde_nvram_fixture &other) = delete;
+    serde_nvram_fixture(serde_nvram_fixture &&other) noexcept = delete;
+    serde_nvram_fixture &operator=(const serde_nvram_fixture &other) = delete;
+    serde_nvram_fixture &operator=(serde_nvram_fixture &&other) noexcept = delete;
+
+protected:
+    std::string _machine_dir_path;
+};
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(serde_nvram_test, serde_nvram_fixture) {
+    cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    cm_machine *restored_machine{};
+    error_code = cm_load_new(_machine_dir_path.c_str(), nullptr, CM_SHARING_NONE, &restored_machine);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    const char *cfg{};
+    error_code = cm_get_initial_config(restored_machine, &cfg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    const auto config = nlohmann::json::parse(cfg);
+    BOOST_REQUIRE(config.contains("nvram"));
+    BOOST_REQUIRE(!config["nvram"].empty());
+    const auto &nvram0 = config["nvram"][0];
+    BOOST_CHECK_EQUAL(nvram0["label"].get<std::string>(), "nvramtest");
+    BOOST_CHECK_EQUAL(nvram0["start"].get<uint64_t>(), UINT64_C(0x70000000));
+    BOOST_CHECK_EQUAL(nvram0["length"].get<uint64_t>(), UINT64_C(0x1000));
+
+    cm_delete(restored_machine);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_null_machine_test) {

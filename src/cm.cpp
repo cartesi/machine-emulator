@@ -63,6 +63,10 @@ static std::string &get_last_err_msg_storage() {
     return last_err_msg;
 }
 
+static_assert(static_cast<int>(cartesi::FLASH_DRIVE_MAX) == CM_FLASH_DRIVE_MAX);
+static_assert(static_cast<int>(cartesi::NVRAM_MAX) == CM_NVRAM_MAX);
+static_assert(static_cast<int>(cartesi::MEMORY_RANGE_LABEL_MAX) == CM_MEMORY_RANGE_LABEL_MAX);
+
 static_assert(AR_CMIO_RX_BUFFER_START_DEF == CM_AR_CMIO_RX_BUFFER_START);
 static_assert(AR_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_AR_CMIO_RX_BUFFER_LOG2_SIZE);
 static_assert(AR_CMIO_TX_BUFFER_START_DEF == CM_AR_CMIO_TX_BUFFER_START);

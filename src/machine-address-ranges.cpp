@@ -410,6 +410,12 @@ static void validate_memory_range_label(const std::string &description, const st
     if (label.empty()) {
         return;
     }
+    if (label.size() > MEMORY_RANGE_LABEL_MAX) {
+        throw std::invalid_argument{std::string(description)
+                .append(" label is too long (max ")
+                .append(std::to_string(MEMORY_RANGE_LABEL_MAX))
+                .append(" characters)")};
+    }
     for (const auto c : label) {
         if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_') {
             throw std::invalid_argument{

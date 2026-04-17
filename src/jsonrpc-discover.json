@@ -1708,6 +1708,9 @@
         "title": "MemoryRangeConfig",
         "type": "object",
         "properties": {
+          "label": {
+            "type": "string"
+          },
           "start": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
@@ -1730,6 +1733,9 @@
             "type": "string"
           },
           "dht_filename": {
+            "type": "string"
+          },
+          "dpt_filename": {
             "type": "string"
           },
           "shared": {

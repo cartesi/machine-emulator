@@ -171,9 +171,9 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             fdt.prop_u32("#address-cells", 2);
             fdt.prop_u32("#size-cells", 2);
             fdt.prop_empty("ranges");
-            { // reserve 256KB for firmware M-mode code (such as OpenSBI)
+            { // reserve 512KB for firmware M-mode code (such as OpenSBI)
                 fdt.begin_node_num("fw_resv", AR_RAM_START);
-                fdt.prop_u64_list<2>("reg", {AR_RAM_START, 0x40000});
+                fdt.prop_u64_list<2>("reg", {AR_RAM_START, 0x80000});
                 fdt.prop_empty("no-map");
                 fdt.end_node();
             }

@@ -327,7 +327,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_machine_config_version_test, store_file_fix
     auto j = nlohmann::json::parse(ifs);
     BOOST_REQUIRE(j.contains("archive_version"));
     BOOST_REQUIRE(j["archive_version"].is_number_integer());
-    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 6);
+    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 7);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture) {

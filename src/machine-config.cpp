@@ -32,7 +32,7 @@
 #include "os-filesystem.hpp"
 #include "riscv-constants.hpp"
 
-static constexpr uint32_t archive_version = 6;
+static constexpr uint32_t archive_version = 7;
 
 namespace cartesi {
 
@@ -118,6 +118,9 @@ machine_config &machine_config::adjust_backing_stores(const std::string &dir, sh
     for (auto &f : flash_drive) {
         adjust_ar_backing_store_config(f.start, f.length, dir, sharing, f.backing_store);
     }
+    for (auto &n : nvram) {
+        adjust_ar_backing_store_config(n.start, n.length, dir, sharing, n.backing_store);
+    }
     adjust_ar_backing_store_config(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH, dir, sharing,
         processor.backing_store);
     adjust_ar_backing_store_config(AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH, dir, sharing,
@@ -189,10 +192,6 @@ machine_config &machine_config::adjust_defaults() {
     int i = 0; // NOLINT(misc-const-correctness)
     for (auto &f : flash_drive) {
         const std::string flash_description = "flash drive "s + std::to_string(i);
-        // Auto detect flash drive label
-        if (f.label.empty()) {
-            f.label = "flashdrive"s + std::to_string(i);
-        }
         // Auto detect flash drive start address
         if (f.start == UINT64_C(-1)) {
             f.start = AR_DRIVE_START + (AR_DRIVE_OFFSET * i);
@@ -204,6 +203,21 @@ machine_config &machine_config::adjust_defaults() {
                     "unable to auto-detect length of "s.append(flash_description).append(" with empty image file")};
             }
             f.length = os::file_size(f.backing_store.data_filename);
+        }
+        i += 1;
+    }
+    // Validate NVRAM entries (no auto-detection of start)
+    i = 0;
+    for (auto &n : nvram) {
+        const std::string nvram_description = "nvram "s + std::to_string(i);
+        if (n.start == UINT64_C(-1)) {
+            throw std::runtime_error{nvram_description + " has no start address"s};
+        }
+        if (n.length == UINT64_C(-1)) {
+            if (n.backing_store.data_filename.empty()) {
+                throw std::runtime_error{nvram_description + " has no length"s};
+            }
+            n.length = os::file_size(n.backing_store.data_filename);
         }
         i += 1;
     }

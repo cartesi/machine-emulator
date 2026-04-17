@@ -2188,59 +2188,6 @@ echo "
 ]]):gsub("\\", "\\\\")
     end
 
-    -- populate /run/cartesi/memoryranges/ by walking sysfs. ctsi,label is not
-    -- exported under /sys/devices/.../of_node/ for pmem (of_pmem filters
-    -- properties), so we read from /sys/firmware/devicetree/base/, which
-    -- always carries every DT property verbatim. The label always begins
-    -- with the auto-generated "_flashdrive<i>" or "_nvram<i>" (optionally
-    -- followed by a comma and the user label); split on comma and create
-    -- one file per part. Each label file stores "<device> <start> <length>"
-    -- on a single line so consumers do not have to re-walk sysfs.
-    config.dtb.init = config.dtb.init
-        .. [[
-busybox mkdir -p /run/cartesi/memoryranges
-map_labels() {
-    dev=$1
-    start=$2
-    length=$3
-    labels=$4
-    IFS=,
-    for name in $labels; do
-        echo "$dev $start $length" > "/run/cartesi/memoryranges/$name"
-    done
-    unset IFS
-}
-for blk in /sys/block/pmem*; do
-    [ -L "$blk/device" ] || continue
-    plat=$(busybox readlink -f "$blk/device/../../..")
-    hex=${plat##*/}
-    hex=${hex%.pmem}
-    label_file="/sys/firmware/devicetree/base/pmem@$hex/ctsi,label"
-    if [ ! -r "$label_file" ]; then
-        echo "cartesi: ${blk##*/} missing $label_file" >&2
-        continue
-    fi
-    sectors=$(busybox cat "$blk/size")
-    length=$(busybox printf '0x%x' $((sectors * 512)))
-    map_labels "/dev/${blk##*/}" "0x$hex" "$length" "$(busybox cat "$label_file")"
-done
-for uio in /sys/class/uio/uio*; do
-    [ -L "$uio/device" ] || continue
-    plat=$(busybox readlink -f "$uio/device")
-    hex=${plat##*/}
-    hex=${hex%.uio}
-    label_file="/sys/firmware/devicetree/base/uio@$hex/ctsi,label"
-    if [ ! -r "$label_file" ]; then
-        echo "cartesi: ${uio##*/} missing $label_file" >&2
-        continue
-    fi
-    start=$(busybox cat "$uio/maps/map0/addr")
-    length=$(busybox cat "$uio/maps/map0/size")
-    map_labels "/dev/${uio##*/}" "$start" "$length" "$(busybox cat "$label_file")"
-done
-unset -f map_labels
-]]
-
     for idx = 1, flash_drive_count do
         local entry = flash_drives[idx]
         if entry then -- skip removed drives (e.g. --no-root-flash-drive)

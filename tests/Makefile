@@ -134,7 +134,7 @@ $(CARTESI_IMAGES): | $(CARTESI_IMAGES_PATH)
 	@wget -nc -i dependencies -P $(CARTESI_IMAGES_PATH)
 	@shasum -ca 256 dependencies.sha256
 	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools.ext2 rootfs.ext2
-	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.13-ctsi-1-v0.20.0.bin linux.bin
+	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.13-ctsi-2-uio-test1-v0.21.0.bin linux.bin
 
 images: | $(CARTESI_IMAGES)
 

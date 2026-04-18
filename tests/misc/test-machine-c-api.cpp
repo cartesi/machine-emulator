@@ -293,6 +293,67 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_too_many_test, incomplete_machine_fix
     BOOST_CHECK_EQUAL(std::string("too many flash drives"), result);
 }
 
+// Exercises the flash-drive length auto-detect branch in
+// machine_config::adjust_image_filenames: when a flash drive is configured
+// with a data_filename but no explicit length, the emulator sizes the range
+// from the file on disk. The readback confirms the file's contents landed
+// in memory.
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_length_auto_detect_from_file_test, incomplete_machine_fixture) {
+    const auto flash_file = (std::filesystem::temp_directory_path() / "flash_autolen.bin").string();
+    const std::string flash_data(0x1000, 'F');
+    {
+        std::ofstream s(flash_file, std::ios::binary);
+        s.write(flash_data.c_str(), static_cast<std::streamsize>(flash_data.size()));
+    }
+    _machine_config["flash_drive"] = {
+        {{"start", 0x80000000000000}, {"backing_store", {{"data_filename", flash_file}}}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    std::array<uint8_t, 4> read_data{};
+    error_code = cm_read_memory(_machine, 0x80000000000000, read_data.data(), read_data.size());
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
+    BOOST_CHECK_EQUAL(std::string(4, 'F'), read_string);
+    cm_delete(_machine);
+    _machine = nullptr;
+    std::filesystem::remove(flash_file);
+}
+
+// Exercises the flash-drive branch of prepare_ar_backing_stores_for_share:
+// passing a non-null dir to cm_create_new triggers the fully-on-disk
+// constructor, which copies each flash drive's backing store into the
+// target directory. The readback proves the file-backed content was
+// propagated through the share path.
+BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_on_disk_share_test, incomplete_machine_fixture) {
+    const auto flash_file = (std::filesystem::temp_directory_path() / "flash_on_disk_share.bin").string();
+    const std::string flash_data(0x1000, 'D');
+    {
+        std::ofstream s(flash_file, std::ios::binary);
+        s.write(flash_data.c_str(), static_cast<std::streamsize>(flash_data.size()));
+    }
+    _machine_config["flash_drive"] = {{{"label", "shared-fd"}, {"start", 0x80000000000000}, {"length", 0x1000},
+        {"backing_store", {{"shared", false}, {"data_filename", flash_file}}}}};
+    const auto dumped_config = _machine_config.dump();
+    const auto dir = (std::filesystem::temp_directory_path() / "flash_on_disk_share").string();
+    std::filesystem::remove_all(dir);
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    std::array<uint8_t, 4> read_data{};
+    error_code = cm_read_memory(_machine, 0x80000000000000, read_data.data(), read_data.size());
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
+    BOOST_CHECK_EQUAL(std::string(4, 'D'), read_string);
+    cm_delete(_machine);
+    _machine = nullptr;
+    std::filesystem::remove_all(dir);
+    std::filesystem::remove(flash_file);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_start_test, incomplete_machine_fixture) {
     _machine_config["nvram"] = {{{"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
@@ -418,6 +479,83 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_read_only_test, incomplete_machine_fixture)
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     cm_delete(_machine);
     _machine = nullptr;
+}
+
+// Exercises the nvram length auto-detect branch in
+// machine_config::adjust_image_filenames: when an nvram is configured with
+// a data_filename but no explicit length, the emulator sizes the range from
+// the file on disk. The readback confirms the file's contents landed in
+// memory.
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_length_auto_detect_from_file_test, incomplete_machine_fixture) {
+    const auto nvram_file = (std::filesystem::temp_directory_path() / "nvram_autolen.bin").string();
+    const std::string nvram_data(0x1000, 'A');
+    {
+        std::ofstream s(nvram_file, std::ios::binary);
+        s.write(nvram_data.c_str(), static_cast<std::streamsize>(nvram_data.size()));
+    }
+    _machine_config["nvram"] = {
+        {{"start", 0x70000000}, {"backing_store", {{"data_filename", nvram_file}}}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    std::array<uint8_t, 4> read_data{};
+    error_code = cm_read_memory(_machine, 0x70000000, read_data.data(), read_data.size());
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
+    BOOST_CHECK_EQUAL(std::string(4, 'A'), read_string);
+    cm_delete(_machine);
+    _machine = nullptr;
+    std::filesystem::remove(nvram_file);
+}
+
+// Exercises the iunrep guard in the fully-on-disk machine constructor:
+// when a non-null dir is passed to cm_create_new but the processor has
+// iunrep set, the constructor must reject the configuration before touching
+// the filesystem.
+BOOST_FIXTURE_TEST_CASE_NOLINT(on_disk_unreproducible_rejected_test, incomplete_machine_fixture) {
+    _machine_config["processor"]["registers"]["iunrep"] = 1;
+    const auto dumped_config = _machine_config.dump();
+    const auto dir = (std::filesystem::temp_directory_path() / "on_disk_unrep").string();
+    std::filesystem::remove_all(dir);
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    std::string result = cm_get_last_error_message();
+    BOOST_CHECK_EQUAL(std::string("fully on-disk machines must not be unreproducible"), result);
+    std::filesystem::remove_all(dir);
+}
+
+// Exercises the nvram branch of prepare_ar_backing_stores_for_share:
+// passing a non-null dir to cm_create_new triggers the fully-on-disk
+// constructor, which copies each nvram's backing store into the target
+// directory. The readback proves the file-backed content was propagated
+// through the share path.
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_on_disk_share_test, incomplete_machine_fixture) {
+    const auto nvram_file = (std::filesystem::temp_directory_path() / "nvram_on_disk_share.bin").string();
+    const std::string nvram_data(0x1000, 'S');
+    {
+        std::ofstream s(nvram_file, std::ios::binary);
+        s.write(nvram_data.c_str(), static_cast<std::streamsize>(nvram_data.size()));
+    }
+    _machine_config["nvram"] = {{{"label", "shared-nv"}, {"start", 0x70000000}, {"length", 0x1000},
+        {"backing_store", {{"shared", false}, {"data_filename", nvram_file}}}}};
+    const auto dumped_config = _machine_config.dump();
+    const auto dir = (std::filesystem::temp_directory_path() / "nvram_on_disk_share").string();
+    std::filesystem::remove_all(dir);
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    std::array<uint8_t, 4> read_data{};
+    error_code = cm_read_memory(_machine, 0x70000000, read_data.data(), read_data.size());
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
+    BOOST_CHECK_EQUAL(std::string(4, 'S'), read_string);
+    cm_delete(_machine);
+    _machine = nullptr;
+    std::filesystem::remove_all(dir);
+    std::filesystem::remove(nvram_file);
 }
 
 class ordinary_machine_fixture : public incomplete_machine_fixture {

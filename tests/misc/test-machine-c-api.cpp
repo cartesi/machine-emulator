@@ -493,8 +493,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_length_auto_detect_from_file_test, incomple
         std::ofstream s(nvram_file, std::ios::binary);
         s.write(nvram_data.c_str(), static_cast<std::streamsize>(nvram_data.size()));
     }
-    _machine_config["nvram"] = {
-        {{"start", 0x70000000}, {"backing_store", {{"data_filename", nvram_file}}}}};
+    _machine_config["nvram"] = {{{"start", 0x70000000}, {"backing_store", {{"data_filename", nvram_file}}}}};
     const auto dumped_config = _machine_config.dump();
     cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);

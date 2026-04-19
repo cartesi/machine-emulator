@@ -4,13 +4,15 @@ RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
         build-essential vim wget git gcovr \
         libomp-19-dev libboost1.83-dev libssl-dev libslirp-dev \
-        ca-certificates pkg-config lua5.4 liblua5.4-dev \
+        ca-certificates pkg-config lua5.4 liblua5.4-dev luarocks \
         lua-check lua-socket lua-posix lua-lpeg \
         xxd procps unzip gosu \
         clang-tidy clang-format \
         g++-14-riscv64-linux-gnu=14.2.0-19cross1 \
         gcc-riscv64-unknown-elf=14.2.0+19 && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    luarocks --lua-version 5.4 install luacov && \
+    luarocks --lua-version 5.4 install cluacov
 
 # Install stylua
 RUN cd /tmp && \

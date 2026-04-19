@@ -27,8 +27,8 @@ local function adjust_images_path(path)
     return string.gsub(path, "/*$", "") .. "/"
 end
 
--- Print help and exit
-local function help()
+-- Print help
+local function print_help()
     print(string.format(
         [=[
 Usage:
@@ -766,7 +766,6 @@ or a left shift (e.g., 2 << 20).
 ]=],
         arg[0]
     ))
-    os.exit()
 end
 
 local remote_closer = {}
@@ -1118,15 +1117,17 @@ local options = {
     {
         "^%-h$",
         function()
-            help()
-            return true
+            print_help()
+            os.exit()
+            -- return true
         end,
     },
     {
         "^%-%-help$",
         function()
-            help()
-            return true
+            print_help()
+            os.exit()
+            -- return true
         end,
     },
     {
@@ -1139,7 +1140,7 @@ local options = {
             print(string.format("compiler: %s", cartesi.COMPILER))
             print("Copyright Cartesi and individual authors.")
             os.exit()
-            return true
+            -- return true
         end,
     },
     {
@@ -1159,7 +1160,7 @@ local options = {
             print(string.format('  "platform": "%s"', cartesi.PLATFORM))
             print("}")
             os.exit()
-            return true
+            -- return true
         end,
     },
     {
@@ -1654,7 +1655,7 @@ local options = {
         end,
     },
     {
-        "%-%-assert%-rolling%-template",
+        "^%-%-assert%-rolling%-template$",
         function(all)
             if not all then return false end
             assert_rolling_template = true
@@ -1662,7 +1663,7 @@ local options = {
         end,
     },
     {
-        "%-%-quiet",
+        "^%-%-quiet$",
         function(all)
             if not all then return false end
             stderr = function() end
@@ -2435,7 +2436,7 @@ local function store_machine(machine, config, dir, sharing)
 end
 
 local function dump_pmas(machine)
-    for _, v in ipairs(machine:get_memory_ranges()) do
+    for _, v in ipairs(machine:get_address_ranges()) do
         local filename = string.format("%016x--%016x.bin", v.start, v.length)
         local file <close> = assert(io.open(filename, "w"))
         assert(file:write(machine:read_memory(v.start, v.length)))

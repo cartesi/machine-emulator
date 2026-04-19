@@ -31,6 +31,7 @@
 #define PMA_CMIO_TX_BUFFER_DID_DEF 8     ///< Device ID for cmio TX buffer
 #define PMA_SHADOW_UARCH_STATE_DID_DEF 9 ///< Device ID for uarch shadow state device
 #define PMA_VIRTIO_DID_DEF 10            ///< Device ID for VirtIO devices
+#define PMA_NVRAM_DID_DEF 11             ///< Device ID for NVRAM
 
 // helper for using UINT64_C with defines
 #ifndef EXPAND_UINT64_C

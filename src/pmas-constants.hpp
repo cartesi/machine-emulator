@@ -67,6 +67,7 @@ enum class PMA_ISTART_DID : uint8_t {
     cmio_rx_buffer = PMA_CMIO_RX_BUFFER_DID_DEF,         ///< DID for cmio receive buffer
     cmio_tx_buffer = PMA_CMIO_TX_BUFFER_DID_DEF,         ///< DID for cmio transmit buffer
     shadow_uarch_state = PMA_SHADOW_UARCH_STATE_DID_DEF, ///< DID for shadow uarch state
+    nvram = PMA_NVRAM_DID_DEF,                           ///< DID for NVRAM
 };
 
 } // namespace cartesi

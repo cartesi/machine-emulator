@@ -54,6 +54,8 @@ static constexpr const char *pmas_get_DID_name(PMA_ISTART_DID did) {
             return "DID.cmio_tx_buffer";
         case PMA_ISTART_DID::shadow_uarch_state:
             return "DID.shadow_uarch_state";
+        case PMA_ISTART_DID::nvram:
+            return "DID.nvram";
     }
     return "DID.unknown";
 }
@@ -62,6 +64,7 @@ static constexpr bool pmas_is_protected(PMA_ISTART_DID DID) {
     switch (DID) {
         case PMA_ISTART_DID::memory:
         case PMA_ISTART_DID::flash_drive:
+        case PMA_ISTART_DID::nvram:
         case PMA_ISTART_DID::cmio_rx_buffer:
         case PMA_ISTART_DID::cmio_tx_buffer:
             return false;

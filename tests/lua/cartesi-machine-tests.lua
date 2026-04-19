@@ -292,7 +292,7 @@ local riscv_tests = {
     { "htif_invalid_ops.bin", 109 },
     { "clint_ops.bin", 133 },
     { "shadow_ops.bin", 78 },
-    { "compressed.bin", 410 },
+    { "compressed.bin", 374 },
     { "thrash-tlb.bin", 3363 },
     { "thrash-tlb.bin", 3363, nil, { "pre-thrash-tlb.lua", "post-thrash-tlb.lua" } },
 }

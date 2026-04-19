@@ -204,8 +204,12 @@ function GDBStub:_handle_query(_, query)
             local reg_name = payload:match("^reg ([%w_]+)$")
             local read_method_name = "read_" .. reg_name
             local read_method = self.machine[read_method_name]
-            if not read_method then return self:_send_unsupported() end
-            local ok, res = pcall(read_method, self.machine)
+            local ok, res
+            if read_method then
+                ok, res = pcall(read_method, self.machine)
+            else
+                ok, res = pcall(self.machine.read_reg, self.machine, reg_name)
+            end
             if not ok or res == nil then return self:_send_unsupported() end
             if math.type(res) == "integer" then
                 self:_send_rcmd_reply(string.format("0x%x (%d)\n", res, res))

@@ -6,8 +6,9 @@
 # Dependencies (install via apt):
 #   build-essential gcc g++ gcovr
 #   libomp-dev libboost-dev libssl-dev libslirp-dev
-#   lua5.4 liblua5.4-dev lua-posix lua-socket lua-lpeg
+#   lua5.4 liblua5.4-dev lua-posix lua-socket lua-lpeg luarocks
 #   xxd pkg-config
+#   luarocks packages: luacov cluacov (install via: sudo luarocks --lua-version 5.4 install luacov && sudo luarocks --lua-version 5.4 install cluacov)
 #   g++-14-riscv64-linux-gnu gcc-riscv64-unknown-elf
 #   stress-ng (for the coverage workload test)
 #

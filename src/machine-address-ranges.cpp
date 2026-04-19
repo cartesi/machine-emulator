@@ -239,6 +239,9 @@ static void prepare_ar_backing_stores(const machine_config &c, scope_remove &rem
     for (const auto &f : c.flash_drive) {
         prepare_ar_backing_store(f.backing_store, f.length, remover);
     }
+    for (const auto &n : c.nvram) {
+        prepare_ar_backing_store(n.backing_store, n.length, remover);
+    }
 }
 
 static void prepare_ar_backing_stores_for_share(const machine_config &from_c, machine_config &to_c,
@@ -262,6 +265,12 @@ static void prepare_ar_backing_stores_for_share(const machine_config &from_c, ma
         const auto &from_f = from_c.flash_drive[i];
         auto &to_f = to_c.flash_drive[i];
         prepare_ar_backing_store_for_share(from_f.backing_store, to_f.backing_store, from_f.length, from_f.read_only,
+            remover);
+    }
+    for (size_t i = 0; i < to_c.nvram.size(); ++i) {
+        const auto &from_n = from_c.nvram[i];
+        auto &to_n = to_c.nvram[i];
+        prepare_ar_backing_store_for_share(from_n.backing_store, to_n.backing_store, from_n.length, from_n.read_only,
             remover);
     }
 }
@@ -301,6 +310,7 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
     push_back_ram(c.ram);
     push_back(make_dtb_address_range(c.dtb), register_where{.hash_tree = true, .pmas = true});
     push_back_flash_drives(c.flash_drive, runtime_config);
+    push_back_nvrams(c.nvram, c.flash_drive, runtime_config);
     push_back_cmio(c.cmio);
     push_back(std::make_unique<htif_address_range>(throw_invalid_argument),
         register_where{.hash_tree = false, .pmas = true});
@@ -391,10 +401,51 @@ void machine_address_ranges::push_back_ram(const ram_config &ram) {
         register_where{.hash_tree = true, .pmas = true});
 }
 
+/// \brief Validates a user-supplied memory range label (may be empty) and checks for duplicates
+/// \param description Description of the entry being validated (e.g., "flash drive 0")
+/// \param label User label to validate; an empty label is allowed and skips duplicate checks
+/// \param seen_labels Non-empty labels already seen (for duplicate detection)
+static void validate_memory_range_label(const std::string &description, const std::string &label,
+    const std::vector<std::string> &seen_labels) {
+    if (label.empty()) {
+        return;
+    }
+    if (label.size() > MEMORY_RANGE_LABEL_MAX) {
+        throw std::invalid_argument{std::string(description)
+                .append(" label is too long (max ")
+                .append(std::to_string(MEMORY_RANGE_LABEL_MAX))
+                .append(" characters)")};
+    }
+    for (const auto c : label) {
+        if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_') {
+            throw std::invalid_argument{
+                std::string(description).append(" label contains invalid character '").append(1, c).append("'")};
+        }
+    }
+    if (label.front() == '_') {
+        throw std::invalid_argument{
+            std::string(description).append(" label must not start with underscore (reserved for internal use)")};
+    }
+    for (const auto &seen : seen_labels) {
+        if (seen == label) {
+            throw std::invalid_argument{
+                std::string(description).append(" has duplicate label \"").append(label).append("\"")};
+        }
+    }
+}
+
 void machine_address_ranges::push_back_flash_drives(const flash_drive_configs &flash_drive,
     const machine_runtime_config &r) {
     if (flash_drive.size() > FLASH_DRIVE_MAX) {
         throw std::invalid_argument{"too many flash drives"};
+    }
+    // Validate flash drive labels (user labels are optional)
+    std::vector<std::string> seen_labels;
+    for (size_t i = 0; i < flash_drive.size(); ++i) {
+        validate_memory_range_label("flash drive "s + std::to_string(i), flash_drive[i].label, seen_labels);
+        if (!flash_drive[i].label.empty()) {
+            seen_labels.push_back(flash_drive[i].label);
+        }
     }
     // Register all flash drives
     int i = 0; // NOLINT(misc-const-correctness)
@@ -414,6 +465,46 @@ void machine_address_ranges::push_back_flash_drives(const flash_drive_configs &f
         push_back(std::make_unique<memory_address_range>(flash_description, f.start, f.length, flash_flags,
                       f.backing_store,
                       memory_address_range_config{.host_read_only = f.read_only, .host_no_reserve = r.no_reserve}),
+            register_where{.hash_tree = true, .pmas = true});
+        i++;
+    }
+}
+
+void machine_address_ranges::push_back_nvrams(const nvram_configs &nvram, const flash_drive_configs &flash_drive,
+    const machine_runtime_config &r) {
+    if (nvram.size() > NVRAM_MAX) {
+        throw std::invalid_argument{"too many NVRAMs"};
+    }
+    // Validate NVRAM labels (user labels are optional; seeded with non-empty flash drive labels)
+    std::vector<std::string> seen_labels;
+    for (const auto &f : flash_drive) {
+        if (!f.label.empty()) {
+            seen_labels.push_back(f.label);
+        }
+    }
+    for (size_t i = 0; i < nvram.size(); ++i) {
+        validate_memory_range_label("nvram "s + std::to_string(i), nvram[i].label, seen_labels);
+        if (!nvram[i].label.empty()) {
+            seen_labels.push_back(nvram[i].label);
+        }
+    }
+    // Register all NVRAMs
+    int i = 0; // NOLINT(misc-const-correctness)
+    for (const auto &n : nvram) {
+        const std::string nvram_description = "nvram "s + std::to_string(i);
+        const pmas_flags nvram_flags{
+            .M = true,
+            .IO = false,
+            .R = true,
+            .W = !n.read_only,
+            .X = false,
+            .IR = true,
+            .IW = !n.read_only,
+            .DID = PMA_ISTART_DID::nvram,
+        };
+        push_back(std::make_unique<memory_address_range>(nvram_description, n.start, n.length, nvram_flags,
+                      n.backing_store,
+                      memory_address_range_config{.host_read_only = n.read_only, .host_no_reserve = r.no_reserve}),
             register_where{.hash_tree = true, .pmas = true});
         i++;
     }

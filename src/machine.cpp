@@ -459,6 +459,9 @@ void machine::store(const std::string &dir, sharing_mode sharing) const {
     for (const auto &f : m_c.flash_drive) {
         store_address_range(f.backing_store, m_ars.find<uint64_t>(f.start), f.read_only);
     }
+    for (const auto &n : m_c.nvram) {
+        store_address_range(n.backing_store, m_ars.find<uint64_t>(n.start), n.read_only);
+    }
 
     // Store hash tree
     const std::string sht_filename = machine_config::get_sht_filename(dir);
@@ -518,6 +521,9 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     for (size_t i = 0; i < to_c.flash_drive.size(); ++i) {
         clone_ar_backing_store(from_c.flash_drive[i].backing_store, to_c.flash_drive[i].backing_store);
     }
+    for (size_t i = 0; i < to_c.nvram.size(); ++i) {
+        clone_ar_backing_store(from_c.nvram[i].backing_store, to_c.nvram[i].backing_store);
+    }
 
     // Clone hash tree
     os::clone_file(from_c.hash_tree.sht_filename, to_c.hash_tree.sht_filename);
@@ -565,6 +571,11 @@ void machine::remove_stored(const std::string &dir) {
         os::remove_file(f.backing_store.dht_filename);
         os::remove_file(f.backing_store.dpt_filename);
     }
+    for (const auto &n : config.nvram) {
+        os::remove_file(n.backing_store.data_filename);
+        os::remove_file(n.backing_store.dht_filename);
+        os::remove_file(n.backing_store.dpt_filename);
+    }
 
     // Remove hash tree files
     os::remove_file(config.hash_tree.sht_filename);
@@ -575,6 +586,54 @@ void machine::remove_stored(const std::string &dir) {
 
     // Remove directory
     os::remove_directory(dir);
+}
+
+void machine::replace_memory_range(const memory_range_config &config) {
+    auto resolved = config;
+    if (!config.label.empty()) {
+        // Find the memory range with the matching label
+        const memory_range_config *found = nullptr;
+        for (const auto &f : m_c.flash_drive) {
+            if (f.label == config.label) {
+                found = &f;
+                break;
+            }
+        }
+        if (found == nullptr) {
+            for (const auto &n : m_c.nvram) {
+                if (n.label == config.label) {
+                    found = &n;
+                    break;
+                }
+            }
+        }
+        if (found == nullptr) {
+            throw std::invalid_argument{"no memory range with label \""s + config.label + "\""};
+        }
+        if (config.start != UINT64_C(-1) && config.start != found->start) {
+            throw std::invalid_argument{"memory range label \""s + config.label + "\" start mismatch: expected "s +
+                std::to_string(found->start) + ", got "s + std::to_string(config.start)};
+        }
+        if (config.length != UINT64_C(-1) && config.length != found->length) {
+            throw std::invalid_argument{"memory range label \""s + config.label + "\" length mismatch: expected "s +
+                std::to_string(found->length) + ", got "s + std::to_string(config.length)};
+        }
+        resolved.start = found->start;
+        resolved.length = found->length;
+    } else {
+        const bool missing_start = config.start == UINT64_C(-1);
+        const bool missing_length = config.length == UINT64_C(-1);
+        if (missing_start && missing_length) {
+            throw std::invalid_argument{"memory range replacement requires either a label or both start and length"};
+        }
+        if (missing_start) {
+            throw std::invalid_argument{"memory range replacement without a label requires start"};
+        }
+        if (missing_length) {
+            throw std::invalid_argument{"memory range replacement without a label requires length"};
+        }
+    }
+    m_ars.replace(resolved);
 }
 
 void machine::dump_insn_hist() {

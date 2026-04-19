@@ -54,8 +54,21 @@ LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).so
 NUM_JOBS ?= $(shell nproc)
 endif
 
+LUAROCKS_PATH := $(shell luarocks --lua-version 5.4 path --lr-path 2>/dev/null)
+LUAROCKS_CPATH := $(shell luarocks --lua-version 5.4 path --lr-cpath 2>/dev/null)
+export LUA_PATH_5_4 := $(LUA_PATH_5_4);$(LUAROCKS_PATH)
+export LUA_CPATH_5_4 := $(LUA_CPATH_5_4);$(LUAROCKS_CPATH)
+
+export CM_CLI ?= $(abspath ../src/cartesi-machine.lua)
+
 ifeq ($(coverage),yes)
 NUM_JOBS = 1
+export LUA_CLI = $(LUA) -lluacov
+LUACOV_DIR := $(BUILDDIR)/luacov
+LUACOV_STATS := $(LUACOV_DIR)/luacov.stats.out
+LUACOV_CONFIG := $(abspath ./scripts/luacov.lua)
+export LUACOV_STATS
+export LUACOV_CONFIG
 endif
 
 ifeq ($(TARGET_OS),Darwin)
@@ -134,7 +147,7 @@ $(CARTESI_IMAGES): | $(CARTESI_IMAGES_PATH)
 	@wget -nc -i dependencies -P $(CARTESI_IMAGES_PATH)
 	@shasum -ca 256 dependencies.sha256
 	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools.ext2 rootfs.ext2
-	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.13-ctsi-1-v0.20.0.bin linux.bin
+	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.13-ctsi-2-uio-test1-v0.21.0.bin linux.bin
 
 images: | $(CARTESI_IMAGES)
 
@@ -229,6 +242,9 @@ test-evmu:
 	$(LUA) lua/test-evmu.lua
 
 test-lua: | $(CARTESI_IMAGES)
+ifeq ($(coverage),yes)
+	mkdir -p $(LUACOV_DIR)
+endif
 	./scripts/run-lua-tests.sh '$(LUA)'
 
 test-c-api: | $(CARTESI_IMAGES)
@@ -298,6 +314,7 @@ GCOVR_FLAGS=--gcov-ignore-parse-errors --use-gcov-files \
 coverage-report: $(COVERAGE_OUTPUT_DIR)
 	$(LUA) ./scripts/run-gcov.lua ../src '$(GCOV)'
 	$(UARCH_PCS_TO_GCOV_CMD)
+	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi-machine.lua ../src
 	mkdir -p $(COVERAGE_OUTPUT_DIR)/gcc
 	cd ../src && gcovr $(GCOVR_FLAGS) --root . --filter '$(abspath ../src)' --filter '$(abspath ../uarch)' --html-details $(COVERAGE_OUTPUT_DIR)/gcc/index.html --txt $(COVERAGE_OUTPUT_DIR)/coverage.txt --print-summary
 

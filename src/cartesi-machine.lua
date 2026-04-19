@@ -27,8 +27,8 @@ local function adjust_images_path(path)
     return string.gsub(path, "/*$", "") .. "/"
 end
 
--- Print help and exit
-local function help()
+-- Print help
+local function print_help()
     print(string.format(
         [=[
 Usage:
@@ -120,7 +120,14 @@ where options are:
 
         label (optional)
         identifies the flash drive. init attempts to mount it as /mnt/<label>.
-        if omitted, the label is set to "driveX", where X starts at 1.
+        the machine always assigns the internal label "_flashdriveN" (where N
+        is the zero-based index). the user label is an optional additional name
+        that can be used to refer to the flash drive in --replace-memory-range.
+        user labels must contain only alphanumeric characters, hyphens, and
+        underscores, must not start with an underscore (reserved for internal
+        use), must be unique across all flash drives and NVRAMs, and must be
+        at most 64 characters long.
+        if omitted, no user label is set.
 
         start (optional)
         sets the starting physical memory offset for flash drive in bytes.
@@ -183,12 +190,57 @@ where options are:
 
     (an option "--flash-drive=label:root,data_filename:rootfs.ext2" is implicit)
 
-  --replace-flash-drive=<key>:<value>[,<key>:<value>[,...]...]
+  --nvram=<key>:<value>[,<key>:<value>[,...]...]
+    defines a new NVRAM, or modify an existing NVRAM definition.
+    NVRAMs use the UIO framework and appear as /dev/uio[0-7].
+    unlike flash drives, NVRAMs have no filesystem layer.
+
+    <key>:<value> is one of
+        label:<label>
+        start:<number>
+        length:<number>
+        data_filename:<filename>
+        dht_filename:<filename>
+        dpt_filename:<filename>
+        shared
+        create
+        truncate
+        read_only
+        user:<string>
+
+        label (optional)
+        the machine always assigns the internal label "_nvramN" (where N is
+        the zero-based index). the user label is an optional additional name
+        that can be used to refer to the NVRAM in --replace-memory-range.
+        user labels must contain only alphanumeric characters, hyphens, and
+        underscores, must not start with an underscore (reserved for internal
+        use), must be unique across all flash drives and NVRAMs, and must be
+        at most 64 characters long.
+        if omitted, no user label is set.
+
+        start (required)
+        sets the starting physical memory offset for the NVRAM in bytes.
+
+        length (optional)
+        gives the length of the NVRAM in bytes (must be multiple of 4Ki).
+        if omitted, the length is computed from the image in data_filename.
+
+        data_filename (optional)
+        gives the name of the file containing the data for the NVRAM.
+        when omitted or set to empty, the NVRAM starts filled with 0.
+
+        dht_filename, dpt_filename, shared, create, truncate, read_only
+        semantics are the same as for the --flash-drive option.
+
+        user (optional)
+        changes the user ownership of the /dev/uioN device.
+
   --replace-memory-range=<key>:<value>[,<key>:<value>[,...]...]
     replaces an existing memory range right after machine instantiation.
     (typically used in conjunction with the --load=<directory> option.)
 
     <key>:<value> is one of
+        label:<string>
         start:<number>
         length:<number>
         data_filename:<filename>
@@ -196,9 +248,10 @@ where options are:
         dpt_filename:<filename>
         shared
 
-    semantics are the same as for the --flash-drive option with the following
-    difference: start and length are mandatory, and must match those of a
-    previously existing memory range (e.g., flash drive, cmio buffer, etc).
+    the memory range can be identified by label, by start and length, or both.
+    when both label and start/length are given, they must be consistent with
+    the existing memory range. when only label is given, start and length are
+    resolved from the machine's initial configuration.
 
   --ram=<key>:<value>[,<key>:<value>[,...]...]
   --dtb=<key>:<value>[,<key>:<value>[,...]...]
@@ -713,7 +766,6 @@ or a left shift (e.g., 2 << 20).
 ]=],
         arg[0]
     ))
-    os.exit()
 end
 
 local remote_closer = {}
@@ -727,19 +779,35 @@ local remote_destroy = true
 local perform_rollbacks = true
 local default_config = cartesi.machine:get_default_config()
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
-local flash_data_filename = { root = images_path .. "rootfs.ext2" }
-local flash_dht_filename = {}
-local flash_dpt_filename = {}
-local flash_label_order = { "root" }
-local flash_shared = {}
-local flash_create = {}
-local flash_truncate = {}
-local flash_read_only = {}
-local flash_mount = {}
-local flash_mke2fs = {}
-local flash_user = {}
-local flash_start = {}
-local flash_length = {}
+-- Merge parsed options into a memory range entry (shared between flash drives and NVRAMs).
+-- The entry uses the same format as machine config (label, backing_store, read_only, start, length).
+-- Extra keys (mount, mke2fs, user) are stored alongside and ignored by the machine config.
+local function merge_memory_range_opts(entry, opts)
+    entry.label = opts.label or entry.label
+    entry.read_only = opts.read_only == nil and entry.read_only or opts.read_only
+    entry.start = opts.start or entry.start
+    entry.length = opts.length or entry.length
+    entry.user = opts.user or entry.user
+    if not entry.backing_store then entry.backing_store = {} end
+    entry.backing_store.data_filename = opts.data_filename or entry.backing_store.data_filename
+    entry.backing_store.dht_filename = opts.dht_filename or entry.backing_store.dht_filename
+    entry.backing_store.dpt_filename = opts.dpt_filename or entry.backing_store.dpt_filename
+    entry.backing_store.shared = opts.shared == nil and entry.backing_store.shared or opts.shared
+    entry.backing_store.create = opts.create == nil and entry.backing_store.create or opts.create
+    entry.backing_store.truncate = opts.truncate == nil and entry.backing_store.truncate or opts.truncate
+end
+
+local flash_label_to_index = { root = 1 }
+local flash_drives = {
+    {
+        label = "root",
+        backing_store = { data_filename = images_path .. "rootfs.ext2" },
+    },
+}
+local flash_drive_count = 1
+local nvram_label_to_index = {}
+local nvrams = {}
+local nvram_count = 0
 local virtio = {}
 local virtio_net_user_config
 local virtio_volume_count = 0
@@ -838,6 +906,7 @@ local log_step_filename
 
 local function parse_memory_range(opts, all)
     local f = util.parse_options(opts, all, {
+        label = "string",
         data_filename = "string",
         dht_filename = "string",
         dpt_filename = "string",
@@ -1048,15 +1117,17 @@ local options = {
     {
         "^%-h$",
         function()
-            help()
-            return true
+            print_help()
+            os.exit()
+            -- return true
         end,
     },
     {
         "^%-%-help$",
         function()
-            help()
-            return true
+            print_help()
+            os.exit()
+            -- return true
         end,
     },
     {
@@ -1069,7 +1140,7 @@ local options = {
             print(string.format("compiler: %s", cartesi.COMPILER))
             print("Copyright Cartesi and individual authors.")
             os.exit()
-            return true
+            -- return true
         end,
     },
     {
@@ -1089,7 +1160,7 @@ local options = {
             print(string.format('  "platform": "%s"', cartesi.PLATFORM))
             print("}")
             os.exit()
-            return true
+            -- return true
         end,
     },
     {
@@ -1379,7 +1450,6 @@ local options = {
                 length = "number",
                 start = "number",
             })
-            if f.label == nil then f.label = "drive" .. #flash_label_order end
             f.data_filename = f.data_filename or ""
             f.dht_filename = f.dht_filename or ""
             f.dpt_filename = f.dpt_filename or ""
@@ -1387,42 +1457,70 @@ local options = {
             if f.mount == nil then
                 -- mount only if there is a file backing
                 if f.data_filename ~= "" or f.mke2fs then
-                    f.mount = "/mnt/" .. f.label
+                    if f.label then
+                        f.mount = "/mnt/" .. f.label
+                    else
+                        f.mount = false
+                    end
                 else
                     f.mount = false
                 end
             elseif f.mount == "true" then
-                f.mount = "/mnt/" .. f.label
+                if f.label then
+                    f.mount = "/mnt/" .. f.label
+                else
+                    f.mount = false
+                end
             elseif f.mount == "false" then
                 f.mount = false
             end
-            local d = f.label
-            if not flash_data_filename[d] then
-                flash_label_order[#flash_label_order + 1] = d
-                flash_data_filename[d] = ""
+            local idx
+            if f.label and flash_label_to_index[f.label] then
+                idx = flash_label_to_index[f.label]
+            else
+                flash_drive_count = flash_drive_count + 1
+                idx = flash_drive_count
+                if f.label then flash_label_to_index[f.label] = idx end
             end
-            flash_data_filename[d] = f.data_filename or flash_data_filename[d]
-            flash_dht_filename[d] = f.dht_filename or flash_dht_filename[d]
-            flash_dpt_filename[d] = f.dpt_filename or flash_dpt_filename[d]
-            flash_start[d] = f.start or flash_start[d]
-            flash_length[d] = f.length or flash_length[d]
-            flash_shared[d] = f.shared or flash_shared[d]
-            flash_create[d] = f.create or flash_create[d]
-            flash_truncate[d] = f.truncate or flash_truncate[d]
-            flash_read_only[d] = f.read_only or flash_read_only[d]
-            flash_mount[d] = f.mount or flash_mount[d]
-            flash_mke2fs[d] = f.mke2fs or flash_mke2fs[d]
-            flash_user[d] = f.user or flash_user[d]
-            if d == "root" and f.read_only then -- Mount root filesystem as read-only
+            if not flash_drives[idx] then flash_drives[idx] = {} end
+            merge_memory_range_opts(flash_drives[idx], f)
+            flash_drives[idx].mount = f.mount or flash_drives[idx].mount
+            flash_drives[idx].mke2fs = f.mke2fs or flash_drives[idx].mke2fs
+            if f.label == "root" and f.read_only then -- Mount root filesystem as read-only
                 dtb.bootargs = dtb.bootargs:gsub("rw", "ro")
             end
             return true
         end,
     },
     {
-        "^(%-%-replace%-flash%-drive%=(.+))$",
+        "^(%-%-nvram%=(.+))$",
         function(all, opts)
-            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, all)
+            local f = util.parse_options(opts, all, {
+                label = "string",
+                data_filename = "string",
+                dht_filename = "string",
+                dpt_filename = "string",
+                shared = "boolean",
+                create = "boolean",
+                truncate = "boolean",
+                read_only = "boolean",
+                user = "string",
+                length = "number",
+                start = "number",
+            })
+            f.data_filename = f.data_filename or ""
+            f.dht_filename = f.dht_filename or ""
+            f.dpt_filename = f.dpt_filename or ""
+            local idx
+            if f.label and nvram_label_to_index[f.label] then
+                idx = nvram_label_to_index[f.label]
+            else
+                nvram_count = nvram_count + 1
+                idx = nvram_count
+                if f.label then nvram_label_to_index[f.label] = idx end
+            end
+            if not nvrams[idx] then nvrams[idx] = {} end
+            merge_memory_range_opts(nvrams[idx], f)
             return true
         end,
     },
@@ -1541,16 +1639,10 @@ local options = {
         "^%-%-no%-root%-flash%-drive$",
         function(all)
             if not all then return false end
-            assert(flash_data_filename.root and flash_label_order[1] == "root", "no root flash drive to remove")
-            flash_data_filename.root = nil
-            flash_start.root = nil
-            flash_length.root = nil
-            flash_shared.root = nil
-            flash_create.root = nil
-            flash_truncate.root = nil
-            flash_read_only.root = nil
-            table.remove(flash_label_order, 1)
-            dtb.bootargs = dtb.bootargs:gsub(" root=$", "")
+            assert(flash_drives[1] and flash_drives[1].label == "root", "no root flash drive to remove")
+            flash_drives[1] = nil
+            flash_label_to_index.root = nil
+            dtb.bootargs = dtb.bootargs:gsub("^root=[^%s]+%s*", ""):gsub("%s+root=[^%s]+", "", 1)
             return true
         end,
     },
@@ -1563,7 +1655,7 @@ local options = {
         end,
     },
     {
-        "%-%-assert%-rolling%-template",
+        "^%-%-assert%-rolling%-template$",
         function(all)
             if not all then return false end
             assert_rolling_template = true
@@ -1571,7 +1663,7 @@ local options = {
         end,
     },
     {
-        "%-%-quiet",
+        "^%-%-quiet$",
         function(all)
             if not all then return false end
             stderr = function() end
@@ -2069,6 +2161,7 @@ elseif not (remote_address and not remote_create) then
         ram = ram,
         dtb = dtb,
         flash_drive = {},
+        nvram = {},
         tlb = tlb,
         virtio = virtio,
         cmio = cmio,
@@ -2095,67 +2188,54 @@ echo "
 ]]):gsub("\\", "\\\\")
     end
 
-    for _, label in ipairs(flash_label_order) do
-        local devname = "pmem" .. #config.flash_drive
-        config.flash_drive[#config.flash_drive + 1] = {
-            backing_store = {
-                data_filename = flash_data_filename[label],
-                dht_filename = flash_dht_filename[label],
-                dpt_filename = flash_dpt_filename[label],
-                shared = flash_shared[label],
-                create = flash_create[label],
-                truncate = flash_truncate[label],
-            },
-            read_only = flash_read_only[label],
-            start = flash_start[label],
-            length = flash_length[label] or -1,
-        }
-        -- auto mount
-        local mke2fs = flash_mke2fs[label]
-        if label ~= "root" and mke2fs then -- format filesystem
-            local cmd = table.concat({
-                'busybox mke2fs -F -b 4096 -I 256 -L "',
-                label,
-                '" /dev/',
-                devname,
-                " > /dev/null",
-            })
-            config.dtb.init = config.dtb.init .. cmd .. "\n"
+    for idx = 1, flash_drive_count do
+        local entry = flash_drives[idx]
+        if entry then -- skip removed drives (e.g. --no-root-flash-drive)
+            -- dt_label is the deterministic name emitted in ctsi,label by dtb.cpp.
+            local dt_label = "_flashdrive" .. #config.flash_drive
+            if not entry.length then entry.length = -1 end
+            config.flash_drive[#config.flash_drive + 1] = entry
+            if entry.label ~= "root" and (entry.mke2fs or entry.mount or entry.user) then
+                config.dtb.init = config.dtb.init .. string.format("dev=$(flashdrive %s)\n", dt_label)
+                if entry.mke2fs then
+                    config.dtb.init = config.dtb.init
+                        .. string.format(
+                            'busybox mke2fs -F -b 4096 -I 256 -L "%s" "$dev" > /dev/null\n',
+                            entry.label or dt_label
+                        )
+                end
+                if entry.mount then
+                    config.dtb.init = config.dtb.init
+                        .. string.format(
+                            'busybox mkdir -p "%s" && busybox mount "$dev" "%s"\n',
+                            entry.mount,
+                            entry.mount
+                        )
+                end
+                if entry.user then
+                    local chownpath = entry.mount or "$dev"
+                    config.dtb.init = config.dtb.init
+                        .. string.format('busybox chown %s: "%s"\n', entry.user, chownpath)
+                end
+            end
         end
-        local mount = flash_mount[label]
-        local chownpath = "/dev/" .. devname
-        if label ~= "root" and mount then -- mount filesystem
-            local cmd = table.concat({
-                'busybox mkdir -p "',
-                mount,
-                '" && busybox mount /dev/',
-                devname,
-                ' "',
-                mount,
-                '"',
-            })
-            config.dtb.init = config.dtb.init .. cmd .. "\n"
-            chownpath = mount
-        end
-        -- change permission
-        local user = flash_user[label]
-        if label ~= "root" and user then
-            local cmd = table.concat({
-                "busybox chown ",
-                user,
-                ": ",
-                chownpath,
-            })
-            config.dtb.init = config.dtb.init .. cmd .. "\n"
-        end
-        do -- create a map of the label in /run/drive-label for flashdrive tool
-            local cmd = table.concat({
-                'busybox mkdir -p /run/drive-label && echo "',
-                label,
-                '" > /run/drive-label/',
-                devname,
-            })
-            config.dtb.init = config.dtb.init .. cmd .. "\n"
+    end
+
+    for idx = 1, nvram_count do
+        local entry = nvrams[idx]
+        if entry then
+            local dt_label = "_nvram" .. #config.nvram
+            if not entry.length then entry.length = -1 end
+            config.nvram[#config.nvram + 1] = entry
+            config.dtb.init = config.dtb.init .. string.format("dev=$(nvram %s)\n", dt_label)
+            if entry.read_only then
+                config.dtb.init = config.dtb.init .. 'chmod 0444 "$dev"\n'
+            else
+                config.dtb.init = config.dtb.init .. 'chmod 0666 "$dev"\n'
+            end
+            if entry.user then
+                config.dtb.init = config.dtb.init .. string.format('busybox chown %s: "$dev"\n', entry.user)
+            end
         end
     end
 
@@ -2183,10 +2263,6 @@ echo "
     end
 
     main_machine = main_machine:create(config, runtime_config, create_dir)
-end
-
-for _, r in ipairs(memory_range_replace) do
-    main_machine:replace_memory_range(r)
 end
 
 local function dump_config(what, whatdef, out, indent)
@@ -2231,6 +2307,10 @@ end
 
 -- obtain config from instantiated machine
 local main_config = main_machine:get_initial_config()
+
+for _, r in ipairs(memory_range_replace) do
+    main_machine:replace_memory_range(r)
+end
 
 if type(store_config) == "string" then
     local f <close> = assert(io.open(store_config, "w"))
@@ -2356,7 +2436,7 @@ local function store_machine(machine, config, dir, sharing)
 end
 
 local function dump_pmas(machine)
-    for _, v in ipairs(machine:get_memory_ranges()) do
+    for _, v in ipairs(machine:get_address_ranges()) do
         local filename = string.format("%016x--%016x.bin", v.start, v.length)
         local file <close> = assert(io.open(filename, "w"))
         assert(file:write(machine:read_memory(v.start, v.length)))

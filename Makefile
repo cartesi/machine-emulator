@@ -86,7 +86,7 @@ UARCH_TO_SHARE= uarch-ram.bin
 
 TESTS_TO_BIN= tests/build/misc/test-machine-c-api
 TESTS_LUA_TO_LUA_PATH=tests/lua/cartesi
-TESTS_LUA_TO_TEST_LUA_PATH=$(wildcard tests/lua/*.lua)
+TESTS_LUA_TO_TEST_LUA_PATH=$(filter-out tests/lua/test-cm-cli.lua,$(wildcard tests/lua/*.lua))
 TESTS_SCRIPTS_TO_TEST_SCRIPTS_PATH=$(wildcard tests/scripts/*.sh)
 TESTS_DATA_TO_TESTS_DATA_PATH= tests/build/machine tests/build/uarch tests/build/uarch-riscv-arch-test tests/build/images
 

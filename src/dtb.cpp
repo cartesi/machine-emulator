@@ -171,9 +171,9 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             fdt.prop_u32("#address-cells", 2);
             fdt.prop_u32("#size-cells", 2);
             fdt.prop_empty("ranges");
-            { // reserve 256KB for firmware M-mode code (such as OpenSBI)
+            { // reserve 512KB for firmware M-mode code (such as OpenSBI)
                 fdt.begin_node_num("fw_resv", AR_RAM_START);
-                fdt.prop_u64_list<2>("reg", {AR_RAM_START, 0x40000});
+                fdt.prop_u64_list<2>("reg", {AR_RAM_START, 0x80000});
                 fdt.prop_empty("no-map");
                 fdt.end_node();
             }
@@ -181,12 +181,41 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
         }
 
         // drives
-        for (const auto &f : c.flash_drive) {
-            fdt.begin_node_num("pmem", f.start);
-            fdt.prop_string("compatible", "pmem-region");
-            fdt.prop_u64_list<2>("reg", {f.start, f.length});
-            fdt.prop_empty("volatile");
-            fdt.end_node();
+        {
+            int i = 0; // NOLINT(misc-const-correctness)
+            for (const auto &f : c.flash_drive) {
+                fdt.begin_node_num("pmem", f.start);
+                fdt.prop_string("compatible", "pmem-region");
+                fdt.prop_u64_list<2>("reg", {f.start, f.length});
+                fdt.prop_empty("volatile");
+                // ctsi,label always starts with the deterministic "_flashdrive<i>"
+                // (leading underscore is reserved for these internal names);
+                // the optional user label (if any) is appended after a comma.
+                std::string dt_label = "_flashdrive"s + std::to_string(i);
+                if (!f.label.empty()) {
+                    dt_label.append(",").append(f.label);
+                }
+                fdt.prop_string("ctsi,label", dt_label);
+                fdt.end_node();
+                i++;
+            }
+        }
+
+        // nvrams
+        {
+            int i = 0; // NOLINT(misc-const-correctness)
+            for (const auto &n : c.nvram) {
+                fdt.begin_node_num("uio", n.start);
+                fdt.prop_string("compatible", "generic-uio");
+                fdt.prop_u64_list<2>("reg", {n.start, n.length});
+                std::string dt_label = "_nvram"s + std::to_string(i);
+                if (!n.label.empty()) {
+                    dt_label.append(",").append(n.label);
+                }
+                fdt.prop_string("ctsi,label", dt_label);
+                fdt.end_node();
+                i++;
+            }
         }
 
         // cmio

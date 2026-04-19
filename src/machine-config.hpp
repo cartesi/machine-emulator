@@ -37,9 +37,11 @@ enum class sharing_mode {
 
 /// \brief Machine config constants
 enum machine_config_constants {
-    FLASH_DRIVE_MAX = 8,     ///< Maximum number of flash drives
-    VIRTIO_DEVICE_MAX = 16,  ///< Maximum number of virtio devices
-    VIRTIO_HOSTFWD_MAX = 16, ///< Maximum number of virtio net user host forward ports
+    FLASH_DRIVE_MAX = 8,         ///< Maximum number of flash drives
+    NVRAM_MAX = 8,               ///< Maximum number of NVRAMs
+    VIRTIO_DEVICE_MAX = 16,      ///< Maximum number of virtio devices
+    VIRTIO_HOSTFWD_MAX = 16,     ///< Maximum number of virtio net user host forward ports
+    MEMORY_RANGE_LABEL_MAX = 64, ///< Maximum length of a memory range user label
 };
 
 /// \brief Backing store config
@@ -77,9 +79,8 @@ struct ram_config final {
 
 /// \brief DTB state config
 struct dtb_config final {
-    std::string bootargs{
-        "quiet earlycon=sbi console=hvc0 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"}; ///< Bootargs to pass
-                                                                                           ///< to kernel
+    std::string bootargs{"quiet earlycon=sbi console=hvc0 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init "
+                         "uio_pdrv_genirq.of_id=generic-uio"}; ///< Bootargs to pass to kernel
     std::string init;                   ///< Initialization commands to be executed as root on boot
     std::string entrypoint;             ///< Commands to execute the main application
     backing_store_config backing_store; ///< Backing store
@@ -87,14 +88,21 @@ struct dtb_config final {
 
 /// \brief Memory range config
 struct memory_range_config final {
+    std::string label;                     ///< Label for identification
     uint64_t start{0xffffffffffffffffUL};  ///< Memory range start position, default is to auto detect
     uint64_t length{0xffffffffffffffffUL}; ///< Memory range length, default is to auto detect
     bool read_only{false};                 ///< Make memory range read-only to host
     backing_store_config backing_store;    ///< Backing store
 };
 
+/// \brief List of memory ranges
+using memory_range_configs = std::vector<memory_range_config>;
+
 /// \brief List of flash drives
-using flash_drive_configs = std::vector<memory_range_config>;
+using flash_drive_configs = memory_range_configs;
+
+/// \brief List of NVRAMs
+using nvram_configs = memory_range_configs;
 
 /// \brief VirtIO console device state config
 struct virtio_console_config final {};
@@ -177,6 +185,7 @@ struct machine_config final {
     ram_config ram{};                ///< RAM config
     dtb_config dtb{};                ///< Device Tree config
     flash_drive_configs flash_drive; ///< Flash drives config
+    nvram_configs nvram;             ///< NVRAMs config
     virtio_configs virtio;           ///< VirtIO devices config
     cmio_config cmio{};              ///< Cartesi Machine IO config
     pmas_config pmas{};              ///< Physical Memory Attributes config

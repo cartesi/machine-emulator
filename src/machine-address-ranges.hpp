@@ -208,6 +208,13 @@ private:
     /// \detail This modifies the flash drive configuration with automatic start/length from backing storage, if needed
     void push_back_flash_drives(const flash_drive_configs &flash_drive, const machine_runtime_config &runtime_config);
 
+    /// \brief Adds NVRAM address ranges
+    /// \param nvram NVRAM configurations
+    /// \param flash_drive Flash drive configurations (for cross-label validation)
+    /// \param runtime_config Runtime configuration
+    void push_back_nvrams(const nvram_configs &nvram, const flash_drive_configs &flash_drive,
+        const machine_runtime_config &runtime_config);
+
     /// \brief Adds virtio address ranges
     /// \param virtio VirtIO configurations
     /// \param iunrep Initial value of iunrep CSR

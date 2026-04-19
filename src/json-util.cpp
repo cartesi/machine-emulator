@@ -1655,6 +1655,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, memory_range_config
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "label"s, value.label, new_path);
     ju_get_opt_field(jconfig, "start"s, value.start, new_path);
     ju_get_opt_field(jconfig, "length"s, value.length, new_path);
     ju_get_opt_field(jconfig, "read_only"s, value.read_only, new_path);
@@ -1745,27 +1746,27 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     backing_store_config_only &value, const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, flash_drive_configs &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, memory_range_configs &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
-    const auto &jflash_drive = j[key];
-    if (!jflash_drive.is_array()) {
+    const auto &jarray = j[key];
+    if (!jarray.is_array()) {
         throw std::invalid_argument("\""s + path + to_string(key) + "\" not an array"s);
     }
     const auto new_path = path + to_string(key) + "/";
     value.resize(0);
-    for (uint64_t i = 0; i < jflash_drive.size(); ++i) {
+    for (uint64_t i = 0; i < jarray.size(); ++i) {
         value.push_back({});
-        ju_get_opt_field(jflash_drive, i, value.back(), new_path);
+        ju_get_opt_field(jarray, i, value.back(), new_path);
     }
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, flash_drive_configs &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, memory_range_configs &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, flash_drive_configs &value,
-    const std::string &path);
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    memory_range_configs &value, const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_device_config &value, const std::string &path) {
@@ -2024,6 +2025,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     ju_get_opt_field(config, "ram"s, value.ram, new_path);
     ju_get_opt_field(config, "dtb"s, value.dtb, new_path);
     ju_get_opt_field(config, "flash_drive"s, value.flash_drive, new_path);
+    ju_get_opt_field(config, "nvram"s, value.nvram, new_path);
     ju_get_opt_field(config, "virtio"s, value.virtio, new_path);
     ju_get_opt_field(config, "cmio"s, value.cmio, new_path);
     ju_get_opt_field(config, "pmas"s, value.pmas, new_path);
@@ -2262,8 +2264,8 @@ void to_json(nlohmann::json &j, const backing_store_config_only &config) {
 }
 
 void to_json(nlohmann::json &j, const memory_range_config &config) {
-    j = nlohmann::json{{"start", config.start}, {"length", config.length}, {"read_only", config.read_only},
-        {"backing_store", config.backing_store}};
+    j = nlohmann::json{{"label", config.label}, {"start", config.start}, {"length", config.length},
+        {"read_only", config.read_only}, {"backing_store", config.backing_store}};
 }
 
 void to_json(nlohmann::json &j, const hash_tree_config &config) {
@@ -2303,7 +2305,7 @@ void to_json(nlohmann::json &j, const processor_config &config) {
     j = nlohmann::json{{"registers", config.registers}, {"backing_store", config.backing_store}};
 }
 
-void to_json(nlohmann::json &j, const flash_drive_configs &fs) {
+void to_json(nlohmann::json &j, const memory_range_configs &fs) {
     j = nlohmann::json::array();
     std::ranges::transform(fs, std::back_inserter(j), [](const memory_range_config &m) -> nlohmann::json { return m; });
 }
@@ -2456,6 +2458,7 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"ram", config.ram},
         {"dtb", config.dtb},
         {"flash_drive", config.flash_drive},
+        {"nvram", config.nvram},
         {"virtio", config.virtio},
         {"cmio", config.cmio},
         {"pmas", config.pmas},

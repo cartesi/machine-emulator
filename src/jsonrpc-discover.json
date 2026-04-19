@@ -1708,6 +1708,9 @@
         "title": "MemoryRangeConfig",
         "type": "object",
         "properties": {
+          "label": {
+            "type": "string"
+          },
           "start": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
@@ -1730,6 +1733,9 @@
             "type": "string"
           },
           "dht_filename": {
+            "type": "string"
+          },
+          "dpt_filename": {
             "type": "string"
           },
           "shared": {
@@ -1806,8 +1812,8 @@
           }
         }
       },
-      "FlashDriveConfigs": {
-        "title": "FlashDriveConfigs",
+      "MemoryRangeConfigs": {
+        "title": "MemoryRangeConfigs",
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/MemoryRangeConfig"
@@ -2068,7 +2074,10 @@
             "$ref": "#/components/schemas/DTBConfig"
           },
           "flash_drive": {
-            "$ref": "#/components/schemas/FlashDriveConfigs"
+            "$ref": "#/components/schemas/MemoryRangeConfigs"
+          },
+          "nvram": {
+            "$ref": "#/components/schemas/MemoryRangeConfigs"
           },
           "clint": {
             "$ref": "#/components/schemas/CLINTConfig"

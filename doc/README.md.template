@@ -14,7 +14,7 @@ It was designed to bring mainstream scalability to decentralized applications an
 Applications running exclusively on smart contracts face severe constraints on the amount of data they can manipulate and on the complexity of computations they can perform.
 These limitations manifest themselves as exorbitant transaction costs and, even if such costs could somehow be overcome, as extremely long computation times.
 
-In comparison, applications running inside Cartesi Machines can process relatively unlimited amounts of data, and at a pace orders of magnitude faster.
+In comparison, applications running inside Cartesi Machines can process practically unlimited amounts of data, and at a pace orders of magnitude faster.
 This is possible because Cartesi Machines run off-chain, free of the overhead imposed by the consensus mechanisms used by blockchains.
 
 In a typical scenario, one of the parties involved in an application will execute the Cartesi Machine off-chain and report its results to the blockchain.
@@ -48,7 +48,7 @@ This arrangement deprives developers of the tools of their trade, severely reduc
 In contrast, Cartesi Machines are based on a proven platform: [RISC-V](https://riscv.org/).
 RISC-V was born of research in academia at UC Berkeley.
 It is now maintained by its own independent foundation.
-Unlike many of its academic counterparts, it is important to keep in mind that RISC-V is not a toy architecture.
+It is important to keep in mind that, unlike many of its academic counterparts, RISC-V is not a toy architecture.
 It is suitable for direct native hardware implementation, which is indeed currently commercialized by a large (and ever-increasing) number of [vendors](https://en.wikipedia.org/wiki/RISC-V#Implementations).
 This means that, in the future, Cartesi will not be limited to emulation or binary translation off-chain.
 The RISC-V platform is supported by a vibrant community of developers.
@@ -70,15 +70,10 @@ The Cartesi Machine emulator is a program that carefully implements the Cartesi 
 During development, a variety of convenient devices can be added to the Cartesi Machine that make prototyping more ergonomic.
 The emulator can be built from the [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator) repository.
 
-In normal execution, the Cartesi Machine emulator runs programs in an _interpreter_ that has been compiled to run natively on the host computer.
-The execution of this program modifies the registers and memories and interacts with the devices accessible to the main processor.
-The Cartesi Machine also includes a _microarchitecture_ (uarch).
-The uarch can be seen as a lower-level emulator, with its own separate registers and memory, implementing a much narrower RISC-V ISA than the main processor.
-The uarch is not visible to the main processor, but code running in the uarch has access to the entire state of the Cartesi Machine, including the main processor and the entire board.
-The same interpreter source-code for the Cartesi Machine that runs on the host can also be compiled to an `uarch.bin` binary that runs exactly one fetch-execute iteration of the main processor and then halts the uarch.
-In its pristine state, the uarch memory is loaded with this `uarch.bin`.
-Therefore, executing the uarch until it halts, and then resetting the uarch to its pristine state, is equivalent to executing one instruction of the main processor.
-This finer granularity is the basis for state-transition proofs, described in the [System architecture](#system-architecture) chapter.
+The Cartesi Machine also includes a microarchitecture (uarch) that can drive the main processor using a much-reduced RISC-V ISA.
+This is necessary to enable verifiability in architectures that, due to computational limitations, cannot emulate a main-processor instruction, such as blockchains.
+Running the uarch until it halts, and then resetting the uarch to its pristine state, is equivalent to executing one instruction of the main processor.
+See [the microarchitecture section](#the-microarchitecture) for details.
 
 The initialization of a Cartesi Machine typically loads the Linux kernel into RAM, and a Linux root file-system (as a flash drive) from regular files in the host file-system.
 The Linux kernel `linux.bin`, is built by the [`cartesi/machine-linux-image`](https://github.com/cartesi/machine-linux-image) repository.
@@ -97,24 +92,34 @@ Once it halts, the machine cannot perform any additional computations.
 
 In the second mode of operation, the guest application runs in a loop.
 In each iteration, it obtains a request carrying an input, performs any necessary computations to service the request, and produces a number of responses.
-After producing each response, the guest application asks the machine to _yield_ control back to the host.
-The host extracts the response and _resumes_ the machine.
-When done with a given input, the guest application once again asks the machine to yield control back to the host.
-The host then prepares the input for the next request, and _resumes_ the machine so the guest application can service the next request in a new iteration of its loop.
-Inputs and responses are transferred in special memory ranges (_CMIO_ memory ranges).
-Whatever state changes happen during the processing of a request will remain in effect when the next request is processed.
 Indeed, this is much like a server in which the guest application can interact with the outside world.
 We say that a Cartesi Machine operating in this mode is a _Rolling Cartesi Machine_.
 
 ### Rolling Cartesi Machines and Cartesi Rollups
 
+Rolling Cartesi Machines accept two types of requests: advance-state requests and inspect-state requests.
+Advance-state requests can create persistent changes to the state of the underlying Cartesi Machine.
+In contrast, inspect-state requests leave the state unchanged.
+
+Both types of request are serviced by the guest application, which modifies the state of the Cartesi Machine while doing so.
+When servicing an advance-state request, the guest application ultimately either accepts or rejects it.
+The resulting modifications are kept only when the request is accepted, and reverted when it is rejected.
+State modifications are always reverted after inspect-state requests are serviced.
+
 The stringent demands of reproducibility prevent a Cartesi Machine from communicating _directly_ with the outside world.
 Indeed, if two parties were to run the same Cartesi Machine and then disagree on the data each instance independently obtained from a network connection, there would be no way to settle a dispute between them.
 Instead, Rolling Cartesi Machines communicate with the outside world under controlled conditions, through _Cartesi Rollups_.
 
-In a nutshell, Cartesi Rollups uses the blockchain to maintain a public record of requests made to advance the state of a Rolling Cartesi Machine.
+In a nutshell, Cartesi Rollups uses the blockchain to maintain a public record of advance-state requests targeting each Rolling Cartesi Machine.
 Both the order and the inputs carried by these requests are recorded and made available in an indisputable fashion.
 Since Cartesi Machines are deterministic, and since the inputs are agreed upon, the state of a Rolling Cartesi Machine can be advanced in a well-defined way, always producing the same set of responses, no matter who runs it.
+
+After producing each response to a request, the guest application asks the machine to _yield_ control back to the host.
+The host extracts the response and _resumes_ the machine.
+When done with a given input, the guest application once again asks the machine to yield control back to the host.
+At the same time, it notifies the host whether the input was accepted or rejected.
+The host then prepares the input for the next request, and _resumes_ either the modified machine or a backup copy, so the guest application can service the next request in a new iteration of its loop.
+Inputs and responses are transferred in special memory ranges (_CMIO_ memory ranges).
 
 Advancing the state of a Rolling Cartesi Machine can produce four types of response: _vouchers_, _notices_, _reports_, and _exceptions_.
 Vouchers allow a Rolling Cartesi Machine to interact back with the blockchain.
@@ -124,14 +129,19 @@ A notice may be issued, for example, announcing the demise of a character in a g
 Disputes over the fact that a voucher or notice has been generated while advancing the state of a Rolling Cartesi Machine can be settled by Cartesi Rollups.
 Reports, in contrast, are used to output any data that is irrelevant to the blockchain.
 A report may, for example, provide diagnostic information on the reasons why an input has been rejected.
-Finally, an exception is used to signal an irrecoverable error encountered by the guest application.
 
-It is also possible to inspect the state of a local Rolling Cartesi Machine, without modifying it.
+_Rejecting an input not only reverts the state, but also cancels all vouchers and notices emitted while the request was serviced._
+
+Between state advances, it is possible to inspect the state of a Rolling Cartesi Machine.
+This works by sending a query for processing inside the Cartesi Machine.
 State inspection produces only reports and exceptions.
+_All modifications to the state due to servicing queries are reverted after the responses are collected._
+
+An exception, which either kind of request may produce, signals an irrecoverable error encountered by the guest application.
 
 ## Documentation
 
-Cartesi Machines can be seen from 3 different perspectives:
+Cartesi Machines can be seen from three different perspectives:
 
 - _The host perspective_ &mdash;
   This is the environment right outside the Cartesi Machine emulator.
@@ -149,10 +159,10 @@ Cartesi Machines can be seen from 3 different perspectives:
   Notably, this includes direct verification by the blockchain of RISC-V instructions performed by the uarch, and ZK proofs of batches of RISC-V instructions performed by the main processor.
 
 As with every computer, the level of knowledge required to interact with Cartesi Machines depends on the nature of the application being created.
-Simple applications will require guest developers to code a few scripts invoking pre-installed software components, require host developers to simply fill out a configuration file specifying the location of the components needed to build a Cartesi Machine, and require blockchain developers to simply instantiate one of the high-level contracts provided by Cartesi.
+Simple applications make only modest demands of each kind of developer. Guest developers code a few scripts invoking pre-installed software components. Host developers fill out a configuration file specifying the location of the components needed to build a Cartesi Machine. Blockchain developers instantiate one of the high-level contracts provided by Cartesi.
 At the other extreme are the developers contributing to the Cartesi ecosystem, who regularly write, build, and deploy custom software components to run in the guest, or even change the Linux kernel to support Cartesi-specific devices. Additionally, these developers programmatically control the creation and execution of Cartesi Machines in the host, and must also understand and use the hash-based state manipulation primitives the blockchain needs.
 
-Although Cartesi's goal is to shield platform users from as much complexity as possible, there is value in making information available to the greatest extent possible. To that end, this documentation of Cartesi Machines aims to provide enough information to cover all 3 perspectives, at all depths of understanding.
+Although Cartesi's goal is to shield platform users from as much complexity as possible, there is value in making information available to the greatest extent possible. To that end, this documentation of Cartesi Machines aims to provide enough information to cover all three perspectives, at all depths of understanding.
 
 # The host perspective
 
@@ -198,11 +208,11 @@ docker run \
     --hostname playground \
     --name playground \
     --rm \
-    -e USER=$$(id -u -n) \
-    -e GROUP=$$(id -g -n) \
-    -e UID=$$(id -u) \
-    -e GID=$$(id -g) \
-    -v $(CURDIR):/work \
+    -e USER=$(id -u -n) \
+    -e GROUP=$(id -g -n) \
+    -e UID=$(id -u) \
+    -e GID=$(id -g) \
+    -v "$(pwd)":/work \
     -w /work \
     -it \
     $image \
@@ -365,40 +375,6 @@ When the image file contains a valid file-system, the `cartesi-machine` command-
 To enable transparency, Cartesi Machine flash drives are mapped into the machine's 64-bit address space.
 The start and length are set, respectively, by the `start:<number>` and `length:<number>` parameters to `--flash-drive`.
 
-```{.lua key=ar_drive_formula replace=null outputs=log2_drive_offset,log2_drive_start,drive_start,input_addr,output_addr,input_addr_dec}
-local c = require "cartesi"
-local o = c.AR_DRIVE_OFFSET
-local log2_drive_offset = 0
-while o > 1 do
-    o = o >> 1
-    log2_drive_offset = log2_drive_offset + 1
-end
-io.write(string.format("0x%x + i*2^%d", c.AR_DRIVE_START, log2_drive_offset))
-local o = c.AR_DRIVE_START
-local log2_drive_start = 0
-while o > 1 do
-    o = o >> 1
-    log2_drive_start = log2_drive_start + 1
-end
-local function writefile(name, val)
-    local f = assert(io.open(name, "w"))
-    f:write(tostring(val))
-    f:close()
-end
-writefile("log2_drive_offset", log2_drive_offset)
-writefile("log2_drive_start", log2_drive_start)
-writefile("drive_start",    string.format("0x%x", c.AR_DRIVE_START))
-writefile("input_addr",     string.format("0x%x", c.AR_DRIVE_START + 1*c.AR_DRIVE_OFFSET))
-writefile("output_addr",    string.format("0x%x", c.AR_DRIVE_START + 2*c.AR_DRIVE_OFFSET))
-writefile("input_addr_dec", tostring(c.AR_DRIVE_START + 1*c.AR_DRIVE_OFFSET))
-```
-
-By default, the start of the first flash drive (which typically holds the root file-system) is set to the beginning of the second half of the address space (i.e., at offset 2<sup>[]{replace=ar_drive_formula/log2_drive_start code=no}</sup>).
-Additional flash drives are automatically spaced uniformly within that second half of the address space.
-They are therefore separated by 2<sup>[]{replace=ar_drive_formula/log2_drive_offset code=no}</sup> bytes, which &ldquo;should be enough separation for everyone&rdquo;.
-(The machine will fail to instantiate if there is any overlap between the ranges occupied by multiple drives.)
-If you specify `start` of *any* drive, make sure to place it where it will not collide with the automatically assigned drives.
-
 When the `length` parameter is omitted, the `cartesi-machine` utility automatically sets the size of a flash drive to match the size of its image file.
 Because RISC-V uses 4KiB pages, image files must have a size multiple of 4KiB.
 (The `truncate` utility can be used to pad a file with zeros so its size is a multiple of 4KiB.)
@@ -410,7 +386,13 @@ When the `length` of a drive is specified, the `data_filename` parameter can be 
 In that case, the drive starts in a *pristine* state: i.e., filled with zeros.
 If, however, both `length` and `data_filename` are specified, then the `length` must exactly match the size of the image file referred to by the `data_filename` parameter.
 
-The positioning of flash drives in the machine's address space has implications on certain operations, discussed in detail under [the blockchain perspective](#hash-view-of-state), that involve the manipulation of hashes of the Cartesi Machine state.
+The positioning of memory ranges in the machine's address space has implications on certain operations, discussed in detail under [the blockchain perspective](#hash-view-of-state), that involve the manipulation of hashes of the Cartesi Machine state.
+First, memory ranges cannot overlap with each other.
+Second, memory ranges must start at positions that are aligned to their lengths.
+Finally, the lengths used to restrict the starts and to detect overlaps are rounded up to the next power of 2.
+
+When the `start` of a drive is omitted, the emulator automatically places it following this rule.
+The first drive is placed past the RAM, and each remaining drive is placed past the previous one.
 
 The preferred file-system type is `ext2`.
 This is because `ext2` image files can be easily created with the `xgenext2fs` command-line utility (a Cartesi fork of `genext2fs`) and manipulated with `e2ls`, `e2cp`, `e2rm`, etc.
@@ -573,7 +555,7 @@ The ability to limit computation to an arbitrary number of cycles is fundamental
 
 The `cartesi-machine` utility can also be used to print Cartesi Machine state hashes.
 State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 256-bit words.
-(See the [Hash view of states](#hash-view-of-state) for an explanation of Merkle trees.)
+(See [Hash-view of state](#hash-view-of-state) for an explanation of Merkle trees.)
 Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all processor CSRs and general-purpose registers, the contents of RAM, of all flash drives and NVRAMs, and of all other devices connected to the board, and even the state of the uarch.
 State hashes therefore work as cryptographic signatures of the machine, and implicitly of the computation they are about to execute.
 
@@ -899,13 +881,6 @@ The result of running the command is, as expected,
 
 ### State value proofs
 
-The `cartesi-machine` command-line utility can generate proofs concerning the contents of the machine state.
-To generate a proof concerning the state as it is before the machine starts running, use the `--initial-proof=address:<number>,log2_size:<number>[,filename:<filename>]` option.
-For proofs concerning the state after the emulator is done, use `--final-proof` instead.
-In either case, the filename field is optional.
-When provided, the proof will be written to the corresponding file.
-Otherwise, the contents will be displayed on screen.
-
 ```{.lua key=hash_tree_constants replace=null outputs=log2_word_size,word_size,log2_root_size,log2_leaf_count}
 local cartesi = require("cartesi")
 local log2_word = cartesi.HASH_TREE_LOG2_WORD_SIZE
@@ -921,14 +896,25 @@ writefile("word_size",      word_size)
 writefile("log2_root_size", log2_root)
 writefile("log2_leaf_count", log2_root - log2_word)
 ```
-*State value proofs* are proofs that a given node in the Merkle tree of the Cartesi Machine state has a given label (i.e., a given associated hash).
+*State value proofs* are proofs that a given node in the Merkle tree of the Cartesi Machine state has a given associated hash.
 Each Merkle tree node covers a contiguous range of the machine's 64-bit address space.
 The size of a range is always a power of 2 (i.e., the `<log2_size>` power of 2).
 Since the leaves have size []{replace=hash_tree_constants/word_size} bytes, the valid values for `<log2_size>` are []{replace=hash_tree_constants/log2_word_size}&hellip;[]{replace=hash_tree_constants/log2_root_size}.
 The range corresponding to each node starts at an `<address>` that is a multiple of its size.
 
+The `cartesi-machine` command-line utility can generate proofs concerning the contents of the machine state.
+To generate a proof concerning the state as it is before the machine starts running, use the
+`--initial-proof=address:<number>,log2_size:<number>[,filename:<filename>]` or `--initial-proof=label:<label>[,filename:<filename>]`.
+The label form of the option searches for a flash drive or NVRAM with that label, from which it automatically obtains the corresponding `address` and `log2_size`.
+For proofs concerning the state after the emulator is done, use `--final-proof` instead.
+The proofs are output as Lua tables that can be loaded with the `require` function.
+To output JSON objects instead, use `--initial-json-proof` and `--final-json-proof` instead.
+In either case, the filename field is optional.
+When provided, the proof will be written to the corresponding file.
+Otherwise, the contents will be displayed on screen.
+
 For example, to generate a proof that the Cartesi Machine template above indeed contains a pristine input drive, use the command line
-```{.bash key=proofs_pristine_run vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr replace=source outputs=pristine-input-proof.lua,root_hash,target_hash,target_address,log2_target_size}
+```{.bash key=proofs_pristine_run vars=template->calc_template/calculator-template/path replace=source outputs=pristine-input-proof.lua,root_hash,target_hash,target_address,log2_target_size}
 ln -sf "$template" .
 # docs:begin
 cartesi-machine \
@@ -936,7 +922,7 @@ cartesi-machine \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
-    --initial-proof="address:$input_addr,log2_size:12,filename:pristine-input-proof.lua"
+    --initial-proof="label:input,filename:pristine-input-proof.lua"
 # docs:end
 lua5.4 -e 'input_proof = require"pristine-input-proof"; print(input_proof.root_hash)' | \
     hex --encode \ |
@@ -947,9 +933,6 @@ lua5.4 -e 'input_proof = require"pristine-input-proof"; print(input_proof.target
 lua5.4 -e 'input_proof = require"pristine-input-proof"; print(string.format("0x%x", input_proof.target_address))' > target_address
 lua5.4 -e 'input_proof = require"pristine-input-proof"; print(input_proof.log2_target_size)' > log2_target_size
 ```
-Recall the first flash drive, the one with the `rootfs.ext2` image file, is present by default, and is automatically placed at starting address []{replace=ar_drive_formula/drive_start}.
-The input NVRAM is therefore in the second slot.
-It is automatically spaced by 2<sup>[]{replace=ar_drive_formula/log2_drive_offset code=no}</sup> bytes relative to the first drive, so that its starting address is []{replace=ar_drive_formula/input_addr}.
 
 The output of the command is
 ```{replace=proofs_pristine_run}
@@ -995,7 +978,7 @@ to obtain
 ```
 
 The initial state hash for the instantiated template can be seen with the `cartesi-machine` command-line
-```{.bash key=input_raw_proof vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr outputs=input-proof.lua,root_hash,target_hash replace=source}
+```{.bash key=input_raw_proof vars=template->calc_template/calculator-template/path outputs=input-proof.lua,root_hash,target_hash replace=source}
 ln -sf "$template" .
 rm -f input-proof.lua input.raw
 # docs:begin
@@ -1004,9 +987,9 @@ truncate -s 4K input.raw
 cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
-    --replace-memory-range="start:$input_addr,length:1<<12,data_filename:input.raw" \
+    --replace-memory-range="label:input,data_filename:input.raw" \
     --initial-hash \
-    --initial-proof="address:$input_addr,log2_size:12,filename:input-proof.lua" \
+    --initial-proof="label:input,filename:input-proof.lua" \
     --max-mcycle=0
 # docs:end
 lua5.4 -e 'input_proof = require"input-proof"; print(input_proof.root_hash)' | \
@@ -1032,7 +1015,7 @@ The result would be the same root hash as that of the instantiated template.
 Another useful proof is the one for the *output* drive, once the machine is halted.
 To obtain this proof, run
 
-```{.bash key=output_raw_proof outputs=output.raw,output-proof.lua,root_hash,target_hash vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr,output_addr->ar_drive_formula/output_addr replace=source}
+```{.bash key=output_raw_proof outputs=output.raw,output-proof.lua,root_hash,target_hash vars=template->calc_template/calculator-template/path replace=source}
 rm -f output-proof input.raw output.raw
 ln -sf "$template" .
 # docs:begin
@@ -1042,10 +1025,10 @@ truncate -s 4K input.raw
 cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
-    --replace-memory-range="start:$input_addr,length:1<<12,data_filename:input.raw" \
-    --replace-memory-range="start:$output_addr,length:1<<12,data_filename:output.raw,shared" \
+    --replace-memory-range="label:input,data_filename:input.raw" \
+    --replace-memory-range="label:output,data_filename:output.raw,shared" \
     --final-hash \
-    --final-proof="address:$output_addr,log2_size:12,filename:output-proof.lua"
+    --final-proof="label:output,filename:output-proof.lua"
 # docs:end
 lua5.4 -e 'proof = require"output-proof"; print(proof.root_hash)' | hex --encode \
     | $RECIPES_DIR/trunc8.sh > root_hash
@@ -1194,13 +1177,15 @@ The server shell shows the execution of both sessions:
 ```
 
 Remote Cartesi Machines have one ability that local Cartesi Machines lack: they can be _forked_, producing a copy that runs forward independently in a child server while the original is preserved in the parent.
-Forks are the foundation on which the state inspection mechanism of Rolling Cartesi Machines is based, as well as the feature that enables the rejection of inputs to state advances.
-Both situations require the state of the Rolling Cartesi Machine to remain unchanged: the host runs the inspect or advance against a fork, then discards it.
+Inspect-state requests and rejected advance-state requests require that changes to the state of the Rolling Cartesi Machine be reverted.
+One way to implement this is for the host to run the inspect or advance against a fork, then discard it.
 
 ### Rolling Cartesi Machines
 
 Applications involving Rolling Cartesi Machines are not designed to interact with the `cartesi-machine` command-line utility.
-Instead, they rely on a variety of software components that allow a front-end to post to the blockchain requests to advance the state of the server, that poll the blockchain for advance-state requests posted by others so a local copy of the server can be kept in sync, and that allow the front-end to inspect the state of the server.
+Instead, they rely on a variety of software components that allow a front-end to post to the blockchain requests to advance the state of the server.
+The Cartesi Node polls the blockchain for advance-state requests posted by others so a local copy of the server can be kept in sync.
+It also allows a front-end to inspect the state of the server.
 
 Nevertheless, in debugging or prototyping tasks, the `cartesi-machine` command-line utility can simulate the external environment that a guest application (running inside a Rolling Cartesi Machine) would encounter in production.
 To use this functionality, the developer creates a sequence of advance-state requests as numbered files, or a single inspect-state request as a file, and instructs the `cartesi-machine` command-line utility to feed them to the guest application.
@@ -1737,7 +1722,7 @@ This is useful to inspect the entire state of the machine from outside the emula
 
 The command-line options `--store-config` and `--load-config` store or load a Lua file with information that can be used to initialize the exact same Cartesi Machine that the `cartesi-machine` command-line utility will use.
 The format of these configuration files is explained in detail under the [Lua interface](#lua-interface) to Cartesi Machines.
-In particular,  the `--store-config` option, without arguments, dumps to screen all the options used to define the Cartesi Machine.
+In particular, the `--store-config` option, without arguments, dumps to screen all the options used to define the Cartesi Machine.
 This information can be very useful when debugging problems.
 JSON counterparts `--store-json-config` and `--load-json-config` are also available.
 
@@ -1753,7 +1738,7 @@ At the end of the computation, these parties now disagree on the final state has
  (E.g., the state hash for the halted machine, or the state hash of the yielded machine after a number of advance-state inputs have been processed.)
 The state hash evolves as the machine executes steps in its fetch-execute loop.
 The first stage of the verification game therefore searches for the *step of disagreement*: the particular main processor cycle such that the parties agree on the state hash before the step, but disagree on the state hash after the step.
-When the microarchitecture is in use, every main processor instruction can also be implemented by a sequence of micro-instructions in the uarch interpreter, and a single uarch step is one of those micro-instructions.
+When the uarch is in use, every main processor instruction can also be implemented by a sequence of micro-instructions in the uarch interpreter, and a single uarch step is one of those micro-instructions.
 So the search is refined to find the *uarch step of disagreement*: the particular uarch cycle such that the parties agree on the state hash before the uarch step, but disagree on the state hash after the uarch step.
 Once this uarch step of disagreement is identified, one of the parties sends to the blockchain a log of state accesses that happen along the uarch step, including Merkle-tree proofs for every value read from or written to the state.
 This log proves to the blockchain that the execution of the uarch step transitions the state in such a way that it reaches the state hash claimed by the submitting party.
@@ -2038,8 +2023,12 @@ The `flash_drive` entry in `machine_config` is a list of <a href="#memory_range_
 The same is true of the `nvram` entry.
 In each `memory_range_config`, fields `start` and `length` give the start and length of the memory range in the machine's address space.
 Once again, the length must be a multiple of 4Ki.
-If `start` is omitted, it defaults to []{replace=ar_drive_formula}, where `i` is the index of the entry across the union of `flash_drive` and `nvram` (flash drives and NVRAMs share the same auto-allocator).
+The `start` of a drive must be aligned to its `length` rounded up to the next power of 2.
+No memory range in a Cartesi Machine can overlap with any other, considering their rounded-up lengths.
 If `length` is omitted, it defaults to the size of the backing image on disk.
+If `start` is omitted, it is automatically placed to respect the alignment and overlap restrictions.
+The first flash drive is placed past RAM, then each remaining flash drive is placed past the previous.
+The first NVRAM is placed past the last flash drive, and then each remaining NVRAM is placed past the previous.
 Field `label` is a string used by the emulator to expose the entry to the guest via DTB aliases.
 Each flash drive is exposed to the guest as a `/dev/pmem*` device, and each NVRAM as a `/dev/uio*` device.
 Field `read_only` is a Boolean (defaults to `false`) that makes the corresponding memory range read-only from the point
@@ -2079,10 +2068,10 @@ The `cartesi-machine` command-line options `--no-htif-yield-automatic` and `--no
 The `uarch` entry describes the microarchitecture state.
 The `uarch.processor` field controls the uarch processor.
 Like the main processor, it includes a `uarch.processor.registers` flat table with all registers.
-Register `uarch.processor.registers.halt_flag` is non-zero when the microarchitecture is halted.
+Register `uarch.processor.registers.halt_flag` is non-zero when the uarch is halted.
 The `uarch.ram` field controls the uarch RAM.
 Unlike the main processor RAM, the uarch RAM is fixed in length.
-Moreover, the `uarch.ram.backing_store.data_filename` is typically left blank (other than in unit tests), as the emulator automatically fills the uarch RAM with an implementation of the main processor fetch-execute loop compiled to function within the microarchitecture.
+Moreover, the `uarch.ram.backing_store.data_filename` is typically left blank (other than in unit tests), as the emulator automatically fills the uarch RAM with an implementation of the main processor fetch-execute loop compiled to function within the uarch.
 
 The `pmas` entry describes the memory range containing one PMA (for _physical memory attributes_) entry for each address range that is visible to the main processor.
 This is automatically filled by the emulator during initialization.
@@ -2090,9 +2079,9 @@ PMAs are described in the [PMAs subsection](#pmas) of the system architecture ch
 
 The `hash_tree` entry configures the global hash-tree structure that supports efficient computation of state hashes and proofs.
 Field `hash_tree.hash_function` controls the hash function used in the hash tree.
-It defaults to `"keccak256"`, and is suitable for use with the microarchitecture.
+It defaults to `"keccak256"`, and is suitable for use with the uarch.
 Set it to `"sha256"` for use with the ZK prover instead.
-These options are mutually exclusive: a machine that was initialized for use with the microarchitecture can never be used with the ZK prover (and vice-versa).
+These options are mutually exclusive: a machine that was initialized for use with the uarch can never be used with the ZK prover (and vice-versa).
 Fields `hash_tree.phtc_size` and `hash_tree.phtc_filename` control the _page hash-tree cache_.
 This is a cache that contains the entire dense hash tree for the most recently used pages in the address space.
 Field `hash_tree.phtc_size` gives the number of entries, and `hash_tree.phtc_filename` gives the filename for the backing image in the host.
@@ -2112,7 +2101,7 @@ lua5.4 $RECIPES_DIR/dump-default-config.lua | tee config-default.lua
 ```
 
 As it is, the default configuration is not functional.
-At a minimum, it is missing the RAM length, the image to be loaded into RAM, and a flash drive with the root filesystem.
+At a minimum, it is missing the RAM length, the image to be loaded into RAM, and a flash drive with the root file-system.
 
 The `dtb.bootargs` field carries the default kernel command line.
 The individual parameters have the following meaning:
@@ -2203,7 +2192,7 @@ It then creates an instance by calling the `cartesi.machine(<machine_config>)` c
 
 The `machine:run(<max_mcycle>)` method of the Cartesi Machine instance runs the corresponding machine until the register `mcycle` reaches at most `<max_mcycle>`.
 The value `math.maxinteger` of `<max_mcycle>` used in the script is a very large integer, providing the machine with enough cycles to run until it halts or yields manual.
-Note that the `machine:run()` method can return precociously for a variety of reasons (see below), so it should always be called inside a loop.
+Note that the `machine:run()` method can return prematurely for a variety of reasons (see below), so it should always be called inside a loop.
 It returns a break reason explaining why control was returned to the caller, taken from the `cartesi.BREAK_REASON_*` set.
 The script's loop terminates when the break reason is `BREAK_REASON_HALTED` or `BREAK_REASON_YIELDED_MANUALLY`, the two reasons that signal the machine has reached a state past which it cannot continue on its own.
 
@@ -2315,7 +2304,7 @@ By default, a Cartesi Machine is configured via `processor.registers.htif.iyield
 The field is a bitmask of enabled commands.
 Setting the `cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK` bit accepts yield automatic, and setting `cartesi.HTIF_YIELD_CMD_MANUAL_MASK` accepts yield manual.
 The default machine configuration sets both bits.
-When automatic yields are accepted, a yield automatic command causes the emulator to return precociously from `machine:run(<max_mcycle>)` with break reason `BREAK_REASON_YIELDED_AUTOMATICALLY`.
+When automatic yields are accepted, a yield automatic command causes the emulator to return prematurely from `machine:run(<max_mcycle>)` with break reason `BREAK_REASON_YIELDED_AUTOMATICALLY`.
 When the bit is clear, the command is silently ignored and execution continues until the machine halts or `mcycle` hits `<max_mcycle>`.
 
 The following example illustrates how Lua scripts can receive progress information throughout a computation performed inside a Cartesi Machine:
@@ -2759,14 +2748,22 @@ The remote console shows only the error generated when the invalid expression `1
 ```{replace=lua_rolling_calculator/server}
 ```
 
-### State transition proofs
+### State-transition proofs
 
-During verification, the blockchain mediates a *verification game* between the disputing parties (explained under [the blockchain perspective](#verification-game)).
-In brief, the parties agree on an initial state hash but disagree on a later one.
-The first stage of the game finds the *step of disagreement*, after which one party submits an access log, with Merkle-tree proofs for every value read from or written to the state, proving the transition.
+During verification, the blockchain mediates a [*verification game*](#verification-game) between the disputing parties.
+In brief, the parties agree on an initial state hash but claim different final state hashes.
+The game first narrows down the disagreement to the first main-processor instruction that deviates, and within it the first uarch instruction that deviates.
+After that, the honest party submits an access log, with Merkle-tree proofs for every value read from or written to the state, which the blockchain uses to identify the honest party.
 
-To obtain the access log for the next uarch step in the execution of a Cartesi Machine instance, use the `machine:log_step_uarch(<log_type>)` function.
-Note that the function indeed performs the step, and therefore advances the microarchitecture state, in addition to collecting the access log.
+To obtain the access log for a specific uarch instruction in the execution of a Cartesi Machine instance, first advance to the last agreed `<mcycle>` using `machine:run(<mcycle>)`.
+Then advance the uarch to the last agreed `<uarch_cycle>` using `machine:run_uarch(<uarch_cycle>)`.
+Like `machine:run()`, `machine:run_uarch()` can return prematurely for a variety of reasons.
+It returns a break reason explaining why control was returned to the caller, taken from the `cartesi.UARCH_BREAK_REASON_*` set.
+For example, `cartesi.UARCH_BREAK_REASON_UARCH_HALTED` if the uarch halted before reaching the target cycle.
+
+Once the target uarch cycle has been reached, use the `machine:log_step_uarch(<log_type>)` function to produce a log that advances to the next uarch cycle.
+Alternatively, if the uarch is halted at that point, use `machine:log_reset_uarch()` to produce the log that reverts the state of the uarch to its pristine form.
+Note that the function indeed performs the action, and therefore modifies the uarch state, in addition to collecting the access log.
 The `<log_type>` argument is an integer bitfield formed by OR-ing `cartesi.ACCESS_LOG_TYPE_ANNOTATIONS` (to include the notes and brackets metadata consumed by the pretty-printer `util.print_log`) and `cartesi.ACCESS_LOG_TYPE_LARGE_DATA` (to include the full raw payload of large accesses, not just their hashes).
 Merkle-tree proofs are always included in the log.
 
@@ -2846,26 +2843,26 @@ The `brackets` contain information that groups ranges of word accesses into *sco
 Each bracket entry `type` field tells if the entry marks the `"begin"` or `"end"` of a scope.
 The `where` field gives the position in the `accesses` array where the bracket should be &ldquo;inserted&rdquo;.
 
-The `print_log(<log>, <out>)` function in the `cartesi.util` module uses these annotations to dump a detailed description of the access `<log>` into Lua file object `<out>` (E.g., `io.stdout` or the return of `io.open()`).
+The `print_log(<log>, <out>)` function in the `cartesi.util` module uses these annotations to dump a detailed description of the access `<log>` into an open file object `<out>` (E.g., `io.stdout` or the return of `io.open()`).
 It indents each access according to the number of enclosing scopes and uses the notes to identify what each address refers to (a register, a CSR, memory).
 Addresses and values are printed in hexadecimal and decimal.
 
-Running the `dump-step.lua` program:
+Running the `dump-uarch-step.lua` program:
 
-```{.lua key=dump_step_source include=dump-step.lua title="dump-step.lua"}
+```{.lua key=dump_uarch_step_source include=dump-uarch-step.lua title="dump-uarch-step.lua"}
 ```
 with command:
-```{.bash key=state_transition_dump_step vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=dump_step_source replace=source/cmd}
+```{.bash key=dump_uarch_step vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=dump_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
-ln -sf "$RECIPES_DIR/dump-step.lua" .
+ln -sf "$RECIPES_DIR/dump-uarch-step.lua" .
 {
 # docs:begin cmd
-lua5.4 dump-step.lua config-nothing-to-do "$cycles" "$ucycles"
+lua5.4 dump-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles"
 # docs:end cmd
 }
 ```
 produces the output:
-```{key=reorder_state_transition_dump_step vars=out->state_transition_dump_step/stdout/path,err->state_transition_dump_step/stderr/path replace=stdout}
+```{key=reorder_dump_uarch_step vars=out->dump_uarch_step/stdout/path,err->dump_uarch_step/stderr/path replace=stdout}
 cat $out
 cat $err
 ```
@@ -2882,80 +2879,80 @@ Using the known state hash before the access, it is possible to verify that the 
 For a `"write"` access, the `sibling_hashes` in the proof can be used to compute the new state hash.
 Doing this for each access in sequence yields the state hash at the end of the step.
 
-The method `machine:verify_step_uarch(<state_hash_before>, <access_log>, <state_hash_after>)` performs this verification, additionally checking that the accesses correspond to the operation of the Cartesi Machine microarchitecture starting from `<state_hash_before>`.
+The method `machine:verify_step_uarch(<state_hash_before>, <access_log>, <state_hash_after>)` performs this verification, additionally checking that the accesses correspond to the operation of the Cartesi Machine uarch starting from `<state_hash_before>`.
 Note there is no need for a Cartesi Machine instance to verify a transition: all required state information is in the access log.
 
 The following script illustrates the verification of a state transition.
 
-```{.lua key=verify_step_source include=verify-step.lua title="verify-step.lua"}
+```{.lua key=verify_uarch_step_source include=verify-uarch-step.lua title="verify-uarch-step.lua"}
 ```
 
 Running the script without arguments accepts the valid state transition:
-```{.bash key=verify_step_run vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+```{.bash key=verify_uarch_step_run vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
-ln -sf "$RECIPES_DIR/verify-step.lua" .
+ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
 {
 # docs:begin cmd
-lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles"
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles"
 # docs:end cmd
 } || true
 ```
-```{replace=verify_step_run/stderr}
+```{replace=verify_uarch_step_run/stderr}
 ```
 
 The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the access log before verification.
 For example, changing the address of access #7 (the write to `uarch.pc`) causes the program to reject the state transition proof:
-```{.bash key=verify_step_mess_address vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+```{.bash key=verify_uarch_step_mess_address vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
-ln -sf "$RECIPES_DIR/verify-step.lua" .
+ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
 {
 # docs:begin cmd
-lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].address = 0x100'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].address = 0x100'
 # docs:end cmd
 } || true
 ```
-```{replace=verify_step_mess_address/stderr}
+```{replace=verify_uarch_step_mess_address/stderr}
 ```
 
-Starting from `<state_hash_before>`, a true Cartesi Machine microarchitecture would have written to `uarch.pc` at `0x400010` for the 7th access, not at `0x100` as our corrupt log claims.
+Starting from `<state_hash_before>`, a true Cartesi Machine uarch would have written to `uarch.pc` at `0x400010` for the 7th access, not at `0x100` as our corrupt log claims.
 
 Changing the `written` data of the same access fails the access's internal consistency check, because `written` no longer hashes to `written_hash`:
-```{.bash key=verify_step_mess_written vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+```{.bash key=verify_uarch_step_mess_written vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
-ln -sf "$RECIPES_DIR/verify-step.lua" .
+ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
 {
 # docs:begin cmd
-lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
 # docs:end cmd
 } || true
 ```
-```{replace=verify_step_mess_written/stderr}
+```{replace=verify_uarch_step_mess_written/stderr}
 ```
 
 Changing the `read` data of access #5 (the read of `uarch.x17`) fails the same consistency check on the read side, because `read` no longer hashes to `read_hash`:
-```{.bash key=verify_step_mess_read vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+```{.bash key=verify_uarch_step_mess_read vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
-ln -sf "$RECIPES_DIR/verify-step.lua" .
+ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
 {
 # docs:begin cmd
-lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
 # docs:end cmd
 } || true
 ```
-```{replace=verify_step_mess_read/stderr}
+```{replace=verify_uarch_step_mess_read/stderr}
 ```
 
 Updating `read_hash` to match the tampered `read` passes the internal consistency check, but the verifier still combines `read_hash` with the proof's `sibling_hashes` to reconstruct the state hash before the access. That reconstruction no longer matches the expected root:
-```{.bash key=verify_step_mess_target_hash vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+```{.bash key=verify_uarch_step_mess_target_hash vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
-ln -sf "$RECIPES_DIR/verify-step.lua" .
+ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
 {
 # docs:begin cmd
-lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
 # docs:end cmd
 } || true
 ```
-```{replace=verify_step_mess_target_hash/stderr}
+```{replace=verify_uarch_step_mess_target_hash/stderr}
 ```
 
 In a nutshell, only valid state transitions are accepted by the `machine:verify_step_uarch()` method.
@@ -3035,8 +3032,9 @@ Building the rootfs requires two host-side steps.
 The first assembles the rootfs with `docker buildx build --platform=linux/riscv64 --output type=tar`, which uses binfmt and QEMU to emulate riscv64 and emits the result as a flat tarball.
 The second converts the tarball into an ext2 image with [`xgenext2fs`](https://github.com/cartesi/genext2fs), which must be installed on the host (release `v1.5.6` or newer).
 
-> [!NOTE]
-> The fourth stage of the multi-stage Dockerfile runs natively on `riscv64` through `binfmt_misc` and QEMU emulation. Depending on your host platform's hardware (e.g., building on x86_64 vs. Apple Silicon), emulating RISC-V instructions during package installation and setup can introduce considerable execution overhead, leading to noticeably slower build times.
+:::note
+The fourth stage of the multi-stage Dockerfile runs natively on `riscv64` through `binfmt_misc` and QEMU emulation. Depending on your host platform's hardware (e.g., building on x86_64 vs. Apple Silicon), emulating RISC-V instructions during package installation and setup can introduce considerable execution overhead, leading to noticeably slower build times.
+:::
 
 The Dockerfile below illustrates the approach with a four-stage build.
 The first stage cross-compiles a C17 and a C++23 &ldquo;Hello world!&rdquo; program using `g++-14-riscv64-linux-gnu` from the Ubuntu archives, and the `puppet` libcmt-rollup guest application against the headers and shared library shipped by `machine-guest-tools` (downloaded as a tarball release artifact and extracted into a sysroot inside the build stage).
@@ -3160,7 +3158,7 @@ Flash drives and NVRAMs are simply regions of physical memory accessible to the 
 Flash drives use the persistent-memory block-device driver `pmem-region`, which makes them accessible as block devices `/dev/pmem0` to `/dev/pmem7`.
 The initialization script added by `cartesi-machine` to the `machine_config` field `dtb.init` mounts any labeled flash
 drive containing a valid file-system at `/mnt/<label>`.
-In this fashion, file systems present in all flash drives become available for use.
+In this fashion, file-systems present in all flash drives become available for use.
 
 The default kernel command-line parameter contains the substring `root=/dev/pmem0 rw`, which declares that the root file-system resides in device `/dev/pmem0`, i.e., flash drive 0, and that it should be mounted read-write.
 
@@ -3214,7 +3212,7 @@ io.write(string.format("0x%x", c.AR_DTB_START))
 ```
 
 Earlier versions of the emulator booted from a `rom.bin` image whose main purpose was to build, inside the guest
-itself, a [device tree](http://devicetree.org/) describing the hardware.
+itself, a [device tree](https://www.devicetree.org/) describing the hardware.
 Starting with version 0.16, the emulator builds the device tree in the host, at instantiation, derived from the machine configuration, and stores it in the DTB memory range immediately below RAM.
 The hart starts execution directly at the beginning of RAM (address []{replace=ar_ram_start}), where the RAM image is loaded.
 The start address of the DTB memory range ([]{replace=ar_dtb_start}) is pre-loaded in register `a1`, per the conventional RISC-V boot ABI.
@@ -3231,13 +3229,13 @@ The Cartesi-provided `cartesi-init` program sets up a basic Linux environment on
 It mounts `/proc`, `/dev/pts`, `/dev/shm`, `/sys`, `/tmp`, and `/run`, and sources any drop-in scripts under `/etc/cartesi-init.d/`.
 Next, it sources (as `root`) the script it reads from the device-tree node `/cartesi-machine/init`, which the emulator
 has filled from the contents of the `machine_config` at `dtb.init`.
-(The `cartesi-machine` utility adds there a script to mount each labeled flash drive carrying a recognized file system
+(The `cartesi-machine` utility adds there a script to mount each labeled flash drive carrying a recognized file-system
 at `/mnt/<label>`.)
 Finally, `cartesi-init` reads the entrypoint string from the device tree at `/cartesi-machine/entrypoint`, which the emulator fills from `machine_config` at `dtb.entrypoint`, and executes it in a shell, by default as user `dapp`.
 (This is where `cartesi-machine` puts the commands it finds after the `--` separator in the command-line.)
 
 Given a proper rootfs and an appropriate entrypoint, applications can run any general computation, consuming input from flash drives or NVRAMs and writing outputs to flash drives or NVRAMs, or run a Rolling Cartesi Machine loop that uses the `/dev/cmio` device to read inputs and write outputs (see below).
-When the application exits, control returns to `cartesi-init`, which unmounts file systems and gracefully halts the machine.
+When the application exits, control returns to `cartesi-init`, which unmounts file-systems and gracefully halts the machine.
 
 ### Communication between guest and host
 
@@ -3603,6 +3601,17 @@ It remains set until the host clears it (either directly, or as a side effect of
 
 ### The microarchitecture
 
+In normal execution (i.e., via `machine:run(<max_mcycle>)`), the Cartesi Machine emulator runs programs in an _interpreter_ that has been compiled to run natively on the host computer.
+The execution of this program modifies the registers and memories and interacts with the devices accessible to the main processor.
+The Cartesi Machine uarch can be seen as a lower-level emulator.
+The uarch is not visible to the main processor, but code running in the uarch has access to the entire state of the Cartesi Machine, including the main processor and the entire board.
+The same interpreter source-code for the Cartesi Machine that runs on the host can also be compiled to an `uarch.bin` binary that runs exactly one fetch-execute iteration of the main processor and then halts the uarch.
+In its pristine state, the uarch memory is loaded with this `uarch.bin`.
+Therefore, executing the uarch until it halts, and then resetting the uarch to its pristine state, is equivalent to executing one instruction of the main processor.
+This finer granularity enables state-transition proofs in architectures, such as blockchains, that lack sufficient computation power to reliably verify complex main-processor instructions (e.g., floating-point division and square-root, virtual-memory page-walks, TLB invalidations, etc.).
+It also greatly reduces the number and complexity of the instructions the blockchain must be taught to simulate.
+See [State-transition proofs](#state-transition-proofs) for details.
+
 In contrast to the main processor, the uarch processor implements the much more restricted RV64I set.
 This includes only 52 instructions, the implementation of which can be directly translated to run in any programmable blockchain.
 It has 32 general-purpose integer registers (`uarch_x0`&hellip;`uarch_x31`), a program counter&nbsp;(`uarch_pc`), a cycle counter&nbsp;(`uarch_cycle`), and a halt flag&nbsp;(`uarch_halt_flag`).
@@ -3662,7 +3671,7 @@ In addition to being able to access all memory ranges and devices visible to the
 The interaction between board and processor happens through interrupts and the memory bus. Devices are mapped to the processor's physical address space.
 The mapping can be seen in the following table:
 
-```{.lua key=ar_table replace=null outputs=shadow,tlb,pmas,pmas_start,clint,htif,virtio,plic,cmio_rx,cmio_tx,dtb,ram_start,drive_start,uarch_shadow,uarch_ram}
+```{.lua key=ar_table replace=null outputs=shadow,tlb,pmas,pmas_start,clint,htif,virtio,plic,cmio_rx,cmio_tx,dtb,ram_start,uarch_shadow,uarch_ram}
 local c = require "cartesi"
 local function write(name, content)
     local f = assert(io.open(name, "w"))
@@ -3683,7 +3692,6 @@ write("cmio_rx",      range_sl(c.AR_CMIO_RX_BUFFER_START,    1 << c.AR_CMIO_RX_B
 write("cmio_tx",      range_sl(c.AR_CMIO_TX_BUFFER_START,    1 << c.AR_CMIO_TX_BUFFER_LOG2_SIZE))
 write("dtb",          range_sl(c.AR_DTB_START,               c.AR_DTB_LENGTH))
 write("ram_start",    string.format("0x%x",                  c.AR_RAM_START))
-write("drive_start",  string.format("0x%x",                  c.AR_DRIVE_START))
 write("uarch_shadow", range_sl(c.UARCH_SHADOW_START_ADDRESS, c.UARCH_SHADOW_LENGTH))
 write("uarch_ram",    range_sl(c.UARCH_RAM_START_ADDRESS,    c.UARCH_RAM_LENGTH))
 ```
@@ -3743,11 +3751,11 @@ write("uarch_ram",    range_sl(c.UARCH_RAM_START_ADDRESS,    c.UARCH_RAM_LENGTH)
   <td> Device tree (DTB) </td>
 </tr>
 <tr>
-  <td> []{replace=ar_table/ram_start}&ndash;<i>configurable</i> </td>
+  <td> []{replace=ar_table/ram_start}&ndash;[]{replace=ar_table/ram_start}+`ram.length`-1 </td>
   <td> RAM </td>
 </tr>
 <tr>
-  <td> []{replace=ar_table/drive_start}&ndash;<i>configurable</i> </td>
+  <td> <i>configurable with constraints</i> </td>
   <td> Flash drive or NVRAM 0 </td>
 </tr>
 <tr>
@@ -3755,7 +3763,7 @@ write("uarch_ram",    range_sl(c.UARCH_RAM_START_ADDRESS,    c.UARCH_RAM_LENGTH)
   <td> &hellip;</td>
 </tr>
 <tr>
-  <td> <i>configurable</i> </td>
+  <td> <i>configurable with constraints</i> </td>
   <td> Flash drive or NVRAM 7 </td>
 </tr>
 </table>
@@ -3765,10 +3773,36 @@ Execution starts at the beginning of RAM, where the bootloader (an OpenSBI&nbsp;
 The amount of RAM is user-configurable, but always starts at address []{replace=ar_table/ram_start}.
 The DTB occupies a fixed region immediately below RAM and carries the kernel command line, the description of every other range, and the init/entrypoint scripts.
 
-Flash drives and NVRAMs share a single slot allocator. When `start` is left unset, the slot defaults to []{replace=ar_drive_formula}, where `i` is the index across the combined `flash_drive` and `nvram` lists.
-Flash drives are typically preloaded with file-system images, and NVRAMs hold raw byte buffers backed by a UIO device.
+Flash drives must start after []{replace=ar_table/ram_start}+`ram.length`-1, end before []{replace=ar_table/ram_start}+64TiB, and be aligned to 2MiB.
 
-The board maps four non-memory devices to the physical address space: CLINT, HTIF, PLIC, and (in unreproducible machines only) one or more VirtIO devices.
+NVRAMs have much lighter requirements.
+Their start and length must be aligned to 4KiB page boundaries, but can otherwise start and end anywhere below the 2<sup>56</sup> limit as long as their length is less than 128TiB.
+
+:::note
+For the relentlessly curious, here are the reasons for these constraints:
+
+Flash drives are exposed via the persistent-memory block-device driver `pmem-region`.
+The kernel adds this memory to its physical memory map and reaches it through the direct linear mapping, a dedicated region of the kernel's virtual address space where physical memory is mapped continuously using fixed offsets rather than page-table traversals.
+Both buffered I/O through the page cache and direct access (DAX) rely on this mapping, so the constraints below hold regardless of how a drive is accessed.
+
+The linear mapping begins where RAM begins, at []{replace=ar_table/ram_start}.
+A Cartesi Machine fixes RAM at this address because it is the standard RISC-V layout, the 2GiB DRAM base used by QEMU's `virt` board and expected by firmware such as OpenSBI, with the lower 2GiB reserved for boot and memory-mapped devices.
+Since those lower addresses are not general-purpose memory, a flash drive must start at []{replace=ar_table/ram_start} or higher.
+The kernel caps the mapping at 64TiB, reserving the rest of the Sv48 address space for other kernel subsystems, so a drive must end no later than []{replace=ar_table/ram_start}+64TiB-1.
+Finally, a flash drive's start and length must be multiples of 2MiB, because the kernel brings persistent-memory regions online only in 2MiB subsections and cannot map a region whose start or end falls off that boundary. This is a generic Linux requirement, not something specific to RISC-V or to the Cartesi Machine.
+
+UIO devices exposed via the `generic-uio` driver allow user-space applications to directly interact with hardware, bypassing the page cache and the direct linear mapping.
+The kernel dynamically creates isolated virtual memory mappings for device registers and memory.
+
+UIO devices map directly to hardware addresses, so they must start and end below the 2<sup>56</sup> limit, the maximum
+physical address space supported by Sv48.
+Their dynamic mappings must align with 4KiB page boundaries, which establishes valid page table entries without altering access permissions for adjacent physical memory.
+(The Cartesi Machine itself imposes the same alignment constraint.)
+The maximum contiguous virtual memory available for user-space processes is 128TiB, half of the total 256TiB Sv48 virtual address space.
+(The limit for kernel-space mappings managed by the `vmalloc` and `ioremap` subsystems is even smaller, 32TiB, reserving the remaining kernel virtual address space for the direct linear mapping and fixed structures.)
+:::
+
+The board also maps non-memory devices to the physical address space: CLINT, HTIF, PLIC, and (in unreproducible machines only) one or more VirtIO devices.
 
 #### CLINT
 
@@ -3939,7 +3973,7 @@ The `cartesi-machine` utility reports this value as the machine's exit code.
 
 The Console device (`DEV=HTIF_DEV_CONSOLE`) can be used to input/output characters.
 
-To input a  character from console (in interactive sessions), request `CMD=HTIF_CONSOLE_CMD_GETCHAR`, `DATA=0`, then read response `CMD=HTIF_CONSOLE_CMD_GETCHAR`, `DATA=<ch>+1`. (`DATA=0` means no character was available);
+To input a character from console (in interactive sessions), request `CMD=HTIF_CONSOLE_CMD_GETCHAR`, `DATA=0`, then read response `CMD=HTIF_CONSOLE_CMD_GETCHAR`, `DATA=<ch>+1`. (`DATA=0` means no character was available);
 
 To output a character `<ch>` to console, request `CMD=HTIF_CONSOLE_CMD_PUTCHAR`, with `DATA=<ch>`.
 
@@ -4229,7 +4263,7 @@ A Cartesi Machine contains many address ranges.
 The address ranges visible to the main processor are mapped at fixed positions in its 64-bit physical address space.
 These are the ranges listed in the [board mapping table](#the-board) at the start of this chapter, exposed to Lua via the `cartesi.AR_*` constants, and discoverable at runtime via the [PMA array](#pmas) described in the next subsection.
 
-The microarchitecture has its own private address ranges, which are not accessible to the main processor:
+The uarch has its own private address ranges, which are not accessible to the main processor:
 
 <center>
 <table>
@@ -4248,8 +4282,8 @@ The microarchitecture has its own private address ranges, which are not accessib
 </table>
 </center>
 
-The microarchitecture shadow holds the uarch processor state.
-The microarchitecture RAM holds the uarch program that decodes and executes one main processor instruction per uarch run before halting.
+The uarch shadow holds the uarch processor state.
+The uarch RAM holds the uarch program that decodes and executes one main processor instruction per uarch run before halting.
 
 #### PMAs
 
@@ -4384,17 +4418,24 @@ The list of PMA records ends with an invalid PMA entry for which `length=0`.
 ### Linux setup
 
 By default, `pc` starts at the beginning of RAM (address []{replace=ar_ram_start}), where the RAM image is loaded.
-The emulator builds a [<i>devicetree</i>](http://devicetree.org/) describing the hardware at instantiation time, derived from the machine configuration, and writes it into the DTB memory range immediately below RAM.
+The emulator builds a [<i>devicetree</i>](https://www.devicetree.org/) describing the hardware at instantiation time, derived from the machine configuration, and writes it into the DTB memory range immediately below RAM.
 The start address of the DTB ([]{replace=ar_dtb_start}) is pre-loaded in register&nbsp;`a1`, per the conventional RISC-V boot ABI.
 
 The `dtc` command-line utility can be used to inspect the devicetree:
 
-```{.bash key=dtc replace=source}
+```{.bash key=dtc replace=source outputs=pmem,pmem_start}
+# docs:begin
 cartesi-machine \
     --no-init-splash \
     --quiet \
     --user=root \
+# docs:begin null
+	--store-json-config=config.json \
+# docs:end null
     -- "dtc -I dtb -O dts /sys/firmware/fdt"
+# docs:end
+printf "%x" $(jq '.flash_drive[0].start' < config.json) > pmem_start
+printf "pmem@%s" $(cat pmem_start) > pmem
 ```
 
 The result is
@@ -4402,7 +4443,7 @@ The result is
 ```
 
 The `memory@80000000` section describes 64MiB of RAM starting at address `0x80000000`.
-The `pmem@80000000000000` describes flash drive 0: a memory region starting at address []{replace=ar_drive_formula/drive_start}, with compatible string `pmem-region`.
+The []{replace=dtc/pmem} section describes flash drive 0: a memory region starting at address []{replace=dtc/pmem_start}, with compatible string `pmem-region`.
 This will eventually become available as `/dev/pmem0`.
 The `cmio` section specifies the starts and lengths of the CMIO memory ranges.
 The `yield` section specifies that the machine will process automatic and manual yields.
@@ -4440,7 +4481,7 @@ After completing its own initialization, the kernel mounts the root file-system 
 Cartesi's root file-system `rootfs.ext2` is built from the [`machine-guest-tools`](https://github.com/cartesi/machine-guest-tools) repository, which also installs `cartesi-init` and the rollups user-space tooling.
 See [Initialization](#initialization-1) under the Guest perspective for what `cartesi-init` does after the kernel hands off.
 
-# Blockchain perspective
+# The blockchain perspective
 
 This section describes the Cartesi Machine from the perspective of the blockchain.
 Using the Cartesi platform, smart contracts gain a new ability.
@@ -4485,7 +4526,7 @@ In the case of Cartesi Machines, a block is simply one of the 2<sup>[]{replace=h
 The root hash can be obtained from the `machine:get_root_hash()` method.
 In the command-line, the options `--initial-hash` and `--final-hash` of the `cartesi-machine` utility cause it to output the root hash of the Merkle tree as it is before the emulator starts running and after it is done running, respectively.
 
-The machine can be configured to use the `"keccak256"` hash function (for use with the microarchitecture) or the `"sha256"` hash function (for use with ZK).
+The machine can be configured to use the `"keccak256"` hash function (for use with the uarch) or the `"sha256"` hash function (for use with ZK).
 In theory, the Merkle tree of the entire machine state could be built from these primitives and [external state access](#external-state-access) to the machine instance.
 In practice, most of the state is unused and implicitly filled with zeros, and this allows the Merkle tree computation to skip large swaths of the state by using precomputed hashes for subtrees that span zeroed out regions of all power-of-2 sizes.
 The computation is also smart enough to only update the parts of the tree that changed between invocations.
@@ -4555,7 +4596,7 @@ From the blockchain perspective, a [Cartesi Machine template](#cartesi-machine-t
 Instantiating the Cartesi Machine with a given input is simply the process of obtaining the state hash *M'* that results from replacing one or more of its input NVRAMs.
 Each replacement is the result of a splicing operation as described above.
 The splicing operation is particularly convenient if the input range length is a power of 2 and its start is aligned according to its length.
-This is why, by default, the `cartesi-machine` command-line utility positions flash drives and NVRAMs at multiples of 2<sup>[]{replace=ar_drive_formula/log2_drive_offset code=no}</sup>.
+This is why, by default, the Cartesi Machine positions flash drives and NVRAMs respecting these constraints.
 
 The following script performs the same operation in two distinct ways, an off-chain way and a blockchain way, and checks that the two agree.
 Off-chain, it instantiates the `calculator-template` concretely, modifies its input NVRAM with the contents of a mathematical expression, and then asks for the state hash *M'* of the modified machine.
@@ -4644,7 +4685,7 @@ When they disagree the referee settles the dispute before accepting the result.
 ### Settling a dispute
 
 The dispute is settled in two bisections.
-The first ranges over `mcycle` and isolates the disputed main processor instruction, the second ranges over `uarch_cycle` and isolates the single microarchitecture step within it.
+The first ranges over `mcycle` and isolates the disputed main processor instruction, the second ranges over `uarch_cycle` and isolates the single uarch step within it.
 ```{.lua key=vg_adjudicate include=verification-game.lua/adjudicate_dispute title="verification-game.lua (excerpt)"}
 ```
 
@@ -4655,7 +4696,7 @@ Each bisection narrows the disagreement to the single transition responsible for
 ```
 The main processor has a fixed-point property once the machine halts.
 Running it for more `mcycle`s leaves the state, and therefore the hash, unchanged.
-Likewise, the microarchitecture has a fixed-point property once it halts.
+Likewise, the uarch has a fixed-point property once it halts.
 Running it for more `uarch_cycle`s leaves the state unchanged, until a reset begins the next main processor instruction.
 This is what lets each bisection range over the full cycle ceiling without knowing in advance where either machine halts.
 A midpoint past a halt simply repeats the final hash, and the disagreement is still found at the cycle where the two computations diverge.
@@ -4664,7 +4705,7 @@ A midpoint past a halt simply repeats the final hash, and the disagreement is st
 
 Once a single `uarch_cycle` is in dispute, the referee asks the player on the disagreeing side for the access log of the transition out of it, and verifies that log without ever instantiating a machine.
 This stands for a Cartesi contract that can verify such logs directly on the blockchain.
-The transition is either an ordinary microarchitecture step or the terminal reset that begins the next main processor instruction.
+The transition is either an ordinary uarch step or the terminal reset that begins the next main processor instruction.
 Which one it is depends only on the agreed cycle, since the only transition out of `cartesi.UARCH_CYCLE_MAX - 1` is the reset, so the referee checks the log with `verify_reset_uarch` at that boundary and `verify_step_uarch` everywhere else.
 If the log proves that the agreed before-hash advances to the player's committed after-hash, that player was honest, otherwise the other one is assumed to be.
 ```{.lua key=vg_verify_transition include=verification-game.lua/verify_state_transition title="verification-game.lua (excerpt)"}
@@ -4736,8 +4777,8 @@ The bisection converges on the cheat point, the disputed step verifies in the ho
 local cartesi = require("cartesi")
 print(cartesi.UARCH_CYCLE_MAX)
 ```
-That dispute resolved on an ordinary microarchitecture step, since the cheat point fell early in the disputed instruction's microarchitecture cycles.
-Cheating instead at the last microarchitecture cycle, `cartesi.UARCH_CYCLE_MAX - 1`, moves the disagreement onto the terminal reset that begins the next instruction, the case the referee checks with `verify_reset_uarch`:
+That dispute resolved on an ordinary uarch step, since the cheat point fell early in the disputed instruction's uarch cycles.
+Cheating instead at the last uarch cycle, `cartesi.UARCH_CYCLE_MAX - 1`, moves the disagreement onto the terminal reset that begins the next instruction, the case the referee checks with `verify_reset_uarch`:
 ```{.bash key=vg_run_reset vars=template->calc_template/calculator-template/path,uarch_cycle_max->vg_uarch_cycle_max/stdout depends=vg_run outputs=referee replace=source/dishonest}
 ln -sf "$template" .
 ln -sf "$RECIPES_DIR/verification-game.lua" .
@@ -4766,7 +4807,7 @@ tail -n 3 bisect_uarch_cycle
 cat verdict
 } > referee
 ```
-This time the microarchitecture bisection climbs to the reset boundary and the honest player's reset log verifies just the same:
+This time the uarch bisection climbs to the reset boundary and the honest player's reset log verifies just the same:
 ```{replace=vg_run_reset/referee}
 ```
 

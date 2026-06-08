@@ -27,6 +27,7 @@ describe("backing stores", function()
         },
         flash_drive = {
             { -- read/write + backing file
+                start = 0x0080000000000000,
                 backing_store = {
                     data_filename = rw_data_filename,
                 },

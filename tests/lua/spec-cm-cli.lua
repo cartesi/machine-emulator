@@ -464,6 +464,16 @@ describe("cartesi-machine CLI", function()
         })
         expect.truthy(not cfg.dtb.init:find("/mnt/empty"))
 
+        -- Auto-detect failure: with neither an explicit length nor a backing
+        -- file there is nothing to auto-detect the length from.
+        run_fail({
+            "--no-root-flash-drive",
+            "--flash-drive=label:f",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        }, "unable to auto%-detect length of flash drive")
+
         -- --hash-tree: hash_function and phtc_size variations
         cfg = config_for({ "--hash-tree=hash_function:sha256" })
         expect.equal(cfg.hash_tree.hash_function, "sha256")
@@ -536,15 +546,42 @@ describe("cartesi-machine CLI", function()
         })
         expect.truthy(not cfg.dtb.init:find("chmod 0444"))
 
-        -- Auto-assigned start: NVRAMs share the drive pool with flash drives.
-        -- The default root flash drive consumes slot 0, so the first --nvram
-        -- without start lands at slot 1 and the second at slot 2.
+        -- Auto-assigned start: a drive without an explicit start is placed past
+        -- the end of RAM (RAM length rounded up to the next power of two) and
+        -- aligned to its own length (also rounded up to the next power of two).
+        -- Flash drives and NVRAMs share a single pool, with flash drives placed
+        -- first.  Here RAM length 0x5000000 rounds up to 0x8000000, so the flash
+        -- drive lands at AR_RAM_START + 0x8000000.  The NVRAM length 0x18000
+        -- rounds up to 0x20000, bumping its start to the next 0x20000-aligned
+        -- address and leaving a gap after the smaller flash drive.
         cfg = config_for({
-            "--nvram=label:auto1,length:0x1000",
-            "--nvram=label:auto2,length:0x1000",
+            "--ram-length=0x5000000",
+            "--no-root-flash-drive",
+            "--flash-drive=label:f,length:0x10000",
+            "--nvram=label:n,length:0x18000",
         })
-        expect.equal(cfg.nvram[1].start, cartesi.AR_DRIVE_START + cartesi.AR_DRIVE_OFFSET)
-        expect.equal(cfg.nvram[2].start, cartesi.AR_DRIVE_START + 2 * cartesi.AR_DRIVE_OFFSET)
+        expect.equal(cfg.flash_drive[1].start, cartesi.AR_RAM_START + 0x8000000)
+        expect.equal(cfg.nvram[1].start, cartesi.AR_RAM_START + 0x8000000 + 0x20000)
+        expect.equal(cfg.nvram[1].length, 0x18000)
+
+        -- Auto-detect failure: with neither an explicit length nor a backing
+        -- file there is nothing to auto-detect the length from.
+        run_fail({
+            "--nvram=label:n",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        }, "unable to auto%-detect length of nvram")
+
+        -- Auto-detect failure: a length whose rounded-up power of two leaves no
+        -- address space past its own alignment overflows and is rejected.
+        run_fail({
+            "--no-root-flash-drive",
+            "--nvram=label:big,length:0x8000000000000000",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        }, "no address space to auto%-detect start of nvram")
     end)
 
     -- -------------------------------------------------------------------------

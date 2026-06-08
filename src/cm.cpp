@@ -106,8 +106,6 @@ static_assert((UINT64_C(1) << AR_CMIO_RX_BUFFER_LOG2_SIZE_DEF) == CM_AR_CMIO_RX_
 static_assert((UINT64_C(1) << AR_CMIO_TX_BUFFER_LOG2_SIZE_DEF) == CM_AR_CMIO_TX_BUFFER_LENGTH);
 static_assert(AR_DTB_START_DEF == CM_AR_DTB_START);
 static_assert(AR_DTB_LENGTH_DEF == CM_AR_DTB_LENGTH);
-static_assert(AR_DRIVE_START_DEF == CM_AR_DRIVE_START);
-static_assert(AR_DRIVE_OFFSET_DEF == CM_AR_DRIVE_OFFSET);
 static_assert(std::string_view{DTB_BOOTARGS_CONSOLE_PART} == std::string_view{CM_DTB_BOOTARGS_CONSOLE_PART});
 static_assert(std::string_view{DTB_BOOTARGS_UIO_PART} == std::string_view{CM_DTB_BOOTARGS_UIO_PART});
 static_assert(std::string_view{DTB_BOOTARGS_ROOT_PART} == std::string_view{CM_DTB_BOOTARGS_ROOT_PART});

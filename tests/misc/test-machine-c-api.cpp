@@ -436,7 +436,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_start_test, incomplete_machine_fixture) 
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     std::array<uint8_t, 4> read_data{};
-    error_code = cm_read_memory(_machine, CM_AR_DRIVE_START, read_data.data(), read_data.size());
+    // A drive without an explicit start is auto-placed past the end of RAM, at
+    // CM_AR_RAM_START plus the RAM length rounded up to the next power of two.
+    // The fixture's RAM length (1 << 20) is already a power of two.
+    error_code = cm_read_memory(_machine, CM_AR_RAM_START + (1 << 20), read_data.data(), read_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
@@ -446,7 +449,19 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_length_no_file_test, incomplete_machine_
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = cm_get_last_error_message();
-    std::string origin("nvram 0 has no length");
+    std::string origin("unable to auto-detect length of nvram 0 with empty image file");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+// A length whose next power of two, once aligned, leaves no address space past
+// its own end overflows during start auto-detection and must be rejected.
+BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_start_space_test, incomplete_machine_fixture) {
+    _machine_config["nvram"] = {{{"length", 0x8000000000000000}}};
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+    std::string result = cm_get_last_error_message();
+    std::string origin("no address space to auto-detect start of nvram 0");
     BOOST_CHECK_EQUAL(origin, result);
 }
 

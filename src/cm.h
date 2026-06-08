@@ -39,9 +39,6 @@ extern "C" {
 static const uint64_t CM_MCYCLE_MAX = -1ULL;
 static const uint64_t CM_UARCH_CYCLE_MAX = 1ULL << 20;
 
-static const uint64_t CM_AR_DRIVE_START = 0x80000000000000ULL;  ///< Start PMA for flash drives and NVRAMs
-static const uint64_t CM_AR_DRIVE_OFFSET = 0x10000000000000ULL; ///< PMA slot stride for flash drives and NVRAMs
-
 #define CM_DTB_BOOTARGS_CONSOLE_PART "quiet earlycon=sbi console=hvc0 "
 #define CM_DTB_BOOTARGS_UIO_PART "uio_pdrv_genirq.of_id=generic-uio "
 #define CM_DTB_BOOTARGS_ROOT_PART "root=/dev/pmem0 rw "

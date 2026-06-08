@@ -177,6 +177,44 @@ std::string machine_config::store(const std::string &dir, sharing_mode sharing) 
     return name;
 }
 
+static void adjust_lengths(memory_range_configs &mrs, const std::string &what) {
+    for (int i = 0; auto &mr : mrs) {
+        if (mr.length == UINT64_C(-1)) {
+            if (mr.backing_store.data_filename.empty()) {
+                throw std::runtime_error{"unable to auto-detect length of "s.append(what)
+                        .append(std::to_string(i))
+                        .append(" with empty image file")};
+            }
+            mr.length = os::file_size(mr.backing_store.data_filename);
+        }
+        ++i;
+    }
+}
+
+static uint64_t adjust_starts(uint64_t start, memory_range_configs &mrs, const std::string &what) {
+    for (int i = 0; auto &mr : mrs) {
+        if (mr.start == UINT64_C(-1)) {
+            // Round length to next power of two
+            auto length_po2 = std::bit_ceil(mr.length);
+            // Advance start to align it to rounded length
+            if (start % length_po2 != 0) {
+                start -= (start % length_po2);
+                if (__builtin_add_overflow(start, length_po2, &start)) {
+                    throw std::runtime_error{
+                        "no address space to auto-detect start of "s.append(what).append(std::to_string(i))};
+                }
+            }
+            mr.start = start;
+            if (__builtin_add_overflow(start, length_po2, &start)) {
+                throw std::runtime_error{
+                    "no address space to auto-detect start of "s.append(what).append(std::to_string(i))};
+            }
+        }
+        ++i;
+    }
+    return start;
+}
+
 machine_config &machine_config::adjust_defaults() {
     // Fill version registers
     if (processor.registers.marchid == UINT64_C(-1)) {
@@ -188,41 +226,12 @@ machine_config &machine_config::adjust_defaults() {
     if (processor.registers.mimpid == UINT64_C(-1)) {
         processor.registers.mimpid = MIMPID_INIT;
     }
-    // Auto detect flash drives and nvram start address and length
-    int i = 0; // NOLINT(misc-const-correctness)
-    int j = 0; // NOLINT(misc-const-correctness)
-    for (auto &f : flash_drive) {
-        const std::string flash_description = "flash drive "s + std::to_string(i);
-        // Auto detect flash drive start address
-        if (f.start == UINT64_C(-1)) {
-            f.start = AR_DRIVE_START + (AR_DRIVE_OFFSET * j);
-            ++j;
-        }
-        // Auto detect flash drive image length
-        if (f.length == UINT64_C(-1)) {
-            if (f.backing_store.data_filename.empty()) {
-                throw std::runtime_error{
-                    "unable to auto-detect length of "s.append(flash_description).append(" with empty image file")};
-            }
-            f.length = os::file_size(f.backing_store.data_filename);
-        }
-        ++i;
-    }
-    i = 0;
-    for (auto &n : nvram) {
-        const std::string nvram_description = "nvram "s + std::to_string(i);
-        if (n.start == UINT64_C(-1)) {
-            n.start = AR_DRIVE_START + (AR_DRIVE_OFFSET * j);
-            ++j;
-        }
-        if (n.length == UINT64_C(-1)) {
-            if (n.backing_store.data_filename.empty()) {
-                throw std::runtime_error{nvram_description + " has no length"s};
-            }
-            n.length = os::file_size(n.backing_store.data_filename);
-        }
-        ++i;
-    }
+    // Auto detect flash drives and nvram lengths
+    adjust_lengths(flash_drive, "flash drive ");
+    adjust_lengths(nvram, "nvram ");
+    // Auto detect starts
+    auto ram_length_po2 = std::bit_ceil(ram.length);
+    adjust_starts(adjust_starts(AR_RAM_START + ram_length_po2, flash_drive, "flash drive "), nvram, "nvram ");
     return *this;
 }
 

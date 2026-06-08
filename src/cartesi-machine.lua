@@ -669,6 +669,38 @@ where options are:
     prints root hash every uarch cycle for <number-length> mcycles.
     if <number-start> is given, the dense hashing will start at that mcycle.
 
+  --initial-proof=<key>:<value>[,<key>:<value>[,...]...]
+    print a Merkle proof for a target region of the initial machine state.
+
+    <key>:<value> is one of
+        address:<number>
+        log2_size:<number>
+        label:<label>
+        filename:<filename>
+
+        address and log2_size
+        give the starting offset and the log2 of the size of the target
+        region in bytes. log2_size must be at least 5 (a 32-byte word).
+
+        label (alternative to address and log2_size)
+        names a flash drive or nvram whose start and length supply the
+        target region's address and log2_size.
+
+        filename (optional)
+        redirects the proof to a file. when omitted, the proof is printed
+        to stdout.
+
+    the proof is printed as a Lua table.
+
+  --final-proof=<key>:<value>[,<key>:<value>[,...]...]
+    like --initial-proof, but for the final machine state.
+
+  --initial-json-proof=<key>:<value>[,<key>:<value>[,...]...]
+    like --initial-proof, but the proof is printed as a JSON object.
+
+  --final-json-proof=<key>:<value>[,<key>:<value>[,...]...]
+    like --final-proof, but the proof is printed as a JSON object.
+
   --log-step=<mcycle-count>,<filename>
     log and save a step of <mcycle-count> mcycles to <filename>.
 
@@ -1659,18 +1691,14 @@ options = {
         "^(%-%-initial%-proof%=(.+))$",
         function(keys, all, opts)
             local p = util.parse_options(keys, all, opts)
+            assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
             p.cmdline = all
             p.format = "lua"
-            assertf(
-                p.log2_size >= cartesi.HASH_TREE_LOG2_WORD_SIZE,
-                "log2_size must be at least %u in %s",
-                cartesi.HASH_TREE_LOG2_WORD_SIZE,
-                all
-            )
             initial_proof[#initial_proof + 1] = p
             return true
         end,
         {
+            label = "string",
             address = "number",
             log2_size = "number",
             filename = "file",
@@ -1681,18 +1709,14 @@ options = {
         function(keys, all, opts)
             if not opts then return false end
             local p = util.parse_options(keys, all, opts)
+            assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
             p.cmdline = all
             p.format = "lua"
-            assertf(
-                p.log2_size >= cartesi.HASH_TREE_LOG2_WORD_SIZE,
-                "log2_size must be at least %u in %s",
-                cartesi.HASH_TREE_LOG2_WORD_SIZE,
-                all
-            )
             final_proof[#final_proof + 1] = p
             return true
         end,
         {
+            label = "string",
             address = "number",
             log2_size = "number",
             filename = "file",
@@ -1702,18 +1726,14 @@ options = {
         "^(%-%-initial%-json%-proof%=(.+))$",
         function(keys, all, opts)
             local p = util.parse_options(keys, all, opts)
+            assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
             p.cmdline = all
             p.format = "json"
-            assertf(
-                p.log2_size >= cartesi.HASH_TREE_LOG2_WORD_SIZE,
-                "log2_size must be at least %u in %s",
-                cartesi.HASH_TREE_LOG2_WORD_SIZE,
-                all
-            )
             initial_proof[#initial_proof + 1] = p
             return true
         end,
         {
+            label = "string",
             address = "number",
             log2_size = "number",
             filename = "file",
@@ -1724,18 +1744,14 @@ options = {
         function(keys, all, opts)
             if not opts then return false end
             local p = util.parse_options(keys, all, opts)
+            assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
             p.format = "json"
             p.cmdline = all
-            assertf(
-                p.log2_size >= cartesi.HASH_TREE_LOG2_WORD_SIZE,
-                "log2_size must be at least %u in %s",
-                cartesi.HASH_TREE_LOG2_WORD_SIZE,
-                all
-            )
             final_proof[#final_proof + 1] = p
             return true
         end,
         {
+            label = "string",
             address = "number",
             log2_size = "number",
             filename = "file",
@@ -2219,6 +2235,19 @@ local function dump_value_proofs(machine, desired_proofs, config)
         assert(config.processor.registers.iunrep == 0, "proofs are meaningless in unreproducible mode")
     end
     for _, desired in ipairs(desired_proofs) do
+        if not desired.address or not desired.log2_size then
+            local drive = util.find_drive(config, "flash_drive", desired.label)
+                or util.find_drive(config, "nvram", desired.label)
+            assertf(drive, "flash-drive or nvram not found with label %s in %s", desired.label, desired.cmdline)
+            desired.log2_size = drive.log2_size
+            desired.address = drive.start
+        end
+        assertf(
+            desired.log2_size >= cartesi.HASH_TREE_LOG2_WORD_SIZE,
+            "log2_size must be at least %u in %s",
+            cartesi.HASH_TREE_LOG2_WORD_SIZE,
+            desired.cmdline
+        )
         local proof = machine:get_proof(desired.address, desired.log2_size)
         local out = desired.filename and assert(io.open(desired.filename, "wb")) or io.stdout
         if desired.format == "lua" then

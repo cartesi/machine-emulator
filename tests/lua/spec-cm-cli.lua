@@ -978,6 +978,69 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- -------------------------------------------------------------------------
+    -- Proof dump by drive label
+    --
+    -- What: The proof options accept label:<label> in place of
+    --       address+log2_size, resolving the target region from the flash
+    --       drive or nvram of that label in the materialized config.  The
+    --       proof's target_address comes from the drive's start and its
+    --       log2_target_size from ilog2(length).
+    -- How:  Run with a labeled flash drive and a labeled nvram, request a
+    --       proof by each label (covering both the Lua and JSON formats and
+    --       the flash-drive-then-nvram lookup order), and assert the derived
+    --       address/log2_size.  An unknown label is a hard error.
+    -- -------------------------------------------------------------------------
+    it("proof dump by drive label", function()
+        local FLASH_START = 0x80000020000000
+        local FLASH_LEN = 0x10000 -- 2^16
+        local NVRAM_START = 0x70000000
+        local NVRAM_LEN = 0x1000 -- 2^12
+
+        -- Flash drive, Lua format: --initial-proof=label:<flash> resolves to the
+        -- flash drive's start and ilog2(length).  This is the path the typo
+        -- "drive = driver or ..." broke, since the flash-drive lookup was
+        -- discarded and only nvram was ever searched.
+        local stdout = run_ok({
+            "--flash-drive=label:pdata,start:" .. string.format("0x%x", FLASH_START) .. ",length:" .. string.format(
+                "0x%x",
+                FLASH_LEN
+            ) .. ",mke2fs",
+            "--initial-proof=label:pdata",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        local p = assert(load(stdout))()
+        expect.equal(p.target_address, FLASH_START)
+        expect.equal(p.log2_target_size, 16)
+
+        -- NVRAM, JSON format: --final-json-proof=label:<nvram> falls through to
+        -- the nvram lookup and resolves the same way.
+        stdout = run_ok({
+            "--nvram=label:pnv,start:" .. string.format("0x%x", NVRAM_START) .. ",length:" .. string.format(
+                "0x%x",
+                NVRAM_LEN
+            ),
+            "--final-json-proof=label:pnv",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        local pj = cartesi.fromjson(stdout, "Proof")
+        expect.equal(pj.target_address, NVRAM_START)
+        expect.equal(pj.log2_target_size, 12)
+
+        -- Unknown label: neither a flash drive nor an nvram matches, so the
+        -- CLI fails before emitting a proof.
+        run_fail({
+            "--initial-proof=label:nosuch",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        }, "flash%-drive or nvram not found with label nosuch")
+    end)
+
+    -- -------------------------------------------------------------------------
     -- Persistence round-trip options
     --
     -- What: --store-config / --load-config, --store-json-config /

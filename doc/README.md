@@ -6219,370 +6219,21 @@ read-only, by mapping every register to the start of the physical
 address space (in the <i>processor shadow</i>, a 4KiB range). The
 mapping is given in the following table:
 
-<center>
-<table>
-<tr>
-<th>
-Offset
-</th>
-<th>
-Register
-</th>
-<th>
-Offset
-</th>
-<th>
-Register
-</th>
-<th>
-Offset
-</th>
-<th>
-Register
-</th>
-<th>
-Offset
-</th>
-<th>
-Register
-</th>
-</tr>
-<tr>
-<td>
-`0x000`
-</td>
-<td>
-<tt>x0</tt>
-</td>
-<td>
-`0x228`
-</td>
-<td>
-<tt>mtvec</tt>
-</td>
-<td>
-`0x290`
-</td>
-<td>
-<tt>marchid</tt>
-</td>
-<td>
-`0x2f8`
-</td>
-<td>
-<tt>iflags_X</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x008`
-</td>
-<td>
-<tt>x1</tt>
-</td>
-<td>
-`0x230`
-</td>
-<td>
-<tt>mscratch</tt>
-</td>
-<td>
-`0x298`
-</td>
-<td>
-<tt>mimpid</tt>
-</td>
-<td>
-`0x300`
-</td>
-<td>
-<tt>iflags_Y</tt>
-</td>
-</tr>
-<tr>
-<td>
-<tt>…</tt>
-</td>
-<td>
-<tt>…</tt>
-</td>
-<td>
-`0x238`
-</td>
-<td>
-<tt>mepc</tt>
-</td>
-<td>
-`0x2a0`
-</td>
-<td>
-<tt>stvec</tt>
-</td>
-<td>
-`0x308`
-</td>
-<td>
-<tt>iflags_H</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x0f8`
-</td>
-<td>
-<tt>x31</tt>
-</td>
-<td>
-`0x240`
-</td>
-<td>
-<tt>mcause</tt>
-</td>
-<td>
-`0x2a8`
-</td>
-<td>
-<tt>sscratch</tt>
-</td>
-<td>
-`0x310`
-</td>
-<td>
-<tt>clint_mtimecmp</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x100`
-</td>
-<td>
-<tt>mcycle</tt>
-</td>
-<td>
-`0x248`
-</td>
-<td>
-<tt>mtval</tt>
-</td>
-<td>
-`0x2b0`
-</td>
-<td>
-<tt>sepc</tt>
-</td>
-<td>
-`0x318`
-</td>
-<td>
-<tt>plic_girqpend</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x108`
-</td>
-<td>
-<tt>pc</tt>
-</td>
-<td>
-`0x250`
-</td>
-<td>
-<tt>misa</tt>
-</td>
-<td>
-`0x2b8`
-</td>
-<td>
-<tt>scause</tt>
-</td>
-<td>
-`0x320`
-</td>
-<td>
-<tt>plic_girqsrvd</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x110`
-</td>
-<td>
-<tt>fcsr</tt>
-</td>
-<td>
-`0x258`
-</td>
-<td>
-<tt>mie</tt>
-</td>
-<td>
-`0x2c0`
-</td>
-<td>
-<tt>stval</tt>
-</td>
-<td>
-`0x328`
-</td>
-<td>
-<tt>htif_tohost</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x118`
-</td>
-<td>
-<tt>f0</tt>
-</td>
-<td>
-`0x260`
-</td>
-<td>
-<tt>mip</tt>
-</td>
-<td>
-`0x2c8`
-</td>
-<td>
-<tt>satp</tt>
-</td>
-<td>
-`0x330`
-</td>
-<td>
-<tt>htif_fromhost</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x120`
-</td>
-<td>
-<tt>f1</tt>
-</td>
-<td>
-`0x268`
-</td>
-<td>
-<tt>medeleg</tt>
-</td>
-<td>
-`0x2d0`
-</td>
-<td>
-<tt>scounteren</tt>
-</td>
-<td>
-`0x338`
-</td>
-<td>
-<tt>htif_ihalt</tt>
-</td>
-</tr>
-<tr>
-<td>
-<tt>…</tt>
-</td>
-<td>
-<tt>…</tt>
-</td>
-<td>
-`0x270`
-</td>
-<td>
-<tt>mideleg</tt>
-</td>
-<td>
-`0x2d8`
-</td>
-<td>
-<tt>senvcfg</tt>
-</td>
-<td>
-`0x340`
-</td>
-<td>
-<tt>htif_iconsole</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x210`
-</td>
-<td>
-<tt>f31</tt>
-</td>
-<td>
-`0x278`
-</td>
-<td>
-<tt>mcounteren</tt>
-</td>
-<td>
-`0x2e0`
-</td>
-<td>
-<tt>ilrsc</tt>
-</td>
-<td>
-`0x348`
-</td>
-<td>
-<tt>htif_iyield</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x218`
-</td>
-<td>
-<tt>iprv</tt>
-</td>
-<td>
-`0x280`
-</td>
-<td>
-<tt>menvcfg</tt>
-</td>
-<td>
-`0x2e8`
-</td>
-<td>
-<tt>icycleinstret</tt>
-</td>
-<td>
-</td>
-<td>
-</td>
-</tr>
-<tr>
-<td>
-`0x220`
-</td>
-<td>
-<tt>mstatus</tt>
-</td>
-<td>
-`0x288`
-</td>
-<td>
-<tt>mvendorid</tt>
-</td>
-<td>
-`0x2f0`
-</td>
-<td>
-<tt>iunrep</tt>
-</td>
-<td>
-</td>
-<td>
-</td>
-</tr>
-</table>
-</center>
+| Offset  | Register  | Offset  | Register     | Offset  | Register        | Offset  | Register         |
+|---------|-----------|---------|--------------|---------|-----------------|---------|------------------|
+| `0x000` | `x0`      | `0x228` | `mtvec`      | `0x290` | `marchid`       | `0x2f8` | `iflags_X`       |
+| `0x008` | `x1`      | `0x230` | `mscratch`   | `0x298` | `mimpid`        | `0x300` | `iflags_Y`       |
+| `...`   | `...`     | `0x238` | `mepc`       | `0x2a0` | `stvec`         | `0x308` | `iflags_H`       |
+| `0x0f8` | `x31`     | `0x240` | `mcause`     | `0x2a8` | `sscratch`      | `0x310` | `clint_mtimecmp` |
+| `0x100` | `mcycle`  | `0x248` | `mtval`      | `0x2b0` | `sepc`          | `0x318` | `plic_girqpend`  |
+| `0x108` | `pc`      | `0x250` | `misa`       | `0x2b8` | `scause`        | `0x320` | `plic_girqsrvd`  |
+| `0x110` | `fcsr`    | `0x258` | `mie`        | `0x2c0` | `stval`         | `0x328` | `htif_tohost`    |
+| `0x118` | `f0`      | `0x260` | `mip`        | `0x2c8` | `satp`          | `0x330` | `htif_fromhost`  |
+| `0x120` | `f1`      | `0x268` | `medeleg`    | `0x2d0` | `scounteren`    | `0x338` | `htif_ihalt`     |
+| `...`   | `...`     | `0x270` | `mideleg`    | `0x2d8` | `senvcfg`       | `0x340` | `htif_iconsole`  |
+| `0x210` | `f31`     | `0x278` | `mcounteren` | `0x2e0` | `ilrsc`         | `0x348` | `htif_iyield`    |
+| `0x218` | `iprv`    | `0x280` | `menvcfg`    | `0x2e8` | `icycleinstret` |         |                  |
+| `0x220` | `mstatus` | `0x288` | `mvendorid`  | `0x2f0` | `iunrep`        |         |                  |
 
 The only generally relevant standard register is `mcycle`. Since its
 value is advanced at every CPU cycle, it can be used to identify a
@@ -6646,78 +6297,12 @@ main processor, the uarch makes its entire state available, externally
 and read-only, by mapping every register to its own 4KiB <i>uarch
 shadow</i> range. The mapping is given in the following table:
 
-<center>
-<table>
-<tr>
-<th>
-Offset
-</th>
-<th>
-Register
-</th>
-<th>
-Offset
-</th>
-<th>
-Register
-</th>
-</tr>
-<tr>
-<td>
-`0x400000`
-</td>
-<td>
-<tt>uarch_halt_flag</tt>
-</td>
-<td>
-`0x400018`
-</td>
-<td>
-<tt>uarch_x0</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x400008`
-</td>
-<td>
-<tt>uarch_cycle</tt>
-</td>
-<td>
-`0x400020`
-</td>
-<td>
-<tt>uarch_x1</tt>
-</td>
-</tr>
-<tr>
-<td>
-</td>
-<td>
-</td>
-<td>
-<tt>…</tt>
-</td>
-<td>
-<tt>…</tt>
-</td>
-</tr>
-<tr>
-<td>
-`0x400010`
-</td>
-<td>
-<tt>uarch_pc</tt>
-</td>
-<td>
-`0x400110`
-</td>
-<td>
-<tt>uarch_x31</tt>
-</td>
-</tr>
-</table>
-</center>
+| Offset     | Register          | Offset     | Register    |
+|------------|-------------------|------------|-------------|
+| `0x400000` | `uarch_halt_flag` | `0x400018` | `uarch_x0`  |
+| `0x400008` | `uarch_cycle`     | `0x400020` | `uarch_x1`  |
+|            |                   | `...`      | `...`       |
+| `0x400010` | `uarch_pc`        | `0x400110` | `uarch_x31` |
 
 In addition to being able to access all memory ranges and devices
 visible to the main processor, the uarch includes a private 2MiB of RAM.
@@ -6728,146 +6313,24 @@ The interaction between board and processor happens through interrupts
 and the memory bus. Devices are mapped to the processor’s physical
 address space. The mapping can be seen in the following table:
 
-<center>
-<table>
-<tr>
-<th>
-Physical address
-</th>
-<th>
-Mapping
-</th>
-</tr>
-<tr>
-<td>
-`0x00000000-0x00000fff`
-</td>
-<td>
-Processor and board shadow
-</td>
-</tr>
-<tr>
-<td>
-`0x00001000-0x00006fff`
-</td>
-<td>
-Shadow TLB
-</td>
-</tr>
-<tr>
-<td>
-`0x00010000-0x00010fff`
-</td>
-<td>
-PMA Array
-</td>
-</tr>
-<tr>
-<td>
-`0x00400000-0x00400fff`
-</td>
-<td>
-Uarch shadow
-</td>
-</tr>
-<tr>
-<td>
-`0x00600000-0x007fffff`
-</td>
-<td>
-Uarch RAM
-</td>
-</tr>
-<tr>
-<td>
-`0x02000000-0x020bffff`
-</td>
-<td>
-Core Local Interruptor (CLINT)
-</td>
-</tr>
-<tr>
-<td>
-`0x40008000-0x40008fff`
-</td>
-<td>
-Host-Target Interface (HTIF)
-</td>
-</tr>
-<tr>
-<td>
-`0x40010000-0x4001ffff` (<i>unreproducible mode only</i>)
-</td>
-<td>
-VirtIO devices
-</td>
-</tr>
-<tr>
-<td>
-`0x40100000-0x404fffff`
-</td>
-<td>
-Platform-Level Interrupt Controller (PLIC)
-</td>
-</tr>
-<tr>
-<td>
-`0x60000000-0x601fffff`
-</td>
-<td>
-CMIO RX buffer
-</td>
-</tr>
-<tr>
-<td>
-`0x60800000-0x609fffff`
-</td>
-<td>
-CMIO TX buffer
-</td>
-</tr>
-<tr>
-<td>
-`0x7ff00000-0x7fffffff`
-</td>
-<td>
-Device tree (DTB)
-</td>
-</tr>
-<tr>
-<td>
-`0x80000000`–`0x80000000`+`ram.length`-1
-</td>
-<td>
-RAM
-</td>
-</tr>
-<tr>
-<td>
-<i>configurable with constraints</i>
-</td>
-<td>
-Flash drive or NVRAM 0
-</td>
-</tr>
-<tr>
-<td>
-…
-</td>
-<td>
-…
-</td>
-</tr>
-<tr>
-<td>
-<i>configurable with constraints</i>
-</td>
-<td>
-Flash drive or NVRAM 7
-</td>
-</tr>
-</table>
-</center>
+| Physical address                                     | Mapping                                    |
+|------------------------------------------------------|--------------------------------------------|
+| `0x00000000-0x00000fff`                              | Processor and board shadow                 |
+| `0x00001000-0x00006fff`                              | Shadow TLB                                 |
+| `0x00010000-0x00010fff`                              | PMA Array                                  |
+| `0x00400000-0x00400fff`                              | Uarch shadow                               |
+| `0x00600000-0x007fffff`                              | Uarch RAM                                  |
+| `0x02000000-0x020bffff`                              | Core Local Interruptor (CLINT)             |
+| `0x40008000-0x40008fff`                              | Host-Target Interface (HTIF)               |
+| `0x40010000-0x4001ffff` (*unreproducible mode only*) | VirtIO devices                             |
+| `0x40100000-0x404fffff`                              | Platform-Level Interrupt Controller (PLIC) |
+| `0x60000000-0x601fffff`                              | CMIO RX buffer                             |
+| `0x60800000-0x609fffff`                              | CMIO TX buffer                             |
+| `0x7ff00000-0x7fffffff`                              | Device tree (DTB)                          |
+| `0x80000000`-`0x80000000`+`ram.length`-1             | RAM                                        |
+| *configurable with constraints*                      | Flash drive or NVRAM 0                     |
+| …                                                    | …                                          |
+| *configurable with constraints*                      | Flash drive or NVRAM 7                     |
 
 Execution starts at the beginning of RAM, where the bootloader (an
 OpenSBI `fw_payload` bundle that wraps the Linux kernel) is loaded from
@@ -6952,93 +6415,24 @@ The Host-Target Interface (HTIF) mediates communication with the
 external world. It is mapped to a physical memory starting at
 `0x40008000`, where registers can be accessed at the following offsets:
 
-<center>
-<table>
-<tr>
-<th>
-Offset
-</th>
-<th>
-Register
-</th>
-</tr>
-<tr>
-<td>
-<tt>0x000</tt>
-</td>
-<td>
-<tt>tohost</tt>
-</td>
-</tr>
-<tr>
-<td>
-<tt>0x008</tt>
-</td>
-<td>
-<tt>fromhost</tt>
-</td>
-</tr>
-<tr>
-<td>
-<tt>0x010</tt>
-</td>
-<td>
-<tt>ihalt</tt>
-</td>
-</tr>
-<tr>
-<td>
-<tt>0x018</tt>
-</td>
-<td>
-<tt>iconsole</tt>
-</td>
-</tr>
-<tr>
-<td>
-<tt>0x020</tt>
-</td>
-<td>
-<tt>iyield</tt>
-</td>
-</tr>
-<tr>
-<td>
-<tt>0x028</tt>
-</td>
-<td>
-<i>Reserved</i>
-</td>
-</tr>
-<tr>
-<td>
-<tt>…</tt>
-</td>
-<td>
-<tt>…</tt>
-</td>
-</tr>
-<tr>
-<td>
-<tt>0x218</tt>
-</td>
-<td>
-<i>Reserved</i>
-</td>
-</tr>
-</table>
-</center>
+| Offset  | Register   |
+|---------|------------|
+| `0x000` | `tohost`   |
+| `0x008` | `fromhost` |
+| `0x010` | `ihalt`    |
+| `0x018` | `iconsole` |
+| `0x020` | `iyield`   |
+| `0x028` | *Reserved* |
+| `...`   | `...`      |
+| `0x218` | *Reserved* |
+
 The format of CSRs `tohost` and `fromhost` are as follows:
 <p>
 </p>
 
-``` text
- 63          56 55          48 47              32 31                             0
-┌──────────────┬──────────────┬──────────────────┬───────────────────────────────┐
-│     DEV      │     CMD      │      REASON      │             DATA              │
-└──────────────┴──────────────┴──────────────────┴───────────────────────────────┘
-    8 bits         8 bits           16 bits                   32 bits
-```
+| Bits  | `63-56` | `55-48` | `47-32`  | `31-0` |
+|-------|---------|---------|----------|--------|
+| Field | `DEV`   | `CMD`   | `REASON` | `DATA` |
 
 Interactions with Cartesi’s HTIF device follow the following protocol:
 
@@ -7049,47 +6443,11 @@ Interactions with Cartesi’s HTIF device follow the following protocol:
 Cartesi’s HTIF supports 3 subdevices: Halt, Console, and Yield. These
 are identified by the following values for the field `DEV`.
 
-<center>
-<table>
-<tr>
-<th colspan="2">
-`DEV`
-</th>
-</tr>
-<tr>
-<th>
-Name
-</th>
-<th>
-Value
-</th>
-</tr>
-<tr>
-<td>
-<tt>HTIF_DEV_HALT</tt>
-</td>
-<td>
-`0`
-</td>
-</tr>
-<tr>
-<td>
-<tt>HTIF_DEV_CONSOLE</tt>
-</td>
-<td>
-`1`
-</td>
-</tr>
-<tr>
-<td>
-<tt>HTIF_DEV_YIELD</tt>
-</td>
-<td>
-`2`
-</td>
-</tr>
-</table>
-</center>
+| Name               | `DEV` |
+|--------------------|-------|
+| `HTIF_DEV_HALT`    | `0`   |
+| `HTIF_DEV_CONSOLE` | `1`   |
+| `HTIF_DEV_YIELD`   | `2`   |
 
 Registers `ihalt`, `iconsole`, and `iyield` are bit masks specifying the
 commands that are available for the respective devices. Unavailable
@@ -7097,31 +6455,9 @@ commands are silently ignored by the machine.
 
 ##### Halt
 
-<center>
-<table>
-<tr>
-<th colspan="2">
-`CMD`
-</th>
-</tr>
-<tr>
-<th>
-Name
-</th>
-<th>
-Value
-</th>
-</tr>
-<tr>
-<td>
-<tt>HTIF_HALT_CMD_HALT</tt>
-</td>
-<td>
-`0`
-</td>
-</tr>
-</table>
-</center>
+| Name                 | `CMD` |
+|----------------------|-------|
+| `HTIF_HALT_CMD_HALT` | `0`   |
 
 The Halt device (`DEV=HTIF_DEV_HALT`) is used to halt the machine. This
 will permanently set register `iflags_H` to 1 and return control back to
@@ -7135,39 +6471,10 @@ value as the machine’s exit code.
 
 ##### Console
 
-<center>
-<table>
-<tr>
-<th colspan="2">
-`CMD`
-</th>
-</tr>
-<tr>
-<th>
-Name
-</th>
-<th>
-Value
-</th>
-</tr>
-<tr>
-<td>
-<tt>HTIF_CONSOLE_CMD_GETCHAR</tt>
-</td>
-<td>
-`0`
-</td>
-</tr>
-<tr>
-<td>
-<tt>HTIF_CONSOLE_CMD_PUTCHAR</tt>
-</td>
-<td>
-`1`
-</td>
-</tr>
-</table>
-</center>
+| Name                       | `CMD` |
+|----------------------------|-------|
+| `HTIF_CONSOLE_CMD_GETCHAR` | `0`   |
+| `HTIF_CONSOLE_CMD_PUTCHAR` | `1`   |
 
 The Console device (`DEV=HTIF_DEV_CONSOLE`) can be used to input/output
 characters.
@@ -7185,86 +6492,21 @@ To output a character `<ch>` to console, request
 The Yield device can be used to return control to the host. There are
 two types of yield: *automatic* and *manual*.
 
-<center>
-<table>
-<tr>
-<th colspan="2">
-`CMD`
-</th>
-</tr>
-<tr>
-<th>
-Name
-</th>
-<th>
-Value
-</th>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_CMD_AUTOMATIC</tt>
-</td>
-<td>
-`0`
-</td>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_CMD_MANUAL</tt>
-</td>
-<td>
-`1`
-</td>
-</tr>
-</table>
-</center>
+| Name                       | `CMD` |
+|----------------------------|-------|
+| `HTIF_YIELD_CMD_AUTOMATIC` | `0`   |
+| `HTIF_YIELD_CMD_MANUAL`    | `1`   |
 
 To issue an automatic yield, request `CMD=HTIF_YIELD_CMD_AUTOMATIC`. An
 automatic yield sets register `iflags_X` to 1 and returns control back
 to the host. There are currently 3 supported reasons for automatic
 yields:
 
-<center>
-<table>
-<tr>
-<th colspan="2">
-`REASON`
-</th>
-</tr>
-<tr>
-<th>
-Name
-</th>
-<th>
-Value
-</th>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_AUTOMATIC_REASON_PROGRESS</tt>
-</td>
-<td>
-`1`
-</td>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT</tt>
-</td>
-<td>
-`2`
-</td>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT</tt>
-</td>
-<td>
-`4`
-</td>
-</tr>
-</table>
-</center>
+| Name                                    | `REASON` |
+|-----------------------------------------|----------|
+| `HTIF_YIELD_AUTOMATIC_REASON_PROGRESS`  | `1`      |
+| `HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT` | `2`      |
+| `HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT` | `4`      |
 
 To report `progress`, set `REASON=HTIF_YIELD_AUTOMATIC_REASON_PROGRESS`,
 and `DATA=<permil>`, where `<permil>` gives the progress in per-mille.
@@ -7280,47 +6522,11 @@ yield sets register `iflags_Y` to 1 and returns control back to the
 host. There are currently 3 supported reasons for manual yields, all
 used with Cartesi Rollups:
 
-<center>
-<table>
-<tr>
-<th colspan="2">
-`REASON`
-</th>
-</tr>
-<tr>
-<th>
-Name
-</th>
-<th>
-Value
-</th>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED</tt>
-</td>
-<td>
-`1`
-</td>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_MANUAL_REASON_RX_REJECTED</tt>
-</td>
-<td>
-`2`
-</td>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION</tt>
-</td>
-<td>
-`4`
-</td>
-</tr>
-</table>
-</center>
+| Name                                    | `REASON` |
+|-----------------------------------------|----------|
+| `HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED`  | `1`      |
+| `HTIF_YIELD_MANUAL_REASON_RX_REJECTED`  | `2`      |
+| `HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION` | `4`      |
 
 To accept or reject the previous request, set
 `REASON=HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED` or
@@ -7332,39 +6538,10 @@ request into the CMIO RX buffer. The `REASON` field in `fromhost`
 carries the request type, and the `DATA` field carries the request
 length in bytes.
 
-<center>
-<table>
-<tr>
-<th colspan="2">
-`REASON` in response
-</th>
-</tr>
-<tr>
-<th>
-Name
-</th>
-<th>
-Value
-</th>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_REASON_ADVANCE_STATE</tt>
-</td>
-<td>
-`0`
-</td>
-</tr>
-<tr>
-<td>
-<tt>HTIF_YIELD_REASON_INSPECT_STATE</tt>
-</td>
-<td>
-`1`
-</td>
-</tr>
-</table>
-</center>
+| Name                              | `REASON` in response |
+|-----------------------------------|----------------------|
+| `HTIF_YIELD_REASON_ADVANCE_STATE` | `0`                  |
+| `HTIF_YIELD_REASON_INSPECT_STATE` | `1`                  |
 
 To signal the throwing of a rollup exception, set
 `REASON=HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION`. The guest writes the
@@ -7575,34 +6752,10 @@ via the `cartesi.AR_*` constants, and discoverable at runtime via the
 The uarch has its own private address ranges, which are not accessible
 to the main processor:
 
-<center>
-<table>
-<tr>
-<th>
-Physical address
-</th>
-<th>
-Mapping
-</th>
-</tr>
-<tr>
-<td>
-`0x00400000-0x00400fff`
-</td>
-<td>
-Microarchitecture shadow
-</td>
-</tr>
-<tr>
-<td>
-`0x00600000-0x007fffff`
-</td>
-<td>
-Microarchitecture RAM
-</td>
-</tr>
-</table>
-</center>
+| Physical address        | Mapping                  |
+|-------------------------|--------------------------|
+| `0x00400000-0x00400fff` | Microarchitecture shadow |
+| `0x00600000-0x007fffff` | Microarchitecture RAM    |
 
 The uarch shadow holds the uarch processor state. The uarch RAM holds
 the uarch program that decodes and executes one main processor
@@ -7733,114 +6886,20 @@ and `X` mark read, write, and execute permissions, respectively. The
 respectively. Finally, the `DID` gives the driver id, which can have the
 following values:
 
-<center>
-<table>
-<tr>
-<th>
-Name
-</th>
-<th>
-Value
-</th>
-</tr>
-<tr>
-<td>
-<tt>PMA_EMPTY_DID</tt>
-</td>
-<td>
-`0`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_MEMORY_DID</tt>
-</td>
-<td>
-`1`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_SHADOW_STATE_DID</tt>
-</td>
-<td>
-`2`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_FLASH_DRIVE_DID</tt>
-</td>
-<td>
-`3`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_CLINT_DID</tt>
-</td>
-<td>
-`4`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_HTIF_DID</tt>
-</td>
-<td>
-`5`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_PLIC_DID</tt>
-</td>
-<td>
-`6`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_CMIO_RX_BUFFER_DID</tt>
-</td>
-<td>
-`7`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_CMIO_TX_BUFFER_DID</tt>
-</td>
-<td>
-`8`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_SHADOW_UARCH_STATE_DID</tt>
-</td>
-<td>
-`9`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_VIRTIO_DID</tt>
-</td>
-<td>
-`10`
-</td>
-</tr>
-<tr>
-<td>
-<tt>PMA_NVRAM_DID</tt>
-</td>
-<td>
-`11`
-</td>
-</tr>
-</table>
-</center>
+| Name                         | Value |
+|------------------------------|-------|
+| `PMA_EMPTY_DID`              | `0`   |
+| `PMA_MEMORY_DID`             | `1`   |
+| `PMA_SHADOW_STATE_DID`       | `2`   |
+| `PMA_FLASH_DRIVE_DID`        | `3`   |
+| `PMA_CLINT_DID`              | `4`   |
+| `PMA_HTIF_DID`               | `5`   |
+| `PMA_PLIC_DID`               | `6`   |
+| `PMA_CMIO_RX_BUFFER_DID`     | `7`   |
+| `PMA_CMIO_TX_BUFFER_DID`     | `8`   |
+| `PMA_SHADOW_UARCH_STATE_DID` | `9`   |
+| `PMA_VIRTIO_DID`             | `10`  |
+| `PMA_NVRAM_DID`              | `11`  |
 
 The list of PMA records ends with an invalid PMA entry for which
 `length=0`.

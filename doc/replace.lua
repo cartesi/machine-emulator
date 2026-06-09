@@ -1021,46 +1021,8 @@ local INLINE_FILTER = { Code = process_code, Span = process_span }
 -- list items) so nested key=/replace= blocks are handled. Inline filters run
 -- on every visited block.
 local walk_blocks
-local function translate_bitfield(text)
-    local lines = {}
-    local line_count = 0
-    for line in text:gmatch("[^\r\n]+") do
-        line_count = line_count + 1
-        lines[line_count] = line:gsub("%s+$", "")
-    end
-
-    if lines[2] then
-        local l = lines[2]
-        l = l:gsub("%-", "\u{2500}")
-        l = l:gsub("^%+", "\u{250c}")
-        l = l:gsub("%+$", "\u{2510}")
-        l = l:gsub("%+", "\u{252c}")
-        lines[2] = l
-    end
-
-    if lines[3] then
-        local l = lines[3]
-        l = l:gsub("|", "\u{2502}")
-        lines[3] = l
-    end
-
-    if lines[4] then
-        local l = lines[4]
-        l = l:gsub("%-", "\u{2500}")
-        l = l:gsub("^%+", "\u{2514}")
-        l = l:gsub("%+$", "\u{2518}")
-        l = l:gsub("%+", "\u{2534}")
-        lines[4] = l
-    end
-
-    return table.concat(lines, "\n")
-end
 
 local function walk_block(b)
-    if b.tag == "CodeBlock" and b.classes:includes("bitfield") then
-        local new_text = translate_bitfield(b.text)
-        return pandoc.CodeBlock(new_text, { class = "text" })
-    end
     if b.tag == "CodeBlock" then
         return process_codeblock(b)
     end

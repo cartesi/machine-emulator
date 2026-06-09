@@ -3438,150 +3438,21 @@ for _, name in ipairs(names) do
 end
 ```
 
-<center>
-<table>
-<tr>
-<th>Offset</th>
-<th>Register</th>
-<th>Offset</th>
-<th>Register</th>
-<th>Offset</th>
-<th>Register</th>
-<th>Offset</th>
-<th>Register</th>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/x0}</td>
-<td><tt>x0</tt></td>
-<td>[]{replace=reg_addr/mtvec}</td>
-<td><tt>mtvec</tt></td>
-<td>[]{replace=reg_addr/marchid}</td>
-<td><tt>marchid</tt></td>
-<td>[]{replace=reg_addr/iflags_X}</td>
-<td><tt>iflags_X</tt></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/x1}</td>
-<td><tt>x1</tt></td>
-<td>[]{replace=reg_addr/mscratch}</td>
-<td><tt>mscratch</tt></td>
-<td>[]{replace=reg_addr/mimpid}</td>
-<td><tt>mimpid</tt></td>
-<td>[]{replace=reg_addr/iflags_Y}</td>
-<td><tt>iflags_Y</tt></td>
-</tr>
-<tr>
-<td><tt>&hellip;</tt></td>
-<td><tt>&hellip;</tt></td>
-<td>[]{replace=reg_addr/mepc}</td>
-<td><tt>mepc</tt></td>
-<td>[]{replace=reg_addr/stvec}</td>
-<td><tt>stvec</tt></td>
-<td>[]{replace=reg_addr/iflags_H}</td>
-<td><tt>iflags_H</tt></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/x31}</td>
-<td><tt>x31</tt></td>
-<td>[]{replace=reg_addr/mcause}</td>
-<td><tt>mcause</tt></td>
-<td>[]{replace=reg_addr/sscratch}</td>
-<td><tt>sscratch</tt></td>
-<td>[]{replace=reg_addr/clint_mtimecmp}</td>
-<td><tt>clint_mtimecmp</tt></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/mcycle}</td>
-<td><tt>mcycle</tt></td>
-<td>[]{replace=reg_addr/mtval}</td>
-<td><tt>mtval</tt></td>
-<td>[]{replace=reg_addr/sepc}</td>
-<td><tt>sepc</tt></td>
-<td>[]{replace=reg_addr/plic_girqpend}</td>
-<td><tt>plic_girqpend</tt></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/pc}</td>
-<td><tt>pc</tt></td>
-<td>[]{replace=reg_addr/misa}</td>
-<td><tt>misa</tt></td>
-<td>[]{replace=reg_addr/scause}</td>
-<td><tt>scause</tt></td>
-<td>[]{replace=reg_addr/plic_girqsrvd}</td>
-<td><tt>plic_girqsrvd</tt></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/fcsr}</td>
-<td><tt>fcsr</tt></td>
-<td>[]{replace=reg_addr/mie}</td>
-<td><tt>mie</tt></td>
-<td>[]{replace=reg_addr/stval}</td>
-<td><tt>stval</tt></td>
-<td>[]{replace=reg_addr/htif_tohost}</td>
-<td><tt>htif_tohost</tt></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/f0}</td>
-<td><tt>f0</tt></td>
-<td>[]{replace=reg_addr/mip}</td>
-<td><tt>mip</tt></td>
-<td>[]{replace=reg_addr/satp}</td>
-<td><tt>satp</tt></td>
-<td>[]{replace=reg_addr/htif_fromhost}</td>
-<td><tt>htif_fromhost</tt></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/f1}</td>
-<td><tt>f1</tt></td>
-<td>[]{replace=reg_addr/medeleg}</td>
-<td><tt>medeleg</tt></td>
-<td>[]{replace=reg_addr/scounteren}</td>
-<td><tt>scounteren</tt></td>
-<td>[]{replace=reg_addr/htif_ihalt}</td>
-<td><tt>htif_ihalt</tt></td>
-</tr>
-<tr>
-<td><tt>&hellip;</tt></td>
-<td><tt>&hellip;</tt></td>
-<td>[]{replace=reg_addr/mideleg}</td>
-<td><tt>mideleg</tt></td>
-<td>[]{replace=reg_addr/senvcfg}</td>
-<td><tt>senvcfg</tt></td>
-<td>[]{replace=reg_addr/htif_iconsole}</td>
-<td><tt>htif_iconsole</tt></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/f31}</td>
-<td><tt>f31</tt></td>
-<td>[]{replace=reg_addr/mcounteren}</td>
-<td><tt>mcounteren</tt></td>
-<td>[]{replace=reg_addr/ilrsc}</td>
-<td><tt>ilrsc</tt></td>
-<td>[]{replace=reg_addr/htif_iyield}</td>
-<td><tt>htif_iyield</tt></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/iprv}</td>
-<td><tt>iprv</tt></td>
-<td>[]{replace=reg_addr/menvcfg}</td>
-<td><tt>menvcfg</tt></td>
-<td>[]{replace=reg_addr/icycleinstret}</td>
-<td><tt>icycleinstret</tt></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td>[]{replace=reg_addr/mstatus}</td>
-<td><tt>mstatus</tt></td>
-<td>[]{replace=reg_addr/mvendorid}</td>
-<td><tt>mvendorid</tt></td>
-<td>[]{replace=reg_addr/iunrep}</td>
-<td><tt>iunrep</tt></td>
-<td></td>
-<td></td>
-</tr>
-</table>
-</center>
+| Offset | Register | Offset | Register | Offset | Register | Offset | Register |
+|--------|----------|--------|----------|--------|----------|--------|----------|
+| []{replace=reg_addr/x0} | `x0` | []{replace=reg_addr/mtvec} | `mtvec` | []{replace=reg_addr/marchid} | `marchid` | []{replace=reg_addr/iflags_X} | `iflags_X` |
+| []{replace=reg_addr/x1} | `x1` | []{replace=reg_addr/mscratch} | `mscratch` | []{replace=reg_addr/mimpid} | `mimpid` | []{replace=reg_addr/iflags_Y} | `iflags_Y` |
+| `...` | `...` | []{replace=reg_addr/mepc} | `mepc` | []{replace=reg_addr/stvec} | `stvec` | []{replace=reg_addr/iflags_H} | `iflags_H` |
+| []{replace=reg_addr/x31} | `x31` | []{replace=reg_addr/mcause} | `mcause` | []{replace=reg_addr/sscratch} | `sscratch` | []{replace=reg_addr/clint_mtimecmp} | `clint_mtimecmp` |
+| []{replace=reg_addr/mcycle} | `mcycle` | []{replace=reg_addr/mtval} | `mtval` | []{replace=reg_addr/sepc} | `sepc` | []{replace=reg_addr/plic_girqpend} | `plic_girqpend` |
+| []{replace=reg_addr/pc} | `pc` | []{replace=reg_addr/misa} | `misa` | []{replace=reg_addr/scause} | `scause` | []{replace=reg_addr/plic_girqsrvd} | `plic_girqsrvd` |
+| []{replace=reg_addr/fcsr} | `fcsr` | []{replace=reg_addr/mie} | `mie` | []{replace=reg_addr/stval} | `stval` | []{replace=reg_addr/htif_tohost} | `htif_tohost` |
+| []{replace=reg_addr/f0} | `f0` | []{replace=reg_addr/mip} | `mip` | []{replace=reg_addr/satp} | `satp` | []{replace=reg_addr/htif_fromhost} | `htif_fromhost` |
+| []{replace=reg_addr/f1} | `f1` | []{replace=reg_addr/medeleg} | `medeleg` | []{replace=reg_addr/scounteren} | `scounteren` | []{replace=reg_addr/htif_ihalt} | `htif_ihalt` |
+| `...` | `...` | []{replace=reg_addr/mideleg} | `mideleg` | []{replace=reg_addr/senvcfg} | `senvcfg` | []{replace=reg_addr/htif_iconsole} | `htif_iconsole` |
+| []{replace=reg_addr/f31} | `f31` | []{replace=reg_addr/mcounteren} | `mcounteren` | []{replace=reg_addr/ilrsc} | `ilrsc` | []{replace=reg_addr/htif_iyield} | `htif_iyield` |
+| []{replace=reg_addr/iprv} | `iprv` | []{replace=reg_addr/menvcfg} | `menvcfg` | []{replace=reg_addr/icycleinstret} | `icycleinstret` | | |
+| []{replace=reg_addr/mstatus} | `mstatus` | []{replace=reg_addr/mvendorid} | `mvendorid` | []{replace=reg_addr/iunrep} | `iunrep` | | |
 
 The only generally relevant standard register is&nbsp;`mcycle`.
 Since its value is advanced at every CPU cycle, it can be used to identify a particular step in the computation being performed by a Cartesi Machine.
@@ -3629,40 +3500,12 @@ for _, name in ipairs(names) do
 end
 ```
 
-<center>
-<table>
-<tr>
-<th>Offset</th>
-<th>Register</th>
-<th>Offset</th>
-<th>Register</th>
-</tr>
-<tr>
-<td>[]{replace=uarch_reg_addr/uarch_halt_flag}</td>
-<td><tt>uarch_halt_flag</tt></td>
-<td>[]{replace=uarch_reg_addr/uarch_x0}</td>
-<td><tt>uarch_x0</tt></td>
-</tr>
-<tr>
-<td>[]{replace=uarch_reg_addr/uarch_cycle}</td>
-<td><tt>uarch_cycle</tt></td>
-<td>[]{replace=uarch_reg_addr/uarch_x1}</td>
-<td><tt>uarch_x1</tt></td>
-</tr>
-<tr>
-<td></td>
-<td></td>
-<td><tt>&hellip;</tt></td>
-<td><tt>&hellip;</tt></td>
-</tr>
-<tr>
-<td>[]{replace=uarch_reg_addr/uarch_pc}</td>
-<td><tt>uarch_pc</tt></td>
-<td>[]{replace=uarch_reg_addr/uarch_x31}</td>
-<td><tt>uarch_x31</tt></td>
-</tr>
-</table>
-</center>
+| Offset | Register | Offset | Register |
+|--------|----------|--------|----------|
+| []{replace=uarch_reg_addr/uarch_halt_flag} | `uarch_halt_flag` | []{replace=uarch_reg_addr/uarch_x0} | `uarch_x0` |
+| []{replace=uarch_reg_addr/uarch_cycle} | `uarch_cycle` | []{replace=uarch_reg_addr/uarch_x1} | `uarch_x1` |
+| | | `...` | `...` |
+| []{replace=uarch_reg_addr/uarch_pc} | `uarch_pc` | []{replace=uarch_reg_addr/uarch_x31} | `uarch_x31` |
 
 In addition to being able to access all memory ranges and devices visible to the main processor, the uarch includes a private 2MiB of RAM.
 
@@ -3696,78 +3539,24 @@ write("uarch_shadow", range_sl(c.UARCH_SHADOW_START_ADDRESS, c.UARCH_SHADOW_LENG
 write("uarch_ram",    range_sl(c.UARCH_RAM_START_ADDRESS,    c.UARCH_RAM_LENGTH))
 ```
 
-<center>
-<table>
-<tr>
-  <th> Physical address </th>
-  <th> Mapping </th>
-</tr>
-<tr>
-  <td> []{replace=ar_table/shadow} </td>
-  <td> Processor and board shadow </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/tlb} </td>
-  <td> Shadow TLB </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/pmas} </td>
-  <td> PMA Array </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/uarch_shadow} </td>
-  <td> Uarch shadow </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/uarch_ram} </td>
-  <td> Uarch RAM </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/clint} </td>
-  <td> Core Local Interruptor (CLINT) </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/htif} </td>
-  <td> Host-Target Interface (HTIF) </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/virtio} (<i>unreproducible mode only</i>) </td>
-  <td> VirtIO devices </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/plic} </td>
-  <td> Platform-Level Interrupt Controller (PLIC) </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/cmio_rx} </td>
-  <td> CMIO RX buffer </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/cmio_tx} </td>
-  <td> CMIO TX buffer </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/dtb} </td>
-  <td> Device tree (DTB) </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/ram_start}&ndash;[]{replace=ar_table/ram_start}+`ram.length`-1 </td>
-  <td> RAM </td>
-</tr>
-<tr>
-  <td> <i>configurable with constraints</i> </td>
-  <td> Flash drive or NVRAM 0 </td>
-</tr>
-<tr>
-  <td> &hellip;</td>
-  <td> &hellip;</td>
-</tr>
-<tr>
-  <td> <i>configurable with constraints</i> </td>
-  <td> Flash drive or NVRAM 7 </td>
-</tr>
-</table>
-</center>
+| Physical address | Mapping |
+|------------------|---------|
+| []{replace=ar_table/shadow} | Processor and board shadow |
+| []{replace=ar_table/tlb} | Shadow TLB |
+| []{replace=ar_table/pmas} | PMA Array |
+| []{replace=ar_table/uarch_shadow} | Uarch shadow |
+| []{replace=ar_table/uarch_ram} | Uarch RAM |
+| []{replace=ar_table/clint} | Core Local Interruptor (CLINT) |
+| []{replace=ar_table/htif} | Host-Target Interface (HTIF) |
+| []{replace=ar_table/virtio} (*unreproducible mode only*) | VirtIO devices |
+| []{replace=ar_table/plic} | Platform-Level Interrupt Controller (PLIC) |
+| []{replace=ar_table/cmio_rx} | CMIO RX buffer |
+| []{replace=ar_table/cmio_tx} | CMIO TX buffer |
+| []{replace=ar_table/dtb} | Device tree (DTB) |
+| []{replace=ar_table/ram_start}-[]{replace=ar_table/ram_start}+`ram.length`-1 | RAM |
+| *configurable with constraints* | Flash drive or NVRAM 0 |
+| ... | ... |
+| *configurable with constraints* | Flash drive or NVRAM 7 |
 
 Execution starts at the beginning of RAM, where the bootloader (an OpenSBI&nbsp;`fw_payload` bundle that wraps the Linux kernel) is loaded from `linux.bin`.
 The amount of RAM is user-configurable, but always starts at address []{replace=ar_table/ram_start}.
@@ -3822,56 +3611,22 @@ There is no notion of wall-clock time.
 The Host-Target Interface (HTIF) mediates communication with the external world.
 It is mapped to a physical memory starting at `0x40008000`, where registers can be accessed at the following offsets:
 
-<center>
-<table>
-<tr>
-<th>Offset</th>
-<th>Register</th>
-</tr>
-<tr>
-<td><tt>0x000</tt></td>
-<td><tt>tohost</tt></td>
-</tr>
-<tr>
-<td><tt>0x008</tt></td>
-<td><tt>fromhost</tt></td>
-</tr>
-<tr>
-<td><tt>0x010</tt></td>
-<td><tt>ihalt</tt></td>
-</tr>
-<tr>
-<td><tt>0x018</tt></td>
-<td><tt>iconsole</tt></td>
-</tr>
-<tr>
-<td><tt>0x020</tt></td>
-<td><tt>iyield</tt></td>
-</tr>
-<tr>
-<td><tt>0x028</tt></td>
-<td><i>Reserved</i></td>
-</tr>
-<tr>
-<td><tt>&hellip;</tt></td>
-<td><tt>&hellip;</tt></td>
-</tr>
-<tr>
-<td><tt>0x218</tt></td>
-<td><i>Reserved</i></td>
-</tr>
-</table>
-</center>
+| Offset | Register |
+|--------|----------|
+| `0x000` | `tohost` |
+| `0x008` | `fromhost` |
+| `0x010` | `ihalt` |
+| `0x018` | `iconsole` |
+| `0x020` | `iyield` |
+| `0x028` | *Reserved* |
+| `...` | `...` |
+| `0x218` | *Reserved* |
 
 The format of CSRs `tohost` and `fromhost` are as follows: <p></p>
 
-```{.bitfield}
- 63          56 55          48 47              32 31                             0
-+--------------+--------------+------------------+-------------------------------+
-|     DEV      |     CMD      |      REASON      |             DATA              |
-+--------------+--------------+------------------+-------------------------------+
-    8 bits         8 bits           16 bits                   32 bits
-```
+| Bits | `63-56` | `55-48` | `47-32` | `31-0` |
+|-------|---------|---------|---------|--------|
+| Field | `DEV` | `CMD` | `REASON` | `DATA` |
 
 Interactions with Cartesi's HTIF device follow the following protocol:
 
@@ -3897,50 +3652,20 @@ for _, n in ipairs({"HTIF_DEV_HALT", "HTIF_DEV_CONSOLE", "HTIF_DEV_YIELD",
 end
 ```
 
-<center>
-<table>
-<tr>
-<th colspan="2"> `DEV` </th>
-</tr>
-<tr>
-<th>Name</th>
-<th>Value</th>
-</tr>
-<tr>
-<td><tt>HTIF_DEV_HALT</tt></td>
-<td>[]{replace=htif_const/HTIF_DEV_HALT}</td>
-</tr>
-<tr>
-<td><tt>HTIF_DEV_CONSOLE</tt></td>
-<td>[]{replace=htif_const/HTIF_DEV_CONSOLE}</td>
-</tr>
-<tr>
-<td><tt>HTIF_DEV_YIELD</tt></td>
-<td>[]{replace=htif_const/HTIF_DEV_YIELD}</td>
-</tr>
-</table>
-</center>
+| Name | `DEV` |
+|------|-------|
+| `HTIF_DEV_HALT` | []{replace=htif_const/HTIF_DEV_HALT} |
+| `HTIF_DEV_CONSOLE` | []{replace=htif_const/HTIF_DEV_CONSOLE} |
+| `HTIF_DEV_YIELD` | []{replace=htif_const/HTIF_DEV_YIELD} |
 
 Registers `ihalt`, `iconsole`, and `iyield` are bit masks specifying the commands that are available for the respective devices.
 Unavailable commands are silently ignored by the machine.
 
 ##### Halt
 
-<center>
-<table>
-<tr>
-<th colspan="2"> `CMD` </th>
-</tr>
-<tr>
-<th>Name</th>
-<th>Value</th>
-</tr>
-<tr>
-<td><tt>HTIF_HALT_CMD_HALT</tt></td>
-<td>[]{replace=htif_const/HTIF_HALT_CMD_HALT}</td>
-</tr>
-</table>
-</center>
+| Name | `CMD` |
+|------|-------|
+| `HTIF_HALT_CMD_HALT` | []{replace=htif_const/HTIF_HALT_CMD_HALT} |
 
 The Halt device (`DEV=HTIF_DEV_HALT`) is used to halt the machine.
 This will permanently set register `iflags_H` to 1 and return control back to the host.
@@ -3951,25 +3676,10 @@ The `cartesi-machine` utility reports this value as the machine's exit code.
 
 ##### Console
 
-<center>
-<table>
-<tr>
-<th colspan="2"> `CMD` </th>
-</tr>
-<tr>
-<th>Name</th>
-<th>Value</th>
-</tr>
-<tr>
-<td><tt>HTIF_CONSOLE_CMD_GETCHAR</tt></td>
-<td>[]{replace=htif_const/HTIF_CONSOLE_CMD_GETCHAR}</td>
-</tr>
-<tr>
-<td><tt>HTIF_CONSOLE_CMD_PUTCHAR</tt></td>
-<td>[]{replace=htif_const/HTIF_CONSOLE_CMD_PUTCHAR}</td>
-</tr>
-</table>
-</center>
+| Name | `CMD` |
+|------|-------|
+| `HTIF_CONSOLE_CMD_GETCHAR` | []{replace=htif_const/HTIF_CONSOLE_CMD_GETCHAR} |
+| `HTIF_CONSOLE_CMD_PUTCHAR` | []{replace=htif_const/HTIF_CONSOLE_CMD_PUTCHAR} |
 
 The Console device (`DEV=HTIF_DEV_CONSOLE`) can be used to input/output characters.
 
@@ -3982,53 +3692,20 @@ To output a character `<ch>` to console, request `CMD=HTIF_CONSOLE_CMD_PUTCHAR`,
 The Yield device can be used to return control to the host.
 There are two types of yield: _automatic_ and _manual_.
 
-<center>
-<table>
-<tr>
-<th colspan="2"> `CMD` </th>
-</tr>
-<tr>
-<th>Name</th>
-<th>Value</th>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_CMD_AUTOMATIC</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_CMD_AUTOMATIC}</td>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_CMD_MANUAL</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_CMD_MANUAL}</td>
-</tr>
-</table>
-</center>
+| Name | `CMD` |
+|------|-------|
+| `HTIF_YIELD_CMD_AUTOMATIC` | []{replace=htif_const/HTIF_YIELD_CMD_AUTOMATIC} |
+| `HTIF_YIELD_CMD_MANUAL` | []{replace=htif_const/HTIF_YIELD_CMD_MANUAL} |
 
 To issue an automatic yield, request `CMD=HTIF_YIELD_CMD_AUTOMATIC`.
 An automatic yield sets register `iflags_X` to 1 and returns control back to the host.
 There are currently 3 supported reasons for automatic yields:
 
-<center>
-<table>
-<tr>
-<th colspan="2"> `REASON` </th>
-</tr>
-<tr>
-<th>Name</th>
-<th>Value</th>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_AUTOMATIC_REASON_PROGRESS</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_AUTOMATIC_REASON_PROGRESS}</td>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT}</td>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT}</td>
-</tr>
-</table>
-</center>
+| Name | `REASON` |
+|------|----------|
+| `HTIF_YIELD_AUTOMATIC_REASON_PROGRESS` | []{replace=htif_const/HTIF_YIELD_AUTOMATIC_REASON_PROGRESS} |
+| `HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT` | []{replace=htif_const/HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT} |
+| `HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT` | []{replace=htif_const/HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT} |
 
 To report `progress`, set `REASON=HTIF_YIELD_AUTOMATIC_REASON_PROGRESS`, and `DATA=<permil>`, where `<permil>` gives the progress in per-mille.
 The other reasons for automatic yield signal the production of Cartesi Rollups responses.
@@ -4039,29 +3716,11 @@ To issue a manual yield, request `CMD=HTIF_YIELD_CMD_MANUAL`.
 A manual yield sets register `iflags_Y` to 1 and returns control back to the host.
 There are currently 3 supported reasons for manual yields, all used with Cartesi Rollups:
 
-<center>
-<table>
-<tr>
-<th colspan="2"> `REASON` </th>
-</tr>
-<tr>
-<th>Name</th>
-<th>Value</th>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED}</td>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_MANUAL_REASON_RX_REJECTED</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_MANUAL_REASON_RX_REJECTED}</td>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION}</td>
-</tr>
-</table>
-</center>
+| Name | `REASON` |
+|------|----------|
+| `HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED` | []{replace=htif_const/HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED} |
+| `HTIF_YIELD_MANUAL_REASON_RX_REJECTED` | []{replace=htif_const/HTIF_YIELD_MANUAL_REASON_RX_REJECTED} |
+| `HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION` | []{replace=htif_const/HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION} |
 
 To accept or reject the previous request, set `REASON=HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED` or
 `REASON=HTIF_YIELD_MANUAL_REASON_RX_REJECTED`, respectively.
@@ -4070,25 +3729,10 @@ On reject, `DATA` is ignored.
 Upon return, the host has loaded the next request into the CMIO RX buffer.
 The `REASON` field in `fromhost` carries the request type, and the `DATA` field carries the request length in bytes.
 
-<center>
-<table>
-<tr>
-<th colspan="2"> `REASON` in response </th>
-</tr>
-<tr>
-<th>Name</th>
-<th>Value</th>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_REASON_ADVANCE_STATE</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_REASON_ADVANCE_STATE}</td>
-</tr>
-<tr>
-<td><tt>HTIF_YIELD_REASON_INSPECT_STATE</tt></td>
-<td>[]{replace=htif_const/HTIF_YIELD_REASON_INSPECT_STATE}</td>
-</tr>
-</table>
-</center>
+| Name | `REASON` in response |
+|------|----------------------|
+| `HTIF_YIELD_REASON_ADVANCE_STATE` | []{replace=htif_const/HTIF_YIELD_REASON_ADVANCE_STATE} |
+| `HTIF_YIELD_REASON_INSPECT_STATE` | []{replace=htif_const/HTIF_YIELD_REASON_INSPECT_STATE} |
 
 To signal the throwing of a rollup exception, set `REASON=HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION`.
 The guest writes the exception payload to the CMIO TX buffer and `DATA` in `tohost` carries the payload length in bytes.
@@ -4265,22 +3909,10 @@ These are the ranges listed in the [board mapping table](#the-board) at the star
 
 The uarch has its own private address ranges, which are not accessible to the main processor:
 
-<center>
-<table>
-<tr>
-  <th> Physical address </th>
-  <th> Mapping </th>
-</tr>
-<tr>
-  <td> []{replace=ar_table/uarch_shadow} </td>
-  <td> Microarchitecture shadow </td>
-</tr>
-<tr>
-  <td> []{replace=ar_table/uarch_ram} </td>
-  <td> Microarchitecture RAM </td>
-</tr>
-</table>
-</center>
+| Physical address | Mapping |
+|------------------|---------|
+| []{replace=ar_table/uarch_shadow} | Microarchitecture shadow |
+| []{replace=ar_table/uarch_ram} | Microarchitecture RAM |
 
 The uarch shadow holds the uarch processor state.
 The uarch RAM holds the uarch program that decodes and executes one main processor instruction per uarch run before halting.
@@ -4297,47 +3929,11 @@ The first word gives the start of a range and the second word its length.
 These words are readable both internally and externally.
 Since the ranges must be aligned to 4KiB page boundaries, the lowest 12-bits of each word are available for attributes.
 The meaning of each attribute field is as follows:
-<center>
-<table>
-<tr>
-  <th> Bits </th>
-  <td><tt>63&ndash;12</tt></td>
-  <td><tt>11&ndash;8</tt></td>
-  <td><tt>7</tt></td>
-  <td><tt>6</tt></td>
-  <td><tt>5</tt></td>
-  <td><tt>4</tt></td>
-  <td><tt>3</tt></td>
-  <td><tt>2</tt></td>
-  <td><tt>1</tt></td>
-  <td><tt>0</tt></td>
-</tr>
-<tr>
-  <th> Field </th>
-  <td><tt>start</tt></td>
-  <td><tt>DID</tt></td>
-  <td><tt>IW</tt></td>
-  <td><tt>IR</tt></td>
-  <td><tt>X</tt></td>
-  <td><tt>W</tt></td>
-  <td><tt>R</tt></td>
-  <td><tt>E</tt></td>
-  <td><tt>IO</tt></td>
-  <td><tt>M</tt></td>
-</tr>
-<tr> <td colspan="11"> </td> </tr>
-<tr>
-  <th> Bits </th>
-  <td><tt>63&ndash;12</tt></td>
-  <td colspan="9"><tt>11&ndash;0</tt></td>
-</tr>
-<tr>
-  <th> Field </th>
-  <td><tt>length</tt></td>
-  <td colspan="9"><i>Reserved (=0)</i></td>
-</tr>
-</table>
-</center>
+First word:
+
+| Bits | `63-12` | `11-8` | `7` | `6` | `5` | `4` | `3` | `2` | `1` | `0` |
+|------|---------|--------|-----|-----|-----|-----|-----|-----|-----|-----|
+| Field | `start` | `DID` | `IW` | `IR` | `X` | `W` | `R` | `E` | `IO` | `M` |
 
 The `M`, `IO`, and `E` bits are mutually exclusive, and respectively mark the range as memory, I/O mapped, or excluded.
 Bits `R`, `W`, and&nbsp;`X` mark read, write, and execute permissions, respectively.
@@ -4356,62 +3952,26 @@ for _, n in ipairs({"PMA_EMPTY_DID", "PMA_MEMORY_DID", "PMA_SHADOW_STATE_DID",
 end
 ```
 
-<center>
-<table>
-<tr>
-  <th> Name </th>
-  <th> Value </th>
-</tr>
-<tr>
-  <td><tt>PMA_EMPTY_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_EMPTY_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_MEMORY_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_MEMORY_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_SHADOW_STATE_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_SHADOW_STATE_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_FLASH_DRIVE_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_FLASH_DRIVE_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_CLINT_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_CLINT_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_HTIF_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_HTIF_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_PLIC_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_PLIC_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_CMIO_RX_BUFFER_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_CMIO_RX_BUFFER_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_CMIO_TX_BUFFER_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_CMIO_TX_BUFFER_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_SHADOW_UARCH_STATE_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_SHADOW_UARCH_STATE_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_VIRTIO_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_VIRTIO_DID}</td>
-</tr>
-<tr>
-  <td><tt>PMA_NVRAM_DID</tt></td>
-  <td>[]{replace=pma_did/PMA_NVRAM_DID}</td>
-</tr>
-</table>
-</center>
+| Name | Value |
+|------|-------|
+| `PMA_EMPTY_DID` | []{replace=pma_did/PMA_EMPTY_DID} |
+| `PMA_MEMORY_DID` | []{replace=pma_did/PMA_MEMORY_DID} |
+| `PMA_SHADOW_STATE_DID` | []{replace=pma_did/PMA_SHADOW_STATE_DID} |
+| `PMA_FLASH_DRIVE_DID` | []{replace=pma_did/PMA_FLASH_DRIVE_DID} |
+| `PMA_CLINT_DID` | []{replace=pma_did/PMA_CLINT_DID} |
+| `PMA_HTIF_DID` | []{replace=pma_did/PMA_HTIF_DID} |
+| `PMA_PLIC_DID` | []{replace=pma_did/PMA_PLIC_DID} |
+| `PMA_CMIO_RX_BUFFER_DID` | []{replace=pma_did/PMA_CMIO_RX_BUFFER_DID} |
+| `PMA_CMIO_TX_BUFFER_DID` | []{replace=pma_did/PMA_CMIO_TX_BUFFER_DID} |
+| `PMA_SHADOW_UARCH_STATE_DID` | []{replace=pma_did/PMA_SHADOW_UARCH_STATE_DID} |
+| `PMA_VIRTIO_DID` | []{replace=pma_did/PMA_VIRTIO_DID} |
+| `PMA_NVRAM_DID` | []{replace=pma_did/PMA_NVRAM_DID} |
+
+Second word:
+
+| Bits | `63-12` | `11-0` |
+|------|---------|--------|
+| Field | `length` | *Reserved (=0)* |
 
 The list of PMA records ends with an invalid PMA entry for which `length=0`.
 

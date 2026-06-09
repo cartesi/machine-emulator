@@ -18,9 +18,7 @@ ARG MACHINE_GUEST_TOOLS_TARGZ_SHA256
 ARG UBUNTU_SNAPSHOT
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates && \
-    sed -i "s|^URIs:.*|URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}|" \
-        /etc/apt/sources.list.d/ubuntu.sources && \
-    apt-get update && \
+    apt-get update --snapshot=${UBUNTU_SNAPSHOT} && \
     apt-get install -y --no-install-recommends g++-14-riscv64-linux-gnu && \
     rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_TARGZ_SHA256} \
@@ -70,9 +68,7 @@ ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_DEB_SHA256} \
     /tmp/
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates && \
-    sed -i "s|^URIs:.*|URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}|" \
-        /etc/apt/sources.list.d/ubuntu.sources && \
-    apt-get update && \
+    apt-get update --snapshot=${UBUNTU_SNAPSHOT} && \
     apt-get install -y --no-install-recommends \
         /tmp/machine-guest-tools_riscv64.deb \
         libstdc++6 \

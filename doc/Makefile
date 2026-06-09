@@ -44,14 +44,55 @@ ROOTFS_DOCS_INPUTS := \
     $(RECIPES_DIR)/puppet.c \
     $(wildcard $(RECIPES_DIR)/hello/*)
 
-$(RECIPES_DIR)/rootfs-docs.ext2: $(ROOTFS_DOCS_INPUTS)
+ROOTFS_DOCS_EXT2 := $(RECIPES_DIR)/rootfs-docs.ext2
+ROOTFS_DOCS_KEY := $(RECIPES_DIR)/rootfs-docs.inputs.sha256
+
+# Fingerprint of the recipe inputs. Generated and gitignored, embedded into the
+# image at build time and re-derived here to spot a stale committed image
+# without rebuilding. Both sides use the same input list so they cannot drift.
+$(ROOTFS_DOCS_KEY): $(ROOTFS_DOCS_INPUTS)
+	cat $(sort $(ROOTFS_DOCS_INPUTS)) | sha256sum | head -c 64 > $@
+
+# Build the image. build-rootfs-docs.sh embeds $(ROOTFS_DOCS_KEY) into it.
+$(ROOTFS_DOCS_EXT2): $(ROOTFS_DOCS_INPUTS) $(ROOTFS_DOCS_KEY)
 	cd $(RECIPES_DIR) && ./build-rootfs-docs.sh
 
-# CI cache key, derived from the same inputs the ext2 rule depends on so it
-# cannot drift from the actual build.
-.PHONY: rootfs-docs-cache-key
-rootfs-docs-cache-key:
-	@cat $(sort $(ROOTFS_DOCS_INPUTS)) | sha256sum | head -c 64
+# Convenience alias, since the real target is an absolute path.
+.PHONY: build-rootfs-docs
+build-rootfs-docs: $(ROOTFS_DOCS_EXT2)
+
+# Verify the committed image matches the current recipe inputs. No rebuild and no
+# network, so CI runs it after a git lfs pull. A missing or stale image is a hard
+# error. e2cp copies the embedded fingerprint out under a -have suffix to compare
+# against the freshly derived one.
+.PHONY: check-rootfs-docs
+check-rootfs-docs: $(ROOTFS_DOCS_KEY)
+	@test -s $(ROOTFS_DOCS_EXT2) || { \
+	    echo "ERROR: rootfs-docs.ext2 missing, run 'git lfs pull'"; exit 1; }
+	@e2cp $(ROOTFS_DOCS_EXT2):/var/log/rootfs-docs.inputs.sha256 $(ROOTFS_DOCS_KEY)-have
+	@cmp -s $(ROOTFS_DOCS_KEY) $(ROOTFS_DOCS_KEY)-have || { \
+	    echo "ERROR: rootfs-docs.ext2 is stale (recipe inputs changed)."; \
+	    echo "Run 'make -C doc build-rootfs-docs' and commit it."; \
+	    exit 1; \
+	}
+
+# Local convenience used before the docs image is built. Fetch the image from
+# LFS if absent or still an unsmudged pointer, rebuild it locally if the embedded
+# fingerprint no longer matches the recipe inputs.
+.PHONY: ensure-rootfs-docs
+ensure-rootfs-docs:
+	@if [ ! -s $(ROOTFS_DOCS_EXT2) ] || \
+	    git lfs pointer --check --file $(ROOTFS_DOCS_EXT2) >/dev/null 2>&1; then \
+	    echo "rootfs-docs.ext2 not present, fetching from git lfs..."; \
+	    git lfs pull --include "$(ROOTFS_DOCS_EXT2)" || true; \
+	fi
+	@if $(MAKE) -s check-rootfs-docs >/dev/null 2>&1; then \
+	    echo "rootfs-docs.ext2 is up to date."; \
+	else \
+	    echo "rootfs-docs.ext2 missing or stale, rebuilding locally..."; \
+	    rm -f $(ROOTFS_DOCS_EXT2); \
+	    $(MAKE) $(ROOTFS_DOCS_EXT2); \
+	fi
 
 check-docs-image:
 	@if docker images $(DOCKER_PLATFORM) -q $(DOCS_IMAGE):$(TAG) 2>/dev/null | grep -q .; then \
@@ -86,7 +127,7 @@ run-docs-image: check-docs-image
 		$(DOCS_IMAGE):$(TAG) \
 	    /bin/bash
 
-build-docs-image: | $(RECIPES_DIR)/rootfs-docs.ext2
+build-docs-image: | ensure-rootfs-docs
 	@if docker image inspect cartesi/machine-emulator:$(TAG) >/dev/null 2>&1; then \
 		echo "Docker image cartesi/machine-emulator:$(TAG) exists, reusing"; \
 	else \
@@ -115,8 +156,10 @@ ifeq (,$(filter clean,$(MAKECMDGOALS)))
 endif
 
 # Real run: render the document. template.d adds per-cache-file prereqs to
-# README.md, so editing a recipe propagates here naturally.
-README.md: README.md.template replace.lua alerts.lua github.template.md template.d
+# README.md, so editing a recipe propagates here naturally. check-rootfs-docs is
+# order-only so a recipe-input change that leaves the committed image stale fails
+# the render here (as in CI) without forcing a re-render on every invocation.
+README.md: README.md.template replace.lua alerts.lua github.template.md template.d | check-rootfs-docs
 	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
 	    pandoc -f markdown -s -t gfm --toc \
 	    -M docs_image=$(DOCS_IMAGE):$(TAG) \
@@ -138,7 +181,7 @@ else
 # container. Inside, DEV_ENV_HAS_DOCGEN=yes activates the rules above and
 # evaluates staleness against template.d.
 .PHONY: README.md README.html
-README.md: $(RECIPES_DIR)/rootfs-docs.ext2 | check-docs-image
+README.md: | check-docs-image
 	@jobs=$(if $(JOBS),$(JOBS),$$(docker run --rm $(DOCS_IMAGE):$(TAG) nproc)); \
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="make -j$$jobs README.md DEV_ENV_HAS_DOCGEN=yes"
 
@@ -148,5 +191,6 @@ endif
 
 clean:
 	rm -f README.md template.d
-	rm -f $(RECIPES_DIR)/rootfs-docs.tar $(RECIPES_DIR)/rootfs-docs.ext2
+	rm -f $(RECIPES_DIR)/rootfs-docs.tar
+	rm -f $(ROOTFS_DOCS_KEY) $(ROOTFS_DOCS_KEY)-have
 	rm -rf $(REPLACE_CACHE_DIR)

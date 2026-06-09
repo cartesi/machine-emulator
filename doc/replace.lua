@@ -1112,7 +1112,7 @@ local function collect_codeblock(b)
         if region then
             body = extract_region(file_content, region, "key=" .. key .. " include=" .. include)
         else
-            body = strip_all_markers(file_content)
+            body = strip_all_markers(strip_null_regions(file_content, "key=" .. key .. " include=" .. include))
         end
     end
     local seq = parse_sequential(b.attr.attributes.sequential)

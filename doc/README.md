@@ -481,7 +481,7 @@ sha256sum /usr/share/cartesi-machine/images/rootfs.ext2
 ```
 
 ``` text
-abb5ee41ca70c53656dca98bdff5879b8d8ed0c0a74811baef97693c2b5944ae  /usr/share/cartesi-machine/images/rootfs.ext2
+3d0d70da950b03957206af1df697ab1dcd2fa19273b521d8e0c9a61468c2cb34  /usr/share/cartesi-machine/images/rootfs.ext2
 ```
 
 Note that, if the hashes of the files you are using do not match the
@@ -519,7 +519,7 @@ and produces the output
 Nothing to do.
 
 Halted
-Cycles: 42129026
+Cycles: 41860500
 ```
 
 The utility instantiates a default Cartesi Machine and runs it until it
@@ -784,7 +784,7 @@ terminal. The output is
 Hello world!
 
 Halted
-Cycles: 57160670
+Cycles: 56572278
 ```
 
 ### Persistent flash drives and NVRAMs
@@ -837,7 +837,7 @@ produces the output
 /mnt/foo/bar.txt  /mnt/foo/baz.txt
 
 Halted
-Cycles: 62124873
+Cycles: 62118259
 ```
 
 indicating that the file-system was modified, at least from the
@@ -890,7 +890,7 @@ specified with the command-line option `--max-mcycle=<number>`.
 For example, running
 
 ``` bash
-cartesi-machine --max-mcycle=37102808
+cartesi-machine --max-mcycle=37056268
 ```
 
 produces the output
@@ -933,7 +933,7 @@ example,
 
 ``` bash
 cartesi-machine \
-    --max-mcycle=37102808 \
+    --max-mcycle=37056268 \
     --initial-hash \
     --final-hash
 ```
@@ -941,7 +941,7 @@ cartesi-machine \
 produces the output
 
 ``` text
-0: e35c5f46232ef08781bc3de73875c062dd01f5ee369a9508b57b6d707f2ce84d
+0: 51951062aaf8860079d677da6630123916b9c9618a1d22aed78d57c226e4fa44
 
          .
         / \
@@ -950,17 +950,17 @@ produces the output
  \       X       \
   \----/  \---/---\
        \    / CARTESI
-37102808: af78737bff3d057789b20b07052d85d8a2901b417b98fe607d4457e5b48a1aae
+37056268: c8eda0fd1780a35dbb82a0fb70badd5a2701ffa42837550ed3484dfe37d769f5
 ```
 
-The initial state hash `e35c5f46…` is the Merkle tree root hash for the
+The initial state hash `51951062…` is the Merkle tree root hash for the
 initial Cartesi Machine state. Since Cartesi Machines are reproducible,
 the initial state hash also works as a *promise* on the result of the
 entire computation.
 
-In other words, the “final state hash” `af78737b…` is the “only”
-possible outcome for the `--final-hash` at cycle `37102808`, given the
-result of the `--initial-hash` operation was `e35c5f46…`.
+In other words, the “final state hash” `c8eda0fd…` is the “only”
+possible outcome for the `--final-hash` at cycle `37056268`, given the
+result of the `--initial-hash` operation was `51951062…`.
 
 > [!NOTE]
 >
@@ -990,7 +990,7 @@ cartesi-machine \
 produces instead the output
 
 ``` text
-0: e35c5f46232ef08781bc3de73875c062dd01f5ee369a9508b57b6d707f2ce84d
+0: 51951062aaf8860079d677da6630123916b9c9618a1d22aed78d57c226e4fa44
 
          .
         / \
@@ -1005,16 +1005,16 @@ produces instead the output
 Nothing to do.
 
 Halted
-Cycles: 42129026
-42129026: f856992bdc065974f8333f1d73cc411f3e90230c183b8ec87878f229b6bc77a8
+Cycles: 41860500
+41860500: daf1f2058ccb0b1bc05ac9df83797809296111518d3a10fe353f33654880cdab
 ```
 
 Naturally, the initial state hash is the same as before.
 
-However, the final state hash `f856992b…` now pertains to cycle
-`42129026`, where the machine is halted. This is the “only” possible
+However, the final state hash `daf1f205…` now pertains to cycle
+`41860500`, where the machine is halted. This is the “only” possible
 state hash for a *halted* machine that started from state hash
-`e35c5f46…`.
+`51951062…`.
 
 ### Persistent Cartesi Machines
 
@@ -1025,15 +1025,15 @@ command-line option `--store=<directory>`. (In `<directory>`, the `%h`
 escape will be replaced by the state hash in hex.) The machine is stored
 as it was right before `cartesi-machine` returns to the command line.
 For example, to store the machine corresponding to state hash
-`af78737b…`
+`c8eda0fd…`
 
 ``` bash
 cartesi-machine \
-    --max-mcycle=37102808 \
+    --max-mcycle=37056268 \
     --store="machine-%8h"
 ```
 
-This command creates a directory `machine-af78737b`, containing a
+This command creates a directory `machine-c8eda0fd`, containing a
 variety of files that allow the Cartesi Machine emulator to recreate a
 machine state. Every image file is copied into the directory, so no
 external dependencies remain.
@@ -1054,7 +1054,7 @@ the corresponding Cartesi Machine, use the command-line option
 
 ``` bash
 cartesi-machine \
-    --load="machine-af78737b" \
+    --load="machine-c8eda0fd" \
     --initial-hash \
     --final-hash
 ```
@@ -1063,7 +1063,7 @@ produces the output
 
 ``` text
 Loading machine: please wait
-37102808: af78737bff3d057789b20b07052d85d8a2901b417b98fe607d4457e5b48a1aae
+37056268: c8eda0fd1780a35dbb82a0fb70badd5a2701ffa42837550ed3484dfe37d769f5
 
         \ /   MACHINE
          '
@@ -1071,17 +1071,17 @@ Loading machine: please wait
 Nothing to do.
 
 Halted
-Cycles: 42129026
-42129026: f856992bdc065974f8333f1d73cc411f3e90230c183b8ec87878f229b6bc77a8
+Cycles: 41860500
+41860500: daf1f2058ccb0b1bc05ac9df83797809296111518d3a10fe353f33654880cdab
 ```
 
 Note that, other than `--load`, no initialization command-line options
 were used. These initializations were used to define the machine before
 it was stored: their values are implicitly encoded in the stored state.
 The machine continues from where it left off, and reaches the same final
-state hash `f856992b…`, as if it had never been interrupted.
+state hash `daf1f205…`, as if it had never been interrupted.
 
-Note also that the initial state hash `af78737b…` after `--load` matches
+Note also that the initial state hash `c8eda0fd…` after `--load` matches
 the final state hash before `--store`. After all, they are state hashes
 concerning the state of the same machine at the same cycle. `--load`
 verifies the archive format version recorded in the stored machine, and
@@ -1092,13 +1092,13 @@ The `cartesi-machine-stored-hash` command-line utility can be used to
 extract the state hash from a stored Cartesi Machine. The command
 
 ``` bash
-cartesi-machine-stored-hash machine-af78737b
+cartesi-machine-stored-hash machine-c8eda0fd
 ```
 
 produces the output
 
 ``` text
-af78737bff3d057789b20b07052d85d8a2901b417b98fe607d4457e5b48a1aae
+c8eda0fd1780a35dbb82a0fb70badd5a2701ffa42837550ed3484dfe37d769f5
 ```
 
 ### Running as root
@@ -1244,7 +1244,7 @@ command is
 ``` text
 
 Halted
-Cycles: 62958552
+Cycles: 62993903
 ```
 
 Once the emulator returns, a tiny Lua script, run by the `lua5.4` Lua
@@ -1288,7 +1288,7 @@ cartesi-machine \
 The result is as follows
 
 ``` text
-0: 171e53b590d1142bfdd455f67e93fe7d0c0f42815439b1dfbf52578bea3070ff
+0: b5a21e1f411a1e726f84704dd0f60ae41ad88c75f9abc7d8d5dcc88a32adb518
 Storing machine: please wait
 ```
 
@@ -1302,10 +1302,10 @@ cartesi-machine-stored-hash calculator-template/
 we can see from the output
 
 ``` text
-171e53b590d1142bfdd455f67e93fe7d0c0f42815439b1dfbf52578bea3070ff
+b5a21e1f411a1e726f84704dd0f60ae41ad88c75f9abc7d8d5dcc88a32adb518
 ```
 
-that the stored template hash is `171e53b5…`.
+that the stored template hash is `b5a21e1f…`.
 
 Templates are typically used by programs that control the emulator with
 the C++, Lua, or JSON-RPC interfaces.
@@ -1386,13 +1386,13 @@ The output of the command is
 
 ``` text
 Loading machine: please wait
-0: 171e53b590d1142bfdd455f67e93fe7d0c0f42815439b1dfbf52578bea3070ff
+0: b5a21e1f411a1e726f84704dd0f60ae41ad88c75f9abc7d8d5dcc88a32adb518
 ```
 
 In addition, the `pristine-input-proof.lua` file now contains a Lua
 table with the requested proof. The value of field `root_hash` is the
-expected initial state hash `0x171e53…` seen in the output of the
-`cartesi-machine` command. The `target_address` value `0xc0000000` is
+expected initial state hash `0xb5a21e…` seen in the output of the
+`cartesi-machine` command. The `target_address` value `0xa0000000` is
 the start of the input NVRAM. The `log2_target_size` value `12` refers
 to the size of the 4KiB input NVRAM. The `target_hash` value `0x292c23…`
 in the proof gives the hash of the input NVRAM.
@@ -1461,14 +1461,14 @@ This produces the output
 
 ``` text
 Loading machine: please wait
-0: c69d162d3322741f1a136b3a5711c8024da057b6d67a014aa27dffbc26b5a42e
+0: 6476bf0419e35d5518d8dba90296134ec9280cee079f6096eadae59953951789
 ```
 
 In addition, the `input-proof.lua` file now contains a Lua table with
 the requested proof, which is produced after the input NVRAM has been
 replaced. The `target_hash` value `0xd5ea32…` reflects the hash computed
-for the input. The `root_hash` value `0xc69d16…` differs from
-`171e53b5…` obtained for the template, as expected, and matches the
+for the input. The `root_hash` value `0x6476bf…` differs from
+`b5a21e1f…` obtained for the template, as expected, and matches the
 final hash printed by the utility. Moreover, the `sibling_hashes`
 entries in the template Cartesi Machine and in the instantiated Cartesi
 Machine remain the same, reflecting the fact that there were no other
@@ -1503,11 +1503,11 @@ This produces the output
 Loading machine: please wait
 
 Halted
-Cycles: 62958552
-62958552: 2c10059c87caefda082cf304b972face7f398f601f3bb5145b8623045c4fbf4b
+Cycles: 62993903
+62993903: af0c3a769a33af4ff89056815fc8634c698ba86f4e9d7dc887fd874cb623586a
 ```
 
-The `root_hash` field in the proof `0x2c1005…` matches the final state
+The `root_hash` field in the proof `0xaf0c3a…` matches the final state
 hash output by the `cartesi-machine` command-line utility. The
 `target_hash` field `0x1beb37…` is the hash of the `output.raw` NVRAM.
 To compute it independently, use the `cartesi-hash-tree-hash`
@@ -1591,7 +1591,7 @@ produces the following output on the client shell
 Connected to JSONRPC remote cartesi machine at '127.0.0.1:8080'
 
 Halted
-Cycles: 42129026
+Cycles: 41860500
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8080'
 ```
 
@@ -1669,7 +1669,7 @@ The client shell now shows:
 Connected to JSONRPC remote cartesi machine at '127.0.0.1:8081'
 
 Halted
-Cycles: 50609253
+Cycles: 50414052
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8081'
 ```
 
@@ -1889,78 +1889,78 @@ shows a lot more activity:
 Connected to JSONRPC remote cartesi machine at '127.0.0.1:8082'
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 48223442
+Cycles: 48382238
 
 Before input 1
-48223442: 3d63afb10127efdf5bd86fa6ff121d4d82e694004321bb08ff76171f44adac9f
-48223442: 4ab93708ecec3eb7ac38abcd9b36a8fbe7c00cd586fa4ef423c744a1fa45c7f7
+48382238: d3cfc00ddd342d6f57f082f9e17df03dc8c18989b41cb8217263dec6d0fa2e80
+48382238: 96e11c6b523857a5a1cc2fcd366c653a02e2f2b04b69a356fc819b855fbc4dcc
 
 Automatic yield tx-output (2) (0x000064 data)
-Cycles: 48241614
+Cycles: 48400410
 Storing input-1-output-0.bin
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 50355694
+Cycles: 50514490
 Storing input-1-output-hashes-root-hash.bin
 
 Before input 2
-50355694: 5b27476344d141ed48b7e9f4ade9025b829fc8bca07843c36ab998b3eeffbb2a
-50355694: ee9ce101700ee410f9d836557ab1e8bc2ae096744b7c5e27ce73b5b2faa7066e
+50514490: 57bcb125c6a5d8fcad3e91c82bfe8ec161cf9bdc2fbee673b875be42f0abab87
+50514490: 0e11b6c326d3a74c98798f5133b2e068bb4fe01dee8e907b9c4ef9366346b63e
 
 Manual yield rx-rejected (2) (0x000000 data)
-Cycles: 50359643
+Cycles: 50518439
 
 Before query
-50355694: 5b27476344d141ed48b7e9f4ade9025b829fc8bca07843c36ab998b3eeffbb2a
-50355694: 0d436d6f405260d9cb7472a40609891ebcde836a79d6d50b0af1623870e9d53f
+50514490: 57bcb125c6a5d8fcad3e91c82bfe8ec161cf9bdc2fbee673b875be42f0abab87
+50514490: 114c14db4b43f5825ca93c6feca9ce891016a22d686bab1f7419d94ffb16b74c
 
 Automatic yield tx-report (4) (0x000011 data)
-Cycles: 50356906
+Cycles: 50515702
 Storing query-report-0.bin
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 50357996
+Cycles: 50516792
 
 After query
-50355694: 5b27476344d141ed48b7e9f4ade9025b829fc8bca07843c36ab998b3eeffbb2a
+50514490: 57bcb125c6a5d8fcad3e91c82bfe8ec161cf9bdc2fbee673b875be42f0abab87
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8082'
 ```
 
 The client starts by printing information about the remote server it
 connected to. It then runs the machine in a loop, occasionally
 transferring information in and out. The first
-`manual yield rx-accepted` (at cycle `48223442`) signals the point at
+`manual yield rx-accepted` (at cycle `48382238`) signals the point at
 which the guest application attempted to obtain its first request.
 
 Upon receiving control back from the machine, the client prints input
-index 1, prints state hash `3d63afb1…`, loads file `input-1.bin` into
-the CMIO RX buffer, prints the modified state hash `4ab93708…`, and
+index 1, prints state hash `d3cfc00d…`, loads file `input-1.bin` into
+the CMIO RX buffer, prints the modified state hash `96e11c6b…`, and
 resumes the machine. The `puppet` reads the payload
 `notice:hello from input 1`, dispatches on the `notice` verb, and emits
 one notice with payload `hello from input 1`. The emission generates an
-`automatic yield tx-output` at cycle `48241614`, returning control to
+`automatic yield tx-output` at cycle `48400410`, returning control to
 the client. The client reads the CMIO TX buffer and stores the output as
 `input-1-output-0.bin`. The `manual yield rx-accepted` at cycle
-`50355694` signals that the `puppet` is done processing input index 1
+`50514490` signals that the `puppet` is done processing input index 1
 and has accepted it.
 
 The client then loads input index 2 and resumes the machine. The payload
 `something the puppet does not understand` does not match any of the
 recognized verbs, so the `puppet` rejects the request. The resulting
-`manual yield rx-rejected` at cycle `50359643` causes the client to roll
+`manual yield rx-rejected` at cycle `50518439` causes the client to roll
 the machine state back to what it was before the input was processed.
 This can be confirmed by the fact that the cycle count and state hash
-before the query remain `50355694:5b274763…`.
+before the query remain `50514490:57bcb125…`.
 
 With both advance-state requests handled, the client moves to the
 inspect-state request. It loads `query.bin` into the CMIO RX buffer and
 resumes the machine so the `puppet` can respond. The
-`automatic yield tx-report` at cycle `50356906` signals the application
+`automatic yield tx-report` at cycle `50515702` signals the application
 issued a report, which the client then saves as `query-report-0.bin`.
 Finally, when the subsequent `manual yield rx-accepted` is received at
-cycle `50357996`, the client reverts the state of the machine back to
+cycle `50516792`, the client reverts the state of the machine back to
 what it was before the query was processed. (Note the final cycle count
-and state hash are still `50355694:5b274763…`.) Since there is nothing
+and state hash are still `50514490:57bcb125…`.) Since there is nothing
 else to do, the client shuts down the remote Cartesi Machine server and
 exits.
 
@@ -2186,7 +2186,7 @@ The result is as follows
 ``` text
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 64942701
+Cycles: 64891638
 Storing machine: please wait
 ```
 
@@ -2270,29 +2270,29 @@ Connected to JSONRPC remote cartesi machine at '127.0.0.1:8083'
 Loading machine: please wait
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 64942701
+Cycles: 64891638
 
 Before input 1
-64942701: 0692fbaeef399c8f3ba8dd3cb9cceb56c0902eeae81afd2423cce098ae74da5f
-64942701: 46dc653dfb8e6e10af4579a861635d3013c4713a884ccb5efd7fe743cb80d4cd
+64891638: 4fcaa135dc141b03e4e281763ee820020ac54b5e7510a654d3f46df6887d2472
+64891638: ab369a80064fe25bdc8c078f229cce4d3206308148db5de915bdb6cdea1718f0
 
 Automatic yield tx-output (2) (0x000044 data)
-Cycles: 109178697
+Cycles: 109114594
 Storing input-1-output-0.bin
 
 Manual yield rx-rejected (2) (0x000000 data)
-Cycles: 113960523
+Cycles: 113872238
 
 Before input 2
-64942701: 0692fbaeef399c8f3ba8dd3cb9cceb56c0902eeae81afd2423cce098ae74da5f
-64942701: 051badc2045b26bc508368b450e7821a3f462a1b3e43e415777050393b438026
+64891638: 4fcaa135dc141b03e4e281763ee820020ac54b5e7510a654d3f46df6887d2472
+64891638: 1384bbdbe9c463478498dc56b59735caf1f9048571be4118c47864416432afe1
 
 Automatic yield tx-output (2) (0x000184 data)
-Cycles: 110089892
+Cycles: 110017203
 Storing input-2-output-0.bin
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 117018765
+Cycles: 116927422
 Storing input-2-output-hashes-root-hash.bin
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8083'
 ```
@@ -2474,24 +2474,24 @@ The output is
 [    0.054272] 9p: Installing v9fs 9p2000 file system support
 [    0.059840] tun: Universal TUN/TAP device driver, 1.6
 [    0.062976] nd_pmem namespace0.0: unable to guarantee persistence of writes
-[    0.065408] Cartesi Machine cmio device: Module loaded
-[    0.066944] NET: Registered PF_PACKET protocol family
-[    0.067456] 9pnet: Installing 9P2000 support
+[    0.065344] Cartesi Machine cmio device: Module loaded
+[    0.066880] NET: Registered PF_PACKET protocol family
+[    0.067392] 9pnet: Installing 9P2000 support
 [    0.067968] NET: Registered PF_VSOCK protocol family
-[    0.113408] clk: Disabling unused clocks
-[    0.117504] EXT4-fs (pmem0): mounted filesystem 00000000-0000-0000-0000-000000000000 r/w without journal. Quota mode: disabled.
-[    0.118144] VFS: Mounted root (ext4 filesystem) on device 259:0.
-[    0.120064] devtmpfs: mounted
-[    0.123840] Freeing unused kernel image (initmem) memory: 2100K
-[    0.124096] Run /usr/sbin/cartesi-init as init process
-[    0.124352]   with arguments:
-[    0.124480]     /usr/sbin/cartesi-init
-[    0.124608]   with environment:
-[    0.124736]     HOME=/
-[    0.124864]     TERM=linux
+[    0.113344] clk: Disabling unused clocks
+[    0.117440] EXT4-fs (pmem0): mounted filesystem 00000000-0000-0000-0000-000000000000 r/w without journal. Quota mode: disabled.
+[    0.118016] VFS: Mounted root (ext4 filesystem) on device 259:0.
+[    0.119936] devtmpfs: mounted
+[    0.123712] Freeing unused kernel image (initmem) memory: 2100K
+[    0.124032] Run /usr/sbin/cartesi-init as init process
+[    0.124224]   with arguments:
+[    0.124352]     /usr/sbin/cartesi-init
+[    0.124480]   with environment:
+[    0.124608]     HOME=/
+[    0.124736]     TERM=linux
 Nothing to do.
-[    0.232320] EXT4-fs (pmem0): re-mounted 00000000-0000-0000-0000-000000000000 ro. Quota mode: disabled.
-[    0.262784] reboot: Power down
+[    0.232000] EXT4-fs (pmem0): re-mounted 00000000-0000-0000-0000-000000000000 ro. Quota mode: disabled.
+[    0.260736] reboot: Power down
 ```
 
 To clear the kernel command-line, use the option `--no-bootargs`. Notice
@@ -2526,28 +2526,28 @@ cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="label:input,data_filename:input.raw" \
-    --periodic-hashes=1,62958542
+    --periodic-hashes=1,62993893
 ```
 
 The output is
 
 ``` text
 Loading machine: please wait
-0: c69d162d3322741f1a136b3a5711c8024da057b6d67a014aa27dffbc26b5a42e
-62958542: 4199c80b404df58d93b36c1169cba0499ffbfecade2b06ef4ffec80b169a720a
-62958543: 3ed95a9c4b6c7af58e288c7d7fa61f2f1c220e284bb41454d4ae24b2f1a0c4f5
-62958544: 673a4a3628e24ed7821043125db1b95f695bd770272a4428e260ee91f677c524
-62958545: bdc8238ec5c2c789e981c6cf9367734a42c319b4c8e151c91c84690f7a00ec1e
-62958546: acd59787fb039d3edd30a5993eb7943e55f72aa78b2c9417585c67210bc5cdef
-62958547: d650f902b8fd9323f4e105df91c0fa65acc7a7fb584f3a6fee0f274f67289eb3
-62958548: d304ff5681263f22c2a43708d06b56fef9313e6c3e312c9c0dbf6cd001a76c68
-62958549: 56faa38effd356653826a23918d39f7bf50de56b9070f97ca1ae491c2f585cbf
-62958550: baccbc6ef21c4aa011441934100ab3235f640161f2c3d882a01db55f069b4cd7
-62958551: f5fe811661eaed59516ed30e4755fa6edc41d2e9896fe827453b1238246e5e3d
+0: 6476bf0419e35d5518d8dba90296134ec9280cee079f6096eadae59953951789
+62993893: 6debd2fb54a76a3fd1205bc65b282193298b8d2f00d153866170a48b57aad20e
+62993894: 19b2cd7151577bf97113db1b96cc12e2b85b46c7c7c3afc56536a23f5b26505b
+62993895: f0338cae4e2a4b00e52f8211e952d4ce5b206a601ae3cdcc4001d06ba4141905
+62993896: 2a1df8652c12c1d7ca53e405ae029a3bd5eeb078f0c533d2bf176068d1c1d628
+62993897: 581d94de19a00c46dcb4bc6fc12e06cb3787e82738a00a0341d19f7c0b32a6fb
+62993898: 1ee5199d7affa9044511673d029e0e2642399a122020048c78ca464b7c643a7c
+62993899: ab60a842862615cc7d7e2f6f2f08f8bc24273b51f3b7d105b1395c89d6a4656b
+62993900: d8910cdc99b4d219378940c03b3fa3cea2a7f36e7f6cbc7048db3f9b0b7cc1e2
+62993901: 41e5b6ea8f6fedda85576f3114604ad2c99ded646c4e49c78528cdcdc49fb2c3
+62993902: 17f95544c6241be3ee6f9483f2f89690ba71b53d60ad346b6344f682ecaac0f7
 
 Halted
-Cycles: 62958552
-62958552: 2c10059c87caefda082cf304b972face7f398f601f3bb5145b8623045c4fbf4b
+Cycles: 62993903
+62993903: af0c3a769a33af4ff89056815fc8634c698ba86f4e9d7dc887fd874cb623586a
 ```
 
 The command-line option `--dump-address-ranges[=<dir>]` causes the
@@ -2604,7 +2604,7 @@ claimed by the submitting party.
 Consider again the example in which the Cartesi Machine was stopped
 while it drew the splash screen. Let’s assume that this is the step of
 disagreement. In an honest Cartesi Machine, the main processor
-instruction about to execute when `mcycle` is `37102808` is the `sd`
+instruction about to execute when `mcycle` is `37056268` is the `sd`
 that issues a putchar command to the HTIF console device by writing it
 to the `htif.tohost` CSR. That single main processor instruction expands
 into many uarch instructions. The one that actually triggers the host to
@@ -2619,7 +2619,7 @@ produced by a single uarch step:
 
 ``` bash
 cartesi-machine \
-    --max-mcycle=37102808 \
+    --max-mcycle=37056268 \
     --max-uarch-cycle=2242 \
     --log-step-uarch
 ```
@@ -3374,8 +3374,8 @@ return {
         data_filename = "/usr/share/cartesi-machine/images/rootfs.ext2",
       },
       label = "root",
-      length = 0x14897000,
-      start = 0xa0000000,
+      length = 0x94e7000,
+      start = 0x90000000,
     },
   },
   ram = {
@@ -3423,8 +3423,8 @@ busybox mkdir -p \"/mnt/foo\" && busybox mount \"$dev\" \"/mnt/foo\"\
         data_filename = "/usr/share/cartesi-machine/images/rootfs.ext2",
       },
       label = "root",
-      length = 0x14897000,
-      start = 0xa0000000,
+      length = 0x94e7000,
+      start = 0x90000000,
     },
     {
       backing_store = {
@@ -3432,7 +3432,7 @@ busybox mkdir -p \"/mnt/foo\" && busybox mount \"$dev\" \"/mnt/foo\"\
       },
       label = "foo",
       length = 0x8000,
-      start = 0xc0000000,
+      start = 0xa0000000,
     },
   },
   ram = {
@@ -3485,8 +3485,8 @@ return {
         data_filename = "/usr/share/cartesi-machine/images/rootfs.ext2",
       },
       label = "root",
-      length = 0x14897000,
-      start = 0xa0000000,
+      length = 0x94e7000,
+      start = 0x90000000,
     },
   },
   ram = {
@@ -3516,8 +3516,8 @@ return {
         data_filename = "/usr/share/cartesi-machine/images/rootfs.ext2",
       },
       label = "root",
-      length = 0x14897000,
-      start = 0xa0000000,
+      length = 0x94e7000,
+      start = 0x90000000,
     },
   },
   ram = {
@@ -3549,8 +3549,8 @@ busybox chown dapp: \"$dev\"\
         data_filename = "/usr/share/cartesi-machine/images/rootfs.ext2",
       },
       label = "root",
-      length = 0x14897000,
-      start = 0xa0000000,
+      length = 0x94e7000,
+      start = 0x90000000,
     },
   },
   nvram = {
@@ -3560,7 +3560,7 @@ busybox chown dapp: \"$dev\"\
       },
       label = "input",
       length = 0x1000,
-      start = 0xc0000000,
+      start = 0xa0000000,
     },
     {
       backing_store = {
@@ -3569,7 +3569,7 @@ busybox chown dapp: \"$dev\"\
       },
       label = "output",
       length = 0x1000,
-      start = 0xc0001000,
+      start = 0xa0001000,
     },
   },
   ram = {
@@ -3779,7 +3779,7 @@ lua5.4 run-config-in-chunks.lua config-cat-foo-bar
 
 ``` text
 Hello world!
-58 chunks
+57 chunks
 ```
 
 ### Progress feedback
@@ -4071,7 +4071,7 @@ cartesi-machine \
 ```
 
 ``` text
-0: e35c5f46232ef08781bc3de73875c062dd01f5ee369a9508b57b6d707f2ce84d
+0: 51951062aaf8860079d677da6630123916b9c9618a1d22aed78d57c226e4fa44
 
          .
         / \
@@ -4086,8 +4086,8 @@ cartesi-machine \
 Nothing to do.
 
 Halted
-Cycles: 42129026
-42129026: f856992bdc065974f8333f1d73cc411f3e90230c183b8ec87878f229b6bc77a8
+Cycles: 41860500
+41860500: daf1f2058ccb0b1bc05ac9df83797809296111518d3a10fe353f33654880cdab
 ```
 
 Note that the initial state hashes and the final state hashes match, as
@@ -4480,7 +4480,7 @@ Connecting to remote cartesi machine at '127.0.0.1:8084'
 Connected: remote version is 0.6.0
 
 Halted
-Cycles: 42129026
+Cycles: 41860500
 ```
 
 The server shell produces
@@ -4919,7 +4919,7 @@ util.print_log(log, io.stderr)
 with command:
 
 ``` bash
-lua5.4 dump-uarch-step.lua config-nothing-to-do "37102808" "2242"
+lua5.4 dump-uarch-step.lua config-nothing-to-do "37056268" "2242"
 ```
 
 produces the output:
@@ -4933,7 +4933,7 @@ produces the output:
  \       X       \
   \----/  \---/---\
        \    / CARTESI
-Access log of uarch step at mcycle=37102808 uarch_cycle=2242:
+Access log of uarch step at mcycle=37056268 uarch_cycle=2242:
 
 begin step
   1: read uarch.cycle@0x400008(4194312): 0x8c2(2242)
@@ -5011,7 +5011,7 @@ io.stderr:write("State transition accepted!\n")
 Running the script without arguments accepts the valid state transition:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "37102808" "2242"
+lua5.4 verify-uarch-step.lua config-nothing-to-do "37056268" "2242"
 ```
 
 ``` text
@@ -5024,7 +5024,7 @@ address of access \#7 (the write to `uarch.pc`) causes the program to
 reject the state transition proof:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "37102808" "2242" 'log.accesses[7].address = 0x100'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "37056268" "2242" 'log.accesses[7].address = 0x100'
 ```
 
 ``` text
@@ -5044,7 +5044,7 @@ internal consistency check, because `written` no longer hashes to
 `written_hash`:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "37102808" "2242" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "37056268" "2242" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
 ```
 
 ``` text
@@ -5060,7 +5060,7 @@ the same consistency check on the read side, because `read` no longer
 hashes to `read_hash`:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "37102808" "2242" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "37056268" "2242" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
 ```
 
 ``` text
@@ -5077,7 +5077,7 @@ proof’s `sibling_hashes` to reconstruct the state hash before the
 access. That reconstruction no longer matches the expected root:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "37102808" "2242" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "37056268" "2242" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
 ```
 
 ``` text
@@ -5386,7 +5386,7 @@ docker buildx build --platform=linux/riscv64 \
     -f Dockerfile.rootfs-docs .
 
 # Convert the tarball into an ext2 image.
-xgenext2fs -fzB 4096 -i 4096 -r +50000 \
+xgenext2fs -fzB 4096 -i 4096 -r +4000 \
     -a rootfs-docs.tar -L docs rootfs-docs.ext2
 rm -f rootfs-docs.tar
 ```
@@ -5419,7 +5419,7 @@ The output is
 5: Hello world from C++!
 
 Halted
-Cycles: 55734397
+Cycles: 55539043
 ```
 
 The Dockerfile’s second stage cross-compiles the following Rust program:
@@ -5633,7 +5633,7 @@ The output is
 5: Hello world from TCL!
 
 Halted
-Cycles: 188385599
+Cycles: 188090925
 ```
 
 The take-away message is that developers can use the tools they are most
@@ -6777,107 +6777,12 @@ Each PMA consists of 2 64-bit words. The first word gives the start of a
 range and the second word its length. These words are readable both
 internally and externally. Since the ranges must be aligned to 4KiB page
 boundaries, the lowest 12-bits of each word are available for
-attributes. The meaning of each attribute field is as follows:
-<center>
-<table>
-<tr>
-<th>
-Bits
-</th>
-<td>
-<tt>63–12</tt>
-</td>
-<td>
-<tt>11–8</tt>
-</td>
-<td>
-<tt>7</tt>
-</td>
-<td>
-<tt>6</tt>
-</td>
-<td>
-<tt>5</tt>
-</td>
-<td>
-<tt>4</tt>
-</td>
-<td>
-<tt>3</tt>
-</td>
-<td>
-<tt>2</tt>
-</td>
-<td>
-<tt>1</tt>
-</td>
-<td>
-<tt>0</tt>
-</td>
-</tr>
-<tr>
-<th>
-Field
-</th>
-<td>
-<tt>start</tt>
-</td>
-<td>
-<tt>DID</tt>
-</td>
-<td>
-<tt>IW</tt>
-</td>
-<td>
-<tt>IR</tt>
-</td>
-<td>
-<tt>X</tt>
-</td>
-<td>
-<tt>W</tt>
-</td>
-<td>
-<tt>R</tt>
-</td>
-<td>
-<tt>E</tt>
-</td>
-<td>
-<tt>IO</tt>
-</td>
-<td>
-<tt>M</tt>
-</td>
-</tr>
-<tr>
-<td colspan="11">
-</td>
-</tr>
-<tr>
-<th>
-Bits
-</th>
-<td>
-<tt>63–12</tt>
-</td>
-<td colspan="9">
-<tt>11–0</tt>
-</td>
-</tr>
-<tr>
-<th>
-Field
-</th>
-<td>
-<tt>length</tt>
-</td>
-<td colspan="9">
-<i>Reserved (=0)</i>
-</td>
-</tr>
-</table>
-</center>
+attributes. The meaning of each attribute field is as follows: First
+word:
+
+| Bits  | `63-12` | `11-8` | `7`  | `6`  | `5` | `4` | `3` | `2` | `1`  | `0` |
+|-------|---------|--------|------|------|-----|-----|-----|-----|------|-----|
+| Field | `start` | `DID`  | `IW` | `IR` | `X` | `W` | `R` | `E` | `IO` | `M` |
 
 The `M`, `IO`, and `E` bits are mutually exclusive, and respectively
 mark the range as memory, I/O mapped, or excluded. Bits `R`, `W`,
@@ -6900,6 +6805,12 @@ following values:
 | `PMA_SHADOW_UARCH_STATE_DID` | `9`   |
 | `PMA_VIRTIO_DID`             | `10`  |
 | `PMA_NVRAM_DID`              | `11`  |
+
+Second word:
+
+| Bits  | `63-12`  | `11-0`          |
+|-------|----------|-----------------|
+| Field | `length` | *Reserved (=0)* |
 
 The list of PMA records ends with an invalid PMA entry for which
 `length=0`.
@@ -7014,15 +6925,15 @@ The result is
 		};
 	};
 
-	pmem@a0000000 {
+	pmem@90000000 {
 		compatible = "pmem-region";
-		reg = <0x00 0xa0000000 0x00 0x14897000>;
+		reg = <0x00 0x90000000 0x00 0x94e7000>;
 		volatile;
 	};
 
 	aliases {
-		flashdrive0 = "/pmem@a0000000";
-		root = "/pmem@a0000000";
+		flashdrive0 = "/pmem@90000000";
+		root = "/pmem@90000000";
 	};
 
 	cmio {
@@ -7048,8 +6959,8 @@ The result is
 ```
 
 The `memory@80000000` section describes 64MiB of RAM starting at address
-`0x80000000`. The `pmem@a0000000` section describes flash drive 0: a
-memory region starting at address `a0000000`, with compatible string
+`0x80000000`. The `pmem@90000000` section describes flash drive 0: a
+memory region starting at address `90000000`, with compatible string
 `pmem-region`. This will eventually become available as `/dev/pmem0`.
 The `cmio` section specifies the starts and lengths of the CMIO memory
 ranges. The `yield` section specifies that the machine will process
@@ -7697,8 +7608,8 @@ lua5.4 verification-game.lua dishonest 127.0.0.1:8086 "6*2^1024 + 3*2^512" 25 7 
 The referee narrates the dispute from start to finish:
 
 ``` text
-Player 1 posted final state hash 0x2c10059c....
-Player 2 posted final state hash 0xe0ff6fc2....
+Player 1 posted final state hash 0xaf0c3a76....
+Player 2 posted final state hash 0x1669470c....
 mcycle bisection round 1, interval of disagreement is [0x0, 0x7fffffffffffffff]
 mcycle bisection round 2, interval of disagreement is [0x0, 0x3fffffffffffffff]
 mcycle bisection round 3, interval of disagreement is [0x0, 0x1fffffffffffffff]
@@ -7716,7 +7627,7 @@ uarch_cycle bisection round 20, interval of disagreement is [0x7, 0x8]
 Player 1 posted log
 Verifying uarch step log!
 Log is valid!
-Player 1 wins! Final state hash is 0x2c10059c....
+Player 1 wins! Final state hash is 0xaf0c3a76....
 Result posted:
 4
 Rejected!
@@ -7757,7 +7668,7 @@ uarch_cycle bisection round 20, interval of disagreement is [0xfffff, 0x100000]
 Player 1 posted log
 Verifying uarch reset log!
 Log is valid!
-Player 1 wins! Final state hash is 0x2c10059c....
+Player 1 wins! Final state hash is 0xaf0c3a76....
 ```
 
 For simplicity this model uses only two players, but the same idea is

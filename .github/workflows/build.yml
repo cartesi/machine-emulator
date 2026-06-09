@@ -694,9 +694,18 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
+          lfs: true
 
       - name: Setup variables
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+
+      - name: Install e2tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends e2tools
+
+      - name: Check rootfs-docs.ext2 is up to date
+        run: make -C doc check-rootfs-docs
 
       - name: Login to Docker Hub
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
@@ -729,31 +738,6 @@ jobs:
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
-
-      - name: Cache xgenext2fs binary
-        id: cache-xgenext2fs
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: /usr/local/bin/xgenext2fs
-          key: xgenext2fs-v1.5.6-${{ runner.os }}
-
-      - name: Build and install xgenext2fs
-        if: steps.cache-xgenext2fs.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            automake autotools-dev build-essential libarchive-dev
-          wget https://github.com/cartesi/genext2fs/archive/refs/tags/v1.5.6.tar.gz
-          echo "34bfc26a037def23b85b676912462a3d126a87ef15c66c212b3500650da44f9e  v1.5.6.tar.gz" | sha256sum -c -
-          tar -xzf v1.5.6.tar.gz
-          cd genext2fs-1.5.6
-          ./autogen.sh
-          ./configure --enable-libarchive
-          make -j"$(nproc)"
-          sudo make install
 
       - name: Ensure doc/README.md is tracked
         run: |

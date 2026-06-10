@@ -22,6 +22,7 @@
 #include "address-range-constants.hpp"
 #include "address-range-defines.h"
 #include "cm.h"
+#include "machine-reg.hpp"
 #include "uarch-defines.h"
 
 namespace cartesi {
@@ -65,6 +66,12 @@ static_assert(UARCH_SHADOW_START_ADDRESS < UARCH_RAM_START_ADDRESS,
 static_assert((UARCH_SHADOW_LENGTH & (AR_PAGE_SIZE - 1)) == 0, "UARCH_SHADOW_LENGTH must be multiple of AR_PAGE_SIZE");
 static_assert((UARCH_RAM_LENGTH & (AR_PAGE_SIZE - 1)) == 0, "UARCH_RAM_LENGTH must be multiple of AR_PAGE_SIZE");
 static_assert(UARCH_CYCLE_MAX == CM_UARCH_CYCLE_MAX, "CM_UARCH_CYCLE_MAX must be equal to UARCH_CYCLE_MAX");
+
+/// \brief Machine state addresses referenced by uarch code that is translated to Solidity
+enum uarch_machine_state_addresses : uint64_t {
+    IFLAGS_Y_ADDRESS = machine_reg_address(machine_reg::iflags_Y),       ///< Address of the iflags.Y register
+    HTIF_TOHOST_ADDRESS = machine_reg_address(machine_reg::htif_tohost), ///< Address of the htif.tohost register
+};
 
 /// \brief ecall function codes
 enum uarch_ecall_functions : uint64_t {

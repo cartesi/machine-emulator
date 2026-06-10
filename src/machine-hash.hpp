@@ -23,7 +23,8 @@
 #include <array>
 #include <cstddef>
 #include <span>
-#ifndef ZKARCHITECTURE
+// std::vector is not available in freestanding builds
+#if !defined(ZKARCHITECTURE) && !defined(MICROARCHITECTURE)
 #include <vector>
 #endif
 
@@ -33,7 +34,7 @@ static constexpr size_t MACHINE_HASH_SIZE = 32;
 using machine_hash = std::array<unsigned char, MACHINE_HASH_SIZE>;
 using machine_hash_view = std::span<unsigned char, MACHINE_HASH_SIZE>;
 using const_machine_hash_view = std::span<const unsigned char, MACHINE_HASH_SIZE>;
-#ifndef ZKARCHITECTURE
+#if !defined(ZKARCHITECTURE) && !defined(MICROARCHITECTURE)
 using machine_hashes = std::vector<machine_hash>;
 #endif
 

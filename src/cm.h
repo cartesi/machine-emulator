@@ -165,6 +165,20 @@ typedef enum cm_sharing_mode {
     CM_SHARING_ALL = 2,    ///< Share all backing stores, all machine changes will be on-disk
 } cm_sharing_mode;
 
+/// \brief HTIF tohost/fromhost register field shifts.
+typedef enum cm_htif_shift {
+    CM_HTIF_DEV_SHIFT = 56,
+    CM_HTIF_CMD_SHIFT = 48,
+    CM_HTIF_REASON_SHIFT = 32,
+    CM_HTIF_DATA_SHIFT = 0,
+} cm_htif_shift;
+
+/// \brief HTIF tohost/fromhost register field masks.
+static const uint64_t CM_HTIF_DEV_MASK = 0xFF00000000000000ULL;
+static const uint64_t CM_HTIF_CMD_MASK = 0x00FF000000000000ULL;
+static const uint64_t CM_HTIF_REASON_MASK = 0x0000FFFF00000000ULL;
+static const uint64_t CM_HTIF_DATA_MASK = 0x00000000FFFFFFFFULL;
+
 /// \brief HTIF device identifiers (DEV field of tohost/fromhost).
 typedef enum cm_htif_device {
     CM_HTIF_DEV_HALT = 0,    ///< Halts the machine
@@ -910,6 +924,9 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, const cm_hash *revert_root_
 /// \param log_filename Name of the log file to be generated.
 /// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error.
+/// \details When the machine ends the step having rejected an input (a manual yield with reason rx-rejected is
+/// pending), the root hash after the step recorded in the log header is the recorded revert root hash instead of
+/// the machine root hash.
 CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
     cm_break_reason *break_reason);
 
@@ -927,6 +944,9 @@ CM_API cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **
 /// \param log Receives the state access log as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
+/// \details When the machine has rejected an input (a manual yield with reason rx-rejected is pending), the
+/// canonical state after the logged operation is the one recorded in the revert root hash, even though the
+/// physical machine only has its uarch reset.
 CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log);
 
 /// \brief Sends a cmio response logging all accesses to the state.

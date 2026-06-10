@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "access-log.hpp"
+#include "address-range-constants.hpp"
 #include "hash-tree-constants.hpp"
 #include "hash-tree.hpp"
 #include "i-accept-scoped-notes.hpp"
@@ -333,6 +334,27 @@ private:
     uint64_t do_read_word(uint64_t paddr) const {
         const auto name = machine::get_address_name(paddr);
         return check_read_word_access(paddr, name.c_str());
+    }
+
+    machine_hash check_read_revert_root_hash_access() const {
+        const auto *text = "revert root hash";
+        const auto &a = check_access(text);
+        check_access_type(a, access_type::read, text);
+        check_access_range(a, access_type::read, AR_SHADOW_REVERT_ROOT_HASH_START, HASH_TREE_LOG2_WORD_SIZE, text);
+        std::ignore = check_access_siblings_and_read_hash(a, text);
+        const auto &read_data = check_read_data(a, text);
+        if (read_data.size() != HASH_TREE_WORD_SIZE) {
+            throw std::invalid_argument{
+                "read data for " + std::string(text) + " has wrong size in " + access_to_report()};
+        }
+        machine_hash hash{};
+        std::ranges::copy(read_data, hash.begin());
+        m_context.next_access++;
+        return hash;
+    }
+
+    void do_revert_state() const {
+        m_context.root_hash = check_read_revert_root_hash_access();
     }
 
     void do_write_word(uint64_t paddr, uint64_t val) const {

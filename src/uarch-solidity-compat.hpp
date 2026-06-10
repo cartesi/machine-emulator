@@ -102,6 +102,11 @@ static inline void resetState(const UarchState a) {
     a.reset_uarch();
 }
 
+template <typename UarchState>
+static inline void revertState(const UarchState a) {
+    a.revert_state();
+}
+
 template <typename State>
 static inline uint64 readIflagsY(State &a) {
     return a.read_iflags_Y();

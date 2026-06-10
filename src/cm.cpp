@@ -115,6 +115,14 @@ static_assert(std::string_view{DTB_BOOTARGS_INIT} == std::string_view{CM_DTB_BOO
 static_assert(UARCH_CYCLE_MAX_DEF == CM_UARCH_CYCLE_MAX);
 static_assert(RTC_FREQ_DIV_DEF == CM_RTC_FREQ_DIV);
 
+static_assert(HTIF_DEV_SHIFT_DEF == CM_HTIF_DEV_SHIFT);
+static_assert(HTIF_CMD_SHIFT_DEF == CM_HTIF_CMD_SHIFT);
+static_assert(HTIF_REASON_SHIFT_DEF == CM_HTIF_REASON_SHIFT);
+static_assert(HTIF_DATA_SHIFT_DEF == CM_HTIF_DATA_SHIFT);
+static_assert(HTIF_DEV_MASK_DEF == CM_HTIF_DEV_MASK);
+static_assert(HTIF_CMD_MASK_DEF == CM_HTIF_CMD_MASK);
+static_assert(HTIF_REASON_MASK_DEF == CM_HTIF_REASON_MASK);
+static_assert(HTIF_DATA_MASK_DEF == CM_HTIF_DATA_MASK);
 static_assert(HTIF_DEV_HALT_DEF == CM_HTIF_DEV_HALT);
 static_assert(HTIF_DEV_CONSOLE_DEF == CM_HTIF_DEV_CONSOLE);
 static_assert(HTIF_DEV_YIELD_DEF == CM_HTIF_DEV_YIELD);

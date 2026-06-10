@@ -982,7 +982,11 @@ local function test_reset_uarch(machine, with_log, with_annotations)
     if with_log then
         local log_type = (with_annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
         local log = machine:log_reset_uarch(log_type)
-        assert(#log.accesses == 1)
+        assert(#log.accesses == 2)
+        -- the second access reads iflags.Y to check for a rejected input
+        local read_iflags_y = log.accesses[2]
+        assert(read_iflags_y.type == "read")
+        assert(read_iflags_y.address == machine:get_reg_address("iflags_Y"))
         local access = log.accesses[1]
         assert(access.sibling_hashes ~= nil)
         assert(access.address == cartesi.UARCH_SHADOW_START_ADDRESS)
@@ -1053,6 +1057,61 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     end
 )
 
+-- Puts the machine in the manual-yield rejected state with a recorded revert root hash
+local function set_rejected_input_state(machine, revert_hash)
+    machine:write_revert_root_hash(revert_hash)
+    machine:write_reg("iflags_Y", 1)
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+end
+
+test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    "Testing log_reset_uarch reverts to the revert root hash when the input was rejected",
+    function(machine)
+        local revert_hash = string.rep("\x5a", cartesi.HASH_SIZE)
+        set_rejected_input_state(machine, revert_hash)
+        local initial_hash = machine:get_root_hash()
+        local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+        -- the physical machine has its uarch reset as usual
+        assert(machine:read_reg("uarch_cycle") == 0, "uarch should have been reset")
+        -- the log contains the uarch state write followed by the three reads
+        assert(#log.accesses == 4)
+        assert(log.accesses[1].type == "write")
+        assert(log.accesses[2].type == "read")
+        assert(log.accesses[3].type == "read")
+        assert(log.accesses[4].type == "read")
+        assert(log.accesses[4].address == cartesi.AR_SHADOW_REVERT_ROOT_HASH_START)
+        -- the canonical root hash after the operation is the revert root hash
+        machine:verify_reset_uarch(initial_hash, log, revert_hash)
+        -- the machine's actual root hash is not accepted
+        local _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, machine:get_root_hash())
+        check_error_find(err, "mismatch in root hash after replay")
+        -- a tampered revert root hash value is not accepted
+        log.accesses[4].read = string.rep("\xff", cartesi.HASH_SIZE)
+        _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, revert_hash)
+        check_error_find(err, "read data for revert root hash does not match read hash")
+    end
+)
+
+test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    "Testing log_reset_uarch does not revert when the yield reason is not rx-rejected",
+    function(machine)
+        local revert_hash = string.rep("\x5a", cartesi.HASH_SIZE)
+        set_rejected_input_state(machine, revert_hash)
+        machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+        local initial_hash = machine:get_root_hash()
+        local log = machine:log_reset_uarch()
+        -- the uarch was reset normally
+        assert(machine:read_reg("uarch_cycle") == 0, "uarch should have been reset")
+        -- the uarch state write is followed by the iflags.Y and htif.tohost reads
+        assert(#log.accesses == 3)
+        assert(log.accesses[1].type == "write")
+        assert(log.accesses[3].type == "read")
+        machine:verify_reset_uarch(initial_hash, log, machine:get_root_hash())
+    end
+)
+
 test_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = "sha256" } })(
     "Uarch operations should fail if hash tree hash function is not keccak256",
     function(machine)
@@ -1096,6 +1155,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         local expected_dump_pattern = "begin reset_uarch_state\n"
             .. "  1: write uarch.state@0x400000%(4194304%): "
             .. 'hash:"[0-9a-f]+"%(2%^22 bytes%) %-> hash:"[0-9a-fA-F]+"%(2%^22 bytes%)\n'
+            .. "  2: read iflags.Y@0x300%(768%): 0x0%(0%)\n"
             .. "end reset_uarch_state\n"
 
         local tmpname = os.tmpname()
@@ -1128,7 +1188,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         local initial_hash = machine:get_root_hash()
         local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS | cartesi.ACCESS_LOG_TYPE_LARGE_DATA)
         local final_hash = machine:get_root_hash()
-        assert(#log.accesses == 1, "log should have 1 access")
+        assert(#log.accesses == 2, "log should have 2 accesses")
         local access = log.accesses[1]
         -- when large data is requested, the log must include read and written data
         assert(access.read ~= nil, "read data should not be nil")
@@ -1173,7 +1233,7 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
     end)
 
     assert_error('missing field "log/accesses/0/read_hash"', function(log)
-        log.accesses[#log.accesses].read_hash = nil
+        log.accesses[1].read_hash = nil
     end)
     assert_error("siblings and read hash do not match root hash before 1st access to uarch.state", function(log)
         log.accesses[1].read_hash = bad_hash
@@ -1182,13 +1242,13 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
         log.accesses[#log.accesses + 1] = log.accesses[1]
     end)
     assert_error("missing written hash of uarch.state in 1st access", function(log)
-        log.accesses[#log.accesses].written_hash = nil
+        log.accesses[1].written_hash = nil
     end)
     assert_error("access written data size is inconsistent with proof size", function(log)
-        log.accesses[#log.accesses].written = "\0"
+        log.accesses[1].written = "\0"
     end)
     assert_error("written data for uarch.state does not match written hash in 1st access", function(log)
-        log.accesses[#log.accesses].written = string.rep("\0", 2 ^ 22)
+        log.accesses[1].written = string.rep("\0", 2 ^ 22)
     end)
     assert_error("siblings and read hash do not match root hash before 1st access to uarch.state", function(log)
         log.accesses[1].sibling_hashes[1] = bad_hash
@@ -1978,5 +2038,29 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
         end
     )
 end
+
+do_test("log_step from a rejected input state verifies against the revert root hash", function(machine)
+    local filename = os.tmpname()
+    os.remove(filename) -- log_step requires the file to not exist
+    local deleter = {}
+    setmetatable(deleter, {
+        __gc = function()
+            os.remove(filename)
+        end,
+    })
+    local revert_hash = string.rep("\x5a", cartesi.HASH_SIZE)
+    set_rejected_input_state(machine, revert_hash)
+    local mcycle_before = machine:read_reg("mcycle")
+    local root_hash_before = machine:get_root_hash()
+    machine:log_step(1, filename)
+    -- the machine does not advance while the manual yield is pending
+    assert(machine:read_reg("mcycle") == mcycle_before, "mcycle should not have advanced")
+    assert(machine:get_root_hash() == root_hash_before, "machine state should not have changed")
+    -- the canonical root hash after the step is the revert root hash
+    machine:verify_step(root_hash_before, filename, 1, revert_hash)
+    -- the machine's actual root hash is not accepted
+    local _, err = pcall(machine.verify_step, machine, root_hash_before, filename, 1, root_hash_before)
+    check_error_find(err, "root hash after mismatch")
+end)
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

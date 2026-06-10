@@ -355,6 +355,12 @@ public:
         derived().do_write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
     }
 
+    /// \brief Reads the revert root hash from the shadow state.
+    /// \returns The hash.
+    machine_hash read_revert_root_hash() const {
+        return derived().do_read_revert_root_hash();
+    }
+
     /// \brief Writes the revert root hash in the shadow state.
     /// \param hash View of hash data, one full hash tree leaf in size.
     void write_revert_root_hash(const_machine_hash_view hash) const {

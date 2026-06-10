@@ -278,6 +278,9 @@ public:
     /// \param log_type Type of access log to generate.
     /// \param log_data If true, access data is recorded in the log, otherwise only hashes. The default is false.
     /// \returns The state access log.
+    /// \details When the machine has rejected an input (a manual yield with reason rx-rejected is pending),
+    /// the canonical state after the logged operation is the one recorded in the revert root hash, even
+    /// though the physical machine only has its uarch reset.
     access_log log_reset_uarch(const access_log::type &log_type);
 
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
@@ -290,7 +293,8 @@ public:
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset
     /// \param log Step state access log.
-    /// \param root_hash_after State hash after uarch reset.
+    /// \param root_hash_after State hash after uarch reset. When the machine has rejected an input,
+    /// this is the recorded revert root hash.
     static void verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
         const machine_hash &root_hash_after);
 

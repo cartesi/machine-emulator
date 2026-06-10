@@ -38,6 +38,7 @@
 #include "mock-address-range.hpp"
 #include "pmas-constants.hpp"
 #include "pmas.hpp"
+#include "rejected-manual-yield.hpp"
 #include "riscv-constants.hpp"
 #include "shadow-registers.hpp"
 #include "shadow-tlb.hpp"
@@ -270,10 +271,17 @@ public:
 
     // \brief Finish the replay and check the final machine root hash
     // \throw runtime_error if the final root hash does not match
+    // \details When the machine has rejected an input (a manual yield with reason
+    // rx-rejected is pending), the canonical root hash after the step is the recorded
+    // revert root hash. Otherwise it is the computed machine root hash.
     void finish() {
-        // compute and check machine root hash after the replay
-        auto computed_final_root_hash = compute_root_hash();
-        if (computed_final_root_hash != m_context.logged_root_hash_after) {
+        machine_hash expected_root_hash_after{};
+        if (is_rejected_manual_yield(*this)) {
+            expected_root_hash_after = read_revert_root_hash();
+        } else {
+            expected_root_hash_after = compute_root_hash();
+        }
+        if (expected_root_hash_after != m_context.logged_root_hash_after) {
             THROW(std::runtime_error, "final root hash mismatch");
         }
     }
@@ -434,6 +442,14 @@ private:
 
     uint64_t do_read_shadow_register(shadow_registers_what what) const {
         return check_read_reg(what);
+    }
+
+    machine_hash do_read_revert_root_hash() const {
+        constexpr uint64_t paddr = AR_SHADOW_REVERT_ROOT_HASH_START;
+        const auto *page_log = find_page(paddr & ~PAGE_OFFSET_MASK);
+        machine_hash hash{};
+        std::copy_n(page_log->data + (paddr & PAGE_OFFSET_MASK), hash.size(), hash.begin());
+        return hash;
     }
 
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {

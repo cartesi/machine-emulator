@@ -25,6 +25,7 @@
 #include <utility>
 
 #include "access-log.hpp"
+#include "address-range-constants.hpp"
 #include "hash-tree-constants.hpp"
 #include "i-accept-scoped-notes.hpp"
 #include "i-prefer-shadow-uarch-state.hpp"
@@ -48,16 +49,25 @@ class uarch_record_state_access :
     public i_accept_scoped_notes<uarch_record_state_access>,
     public i_prefer_shadow_uarch_state<uarch_record_state_access> {
 
+public:
+    struct context {
+        ///< Root hash after the recorded operation, already reverted when the operation reverted the state
+        machine_hash root_hash_after{};
+    };
+
+private:
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-    machine &m_m;      ///< Macro machine
-    access_log &m_log; ///< Access log
+    context &m_context; ///< Context
+    machine &m_m;       ///< Macro machine
+    access_log &m_log;  ///< Access log
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
     /// \brief Constructor from machine and uarch states.
+    /// \param c Reference to context.
     /// \param m Reference to machine state.
     /// \param log Reference to log.
-    uarch_record_state_access(machine &m, access_log &log) : m_m(m), m_log(log) {
+    uarch_record_state_access(context &c, machine &m, access_log &log) : m_context(c), m_m(m), m_log(log) {
         ;
     }
 
@@ -209,6 +219,24 @@ private:
         return log_read_word_access(paddr, name.c_str());
     }
 
+    machine_hash log_read_revert_root_hash_access() const {
+        access a;
+        log_access_type(a, access_type::read);
+        log_access_range(a, AR_SHADOW_REVERT_ROOT_HASH_START, HASH_TREE_LOG2_WORD_SIZE);
+        log_access_siblings_and_read_hash(a, AR_SHADOW_REVERT_ROOT_HASH_START, HASH_TREE_LOG2_WORD_SIZE);
+        // the value must always be in the log, the EVM verifier consumes it from there
+        const auto &read_data = log_read_data(a, AR_SHADOW_REVERT_ROOT_HASH_START, HASH_TREE_LOG2_WORD_SIZE);
+        machine_hash hash{};
+        std::ranges::copy(read_data, hash.begin());
+        log_access(std::move(a), "revert root hash");
+        return hash;
+    }
+
+    void do_revert_state() const {
+        // the physical machine state does not revert, only the canonical root hash does
+        m_context.root_hash_after = log_read_revert_root_hash_access();
+    }
+
     void do_write_word(uint64_t paddr, uint64_t val) const {
         const auto name = machine::get_address_name(paddr);
         log_write_access(
@@ -259,6 +287,7 @@ private:
                 }
             },
             "uarch.state");
+        m_context.root_hash_after = m_m.get_root_hash();
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

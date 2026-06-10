@@ -83,6 +83,11 @@ private:
         return m_m.read_word(paddr);
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    void do_revert_state() const {
+        ; // the physical machine state does not revert
+    }
+
     void do_write_word(uint64_t paddr, uint64_t val) const {
         // Forward to machine
         m_m.write_word(paddr, val);

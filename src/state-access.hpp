@@ -451,6 +451,10 @@ private:
         }
     }
 
+    machine_hash do_read_revert_root_hash() const {
+        return m_s.shadow.revert_root_hash;
+    }
+
     void do_write_revert_root_hash(const_machine_hash_view hash) const {
         std::ranges::copy(hash, m_s.shadow.revert_root_hash.begin());
     }

@@ -289,6 +289,15 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setstringfield(L, CM_DTB_BOOTARGS_ROOT_PART, "DTB_BOOTARGS_ROOT_PART", -1);
     clua_setstringfield(L, CM_DTB_BOOTARGS_INIT_PART, "DTB_BOOTARGS_INIT_PART", -1);
     clua_setstringfield(L, CM_DTB_BOOTARGS_INIT, "DTB_BOOTARGS_INIT", -1);
+    // HTIF register fields
+    clua_setintegerfield(L, CM_HTIF_DEV_SHIFT, "HTIF_DEV_SHIFT", -1);
+    clua_setintegerfield(L, CM_HTIF_CMD_SHIFT, "HTIF_CMD_SHIFT", -1);
+    clua_setintegerfield(L, CM_HTIF_REASON_SHIFT, "HTIF_REASON_SHIFT", -1);
+    clua_setintegerfield(L, CM_HTIF_DATA_SHIFT, "HTIF_DATA_SHIFT", -1);
+    clua_setintegerfield(L, CM_HTIF_DEV_MASK, "HTIF_DEV_MASK", -1);
+    clua_setintegerfield(L, CM_HTIF_CMD_MASK, "HTIF_CMD_MASK", -1);
+    clua_setintegerfield(L, CM_HTIF_REASON_MASK, "HTIF_REASON_MASK", -1);
+    clua_setintegerfield(L, CM_HTIF_DATA_MASK, "HTIF_DATA_MASK", -1);
     // HTIF devices and commands
     clua_setintegerfield(L, CM_HTIF_DEV_HALT, "HTIF_DEV_HALT", -1);
     clua_setintegerfield(L, CM_HTIF_DEV_CONSOLE, "HTIF_DEV_CONSOLE", -1);

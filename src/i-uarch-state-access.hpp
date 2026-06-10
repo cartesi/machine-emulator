@@ -136,6 +136,14 @@ public:
         return val;
     }
 
+    /// \brief Reverts the canonical machine state to the one whose root hash is recorded
+    /// in the revert root hash leaf of the shadow state.
+    /// \details Implementations that track a root hash read the leaf and replace it. The
+    /// others do nothing, the physical machine state does not revert.
+    void revert_state() const {
+        derived().do_revert_state();
+    }
+
     void write_word(uint64_t paddr, uint64_t val) const {
         derived().do_write_word(paddr, val);
         dusa_printf("%s::write_word(phys_addr{0x%" PRIx64 "}, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), paddr, val,

@@ -65,6 +65,7 @@
 #include "processor-state.hpp"
 #include "record-send-cmio-state-access.hpp"
 #include "record-step-state-access.hpp"
+#include "rejected-manual-yield.hpp"
 #include "replay-send-cmio-state-access.hpp"
 #include "replay-step-state-access.hpp"
 #include "riscv-constants.hpp"
@@ -1950,13 +1951,14 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
     const machine_hash root_hash_before = get_root_hash();
     // Call uarch_reset_state with a uarch_record_state_access object
     access_log log(log_type);
-    uarch_record_state_access a(*this, log);
+    uarch_record_state_access::context context;
+    uarch_record_state_access a(context, *this, log);
     {
         [[maybe_unused]] auto note = a.make_scoped_note("reset_uarch_state");
         uarch_reset_state(a);
     }
-    const auto root_hash_after = get_root_hash();
-    verify_reset_uarch(root_hash_before, log, root_hash_after);
+    // context.root_hash_after holds the revert root hash when the reset reverted the state
+    verify_reset_uarch(root_hash_before, log, context.root_hash_after);
     return log;
 }
 
@@ -1988,7 +1990,8 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
     auto root_hash_before = get_root_hash();
     access_log log(log_type);
     // Call interpret with a logged state access object
-    const uarch_record_state_access a(*this, log);
+    uarch_record_state_access::context context;
+    const uarch_record_state_access a(context, *this, log);
     {
         [[maybe_unused]] auto note = a.make_scoped_note("step");
         uarch_step(a);
@@ -2067,7 +2070,10 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     record_step_state_access a(context, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     auto break_reason = interpret(a, mcycle_end);
-    auto root_hash_after = get_root_hash();
+    // When the machine has rejected an input, the canonical root hash after the step is
+    // the recorded revert root hash
+    const state_access sa(*this);
+    const auto root_hash_after = is_rejected_manual_yield(sa) ? read_revert_root_hash() : get_root_hash();
     a.finish(root_hash_before, mcycle_count, root_hash_after);
     verify_step(root_hash_before, filename, mcycle_count, root_hash_after);
     return break_reason;

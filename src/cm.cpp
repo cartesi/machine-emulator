@@ -874,19 +874,19 @@ cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash) try {
     return cm_result_failure();
 }
 
-cm_error cm_get_revert_root_hash(const cm_machine *m, cm_hash *hash) try {
+cm_error cm_read_revert_root_hash(const cm_machine *m, cm_hash *hash) try {
     const auto *cpp_m = convert_from_c(m);
-    const cartesi::machine_hash cpp_hash = cpp_m->get_revert_root_hash();
+    const cartesi::machine_hash cpp_hash = cpp_m->read_revert_root_hash();
     convert_to_c(cpp_hash, hash);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-cm_error cm_set_revert_root_hash(cm_machine *m, const cm_hash *hash) try {
+cm_error cm_write_revert_root_hash(cm_machine *m, const cm_hash *hash) try {
     auto *cpp_m = convert_from_c(m);
     const cartesi::machine_hash cpp_hash = convert_from_c(hash);
-    cpp_m->set_revert_root_hash(cpp_hash);
+    cpp_m->write_revert_root_hash(cpp_hash);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -1231,22 +1231,26 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
     return cm_result_failure();
 }
 
-cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length) try {
+cm_error cm_send_cmio_response(cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason, const uint8_t *data,
+    uint64_t length) try {
     auto *cpp_m = convert_from_c(m);
-    cpp_m->send_cmio_response(reason, data, length);
+    const cartesi::machine_hash cpp_revert_root_hash = convert_from_c(revert_root_hash);
+    cpp_m->send_cmio_response(cpp_revert_root_hash, reason, data, length);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    int32_t log_type, const char **log) try {
+cm_error cm_log_send_cmio_response(cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason, const uint8_t *data,
+    uint64_t length, int32_t log_type, const char **log) try {
     if (log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_m = convert_from_c(m);
+    const cartesi::machine_hash cpp_revert_root_hash = convert_from_c(revert_root_hash);
     const cartesi::access_log::type cpp_log_type(log_type);
-    const cartesi::access_log cpp_log = cpp_m->log_send_cmio_response(reason, data, length, cpp_log_type);
+    const cartesi::access_log cpp_log =
+        cpp_m->log_send_cmio_response(cpp_revert_root_hash, reason, data, length, cpp_log_type);
     *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {
@@ -1256,21 +1260,24 @@ cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t
     return cm_result_failure();
 }
 
-cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after) try {
+cm_error cm_verify_send_cmio_response(const cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason,
+    const uint8_t *data, uint64_t length, const cm_hash *root_hash_before, const char *log,
+    const cm_hash *root_hash_after) try {
     if (log == nullptr) {
         throw std::invalid_argument("invalid access log");
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
+    const cartesi::machine_hash cpp_revert_root_hash = convert_from_c(revert_root_hash);
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine_hash cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
-        cpp_m->verify_send_cmio_response(reason, data, length, cpp_root_hash_before, cpp_log, cpp_root_hash_after);
-    } else {
-        cartesi::machine::verify_send_cmio_response(reason, data, length, cpp_root_hash_before, cpp_log,
+        cpp_m->verify_send_cmio_response(cpp_revert_root_hash, reason, data, length, cpp_root_hash_before, cpp_log,
             cpp_root_hash_after);
+    } else {
+        cartesi::machine::verify_send_cmio_response(cpp_revert_root_hash, reason, data, length, cpp_root_hash_before,
+            cpp_log, cpp_root_hash_after);
     }
     return cm_result_success();
 } catch (...) {

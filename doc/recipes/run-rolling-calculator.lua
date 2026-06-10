@@ -90,8 +90,11 @@ repeat
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
             i = i + 1
             snapshot()
-            machine:set_revert_root_hash(machine:get_root_hash())
-            machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, encode_advance(expr, i))
+            machine:send_cmio_response(
+                machine:get_root_hash(),
+                cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+                encode_advance(expr, i)
+            )
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
             rollback()

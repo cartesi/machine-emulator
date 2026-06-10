@@ -112,12 +112,12 @@ machine_hash local_machine::do_get_root_hash() const {
     return get_machine()->get_root_hash();
 }
 
-machine_hash local_machine::do_get_revert_root_hash() const {
-    return get_machine()->get_revert_root_hash();
+machine_hash local_machine::do_read_revert_root_hash() const {
+    return get_machine()->read_revert_root_hash();
 }
 
-void local_machine::do_set_revert_root_hash(const_machine_hash_view hash) {
-    get_machine()->set_revert_root_hash(hash);
+void local_machine::do_write_revert_root_hash(const_machine_hash_view hash) {
+    get_machine()->write_revert_root_hash(hash);
 }
 
 machine_hash local_machine::do_get_node_hash(uint64_t address, int log2_size) const {
@@ -218,13 +218,14 @@ address_range_descriptions local_machine::do_get_address_ranges() const {
     return get_machine()->get_address_ranges();
 }
 
-void local_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
-    get_machine()->send_cmio_response(reason, data, length);
+void local_machine::do_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length) {
+    get_machine()->send_cmio_response(revert_root_hash, reason, data, length);
 }
 
-access_log local_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const access_log::type &log_type) {
-    return get_machine()->log_send_cmio_response(reason, data, length, log_type);
+access_log local_machine::do_log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length, const access_log::type &log_type) {
+    return get_machine()->log_send_cmio_response(revert_root_hash, reason, data, length, log_type);
 }
 
 uint64_t local_machine::do_get_reg_address(reg r) const {
@@ -254,9 +255,10 @@ void local_machine::do_verify_reset_uarch(const machine_hash &root_hash_before, 
     machine::verify_reset_uarch(root_hash_before, log, root_hash_after);
 }
 
-void local_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const {
-    machine::verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
+void local_machine::do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
+    machine::verify_send_cmio_response(revert_root_hash, reason, data, length, root_hash_before, log, root_hash_after);
 }
 
 } // namespace cartesi

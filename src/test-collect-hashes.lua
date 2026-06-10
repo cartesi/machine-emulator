@@ -116,7 +116,7 @@ local function get_root_hashes_directly(input_count)
             if hashes then tinsert(inputs, hashes) end
             hashes = {}
             local input = encode_input(index)
-            m:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input)
+            m:send_cmio_response(m:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input)
             index = index + 1
             if index >= input_count then break end
         end
@@ -154,7 +154,7 @@ local function get_root_hashes_with_collect(input_count)
             hashes = {}
             mcycle_phase = 0
             local input = encode_input(index)
-            m:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input)
+            m:send_cmio_response(m:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input)
             index = index + 1
             if index >= input_count then break end
         end

@@ -527,7 +527,7 @@ local function create_json_send_cmio_response_log()
     local reason = 1
     machine:write_reg("iflags_Y", 1)
     local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_send_cmio_response(reason, response_data)
+    local log = machine:log_send_cmio_response(initial_root_hash, reason, response_data)
     local out = create_json_log_file(test_name .. "-steps")
     write_log_to_file(log, out, 0, true)
     out:close()

@@ -549,11 +549,11 @@ do_test("should return expected value", function(machine)
     assert(root_hash == calculated_root_hash, "initial root hash does not match")
 end)
 
-print("\n\n test get_revert_root_hash and set_revert_root_hash")
+print("\n\n test read_revert_root_hash and write_revert_root_hash")
 do_test("should round-trip correctly", function(machine)
     local root_hash = machine:get_root_hash()
-    machine:set_revert_root_hash(root_hash)
-    local revert_hash = machine:get_revert_root_hash()
+    machine:write_revert_root_hash(root_hash)
+    local revert_hash = machine:read_revert_root_hash()
     assert(root_hash == revert_hash, "revert root hash does not match hash that was set")
 end)
 
@@ -1082,7 +1082,7 @@ test_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_functio
             success == false and err:match("can only be used with hash tree configured with Keccak%-256 hash function")
         )
         -- log_send_cmio_response should fail
-        success, err = pcall(machine.log_send_cmio_response, machine, 0, 0)
+        success, err = pcall(machine.log_send_cmio_response, machine, string.rep("\0", 32), 0, 0)
         assert(
             success == false and err:match("can only be used with hash tree configured with Keccak%-256 hash function")
         )
@@ -1303,10 +1303,10 @@ do_test("send_cmio_response fails if iflags.Y is not set", function(machine)
     machine:write_reg("iflags_Y", 0)
     assert(machine:read_reg("iflags_Y") == 0)
     test_util.assert_error("iflags.Y is not set", function()
-        machine:send_cmio_response(reason, data)
+        machine:send_cmio_response(machine:get_root_hash(), reason, data)
     end)
     test_util.assert_error("iflags.Y is not set", function()
-        machine:log_send_cmio_response(reason, data)
+        machine:log_send_cmio_response(machine:get_root_hash(), reason, data)
     end)
 end)
 
@@ -1315,10 +1315,10 @@ do_test("send_cmio_response fails if data is too big", function(machine)
     local data_too_big = string.rep("a", 1 + (1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE))
     machine:write_reg("iflags_Y", 1)
     test_util.assert_error("CMIO response data is too large", function()
-        machine:send_cmio_response(reason, data_too_big)
+        machine:send_cmio_response(machine:get_root_hash(), reason, data_too_big)
     end)
     test_util.assert_error("CMIO response data is too large", function()
-        machine:log_send_cmio_response(reason, data_too_big)
+        machine:log_send_cmio_response(machine:get_root_hash(), reason, data_too_big)
     end)
 end)
 
@@ -1339,6 +1339,8 @@ local function test_send_cmio_input_with_different_arguments()
     local data_hash = test_util.merkle_hash(data, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
     local all_zeros = string.rep("\0", max_rx_buffer_len)
     local all_zeros_hash = test_util.merkle_hash(all_zeros, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
+    local zero_leaf = string.rep("\0", 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE)
+    local zero_leaf_hash = test_util.merkle_hash(zero_leaf, 0, cartesi.HASH_TREE_LOG2_WORD_SIZE, hash_fn)
     -- prepares and asserts the state before send_cmio_response is called
     local function assert_before_cmio_response_sent(machine)
         machine:write_reg("iflags_Y", 1)
@@ -1357,7 +1359,7 @@ local function test_send_cmio_input_with_different_arguments()
     end
     do_test("send_cmio_response happy path", function(machine)
         assert_before_cmio_response_sent(machine)
-        machine:send_cmio_response(reason, data)
+        machine:send_cmio_response(machine:get_root_hash(), reason, data)
         assert_after_cmio_response_sent(machine)
     end)
     for _, large_data in ipairs({ false, true }) do
@@ -1373,18 +1375,32 @@ local function test_send_cmio_input_with_different_arguments()
                     | (large_data and cartesi.ACCESS_LOG_TYPE_LARGE_DATA or 0)
                 assert_before_cmio_response_sent(machine)
                 local root_hash_before = machine:get_root_hash()
-                local log = machine:log_send_cmio_response(reason, data, log_type)
+                local log = machine:log_send_cmio_response(root_hash_before, reason, data, log_type)
                 assert_after_cmio_response_sent(machine)
                 local root_hash_after = machine:get_root_hash()
                 -- check log
                 local accesses = log.accesses
-                assert(#accesses == 4)
+                assert(#accesses == 5)
                 assert_access(accesses, 1, {
                     type = "read",
                     address = machine:get_reg_address("iflags_Y"),
                     log2_size = 3,
                 })
                 assert_access(accesses, 2, {
+                    type = "write",
+                    address = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START,
+                    log2_size = cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                    read_hash = zero_leaf_hash,
+                    read = large_data and zero_leaf or nil,
+                    written_hash = test_util.merkle_hash(
+                        root_hash_before,
+                        0,
+                        cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                        hash_fn
+                    ),
+                    written = large_data and root_hash_before or nil,
+                })
+                assert_access(accesses, 3, {
                     type = "write",
                     address = cartesi.AR_CMIO_RX_BUFFER_START,
                     log2_size = cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE,
@@ -1393,18 +1409,27 @@ local function test_send_cmio_input_with_different_arguments()
                     written_hash = data_hash,
                     written = large_data and data or nil,
                 })
-                assert_access(accesses, 3, {
+                assert_access(accesses, 4, {
                     type = "write",
                     address = machine:get_reg_address("htif_fromhost"),
                     log2_size = 3,
                 })
-                assert_access(accesses, 4, {
+                assert_access(accesses, 5, {
                     type = "write",
                     address = machine:get_reg_address("iflags_Y"),
                     log2_size = 3,
                 })
                 -- ask machine to verify state transitions
-                machine:verify_send_cmio_response(reason, data, root_hash_before, log, root_hash_after, log_type, {})
+                machine:verify_send_cmio_response(
+                    root_hash_before,
+                    reason,
+                    data,
+                    root_hash_before,
+                    log,
+                    root_hash_after,
+                    log_type,
+                    {}
+                )
             end
         )
     end
@@ -1416,13 +1441,16 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
     machine:write_reg("iflags_Y", 1)
     local data = "0123456789"
     local reason = 7
-    local log = machine:log_send_cmio_response(reason, data, cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+    -- a fixed revert root hash keeps the expected dump independent of the machine configuration
+    local revert_root_hash = string.rep("\0", 32)
+    local log = machine:log_send_cmio_response(revert_root_hash, reason, data, cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     local expected_dump = [[
 begin send_cmio_response
   1: read iflags.Y@0x300(768): 0x1(1)
-  2: write cmio rx buffer@0x60000000(1610612736): hash:"290decd9"(2^5 bytes) -> hash:"555b1f6d"(2^5 bytes)
-  3: write htif.fromhost@0x330(816): 0x0(0) -> 0x70000000a(30064771082)
-  4: write iflags.Y@0x300(768): 0x1(1) -> 0x0(0)
+  2: write revert root hash@0xfe0(4064): hash:"290decd9"(2^5 bytes) -> hash:"290decd9"(2^5 bytes)
+  3: write cmio rx buffer@0x60000000(1610612736): hash:"290decd9"(2^5 bytes) -> hash:"555b1f6d"(2^5 bytes)
+  4: write htif.fromhost@0x330(816): 0x0(0) -> 0x70000000a(30064771082)
+  5: write iflags.Y@0x300(768): 0x1(1) -> 0x0(0)
 end send_cmio_response
 ]]
     local temp_file <close> = test_util.new_temp_file()
@@ -1467,12 +1495,12 @@ do_test("send_cmio_response with different data sizes", function(machine)
             local data = string.rep("a", case.data_len)
             machine:write_reg("iflags_Y", 1)
             if logging then
-                local log = machine:log_send_cmio_response(reason, data)
-                assert(#log.accesses == 4, string.format("log should have 4 accesses, but it has %s", #log.accesses))
-                assert(log.accesses[2].type == "write", "access 2 should be a write")
-                assert(1 << log.accesses[2].log2_size == case.write_len, "log2_size of write access does not match")
+                local log = machine:log_send_cmio_response(machine:get_root_hash(), reason, data)
+                assert(#log.accesses == 5, string.format("log should have 5 accesses, but it has %s", #log.accesses))
+                assert(log.accesses[3].type == "write", "access 3 should be a write")
+                assert(1 << log.accesses[3].log2_size == case.write_len, "log2_size of write access does not match")
             else
-                machine:send_cmio_response(reason, data)
+                machine:send_cmio_response(machine:get_root_hash(), reason, data)
             end
             local expected_rx_buffer = padded_data(data, case.write_len, "\0")
                 .. string.rep("x", rx_buffer_size - case.write_len)
@@ -1499,18 +1527,18 @@ do_test("send_cmio_response of zero bytes", function(machine)
     machine:write_reg("iflags_Y", 1)
     local reason = 1
     local data = ""
-    machine:send_cmio_response(reason, data)
+    machine:send_cmio_response(machine:get_root_hash(), reason, data)
     local new_rx_buffer = machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, rx_buffer_size)
     assert(new_rx_buffer == initial_rx_buffer, "rx_buffer should not have been modified")
     assert(machine:read_reg("iflags_Y") == 0, "iflags.Y should be cleared")
     -- log and verify
     machine:write_reg("iflags_Y", 1)
     local hash_before = machine:get_root_hash()
-    local log = machine:log_send_cmio_response(reason, data)
+    local log = machine:log_send_cmio_response(hash_before, reason, data)
     util.print_log(log, io.stderr)
-    assert(#log.accesses == 3, "log should have 3 accesses")
+    assert(#log.accesses == 4, "log should have 4 accesses")
     local hash_after = machine:get_root_hash()
-    machine:verify_send_cmio_response(reason, data, hash_before, log, hash_after)
+    machine:verify_send_cmio_response(hash_before, reason, data, hash_before, log, hash_after)
 end)
 
 local function test_cmio_buffers_backed_by_files()

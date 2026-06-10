@@ -26,6 +26,7 @@
 #include <utility>
 
 #include "access-log.hpp"
+#include "address-range-constants.hpp"
 #include "assert-printf.hpp"
 #include "hash-tree-constants.hpp"
 #include "host-addr.hpp"
@@ -182,28 +183,14 @@ private:
         update_after_write(paligned);
     }
 
-    // -----
-    // i_state_access interface implementation
-    // -----
-    friend i_state_access<record_send_cmio_state_access>;
-
-    void do_write_iflags_Y(uint64_t val) const {
-        log_before_write_write_and_update(machine_reg_address(machine_reg::iflags_Y),
-            m_m.get_state().shadow.registers.iflags.Y, val, "iflags.Y");
-    }
-
-    uint64_t do_read_iflags_Y() const {
-        log_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
-        return m_m.get_state().shadow.registers.iflags.Y;
-    }
-
-    void do_write_htif_fromhost(uint64_t val) const {
-        log_before_write_write_and_update(machine_reg_address(machine_reg::htif_fromhost),
-            m_m.get_state().shadow.registers.htif.fromhost, val, "htif.fromhost");
-    }
-
-    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) const {
+    /// \brief Logs a write of a data buffer to memory padded with 0, writes, and updates the hash tree.
+    /// \param paddr Destination physical address.
+    /// \param data Pointer to source data buffer.
+    /// \param data_length Length of data buffer.
+    /// \param write_length_log2_size Log2 size of the total write length.
+    /// \param text Textual description of the access.
+    void log_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
+        int write_length_log2_size, const char *text) const {
         if ((paddr & (HASH_TREE_WORD_SIZE - 1)) != 0) {
             throw std::invalid_argument("paddr is not aligned to tree leaf size");
         }
@@ -231,9 +218,10 @@ private:
         auto proof = m_m.get_proof(paddr, write_length_log2_size);
         // log hash and data before write
         a.set_read_hash(proof.get_target_hash());
+        const auto offset = paddr - ar.get_start();
         if (m_log.get_log_type().has_large_data()) {
-            access_data &data = a.get_read().emplace(write_length);
-            memcpy(data.data(), ar.get_host_memory(), write_length);
+            access_data &read_data = a.get_read().emplace(write_length);
+            memcpy(read_data.data(), ar.get_host_memory() + offset, write_length);
         }
 
         // We just store the sibling hashes in the access because this is the only missing piece of data needed to
@@ -253,16 +241,45 @@ private:
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
         a.get_written_hash().emplace();
         variant_hasher h(m_m.get_hash_function());
-        const auto offset = paddr - ar.get_start();
         get_merkle_tree_hash(h,
             std::span<const unsigned char>{ar.get_host_memory() + offset, static_cast<size_t>(write_length)},
             HASH_TREE_WORD_SIZE, a.get_written_hash().value());
         if (m_log.get_log_type().has_large_data()) {
-            access_data &data = a.get_written().emplace(write_length);
-            memcpy(data.data(), ar.get_host_memory() + offset, write_length);
+            access_data &written_data = a.get_written().emplace(write_length);
+            memcpy(written_data.data(), ar.get_host_memory() + offset, write_length);
         }
         // NOLINTEND(bugprone-unchecked-optional-access)
-        m_log.push_access(a, "cmio rx buffer");
+        m_log.push_access(a, text);
+    }
+
+    // -----
+    // i_state_access interface implementation
+    // -----
+    friend i_state_access<record_send_cmio_state_access>;
+
+    void do_write_iflags_Y(uint64_t val) const {
+        log_before_write_write_and_update(machine_reg_address(machine_reg::iflags_Y),
+            m_m.get_state().shadow.registers.iflags.Y, val, "iflags.Y");
+    }
+
+    uint64_t do_read_iflags_Y() const {
+        log_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
+        return m_m.get_state().shadow.registers.iflags.Y;
+    }
+
+    void do_write_htif_fromhost(uint64_t val) const {
+        log_before_write_write_and_update(machine_reg_address(machine_reg::htif_fromhost),
+            m_m.get_state().shadow.registers.htif.fromhost, val, "htif.fromhost");
+    }
+
+    void do_write_revert_root_hash(const_machine_hash_view hash) const {
+        log_write_memory_with_padding(AR_SHADOW_REVERT_ROOT_HASH_START, hash.data(), hash.size(),
+            HASH_TREE_LOG2_WORD_SIZE, "revert root hash");
+    }
+
+    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
+        int write_length_log2_size) const {
+        log_write_memory_with_padding(paddr, data, data_length, write_length_log2_size, "cmio rx buffer");
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

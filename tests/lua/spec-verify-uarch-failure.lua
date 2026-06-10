@@ -106,11 +106,11 @@ local function cmio_should_fail(expected_error, corrupt, options)
     local reason = options.reason or 1
     local data = options.data or "test cmio data"
     local initial_hash = machine:get_root_hash()
-    local log = machine:log_send_cmio_response(reason, data)
+    local log = machine:log_send_cmio_response(initial_hash, reason, data)
     local final_hash = machine:get_root_hash()
     corrupt(log)
     expect.fail(function()
-        machine:verify_send_cmio_response(reason, data, initial_hash, log, final_hash)
+        machine:verify_send_cmio_response(initial_hash, reason, data, initial_hash, log, final_hash)
     end, expected_error)
 end
 
@@ -364,10 +364,11 @@ describe("verify_step_uarch", function()
 end)
 
 -- The access pattern for send_cmio_response with non-empty data is:
---   1: read iflags.Y       (check_read)
---   2: write cmio rx buffer (do_write_memory_with_padding)
---   3: write htif.fromhost  (check_write)
---   4: write iflags.Y       (check_write)
+--   1: read iflags.Y          (check_read)
+--   2: write revert root hash (check_write_memory_with_padding)
+--   3: write cmio rx buffer   (check_write_memory_with_padding)
+--   4: write htif.fromhost    (check_write)
+--   5: write iflags.Y         (check_write)
 
 describe("verify_send_cmio_response", function()
     describe("log structure", function()
@@ -389,8 +390,8 @@ describe("verify_send_cmio_response", function()
             end)
         end)
 
-        it("should reject truncated log (missing buffer write)", function()
-            -- Keep only the first access (read iflags.Y), so do_write_memory_with_padding
+        it("should reject truncated log (missing revert root hash write)", function()
+            -- Keep only the first access (read iflags.Y), so check_write_memory_with_padding
             -- hits "too few accesses in log"
             cmio_should_fail("too few accesses in log", function(log)
                 while #log.accesses > 1 do
@@ -400,8 +401,9 @@ describe("verify_send_cmio_response", function()
         end)
 
         it("should reject truncated log (missing check_read)", function()
-            -- With zero-length data, accesses are: read iflags.Y, write htif.fromhost, write iflags.Y
-            -- Keep only the first two so check_write for iflags.Y hits "too few accesses"
+            -- With zero-length data, accesses are: read iflags.Y, write revert root hash,
+            -- write htif.fromhost, write iflags.Y
+            -- Keep only the first three so check_write for iflags.Y hits "too few accesses"
             cmio_should_fail("too few accesses in log", function(log)
                 log.accesses[#log.accesses] = nil
             end, { data = "" })
@@ -413,9 +415,9 @@ describe("verify_send_cmio_response", function()
             local reason = 1
             local data = "test"
             local initial_hash = machine:get_root_hash()
-            local log = machine:log_send_cmio_response(reason, data)
+            local log = machine:log_send_cmio_response(initial_hash, reason, data)
             expect.fail(function()
-                machine:verify_send_cmio_response(reason, data, initial_hash, log, bad_hash)
+                machine:verify_send_cmio_response(initial_hash, reason, data, initial_hash, log, bad_hash)
             end, "mismatch in root hash after replay")
         end)
     end)
@@ -464,15 +466,15 @@ describe("verify_send_cmio_response", function()
         end)
     end)
 
-    describe("do_write_memory_with_padding (access 2: write cmio rx buffer)", function()
+    describe("check_write_memory_with_padding (access 2: write revert root hash)", function()
         it("should reject wrong type", function()
-            cmio_should_fail("expected 2nd access to write cmio rx buffer", function(log)
+            cmio_should_fail("expected 2nd access to write revert root hash", function(log)
                 log.accesses[2].type = "read"
             end)
         end)
 
         it("should reject wrong address", function()
-            cmio_should_fail("expected address of 2nd access to match address of cmio rx buffer", function(log)
+            cmio_should_fail("expected address of 2nd access to match address of revert root hash", function(log)
                 log.accesses[2].address = 0
             end)
         end)
@@ -483,33 +485,13 @@ describe("verify_send_cmio_response", function()
             end)
         end)
 
-        it("should reject corrupt read data", function()
-            cmio_should_fail("hash of read data and read hash at 2nd access does not match", function(log)
-                local size = 1 << log.accesses[2].log2_size
-                log.accesses[2].read = string.rep("\xff", size)
-            end)
-        end)
-
-        it("should reject missing written_hash", function()
-            cmio_should_fail("write 2nd access has no written hash", function(log)
-                log.accesses[2].written_hash = nil
-            end)
-        end)
-
         it("should reject wrong written_hash", function()
             cmio_should_fail(
-                "logged written hash of cmio rx buffer does not match the hash of data argument",
+                "logged written hash of revert root hash does not match the hash of data argument",
                 function(log)
                     log.accesses[2].written_hash = bad_hash
                 end
             )
-        end)
-
-        it("should reject corrupt written data", function()
-            cmio_should_fail("written hash and written data mismatch at 2nd access", function(log)
-                local size = 1 << log.accesses[2].log2_size
-                log.accesses[2].written = string.rep("\xff", size)
-            end)
         end)
 
         it("should reject corrupt sibling hash", function()
@@ -519,15 +501,15 @@ describe("verify_send_cmio_response", function()
         end)
     end)
 
-    describe("check_write (access 3: write htif.fromhost)", function()
+    describe("check_write_memory_with_padding (access 3: write cmio rx buffer)", function()
         it("should reject wrong type", function()
-            cmio_should_fail("expected 3rd access to write htif.fromhost", function(log)
+            cmio_should_fail("expected 3rd access to write cmio rx buffer", function(log)
                 log.accesses[3].type = "read"
             end)
         end)
 
         it("should reject wrong address", function()
-            cmio_should_fail("expected 3rd access to write htif.fromhost to address", function(log)
+            cmio_should_fail("expected address of 3rd access to match address of cmio rx buffer", function(log)
                 log.accesses[3].address = 0
             end)
         end)
@@ -538,68 +520,32 @@ describe("verify_send_cmio_response", function()
             end)
         end)
 
-        it("should reject missing read data", function()
-            cmio_should_fail("missing read htif.fromhost data at 3rd access", function(log)
-                log.accesses[3].read = nil
-            end)
-        end)
-
-        it("should reject wrong read data size", function()
-            cmio_should_fail("expected overwritten data from htif.fromhost to contain 2^", function(log)
-                log.accesses[3].read = "\0"
-            end)
-        end)
-
-        it("should reject read data that does not hash to read_hash", function()
-            cmio_should_fail("logged read data of htif.fromhost does not hash to the logged read hash", function(log)
-                log.accesses[3].read = string.rep("\xff", #log.accesses[3].read)
+        it("should reject corrupt read data", function()
+            cmio_should_fail("hash of read data and read hash at 3rd access does not match", function(log)
+                local size = 1 << log.accesses[3].log2_size
+                log.accesses[3].read = string.rep("\xff", size)
             end)
         end)
 
         it("should reject missing written_hash", function()
-            cmio_should_fail("missing written htif.fromhost hash at 3rd access", function(log)
+            cmio_should_fail("write 3rd access has no written hash", function(log)
                 log.accesses[3].written_hash = nil
             end)
         end)
 
-        it("should reject missing written data", function()
-            cmio_should_fail("missing written htif.fromhost data at 3rd access", function(log)
-                log.accesses[3].written = nil
-            end)
-        end)
-
-        it("should reject wrong written data size", function()
-            cmio_should_fail("expected written htif.fromhost data to contain 2^", function(log)
-                log.accesses[3].written = "\0"
-            end)
-        end)
-
-        it("should reject written data that does not hash to written_hash", function()
+        it("should reject wrong written_hash", function()
             cmio_should_fail(
-                "logged written data of htif.fromhost does not hash to the logged written hash",
+                "logged written hash of cmio rx buffer does not match the hash of data argument",
                 function(log)
-                    log.accesses[3].written = string.rep("\xff", #log.accesses[3].written)
+                    log.accesses[3].written_hash = bad_hash
                 end
             )
         end)
 
-        it("should reject value that does not match logged written value", function()
-            cmio_should_fail("value being written to htif.fromhost does not match", function(log)
-                local a = log.accesses[3]
-                local new_written = string.rep("\x42", #a.written)
-                a.written = new_written
-                a.written_hash = cartesi.keccak256(new_written)
-            end)
-        end)
-
-        it("should reject written data that differs from read in unexpected way", function()
-            cmio_should_fail("doesn't differ from the logged read data only by the written word", function(log)
-                local a = log.accesses[3]
-                -- htif.fromhost is at offset 16 within the 32-byte leaf,
-                -- so we corrupt byte 0 (outside the written word) while keeping the word intact
-                local corrupted = string.char(a.written:byte(1) ~ 0xff) .. a.written:sub(2)
-                a.written = corrupted
-                a.written_hash = cartesi.keccak256(corrupted)
+        it("should reject corrupt written data", function()
+            cmio_should_fail("written hash and written data mismatch at 3rd access", function(log)
+                local size = 1 << log.accesses[3].log2_size
+                log.accesses[3].written = string.rep("\xff", size)
             end)
         end)
 
@@ -610,24 +556,115 @@ describe("verify_send_cmio_response", function()
         end)
     end)
 
-    describe("ordinal coverage (4th access: write iflags.Y)", function()
-        it("should reject wrong type on 4th access", function()
-            cmio_should_fail("expected 4th access to write iflags.Y", function(log)
+    describe("check_write (access 4: write htif.fromhost)", function()
+        it("should reject wrong type", function()
+            cmio_should_fail("expected 4th access to write htif.fromhost", function(log)
                 log.accesses[4].type = "read"
+            end)
+        end)
+
+        it("should reject wrong address", function()
+            cmio_should_fail("expected 4th access to write htif.fromhost to address", function(log)
+                log.accesses[4].address = 0
+            end)
+        end)
+
+        it("should reject wrong log2_size", function()
+            cmio_should_fail("expected 4th access to write 2^", function(log)
+                log.accesses[4].log2_size = 2
+            end)
+        end)
+
+        it("should reject missing read data", function()
+            cmio_should_fail("missing read htif.fromhost data at 4th access", function(log)
+                log.accesses[4].read = nil
+            end)
+        end)
+
+        it("should reject wrong read data size", function()
+            cmio_should_fail("expected overwritten data from htif.fromhost to contain 2^", function(log)
+                log.accesses[4].read = "\0"
+            end)
+        end)
+
+        it("should reject read data that does not hash to read_hash", function()
+            cmio_should_fail("logged read data of htif.fromhost does not hash to the logged read hash", function(log)
+                log.accesses[4].read = string.rep("\xff", #log.accesses[4].read)
+            end)
+        end)
+
+        it("should reject missing written_hash", function()
+            cmio_should_fail("missing written htif.fromhost hash at 4th access", function(log)
+                log.accesses[4].written_hash = nil
+            end)
+        end)
+
+        it("should reject missing written data", function()
+            cmio_should_fail("missing written htif.fromhost data at 4th access", function(log)
+                log.accesses[4].written = nil
+            end)
+        end)
+
+        it("should reject wrong written data size", function()
+            cmio_should_fail("expected written htif.fromhost data to contain 2^", function(log)
+                log.accesses[4].written = "\0"
+            end)
+        end)
+
+        it("should reject written data that does not hash to written_hash", function()
+            cmio_should_fail(
+                "logged written data of htif.fromhost does not hash to the logged written hash",
+                function(log)
+                    log.accesses[4].written = string.rep("\xff", #log.accesses[4].written)
+                end
+            )
+        end)
+
+        it("should reject value that does not match logged written value", function()
+            cmio_should_fail("value being written to htif.fromhost does not match", function(log)
+                local a = log.accesses[4]
+                local new_written = string.rep("\x42", #a.written)
+                a.written = new_written
+                a.written_hash = cartesi.keccak256(new_written)
+            end)
+        end)
+
+        it("should reject written data that differs from read in unexpected way", function()
+            cmio_should_fail("doesn't differ from the logged read data only by the written word", function(log)
+                local a = log.accesses[4]
+                -- htif.fromhost is at offset 16 within the 32-byte leaf,
+                -- so we corrupt byte 0 (outside the written word) while keeping the word intact
+                local corrupted = string.char(a.written:byte(1) ~ 0xff) .. a.written:sub(2)
+                a.written = corrupted
+                a.written_hash = cartesi.keccak256(corrupted)
+            end)
+        end)
+
+        it("should reject corrupt sibling hash", function()
+            cmio_should_fail("Mismatch in root hash of 4th access", function(log)
+                log.accesses[4].sibling_hashes[1] = bad_hash
+            end)
+        end)
+    end)
+
+    describe("ordinal coverage (5th access: write iflags.Y)", function()
+        it("should reject wrong type on 5th access", function()
+            cmio_should_fail("expected 5th access to write iflags.Y", function(log)
+                log.accesses[5].type = "read"
             end)
         end)
     end)
 
     describe("zero-length data (no buffer write)", function()
-        it("should reject wrong type on 2nd access", function()
-            cmio_should_fail("expected 2nd access to write htif.fromhost", function(log)
-                log.accesses[2].type = "read"
+        it("should reject wrong type on 3rd access", function()
+            cmio_should_fail("expected 3rd access to write htif.fromhost", function(log)
+                log.accesses[3].type = "read"
             end, { data = "" })
         end)
 
-        it("should reject wrong type on 3rd access", function()
-            cmio_should_fail("expected 3rd access to write iflags.Y", function(log)
-                log.accesses[3].type = "read"
+        it("should reject wrong type on 4th access", function()
+            cmio_should_fail("expected 4th access to write iflags.Y", function(log)
+                log.accesses[4].type = "read"
             end, { data = "" })
         end)
     end)

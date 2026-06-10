@@ -125,7 +125,7 @@ local function load_machine(name)
 end
 
 local function next_input(machine, reason, data)
-    machine:send_cmio_response(reason, data)
+    machine:send_cmio_response(machine:get_root_hash(), reason, data)
 end
 
 local function setup_advance(machine, data)

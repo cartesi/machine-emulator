@@ -396,13 +396,13 @@ public:
     /// \returns The hash.
     machine_hash get_root_hash() const;
 
-    /// \brief Obtains the revert root hash from the shadow state.
+    /// \brief Reads the revert root hash from the shadow state.
     /// \returns The hash.
-    machine_hash get_revert_root_hash() const;
+    machine_hash read_revert_root_hash() const;
 
-    /// \brief Sets the revert root hash in the shadow state.
+    /// \brief Writes the revert root hash to the shadow state.
     /// \param hash Hash to store.
-    void set_revert_root_hash(const_machine_hash_view hash);
+    void write_revert_root_hash(const_machine_hash_view hash);
 
     /// \brief Obtains the hash of a node in the hash-tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
@@ -545,10 +545,12 @@ public:
     void replace_memory_range(const memory_range_config &config);
 
     /// \brief Sends cmio response
+    /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
     /// \param reason Reason for sending response.
     /// \param data Response data.
     /// \param length Length of response data.
-    void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length);
+    void send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
+        uint64_t length);
 
     /// \brief Converts from machine host address to target physical address
     /// \param haddr Machine host address to convert
@@ -650,23 +652,26 @@ public:
     }
 
     /// \brief Sends cmio response and returns an access log
+    /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
     /// \param reason Reason for sending response.
     /// \param data Response data.
     /// \param length Length of response data.
     /// \param log_type Type of access log to generate.
     /// \return The state access log.
-    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const access_log::type &log_type);
+    access_log log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const access_log::type &log_type);
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
+    /// \param revert_root_hash The revert root hash recorded when the log was generated.
     /// \param reason Reason for sending response.
     /// \param data The response sent when the log was generated.
     /// \param length Length of response
     /// \param root_hash_before State hash before response was sent.
     /// \param log Log containing the state accesses performed by the load operation
     /// \param root_hash_after State hash after response was sent.
-    static void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after);
+    static void verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after);
 
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest

@@ -1497,11 +1497,11 @@ machine_hash machine::get_root_hash() const {
     return m_ht.get_root_hash();
 }
 
-machine_hash machine::get_revert_root_hash() const {
+machine_hash machine::read_revert_root_hash() const {
     return m_s->shadow.revert_root_hash;
 }
 
-void machine::set_revert_root_hash(const_machine_hash_view hash) {
+void machine::write_revert_root_hash(const_machine_hash_view hash) {
     std::ranges::copy(hash, m_s->shadow.revert_root_hash.begin());
 }
 
@@ -1883,13 +1883,14 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
     ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
 }
 
-void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
+void machine::send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
+    uint64_t length) {
     const state_access a(*this);
-    cartesi::send_cmio_response(a, reason, data, length);
+    cartesi::send_cmio_response(a, revert_root_hash, reason, data, length);
 }
 
-access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const access_log::type &log_type) {
+access_log machine::log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length, const access_log::type &log_type) {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{
             "access logs can only be used with hash tree configured with Keccak-256 hash function"};
@@ -1900,19 +1901,20 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     const record_send_cmio_state_access a(*this, log);
     {
         [[maybe_unused]] auto note = a.make_scoped_note("send_cmio_response");
-        cartesi::send_cmio_response(a, reason, data, length);
+        cartesi::send_cmio_response(a, revert_root_hash, reason, data, length);
     }
     auto root_hash_after = get_root_hash();
-    verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
+    verify_send_cmio_response(revert_root_hash, reason, data, length, root_hash_before, log, root_hash_after);
     return log;
 }
 
-void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) {
+void machine::verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) {
     replay_send_cmio_state_access::context context{log, root_hash_before, hash_function_type::keccak256};
     // Verify all intermediate state transitions
     replay_send_cmio_state_access a(context);
-    cartesi::send_cmio_response(a, reason, data, length);
+    cartesi::send_cmio_response(a, revert_root_hash, reason, data, length);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
     auto obtained_root_hash = a.get_root_hash();

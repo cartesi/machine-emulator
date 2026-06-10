@@ -21,6 +21,7 @@
 #include <stdexcept>
 
 #include "assert-printf.hpp"
+#include "machine-hash.hpp"
 #include "shadow-tlb.hpp"
 
 /// \file
@@ -42,6 +43,7 @@ using uint32 = uint32_t;
 using int64 = int64_t;
 using uint64 = uint64_t;
 using bytes = const unsigned char *;
+using bytes32 = const_machine_hash_view;
 
 // Wrapperfunctions used to access data from the uarch state accessor
 
@@ -113,6 +115,11 @@ static inline void writeIflagsY(State &a, uint64 val) {
 template <typename State>
 static inline void writeHtifFromhost(State &a, uint64 val) {
     a.write_htif_fromhost(val);
+}
+
+template <typename State>
+static inline void writeRevertRootHash(State &a, bytes32 revertRootHash) {
+    a.write_revert_root_hash(revertRootHash);
 }
 
 template <typename State>

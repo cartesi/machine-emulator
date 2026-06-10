@@ -807,16 +807,16 @@ machine_hash jsonrpc_machine::do_get_root_hash() const {
     return hash;
 }
 
-machine_hash jsonrpc_machine::do_get_revert_root_hash() const {
+machine_hash jsonrpc_machine::do_read_revert_root_hash() const {
     machine_hash hash;
-    request("machine.get_revert_root_hash", std::tie(), hash);
+    request("machine.read_revert_root_hash", std::tie(), hash);
     return hash;
 }
 
-void jsonrpc_machine::do_set_revert_root_hash(const_machine_hash_view hash) {
+void jsonrpc_machine::do_write_revert_root_hash(const_machine_hash_view hash) {
     bool result{};
     auto b64 = encode_base64(hash);
-    request("machine.set_revert_root_hash", std::tie(b64), result);
+    request("machine.write_revert_root_hash", std::tie(b64), result);
 }
 
 machine_hash jsonrpc_machine::do_get_node_hash(uint64_t address, int log2_size) const {
@@ -895,17 +895,20 @@ address_range_descriptions jsonrpc_machine::do_get_address_ranges() const {
     return result;
 }
 
-void jsonrpc_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
+void jsonrpc_machine::do_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length) {
     bool result = false;
+    auto b64_revert_root_hash = encode_base64(revert_root_hash);
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
-    request("machine.send_cmio_response", std::tie(reason, b64), result);
+    request("machine.send_cmio_response", std::tie(b64_revert_root_hash, reason, b64), result);
 }
 
-access_log jsonrpc_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const access_log::type &log_type) {
+access_log jsonrpc_machine::do_log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length, const access_log::type &log_type) {
     not_default_constructible<access_log> result;
+    auto b64_revert_root_hash = encode_base64(revert_root_hash);
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
-    request("machine.log_send_cmio_response", std::tie(reason, b64, log_type), result);
+    request("machine.log_send_cmio_response", std::tie(b64_revert_root_hash, reason, b64, log_type), result);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
     }
@@ -956,14 +959,16 @@ void jsonrpc_machine::do_verify_reset_uarch(const machine_hash &root_hash_before
     request("machine.verify_reset_uarch", std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
 }
 
-void jsonrpc_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const {
+void jsonrpc_machine::do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
     bool result = false;
+    auto b64_revert_root_hash = encode_base64(revert_root_hash);
     std::string b64_data = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
     request("machine.verify_send_cmio_response",
-        std::tie(reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result);
+        std::tie(b64_revert_root_hash, reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result);
 }
 
 bool jsonrpc_machine::do_is_jsonrpc_machine() const {

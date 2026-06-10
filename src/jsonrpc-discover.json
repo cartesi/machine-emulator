@@ -499,8 +499,8 @@
       }
     },
     {
-      "name": "machine.get_revert_root_hash",
-      "summary": "Obtains the revert root hash from the shadow state",
+      "name": "machine.read_revert_root_hash",
+      "summary": "Reads the revert root hash from the shadow state",
       "params": [],
       "result": {
         "name": "hash",
@@ -511,8 +511,8 @@
       }
     },
     {
-      "name": "machine.set_revert_root_hash",
-      "summary": "Sets the revert root hash in the shadow state",
+      "name": "machine.write_revert_root_hash",
+      "summary": "Writes the revert root hash to the shadow state",
       "params": [
         {
           "name": "hash",
@@ -1039,6 +1039,14 @@
       "summary": "Sends cmio response.",
       "params": [
         {
+          "name": "revert_root_hash",
+          "description": "Machine root hash to revert to in case the response is eventually rejected",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        },
+        {
           "name": "reason",
           "description": "Reason for sending response",
           "required": true,
@@ -1067,6 +1075,14 @@
       "name": "machine.log_send_cmio_response",
       "summary": "Sends cmio response and returns an access log",
       "params": [
+        {
+          "name": "revert_root_hash",
+          "description": "Machine root hash to revert to in case the response is eventually rejected",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        },
         {
           "name": "reason",
           "description": "Reason for sending response",
@@ -1104,6 +1120,14 @@
       "name": "machine.verify_send_cmio_response",
       "summary": "Verifies a state transition caused by log_send_cmio_response",
       "params": [
+        {
+          "name": "revert_root_hash",
+          "description": "The revert root hash recorded when the log was generated",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        },
         {
           "name": "reason",
           "description": "Reason for sending response",

@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "access-log.hpp"
+#include "address-range-constants.hpp"
 #include "hash-tree-constants.hpp"
 #include "i-hasher.hpp"
 #include "i-state-access.hpp"
@@ -276,20 +277,14 @@ private:
         m_context.next_access++;
     }
 
-    void do_write_iflags_Y(uint64_t val) const {
-        check_write(machine_reg_address(machine_reg::iflags_Y), val, "iflags.Y");
-    }
-
-    uint64_t do_read_iflags_Y() const {
-        return check_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
-    }
-
-    void do_write_htif_fromhost(uint64_t val) const {
-        check_write(machine_reg_address(machine_reg::htif_fromhost), val, "htif.fromhost");
-    }
-
-    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) const {
+    /// \brief Checks a logged write of a data buffer to memory padded with 0 and advances log.
+    /// \param paddr Destination physical address.
+    /// \param data Pointer to source data buffer.
+    /// \param data_length Length of data buffer.
+    /// \param write_length_log2_size Log2 size of the total write length.
+    /// \param text Textual description of the access.
+    void check_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
+        int write_length_log2_size, const std::string &text) const {
         variant_hasher h{m_context.hash_function};
         if (data == nullptr) {
             throw std::invalid_argument("data is null");
@@ -298,7 +293,6 @@ private:
         if (write_length < data_length) {
             throw std::invalid_argument{"write length is less than data length"};
         }
-        const auto text = std::string("cmio rx buffer");
         if (m_context.next_access >= m_context.accesses.size()) {
             throw std::invalid_argument{"too few accesses in log"};
         }
@@ -361,6 +355,28 @@ private:
         // Update root hash to reflect the data written by this access
         m_context.root_hash = proof.bubble_up(h, written_hash);
         m_context.next_access++;
+    }
+
+    void do_write_iflags_Y(uint64_t val) const {
+        check_write(machine_reg_address(machine_reg::iflags_Y), val, "iflags.Y");
+    }
+
+    uint64_t do_read_iflags_Y() const {
+        return check_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
+    }
+
+    void do_write_htif_fromhost(uint64_t val) const {
+        check_write(machine_reg_address(machine_reg::htif_fromhost), val, "htif.fromhost");
+    }
+
+    void do_write_revert_root_hash(const_machine_hash_view hash) const {
+        check_write_memory_with_padding(AR_SHADOW_REVERT_ROOT_HASH_START, hash.data(), hash.size(),
+            HASH_TREE_LOG2_WORD_SIZE, "revert root hash");
+    }
+
+    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
+        int write_length_log2_size) const {
+        check_write_memory_with_padding(paddr, data, data_length, write_length_log2_size, "cmio rx buffer");
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

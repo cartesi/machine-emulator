@@ -19,32 +19,36 @@
 
 #include <cstdint>
 
+#include "machine-hash.hpp"
+
 namespace cartesi {
 
 /// \brief Sends cmio response
 /// \tparam STATE_ACCESS State accessor type
 /// \param a State accessor
+/// \param revertRootHash Machine root hash to revert to in case the response is eventually rejected
 /// \param reason Reason for sending the response
 /// \param data Response data
 /// \param length Response data length
 template <typename STATE_ACCESS>
-void send_cmio_response(STATE_ACCESS a, uint16_t reason, const unsigned char *data, uint32_t dataLength);
+void send_cmio_response(STATE_ACCESS a, const_machine_hash_view revertRootHash, uint16_t reason,
+    const unsigned char *data, uint32_t dataLength);
 
 class state_access;
 class record_state_access;
 class replay_state_access;
 
 // Declaration of explicit instantiation in module send_cmio_response.cpp
-extern template void send_cmio_response(state_access a, uint16_t reason, const unsigned char *data,
-    uint32_t dataLength);
+extern template void send_cmio_response(state_access a, const_machine_hash_view revertRootHash, uint16_t reason,
+    const unsigned char *data, uint32_t dataLength);
 
 // Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void send_cmio_response(record_state_access a, uint16_t reason, const unsigned char *data,
-    uint32_t dataLength);
+extern template void send_cmio_response(record_state_access a, const_machine_hash_view revertRootHash, uint16_t reason,
+    const unsigned char *data, uint32_t dataLength);
 
 // Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void send_cmio_response(replay_state_access a, uint16_t reason, const unsigned char *data,
-    uint32_t dataLength);
+extern template void send_cmio_response(replay_state_access a, const_machine_hash_view revertRootHash, uint16_t reason,
+    const unsigned char *data, uint32_t dataLength);
 
 } // namespace cartesi
 

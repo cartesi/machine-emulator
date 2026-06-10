@@ -28,6 +28,7 @@
 #include "address-range.hpp"
 #include "assert-printf.hpp"
 #include "i-prefer-shadow-state.hpp"
+#include "machine-hash.hpp"
 #include "meta.hpp"
 #include "poor-type-name.hpp"
 #include "riscv-warl.hpp"
@@ -352,6 +353,12 @@ public:
     void write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) const {
         derived().do_write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
+    }
+
+    /// \brief Writes the revert root hash in the shadow state.
+    /// \param hash View of hash data, one full hash tree leaf in size.
+    void write_revert_root_hash(const_machine_hash_view hash) const {
+        derived().do_write_revert_root_hash(hash);
     }
 
     /// \brief Reads a word from memory.

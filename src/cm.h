@@ -622,13 +622,13 @@ CM_API cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param hash Valid pointer to cm_hash structure that receives the hash.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_get_revert_root_hash(const cm_machine *m, cm_hash *hash);
+CM_API cm_error cm_read_revert_root_hash(const cm_machine *m, cm_hash *hash);
 
-/// \brief Sets the revert root hash in the shadow state.
+/// \brief Writes the revert root hash to the shadow state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param hash Valid pointer to cm_hash structure with hash to store.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_set_revert_root_hash(cm_machine *m, const cm_hash *hash);
+CM_API cm_error cm_write_revert_root_hash(cm_machine *m, const cm_hash *hash);
 
 /// \brief Obtains the hash of a node in the hash tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
@@ -890,13 +890,15 @@ CM_API cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint1
 
 /// \brief Sends a cmio response.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
 /// \param length Length of response data.
 /// \returns 0 for success, non zero code for error.
 /// \details This method should only be called as a response to cmio requests with manual yield command,
 /// where the reason is either accepted or a GIO request, may fail otherwise.
-CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length);
+CM_API cm_error cm_send_cmio_response(cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason,
+    const uint8_t *data, uint64_t length);
 
 // ------------------------------------
 // Logging
@@ -929,6 +931,7 @@ CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char *
 
 /// \brief Sends a cmio response logging all accesses to the state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
 /// \param length Length of response data.
@@ -936,8 +939,8 @@ CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char *
 /// \param log Receives the state access log as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    int32_t log_type, const char **log);
+CM_API cm_error cm_log_send_cmio_response(cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason,
+    const uint8_t *data, uint64_t length, int32_t log_type, const char **log);
 
 // ------------------------------------
 // Verifying
@@ -973,6 +976,7 @@ CM_API cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_h
 
 /// \brief Checks the validity of a state transition produced by cm_log_send_cmio_response.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
+/// \param revert_root_hash The revert root hash recorded when the log was generated.
 /// \param reason Reason for sending the response.
 /// \param data The response sent when the log was generated.
 /// \param length Length of response.
@@ -980,8 +984,9 @@ CM_API cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_h
 /// \param log State access log to be verified as a JSON object in a string.
 /// \param root_hash_after State hash after response.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
+CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason,
+    const uint8_t *data, uint64_t length, const cm_hash *root_hash_before, const char *log,
+    const cm_hash *root_hash_after);
 
 // ------------------------------------
 // Integrity checking

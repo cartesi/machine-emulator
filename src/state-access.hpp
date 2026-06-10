@@ -20,6 +20,7 @@
 /// \file
 /// \brief Fast state access implementation
 
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <utility>
@@ -448,6 +449,10 @@ private:
         if (write_length > data_length) {
             m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
         }
+    }
+
+    void do_write_revert_root_hash(const_machine_hash_view hash) const {
+        std::ranges::copy(hash, m_s.shadow.revert_root_hash.begin());
     }
 
     template <typename T, typename A = T>

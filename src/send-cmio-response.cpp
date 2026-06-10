@@ -30,10 +30,12 @@
 namespace cartesi {
 
 template <typename STATE_ACCESS>
-void send_cmio_response(STATE_ACCESS a, uint16 reason, bytes data, uint32 dataLength) {
+void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, bytes data, uint32 dataLength) {
     if (!readIflagsY(a)) {
         throwRuntimeError(a, "iflags.Y is not set");
     }
+    // Record the machine root hash to revert to in case the response is eventually rejected
+    writeRevertRootHash(a, revertRootHash);
     // A zero length data is a valid response. We just skip writing to the rx buffer.
     if (dataLength > 0) {
         // Find the write length: the smallest power of 2 that is >= dataLength and >= tree leaf size
@@ -59,15 +61,16 @@ void send_cmio_response(STATE_ACCESS a, uint16 reason, bytes data, uint32 dataLe
 }
 
 // Explicit instantiation for state_access
-template void send_cmio_response(state_access a, uint16_t reason, const unsigned char *data, uint32 length);
+template void send_cmio_response(state_access a, bytes32 revertRootHash, uint16_t reason, const unsigned char *data,
+    uint32 length);
 
 // Explicit instantiation for record_state_access
-template void send_cmio_response(record_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
-    uint32 length);
+template void send_cmio_response(record_send_cmio_state_access a, bytes32 revertRootHash, uint16_t reason,
+    const unsigned char *data, uint32 length);
 
 // Explicit instantiation for replay_state_access
-template void send_cmio_response(replay_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
-    uint32 length);
+template void send_cmio_response(replay_send_cmio_state_access a, bytes32 revertRootHash, uint16_t reason,
+    const unsigned char *data, uint32 length);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)

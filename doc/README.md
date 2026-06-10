@@ -1912,7 +1912,7 @@ Cycles: 50518439
 
 Before query
 50514490: 6f60617ef417113442c84b6d738f545997072428348b8b9778dc9c98b3231102
-50514490: 94efcdff27e7f575ebfb0803687f62f984db3c821c1076997a6c0b19db26e1dc
+50514490: f9d87a06621dc2e7dba5636dda1fa322ab38355619afaa64405c1d691455ee55
 
 Automatic yield tx-report (4) (0x000011 data)
 Cycles: 50515702
@@ -4534,12 +4534,13 @@ memory range defined by the `memory_range_config` entry stored in the
 `machine_config` as `cmio.rx_buffer`. Conversely, the data associated
 with responses (or exceptions) is obtained from the machine in the
 `cmio.tx_buffer` memory range. The host does not need to access these
-ranges directly. The call `machine:send_cmio_response(reason, data)`
-writes *data* into `cmio.rx_buffer`, records the reason and length in
-`htif_fromhost`, and clears `iflags_Y` so the machine can resume.
-Conversely, the *data* value returned by
-`machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at
-the yield.
+ranges directly. The call
+`machine:send_cmio_response(<revert_root_hash>, <reason>, <data>)`
+records `<revert_root_hash>` in the machine state, writes `<data>` into
+`cmio.rx_buffer`, records the reason and length in `htif_fromhost`, and
+clears `iflags_Y` so the machine can resume. Conversely, the *data*
+value returned by `machine:receive_cmio_request()` is the contents of
+`cmio.tx_buffer` at the yield.
 
 Advance-state inputs are passed as ABI-encoded
 `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)`
@@ -4652,8 +4653,11 @@ repeat
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
             i = i + 1
             snapshot()
-            machine:set_revert_root_hash(machine:get_root_hash())
-            machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, encode_advance(expr, i))
+            machine:send_cmio_response(
+                machine:get_root_hash(),
+                cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+                encode_advance(expr, i)
+            )
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
             rollback()
@@ -4696,16 +4700,16 @@ script then attempts to obtain a mathematical expression from the
 console. If the user provides one, it creates a new snapshot,
 ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`,
 and feeds the encoded input through
-`machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ...)`.
+`machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ...)`.
 If, however, the reason was anything else, the script rolls back the
 machine and continues with the next loop iteration.
 
 > [!NOTE]
 >
-> The `machine:set_revert_root_hash(machine:get_root_hash())` writes
-> into the machine state the state hash as it was right before the
-> request was sent. This is required for dispute resolution to operate
-> properly in case the guest application rejects an input.
+> The `machine:get_root_hash()` passed to `machine:send_cmio_response()`
+> is recorded into the machine state as the state hash to revert to in
+> case the guest application rejects the input. This is required for
+> dispute resolution to operate properly.
 
 If the machine yielded automatic, the script once again checks for the
 yield reason. If the reason was
@@ -6717,20 +6721,20 @@ modifies the state of the machine. However, at the end of a request, the
 host may have to revert these changes. Therefore, the host keeps a
 snapshot of the state of the machine before any request is processed.
 
-For an advance-state request, the host first writes the current state
-hash to the machine state using
-`machine:set_revert_root_hash(machine:get_root_hash())`. (This, of
-course, changes the state so its hash is not what has just been written,
-but this is expected.) It then writes the request to the CMIO RX buffer
-and its type and length to the HTIF register `fromhost`, and unblocks
-the machine by clearing its `iflags_Y` register. The machine is now
-ready to be resumed. The host loops resuming the machine and collecting
-its outputs or reports every time it yields automatic. The guest
-application is eventually done with the input. If it rejects the input,
-the host drops the current machine and replaces it with a copy of the
-snapshot. If it accepts the input, the host replaces the snapshot with a
-copy of the current machine, and collects the new output-hashes Merkle
-root. If it threw an exception or halted, the host aborts.
+For an advance-state request, the host sends the request with
+`machine:send_cmio_response()`, passing the current state hash for the
+machine to record. (This, of course, changes the state so its hash is
+not what has just been written, but this is expected.) The call also
+writes the request to the CMIO RX buffer and its type and length to the
+HTIF register `fromhost`, and unblocks the machine by clearing its
+`iflags_Y` register. The machine is now ready to be resumed. The host
+loops resuming the machine and collecting its outputs or reports every
+time it yields automatic. The guest application is eventually done with
+the input. If it rejects the input, the host drops the current machine
+and replaces it with a copy of the snapshot. If it accepts the input,
+the host replaces the snapshot with a copy of the current machine, and
+collects the new output-hashes Merkle root. If it threw an exception or
+halted, the host aborts.
 
 For an inspect-state request, the loop is very similar. The differences
 are that only reports are collected (outputs are ignored), and that the

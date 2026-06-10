@@ -139,14 +139,14 @@ public:
         return do_get_root_hash();
     }
 
-    /// \brief Obtains the revert root hash from the shadow state.
-    machine_hash get_revert_root_hash() const {
-        return do_get_revert_root_hash();
+    /// \brief Reads the revert root hash from the shadow state.
+    machine_hash read_revert_root_hash() const {
+        return do_read_revert_root_hash();
     }
 
-    /// \brief Sets the revert root hash in the shadow state.
-    void set_revert_root_hash(const_machine_hash_view hash) {
-        do_set_revert_root_hash(hash);
+    /// \brief Writes the revert root hash to the shadow state.
+    void write_revert_root_hash(const_machine_hash_view hash) {
+        do_write_revert_root_hash(hash);
     }
 
     /// \brief Obtains the root hash of the hash tree.
@@ -287,14 +287,15 @@ public:
     }
 
     /// \brief Sends cmio response.
-    void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
-        do_send_cmio_response(reason, data, length);
+    void send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
+        uint64_t length) {
+        do_send_cmio_response(revert_root_hash, reason, data, length);
     }
 
     /// \brief Sends cmio response and returns an access log
-    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const access_log::type &log_type) {
-        return do_log_send_cmio_response(reason, data, length, log_type);
+    access_log log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const access_log::type &log_type) {
+        return do_log_send_cmio_response(revert_root_hash, reason, data, length, log_type);
     }
 
     /// \brief Gets the address of any register
@@ -331,9 +332,10 @@ public:
     }
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
-    void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const {
-        do_verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
+    void verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
+        uint64_t length, const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const {
+        do_verify_send_cmio_response(revert_root_hash, reason, data, length, root_hash_before, log, root_hash_after);
     }
 
     /// \brief Checks if implementation is jsorpc-machine
@@ -358,8 +360,8 @@ private:
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
     virtual hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const = 0;
     virtual machine_hash do_get_root_hash() const = 0;
-    virtual machine_hash do_get_revert_root_hash() const = 0;
-    virtual void do_set_revert_root_hash(const_machine_hash_view hash) = 0;
+    virtual machine_hash do_read_revert_root_hash() const = 0;
+    virtual void do_write_revert_root_hash(const_machine_hash_view hash) = 0;
     virtual machine_hash do_get_node_hash(uint64_t address, int log2_size) const = 0;
     virtual uint64_t do_read_reg(reg r) const = 0;
     virtual void do_write_reg(reg w, uint64_t val) = 0;
@@ -384,9 +386,10 @@ private:
     virtual uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
         int32_t log2_bundle_uarch_cycle_count) = 0;
     virtual address_range_descriptions do_get_address_ranges() const = 0;
-    virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) = 0;
-    virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const access_log::type &log_type) = 0;
+    virtual void do_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length) = 0;
+    virtual access_log do_log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const access_log::type &log_type) = 0;
     virtual uint64_t do_get_reg_address(reg r) const = 0;
     virtual machine_config do_get_default_config() const = 0;
     virtual std::string do_get_address_name(uint64_t paddr) const = 0;
@@ -396,8 +399,9 @@ private:
         const machine_hash &root_hash_after) const = 0;
     virtual void do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
         const machine_hash &root_hash_after) const = 0;
-    virtual void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const = 0;
+    virtual void do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const = 0;
     virtual bool do_verify_hash_tree() const = 0;
     virtual bool do_is_jsonrpc_machine() const {
         return false;

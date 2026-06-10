@@ -65,8 +65,8 @@ private:
     access_log do_log_step_uarch(const access_log::type &log_type) override;
     hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const override;
     machine_hash do_get_root_hash() const override;
-    machine_hash do_get_revert_root_hash() const override;
-    void do_set_revert_root_hash(const_machine_hash_view hash) override;
+    machine_hash do_read_revert_root_hash() const override;
+    void do_write_revert_root_hash(const_machine_hash_view hash) override;
     machine_hash do_get_node_hash(uint64_t address, int log2_size) const override;
     bool do_verify_hash_tree() const override;
     uint64_t do_read_reg(reg r) const override;
@@ -92,9 +92,10 @@ private:
     uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
         int32_t log2_bundle_uarch_cycle_count) override;
     address_range_descriptions do_get_address_ranges() const override;
-    void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
-    access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const access_log::type &log_type) override;
+    void do_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
+        uint64_t length) override;
+    access_log do_log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const access_log::type &log_type) override;
     uint64_t do_get_reg_address(reg r) const override;
     machine_config do_get_default_config() const override;
     std::string do_get_address_name(uint64_t paddr) const override;
@@ -104,8 +105,8 @@ private:
         const machine_hash &root_hash_after) const override;
     void do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
         const machine_hash &root_hash_after) const override;
-    void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const machine_hash &root_hash_before, const access_log &log,
+    void do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
         const machine_hash &root_hash_after) const override;
 
     machine *get_machine();

@@ -33,11 +33,9 @@
 
 #include <json.hpp>
 
-#include "access-log.hpp"
 #include "address-range-description.hpp"
 #include "back-merkle-tree.hpp"
 #include "base64.hpp"
-#include "bracket-note.hpp"
 #include "hash-tree-constants.hpp"
 #include "hash-tree-proof.hpp"
 #include "hash-tree-stats.hpp"
@@ -650,36 +648,6 @@ static std::string hash_function_to_name(hash_function_type hf) {
             return "sha256";
     }
     throw std::domain_error{"invalid hash function type"};
-}
-
-static std::string access_type_to_name(access_type at) {
-    switch (at) {
-        case access_type::read:
-            return "read";
-        case access_type::write:
-            return "write";
-    }
-    throw std::domain_error{"invalid access type"};
-}
-
-static std::string bracket_type_to_name(bracket_type bt) {
-    switch (bt) {
-        case bracket_type::begin:
-            return "begin";
-        case bracket_type::end:
-            return "end";
-    }
-    throw std::domain_error{"invalid bracket type"};
-}
-
-static bracket_type bracket_type_from_name(const std::string &name) {
-    if (name == "begin") {
-        return bracket_type::begin;
-    }
-    if (name == "end") {
-        return bracket_type::end;
-    }
-    throw std::domain_error{"invalid bracket type"};
 }
 
 static std::string console_output_destination_to_name(console_output_destination dest) {
@@ -1296,228 +1264,6 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, hash_tree_stats &value,
     const std::string &path);
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, access_type &value, const std::string &path) {
-    if (!contains(j, key, path)) {
-        return;
-    }
-    const auto &jk = j[key];
-    if (!jk.is_string()) {
-        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
-    }
-    const auto &v = jk.template get<std::string>();
-    if (v == "read") {
-        value = access_type::read;
-        return;
-    }
-    if (v == "write") {
-        value = access_type::write;
-        return;
-    }
-    throw std::invalid_argument("\""s + path + to_string(key) + "\" not an access type");
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, access_type &value,
-    const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, access_type &value,
-    const std::string &path);
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, access_data &data, const std::string &path) {
-    data.clear();
-    if (!contains(j, key, path)) {
-        return;
-    }
-    const auto &jk = j[key];
-    if (!jk.is_string()) {
-        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
-    }
-    const auto &bin = decode_base64(jk.template get<std::string>());
-    std::copy(bin.begin(), bin.end(), std::back_inserter(data));
-}
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<access_data> &optional,
-    const std::string &path) {
-    optional = {};
-    if (!contains(j, key, path)) {
-        return;
-    }
-    const auto &jk = j[key];
-    if (!jk.is_string()) {
-        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
-    }
-    const auto &bin = decode_base64(jk.template get<std::string>());
-    optional.emplace();
-    std::copy(bin.begin(), bin.end(), std::back_inserter(optional.value()));
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, access_data &value,
-    const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, access_data &value,
-    const std::string &path);
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, const std::string &path) {
-    if (!contains(j, key, path)) {
-        return;
-    }
-    const auto &jk = j[key];
-    if (!jk.is_object()) {
-        throw std::invalid_argument("\""s + path + to_string(key) + "\" not an object");
-    }
-    const auto new_path = path + to_string(key) + "/";
-    access_type type = access_type::read;
-    ju_get_field(jk, "type"s, type, new_path);
-    access.set_type(type);
-    uint64_t log2_size = 0;
-    ju_get_field(jk, "log2_size"s, log2_size, new_path);
-    access.set_log2_size(static_cast<int>(log2_size));
-    uint64_t address = 0;
-    ju_get_field(jk, "address"s, address, new_path);
-    access.set_address(address);
-    machine_hash read_hash;
-    ju_get_field(jk, "read_hash", read_hash, new_path);
-    access.set_read_hash(read_hash);
-
-    not_default_constructible<machine_hash> written_hash;
-    ju_get_opt_field(jk, "written_hash", written_hash, new_path);
-    if (written_hash.has_value()) {
-        access.set_written_hash(written_hash.value());
-    }
-
-    std::optional<access_data> read;
-    ju_get_opt_field(jk, "read"s, read, new_path);
-    if (read.has_value()) {
-        access.set_read(std::move(read.value()));
-    }
-    std::optional<access_data> written;
-    ju_get_opt_field(jk, "written"s, written, new_path);
-    if (written.has_value()) {
-        access.set_written(std::move(written.value()));
-    }
-    if (contains(jk, "sibling_hashes", new_path)) {
-        access.get_sibling_hashes().emplace();
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        auto &sibling_hashes = access.get_sibling_hashes().value();
-        ju_get_vector_like_field(jk, "sibling_hashes"s, sibling_hashes, new_path);
-    }
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, access &value,
-    const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, access &value,
-    const std::string &path);
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, bracket_type &value, const std::string &path) {
-    if (!contains(j, key, path)) {
-        return;
-    }
-    const auto &jk = j[key];
-    if (!jk.is_string()) {
-        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
-    }
-    value = bracket_type_from_name(jk.template get<std::string>());
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, bracket_type &value,
-    const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, bracket_type &value,
-    const std::string &path);
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, bracket_note &value, const std::string &path) {
-    if (!contains(j, key, path)) {
-        return;
-    }
-    const auto &jk = j[key];
-    if (!jk.is_object()) {
-        throw std::invalid_argument("\""s + path + to_string(key) + "\" not an object");
-    }
-    const auto new_path = path + to_string(key) + "/";
-    ju_get_field(jk, "type"s, value.type, new_path);
-    ju_get_field(jk, "where"s, value.where, new_path);
-    ju_get_opt_field(jk, "text"s, value.text, new_path);
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, bracket_note &value,
-    const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, bracket_note &value,
-    const std::string &path);
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<access_log::type> &optional,
-    const std::string &path) {
-    optional = {};
-    if (!contains(j, key, path)) {
-        return;
-    }
-    const auto &jk = j[key];
-    const auto new_path = path + to_string(key) + "/";
-    bool has_annotations = false;
-    ju_get_field(jk, "has_annotations"s, has_annotations, new_path);
-    bool has_large_data = false;
-    ju_get_field(jk, "has_large_data"s, has_large_data, new_path);
-    optional.emplace(has_annotations, has_large_data);
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    not_default_constructible<access_log::type> &value, const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    not_default_constructible<access_log::type> &value, const std::string &path);
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<access_log> &optional,
-    const std::string &path) {
-    optional = {};
-    if (!contains(j, key, path)) {
-        return;
-    }
-    const auto &jk = j[key];
-    const auto new_path = path + to_string(key) + "/";
-    not_default_constructible<access_log::type> log_type;
-    ju_get_field(jk, "log_type"s, log_type, new_path);
-    if (!log_type.has_value()) {
-        throw std::logic_error("log_type conversion bug");
-    }
-    std::vector<access> accesses;
-    ju_get_vector_like_field(jk, "accesses"s, accesses, new_path);
-    for (unsigned i = 0; i < accesses.size(); ++i) {
-        if (!accesses[i].get_sibling_hashes().has_value()) {
-            throw std::invalid_argument("\""s + new_path + "accesses/" + to_string(i) + "\" missing sibling hashes");
-        }
-    }
-    std::vector<bracket_note> brackets;
-    std::vector<std::string> notes;
-    if (log_type.value().has_annotations()) {
-        ju_get_vector_like_field(jk, "notes"s, notes, new_path);
-        if (notes.size() != accesses.size()) {
-            throw std::invalid_argument(
-                "size of fields \""s + new_path + "accesses\" and \"" + new_path + "notes\" do not match");
-        }
-        ju_get_vector_like_field(jk, "brackets"s, brackets, new_path);
-        for (unsigned i = 0; i < brackets.size(); ++i) {
-            if (brackets[i].where > accesses.size()) {
-                throw std::invalid_argument("\""s + new_path + "brackets/" + to_string(i) + "/where\" is out of range");
-            }
-        }
-    }
-    optional.emplace(std::move(accesses), std::move(brackets), std::move(notes), log_type.value());
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    not_default_constructible<access_log> &value, const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    not_default_constructible<access_log> &value, const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, registers_state &value, const std::string &path) {
@@ -2248,75 +1994,12 @@ void to_json(nlohmann::json &j, const hash_tree_proof &p) {
         {"root_hash", encode_base64(p.get_root_hash())}, {"sibling_hashes", s}};
 }
 
-void to_json(nlohmann::json &j, const access &a) {
-    j = nlohmann::json{
-        {"type", access_type_to_name(a.get_type())},
-        {"address", a.get_address()},
-        {"log2_size", a.get_log2_size()},
-    };
-
-    j["read_hash"] = encode_base64(a.get_read_hash());
-    if (a.get_read().has_value()) {
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        j["read"] = encode_base64(a.get_read().value());
-    }
-
-    if (a.get_type() == access_type::write) {
-        if (a.get_written_hash().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            j["written_hash"] = encode_base64(a.get_written_hash().value());
-        }
-        if (a.get_written().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            j["written"] = encode_base64(a.get_written().value());
-        }
-    }
-    if (a.get_sibling_hashes().has_value()) {
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        const auto &sibling_hashes = a.get_sibling_hashes().value();
-        // Minimum logged data size is hash-tree word size
-        auto data_log2_size = std::max(a.get_log2_size(), HASH_TREE_LOG2_WORD_SIZE);
-        auto depth = HASH_TREE_LOG2_ROOT_SIZE - data_log2_size;
-        nlohmann::json s = nlohmann::json::array();
-        for (int i = 0; i < depth; i++) {
-            s.push_back(encode_base64(sibling_hashes[i]));
-        }
-        j["sibling_hashes"] = s;
-    }
-}
-
-void to_json(nlohmann::json &j, const bracket_note &b) {
-    j = nlohmann::json{{"type", bracket_type_to_name(b.type)}, {"where", b.where}, {"text", b.text}};
-}
-
 void to_json(nlohmann::json &j, const uarch_interpreter_break_reason &break_reason) {
     j = uarch_interpreter_break_reason_to_name(break_reason);
 }
 
 void to_json(nlohmann::json &j, const interpreter_break_reason &break_reason) {
     j = interpreter_break_reason_to_name(break_reason);
-}
-
-void to_json(nlohmann::json &j, const std::vector<bracket_note> &bs) {
-    j = nlohmann::json::array();
-    std::ranges::transform(bs, std::back_inserter(j), [](const bracket_note &b) -> nlohmann::json { return b; });
-}
-
-void to_json(nlohmann::json &j, const std::vector<access> &as) {
-    j = nlohmann::json::array();
-    std::ranges::transform(as, std::back_inserter(j), [](const access &a) -> nlohmann::json { return a; });
-}
-
-void to_json(nlohmann::json &j, const access_log::type &log_type) {
-    j = nlohmann::json{{"has_annotations", log_type.has_annotations()}, {"has_large_data", log_type.has_large_data()}};
-}
-
-void to_json(nlohmann::json &j, const access_log &log) {
-    j = nlohmann::json{{"log_type", log.get_log_type()}, {"accesses", log.get_accesses()}};
-    if (log.get_log_type().has_annotations()) {
-        j["notes"] = log.get_notes();
-        j["brackets"] = log.get_brackets();
-    }
 }
 
 void to_json(nlohmann::json &j, const backing_store_config &config) {

@@ -1,1 +1,4 @@
 target
+*.profraw
+lcov.info
+coverage-summary.txt

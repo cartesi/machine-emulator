@@ -8,8 +8,14 @@ state transition is valid.
 
     cd risc0 && make
 
-Docker is required -- the guest binary is built inside a container
-to ensure all machines produce the same Image ID.
+Prerequisites (versions pinned in CI):
+
+- Docker -- the guest binary is built inside a container to ensure all
+  machines produce the same Image ID
+- `rzup` with the `cpp` toolchain (2024.1.5) and `r0vm` (3.0.5)
+- lua5.4 and a built emulator (for fixtures and the pipeline test)
+
+The CLI binary lands in `risc0/rust/target/debug/cartesi-risc0-cli`.
 
 ## Pipeline
 
@@ -32,6 +38,11 @@ to ensure all machines produce the same Image ID.
 Dev mode (fake proofs, for development):
 
     RISC0_DEV_MODE=1 cartesi-risc0-cli prove <hash_before> step.log <mcycle> <hash_after> receipt.bin
+
+A dev-mode receipt carries no cryptographic proof, so `verify` rejects it
+unless `--allow-dev-mode` is passed -- the env var alone is not enough:
+
+    cartesi-risc0-cli --allow-dev-mode verify receipt.bin <hash_before> <mcycle> <hash_after>
 
 ## Building with CUDA
 
@@ -56,9 +67,10 @@ See [`solidity/`](solidity/) for the contract and integration tests.
 
 ## Testing
 
+    make -C risc0 fixtures     # record step-log fixtures (needs a built emulator)
     make -C risc0 test
 
-This runs:
+`make test` runs:
 
 1. Dev-mode interpreter tests (cargo test with RISC0_DEV_MODE=1) -- always runs
 2. Full proving pipeline (prove -> verify -> compress -> verify-seal) -- real proofs
@@ -69,9 +81,18 @@ To skip them during development:
 
     RISC0_TEST_DEV_ONLY=1 make -C risc0 test
 
-Fixtures (step log, receipt, seal, journal) are generated once in
-`risc0/test/fixtures/` and reused across pipeline and Solidity tests.
-Run `make -C risc0 clean` to regenerate them.
+Host-side Rust coverage (needs `cargo install cargo-llvm-cov` and
+`rustup component add llvm-tools`): `make -C risc0 coverage` writes
+`rust/lcov.info` + `rust/coverage-summary.txt`, covering the dev-mode suite
+plus an instrumented run of the real proving pipeline (skipped under
+`RISC0_TEST_DEV_ONLY=1`). `make -C risc0/solidity coverage` covers the
+on-chain verifier. The zkVM guest itself cannot be instrumented; its behavior
+is covered by the reject-fixture and pipeline tests.
+
+The step-log fixtures under `risc0/test/fixtures/` come from `make fixtures`
+and survive across test runs; the receipt/seal/journal are derived from them
+on demand. `make -C risc0 clean` deletes everything, after which `make
+fixtures` must run again before `make test`.
 
 ## FAQ
 
@@ -85,5 +106,8 @@ to override with a Docker-built guest when needed.
 
 **Image ID mismatch between machines?**
 
-Check same `risc0-build` version, Docker running, and neither
-machine has `RISC0_REPRODUCIBLE_BUILD=0`.
+Check same `risc0-build` version, same rzup `cpp` toolchain version
+(the C++ replay object is compiled on the host and linked into the
+guest, so its compiler is part of the Image ID; `cpp/Makefile` pins
+and enforces the version), Docker running, and neither machine has
+`RISC0_REPRODUCIBLE_BUILD=0`.

@@ -21,6 +21,7 @@ local util = require("cartesi.util")
 local tests_util = require("cartesi.tests.util")
 local tabular = require("cartesi.tabular")
 local parallel = require("cartesi.parallel")
+local manifest_mod = require("cartesi.tests.step_log_manifest")
 local jsonrpc
 
 -- Tests Cases
@@ -296,9 +297,10 @@ local riscv_tests = {
     { "zcb.bin", 172 },
     { "thrash-tlb.bin", 3363 },
     { "thrash-tlb.bin", 3363, nil, { "pre-thrash-tlb.lua", "post-thrash-tlb.lua" } },
+    -- worst-case step-log footprint generators (see step_max_pages*.S)
+    { "step_max_pages.bin", 123 },
+    { "step_max_pages_flush.bin", 1037 },
 }
-
-local log_annotations = false
 
 -- Microarchitecture configuration
 local uarch
@@ -329,13 +331,10 @@ where options are:
     run N tests in parallel
     (default: 1, i.e., run tests sequentially)
 
-  --log-annotations
-    include annotations in logs
-
   --periodic-action=<number-period>[,<number-start>]
     stop execution every <number> of uarch cycles and perform action. If
     <number-start> is given, the periodic action will start at that
-    uarch cycle. Only take effect with hash and step commands.
+    uarch cycle. Only take effect with the hash command.
     (default: none)
 
   --remote-address=<ip>:<port>
@@ -343,7 +342,7 @@ where options are:
     running a local cartesi machine.
 
   --output=<filename>
-    write the output of hash and step commands to the file at
+    write the output of the hash command to the file at
     <filename>. If the argument is not present the output is written
     to stdout.
     (default: none)
@@ -371,6 +370,10 @@ and command can be:
   run_step
     run all tests by recording and verifying each test execution into a step log file
 
+  run_step_uarch
+    run all tests one uarch step at a time, recording and verifying each step into a
+    step log file, and check the final hash against a reference machine
+
   run_uarch
     run test in the microarchitecture and report if payload and cycles match expected
 
@@ -382,9 +385,6 @@ and command can be:
 
   hash
     output root hash at every <number> of cycles
-
-  step
-    output json log of step at every <number> of cycles
 
   dump
     dump machine initial state memory ranges on current directory
@@ -514,16 +514,6 @@ local options = {
             end
             jobs = assert(tonumber(o))
             assert(jobs and jobs >= 1, "invalid number of jobs")
-            return true
-        end,
-    },
-    {
-        "^%-%-log%-annotations$",
-        function(o)
-            if not o then
-                return false
-            end
-            log_annotations = true
             return true
         end,
     },
@@ -863,89 +853,6 @@ local function print_machines(tests)
     end
 end
 
-local function step(tests)
-    local out = io.stdout
-    if output then
-        out = assert(io.open(output, "w"), "error opening file: " .. output)
-    end
-    local indentout = util.indentout
-    local log_type = (log_annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
-    out:write("[\n")
-    for i, test in ipairs(tests) do
-        local ram_image = test[1]
-        local expected_cycles = test[2]
-        local expected_payload = test[3] or 0
-        local machine <close> = build_machine(ram_image)
-        indentout(out, 1, "{\n")
-        indentout(out, 2, '"test": "%s",\n', ram_image)
-        if periodic_action then
-            indentout(out, 2, '"period": %u,\n', periodic_action_period)
-            indentout(out, 2, '"start": %u,\n', periodic_action_start)
-        end
-        indentout(out, 2, '"steps": [\n')
-        local total_logged_steps = 0
-        local total_uarch_cycles = 0
-        local max_mcycle = 2 * expected_cycles
-        while math.ult(machine:read_reg("mcycle"), max_mcycle) do
-            local uarch_cycle_increment = 0
-            local next_action_uarch_cycle
-            if periodic_action then
-                next_action_uarch_cycle = periodic_action_start
-                if next_action_uarch_cycle <= total_uarch_cycles then
-                    next_action_uarch_cycle = next_action_uarch_cycle
-                        + (
-                            (((total_uarch_cycles - periodic_action_start) // periodic_action_period) + 1)
-                            * periodic_action_period
-                        )
-                end
-                uarch_cycle_increment = next_action_uarch_cycle - total_uarch_cycles
-            end
-            local init_uarch_cycle = machine:read_reg("uarch_cycle")
-            machine:run_uarch(machine:read_reg("uarch_cycle") + uarch_cycle_increment)
-            local final_uarch_cycle = machine:read_reg("uarch_cycle")
-            total_uarch_cycles = total_uarch_cycles + (final_uarch_cycle - init_uarch_cycle)
-            if machine:read_reg("uarch_halt") ~= 0 then
-                machine:reset_uarch()
-                if machine:read_reg("iflags_H") ~= 0 then
-                    break
-                end
-            end
-            if not periodic_action or total_uarch_cycles == next_action_uarch_cycle then
-                local init_mcycle = machine:read_reg("mcycle")
-                init_uarch_cycle = machine:read_reg("uarch_cycle")
-                local log = machine:log_step_uarch(log_type)
-                local final_mcycle = machine:read_reg("mcycle")
-                final_uarch_cycle = machine:read_reg("uarch_cycle")
-                if total_logged_steps > 0 then
-                    out:write(",\n")
-                end
-                util.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle, out, 3)
-                total_uarch_cycles = total_uarch_cycles + 1
-                total_logged_steps = total_logged_steps + 1
-                if machine:read_reg("uarch_halt") ~= 0 then
-                    machine:reset_uarch()
-                    if machine:read_reg("iflags_H") ~= 0 then
-                        break
-                    end
-                end
-            end
-        end
-        indentout(out, 2, "]\n")
-        if tests[i + 1] then
-            indentout(out, 1, "},\n")
-        else
-            indentout(out, 1, "}\n")
-        end
-        if
-            machine:read_reg("htif_tohost_data") >> 1 ~= expected_payload
-            or machine:read_reg("mcycle") ~= expected_cycles
-        then
-            os.exit(1, true)
-        end
-    end
-    out:write("]\n")
-end
-
 local function dump(tests)
     local ram_image = tests[1][1]
     local machine <close> = build_machine(ram_image)
@@ -1048,6 +955,16 @@ local function run_host_and_uarch_machines(host_machine, uarch_machine, ctx, max
     return host_cycles
 end
 
+-- A ram_image can be run both plain and with a prepost variant; give them distinct
+-- fixture names so each saved log stays paired with its own manifest root hashes.
+local function step_log_name(row)
+    local base = row.ram_image:match("^(.+)%.bin$") or row.ram_image
+    if row.prepost and row.prepost[1] then
+        base = base .. "-prepost"
+    end
+    return base
+end
+
 local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
     local log_filename = os.tmpname()
     local delete_temp = true
@@ -1076,14 +993,85 @@ local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
         fatal("%s: failed. Final hash does not match reference machine\n", ctx.ram_image)
     end
     ctx.read_htif_tohost_data = machine:read_reg("htif_tohost_data")
-    -- save step log if requested
+    -- Save the step log plus a manifest fragment carrying the live-machine root
+    -- hashes (the replayer's Layer-2 source of truth). Fragments are merged after.
     if save_step_logs_dir then
-        local test_name = ctx.ram_image:match("^(.+)%.bin$") or ctx.ram_image
+        local test_name = step_log_name(ctx)
         local final_name = string.format("step-%s.log", test_name)
-        local final_path = save_step_logs_dir:gsub("/*$", "/") .. final_name
+        local logs_dir = save_step_logs_dir:gsub("/+$", "")
+        local final_path = logs_dir .. "/" .. final_name
         local cmd = string.format("cp '%s' '%s'", log_filename, final_path)
         assert(os.execute(cmd), "failed to copy step log to " .. final_path)
+        manifest_mod.write_fragment(logs_dir, test_name, {
+            kind = "machine",
+            name = final_name,
+            hash_function = hash_function or "keccak256",
+            requested_cycle_count = mcycle_count,
+            initial_root_hash = root_hash_before,
+            final_root_hash = root_hash_after,
+        })
     end
+end
+
+local function run_machine_step_uarch(machine, reference_machine, ctx, max_mcycle)
+    local log_filename = os.tmpname()
+    local delete_temp = true
+    local deleter = {}
+    setmetatable(deleter, {
+        __gc = function()
+            if delete_temp then
+                os.remove(log_filename)
+            end
+        end,
+    })
+    local test_cycles = machine:read_reg("mcycle")
+    local ref_cycles = reference_machine:read_reg("mcycle")
+    if test_cycles ~= ref_cycles then
+        fatal("%s: test_cycles ~= ref_cycles: %d ~= %d", ctx.ram_image, test_cycles, ref_cycles)
+    end
+    while math.ult(test_cycles, max_mcycle) do
+        local test_hash = machine:get_root_hash()
+        local ref_hash = reference_machine:get_root_hash()
+        if test_hash ~= ref_hash then
+            fatal(
+                "%s: Hash mismatch at mcycle %d: %s ~= %s",
+                ctx.ram_image,
+                test_cycles,
+                util.hexhash(test_hash),
+                util.hexhash(ref_hash)
+            )
+        end
+        reference_machine:run(1 + ref_cycles)
+        -- Test machine advances one mcycle: log all its uarch cycles, then verify the round-trip.
+        local root_hash_before = machine:get_root_hash()
+        os.remove(log_filename)
+        machine:log_step_uarch(math.maxinteger, log_filename)
+        local root_hash_after = machine:get_root_hash()
+        cartesi.machine:verify_step_uarch(root_hash_before, log_filename, math.maxinteger, root_hash_after)
+        machine:reset_uarch()
+        test_cycles = machine:read_reg("mcycle")
+        ref_cycles = reference_machine:read_reg("mcycle")
+        if test_cycles ~= ref_cycles then
+            fatal("%s: test_cycles ~= ref_cycles: %d ~= %d", ctx.ram_image, test_cycles, ref_cycles)
+        end
+        local test_iflags_H = machine:read_reg("iflags_H") ~= 0
+        local ref_iflags_H = reference_machine:read_reg("iflags_H") ~= 0
+        if test_iflags_H ~= ref_iflags_H then
+            fatal(
+                "%s: test_iflags_H ~= ref_iflags_H: %s ~= %s",
+                ctx.ram_image,
+                tostring(test_iflags_H),
+                tostring(ref_iflags_H)
+            )
+        end
+        if test_iflags_H then
+            break
+        end
+    end
+    if machine:get_root_hash() ~= reference_machine:get_root_hash() then
+        fatal("%s: failed. Final hash does not match reference machine\n", ctx.ram_image)
+    end
+    ctx.read_htif_tohost_data = machine:read_reg("htif_tohost_data")
 end
 
 local failures = nil
@@ -1108,6 +1096,31 @@ elseif command == "run_step" then
         local pre_ctx = pre_fn(machine)
         pre_fn(reference_machine)
         run_machine_step(machine, reference_machine, row, row.expected_cycles)
+        check_and_print_result(machine, row)
+        post_fn(machine, pre_ctx)
+    end)
+    -- Merge the per-test manifest fragments written by the workers (deduped, since
+    -- prepost variants can repeat a ram_image) into one _manifest.csv.
+    if save_step_logs_dir and (not failures or failures == 0) then
+        local logs_dir = save_step_logs_dir:gsub("/+$", "")
+        local seen, keys = {}, {}
+        for _, row in ipairs(contexts) do
+            local test_name = step_log_name(row)
+            if not seen[test_name] then
+                seen[test_name] = true
+                keys[#keys + 1] = test_name
+            end
+        end
+        manifest_mod.concat_fragments(logs_dir, keys)
+    end
+elseif command == "run_step_uarch" then
+    failures = parallel.run(contexts, jobs, function(row)
+        local pre_fn, post_fn = load_prepost(row.prepost)
+        local machine <close> = build_machine(row.ram_image)
+        local reference_machine <close> = build_machine(row.ram_image)
+        local pre_ctx = pre_fn(machine)
+        pre_fn(reference_machine)
+        run_machine_step_uarch(machine, reference_machine, row, row.expected_cycles)
         check_and_print_result(machine, row)
         post_fn(machine, pre_ctx)
     end)
@@ -1149,8 +1162,6 @@ elseif command == "run_host_and_uarch" then
     end)
 elseif command == "hash" then
     hash(selected_tests)
-elseif command == "step" then
-    step(selected_tests)
 elseif command == "dump" then
     dump(selected_tests)
 elseif command == "list" then

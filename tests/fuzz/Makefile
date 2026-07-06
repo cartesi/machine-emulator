@@ -60,7 +60,8 @@ threads ?= yes
 BUILDDIR ?= .
 SRCDIR = ../../src
 
-INCS = -I$(SRCDIR) -I../../third-party/ankerl -I../../third-party/nlohmann-json -I../../third-party/downloads
+INCS = -I$(SRCDIR) -I../../third-party/ankerl -I../../third-party/nlohmann-json -I../../third-party/downloads \
+	-I../../third-party/llvm-flang-uint128
 
 # Core flags: C++23, fuzzer + sanitizers
 CXXFLAGS += -std=gnu++23 -g -O1 -fno-omit-frame-pointer
@@ -94,7 +95,8 @@ endif
 FUZZ_TARGETS = \
 	$(BUILDDIR)/fuzz-interpret \
 	$(BUILDDIR)/fuzz-interpret-step \
-	$(BUILDDIR)/fuzz-config
+	$(BUILDDIR)/fuzz-config \
+	$(BUILDDIR)/fuzz-step-log
 
 .PHONY: all clean distclean run-fuzz \
 	run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config \
@@ -122,16 +124,21 @@ $(BUILDDIR)/fuzz-interpret-step: fuzz-interpret-step.cpp fuzz-common.h $(SRCDIR)
 $(BUILDDIR)/fuzz-config: fuzz-config.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
 	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
 
+$(BUILDDIR)/fuzz-step-log: fuzz-step-log.cpp $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
+	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
+
 # -- Run targets --------------------------------------------------------------
 
 CORPUS_DIR = corpus
 CONFIG_CORPUS_DIR = corpus-config
+STEP_LOG_CORPUS_DIR = corpus-step-log
 FUZZ_INTERPRET_ARGS ?=
 FUZZ_INTERPRET_STEP_ARGS ?=
 FUZZ_CONFIG_ARGS ?=
+FUZZ_STEP_LOG_ARGS ?=
 
 # Recommended entry point: runs all fuzzers in sequence.
-run-fuzz: run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config
+run-fuzz: run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config run-fuzz-step-log
 
 check-seed-corpus:
 	@test -d $(SEED_DIR) && test "$$(ls -A $(SEED_DIR) 2>/dev/null)" || \
@@ -151,6 +158,29 @@ run-fuzz-interpret-step: $(BUILDDIR)/fuzz-interpret-step check-seed-corpus
 run-fuzz-config: $(BUILDDIR)/fuzz-config
 	@mkdir -p $(CONFIG_CORPUS_DIR)
 	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-config $(CONFIG_CORPUS_DIR) $(FUZZ_CONFIG_ARGS)
+
+# Seeds are recorded fixture logs: mutating a valid image explores the validation
+# paths deeply instead of dying on the signature check. Sources are the logs the
+# solidity-step and risc0 test suites record.
+STEP_LOG_SEED_DIR = seed-corpus-step-log
+STEP_LOG_FIXTURE_DIRS = ../../solidity-step/test/fixtures ../../risc0/test/fixtures
+
+fuzz-step-log-seed-corpus:
+	@mkdir -p $(STEP_LOG_SEED_DIR)
+	@# Copy up to 40 small (<64k) recorded logs into the seed dir. Missing dirs are fine.
+	@find $(STEP_LOG_FIXTURE_DIRS) -name '*.log' -size -64k 2>/dev/null \
+		| head -40 \
+		| xargs -I{} cp {} $(STEP_LOG_SEED_DIR)/ \
+		|| true
+	@# A seeded run needs at least one fixture; warn (do not fail) if none were found.
+	@if [ -z "$$(ls -A $(STEP_LOG_SEED_DIR) 2>/dev/null)" ]; then \
+		echo "warning: no step-log fixtures found;" >&2; \
+		echo "  run 'make -C ../../solidity-step fixtures' first for a seeded run" >&2; \
+	fi
+
+run-fuzz-step-log: $(BUILDDIR)/fuzz-step-log fuzz-step-log-seed-corpus
+	@mkdir -p $(STEP_LOG_CORPUS_DIR)
+	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-step-log $(STEP_LOG_CORPUS_DIR) $(STEP_LOG_SEED_DIR)/ $(FUZZ_STEP_LOG_ARGS)
 
 # -- Seed corpus --------------------------------------------------------------
 #
@@ -212,6 +242,6 @@ fuzz-coverage-clean:
 
 clean: fuzz-coverage-clean
 	rm -f $(FUZZ_TARGETS)
-	rm -rf $(SEED_DIR)/
+	rm -rf $(SEED_DIR)/ $(STEP_LOG_SEED_DIR)/
 	rm -rf $(FUZZ_TARGETS:=.dSYM)
 	rm -f crash-* fuzz-*.log

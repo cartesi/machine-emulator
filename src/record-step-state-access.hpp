@@ -17,6 +17,7 @@
 #ifndef RECORD_STEP_STATE_ACCESS_HPP
 #define RECORD_STEP_STATE_ACCESS_HPP
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <map>
@@ -44,6 +45,7 @@
 #include "riscv-constants.hpp"
 #include "shadow-registers.hpp"
 #include "shadow-tlb.hpp"
+#include "step-log.hpp"
 #include "unique-c-ptr.hpp"
 #include "variant-hasher.hpp"
 
@@ -70,6 +72,7 @@ class record_step_state_access :
     using pages_type = std::map<uint64_t, page_data_type>;
     using sibling_hashes_type = hash_tree::sibling_hashes_type;
     using page_indices_type = std::vector<uint64_t>;
+    using nodes_type = std::map<uint64_t, node_entry>;
 
 public:
     struct context {
@@ -80,15 +83,16 @@ public:
             hash_function(hash_function) {
             ;
         }
-        std::string filename;             ///<  where to save the log
-        hash_function_type hash_function; ///<  hash function type to use for the log
-        mutable pages_type touched_pages; ///<  copy of all pages touched during execution
+        std::string filename;             ///< Where to save the log
+        hash_function_type hash_function; ///< Hash function type to use for the log
+        mutable pages_type touched_pages; ///< Copy of all pages touched during execution
+        mutable nodes_type touched_nodes; ///< Subtrees touched during execution
     };
 
 private:
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-    context &m_context; ///<  context for the recording
-    machine &m_m;       ///<  reference to machine
+    context &m_context; ///< Context for the recording
+    machine &m_m;       ///< Reference to machine
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
@@ -103,58 +107,48 @@ public:
     }
 
     /// \brief Finish recording and save the log file
-    void finish(const machine_hash &root_hash_before, uint64_t mcycle_count, const machine_hash &root_hash_after) {
-        // get sibling hashes of all touched pages
+    void finish(const machine_hash &root_hash_before, uint64_t requested_cycle_count,
+        const machine_hash &root_hash_after) {
+        // Fill in hash_after for each recorded node (tree is fresh from the outer get_root_hash call).
+        for (auto &[address, entry] : m_context.touched_nodes) {
+            entry.hash_after = m_m.get_node_hash(address, static_cast<int>(entry.log2_size), skip_hash_tree_update);
+        }
         auto sibling_hashes = get_sibling_hashes();
-        uint64_t page_count = m_context.touched_pages.size();
-        uint64_t sibling_count = sibling_hashes.size();
 
-        // Write log file.
-        // The log format is as follows:
-        // root_hash_before, mcycle_count, root_hash_after,
-        // hash_function, page_count, [(page_index, data, scratch_area), ...], sibling_count, [sibling_hash, ...]
-        // We store the page index, instead of the page address.
-        // Scratch area is used by the replay to store page hashes, which change during replay
-        // This is to work around the lack of dynamic memory allocation when replaying the log in microarchitectures
+        const step_log_header header{
+            .signature = STEP_LOG_SIGNATURE,
+            .root_hash_before = root_hash_before,
+            .requested_cycle_count = requested_cycle_count,
+            .root_hash_after = root_hash_after,
+            .hash_function = static_cast<uint64_t>(m_context.hash_function),
+            .page_count = m_context.touched_pages.size(),
+            .node_count = m_context.touched_nodes.size(),
+            .sibling_count = sibling_hashes.size(),
+        };
         auto fp = make_unique_fopen(m_context.filename.c_str(), "wb");
-        // write root hash before, mcycle count, and root hash after
-        if (fwrite(root_hash_before.data(), root_hash_before.size(), 1, fp.get()) != 1) {
-            throw std::runtime_error("Could not write root hash before to log file");
+        if (fwrite(&header, sizeof(header), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write header to log file");
         }
-        if (fwrite(&mcycle_count, sizeof(mcycle_count), 1, fp.get()) != 1) {
-            throw std::runtime_error("Could not write mcycle count to log file");
-        }
-        if (fwrite(root_hash_after.data(), root_hash_after.size(), 1, fp.get()) != 1) {
-            throw std::runtime_error("Could not write root hash after to log file");
-        }
-        // write the hash function type so the hasher can be recreated by the replay
-        auto hash_function = static_cast<uint64_t>(m_context.hash_function);
-        if (fwrite(&hash_function, sizeof(hash_function), 1, fp.get()) != 1) {
-            throw std::runtime_error("Could not write hash function type to log file");
-        }
-        if (fwrite(&page_count, sizeof(page_count), 1, fp.get()) != 1) {
-            throw std::runtime_error("Could not write page count to log file");
-        }
-        for (auto &[address, data] : m_context.touched_pages) {
-            const auto page_index = address >> HASH_TREE_LOG2_PAGE_SIZE;
-            if (fwrite(&page_index, sizeof(page_index), 1, fp.get()) != 1) {
-                throw std::runtime_error("Could not write page index to log file");
-            }
-            if (fwrite(data.data(), data.size(), 1, fp.get()) != 1) {
-                throw std::runtime_error("Could not write page data to log file");
-            }
-            static const machine_hash all_zeros{};
-            if (fwrite(all_zeros.data(), sizeof(all_zeros), 1, fp.get()) != 1) {
-                throw std::runtime_error("Could not write page hash scratch to log file");
+        for (const auto &[address, data] : m_context.touched_pages) {
+            page_entry entry{
+                .index = address >> HASH_TREE_LOG2_PAGE_SIZE,
+                .data = {},
+                .hash = {}, // scratch; replayer fills this in from the data
+            };
+            std::copy_n(data.data(), data.size(), entry.data);
+            if (fwrite(&entry, sizeof(entry), 1, fp.get()) != 1) {
+                throw std::runtime_error("Could not write page entry to log file");
             }
         }
-        if (fwrite(&sibling_count, sizeof(sibling_count), 1, fp.get()) != 1) {
-            throw std::runtime_error("Could not write sibling count to log file");
-        }
-        for (auto &hash : sibling_hashes) {
-            if (fwrite(hash.data(), sizeof(hash), 1, fp.get()) != 1) {
-                throw std::runtime_error("Could not write sibling hash to log file");
+        for (const auto &[_, node] : m_context.touched_nodes) {
+            if (fwrite(&node, sizeof(node), 1, fp.get()) != 1) {
+                throw std::runtime_error("Could not write node entry to log file");
             }
+        }
+        if (!sibling_hashes.empty() &&
+            fwrite(sibling_hashes.data(), sizeof(machine_hash), sibling_hashes.size(), fp.get()) !=
+                sibling_hashes.size()) {
+            throw std::runtime_error("Could not write sibling hashes to log file");
         }
     }
 
@@ -168,46 +162,120 @@ private:
         if (m_context.touched_pages.contains(page)) {
             return; // already saved
         }
+        // get first node with starting address > page or end of map
+        auto node_it = m_context.touched_nodes.upper_bound(page);
+        if (node_it != m_context.touched_nodes.begin()) {
+            const auto prev_node_it = std::prev(node_it);
+            const auto prev_node_end = prev_node_it->first + (UINT64_C(1) << prev_node_it->second.log2_size);
+            // Reject if the page falls inside a previously recorded node's range.
+            if (prev_node_end > page) {
+                throw std::runtime_error("page falls inside a recorded node's range");
+            }
+        }
         auto [it, _] = m_context.touched_pages.emplace(page, page_data_type());
         m_m.read_memory(page, it->second.data(), it->second.size());
     }
 
-    /// \brief Get the sibling hashes of all touched pages
+    /// \brief Record that the subtree at (address, log2_size) is being touched.
+    /// \param address Subtree start address, must be aligned to 2^log2_size
+    /// \param log2_size Log2 of the subtree size. Must be > PAGE_SIZE and <= ROOT_SIZE.
+    /// \details Captures the subtree's current hash as hash_before. hash_after is
+    /// filled in during finish() once the machine's tree has been refreshed.
+    /// Rejects overlaps with existing nodes and enclosure of touched pages so
+    /// the "pages and nodes are pairwise disjoint" invariant holds at replay.
+    void touch_node(uint64_t address, int log2_size) const {
+        if (log2_size <= HASH_TREE_LOG2_PAGE_SIZE || log2_size > HASH_TREE_LOG2_ROOT_SIZE) {
+            throw std::runtime_error("node log2 size is out of range");
+        }
+        const auto node_size = UINT64_C(1) << log2_size;
+        if ((address & (node_size - 1)) != 0) {
+            throw std::runtime_error("node address is not aligned to its size");
+        }
+        const auto node_end = address + node_size;
+        // get first node with starting address >= address or end of map
+        auto next_node_it = m_context.touched_nodes.lower_bound(address);
+        // Reject if the next node starts inside this node's range.
+        if (next_node_it != m_context.touched_nodes.end() && next_node_it->first < node_end) {
+            throw std::runtime_error("node overlaps an existing node");
+        }
+        if (next_node_it != m_context.touched_nodes.begin()) {
+            const auto prev_node_it = std::prev(next_node_it);
+            const auto prev_node_end = prev_node_it->first + (UINT64_C(1) << prev_node_it->second.log2_size);
+            // Reject if the previous node's range extends into this node's range.
+            if (prev_node_end > address) {
+                throw std::runtime_error("node overlaps an existing node");
+            }
+        }
+        // get first page with starting address >= address or end of map
+        auto next_page_it = m_context.touched_pages.lower_bound(address);
+        // Reject if any existing page lies inside the node's range.
+        if (next_page_it != m_context.touched_pages.end() && next_page_it->first < node_end) {
+            throw std::runtime_error("node would enclose an existing page");
+        }
+        m_context.touched_nodes.emplace(address,
+            node_entry{
+                .address = address,
+                .log2_size = static_cast<uint64_t>(log2_size),
+                .hash_before = m_m.get_node_hash(address, log2_size, skip_hash_tree_update),
+                .hash_after = {}, // filled in by finish() after the outer get_root_hash() refreshes the tree
+            });
+    }
+
+    /// \brief Collect the sibling hashes needed to reconstruct the root hash from touched_pages and touched_nodes.
+    /// \details Walks the tree with three cursors (pages, nodes, siblings).
+    /// A subtree whose range exactly matches a recorded node is consumed as a node
+    /// (no sibling emitted). Subtrees with no touched content emit one sibling hash.
+    /// Recursion descends into subtrees that contain at least one touched page or node.
     sibling_hashes_type get_sibling_hashes() {
         sibling_hashes_type sibling_hashes{};
-        // page address are converted to page indices, in order to avoid overflows
         page_indices_type page_indices{};
-        // iterate in ascending order of page addresses (the container is ordered by key)
         for (const auto &[address, _] : m_context.touched_pages) {
             page_indices.push_back(address >> HASH_TREE_LOG2_PAGE_SIZE);
         }
         auto next_page_index = page_indices.cbegin();
+        auto next_node_it = m_context.touched_nodes.cbegin();
         get_sibling_hashes_impl(0, HASH_TREE_LOG2_ROOT_SIZE - HASH_TREE_LOG2_PAGE_SIZE, page_indices, next_page_index,
-            sibling_hashes);
+            next_node_it, sibling_hashes);
         if (next_page_index != page_indices.cend()) {
             throw std::runtime_error("get_sibling_hashes failed to consume all pages");
+        }
+        if (next_node_it != m_context.touched_nodes.cend()) {
+            throw std::runtime_error("get_sibling_hashes failed to consume all nodes");
         }
         return sibling_hashes;
     }
 
-    /// \brief Recursively get the sibling hashes of all touched pages
-    /// \param page_index index of 1st page in range
-    /// \param page_count_log2_size log2 of the number of pages in range
-    /// \param page_indices indices of all pages
-    /// \param next_page_index smallest page index not visited yet
-    /// \param sibling_hashes stores the collected sibling hashes during the recursion
+    /// \brief Recursively collect sibling hashes for the subtree rooted at page_index
+    /// \param page_index Index of the first page in the subtree
+    /// \param page_count_log2_size Log2 of the number of pages in the subtree
+    /// \param page_indices All touched page indices, sorted ascending
+    /// \param next_page_index Cursor into page_indices; advances past each page consumed during recursion
+    /// \param next_node_it Cursor into touched_nodes; advances past each node consumed during recursion
+    /// \param sibling_hashes Accumulates sibling hashes for untouched subtrees
     void get_sibling_hashes_impl(uint64_t page_index, int page_count_log2_size, page_indices_type &page_indices,
-        page_indices_type::const_iterator &next_page_index, sibling_hashes_type &sibling_hashes) {
-        auto page_count = UINT64_C(1) << page_count_log2_size;
-        if (next_page_index == page_indices.cend() || page_index + page_count <= *next_page_index) {
-            // we can skip the hash tree update, because a full update was done before the recording started
-            sibling_hashes.push_back(m_m.get_node_hash(page_index << HASH_TREE_LOG2_PAGE_SIZE,
-                page_count_log2_size + HASH_TREE_LOG2_PAGE_SIZE, skip_hash_tree_update));
+        page_indices_type::const_iterator &next_page_index, nodes_type::const_iterator &next_node_it,
+        sibling_hashes_type &sibling_hashes) {
+        const auto subtree_start_addr = page_index << HASH_TREE_LOG2_PAGE_SIZE;
+        const auto subtree_log2_size = page_count_log2_size + HASH_TREE_LOG2_PAGE_SIZE;
+        const auto page_count = UINT64_C(1) << page_count_log2_size;
+        const auto subtree_end_page_index = page_index + page_count;
+
+        // next unconsumed page / node is inside this subtree?
+        const bool page_in = next_page_index != page_indices.cend() && *next_page_index < subtree_end_page_index;
+        // shift node address into page-index units to compare with subtree_end_page_index
+        const bool node_in = next_node_it != m_context.touched_nodes.cend() &&
+            (next_node_it->first >> HASH_TREE_LOG2_PAGE_SIZE) < subtree_end_page_index;
+
+        if (!page_in && !node_in) {
+            sibling_hashes.push_back(m_m.get_node_hash(subtree_start_addr, subtree_log2_size, skip_hash_tree_update));
+        } else if (node_in && next_node_it->first == subtree_start_addr &&
+            next_node_it->second.log2_size == static_cast<uint64_t>(subtree_log2_size)) {
+            ++next_node_it;
         } else if (page_count_log2_size > 0) {
-            get_sibling_hashes_impl(page_index, page_count_log2_size - 1, page_indices, next_page_index,
+            get_sibling_hashes_impl(page_index, page_count_log2_size - 1, page_indices, next_page_index, next_node_it,
                 sibling_hashes);
             get_sibling_hashes_impl(page_index + (UINT64_C(1) << (page_count_log2_size - 1)), page_count_log2_size - 1,
-                page_indices, next_page_index, sibling_hashes);
+                page_indices, next_page_index, next_node_it, sibling_hashes);
         } else {
             ++next_page_index;
         }
@@ -352,6 +420,35 @@ private:
         // translation between paddr and its own haddr, so we touch the page here
         touch_page(paddr);
         return m_m.get_host_addr(paddr, pma_index);
+    }
+
+    /// \brief Record a cmio response write into the cmio rx buffer.
+    /// \param paddr Destination physical address; must be aligned to (1 << write_length_log2_size).
+    /// \param data Pointer to source bytes.
+    /// \param data_length Number of valid bytes at \p data.
+    /// \param write_length_log2_size Log2 of the full write length (data + zero padding).
+    /// \details Writes spanning more than a page are recorded as a single subtree
+    /// node (touch_node); writes fitting within a page fall back to page-level
+    /// recording (touch_page). In either case the actual memory write is delegated
+    /// to the machine, and the padding zeros are written via fill_memory.
+    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
+        int write_length_log2_size) const {
+        if (data == nullptr) {
+            throw std::invalid_argument("data is null");
+        }
+        const uint64_t write_length = UINT64_C(1) << write_length_log2_size;
+        if (write_length < data_length) {
+            throw std::invalid_argument("write_length is less than data_length");
+        }
+        if (write_length_log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
+            touch_node(paddr, write_length_log2_size);
+        } else {
+            touch_page(paddr);
+        }
+        m_m.write_memory(paddr, data, data_length);
+        if (write_length > data_length) {
+            m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
+        }
     }
 
     bool do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)

@@ -71,7 +71,6 @@
 #include <omp.h>
 #endif
 
-#include "access-log.hpp"
 #include "back-merkle-tree.hpp"
 #include "base64.hpp"
 #include "cm-exception.hpp"
@@ -985,8 +984,10 @@ static json jsonrpc_machine_collect_mcycle_root_hashes(const json &j, const std:
     auto mcycle_phase = std::get<2>(args);
     auto log2_bundle_mcycle_count = std::get<3>(args);
     auto previous_back_tree = std::get<4>(args);
+    // check_int rejects values that would not survive the narrowing to int instead of letting them
+    // wrap to a small, valid-looking bundle size.
     const auto result = session->handler->machine->collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase,
-        static_cast<int>(log2_bundle_mcycle_count), previous_back_tree);
+        check_int(log2_bundle_mcycle_count, param_name[3]), previous_back_tree);
     return jsonrpc_response_ok(j, result);
 }
 
@@ -1004,8 +1005,10 @@ static json jsonrpc_machine_collect_uarch_cycle_root_hashes(const json &j,
     auto mcycle_end = std::get<0>(args);
     auto log2_bundle_uarch_cycle_count = std::get<1>(args);
     const auto revert_uarch_tail = std::get<2>(args).value_or(cartesi::machine_hashes{});
+    // check_int rejects values that would not survive the narrowing to int instead of letting them
+    // wrap to a small, valid-looking bundle size.
     const auto result = session->handler->machine->collect_uarch_cycle_root_hashes(mcycle_end,
-        static_cast<int>(log2_bundle_uarch_cycle_count), revert_uarch_tail);
+        check_int(log2_bundle_uarch_cycle_count, param_name[1]), revert_uarch_tail);
     return jsonrpc_response_ok(j, result);
 }
 
@@ -1142,10 +1145,10 @@ static json jsonrpc_machine_log_step_uarch_handler(const json &j, const std::sha
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *const param_name[] = {"log_type"};
-    auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log::type>>(j, param_name);
-    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    return jsonrpc_response_ok(j, session->handler->machine->log_step_uarch(std::get<0>(args).value()));
+    static const char *const param_name[] = {"uarch_cycle_count", "filename"};
+    auto args = parse_args<uint64_t, std::string>(j, param_name);
+    auto reason = session->handler->machine->log_step_uarch(std::get<0>(args), std::get<1>(args));
+    return jsonrpc_response_ok(j, reason);
 }
 
 /// \brief JSONRPC handler for the machine.log_step_uarch method
@@ -1156,10 +1159,10 @@ static json jsonrpc_machine_log_reset_uarch_handler(const json &j, const std::sh
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *const param_name[] = {"log_type"};
-    auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log::type>>(j, param_name);
-    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    return jsonrpc_response_ok(j, session->handler->machine->log_reset_uarch(std::get<0>(args).value()));
+    static const char *const param_name[] = {"filename"};
+    auto args = parse_args<std::string>(j, param_name);
+    session->handler->machine->log_reset_uarch(std::get<0>(args));
+    return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.verify_step method
@@ -1183,12 +1186,12 @@ static json jsonrpc_machine_verify_step_handler(const json &j, const std::shared
 /// \returns JSON response object
 static json jsonrpc_machine_verify_step_uarch_handler(const json &j,
     const std::shared_ptr<http_session> & /*session*/) {
-    static const char *const param_name[] = {"root_hash_before", "log", "root_hash_after"};
-    auto args = parse_args<cartesi::machine_hash, cartesi::not_default_constructible<cartesi::access_log>,
-        cartesi::optional_param<cartesi::machine_hash>>(j, param_name);
+    static const char *const param_name[] = {"root_hash_before", "filename", "uarch_cycle_count", "root_hash_after"};
+    auto args =
+        parse_args<cartesi::machine_hash, std::string, uint64_t, cartesi::optional_param<cartesi::machine_hash>>(j,
+            param_name);
     auto obtained_root_hash =
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::machine::verify_step_uarch(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args));
+        cartesi::machine::verify_step_uarch(std::get<0>(args), std::get<1>(args), std::get<2>(args), std::get<3>(args));
     return jsonrpc_response_ok(j, cartesi::base64_machine_hash(obtained_root_hash));
 }
 
@@ -1198,12 +1201,11 @@ static json jsonrpc_machine_verify_step_uarch_handler(const json &j,
 /// \returns JSON response object
 static json jsonrpc_machine_verify_reset_uarch_handler(const json &j,
     const std::shared_ptr<http_session> & /*session*/) {
-    static const char *const param_name[] = {"root_hash_before", "log", "root_hash_after"};
-    auto args = parse_args<cartesi::machine_hash, cartesi::not_default_constructible<cartesi::access_log>,
-        cartesi::optional_param<cartesi::machine_hash>>(j, param_name);
+    static const char *const param_name[] = {"root_hash_before", "filename", "root_hash_after"};
+    auto args =
+        parse_args<cartesi::machine_hash, std::string, cartesi::optional_param<cartesi::machine_hash>>(j, param_name);
     auto obtained_root_hash =
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::machine::verify_reset_uarch(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args));
+        cartesi::machine::verify_reset_uarch(std::get<0>(args), std::get<1>(args), std::get<2>(args));
     return jsonrpc_response_ok(j, cartesi::base64_machine_hash(obtained_root_hash));
 }
 
@@ -1647,17 +1649,14 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *const param_name[] = {"revert_root_hash", "reason", "data", "log_type"};
-    auto args = parse_args<cartesi::machine_hash, uint16_t, std::string,
-        cartesi::not_default_constructible<cartesi::access_log::type>>(j, param_name);
+    static const char *const param_name[] = {"revert_root_hash", "reason", "data", "filename"};
+    auto args = parse_args<cartesi::machine_hash, uint16_t, std::string, std::string>(j, param_name);
     auto bin = cartesi::decode_base64(std::get<2>(args));
-    // NOLINTBEGIN(bugprone-unchecked-optional-access)
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-    return jsonrpc_response_ok(j,
-        session->handler->machine->log_send_cmio_response(std::get<0>(args), std::get<1>(args),
-            reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<3>(args).value()));
+    session->handler->machine->log_send_cmio_response(std::get<0>(args), std::get<1>(args),
+        reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<3>(args));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
-    // NOLINTEND(bugprone-unchecked-optional-access)
+    return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.verify_send_cmio_response method
@@ -1666,20 +1665,17 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
 /// \returns JSON response object
 static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
     const std::shared_ptr<http_session> & /*session*/) {
-    static const char *const param_name[] = {"revert_root_hash", "reason", "data", "root_hash_before", "log",
+    static const char *const param_name[] = {"revert_root_hash", "reason", "data", "root_hash_before", "filename",
         "root_hash_after"};
-    auto args = parse_args<cartesi::machine_hash, uint16_t, std::string, cartesi::machine_hash,
-        cartesi::not_default_constructible<cartesi::access_log>, cartesi::optional_param<cartesi::machine_hash>>(j,
-        param_name);
+    auto args = parse_args<cartesi::machine_hash, uint16_t, std::string, cartesi::machine_hash, std::string,
+        cartesi::optional_param<cartesi::machine_hash>>(j, param_name);
 
     auto bin = cartesi::decode_base64(std::get<2>(args));
-    // NOLINTBEGIN(bugprone-unchecked-optional-access)
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
     auto obtained_root_hash = cartesi::machine::verify_send_cmio_response(std::get<0>(args), std::get<1>(args),
-        reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<3>(args), std::get<4>(args).value(),
+        reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<3>(args), std::get<4>(args),
         std::get<5>(args));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
-    // NOLINTEND(bugprone-unchecked-optional-access)
     return jsonrpc_response_ok(j, cartesi::base64_machine_hash(obtained_root_hash));
 }
 

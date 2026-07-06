@@ -22,9 +22,9 @@
 #include "address-range-constants.hpp"
 #include "hash-tree-constants.hpp"
 #include "htif-constants.hpp"
-#include "record-send-cmio-state-access.hpp" // IWYU pragma: keep
-#include "replay-send-cmio-state-access.hpp" // IWYU pragma: keep
-#include "state-access.hpp"                  // IWYU pragma: keep
+#include "record-step-state-access.hpp" // IWYU pragma: keep
+#include "replay-step-state-access.hpp" // IWYU pragma: keep
+#include "state-access.hpp"             // IWYU pragma: keep
 #include "uarch-solidity-compat.hpp"
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)
@@ -63,7 +63,9 @@ void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, b
             return;
         }
     }
-    // Record the machine root hash to revert to in case the response is eventually rejected
+    // Record the machine root hash to revert to in case the response is eventually rejected. A consumer
+    // recovers it from the uarch-reset step log (whose reset accesses this slot) to revert to this state
+    // if the response is later rejected.
     writeRevertRootHash(a, revertRootHash);
     if (dataLength > 0) {
         writeMemoryWithPadding(a, AR_CMIO_RX_BUFFER_START, data, dataLength, writeLengthLog2Size);
@@ -81,12 +83,12 @@ void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, b
 template void send_cmio_response(state_access a, bytes32 revertRootHash, uint16_t reason, const unsigned char *data,
     uint32 length);
 
-// Explicit instantiation for record_state_access
-template void send_cmio_response(record_send_cmio_state_access a, bytes32 revertRootHash, uint16_t reason,
+// Explicit instantiation for record_step_state_access
+template void send_cmio_response(record_step_state_access a, bytes32 revertRootHash, uint16_t reason,
     const unsigned char *data, uint32 length);
 
-// Explicit instantiation for replay_state_access
-template void send_cmio_response(replay_send_cmio_state_access a, bytes32 revertRootHash, uint16_t reason,
+// Explicit instantiation for replay_step_state_access
+template void send_cmio_response(replay_step_state_access a, bytes32 revertRootHash, uint16_t reason,
     const unsigned char *data, uint32 length);
 
 } // namespace cartesi

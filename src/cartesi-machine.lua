@@ -770,11 +770,36 @@ where options are:
   --log-step=<filename>,count:<mcycle-count>
     log and save a step of <mcycle-count> mcycles to <filename>.
 
-  --log-step-uarch
-    advance one micro step and print access log.
+  --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,pretty]
+    log <uarch-cycle-count> microarchitecture cycles (default 1) to <filename>
+    as a binary step log. logging stops early at the uarch halt, so a count at
+    or above the per-mcycle uarch budget records one whole mcycle.
+    append ",pretty" to also write a human-readable printout to stderr.
 
-  --log-reset-uarch
-    reset the microarchitecture state and print the access log.
+  --log-reset-uarch=<filename>
+    reset the microarchitecture state and write a binary step log to <filename>.
+
+  --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...]
+    send a cmio response to the rx buffer and write a binary step log to a file.
+    runs after the machine has reached its terminal state. The machine should be
+    in a yielded state (iflags.Y == 1); otherwise the logged transition is a no-op.
+
+    <key>:<value> is one of
+        reason:<number>
+        filename:<path>
+        file:<path>
+        hex:<0x...>
+        str:<text>
+
+        reason (required)
+        the cmio yield reason (e.g., a HTIF_YIELD_*_REASON_* constant).
+
+        filename (required)
+        path of the step log file to write.
+
+        file | hex | str (exactly one required)
+        source for the response bytes. "file:" reads from a binary file,
+        "hex:" takes a 0x-prefixed hex string, "str:" takes literal text.
 
   --auto-reset-uarch
     reset uarch automatically after halt.
@@ -975,9 +1000,12 @@ local dense_uarch_hashes_end
 local dump_memory_ranges_dir = false
 local max_mcycle = math.maxinteger
 local max_uarch_cycle = 0
-local log_step_uarch = false
+local log_step_uarch_filename
+local log_step_uarch_cycles
+local log_step_uarch_pretty
+local log_send_cmio_response_opts
 local auto_reset_uarch = false
-local log_reset_uarch = false
+local log_reset_uarch_filename
 local store_dir
 local load_dir
 local create_dir
@@ -1913,18 +1941,54 @@ options = {
         },
     },
     {
-        "--log-step-uarch",
-        function()
-            log_step_uarch = true
+        "--log-step-uarch=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.filename, "need filename in %s", all)
+            log_step_uarch_filename = o.filename
+            log_step_uarch_cycles = o.count or 1
+            log_step_uarch_pretty = o.pretty
             return true
         end,
+        {
+            "filename",
+            filename = "file",
+            count = "number",
+            pretty = "boolean",
+        },
     },
     {
-        "--log-reset-uarch",
-        function()
-            log_reset_uarch = true
+        "--log-reset-uarch=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.filename, "need filename in %s", all)
+            log_reset_uarch_filename = o.filename
             return true
         end,
+        {
+            "filename",
+            filename = "file",
+        },
+    },
+    {
+        "--log-send-cmio-response=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assert(o.reason, "missing reason for --log-send-cmio-response")
+            assert(o.filename, "missing filename for --log-send-cmio-response")
+            local sources = (o.file and 1 or 0) + (o.hex and 1 or 0) + (o.str and 1 or 0)
+            assert(sources == 1, "--log-send-cmio-response requires exactly one of file:, hex:, str:")
+            log_send_cmio_response_opts = o
+            return true
+        end,
+        {
+            "filename",
+            reason = "number",
+            filename = "file",
+            file = "file",
+            hex = "string",
+            str = "string",
+        },
     },
     {
         "--max-mcycle=",
@@ -3092,14 +3156,30 @@ if max_uarch_cycle > 0 then
     end
 end
 if gdb_stub then gdb_stub:close() end
-if log_step_uarch then
-    assert(initial_config.processor.registers.iunrep == 0, "uarch step proof is meaningless in unreproducible mode")
-    stderr("Gathering uarch step log: please wait\n")
-    util.print_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
+if log_step_uarch_filename then
+    assert(initial_config.processor.registers.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
+    stderr("Gathering micro step log: please wait\n")
+    machine:log_step_uarch(log_step_uarch_cycles, log_step_uarch_filename)
+    if log_step_uarch_pretty then io.stderr:write(cartesi.machine:pretty_print_step_uarch(log_step_uarch_filename)) end
 end
-if log_reset_uarch then
+if log_reset_uarch_filename then
     stderr("Resetting microarchitecture state: please wait\n")
-    util.print_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
+    machine:log_reset_uarch(log_reset_uarch_filename)
+end
+if log_send_cmio_response_opts then
+    local o = log_send_cmio_response_opts
+    local data
+    if o.file then
+        local f <close> = assert(io.open(o.file, "rb"))
+        data = assert(f:read("*a"))
+    elseif o.hex then
+        assert(o.hex:sub(1, 2) == "0x" and #o.hex % 2 == 0, "hex must be 0x-prefixed with even length")
+        data = (o.hex:sub(3):gsub("(%x%x)", function(c) return string.char(tonumber(c, 16)) end))
+    else
+        data = o.str
+    end
+    stderr("Logging cmio response: please wait\n")
+    machine:log_send_cmio_response(machine:get_root_hash(), o.reason, data, o.filename)
 end
 if dump_memory_ranges_dir then dump_memory_ranges(machine, dump_memory_ranges_dir) end
 if final_hash then

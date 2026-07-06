@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <ranges>
 #include <variant>
@@ -42,50 +43,87 @@
 #include "riscv-constants.hpp"
 #include "shadow-registers.hpp"
 #include "shadow-tlb.hpp"
+#include "step-log-layout.hpp"
+#include "step-log.hpp"
 #include "strict-aliasing.hpp"
 #include "throw.hpp"
-#include "variant-hasher.hpp"
 
 namespace cartesi {
 
-using hash_type = unsigned char (*)[MACHINE_HASH_SIZE];
-using const_hash_type = const unsigned char (*)[MACHINE_HASH_SIZE];
+// NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,misc-no-recursion)
 
-#ifdef ZKARCHITECTURE
-
-extern "C" void zk_merkle_tree_hash(hash_function_type hash_function, const unsigned char *data, size_t size,
-    hash_type hash);
-
-extern "C" void zk_concat_hash(hash_function_type hash_function, const_hash_type left, const_hash_type right,
-    hash_type result);
-
-static void merkle_tree_hash(hash_function_type hash_function, const unsigned char *data, size_t size, hash_type hash) {
-    zk_merkle_tree_hash(hash_function, data, size, hash);
+/// Merkle hash of the subtree [start, start + 2^log2_size) of `data` (data_length
+/// bytes, zero-padded beyond). A subtree entirely past the data collapses to the
+/// precomputed pristine-zero hash for its level; a subtree entirely within falls
+/// through to merkle_tree_hash; only the boundary subtree at each level recurses.
+/// Mirrors HashTree.merkleSubtreeHashPadded in the Solidity replayer. Heap-free so it
+/// builds in the risc0 guest.
+static machine_hash merkle_subtree_hash_padded(hash_function_type hash_function, const unsigned char *data,
+    uint64_t data_length, uint64_t start, int log2_size, const machine_hash *pristine) {
+    constexpr int word_log2 = HASH_TREE_LOG2_WORD_SIZE;
+    constexpr uint64_t word_size = UINT64_C(1) << word_log2;
+    if (start >= data_length) {
+        return pristine[log2_size];
+    }
+    machine_hash result{};
+    if (log2_size == word_log2) {
+        // Leaf. One straddling the data boundary is zero-padded on the right,
+        // matching the rx-buffer post-state after the copy_n + fill_n write.
+        if (start + word_size <= data_length) {
+            merkle_tree_hash(hash_function, data + start, word_size, reinterpret_cast<hash_type>(&result));
+        } else {
+            std::array<unsigned char, word_size> buf{};
+            std::memcpy(buf.data(), data + start, static_cast<size_t>(data_length - start));
+            merkle_tree_hash(hash_function, buf.data(), word_size, reinterpret_cast<hash_type>(&result));
+        }
+        return result;
+    }
+    const uint64_t size = UINT64_C(1) << log2_size;
+    if (start + size <= data_length) {
+        merkle_tree_hash(hash_function, data + start, size, reinterpret_cast<hash_type>(&result));
+        return result;
+    }
+    const uint64_t half = size >> 1;
+    const machine_hash left =
+        merkle_subtree_hash_padded(hash_function, data, data_length, start, log2_size - 1, pristine);
+    const machine_hash right =
+        merkle_subtree_hash_padded(hash_function, data, data_length, start + half, log2_size - 1, pristine);
+    concat_hash(hash_function, reinterpret_cast<const_hash_type>(&left), reinterpret_cast<const_hash_type>(&right),
+        reinterpret_cast<hash_type>(&result));
+    return result;
 }
 
-static void concat_hash(hash_function_type hash_function, const_hash_type left, const_hash_type right,
-    hash_type result) {
-    zk_concat_hash(hash_function, left, right, result);
+/// Merkle hash of `data` (data_length bytes) zero-padded to 2^write_length_log2_size.
+static void merkle_tree_hash_padded(hash_function_type hash_function, const unsigned char *data, uint64_t data_length,
+    int write_length_log2_size, hash_type hash) {
+    if (write_length_log2_size <= HASH_TREE_LOG2_WORD_SIZE || write_length_log2_size >= HASH_TREE_LOG2_ROOT_SIZE) {
+        THROW(std::invalid_argument, "write_length_log2_size out of range");
+    }
+    const uint64_t write_length = UINT64_C(1) << write_length_log2_size;
+    if (data_length > write_length) {
+        THROW(std::invalid_argument, "data_length exceeds padded write length");
+    }
+    if (data == nullptr && data_length != 0) {
+        THROW(std::invalid_argument, "data is null but data_length is non-zero");
+    }
+    constexpr int word_log2 = HASH_TREE_LOG2_WORD_SIZE;
+    constexpr uint64_t word_size = UINT64_C(1) << word_log2;
+    // Pristine-zero hash per level, built from merkle_tree_hash + concat_hash alone
+    // (heap-free for the ZK guest).
+    std::array<machine_hash, HASH_TREE_LOG2_ROOT_SIZE + 1> pristine{};
+    std::array<unsigned char, word_size> zero_word{};
+    merkle_tree_hash(hash_function, zero_word.data(), zero_word.size(),
+        reinterpret_cast<hash_type>(&pristine[word_log2]));
+    for (int k = word_log2 + 1; k <= write_length_log2_size; ++k) {
+        concat_hash(hash_function, reinterpret_cast<const_hash_type>(&pristine[k - 1]),
+            reinterpret_cast<const_hash_type>(&pristine[k - 1]), reinterpret_cast<hash_type>(&pristine[k]));
+    }
+    const machine_hash root =
+        merkle_subtree_hash_padded(hash_function, data, data_length, 0, write_length_log2_size, pristine.data());
+    *reinterpret_cast<machine_hash *>(hash) = root;
 }
 
-#else
-
-static void merkle_tree_hash(hash_function_type hash_function, const unsigned char *data, size_t size, hash_type hash) {
-    variant_hasher h{hash_function};
-    get_merkle_tree_hash(h, std::span<const unsigned char>{data, size}, HASH_TREE_WORD_SIZE,
-        machine_hash_view{*hash, MACHINE_HASH_SIZE});
-}
-
-static void concat_hash(hash_function_type hash_function, const_hash_type left, const_hash_type right,
-    hash_type result) {
-    variant_hasher h{hash_function};
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-    get_concat_hash(h, *reinterpret_cast<const machine_hash *>(left), *reinterpret_cast<const machine_hash *>(right),
-        *reinterpret_cast<machine_hash *>(result));
-    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
-}
-
-#endif
+// NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast,misc-no-recursion)
 
 class replay_step_state_access;
 
@@ -95,56 +133,21 @@ struct i_state_access_fast_addr<replay_step_state_access> {
     using type = host_addr;
 };
 
-// \brief checks if a buffer is large enough to hold a data block of N elements of size S starting at a given offset
-// \param max The maximum offset allowed
-// \param current The current offset
-// \param elsize The size of each element
-// \param elcount The number of elements
-// \param next Receives the start offset of the next data block
-// \return true if the buffer is large enough and data doesn't overflow, false otherwise
-static inline bool validate_and_advance_offset(uint64_t max, uint64_t current, uint64_t elsize, uint64_t elcount,
-    uint64_t *next) {
-    uint64_t size{};
-    if (__builtin_mul_overflow(elsize, elcount, &size)) {
-        return false;
-    }
-    if (__builtin_add_overflow(current, size, next)) {
-        return false;
-    }
-    return *next <= max;
-}
-
 // \brief Provides machine state from a step log file
 class replay_step_state_access :
     public i_state_access<replay_step_state_access>,
     public i_accept_scoped_notes<replay_step_state_access>,
     public i_prefer_shadow_state<replay_step_state_access> {
 public:
-    using address_type = uint64_t;
-    using data_type = unsigned char[AR_PAGE_SIZE];
-
-    struct PACKED page_type {
-        address_type index;
-        data_type data;
-        machine_hash hash;
-    };
-
     struct context {
-        machine_hash logged_root_hash_before{}; ///< Root hash before the step (from log header)
-        uint64_t logged_mcycle_count{0};        ///< Number of mcycles in the step (from log header)
-        machine_hash logged_root_hash_after{};  ///< Root hash after the step (from log header)
-        hash_function_type hash_function{hash_function_type::keccak256}; ///< Hash function used for the step log
-        uint64_t page_count{0};                                          ///< Number of pages in the step log
-        page_type *pages{nullptr};                                       ///< Array of page data
-        uint64_t sibling_count{0};                                       ///< Number of sibling hashes in the step log
-        machine_hash *sibling_hashes{nullptr};                           ///< Array of sibling hashes
-        mock_address_ranges ars{};                                       ///< Array of address ranges
-        hot_tlb_state tlb{};                                             ///< Hot TLB cache for validated entries
+        step_log log;              ///< Parsed step log (witnessed tree)
+        mock_address_ranges ars{}; ///< Array of address ranges
+        hot_tlb_state tlb{};       ///< Hot TLB cache for validated entries
     };
 
 private:
-    context &m_context;                             // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-    mutable page_type *m_shadow_regs_page{nullptr}; ///< cache shadow registers page
+    context &m_context;                              // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+    mutable page_entry *m_shadow_regs_page{nullptr}; ///< cache shadow registers page
 
 public:
     // \brief Construct a replay_step_state_access object from a log image
@@ -153,113 +156,7 @@ public:
     // \param log_size The size of the log data
     // \throw runtime_error if the initial root hash does not match or the log data is invalid
     replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size) : m_context(context) {
-        // relevant offsets in the log data
-        uint64_t mcycle_count_offset{};
-        uint64_t root_hash_after_offset{};
-        uint64_t hash_function_offset{};
-        uint64_t page_count_offset{};
-        uint64_t first_page_offset{};
-        uint64_t first_sibling_offset{};
-        uint64_t sibling_count_offset{};
-        uint64_t end_offset{}; // end of the log data
-        // read root_hash_before
-        if (!validate_and_advance_offset(log_size, 0, sizeof(m_context.logged_root_hash_before), 1,
-                &mcycle_count_offset)) {
-            THROW(std::runtime_error, "root hash before past end of step log");
-        }
-        std::copy_n(log_image, sizeof(m_context.logged_root_hash_before), m_context.logged_root_hash_before.data());
-        // read mcycle_count
-        if (!validate_and_advance_offset(log_size, mcycle_count_offset, sizeof(m_context.logged_mcycle_count), 1,
-                &root_hash_after_offset)) {
-            THROW(std::runtime_error, "mcycle count past end of step log");
-        }
-        m_context.logged_mcycle_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + mcycle_count_offset);
-        // read root_hash_after
-        if (!validate_and_advance_offset(log_size, root_hash_after_offset, sizeof(m_context.logged_root_hash_after), 1,
-                &hash_function_offset)) {
-            THROW(std::runtime_error, "root hash after past end of step log");
-        }
-        std::copy_n(log_image + root_hash_after_offset, sizeof(m_context.logged_root_hash_after),
-            m_context.logged_root_hash_after.data());
-        // hash function type
-        uint64_t temp_hash_function{};
-        if (!validate_and_advance_offset(log_size, hash_function_offset, sizeof(temp_hash_function), 1,
-                &page_count_offset)) {
-            THROW(std::runtime_error, "hash function type past end of step log");
-        }
-        temp_hash_function = aliased_aligned_read<uint64_t, uint8_t>(log_image + hash_function_offset);
-        switch (temp_hash_function) {
-            case static_cast<uint64_t>(hash_function_type::keccak256):
-                m_context.hash_function = hash_function_type::keccak256;
-                break;
-            case static_cast<uint64_t>(hash_function_type::sha256):
-                m_context.hash_function = hash_function_type::sha256;
-                break;
-            default:
-                THROW(std::runtime_error, "invalid log format: unsupported hash function type");
-        }
-
-        // set page count
-        if (!validate_and_advance_offset(log_size, page_count_offset, sizeof(m_context.page_count), 1,
-                &first_page_offset)) {
-            THROW(std::runtime_error, "page count past end of step log");
-        }
-        m_context.page_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + page_count_offset);
-        if (m_context.page_count == 0) {
-            THROW(std::runtime_error, "page count is zero");
-        }
-        // set page data
-        if (!validate_and_advance_offset(log_size, first_page_offset, sizeof(page_type), m_context.page_count,
-                &sibling_count_offset)) {
-            THROW(std::runtime_error, "page data past end of step log");
-        }
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        m_context.pages = reinterpret_cast<page_type *>(log_image + first_page_offset);
-
-        // set sibling count and hashes
-        if (!validate_and_advance_offset(log_size, sibling_count_offset, sizeof(m_context.sibling_count), 1,
-                &first_sibling_offset)) {
-            THROW(std::runtime_error, "sibling count past end of step log");
-        }
-        m_context.sibling_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + sibling_count_offset);
-
-        // set sibling hashes
-        if (!validate_and_advance_offset(log_size, first_sibling_offset, sizeof(machine_hash), m_context.sibling_count,
-                &end_offset)) {
-            THROW(std::runtime_error, "sibling hashes past end of step log");
-        }
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        m_context.sibling_hashes = reinterpret_cast<machine_hash *>(log_image + first_sibling_offset);
-
-        // ensure that we read exactly the expected log size
-        if (end_offset != log_size) {
-            THROW(std::runtime_error, "extra data at end of step log");
-        }
-
-        // ensure that the page indexes are in increasing order
-        // and that the scratch hash area is all zeros
-        static const machine_hash all_zeros{};
-        for (uint64_t i = 0; i < m_context.page_count; i++) {
-            if (i > 0 && m_context.pages[i - 1].index >= m_context.pages[i].index) {
-                THROW(std::runtime_error, "invalid log format: page index is not in increasing order");
-            }
-            // In the current implementation, this check is unnecessary
-            // But we may in the future change the data field to point to independently allocated pages
-            // This would break the code that uses binary search to find the page based on the address of its data
-            // LCOV_EXCL_START
-            if (i > 0 && +m_context.pages[i - 1].data >= +m_context.pages[i].data) {
-                THROW(std::runtime_error, "invalid log format: page data is not in increasing order");
-            }
-            // LCOV_EXCL_STOP
-            if (m_context.pages[i].hash != all_zeros) {
-                THROW(std::runtime_error, "invalid log format: page scratch hash area is not zero");
-            }
-        }
-        // compute and check the machine root hash before the replay
-        auto computed_root_hash_before = compute_root_hash();
-        if (computed_root_hash_before != m_context.logged_root_hash_before) {
-            THROW(std::runtime_error, "initial root hash mismatch");
-        }
+        m_context.log = step_log::decode(log_image, log_size);
         // initialize hot TLB entries as unverified
         for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
             for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
@@ -270,54 +167,43 @@ public:
     }
 
     // \brief Finish the replay and return the obtained root hash after
-    // \details When the machine has rejected an input (a manual yield with reason
-    // rx-rejected is pending), the canonical root hash after the step is the recorded
-    // revert root hash. Otherwise it is the computed machine root hash.
-    machine_hash finish() {
-        auto obtained_root_hash = is_rejected_manual_yield(*this) ? read_revert_root_hash() : compute_root_hash();
-        if (!std::ranges::equal(obtained_root_hash, m_context.logged_root_hash_after)) {
+    // \param revert_on_rejected_yield Whether a machine left paused on a manual rejected yield makes the
+    // recorded revert root hash the canonical post-operation hash.
+    // \throw runtime_error if the final root hash does not match the step log header
+    // \details A step or uarch reset that leaves the machine paused on a rejected input reverts: its
+    // canonical post-operation hash is the recorded revert root hash. A send_cmio_response is not a step;
+    // when it no-ops on an already-rejected machine the transition is the identity, so it never reverts
+    // and its post-operation hash is the recomputed machine root hash.
+    machine_hash finish(bool revert_on_rejected_yield = true) {
+        machine_hash obtained_root_hash{};
+        if (revert_on_rejected_yield && is_rejected_manual_yield(*this)) {
+            // Revert substitutes the recorded root instead of recomputing it; still assert no node was
+            // left unconsumed (compute_root_hash makes this assertion on the non-reverted path).
+            m_context.log.check_all_nodes_consumed();
+            obtained_root_hash = read_revert_root_hash();
+        } else {
+            obtained_root_hash = m_context.log.compute_root_hash(true);
+        }
+        if (obtained_root_hash != m_context.log.root_hash_after) {
             THROW(std::runtime_error, "final root hash mismatch");
         }
         return obtained_root_hash;
     }
 
 private:
-    /// \brief Try to find a page in the logged data by its physical address
-    /// \param paddr The physical address of the page
-    /// \return A pointer to the page_type structure if found, nullptr otherwise
-    page_type *try_find_page(uint64_t paddr_page) const {
-        const auto page_index = paddr_page >> AR_LOG2_PAGE_SIZE;
-        auto pages = std::ranges::views::counted(m_context.pages, static_cast<int64_t>(m_context.page_count));
-        auto it = std::ranges::lower_bound(pages, page_index, std::ranges::less{},
-            [](const auto &page) { return page.index; });
-        if (it != pages.end() && it->index == page_index) {
-            return &(*it);
-        }
-        return nullptr;
-    }
-
     /// \brief Try to find a page in the logged data by the host address of its data
     /// \param haddr Host address of page data
-    /// \return A pointer to the page_type structure if found, nullptr otherwise
-    page_type *try_find_page(host_addr haddr_page) const {
-        auto pages = std::ranges::views::counted(m_context.pages, static_cast<int64_t>(m_context.page_count));
-        auto it = std::ranges::lower_bound(pages, haddr_page, std::ranges::less{},
+    /// \return A pointer to the page_entry structure if found, nullptr otherwise
+    page_entry *try_find_page(host_addr haddr_page) const {
+        auto it = std::ranges::lower_bound(m_context.log.pages, haddr_page, std::ranges::less{},
             [](const auto &page) { return cast_ptr_to_host_addr(page.data); });
-        if (it != pages.end() && cast_ptr_to_host_addr(it->data) == haddr_page) {
+        if (it != m_context.log.pages.end() && cast_ptr_to_host_addr(it->data) == haddr_page) {
             return &(*it);
         }
         return nullptr;
     }
 
-    page_type *find_page(uint64_t paddr_page) const {
-        auto *page_log = try_find_page(paddr_page);
-        if (page_log == nullptr) {
-            THROW(std::runtime_error, "required page not found");
-        }
-        return page_log;
-    }
-
-    page_type *find_page(host_addr haddr_page) const {
+    page_entry *find_page(host_addr haddr_page) const {
         auto *page_log = try_find_page(haddr_page);
         // The only caller is do_write_tlb, which receives vh_offset from the interpreter's page walk.
         // The interpreter computes vh_offset from do_get_faddr, which already called find_page(uint64_t)
@@ -331,6 +217,18 @@ private:
         return page_log;
     }
 
+    /// \brief Zero the cached scratch hash of the page containing \p haddr so compute_root_hash
+    /// rehashes it on the after-root pass.
+    /// \details A write through a raw host address only knows the address, not the page entry. Page
+    /// data pointers strictly ascend, so the containing page is the last one whose data is <= haddr.
+    /// \p haddr always falls inside a witnessed page (the interpreter resolved it via do_get_faddr,
+    /// which find_page'd it), so the lookup never steps before the first page.
+    void invalidate_page_hash(host_addr haddr) const {
+        auto it = std::ranges::upper_bound(m_context.log.pages, haddr, std::ranges::less{},
+            [](const auto &page) { return cast_ptr_to_host_addr(page.data); });
+        (--it)->hash = machine_hash{};
+    }
+
     static_assert(sizeof(shadow_registers_state) <= AR_PAGE_SIZE, "shadow registers must fit in a single page");
 
     host_addr get_shadow_reg_host_addr(shadow_registers_what what) const {
@@ -338,86 +236,19 @@ private:
         const auto page = paddr & ~PAGE_OFFSET_MASK;
         const auto offset = paddr & PAGE_OFFSET_MASK;
         if (m_shadow_regs_page == nullptr) {
-            m_shadow_regs_page = find_page(page);
+            m_shadow_regs_page = m_context.log.find_page(page);
         }
         return cast_ptr_to_host_addr(m_shadow_regs_page->data) + offset;
     }
 
-    // \brief Compute the current machine root hash
-    machine_hash compute_root_hash() {
-        //??D Here we should only do this for dirty pages, right?
-        //??D Initially, all pages are dirty, because we don't know their hashes
-        //??D But in the end, we should only update those pages that we touched
-        //??D May improve performance when we are running this on ZK
-        for (uint64_t i = 0; i < m_context.page_count; i++) {
-            merkle_tree_hash(m_context.hash_function, m_context.pages[i].data, AR_PAGE_SIZE,
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                reinterpret_cast<hash_type>(&m_context.pages[i].hash));
-        }
-        size_t next_page = 0;
-        size_t next_sibling = 0;
-        auto root_hash =
-            compute_root_hash_impl(0, HASH_TREE_LOG2_ROOT_SIZE - AR_LOG2_PAGE_SIZE, next_page, next_sibling);
-        // In the current implementation, recursion is guided by the pages, so they are always consumed
-        // So this can never happen.
-        if (next_page != m_context.page_count) {
-            THROW(std::runtime_error, "too many pages in log");
-        }
-        if (next_sibling != m_context.sibling_count) {
-            THROW(std::runtime_error, "too many sibling hashes in log");
-        }
-        return root_hash;
-    }
-
-    // \brief Compute the root hash of a memory range recursively
-    // \param page_index Index of the first page in the range
-    // \param log2_page_count Log2 of the size of number of pages in the range
-    // \param next_page Index of the next page to be visited
-    // \param next_sibling Index of the next sibling hash to be visited
-    // \return Resulting root hash of the range
-    machine_hash compute_root_hash_impl(address_type page_index, int log2_page_count, size_t &next_page,
-        size_t &next_sibling) {
-        // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast))
-        auto page_count = UINT64_C(1) << log2_page_count;
-        if (next_page >= m_context.page_count || page_index + page_count <= m_context.pages[next_page].index) {
-            if (next_sibling >= m_context.sibling_count) {
-                THROW(std::runtime_error, "too few sibling hashes in log");
-            }
-            return m_context.sibling_hashes[next_sibling++];
-        }
-        if (log2_page_count > 0) {
-            auto left = compute_root_hash_impl(page_index, log2_page_count - 1, next_page, next_sibling);
-            const auto halfway_page_index = page_index + (page_count >> 1);
-            auto right = compute_root_hash_impl(halfway_page_index, log2_page_count - 1, next_page, next_sibling);
-            machine_hash hash{};
-            concat_hash(m_context.hash_function, reinterpret_cast<hash_type>(&left),
-                reinterpret_cast<hash_type>(&right), reinterpret_cast<hash_type>(&hash));
-            return hash;
-        }
-        if (m_context.pages[next_page].index == page_index) {
-            return m_context.pages[next_page++].hash;
-        }
-        // To reach here, we need all three conditions at leaf level (log2_page_count == 0):
-        // 1. Line 360 false: pages[next_page].index <= page_index
-        // 2. Line 366 false: log2_page_count == 0 (leaf)
-        // 3. Line 375 false: pages[next_page].index != page_index
-        // That requires pages[next_page].index < page_index. But with sorted pages consumed left-to-right,
-        // that can't happen -- the next unconsumed page always has index >= current leaf's page_index.
-        // LCOV_EXCL_START
-        if (next_sibling >= m_context.sibling_count) {
-            THROW(std::runtime_error, "too few sibling hashes in log");
-        }
-        return m_context.sibling_hashes[next_sibling++];
-        // LCOV_EXCL_STOP
-        // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
-    }
-
-    uint64_t check_read_reg(shadow_registers_what what) const {
+    uint64_t read_shadow_reg(shadow_registers_what what) const {
         return aliased_aligned_read<uint64_t>(get_shadow_reg_host_addr(what));
     }
 
-    void check_write_reg(shadow_registers_what what, uint64_t val) const {
-        aliased_aligned_write<uint64_t>(get_shadow_reg_host_addr(what), val);
+    void write_shadow_reg(shadow_registers_what what, uint64_t val) const {
+        const auto haddr = get_shadow_reg_host_addr(what);
+        m_shadow_regs_page->hash = machine_hash{}; // written page: rehash on the after-root pass
+        aliased_aligned_write<uint64_t>(haddr, val);
     }
 
     uint64_t read_pmas_istart(uint64_t index) const {
@@ -436,19 +267,19 @@ private:
     friend i_prefer_shadow_state<replay_step_state_access>;
 
     uint64_t do_read_shadow_register(shadow_registers_what what) const {
-        return check_read_reg(what);
+        return read_shadow_reg(what);
+    }
+
+    void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
+        write_shadow_reg(what, val);
     }
 
     machine_hash do_read_revert_root_hash() const {
         constexpr uint64_t paddr = AR_SHADOW_REVERT_ROOT_HASH_START;
-        const auto *page_log = find_page(paddr & ~PAGE_OFFSET_MASK);
+        const auto *page_log = m_context.log.find_page(paddr & ~PAGE_OFFSET_MASK);
         machine_hash hash{};
         std::copy_n(page_log->data + (paddr & PAGE_OFFSET_MASK), hash.size(), hash.begin());
         return hash;
-    }
-
-    void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
-        check_write_reg(what, val);
     }
 
     // -----
@@ -463,7 +294,7 @@ private:
         // This assumes the corresponding page has been touched
         // (replay_step_state_access makes sure of it for any address we try to convert)
         const auto paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        auto *page_log = find_page(paddr_page);
+        auto *page_log = m_context.log.find_page(paddr_page);
         const auto offset = paddr & PAGE_OFFSET_MASK;
         return cast_ptr_to_host_addr(page_log->data) + offset;
     }
@@ -513,11 +344,12 @@ private:
 
     template <typename T, typename A>
     void do_write_memory_word(host_addr haddr, uint64_t /* pma_index */, T val) const {
+        invalidate_page_hash(haddr);
         aliased_aligned_write<T, A>(haddr, val);
     }
 
     template <typename TYPE>
-    auto check_read_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) const {
+    auto read_tlb_field(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) const {
         const auto haddr = do_get_faddr(shadow_tlb_get_abs_addr(set_index, slot_index, what));
         return aliased_aligned_read<TYPE>(haddr);
     }
@@ -534,12 +366,13 @@ private:
 
     template <TLB_set_index SET>
     uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
-        return check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
+        return read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
     }
 
     template <typename TYPE>
-    auto check_write_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what, TYPE val) const {
+    auto write_tlb_field(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what, TYPE val) const {
         const auto haddr = do_get_faddr(shadow_tlb_get_abs_addr(set_index, slot_index, what));
+        invalidate_page_hash(haddr);
         aliased_aligned_write<TYPE>(haddr, val);
     }
 
@@ -551,10 +384,10 @@ private:
             return hot_slot.vaddr_page;
         }
         // Read shadow entry from the log
-        const auto vaddr_page = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::vaddr_page);
-        const auto vp_offset = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::vp_offset);
-        const auto pma_index = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
-        const auto zero_padding = check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::zero_padding_);
+        const auto vaddr_page = read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::vaddr_page);
+        const auto vp_offset = read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::vp_offset);
+        const auto pma_index = read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
+        const auto zero_padding = read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::zero_padding_);
         const auto &ar = do_read_pma(pma_index);
         if (shadow_tlb_verify_slot(vaddr_page, vp_offset, zero_padding, ar) == TLB_INVALID_PAGE) {
             hot_slot.vaddr_page = TLB_INVALID_PAGE;
@@ -562,7 +395,7 @@ private:
         }
         // Find the target page in the log and compute vh_offset pointing into log data
         const auto paddr_page = vaddr_page + vp_offset;
-        const auto haddr_page = cast_ptr_to_host_addr(find_page(paddr_page)->data);
+        const auto haddr_page = cast_ptr_to_host_addr(m_context.log.find_page(paddr_page)->data);
         const auto vh_offset = haddr_page - vaddr_page;
         // Verification passed -- promote to hot entry
         hot_slot.vaddr_page = vaddr_page;
@@ -578,16 +411,16 @@ private:
     template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
         assert(vaddr_page != TLB_UNVERIFIED_PAGE);
-        check_write_tlb(SET, slot_index, shadow_tlb_what::vaddr_page, vaddr_page);
+        write_tlb_field(SET, slot_index, shadow_tlb_what::vaddr_page, vaddr_page);
         if (vaddr_page != TLB_INVALID_PAGE) {
             // Convert vh_offset to vp_offset for the log (shadow stores vp_offset)
             const auto paddr_page = find_page(vaddr_page + vh_offset)->index << AR_LOG2_PAGE_SIZE;
-            check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, paddr_page - vaddr_page);
+            write_tlb_field(SET, slot_index, shadow_tlb_what::vp_offset, paddr_page - vaddr_page);
         } else {
-            check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, static_cast<uint64_t>(vh_offset));
+            write_tlb_field(SET, slot_index, shadow_tlb_what::vp_offset, static_cast<uint64_t>(vh_offset));
         }
-        check_write_tlb(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
-        check_write_tlb(SET, slot_index, shadow_tlb_what::zero_padding_, UINT64_C(0));
+        write_tlb_field(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
+        write_tlb_field(SET, slot_index, shadow_tlb_what::zero_padding_, UINT64_C(0));
         // Mark hot entry as unverified so next access re-validates from the log
         m_context.tlb[SET][slot_index].vaddr_page = TLB_UNVERIFIED_PAGE;
         m_context.tlb[SET][slot_index].vh_offset = host_addr{0};
@@ -598,6 +431,50 @@ private:
         return false;
     }
     // LCOV_EXCL_STOP
+
+    /// \brief Verify a padded memory write recorded in the log.
+    /// \param paddr Destination physical address; must be aligned to (1 << write_length_log2_size).
+    /// \param data Pointer to source bytes.
+    /// \param data_length Number of valid bytes at \p data.
+    /// \param write_length_log2_size Log2 of the full write length (data + padding).
+    /// \details Supra-page writes hash (data || zero padding) and compare to the logged
+    /// node's hash_after. Sub-page writes mutate the logged page in place so its new hash
+    /// feeds the finish()-time root reconstruction.
+    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
+        int write_length_log2_size) const {
+        if (data == nullptr) {
+            THROW(std::invalid_argument, "data is null");
+        }
+        const uint64_t write_length = UINT64_C(1) << write_length_log2_size;
+        if (write_length < data_length) {
+            THROW(std::invalid_argument, "write length is less than data length");
+        }
+        if (write_length_log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
+            // Supra-page: hash data + zero-pad via pristine-streaming and compare to the logged node.
+            const auto *node = m_context.log.try_find_node(paddr);
+            if (node == nullptr || node->log2_size != static_cast<uint64_t>(write_length_log2_size)) {
+                THROW(std::runtime_error, "write_memory_with_padding node not found in log");
+            }
+            machine_hash data_hash{};
+            merkle_tree_hash_padded(m_context.log.hash_function, data, data_length, write_length_log2_size,
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<hash_type>(&data_hash));
+            if (node->hash_after != data_hash) {
+                THROW(std::runtime_error, "write_memory_with_padding does not match logged hash");
+            }
+            m_context.log.consumed_node_count++;
+            return;
+        }
+        // Sub-page: mutate the logged page in place so its new hash flows into root reconstruction.
+        const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        auto *page_log = m_context.log.find_page(paddr_page);
+        page_log->hash = machine_hash{};
+        const uint64_t offset = paddr & PAGE_OFFSET_MASK;
+        std::copy_n(data, data_length, page_log->data + offset);
+        if (write_length > data_length) {
+            std::fill_n(page_log->data + offset + data_length, write_length - data_length, 0);
+        }
+    }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)

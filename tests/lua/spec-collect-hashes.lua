@@ -437,7 +437,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
+                local collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_HALTED)
@@ -462,7 +463,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
+                local collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
@@ -486,7 +488,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
+                local collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_HALTED)
                 expect.equal(#collected_uarch.reset_indices, 1)
@@ -509,7 +512,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
+                local collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
                 expect.equal(#collected_uarch.reset_indices, 1)
@@ -617,7 +621,8 @@ describe("collect hashes", function()
                 expect.equal(#collected_uarch.reset_indices, 2)
                 expect.equal(machine:read_reg("mcycle"), cartesi.MCYCLE_MAX)
 
-                collected_uarch = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX)
+                collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
                 expect.equal(#collected_uarch.reset_indices, 1)

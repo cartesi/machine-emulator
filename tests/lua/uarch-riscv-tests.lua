@@ -17,9 +17,9 @@
 --
 
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
 local parallel = require("cartesi.parallel")
+local manifest_mod = require("cartesi.tests.step_log_manifest")
 
 -- Tests Cases
 -- format {"ram_image_file", number_of_uarch_cycles, expected_error_pattern}
@@ -98,25 +98,33 @@ where options are:
   --jobs=<N>
     run N tests in parallel
     (default: 1, i.e., run tests sequentially)
-  --output-dir=<directory-path>
-    write json logs to this  directory
-  --create-reset-uarch-log
-    create a json log file for a uarch reset operation
-    valid only for the json-step-logs command
---create-send-cmio-response-log
-    create a json log file for a send_cmio_response operation
-    valid only for the json-step-logs command
+  --output-dir=<dir>
+    destination directory for the recorded fixtures
+    (required for the record_* commands; each command writes one homogeneous
+    fixture set directly into <dir>)
+  --per-cycle-logs
+    record_uarch_tests only: write one step log per uarch cycle into
+    <output-dir>/<test-name>/NNNNN.log instead of the per-program batched log.
+    Each per-test directory gets its own _manifest.csv with cycle rows.
 and command can be:
   run
     run test and report errors
 
+  verify
+    record each test as a multi-cycle uarch step log and verify it round-trips
+    through verify_step_uarch (C++ record/replay coverage; no fixtures kept)
+
   list
     list tests selected by the test <pattern>
 
-  json-step-logs
-    generate json log files for every step of the selected tests
-    the files are written to the directory specified by --output-dir
-    these log files are used by Solidity unit tests
+  record_uarch_tests
+    record one step log per uarch test into <output-dir>. Default granularity
+    is one log per whole test (batched); pass --per-cycle-logs to emit one log
+    per cycle instead. Writes <output-dir>/_manifest.csv with program rows
+    (batched mode) or per-test subdirectories with cycle manifests (per-cycle).
+
+  (uarch reset and send_cmio_response fixtures are machine-level dispute operations,
+   not uarch instruction steps; see tests/lua/record-send-cmio-response.lua and record-reset-uarch.lua)
 ]=],
         arg[0]
     ))
@@ -125,10 +133,9 @@ end
 
 local test_path = test_util.tests_uarch_path
 local test_pattern = ".*"
-local output_dir
 local jobs = 1
-local create_uarch_reset_log = false
-local create_send_cmio_response_log = false
+local output_dir
+local per_cycle_logs = false
 
 local options = {
     {
@@ -147,36 +154,6 @@ local options = {
                 return false
             end
             help()
-        end,
-    },
-    {
-        "^%-%-create%-reset%-uarch%-log$",
-        function(all)
-            if not all then
-                return false
-            end
-            create_uarch_reset_log = true
-            return true
-        end,
-    },
-    {
-        "^%-%-create%-send%-cmio%-response%-log$",
-        function(all)
-            if not all then
-                return false
-            end
-            create_send_cmio_response_log = true
-            return true
-        end,
-    },
-    {
-        "^%-%-output%-dir%=(.*)$",
-        function(o)
-            if not o or #o < 1 then
-                return false
-            end
-            output_dir = o
-            return true
         end,
     },
     {
@@ -207,6 +184,26 @@ local options = {
             end
             jobs = assert(tonumber(o))
             assert(jobs and jobs >= 1, "invalid number of jobs")
+            return true
+        end,
+    },
+    {
+        "^%-%-output%-dir%=(.*)$",
+        function(o)
+            if not o or #o < 1 then
+                return false
+            end
+            output_dir = o
+            return true
+        end,
+    },
+    {
+        "^%-%-per%-cycle%-logs$",
+        function(all)
+            if not all then
+                return false
+            end
+            per_cycle_logs = true
             return true
         end,
     },
@@ -268,13 +265,6 @@ local TEST_STATUS_X = 1 -- When test finishes executing,the value of this regist
 local FAILED_TEST_CASE_X = 3 -- If test fails, the value of this register contains the failed test case
 local TEST_SUCCEEDED = 0xbe1e7aaa -- Value indicating that test has passed
 local TEST_FAILED = 0xdeadbeef -- Value indicating that test has failed
-
-local function read_all(path)
-    local file <close> = assert(io.open(path, "rb"))
-    local contents = file:read("*a")
-    file:close()
-    return contents
-end
 
 local function check_test_result(machine, ctx)
     local actual_cycle = machine:read_reg("uarch_cycle")
@@ -367,6 +357,146 @@ local function list(tests)
     end
 end
 
+local function step_log_file_name(test_name)
+    return test_name .. ".log"
+end
+
+-- Manifest schema + parallel-fragment helpers live in cartesi.tests.step_log_manifest
+-- (shared with the machine-level generator). The cmio `data` column stays ASCII;
+-- see that module for the CSV-safety contract.
+
+-- Records a step log for one uarch test. Mutates ctx with the captured
+-- root hashes; self-checks the recorded log via verify_step_uarch.
+local function record_test_step_log(machine, ctx)
+    ctx.log_file = step_log_file_name(ctx.test_name)
+    ctx.kind = "program"
+    ctx.name = ctx.log_file
+    ctx.hash_function = "keccak256"
+    local log_path = output_dir .. "/" .. ctx.log_file
+    os.remove(log_path)
+    ctx.initial_root_hash = machine:get_root_hash()
+    -- 2x expected cycles so an overrun bug shows up in actual_cycle rather than
+    -- being clipped silently at the expected boundary.
+    ctx.requested_cycle_count = 2 * ctx.expected_cycles
+    machine:log_step_uarch(ctx.requested_cycle_count, log_path)
+    ctx.final_root_hash = machine:get_root_hash()
+    ctx.uarch_run_success = true
+    cartesi.machine:verify_step_uarch(ctx.initial_root_hash, log_path, ctx.requested_cycle_count, ctx.final_root_hash)
+end
+
+-- Records one step log per uarch cycle in <output_dir>/<test_name>/.
+-- Runs cycle by cycle until the machine halts or uarch_cycle overflows.
+-- Each log captures a single cycle's transition, matching the production dispute
+-- path (one uarch_step per transition).
+local function record_per_cycle_step_logs(ram_image, ctx)
+    local per_cycle_dir = ctx.test_name
+    local dir_abs = output_dir .. "/" .. per_cycle_dir
+    test_util.prepare_empty_output_dir(dir_abs)
+    local manifest <close> = assert(io.open(dir_abs .. "/" .. manifest_mod.MANIFEST_NAME, "w"))
+    manifest:write(manifest_mod.HEADER)
+    local machine <close> = build_machine(ram_image)
+    local cycle = 0
+    local before_hash = machine:get_root_hash()
+    while true do
+        local cycle_name = string.format("%05d.log", cycle)
+        local cycle_path = dir_abs .. "/" .. cycle_name
+        local status = machine:log_step_uarch(1, cycle_path)
+        if status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE then
+            local after_hash = machine:get_root_hash()
+            manifest_mod.write_row(manifest, {
+                kind = "cycle",
+                name = cycle_name,
+                hash_function = "keccak256",
+                requested_cycle_count = 1,
+                initial_root_hash = before_hash,
+                final_root_hash = after_hash,
+            })
+            before_hash = after_hash
+            cycle = cycle + 1
+        else
+            -- The machine was already halted (or cycle overflowed): no transition happened.
+            -- Discard the no-op log so per-cycle replay only sees genuine cycles.
+            os.remove(cycle_path)
+            break
+        end
+    end
+    -- Confirm the test passed, anchoring the fixture's validity at generation (the same
+    -- check the batched recorder runs); consumers then only reproduce the recorded roots.
+    ctx.uarch_run_success = true
+    check_test_result(machine, ctx)
+    ctx.per_cycle_dir = per_cycle_dir
+    ctx.actual_cycle_count = cycle
+end
+
+-- uarch reset and send_cmio_response are machine-level dispute operations, not uarch
+-- instruction steps; their fixtures come from tests/lua/record-send-cmio-response.lua
+-- and record-reset-uarch.lua.
+
+-- Record one binary step log per uarch test into <output_dir>. Granularity
+-- chosen by --per-cycle-logs: default writes one log per whole test (batched);
+-- with the flag, writes one log per cycle into <output_dir>/<test_name>/.
+-- Tests with an expected_error_pattern (runtime-error tests) are skipped.
+local function record_uarch_tests(tests)
+    assert(output_dir, "--output-dir is required for record_uarch_tests")
+    local loggable_tests = {}
+    for _, test in ipairs(tests) do
+        if not test[3] then
+            loggable_tests[#loggable_tests + 1] = test
+        end
+    end
+
+    if per_cycle_logs then
+        -- Per-cycle mode: each test produces <output_dir>/<test_name>/<NNNNN>.log
+        -- plus its own _manifest.csv. No top-level manifest; consumers discover the
+        -- per-test dirs directly from the directory listing (Solidity uses vm.readDir).
+        -- Require an empty root so no stale program dir survives into that discovery.
+        test_util.prepare_empty_output_dir(output_dir)
+        local failures = parallel.run(loggable_tests, jobs, function(test)
+            local ctx = {
+                ram_image = test[1],
+                test_name = test[1]:gsub("%.bin$", ""),
+                expected_cycles = test[2],
+            }
+            record_per_cycle_step_logs(ctx.ram_image, ctx)
+        end)
+        if failures ~= nil and failures > 0 then
+            stderr("\nFAILED %d of %d tests\n\n", failures, #loggable_tests)
+            os.exit(1)
+        end
+        stderr("\nPASSED all %d tests (per-cycle)\n\n", #loggable_tests)
+        os.exit(0)
+    end
+
+    -- Batched mode: each test produces <output_dir>/<test_name>.log; manifest
+    -- rows accumulate from worker fragments, then merge into <output_dir>/_manifest.csv.
+    test_util.prepare_empty_output_dir(output_dir)
+    local failures = parallel.run(loggable_tests, jobs, function(test)
+        local ctx = {
+            ram_image = test[1],
+            test_name = test[1]:gsub("%.bin$", ""),
+            expected_cycles = test[2],
+            uarch_run_success = false,
+        }
+        local machine <close> = build_machine(ctx.ram_image)
+        record_test_step_log(machine, ctx)
+        check_test_result(machine, ctx)
+        manifest_mod.write_fragment(output_dir, ctx.test_name, ctx)
+    end)
+    if failures ~= nil and failures > 0 then
+        stderr("\nFAILED %d of %d tests\n\n", failures, #loggable_tests)
+        os.exit(1)
+    end
+
+    local test_names = {}
+    for _, test in ipairs(loggable_tests) do
+        test_names[#test_names + 1] = test[1]:gsub("%.bin$", "")
+    end
+    manifest_mod.concat_fragments(output_dir, test_names)
+
+    stderr("\nPASSED all %d tests\n\n", #loggable_tests)
+    os.exit(0)
+end
+
 local function select_test(test_name, patt)
     local i, j = test_name:find(patt)
     if i == 1 and j == #test_name then
@@ -376,342 +506,44 @@ local function select_test(test_name, patt)
     return i == 1 and j == #test_name
 end
 
-local function make_json_log_file_name(test_name, suffix)
-    return test_name .. (suffix or "") .. ".json"
-end
-
-local function create_json_log_file(test_name, suffix)
-    local file_path = output_dir .. "/" .. make_json_log_file_name(test_name, suffix)
-    return assert(io.open(file_path, "w"), "error opening file " .. file_path)
-end
-
-local function open_steps_json_log(test_name)
-    return create_json_log_file(test_name, "-steps")
-end
-
-local function write_sibling_hashes_to_log(sibling_hashes, out, indent)
-    util.indentout(out, indent, '"sibling_hashes": [\n')
-    for i, h in ipairs(sibling_hashes) do
-        util.indentout(out, indent + 1, '"%s"', util.hexhash(h))
-        if sibling_hashes[i + 1] then
-            out:write(",\n")
-        else
-            out:write("\n")
-        end
-    end
-    util.indentout(out, indent, "]\n")
-end
-
-local function write_access_to_log(access, out, indent, last)
-    util.indentout(out, indent, "{\n")
-    util.indentout(out, indent + 1, '"type": "%s",\n', access.type)
-    util.indentout(out, indent + 1, '"address": %u,\n', access.address)
-    util.indentout(out, indent + 1, '"log2_size": %u,\n', access.log2_size)
-    local read_value = "" -- Solidity JSON parser breaks, if this field is null
-    if access.read then
-        read_value = util.hexstring(access.read)
-    end
-    util.indentout(out, indent + 1, '"read_value": "%s",\n', read_value)
-    util.indentout(out, indent + 1, '"read_hash": "%s",\n', util.hexhash(access.read_hash))
-    local written_value = ""
-    local written_hash = ""
-    if access.type == "write" then
-        written_hash = util.hexhash(access.written_hash)
-        if access.written then
-            written_value = util.hexstring(access.written)
-        end
-    end
-    util.indentout(out, indent + 1, '"written_value": "%s",\n', written_value)
-    util.indentout(out, indent + 1, '"written_hash": "%s"', written_hash)
-    if access.sibling_hashes then
-        out:write(",\n")
-        write_sibling_hashes_to_log(access.sibling_hashes, out, indent + 2)
-    else
-        out:write("\n")
-    end
-    util.indentout(out, indent, "}")
-    if not last then
-        out:write(",")
-    end
-    out:write("\n")
-end
-
-local function write_log_to_file(log, out, indent, last)
-    local n = #log.accesses
-    util.indentout(out, indent, "{\n")
-    util.indentout(out, indent + 1, '"accesses": [\n')
-    for i, access in ipairs(log.accesses) do
-        write_access_to_log(access, out, indent + 2, i == n)
-    end
-    util.indentout(out, indent + 1, "]\n")
-    util.indentout(out, indent, "}")
-    if not last then
-        out:write(",")
-    end
-    out:write("\n")
-end
-
-local function catalog_entry_file_name(name)
-    return output_dir .. "/" .. make_json_log_file_name(name, "-catalog-entry")
-end
-
-local function write_catalog_json_log_entry(out, logFilename, ctx)
-    util.indentout(
-        out,
-        1,
-        '{"logFilename": "%s", "binaryFilename": "%s", "steps": %d, '
-            .. '"initialRootHash": "%s", "finalRootHash": "%s"}',
-        logFilename,
-        ctx.ram_image or "",
-        ctx.step_count,
-        util.hexhash(ctx.initial_root_hash),
-        util.hexhash(ctx.final_root_hash)
-    )
-end
-
-local function create_catalog_json_log_entry(ctx)
-    local out <close> = create_json_log_file(ctx.test_name, "-catalog-entry")
-    local logFilename = make_json_log_file_name(ctx.test_name, "-steps")
-    write_catalog_json_log_entry(out, logFilename, ctx)
-    out:close()
-end
-
-local function run_machine_writing_json_logs(machine, ctx)
-    local test_name = ctx.test_name
-    local max_cycle = ctx.expected_cycles * 2
-    local out = open_steps_json_log(test_name)
-    local indent = 0
-    util.indentout(out, indent, '{ "steps":[\n')
-    local step_count = 0
-    while math.ult(machine:read_reg("uarch_cycle"), max_cycle) do
-        local log = machine:log_step_uarch()
-        step_count = step_count + 1
-        local halted = machine:read_reg("uarch_halt_flag") ~= 0
-        write_log_to_file(log, out, indent + 1, halted)
-        if halted then
-            break
-        end
-    end
-    ctx.step_count = step_count
-    ctx.uarch_run_success = true
-    util.indentout(out, indent, "]}\n")
-    out:close()
-end
-
-local function create_json_reset_log()
-    local machine <close> = build_machine()
-    local test_name = "reset-uarch"
-    machine:write_reg("uarch_halt_flag", 1)
-    local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_reset_uarch()
-    local out = create_json_log_file(test_name .. "-steps")
-    write_log_to_file(log, out, 0, true)
-    out:close()
-    local ctx = {
-        initial_root_hash = initial_root_hash,
-        final_root_hash = machine:get_root_hash(),
-        ram_image = "",
-        test_name = test_name,
-        expected_cycles = 1,
-        step_count = 1,
-        failed = false,
-        accesses_count = #log.accesses,
-    }
-    return ctx
-end
-
-local function create_json_reset_rejected_log()
-    local machine <close> = build_machine()
-    local test_name = "reset-uarch-rejected"
-    machine:write_reg("uarch_halt_flag", 1)
-    -- pretend an input was fed from a state with this root hash and later rejected
-    local revert_root_hash = machine:get_root_hash()
-    machine:write_revert_root_hash(revert_root_hash)
-    machine:write_reg("iflags_Y", 1)
-    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
-    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
-    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
-    local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_reset_uarch()
-    local out = create_json_log_file(test_name .. "-steps")
-    write_log_to_file(log, out, 0, true)
-    out:close()
-    local ctx = {
-        initial_root_hash = initial_root_hash,
-        -- the reset reverts the canonical state to the recorded revert root hash
-        final_root_hash = revert_root_hash,
-        ram_image = "",
-        test_name = test_name,
-        expected_cycles = 1,
-        step_count = 1,
-        failed = false,
-        accesses_count = #log.accesses,
-    }
-    return ctx
-end
-
-local function create_json_reset_accepted_log()
-    local machine <close> = build_machine()
-    local test_name = "reset-uarch-accepted"
-    machine:write_reg("uarch_halt_flag", 1)
-    -- pretend an input was fed and later accepted, so the reset must not revert
-    machine:write_reg("iflags_Y", 1)
-    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
-    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
-    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
-    local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_reset_uarch()
-    local out = create_json_log_file(test_name .. "-steps")
-    write_log_to_file(log, out, 0, true)
-    out:close()
-    local ctx = {
-        initial_root_hash = initial_root_hash,
-        -- no revert: the canonical state is the post-reset state
-        final_root_hash = machine:get_root_hash(),
-        ram_image = "",
-        test_name = test_name,
-        expected_cycles = 1,
-        step_count = 1,
-        failed = false,
-        accesses_count = #log.accesses,
-    }
-    return ctx
-end
-
-local function create_json_send_cmio_response_log()
-    local machine <close> = build_machine()
-    local test_name = "send-cmio-response"
-    local response_data = "This is a test cmio response"
-    local reason = 1
-    machine:write_reg("iflags_Y", 1)
-    local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_send_cmio_response(initial_root_hash, reason, response_data)
-    local out = create_json_log_file(test_name .. "-steps")
-    write_log_to_file(log, out, 0, true)
-    out:close()
-    local ctx = {
-        initial_root_hash = initial_root_hash,
-        final_root_hash = machine:get_root_hash(),
-        ram_image = "",
-        test_name = test_name,
-        expected_cycles = 1,
-        step_count = 1,
-        failed = false,
-        accesses_count = #log.accesses,
-    }
-    return ctx
-end
-
-local function create_json_send_cmio_response_noop_log()
-    local machine <close> = build_machine()
-    local test_name = "send-cmio-response-noop"
-    local response_data = "This is a test cmio response"
-    local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-    -- the machine yielded manual, but rejected the previous input, so the
-    -- advance-state response is logged as a no-op
-    machine:write_reg("iflags_Y", 1)
-    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
-    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
-    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
-    local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_send_cmio_response(initial_root_hash, reason, response_data)
-    local out = create_json_log_file(test_name .. "-steps")
-    write_log_to_file(log, out, 0, true)
-    out:close()
-    local ctx = {
-        initial_root_hash = initial_root_hash,
-        final_root_hash = machine:get_root_hash(),
-        ram_image = "",
-        test_name = test_name,
-        expected_cycles = 1,
-        step_count = 1,
-        failed = false,
-        accesses_count = #log.accesses,
-    }
-    return ctx
-end
-
-local function json_step_logs(tests)
-    assert(output_dir, "output-dir is required for json-logs")
-    -- filter out tests that intentionally produce runtime errors
-    -- They represent bug conditions that are not supposed to be logged
+-- Records each test as a multi-cycle uarch step log and verifies it round-trips through
+-- verify_step_uarch: C++ record/replay coverage of the step-proof path over the rv64ui-uarch
+-- corpus. Logs go to a private temp dir and are discarded (no fixtures persist); runtime-error
+-- tests have no valid log to replay and are skipped, matching record_uarch_tests.
+local function verify(tests)
     local loggable_tests = {}
     for _, test in ipairs(tests) do
-        local expected_error_pattern = test[3]
-        if not expected_error_pattern then
+        if not test[3] then
             loggable_tests[#loggable_tests + 1] = test
         end
     end
-
-    -- note: function may run in a separate process
+    -- os.tmpname reserves a unique name (and may create an empty file); turn it into our temp dir.
+    output_dir = os.tmpname()
+    os.remove(output_dir)
+    test_util.prepare_empty_output_dir(output_dir)
     local failures = parallel.run(loggable_tests, jobs, function(test)
         local ctx = {
             ram_image = test[1],
-            test_name = test[1]:gsub(".bin$", ""),
+            test_name = test[1]:gsub("%.bin$", ""),
             expected_cycles = test[2],
-            failed = true,
-            step_count = 0,
-            accesses_count = 0,
+            uarch_run_success = false,
         }
         local machine <close> = build_machine(ctx.ram_image)
-        ctx.initial_root_hash = machine:get_root_hash()
-        run_machine_writing_json_logs(machine, ctx)
-        ctx.final_root_hash = machine:get_root_hash()
+        record_test_step_log(machine, ctx) -- records the log and self-checks it via verify_step_uarch
         check_test_result(machine, ctx)
-        create_catalog_json_log_entry(ctx)
+        os.remove(output_dir .. "/" .. ctx.log_file)
     end)
-
-    -- create additional logs not in the `tests` list
-    local contexts = {}
-    if create_uarch_reset_log then
-        local ctx = create_json_reset_log()
-        contexts[#contexts + 1] = ctx
-        contexts[#contexts + 1] = create_json_reset_rejected_log()
-        contexts[#contexts + 1] = create_json_reset_accepted_log()
-    end
-    if create_send_cmio_response_log then
-        local ctx = create_json_send_cmio_response_log()
-        contexts[#contexts + 1] = ctx
-        contexts[#contexts + 1] = create_json_send_cmio_response_noop_log()
-    end
-
-    -- build catalog
-
-    -- gather catalog entries from files
-    local out <close> = create_json_log_file("catalog")
-    out:write("[\n")
-    for _, test in ipairs(loggable_tests) do
-        local test_name = test[1]:gsub(".bin$", "")
-        local filename = catalog_entry_file_name(test_name)
-        local contents = read_all(filename)
-        out:write(contents)
-        out:write(",\n")
-        os.remove(filename)
-    end
-
-    -- gather remaining entries
-    for i, ctx in ipairs(contexts) do
-        local logFilename = make_json_log_file_name(ctx.test_name, "-steps")
-        write_catalog_json_log_entry(out, logFilename, ctx)
-        if i == #contexts then
-            out:write("\n")
-        else
-            out:write(",\n")
-        end
-    end
-
-    out:write("]\n")
-    out:close()
-
-    -- print summary
+    -- Each worker removed its own log, so the temp dir is now empty: os.remove drops it (a plain
+    -- rmdir, no recursion). A failed worker may leave its log behind; leaking the temp dir is
+    -- acceptable -- recorders never recursively delete.
+    os.remove(output_dir)
     if failures ~= nil then
         if failures > 0 then
-            stderr("\nFAILED %d of %d tests\n\n", failures, #loggable_tests)
+            stderr(string.format("\nFAILED %d of %d tests\n\n", failures, #loggable_tests))
             os.exit(1)
-        else
-            stderr("\nPASSED all %d tests\n\n", #loggable_tests)
-            os.exit(0)
         end
+        stderr(string.format("\nPASSED all %d tests (record/replay)\n\n", #loggable_tests))
+        os.exit(0)
     end
 end
 
@@ -726,10 +558,12 @@ if #selected_tests < 1 then
     error("no test selected")
 elseif command == "run" then
     run(selected_tests)
+elseif command == "verify" then
+    verify(selected_tests)
 elseif command == "list" then
     list(selected_tests)
-elseif command == "json-step-logs" then
-    json_step_logs(selected_tests)
+elseif command == "record_uarch_tests" then
+    record_uarch_tests(selected_tests)
 else
     error("command not found")
 end

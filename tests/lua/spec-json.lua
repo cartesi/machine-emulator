@@ -84,14 +84,21 @@ describe("tojson / fromjson schema dictionary", function()
     end)
 
     it("should let user types override machine types of the same name", function()
-        -- the machine dictionary defines Bracket.where as ArrayIndex (0-based in JSON)...
-        expect.equal(cartesi.fromjson(cartesi.tojson({ where = 5 }, nil, "Bracket")).where, 4)
-        -- ...but a user Bracket can reinterpret the same field as a Base64 hash,
+        -- the machine dictionary defines McycleRootHashes.break_reason as InterpreterBreakReason...
+        expect.equal(
+            cartesi.fromjson('{"break_reason":"halted"}', "McycleRootHashes").break_reason,
+            cartesi.BREAK_REASON_HALTED
+        )
+        -- ...but a user McycleRootHashes can reinterpret the same field as a Base64 hash,
         -- while the nested "Base64" still resolves from the machine dictionary
-        local SCHEMA = { Bracket = { where = "Base64" } }
-        local back = cartesi.fromjson(cartesi.tojson({ where = HASH }, nil, "Bracket", SCHEMA), "Bracket", SCHEMA)
-        expect.equal(back.where, HASH)
-        expect.equal(#back.where, 32)
+        local SCHEMA = { McycleRootHashes = { break_reason = "Base64" } }
+        local back = cartesi.fromjson(
+            cartesi.tojson({ break_reason = HASH }, nil, "McycleRootHashes", SCHEMA),
+            "McycleRootHashes",
+            SCHEMA
+        )
+        expect.equal(back.break_reason, HASH)
+        expect.equal(#back.break_reason, 32)
     end)
 
     it("should error on an unknown schema name", function()

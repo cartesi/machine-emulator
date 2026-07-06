@@ -1638,25 +1638,27 @@ describe("cartesi-machine CLI", function()
         })
         expect.truthy(#filesystem.read_file(log_file) > 0)
 
-        -- --log-step-uarch
-        local _ <close>, su_cfg = scope_temp_pathname()
+        -- --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,pretty]
+        local _ <close>, su_log = scope_temp_pathname()
+        os.remove(su_log)
         run_ok({
-            "--log-step-uarch",
-            "--store-config=" .. su_cfg,
+            "--log-step-uarch=" .. su_log .. ",count:1",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
+        expect.truthy(#filesystem.read_file(su_log) > 0)
 
-        -- --log-reset-uarch
-        local _ <close>, ru_cfg = scope_temp_pathname()
+        -- --log-reset-uarch=<filename>
+        local _ <close>, ru_log = scope_temp_pathname()
+        os.remove(ru_log)
         run_ok({
-            "--log-reset-uarch",
-            "--store-config=" .. ru_cfg,
+            "--log-reset-uarch=" .. ru_log,
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
+        expect.truthy(#filesystem.read_file(ru_log) > 0)
 
         -- --max-uarch-cycle
         run_ok({ "--max-uarch-cycle=0", "--max-mcycle=0", "--no-init-splash", "--quiet" })

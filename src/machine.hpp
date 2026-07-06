@@ -28,7 +28,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include "access-log.hpp"
 #include "address-range.hpp"
 #include "back-merkle-tree.hpp"
 #include "hash-tree-constants.hpp"
@@ -283,44 +282,56 @@ public:
     /// Stores into result.break_reason the reason why the function returned.
     /// \detail The first hash added to \p result.hashes is the root hash after the first uarch cycle, the last is the
     /// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
+    /// \param revert_uarch_tail Root hashes after each uarch cycle of the period of the machine the recorded
+    /// revert root hash reverts to, the last entry being the revert root hash itself (the reset entry of that
+    /// period). It is obtained by calling this function with no bundling on that machine, while it waits for
+    /// a response. Required unless the machine starts at a fixed point other than a rejected manual yield,
+    /// in which case the call cannot consume it and ignores it.
     /// When the machine ends in a manual yield whose reason is rx-rejected, the root hash after the final uarch
     /// reset is substituted by the recorded revert root hash, and one extra period, that of the reverted machine
     /// as given by \p revert_uarch_tail, is collected after it.
     uarch_cycle_root_hashes collect_uarch_cycle_root_hashes(uint64_t mcycle_end, int32_t log2_bundle_uarch_cycle_count,
         const machine_hashes &revert_uarch_tail = {});
 
-    /// \brief Advances one micro step and returns a state access log.
-    /// \param log_type Type of access log to generate.
-    /// \returns The state access log.
-    access_log log_step_uarch(const access_log::type &log_type);
+    /// \brief Runs the uarch for the given cycle count (or halt) and writes a binary step log to a file.
+    /// \param uarch_cycle_count Number of cycles to advance; the run stops earlier on halt or overflow.
+    /// \param filename Path where the binary step log will be saved.
+    /// \returns Reason the uarch step ended.
+    uarch_interpreter_break_reason log_step_uarch(uint64_t uarch_cycle_count, const std::string &filename);
 
     /// \brief Resets the entire uarch state to pristine values.
     void reset_uarch();
 
-    /// \brief Resets the microarchitecture state and returns an access log
-    /// \param log_type Type of access log to generate.
-    /// \param log_data If true, access data is recorded in the log, otherwise only hashes. The default is false.
-    /// \returns The state access log.
-    /// \details When the machine has rejected an input (a manual yield with reason rx-rejected is pending),
-    /// the canonical state after the logged operation is the one recorded in the revert root hash, even
-    /// though the physical machine only has its uarch reset.
-    access_log log_reset_uarch(const access_log::type &log_type);
+    /// \brief Resets the microarchitecture state and writes a binary step log to a file.
+    /// \param filename Path where the binary step log will be saved.
+    void log_reset_uarch(const std::string &filename);
 
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
     /// \param root_hash_before State hash before step.
-    /// \param log Step state access log.
+    /// \param filename Path to the binary step log file produced by log_step_uarch.
+    /// \param uarch_cycle_count Number of cycles the caller expects to have been advanced.
     /// \param root_hash_after Hash to check against the state after the step (optional).
     /// \returns State hash after step.
-    static machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-        std::optional<const_machine_hash_view> root_hash_after = {});
+    static machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
+        uint64_t uarch_cycle_count, std::optional<const_machine_hash_view> root_hash_after = {});
+
+    /// \brief Replays a uarch step log and returns a human-readable printout.
+    /// \param filename Path to a binary step log file produced by log_step_uarch.
+    /// \returns The printout text; the caller decides where to write it.
+    /// \details Decodes and replays the log purely to produce the printout; no caller belief is
+    /// checked. The printout shows each uarch instruction bracketed by its mnemonic, with the reads
+    /// and writes it performs (and the old/new value of each write) nested underneath. A log whose
+    /// replay fails the final root hash check still yields its printout, with a trailing WARNING
+    /// line -- that is exactly when the printout is most needed.
+    static std::string pretty_print_step_uarch(const std::string &filename);
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
-    /// \param root_hash_before State hash before uarch reset
-    /// \param log Step state access log.
+    /// \param root_hash_before State hash before uarch reset.
+    /// \param filename Path to the binary step log file produced by log_reset_uarch.
     /// \param root_hash_after Hash to check against the state after the step (optional).
     /// \returns State hash after uarch reset. When the machine has rejected an input,
     /// this is the recorded revert root hash.
-    static machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+    static machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
         std::optional<const_machine_hash_view> root_hash_after = {});
 
     /// \brief Returns copy of default machine config
@@ -687,34 +698,33 @@ public:
         }
     }
 
-    /// \brief Sends cmio response and returns an access log
-    /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-    /// Unlike send_cmio_response, it is not checked against the machine root hash.
+    /// \brief Sends cmio response and writes a binary step log to a file.
+    /// \param revert_root_hash Root hash stored in the revert-root-hash shadow slot, to revert to if
+    /// the input delivered by this response is later rejected.
     /// \param reason Reason for sending response.
     /// \param data Response data.
     /// \param length Length of response data.
-    /// \param log_type Type of access log to generate.
-    /// \return The state access log.
+    /// \param filename Path where the binary step log will be saved.
     /// \details The logged operation cannot fail, so the honest party can always prove the resulting
     /// state transition. It is a no-op that leaves the state unchanged when the machine is not waiting
     /// on a manual yield, when an advance-state response finds the machine yielded with a reason other
     /// than rx-accepted (e.g., it rejected an input or threw an exception), or when the response data
     /// does not fit in the rx buffer.
-    access_log log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-        const unsigned char *data, uint64_t length, const access_log::type &log_type);
+    void log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
+        uint64_t length, const std::string &filename);
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
-    /// \param revert_root_hash The revert root hash recorded when the log was generated.
+    /// \param revert_root_hash Root hash that was stored in the revert-root-hash shadow slot.
     /// \param reason Reason for sending response.
     /// \param data The response sent when the log was generated.
-    /// \param length Length of response
+    /// \param length Length of response.
     /// \param root_hash_before State hash before response was sent.
-    /// \param log Log containing the state accesses performed by the load operation
+    /// \param filename Path to the binary step log file produced by log_send_cmio_response.
     /// \param root_hash_after Hash to check against the state after the response was sent (optional).
     /// \returns State hash after response was sent.
     static machine_hash verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-        const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
-        std::optional<const_machine_hash_view> root_hash_after = {});
+        const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before,
+        const std::string &filename, std::optional<const_machine_hash_view> root_hash_after = {});
 
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest

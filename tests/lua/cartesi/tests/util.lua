@@ -208,6 +208,22 @@ function test_util.file_exists(name)
     return f ~= nil
 end
 
+-- Create a fixture output directory and require it to be empty before the caller writes into it.
+-- Deliberately non-destructive: it never deletes. Clearing stale fixtures is the job of a visible
+-- Makefile/CI target (e.g. solidity-step's fixtures-clean), not of a recorder. The only shell call
+-- is mkdir -p (creation, never deletion); the path is single-quoted and a literal quote rejected.
+function test_util.prepare_empty_output_dir(dir)
+    assert(type(dir) == "string" and #dir > 0, "output dir must be a non-empty string")
+    assert(not dir:match("^/+$"), "refusing to use the filesystem root as an output dir")
+    assert(not dir:find("'", 1, true), "output dir must not contain a single quote: " .. dir)
+    assert(os.execute("mkdir -p '" .. dir .. "'"))
+    for _, entry in ipairs(require("posix.dirent").dir(dir)) do
+        if entry ~= "." and entry ~= ".." then
+            error("output dir is not empty: " .. dir .. "\nremove it or clean the fixture root before recording")
+        end
+    end
+end
+
 function test_util.tohex(str)
     return (str:gsub(".", function(c)
         return string.format("%02X", string.byte(c))
@@ -391,6 +407,208 @@ function test_util.new_temp_file()
     self.file_name = os.tmpname()
     self.file = io.open(self.file_name, "w+")
     return setmetatable(self, temp_file_meta)
+end
+
+-- Binary step log helpers. Layout: see step_log_header in src/step-log.hpp.
+
+function test_util.read_step_log_file(filename)
+    local file <close> = assert(io.open(filename, "rb"))
+    local signature = file:read(8)
+    local root_hash_before = file:read(32)
+    local requested_cycle_count = string.unpack("<I8", file:read(8))
+    local root_hash_after = file:read(32)
+    local hash_function = string.unpack("<I8", file:read(8))
+    local page_count = string.unpack("<I8", file:read(8))
+    local node_count = string.unpack("<I8", file:read(8))
+    local sibling_count = string.unpack("<I8", file:read(8))
+    local log = {
+        signature = signature,
+        root_hash_before = root_hash_before,
+        requested_cycle_count = requested_cycle_count,
+        root_hash_after = root_hash_after,
+        hash_function = hash_function,
+        pages = {},
+        nodes = {},
+        siblings = {},
+    }
+    for i = 1, page_count do
+        log.pages[i] = {
+            index = string.unpack("<I8", file:read(8)),
+            data = file:read(PAGE_SIZE),
+            scratch_hash = file:read(32),
+        }
+    end
+    for i = 1, node_count do
+        log.nodes[i] = {
+            address = string.unpack("<I8", file:read(8)),
+            log2_size = string.unpack("<I8", file:read(8)),
+            hash_before = file:read(32),
+            hash_after = file:read(32),
+        }
+    end
+    for i = 1, sibling_count do
+        log.siblings[i] = file:read(32)
+    end
+    return log
+end
+
+-- override_{page,node,sibling}_count lets a test fake a header count that
+-- diverges from the actual entry array length (to exercise overflow checks).
+function test_util.write_step_log_file(logdata, filename)
+    local file <close> = assert(io.open(filename, "wb"))
+    local page_count = logdata.override_page_count or #logdata.pages
+    local node_count = logdata.override_node_count or #logdata.nodes
+    local sibling_count = logdata.override_sibling_count or #logdata.siblings
+    file:write(logdata.signature)
+    file:write(logdata.root_hash_before)
+    file:write(string.pack("<I8", logdata.requested_cycle_count))
+    file:write(logdata.root_hash_after)
+    file:write(string.pack("<I8", logdata.hash_function))
+    file:write(string.pack("<I8", page_count))
+    file:write(string.pack("<I8", node_count))
+    file:write(string.pack("<I8", sibling_count))
+    for _, page in ipairs(logdata.pages) do
+        file:write(string.pack("<I8", page.index))
+        file:write(page.data)
+        file:write(page.scratch_hash)
+    end
+    for _, node in ipairs(logdata.nodes) do
+        file:write(string.pack("<I8", node.address))
+        file:write(string.pack("<I8", node.log2_size))
+        file:write(node.hash_before)
+        file:write(node.hash_after)
+    end
+    for _, sibling in ipairs(logdata.siblings) do
+        file:write(sibling)
+    end
+end
+
+-- Read a step log file, hand it to callback for mutation, write it to a new file.
+function test_util.copy_step_log(original_filename, new_filename, callback)
+    local log_data = test_util.read_step_log_file(original_filename)
+    callback(log_data)
+    os.remove(new_filename)
+    test_util.write_step_log_file(log_data, new_filename)
+end
+
+-- Turn one sibling subtree into an unchanged node carrying the same hash, leaving the
+-- pre-state root identical but adding a node no semantic write consumes. Exercises the
+-- replayer's unconsumed-node rejection: every node's hash_after is folded into the
+-- post-state root verbatim, so a node must be produced by an actual write.
+--
+-- Mirrors the replayer's three-cursor walk (pages, nodes, siblings) to locate the first
+-- sibling spanning more than one page (node sizes must exceed a page), then moves that
+-- sibling's hash into log.nodes. Works on logs that already carry a node (reset/cmio).
+function test_util.inject_unconsumed_node(log)
+    local pages = {}
+    for i, p in ipairs(log.pages) do
+        pages[i] = p.index
+    end
+    table.sort(pages)
+    local nodes = log.nodes or {}
+    local next_page, next_node, next_sibling = 1, 1, 1
+    local target
+
+    local function walk(first_page_index, log2_page_count)
+        local end_page_index = first_page_index + (1 << log2_page_count)
+        local page_in = next_page <= #pages and pages[next_page] < end_page_index
+        local node_in = next_node <= #nodes and (nodes[next_node].address >> PAGE_LOG2_SIZE) < end_page_index
+        if not page_in and not node_in then
+            if not target and log2_page_count > 0 then
+                target = {
+                    sibling_index = next_sibling,
+                    address = first_page_index << PAGE_LOG2_SIZE,
+                    log2_size = log2_page_count + PAGE_LOG2_SIZE,
+                }
+            end
+            next_sibling = next_sibling + 1
+            return
+        end
+        if
+            node_in
+            and nodes[next_node].address == (first_page_index << PAGE_LOG2_SIZE)
+            and nodes[next_node].log2_size == (log2_page_count + PAGE_LOG2_SIZE)
+        then
+            next_node = next_node + 1
+            return
+        end
+        if log2_page_count > 0 then
+            walk(first_page_index, log2_page_count - 1)
+            walk(first_page_index + (1 << (log2_page_count - 1)), log2_page_count - 1)
+        else
+            next_page = next_page + 1
+        end
+    end
+
+    walk(0, ROOT_LOG2_SIZE - PAGE_LOG2_SIZE)
+    assert(target, "no multi-page sibling subtree available to convert into a node")
+    local hash = log.siblings[target.sibling_index]
+    table.remove(log.siblings, target.sibling_index)
+    log.nodes = nodes
+    table.insert(log.nodes, {
+        address = target.address,
+        log2_size = target.log2_size,
+        hash_before = hash,
+        hash_after = hash,
+    })
+    table.sort(log.nodes, function(a, b)
+        return a.address < b.address
+    end)
+    return log
+end
+
+-- Recompute a parsed step log's root by folding pages, nodes, and siblings over the
+-- full address space, mirroring the replayer's compute_root_hash. `use_after` selects a
+-- node's hash_after (post-state) over hash_before. Lets a generator tamper a page or node
+-- and re-derive the matching root so the log still decodes. Same three-cursor walk as
+-- inject_unconsumed_node, but returning each subtree's hash instead of locating a target.
+function test_util.recompute_step_log_root(log, use_after, hash_fn)
+    hash_fn = hash_fn or "keccak256"
+    local pages = {}
+    for _, p in ipairs(log.pages) do
+        pages[#pages + 1] = p
+    end
+    table.sort(pages, function(a, b)
+        return a.index < b.index
+    end)
+    local nodes = {}
+    for _, n in ipairs(log.nodes) do
+        nodes[#nodes + 1] = n
+    end
+    table.sort(nodes, function(a, b)
+        return a.address < b.address
+    end)
+    local next_page, next_node, next_sibling = 1, 1, 1
+
+    local function walk(first_page_index, log2_page_count)
+        local end_page_index = first_page_index + (1 << log2_page_count)
+        local page_in = next_page <= #pages and pages[next_page].index < end_page_index
+        local node_in = next_node <= #nodes and (nodes[next_node].address >> PAGE_LOG2_SIZE) < end_page_index
+        if not page_in and not node_in then
+            local sibling = log.siblings[next_sibling]
+            next_sibling = next_sibling + 1
+            return sibling
+        end
+        if
+            node_in
+            and nodes[next_node].address == (first_page_index << PAGE_LOG2_SIZE)
+            and nodes[next_node].log2_size == (log2_page_count + PAGE_LOG2_SIZE)
+        then
+            local node = nodes[next_node]
+            next_node = next_node + 1
+            return use_after and node.hash_after or node.hash_before
+        end
+        if log2_page_count > 0 then
+            local left = walk(first_page_index, log2_page_count - 1)
+            local right = walk(first_page_index + (1 << (log2_page_count - 1)), log2_page_count - 1)
+            return cartesi[hash_fn](left, right)
+        end
+        local page = pages[next_page]
+        next_page = next_page + 1
+        return merkle_hash(page.data, 0, PAGE_LOG2_SIZE, hash_fn)
+    end
+
+    return walk(0, ROOT_LOG2_SIZE - PAGE_LOG2_SIZE)
 end
 
 return test_util

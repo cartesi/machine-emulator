@@ -33,6 +33,7 @@ extern "C" {
 #include "cm.h"
 #include "htif-constants.hpp"
 #include "riscv-constants.hpp"
+#include "step-log.hpp"
 #include "uarch-constants.hpp"
 #include "uarch-pristine.hpp"
 
@@ -220,6 +221,8 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_FLASH_DRIVE_MAX, "FLASH_DRIVE_MAX", -1);
     clua_setintegerfield(L, CM_NVRAM_MAX, "NVRAM_MAX", -1);
     clua_setintegerfield(L, CM_MEMORY_RANGE_LABEL_MAX, "MEMORY_RANGE_LABEL_MAX", -1);
+    clua_setintegerfield(L, CM_HASH_KECCAK256, "HASH_FUNCTION_KECCAK256", -1);
+    clua_setintegerfield(L, CM_HASH_SHA256, "HASH_FUNCTION_SHA256", -1);
     clua_setintegerfield(L, CM_MCYCLE_MAX, "MCYCLE_MAX", -1);
     clua_setintegerfield(L, CM_UARCH_CYCLE_MAX, "UARCH_CYCLE_MAX", -1);
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_WORD_SIZE, "HASH_TREE_LOG2_WORD_SIZE", -1);
@@ -237,16 +240,6 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE, "UARCH_BREAK_REASON_REACHED_TARGET_CYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_UARCH_HALTED, "UARCH_BREAK_REASON_UARCH_HALTED", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_CYCLE_OVERFLOW, "UARCH_BREAK_REASON_CYCLE_OVERFLOW", -1);
-    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_ANNOTATIONS, "ACCESS_LOG_TYPE_ANNOTATIONS", -1);
-    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_LARGE_DATA, "ACCESS_LOG_TYPE_LARGE_DATA", -1);
-    clua_setintegerfield(L, CM_HTIF_YIELD_AUTOMATIC_REASON_PROGRESS, "HTIF_YIELD_AUTOMATIC_REASON_PROGRESS", -1);
-    clua_setintegerfield(L, CM_HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT, "HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT", -1);
-    clua_setintegerfield(L, CM_HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT, "HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT", -1);
-    clua_setintegerfield(L, CM_HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED", -1);
-    clua_setintegerfield(L, CM_HTIF_YIELD_MANUAL_REASON_RX_REJECTED, "HTIF_YIELD_MANUAL_REASON_RX_REJECTED", -1);
-    clua_setintegerfield(L, CM_HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION, "HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION", -1);
-    clua_setintegerfield(L, CM_HTIF_YIELD_REASON_ADVANCE_STATE, "HTIF_YIELD_REASON_ADVANCE_STATE", -1);
-    clua_setintegerfield(L, CM_HTIF_YIELD_REASON_INSPECT_STATE, "HTIF_YIELD_REASON_INSPECT_STATE", -1);
     clua_setintegerfield(L, CM_SHARING_NONE, "SHARING_NONE", -1);
     clua_setintegerfield(L, CM_SHARING_CONFIG, "SHARING_CONFIG", -1);
     clua_setintegerfield(L, CM_SHARING_ALL, "SHARING_ALL", -1);
@@ -259,6 +252,10 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_AR_RAM_START, "AR_RAM_START", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_STATE_START, "AR_SHADOW_STATE_START", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_STATE_LENGTH, "AR_SHADOW_STATE_LENGTH", -1);
+    clua_setintegerfield(L, CM_AR_SHADOW_UARCH_STATE_START, "AR_SHADOW_UARCH_STATE_START", -1);
+    clua_setintegerfield(L, CM_AR_SHADOW_UARCH_STATE_LENGTH, "AR_SHADOW_UARCH_STATE_LENGTH", -1);
+    clua_setintegerfield(L, CM_AR_UARCH_RAM_START, "AR_UARCH_RAM_START", -1);
+    clua_setintegerfield(L, CM_AR_UARCH_RAM_LENGTH, "AR_UARCH_RAM_LENGTH", -1);
     clua_setintegerfield(L, CM_AR_SHADOW_TLB_START, "AR_SHADOW_TLB_START", -1);
     clua_setintegerfield(L, CM_AR_PMAS_START, "AR_PMAS_START", -1);
     clua_setintegerfield(L, CM_AR_PMAS_LENGTH, "AR_PMAS_LENGTH", -1);
@@ -332,6 +329,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, UARCH_ECALL_FN_HALT, "UARCH_ECALL_FN_HALT", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_PUTCHAR, "UARCH_ECALL_FN_PUTCHAR", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_WRITE_TLB, "UARCH_ECALL_FN_WRITE_TLB", -1);
+    clua_setlstringfield(L, STEP_LOG_SIGNATURE.data(), STEP_LOG_SIGNATURE.size(), "STEP_LOG_SIGNATURE", -1);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     clua_setlstringfield(L, reinterpret_cast<const char *>(uarch_pristine_hash), uarch_pristine_hash_len,
         "UARCH_PRISTINE_STATE_HASH", -1);

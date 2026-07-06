@@ -15,97 +15,76 @@
 --
 
 --[[
-Tests that verify_step correctly rejects corrupted binary step log files.
-This exercises the validation error paths in replay-step-state-access.h
-(the constructor that parses the binary log format).
+Failure-mode tests for cartesi.machine:verify_step.
+
+Three flavors of failure are exercised:
+
+  - Layer 2 argument checks (caller-belief mismatch with the log header).
+  - Layer 1 / parse-layer corruption (signature, counts, page/sibling
+    structure) in the replay_step_state_access constructor.
+  - Interpretation-time adversarial logs that are merkle-self-consistent
+    but still must be rejected during replay.
+
+Format-corruption coverage lives here, exercised against the
+replay_step_state_access parser via verify_step.
 ]]
 
 local cartesi = require("cartesi")
 local lester = require("cartesi.third-party.lester")
-lester.parse_args()
 local test_util = require("cartesi.tests.util")
 
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
-local HASH_SIZE = cartesi.HASH_SIZE -- 32
-local LOG2_PAGE_SIZE = 12
-local PAGE_SIZE = 1 << LOG2_PAGE_SIZE -- 4096
-local LOG2_ROOT_SIZE = 64
-local PAGE_ENTRY_SIZE = 8 + PAGE_SIZE + HASH_SIZE -- page_index + data + scratch_hash
+local HASH_SIZE = cartesi.HASH_SIZE
+local LOG2_PAGE_SIZE = cartesi.HASH_TREE_LOG2_PAGE_SIZE
+local PAGE_SIZE = 1 << LOG2_PAGE_SIZE
+local LOG2_ROOT_SIZE = cartesi.HASH_TREE_LOG2_ROOT_SIZE
+local BAD_HASH = string.rep("\0", HASH_SIZE)
+local MCYCLE_COUNT = 10
 
--- Field offsets in the binary step log
-local OFFSET_ROOT_HASH_BEFORE = 0
-local OFFSET_MCYCLE_COUNT = OFFSET_ROOT_HASH_BEFORE + HASH_SIZE -- 32
-local OFFSET_ROOT_HASH_AFTER = OFFSET_MCYCLE_COUNT + 8 -- 40
-local OFFSET_HASH_FUNCTION = OFFSET_ROOT_HASH_AFTER + HASH_SIZE -- 72
-local OFFSET_PAGE_COUNT = OFFSET_HASH_FUNCTION + 8 -- 80
-local OFFSET_FIRST_PAGE = OFFSET_PAGE_COUNT + 8 -- 88
-
--- Produce a valid step log and return (root_hash_before, mcycle_count, root_hash_after, log_data)
-local function produce_valid_step_log()
-    local machine <close> = cartesi.machine({
-        ram = { length = 0x20000 },
+-- Machine configured so log_step touches multiple pages (shadow_state, an
+-- instruction page, and the PMA page).
+local function build_machine(hash_fn)
+    return cartesi.machine({
+        hash_tree = hash_fn and { hash_function = hash_fn } or nil,
+        ram = { length = 1 << 20 },
+        uarch = {
+            ram = {
+                length = 0x1000,
+                backing_store = {
+                    data_filename = test_util.create_test_uarch_program(test_util.uarch_programs.default),
+                },
+            },
+        },
     }, {})
-    local root_hash_before = machine:get_root_hash()
-    local log_filename = os.tmpname()
-    os.remove(log_filename) -- log_step requires the file not to exist
-    local mcycle_count = 1
-    machine:log_step(mcycle_count, log_filename)
-    local root_hash_after = machine:get_root_hash()
-    -- Read the binary log file
-    local f <close> = assert(io.open(log_filename, "rb"))
-    local log_data = f:read("a")
-    os.remove(log_filename)
-    return root_hash_before, mcycle_count, root_hash_after, log_data
 end
 
--- Write log_data to a temp file, call verify_step on machine, clean up
-local function verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, log_data)
-    local log_filename = os.tmpname()
-    local f <close> = assert(io.open(log_filename, "wb"))
-    f:write(log_data)
-    f:close()
+-- Produce a fresh valid log + endpoint hashes; each call gives an isolated file.
+local function produce_valid_log(hash_fn)
+    local machine <close> = build_machine(hash_fn)
+    machine:write_reg("mcycle", 0)
+    local root_hash_before = machine:get_root_hash()
+    local filename = os.tmpname()
+    os.remove(filename)
+    machine:log_step(MCYCLE_COUNT, filename)
+    local root_hash_after = machine:get_root_hash()
+    return filename, root_hash_before, root_hash_after
+end
+
+-- Run verify_step against a corrupted copy produced by `mutate`. Returns (ok, err).
+local function verify_corrupted(filename, mutate, root_hash_before, mcycle_count, root_hash_after)
+    local corrupted = os.tmpname()
+    test_util.copy_step_log(filename, corrupted, mutate)
     local ok, err = pcall(function()
-        machine:verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after)
+        cartesi.machine:verify_step(root_hash_before, corrupted, mcycle_count, root_hash_after)
     end)
-    os.remove(log_filename)
+    os.remove(corrupted)
     return ok, err
 end
 
--- Helper: produce a valid log, corrupt it, verify it fails with expected error
-local function should_fail(machine, expected_error, corrupt)
-    local root_hash_before, mcycle_count, root_hash_after, log_data = produce_valid_step_log()
-    local corrupted = corrupt(log_data, root_hash_before, mcycle_count, root_hash_after)
-    if type(corrupted) == "table" then
-        -- corrupt() returned {log_data, root_hash_before, mcycle_count, root_hash_after}
-        log_data = corrupted[1]
-        root_hash_before = corrupted[2]
-        mcycle_count = corrupted[3]
-        root_hash_after = corrupted[4]
-    else
-        log_data = corrupted
-    end
-    local ok, err = verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, log_data)
-    expect.falsy(ok)
-    expect.truthy(err and err:find(expected_error, 1, true), err)
-end
-
--- Helper: verify the happy path works
-local function should_succeed(machine)
-    local root_hash_before, mcycle_count, root_hash_after, log_data = produce_valid_step_log()
-    local ok, err = verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, log_data)
-    expect.truthy(ok, err)
-end
-
--- Replace bytes at a given offset in a string
-local function replace_at(data, offset, replacement)
-    return data:sub(1, offset) .. replacement .. data:sub(offset + #replacement + 1)
-end
-
--- Compute sibling hashes for a given subset of page indices using the machine's
--- hash tree. This implements the same tree walk as compute_root_hash_impl in
--- replay-step-state-access.h, but uses get_node_hash for subtrees that contain
--- no selected pages instead of consuming from a sibling array.
+-- Three-cursor sibling computation: replicates replay_step_state_access's tree
+-- walk for an arbitrary subset of present page indices, using a pristine
+-- machine's node hashes for subtrees that contain none of those pages.
 local function get_siblings_for_pages(machine, page_indices)
     table.sort(page_indices)
     local log2_page_count = LOG2_ROOT_SIZE - LOG2_PAGE_SIZE
@@ -114,12 +93,10 @@ local function get_siblings_for_pages(machine, page_indices)
 
     local function walk(first_page_index, lpc)
         local range_size = 1 << lpc
-        -- Check if any selected pages fall in this range
         local has_page = next_page <= #page_indices
             and page_indices[next_page] >= first_page_index
             and page_indices[next_page] < first_page_index + range_size
         if not has_page then
-            -- No pages in range: get the subtree hash from the machine
             local addr = first_page_index << LOG2_PAGE_SIZE
             local log2_size = lpc + LOG2_PAGE_SIZE
             table.insert(siblings, machine:get_node_hash(addr, log2_size))
@@ -129,7 +106,6 @@ local function get_siblings_for_pages(machine, page_indices)
             walk(first_page_index, lpc - 1)
             walk(first_page_index + (range_size >> 1), lpc - 1)
         else
-            -- Leaf: this page is present, skip it
             next_page = next_page + 1
         end
     end
@@ -138,418 +114,365 @@ local function get_siblings_for_pages(machine, page_indices)
     return siblings
 end
 
--- Build a binary step log from components
-local function build_step_log(root_hash_before, mcycle_count, root_hash_after, hash_function, pages, siblings)
-    local parts = {
-        root_hash_before,
-        string.pack("<I8", mcycle_count),
-        root_hash_after,
-        string.pack("<I8", hash_function),
-        string.pack("<I8", #pages),
-    }
-    for _, page in ipairs(pages) do
-        parts[#parts + 1] = string.pack("<I8", page.index)
-        parts[#parts + 1] = page.data
-        parts[#parts + 1] = string.rep("\0", HASH_SIZE) -- scratch hash area
+-- Run `body(filename, root_hash_before, root_hash_after)` against a freshly
+-- produced log. Cleans up the file on the way out.
+local function with_valid_log(body)
+    local filename, root_hash_before, root_hash_after = produce_valid_log()
+    local ok, err = pcall(body, filename, root_hash_before, root_hash_after)
+    os.remove(filename)
+    if not ok then
+        error(err)
     end
-    parts[#parts + 1] = string.pack("<I8", #siblings)
-    for _, s in ipairs(siblings) do
-        parts[#parts + 1] = s
-    end
-    return table.concat(parts)
 end
 
--- Parse pages from a binary step log
-local function parse_pages(log_data)
-    local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
-    local pages = {}
-    for i = 0, page_count - 1 do
-        local entry_offset = OFFSET_FIRST_PAGE + i * PAGE_ENTRY_SIZE
-        local index = string.unpack("<I8", log_data, entry_offset + 1)
-        local data = log_data:sub(entry_offset + 8 + 1, entry_offset + 8 + PAGE_SIZE)
-        pages[#pages + 1] = { index = index, data = data }
-    end
-    return pages
+-- Common pattern: produce a valid log, corrupt it via `mutate`, expect
+-- verify_step to fail with an error containing `expected_substring`.
+local function expect_corruption_error(expected_substring, mutate, verify_overrides)
+    with_valid_log(function(filename, root_hash_before, root_hash_after)
+        local args = verify_overrides or {}
+        local ok, err = verify_corrupted(
+            filename,
+            mutate,
+            args.root_hash_before or root_hash_before,
+            args.mcycle_count or MCYCLE_COUNT,
+            args.root_hash_after or root_hash_after
+        )
+        expect.falsy(ok)
+        expect.truthy(err and err:find(expected_substring, 1, true), err)
+    end)
 end
 
 --------------------------------------------------------------------------------
 
-local function register_verify_step_tests(machine)
-    describe("happy path", function()
-        it("should accept a valid step log", function()
-            should_succeed(machine)
-        end)
-    end)
-
-    describe("constructor: truncation errors", function()
-        it("should reject empty log", function()
-            -- An empty file (0 bytes) fails at mmap level before the constructor runs.
-            -- A file with just a few bytes reaches the constructor's first check.
-            should_fail(machine, "root hash before past end of step log", function()
-                return string.rep("\0", 4) -- too short for root_hash_before
+describe("verify_step", function()
+    describe("argument validation (Layer 2)", function()
+        it("rejects a wrong root_hash_before argument", function()
+            with_valid_log(function(filename, _, root_hash_after)
+                local ok, err = pcall(function()
+                    cartesi.machine:verify_step(BAD_HASH, filename, MCYCLE_COUNT, root_hash_after)
+                end)
+                expect.falsy(ok)
+                expect.truthy(err and err:find("root hash before does not match", 1, true), err)
             end)
         end)
 
-        it("should reject log truncated before mcycle_count", function()
-            should_fail(machine, "mcycle count past end of step log", function(log_data)
-                return log_data:sub(1, OFFSET_MCYCLE_COUNT)
+        it("rejects a wrong root_hash_after argument", function()
+            with_valid_log(function(filename, root_hash_before)
+                local ok, err = pcall(function()
+                    cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT, BAD_HASH)
+                end)
+                expect.falsy(ok)
+                expect.truthy(err and err:find("root hash after does not match", 1, true), err)
             end)
         end)
 
-        it("should reject log truncated before root_hash_after", function()
-            should_fail(machine, "root hash after past end of step log", function(log_data)
-                return log_data:sub(1, OFFSET_ROOT_HASH_AFTER)
-            end)
-        end)
-
-        it("should reject log truncated before hash_function", function()
-            should_fail(machine, "hash function type past end of step log", function(log_data)
-                return log_data:sub(1, OFFSET_HASH_FUNCTION)
-            end)
-        end)
-
-        it("should reject log truncated before page_count", function()
-            should_fail(machine, "page count past end of step log", function(log_data)
-                return log_data:sub(1, OFFSET_PAGE_COUNT)
-            end)
-        end)
-
-        it("should reject log truncated in the middle of page data", function()
-            -- Truncate one byte into the first page entry
-            should_fail(machine, "page data past end of step log", function(log_data)
-                return log_data:sub(1, OFFSET_FIRST_PAGE + 1)
-            end)
-        end)
-
-        it("should reject log truncated before sibling_count", function()
-            -- Parse page_count to find where sibling_count should be
-            should_fail(machine, "sibling count past end of step log", function(log_data)
-                local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
-                local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
-                return log_data:sub(1, sibling_count_offset)
-            end)
-        end)
-
-        it("should reject log truncated in the middle of sibling hashes", function()
-            should_fail(machine, "sibling hashes past end of step log", function(log_data)
-                local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
-                local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
-                local sibling_count = string.unpack("<I8", log_data, sibling_count_offset + 1)
-                assert(sibling_count > 0, "test requires at least one sibling hash")
-                -- Keep only the sibling_count field but truncate the sibling hashes
-                return log_data:sub(1, sibling_count_offset + 8 + 1)
+        it("rejects a wrong mcycle_count argument", function()
+            with_valid_log(function(filename, root_hash_before, root_hash_after)
+                local ok, err = pcall(function()
+                    cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT + 1, root_hash_after)
+                end)
+                expect.falsy(ok)
+                expect.truthy(err and err:find("mcycle count does not match", 1, true), err)
             end)
         end)
     end)
 
-    describe("constructor: format validation errors", function()
-        it("should reject unsupported hash function type", function()
-            should_fail(machine, "unsupported hash function type", function(log_data)
-                -- Replace hash_function field (at offset 72) with an invalid value (0xFF)
-                local bad_hash_fn = string.pack("<I8", 0xFF)
-                return replace_at(log_data, OFFSET_HASH_FUNCTION, bad_hash_fn)
-            end)
-        end)
-
-        it("should reject page count of zero", function()
-            -- Build a log with page_count = 0. We need to also adjust the file
-            -- size to match (remove all page data and sibling hashes).
-            should_fail(machine, "page count is zero", function(log_data)
-                -- header (88 bytes) with page_count = 0, then sibling_count = 0
-                local header = log_data:sub(1, OFFSET_PAGE_COUNT)
-                    .. string.pack("<I8", 0) -- page_count = 0
-                    .. string.pack("<I8", 0) -- sibling_count = 0
-                return header
-            end)
-        end)
-
-        it("should reject extra data at end of step log", function()
-            should_fail(machine, "extra data at end of step log", function(log_data)
-                return log_data .. "\0"
-            end)
-        end)
-
-        it("should reject page index not in increasing order", function()
-            should_fail(machine, "page index is not in increasing order", function(log_data)
-                local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
-                if page_count < 2 then
-                    error("test requires at least 2 pages")
+    describe("header validation", function()
+        it("rejects a log shorter than the header", function()
+            with_valid_log(function(_, root_hash_before, root_hash_after)
+                local truncated = os.tmpname()
+                do
+                    local f <close> = assert(io.open(truncated, "wb"))
+                    f:write(string.rep("\0", 16))
                 end
-                -- Swap the page indices of the first two pages
-                -- (make the first page index larger than the second)
-                local idx1_offset = OFFSET_FIRST_PAGE
-                local idx2_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE
-                local idx1 = string.unpack("<I8", log_data, idx1_offset + 1)
-                local idx2 = string.unpack("<I8", log_data, idx2_offset + 1)
-                -- Set both to the same value (not increasing)
-                local corrupted = replace_at(log_data, idx1_offset, string.pack("<I8", idx2))
-                corrupted = replace_at(corrupted, idx2_offset, string.pack("<I8", idx1))
-                return corrupted
+                local ok, err = pcall(function()
+                    cartesi.machine:verify_step(root_hash_before, truncated, MCYCLE_COUNT, root_hash_after)
+                end)
+                os.remove(truncated)
+                expect.falsy(ok)
+                expect.truthy(err and err:find("step log shorter than header", 1, true), err)
             end)
         end)
 
-        it("should reject page scratch hash area that is not zero", function()
-            should_fail(machine, "page scratch hash area is not zero", function(log_data)
-                -- The scratch hash is at offset 8 + PAGE_SIZE within each page entry
-                local scratch_offset = OFFSET_FIRST_PAGE + 8 + PAGE_SIZE
-                return replace_at(log_data, scratch_offset, string.rep("\xff", HASH_SIZE))
+        it("rejects an invalid signature", function()
+            expect_corruption_error("invalid step log signature", function(log_data)
+                log_data.signature = string.rep("\0", 8)
             end)
         end)
 
-        it("should reject initial root hash mismatch", function()
-            should_fail(machine, "initial root hash mismatch", function(log_data)
-                -- Corrupt a byte in the first page's data so the computed hash won't match
-                local data_offset = OFFSET_FIRST_PAGE + 8 -- skip page_index
-                local byte_val = log_data:byte(data_offset + 1)
-                local new_byte = string.char((byte_val + 1) % 256)
-                return replace_at(log_data, data_offset, new_byte)
+        it("rejects an unsupported hash function type", function()
+            expect_corruption_error("unsupported hash function type", function(log_data)
+                log_data.hash_function = 0xffff
+            end)
+        end)
+
+        it("rejects a logged requested_cycle_count that disagrees with the argument", function()
+            expect_corruption_error("mcycle count does not match", function(log_data)
+                log_data.requested_cycle_count = MCYCLE_COUNT + 1
+            end)
+        end)
+
+        it("rejects page_count overflow against file size", function()
+            expect_corruption_error("page count exceeds step log size", function(log_data)
+                log_data.override_page_count = cartesi.MCYCLE_MAX
+            end)
+        end)
+
+        it("rejects node_count overflow against file size", function()
+            expect_corruption_error("node count exceeds step log size", function(log_data)
+                log_data.override_node_count = cartesi.MCYCLE_MAX
+            end)
+        end)
+
+        it("rejects sibling_count that does not match file size", function()
+            expect_corruption_error("sibling count does not match step log size", function(log_data)
+                log_data.override_sibling_count = 0xffffffff
+            end)
+        end)
+
+        it("rejects sibling_count whose byte size overflows uint64", function()
+            -- 2^59 siblings * 32 bytes == 2^64 wraps to 0, so a header claiming siblings
+            -- with no sibling bytes present must still be rejected by the size check.
+            expect_corruption_error("sibling count does not match step log size", function(log_data)
+                log_data.siblings = {}
+                log_data.override_sibling_count = 1 << 59
             end)
         end)
     end)
 
-    describe("finish: final root hash", function()
-        it("should reject final root hash mismatch", function()
-            -- Pass a wrong root_hash_after to verify_step
-            local bad_hash = string.rep("\xba", HASH_SIZE)
-            local root_hash_before, mcycle_count, _, log_data = produce_valid_step_log()
-            local ok, err = verify_step_with_data(machine, root_hash_before, mcycle_count, bad_hash, log_data)
-            expect.falsy(ok)
-            -- The error could be "root hash after does not match" (from machine::verify_step)
-            -- or "final root hash mismatch" (from replay_step_state_access::finish)
-            expect.truthy(err and (err:find("root hash", 1, true) or err:find("hash", 1, true)), err)
+    describe("page validation", function()
+        it("rejects an empty page list", function()
+            expect_corruption_error("page count is zero", function(log_data)
+                log_data.pages = {}
+            end)
+        end)
+
+        it("rejects page indices not in ascending order", function()
+            expect_corruption_error("invalid log format: page index is not in increasing order", function(log_data)
+                log_data.pages[2].index = log_data.pages[1].index
+            end)
+        end)
+
+        it("rejects a non-zero page scratch hash area", function()
+            expect_corruption_error("invalid log format: page scratch hash area is not zero", function(log_data)
+                log_data.pages[1].scratch_hash = string.rep("\1", HASH_SIZE)
+            end)
+        end)
+
+        it("rejects modified page data via initial root hash mismatch", function()
+            expect_corruption_error("initial root hash mismatch", function(log_data)
+                log_data.pages[1].data = string.reverse(log_data.pages[1].data)
+            end)
+        end)
+
+        -- A page at index 2^52 is beyond the tree's page-index range; the
+        -- walk visits root, finds nothing in range, consumes one sibling and
+        -- returns -- leaving the extra page unconsumed.
+        it("rejects a page with an out-of-range index", function()
+            expect_corruption_error("too many pages in log", function(log_data)
+                local last = log_data.pages[#log_data.pages]
+                log_data.pages = {
+                    {
+                        index = 1 << (LOG2_ROOT_SIZE - LOG2_PAGE_SIZE),
+                        data = last.data,
+                        scratch_hash = last.scratch_hash,
+                    },
+                }
+                log_data.siblings = { BAD_HASH }
+            end, { root_hash_after = BAD_HASH })
         end)
     end)
 
-    describe("verify_step wrapper: argument validation", function()
-        it("should reject root hash before mismatch with log header", function()
-            local bad_hash = string.rep("\xba", HASH_SIZE)
-            local _, mcycle_count, root_hash_after, log_data = produce_valid_step_log()
-            local ok, err = verify_step_with_data(machine, bad_hash, mcycle_count, root_hash_after, log_data)
-            expect.falsy(ok)
-            expect.truthy(err and err:find("root hash before does not match", 1, true), err)
+    describe("root hash validation (Layer 1)", function()
+        it("rejects a corrupted logged root_hash_before", function()
+            expect_corruption_error("initial root hash mismatch", function(log_data)
+                log_data.root_hash_before = BAD_HASH
+            end, { root_hash_before = BAD_HASH })
         end)
 
-        it("should reject mcycle count mismatch with log header", function()
-            local root_hash_before, mcycle_count, root_hash_after, log_data = produce_valid_step_log()
-            local ok, err =
-                verify_step_with_data(machine, root_hash_before, mcycle_count + 1, root_hash_after, log_data)
-            expect.falsy(ok)
-            expect.truthy(err and err:find("mcycle count does not match", 1, true), err)
+        it("rejects a corrupted logged root_hash_after", function()
+            expect_corruption_error("final root hash mismatch", function(log_data)
+                log_data.root_hash_after = BAD_HASH
+            end, { root_hash_after = BAD_HASH })
+        end)
+    end)
+
+    describe("sibling validation", function()
+        it("rejects an extra page that consumes a missing sibling slot", function()
+            expect_corruption_error("too many sibling hashes in log", function(log_data)
+                local last = log_data.pages[#log_data.pages]
+                table.insert(log_data.pages, {
+                    index = last.index + 1,
+                    data = last.data,
+                    scratch_hash = last.scratch_hash,
+                })
+            end, { root_hash_after = BAD_HASH })
+        end)
+
+        it("rejects a removed page that frees a sibling slot", function()
+            expect_corruption_error("too many sibling hashes in log", function(log_data)
+                table.remove(log_data.pages)
+            end, { root_hash_after = BAD_HASH })
+        end)
+
+        it("rejects a removed sibling hash", function()
+            expect_corruption_error("too few sibling hashes in log", function(log_data)
+                table.remove(log_data.siblings)
+            end, { root_hash_after = BAD_HASH })
+        end)
+
+        it("rejects an extra sibling hash", function()
+            expect_corruption_error("too many sibling hashes in log", function(log_data)
+                table.insert(log_data.siblings, BAD_HASH)
+            end, { root_hash_after = BAD_HASH })
+        end)
+
+        it("rejects a modified sibling hash via initial root hash mismatch", function()
+            expect_corruption_error("initial root hash mismatch", function(log_data)
+                log_data.siblings[1] = BAD_HASH
+            end, { root_hash_after = BAD_HASH })
+        end)
+
+        it("rejects an empty sibling list", function()
+            expect_corruption_error("too few sibling hashes in log", function(log_data)
+                log_data.siblings = {}
+            end, { root_hash_after = BAD_HASH })
+        end)
+    end)
+
+    describe("node validation", function()
+        -- A uarch step writes only pages, so it consumes no nodes. Converting a sibling
+        -- subtree into an unchanged node keeps the pre-state root identical but leaves a
+        -- node no write consumes; its hash_after is folded into the post-state root
+        -- verbatim, so the replayer must reject it.
+        it("rejects an unconsumed subtree-write node", function()
+            expect_corruption_error("unconsumed node in step log", function(log_data)
+                test_util.inject_unconsumed_node(log_data)
+            end)
+        end)
+
+        -- The following inject a structurally invalid node; decode validates nodes and the
+        -- pages+nodes disjointness before recomputing the root, so each is rejected at parse.
+        it("rejects a node whose log2 size is out of range", function()
+            expect_corruption_error("node log2 size out of range", function(log_data)
+                log_data.nodes = {
+                    { address = 0, log2_size = LOG2_ROOT_SIZE + 1, hash_before = BAD_HASH, hash_after = BAD_HASH },
+                }
+            end)
+        end)
+
+        it("rejects a node whose address is not aligned to its size", function()
+            expect_corruption_error("node address not aligned to its size", function(log_data)
+                log_data.nodes = {
+                    {
+                        address = PAGE_SIZE,
+                        log2_size = LOG2_PAGE_SIZE + 1,
+                        hash_before = BAD_HASH,
+                        hash_after = BAD_HASH,
+                    },
+                }
+            end)
+        end)
+
+        it("rejects a node overlapping a witnessed page", function()
+            expect_corruption_error("page or node overlaps a previous entry", function(log_data)
+                -- A two-page-aligned node covering the first witnessed page's pair overlaps it.
+                local pair_index = log_data.pages[1].index & ~1
+                log_data.nodes = {
+                    {
+                        address = pair_index << LOG2_PAGE_SIZE,
+                        log2_size = LOG2_PAGE_SIZE + 1,
+                        hash_before = BAD_HASH,
+                        hash_after = BAD_HASH,
+                    },
+                }
+            end)
         end)
     end)
 
     describe("interpret: adversarial log with missing page", function()
-        -- An adversary can produce a log that has a valid Merkle tree (pages +
-        -- siblings hash to the agreed root) while omitting a page the interpreter
-        -- needs. The constructor passes but find_page fails during interpret().
-        -- We craft such a log by using get_node_hash to build a different tree
-        -- cut that excludes one required page.
-        it("should reject log with a required page omitted", function()
-            -- Create two identical machines: one to produce the valid log,
-            -- one to stay in the initial state for get_node_hash queries.
-            local config = { ram = { length = 0x20000 } }
-            local log_machine <close> = cartesi.machine(config, {})
-            local root_hash_before = log_machine:get_root_hash()
+        -- An attacker can produce a log where pages + siblings hash to the
+        -- agreed root, yet a page the interpreter needs is absent. The
+        -- constructor accepts the log; find_page must reject it during replay.
+        it("rejects a log with a required page omitted", function()
+            local filename, root_hash_before, root_hash_after = produce_valid_log()
+            local log = test_util.read_step_log_file(filename)
+            os.remove(filename)
 
-            -- Produce a valid step log to learn which pages are needed
-            local log_filename = os.tmpname()
-            os.remove(log_filename)
-            local mcycle_count = 1
-            log_machine:log_step(mcycle_count, log_filename)
-            local root_hash_after = log_machine:get_root_hash()
+            assert(#log.pages >= 2, "test needs a machine that produces at least 2 pages per step")
 
-            local f <close> = assert(io.open(log_filename, "rb"))
-            local log_data = f:read("a")
-            f:close()
-            os.remove(log_filename)
-
-            -- Parse pages from the valid log
-            local pages = parse_pages(log_data)
-            assert(#pages >= 2, "test requires at least 2 pages")
-
-            -- Remove the last page -- the interpreter will still need it
-            local reduced_pages = {}
-            for i = 1, #pages - 1 do
-                reduced_pages[i] = pages[i]
+            table.remove(log.pages)
+            local kept_indices = {}
+            for i, p in ipairs(log.pages) do
+                kept_indices[i] = p.index
             end
+            local fresh <close> = build_machine()
+            log.siblings = get_siblings_for_pages(fresh, kept_indices)
 
-            -- Collect page indices for the reduced set
-            local reduced_indices = {}
-            for i, p in ipairs(reduced_pages) do
-                reduced_indices[i] = p.index
-            end
-
-            -- Use a fresh machine (still in initial state) to compute siblings
-            local fresh_machine <close> = cartesi.machine(config, {})
-            local siblings = get_siblings_for_pages(fresh_machine, reduced_indices)
-
-            -- Read hash_function from the original log
-            local hash_function = string.unpack("<I8", log_data, OFFSET_HASH_FUNCTION + 1)
-
-            -- Build the adversarial log
-            local adversarial_log =
-                build_step_log(root_hash_before, mcycle_count, root_hash_after, hash_function, reduced_pages, siblings)
-
-            -- verify_step should pass the constructor (initial hash matches)
-            -- but fail during interpret() when it accesses the missing page
-            local ok, err =
-                verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, adversarial_log)
+            local adversarial = os.tmpname()
+            os.remove(adversarial)
+            test_util.write_step_log_file(log, adversarial)
+            local ok, err = pcall(function()
+                cartesi.machine:verify_step(root_hash_before, adversarial, MCYCLE_COUNT, root_hash_after)
+            end)
+            os.remove(adversarial)
             expect.falsy(ok)
             expect.truthy(err and err:find("required page not found", 1, true), err)
         end)
     end)
 
     describe("interpret: corrupted PMA data", function()
-        it("should reject log with invalid PMA entries", function()
-            -- Craft a log where the PMA page has garbage istart/ilength.
-            -- The Merkle tree is self-consistent (root hash matches the
-            -- corrupted data), but make_mock_address_range rejects the values.
-            local config = { ram = { length = 0x20000 } }
-            local log_machine <close> = cartesi.machine(config, {})
+        it("rejects a log with invalid PMA entries", function()
+            local filename, _, root_hash_after = produce_valid_log()
+            local log = test_util.read_step_log_file(filename)
+            os.remove(filename)
+            local hash_fn = log.hash_function == 0 and "keccak256" or "sha256"
 
-            local log_filename = os.tmpname()
-            os.remove(log_filename)
-            local mcycle_count = 1
-            log_machine:log_step(mcycle_count, log_filename)
-            local root_hash_after = log_machine:get_root_hash()
-
-            local f <close> = assert(io.open(log_filename, "rb"))
-            local log_data = f:read("a")
-            f:close()
-            os.remove(log_filename)
-
-            local pages = parse_pages(log_data)
-            local hash_function = string.unpack("<I8", log_data, OFFSET_HASH_FUNCTION + 1)
-            local hash_fn = hash_function == 0 and "keccak256" or "sha256"
-
-            -- Find the PMA page (address 0x10000 = page index 16)
             local pma_page_index = cartesi.AR_PMAS_START >> LOG2_PAGE_SIZE
-            local pma_page_pos = nil
-            for i, p in ipairs(pages) do
+            local pma_pos
+            for i, p in ipairs(log.pages) do
                 if p.index == pma_page_index then
-                    pma_page_pos = i
+                    pma_pos = i
                     break
                 end
             end
-            assert(pma_page_pos, "PMA page not found in log")
+            assert(pma_pos, "PMA page not found in log -- machine config must touch it")
 
-            -- Corrupt the PMA page: fill with 0xFF so istart/ilength are garbage
-            pages[pma_page_pos].data = string.rep("\xff", PAGE_SIZE)
+            log.pages[pma_pos].data = string.rep("\xff", PAGE_SIZE)
 
-            -- Compute the new root hash by walking up from the corrupted page.
-            -- Get the proof path from the real machine (siblings at each level).
-            local fresh_machine <close> = cartesi.machine(config, {})
-            local pma_page_addr = pma_page_index << LOG2_PAGE_SIZE
-            -- Start with the Merkle tree hash of the corrupted page data
-            local node_hash = test_util.merkle_hash(pages[pma_page_pos].data, 0, LOG2_PAGE_SIZE, hash_fn)
-            -- Walk up from page level to root, combining with sibling hashes
+            -- Walk corrupted PMA page up to root, picking siblings from a
+            -- pristine machine to keep the merkle tree self-consistent.
+            local fresh <close> = build_machine()
+            local pma_addr = pma_page_index << LOG2_PAGE_SIZE
+            local node_hash = test_util.merkle_hash(log.pages[pma_pos].data, 0, LOG2_PAGE_SIZE, hash_fn)
             for log2_size = LOG2_PAGE_SIZE, LOG2_ROOT_SIZE - 1 do
                 local bit = 1 << log2_size
-                local sibling_addr = (pma_page_addr ~ bit) & ~(bit - 1)
-                local sibling_hash = fresh_machine:get_node_hash(sibling_addr, log2_size)
-                if (pma_page_addr & bit) ~= 0 then
-                    node_hash = cartesi[hash_fn](sibling_hash, node_hash)
+                local sibling_addr = (pma_addr ~ bit) & ~(bit - 1)
+                local sibling = fresh:get_node_hash(sibling_addr, log2_size)
+                if (pma_addr & bit) ~= 0 then
+                    node_hash = cartesi[hash_fn](sibling, node_hash)
                 else
-                    node_hash = cartesi[hash_fn](node_hash, sibling_hash)
+                    node_hash = cartesi[hash_fn](node_hash, sibling)
                 end
             end
-            local new_root_hash = node_hash
+            local new_root = node_hash
 
-            -- Build the log with the corrupted page and the new root hash
-            local page_indices = {}
-            for i, p in ipairs(pages) do
-                page_indices[i] = p.index
+            local indices = {}
+            for i, p in ipairs(log.pages) do
+                indices[i] = p.index
             end
-            local siblings = get_siblings_for_pages(fresh_machine, page_indices)
-            local adversarial_log =
-                build_step_log(new_root_hash, mcycle_count, root_hash_after, hash_function, pages, siblings)
+            log.root_hash_before = new_root
+            log.siblings = get_siblings_for_pages(fresh, indices)
 
-            local ok, err =
-                verify_step_with_data(machine, new_root_hash, mcycle_count, root_hash_after, adversarial_log)
+            local adversarial = os.tmpname()
+            os.remove(adversarial)
+            test_util.write_step_log_file(log, adversarial)
+            local ok, err = pcall(function()
+                cartesi.machine:verify_step(new_root, adversarial, MCYCLE_COUNT, root_hash_after)
+            end)
+            os.remove(adversarial)
             expect.falsy(ok)
-            -- The abrt lambda (L463) is invoked through ABRTF in the
-            -- address_range constructor, called from make_mock_address_range
             expect.truthy(err and err:find("when initializing", 1, true), err)
         end)
     end)
-
-    describe("compute_root_hash: page/sibling count errors", function()
-        it("should reject too many pages in log", function()
-            -- Add an extra page with index >= 2^52 (beyond the tree's page index
-            -- range). The tree walk never reaches it, so next_page < page_count.
-            should_fail(machine, "too many pages in log", function(log_data)
-                local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
-                local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
-
-                -- Build a fake page entry: index beyond tree range, zero data, zero scratch
-                local oob_index = 1 << 52 -- beyond the 2^52 page index range
-                local extra_page = string.pack("<I8", oob_index)
-                    .. string.rep("\0", PAGE_SIZE)
-                    .. string.rep("\0", HASH_SIZE)
-
-                -- Insert the extra page before sibling_count, update page_count
-                local result = replace_at(log_data, OFFSET_PAGE_COUNT, string.pack("<I8", page_count + 1))
-                result = result:sub(1, sibling_count_offset) .. extra_page .. result:sub(sibling_count_offset + 1)
-                return result
-            end)
-        end)
-
-        it("should reject too few sibling hashes (internal level)", function()
-            should_fail(machine, "too few sibling hashes in log", function(log_data)
-                local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
-                local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
-                local sibling_count = string.unpack("<I8", log_data, sibling_count_offset + 1)
-                assert(sibling_count > 0, "test requires at least one sibling hash")
-                -- Set sibling_count to 0 and remove all sibling hashes
-                local truncated = log_data:sub(1, sibling_count_offset) .. string.pack("<I8", 0)
-                return truncated
-            end)
-        end)
-
-        it("should reject too few sibling hashes (leaf level)", function()
-            -- Pages at indices [0, 3] with 0 siblings. The tree walk recurses
-            -- down to leaf 0 (consumed), then leaf 1: page[next].index=3 != 1,
-            -- so it needs a sibling at the LEAF level (L374), not an internal
-            -- level (L358).
-            local dummy_hash = string.rep("\0", HASH_SIZE)
-            local dummy_page_data = string.rep("\0", PAGE_SIZE)
-            local pages = {
-                { index = 0, data = dummy_page_data },
-                { index = 3, data = dummy_page_data },
-            }
-            local log_data = build_step_log(dummy_hash, 1, dummy_hash, 0, pages, {})
-            local ok, err = verify_step_with_data(machine, dummy_hash, 1, dummy_hash, log_data)
-            expect.falsy(ok)
-            expect.truthy(err and err:find("too few sibling hashes in log", 1, true), err)
-        end)
-
-        it("should reject too many sibling hashes", function()
-            should_fail(machine, "too many sibling hashes in log", function(log_data)
-                local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
-                local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
-                local sibling_count = string.unpack("<I8", log_data, sibling_count_offset + 1)
-                -- Add one extra sibling hash and increase the count
-                local new_count = string.pack("<I8", sibling_count + 1)
-                local result = log_data:sub(1, sibling_count_offset)
-                    .. new_count
-                    .. log_data:sub(sibling_count_offset + 8 + 1)
-                    .. string.rep("\0", HASH_SIZE) -- extra sibling hash
-                return result
-            end)
-        end)
-    end)
-end
-
-describe("verify_step (local)", function()
-    register_verify_step_tests(cartesi.machine)
 end)
-
-describe("verify_step (remote)", function()
-    local jsonrpc = require("cartesi.jsonrpc")
-    local machine <close> =
-        jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create({ ram = { length = 0x1000 } })
-    register_verify_step_tests(machine)
-end)
-
-lester.report()
-lester.exit()

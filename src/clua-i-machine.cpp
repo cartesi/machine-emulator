@@ -505,31 +505,6 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
                 {"root_hash", "Base64"},
                 {"sibling_hashes", "Base64Array"},
             }},
-        {"Access",
-            {
-                {"read", "Base64"},
-                {"read_hash", "Base64"},
-                {"written", "Base64"},
-                {"written_hash", "Base64"},
-                {"sibling_hashes", "Base64Array"},
-            }},
-        {"AccessArray",
-            {
-                {"items", "Access"},
-            }},
-        {"Bracket",
-            {
-                {"where", "ArrayIndex"},
-            }},
-        {"BracketArray",
-            {
-                {"items", "Bracket"},
-            }},
-        {"AccessLog",
-            {
-                {"accesses", "AccessArray"},
-                {"brackets", "BracketArray"},
-            }},
         {"McycleRootHashes",
             {
                 {"hashes", "Base64Array"},
@@ -826,13 +801,10 @@ static int machine_obj_index_get_address_ranges(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
-    const char *log = nullptr;
-    if (cm_log_reset_uarch(m.get(), log_type, &log) != 0) {
+    if (cm_log_reset_uarch(m.get(), luaL_checkstring(L, 2)) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_fromjson(L, log, "AccessLog");
-    return 1;
+    return 0;
 }
 
 /// \brief This is the machine:run_uarch() method implementation.
@@ -852,12 +824,13 @@ static int machine_obj_index_run_uarch(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_step_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
-    const char *log = nullptr;
-    if (cm_log_step_uarch(m.get(), log_type, &log) != 0) {
+    const uint64_t uarch_cycle_count = luaL_checkinteger(L, 2);
+    const char *log_filename = luaL_checkstring(L, 3);
+    cm_uarch_break_reason uarch_break_reason = CM_UARCH_BREAK_REASON_FAILED;
+    if (cm_log_step_uarch(m.get(), uarch_cycle_count, log_filename, &uarch_break_reason) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_fromjson(L, log, "AccessLog");
+    lua_pushinteger(L, static_cast<lua_Integer>(uarch_break_reason));
     return 1;
 }
 
@@ -1114,16 +1087,13 @@ static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     cm_hash revert_root_hash{};
     clua_check_cm_hash(L, 2, &revert_root_hash);
     const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 3));
-    const int log_type = static_cast<int>(luaL_optinteger(L, 5, 0));
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 4, &length));
-    const char *log = nullptr;
-    if (cm_log_send_cmio_response(m.get(), &revert_root_hash, reason, data, length, log_type, &log) != 0) {
+    if (cm_log_send_cmio_response(m.get(), &revert_root_hash, reason, data, length, luaL_checkstring(L, 5)) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_fromjson(L, log, "AccessLog");
-    return 1;
+    return 0;
 }
 
 /// \brief This is the machine:is_empty() method implementation.
@@ -1162,7 +1132,13 @@ static int machine_obj_index_collect_mcycle_root_hashes(lua_State *L) {
     const uint64_t mcycle_end = luaL_checkinteger(L, 2);
     const uint64_t mcycle_period = luaL_checkinteger(L, 3);
     const uint64_t mcycle_phase = luaL_optinteger(L, 4, 0);
-    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_optinteger(L, 5, 0));
+    // Reject values that would not survive the narrowing to int32 instead of letting them wrap to a
+    // small, valid-looking bundle size.
+    const lua_Integer log2_bundle = luaL_optinteger(L, 5, 0);
+    if (log2_bundle < 0 || log2_bundle > INT32_MAX) {
+        return luaL_argerror(L, 5, "log2_bundle_mcycle_count is out of range");
+    }
+    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(log2_bundle);
     const char *previous_back_tree = !lua_isnil(L, 6) ? clua_tojson(L, 6, -1, "BackMerkleTree") : nullptr;
     const char *result = nullptr;
     if (cm_collect_mcycle_root_hashes(m.get(), mcycle_end, mcycle_period, mcycle_phase, log2_bundle_uarch_cycle_count,
@@ -1179,7 +1155,13 @@ static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t mcycle_end = luaL_checkinteger(L, 2);
-    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_optinteger(L, 3, 0));
+    // Reject values that would not survive the narrowing to int32 instead of letting them wrap to a
+    // small, valid-looking bundle size.
+    const lua_Integer log2_bundle = luaL_optinteger(L, 3, 0);
+    if (log2_bundle < 0 || log2_bundle > INT32_MAX) {
+        return luaL_argerror(L, 3, "log2_bundle_uarch_cycle_count is out of range");
+    }
+    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(log2_bundle);
     const char *revert_uarch_tail = !lua_isnil(L, 4) ? clua_tojson(L, 4, -1, "Base64Array") : nullptr;
     const char *result = nullptr;
     if (cm_collect_uarch_cycle_root_hashes(m.get(), mcycle_end, log2_bundle_uarch_cycle_count, revert_uarch_tail,
@@ -1264,22 +1246,33 @@ static int machine_obj_index_verify_step(lua_State *L) {
 /// \brief This is the machine:verify_step_uarch() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_verify_step_uarch(lua_State *L) {
-    lua_settop(L, 4);
+    lua_settop(L, 5);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 2, &root_hash_before);
-    const char *log = clua_tojson(L, 3, -1, "AccessLog");
+    const uint64_t uarch_cycle_count = luaL_checkinteger(L, 4);
     cm_hash root_hash_after{};
-    const bool has_root_hash_after = !lua_isnoneornil(L, 4);
+    const bool has_root_hash_after = !lua_isnoneornil(L, 5);
     if (has_root_hash_after) {
-        clua_check_cm_hash(L, 4, &root_hash_after);
+        clua_check_cm_hash(L, 5, &root_hash_after);
     }
     cm_hash obtained_root_hash{};
-    if (cm_verify_step_uarch(m.get(), &root_hash_before, log, has_root_hash_after ? &root_hash_after : nullptr,
-            &obtained_root_hash) != 0) {
+    if (cm_verify_step_uarch(m.get(), &root_hash_before, luaL_checkstring(L, 3), uarch_cycle_count,
+            has_root_hash_after ? &root_hash_after : nullptr, &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_cm_hash(L, &obtained_root_hash);
+    return 1;
+}
+
+/// \brief This is the machine:pretty_print_step_uarch() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_pretty_print_step_uarch(lua_State *L) {
+    const char *printout = nullptr;
+    if (cm_pretty_print_step_uarch(luaL_checkstring(L, 2), &printout) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushstring(L, printout);
     return 1;
 }
 
@@ -1290,15 +1283,14 @@ static int machine_obj_index_verify_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 2, &root_hash_before);
-    const char *log = clua_tojson(L, 3, -1, "AccessLog");
     cm_hash root_hash_after{};
     const bool has_root_hash_after = !lua_isnoneornil(L, 4);
     if (has_root_hash_after) {
         clua_check_cm_hash(L, 4, &root_hash_after);
     }
     cm_hash obtained_root_hash{};
-    if (cm_verify_reset_uarch(m.get(), &root_hash_before, log, has_root_hash_after ? &root_hash_after : nullptr,
-            &obtained_root_hash) != 0) {
+    if (cm_verify_reset_uarch(m.get(), &root_hash_before, luaL_checkstring(L, 3),
+            has_root_hash_after ? &root_hash_after : nullptr, &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_cm_hash(L, &obtained_root_hash);
@@ -1318,15 +1310,14 @@ static int machine_obj_index_verify_send_cmio_response(lua_State *L) {
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 4, &length));
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 5, &root_hash_before);
-    const char *log = clua_tojson(L, 6, -1, "AccessLog");
     cm_hash root_hash_after{};
     const bool has_root_hash_after = !lua_isnoneornil(L, 7);
     if (has_root_hash_after) {
         clua_check_cm_hash(L, 7, &root_hash_after);
     }
     cm_hash obtained_root_hash{};
-    if (cm_verify_send_cmio_response(m.get(), &revert_root_hash, reason, data, length, &root_hash_before, log,
-            has_root_hash_after ? &root_hash_after : nullptr, &obtained_root_hash) != 0) {
+    if (cm_verify_send_cmio_response(m.get(), &revert_root_hash, reason, data, length, &root_hash_before,
+            luaL_checkstring(L, 6), has_root_hash_after ? &root_hash_after : nullptr, &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_cm_hash(L, &obtained_root_hash);
@@ -1388,6 +1379,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_send_cmio_response", machine_obj_index_verify_send_cmio_response},
     {"verify_step", machine_obj_index_verify_step},
     {"verify_step_uarch", machine_obj_index_verify_step_uarch},
+    {"pretty_print_step_uarch", machine_obj_index_pretty_print_step_uarch},
     {"write_console_input", machine_obj_index_write_console_input},
     {"write_memory", machine_obj_index_write_memory},
     {"write_reg", machine_obj_index_write_reg},

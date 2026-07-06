@@ -31,7 +31,6 @@
 #include <string>
 #include <utility>
 
-#include "access-log.hpp"
 #include "address-range-constants.hpp"
 #include "address-range.hpp"
 #include "algorithm.hpp"
@@ -63,10 +62,8 @@
 #include "pmas-constants.hpp"
 #include "pmas.hpp"
 #include "processor-state.hpp"
-#include "record-send-cmio-state-access.hpp"
 #include "record-step-state-access.hpp"
 #include "rejected-manual-yield.hpp"
-#include "replay-send-cmio-state-access.hpp"
 #include "replay-step-state-access.hpp"
 #include "riscv-constants.hpp"
 #include "rtc.hpp"
@@ -77,14 +74,15 @@
 #include "shadow-tlb.hpp"
 #include "shadow-uarch-state.hpp"
 #include "state-access.hpp"
+#include "step-pretty-printer.hpp"
 #include "strict-aliasing.hpp"
 #include "translate-virtual-address.hpp"
 #include "uarch-constants.hpp"
 #include "uarch-cycle-root-hashes.hpp"
 #include "uarch-interpret.hpp"
 #include "uarch-pristine.hpp"
-#include "uarch-record-state-access.hpp"
-#include "uarch-replay-state-access.hpp"
+#include "uarch-record-step-state-access.hpp"
+#include "uarch-replay-step-state-access.hpp"
 #include "uarch-reset-state.hpp"
 #include "uarch-state-access.hpp"
 #include "uarch-step.hpp"
@@ -1691,6 +1689,9 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
     // Handle special case for writing to shadow memory, allowing manual snapshots
     // for machines with shared layouts via read_memory()/write_memory()
     if (paddr == AR_SHADOW_STATE_START && length == AR_SHADOW_STATE_LENGTH) {
+        // This bypasses write_verified_tlb/write_unverified_tlb, where outgoing write-TLB pages are
+        // marked dirty, so mark the resident ones before the overwrite discards their mappings.
+        mark_write_tlb_dirty_pages();
         // Overwrite the processor shadow state with the provided data
         static_assert(AR_SHADOW_STATE_LENGTH == sizeof(m_s->shadow));
         // Make sure we marked as dirty whatever pages were in the write TLB
@@ -1928,35 +1929,52 @@ void machine::send_cmio_response(const_machine_hash_view revert_root_hash, uint1
     cartesi::send_cmio_response(a, revert_root_hash, reason, data, length);
 }
 
-access_log machine::log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-    const unsigned char *data, uint64_t length, const access_log::type &log_type) {
+void machine::log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length, const std::string &filename) {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{
-            "access logs can only be used with hash tree configured with Keccak-256 hash function"};
+            "send cmio response logs can only be used with hash tree configured with Keccak-256 hash function"};
+    }
+    // The shared send_cmio_response core takes a uint32 data length (it transpiles to Solidity), so a
+    // larger length would be silently narrowed and could log a transition that differs from these
+    // arguments. The host-facing send is bounded earlier by check_pending_cmio_request's rx-buffer check.
+    if (length > UINT32_MAX) {
+        throw std::invalid_argument{"CMIO response data length does not fit in 32 bits"};
     }
     auto root_hash_before = get_root_hash();
-    access_log log(log_type);
-    // Call send_cmio_response  with the recording state accessor
-    const record_send_cmio_state_access a(*this, log);
-    {
-        [[maybe_unused]] auto note = a.make_scoped_note("send_cmio_response");
-        cartesi::send_cmio_response(a, revert_root_hash, reason, data, length);
-    }
+    record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
+    record_step_state_access a(context, *this);
+    cartesi::send_cmio_response(a, revert_root_hash, reason, data, length);
+    // send_cmio_response is not a step. Even when it no-ops on a machine paused on a rejected input,
+    // its transition is the identity, so the post-operation hash is the plain machine root hash with no
+    // revert substitution.
     auto root_hash_after = get_root_hash();
-    verify_send_cmio_response(revert_root_hash, reason, data, length, root_hash_before, log, root_hash_after);
-    return log;
+    a.finish(root_hash_before, 0, root_hash_after);
+    verify_send_cmio_response(revert_root_hash, reason, data, length, root_hash_before, filename, root_hash_after);
 }
 
 machine_hash machine::verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-    const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
+    const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const std::string &filename,
     std::optional<const_machine_hash_view> root_hash_after) {
-    replay_send_cmio_state_access::context context{log, root_hash_before, hash_function_type::keccak256};
-    // Verify all intermediate state transitions
-    replay_send_cmio_state_access a(context);
+    // See log_send_cmio_response: the core narrows length to uint32, so reject what would not fit.
+    if (length > UINT32_MAX) {
+        throw std::invalid_argument{"CMIO response data length does not fit in 32 bits"};
+    }
+    auto data_length = os::file_size(filename);
+    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
+    replay_step_state_access::context context;
+    replay_step_state_access a(context, mapped_data.get_ptr(), data_length);
+    if (!std::ranges::equal(context.log.root_hash_before, root_hash_before)) {
+        throw std::runtime_error("root hash before does not match step log header");
+    }
+    if (context.log.requested_cycle_count != 0) {
+        throw std::runtime_error("requested_cycle_count must be zero in send_cmio_response log");
+    }
     cartesi::send_cmio_response(a, revert_root_hash, reason, data, length);
-    auto obtained_root_hash = a.finish();
+    // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
+    auto obtained_root_hash = a.finish(false);
     if (root_hash_after && !std::ranges::equal(obtained_root_hash, *root_hash_after)) {
-        throw std::invalid_argument{"mismatch in root hash after replay"};
+        throw std::runtime_error("root hash after does not match step log header");
     }
     return obtained_root_hash;
 }
@@ -1980,42 +1998,49 @@ void machine::reset_uarch() {
     }
 }
 
-access_log machine::log_reset_uarch(const access_log::type &log_type) {
+void machine::log_reset_uarch(const std::string &filename) {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{
             "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
     }
-    const machine_hash root_hash_before = get_root_hash();
-    // Call uarch_reset_state with a uarch_record_state_access object
-    access_log log(log_type);
-    uarch_record_state_access::context context;
-    uarch_record_state_access a(context, *this, log);
-    {
-        [[maybe_unused]] auto note = a.make_scoped_note("reset_uarch_state");
-        uarch_reset_state(a);
+    auto root_hash_before = get_root_hash();
+    uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
+    uarch_record_step_state_access a(context, *this);
+    uarch_reset_state(a);
+    // get_root_hash() also updates the hash tree, which finish() relies on to record node hashes.
+    // When the machine has rejected an input, the canonical root hash after the reset is the recorded
+    // revert root hash (the physical machine only has its uarch reset; iflags.Y and htif.tohost are
+    // unchanged), so the computed value is replaced -- but the tree update must still happen first.
+    auto root_hash_after = get_root_hash();
+    const state_access sa(*this);
+    if (is_rejected_manual_yield(sa)) {
+        root_hash_after = read_revert_root_hash();
     }
-    // context.root_hash_after holds the revert root hash when the reset reverted the state
-    verify_reset_uarch(root_hash_before, log, context.root_hash_after);
-    return log;
+    a.finish(root_hash_before, 0, root_hash_after);
+    verify_reset_uarch(root_hash_before, filename, root_hash_after);
 }
 
-machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
     std::optional<const_machine_hash_view> root_hash_after) {
-    // Verify all intermediate state transitions
-    uarch_replay_state_access::context context{log, root_hash_before};
-    uarch_replay_state_access a(context);
+    auto data_length = os::file_size(filename);
+    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
+    uarch_replay_step_state_access<>::context context;
+    uarch_replay_step_state_access<> a(context, mapped_data.get_ptr(), data_length);
+    if (!std::ranges::equal(context.log.root_hash_before, root_hash_before)) {
+        throw std::runtime_error("root hash before does not match step log header");
+    }
+    if (context.log.requested_cycle_count != 0) {
+        throw std::runtime_error("requested_cycle_count must be zero in reset_uarch log");
+    }
     uarch_reset_state(a);
     auto obtained_root_hash = a.finish();
     if (root_hash_after && !std::ranges::equal(obtained_root_hash, *root_hash_after)) {
-        throw std::invalid_argument{"mismatch in root hash after replay"};
+        throw std::runtime_error("root hash after does not match step log header");
     }
     return obtained_root_hash;
 }
 
-// Declaration of explicit instantiation in module uarch-step.cpp
-extern template UArchStepStatus uarch_step(uarch_record_state_access &a);
-
-access_log machine::log_step_uarch(const access_log::type &log_type) {
+uarch_interpreter_break_reason machine::log_step_uarch(uint64_t uarch_cycle_count, const std::string &filename) {
     if (is_unreproducible()) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
@@ -2024,35 +2049,61 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
             "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
     }
     auto root_hash_before = get_root_hash();
-    access_log log(log_type);
-    // Call interpret with a logged state access object
-    uarch_record_state_access::context context;
-    const uarch_record_state_access a(context, *this, log);
-    {
-        [[maybe_unused]] auto note = a.make_scoped_note("step");
-        uarch_step(a);
-    }
-    // Verify access log before returning
+    uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
+    uarch_record_step_state_access a(context, *this);
+    const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), uarch_cycle_count);
+    const auto break_reason = uarch_interpret(a, uarch_cycle_end);
     auto root_hash_after = get_root_hash();
-    verify_step_uarch(root_hash_before, log, root_hash_after);
-    return log;
+    a.finish(root_hash_before, uarch_cycle_count, root_hash_after);
+    verify_step_uarch(root_hash_before, filename, uarch_cycle_count, root_hash_after);
+    return break_reason;
 }
 
-// Declaration of explicit instantiation in module uarch-step.cpp
-extern template UArchStepStatus uarch_step(uarch_replay_state_access &a);
-
-machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-    std::optional<const_machine_hash_view> root_hash_after) {
-    // Verify all intermediate state transitions
-    uarch_replay_state_access::context context{log, root_hash_before};
-    uarch_replay_state_access a(context);
-    uarch_step(a);
-    // Make sure the access log ends at the same root hash as the state
+machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
+    uint64_t uarch_cycle_count, std::optional<const_machine_hash_view> root_hash_after) {
+    auto data_length = os::file_size(filename);
+    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
+    uarch_replay_step_state_access<>::context context;
+    uarch_replay_step_state_access<> a(context, mapped_data.get_ptr(), data_length);
+    if (!std::ranges::equal(context.log.root_hash_before, root_hash_before)) {
+        throw std::runtime_error("root hash before does not match step log header");
+    }
+    if (context.log.requested_cycle_count != uarch_cycle_count) {
+        throw std::runtime_error("uarch cycle count does not match step log header");
+    }
+    const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), context.log.requested_cycle_count);
+    uarch_interpret(a, uarch_cycle_end);
     auto obtained_root_hash = a.finish();
     if (root_hash_after && !std::ranges::equal(obtained_root_hash, *root_hash_after)) {
-        throw std::invalid_argument{"mismatch in root hash after replay"};
+        throw std::runtime_error("root hash after does not match step log header");
     }
     return obtained_root_hash;
+}
+
+std::string machine::pretty_print_step_uarch(const std::string &filename) {
+    auto data_length = os::file_size(filename);
+    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
+    uarch_replay_step_state_access<step_pretty_printer>::context context;
+    uarch_replay_step_state_access<step_pretty_printer> a(context, mapped_data.get_ptr(), data_length);
+    // Loops uarch_step directly instead of going through uarch_interpret: the cycle-limit
+    // bookkeeping reads of the driver and the interpreter would open the printout with two
+    // redundant uarch.cycle reads, and the cycle count is already in the log header.
+    for (uint64_t i = 0; i < context.log.requested_cycle_count; ++i) {
+        if (uarch_step(a) != UArchStepStatus::Success) {
+            break;
+        }
+    }
+    auto printout = context.printer.str();
+    // The printout is most needed exactly when the log is inconsistent, so a failed final
+    // check appends a warning instead of discarding the text.
+    try {
+        a.finish();
+    } catch (const std::exception &e) {
+        printout += "WARNING: replay does not verify: ";
+        printout += e.what();
+        printout += '\n';
+    }
+    return printout;
 }
 
 machine_config machine::get_default_config() {
@@ -2106,10 +2157,14 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     record_step_state_access a(context, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     auto break_reason = interpret(a, mcycle_end);
-    // When the machine has rejected an input, the canonical root hash after the step is
-    // the recorded revert root hash
+    // get_root_hash() also updates the hash tree, which finish() relies on to record node/page hashes.
+    // When the machine has rejected an input, the canonical root hash after the step is the recorded
+    // revert root hash, so the computed value is replaced -- but the tree update must still happen first.
+    auto root_hash_after = get_root_hash();
     const state_access sa(*this);
-    const auto root_hash_after = is_rejected_manual_yield(sa) ? read_revert_root_hash() : get_root_hash();
+    if (is_rejected_manual_yield(sa)) {
+        root_hash_after = read_revert_root_hash();
+    }
     a.finish(root_hash_before, mcycle_count, root_hash_after);
     verify_step(root_hash_before, filename, mcycle_count, root_hash_after);
     return break_reason;
@@ -2123,13 +2178,13 @@ machine_hash machine::verify_step(const_machine_hash_view root_hash_before, cons
     // Constructor reads log header, validates computed initial hash == logged initial hash
     replay_step_state_access a(context, mapped_data.get_ptr(), data_length);
     // logged initial hash matches computed initial hash
-    if (!std::ranges::equal(context.logged_root_hash_before, root_hash_before)) {
+    if (!std::ranges::equal(context.log.root_hash_before, root_hash_before)) {
         throw std::runtime_error("root hash before does not match step log header");
     }
-    if (context.logged_mcycle_count != mcycle_count) {
+    if (context.log.requested_cycle_count != mcycle_count) {
         throw std::runtime_error("mcycle count does not match step log header");
     }
-    const uint64_t mcycle_end = saturating_add(a.read_mcycle(), context.logged_mcycle_count);
+    const uint64_t mcycle_end = saturating_add(a.read_mcycle(), context.log.requested_cycle_count);
     interpret(a, mcycle_end);
     auto obtained_root_hash = a.finish();
     if (root_hash_after && !std::ranges::equal(obtained_root_hash, *root_hash_after)) {
@@ -2436,7 +2491,7 @@ static void append_uarch_reset_root_hash(uarch_cycle_root_hashes &result, back_m
         // Append bundled root hash containing repetitions of the halt root hash on the left
         // and one reset root hash on the right
         assert(back_tree.empty());
-        back_tree.pad_back((1 << log2_bundle_uarch_cycle_count) - 1, halt_pad_hashes);
+        back_tree.pad_back((UINT64_C(1) << log2_bundle_uarch_cycle_count) - 1, halt_pad_hashes);
         back_tree.push_back(reset_root_hash);
         assert(back_tree.full());
         result.hashes.emplace_back(back_tree.get_root_hash());

@@ -77,15 +77,15 @@ end)
 
 do_test("machine step should do nothing on max mcycle", function(machine)
     machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
-    local log = machine:log_step_uarch()
+    local hash_before = machine:get_root_hash()
+    local filename = os.tmpname()
+    os.remove(filename)
+    machine:log_step_uarch(1, filename)
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
-    assert(#log.accesses == 1)
-    assert(log.accesses[1].type == "read")
-    assert(log.accesses[1].address == cartesi.UARCH_SHADOW_START_ADDRESS + 8) -- address of uarch_cycle
-    assert(#log.accesses[1].read == 32)
-    -- log data has 32 bytes. The uarch_cycle is the 2nd 8-byte word
-    assert(log.accesses[1].read:sub(9, 16) == string.pack("J", MAX_UARCH_CYCLE))
-    assert(log.accesses[1].sibling_hashes ~= nil)
+    local hash_after = machine:get_root_hash()
+    assert(hash_before == hash_after)
+    machine:verify_step_uarch(hash_before, filename, 1, hash_after)
+    os.remove(filename)
 end)
 
 print("passed all")

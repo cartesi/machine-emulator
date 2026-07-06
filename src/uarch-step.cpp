@@ -22,8 +22,9 @@
 #include "uarch-step.hpp"
 
 #include "collect-uarch-cycle-hashes-state-access.hpp" // IWYU pragma: keep
-#include "uarch-record-state-access.hpp"               // IWYU pragma: keep
-#include "uarch-replay-state-access.hpp"               // IWYU pragma: keep
+#include "step-pretty-printer.hpp"                     // IWYU pragma: keep
+#include "uarch-record-step-state-access.hpp"          // IWYU pragma: keep
+#include "uarch-replay-step-state-access.hpp"          // IWYU pragma: keep
 #include "uarch-state-access.hpp"                      // IWYU pragma: keep
 
 #include "uarch-constants.hpp"
@@ -1087,7 +1088,7 @@ static inline void executeInsn(const UarchState a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 UArchStepStatus uarch_step(const UarchState a) {
-    // This must be the first read in order to match the first log access in machine::verify_step_uarch
+    // Read the cycle first so the overflow guard below runs before any state is mutated
     uint64 cycle = readCycle(a);
     // do not advance if cycle will overflow
     if (cycle >= UARCH_CYCLE_MAX) {
@@ -1109,14 +1110,15 @@ UArchStepStatus uarch_step(const UarchState a) {
 // Explicit instantiation for uarch_state_access
 template UArchStepStatus uarch_step(const uarch_state_access a);
 
-// Explicit instantiation for uarch_record_state_access
-template UArchStepStatus uarch_step(const uarch_record_state_access a);
-
-// Explicit instantiation for uarch_replay_state_access
-template UArchStepStatus uarch_step(const uarch_replay_state_access a);
-
 // Explicit instantiation for collect_uarch_cycle_hashes_state_access
 template UArchStepStatus uarch_step(const collect_uarch_cycle_hashes_state_access a);
+
+// Explicit instantiation for uarch_record_step_state_access
+template UArchStepStatus uarch_step(const uarch_record_step_state_access a);
+
+// Explicit instantiation for uarch_replay_step_state_access (replay/verify and the host printout)
+template UArchStepStatus uarch_step(const uarch_replay_step_state_access<no_step_printout> a);
+template UArchStepStatus uarch_step(const uarch_replay_step_state_access<step_pretty_printer> a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

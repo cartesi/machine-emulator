@@ -123,6 +123,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     const auto dir3 = tmpdir.sub("m3");
     const auto dir4 = tmpdir.sub("m4");
     const auto log_file = tmpdir.sub("step.log");
+    const auto uarch_log_file = tmpdir.sub("step_uarch.log");
+    const auto reset_log_file = tmpdir.sub("reset_uarch.log");
 
     // Store machine state to disk so we can clone it
     if (cm_store(m0, store_dir.c_str(), CM_SHARING_ALL) != CM_ERROR_OK) {
@@ -175,12 +177,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             cm_hash hb{};
             cm_hash ha{};
             cm_get_root_hash(m3, &hb);
-            const char *log = nullptr;
-            if (cm_log_step_uarch(m3, CM_ACCESS_LOG_TYPE_LARGE_DATA, &log) != CM_ERROR_OK) {
+            // log_step_uarch requires the target file to not exist
+            std::filesystem::remove(uarch_log_file);
+            if (cm_log_step_uarch(m3, 1, uarch_log_file.c_str(), nullptr) != CM_ERROR_OK) {
                 fuzz_abort("cm_log_step_uarch failed");
             }
             cm_get_root_hash(m3, &ha);
-            if (cm_verify_step_uarch(m3, &hb, log, &ha, nullptr) != CM_ERROR_OK) {
+            if (cm_verify_step_uarch(m3, &hb, uarch_log_file.c_str(), 1, &ha, nullptr) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_step_uarch failed");
             }
             uint64_t halt = 0;
@@ -199,12 +202,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             cm_hash hb{};
             cm_hash ha{};
             cm_get_root_hash(m3, &hb);
-            const char *log = nullptr;
-            if (cm_log_reset_uarch(m3, CM_ACCESS_LOG_TYPE_LARGE_DATA, &log) != CM_ERROR_OK) {
+            std::filesystem::remove(reset_log_file);
+            if (cm_log_reset_uarch(m3, reset_log_file.c_str()) != CM_ERROR_OK) {
                 fuzz_abort("cm_log_reset_uarch failed");
             }
             cm_get_root_hash(m3, &ha);
-            if (cm_verify_reset_uarch(m3, &hb, log, &ha, nullptr) != CM_ERROR_OK) {
+            if (cm_verify_reset_uarch(m3, &hb, reset_log_file.c_str(), &ha, nullptr) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_reset_uarch failed");
             }
         }

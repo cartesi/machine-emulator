@@ -38,8 +38,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <stdexcept>
-#include <string>
+#include <vector>
 
 #include <cm-jsonrpc.h>
 #include <cm.h>
@@ -1756,19 +1755,19 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_hash_tree_basic_test, ordinary_machine_fix
     BOOST_CHECK(ret);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_log_null_log_test, default_machine_fixture) {
-    cm_error error_code = cm_verify_step_uarch(nullptr, nullptr, nullptr, nullptr, nullptr);
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_filename_test, default_machine_fixture) {
+    cm_error error_code = cm_verify_step_uarch(nullptr, nullptr, nullptr, 0, nullptr, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("invalid access log");
+    std::string origin("invalid log_filename");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
-class access_log_machine_fixture : public incomplete_machine_fixture {
+class step_log_machine_fixture : public incomplete_machine_fixture {
 public:
-    access_log_machine_fixture() : _log_type(CM_ACCESS_LOG_TYPE_ANNOTATIONS) {
-        _machine_dir_path = unique_temp_path("661b6096c377cdc07756df488059f4407c8f4");
+    step_log_machine_fixture() {
+        _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
 
         uint32_t test_uarch_ram[] = {
             0x07b00513,                                                            //  li	a0,123
@@ -1784,41 +1783,60 @@ public:
 
         test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     }
-    ~access_log_machine_fixture() {
+    ~step_log_machine_fixture() {
+        for (const auto &f : _temp_logs) {
+            std::filesystem::remove(f);
+        }
         test_delete(&_machine);
         std::filesystem::remove_all(_machine_dir_path);
         std::filesystem::remove_all(_uarch_ram_path);
     }
 
-    access_log_machine_fixture(const access_log_machine_fixture &other) = delete;
-    access_log_machine_fixture(access_log_machine_fixture &&other) noexcept = delete;
-    access_log_machine_fixture &operator=(const access_log_machine_fixture &other) = delete;
-    access_log_machine_fixture &operator=(access_log_machine_fixture &&other) noexcept = delete;
+    step_log_machine_fixture(const step_log_machine_fixture &other) = delete;
+    step_log_machine_fixture(step_log_machine_fixture &&other) noexcept = delete;
+    step_log_machine_fixture &operator=(const step_log_machine_fixture &other) = delete;
+    step_log_machine_fixture &operator=(step_log_machine_fixture &&other) noexcept = delete;
 
 protected:
+    // Returns a fresh path; the fixture removes the file on destruction. The path is
+    // removed eagerly so cm_log_step_uarch's "file already exists" check passes.
+    std::string make_log_filename() {
+        auto path =
+            (std::filesystem::temp_directory_path() / ("step-log-" + std::to_string(_next_log_id++) + ".bin")).string();
+        std::filesystem::remove(path);
+        _temp_logs.push_back(path);
+        return path;
+    }
+
     std::string _machine_dir_path;
-    const std::string _uarch_ram_path = unique_temp_path("test-uarch-ram.bin");
-    const char *_access_log{};
-    int _log_type{};
+    const std::string _uarch_ram_path = "/tmp/test-uarch-ram.bin";
+    std::vector<std::string> _temp_logs;
+    int _next_log_id{};
 };
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixture) {
-    cm_error error_code = cm_log_step_uarch(nullptr, _log_type, &_access_log);
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, step_log_machine_fixture) {
+    const auto filename = make_log_filename();
+    cm_error error_code = cm_log_step_uarch(nullptr, 1, filename.c_str(), nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fixture) {
-    cm_error error_code = cm_log_step_uarch(_machine, _log_type, nullptr);
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_filename_test, step_log_machine_fixture) {
+    cm_error error_code = cm_log_step_uarch(_machine, 1, nullptr, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+
+    std::string result = cm_get_last_error_message();
+    std::string origin("invalid log_filename");
+    BOOST_CHECK_EQUAL(origin, result);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash0_test, access_log_machine_fixture) {
-    cm_error error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash0_test, step_log_machine_fixture) {
+    const auto filename = make_log_filename();
+    cm_error error_code = cm_log_step_uarch(_machine, 1, filename.c_str(), nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     cm_hash hash1;
-    error_code = cm_verify_step_uarch(nullptr, nullptr, _access_log, &hash1, nullptr);
+    error_code = cm_verify_step_uarch(nullptr, nullptr, filename.c_str(), 1, &hash1, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -1826,12 +1844,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash0_test, access_log_mac
     BOOST_CHECK_EQUAL(origin, result);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash1_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash1_test, step_log_machine_fixture) {
     cm_hash hash0;
     cm_error error_code = cm_get_root_hash(_machine, &hash0);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
+    const auto filename = make_log_filename();
+    error_code = cm_log_step_uarch(_machine, 1, filename.c_str(), nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -1841,23 +1860,23 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash1_test, access_log_mac
 
     // a NULL root_hash_after skips the check and the obtained hash is returned
     cm_hash obtained_root_hash;
-    error_code = cm_verify_step_uarch(nullptr, &hash0, _access_log, nullptr, &obtained_root_hash);
+    error_code = cm_verify_step_uarch(nullptr, &hash0, filename.c_str(), 1, nullptr, &obtained_root_hash);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(0, memcmp(obtained_root_hash, hash1, sizeof(cm_hash)));
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_access_log_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_filename_with_hashes_test, step_log_machine_fixture) {
     cm_hash hash0;
     cm_hash hash1;
-    cm_error error_code = cm_verify_step_uarch(nullptr, &hash0, nullptr, &hash1, nullptr);
+    cm_error error_code = cm_verify_step_uarch(nullptr, &hash0, nullptr, 0, &hash1, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("invalid access log");
+    std::string origin("invalid log_filename");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, step_log_machine_fixture) {
     cm_hash hash0{};
     cm_hash hash1{};
     cm_hash hash2{};
@@ -1883,42 +1902,39 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     // step 1
-    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
+    const auto filename1 = make_log_filename();
+    error_code = cm_log_step_uarch(_machine, 1, filename1.c_str(), nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    // get hash after step
     error_code = cm_get_root_hash(_machine, &hash1);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    // verify
-    error_code = cm_verify_step_uarch(nullptr, &hash0, _access_log, &hash1, nullptr);
+    error_code = cm_verify_step_uarch(nullptr, &hash0, filename1.c_str(), 1, &hash1, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     // step 2
-    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
+    const auto filename2 = make_log_filename();
+    error_code = cm_log_step_uarch(_machine, 1, filename2.c_str(), nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    // get hash after step
     error_code = cm_get_root_hash(_machine, &hash2);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    // verify
-    error_code = cm_verify_step_uarch(nullptr, &hash1, _access_log, &hash2, nullptr);
+    error_code = cm_verify_step_uarch(nullptr, &hash1, filename2.c_str(), 1, &hash2, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     // step 3
-    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
+    const auto filename3 = make_log_filename();
+    error_code = cm_log_step_uarch(_machine, 1, filename3.c_str(), nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    // get hash after step
     error_code = cm_get_root_hash(_machine, &hash3);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    // verify
-    error_code = cm_verify_step_uarch(nullptr, &hash2, _access_log, &hash3, nullptr);
+    error_code = cm_verify_step_uarch(nullptr, &hash2, filename3.c_str(), 1, &hash3, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+
     // step 4
-    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
+    const auto filename4 = make_log_filename();
+    error_code = cm_log_step_uarch(_machine, 1, filename4.c_str(), nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    // get hash after step
     error_code = cm_get_root_hash(_machine, &hash4);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    // verify
-    error_code = cm_verify_step_uarch(_machine, &hash3, _access_log, &hash4, nullptr);
+    error_code = cm_verify_step_uarch(_machine, &hash3, filename4.c_str(), 1, &hash4, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     // at micro cycle 4
@@ -1932,7 +1948,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(halt, 1);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, step_log_machine_fixture) {
     cm_hash hash0;
     cm_hash hash1;
 
@@ -1940,7 +1956,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
 
-    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
+    const auto filename = make_log_filename();
+    error_code = cm_log_step_uarch(_machine, 1, filename.c_str(), nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -1948,14 +1965,24 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
 
-    error_code = cm_verify_step_uarch(_machine, &hash0, _access_log, &hash1, nullptr);
+    cm_hash obtained_root_hash{};
+    error_code = cm_verify_step_uarch(_machine, &hash0, filename.c_str(), 1, &hash1, &obtained_root_hash);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    BOOST_CHECK_EQUAL_COLLECTIONS(obtained_root_hash, obtained_root_hash + sizeof(cm_hash), hash1,
+        hash1 + sizeof(cm_hash));
+
+    // verifying without root_hash_after still returns the obtained root hash
+    cm_hash unchecked_root_hash{};
+    error_code = cm_verify_step_uarch(_machine, &hash0, filename.c_str(), 1, nullptr, &unchecked_root_hash);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL_COLLECTIONS(unchecked_root_hash, unchecked_root_hash + sizeof(cm_hash), hash1,
+        hash1 + sizeof(cm_hash));
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
-
-    cm_error error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
+BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, step_log_machine_fixture) {
+    const auto filename = make_log_filename();
+    cm_error error_code = cm_log_step_uarch(_machine, 1, filename.c_str(), nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -2043,7 +2070,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(machine_run_uarch_null_machine_test) {
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_one_cycle, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_one_cycle, step_log_machine_fixture) {
 
     // ensure that uarch cycle is 0
     uint64_t cycle{};
@@ -2066,7 +2093,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_one_cycle, access_log_m
     BOOST_REQUIRE_EQUAL(cycle, 1);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, step_log_machine_fixture) {
     // ensure that uarch cycle is 0
     uint64_t cycle{};
     cm_error error_code = cm_read_reg(_machine, CM_REG_UARCH_CYCLE, &cycle);
@@ -2377,5 +2404,14 @@ BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {
     BOOST_CHECK_EQUAL(int8ToUint64(int8(1)), 1);
     BOOST_CHECK_EQUAL(int8ToUint64(int8(127)), 127);
     BOOST_CHECK_EQUAL(int8ToUint64(int8(-128)), 0xffffffffffffff80ULL);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(pretty_print_step_uarch_failure_clears_output_test) {
+    // On failure the documented contract is *printout == nullptr; a stale pointer would let the caller
+    // consume previous text as if it came from the failed log.
+    const char *printout = "stale";
+    const cm_error error_code = cm_pretty_print_step_uarch("/no/such/uarch.log", &printout);
+    BOOST_CHECK_NE(error_code, CM_ERROR_OK);
+    BOOST_CHECK(printout == nullptr);
 }
 // NOLINTEND(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)

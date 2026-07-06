@@ -125,6 +125,8 @@ local function load_machine(name)
 end
 
 local function next_input(machine, reason, data)
+    -- No dispute checkpoint here; use the pre-input root as the revert target (the protocol's job
+    -- on-chain, but a sensible default when just driving the machine forward).
     machine:send_cmio_response(machine:get_root_hash(), reason, data)
 end
 

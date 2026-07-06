@@ -20,17 +20,17 @@
 #include <cstdint>
 #include <stdexcept>
 
-#include "assert-printf.hpp"
+#include "address-range-constants.hpp"
 #include "htif-constants.hpp"
 #include "machine-hash.hpp"
+#include "shadow-registers.hpp"
 #include "shadow-tlb.hpp"
 
 /// \file
-/// \brief Solidity Compatibility Layer
-/// \brief The purpose of this file is to facilitate porting the uarch instruction interpreter to Solidity.
-/// \brief The uarch interpreter implementation uses functions from this file to perform operations not available
-/// \brief or whose behavior differ in Solidity.
-/// \brief Arithmetic overflow should never cause exceptions.
+/// \brief Solidity compatibility layer for porting the uarch instruction interpreter to Solidity.
+///
+/// The uarch interpreter uses these functions for operations that are unavailable or behave differently
+/// in Solidity. Arithmetic overflow must never raise exceptions.
 
 namespace cartesi {
 
@@ -44,6 +44,8 @@ using uint32 = uint32_t;
 using int64 = int64_t;
 using uint64 = uint64_t;
 using bytes = const unsigned char *;
+// Solidity's bytes32. The transpiler leaves the name unchanged, mapping it directly to Solidity's
+// native bytes32.
 using bytes32 = const_machine_hash_view;
 
 // Wrapperfunctions used to access data from the uarch state accessor
@@ -128,9 +130,15 @@ static inline uint64 readHtifTohost(State &a) {
     return a.read_htif_tohost();
 }
 
+// The revert root hash is a 32-byte machine hash stored raw in its dedicated shadow slot. The page
+// model hashes the bytes as-is, so the write must produce the same page bytes across all replayers.
+static constexpr uint64 REVERT_ROOT_HASH_LENGTH = 32;
+
 template <typename State>
 static inline void writeRevertRootHash(State &a, bytes32 revertRootHash) {
-    a.write_revert_root_hash(revertRootHash);
+    // The step recorder supports padded-memory writes, not raw write_memory. A 32-byte (2^5) write
+    // fills the shadow slot exactly with no padding, landing the hash bytes in their page verbatim.
+    a.write_memory_with_padding(AR_SHADOW_REVERT_ROOT_HASH_START, revertRootHash.data(), REVERT_ROOT_HASH_LENGTH, 5);
 }
 
 template <typename State>
@@ -238,9 +246,15 @@ static inline bool isYieldedManualWith(uint64 tohost, uint64 yieldReason) {
     return dev == HTIF_DEV_YIELD && cmd == HTIF_YIELD_CMD_MANUAL && reason == yieldReason;
 }
 
+// Throws (not asserts) so the replay rejects a bad log identically under every build flag.
+// The transpiled Solidity emits a native require that always reverts; an assert here would be
+// compiled out under NDEBUG, letting a release C++ replayer accept a log the on-chain verifier
+// rejects (e.g. a misaligned uarch pc). Host-only header, so throwing is always available.
 template <typename T1, typename T2>
-void require([[maybe_unused]] T1 condition, [[maybe_unused]] T2 message) {
-    assert((condition) && (message));
+void require(T1 condition, T2 message) {
+    if (!(condition)) {
+        throw std::runtime_error(message);
+    }
 }
 
 template <typename UarchState>

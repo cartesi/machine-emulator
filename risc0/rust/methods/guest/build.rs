@@ -19,7 +19,7 @@ fn main() {
 
     // Tell Cargo to rerun the build script if the object file changes
     println!("cargo:rerun-if-changed={}", RISC0_REPLAY_STEPS_OBJ_PATH);
-    
+
     cc::Build::new()
         .object(RISC0_REPLAY_STEPS_OBJ_PATH)
         .compile("guest");

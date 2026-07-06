@@ -216,6 +216,7 @@ $(SUBCLEAN): %.clean:
 
 clean: $(SUBCLEAN)
 	@$(MAKE) -C risc0 clean
+	@$(MAKE) -C solidity-step clean
 	@rm -rf machine-emulator*.deb
 	@rm -rf $(ADD_GENERATED_FILES_DIFF)
 

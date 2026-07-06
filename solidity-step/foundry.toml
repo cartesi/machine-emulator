@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+out = "out"
+test = "test"
+solc_version = "0.8.30"
+evm_version = "prague"
+optimizer = true
+via_ir = true
+fs_permissions = [{ access = "read", path = "test/fixtures" }]
+# Per-cycle replay walks every cycle of every program in one outer test frame,
+# accumulating bytes allocations across thousands of vm.readFileBinary calls.
+# 1 GiB is comfortable headroom for the full 54-program uarch suite.
+memory_limit = 1073741824
+
+[fmt]
+line_length = 100
+tab_width = 4
+sort_imports = true

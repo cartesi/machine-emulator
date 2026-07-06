@@ -37,19 +37,17 @@ void send_cmio_response(STATE_ACCESS a, uint16_t reason, const unsigned char *da
     const_machine_hash_view revertRootHash);
 
 class state_access;
-class record_send_cmio_state_access;
-class replay_send_cmio_state_access;
+class record_step_state_access;
+class replay_step_state_access;
 
-// Declaration of explicit instantiation in module send_cmio_response.cpp
+// Declaration of explicit instantiations in module send-cmio-response.cpp
 extern template void send_cmio_response(state_access a, uint16_t reason, const unsigned char *data, uint32_t dataLength,
     const_machine_hash_view revertRootHash);
 
-// Declaration of explicit instantiation in module send_cmio_response.cpp
-extern template void send_cmio_response(record_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
+extern template void send_cmio_response(record_step_state_access a, uint16_t reason, const unsigned char *data,
     uint32_t dataLength, const_machine_hash_view revertRootHash);
 
-// Declaration of explicit instantiation in module send_cmio_response.cpp
-extern template void send_cmio_response(replay_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
+extern template void send_cmio_response(replay_step_state_access a, uint16_t reason, const unsigned char *data,
     uint32_t dataLength, const_machine_hash_view revertRootHash);
 
 } // namespace cartesi

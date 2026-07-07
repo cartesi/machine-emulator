@@ -551,11 +551,16 @@ int dup_fd(int fd) {
     if (fd < 0) {
         throw std::system_error{EBADF, std::generic_category(), "invalid file descriptor"};
     }
+#ifdef HAVE_DUP
     const int new_fd = dup(fd);
     if (new_fd == -1) {
         throw std::system_error{errno, std::generic_category(), "dup failed"};
     }
     return new_fd;
+#else
+    errno = EOPNOTSUPP;
+    return -1;
+#endif
 }
 
 void close_fd(int fd) noexcept {

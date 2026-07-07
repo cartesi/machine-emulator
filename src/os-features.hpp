@@ -88,4 +88,8 @@
 #define HAVE_CLONEFILE
 #endif
 
+#if !defined(NO_DUP) && !defined(__wasi__)
+#define HAVE_DUP
+#endif
+
 #endif

@@ -308,6 +308,7 @@ LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $
 
 CLANG_TIDY=clang-tidy
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(LINTER_SOURCES)))
+CLANG_TIDY_FLAGS=--header-filter='^$(abspath ..)/'
 
 CLANG_FORMAT=clang-format
 CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp) $(wildcard ../uarch/*.h) $(wildcard ../uarch/*.hpp)
@@ -592,12 +593,12 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
 %.clang-tidy: %.cpp cm-version.h interpret-jump-table.hpp
-	@$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(CLANG_TIDY_WARNS) $(LUA_INC) -DCLANG_TIDY_LINT 2>/dev/null
+	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(CLANG_TIDY_WARNS) $(LUA_INC) -DCLANG_TIDY_LINT
 	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 %.clang-tidy: %.c
-	@$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) $(CLANG_TIDY_WARNS) -DCLANG_TIDY_LINT 2>/dev/null
+	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) $(CLANG_TIDY_WARNS) -DCLANG_TIDY_LINT
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 

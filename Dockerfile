@@ -6,16 +6,26 @@ FROM $BUILD_BASE AS toolchain
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
         build-essential vim wget git gcovr \
-        libomp-19-dev libboost1.83-dev libssl-dev libslirp-dev \
+        libboost1.83-dev libssl-dev libslirp-dev \
         ca-certificates pkg-config lua5.4 liblua5.4-dev luarocks \
         lua-check lua-socket lua-posix lua-lpeg \
         xxd procps unzip gosu \
-        clang-tidy clang-format \
+        gpg \
         g++-14-riscv64-linux-gnu=14.2.0-19cross1 \
         gcc-riscv64-unknown-elf=14.2.0+19 && \
     rm -rf /var/lib/apt/lists/* && \
     luarocks --lua-version 5.4 install luacov && \
     luarocks --lua-version 5.4 install cluacov
+
+# Install Clang 22 from LLVM toolchain repository
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-22 main" > /etc/apt/sources.list.d/llvm-toolchain-trixie-22.list && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+        clang-tidy-22 clang-format-22 libomp-22-dev && \
+    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-22 100 && \
+    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-22 100 && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install stylua
 RUN cd /tmp && \
@@ -36,7 +46,7 @@ COPY tools/docker-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Install necessary headers to make GNU libc work with lp64 ABI
-COPY tools/gnu/stubs-lp64.h /usr/riscv64-linux-gnu/include/gnu/stubs-lp64.h
+COPY tools/rv64i-lp64-stubs/gnu/stubs-lp64.h /usr/riscv64-linux-gnu/include/gnu/stubs-lp64.h
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 WORKDIR /usr/src/emulator

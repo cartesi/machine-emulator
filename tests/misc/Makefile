@@ -83,14 +83,10 @@ endif
 
 # We ignore test-machine-c-api.cpp cause it takes too long.
 LINTER_SOURCES=
-LINTER_HEADERS=$(wildcard *.h)
 
 CLANG_TIDY=clang-tidy
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(LINTER_SOURCES))
-
-EMPTY:=
-SPACE:=$(EMPTY) $(EMPTY)
-CLANG_TIDY_HEADER_FILTER=$(CURDIR)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
+CLANG_TIDY_FLAGS=--header-filter='^$(abspath ../..)/'
 
 CLANG_FORMAT=clang-format
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.h)
@@ -123,7 +119,7 @@ $(BUILDDIR)/test-machine-c-jsonrpc-api: test-machine-c-jsonrpc-api.o ../../src/l
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 %.clang-tidy: %.cpp
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(BOOST_INC) 2>/dev/null
+	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(BOOST_INC)
 	@$(CXX) $(CXXFLAGS) $(BOOST_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 

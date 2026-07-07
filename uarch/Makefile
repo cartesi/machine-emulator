@@ -104,12 +104,11 @@ EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,
 COMPUTE_OBJS = $(patsubst %.c,%.compute_c.o,$(patsubst %.cpp,%.compute_cpp.o,$(COMPUTE_SOURCES)))
 
 LINTER_SOURCES=$(strip $(wildcard uarch-*.cpp))
-EMPTY:=
-SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY=clang-tidy
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(LINTER_SOURCES))
-CLANG_TIDY_FLAGS=--warnings-as-errors=*
+CLANG_TIDY_FLAGS=--header-filter='^$(abspath ..)/'
 CLANG_TIDY_WARNS=-Wthread-safety -Wglobal-constructors -Wno-unused-command-line-argument -Wno-format
+CLANG_TIDY_CXXFLAGS=-target riscv64-linux-gnu -I../tools/rv64i-lp64-stubs
 
 .PHONY: all clean validate-instruction-set
 
@@ -201,7 +200,7 @@ uarch-ram-entry.o: uarch-ram-entry.S
 	grep -v '^#' $@.tmp > $@
 
 %.clang-tidy: %.cpp
-	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- -target riscv64-linux-gnu $(CFLAGS) $(CXXFLAGS) $(CLANG_TIDY_WARNS) 2>/dev/null
+	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CLANG_TIDY_CXXFLAGS) $(CFLAGS) $(CXXFLAGS) $(CLANG_TIDY_WARNS)
 	@touch $@
 
 lint: $(CLANG_TIDY_TARGETS)

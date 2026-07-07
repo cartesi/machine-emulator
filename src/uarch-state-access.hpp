@@ -27,6 +27,7 @@
 
 namespace cartesi {
 
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class uarch_state_access :
     public i_uarch_state_access<uarch_state_access>,
     public i_accept_scoped_notes<uarch_state_access> {

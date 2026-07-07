@@ -154,7 +154,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr
     // The rest of vaddr must be filled with copies of the
     // most significant bit in VPN[levels]
     // Hence, the use of arithmetic shifts here
-    const int vaddr_bits = XLEN - (LOG2_PAGE_SIZE + levels * LOG2_VPN_SIZE);
+    const int vaddr_bits = XLEN - (LOG2_PAGE_SIZE + (levels * LOG2_VPN_SIZE));
     if ((static_cast<int64_t>(vaddr << vaddr_bits) >> vaddr_bits) != static_cast<int64_t>(vaddr)) [[unlikely]] {
         return false;
     }

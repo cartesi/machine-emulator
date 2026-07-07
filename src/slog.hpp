@@ -110,7 +110,7 @@ static inline std::ostream &operator<<(std::ostream &out, null_prefix /*unused*/
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define SLOG(level)                                                                                                    \
     if (SLOG_DISABLE || slog::severity_level::level < slog::log_level(slog::level_operation::get)) {                   \
-    } else                                                                                                             \
+    } else /* NOLINT(readability-inconsistent-ifelse-braces) */                                                        \
         slog::autoendl(SLOG_OSTREAM) << SLOG_PREFIX {                                                                  \
             slog::severity_level::level                                                                                \
         }

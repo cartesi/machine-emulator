@@ -340,6 +340,7 @@ private:
 /// \brief Dirty page tree that is forever dirty
 class empty_dirty_page_tree final : public i_dirty_page_tree {
 
+protected:
     void do_advance_dirty_position(position_iterator &pos, positions_range /*level*/) const noexcept override {
         pos = invalid_position;
     }

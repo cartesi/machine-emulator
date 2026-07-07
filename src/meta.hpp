@@ -87,6 +87,7 @@ struct log2_size<uint64_t> {
 
 // helper type for visitor
 template <class... Ts>
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 struct overloads : Ts... {
     using Ts::operator()...;
 };

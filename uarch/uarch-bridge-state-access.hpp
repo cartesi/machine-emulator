@@ -47,6 +47,7 @@ struct i_state_access_fast_addr<uarch_bridge_state_access> {
 };
 
 // Provides access to the state of the big emulator from microcode
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class uarch_bridge_state_access :
     public i_state_access<uarch_bridge_state_access>,
     public i_accept_scoped_notes<uarch_bridge_state_access>,

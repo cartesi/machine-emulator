@@ -44,6 +44,7 @@ namespace cartesi {
 using namespace std::string_literals;
 
 /// \details The uarch_record_state_access logs all access to the machine state.
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class uarch_record_state_access :
     public i_uarch_state_access<uarch_record_state_access>,
     public i_accept_scoped_notes<uarch_record_state_access>,

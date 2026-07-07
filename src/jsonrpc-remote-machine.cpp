@@ -1985,7 +1985,7 @@ int main(int argc, char *argv[]) try {
     for (int i = 1; i < argc; i++) {
         if (int end = 0; stringval("--server-address=", argv[i], &server_address) ||
             stringval("--log-level=", argv[i], &log_level) ||
-            // NOLINTNEXTLINE(cert-err34-c)
+            // NOLINTNEXTLINE(cert-err34-c,bugprone-unchecked-string-to-number-conversion)
             (sscanf(argv[i], "--server-fd=%d%n", &server_fd, &end) == 1 && argv[i][end] == 0)) {
             ;
         } else if (strcmp(argv[i], "--help") == 0) {

@@ -17,7 +17,7 @@
 /// \file
 /// \brief This file is be converted to Solidity by the machine-solidity-step.
 
-// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
+// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,modernize-avoid-c-style-cast)
 
 #include "uarch-step.hpp"
 
@@ -901,7 +901,7 @@ static inline void executeEBREAK(const UarchState a, uint32 insn, uint64 pc) {
 
 /// \brief Returns true if the opcode field of an instruction matches the provided argument
 static inline bool insnMatchOpcode(uint32 insn, uint32 opcode) {
-    return ((insn & 0x7f)) == opcode;
+    return (insn & 0x7f) == opcode;
 }
 
 /// \brief Returns true if the opcode and funct3 fields of an instruction match the provided arguments
@@ -913,14 +913,14 @@ static inline bool insnMatchOpcodeFunct3(uint32 insn, uint32 opcode, uint32 func
 /// \brief Returns true if the opcode, funct3 and funct7 fields of an instruction match the provided arguments
 static inline bool insnMatchOpcodeFunct3Funct7(uint32 insn, uint32 opcode, uint32 funct3, uint32 funct7) {
     constexpr uint32 mask = (0x7f << 25) | (7 << 12) | 0x7f;
-    return ((insn & mask)) == (uint32ShiftLeft(funct7, 25) | uint32ShiftLeft(funct3, 12) | opcode);
+    return (insn & mask) == (uint32ShiftLeft(funct7, 25) | uint32ShiftLeft(funct3, 12) | opcode);
 }
 
 /// \brief Returns true if the opcode, funct3 and 6 most significant bits of funct7 fields of an instruction match the
 /// provided arguments
 static inline bool insnMatchOpcodeFunct3Funct7Sr1(uint32 insn, uint32 opcode, uint32 funct3, uint32 funct7Sr1) {
     constexpr uint32 mask = (0x3f << 26) | (7 << 12) | 0x7f;
-    return ((insn & mask)) == (uint32ShiftLeft(funct7Sr1, 26) | uint32ShiftLeft(funct3, 12) | opcode);
+    return (insn & mask) == (uint32ShiftLeft(funct7Sr1, 26) | uint32ShiftLeft(funct3, 12) | opcode);
 }
 
 // Decode and execute one instruction
@@ -1119,4 +1119,4 @@ template UArchStepStatus uarch_step(const uarch_replay_state_access a);
 template UArchStepStatus uarch_step(const collect_uarch_cycle_hashes_state_access a);
 
 } // namespace cartesi
-// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
+// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,modernize-avoid-c-style-cast)

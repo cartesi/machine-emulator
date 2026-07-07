@@ -588,7 +588,7 @@ io.write([[
 #ifndef INTERPRET_JUMP_TABLE_HPP
 #define INTERPRET_JUMP_TABLE_HPP
 
-// NOLINTBEGIN(cppcoreguidelines-macro-usage)
+// NOLINTBEGIN
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma GCC diagnostic push
 
@@ -629,7 +629,6 @@ io.write([[};
 ]])
 
 -- Emit the jump table
-io.write("//NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)\n")
 io.write("static const INSN_JUMPTABLE_TYPE insn_jumptable[", #jumptable, "] = {\n")
 io.write("#ifndef CLANG_TIDY_LINT // Disable clang-tidy via an ifdef because it's too slow\n")
 for i, name in ipairs(jumptable) do
@@ -644,7 +643,7 @@ io.write("};\n")
 io.write([[
 
 #pragma GCC diagnostic pop
-// NOLINTEND(cppcoreguidelines-macro-usage)
+// NOLINTEND
 
 #endif // INTERPRET_JUMP_TABLE_HPP
 ]])

@@ -54,6 +54,7 @@ struct i_state_access_fast_addr<state_access> {
 /// \class state_access
 /// \details The state_access class implements fast, direct
 /// access to the machine state. No logs are kept.
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class state_access :
     public i_state_access<state_access>,
     public i_interactive_state_access<state_access>,

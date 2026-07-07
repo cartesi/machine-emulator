@@ -55,6 +55,7 @@ struct i_state_access_fast_addr<record_send_cmio_state_access> {
 /// \class record_send_cmio_state_access
 /// \details This records all state accesses that happen during the execution of
 /// a machine::send_cmio_response() function call
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class record_send_cmio_state_access :
     public i_state_access<record_send_cmio_state_access>,
     public i_accept_scoped_notes<record_send_cmio_state_access> {

@@ -102,13 +102,13 @@ public:
     unsigned char *get_ptr() noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return reinterpret_cast<unsigned char *>(m_host_memory);
-    };
+    }
 
     /// \brief Returns a pointer to the mapped memory region.
     const unsigned char *get_ptr() const noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return reinterpret_cast<const unsigned char *>(m_host_memory);
-    };
+    }
 
     /// \brief Returns a span representing the mapped memory region.
     std::span<unsigned char> get_storage_data() noexcept {

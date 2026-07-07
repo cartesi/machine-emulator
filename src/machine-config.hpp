@@ -78,6 +78,7 @@ struct ram_config final {
     backing_store_config backing_store; ///< Backing store
 };
 
+// NOLINTBEGIN(cppcoreguidelines-macro-usage)
 /// \brief Build default DTB bootargs from its parts
 #define DTB_BOOTARGS_CONSOLE_PART "quiet earlycon=sbi console=hvc0 "
 #define DTB_BOOTARGS_UIO_PART "uio_pdrv_genirq.of_id=generic-uio "
@@ -85,6 +86,7 @@ struct ram_config final {
 #define DTB_BOOTARGS_INIT_PART "init=/usr/sbin/cartesi-init"
 #define DTB_BOOTARGS_INIT                                                                                              \
     (DTB_BOOTARGS_CONSOLE_PART DTB_BOOTARGS_UIO_PART DTB_BOOTARGS_ROOT_PART DTB_BOOTARGS_INIT_PART)
+// NOLINTEND(cppcoreguidelines-macro-usage)
 
 /// \brief DTB state config
 struct dtb_config final {

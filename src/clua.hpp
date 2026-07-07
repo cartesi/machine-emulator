@@ -163,8 +163,7 @@ int clua_tostring(lua_State *L) {
         name = lua_tostring(L, -1);
     }
     if (lua_type(L, 1) == LUA_TUSERDATA) {
-        T *ptr = static_cast<T *>(lua_touserdata(L, 1));
-        lua_pushfstring(L, "%s: %p", name, ptr);
+        lua_pushfstring(L, "%s: %p", name, static_cast<T *>(lua_touserdata(L, 1)));
     }
     return 1;
 }
@@ -226,8 +225,7 @@ void clua_setmetatable(lua_State *L, int objidx, int ctxidx = lua_upvalueindex(1
 template <typename T>
 int clua_push(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
     ctxidx = lua_absindex(L, ctxidx);
-    T *ptr = static_cast<T *>(lua_newuserdata(L, sizeof(T)));
-    new (ptr) T{std::forward<T>(value)};
+    new (static_cast<T *>(lua_newuserdata(L, sizeof(T)))) T{std::forward<T>(value)};
     clua_setmetatable<T>(L, -1, ctxidx);
     return 1;
 }

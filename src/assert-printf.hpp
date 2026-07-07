@@ -38,7 +38,7 @@ static inline void d_vprintf(const char *fmt, va_list ap) {
 }
 
 // Better to use C-style variadic function that checks for format!
-// NOLINTNEXTLINE(cert-dcl50-cpp)
+// NOLINTNEXTLINE(cert-dcl50-cpp,modernize-avoid-variadic-functions)
 __attribute__((__format__(__printf__, 1, 2))) static inline void d_printf(const char *fmt, ...) {
     va_list ap{};
     va_start(ap, fmt);

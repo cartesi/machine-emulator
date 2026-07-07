@@ -115,6 +115,7 @@ static inline bool validate_and_advance_offset(uint64_t max, uint64_t current, u
 }
 
 // \brief Provides machine state from a step log file
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class replay_step_state_access :
     public i_state_access<replay_step_state_access>,
     public i_accept_scoped_notes<replay_step_state_access>,

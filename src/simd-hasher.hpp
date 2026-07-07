@@ -57,6 +57,7 @@ public:
     /// \param data Data to hash
     /// \param result Receives the hash of data
     /// \details If the queue reaches the optimal size, it is automatically flushed.
+    // NOLINTNEXTLINE(bugprone-exception-escape)
     void enqueue(data_type data, machine_hash_view result) noexcept {
         m_queue.emplace_back(data_entry{.data = data, .result = result});
         static const size_t optimal_queue_size = std::min(MaxQueueSize, m_hasher.get_optimal_lane_count());
@@ -197,6 +198,7 @@ public:
     /// \param right Right data to hash
     /// \param result Receives the hash of concatenated data
     /// \details If the queue reaches the optimal size, it is automatically flushed.
+    // NOLINTNEXTLINE(bugprone-exception-escape)
     void enqueue(data_type left, data_type right, machine_hash_view result) noexcept {
         m_queue.emplace_back(concat_entry{.left = left, .right = right, .result = result});
         static const size_t optimal_queue_size = std::min(MaxQueueSize, m_hasher.get_optimal_lane_count());

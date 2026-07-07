@@ -36,6 +36,7 @@
 namespace cartesi {
 
 /// \details The collect_uarch_cycle_hashes_state_access logs all access to the machine state.
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class collect_uarch_cycle_hashes_state_access :
     public i_uarch_state_access<collect_uarch_cycle_hashes_state_access>,
     public i_prefer_shadow_uarch_state<collect_uarch_cycle_hashes_state_access>,

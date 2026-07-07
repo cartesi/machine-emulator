@@ -19,9 +19,11 @@
 
 #ifdef ZKARCHITECTURE
 extern "C" NO_RETURN void zk_abort_with_msg(const char *msg);
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define THROW(exception_type, message) zk_abort_with_msg(message)
 #else
 #include <stdexcept>
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define THROW(exception_type, message) throw exception_type(message)
 #endif
 

@@ -301,6 +301,7 @@ private:
     // i_dirty_page_tree interface
     // -----
 
+protected:
     /// \brief Advances a position to the next dirty position within a level
     void do_advance_dirty_position(position_iterator &pos, positions_range level) const noexcept override {
         up_then_down(pos, level);
@@ -361,6 +362,7 @@ private:
     // Fields
     // -----
 
+private:
     positions_range m_leaf_positions;  ///< Bounds on leaf positions
     positions_range m_valid_positions; ///< Bounds on all positions
     os::mapped_memory m_mapped_memory; ///< Mapped memory for tree storage

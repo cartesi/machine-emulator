@@ -961,7 +961,7 @@ static bool is_name_legal(const std::string &name) {
     if (name.empty()) {
         return false;
     }
-    if (name.find('/') != std::string::npos) {
+    if (name.contains('/')) {
         return false;
     }
     if (name == "." || name == "..") {
@@ -2211,7 +2211,7 @@ bool virtio_p9fs_address_range::op_walk(virtq_unserializer &&mmsg, uint16_t tag)
         }
         const std::string &name = namebuf;
         // Check if name is valid
-        if (name.empty() || name.find('/') != std::string::npos) {
+        if (name.empty() || name.contains('/')) {
             return send_error(msg, tag, P9_ENOENT);
         }
         // A walk of the name ".." in the root directory is equivalent to a walk with no name elements

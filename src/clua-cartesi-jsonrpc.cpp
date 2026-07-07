@@ -155,17 +155,19 @@ static int jsonrpc_machine_obj_index_delay_next_request(lua_State *L) {
 }
 
 /// \brief Contents of the machine object metatable __index table.
-static const auto jsonrpc_machine_obj_index = cartesi::clua_make_luaL_Reg_array(
-    {{"set_timeout", jsonrpc_machine_obj_index_set_timeout}, {"get_timeout", jsonrpc_machine_obj_index_get_timeout},
-        {"set_cleanup_call", jsonrpc_machine_obj_index_set_cleanup_call},
-        {"get_cleanup_call", jsonrpc_machine_obj_index_get_cleanup_call},
-        {"get_server_address", jsonrpc_machine_obj_index_get_server_address},
-        {"get_server_version", jsonrpc_machine_obj_index_get_server_version},
-        {"fork_server", jsonrpc_machine_obj_index_fork_server},
-        {"rebind_server", jsonrpc_machine_obj_index_rebind_server},
-        {"shutdown_server", jsonrpc_machine_obj_index_shutdown_server},
-        {"emancipate_server", jsonrpc_machine_obj_index_emancipate_server},
-        {"delay_next_request", jsonrpc_machine_obj_index_delay_next_request}});
+static const auto jsonrpc_machine_obj_index = cartesi::clua_make_luaL_Reg_array({
+    {.name = "set_timeout", .func = jsonrpc_machine_obj_index_set_timeout},
+    {.name = "get_timeout", .func = jsonrpc_machine_obj_index_get_timeout},
+    {.name = "set_cleanup_call", .func = jsonrpc_machine_obj_index_set_cleanup_call},
+    {.name = "get_cleanup_call", .func = jsonrpc_machine_obj_index_get_cleanup_call},
+    {.name = "get_server_address", .func = jsonrpc_machine_obj_index_get_server_address},
+    {.name = "get_server_version", .func = jsonrpc_machine_obj_index_get_server_version},
+    {.name = "fork_server", .func = jsonrpc_machine_obj_index_fork_server},
+    {.name = "rebind_server", .func = jsonrpc_machine_obj_index_rebind_server},
+    {.name = "shutdown_server", .func = jsonrpc_machine_obj_index_shutdown_server},
+    {.name = "emancipate_server", .func = jsonrpc_machine_obj_index_emancipate_server},
+    {.name = "delay_next_request", .func = jsonrpc_machine_obj_index_delay_next_request},
+});
 
 /// \brief This is the jsonrpc.connect() method implementation.
 static int mod_connect_server(lua_State *L) {
@@ -198,8 +200,8 @@ static int mod_spawn_server(lua_State *L) {
 
 /// \brief Contents of the jsonrpc module.
 static const auto mod = cartesi::clua_make_luaL_Reg_array({
-    {"connect_server", mod_connect_server},
-    {"spawn_server", mod_spawn_server},
+    {.name = "connect_server", .func = mod_connect_server},
+    {.name = "spawn_server", .func = mod_spawn_server},
 });
 
 } // namespace cartesi

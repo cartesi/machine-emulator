@@ -47,6 +47,7 @@ struct i_state_access_fast_addr<collect_mcycle_hashes_state_access> {
 
 /// \class collect_mcycle_hashes_state_access
 /// \brief Records machine state access into a step log file
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class collect_mcycle_hashes_state_access :
     public i_state_access<collect_mcycle_hashes_state_access>,
     public i_accept_scoped_notes<collect_mcycle_hashes_state_access> {

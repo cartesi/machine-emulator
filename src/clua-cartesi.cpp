@@ -52,7 +52,7 @@ static int gperf_gc(lua_State *) {
 }
 
 static const auto gperf_meta = clua_make_luaL_Reg_array({
-    {"__gc", gperf_gc},
+    {.name = "__gc", .func = gperf_gc},
 });
 #endif
 
@@ -170,13 +170,13 @@ static int cartesi_mod_new(lua_State *L) try {
 
 /// \brief Contents of the cartesi module table.
 static const auto cartesi_mod = clua_make_luaL_Reg_array({
-    {"keccak256", cartesi_mod_keccak256},
-    {"sha256", cartesi_mod_sha256},
-    {"tobase64", cartesi_mod_tobase64},
-    {"frombase64", cartesi_mod_frombase64},
-    {"tojson", cartesi_mod_tojson},
-    {"fromjson", cartesi_mod_fromjson},
-    {"new", cartesi_mod_new},
+    {.name = "keccak256", .func = cartesi_mod_keccak256},
+    {.name = "sha256", .func = cartesi_mod_sha256},
+    {.name = "tobase64", .func = cartesi_mod_tobase64},
+    {.name = "frombase64", .func = cartesi_mod_frombase64},
+    {.name = "tojson", .func = cartesi_mod_tojson},
+    {.name = "fromjson", .func = cartesi_mod_fromjson},
+    {.name = "new", .func = cartesi_mod_new},
 });
 
 } // namespace cartesi

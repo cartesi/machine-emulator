@@ -44,7 +44,7 @@ enum class bracket_type;
 template <typename STATE_ACCESS>
 struct i_state_access_fast_addr {};
 template <typename STATE_ACCESS>
-using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCESS>::type;
+using i_state_access_fast_addr_t = i_state_access_fast_addr<STATE_ACCESS>::type;
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 #define DEFINE_SA_READ(REG)                                                                                            \
@@ -152,7 +152,7 @@ public:
 
     /// \brief Works as printf if we are dumping state accesses, otherwise does nothing
     // Better to use C-style variadic function that checks for format!
-    // NOLINTNEXTLINE(cert-dcl50-cpp)
+    // NOLINTNEXTLINE(cert-dcl50-cpp,modernize-avoid-variadic-functions)
     __attribute__((__format__(__printf__, 1, 2))) static void dsa_printf([[maybe_unused]] const char *fmt, ...) {
 #ifdef DUMP_STATE_ACCESS
         va_list ap;

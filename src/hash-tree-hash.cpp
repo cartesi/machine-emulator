@@ -61,7 +61,7 @@ static bool intval(const char *pre, const char *str, int *val) {
     if (strncmp(pre, str, len) == 0) {
         str += len;
         int end = 0;
-        // NOLINTNEXTLINE(cert-err34-c): %n is used toverify conversion errors
+        // NOLINTNEXTLINE(cert-err34-c,bugprone-unchecked-string-to-number-conversion): %n is used toverify conversion
         return sscanf(str, "%d%n", val, &end) == 1 && (str[end] == 0);
     }
     return false;
@@ -104,7 +104,7 @@ static std::optional<machine_hash> read_hash(FILE *f) {
 /// \brief Prints formatted message to stderr
 /// \param fmt Format string
 /// \param ... Arguments, if any
-// NOLINTNEXTLINE(cert-dcl50-cpp): this vararg is safe because the compiler can check the format
+// NOLINTNEXTLINE(cert-dcl50-cpp,modernize-avoid-variadic-functions): safe because the compiler can check the format
 __attribute__((__format__(__printf__, 1, 2))) static void error(const char *fmt, ...) {
     va_list ap{};
     va_start(ap, fmt);

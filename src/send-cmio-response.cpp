@@ -27,7 +27,7 @@
 #include "state-access.hpp"                  // IWYU pragma: keep
 #include "uarch-solidity-compat.hpp"
 
-// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)
+// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max,modernize-avoid-c-style-cast)
 namespace cartesi {
 
 template <typename STATE_ACCESS>
@@ -90,4 +90,4 @@ template void send_cmio_response(replay_send_cmio_state_access a, bytes32 revert
     const unsigned char *data, uint32 length);
 
 } // namespace cartesi
-// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)
+// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max,modernize-avoid-c-style-cast)

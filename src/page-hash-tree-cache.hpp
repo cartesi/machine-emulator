@@ -285,8 +285,7 @@ public:
         };
 
         static constexpr size_t QUEUE_MAX_SIZE =
-            ((UINT64_C(1) << ((HASH_TREE_LOG2_PAGE_SIZE - HASH_TREE_LOG2_WORD_SIZE) - 1))) *
-            hasher_type::MAX_LANE_COUNT;
+            (UINT64_C(1) << ((HASH_TREE_LOG2_PAGE_SIZE - HASH_TREE_LOG2_WORD_SIZE) - 1)) * hasher_type::MAX_LANE_COUNT;
 
         simd_data_hasher<hasher_type, const_hash_tree_word_view> m_leaves_queue;
         simd_concat_hasher<hasher_type, const_machine_hash_view> m_concat_queue;
@@ -298,12 +297,14 @@ public:
         explicit simd_page_hasher(hasher_type &hasher) : m_leaves_queue{hasher}, m_concat_queue{hasher} {}
 
         /// \brief Enqueues a leaf for hashing
+        // NOLINTNEXTLINE(bugprone-exception-escape)
         void enqueue_leaf(const_hash_tree_word_view data, page_hash_tree_view page_tree, int word_index) noexcept {
             m_leaves_queue.enqueue(data, page_tree[word_index]);
             try_push_back(m_dirty_queue, dirty_entry{.page_tree = page_tree, .node_index = entry::parent(word_index)});
         }
 
         /// \brief Flushes the entire queue
+        // NOLINTNEXTLINE(bugprone-exception-escape)
         int flush() noexcept {
             m_leaves_queue.flush();
             int hashes = 0;

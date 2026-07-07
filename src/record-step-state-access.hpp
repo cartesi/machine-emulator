@@ -59,6 +59,7 @@ struct i_state_access_fast_addr<record_step_state_access> {
 
 /// \class record_step_state_access
 /// \brief Records machine state access into a step log file
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class record_step_state_access :
     public i_state_access<record_step_state_access>,
     public i_accept_scoped_notes<record_step_state_access>,

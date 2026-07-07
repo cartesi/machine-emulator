@@ -87,7 +87,7 @@ struct make_long_uint<uint64_t> {
 /// \returns The high bits of the result.
 template <typename UINT>
 static UINT mul_u(UINT *plow, UINT a, UINT b) {
-    using ULONG = typename make_long_uint<UINT>::type;
+    using ULONG = make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     const ULONG r = static_cast<ULONG>(a) * static_cast<ULONG>(b);
     *plow = static_cast<UINT>(r);
@@ -99,7 +99,7 @@ static UINT mul_u(UINT *plow, UINT a, UINT b) {
 /// \returns the quotient.
 template <typename UINT>
 static UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
-    using ULONG = typename make_long_uint<UINT>::type;
+    using ULONG = make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
     const auto b = static_cast<ULONG>(bl);
@@ -121,7 +121,7 @@ static UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
 /// \returns true if not an exact square.
 template <typename UINT>
 static bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
-    using ULONG = typename make_long_uint<UINT>::type;
+    using ULONG = make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
 
@@ -197,7 +197,7 @@ struct i_sfloat {
 
     /// \brief Normalizes mantissa of a subnormal float.
     static F_UINT mant_normalize_subnormal(int32_t *pa_exp, F_UINT a_mant) {
-        const int shift = MANT_SIZE - ((F_SIZE - 1 - clz(a_mant)));
+        const int shift = MANT_SIZE - (F_SIZE - 1 - clz(a_mant));
         *pa_exp = 1 - shift;
         return a_mant << shift;
     }

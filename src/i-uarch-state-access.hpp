@@ -90,7 +90,7 @@ public:
 
     /// \brief Works as printf if we are dumping uarch state accesses, otherwise does nothing
     // Better to use C-style variadic function that checks for format!
-    // NOLINTNEXTLINE(cert-dcl50-cpp)
+    // NOLINTNEXTLINE(cert-dcl50-cpp,modernize-avoid-variadic-functions)
     __attribute__((__format__(__printf__, 1, 2))) static void dusa_printf([[maybe_unused]] const char *fmt, ...) {
 #ifdef DUMP_UARCH_STATE_ACCESS
         va_list ap;

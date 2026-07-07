@@ -582,7 +582,8 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
 
 #else
 
-jsonrpc_machine::jsonrpc_machine(const std::string & /*address*/, fork_result & /*spawned*/) {
+jsonrpc_machine::jsonrpc_machine(const std::string & /*address*/, int64_t /*spawn_timeout_ms*/,
+    fork_result & /*spawned*/) {
     throw std::runtime_error{"fork() is unsupported in this platform"s};
 }
 

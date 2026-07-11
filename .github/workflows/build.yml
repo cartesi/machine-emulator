@@ -1232,6 +1232,22 @@ jobs:
       - name: Run solidity-step tests
         run: make -C solidity-step test
 
+      # Gas report is informational: it records the whole-mcycle champion logs (worst
+      # mcycles by cycle count and by page count; see tools/record-mcycle.lua) and
+      # prints verification gas, worst case first, into the job summary so cost
+      # regressions and improvements are visible per run. Never gates the job.
+      - name: Solidity-step gas report
+        continue-on-error: true
+        run: |
+          FIX=solidity-step/test/fixtures
+          IMG=${{ github.repository_owner }}/machine-emulator:tests
+          TESTS=$(docker run --rm $IMG sh -c 'find /usr/share/cartesi-machine* -name rv64uc-v-rvc.bin | head -1 | xargs dirname')
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures -v ${{ github.workspace }}/solidity-step/tools:/gastools $IMG \
+            lua5.4 /gastools/record-mcycle.lua $TESTS/rv64uc-v-rvc.bin 6527 /fixtures/worst-mcycle-rvc.log
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures -v ${{ github.workspace }}/solidity-step/tools:/gastools $IMG \
+            lua5.4 /gastools/record-mcycle.lua $TESTS/rv64ua-v-lrsc.bin 3791 /fixtures/worst-mcycle-pages.log
+          make -C solidity-step gas-report | tee -a $GITHUB_STEP_SUMMARY
+
       # Coverage is informational and forge's --ir-minimum pass is slow, so it never gates the job.
       - name: Solidity-step coverage report
         continue-on-error: true

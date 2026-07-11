@@ -34,7 +34,7 @@ library EmulatorConstants {
 
     // Root hash of the pristine uarch state (cartesi.UARCH_PRISTINE_STATE_HASH).
     bytes32 internal constant UARCH_PRISTINE_STATE_HASH =
-        0x42e6d54b3b07b4a1c5f2ed13aae7c8d924269c32728a5b66f54b70358b4d99e7;
+        0xfec4c4fc5eb740590973a1a9813f126ff6c42cebc9254199729cf8ca1bc48a30;
 
     // Hash tree geometry (cartesi.HASH_TREE_LOG2_*).
     uint8 internal constant HASH_TREE_LOG2_WORD_SIZE = 5;

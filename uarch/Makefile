@@ -78,7 +78,6 @@ CXXFLAGS := -std=c++23 -fno-rtti \
 
 UARCH_SOURCES=\
 	uarch-run.cpp \
-	uarch-ecall.c \
 	uarch-runtime.cpp
 
 UARCH_THIRDPARTY_SOURCES_C=\

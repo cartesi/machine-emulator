@@ -128,6 +128,27 @@ fixtures: fixtures-clean
 fixtures-clean:
 	rm -rf $(FIXTURES_DIR)
 
+# Whole-mcycle champion logs for the gas report: the worst mcycles by uarch cycle
+# count and by page/byte count over the riscv-tests corpus (found by cycle-count
+# sweep; re-derive with tools/uarch-cycle-profile.lua after uarch changes).
+# Re-record after any uarch or wire-format change.
+mcycle-fixtures:
+	@mkdir -p $(FIXTURES_DIR)
+	@cd $(EMULATOR_DIR) && eval $$($(MAKE) env) && cd $(abspath .) && \
+	  $(LUA_BIN) tools/record-mcycle.lua \
+	    $(EMULATOR_DIR)/tests/build/machine/rv64uc-v-rvc.bin 6527 \
+	    $(FIXTURES_DIR)/worst-mcycle-rvc.log && \
+	  $(LUA_BIN) tools/record-mcycle.lua \
+	    $(EMULATOR_DIR)/tests/build/machine/rv64ua-v-lrsc.bin 3791 \
+	    $(FIXTURES_DIR)/worst-mcycle-pages.log
+
+# Consolidated gas numbers, worst case first. Needs `fixtures` (per-step section)
+# and `mcycle-fixtures` (whole-mcycle section; skipped with a notice if absent).
+gas-report:
+	@echo "=== solidity-step gas report (EIP-7825 cap 16777216) ==="
+	@forge test --match-contract GasReportTest -vv 2>&1 \
+	  | grep -E '^ +(cycle champion|page champion|cycles |single uarch|avg |.*MISSING)'
+
 # No forge dependency, so the top-level clean works without Foundry installed.
 clean: fixtures-clean
 	rm -rf out cache broadcast

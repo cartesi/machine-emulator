@@ -81,14 +81,16 @@ library StepLog {
         + HASH_SIZE // hash_before
         + HASH_SIZE; // hash_after
 
-    // Witness-size caps for one single-step log (step/reset/cmio), the only logs verified on-chain.
-    // A single uarch step touches <=3 pages (shadow+fetch+data), reset/cmio <=1 node (corpus max
-    // 3/1/69). The single-uarch-step scope itself is enforced in Verify.verifyStep (requested cycle
-    // count == 1); these caps just bound the decode work and reject pathological logs early. Sibling
-    // cap must stay >= 52 (tree depth) * MAX_PAGE_COUNT so a maximally-spread log is not wrongly rejected.
-    uint64 internal constant MAX_PAGE_COUNT = 8;
+    // Witness-size caps. These only bound the decode work and reject pathological logs
+    // early: the actual verification scope (a single uarch step, reset or cmio) is
+    // enforced by Verify.verifyXXX (requested cycle count, root chain). A single uarch
+    // step touches <=3 pages and reset/cmio <=1 node (corpus max 3/1/69), but the caps
+    // admit a whole-mcycle log (corpus max 31 pages; see test/GasReport.t.sol) so gas
+    // measurement runs against unmodified decode. Sibling cap must stay >= 52 (tree
+    // depth) * MAX_PAGE_COUNT so a maximally-spread log is not wrongly rejected.
+    uint64 internal constant MAX_PAGE_COUNT = 64;
     uint64 internal constant MAX_NODE_COUNT = 4;
-    uint64 internal constant MAX_SIBLING_COUNT = 512;
+    uint64 internal constant MAX_SIBLING_COUNT = 3328;
 
     /// Decode a standalone step log that must occupy the entire buffer; reverts on
     /// trailing bytes. Use `decodeAt` for multi-log cursor composition.
@@ -333,7 +335,16 @@ library StepLog {
             uint64 halfwayPageIndex = pageIndex + (uint64(1) << (log2PageCount - 1));
             bytes32 right =
                 computeSubtreeHash(ctx, c, halfwayPageIndex, log2PageCount - 1, useAfter);
-            return keccak256(abi.encodePacked(left, right));
+            // combine through the EVM scratch space (0x00-0x40) rather than
+            // abi.encodePacked, which would allocate a fresh buffer per tree node
+            // (~100 nodes per verify); same idiom as HashTree.merkleTreeHash
+            bytes32 parent;
+            assembly ("memory-safe") {
+                mstore(0x00, left)
+                mstore(0x20, right)
+                parent := keccak256(0x00, 0x40)
+            }
+            return parent;
         }
         // Leaf: must be a page (nodes have log2Size > HASH_TREE_LOG2_PAGE_SIZE).
         return ctx.pageHashes[c.nextPage++];

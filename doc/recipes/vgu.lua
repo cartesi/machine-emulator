@@ -172,7 +172,7 @@ local schemas = {
     InputAdded = { items = { "Default", "Default" } },
     EpochSealed = { items = { "Default" } },
     Bisection = { items = { "Default", "Default" } },
-    Log = { send_cmio_log = "AccessLog", step_log = "AccessLog", reset_uarch_log = "AccessLog" },
+    Log = { send_cmio_log = "Base64", step_log = "Base64", reset_uarch_log = "Base64" },
     Transition = { items = { "Default", "Default", "Default" } },
     Hash = { items = { "Base64" } },
     OutputsRoot = {

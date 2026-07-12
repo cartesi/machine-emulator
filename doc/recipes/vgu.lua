@@ -56,9 +56,25 @@ end
 -- Binary values do not survive plain JSON, so each reply carries a schema, named by the
 -- referee, that tags its binary and compound fields. tojson then encodes hashes as Base64 and
 -- embeds proofs and access logs as nested objects, and fromjson decodes them back. The schema
--- dictionary below, referencing the built-in Proof and AccessLog, holds the schemas every game
+-- dictionary below, referencing the built-in Proof, holds the schemas every game
 -- uses, and each game script adds the entries for its own log and result commitments.
 --------------------------------------------------------------------------------
+
+-- Binary step logs travel over the wire as raw bytes (Base64 in the JSON encoding):
+-- players read the files the machine writes, and the referee materializes received
+-- bytes back into files for the verify methods, which take filenames.
+local function read_file(path)
+    local f = assert(io.open(path, "rb"))
+    local data = f:read("a")
+    f:close()
+    return data
+end
+
+local function write_file(path, data)
+    local f = assert(io.open(path, "wb"))
+    f:write(data)
+    f:close()
+end
 
 local SCHEMA_DICT = {
     -- The claimed final state hash a player posts at the start.
@@ -334,6 +350,8 @@ end
 
 return {
     SCHEMA_DICT = SCHEMA_DICT,
+    read_file = read_file,
+    write_file = write_file,
     short_hash = short_hash,
     phase = phase,
     eventf = eventf,

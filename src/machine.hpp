@@ -31,6 +31,7 @@
 #include "access-log.hpp"
 #include "address-range.hpp"
 #include "back-merkle-tree.hpp"
+#include "decoded-insn-cache.hpp"
 #include "hash-tree-constants.hpp"
 #include "hash-tree-stats.hpp"
 #include "hash-tree.hpp"
@@ -74,6 +75,11 @@ private:
     mutable hash_tree m_ht;               ///< Top level hash tree
     processor_state *const m_s;           ///< Big machine processor state
     uarch_processor_state *const m_us;    ///< Microarchitecture processor state
+
+    /// \brief Decoded instruction cache (host-only interpreter acceleration, never
+    /// serialized; see decoded-insn-cache.hpp). Mutable: it is a pure memoization that
+    /// never affects observable machine state.
+    mutable decoded_insn_cache m_decoded_insn_cache{};
 
     std::unordered_map<std::string, uint64_t> m_counters; ///< Counters used for statistics collection
 
@@ -339,6 +345,11 @@ public:
     /// \brief Returns machine state for direct read-only access.
     const processor_state &get_state() const {
         return *m_s;
+    }
+
+    /// \brief Returns the decoded instruction cache (host-only interpreter acceleration).
+    decoded_insn_cache &get_decoded_insn_cache() const {
+        return m_decoded_insn_cache;
     }
 
     /// \brief Returns uarch state for direct access.

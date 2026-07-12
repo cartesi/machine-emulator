@@ -98,6 +98,7 @@
 #include "zk-runtime.hpp"               // IWYU pragma: export
 #else
 #include "collect-mcycle-hashes-state-access.hpp" // IWYU pragma: keep
+#include "decoded-insn-cache.hpp"                 // IWYU pragma: keep
 #include "record-step-state-access.hpp"           // IWYU pragma: keep
 #include "replay-step-state-access.hpp"           // IWYU pragma: keep
 #include "state-access.hpp"                       // IWYU pragma: keep
@@ -5742,6 +5743,71 @@ static inline uint64_t raise_interrupt_if_any(const STATE_ACCESS a, uint64_t pc,
     return pc;
 }
 
+#if !defined(MICROARCHITECTURE) && !defined(ZKARCHITECTURE)
+/// \brief Returns the machine's decoded instruction cache for the fast state access.
+static inline decoded_insn_cache *get_decoded_insn_cache_of(const state_access &a) {
+    return &a.get_decoded_insn_cache();
+}
+
+/// \brief Overload for all other state accesses, which do not use the decoded cache.
+template <typename STATE_ACCESS>
+static inline decoded_insn_cache *get_decoded_insn_cache_of(const STATE_ACCESS & /*a*/) {
+    return nullptr;
+}
+
+/// \brief Implementation of branch instructions dispatched via decoded cache entries.
+/// \details Same semantics as execute_branch, but the branch offset comes pre-decoded
+/// from the cache entry, removing the immediate extraction from the taken-branch serial
+/// chain (entry load -> new pc -> next entry load).
+template <typename STATE_ACCESS, typename F>
+static FORCE_INLINE execute_status execute_decoded_branch(const STATE_ACCESS a, uint64_t &pc, uint32_t insn,
+    int64_t imm, const F &f) {
+    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    const uint64_t rs2 = a.read_x(insn_get_rs2(insn));
+    if (f(rs1, rs2)) {
+        // The empty asm on new_pc prevents GCC from if-converting this branch into a
+        // conditional move, which would turn the (predictable, hence free) control
+        // dependency into a data dependency on the register loads, serializing the
+        // loop. It is scoped to the one register so it does not act as a scheduling
+        // barrier for the surrounding code.
+        uint64_t new_pc = pc + static_cast<uint64_t>(imm);
+        asm("" : "+r"(new_pc));
+        return execute_jump(a, pc, new_pc);
+    }
+    return advance_to_next_insn(a, pc);
+}
+
+/// \brief Implementation of the JAL instruction dispatched via decoded cache entries.
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_decoded_JAL(const STATE_ACCESS a, uint64_t &pc, uint32_t insn, int64_t imm) {
+    const uint64_t new_pc = pc + static_cast<uint64_t>(imm);
+    if constexpr (rd_kind != rd_kind::x0) {
+        a.write_x(insn_get_rd(insn), pc + 4);
+    }
+    return execute_jump(a, pc, new_pc);
+}
+
+/// \brief Implementation of the C.J instruction dispatched via decoded cache entries.
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_decoded_C_J(const STATE_ACCESS a, uint64_t &pc, int64_t imm) {
+    return execute_jump(a, pc, pc + static_cast<uint64_t>(imm));
+}
+
+/// \brief Implementation of C.BEQZ/C.BNEZ instructions dispatched via decoded cache entries.
+template <bool BNEZ, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_decoded_C_BEQZ_BNEZ(const STATE_ACCESS a, uint64_t &pc, uint32_t insn,
+    int64_t imm) {
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    if ((a.read_x(rs1) != 0) == BNEZ) {
+        // Register-scoped anti-if-conversion asm (see execute_decoded_branch)
+        uint64_t new_pc = pc + static_cast<uint64_t>(imm);
+        asm("" : "+r"(new_pc));
+        return execute_jump(a, pc, new_pc);
+    }
+    return advance_to_next_insn<2>(a, pc);
+}
+#endif
+
 /// \brief Interpreter hot loop
 template <typename STATE_ACCESS>
 static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mcycle_end, uint64_t mcycle) {
@@ -5771,6 +5837,54 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
     uint64_t fetch_pma_index = TLB_INVALID_PMA_INDEX;
     i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset{};
 
+    // clang-format off
+    // NOLINTBEGIN
+
+    // This header defines the instruction jump table (which is very large) and the
+    // jump-table macros used in the big dispatch switch inside the loop below.
+    // It is included before the loop so the decoded instruction cache code can also use
+    // it (computed-goto labels have function scope, so the jump table can reference the
+    // handler labels before they appear).
+    #include "interpret-jump-table.hpp"
+
+#if defined(USE_COMPUTED_GOTO) && !defined(MICROARCHITECTURE) && !defined(ZKARCHITECTURE) &&                          \
+    !defined(DUMP_INSN) && !defined(DUMP_REGS)
+#define USE_DECODED_INSN_CACHE
+#endif
+
+#ifdef USE_DECODED_INSN_CACHE
+    // The decoded instruction page cache (see decoded-insn-cache.hpp) memoizes
+    // fetch+decode: dispatching becomes a single entry load instead of an instruction
+    // load plus a jump-table load. It is used only by the fast state_access interpreter.
+    // A plain if on this constant (instead of if constexpr) keeps all code type-checked
+    // for every STATE_ACCESS while the optimizer removes it where disabled.
+    constexpr bool use_decoded_insn_cache = std::is_same_v<STATE_ACCESS, state_access>;
+    // Loop-local decoded page cache, mirroring the fetch cache: decoded_vaddr_page must
+    // be invalidated at exactly the same points as fetch_vaddr_page, because both cache
+    // the current virtual page translation (which only changes via instructions or
+    // interrupts that already report status > success).
+    [[maybe_unused]] uint64_t decoded_vaddr_page = ensure_fetch_cache_miss(pc);
+    [[maybe_unused]] decoded_insn_entry *decoded_page = nullptr;
+    // Scaled entry base so the dispatch entry address is a single lea:
+    // entry address = decoded_entry_off + pc*8 (16-byte entries, 2-byte pc granularity).
+    [[maybe_unused]] uint64_t decoded_entry_off = 0;
+    [[maybe_unused]] decoded_insn_cache *const dcache = get_decoded_insn_cache_of(a);
+
+#define DECODED_ENTRY_AT_PC() (*reinterpret_cast<const decoded_insn_entry *>(decoded_entry_off + (pc << 3)))
+    if (use_decoded_insn_cache) {
+        // Invalidate all pages cached by previous interpret() calls: guest memory may
+        // have been mutated externally between calls (host API writes, uarch, snapshot
+        // restore). Pages are lazily revalidated against this generation when they are
+        // next installed.
+        ++dcache->generation;
+        // The sentinel handler label belongs to this instantiation of interpret_loop
+        dcache->sentinel = &&DECODE_INSN;
+    }
+#endif
+
+    // NOLINTEND
+    // clang-format on
+
     // The outer loop continues until there is an interruption that should be handled
     // externally, or mcycle reaches mcycle_end
     while (mcycle < mcycle_end) {
@@ -5792,6 +5906,15 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
         // Raise the highest priority pending interrupt, if any
         pc = raise_interrupt_if_any(a, pc, fetch_vaddr_page);
 
+#ifdef USE_DECODED_INSN_CACHE
+        // Interrupts change privilege mode (and thus the fetch translation), so mirror the
+        // fetch cache invalidation done inside raise_interrupt_if_any. Done unconditionally
+        // (once per tick) for simplicity: re-installing from the pool is nearly free.
+        if (use_decoded_insn_cache) {
+            decoded_vaddr_page = ensure_fetch_cache_miss(pc);
+        }
+#endif
+
 #ifndef NDEBUG
         // After raising any exception for a given interrupt, we expect no pending break
         assert_no_brk(a);
@@ -5807,6 +5930,21 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
 
             uint32_t insn = 0;
 
+#ifdef USE_DECODED_INSN_CACHE
+            // Decoded dispatch fast path: when pc falls in the current decoded page, a
+            // single entry load replaces fetch (insn load) + decode + jump-table load.
+            // Jumping into the switch block below is fine: the only declaration skipped
+            // is status, which is intentionally uninitialized (vacuous initialization).
+            if (use_decoded_insn_cache) {
+                if (fetch_cache_is_hit(pc, decoded_vaddr_page)) [[likely]] {
+                    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+                    const decoded_insn_entry &entry = DECODED_ENTRY_AT_PC();
+                    insn = entry.insn;
+                    goto *entry.handler;
+                }
+            }
+#endif
+
             // Try to fetch the next instruction
             if (fetch_insn(a, pc, insn, fetch_vaddr_page, fetch_vf_offset, fetch_pma_index) == fetch_status::success)
                 [[likely]] {
@@ -5814,12 +5952,41 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                 // NOLINTBEGIN
                 execute_status status; // explicit uninitialized as an optimization
 
-                // This header define the instruction jump table table, which is very large.
-                // It also defines the jump table related macros used in the next big switch.
-                #include "interpret-jump-table.hpp"
+#ifdef USE_DECODED_INSN_CACHE
+                // Install pc's page in the decoded instruction cache and cache the entry
+                // for the instruction just fetched. Only done when the fetch cache
+                // describes pc's own page: this excludes page-boundary-crossing
+                // instructions (whose fetch translation refers to the next page) and
+                // non-memory fetches — those keep executing via this generic path.
+                if (use_decoded_insn_cache) {
+                    if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {
+                        const uint64_t faddr_page = static_cast<uint64_t>(pc + fetch_vf_offset) & ~PAGE_OFFSET_MASK;
+                        const uint64_t slot_index = decoded_insn_cache_slot_index(faddr_page);
+                        decoded_insn_page_tag &tag = dcache->tags[slot_index];
+                        if (tag.faddr_page != faddr_page || tag.generation != dcache->generation) {
+                            // Install the page in the pool slot (evicting any previous one)
+                            if (!dcache->pages) {
+                                dcache->pages = std::make_unique<decoded_insn_page[]>(DECODED_INSN_CACHE_SIZE);
+                            }
+                            tag.faddr_page = faddr_page;
+                            tag.generation = dcache->generation;
+                            decoded_insn_cache_reset_page(*dcache, slot_index);
+                        }
+                        decoded_vaddr_page = tlb_addr_page(pc);
+                        decoded_page = dcache->pages[slot_index].entries.data();
+                        decoded_entry_off =
+                            reinterpret_cast<uint64_t>(decoded_page) - (decoded_vaddr_page << 3); // NOLINT
+                        // Watch the page: the store barrier must invalidate it on writes
+                        // (entries are filled lazily by the DECODE_INSN sentinel)
+                        dcache->watch[slot_index] = faddr_page;
+                    }
+                }
+#endif
 
                 // This will use computed goto on supported compilers,
                 // otherwise normal switch in unsupported platforms.
+                // (The jump table itself is defined in "interpret-jump-table.hpp",
+                // included before the loop.)
                 INSN_SWITCH(insn_get_id(insn)) {
                     // The instructions is this switch are ordered so
                     // infrequent instructions are placed at the end.
@@ -6290,6 +6457,107 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     INSN_CASE(ILLEGAL):
                         status = raise_illegal_insn_exception(a, pc, insn);
                         INSN_BREAK();
+#ifdef USE_DECODED_INSN_CACHE
+                    // Sentinel handler for not-yet-decoded (or invalidated) decoded cache
+                    // entries: performs a full generic fetch+decode, refreshes the cache
+                    // entry, and dispatches to the real handler. Reached only through
+                    // decoded cache entries, never through the jump table.
+                    DECODE_INSN: {
+                        if (fetch_insn(a, pc, insn, fetch_vaddr_page, fetch_vf_offset, fetch_pma_index) ==
+                            fetch_status::success) [[likely]] {
+                            const void *handler = insn_jumptable[insn_get_id(insn)];
+                            int32_t imm = 0;
+                            // Specialize hot control-flow handlers to decoded variants that
+                            // take a pre-decoded immediate, removing the immediate extraction
+                            // from the taken-jump serial chain
+                            if (handler == INSN_LABEL(BEQ)) {
+                                handler = &&D_BEQ; imm = insn_B_get_imm(insn);
+                            } else if (handler == INSN_LABEL(BNE)) {
+                                handler = &&D_BNE; imm = insn_B_get_imm(insn);
+                            } else if (handler == INSN_LABEL(BLT)) {
+                                handler = &&D_BLT; imm = insn_B_get_imm(insn);
+                            } else if (handler == INSN_LABEL(BGE)) {
+                                handler = &&D_BGE; imm = insn_B_get_imm(insn);
+                            } else if (handler == INSN_LABEL(BLTU)) {
+                                handler = &&D_BLTU; imm = insn_B_get_imm(insn);
+                            } else if (handler == INSN_LABEL(BGEU)) {
+                                handler = &&D_BGEU; imm = insn_B_get_imm(insn);
+                            } else if (handler == INSN_LABEL(JAL_rdN)) {
+                                handler = &&D_JAL_rdN; imm = insn_J_get_imm(insn);
+                            } else if (handler == INSN_LABEL(JAL_rd0)) {
+                                handler = &&D_JAL_rd0; imm = insn_J_get_imm(insn);
+                            } else if (handler == INSN_LABEL(C_J)) {
+                                handler = &&D_C_J; imm = insn_get_C_J_imm(insn);
+                            } else if (handler == INSN_LABEL(C_BEQZ)) {
+                                handler = &&D_C_BEQZ; imm = insn_get_C_BEQZ_BNEZ_imm(insn);
+                            } else if (handler == INSN_LABEL(C_BNEZ)) {
+                                handler = &&D_C_BNEZ; imm = insn_get_C_BEQZ_BNEZ_imm(insn);
+                            }
+                            if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {
+                                // Refresh the decoded entry, and mark the page watched
+                                // again so the store barrier resumes invalidating it
+                                const uint64_t faddr_page =
+                                    static_cast<uint64_t>(pc + fetch_vf_offset) & ~PAGE_OFFSET_MASK;
+                                const uint64_t slot_index = decoded_insn_cache_slot_index(faddr_page);
+                                dcache->watch[slot_index] = faddr_page;
+                                decoded_page[(pc & PAGE_OFFSET_MASK) >> 1] = decoded_insn_entry{handler, imm, insn};
+                                // D_* handlers read the immediate back from the entry just written
+                                goto *handler;
+                            }
+                            // Entry not cacheable (page-boundary-crossing instruction):
+                            // execute via the original handler, which decodes from insn
+                            goto *insn_jumptable[insn_get_id(insn)];
+                        }
+                        // Fetch raised an exception: skip execution and consume one cycle
+                        goto DECODED_FETCH_EXCEPTION;
+                    }
+                    // Decoded variants of hot control-flow handlers (reached only through
+                    // decoded cache entries, never through the jump table): the branch or
+                    // jump offset comes pre-decoded in the cache entry at pc
+                    D_BEQ:
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                            [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 == rs2; });
+                        INSN_BREAK();
+                    D_BNE:
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                            [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 != rs2; });
+                        INSN_BREAK();
+                    D_BLT:
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                            [](uint64_t rs1, uint64_t rs2) -> bool {
+                                return static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2);
+                            });
+                        INSN_BREAK();
+                    D_BGE:
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                            [](uint64_t rs1, uint64_t rs2) -> bool {
+                                return static_cast<int64_t>(rs1) >= static_cast<int64_t>(rs2);
+                            });
+                        INSN_BREAK();
+                    D_BLTU:
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                            [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 < rs2; });
+                        INSN_BREAK();
+                    D_BGEU:
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                            [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 >= rs2; });
+                        INSN_BREAK();
+                    D_JAL_rdN:
+                        status = execute_decoded_JAL<rd_kind::xN>(a, pc, insn, DECODED_ENTRY_AT_PC().imm);
+                        INSN_BREAK();
+                    D_JAL_rd0:
+                        status = execute_decoded_JAL<rd_kind::x0>(a, pc, insn, DECODED_ENTRY_AT_PC().imm);
+                        INSN_BREAK();
+                    D_C_J:
+                        status = execute_decoded_C_J(a, pc, DECODED_ENTRY_AT_PC().imm);
+                        INSN_BREAK();
+                    D_C_BEQZ:
+                        status = execute_decoded_C_BEQZ_BNEZ<false>(a, pc, insn, DECODED_ENTRY_AT_PC().imm);
+                        INSN_BREAK();
+                    D_C_BNEZ:
+                        status = execute_decoded_C_BEQZ_BNEZ<true>(a, pc, insn, DECODED_ENTRY_AT_PC().imm);
+                        INSN_BREAK();
+#endif
 #ifndef USE_COMPUTED_GOTO
                     // When using a naive switch statement, other cases are impossible.
                     // The following will give a hint to the compiler that it can remove range checks
@@ -6319,6 +6587,13 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     // As a simplification (and optimization), the next line will also invalidate in more cases,
                     // but this it's fine.
                     fetch_vaddr_page = ensure_fetch_cache_miss(pc);
+#ifdef USE_DECODED_INSN_CACHE
+                    // The decoded page cache caches the same virtual page translation as
+                    // the fetch cache, so it must be invalidated at exactly the same points
+                    if (use_decoded_insn_cache) {
+                        decoded_vaddr_page = ensure_fetch_cache_miss(pc);
+                    }
+#endif
                     // All status above execute_status::success_and_serve_interrupts will require breaking the loop
                     if (status >= execute_status::success_and_serve_interrupts) [[unlikely]] {
                         // Increment the cycle counter mcycle
@@ -6343,6 +6618,10 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                 }
             }
 
+#ifdef USE_DECODED_INSN_CACHE
+        // Jumped to by the DECODE_INSN sentinel when its fetch raises an exception
+        DECODED_FETCH_EXCEPTION:
+#endif
             // Increment the cycle counter mcycle
             ++mcycle;
 
@@ -6357,6 +6636,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
     a.write_pc(pc);
     a.write_mcycle(mcycle);
     return execute_status::success;
+#undef DECODED_ENTRY_AT_PC
 }
 
 template <typename STATE_ACCESS>

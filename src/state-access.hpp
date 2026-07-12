@@ -28,6 +28,8 @@
 #include "address-range.hpp"
 #include "assert-printf.hpp"
 #include "compiler-defines.hpp"
+#include "decoded-insn-cache.hpp"
+#include "find-pma.hpp"
 #include "host-addr.hpp"
 #include "i-accept-counters.hpp"
 #include "i-accept-dirty-pages.hpp"
@@ -76,6 +78,11 @@ public:
     /// \param m Pointer to machine state.
     explicit state_access(machine &m) : m_s(m.get_state()), m_m(m) {
         ;
+    }
+
+    /// \brief Returns the machine's decoded instruction cache.
+    decoded_insn_cache &get_decoded_insn_cache() const {
+        return m_m.get_decoded_insn_cache();
     }
 
 private:
@@ -424,15 +431,33 @@ private:
         }
     }
 
+    /// \brief Invalidates decoded instruction cache pages overlapping a written paddr range.
+    /// \details Keeps the decoded instruction cache coherent with bulk writes (e.g. virtio
+    /// DMA): any cached code page overlapping the written range must die before the next
+    /// fetch from it.
+    void invalidate_decoded_insn_range(uint64_t paddr, uint64_t length) const {
+        if (length == 0) {
+            return;
+        }
+        uint64_t pma_index{};
+        const auto &ar = find_pma<uint8_t>(*this, paddr, pma_index);
+        if (ar.is_memory()) {
+            const uint64_t faddr = static_cast<uint64_t>(m_m.get_host_addr(paddr, pma_index));
+            decoded_insn_cache_invalidate_range(m_m.get_decoded_insn_cache(), faddr, length);
+        }
+    }
+
     bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         //??(edubart): Treating exceptions here is not ideal, we should probably
         // move write_memory() method implementation inside state access later
         try {
             m_m.write_memory(paddr, data, length);
-            return true;
         } catch (...) {
+            invalidate_decoded_insn_range(paddr, length);
             return false;
         }
+        invalidate_decoded_insn_range(paddr, length);
+        return true;
     }
 
     address_range &do_read_pma(uint64_t index) const {
@@ -452,6 +477,7 @@ private:
         if (write_length > data_length) {
             m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
         }
+        invalidate_decoded_insn_range(paddr, write_length);
     }
 
     machine_hash do_read_revert_root_hash() const {
@@ -470,6 +496,9 @@ private:
     template <typename T, typename A = T>
     void do_write_memory_word(host_addr haddr, uint64_t /* pma_index */, T val) const {
         aliased_aligned_write<T, A>(haddr, val);
+        // Keep the decoded instruction cache coherent: if this store hit a guest code
+        // page whose decoded copy is cached, the copy must die before the next fetch.
+        decoded_insn_cache_store_barrier(m_m.get_decoded_insn_cache(), static_cast<uint64_t>(haddr));
     }
 
     template <TLB_set_index SET>

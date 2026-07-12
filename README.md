@@ -319,4 +319,5 @@ For a complete list of authors, see the [AUTHORS](AUTHORS) file.
 ## License
 
 The repository and all contributions to it are licensed under the [LGPL 3.0](https://www.gnu.org/licenses/lgpl-3.0.html), unless otherwise specified below or in subdirectory LICENSE / COPYING files.
+The on-chain verifier contracts are licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), as their own LICENSE files state: [solidity-step/](solidity-step/LICENSE) and [risc0/solidity/](risc0/solidity/LICENSE).
 Please review our [COPYING](COPYING) file for the LGPL 3.0 license and also [LICENSES](LICENSES.md) file for additional information on third-party software licenses.

@@ -1,0 +1,24 @@
+set startup-quietly on
+set debuginfod enabled off
+set breakpoint pending on
+set pagination off
+
+# make gdb more quiet
+set verbose off
+set confirm off
+
+# make gdb never pause in its output
+set height 0
+set width 0
+
+define i
+    stepi
+    x/i $pc
+end
+
+define nstepi
+    set $counter = 0
+    while ($counter++ < $arg0)
+        i
+    end
+end

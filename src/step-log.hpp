@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <ranges>
 #include <span>
 
@@ -102,12 +103,16 @@ struct step_log {
     /// \param log_image Pointer to the step log file bytes. The returned step_log keeps spans into it,
     /// so it must outlive the step_log.
     /// \param log_size Size of the log bytes.
+    /// \param required_hash_function When set, reject a log declaring any other hash function.
+    /// Verifiers whose protocol fixes the hash function (the on-chain replayer is Keccak-256 only)
+    /// pass it so a mismatched log fails here instead of at the initial-root recompute.
     /// \return A validated step_log whose witnessed tree reconstructs root_hash_before.
     /// \throw runtime_error if the log is malformed or the initial root hash does not match.
     /// \details Mirrors StepLog.decode in the Solidity replayer: header parse, per-count size bounds,
     /// page ordering, per-node alignment/range, the combined pages+nodes disjointness walk, and the
     /// initial-root recompute.
-    static step_log decode(unsigned char *log_image, uint64_t log_size) {
+    static step_log decode(unsigned char *log_image, uint64_t log_size,
+        std::optional<hash_function_type> required_hash_function = std::nullopt) {
         step_log log;
         // Parse header with a stack-local copy to avoid alignment UB on the log buffer
         if (log_size < sizeof(step_log_header)) {
@@ -127,6 +132,9 @@ struct step_log {
                 break;
             default:
                 THROW(std::runtime_error, "invalid log format: unsupported hash function type");
+        }
+        if (required_hash_function && log.hash_function != *required_hash_function) {
+            THROW(std::runtime_error, "step log hash function not supported by this verifier");
         }
         // Bound each count against remaining log bytes. Division avoids overflow
         // (remaining stays within log_size; each *_count * sizeof is then safe).

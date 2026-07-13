@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <ranges>
 #include <variant>
 
@@ -155,9 +156,13 @@ public:
     // \param context The context object to be filled with the replay step log data
     // \param log_image Image of the step log file
     // \param log_size The size of the log data
+    // \param required_hash_function When set, reject a log declaring any other hash function
+    // (see step_log::decode); machine step logs are otherwise hash-function agnostic
     // \throw runtime_error if the initial root hash does not match or the log data is invalid
-    replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size) : m_context(context) {
-        m_context.log = step_log::decode(log_image, log_size);
+    replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size,
+        std::optional<hash_function_type> required_hash_function = std::nullopt) :
+        m_context(context) {
+        m_context.log = step_log::decode(log_image, log_size, required_hash_function);
         // initialize hot TLB entries as unverified
         for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
             for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {

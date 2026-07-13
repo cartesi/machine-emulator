@@ -55,7 +55,8 @@ namespace cartesi {
 /// \brief One decoded instruction slot.
 struct decoded_insn_entry final {
     const void *handler; ///< Computed-goto label inside interpret_loop<state_access>
-    int32_t imm;         ///< Pre-decoded immediate (branch/jump offset) for specialized handlers, else 0
+    int32_t payload;     ///< Pre-decoded payload for specialized handlers (immediate or
+                         ///< packed fields, meaning defined per handler), else 0
     uint32_t insn;       ///< Raw instruction bytes (as fetch_insn would produce)
 };
 

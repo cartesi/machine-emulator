@@ -168,3 +168,75 @@ paired c.ld/c.sd) and install fused handlers; the second slot keeps its own vali
 3. Boot-Linux-and-run-stress sanity: identical `machine:read_reg("mcycle")`/halt state and
    identical root hash vs pristine build for the same run (determinism check).
 4. Full pinned bench-insns + bench-stress, 3× A/B.
+
+---
+
+# Round 2 (P4): decode-time sub-opcode resolution + richer payloads
+
+P1/P2 landed (+6% geomean stress, 12/13 benches ≥ baseline). Two structural observations
+enable the next round:
+
+1. **The jump table only sees the low 16 insn bits** (opcode+rd+funct3), so multiplexed
+   handlers (ADD_MUL_SUB, SLL_MULH, SRL_DIVU_SRA, SRLI_SRAI, AMO_W/D, FD, FMADD family,
+   PRIVILEGED, csr address switches — 21 funct7/funct5 probe sites) re-inspect high insn
+   bits at EVERY execution. DECODE_INSN sees all 32 bits and can install the exact
+   operation's handler once. The multiplexed handlers are already thin wrappers over
+   standalone execute_ADD/execute_MUL/... templates, so D_ stubs are one-liners.
+   Exactness is free: decode only specializes valid encodings; anything else keeps the
+   original handler (including its illegal-insn raise).
+2. **The entry's 4-byte imm field is really a general payload** that each specialized
+   handler can interpret its own way (pre-packed fields, pre-masked so unpacking is 1 op
+   per field instead of 2), on top of the already-pre-decoded immediates.
+
+## Phases (each: implement → gates → full 2× suite → keep/revert)
+
+### Q0. Guest instruction histogram (diagnosis, ~30 min)
+Build pristine with `DUMP_INSN_HIST` (`make dump=yes` machinery), run the stress subset,
+and rank guest instructions by dynamic frequency per workload. This decides which
+specializations matter and in what order — and gives the expected ceiling for each phase
+(specializing an insn that is 0.1% of the mix cannot pay).
+
+### Q1. Integer OP / OP-32 funct7 resolution (expected: the big one)
+D_ADD, D_SUB, D_MUL, D_SLL, D_SLT, D_SLTU, D_XOR, D_SRL, D_SRA, D_OR, D_AND, D_DIV(U),
+D_REM(U), D_MULH(SU/U) + the W-suffix family + D_SLLI/D_SRLI/D_SRAI splits, each calling
+the existing single-op execute_* template. Kills a 1-2 branch chain + funct7 extraction
+per ALU/M execution and shrinks the hot handler bodies.
+**Watch: L1i pressure (~40 new small stubs); selection chain length in DECODE_INSN
+(decode-time only, but keep it ordered by Q0 frequency).**
+
+### Q2. Compressed-insn payload pre-decode
+c.addi / c.li / c.lui / c.addiw / c.addi4spn / c.addi16sp / c.andi / c.slli / c.srli /
+c.srai and compressed loads/stores (c.ld/c.sd/c.lw/c.sw/c.*sp): their scattered-bit
+immediates cost 3-5 ops per execution today, and compressed insns are the most frequent
+class in RV64GC code. Payload = pre-extracted imm (+pre-masked rd/rs1' where useful);
+trivial D_ handlers. Also fixes the asymmetry that c.addi (762 MIPS baseline) is ~2x
+slower than addi.
+
+### Q3. Loads/stores/JALR packed payload {imm16, rs1, rd}
+Pre-masked rs1 takes 1 op off the FRONT of the address chain (rs1 extract currently
+feeds the x[rs1] load); imm/rd come along for free. D_LD/LW/LWU/LHU/LBU/LB/LH,
+D_SD/SW/SH/SB, D_JALR. Loads+stores ≈ 25-30% of real mixes; expect 1-3% broad.
+**Caution: the E2/E3/P2b lessons — an op saved off-chain is worth ~nothing; only the
+rs1-extract saving is on-chain. Measure honestly.**
+
+### Q4. AMO funct5 + FP funct7/fmt resolution
+D_AMOSWAP/ADD/XOR/AND/OR/MIN/MAX/MINU/MAXU × W/D (kills the largest inner switch),
+D_FADD/FSUB/FMUL/FDIV/FSGNJ*/FMIN/FMAX/FEQ/FLT/FLE/FCVT*/FMV*/FCLASS × fmt, FMADD-family
+fmt resolution. Helps kernel/malloc (AMOs in spinlocks) and fp/matrix-3d margins;
+softfloat still dominates FP cost, so expectations are modest.
+
+### Q5 (optional). Hot-CSR address resolution
+csrrw/csrrs on sstatus/sepc/sscratch/satp etc. run a NO_INLINE address switch per
+execution inside read_csr/write_csr; decode knows the address. Install per-CSR D_
+handlers for the ~6 hottest CSRs (Q0 histogram decides), keeping all permission checks
+at execution time (semantics unchanged). Helps trap/syscall-heavy workloads (malloc).
+
+## Standing risks/rules for this round
+- Code layout luck swings randlist/regs by ±10%: never compare across refactors without
+  a full re-run; keep the measured-winning shape.
+- The if-conversion trap: any new D_ handler whose branch guards a cheap pc update needs
+  the register-scoped `asm("" : "+r"(new_pc))` pattern (ALU stubs don't branch — safe).
+- Selection chain in DECODE_INSN grows to ~60 compares: decode-time only, but order it
+  by Q0 frequency and consider splitting by opcode class first (one switch on
+  insn_get_id-derived class, then small chains).
+- Keep entry at 16B (P2b proved footprint < resolve latency, three times now).

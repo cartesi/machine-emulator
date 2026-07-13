@@ -175,6 +175,55 @@ determinism-preserving design (pure memoization of fetch+decode, exact store-sid
 invalidation, penumbra-resident, fast state_access only). Full phased plan with go/no-go
 gates in `N5-PLAN.md`.
 
+## Round 3: ranked next experiments (after N5 P1-P2 + Q1-Q3 landed, ≈+10% geomean)
+
+Current state: decode cache with per-op resolution and payload pre-decode; 12/13 stress
+benches above baseline. Remaining exploitable structure, ranked:
+
+### R1. Host-side L2 translation cache (= Round-2 N1, still unexplored)
+The strongest remaining lever and it is *data-side* (immune to the text-layout lottery
+that now dominates decode-cache tuning). translate_virtual_address was 11% of malloc
+cycles in E0; malloc (317), tsearch (579), tree (572), randlist (613) are all
+TLB-slow-path-heavy. Memoize the walk in a host-only, larger/associative cache used only
+when the walk would not mutate state (PTE A/D already set), invalidated exactly where the
+architectural TLB flushes. **Expected +5-10% on the pointer/kernel-heavy class. Effort
+medium-high; risk = invalidation correctness (same discipline as the decode cache).**
+
+### R2. Cheap sfence.vma flush (= Round-2 N2)
+~2500 host cycles per flush through per-slot write_tlb; malloc-class workloads pay it
+constantly. Bulk-specialize for state_access only (record/replay keep the logged path).
+**Expected +2-4% malloc-class. Low effort, low risk; natural companion to R1.**
+
+### R3. Superinstruction fusion (P3, now enabled by the payload infrastructure)
+DECODE_INSN recognizes hot pairs (slli+add, lui/auipc+addi, addi+ld, ld+ld, ...) and
+installs a fused handler in the first insn's entry; the second entry stays valid so jumps
+into the middle are correct. Removes one full dispatch (~4-6 cycles) per fused pair on
+dense code. **Determinism constraint: mcycle must advance by 2 and the RTC-tick boundary
+must not be crossed mid-pair — the fused handler needs a remaining-budget check with
+unfused fallback, and the mcycle++ plumbing in the funnel needs a per-entry size. Expected
++5-15% integer code; effort high; adds text → full-suite A/B gate mandatory.**
+
+### R4. Branch-stressor recovery (the one remaining loss, −16%)
+First diagnose: is it entry-footprint L1d misses (little to do; 16B entries are locked)
+or the cross-page-jump install path (~30-40 ops per random cross-page jump: decoded miss
+→ full generic fetch → install)? If the latter: a leaner decoded-miss path (translate via
+TLB + pool probe + dispatch through the entry, skipping fetch_insn) or a 2-way loop-local
+page cache. **Expected: partial recovery of an adversarial synthetic; real-code benefit
+unclear. Medium effort.**
+
+### R5. Q4-retry (AMO/FP) + hot-CSR resolution, gated on layout control
+Both were/would-be correct but add text for rare ops, and Q4 proved that costs more in
+layout perturbation than it earns. Only revisit after finding a way to park cold stubs
+away from hot text within the constraints (no compiler-flag changes): e.g. placing the
+stub block textually after the funnel, or restructuring stubs into NO_INLINE outlined
+functions (one call per rare-op execution is acceptable for AMO/FP/CSR frequencies).
+**Expected small; treat as a layout-engineering experiment.**
+
+### R6. Softfloat internals (= Round-2 N3)
+matrix-3d (236) and fp (1007) are now decode-optimal; only softfloat arithmetic cost
+remains (~121 host insns/guest FP insn). Branchless normal-path work in soft-float.hpp,
+gated by the FP test suite. **Expected +10-25% on FP-heavy only; effort medium-high.**
+
 ## Methodology (all experiments)
 
 - Pin benchmark to one P-core (`taskset -c 2`), quiet machine.

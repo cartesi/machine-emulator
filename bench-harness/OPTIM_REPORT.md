@@ -461,3 +461,71 @@ hash vs pristine on the boot+400Mi-cycle determinism run — at every phase.
 src/state-access.hpp, src/machine.hpp. Polished: clang-formatted, macro scoped with
 #undef, comments document the invalidation invariant and both codegen traps
 (if-conversion → register-scoped asm; scheduling-barrier asm → regs regression).
+
+# Round 3 (P4/Q phases): decode-time sub-opcode resolution + payload pre-decode
+
+Premise (user-directed): the jump table only sees the low 16 insn bits, so multiplexed
+handlers re-probe funct7/funct5/fmt at every execution — the decoded entry can jump to
+the exact operation; and the entry's 4-byte field generalizes from `imm` to a packed
+`payload` (imm16 | field_b8 | field_a8, fields pre-masked so unpacking is one op each).
+
+## Q1. Integer OP/OP-32 funct7 resolution — KEPT
+28 one-line D_* stubs calling the existing single-op execute_* templates (ADD..REMU,
+W-forms, SRLI/SRAI splits); selection resolves funct7 once at decode; illegal encodings
+keep the original handler. Micro: add +22%, sub +41%, mul +48%, sll +29%, srli +35%.
+(Placement experiment: moving the stub block to the top of the switch cost 3-20% on
+several benches — tail placement kept.)
+
+## Q2. Compressed payload pre-decode — KEPT
+Two generic helpers (x[rd]=f(x[rs1],imm) and x[rd]=f(x[rd],x[rs2])) + load/store/jump
+stubs serve 33 compressed forms; SP-relative and ADDI-like aliases share handlers with
+fields packed accordingly at decode (c.addi16sp → D_C_ADDI with rd=rs1=2, c.ldsp →
+D_C_LD with rs1=2, etc.). FS-off checks for c.fld/c.fsd remain at execution time.
+Micro: c.ld +27%, c.sd +10%; stress: tree and tsearch flipped positive.
+
+## Q3. Loads/stores/JALR packed payload — KEPT (biggest phase win)
+D variants for all integer loads/stores and JALR with payload {imm16, rs1, rd/rs2}: the
+pre-masked rs1 comes one op earlier on the address serial chain. Micro: ld +14%,
+sd +19% (store-barrier cost more than recovered); stress jumped broadly (memcpy +29%,
+cpu +23% at this phase's spot-check).
+
+## Q4. AMO funct5 + FP funct7/fmt resolution — REJECTED (net-negative via layout)
+46 stubs (22 AMO incl. LR/SC, 24 FP with execution-time FS checks) worked correctly
+(lr.w +25%, fadd.d +9% micro) but dragged regs/crypt/heapsort/randlist down 5-20% in the
+full suite; removing Q4 restored them instantly (regs 1097→1382, heapsort 821→906).
+AMO/FP are too rare in real mixes to pay for the text-layout perturbation their stubs
+cause. Dropped; revisit only with explicit hot/cold section control (e.g.
+__attribute__((cold)) on the stubs or section attributes).
+
+## FINAL RESULTS (Q1-Q3 build, 3-run average, all runs within ±0.5%)
+
+| bench      | base   | N5 P2  | final  | vs base    |
+|------------|--------|--------|--------|------------|
+| memcpy     | 963.5  | 1102.6 | 1244.0 | **+29.1%** |
+| regs       | 1220.0 | 1401.6 | 1528.6 | **+25.3%** |
+| cpu        | 505.3  | 590.9  | 630.3  | **+24.7%** |
+| crypt      | 741.2  | 865.0  | 891.9  | **+20.3%** |
+| fp         | 885.3  | 929.5  | 1006.6 | **+13.7%** |
+| malloc     | 289.5  | 298.0  | 316.6  | **+9.4%**  |
+| tree       | 526.7  | 526.8  | 572.4  | **+8.7%**  |
+| randlist   | 566.0  | 610.4  | 613.3  | **+8.4%**  |
+| nop        | 1677.5 | 1822.8 | 1815.2 | +8.2%      |
+| matrix-3d  | 225.2  | 231.6  | 236.5  | +5.0%      |
+| tsearch    | 553.2  | 544.8  | 578.9  | +4.6%      |
+| heapsort   | 869.0  | 880.2  | 904.8  | +4.1%      |
+| branch     | 951.4  | 802.1  | 798.2  | −16.1%     |
+| insns avg  | 674.9  | 722.4  | 762.5  | +13.0%     |
+
+12 of 13 stress benchmarks above baseline (geomean uplift ≈ +10%); the only loss remains
+stress-ng's adversarial random-jump `branch` stressor. Gates green at every phase:
+267/267 arch tests, 102/102 fast-vs-uarch, bit-identical root hash. clang-format clean.
+
+**Learnings of this round**:
+- Decode-time sub-opcode resolution is nearly free to implement here because the
+  interpreter already decomposes every multiplexed handler into standalone per-op
+  executors — the D_ stubs are one-liners and semantics are inherited, not duplicated.
+- Pre-masked payload fields pay exactly where they sit on a serial chain (rs1 before the
+  x[rs1] load in loads/stores: big) and pay nothing off-chain (imm for loads: absorbed).
+- Code-layout luck is the dominant noise source at this level of tuning (±15% on regs,
+  ±10% on randlist): every phase decision must be made on full-suite A/B runs, and
+  rare-op specializations can lose more to layout than they gain in work (Q4).

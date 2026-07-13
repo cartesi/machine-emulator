@@ -5806,6 +5806,112 @@ static FORCE_INLINE execute_status execute_decoded_C_BEQZ_BNEZ(const STATE_ACCES
     }
     return advance_to_next_insn<2>(a, pc);
 }
+
+/// \brief Packs a decoded-cache payload: pre-decoded immediate and two pre-masked fields.
+/// \details Layout: imm in bits [31:16] (signed), field b in [15:8], field a in [7:0],
+/// so each field unpacks with a single shift/mask (and the immediate sign-extends for
+/// free with an arithmetic shift).
+static FORCE_INLINE int32_t make_decoded_payload(int32_t imm, uint32_t field_b, uint32_t field_a) {
+    return (imm << 16) | static_cast<int32_t>((field_b << 8) | field_a);
+}
+
+/// \brief Unpacks the pre-decoded immediate from a decoded-cache payload.
+static FORCE_INLINE int64_t decoded_payload_imm(int32_t payload) {
+    return payload >> 16;
+}
+
+/// \brief Unpacks pre-masked field b from a decoded-cache payload.
+static FORCE_INLINE uint32_t decoded_payload_b(int32_t payload) {
+    return (static_cast<uint32_t>(payload) >> 8) & 0xff;
+}
+
+/// \brief Unpacks pre-masked field a from a decoded-cache payload.
+static FORCE_INLINE uint32_t decoded_payload_a(int32_t payload) {
+    return static_cast<uint32_t>(payload) & 0xff;
+}
+
+/// \brief Compressed x[rd] = f(x[rs1], imm) ops dispatched via decoded cache entries.
+/// \details Payload: a = rd, b = rs1, imm = pre-decoded immediate. Serves c.addi
+/// (rs1 = rd), c.addi16sp (rd = rs1 = 2), c.addi4spn (rs1 = 2), c.li, c.lui-like and
+/// shift/and forms. rd is never x0 (guaranteed by the jump table routing).
+template <typename STATE_ACCESS, typename F>
+static FORCE_INLINE execute_status execute_decoded_C_rd_rs1_imm(const STATE_ACCESS a, uint64_t &pc, int32_t payload,
+    const F &f) {
+    const uint32_t rd = decoded_payload_a(payload);
+    const uint64_t rs1_value = a.read_x(decoded_payload_b(payload));
+    a.write_x(rd, f(rs1_value, decoded_payload_imm(payload)));
+    return advance_to_next_insn<2>(a, pc);
+}
+
+/// \brief Compressed x[rd] = f(x[rd], x[rs2]) ops dispatched via decoded cache entries.
+/// \details Payload: a = rd, b = rs2. Serves c.mv/c.add and the CA-format ops
+/// (which all have rd = rs1). rd is never x0 (guaranteed by the jump table routing).
+template <typename STATE_ACCESS, typename F>
+static FORCE_INLINE execute_status execute_decoded_C_rd_rs2(const STATE_ACCESS a, uint64_t &pc, int32_t payload,
+    const F &f) {
+    const uint32_t rd = decoded_payload_a(payload);
+    const uint64_t rd_value = a.read_x(rd);
+    const uint64_t rs2_value = a.read_x(decoded_payload_b(payload));
+    a.write_x(rd, f(rd_value, rs2_value));
+    return advance_to_next_insn<2>(a, pc);
+}
+
+/// \brief Load instructions dispatched via decoded cache entries.
+/// \details Same semantics as execute_L for rd != x0, with payload a = rd, b = rs1,
+/// imm = pre-decoded I-immediate. The pre-masked rs1 shortens the address serial chain.
+template <typename T, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_decoded_L(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle,
+    int32_t payload) {
+    const uint64_t vaddr = a.read_x(decoded_payload_b(payload));
+    T val = 0;
+    if (!read_virtual_memory<T>(a, pc, mcycle, vaddr + static_cast<uint64_t>(decoded_payload_imm(payload)), &val))
+        [[unlikely]] {
+        return advance_to_raised_exception(a, pc);
+    }
+    const uint32_t rd = decoded_payload_a(payload);
+    // This static branch is eliminated by the compiler
+    if constexpr (std::is_signed_v<T>) {
+        a.write_x(rd, static_cast<int64_t>(val));
+    } else {
+        a.write_x(rd, static_cast<uint64_t>(val));
+    }
+    return advance_to_next_insn(a, pc);
+}
+
+/// \brief Store instructions dispatched via decoded cache entries.
+/// \details Same semantics as execute_S, with payload a = rs2, b = rs1,
+/// imm = pre-decoded S-immediate.
+template <typename T, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_decoded_S(const STATE_ACCESS a, uint64_t &pc, uint64_t mcycle,
+    int32_t payload) {
+    const uint64_t vaddr = a.read_x(decoded_payload_b(payload));
+    const uint64_t val = a.read_x(decoded_payload_a(payload));
+    const execute_status status =
+        write_virtual_memory<T>(a, pc, mcycle, vaddr + static_cast<uint64_t>(decoded_payload_imm(payload)), val);
+    if (status != execute_status::success) [[unlikely]] {
+        if (status == execute_status::failure) {
+            return advance_to_raised_exception(a, pc);
+        }
+        return advance_to_next_insn(a, pc, status);
+    }
+    return advance_to_next_insn(a, pc);
+}
+
+/// \brief JALR dispatched via decoded cache entries.
+/// \details Same semantics as execute_JALR, with payload a = rd, b = rs1,
+/// imm = pre-decoded I-immediate.
+template <rd_kind rd_kind, typename STATE_ACCESS>
+static FORCE_INLINE execute_status execute_decoded_JALR(const STATE_ACCESS a, uint64_t &pc, int32_t payload) {
+    const uint64_t val = pc + 4;
+    const uint64_t new_pc =
+        static_cast<uint64_t>(a.read_x(decoded_payload_b(payload)) +
+            static_cast<uint64_t>(decoded_payload_imm(payload))) &
+        ~static_cast<uint64_t>(1);
+    if constexpr (rd_kind != rd_kind::x0) {
+        a.write_x(decoded_payload_a(payload), val);
+    }
+    return execute_jump(a, pc, new_pc);
+}
 #endif
 
 /// \brief Interpreter hot loop
@@ -6493,6 +6599,302 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                             } else if (handler == INSN_LABEL(C_BNEZ)) {
                                 handler = &&D_C_BNEZ; imm = insn_get_C_BEQZ_BNEZ_imm(insn);
                             }
+                            // Decode-time funct7 resolution: the jump table only sees the
+                            // low 16 insn bits, so these handlers re-probe funct7 at every
+                            // execution; the decoded entry can jump to the exact operation.
+                            // Unmatched (illegal) encodings keep the original handler.
+                            else if (handler == INSN_LABEL(ADD_MUL_SUB_rdN)) {
+                                const auto funct7 = static_cast<insn_ADD_MUL_SUB_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_ADD_MUL_SUB_funct7::ADD) {
+                                    handler = &&D_ADD;
+                                } else if (funct7 == insn_ADD_MUL_SUB_funct7::MUL) {
+                                    handler = &&D_MUL;
+                                } else if (funct7 == insn_ADD_MUL_SUB_funct7::SUB) {
+                                    handler = &&D_SUB;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(SLL_MULH_rdN)) {
+                                const auto funct7 = static_cast<insn_SLL_MULH_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_SLL_MULH_funct7::SLL) {
+                                    handler = &&D_SLL;
+                                } else if (funct7 == insn_SLL_MULH_funct7::MULH) {
+                                    handler = &&D_MULH;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(SLT_MULHSU_rdN)) {
+                                const auto funct7 = static_cast<insn_SLT_MULHSU_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_SLT_MULHSU_funct7::SLT) {
+                                    handler = &&D_SLT;
+                                } else if (funct7 == insn_SLT_MULHSU_funct7::MULHSU) {
+                                    handler = &&D_MULHSU;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(SLTU_MULHU_rdN)) {
+                                const auto funct7 = static_cast<insn_SLTU_MULHU_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_SLTU_MULHU_funct7::SLTU) {
+                                    handler = &&D_SLTU;
+                                } else if (funct7 == insn_SLTU_MULHU_funct7::MULHU) {
+                                    handler = &&D_MULHU;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(XOR_DIV_rdN)) {
+                                const auto funct7 = static_cast<insn_XOR_DIV_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_XOR_DIV_funct7::XOR) {
+                                    handler = &&D_XOR;
+                                } else if (funct7 == insn_XOR_DIV_funct7::DIV) {
+                                    handler = &&D_DIV;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(SRL_DIVU_SRA_rdN)) {
+                                const auto funct7 = static_cast<insn_SRL_DIVU_SRA_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_SRL_DIVU_SRA_funct7::SRL) {
+                                    handler = &&D_SRL;
+                                } else if (funct7 == insn_SRL_DIVU_SRA_funct7::DIVU) {
+                                    handler = &&D_DIVU;
+                                } else if (funct7 == insn_SRL_DIVU_SRA_funct7::SRA) {
+                                    handler = &&D_SRA;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(OR_REM_rdN)) {
+                                const auto funct7 = static_cast<insn_OR_REM_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_OR_REM_funct7::OR) {
+                                    handler = &&D_OR;
+                                } else if (funct7 == insn_OR_REM_funct7::REM) {
+                                    handler = &&D_REM;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(AND_REMU_rdN)) {
+                                const auto funct7 = static_cast<insn_AND_REMU_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_AND_REMU_funct7::AND) {
+                                    handler = &&D_AND;
+                                } else if (funct7 == insn_AND_REMU_funct7::REMU) {
+                                    handler = &&D_REMU;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(SRLI_SRAI_rdN)) {
+                                const auto funct7 = static_cast<insn_SRLI_SRAI_funct7_sr1>(insn_get_funct7_sr1(insn));
+                                if (funct7 == insn_SRLI_SRAI_funct7_sr1::SRLI) {
+                                    handler = &&D_SRLI;
+                                } else if (funct7 == insn_SRLI_SRAI_funct7_sr1::SRAI) {
+                                    handler = &&D_SRAI;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(SRLIW_SRAIW_rdN)) {
+                                const auto funct7 = static_cast<insn_SRLIW_SRAIW_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_SRLIW_SRAIW_funct7::SRLIW) {
+                                    handler = &&D_SRLIW;
+                                } else if (funct7 == insn_SRLIW_SRAIW_funct7::SRAIW) {
+                                    handler = &&D_SRAIW;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(ADDW_MULW_SUBW_rdN)) {
+                                const auto funct7 = static_cast<insn_ADDW_MULW_SUBW_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_ADDW_MULW_SUBW_funct7::ADDW) {
+                                    handler = &&D_ADDW;
+                                } else if (funct7 == insn_ADDW_MULW_SUBW_funct7::MULW) {
+                                    handler = &&D_MULW;
+                                } else if (funct7 == insn_ADDW_MULW_SUBW_funct7::SUBW) {
+                                    handler = &&D_SUBW;
+                                }
+                            }
+                            else if (handler == INSN_LABEL(SRLW_DIVUW_SRAW_rdN)) {
+                                const auto funct7 = static_cast<insn_SRLW_DIVUW_SRAW_funct7>(insn_get_funct7(insn));
+                                if (funct7 == insn_SRLW_DIVUW_SRAW_funct7::SRLW) {
+                                    handler = &&D_SRLW;
+                                } else if (funct7 == insn_SRLW_DIVUW_SRAW_funct7::DIVUW) {
+                                    handler = &&D_DIVUW;
+                                } else if (funct7 == insn_SRLW_DIVUW_SRAW_funct7::SRAW) {
+                                    handler = &&D_SRAW;
+                                }
+                            }
+                            // Compressed instructions: pre-decode immediates and register
+                            // fields into the payload (SP-relative and ADDI-like aliases
+                            // share decoded handlers with fields packed accordingly)
+                            else if (handler == INSN_LABEL(C_ADDI)) {
+                                handler = &&D_C_ADDI;
+                                imm = make_decoded_payload(insn_get_CI_CB_imm_se(insn), insn_get_rd(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_ADDIW)) {
+                                handler = &&D_C_ADDIW;
+                                imm = make_decoded_payload(insn_get_CI_CB_imm_se(insn), insn_get_rd(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_LI)) {
+                                handler = &&D_C_LI;
+                                imm = make_decoded_payload(insn_get_CI_CB_imm_se(insn), insn_get_rd(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_ADDI16SP)) {
+                                handler = &&D_C_ADDI;
+                                imm = make_decoded_payload(insn_get_C_ADDI16SP_imm(insn), 2, 2);
+                            }
+                            else if (handler == INSN_LABEL(C_ADDI4SPN)) {
+                                handler = &&D_C_ADDI;
+                                imm = make_decoded_payload(static_cast<int32_t>(insn_get_CIW_imm(insn)), 2, insn_get_CIW_CL_rd_CS_CA_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_ANDI)) {
+                                handler = &&D_C_ANDI;
+                                imm = make_decoded_payload(insn_get_CI_CB_imm_se(insn), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_SLLI)) {
+                                handler = &&D_C_SLLI;
+                                imm = make_decoded_payload(static_cast<int32_t>(insn_get_CI_CB_imm(insn)), insn_get_rd(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_SRLI)) {
+                                handler = &&D_C_SRLI;
+                                imm = make_decoded_payload(static_cast<int32_t>(insn_get_CI_CB_imm(insn)), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_SRAI)) {
+                                handler = &&D_C_SRAI;
+                                imm = make_decoded_payload(static_cast<int32_t>(insn_get_CI_CB_imm(insn)), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_MV)) {
+                                handler = &&D_C_MV;
+                                imm = make_decoded_payload(0, insn_get_CR_CSS_rs2(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_ADD)) {
+                                handler = &&D_C_ADD;
+                                imm = make_decoded_payload(0, insn_get_CR_CSS_rs2(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_SUB)) {
+                                handler = &&D_C_SUB;
+                                imm = make_decoded_payload(0, insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_XOR)) {
+                                handler = &&D_C_XOR;
+                                imm = make_decoded_payload(0, insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_OR)) {
+                                handler = &&D_C_OR;
+                                imm = make_decoded_payload(0, insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_AND)) {
+                                handler = &&D_C_AND;
+                                imm = make_decoded_payload(0, insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_ADDW)) {
+                                handler = &&D_C_ADDW;
+                                imm = make_decoded_payload(0, insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_SUBW)) {
+                                handler = &&D_C_SUBW;
+                                imm = make_decoded_payload(0, insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_MUL)) {
+                                handler = &&D_C_MUL;
+                                imm = make_decoded_payload(0, insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_LW)) {
+                                handler = &&D_C_LW;
+                                imm = make_decoded_payload(insn_get_C_LW_C_SW_imm(insn), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CIW_CL_rd_CS_CA_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_LD)) {
+                                handler = &&D_C_LD;
+                                imm = make_decoded_payload(insn_get_CL_CS_imm(insn), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CIW_CL_rd_CS_CA_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_FLD)) {
+                                handler = &&D_C_FLD;
+                                imm = make_decoded_payload(insn_get_CL_CS_imm(insn), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CIW_CL_rd_CS_CA_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_LWSP)) {
+                                handler = &&D_C_LW;
+                                imm = make_decoded_payload(insn_get_C_LWSP_imm(insn), 2, insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_LDSP)) {
+                                handler = &&D_C_LD;
+                                imm = make_decoded_payload(insn_get_C_FLDSP_LDSP_imm(insn), 2, insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_FLDSP)) {
+                                handler = &&D_C_FLD;
+                                imm = make_decoded_payload(insn_get_C_FLDSP_LDSP_imm(insn), 2, insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_SW)) {
+                                handler = &&D_C_SW;
+                                imm = make_decoded_payload(insn_get_C_LW_C_SW_imm(insn), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CIW_CL_rd_CS_CA_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_SD)) {
+                                handler = &&D_C_SD;
+                                imm = make_decoded_payload(insn_get_CL_CS_imm(insn), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CIW_CL_rd_CS_CA_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_FSD)) {
+                                handler = &&D_C_FSD;
+                                imm = make_decoded_payload(insn_get_CL_CS_imm(insn), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CIW_CL_rd_CS_CA_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_SWSP)) {
+                                handler = &&D_C_SW;
+                                imm = make_decoded_payload(insn_get_C_SWSP_imm(insn), 2, insn_get_CR_CSS_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_SDSP)) {
+                                handler = &&D_C_SD;
+                                imm = make_decoded_payload(insn_get_C_FSDSP_SDSP_imm(insn), 2, insn_get_CR_CSS_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_FSDSP)) {
+                                handler = &&D_C_FSD;
+                                imm = make_decoded_payload(insn_get_C_FSDSP_SDSP_imm(insn), 2, insn_get_CR_CSS_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_JR)) {
+                                handler = &&D_C_JR;
+                                imm = make_decoded_payload(0, 0, insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_JALR)) {
+                                handler = &&D_C_JALR;
+                                imm = make_decoded_payload(0, 0, insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(C_LUI)) {
+                                handler = &&D_C_LUI;
+                                imm = insn_get_C_LUI_imm(insn);
+                            }
+                            // Loads/stores/JALR: pre-decode immediate and register fields
+                            else if (handler == INSN_LABEL(LD_rdN)) {
+                                handler = &&D_LD;
+                                imm = make_decoded_payload(insn_I_get_imm(insn), insn_get_rs1(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(LW_rdN)) {
+                                handler = &&D_LW;
+                                imm = make_decoded_payload(insn_I_get_imm(insn), insn_get_rs1(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(LWU_rdN)) {
+                                handler = &&D_LWU;
+                                imm = make_decoded_payload(insn_I_get_imm(insn), insn_get_rs1(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(LH_rdN)) {
+                                handler = &&D_LH;
+                                imm = make_decoded_payload(insn_I_get_imm(insn), insn_get_rs1(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(LHU_rdN)) {
+                                handler = &&D_LHU;
+                                imm = make_decoded_payload(insn_I_get_imm(insn), insn_get_rs1(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(LB_rdN)) {
+                                handler = &&D_LB;
+                                imm = make_decoded_payload(insn_I_get_imm(insn), insn_get_rs1(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(LBU_rdN)) {
+                                handler = &&D_LBU;
+                                imm = make_decoded_payload(insn_I_get_imm(insn), insn_get_rs1(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(SD)) {
+                                handler = &&D_SD;
+                                imm = make_decoded_payload(insn_S_get_imm(insn), insn_get_rs1(insn), insn_get_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(SW)) {
+                                handler = &&D_SW;
+                                imm = make_decoded_payload(insn_S_get_imm(insn), insn_get_rs1(insn), insn_get_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(SH)) {
+                                handler = &&D_SH;
+                                imm = make_decoded_payload(insn_S_get_imm(insn), insn_get_rs1(insn), insn_get_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(SB)) {
+                                handler = &&D_SB;
+                                imm = make_decoded_payload(insn_S_get_imm(insn), insn_get_rs1(insn), insn_get_rs2(insn));
+                            }
+                            else if (handler == INSN_LABEL(JALR_rdN)) {
+                                handler = &&D_JALR_rdN;
+                                imm = make_decoded_payload(insn_I_get_imm(insn), insn_get_rs1(insn), insn_get_rd(insn));
+                            }
+                            else if (handler == INSN_LABEL(JALR_rd0)) {
+                                handler = &&D_JALR_rd0;
+                                imm = make_decoded_payload(insn_I_get_imm(insn), insn_get_rs1(insn), insn_get_rd(insn));
+                            }
                             if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {
                                 // Refresh the decoded entry, and mark the page watched
                                 // again so the store barrier resumes invalidating it
@@ -6515,48 +6917,324 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     // decoded cache entries, never through the jump table): the branch or
                     // jump offset comes pre-decoded in the cache entry at pc
                     D_BEQ:
-                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().payload,
                             [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 == rs2; });
                         INSN_BREAK();
                     D_BNE:
-                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().payload,
                             [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 != rs2; });
                         INSN_BREAK();
                     D_BLT:
-                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().payload,
                             [](uint64_t rs1, uint64_t rs2) -> bool {
                                 return static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2);
                             });
                         INSN_BREAK();
                     D_BGE:
-                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().payload,
                             [](uint64_t rs1, uint64_t rs2) -> bool {
                                 return static_cast<int64_t>(rs1) >= static_cast<int64_t>(rs2);
                             });
                         INSN_BREAK();
                     D_BLTU:
-                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().payload,
                             [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 < rs2; });
                         INSN_BREAK();
                     D_BGEU:
-                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().imm,
+                        status = execute_decoded_branch(a, pc, insn, DECODED_ENTRY_AT_PC().payload,
                             [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 >= rs2; });
                         INSN_BREAK();
                     D_JAL_rdN:
-                        status = execute_decoded_JAL<rd_kind::xN>(a, pc, insn, DECODED_ENTRY_AT_PC().imm);
+                        status = execute_decoded_JAL<rd_kind::xN>(a, pc, insn, DECODED_ENTRY_AT_PC().payload);
                         INSN_BREAK();
                     D_JAL_rd0:
-                        status = execute_decoded_JAL<rd_kind::x0>(a, pc, insn, DECODED_ENTRY_AT_PC().imm);
+                        status = execute_decoded_JAL<rd_kind::x0>(a, pc, insn, DECODED_ENTRY_AT_PC().payload);
                         INSN_BREAK();
                     D_C_J:
-                        status = execute_decoded_C_J(a, pc, DECODED_ENTRY_AT_PC().imm);
+                        status = execute_decoded_C_J(a, pc, DECODED_ENTRY_AT_PC().payload);
                         INSN_BREAK();
                     D_C_BEQZ:
-                        status = execute_decoded_C_BEQZ_BNEZ<false>(a, pc, insn, DECODED_ENTRY_AT_PC().imm);
+                        status = execute_decoded_C_BEQZ_BNEZ<false>(a, pc, insn, DECODED_ENTRY_AT_PC().payload);
                         INSN_BREAK();
                     D_C_BNEZ:
-                        status = execute_decoded_C_BEQZ_BNEZ<true>(a, pc, insn, DECODED_ENTRY_AT_PC().imm);
+                        status = execute_decoded_C_BEQZ_BNEZ<true>(a, pc, insn, DECODED_ENTRY_AT_PC().payload);
                         INSN_BREAK();
+                    // Decoded variants of the funct7-multiplexed integer handlers: the
+                    // exact operation was resolved at decode time, so no funct7 probe
+                    // (nor illegal-encoding check) runs at execution time
+                    D_ADD:
+                        status = execute_ADD<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_MUL:
+                        status = execute_MUL<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SUB:
+                        status = execute_SUB<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SLL:
+                        status = execute_SLL<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_MULH:
+                        status = execute_MULH<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SLT:
+                        status = execute_SLT<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_MULHSU:
+                        status = execute_MULHSU<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SLTU:
+                        status = execute_SLTU<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_MULHU:
+                        status = execute_MULHU<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_XOR:
+                        status = execute_XOR<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_DIV:
+                        status = execute_DIV<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SRL:
+                        status = execute_SRL<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_DIVU:
+                        status = execute_DIVU<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SRA:
+                        status = execute_SRA<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_OR:
+                        status = execute_OR<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_REM:
+                        status = execute_REM<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_AND:
+                        status = execute_AND<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_REMU:
+                        status = execute_REMU<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SRLI:
+                        status = execute_SRLI<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SRAI:
+                        status = execute_SRAI<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SRLIW:
+                        status = execute_SRLIW<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SRAIW:
+                        status = execute_SRAIW<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_ADDW:
+                        status = execute_ADDW<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_MULW:
+                        status = execute_MULW<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SUBW:
+                        status = execute_SUBW<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SRLW:
+                        status = execute_SRLW<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_DIVUW:
+                        status = execute_DIVUW<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    D_SRAW:
+                        status = execute_SRAW<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    // Decoded variants of compressed instructions: immediates and
+                    // register fields come pre-decoded (and pre-masked) in the payload.
+                    // The SP-relative forms share these handlers with rs1/rd packed
+                    // accordingly at decode time.
+                    D_C_ADDI:
+                        status = execute_decoded_C_rd_rs1_imm(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rs1, int64_t imm) -> uint64_t { return rs1 + static_cast<uint64_t>(imm); });
+                        INSN_BREAK();
+                    D_C_ADDIW:
+                        status = execute_decoded_C_rd_rs1_imm(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rs1, int64_t imm) -> uint64_t {
+                                return static_cast<uint64_t>(static_cast<int64_t>(
+                                    static_cast<int32_t>(static_cast<uint32_t>(rs1) + static_cast<uint32_t>(imm))));
+                            });
+                        INSN_BREAK();
+                    D_C_LI:
+                        status = execute_decoded_C_rd_rs1_imm(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t /*rs1*/, int64_t imm) -> uint64_t { return static_cast<uint64_t>(imm); });
+                        INSN_BREAK();
+                    D_C_ANDI:
+                        status = execute_decoded_C_rd_rs1_imm(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rs1, int64_t imm) -> uint64_t { return rs1 & static_cast<uint64_t>(imm); });
+                        INSN_BREAK();
+                    D_C_SLLI:
+                        status = execute_decoded_C_rd_rs1_imm(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rs1, int64_t imm) -> uint64_t { return rs1 << imm; });
+                        INSN_BREAK();
+                    D_C_SRLI:
+                        status = execute_decoded_C_rd_rs1_imm(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rs1, int64_t imm) -> uint64_t { return rs1 >> imm; });
+                        INSN_BREAK();
+                    D_C_SRAI:
+                        status = execute_decoded_C_rd_rs1_imm(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rs1, int64_t imm) -> uint64_t {
+                                return static_cast<uint64_t>(static_cast<int64_t>(rs1) >> imm);
+                            });
+                        INSN_BREAK();
+                    D_C_LUI:
+                        // Payload is the full pre-decoded immediate (17 bits, does not fit
+                        // the packed layout); rd comes from insn as usual
+                        a.write_x(insn_get_rd(insn),
+                            static_cast<uint64_t>(static_cast<int64_t>(DECODED_ENTRY_AT_PC().payload)));
+                        status = advance_to_next_insn<2>(a, pc);
+                        INSN_BREAK();
+                    D_C_MV:
+                        status = execute_decoded_C_rd_rs2(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t /*rd*/, uint64_t rs2) -> uint64_t { return rs2; });
+                        INSN_BREAK();
+                    D_C_ADD:
+                        status = execute_decoded_C_rd_rs2(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rd, uint64_t rs2) -> uint64_t { return rd + rs2; });
+                        INSN_BREAK();
+                    D_C_SUB:
+                        status = execute_decoded_C_rd_rs2(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rd, uint64_t rs2) -> uint64_t { return rd - rs2; });
+                        INSN_BREAK();
+                    D_C_XOR:
+                        status = execute_decoded_C_rd_rs2(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rd, uint64_t rs2) -> uint64_t { return rd ^ rs2; });
+                        INSN_BREAK();
+                    D_C_OR:
+                        status = execute_decoded_C_rd_rs2(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rd, uint64_t rs2) -> uint64_t { return rd | rs2; });
+                        INSN_BREAK();
+                    D_C_AND:
+                        status = execute_decoded_C_rd_rs2(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rd, uint64_t rs2) -> uint64_t { return rd & rs2; });
+                        INSN_BREAK();
+                    D_C_ADDW:
+                        status = execute_decoded_C_rd_rs2(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rd, uint64_t rs2) -> uint64_t {
+                                return static_cast<uint64_t>(static_cast<int64_t>(
+                                    static_cast<int32_t>(static_cast<uint32_t>(rd) + static_cast<uint32_t>(rs2))));
+                            });
+                        INSN_BREAK();
+                    D_C_SUBW:
+                        status = execute_decoded_C_rd_rs2(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rd, uint64_t rs2) -> uint64_t {
+                                return static_cast<uint64_t>(static_cast<int64_t>(
+                                    static_cast<int32_t>(static_cast<uint32_t>(rd) - static_cast<uint32_t>(rs2))));
+                            });
+                        INSN_BREAK();
+                    D_C_MUL:
+                        status = execute_decoded_C_rd_rs2(a, pc, DECODED_ENTRY_AT_PC().payload,
+                            [](uint64_t rd, uint64_t rs2) -> uint64_t { return rd * rs2; });
+                        INSN_BREAK();
+                    D_C_LW: {
+                        const int32_t payload = DECODED_ENTRY_AT_PC().payload;
+                        status = execute_C_L<int32_t>(a, pc, mcycle, decoded_payload_a(payload),
+                            decoded_payload_b(payload), static_cast<int32_t>(decoded_payload_imm(payload)));
+                        INSN_BREAK();
+                    }
+                    D_C_LD: {
+                        const int32_t payload = DECODED_ENTRY_AT_PC().payload;
+                        status = execute_C_L<int64_t>(a, pc, mcycle, decoded_payload_a(payload),
+                            decoded_payload_b(payload), static_cast<int32_t>(decoded_payload_imm(payload)));
+                        INSN_BREAK();
+                    }
+                    D_C_FLD: {
+                        // The FS-off check must run at execution time (mstatus may change)
+                        if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
+                            status = raise_illegal_insn_exception(a, pc, insn);
+                        } else {
+                            const int32_t payload = DECODED_ENTRY_AT_PC().payload;
+                            status = execute_C_FL<uint64_t>(a, pc, mcycle, decoded_payload_a(payload),
+                                decoded_payload_b(payload), static_cast<int32_t>(decoded_payload_imm(payload)));
+                        }
+                        INSN_BREAK();
+                    }
+                    D_C_SW: {
+                        const int32_t payload = DECODED_ENTRY_AT_PC().payload;
+                        status = execute_C_S<uint32_t>(a, pc, mcycle, decoded_payload_a(payload),
+                            decoded_payload_b(payload), static_cast<int32_t>(decoded_payload_imm(payload)));
+                        INSN_BREAK();
+                    }
+                    D_C_SD: {
+                        const int32_t payload = DECODED_ENTRY_AT_PC().payload;
+                        status = execute_C_S<uint64_t>(a, pc, mcycle, decoded_payload_a(payload),
+                            decoded_payload_b(payload), static_cast<int32_t>(decoded_payload_imm(payload)));
+                        INSN_BREAK();
+                    }
+                    D_C_FSD: {
+                        // The FS-off check must run at execution time (mstatus may change)
+                        if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
+                            status = raise_illegal_insn_exception(a, pc, insn);
+                        } else {
+                            const int32_t payload = DECODED_ENTRY_AT_PC().payload;
+                            status = execute_C_FS<uint64_t>(a, pc, mcycle, decoded_payload_a(payload),
+                                decoded_payload_b(payload), static_cast<int32_t>(decoded_payload_imm(payload)));
+                        }
+                        INSN_BREAK();
+                    }
+                    D_C_JR: {
+                        const uint64_t new_pc =
+                            a.read_x(decoded_payload_a(DECODED_ENTRY_AT_PC().payload)) & ~static_cast<uint64_t>(1);
+                        status = execute_jump(a, pc, new_pc);
+                        INSN_BREAK();
+                    }
+                    D_C_JALR: {
+                        // Read rs1 before writing x1 (rs1 may be x1)
+                        const uint64_t new_pc =
+                            a.read_x(decoded_payload_a(DECODED_ENTRY_AT_PC().payload)) & ~static_cast<uint64_t>(1);
+                        a.write_x(0x1, pc + 2);
+                        status = execute_jump(a, pc, new_pc);
+                        INSN_BREAK();
+                    }
+                    // Decoded variants of loads/stores/JALR: immediate and pre-masked
+                    // register fields come from the payload (rd is never x0 here; x0
+                    // destinations keep the original handlers)
+                    D_LD:
+                        status = execute_decoded_L<int64_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_LW:
+                        status = execute_decoded_L<int32_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_LWU:
+                        status = execute_decoded_L<uint32_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_LH:
+                        status = execute_decoded_L<int16_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_LHU:
+                        status = execute_decoded_L<uint16_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_LB:
+                        status = execute_decoded_L<int8_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_LBU:
+                        status = execute_decoded_L<uint8_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_SD:
+                        status = execute_decoded_S<uint64_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_SW:
+                        status = execute_decoded_S<uint32_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_SH:
+                        status = execute_decoded_S<uint16_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_SB:
+                        status = execute_decoded_S<uint8_t>(a, pc, mcycle, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_JALR_rdN:
+                        status = execute_decoded_JALR<rd_kind::xN>(a, pc, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+                    D_JALR_rd0:
+                        status = execute_decoded_JALR<rd_kind::x0>(a, pc, DECODED_ENTRY_AT_PC().payload);
+                        INSN_BREAK();
+
 #endif
 #ifndef USE_COMPUTED_GOTO
                     // When using a naive switch statement, other cases are impossible.

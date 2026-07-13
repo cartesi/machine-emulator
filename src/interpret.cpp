@@ -5755,6 +5755,29 @@ static inline decoded_insn_cache *get_decoded_insn_cache_of(const STATE_ACCESS &
     return nullptr;
 }
 
+/// \brief Packs a decoded-cache payload: pre-decoded immediate and two pre-masked fields.
+/// \details Layout: imm in bits [31:16] (signed), field b in [15:8], field a in [7:0],
+/// so each field unpacks with a single shift/mask (and the immediate sign-extends for
+/// free with an arithmetic shift).
+static FORCE_INLINE int32_t make_decoded_payload(int32_t imm, uint32_t field_b, uint32_t field_a) {
+    return (imm << 16) | static_cast<int32_t>((field_b << 8) | field_a);
+}
+
+/// \brief Unpacks the pre-decoded immediate from a decoded-cache payload.
+static FORCE_INLINE int64_t decoded_payload_imm(int32_t payload) {
+    return payload >> 16;
+}
+
+/// \brief Unpacks pre-masked field b from a decoded-cache payload.
+static FORCE_INLINE uint32_t decoded_payload_b(int32_t payload) {
+    return (static_cast<uint32_t>(payload) >> 8) & 0xff;
+}
+
+/// \brief Unpacks pre-masked field a from a decoded-cache payload.
+static FORCE_INLINE uint32_t decoded_payload_a(int32_t payload) {
+    return static_cast<uint32_t>(payload) & 0xff;
+}
+
 /// \brief Implementation of branch instructions dispatched via decoded cache entries.
 /// \details Same semantics as execute_branch, but the branch offset comes pre-decoded
 /// from the cache entry, removing the immediate extraction from the taken-branch serial
@@ -5805,29 +5828,6 @@ static FORCE_INLINE execute_status execute_decoded_C_BEQZ_BNEZ(const STATE_ACCES
         return execute_jump(a, pc, new_pc);
     }
     return advance_to_next_insn<2>(a, pc);
-}
-
-/// \brief Packs a decoded-cache payload: pre-decoded immediate and two pre-masked fields.
-/// \details Layout: imm in bits [31:16] (signed), field b in [15:8], field a in [7:0],
-/// so each field unpacks with a single shift/mask (and the immediate sign-extends for
-/// free with an arithmetic shift).
-static FORCE_INLINE int32_t make_decoded_payload(int32_t imm, uint32_t field_b, uint32_t field_a) {
-    return (imm << 16) | static_cast<int32_t>((field_b << 8) | field_a);
-}
-
-/// \brief Unpacks the pre-decoded immediate from a decoded-cache payload.
-static FORCE_INLINE int64_t decoded_payload_imm(int32_t payload) {
-    return payload >> 16;
-}
-
-/// \brief Unpacks pre-masked field b from a decoded-cache payload.
-static FORCE_INLINE uint32_t decoded_payload_b(int32_t payload) {
-    return (static_cast<uint32_t>(payload) >> 8) & 0xff;
-}
-
-/// \brief Unpacks pre-masked field a from a decoded-cache payload.
-static FORCE_INLINE uint32_t decoded_payload_a(int32_t payload) {
-    return static_cast<uint32_t>(payload) & 0xff;
 }
 
 /// \brief Compressed x[rd] = f(x[rs1], imm) ops dispatched via decoded cache entries.
@@ -5903,15 +5903,15 @@ static FORCE_INLINE execute_status execute_decoded_S(const STATE_ACCESS a, uint6
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_decoded_JALR(const STATE_ACCESS a, uint64_t &pc, int32_t payload) {
     const uint64_t val = pc + 4;
-    const uint64_t new_pc =
-        static_cast<uint64_t>(a.read_x(decoded_payload_b(payload)) +
-            static_cast<uint64_t>(decoded_payload_imm(payload))) &
+    const uint64_t new_pc = static_cast<uint64_t>(a.read_x(decoded_payload_b(payload)) +
+                                static_cast<uint64_t>(decoded_payload_imm(payload))) &
         ~static_cast<uint64_t>(1);
     if constexpr (rd_kind != rd_kind::x0) {
         a.write_x(decoded_payload_a(payload), val);
     }
     return execute_jump(a, pc, new_pc);
 }
+
 #endif
 
 /// \brief Interpreter hot loop

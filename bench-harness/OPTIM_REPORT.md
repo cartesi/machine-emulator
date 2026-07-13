@@ -529,3 +529,31 @@ stress-ng's adversarial random-jump `branch` stressor. Gates green at every phas
 - Code-layout luck is the dominant noise source at this level of tuning (±15% on regs,
   ±10% on randlist): every phase decision must be made on full-suite A/B runs, and
   rare-op specializations can lose more to layout than they gain in work (Q4).
+
+## Q5. Payload fields for ALL ALU instructions — REJECTED (the decisive negative result)
+
+**Question (user)**: why don't D_ADD etc. use pre-decoded rd/rs1/rs2 from the payload,
+and why do I-type ALU ops and branch rs1/rs2 not use it?
+
+**Experiment**: converted all cheap OP/OP-32 reg-reg stubs, the shift-immediate stubs,
+branches and new I-type ALU stubs (addi family) to payload-packed fields
+({rs2|imm16, rs1, rd}, verbatim-lambda semantics). Microbenches improved as op-count
+analysis predicts (addi 1502→1603, beq 1524→1805, slli +45%) — but **every stress bench
+collapsed 30-45%** (regs 1520→775, cpu 629→466, memcpy 1249→761, crypt 892→634).
+
+**Diagnosis** (perf): identical instruction counts, identical branch/L1i/L1d misses,
+99.4% uop-cache delivery — cycles up 50%. Pure serial-chain latency: at handler time
+`insn` is a REGISTER (loaded at dispatch) so a field extraction is 2 latency-cheap ALU
+ops, while the payload is a fresh MEMORY load (~5 cycles) that, when it feeds the
+x[rs1]/x[rs2] read address, inserts itself into the guest's dependent result chain.
+Micro benches (independent iterations, throughput-bound) hide it; real dependent code
+(latency-bound) pays it on every chained op. Loads/stores tolerate payload-rs1 (Q3,
+memcpy +29%) because their long TLB/memory handler hides the load.
+
+**Rule established** (now documented in D_INSTRUCTIONS.md): the payload only pays for
+(a) off-result-chain fields (branch/jump immediates behind a predicted condition, rd),
+(b) expensive extractions (scattered compressed immediates, S-imm), or (c) fields feeding
+chains long enough to hide a 5-cycle load (load/store addresses). Chain-critical fields
+of short ALU handlers must come from insn. Reverted to the Q1-Q3 state; full suite
+re-verified identical to the Round-3 final table; all gates green; payload coverage
+proof written to `D_INSTRUCTIONS.md`.

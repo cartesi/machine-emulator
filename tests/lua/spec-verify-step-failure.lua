@@ -27,6 +27,11 @@ Three flavors of failure are exercised:
 
 Format-corruption coverage lives here, exercised against the
 replay_step_state_access parser via verify_step.
+
+The hash-function policy tests also cover the Keccak-256-only verifiers
+(verify_step_uarch, verify_reset_uarch, verify_send_cmio_response), which
+mirror the on-chain replayer; verify_step itself stays hash-function
+agnostic (RISC0 proves SHA-256 logs).
 ]]
 
 local cartesi = require("cartesi")
@@ -237,6 +242,76 @@ describe("verify_step", function()
             expect_corruption_error("sibling count does not match step log size", function(log_data)
                 log_data.siblings = {}
                 log_data.override_sibling_count = 1 << 59
+            end)
+        end)
+    end)
+
+    describe("hash function policy", function()
+        local POLICY_ERROR = "step log hash function not supported by this verifier"
+
+        -- Flip the declared hash function on an otherwise valid Keccak log and expect the
+        -- policy error: the check must fire at header parse, before the pre-root recompute
+        -- turns the mismatch into an unhelpful "initial root hash mismatch".
+        local function expect_sha256_rejection(produce, verify)
+            local filename, root_hash_before, root_hash_after = produce()
+            local corrupted = os.tmpname()
+            test_util.copy_step_log(filename, corrupted, function(log_data)
+                log_data.hash_function = 1 -- sha256
+            end)
+            os.remove(filename)
+            local ok, err = pcall(verify, root_hash_before, corrupted, root_hash_after)
+            os.remove(corrupted)
+            expect.falsy(ok)
+            expect.truthy(err and err:find(POLICY_ERROR, 1, true), err)
+        end
+
+        it("verify_step accepts a sha256 log", function()
+            local filename, root_hash_before, root_hash_after = produce_valid_log("sha256")
+            local ok, err = pcall(function()
+                cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT, root_hash_after)
+            end)
+            os.remove(filename)
+            expect.truthy(ok, err)
+        end)
+
+        it("verify_step_uarch rejects a log declaring sha256", function()
+            expect_sha256_rejection(function()
+                local machine <close> = build_machine()
+                local root_hash_before = machine:get_root_hash()
+                local filename = os.tmpname()
+                os.remove(filename)
+                machine:log_step_uarch(1, filename)
+                return filename, root_hash_before, machine:get_root_hash()
+            end, function(root_hash_before, filename, root_hash_after)
+                cartesi.machine:verify_step_uarch(root_hash_before, filename, 1, root_hash_after)
+            end)
+        end)
+
+        it("verify_reset_uarch rejects a log declaring sha256", function()
+            expect_sha256_rejection(function()
+                local machine <close> = build_machine()
+                local root_hash_before = machine:get_root_hash()
+                local filename = os.tmpname()
+                os.remove(filename)
+                machine:log_reset_uarch(filename)
+                return filename, root_hash_before, machine:get_root_hash()
+            end, function(root_hash_before, filename, root_hash_after)
+                cartesi.machine:verify_reset_uarch(root_hash_before, filename, root_hash_after)
+            end)
+        end)
+
+        it("verify_send_cmio_response rejects a log declaring sha256", function()
+            local data = "response"
+            expect_sha256_rejection(function()
+                local machine <close> = build_machine()
+                machine:write_reg("iflags_Y", 1)
+                local root_hash_before = machine:get_root_hash()
+                local filename = os.tmpname()
+                os.remove(filename)
+                machine:log_send_cmio_response(BAD_HASH, 1, data, filename)
+                return filename, root_hash_before, machine:get_root_hash()
+            end, function(root_hash_before, filename, root_hash_after)
+                cartesi.machine:verify_send_cmio_response(BAD_HASH, 1, data, root_hash_before, filename, root_hash_after)
             end)
         end)
     end)

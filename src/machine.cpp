@@ -2051,7 +2051,8 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
     auto data_length = os::file_size(filename);
     auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
     replay_step_state_access::context context;
-    replay_step_state_access a(context, mapped_data.get_ptr(), data_length);
+    // Keccak-256 only, mirroring recording: these logs exist for the on-chain verifier
+    replay_step_state_access a(context, mapped_data.get_ptr(), data_length, hash_function_type::keccak256);
     if (!std::ranges::equal(context.log.root_hash_before, root_hash_before)) {
         throw std::runtime_error("root hash before does not match step log header");
     }

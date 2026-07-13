@@ -77,9 +77,11 @@ public:
     /// \param context Context to be filled with replay step log data
     /// \param log_image Pointer to the step log file bytes
     /// \param log_size Size of the log bytes
-    /// \throw runtime_error if the log is malformed or the initial root hash does not match
+    /// \throw runtime_error if the log is malformed, declares a hash function other than
+    /// Keccak-256 (the only one the uarch protocol and its on-chain verifier support),
+    /// or the initial root hash does not match
     uarch_replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size) : m_context(context) {
-        m_context.log = step_log::decode(log_image, log_size);
+        m_context.log = step_log::decode(log_image, log_size, hash_function_type::keccak256);
     }
 
     /// \brief Finish the replay and return the obtained root hash after

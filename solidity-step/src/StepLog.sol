@@ -36,7 +36,8 @@ library StepLog {
     /// must be produced by a semantic write; some node was never consumed by the replay.
     error UnconsumedNodes(uint256 consumed, uint256 total);
 
-    /// Decoded step log. Fields are unverified wire claims until Verify.verifyXXX runs computeRootHash.
+    /// Decoded step log. decodeAt verifies the pre-state root, so rootHashBefore is trustworthy;
+    /// the remaining fields are wire claims until Verify.verifyXXX checks the post-state root chain.
     struct Context {
         bytes32 rootHashBefore;
         uint64 requestedCycleCount;
@@ -83,11 +84,14 @@ library StepLog {
 
     // Witness-size caps. These only bound the decode work and reject pathological logs
     // early: the actual verification scope (a single uarch step, reset or cmio) is
-    // enforced by Verify.verifyXXX (requested cycle count, root chain). A single uarch
-    // step touches <=3 pages and reset/cmio <=1 node (corpus max 3/1/69), but the caps
-    // admit a whole-mcycle log (corpus max 31 pages; see test/GasReport.t.sol) so gas
-    // measurement runs against unmodified decode. Sibling cap must stay >= 52 (tree
-    // depth) * MAX_PAGE_COUNT so a maximally-spread log is not wrongly rejected.
+    // enforced by Verify.verifyXXX (requested cycle count, root chain). Two separate
+    // requirements set the values. Protocol: a single uarch step touches <=3 pages and
+    // reset/cmio <=1 node (corpus max 3/1/69), so any cap at or above that is sound.
+    // Tooling: the caps are deliberately larger so a whole-mcycle log (corpus max 31
+    // pages; see test/GasReport.t.sol) passes unmodified decode for gas measurement;
+    // shrinking them to protocol size would not affect consensus, only the gas report.
+    // Sibling cap must stay >= 52 (tree depth) * MAX_PAGE_COUNT so a maximally-spread
+    // log is not wrongly rejected.
     uint64 internal constant MAX_PAGE_COUNT = 64;
     uint64 internal constant MAX_NODE_COUNT = 4;
     uint64 internal constant MAX_SIBLING_COUNT = 3328;

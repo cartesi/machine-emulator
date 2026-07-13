@@ -20,10 +20,13 @@ dep:
 		echo "Dependencies already installed (lib/risc0-ethereum exists)"; \
 	fi
 
-# Depends on the CLI binary: cargo rebuilds it whenever the guest changes, so a guest
-# rebuild invalidates the generated Image ID instead of leaving a stale one behind.
-$(CARTESI_RISC0_CLI):
+# FORCE delegates freshness to cargo on every run, so a guest source edit reaches
+# the binary -- and thus the Image ID -- even when this Makefile is invoked directly.
+# The generator below rewrites src/ImageID.sol only when the ID actually changes.
+$(CARTESI_RISC0_CLI): FORCE
 	@$(MAKE) -C ../rust
+
+FORCE:
 
 src/ImageID.sol: $(CARTESI_RISC0_CLI)
 	@IMAGE_ID=$$($(CARTESI_RISC0_CLI) image-id) && \
@@ -34,8 +37,12 @@ src/ImageID.sol: $(CARTESI_RISC0_CLI)
 	  echo 'library ImageID {'; \
 	  echo "    bytes32 public constant CARTESI_STEP_VERIFIER_ID = bytes32(0x$$IMAGE_ID);"; \
 	  echo '}'; \
-	} > $@ && \
-	echo "Generated $@ (Image ID: $$IMAGE_ID)"
+	} > $@.tmp && \
+	if cmp -s $@.tmp $@; then \
+		rm -f $@.tmp; \
+	else \
+		mv $@.tmp $@ && echo "Generated $@ (Image ID: $$IMAGE_ID)"; \
+	fi
 
 image-id:
 	@rm -f src/ImageID.sol

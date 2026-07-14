@@ -311,7 +311,14 @@ describe("verify_step", function()
                 machine:log_send_cmio_response(BAD_HASH, 1, data, filename)
                 return filename, root_hash_before, machine:get_root_hash()
             end, function(root_hash_before, filename, root_hash_after)
-                cartesi.machine:verify_send_cmio_response(BAD_HASH, 1, data, root_hash_before, filename, root_hash_after)
+                cartesi.machine:verify_send_cmio_response(
+                    BAD_HASH,
+                    1,
+                    data,
+                    root_hash_before,
+                    filename,
+                    root_hash_after
+                )
             end)
         end)
     end)

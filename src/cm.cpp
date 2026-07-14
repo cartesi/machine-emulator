@@ -59,6 +59,8 @@
 #include "os-features.hpp"
 #include "pmas-defines.h"
 #include "ranges.hpp"
+#include "riscv-constants.hpp"
+#include "rollup-defines.h"
 #include "rtc-defines.h"
 #include "send-cmio-response.hpp"
 #include "sha-256-hasher.hpp"
@@ -72,7 +74,10 @@ static std::string &get_last_err_msg_storage() {
 static_assert(static_cast<int>(cartesi::FLASH_DRIVE_MAX) == CM_FLASH_DRIVE_MAX);
 static_assert(static_cast<int>(cartesi::NVRAM_MAX) == CM_NVRAM_MAX);
 static_assert(static_cast<int>(cartesi::MEMORY_RANGE_LABEL_MAX) == CM_MEMORY_RANGE_LABEL_MAX);
-static_assert(static_cast<int>(cartesi::CMIO_LOG2_MAX_OUTPUT_COUNT) == CM_CMIO_LOG2_MAX_OUTPUT_COUNT);
+static_assert(ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE_DEF == CM_ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE);
+static_assert(ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE_DEF == CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE);
+static_assert(ROLLUP_LOG2_MAX_OUTPUT_COUNT_DEF == CM_ROLLUP_LOG2_MAX_OUTPUT_COUNT);
+static_assert(ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH_DEF == CM_ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH);
 
 static_assert(AR_CMIO_RX_BUFFER_START_DEF == CM_AR_CMIO_RX_BUFFER_START);
 static_assert(AR_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_AR_CMIO_RX_BUFFER_LOG2_SIZE);
@@ -115,6 +120,11 @@ static_assert(std::string_view{DTB_BOOTARGS_INIT_PART} == std::string_view{CM_DT
 static_assert(std::string_view{DTB_BOOTARGS_INIT} == std::string_view{CM_DTB_BOOTARGS_INIT});
 
 static_assert(UARCH_CYCLE_MAX_DEF == CM_UARCH_CYCLE_MAX);
+static_assert(static_cast<uint64_t>(cartesi::IFLAGS_H_HALTED) == static_cast<uint64_t>(CM_IFLAGS_H_HALTED));
+static_assert(
+    static_cast<uint64_t>(cartesi::IFLAGS_H_MCYCLE_OVERFLOW) == static_cast<uint64_t>(CM_IFLAGS_H_MCYCLE_OVERFLOW));
+static_assert(UARCH_HALT_HALTED_DEF == CM_UARCH_HALT_HALTED);
+static_assert(UARCH_HALT_CYCLE_OVERFLOW_DEF == CM_UARCH_HALT_CYCLE_OVERFLOW);
 static_assert(RTC_FREQ_DIV_DEF == CM_RTC_FREQ_DIV);
 
 static_assert(HTIF_DEV_SHIFT_DEF == CM_HTIF_DEV_SHIFT);
@@ -369,6 +379,8 @@ static cartesi::machine_reg convert_from_c(cm_reg r) {
             return reg::iflags_H;
         case CM_REG_IUNREP:
             return reg::iunrep;
+        case CM_REG_IMCYCLEMAX:
+            return reg::imcyclemax;
         case CM_REG_CLINT_MTIMECMP:
             return reg::clint_mtimecmp;
         case CM_REG_PLIC_GIRQPEND:
@@ -453,8 +465,8 @@ static cartesi::machine_reg convert_from_c(cm_reg r) {
             return reg::uarch_pc;
         case CM_REG_UARCH_CYCLE:
             return reg::uarch_cycle;
-        case CM_REG_UARCH_HALT_FLAG:
-            return reg::uarch_halt_flag;
+        case CM_REG_UARCH_HALT:
+            return reg::uarch_halt;
         case CM_REG_HTIF_TOHOST_DEV:
             return reg::htif_tohost_dev;
         case CM_REG_HTIF_TOHOST_CMD:

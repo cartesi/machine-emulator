@@ -278,7 +278,8 @@ public:
     /// resetting the uarch between mcycles.
     /// \details The \p revert_uarch_tail holds the root hashes after each uarch cycle of the period of the
     /// machine the recorded revert root hash reverts to, the last entry being the revert root hash itself.
-    /// It is required unless the machine starts at a fixed point other than a rejected manual yield.
+    /// When \p mcycle_end is greater than the current mcycle, it is required unless the machine starts at a fixed point
+    /// other than a rejected manual yield.
     uarch_cycle_root_hashes collect_uarch_cycle_root_hashes(uint64_t mcycle_end, int32_t log2_bundle_uarch_cycle_count,
         const machine_hashes &revert_uarch_tail = {}) {
         return do_collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count, revert_uarch_tail);

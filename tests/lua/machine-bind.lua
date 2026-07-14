@@ -184,6 +184,7 @@ local function get_cpu_reg_test_values()
         fcsr = 0x61,
         ilrsc = 0x2e0,
         iunrep = 0x0,
+        imcyclemax = cartesi.MCYCLE_MAX,
     }
     for i = 0, 31 do
         reg_values["x" .. i] = i * 8
@@ -202,6 +203,11 @@ end
 
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "jsonrpc", "unknown machine type, should be 'local' or 'jsonrpc'")
+assert(cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE == 48)
+assert(cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE == 20)
+assert(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT == 63)
+assert(cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH == 24)
+assert(cartesi.UARCH_CYCLE_MAX == (1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - 1)
 local to_shutdown -- luacheck: no unused
 if machine_type == "jsonrpc" then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
@@ -492,6 +498,7 @@ local function test_config(config)
         "iflags.Y",
         "iflags.H",
         "iunrep",
+        "imcyclemax",
         "htif.ihalt",
         "htif.iconsole",
         "htif.iyield",
@@ -563,6 +570,7 @@ do_test("should have expected values", function(machine)
     local initial_config = machine:get_initial_config()
     test_config(initial_config)
     assert(initial_config.processor.registers.pc == 0x200, "wrong pc reg initial config value")
+    assert(initial_config.processor.registers.imcyclemax == cartesi.MCYCLE_MAX, "wrong imcyclemax value")
     assert(initial_config.processor.registers.ilrsc == 0x2e0, "wrong ilrsc reg initial config value")
     assert(initial_config.processor.registers.mstatus == 0x230, "wrong mstatus reg initial config value")
     assert(initial_config.processor.registers.clint.mtimecmp == 0, "wrong clint mtimecmp initial config value")
@@ -689,19 +697,19 @@ print("\n\n run_uarch tests")
 
 do_test("advance one micro cycle without halting", function(machine)
     assert(machine:read_reg("uarch_cycle") == 0, "uarch cycle should be 0")
-    assert(machine:read_reg("uarch_halt_flag") == 0, "uarch halt flag should be cleared")
+    assert(machine:read_reg("uarch_halt") == 0, "uarch halt should be cleared")
     assert(machine:read_reg("iflags_Y") == 0, "iflags.Y should be cleared")
     assert(machine:read_reg("iflags_H") == 0, "iflags.H should be cleared")
     local status = machine:run_uarch(1)
-    assert(status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
+    assert(status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE)
     assert(machine:read_reg("uarch_cycle") == 1, "uarch cycle should be 1")
-    assert(machine:read_reg("uarch_halt_flag") == 0, "uarch should not be halted")
+    assert(machine:read_reg("uarch_halt") == 0, "uarch should not be halted")
 end)
 
 do_test("do not advance micro cycle if uarch is halted", function(machine)
-    machine:write_reg("uarch_halt_flag", 1)
+    machine:write_reg("uarch_halt", cartesi.UARCH_HALT_HALTED)
     assert(machine:read_reg("uarch_cycle") == 0, "uarch cycle should be 0")
-    assert(machine:read_reg("uarch_halt_flag") ~= 0, "uarch halt flag should be set")
+    assert(machine:read_reg("uarch_halt") ~= 0, "uarch halt should be set")
     assert(machine:read_reg("iflags_Y") == 0, "iflags.Y should be cleared")
     assert(machine:read_reg("iflags_H") == 0, "iflags.H should be cleared")
     local status = machine:run_uarch(1)
@@ -714,19 +722,29 @@ do_test("do not advance micro cycle if uarch cycle overflows", function(machine)
     assert(machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX, "uarch cycle should be 0")
     local status = machine:run_uarch(cartesi.UARCH_CYCLE_MAX + 1)
     assert(
-        status == cartesi.UARCH_BREAK_REASON_CYCLE_OVERFLOW,
-        "run_uarch should return UARCH_BREAK_REASON_CYCLE_OVERFLOW"
+        status == cartesi.UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW,
+        "run_uarch should return UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW"
     )
     assert(machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX, "uarch cycle should still be 0")
+    assert(machine:read_reg("uarch_halt") == cartesi.UARCH_HALT_CYCLE_OVERFLOW)
+end)
+
+do_test("final micro cycle should immediately overflow", function(machine)
+    machine:write_reg("uarch_cycle", cartesi.UARCH_CYCLE_MAX - 1)
+    local status = machine:run_uarch(cartesi.UARCH_CYCLE_MAX)
+    assert(status == cartesi.UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW)
+    assert(machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX)
+    assert(machine:read_reg("uarch_halt") == cartesi.UARCH_HALT_CYCLE_OVERFLOW)
 end)
 
 do_test("advance micro cycles until halt", function(machine)
     assert(machine:read_reg("uarch_cycle") == 0, "uarch cycle should be 0")
-    assert(machine:read_reg("uarch_halt_flag") == 0, "machine should not be halted")
-    local status = machine:run_uarch()
+    assert(machine:read_reg("uarch_halt") == 0, "machine should not be halted")
+    local status = machine:run_uarch(3)
     assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
     assert(machine:read_reg("uarch_cycle") == 3, "uarch cycle should be 4")
-    assert(machine:read_reg("uarch_halt_flag") ~= 0, "uarch should be halted")
+    assert(machine:read_reg("uarch_halt") == cartesi.UARCH_HALT_HALTED, "uarch should be halted")
+    assert(machine:run_uarch(3) == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE)
 end)
 
 print("\n\n run machine to 1000 mcycle")
@@ -741,6 +759,19 @@ do_test("mcycle value should be 1000 after execution", function(machine)
         test = machine:read_reg("mcycle")
     end
     assert(machine:read_reg("mcycle") == 1000)
+end)
+
+do_test("machine should overflow exactly at imcyclemax", function(machine)
+    machine:write_reg("mcycle", 0)
+    machine:write_reg("imcyclemax", 5)
+    machine:write_reg("iflags_H", 0)
+    machine:write_reg("iflags_Y", 0)
+    assert(machine:run(4) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    assert(machine:read_reg("mcycle") == 4)
+    assert(machine:run(5) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
+    assert(machine:read_reg("mcycle") == 5)
+    assert(machine:read_reg("iflags_H") == cartesi.IFLAGS_H_MCYCLE_OVERFLOW)
+    assert(machine:run(6) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
 end)
 
 print("\n\n check reading and writing htif registers")
@@ -779,8 +810,8 @@ do_test("dumped step log content should match", function(machine)
     local log_output = temp_file:read_all()
     -- luacheck: push no max line length
     local expected_output = "begin step\n"
-        .. "  1: read uarch.cycle@0x400008(4194312): 0x0(0)\n"
-        .. "  2: read uarch.halt_flag@0x400000(4194304): 0x0(0)\n"
+        .. "  1: read uarch.halt@0x400000(4194304): 0x0(0)\n"
+        .. "  2: read uarch.cycle@0x400008(4194312): 0x0(0)\n"
         .. "  3: read uarch.pc@0x400010(4194320): 0x600000(6291456)\n"
         .. "  4: read uarch.ram@0x600000(6291456): 0x10089307b00513(4513027209561363)\n"
         .. "  begin addi\n"
@@ -819,11 +850,11 @@ do_test("Step log must contain consistent data hashes", function(machine)
     -- ensure that verification fails with wrong read hash
     read_access.read_hash = wrong_hash
     local _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
-    check_error_find(err, "siblings and read hash do not match root hash before 1st access to uarch.cycle")
+    check_error_find(err, "siblings and read hash do not match root hash before 1st access to uarch.halt")
     read_access.read_hash = read_hash -- restore correct value
 
     -- ensure that verification fails with wrong read hash
-    local write_access = log.accesses[#log.accesses]
+    local write_access = log.accesses[8]
     assert(write_access.type == "write")
     read_hash = write_access.read_hash
     write_access.read_hash = wrong_hash
@@ -837,14 +868,15 @@ do_test("Step log must contain consistent data hashes", function(machine)
     check_error_find(err, "written hash for uarch.cycle does not match expected hash in 8th access")
 end)
 
-do_test("step when uarch cycle is max", function(machine)
+do_test("step at max uarch cycle materializes overflow", function(machine)
     machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     local initial_hash = machine:get_root_hash()
     local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
+    assert(machine:read_reg("uarch_halt") == cartesi.UARCH_HALT_CYCLE_OVERFLOW)
     local final_hash = machine:get_root_hash()
-    assert(final_hash == initial_hash)
+    assert(final_hash ~= initial_hash)
     machine:verify_step_uarch(initial_hash, log, final_hash)
 end)
 
@@ -953,7 +985,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })(
 local test_reset_uarch_config = {
     processor = {
         registers = {
-            halt_flag = 1,
+            halt = 1,
             cycle = 1,
             pc = 0,
         },
@@ -965,7 +997,7 @@ end
 
 local function test_reset_uarch(machine, with_log, with_annotations)
     -- assert initial fixture state
-    assert(machine:read_reg("uarch_halt_flag") ~= 0)
+    assert(machine:read_reg("uarch_halt") ~= 0)
     assert(machine:read_reg("uarch_cycle") == 1)
     assert(machine:read_reg("uarch_pc") == 0)
     for i = 1, 31 do
@@ -999,7 +1031,7 @@ local function test_reset_uarch(machine, with_log, with_annotations)
         machine:reset_uarch()
     end
     --- assert registers are reset to pristine values
-    assert(machine:read_reg("uarch_halt_flag") == 0)
+    assert(machine:read_reg("uarch_halt") == 0)
     assert(machine:read_reg("uarch_cycle") == 0)
     assert(machine:read_reg("uarch_pc") == cartesi.UARCH_RAM_START_ADDRESS)
     for i = 1, 31 do
@@ -1155,7 +1187,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         local expected_dump_pattern = "begin reset_uarch_state\n"
             .. "  1: write uarch.state@0x400000%(4194304%): "
             .. 'hash:"[0-9a-f]+"%(2%^22 bytes%) %-> hash:"[0-9a-fA-F]+"%(2%^22 bytes%)\n'
-            .. "  2: read iflags.Y@0x300%(768%): 0x0%(0%)\n"
+            .. "  2: read iflags.Y@0x308%(776%): 0x0%(0%)\n"
             .. "end reset_uarch_state\n"
 
         local tmpname = os.tmpname()
@@ -1266,25 +1298,25 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
         local _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
         check_error_find(err, expected_error)
     end
-    assert_error("log is missing access 1st access to uarch.cycle", function(log)
+    assert_error("log is missing access 1st access to uarch.halt", function(log)
         log.accesses = {}
     end)
-    assert_error("expected 1st access to read uarch.cycle", function(log)
+    assert_error("expected 1st access to read uarch.halt", function(log)
         log.accesses[1].address = 0
     end)
-    assert_error("expected 1st access to uarch.cycle to read 2^3 bytes", function(log)
+    assert_error("expected 1st access to uarch.halt to read 2^3 bytes", function(log)
         log.accesses[1].log2_size = 2
     end)
-    assert_error("expected 1st access to uarch.cycle to read 2^3 bytes", function(log)
+    assert_error("expected 1st access to uarch.halt to read 2^3 bytes", function(log)
         log.accesses[1].log2_size = 65
     end)
-    assert_error("missing read data for uarch.cycle in 1st access", function(log)
+    assert_error("missing read data for uarch.halt in 1st access", function(log)
         log.accesses[1].read = nil
     end)
     assert_error("access read data size is inconsistent with proof size", function(log)
         log.accesses[1].read = "\0"
     end)
-    assert_error("siblings and read hash do not match root hash before 1st access to uarch.cycle", function(log)
+    assert_error("siblings and read hash do not match root hash before 1st access to uarch.halt", function(log)
         log.accesses[1].read_hash = bad_hash
     end)
     assert_error("missing field", function(log)
@@ -1302,7 +1334,7 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
     assert_error("written data for uarch.cycle does not match written hash in 7th access", function(log)
         log.accesses[#log.accesses].written = string.rep("\0", cartesi.HASH_SIZE)
     end)
-    assert_error("siblings and read hash do not match root hash before 1st access to uarch.cycle", function(log)
+    assert_error("siblings and read hash do not match root hash before 1st access to uarch.halt", function(log)
         log.accesses[1].sibling_hashes[1] = bad_hash
     end)
 end)
@@ -1511,13 +1543,13 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
     local log =
         machine:log_send_cmio_response(machine:get_root_hash(), reason, data, cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     local expected_dump_pattern = "begin send_cmio_response\n"
-        .. "  1: read iflags%.Y@0x300%(768%): 0x1%(1%)\n"
+        .. "  1: read iflags%.Y@0x308%(776%): 0x1%(1%)\n"
         .. '  2: write revert root hash@0xfe0%(4064%): hash:"290decd9"%(2%^5 bytes%) %-> '
         .. 'hash:"[0-9a-f]+"%(2%^5 bytes%)\n'
         .. '  3: write cmio rx buffer@0x60000000%(1610612736%): hash:"290decd9"%(2%^5 bytes%) %-> '
         .. 'hash:"555b1f6d"%(2%^5 bytes%)\n'
-        .. "  4: write htif%.fromhost@0x330%(816%): 0x0%(0%) %-> 0x70000000a%(30064771082%)\n"
-        .. "  5: write iflags%.Y@0x300%(768%): 0x1%(1%) %-> 0x0%(0%)\n"
+        .. "  4: write htif%.fromhost@0x338%(824%): 0x0%(0%) %-> 0x70000000a%(30064771082%)\n"
+        .. "  5: write iflags%.Y@0x308%(776%): 0x1%(1%) %-> 0x0%(0%)\n"
         .. "end send_cmio_response\n"
     local temp_file <close> = test_util.new_temp_file()
     util.print_log(log, temp_file)
@@ -1553,9 +1585,31 @@ do_test("send_cmio_response should check the machine state for advance-state res
     _, err = pcall(machine.send_cmio_response, machine, root_hash_before, advance_reason, data)
     check_error_find(err, "machine is not waiting on an rx-accepted manual yield")
     assert(machine:get_root_hash() == root_hash_before)
-    -- other response reasons are not checked at all
+    -- Other response reasons are not checked and do not change the mcycle limit.
+    local imcyclemax = machine:read_reg("imcyclemax")
     machine:send_cmio_response(wrong_revert_root_hash, cartesi.HTIF_YIELD_REASON_INSPECT_STATE, data)
     assert(machine:read_reg("iflags_Y") == 0)
+    assert(machine:read_reg("imcyclemax") == imcyclemax)
+end)
+
+do_test("advance-state response sets a saturating mcycle limit", function(machine)
+    local advance_reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+    local function prepare()
+        machine:write_reg("iflags_Y", 1)
+        machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+        machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+        machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+    end
+    local mcycle = 123
+    machine:write_reg("mcycle", mcycle)
+    prepare()
+    machine:send_cmio_response(machine:get_root_hash(), advance_reason, "")
+    assert(machine:read_reg("imcyclemax") == mcycle + (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE) - 1)
+
+    machine:write_reg("mcycle", cartesi.MCYCLE_MAX - 1)
+    prepare()
+    machine:send_cmio_response(machine:get_root_hash(), advance_reason, "")
+    assert(machine:read_reg("imcyclemax") == cartesi.MCYCLE_MAX)
 end)
 
 do_test("advance-state response without an rx-accepted manual yield logs as a no-op", function(machine)
@@ -1590,11 +1644,17 @@ do_test("log_send_cmio_response happy path for an advance-state response", funct
     local root_hash_before = machine:get_root_hash()
     local log = machine:log_send_cmio_response(root_hash_before, advance_reason, data)
     -- the reads that check the machine state, followed by the writes of the response
-    assert(#log.accesses == 6, "advance-state log should have 6 accesses")
+    assert(#log.accesses == 8, "advance-state log should have 8 accesses")
     assert_access(log.accesses, 1, { type = "read", address = machine:get_reg_address("iflags_Y") })
     assert_access(log.accesses, 2, { type = "read", address = machine:get_reg_address("htif_tohost") })
-    assert_access(log.accesses, 3, { type = "write", address = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START })
+    assert_access(log.accesses, 3, { type = "read", address = machine:get_reg_address("mcycle") })
+    assert_access(log.accesses, 4, { type = "write", address = machine:get_reg_address("imcyclemax") })
+    assert_access(log.accesses, 5, { type = "write", address = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START })
     assert(machine:read_reg("iflags_Y") == 0)
+    assert(
+        machine:read_reg("imcyclemax")
+            == machine:read_reg("mcycle") + (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE) - 1
+    )
     local root_hash_after = machine:get_root_hash()
     machine:verify_send_cmio_response(root_hash_before, advance_reason, data, root_hash_before, log, root_hash_after)
 end)

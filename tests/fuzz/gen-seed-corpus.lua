@@ -48,7 +48,7 @@ local MAX_CODE_SIZE <const> = 4096
 
 -- Shadow state
 local SHADOW_REGISTERS_START <const> = 0x0
-local REGISTERS_STATE_SIZE <const> = 106 * 8 -- 848 bytes
+local REGISTERS_STATE_SIZE <const> = 107 * 8 -- 856 bytes
 local PC_OFFSET <const> = 33 * 8 -- pc is the 34th uint64 in registers_state
 
 -- SV39

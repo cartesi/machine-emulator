@@ -1839,7 +1839,7 @@ describe("cartesi-machine CLI", function()
         for _, o in ipairs(outputs) do
             local proof =
                 cartesi.fromjson(filesystem.read_file(string.format("%s-oproof-%d-%d.json", prefix, o.o, o.i)), "Proof")
-            expect.equal(proof.log2_root_size, cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+            expect.equal(proof.log2_root_size, cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
             expect.equal(proof.log2_target_size, 0)
             expect.equal(proof.target_address, o.o)
             expect.equal(proof.root_hash, final_root)
@@ -1899,7 +1899,7 @@ describe("cartesi-machine CLI", function()
         -- The default proof is a Lua chunk returning the Proof table, with raw-byte hashes.
         local lua_proof = assert(load(filesystem.read_file(prefix .. "-lua-0-0.lua"), "proof", "t", {}))()
         expect.equal(lua_proof.target_address, 0)
-        expect.equal(lua_proof.log2_root_size, cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+        expect.equal(lua_proof.log2_root_size, cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
         expect.equal(lua_proof.target_hash, cartesi.keccak256(filesystem.read_file(prefix .. "-out-0-0.bin")))
         hash_tree.verify_slice(lua_proof)
 
@@ -1946,9 +1946,9 @@ describe("cartesi-machine CLI", function()
     --       independently over the accumulated leaves.
     -- -------------------------------------------------------------------------
     it("output hashes root hash accumulates across inputs", function()
-        -- Root of the height-CMIO_LOG2_MAX_OUTPUT_COUNT pristine-padded outputs tree over leaves.
+        -- Root of the height-ROLLUP_LOG2_MAX_OUTPUT_COUNT pristine-padded outputs tree over leaves.
         local function outputs_root(leaves)
-            local frontier = hash_tree.frontier(cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+            local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
             for _, leaf in ipairs(leaves) do
                 hash_tree.frontier_push_back(frontier, leaf)
             end
@@ -2224,7 +2224,7 @@ describe("cartesi-machine CLI", function()
                 filesystem.read_file(string.format("%s-e2proof-%d-%d.json", prefix, p.o, p.i)),
                 "Proof"
             )
-            expect.equal(proof.log2_root_size, cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+            expect.equal(proof.log2_root_size, cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
             expect.equal(proof.target_address, p.o)
             expect.equal(proof.root_hash, final_root)
             hash_tree.verify_slice(proof)

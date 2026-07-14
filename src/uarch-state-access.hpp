@@ -71,12 +71,12 @@ private:
         m_m.get_uarch_state().registers.cycle = val;
     }
 
-    uint64_t do_read_uarch_halt_flag() const {
-        return m_m.get_uarch_state().registers.halt_flag;
+    uint64_t do_read_uarch_halt() const {
+        return m_m.get_uarch_state().registers.halt;
     }
 
-    void do_write_uarch_halt_flag(uint64_t v) const {
-        m_m.get_uarch_state().registers.halt_flag = v;
+    void do_write_uarch_halt(uint64_t v) const {
+        m_m.get_uarch_state().registers.halt = v;
     }
 
     uint64_t do_read_word(uint64_t paddr) const {

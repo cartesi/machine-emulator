@@ -111,7 +111,7 @@ void machine::init_uarch_processor(const uarch_processor_config &p) {
         // Initialize registers
         write_reg(reg::uarch_pc, p.registers.pc);
         write_reg(reg::uarch_cycle, p.registers.cycle);
-        write_reg(reg::uarch_halt_flag, p.registers.halt_flag);
+        write_reg(reg::uarch_halt, p.registers.halt);
         // General purpose registers
         for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
             write_reg(machine_reg_enum(reg::uarch_x0, i), p.registers.x[i]);
@@ -171,6 +171,7 @@ void machine::init_processor(const processor_config &p, const machine_runtime_co
         write_reg(reg::iflags_Y, p.registers.iflags.Y);
         write_reg(reg::iflags_H, p.registers.iflags.H);
         write_reg(reg::iunrep, p.registers.iunrep);
+        write_reg(reg::imcyclemax, p.registers.imcyclemax);
 
         // HTIF registers
         write_reg(reg::htif_tohost, p.registers.htif.tohost);
@@ -894,6 +895,8 @@ uint64_t machine::read_reg(reg r) const {
             return m_s->shadow.registers.iflags.H;
         case reg::iunrep:
             return m_s->shadow.registers.iunrep;
+        case reg::imcyclemax:
+            return m_s->shadow.registers.imcyclemax;
         case reg::clint_mtimecmp:
             return m_s->shadow.registers.clint.mtimecmp;
         case reg::plic_girqpend:
@@ -978,8 +981,8 @@ uint64_t machine::read_reg(reg r) const {
             return m_us->registers.pc;
         case reg::uarch_cycle:
             return m_us->registers.cycle;
-        case reg::uarch_halt_flag:
-            return m_us->registers.halt_flag;
+        case reg::uarch_halt:
+            return m_us->registers.halt;
         case reg::htif_tohost_dev:
             return HTIF_DEV_FIELD(m_s->shadow.registers.htif.tohost);
         case reg::htif_tohost_cmd:
@@ -1294,6 +1297,9 @@ void machine::write_reg(reg w, uint64_t value) {
         case reg::iunrep:
             m_s->shadow.registers.iunrep = value;
             break;
+        case reg::imcyclemax:
+            m_s->shadow.registers.imcyclemax = value;
+            break;
         case reg::clint_mtimecmp:
             m_s->shadow.registers.clint.mtimecmp = value;
             break;
@@ -1419,8 +1425,8 @@ void machine::write_reg(reg w, uint64_t value) {
         case reg::uarch_cycle:
             m_us->registers.cycle = value;
             break;
-        case reg::uarch_halt_flag:
-            m_us->registers.halt_flag = value;
+        case reg::uarch_halt:
+            m_us->registers.halt = value;
             break;
         case reg::htif_tohost_dev:
             m_s->shadow.registers.htif.tohost = HTIF_REPLACE_DEV(m_s->shadow.registers.htif.tohost, value);
@@ -1966,7 +1972,7 @@ void machine::reset_uarch() {
         throw std::runtime_error{
             "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
     }
-    write_reg(reg::uarch_halt_flag, UARCH_HALT_FLAG_INIT);
+    write_reg(reg::uarch_halt, UARCH_HALT_INIT);
     write_reg(reg::uarch_pc, UARCH_PC_INIT);
     write_reg(reg::uarch_cycle, UARCH_CYCLE_INIT);
     // General purpose registers
@@ -2262,16 +2268,6 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     result.mcycle_phase = mcycle_phase;
     result.break_reason = interpreter_break_reason::reached_target_mcycle;
 
-    // Check halted and yielded break reasons first to behave with same priority as the interpreter
-    if (read_reg(reg::iflags_H) != 0) {
-        result.break_reason = interpreter_break_reason::halted;
-        return result;
-    }
-    if (read_reg(reg::iflags_Y) != 0) {
-        result.break_reason = interpreter_break_reason::yielded_manually;
-        return result;
-    }
-
     // Initialize back tree
     if (previous_back_tree.has_value()) {
         result.back_tree = *previous_back_tree;
@@ -2336,7 +2332,8 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
 
         // Check if we reached a fixed point
         at_fixed_point = result.break_reason == interpreter_break_reason::halted ||
-            result.break_reason == interpreter_break_reason::yielded_manually || mcycle_reached == UINT64_MAX;
+            result.break_reason == interpreter_break_reason::yielded_manually ||
+            result.break_reason == interpreter_break_reason::mcycle_overflow;
 
         // Compute the new phase
         result.mcycle_phase = (((mcycle_reached - mcycle_start) % mcycle_period) + mcycle_phase) % mcycle_period;
@@ -2369,7 +2366,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
         mcycle_target = saturating_add(mcycle_target, mcycle_period, mcycle_end);
     }
 
-    // If the machine yielded manually or halted, then append bundled root hashes with padding
+    // If the machine halted, yielded manually, or overflowed, append bundled root hashes with padding
     if (at_fixed_point && log2_bundle_mcycle_count > 0) {
         // Construct pad tree containing repetitions of the last collected root hash
         const auto pad_hashes =
@@ -2442,6 +2439,7 @@ static void append_uarch_reset_root_hash(uarch_cycle_root_hashes &result, back_m
         result.hashes.emplace_back(back_tree.get_root_hash());
         back_tree.clear();
     } else {
+        result.hashes.push_back(halt_root_hash);
         result.hashes.push_back(reset_root_hash);
     }
 
@@ -2458,7 +2456,9 @@ static void append_uarch_reset_root_hash(uarch_cycle_root_hashes &result, back_m
 static void append_revert_uarch_tail_period(uarch_cycle_root_hashes &result, back_merkle_tree &back_tree,
     int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) {
     assert(revert_uarch_tail.size() >= 2);
-    for (size_t i = 0; i + 1 < revert_uarch_tail.size(); ++i) {
+    // Append all entries except the final fixed-point and reset hashes.
+    // append_uarch_reset_root_hash adds those after bundling the preceding entries.
+    for (size_t i = 0; i + 2 < revert_uarch_tail.size(); ++i) {
         append_uarch_cycle_root_hash(result, back_tree, revert_uarch_tail[i]);
     }
     append_uarch_reset_root_hash(result, back_tree, log2_bundle_uarch_cycle_count,
@@ -2490,6 +2490,12 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
         throw std::runtime_error{"microarchitecture is not reset"};
     }
 
+    uarch_cycle_root_hashes result;
+    result.break_reason = interpreter_break_reason::reached_target_mcycle;
+    if (mcycle_start == mcycle_end) {
+        return result;
+    }
+
     // A call that can execute instructions may end in a rejected manual yield, and a call on a
     // machine already in that state must emit the period of the reverted machine. Both need the
     // revert uarch tail, which is checked here, before anything executes, so a failed call
@@ -2498,8 +2504,10 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     // consumes the tail.
     const state_access sa(*this);
     const bool start_rejected = is_rejected_manual_yield(sa);
-    const bool start_at_fixed_point =
-        read_reg(reg::iflags_H) != 0 || read_reg(reg::iflags_Y) != 0 || mcycle_start == UINT64_MAX;
+    const bool start_halted = read_reg(reg::iflags_H) != 0;
+    const bool start_yielded_manual = read_reg(reg::iflags_Y) != 0;
+    const bool start_at_mcycle_overflow = !start_halted && mcycle_start >= read_reg(reg::imcyclemax);
+    const bool start_at_fixed_point = start_halted || start_yielded_manual || start_at_mcycle_overflow;
     if (start_rejected || !start_at_fixed_point) {
         if (revert_uarch_tail.empty()) {
             throw std::runtime_error{"revert uarch tail is required"};
@@ -2511,10 +2519,6 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
             throw std::runtime_error{"revert uarch tail does not end with the revert root hash"};
         }
     }
-
-    // If the collection loop does not advance mcycle, set the break reason to indicate the target mcycle was reached
-    uarch_cycle_root_hashes result;
-    result.break_reason = interpreter_break_reason::reached_target_mcycle;
 
     // Initialize back tree
     back_merkle_tree back_tree(log2_bundle_uarch_cycle_count, m_c.hash_tree.hash_function);
@@ -2582,7 +2586,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
             context.dirty_words.clear();
 
             // If the uarch cycle counter overflows, this is catastrophic and machine execution cannot continue
-            if (uarch_break_reason == uarch_interpreter_break_reason::cycle_overflow) {
+            if (uarch_break_reason == uarch_interpreter_break_reason::uarch_cycle_overflow) {
                 throw std::runtime_error{"uarch reached its maximum cycle and cannot advance more uarch cycles"};
             }
             // If the uarch is halted, we can break the loop
@@ -2592,14 +2596,14 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
 
             // Sanity check to ensure the loop is working correctly, this should always be true
             assert(uarch_cycle_reached == uarch_cycle_target);
-            assert(uarch_break_reason == uarch_interpreter_break_reason::reached_target_cycle);
+            assert(uarch_break_reason == uarch_interpreter_break_reason::reached_target_uarch_cycle);
 
             // Append root hash to the result
             append_uarch_cycle_root_hash(result, back_tree, m_ht.get_root_hash());
         }
 
         // Sanity check to ensure the loop is working correctly, this should always be true
-        assert(read_reg(reg::uarch_halt_flag) != 0);
+        assert(read_reg(reg::uarch_halt) != 0);
 
         const auto halt_root_hash = m_ht.get_root_hash();
 
@@ -2632,22 +2636,23 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
         }
         reset_dirty_words.clear();
 
+        mcycle_reached = read_reg(reg::mcycle);
+
         // When the machine has rejected an input, the reset folds in a revert, and the canonical
         // root hash after it is the recorded revert root hash
         const bool rejected = is_rejected_manual_yield(sa);
         const auto reset_root_hash = rejected ? read_revert_root_hash() : m_ht.get_root_hash();
 
-        // Add one hash after the uarch reset
+        // Finish the period by padding with the halt root hash and appending the reset root hash
         append_uarch_reset_root_hash(result, back_tree, log2_bundle_uarch_cycle_count, halt_root_hash, reset_root_hash);
-
-        mcycle_reached = read_reg(reg::mcycle);
 
         // Sanity check to ensure the loop is working correctly, this should always be true
         assert(mcycle_reached == mcycle_target);
 
         // Retrieve break reason
-        if (read_reg(reg::iflags_H) != 0) {
-            result.break_reason = interpreter_break_reason::halted;
+        const uint64_t iflags_H = read_reg(reg::iflags_H);
+        if (iflags_H != 0) {
+            result.break_reason = iflags_H_to_interpreter_break_reason(iflags_H);
         } else if (read_reg(reg::iflags_Y) != 0) {
             result.break_reason = interpreter_break_reason::yielded_manually;
         } else if (read_reg(reg::iflags_X) != 0) {
@@ -2668,10 +2673,11 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
             break;
         }
 
-        // If the machine halted, yielded manually or reached mcycle UINT64_MAX,
+        // If the machine halted or yielded manually,
         // then we are at a fixed point and should always attempt to advance one more mcycle
         at_fixed_point = result.break_reason == interpreter_break_reason::halted ||
-            result.break_reason == interpreter_break_reason::yielded_manually || mcycle_reached == UINT64_MAX;
+            result.break_reason == interpreter_break_reason::yielded_manually ||
+            result.break_reason == interpreter_break_reason::mcycle_overflow;
 
         if (!at_fixed_point) {
             // The next iteration will target the next mcycle successor,

@@ -86,7 +86,7 @@ local function rollback()
 end
 
 -- Seed frontier builds the end-of-epoch proofs, a running copy checks each input's root
-local seed_frontier = hash_tree.frontier(cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+local seed_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
 local running_frontier = hash_tree.frontier_copy(seed_frontier)
 local output_hashes = {} -- keccak256 leaf of every accepted output, in order
 local output_inputs = {} -- the input index each accepted output came from

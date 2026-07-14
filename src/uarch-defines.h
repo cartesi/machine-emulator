@@ -18,6 +18,7 @@
 #define UARCH_DEFINES_H
 
 #include "address-range-defines.h"
+#include "rollup-defines.h"
 // NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 /// \brief Start address of the entire uarch memory range: shadow and ram
 #define UARCH_STATE_START_ADDRESS_DEF AR_SHADOW_UARCH_STATE_START_DEF
@@ -25,11 +26,29 @@
 /// \brief Log2 size of the entire uarch memory range: shadow and ram
 #define UARCH_STATE_LOG2_SIZE_DEF 22
 
+/// \brief Initial value of the microarchitecture halt register
+#define UARCH_HALT_INIT_DEF 0
+
+/// \brief Initial value of a microarchitecture general-purpose register
+#define UARCH_X_INIT_DEF 0
+
+/// \brief Initial value of the microarchitecture program counter
+#define UARCH_PC_INIT_DEF AR_UARCH_RAM_START_DEF
+
+/// \brief Initial value of the microarchitecture cycle register
+#define UARCH_CYCLE_INIT_DEF 0
+
+/// \brief Microarchitecture halted normally
+#define UARCH_HALT_HALTED_DEF 1
+
+/// \brief Microarchitecture halted due to cycle overflow
+#define UARCH_HALT_CYCLE_OVERFLOW_DEF 3
+
 /// \brief Log2 of the expected maximum uarch cycle
-#define UARCH_LOG2_CYCLE_MAX_DEF 20
+#define UARCH_LOG2_CYCLE_MAX_DEF ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE_DEF
 
 /// \brief Maximum uarch cycle
-#define UARCH_CYCLE_MAX_DEF (1 << UARCH_LOG2_CYCLE_MAX_DEF)
+#define UARCH_CYCLE_MAX_DEF ((1ULL << UARCH_LOG2_CYCLE_MAX_DEF) - 1)
 
 // microarchitecture ecall function codes
 // function code 3 was mark_dirty_page, now removed, and the gap is intentional

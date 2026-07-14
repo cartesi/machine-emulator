@@ -63,6 +63,13 @@ void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, b
             return;
         }
     }
+    if (reason == HTIF_YIELD_REASON_ADVANCE_STATE) {
+        const uint64 mcycle = readMcycle(a);
+        const uint64 maxMcycles = uint64ShiftLeft(1, uint32(ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)) - 1;
+        const uint64 maxUint64 = ~uint64(0);
+        const uint64 imcyclemax = mcycle > maxUint64 - maxMcycles ? maxUint64 : mcycle + maxMcycles;
+        writeImcyclemax(a, imcyclemax);
+    }
     // Record the machine root hash to revert to in case the response is eventually rejected
     writeRevertRootHash(a, revertRootHash);
     if (dataLength > 0) {

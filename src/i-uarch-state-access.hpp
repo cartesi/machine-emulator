@@ -121,8 +121,8 @@ public:
 
     // Define read and write methods for each register in the shadow uarch state
     // NOLINTBEGIN(cppcoreguidelines-macro-usage)
-    DEFINE_USA_READ(uarch_halt_flag)
-    DEFINE_USA_WRITE(uarch_halt_flag)
+    DEFINE_USA_READ(uarch_halt)
+    DEFINE_USA_WRITE(uarch_halt)
     DEFINE_USA_READ(uarch_cycle)
     DEFINE_USA_WRITE(uarch_cycle)
     DEFINE_USA_READ(uarch_pc)

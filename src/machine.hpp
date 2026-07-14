@@ -241,6 +241,11 @@ public:
     /// Stores into result.back_tree the back tree context to continue collecting bundled root hashes.
     /// \detail The first hash added to \p result.hashes is the root hash after (\p mcycle_period - \p mcycle_phase)
     /// machine cycles (if the function managed to get that far before returning).
+    /// If \p mcycle_end equals the current mcycle, no transition is requested, no root hash is collected, and
+    /// result.break_reason is interpreter_break_reason::reached_target_mcycle, regardless of whether the machine is
+    /// already at a fixed point. If \p mcycle_end is greater than the current mcycle and the machine is already at a
+    /// fixed point, the machine remains unchanged, result.break_reason reports that fixed point, and its root hash is
+    /// collected.
     /// When the machine stops on a manual yield whose reason is rx-rejected, the root hash collected at the
     /// yield and the padding that follows are substituted by the recorded revert root hash, which is the root
     /// hash verifiers accept for these state transitions.
@@ -272,17 +277,23 @@ public:
     /// \param mcycle_end End machine cycle value to execute, uarch cycle by uarch cycle.
     /// \param log2_bundle_uarch_cycle_count Log base 2 of the amount of uarch cycle root hashes to bundle.
     /// \param revert_uarch_tail Root hashes after each uarch cycle of the period of the machine the recorded
-    /// revert root hash reverts to, the last entry being the revert root hash itself (the reset entry of that
-    /// period). It is obtained by calling this function with no bundling on that machine, while it waits for
-    /// a response. Required unless the machine starts at a fixed point other than a rejected manual yield,
-    /// in which case the call cannot consume it and ignores it.
+    /// revert root hash reverts to. Its final two entries are the fixed-point hash and the revert root hash after
+    /// reset. It is obtained by calling this function with no bundling on that machine, while it waits for a response.
+    /// When \p mcycle_end is greater than the current mcycle, it is required unless the machine starts at a fixed
+    /// point other than a rejected manual yield. Otherwise the call cannot consume it and ignores it.
     /// \returns The collected uarch cycle root hashes.
     /// Stores into result.hashes the root hashes after each uarch cycle.
     /// Stores into result.reset_indices the indices of the root hashes after each implicit uarch reset
     /// (i.e., after each machine cycle).
     /// Stores into result.break_reason the reason why the function returned.
+    /// If \p mcycle_end equals the current mcycle, no transition is requested, no root hash is collected, and
+    /// result.break_reason is interpreter_break_reason::reached_target_mcycle, regardless of whether the machine is
+    /// already at a fixed point.
     /// \detail The first hash added to \p result.hashes is the root hash after the first uarch cycle, the last is the
     /// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
+    /// For each reset index, the preceding entry is an all-fixed-point bundle and the indexed entry is a bundle of
+    /// fixed-point hashes ending with the reset hash. This also applies without bundling, when the two entries are
+    /// simply the fixed-point hash and the reset hash.
     /// When the machine ends in a manual yield whose reason is rx-rejected, the root hash after the final uarch
     /// reset is substituted by the recorded revert root hash, and one extra period, that of the reverted machine
     /// as given by \p revert_uarch_tail, is collected after it.

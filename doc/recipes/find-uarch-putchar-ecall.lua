@@ -9,7 +9,7 @@ machine:run(mcycle)
 
 local PUTCHAR = cartesi.UARCH_ECALL_FN_PUTCHAR
 local ECALL = 0x00000073
-while machine:read_reg("uarch_halt_flag") == 0 do
+while machine:read_reg("uarch_halt") == 0 do
     local pc = machine:read_reg("uarch_pc")
     local insn = string.unpack("<I4", machine:read_memory(pc, 4))
     if insn == ECALL and machine:read_reg("uarch_x17") == PUTCHAR then

@@ -20,13 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added decoding of RISC-V Zcb compressed instructions (required by kernels built with GCC 14)
 - Added fallback to `read_reg` in the GDB stub so `monitor reg <name>` works for any named register
 - Added `--bash-completion` to print a bash completion script for `cartesi-machine`
-- Added public C API constants `CM_FLASH_DRIVE_MAX`, `CM_NVRAM_MAX`, `CM_MEMORY_RANGE_LABEL_MAX`, `CM_RTC_FREQ_DIV`, and `CM_CMIO_LOG2_MAX_OUTPUT_COUNT`
+- Added public C API constants `CM_FLASH_DRIVE_MAX`, `CM_NVRAM_MAX`, `CM_MEMORY_RANGE_LABEL_MAX`, `CM_RTC_FREQ_DIV`, and `CM_ROLLUP_LOG2_MAX_OUTPUT_COUNT`
+- Added explicit machine and uarch cycle-overflow halt values and break reasons across the C++, C, Lua, and JSON-RPC APIs
 - Added the peripheral `CM_AR_*` address range constants, the `CM_PMA_*_DID` driver id constants, the HTIF device, command, shift, and mask constants, and the `CM_DTB_BOOTARGS_*` macros to the public C API
 - Added LuaCov-based coverage tracking for Lua code, integrated with the gcov report pipeline
 - Added a JSON-RPC C API coverage suite and converted `test-cm-cli` and `test-evmu` to the lester spec format
 - Added `spec-cm-cli.lua` covering every command-line option of `cartesi-machine.lua`
 
 ## Fixed
+- Fixed unbundled uarch-cycle hash collection to include the fixed-point padding hash immediately before each reset, matching bundled collection
 - Fixed leaf size in `cartesi-hash-tree-hash`, which was 8 instead of 32
 - Fixed read-only flash drives not being mounted with `-o ro`, which trapped guest writes and panicked init
 - Fixed missing `#address-cells` on the per-CPU `interrupt-controller` node in the DTB, silencing a `dtc` interrupt-provider lint warning
@@ -40,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a typo in the `cartesi-machine.lua` cmio handling
 
 ## Changed
+- Changed machine and uarch cycle overflow to persist as fixed-point state in `iflags.H` and `uarch.halt`; run and hash-collection APIs now distinguish reaching an unchanged target from requesting progress at a fixed point
+- Renamed the uarch halt register and cycle break reasons to consistently use `uarch_halt`, `reached_target_uarch_cycle`, and `uarch_cycle_overflow`
 - Renamed the yield constants in `cm.h` and the Lua API from `CM_CMIO_YIELD_*` to `CM_HTIF_YIELD_*` (and the command suffix from `COMMAND` to `CMD`)
 - Renamed the PMA "device id" to "driver id" across the public API (`CM_PMA_*_DID` constants, `driver_id` in `get_address_ranges`)
 - Changed `get_address_ranges` to report per-range attributes (`is_memory`, `is_device`, `is_readable`, `is_writeable`, `is_executable`, `is_read_idempotent`, `is_write_idempotent`, and `driver_id`)

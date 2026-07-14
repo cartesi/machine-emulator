@@ -75,6 +75,7 @@ for _, variant in ipairs(variants) do
                 "ilrsc",
                 "iprv",
                 "iunrep",
+                "imcyclemax",
             }
             for _, name in ipairs(identity_regs) do
                 reg_address_names[name] = name
@@ -91,7 +92,7 @@ for _, variant in ipairs(variants) do
                 htif_ihalt = "htif.ihalt",
                 htif_iconsole = "htif.iconsole",
                 htif_iyield = "htif.iyield",
-                uarch_halt_flag = "uarch.halt_flag",
+                uarch_halt = "uarch.halt",
                 uarch_cycle = "uarch.cycle",
                 uarch_pc = "uarch.pc",
             }

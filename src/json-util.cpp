@@ -171,6 +171,7 @@ static auto reg_from_name(const std::string &name) {
         {"iflags_Y", reg::iflags_Y},
         {"iflags_H", reg::iflags_H},
         {"iunrep", reg::iunrep},
+        {"imcyclemax", reg::imcyclemax},
         {"clint_mtimecmp", reg::clint_mtimecmp},
         {"plic_girqpend", reg::plic_girqpend},
         {"plic_girqsrvd", reg::plic_girqsrvd},
@@ -221,7 +222,7 @@ static auto reg_from_name(const std::string &name) {
         {"uarch_x31", reg::uarch_x31},
         {"uarch_pc", reg::uarch_pc},
         {"uarch_cycle", reg::uarch_cycle},
-        {"uarch_halt_flag", reg::uarch_halt_flag},
+        {"uarch_halt", reg::uarch_halt},
     };
     auto got = g_reg_name.find(name);
     if (got == g_reg_name.end()) {
@@ -454,6 +455,8 @@ static auto reg_to_name(machine_reg r) {
             return "iflags_H";
         case reg::iunrep:
             return "iunrep";
+        case reg::imcyclemax:
+            return "imcyclemax";
         case reg::clint_mtimecmp:
             return "clint_mtimecmp";
         case reg::plic_girqpend:
@@ -554,8 +557,8 @@ static auto reg_to_name(machine_reg r) {
             return "uarch_pc";
         case reg::uarch_cycle:
             return "uarch_cycle";
-        case reg::uarch_halt_flag:
-            return "uarch_halt_flag";
+        case reg::uarch_halt:
+            return "uarch_halt";
         default:
             throw std::domain_error{"invalid register"};
             break;
@@ -568,10 +571,10 @@ static std::string uarch_interpreter_break_reason_to_name(uarch_interpreter_brea
     switch (reason) {
         case R::uarch_halted:
             return "uarch_halted";
-        case R::reached_target_cycle:
-            return "reached_target_cycle";
-        case R::cycle_overflow:
-            return "cycle_overflow";
+        case R::reached_target_uarch_cycle:
+            return "reached_target_uarch_cycle";
+        case R::uarch_cycle_overflow:
+            return "uarch_cycle_overflow";
     }
     throw std::domain_error{"invalid uarch interpreter break reason"};
 }
@@ -595,6 +598,8 @@ static std::string interpreter_break_reason_to_name(interpreter_break_reason rea
             return "console_output";
         case R::console_input:
             return "console_input";
+        case R::mcycle_overflow:
+            return "mcycle_overflow";
     }
     throw std::domain_error{"invalid interpreter break reason"};
 }
@@ -604,7 +609,8 @@ static interpreter_break_reason interpreter_break_reason_from_name(const std::st
     const static std::unordered_map<std::string, ibr> g_ibr_name = {{"failed", ibr::failed}, {"halted", ibr::halted},
         {"yielded_manually", ibr::yielded_manually}, {"yielded_automatically", ibr::yielded_automatically},
         {"yielded_softly", ibr::yielded_softly}, {"reached_target_mcycle", ibr::reached_target_mcycle},
-        {"console_output", ibr::console_output}, {"console_input", ibr::console_input}};
+        {"console_output", ibr::console_output}, {"console_input", ibr::console_input},
+        {"mcycle_overflow", ibr::mcycle_overflow}};
     auto got = g_ibr_name.find(name);
     if (got == g_ibr_name.end()) {
         throw std::domain_error{"invalid interpreter break reason"};
@@ -615,8 +621,8 @@ static interpreter_break_reason interpreter_break_reason_from_name(const std::st
 static uarch_interpreter_break_reason uarch_interpreter_break_reason_from_name(const std::string &name) {
     using uibr = uarch_interpreter_break_reason;
     const static std::unordered_map<std::string, uibr> g_uibr_name = {
-        {"reached_target_cycle", uibr::reached_target_cycle}, {"uarch_halted", uibr::uarch_halted},
-        {"cycle_overflow", uibr::cycle_overflow}};
+        {"reached_target_uarch_cycle", uibr::reached_target_uarch_cycle}, {"uarch_halted", uibr::uarch_halted},
+        {"uarch_cycle_overflow", uibr::uarch_cycle_overflow}};
     auto got = g_uibr_name.find(name);
     if (got == g_uibr_name.end()) {
         throw std::domain_error{"invalid uarch interpreter break reason"};
@@ -1595,6 +1601,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, registers_state &va
     ju_get_opt_field(jconfig, "iprv"s, value.iprv, new_path);
     ju_get_opt_field(jconfig, "iflags"s, value.iflags, new_path);
     ju_get_opt_field(jconfig, "iunrep"s, value.iunrep, new_path);
+    ju_get_opt_field(jconfig, "imcyclemax"s, value.imcyclemax, new_path);
     ju_get_opt_field(jconfig, "clint"s, value.clint, new_path);
     ju_get_opt_field(jconfig, "plic"s, value.plic, new_path);
     ju_get_opt_field(jconfig, "htif"s, value.htif, new_path);
@@ -1982,7 +1989,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_registers_sta
     ju_get_opt_field(jconfig, "x31"s, value.x[31], new_path);
     ju_get_opt_field(jconfig, "pc"s, value.pc, new_path);
     ju_get_opt_field(jconfig, "cycle"s, value.cycle, new_path);
-    ju_get_opt_field(jconfig, "halt_flag"s, value.halt_flag, new_path);
+    ju_get_opt_field(jconfig, "halt"s, value.halt, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uarch_registers_state &value,
@@ -2317,7 +2324,8 @@ void to_json(nlohmann::json &j, const registers_state &config) {
         {"menvcfg", config.menvcfg}, {"stvec", config.stvec}, {"sscratch", config.sscratch}, {"sepc", config.sepc},
         {"scause", config.scause}, {"stval", config.stval}, {"satp", config.satp}, {"scounteren", config.scounteren},
         {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc}, {"iprv", config.iprv}, {"iflags", config.iflags},
-        {"iunrep", config.iunrep}, {"clint", config.clint}, {"plic", config.plic}, {"htif", config.htif}};
+        {"iunrep", config.iunrep}, {"imcyclemax", config.imcyclemax}, {"clint", config.clint}, {"plic", config.plic},
+        {"htif", config.htif}};
 }
 
 void to_json(nlohmann::json &j, const processor_config &config) {
@@ -2456,7 +2464,7 @@ void to_json(nlohmann::json &j, const uarch_registers_state &config) {
         {"x31", config.x[31]},
         {"pc", config.pc},
         {"cycle", config.cycle},
-        {"halt_flag", config.halt_flag},
+        {"halt", config.halt},
     };
 }
 

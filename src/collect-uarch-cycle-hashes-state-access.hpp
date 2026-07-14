@@ -72,9 +72,8 @@ private:
 
     uint64_t do_read_shadow_uarch_state(shadow_uarch_state_what what) const {
         // Code assumes we only attempt to read valid registers
-        static_assert(shadow_uarch_state_get_what(AR_SHADOW_UARCH_STATE_START) ==
-                shadow_uarch_state_what::uarch_halt_flag,
-            "code assumes halt_flag is the first shadow uarch register");
+        static_assert(shadow_uarch_state_get_what(AR_SHADOW_UARCH_STATE_START) == shadow_uarch_state_what::uarch_halt,
+            "code assumes halt is the first shadow uarch register");
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         const auto *regs = reinterpret_cast<uint64_t *>(&m_m.get_uarch_state().registers);
         return regs[(static_cast<uint64_t>(what) - AR_SHADOW_UARCH_STATE_START) / sizeof(uint64_t)];
@@ -82,9 +81,8 @@ private:
 
     void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
         // Code assumes we only attempt to write valid and writeable registers
-        static_assert(shadow_uarch_state_get_what(AR_SHADOW_UARCH_STATE_START) ==
-                shadow_uarch_state_what::uarch_halt_flag,
-            "code assumes halt_flag is the first shadow uarch register");
+        static_assert(shadow_uarch_state_get_what(AR_SHADOW_UARCH_STATE_START) == shadow_uarch_state_what::uarch_halt,
+            "code assumes halt is the first shadow uarch register");
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         auto *regs = reinterpret_cast<uint64_t *>(&m_m.get_uarch_state().registers);
         regs[(static_cast<uint64_t>(what) - AR_SHADOW_UARCH_STATE_START) / sizeof(uint64_t)] = val;

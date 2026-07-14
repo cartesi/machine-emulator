@@ -100,6 +100,7 @@ struct registers_state final {
     uint64_t ilrsc{ILRSC_INIT};                 ///< For LR/SC instructions.
     uint64_t icycleinstret{ICYCLEINSTRET_INIT}; ///< Difference between mcycle and minstret.
     uint64_t iunrep{IUNREP_INIT};               ///< Unreproducible mode.
+    uint64_t imcyclemax{IMCYCLEMAX_INIT};       ///< Maximum mcycle for the current advance-state input.
 
     iflags_state iflags; ///< Internal flags (Cartesi specific).
     clint_state clint;   ///< CLINT registers.
@@ -111,7 +112,7 @@ struct registers_state final {
 using shadow_registers_state = registers_state;
 
 // We need strong guarantees that shadow_state has fixed size and alignment across platforms.
-static_assert(sizeof(shadow_registers_state) == 106 * sizeof(uint64_t), "unexpected registers state size");
+static_assert(sizeof(shadow_registers_state) == 107 * sizeof(uint64_t), "unexpected registers state size");
 static_assert(alignof(shadow_registers_state) == sizeof(uint64_t), "unexpected registers state alignment");
 
 enum class shadow_registers_what : uint64_t {
@@ -213,6 +214,7 @@ enum class shadow_registers_what : uint64_t {
     iflags_Y = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, iflags.Y),
     iflags_H = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, iflags.H),
     iunrep = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, iunrep),
+    imcyclemax = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, imcyclemax),
     clint_mtimecmp = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, clint.mtimecmp),
     plic_girqpend = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, plic.girqpend),
     plic_girqsrvd = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, plic.girqsrvd),
@@ -441,6 +443,8 @@ static constexpr const char *shadow_registers_get_what_name(shadow_registers_wha
             return "iflags.H";
         case reg::iunrep:
             return "iunrep";
+        case reg::imcyclemax:
+            return "imcyclemax";
         case reg::clint_mtimecmp:
             return "clint.mtimecmp";
         case reg::plic_girqpend:

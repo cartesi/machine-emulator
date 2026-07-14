@@ -268,6 +268,16 @@ private:
         return m_m.get_state().shadow.registers.iflags.Y;
     }
 
+    uint64_t do_read_mcycle() const {
+        log_read(machine_reg_address(machine_reg::mcycle), "mcycle");
+        return m_m.get_state().shadow.registers.mcycle;
+    }
+
+    void do_write_imcyclemax(uint64_t val) const {
+        log_before_write_write_and_update(machine_reg_address(machine_reg::imcyclemax),
+            m_m.get_state().shadow.registers.imcyclemax, val, "imcyclemax");
+    }
+
     void do_write_htif_fromhost(uint64_t val) const {
         log_before_write_write_and_update(machine_reg_address(machine_reg::htif_fromhost),
             m_m.get_state().shadow.registers.htif.fromhost, val, "htif.fromhost");

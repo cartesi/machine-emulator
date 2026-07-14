@@ -22,6 +22,7 @@
 
 #include "address-range-constants.hpp"
 #include "riscv-constants.hpp"
+#include "uarch-constants.hpp"
 
 /// \file
 /// \brief Shadow uarch state device.
@@ -30,7 +31,7 @@ namespace cartesi {
 
 /// \brief Uarch registers state
 struct uarch_registers_state final {
-    uint64_t halt_flag{UARCH_HALT_FLAG_INIT};
+    uint64_t halt{UARCH_HALT_INIT};
     uint64_t cycle{UARCH_CYCLE_INIT};
     uint64_t pc{UARCH_PC_INIT};
     uint64_t x[UARCH_X_REG_COUNT]{};
@@ -44,7 +45,7 @@ static_assert(sizeof(shadow_uarch_state) == 35 * sizeof(uint64_t), "unexpected u
 static_assert(alignof(shadow_uarch_state) == sizeof(uint64_t), "unexpected uarch registers state alignment");
 
 enum class shadow_uarch_state_what : uint64_t {
-    uarch_halt_flag = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, halt_flag),
+    uarch_halt = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, halt),
     uarch_cycle = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, cycle),
     uarch_pc = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, pc),
     uarch_x0 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[0]),
@@ -107,8 +108,8 @@ static constexpr const char *shadow_uarch_state_get_what_name(shadow_uarch_state
     }
     using reg = shadow_uarch_state_what;
     switch (what) {
-        case reg::uarch_halt_flag:
-            return "uarch.halt_flag";
+        case reg::uarch_halt:
+            return "uarch.halt";
         case reg::uarch_cycle:
             return "uarch.cycle";
         case reg::uarch_pc:

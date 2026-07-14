@@ -19,16 +19,34 @@
 #include <cstdint>
 
 #include "collect-uarch-cycle-hashes-state-access.hpp" // IWYU pragma: keep
-#include "uarch-state-access.hpp"                      // IWYU pragma: keep
+#include "riscv-constants.hpp"
+#include "uarch-constants.hpp"
+#include "uarch-state-access.hpp" // IWYU pragma: keep
 #include "uarch-step.hpp"
 
 namespace cartesi {
+
+uarch_interpreter_break_reason uarch_halt_to_interpreter_break_reason(uint64_t uarch_halt) {
+    return uarch_halt == UARCH_HALT_CYCLE_OVERFLOW ? uarch_interpreter_break_reason::uarch_cycle_overflow :
+                                                     uarch_interpreter_break_reason::uarch_halted;
+}
 
 template <typename STATE_ACCESS>
 uarch_interpreter_break_reason uarch_interpret(const STATE_ACCESS a, uint64_t cycle_end) {
     uint64_t cycle = a.read_uarch_cycle();
     if (cycle_end < cycle) {
         throw std::invalid_argument{"uarch_cycle is past"};
+    }
+    if (cycle == cycle_end) {
+        return uarch_interpreter_break_reason::reached_target_uarch_cycle;
+    }
+    const uint64_t halt = a.read_uarch_halt();
+    if (halt != 0) {
+        return uarch_halt_to_interpreter_break_reason(halt);
+    }
+    if (cycle >= UARCH_CYCLE_MAX) {
+        a.write_uarch_halt(UARCH_HALT_CYCLE_OVERFLOW);
+        return uarch_interpreter_break_reason::uarch_cycle_overflow;
     }
     while (cycle < cycle_end) {
         const UArchStepStatus status = uarch_step(a);
@@ -38,11 +56,11 @@ uarch_interpreter_break_reason uarch_interpret(const STATE_ACCESS a, uint64_t cy
                 break;
             case UArchStepStatus::UArchHalted:
                 return uarch_interpreter_break_reason::uarch_halted;
-            case UArchStepStatus::CycleOverflow:
-                return uarch_interpreter_break_reason::cycle_overflow;
+            case UArchStepStatus::UArchCycleOverflow:
+                return uarch_interpreter_break_reason::uarch_cycle_overflow;
         }
     }
-    return uarch_interpreter_break_reason::reached_target_cycle;
+    return uarch_interpreter_break_reason::reached_target_uarch_cycle;
 }
 
 // Explicit instantiation for uarch_state_access

@@ -21,14 +21,14 @@ namespace cartesi {
 
 /// \brief Microarchitecture step execution status code
 enum class UArchStepStatus : int {
-    Success,       // one micro instruction was executed successfully
-    CycleOverflow, // already at fixed point: uarch cycle has reached its maximum value
-    UArchHalted    // already at fixed point: microarchitecture is halted
+    Success,            // one micro instruction was executed successfully
+    UArchCycleOverflow, // uarch cycle reached or was already at its maximum value
+    UArchHalted         // microarchitecture reached or was already at its halted fixed point
 };
 
 /// \brief Advances the microarchitecture by one micro cycle
 /// \tparam Microarchitecture state accessor class
-/// \returns Returns a status code indicating whether and how the microarchitecure was advanced
+/// \returns Returns a status code indicating whether and how the microarchitecture was advanced
 /// \details The microarchitecture will not advance if it is at a fixed point
 template <typename STATE_ACCESS>
 UArchStepStatus uarch_step(STATE_ACCESS a);

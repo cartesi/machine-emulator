@@ -127,6 +127,7 @@ enum class machine_reg : uint64_t {
     iflags_Y = static_cast<uint64_t>(shadow_registers_what::iflags_Y),
     iflags_H = static_cast<uint64_t>(shadow_registers_what::iflags_H),
     iunrep = static_cast<uint64_t>(shadow_registers_what::iunrep),
+    imcyclemax = static_cast<uint64_t>(shadow_registers_what::imcyclemax),
     clint_mtimecmp = static_cast<uint64_t>(shadow_registers_what::clint_mtimecmp),
     plic_girqpend = static_cast<uint64_t>(shadow_registers_what::plic_girqpend),
     plic_girqsrvd = static_cast<uint64_t>(shadow_registers_what::plic_girqsrvd),
@@ -138,7 +139,7 @@ enum class machine_reg : uint64_t {
     first_ = x0,
     last_ = htif_iyield,
 
-    uarch_halt_flag = static_cast<uint64_t>(shadow_uarch_state_what::uarch_halt_flag),
+    uarch_halt = static_cast<uint64_t>(shadow_uarch_state_what::uarch_halt),
     uarch_cycle = static_cast<uint64_t>(shadow_uarch_state_what::uarch_cycle),
     uarch_pc = static_cast<uint64_t>(shadow_uarch_state_what::uarch_pc),
     uarch_x0 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x0),
@@ -173,7 +174,7 @@ enum class machine_reg : uint64_t {
     uarch_x29 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x29),
     uarch_x30 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x30),
     uarch_x31 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x31),
-    uarch_first_ = uarch_halt_flag,
+    uarch_first_ = uarch_halt,
     uarch_last_ = uarch_x31,
 
     // Something unknown

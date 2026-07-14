@@ -899,7 +899,7 @@ bool jsonrpc_machine::do_verify_hash_tree() const {
 }
 
 uarch_interpreter_break_reason jsonrpc_machine::do_run_uarch(uint64_t uarch_cycle_end) {
-    uarch_interpreter_break_reason result = uarch_interpreter_break_reason::reached_target_cycle;
+    uarch_interpreter_break_reason result = uarch_interpreter_break_reason::reached_target_uarch_cycle;
     request("machine.run_uarch", std::tie(uarch_cycle_end), result);
     return result;
 }

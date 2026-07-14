@@ -6359,6 +6359,11 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
     return execute_status::success;
 }
 
+interpreter_break_reason iflags_H_to_interpreter_break_reason(uint64_t iflags_H) {
+    return iflags_H == IFLAGS_H_MCYCLE_OVERFLOW ? interpreter_break_reason::mcycle_overflow :
+                                                  interpreter_break_reason::halted;
+}
+
 template <typename STATE_ACCESS>
 interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
@@ -6366,10 +6371,24 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
     static_assert(is_an_i_accept_scoped_note_v<STATE_ACCESS>, "not an i_accept_scoped_notes");
 
     const uint64_t mcycle = a.read_mcycle();
+    const uint64_t imcyclemax = a.read_imcyclemax();
 
-    // If the cpu is halted, we are done
-    if (a.read_iflags_H() != 0) {
-        return interpreter_break_reason::halted;
+    // If we reached the requested target, there is no transition to perform.
+    if (mcycle >= mcycle_end) {
+        return interpreter_break_reason::reached_target_mcycle;
+    }
+
+    // If the cpu is halted, return the reason persisted in the halt flag.
+    const uint64_t iflags_H = a.read_iflags_H();
+    if (iflags_H != 0) {
+        return iflags_H_to_interpreter_break_reason(iflags_H);
+    }
+
+    // The mcycle limit is proof-visible and inclusive. A machine at or beyond it overflows
+    // on the next execution attempt, including after an external register write.
+    if (mcycle >= imcyclemax) {
+        a.write_iflags_H(IFLAGS_H_MCYCLE_OVERFLOW);
+        return interpreter_break_reason::mcycle_overflow;
     }
 
     // If the cpu has yielded manually, we are done
@@ -6377,21 +6396,23 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
         return interpreter_break_reason::yielded_manually;
     }
 
-    // If we reached the target mcycle, we are done
-    if (mcycle >= mcycle_end) {
-        return interpreter_break_reason::reached_target_mcycle;
-    }
+    const uint64_t effective_mcycle_end = std::min(mcycle_end, imcyclemax);
 
     // Just reset the automatic yield flag and continue
     a.write_iflags_X(0);
 
     // Run the interpreter loop,
     // the loop is outlined in a dedicated function so the compiler can optimize it better
-    const execute_status status = interpret_loop(a, mcycle_end, mcycle);
+    const execute_status status = interpret_loop(a, effective_mcycle_end, mcycle);
 
     // Detect and return the reason for stopping the interpreter loop
-    if (a.read_iflags_H() != 0) {
-        return interpreter_break_reason::halted;
+    if (a.read_mcycle() >= imcyclemax) {
+        a.write_iflags_H(IFLAGS_H_MCYCLE_OVERFLOW);
+        return interpreter_break_reason::mcycle_overflow;
+    }
+    const uint64_t final_iflags_H = a.read_iflags_H();
+    if (final_iflags_H != 0) {
+        return iflags_H_to_interpreter_break_reason(final_iflags_H);
     }
     if (a.read_iflags_Y() != 0) {
         return interpreter_break_reason::yielded_manually;
@@ -6409,7 +6430,7 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
         return interpreter_break_reason::console_input;
     }
     // Else, reached mcycle_end
-    assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
+    assert(a.read_mcycle() == effective_mcycle_end); // LCOV_EXCL_LINE
     return interpreter_break_reason::reached_target_mcycle;
 }
 

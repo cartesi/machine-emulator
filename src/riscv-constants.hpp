@@ -425,6 +425,12 @@ enum COUNTEREN_rw_masks : uint64_t {
     SCOUNTEREN_RW_MASK = MCOUNTEREN_RW_MASK
 };
 
+/// \brief Main machine halt flag values
+enum IFLAGS_H_constants : uint64_t {
+    IFLAGS_H_HALTED = UINT64_C(1),
+    IFLAGS_H_MCYCLE_OVERFLOW = UINT64_C(3),
+};
+
 /// \brief Initial values for Cartesi machines
 enum CARTESI_init : uint64_t {
     // The machines starts executing instructions from RAM start by default,
@@ -464,6 +470,7 @@ enum CARTESI_init : uint64_t {
     IFLAGS_Y_INIT = UINT64_C(0),                                              ///< Initial value for iflags_Y
     IFLAGS_H_INIT = UINT64_C(0),                                              ///< Initial value for iflags_H
     IUNREP_INIT = UINT64_C(0),                                                ///< Initial value for iunrep
+    IMCYCLEMAX_INIT = UINT64_MAX,                                             ///< Initial maximum mcycle
     MTIMECMP_INIT = UINT64_C(0),                                              ///< Initial value for mtimecmp
     GIRQPEND_INIT = UINT64_C(0),                                              ///< Initial value for girqpend
     GIRQSRVD_INIT = UINT64_C(0),                                              ///< Initial value for girqsrvd
@@ -474,12 +481,8 @@ enum CARTESI_init : uint64_t {
     IHALT_INIT = HTIF_HALT_CMD_HALT_MASK,                                     ///< Initial value for ihalt
     ICONSOLE_INIT = HTIF_CONSOLE_CMD_PUTCHAR_MASK,                            ///< Initial value for iconsole
     IYIELD_INIT = HTIF_YIELD_CMD_MANUAL_MASK | HTIF_YIELD_CMD_AUTOMATIC_MASK, ///< Initial value for iyield
-    UARCH_HALT_FLAG_INIT = UINT64_C(0), ///< Initial value for microarchitecture halt flag
-    UARCH_X_INIT = UINT64_C(0),         ///< Initial value for microarchitecture general purpose register x
-    UARCH_PC_INIT = AR_UARCH_RAM_START, ///< Initial value for microarchitecture pc
-    UARCH_CYCLE_INIT = UINT64_C(0),     ///< Initial value for microarchitecture cycle
-    MHARTID_INIT = UINT64_C(0),         ///< Initial mhartid
-    FDTADDR_INIT = AR_DTB_START,        ///< Initial FDT address
+    MHARTID_INIT = UINT64_C(0),                                               ///< Initial mhartid
+    FDTADDR_INIT = AR_DTB_START,                                              ///< Initial FDT address
 
     // Registers
     REG_X0 = UINT64_C(0), //< zero - hardwired zero

@@ -374,6 +374,14 @@ private:
         m_s.shadow.registers.iunrep = val;
     }
 
+    uint64_t do_read_imcyclemax() const {
+        return m_s.shadow.registers.imcyclemax;
+    }
+
+    void do_write_imcyclemax(uint64_t val) const {
+        m_s.shadow.registers.imcyclemax = val;
+    }
+
     uint64_t do_read_clint_mtimecmp() const {
         return m_s.shadow.registers.clint.mtimecmp;
     }

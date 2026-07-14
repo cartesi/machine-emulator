@@ -284,6 +284,8 @@ public:
     DEFINE_SA_WRITE(iflags_H)
     DEFINE_SA_READ(iunrep)
     DEFINE_SA_WRITE(iunrep)
+    DEFINE_SA_READ(imcyclemax)
+    DEFINE_SA_WRITE(imcyclemax)
     DEFINE_SA_READ(clint_mtimecmp)
     DEFINE_SA_WRITE(clint_mtimecmp)
     DEFINE_SA_READ(plic_girqpend)

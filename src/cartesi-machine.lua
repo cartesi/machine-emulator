@@ -2828,7 +2828,7 @@ end
 -- their running global indices. Otherwise start empty at genesis. The seed frontier produces the
 -- end-of-epoch proofs, and a copy tracks the running per-input root check.
 if cmio_advance then
-    local depth = cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT
+    local depth = cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
     if cmio_advance.last_output_proof then
         local proof = read_proof(cmio_advance.last_output_proof, cmio_advance.format)
         assertf(
@@ -2936,12 +2936,12 @@ while math.ult(machine:read_reg("mcycle"), max_mcycle) do
                 for uarch_cycle = 1, math.maxinteger do
                     local break_reason = machine:run_uarch(uarch_cycle)
                     print_uarch_root_hash(machine, current_mcycle + step - 1, uarch_cycle)
-                    if machine:read_reg("uarch_halt_flag") ~= 0 then
+                    if machine:read_reg("uarch_halt") ~= 0 then
                         machine:reset_uarch()
                         print_root_hash(machine)
                         break
                     end
-                    assert(break_reason == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
+                    assert(break_reason == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE)
                 end
                 if
                     machine:read_reg("iflags_H") ~= 0

@@ -20,13 +20,9 @@
 #include <cstdint>
 
 #include "machine-hash.hpp"
+#include "rollup-constants.hpp"
 
 namespace cartesi {
-
-/// \brief cmio constants
-enum cmio_constants {
-    CMIO_LOG2_MAX_OUTPUT_COUNT = 63, ///< Height of the cmio outputs Merkle tree (capacity 2^63 outputs)
-};
 
 /// \brief Sends cmio response
 /// \tparam STATE_ACCESS State accessor type

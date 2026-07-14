@@ -37,7 +37,6 @@ extern "C" {
 #endif
 
 static const uint64_t CM_MCYCLE_MAX = -1ULL;
-static const uint64_t CM_UARCH_CYCLE_MAX = 1ULL << 20;
 
 #define CM_DTB_BOOTARGS_CONSOLE_PART "quiet earlycon=sbi console=hvc0 "
 #define CM_DTB_BOOTARGS_UIO_PART "uio_pdrv_genirq.of_id=generic-uio "
@@ -56,12 +55,21 @@ typedef enum cm_constant {
     CM_HASH_TREE_LOG2_WORD_SIZE = 5,
     CM_HASH_TREE_LOG2_PAGE_SIZE = 12,
     CM_HASH_TREE_LOG2_ROOT_SIZE = 64,
-    CM_CMIO_LOG2_MAX_OUTPUT_COUNT = 63, ///< Height of the cmio outputs Merkle tree (capacity 2^63 outputs)
-    CM_FLASH_DRIVE_MAX = 8,             ///< Maximum number of flash drives
-    CM_NVRAM_MAX = 8,                   ///< Maximum number of NVRAMs
-    CM_MEMORY_RANGE_LABEL_MAX = 31,     ///< Maximum length of a memory range user label (DT alias constraint)
-    CM_RTC_FREQ_DIV = 8192,             ///< mtime increments once per this many mcycle increments
+    CM_ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = 48,
+    CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = 20,
+    CM_ROLLUP_LOG2_MAX_OUTPUT_COUNT = 63,
+    CM_ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH = 24,
+    CM_IFLAGS_H_HALTED = 1,
+    CM_IFLAGS_H_MCYCLE_OVERFLOW = 3,
+    CM_UARCH_HALT_HALTED = 1,
+    CM_UARCH_HALT_CYCLE_OVERFLOW = 3,
+    CM_FLASH_DRIVE_MAX = 8,         ///< Maximum number of flash drives
+    CM_NVRAM_MAX = 8,               ///< Maximum number of NVRAMs
+    CM_MEMORY_RANGE_LABEL_MAX = 31, ///< Maximum length of a memory range user label (DT alias constraint)
+    CM_RTC_FREQ_DIV = 8192,         ///< mtime increments once per this many mcycle increments
 } cm_constant;
+
+static const uint64_t CM_UARCH_CYCLE_MAX = (1ULL << CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - 1;
 
 /// \brief Physical memory addresses (only the most useful are exposed in the API).
 typedef enum cm_pmas_constant {
@@ -143,13 +151,14 @@ typedef enum cm_break_reason {
     CM_BREAK_REASON_REACHED_TARGET_MCYCLE,
     CM_BREAK_REASON_CONSOLE_OUTPUT,
     CM_BREAK_REASON_CONSOLE_INPUT,
+    CM_BREAK_REASON_MCYCLE_OVERFLOW,
 } cm_break_reason;
 
 /// \brief Reasons for the machine to break from call to cm_run_uarch.
 typedef enum cm_uarch_break_reason {
-    CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
+    CM_UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE,
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
-    CM_UARCH_BREAK_REASON_CYCLE_OVERFLOW,
+    CM_UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW,
     CM_UARCH_BREAK_REASON_FAILED,
 } cm_uarch_break_reason;
 
@@ -311,6 +320,7 @@ typedef enum cm_reg {
     CM_REG_IFLAGS_Y,
     CM_REG_IFLAGS_H,
     CM_REG_IUNREP,
+    CM_REG_IMCYCLEMAX,
     // Device registers
     CM_REG_CLINT_MTIMECMP,
     CM_REG_PLIC_GIRQPEND,
@@ -355,7 +365,7 @@ typedef enum cm_reg {
     CM_REG_UARCH_X31,
     CM_REG_UARCH_PC,
     CM_REG_UARCH_CYCLE,
-    CM_REG_UARCH_HALT_FLAG,
+    CM_REG_UARCH_HALT,
     // Views of registers
     CM_REG_HTIF_TOHOST_DEV,
     CM_REG_HTIF_TOHOST_CMD,
@@ -368,7 +378,7 @@ typedef enum cm_reg {
     // Enumeration helpers
     CM_REG_UNKNOWN_,
     CM_REG_FIRST_ = CM_REG_X0,
-    CM_REG_LAST_ = CM_REG_UARCH_HALT_FLAG,
+    CM_REG_LAST_ = CM_REG_UARCH_HALT,
 } cm_reg;
 
 /// \brief Hash function types.
@@ -816,8 +826,12 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// \detail The first hash added to "hashes" is the root hash after (\p mcycle_period - \p mcycle_phase)
 /// machine cycles (if the function managed to get that far before returning).
 ///
-/// If "break_reason" is "yielded_manually", "halted", or if mcycle reaches CM_MCYCLE_MAX (maximum mcycle value),
-/// this means that execution stopped at a fixed point.
+/// If \p mcycle_end equals the current mcycle, no transition is requested, no root hash is collected, and
+/// "break_reason" is "reached_target_mcycle", regardless of whether the machine is already at a fixed point.
+/// If \p mcycle_end is greater than the current mcycle and the machine is already at a fixed point, the machine
+/// remains unchanged, "break_reason" reports that fixed point, and its root hash is collected.
+///
+/// If "break_reason" is "yielded_manually", "halted", or "mcycle_overflow", execution stopped at a fixed point.
 ///
 /// If execution stopped on a manual yield whose reason is rx-rejected, the root hash collected at the yield
 /// and the padding that follows are substituted by the recorded revert root hash, which is the root hash
@@ -854,10 +868,10 @@ CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_b
 /// If greater than 0, it collects subtree root hashes for 2^log2_bundle_uarch_cycle_count root hashes.
 /// \param revert_uarch_tail Optional JSON array (of hashes as base64-encoded strings) with the root hashes
 /// after each uarch cycle of the period of the machine the recorded revert root hash reverts to, the last
-/// entry being the revert root hash itself (can be NULL).
+/// two entries being the fixed-point hash and the revert root hash after reset (can be NULL).
 /// It is obtained by calling this function with no bundling on that machine, while it waits for a response.
-/// Required unless the machine starts at a fixed point other than a rejected manual yield, in which case
-/// the call cannot consume it and ignores it.
+/// When \p mcycle_end is greater than the current mcycle, it is required unless the machine starts at a fixed point
+/// other than a rejected manual yield. Otherwise the call cannot consume it and ignores it.
 /// \param result Receives an JSON object as a string, guaranteed to remain valid only until
 /// the next CM_API function is called from the same thread.
 /// The field "hashes" is an array (of hashes as base64-encoded strings) with the root hashes after each uarch cycle.
@@ -865,6 +879,8 @@ CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_b
 /// (i.e., after each machine cycle).
 /// The field "break_reason" is a string with the reason why the function returned.
 /// (Set to "failed" on failure.)
+/// If \p mcycle_end equals the current mcycle, no transition is requested, no root hash is collected, and
+/// "break_reason" is "reached_target_mcycle", regardless of whether the machine is already at a fixed point.
 /// For example:
 /// ```json
 /// {
@@ -877,18 +893,18 @@ CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_b
 /// \detail The first hash added to "hashes" is the root hash after the first uarch cycle, the last is the
 /// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
 ///
-/// If \p log2_bundle_uarch_cycle_count is greater than zero, the "hashes" array contains bundles of root hashes.
+/// Each entry in the "hashes" array represents a bundle of 2^log2_bundle_uarch_cycle_count root hashes.
+/// With a log2 bundle count of zero, each bundle contains one root hash.
 /// For each reset_index value in the "reset_indices" array:
 ///   - hashes[reset_index - 1] contains a bundle representing repeated root hashes at the point where the uarch halted
 ///     just before the uarch reset.
 ///   - hashes[reset_index] contains a bundle representing repeated root hashes at the point where the uarch halted,
 ///     followed by a single root hash immediately after the uarch reset.
 ///
-/// If "break_reason" is "yielded_manually", "halted", or if mcycle reaches CM_MCYCLE_MAX (maximum mcycle value),
-/// this means that execution stopped at a fixed point.
-/// In these cases, the function will attempt to execute one additional mcycle at this fixed point,
-/// and collect the resulting root hashes as well. As a result, all root hashes collected after the next-to-last
-/// reset index correspond to this fixed point.
+/// If "break_reason" is "yielded_manually", "halted", or "mcycle_overflow", execution stopped at a fixed point. In
+/// these cases, the function will attempt to execute one additional mcycle at this fixed point, and collect the
+/// resulting root hashes as well. As a result, all root hashes collected after the next-to-last reset index correspond
+/// to this fixed point.
 ///
 /// The rejected manual yield is the exception to the paragraph above. When execution stops on a manual yield
 /// whose reason is rx-rejected, the root hash after the final uarch reset is substituted by the recorded

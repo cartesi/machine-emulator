@@ -21,7 +21,10 @@
 
 namespace cartesi {
 
-enum class uarch_interpreter_break_reason : int { reached_target_cycle, uarch_halted, cycle_overflow };
+enum class uarch_interpreter_break_reason : int { reached_target_uarch_cycle, uarch_halted, uarch_cycle_overflow };
+
+// Returns the interpreter break reason persisted in a non-zero uarch_halt value
+uarch_interpreter_break_reason uarch_halt_to_interpreter_break_reason(uint64_t uarch_halt);
 
 // Run the microarchitecture interpreter until cycle hits a target or a fixed point is reached
 template <typename STATE_ACCESS>

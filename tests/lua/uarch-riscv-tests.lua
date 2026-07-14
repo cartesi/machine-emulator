@@ -486,7 +486,7 @@ local function run_machine_writing_json_logs(machine, ctx)
     while math.ult(machine:read_reg("uarch_cycle"), max_cycle) do
         local log = machine:log_step_uarch()
         step_count = step_count + 1
-        local halted = machine:read_reg("uarch_halt_flag") ~= 0
+        local halted = machine:read_reg("uarch_halt") ~= 0
         write_log_to_file(log, out, indent + 1, halted)
         if halted then
             break
@@ -501,7 +501,7 @@ end
 local function create_json_reset_log()
     local machine <close> = build_machine()
     local test_name = "reset-uarch"
-    machine:write_reg("uarch_halt_flag", 1)
+    machine:write_reg("uarch_halt", cartesi.UARCH_HALT_HALTED)
     local initial_root_hash = machine:get_root_hash()
     local log = machine:log_reset_uarch()
     local out = create_json_log_file(test_name .. "-steps")
@@ -523,7 +523,7 @@ end
 local function create_json_reset_rejected_log()
     local machine <close> = build_machine()
     local test_name = "reset-uarch-rejected"
-    machine:write_reg("uarch_halt_flag", 1)
+    machine:write_reg("uarch_halt", cartesi.UARCH_HALT_HALTED)
     -- pretend an input was fed from a state with this root hash and later rejected
     local revert_root_hash = machine:get_root_hash()
     machine:write_revert_root_hash(revert_root_hash)
@@ -553,7 +553,7 @@ end
 local function create_json_reset_accepted_log()
     local machine <close> = build_machine()
     local test_name = "reset-uarch-accepted"
-    machine:write_reg("uarch_halt_flag", 1)
+    machine:write_reg("uarch_halt", cartesi.UARCH_HALT_HALTED)
     -- pretend an input was fed and later accepted, so the reset must not revert
     machine:write_reg("iflags_Y", 1)
     machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
@@ -582,8 +582,11 @@ local function create_json_send_cmio_response_log()
     local machine <close> = build_machine()
     local test_name = "send-cmio-response"
     local response_data = "This is a test cmio response"
-    local reason = 1
+    local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
     machine:write_reg("iflags_Y", 1)
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
     local initial_root_hash = machine:get_root_hash()
     local log = machine:log_send_cmio_response(initial_root_hash, reason, response_data)
     local out = create_json_log_file(test_name .. "-steps")

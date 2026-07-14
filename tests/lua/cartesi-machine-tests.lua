@@ -904,7 +904,7 @@ local function step(tests)
             machine:run_uarch(machine:read_reg("uarch_cycle") + uarch_cycle_increment)
             local final_uarch_cycle = machine:read_reg("uarch_cycle")
             total_uarch_cycles = total_uarch_cycles + (final_uarch_cycle - init_uarch_cycle)
-            if machine:read_reg("uarch_halt_flag") then
+            if machine:read_reg("uarch_halt") ~= 0 then
                 machine:reset_uarch()
                 if machine:read_reg("iflags_H") ~= 0 then
                     break
@@ -922,7 +922,7 @@ local function step(tests)
                 util.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle, out, 3)
                 total_uarch_cycles = total_uarch_cycles + 1
                 total_logged_steps = total_logged_steps + 1
-                if machine:read_reg("uarch_halt_flag") then
+                if machine:read_reg("uarch_halt") ~= 0 then
                     machine:reset_uarch()
                     if machine:read_reg("iflags_H") ~= 0 then
                         break

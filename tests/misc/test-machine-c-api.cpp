@@ -151,6 +151,14 @@ void test_delete(cm_machine **m) {
 
 } // namespace
 
+BOOST_AUTO_TEST_CASE_NOLINT(rollup_constants_test) {
+    BOOST_CHECK_EQUAL(CM_ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE, 48);
+    BOOST_CHECK_EQUAL(CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE, 20);
+    BOOST_CHECK_EQUAL(CM_ROLLUP_LOG2_MAX_OUTPUT_COUNT, 63);
+    BOOST_CHECK_EQUAL(CM_ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH, 24);
+    BOOST_CHECK_EQUAL(CM_UARCH_CYCLE_MAX, (UINT64_C(1) << CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - 1);
+}
+
 BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete(nullptr));
 }
@@ -810,6 +818,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_machine_test, ordinary_machine_
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
+    BOOST_REQUIRE_EQUAL(cm_write_reg(_machine, CM_REG_IMCYCLEMAX, 123), CM_ERROR_OK);
+
     cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
@@ -828,6 +838,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_CHECK_EQUAL(0, memcmp(origin_hash, restored_hash, sizeof(cm_hash)));
+
+    uint64_t restored_imcyclemax{};
+    BOOST_REQUIRE_EQUAL(cm_read_reg(restored_machine, CM_REG_IMCYCLEMAX, &restored_imcyclemax), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(restored_imcyclemax, 123);
 
     test_delete(&restored_machine);
 }
@@ -1273,6 +1287,15 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(impid, static_cast<uint64_t>(cartesi::MIMPID_INIT));
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(imcyclemax_read_write_test, ordinary_machine_fixture) {
+    uint64_t imcyclemax{};
+    BOOST_CHECK_EQUAL(cm_read_reg(_machine, CM_REG_IMCYCLEMAX, &imcyclemax), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(imcyclemax, UINT64_MAX);
+    BOOST_CHECK_EQUAL(cm_write_reg(_machine, CM_REG_IMCYCLEMAX, 123), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(cm_read_reg(_machine, CM_REG_IMCYCLEMAX, &imcyclemax), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(imcyclemax, 123);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_machine_fixture) {
@@ -1874,7 +1897,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(cycle, 0);
 
     // not halted
-    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(halt, 0);
 
@@ -1927,7 +1950,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(cycle, 3);
 
     // halted
-    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(halt, 1);
 }
@@ -2038,7 +2061,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fix
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(machine_run_uarch_null_machine_test) {
-    auto status{CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE};
+    auto status{CM_UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE};
     cm_error error_code = cm_run_uarch(nullptr, 1000, &status);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
@@ -2057,7 +2080,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_one_cycle, access_log_m
     error_code = cm_run_uarch(_machine, 1, &status);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE);
 
     // confirm uarch cycle was incremented
     error_code = cm_read_reg(_machine, CM_REG_UARCH_CYCLE, &cycle);
@@ -2076,7 +2099,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
 
     // ensure not halted
     uint64_t halt{1};
-    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 0);
@@ -2091,7 +2114,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
     error_code = cm_run_uarch(_machine, 1, &status);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
-    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE);
+    BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE);
 
     error_code = cm_read_reg(_machine, CM_REG_UARCH_CYCLE, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -2117,7 +2140,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(cycle, 3);
 
     // assert halt flag is set
-    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 1);
@@ -2135,7 +2158,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
 
     // ensure not halted
     uint64_t halt{1};
-    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 0);
@@ -2155,7 +2178,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_UARCH_HALTED);
 
     // confirm if halt flag is set
-    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 1);
@@ -2195,7 +2218,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
 
     // halt flag should be cleared
-    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 0);

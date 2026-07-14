@@ -355,6 +355,14 @@ private:
         return check_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
     }
 
+    uint64_t do_read_mcycle() const {
+        return check_read(machine_reg_address(machine_reg::mcycle), "mcycle");
+    }
+
+    void do_write_imcyclemax(uint64_t val) const {
+        check_write(machine_reg_address(machine_reg::imcyclemax), val, "imcyclemax");
+    }
+
     void do_write_htif_fromhost(uint64_t val) const {
         check_write(machine_reg_address(machine_reg::htif_fromhost), val, "htif.fromhost");
     }

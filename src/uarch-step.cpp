@@ -26,10 +26,15 @@
 #include "uarch-replay-state-access.hpp"               // IWYU pragma: keep
 #include "uarch-state-access.hpp"                      // IWYU pragma: keep
 
+#include "riscv-constants.hpp"
 #include "uarch-constants.hpp"
 #include "uarch-solidity-compat.hpp"
 
 namespace cartesi {
+
+static inline UArchStepStatus uarch_halt_to_step_status(uint64 halt) {
+    return halt == UARCH_HALT_CYCLE_OVERFLOW ? UArchStepStatus::UArchCycleOverflow : UArchStepStatus::UArchHalted;
+}
 
 // Memory read/write access
 
@@ -873,7 +878,7 @@ static inline void executeECALL(const UarchState a, uint32 insn, uint64 pc) {
     // return value is in a0 (and maybe also in a1)
     uint64 fn = readX(a, 17); // a7 contains the function number
     if (fn == UARCH_ECALL_FN_HALT) {
-        return writeHaltFlag(a, 1);
+        return writeHalt(a, UARCH_HALT_HALTED);
     }
     if (fn == UARCH_ECALL_FN_PUTCHAR) {
         uint64 c = readX(a, 10);   // a0 contains the character to print
@@ -1087,22 +1092,36 @@ static inline void executeInsn(const UarchState a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 UArchStepStatus uarch_step(const UarchState a) {
-    // This must be the first read in order to match the first log access in machine::verify_step_uarch
+    // Report existing halt fixed point
+    uint64 halt = readHalt(a);
+    if (halt != 0) {
+        return uarch_halt_to_step_status(halt);
+    }
+    // Report existing overflow fixed point if the cycle is at or beyond its limit
     uint64 cycle = readCycle(a);
-    // do not advance if cycle will overflow
     if (cycle >= UARCH_CYCLE_MAX) {
-        return UArchStepStatus::CycleOverflow;
+        writeHalt(a, UARCH_HALT_CYCLE_OVERFLOW);
+        return UArchStepStatus::UArchCycleOverflow;
     }
-    // do not advance if machine is halted
-    if (readHaltFlag(a) != 0) {
-        return UArchStepStatus::UArchHalted;
-    }
-    // execute next instruction
+    // Execute next instruction
     uint64 pc = readPc(a);
     uint32 insn = readUint32(a, pc);
     executeInsn(a, insn, pc);
     cycle = cycle + 1;
     writeCycle(a, cycle);
+    // Materialize overflow immediately when this step reaches the cycle limit
+    if (cycle >= UARCH_CYCLE_MAX) {
+        writeHalt(a, UARCH_HALT_CYCLE_OVERFLOW);
+        return UArchStepStatus::UArchCycleOverflow;
+    }
+    // ECALL is the only instruction that can halt the uarch. Overflow was handled above,
+    // so a non-zero halt value here can only report a normal halt.
+    if (insn == uint32(0x73)) {
+        halt = readHalt(a);
+        if (halt != 0) {
+            return uarch_halt_to_step_status(halt);
+        }
+    }
     return UArchStepStatus::Success;
 }
 

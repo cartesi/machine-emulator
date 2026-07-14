@@ -12,7 +12,7 @@ local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 
-local H = cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT
+local H = cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
 
 -- Independent reference for the height-H pristine-padded keccak outputs root, mirroring
 -- check_outputs_root_hash in tests/lua/cmio-test.lua. The leaves are already keccak256(output).

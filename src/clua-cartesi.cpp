@@ -33,6 +33,7 @@ extern "C" {
 #include "cm.h"
 #include "htif-constants.hpp"
 #include "riscv-constants.hpp"
+#include "rollup-constants.hpp"
 #include "uarch-constants.hpp"
 #include "uarch-pristine.hpp"
 
@@ -222,10 +223,17 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_MEMORY_RANGE_LABEL_MAX, "MEMORY_RANGE_LABEL_MAX", -1);
     clua_setintegerfield(L, CM_MCYCLE_MAX, "MCYCLE_MAX", -1);
     clua_setintegerfield(L, CM_UARCH_CYCLE_MAX, "UARCH_CYCLE_MAX", -1);
+    clua_setintegerfield(L, CM_IFLAGS_H_HALTED, "IFLAGS_H_HALTED", -1);
+    clua_setintegerfield(L, CM_IFLAGS_H_MCYCLE_OVERFLOW, "IFLAGS_H_MCYCLE_OVERFLOW", -1);
+    clua_setintegerfield(L, CM_UARCH_HALT_HALTED, "UARCH_HALT_HALTED", -1);
+    clua_setintegerfield(L, CM_UARCH_HALT_CYCLE_OVERFLOW, "UARCH_HALT_CYCLE_OVERFLOW", -1);
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_WORD_SIZE, "HASH_TREE_LOG2_WORD_SIZE", -1);
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_PAGE_SIZE, "HASH_TREE_LOG2_PAGE_SIZE", -1);
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_ROOT_SIZE, "HASH_TREE_LOG2_ROOT_SIZE", -1);
-    clua_setintegerfield(L, CM_CMIO_LOG2_MAX_OUTPUT_COUNT, "CMIO_LOG2_MAX_OUTPUT_COUNT", -1);
+    clua_setintegerfield(L, ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE, "ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE", -1);
+    clua_setintegerfield(L, ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE, "ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE", -1);
+    clua_setintegerfield(L, ROLLUP_LOG2_MAX_OUTPUT_COUNT, "ROLLUP_LOG2_MAX_OUTPUT_COUNT", -1);
+    clua_setintegerfield(L, ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH, "ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_FAILED, "BREAK_REASON_FAILED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_HALTED, "BREAK_REASON_HALTED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_MANUALLY, "BREAK_REASON_YIELDED_MANUALLY", -1);
@@ -234,9 +242,11 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_BREAK_REASON_REACHED_TARGET_MCYCLE, "BREAK_REASON_REACHED_TARGET_MCYCLE", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_CONSOLE_OUTPUT, "BREAK_REASON_CONSOLE_OUTPUT", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_CONSOLE_INPUT, "BREAK_REASON_CONSOLE_INPUT", -1);
-    clua_setintegerfield(L, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE, "UARCH_BREAK_REASON_REACHED_TARGET_CYCLE", -1);
+    clua_setintegerfield(L, CM_BREAK_REASON_MCYCLE_OVERFLOW, "BREAK_REASON_MCYCLE_OVERFLOW", -1);
+    clua_setintegerfield(L, CM_UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE,
+        "UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_UARCH_HALTED, "UARCH_BREAK_REASON_UARCH_HALTED", -1);
-    clua_setintegerfield(L, CM_UARCH_BREAK_REASON_CYCLE_OVERFLOW, "UARCH_BREAK_REASON_CYCLE_OVERFLOW", -1);
+    clua_setintegerfield(L, CM_UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW, "UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW", -1);
     clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_ANNOTATIONS, "ACCESS_LOG_TYPE_ANNOTATIONS", -1);
     clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_LARGE_DATA, "ACCESS_LOG_TYPE_LARGE_DATA", -1);
     clua_setintegerfield(L, CM_HTIF_YIELD_AUTOMATIC_REASON_PROGRESS, "HTIF_YIELD_AUTOMATIC_REASON_PROGRESS", -1);

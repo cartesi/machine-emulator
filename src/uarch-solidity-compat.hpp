@@ -46,7 +46,7 @@ using uint64 = uint64_t;
 using bytes = const unsigned char *;
 using bytes32 = const_machine_hash_view;
 
-// Wrapperfunctions used to access data from the uarch state accessor
+// Wrapper functions used to access data from the uarch state accessor
 
 template <typename UarchState>
 static inline uint64 readWord(const UarchState a, uint64 paddr) {
@@ -69,13 +69,13 @@ static inline void writeCycle(const UarchState a, uint64 val) {
 }
 
 template <typename UarchState>
-static inline uint64 readHaltFlag(const UarchState a) {
-    return a.read_uarch_halt_flag();
+static inline uint64 readHalt(const UarchState a) {
+    return a.read_uarch_halt();
 }
 
 template <typename UarchState>
-static inline void writeHaltFlag(const UarchState a, uint64 val) {
-    a.write_uarch_halt_flag(val);
+static inline void writeHalt(const UarchState a, uint64 val) {
+    a.write_uarch_halt(val);
 }
 
 template <typename UarchState>
@@ -116,6 +116,16 @@ static inline uint64 readIflagsY(State &a) {
 template <typename State>
 static inline void writeIflagsY(State &a, uint64 val) {
     a.write_iflags_Y(val);
+}
+
+template <typename State>
+static inline uint64 readMcycle(State &a) {
+    return a.read_mcycle();
+}
+
+template <typename State>
+static inline void writeImcyclemax(State &a, uint64 val) {
+    a.write_imcyclemax(val);
 }
 
 template <typename State>

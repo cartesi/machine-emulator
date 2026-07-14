@@ -22,10 +22,24 @@
 #include "address-range-constants.hpp"
 #include "address-range-defines.h"
 #include "cm.h"
-#include "machine-reg.hpp"
+#include "shadow-registers.hpp"
 #include "uarch-defines.h"
 
 namespace cartesi {
+
+/// \brief Microarchitecture halt register values
+enum UARCH_HALT_constants : uint64_t {
+    UARCH_HALT_HALTED = EXPAND_UINT64_C(UARCH_HALT_HALTED_DEF),
+    UARCH_HALT_CYCLE_OVERFLOW = EXPAND_UINT64_C(UARCH_HALT_CYCLE_OVERFLOW_DEF),
+};
+
+/// \brief Initial values for the microarchitecture
+enum UARCH_init : uint64_t {
+    UARCH_HALT_INIT = EXPAND_UINT64_C(UARCH_HALT_INIT_DEF),
+    UARCH_X_INIT = EXPAND_UINT64_C(UARCH_X_INIT_DEF),
+    UARCH_PC_INIT = EXPAND_UINT64_C(UARCH_PC_INIT_DEF),
+    UARCH_CYCLE_INIT = EXPAND_UINT64_C(UARCH_CYCLE_INIT_DEF),
+};
 
 /// \brief uarch state constants
 enum uarch_state_constants : uint64_t {
@@ -69,8 +83,9 @@ static_assert(UARCH_CYCLE_MAX == CM_UARCH_CYCLE_MAX, "CM_UARCH_CYCLE_MAX must be
 
 /// \brief Machine state addresses referenced by uarch code that is translated to Solidity
 enum uarch_machine_state_addresses : uint64_t {
-    IFLAGS_Y_ADDRESS = machine_reg_address(machine_reg::iflags_Y),       ///< Address of the iflags.Y register
-    HTIF_TOHOST_ADDRESS = machine_reg_address(machine_reg::htif_tohost), ///< Address of the htif.tohost register
+    IFLAGS_Y_ADDRESS = static_cast<uint64_t>(shadow_registers_what::iflags_Y), ///< Address of the iflags.Y register
+    HTIF_TOHOST_ADDRESS =
+        static_cast<uint64_t>(shadow_registers_what::htif_tohost), ///< Address of the htif.tohost register
 };
 
 /// \brief ecall function codes

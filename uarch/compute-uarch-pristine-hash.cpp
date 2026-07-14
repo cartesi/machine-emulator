@@ -94,7 +94,7 @@ int main(int argc, char *argv[]) try {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *shadow = reinterpret_cast<shadow_uarch_state *>(scratch.get());
     memset(scratch.get(), 0, page_size);
-    shadow->halt_flag = UARCH_HALT_FLAG_INIT;
+    shadow->halt = UARCH_HALT_INIT;
     shadow->pc = UARCH_PC_INIT;
     shadow->cycle = UARCH_CYCLE_INIT;
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {

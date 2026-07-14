@@ -35,7 +35,7 @@ namespace cartesi {
 /// \details It's stored in the processor backing file.
 struct shadow_state final {
     registers_state registers;          ///< Registers state
-    uint64_t registers_padding_[402]{}; ///< Padding to align next field to a page boundary
+    uint64_t registers_padding_[401]{}; ///< Padding to align next field to a page boundary
     machine_hash revert_root_hash{};    ///< Revert root hash
     shadow_tlb_state tlb;               ///< Shadow TLB state
     uint64_t tlb_padding_[512]{};       ///< Padding to align next field to a page boundary

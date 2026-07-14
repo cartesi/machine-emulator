@@ -184,7 +184,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 fuzz_abort("cm_verify_step_uarch failed");
             }
             uint64_t halt = 0;
-            cm_read_reg(m3, CM_REG_UARCH_HALT_FLAG, &halt);
+            cm_read_reg(m3, CM_REG_UARCH_HALT, &halt);
             if (halt) {
                 break;
             }

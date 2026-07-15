@@ -158,9 +158,8 @@ end
 -- player's scope, and sending the value back. The last request is always for the result, whose
 -- handler marks the player done, so the loop exits after that reply. Then it shuts down every
 -- machine and fork it still holds.
-local function run(player)
-    local address = assert(arg[2], "missing referee address")
-    local host, port = address:match("^(.-):(%d+)$")
+local function run(player, server_address)
+    local host, port = server_address:match("^(.-):(%d+)$")
     player.connection = assert(socket.connect(host, tonumber(port)))
     repeat
         local request = receive(player)
@@ -284,12 +283,11 @@ local function wait_for_log(player, branch, ...)
 end
 
 -- Waits for both players to connect, collects their commitments, and announces them. It binds the
--- listen address, accepts the two players in turn, numbering them by connection order, and asks both
+-- server address, accepts the two players in turn, numbering them by connection order, and asks both
 -- for their final state hash at once so the run-to-halt commitments overlap. The hash needs no
 -- checking here, since a wrong hash can win neither the dispute nor the output phase.
-local function wait_for_commitments()
-    local address = assert(arg[2], "missing listen address")
-    local host, port = address:match("^(.-):(%d+)$")
+local function wait_for_commitments(server_address)
+    local host, port = server_address:match("^(.-):(%d+)$")
     local listener = assert(socket.bind(host, tonumber(port)))
     -- The connection-to-index map lets receive_any link each ready connection back to its player.
     local players = { index_of = {} }

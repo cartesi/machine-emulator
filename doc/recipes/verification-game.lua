@@ -266,7 +266,7 @@ end
 -- winner's hash. Equal commitments mean no dispute, so either player's hash is the true one.
 -- docs:begin run_referee
 local function run_referee(referee, dapp_contract)
-    local players = wait_for_commitments()
+    local players = wait_for_commitments(referee.server_address)
 
     local winner = players[1]
     if players[1].final_hash ~= players[2].final_hash then
@@ -282,12 +282,12 @@ end
 -- hash of the input NVRAM holding the expression up the pristine input proof gives the root hash
 -- of the template instantiated with it, with hash_tree.get_root_hash padding the rest to match the honest
 -- player's NVRAM. Honest play starts from exactly this state, never a player-declared one.
-local function new_referee(dapp_contract, expr)
+local function new_referee(server_address, dapp_contract, expr)
     local initial_hash = hash_tree.roll_hash_up_tree(
         dapp_contract.input_proof,
         hash_tree.get_root_hash(expr .. "\n", dapp_contract.input.log2_size)
     )
-    return { initial_hash = initial_hash, run = run_referee }
+    return { server_address = server_address, initial_hash = initial_hash, run = run_referee }
 end
 
 --------------------------------------------------------------------------------
@@ -295,16 +295,17 @@ end
 --------------------------------------------------------------------------------
 
 local role = assert(arg[1], "missing role (referee, honest, or dishonest)")
+local server_address = assert(arg[2], "missing referee address")
 
 if role == "referee" then
     local dapp_contract = deploy()
-    local referee = new_referee(dapp_contract, assert(arg[3], "missing public expression"))
+    local referee = new_referee(server_address, dapp_contract, assert(arg[3], "missing public expression"))
     referee:run(dapp_contract)
 elseif role == "honest" then
     -- The one-second delay is the demo-ordering device from prove_output: it holds the honest
     -- result back so the dishonest player's invalid result is rejected first in the referee's log.
     local player = new_player(new_remote_machine(assert(arg[3], "missing expression")), 1)
-    player:run()
+    player:run(server_address)
 elseif role == "dishonest" then
     local player = new_player(
         dishonest.new_composite_machine(
@@ -314,7 +315,7 @@ elseif role == "dishonest" then
             new_remote_machine(assert(arg[6], "missing cheat expression"))
         )
     )
-    player:run()
+    player:run(server_address)
 else
     error("unknown role: " .. role)
 end

@@ -58,10 +58,12 @@ local TEMPLATE = "rolling-calculator-template"
 -- Every input is limited to this many mcycles, matching Dave's LOG2_BARCH_SPAN_TO_INPUT.
 -- The uarch cycles per instruction are the emulator's own UARCH_CYCLE_MAX, matching its
 -- LOG2_UARCH_SPAN_TO_BARCH.
-local MCYCLES_PER_INPUT = 1 << 48
+local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 
 -- Every epoch is limited to this many inputs. The input bisection ranges over all of them,
--- however many the epoch actually received.
+-- however many the epoch actually received. A real epoch can take up to
+-- 2^ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH inputs. This demonstration uses a smaller limit
+-- to keep the bisection narration short.
 local INPUTS_PER_EPOCH = 1 << 16
 
 local NOTICE = "Notice(bytes payload)"
@@ -199,7 +201,8 @@ local function commit_bisection(player, branch, level, target)
     local agreed = player.agreed
     if level == "input" then
         local machine = assert(agreed.machine:fork_server())
-        for index = agreed.input_index + 1, target do
+        -- Boundaries past the last input all repeat the same fixed point, with nothing to advance.
+        for index = agreed.input_index + 1, math.min(target, #player.inputs) do
             player:advance(machine, player.inputs[index])
         end
         player.tentative = { machine = machine, input_index = target }
@@ -416,7 +419,7 @@ end
 -- any dispute over them to name the honest winner, then posts the result that verifies against
 -- the winner's hash. Equal commitments mean no dispute, so either player's hash is the true one.
 local function run_referee(referee, dapp_contract)
-    local players = wait_for_commitments()
+    local players = wait_for_commitments(referee.server_address)
 
     local winner = players[1]
     if players[1].final_hash ~= players[2].final_hash then
@@ -436,9 +439,9 @@ end
 -- Builds a referee for the epoch. The rolling template is stored ready to take its first input,
 -- so the agreed starting state hash is its own root hash, what a freshly deployed application
 -- looks like to the blockchain.
-local function new_referee()
+local function new_referee(server_address)
     local template = cartesi.machine(TEMPLATE)
-    return { initial_hash = template:get_root_hash(), run = run_referee }
+    return { server_address = server_address, initial_hash = template:get_root_hash(), run = run_referee }
 end
 
 --------------------------------------------------------------------------------
@@ -446,16 +449,17 @@ end
 --------------------------------------------------------------------------------
 
 local role = assert(arg[1], "missing role (referee, honest, or dishonest)")
+local server_address = assert(arg[2], "missing referee address")
 
 if role == "referee" then
     local dapp_contract = deploy(read_inputs(3))
-    local referee = new_referee()
+    local referee = new_referee(server_address)
     referee:run(dapp_contract)
 elseif role == "honest" then
     -- The one-second delay is the demo-ordering device from prove_output: it holds the honest
     -- result back so the dishonest player's invalid result is rejected first in the referee's log.
     local player = new_player(new_remote_machine(), read_inputs(3), 1)
-    player:run()
+    player:run(server_address)
 elseif role == "dishonest" then
     local cheat = assert(arg[3], "missing cheat mode (wrong-input, no-rollback, mid-processing, or extra-input)")
     local player
@@ -476,8 +480,11 @@ elseif role == "dishonest" then
         -- The kept machine is parked on its rejected yield, a fixed point no input can enter,
         -- so the feed is skipped for it.
         function player.advance(self, machine, data, sink)
+            if not data then
+                return
+            end
             local _, request_reason = machine:receive_cmio_request()
-            if data and request_reason ~= cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+            if request_reason ~= cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
                 return request_reason
             end
             return advance(self, machine, data, sink)
@@ -507,7 +514,7 @@ elseif role == "dishonest" then
     else
         error("unknown cheat mode: " .. cheat)
     end
-    player:run()
+    player:run(server_address)
 else
     error("unknown role: " .. role)
 end

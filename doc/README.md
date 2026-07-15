@@ -1980,7 +1980,7 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
-    --cmio-advance-state=input_index_begin:0,input_index_end:3,hashes \
+    --cmio-advance-state=input_index_begin:0,input_index_end:3,print_input_state_hashes \
     --final-hash=epoch-0-state-hash.bin \
     -- /mnt/calc/calc.sh
 ```
@@ -2093,8 +2093,8 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-create \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:3,input_index_end:6,last_output_proof:output-1-input-2-proof.lua,hashes \
-    --cmio-inspect-state=query:query.bin,hashes
+    --cmio-advance-state=input_index_begin:3,input_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
+    --cmio-inspect-state=query:query.bin,print_query_state_hashes
 ```
 
 The command-line option `--no-remote-create` reuses the machine where
@@ -2320,7 +2320,7 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8083 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,hashes \
+    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,print_input_state_hashes \
     --load="rolling-calculator-template"
 ```
 
@@ -2529,12 +2529,13 @@ cartesi-machine \
     --append-bootargs="quiet earlycon=sbi console=hvc0 uio_pdrv_genirq.of_id=generic-uio root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
 ```
 
-The command-line option `--periodic-hashes=<period>[,start:<mcycle>]`
-causes the command-line utility to periodically obtain and print the
-state hash. The `<period>` argument gives the distance between hashes in
-cycles. The optional `start:<mcycle>` sub-key gives the starting cycle
-for the periodic hashes. (Both `--initial-hash` and `--final-hash` are
-implied by this option.)
+The command-line option
+`--print-mcycle-root-hashes=<period>[,start:<mcycle>]` causes the
+command-line utility to periodically obtain and print the state hash.
+The `<period>` argument gives the distance between hashes in cycles. The
+optional `start:<mcycle>` sub-key gives the starting cycle for the
+hashes. (Both `--initial-hash` and `--final-hash` are implied by this
+option.)
 
 For example, to see the last 10 state hashes from the calculator machine
 computation, run the command
@@ -2546,7 +2547,7 @@ cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="label:input,data_filename:input.raw" \
-    --periodic-hashes=1,start:62993888
+    --print-mcycle-root-hashes=1,start:62993888
 ```
 
 The output is
@@ -2564,6 +2565,7 @@ Loading machine: please wait
 62993895: 83bd573d53e4d9fd8491756a8b5248a63650ec64267a07f3d5c2c16a96a1abba
 62993896: 0b7b768d5e57ad56d5a18b1ab9d641c32248a7897a024802a4a480b1103ef52a
 62993897: e7c8af6da3c38dbdfb842733ad2aa841011f87a9b38abbb67aad03ebe6607135
+62993898: 14f68624c8d941821992ec6e597c759f54f159453f5b0244ca34af1bb6a9733f
 
 Halted
 Cycles: 62993898
@@ -6282,8 +6284,8 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8086 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:0,input_index_end:2,hashes \
-    --cmio-inspect-state=hashes \
+    --cmio-advance-state=input_index_begin:0,input_index_end:2,print_input_state_hashes \
+    --cmio-inspect-state=print_query_state_hashes \
     --final-hash \
     -- /home/dapp/puppet
 ```
@@ -7964,9 +7966,12 @@ The function `frontier_push_back` folds one new output leaf into the
 frontier:
 
 ``` lua
-local function frontier_push_back(frontier, hash)
+local function frontier_push_back(frontier, hash, log2_hash_size)
+    local level = (log2_hash_size or 0) + 1
+    for below = 1, level - 1 do
+        assert(not frontier[below], "frontier is not aligned to the hash size")
+    end
     local right = hash
-    local level = 1
     while frontier[level] do
         right = cartesi.keccak256(frontier[level], right)
         frontier[level] = false
@@ -7990,16 +7995,22 @@ The function `frontier_get_root_hash` returns the root hash of the tree,
 padded with zero leaves to completion:
 
 ``` lua
-local function frontier_get_root_hash(frontier)
-    local root = pristine_leaf
-    local pristine = pristine_leaf
-    for level = 1, #frontier do
+local function frontier_get_root_hash(frontier, pad, log2_pad_size)
+    local height = #frontier - 1
+    if frontier[height + 1] then return frontier[height + 1] end
+    pad = pad or pristine_leaf
+    local root = pad
+    for level = 1, log2_pad_size or 0 do
+        assert(not frontier[level], "frontier is not aligned to the pad size")
+    end
+    -- pad doubles into the all-pad subtree of each level, the right sibling of every empty one
+    for level = (log2_pad_size or 0) + 1, height do
         if frontier[level] then
             root = cartesi.keccak256(frontier[level], root)
         else
-            root = cartesi.keccak256(root, pristine)
+            root = cartesi.keccak256(root, pad)
         end
-        pristine = cartesi.keccak256(pristine, pristine)
+        pad = cartesi.keccak256(pad, pad)
     end
     return root
 end
@@ -8063,7 +8074,7 @@ Finally, `frontier_next_proofs` produces an epoch’s output proofs:
 
 ``` lua
 local function frontier_next_proofs(frontier, next_output_hashes)
-    local log2_max_leaves = #frontier
+    local log2_max_leaves = #frontier - 1
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
     local leaf_count = frontier_leaf_count(frontier)

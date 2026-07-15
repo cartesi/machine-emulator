@@ -31,7 +31,7 @@ RUN <<EOF
 set -e
 export DEBIAN_FRONTEND="noninteractive"
 apt-get update
-apt-get install -y ./machine-emulator-tests*.deb
+apt-get install -y lua-socket ./machine-emulator-tests*.deb
 rm -rf /var/lib/apt/lists/* machine-emulator-tests*.deb
 mkdir -p ${CARTESI_CMIO_PATH}
 chown -R cartesi:cartesi ${CARTESI_CMIO_PATH}

@@ -30,6 +30,13 @@ describe("cartesi-machine CLI", function()
     local cartesi = require("cartesi")
     local evmu = require("cartesi.evmu")
     local hash_tree = require("cartesi.hash-tree")
+    local ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+    local ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+    local ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local LOG2_MCYCLE_COMPUTATION_HASH_PERIOD = 19
+    local LOG2_EPOCH_LEAF_COUNT = ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+        + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+        - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
 
     local function zeros(n)
         return string.rep("\0", n)
@@ -859,11 +866,32 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- -------------------------------------------------------------------------
+    -- Mcycle overflow
+    --
+    -- What: A run that reaches imcyclemax stops at the overflow fixed point
+    --       instead of looping, reports the overflow banner, and exits with
+    --       failure.
+    -- How:  Store a config, rewrite its imcyclemax to a low value, and run to
+    --       the default max_mcycle so the overflow is what stops the run.
+    -- -------------------------------------------------------------------------
+    it("mcycle overflow stops the run", function()
+        local _ <close>, cfg_file = scope_temp_pathname()
+        run_ok({ "--max-mcycle=0", "--no-init-splash", "--quiet", "--store-config=" .. cfg_file })
+        local cfg_text, count = filesystem.read_file(cfg_file):gsub("imcyclemax = 0x%x+", "imcyclemax = 1000")
+        expect.equal(count, 1)
+        local _ <close>, overflow_cfg_file = filesystem.write_scope_temp_file(cfg_text)
+        local rc, _, err = run({ "--load-config=" .. overflow_cfg_file, "--no-init-splash" })
+        expect.equal(rc, 1)
+        expect.truthy(err:find("Mcycle overflow", 1, true))
+        expect.truthy(err:find("Cycles: 1000", 1, true))
+    end)
+
+    -- -------------------------------------------------------------------------
     -- Hashing and proof options
     --
-    -- What: --initial-hash, --final-hash, --periodic-hashes (positional period
+    -- What: --initial-hash, --final-hash, --print-mcycle-root-hashes (positional period
     --       with and without a start: sub-key), --initial-proof, --final-proof,
-    --       --dense-uarch-hashes, and --dump-memory-ranges.
+    --       --print-uarch-cycle-root-hashes, and --dump-memory-ranges.
     -- How:  run_ok() each flag; regex-match 64-hex-digit lines in stderr to
     --       count hash emissions; open proof output files and assert they are
     --       non-empty.  Format-specific proof assertions live in the dedicated
@@ -880,8 +908,8 @@ describe("cartesi-machine CLI", function()
         end
         expect.truthy(hash_count >= 2)
 
-        -- --periodic-hashes
-        _, err = run_ok({ "--periodic-hashes=1,start:0", "--max-mcycle=2", "--no-init-splash", "--quiet" })
+        -- --print-mcycle-root-hashes
+        _, err = run_ok({ "--print-mcycle-root-hashes=1,start:0", "--max-mcycle=2", "--no-init-splash", "--quiet" })
         hash_count = 0
         for line in err:gmatch("[^\n]+") do
             if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
@@ -890,15 +918,28 @@ describe("cartesi-machine CLI", function()
         end
         expect.truthy(hash_count >= 1)
 
-        -- --periodic-hashes=<period> bare positional form (start defaults to 0)
-        run_ok({ "--periodic-hashes=10", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        -- --print-mcycle-root-hashes=<period> bare positional form (start defaults to 0)
+        run_ok({ "--print-mcycle-root-hashes=10", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --periodic-hashes=<period>,start:<n> with start > 0: exercises the
-        -- next_hash_mcycle = periodic_hashes_start branch.
-        run_ok({ "--periodic-hashes=10,start:5", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        -- --print-mcycle-root-hashes=<period>,start:<n> with start > 0: exercises the
+        -- next_hash_mcycle = mcycle_root_hashes_start branch.
+        run_ok({ "--print-mcycle-root-hashes=10,start:5", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --dense-uarch-hashes=N single-argument form
-        run_ok({ "--dense-uarch-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        -- --print-mcycle-root-hashes=<period>,start:<n> must run PAST start, emitting a hash at start and at
+        -- each period beyond it up to --max-mcycle (regression guard: run_to_cycle must not report a
+        -- stop at the start waypoint and leave the machine parked there).
+        _, err = run_ok({ "--print-mcycle-root-hashes=100000,start:200000", "--max-mcycle=600000", "--no-init-splash" })
+        local seen = {}
+        for line in err:gmatch("[^\n]+") do
+            local mcycle = line:match("^(%d+): [0-9a-f]+$")
+            if mcycle and #line:match("[0-9a-f]+$") == 64 then
+                seen[tonumber(mcycle)] = true
+            end
+        end
+        expect.truthy(seen[200000] and seen[300000] and seen[400000])
+
+        -- --print-uarch-cycle-root-hashes=N single-argument form
+        run_ok({ "--print-uarch-cycle-root-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
         -- --dump-memory-ranges=<dir>: writes one <start>--<length>.bin per memory range under <dir>.
         -- The CLI creates the directory; we only own the cleanup.
@@ -1312,15 +1353,15 @@ describe("cartesi-machine CLI", function()
     --
     -- What: --cmio-advance-state and --cmio-inspect-state option-string parsing,
     --       including both the key:value form and the bare --cmio-inspect-state.
-    -- How:  run_ok() with --no-rollback and --max-mcycle=0 so the option parser
+    -- How:  run_ok() with --no-revert and --max-mcycle=0 so the option parser
     --       and HTIF config check run but the guest is never booted.
     -- -------------------------------------------------------------------------
     it("cmio advance/inspect options", function()
         -- --cmio-advance-state: option parses and machine runs through check_cmio_htif_config
         run_ok({
             "--cmio-advance-state=input:inp-%i.bin,input_index_begin:0,input_index_end:0,"
-                .. "report:rep-%i-%o.bin,output:out-%i-%o.bin",
-            "--no-rollback",
+                .. "report:rep-%i-%o.bin,output:out-%i-%o.bin,print_input_state_hashes",
+            "--no-revert",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1328,8 +1369,8 @@ describe("cartesi-machine CLI", function()
 
         -- --cmio-inspect-state=<opts>
         run_ok({
-            "--cmio-inspect-state=query:q.bin,report:qrep-%o.bin",
-            "--no-rollback",
+            "--cmio-inspect-state=query:q.bin,report:qrep-%o.bin,print_query_state_hashes",
+            "--no-revert",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1338,7 +1379,7 @@ describe("cartesi-machine CLI", function()
         -- bare --cmio-inspect-state (no arguments)
         run_ok({
             "--cmio-inspect-state",
-            "--no-rollback",
+            "--no-revert",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1350,7 +1391,7 @@ describe("cartesi-machine CLI", function()
     --
     -- What: --remote-address, --remote-health-check, --remote-spawn,
     --       --remote-shutdown, --no-remote-create, --no-remote-destroy, and
-    --       --no-rollback.
+    --       --no-revert.
     -- How:  Each case spawns a real server with jsonrpc.spawn_server(), runs
     --       the CLI against it, and asserts the expected rc or config fields.
     --       --no-remote-create is verified by first creating a machine then
@@ -1423,8 +1464,8 @@ describe("cartesi-machine CLI", function()
             })
         end
 
-        -- --no-rollback parses without error
-        run_ok({ "--no-rollback", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        -- --no-revert parses without error
+        run_ok({ "--no-revert", "--max-mcycle=0", "--no-init-splash", "--quiet" })
     end)
 
     -- -------------------------------------------------------------------------
@@ -1539,9 +1580,8 @@ describe("cartesi-machine CLI", function()
     -- Error paths
     --
     -- What: Expected failure modes: malformed --port-forward, log2_size too
-    --       small for --initial-proof, --gdb conflicting with
-    --       --periodic-hashes, and --assert-rolling-template failing because
-    --       the machine is not a rolling template.
+    --       small for --initial-proof, and --assert-rolling-template failing
+    --       because the machine is not a rolling template.
     -- How:  run_fail() each case; where the CLI emits a stable stderr
     --       substring, pass it as the pattern argument.
     -- -------------------------------------------------------------------------
@@ -1562,15 +1602,6 @@ describe("cartesi-machine CLI", function()
             "--max-mcycle=0",
         }, min_msg)
 
-        -- --gdb conflicts with --periodic-hashes
-        run_fail({
-            "--gdb=127.0.0.1:19234",
-            "--periodic-hashes=100,start:0",
-            "--max-mcycle=0",
-            "--no-init-splash",
-            "--quiet",
-        }, "not supported when debugging")
-
         -- --assert-rolling-template: exits non-zero when machine is not a rolling template
         run_fail({ "--assert-rolling-template", "--max-mcycle=0", "--no-init-splash", "--quiet" }, nil)
 
@@ -1589,17 +1620,8 @@ describe("cartesi-machine CLI", function()
         run_fail({ "--remote-forkXXX" }, nil)
         run_fail({ "--store-configXXX" }, nil)
 
-        -- --gdb= (empty value) is rejected; bare --gdb combined with --periodic-hashes
-        -- exercises the default-address branch and trips the "not supported when
-        -- debugging" assertion before the stub ever listens.
+        -- --gdb= (empty value) is rejected as an invalid address
         run_fail({ "--gdb=" }, nil)
-        run_fail({
-            "--gdb",
-            "--periodic-hashes=100,start:0",
-            "--max-mcycle=0",
-            "--no-init-splash",
-            "--quiet",
-        }, "not supported when debugging")
     end)
 
     -- -------------------------------------------------------------------------
@@ -1625,7 +1647,7 @@ describe("cartesi-machine CLI", function()
     -- Step-logging and uarch options
     --
     -- What: --log-step, --log-step-uarch, --log-reset-uarch, --max-uarch-cycle,
-    --       --auto-reset-uarch, and --dense-uarch-hashes (positional count with
+    --       --auto-reset-uarch, and --print-uarch-cycle-root-hashes (positional count with
     --       a start: sub-key).
     -- How:  run_ok() each flag; for --log-step also open the output file and
     --       assert it is non-empty to confirm the log was written.
@@ -1668,8 +1690,8 @@ describe("cartesi-machine CLI", function()
         -- --auto-reset-uarch
         run_ok({ "--auto-reset-uarch", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --dense-uarch-hashes=<count>,start:<n>
-        run_ok({ "--dense-uarch-hashes=1,start:0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        -- --print-uarch-cycle-root-hashes=<count>,start:<n>
+        run_ok({ "--print-uarch-cycle-root-hashes=1,start:0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
     end)
 
     -- -------------------------------------------------------------------------
@@ -1806,7 +1828,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-outh-%i.bin,output_hashes_root_hash_proof:",
             "--cmio-inspect-state=query:" .. prefix .. "-query.bin," .. "report:" .. prefix .. "-qrep-%o.bin",
-            "--no-rollback",
+            "--no-revert",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -1887,7 +1909,7 @@ describe("cartesi-machine CLI", function()
                 .. "output_proof:"
                 .. prefix
                 .. "-lua-%o-%i.lua",
-            "--no-rollback",
+            "--no-revert",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -1917,7 +1939,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-json-%o-%i.lua,"
                 .. "format:json",
-            "--no-rollback",
+            "--no-revert",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -1983,7 +2005,7 @@ describe("cartesi-machine CLI", function()
                 .. "output_hashes_root_hash:"
                 .. prefix
                 .. "-oh-%i.bin,output_hashes_root_hash_proof:",
-            "--no-rollback",
+            "--no-revert",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -2002,15 +2024,15 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- -------------------------------------------------------------------------
-    -- Rollback flow: snapshot / commit / rollback via remote server
+    -- Revert flow: snapshot / commit / revert via remote server
     --
-    -- What: The do_snapshot, do_commit, and do_rollback branches of the CLI's
-    --       main loop, exercised when a remote server is available.
+    -- What: The snapshot, commit, and revert branches of the CLI's epoch
+    --       driver, exercised when a remote server is available.
     -- How:  Spawn a JSON-RPC server; feed three inputs where
     --       ioctl-echo-loop --reject=1 rejects the middle input, so input 1
-    --       takes the rollback path while inputs 0 and 2 take snapshot + commit.
+    --       takes the revert path while inputs 0 and 2 take snapshot + commit.
     -- -------------------------------------------------------------------------
-    it("rollup rollback flow", function()
+    it("rollup revert flow", function()
         local jsonrpc = require("cartesi.jsonrpc")
         local server <close>, address = jsonrpc.spawn_server()
         server:set_cleanup_call(jsonrpc.NOTHING)
@@ -2042,7 +2064,7 @@ describe("cartesi-machine CLI", function()
         filesystem.write_file(prefix .. "-inpr-1.bin", encode_advance(1, "reject-me"))
         filesystem.write_file(prefix .. "-inpr-2.bin", encode_advance(2, "also-ok"))
 
-        -- ioctl-echo-loop --reject=1 rejects input 1, exercising do_rollback; inputs 0 and 2
+        -- ioctl-echo-loop --reject=1 rejects input 1, exercising revert; inputs 0 and 2
         -- exercise do_snapshot + do_commit. A rejected input's outputs go to rejected_output and
         -- do not advance the global output index, so input 2 continues at index 2.
         run_ok({
@@ -2106,6 +2128,674 @@ describe("cartesi-machine CLI", function()
             expect.equal(proof.root_hash, final_root)
             hash_tree.verify_slice(proof)
         end
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Computation hash across an epoch with a reject
+    --
+    -- What: mcycle_computation_hash commits to the epoch's history: a Merkle tree over
+    --       the state hashes sampled every 2^log2_mcycle_computation_hash_period mcycles,
+    --       each input owning the number of mcycles specified by
+    --       ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE, counted from the state that received it,
+    --       leaves past a stop repeating the stopped
+    --       state's hash (the reverted state hash for a reject), and leaves
+    --       past the last input repeating the last such hash.
+    -- How:  Advance three inputs where ioctl-echo-loop --reject=1 rejects the
+    --       middle one, on a remote server, which reverts require.
+    --       mcycle_computation_hash_leaves prints each leaf, and the
+    --       print_input_state_hashes sub-key
+    --       prints each input's boundary state. Rebuild the full epoch tree from
+    --       the printed leaves and compare it against the mcycle_computation_hash file,
+    --       and check the rejected input's last leaf is the boundary hash it
+    --       reverted to. Then rerun with bundling, whose bundle roots are
+    --       interior nodes of the same tree, and expect the same hash.
+    -- -------------------------------------------------------------------------
+
+    -- Collects the leaves mcycle_computation_hash_leaves printed for each input, and each input's
+    -- boundary hash printed by the print_input_state_hashes sub-key. The two
+    -- print_input_state_hashes lines after
+    -- "Before input" (before and after feeding) share the boundary's mcycle label, while leaves
+    -- sit at later mcycles. Lines before the first input are boot hashes, not epoch leaves.
+    local function parse_epoch_leaves(log)
+        local function unhex(s)
+            return (s:gsub("%x%x", function(b)
+                return string.char(tonumber(b, 16))
+            end))
+        end
+        local input_leaves, boundaries = {}, {}
+        local current, boundary_label
+        for line in log:gmatch("[^\n]*") do
+            local index = line:match("^Before input (%d+)$")
+            local label, hash = line:match("^(%d+): (%x+)$")
+            if index then
+                current, boundary_label = {}, nil
+                input_leaves[tonumber(index) + 1] = current
+            elseif line:match("^Mcycle computation hash: ") then
+                current = nil
+            elseif current and label then
+                if not boundary_label then
+                    boundary_label = label
+                    boundaries[#input_leaves] = unhex(hash)
+                elseif label ~= boundary_label then
+                    current[#current + 1] = unhex(hash)
+                end
+            end
+        end
+        return input_leaves, boundaries
+    end
+
+    -- Root of the tree of the given height whose leaves are the given ones followed by
+    -- repetitions of pad to the end. Each level hashes the padding value with itself, since the
+    -- epoch geometry is far too large to enumerate.
+    local function padded_root(leaves, pad, height)
+        local level = leaves
+        for _ = 1, height do
+            local parents = {}
+            for k = 1, #level - 1, 2 do
+                parents[#parents + 1] = cartesi.keccak256(level[k], level[k + 1])
+            end
+            if #level % 2 == 1 then
+                parents[#parents + 1] = cartesi.keccak256(level[#level], pad)
+            end
+            pad = cartesi.keccak256(pad, pad)
+            level = parents
+        end
+        return level[1] or pad
+    end
+
+    -- The epoch tree over the collected leaves: each input's leaves padded to capacity with its
+    -- last leaf, and the rest of the epoch padded with the last leaf of all (a whole input's worth
+    -- of its repetitions per remaining input).
+    local function epoch_root(input_leaves, log2_leaves_per_input, log2_inputs)
+        local input_roots = {}
+        local pad
+        for _, leaves in ipairs(input_leaves) do
+            assert(#leaves > 0 and #leaves <= 1 << log2_leaves_per_input, "bad input leaf count")
+            pad = leaves[#leaves]
+            input_roots[#input_roots + 1] = padded_root(leaves, pad, log2_leaves_per_input)
+        end
+        for _ = 1, log2_leaves_per_input do
+            pad = cartesi.keccak256(pad, pad)
+        end
+        return padded_root(input_roots, pad, log2_inputs)
+    end
+
+    it("mcycle computation hash across an epoch with a reject", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local server <close>, address = jsonrpc.spawn_server()
+        server:set_cleanup_call(jsonrpc.NOTHING)
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            for _, p in ipairs({
+                prefix .. "-chin-0.bin",
+                prefix .. "-chin-1.bin",
+                prefix .. "-chin-2.bin",
+                prefix .. "-ch.bin",
+                prefix .. "-chb.bin",
+            }) do
+                os.remove(p)
+            end
+        end)
+        filesystem.write_file(prefix .. "-chin-0.bin", encode_advance(0, "ok"))
+        filesystem.write_file(prefix .. "-chin-1.bin", encode_advance(1, "reject-me"))
+        filesystem.write_file(prefix .. "-chin-2.bin", encode_advance(2, "also-ok"))
+
+        local _, log = run_ok({
+            "--remote-address=" .. address,
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-chin-%i.bin,"
+                .. "input_index_begin:0,input_index_end:3,"
+                .. "output:,rejected_output:,output_proof:,report:,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "mcycle_computation_hash:"
+                .. prefix
+                .. "-ch.bin,"
+                .. "log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",mcycle_computation_hash_leaves,print_input_state_hashes",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1",
+        })
+
+        local input_leaves, boundaries = parse_epoch_leaves(log)
+        expect.equal(#input_leaves, 3)
+        -- the rejected input's last leaf is the reverted state's hash: the boundary it started
+        -- from, which is also where the next input starts
+        expect.equal(input_leaves[2][#input_leaves[2]], boundaries[2])
+        expect.equal(boundaries[3], boundaries[2])
+        -- the accepted inputs advanced the state
+        expect.not_equal(input_leaves[1][#input_leaves[1]], boundaries[1])
+        expect.not_equal(input_leaves[3][#input_leaves[3]], boundaries[3])
+
+        -- the computation hash file holds the root of the tree over the printed leaves, and the
+        -- printed hash agrees with it
+        local ch = filesystem.read_file(prefix .. "-ch.bin")
+        expect.equal(#ch, 32)
+        expect.equal(
+            ch,
+            epoch_root(
+                input_leaves,
+                ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+                ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+            )
+        )
+        local printed = log:match("Mcycle computation hash: (%x+)")
+        expect.truthy(printed)
+        expect.equal(#printed, 64)
+        expect.truthy(log:find("Mcycle computation hash: " .. printed, 1, true))
+
+        -- Bundle roots are interior nodes of the same epoch tree, so the same run with bundling
+        -- must produce the same computation hash.
+        run_ok({
+            "--remote-address=" .. address,
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-chin-%i.bin,"
+                .. "input_index_begin:0,input_index_end:3,"
+                .. "output:,rejected_output:,output_proof:,report:,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "mcycle_computation_hash:"
+                .. prefix
+                .. "-chb.bin,"
+                .. "log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",log2_bundle_mcycle_count:2",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1",
+        })
+        expect.equal(filesystem.read_file(prefix .. "-chb.bin"), ch)
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Computation hash of an epoch with no inputs
+    --
+    -- What: An epoch that receives no inputs repeats the hash of the machine
+    --       waiting at its first input boundary over the whole epoch, so the
+    --       computation hash is that hash squared once per tree level.
+    -- How:  Run with input_index_end:0 and --final-hash into a file (the final
+    --       state is the waiting boundary), then square it up the tree height
+    --       and compare with the mcycle_computation_hash file.
+    -- -------------------------------------------------------------------------
+    it("mcycle computation hash of an epoch with no inputs", function()
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            os.remove(prefix .. "-ch0.bin")
+            os.remove(prefix .. "-final.bin")
+        end)
+        run_ok({
+            "--cmio-advance-state=input_index_end:0,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "mcycle_computation_hash:"
+                .. prefix
+                .. "-ch0.bin,"
+                .. "log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--final-hash=" .. prefix .. "-final.bin",
+            "--no-revert",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop",
+        })
+        local hash = filesystem.read_file(prefix .. "-final.bin")
+        for _ = 1, LOG2_EPOCH_LEAF_COUNT do
+            hash = cartesi.keccak256(hash, hash)
+        end
+        expect.equal(filesystem.read_file(prefix .. "-ch0.bin"), hash)
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Computation hash when the machine halts mid-input
+    --
+    -- What: A halt is a fixed point like a manual yield, so a machine that
+    --       halts while processing an input still determines the computation
+    --       hash: the input's remaining leaves and the rest of the epoch repeat
+    --       the halted state hash.
+    -- How:  The guest accepts one input and exits instead of yielding again.
+    --       Rebuild the tree from the printed leaves (the halt hash is the last
+    --       one) and compare with the mcycle_computation_hash file.
+    -- -------------------------------------------------------------------------
+    it("mcycle computation hash when the machine halts mid-input", function()
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            os.remove(prefix .. "-chh-0.bin")
+            os.remove(prefix .. "-chh.bin")
+        end)
+        filesystem.write_file(prefix .. "-chh-0.bin", encode_advance(0, "last-input"))
+        local _, log = run_ok({
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-chh-%i.bin,"
+                .. "input_index_begin:0,input_index_end:1,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "mcycle_computation_hash:"
+                .. prefix
+                .. "-chh.bin,"
+                .. "log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",mcycle_computation_hash_leaves,print_input_state_hashes",
+            "--no-revert",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--",
+            "rollup accept",
+        })
+        expect.truthy(log:find("\nHalted\n", 1, true))
+        local input_leaves = parse_epoch_leaves(log)
+        expect.equal(#input_leaves, 1)
+        expect.equal(
+            filesystem.read_file(prefix .. "-chh.bin"),
+            epoch_root(
+                input_leaves,
+                ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+                ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+            )
+        )
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Computation hash option validation
+    --
+    -- What: The computation hash sub-keys reject inconsistent geometry, and the
+    --       run refuses configurations whose leaves could not stand a dispute
+    --       (--print-mcycle-root-hashes alongside it, a reject with reverts off, an
+    --       input that overruns its mcycles). A run that stops before the epoch
+    --       ends produces no computation hash.
+    -- How:  run_fail each bad combination and match the error; run to a
+    --       max_mcycle inside the boot and assert no computation hash is emitted.
+    -- -------------------------------------------------------------------------
+    it("computation hash option validation", function()
+        -- sub-key validation, before any machine is built
+        run_fail(
+            { "--cmio-advance-state=mcycle_computation_hash:x.bin", "--max-mcycle=0" },
+            "need log2_mcycle_computation_hash_period"
+        )
+        run_fail({
+            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
+                .. (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE + 1),
+            "--max-mcycle=0",
+        }, "log2_mcycle_computation_hash_period cannot exceed the mcycles of an input")
+        run_fail({
+            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
+                .. ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+                .. ",log2_bundle_mcycle_count:1",
+            "--max-mcycle=0",
+        }, "computation hash bundle cannot exceed the mcycles of an input")
+        run_fail(
+            { "--cmio-advance-state=log2_mcycle_computation_hash_period:0", "--max-mcycle=0" },
+            "computation hash tree with more than 2"
+        )
+        -- bundle roots are interior nodes of the keccak epoch tree, so the machine must hash with keccak
+        run_fail({
+            "--hash-tree=hash_function:sha256",
+            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",log2_bundle_mcycle_count:2",
+            "--no-revert",
+            "--max-mcycle=0",
+        }, "computation hash bundling requires the keccak256 hash function")
+        run_fail({
+            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",input_index_begin:1,input_index_end:2",
+            "--max-mcycle=0",
+        }, "computation hash requires input_index_begin 0")
+        run_fail({
+            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",input_index_end:"
+                .. ((1 << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) + 1),
+            "--max-mcycle=0",
+        }, "input_index_end past the inputs of an epoch")
+        -- advance state runs plainly or collects the computation hash, so --print-mcycle-root-hashes is refused
+        run_fail({
+            "--cmio-advance-state=log2_mcycle_computation_hash_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--print-mcycle-root-hashes=" .. (1 << LOG2_MCYCLE_COMPUTATION_HASH_PERIOD),
+            "--no-revert",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        }, "cannot be combined with printing mcycle root hashes")
+        -- a run that stops before the epoch ends produces no computation hash
+        local _, log = run_ok({
+            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ","
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:",
+            "--no-revert",
+            "--max-mcycle=1000",
+            "--no-init-splash",
+        })
+        expect.falsy(log:find("Mcycle computation hash:", 1, true))
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Computation hash needs consistent leaves
+    --
+    -- What: A reject with reverts off leaves the machine in a state that does
+    --       not match the reverted leaves, so it must fail rather than emit a
+    --       hash a dispute would lose. (The input-overrun error is untestable
+    --       now that each input's budget is fixed by the exported rollup geometry.)
+    -- How:  Boot and feed inputs that trigger the case, matching the error.
+    -- -------------------------------------------------------------------------
+    it("mcycle computation hash needs consistent leaves", function()
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            os.remove(prefix .. "-chr-0.bin")
+            os.remove(prefix .. "-chr-1.bin")
+        end)
+        filesystem.write_file(prefix .. "-chr-0.bin", encode_advance(0, "ok"))
+        filesystem.write_file(prefix .. "-chr-1.bin", encode_advance(1, "reject-me"))
+        run_fail({
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-chr-%i.bin,"
+                .. "input_index_begin:0,input_index_end:2,"
+                .. "output:,rejected_output:,output_proof:,report:,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--no-revert",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --reject=1",
+        }, "computation hash of a rejected input requires reverts")
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Uarch cycle computation hash option validation
+    --
+    -- What: The uarch cycle computation hash sub-keys reject inconsistent
+    --       geometry and unusable configurations: a period index past the
+    --       epoch, bundle sizes outside {0, ..., LOG2_UARCH_CYCLES_PER_MCYCLE-1},
+    --       combining with the mcycle computation hash, a non-keccak hash
+    --       tree, and a reject with reverts off.
+    -- How:  run_fail each bad combination and match the error.
+    -- -------------------------------------------------------------------------
+    it("uarch cycle computation hash option validation", function()
+        run_fail({
+            "--cmio-advance-state=uarch_cycle_computation_hash:x.bin,mcycle_period_index:0",
+            "--max-mcycle=0",
+        }, "need log2_mcycle_computation_hash_period")
+        run_fail({
+            "--cmio-advance-state=uarch_cycle_computation_hash:x.bin,log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--max-mcycle=0",
+        }, "need mcycle_period_index")
+        -- Use the index immediately past all periods in the epoch.
+        run_fail({
+            "--cmio-advance-state=mcycle_period_index:"
+                .. (1 << LOG2_EPOCH_LEAF_COUNT)
+                .. ",log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--max-mcycle=0",
+        }, "mcycle_period_index past the periods of an epoch")
+        run_ok({
+            "--cmio-advance-state=output:,rejected_output:,output_proof:,report:,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "mcycle_period_index:0,log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",log2_bundle_uarch_cycle_count:0",
+            "--no-revert",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        run_fail({
+            "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",log2_bundle_uarch_cycle_count:-1",
+            "--max-mcycle=0",
+        }, 'invalid number for option "log2_bundle_uarch_cycle_count"')
+        run_fail({
+            "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",log2_bundle_uarch_cycle_count:"
+                .. ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
+            "--max-mcycle=0",
+        }, "log2_bundle_uarch_cycle_count must be in")
+        run_fail({
+            "--cmio-advance-state=mcycle_period_index:0,mcycle_computation_hash:x.bin,"
+                .. "log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--max-mcycle=0",
+        }, "uarch_cycle_computation_hash cannot be combined with mcycle_computation_hash")
+        -- bundle roots are interior nodes of the keccak tree, so the machine must hash with keccak
+        run_fail({
+            "--hash-tree=hash_function:sha256",
+            "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--no-revert",
+            "--max-mcycle=0",
+        }, "computation hash bundling requires the keccak256 hash function")
+        -- a reject with reverts off leaves no boundary to pad the reverted timeline from, even
+        -- when the disputed period sits in an input the run never reaches
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            os.remove(prefix .. "-uchr-0.bin")
+            os.remove(prefix .. "-uchr-1.bin")
+        end)
+        filesystem.write_file(prefix .. "-uchr-0.bin", encode_advance(0, "ok"))
+        filesystem.write_file(prefix .. "-uchr-1.bin", encode_advance(1, "reject-me"))
+        run_fail({
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-uchr-%i.bin,"
+                .. "input_index_begin:0,input_index_end:2,"
+                .. "output:,rejected_output:,output_proof:,report:,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "mcycle_period_index:"
+                .. (3 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD))
+                .. ",log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--no-revert",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --reject=1",
+        }, "computation hash of a rejected input requires reverts")
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Uarch cycle computation hash across an epoch with a reject
+    --
+    -- What: uarch_cycle_computation_hash commits to one period of the mcycle
+    --       computation hash at uarch-transition granularity: each mcycle of
+    --       the period expands into its uarch cycles, repetitions of the uarch
+    --       halt state, and the reset, which lands on the revert root hash when
+    --       the input was rejected, and the mcycles past a stop repeat the
+    --       stopped state's no-op period. Bundle roots are interior nodes of
+    --       that tree, so the hash is invariant to the bundle size.
+    -- How:  Advance the reject epoch once with the print_input_state_hashes
+    --       sub-key to locate the
+    --       period where input 1 rejects, then advance it twice more collecting
+    --       the uarch cycle computation hash of that period with two different
+    --       bundle sizes, and expect byte-identical hash files. The period
+    --       exercises the plain run up to it, the revert uarch tail consumption
+    --       at the rejected yield, and the reverted-state padding.
+    -- -------------------------------------------------------------------------
+    it("uarch cycle computation hash across an epoch with a reject", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local server <close>, address = jsonrpc.spawn_server()
+        server:set_cleanup_call(jsonrpc.NOTHING)
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            for _, p in ipairs({
+                prefix .. "-uin-0.bin",
+                prefix .. "-uin-1.bin",
+                prefix .. "-uin-2.bin",
+                prefix .. "-uch-16.bin",
+                prefix .. "-uch-8.bin",
+                prefix .. "-uch-full.bin",
+                prefix .. "-uch-trunc.bin",
+            }) do
+                os.remove(p)
+            end
+        end)
+        filesystem.write_file(prefix .. "-uin-0.bin", encode_advance(0, "ok"))
+        filesystem.write_file(prefix .. "-uin-1.bin", encode_advance(1, "reject-me"))
+        filesystem.write_file(prefix .. "-uin-2.bin", encode_advance(2, "also-ok"))
+        local common = "input:"
+            .. prefix
+            .. "-uin-%i.bin,"
+            .. "input_index_begin:0,input_index_end:3,"
+            .. "output:,rejected_output:,output_proof:,report:,"
+            .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+        local entrypoint = "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1"
+
+        -- Locate the period of input 1's reject: its boundary mcycle is the label of the
+        -- print_input_state_hashes sub-key line after "Before input 1", and the reject mcycle
+        -- is the cycle count of the rejected yield.
+        local _, log = run_ok({
+            "--remote-address=" .. address,
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=" .. common .. "print_input_state_hashes",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--",
+            entrypoint,
+        })
+        local boundary = tonumber(log:match("Before input 1\n(%d+): %x+"))
+        local reject_mcycle = tonumber(log:match("Manual yield rx%-rejected[^\n]*\nCycles: (%d+)"))
+        assert(boundary and reject_mcycle and reject_mcycle > boundary, "could not locate the rejected input")
+        -- Add input 1's base period index to the reject's period within that input.
+        local index = (1 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - 10)) + ((reject_mcycle - boundary) >> 10)
+
+        local hashes = {}
+        for _, log2_bundle in ipairs({ 16, 8 }) do
+            local filename = prefix .. "-uch-" .. log2_bundle .. ".bin"
+            local _, err = run_ok({
+                "--remote-address=" .. address,
+                "--console-io=output_destination:to_null",
+                "--cmio-advance-state="
+                    .. common
+                    .. "uarch_cycle_computation_hash:"
+                    .. filename
+                    .. ","
+                    .. (
+                        "mcycle_period_index:"
+                        .. index
+                        .. ",log2_bundle_uarch_cycle_count:"
+                        .. log2_bundle
+                        .. ",log2_mcycle_computation_hash_period:10"
+                    ),
+                "--max-mcycle=2000000000",
+                "--no-init-splash",
+                "--",
+                entrypoint,
+            })
+            expect.truthy(err:find("Uarch cycle computation hash:", 1, true))
+            hashes[#hashes + 1] = filesystem.read_file(filename)
+            expect.equal(#hashes[#hashes], 32)
+        end
+        expect.equal(hashes[1], hashes[2])
+
+        -- The hash is emitted as soon as its value is determined, so a run truncated by
+        -- --max-mcycle long past the period, but short of the epoch's end, still emits the
+        -- same hash. Input 0's first period is fully collected well before input 1's boundary.
+        for _, case in ipairs({
+            { filename = prefix .. "-uch-full.bin", max_mcycle = 2000000000 },
+            { filename = prefix .. "-uch-trunc.bin", max_mcycle = boundary },
+        }) do
+            local _, err = run_ok({
+                "--remote-address=" .. address,
+                "--console-io=output_destination:to_null",
+                "--cmio-advance-state="
+                    .. common
+                    .. "uarch_cycle_computation_hash:"
+                    .. case.filename
+                    .. ","
+                    .. "mcycle_period_index:0,log2_mcycle_computation_hash_period:10",
+                "--max-mcycle=" .. case.max_mcycle,
+                "--no-init-splash",
+                "--",
+                entrypoint,
+            })
+            expect.truthy(err:find("Uarch cycle computation hash:", 1, true))
+        end
+        expect.equal(filesystem.read_file(prefix .. "-uch-full.bin"), filesystem.read_file(prefix .. "-uch-trunc.bin"))
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Uarch cycle computation hash of an epoch with no inputs
+    --
+    -- What: An epoch that receives no inputs repeats the no-op uarch period of
+    --       the machine waiting at its first input boundary over the whole
+    --       target period, whatever index it has.
+    -- How:  Run with input_index_end:0, then rebuild the expected hash from
+    --       scratch with a local machine stopped at the same boundary: walk one
+    --       no-op period cycle by cycle through run_uarch (the last cycle being
+    --       the one where the uarch halts), reset the uarch, and construct one mcycle using the
+    --       exported uarch span. Halt repetitions fill the middle and the reset hash closes it.
+    --       Double its root up the target period tree.
+    --       Compare with the emitted file.
+    -- -------------------------------------------------------------------------
+    it("uarch cycle computation hash of an epoch with no inputs", function()
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            os.remove(prefix .. "-uch0.bin")
+        end)
+        run_ok({
+            "--cmio-advance-state=input_index_end:0,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "uarch_cycle_computation_hash:"
+                .. prefix
+                .. "-uch0.bin,"
+                .. "mcycle_period_index:7,log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--no-revert",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop",
+        })
+
+        -- The same machine, stopped at the same first input boundary.
+        local m <close> =
+            cartesi.machine(config_for({ "ioctl-echo-loop" }), { console = { output_destination = "to_null" } })
+        expect.equal(m:run(math.maxinteger), cartesi.BREAK_REASON_YIELDED_MANUALLY)
+        -- One no-op period, cycle by cycle: hashes after each uarch cycle, then after the reset.
+        local tail = {}
+        local uarch_cycle = 0
+        while true do
+            local break_reason = m:run_uarch(uarch_cycle + 1)
+            table.insert(tail, m:get_root_hash())
+            if break_reason == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
+                break
+            end
+            uarch_cycle = uarch_cycle + 1
+        end
+        m:reset_uarch()
+        table.insert(tail, m:get_root_hash())
+        -- Construct the period: positions 1..n are the cycle hashes, the halt hash repeats up to the
+        -- last position, where the reset hash sits.
+        local frontier = hash_tree.frontier(ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)
+        for i = 1, #tail - 1 do
+            hash_tree.frontier_push_back(frontier, tail[i])
+        end
+        hash_tree.frontier_pad_back(frontier, tail[#tail - 1], (1 << ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - #tail)
+        hash_tree.frontier_push_back(frontier, tail[#tail])
+        local period_root = hash_tree.frontier_get_root_hash(frontier)
+        -- Every mcycle in the selected period repeats that no-op mcycle.
+        local root = period_root
+        for _ = 1, LOG2_MCYCLE_COMPUTATION_HASH_PERIOD do
+            root = cartesi.keccak256(root, root)
+        end
+        expect.equal(filesystem.read_file(prefix .. "-uch0.bin"), root)
     end)
 
     -- -------------------------------------------------------------------------
@@ -2275,7 +2965,7 @@ describe("cartesi-machine CLI", function()
                 .. "output_hashes_root_hash:"
                 .. prefix
                 .. "-rth-%i.bin",
-            "--no-rollback",
+            "--no-revert",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -2372,6 +3062,149 @@ describe("cartesi-machine CLI", function()
         if pid then
             os.execute("wait " .. pid .. " 2>/dev/null || kill " .. pid .. " 2>/dev/null")
         end
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- --gdb with hash collection
+    --
+    -- What: --gdb combined with --print-mcycle-root-hashes or --print-uarch-cycle-root-hashes must
+    --       produce exactly the hash stream of the same run without --gdb.
+    -- How:  For each flag set, run the CLI plainly with run_ok(), then again in
+    --       the background with --gdb, drive the session over a raw luasocket
+    --       client, and compare the hash lines printed to the two stderr logs.
+    -- -------------------------------------------------------------------------
+    it("GDB with hash collection", function()
+        local socket = require("socket")
+
+        -- Sends one GDB packet and returns the payload of the stub's reply.
+        local function gdb_command(conn, payload)
+            local sum = 0
+            for i = 1, #payload do
+                sum = sum + payload:byte(i)
+            end
+            assert(conn:send(string.format("$%s#%02x", payload, sum % 256)))
+            assert(assert(conn:receive(1)) == "+", "GDB stub did not acknowledge the packet")
+            assert(assert(conn:receive(1)) == "$", "expected a reply packet")
+            local reply = {}
+            while true do
+                local c = assert(conn:receive(1))
+                if c == "#" then
+                    break
+                end
+                reply[#reply + 1] = c
+            end
+            assert(conn:receive(2)) -- checksum
+            assert(conn:send("+"))
+            return table.concat(reply)
+        end
+
+        local function gdb_rcmd(conn, command)
+            return gdb_command(conn, "qRcmd," .. command:gsub(".", function(c)
+                return string.format("%02x", c:byte())
+            end))
+        end
+
+        -- Keeps only the hash lines, so gdb and plain logs can be compared.
+        local function hash_lines(log)
+            local lines = {}
+            for line in log:gmatch("[^\n]+") do
+                if line:match("^[%d,%-]+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
+                    lines[#lines + 1] = line
+                end
+            end
+            return table.concat(lines, "\n")
+        end
+
+        -- Runs the CLI with the given flags plus --gdb in the background, drives
+        -- the session with script(conn), and returns the CLI's stderr.
+        local function run_under_gdb(flags, port, script)
+            local _ <close>, log = scope_temp_pathname()
+            local _ <close>, done = scope_temp_pathname()
+            local args = {}
+            for _, f in ipairs(flags) do
+                args[#args + 1] = shquote(f)
+            end
+            local _ <close>, runner = filesystem.write_scope_temp_file(
+                string.format(
+                    "#!/bin/sh\n(CARTESI_IMAGES_PATH=%s %s %s %s --gdb=127.0.0.1:%d >/dev/null 2>%s; touch %s) &\n"
+                        .. "echo $!\n",
+                    shquote(images_path),
+                    CLI_LUA,
+                    CLI,
+                    table.concat(args, " "),
+                    port,
+                    shquote(log),
+                    shquote(done)
+                )
+            )
+            local pipe = assert(io.popen("sh " .. shquote(runner)))
+            local pid = pipe:read("*l")
+            pipe:close()
+            local _ <close> = utils.scope_exit(function()
+                if pid then
+                    os.execute("kill " .. pid .. " 2>/dev/null")
+                end
+            end)
+            -- wait for the stub to listen, then connect
+            local conn
+            for _ = 1, 100 do
+                conn = socket.connect("127.0.0.1", port)
+                if conn then
+                    break
+                end
+                socket.sleep(0.1)
+            end
+            assert(conn, "could not connect to the GDB stub")
+            conn:settimeout(60)
+            assert(conn:setoption("tcp-nodelay", true))
+            assert(conn:send("+")) -- connection-start acknowledge expected by the stub
+            script(conn)
+            conn:close()
+            -- wait for the CLI to exit, so the log is complete
+            for _ = 1, 600 do
+                local f = io.open(done, "r")
+                if f then
+                    f:close()
+                    return filesystem.read_file(log)
+                end
+                socket.sleep(0.1)
+            end
+            error("CLI under GDB did not exit")
+        end
+
+        -- Mcycle root hashes split across two continues: the first crosses the suspend
+        -- at start and stops mid-period at the stepc limit, the second runs to
+        -- --max-mcycle. No --quiet below, it would silence the hash streams.
+        local periodic_flags = { "--print-mcycle-root-hashes=100,start:150", "--max-mcycle=1000", "--no-init-splash" }
+        local _, plain = run_ok(periodic_flags)
+        local under_gdb = run_under_gdb(periodic_flags, 53211, function(conn)
+            expect.equal(gdb_rcmd(conn, "stepc 375"), "OK")
+            expect.equal(gdb_command(conn, "c"), "S02") -- SIGINT at the stepc limit
+            expect.equal(gdb_rcmd(conn, "stepc_clear"), "OK")
+            expect.equal(gdb_command(conn, "c"), "S03") -- SIGQUIT at --max-mcycle
+            expect.equal(gdb_command(conn, "D"), "OK")
+        end)
+        expect.truthy(#hash_lines(plain) > 0)
+        expect.equal(hash_lines(under_gdb), hash_lines(plain))
+
+        -- Uarch cycle root hashes: one continue crosses both window boundaries.
+        local dense_flags = { "--print-uarch-cycle-root-hashes=2,start:5", "--max-mcycle=20", "--no-init-splash" }
+        local _, plain_dense = run_ok(dense_flags)
+        local under_gdb_dense = run_under_gdb(dense_flags, 53212, function(conn)
+            expect.equal(gdb_command(conn, "c"), "S03") -- SIGQUIT at --max-mcycle
+            expect.equal(gdb_command(conn, "D"), "OK")
+        end)
+        expect.truthy(#hash_lines(plain_dense) > 0)
+        expect.equal(hash_lines(under_gdb_dense), hash_lines(plain_dense))
+
+        -- Detach right away: the collection finishes against the machine.
+        local fallback_flags = { "--print-mcycle-root-hashes=100", "--max-mcycle=500", "--no-init-splash" }
+        local _, plain_fallback = run_ok(fallback_flags)
+        local under_gdb_fallback = run_under_gdb(fallback_flags, 53213, function(conn)
+            expect.equal(gdb_command(conn, "D"), "OK")
+        end)
+        expect.truthy(#hash_lines(plain_fallback) > 0)
+        expect.equal(hash_lines(under_gdb_fallback), hash_lines(plain_fallback))
     end)
 end)
 

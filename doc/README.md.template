@@ -1367,7 +1367,7 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
-    --cmio-advance-state=input_index_begin:0,input_index_end:3,hashes \
+    --cmio-advance-state=input_index_begin:0,input_index_end:3,print_input_state_hashes \
     --final-hash=epoch-0-state-hash.bin \
     -- /mnt/calc/calc.sh
 # docs:end client1
@@ -1380,8 +1380,8 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-create \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:3,input_index_end:6,last_output_proof:output-1-input-2-proof.lua,hashes \
-    --cmio-inspect-state=query:query.bin,hashes
+    --cmio-advance-state=input_index_begin:3,input_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
+    --cmio-inspect-state=query:query.bin,print_query_state_hashes
 # docs:end client2
 } > client2 2>&1
 client2_status=$?
@@ -1562,7 +1562,7 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8083 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,hashes \
+    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,print_input_state_hashes \
     --load="rolling-calculator-template"
 # docs:end client
 } > client 2>&1
@@ -1657,8 +1657,8 @@ cartesi-machine \
     --append-bootargs="$bootargs"
 ```
 
-The command-line option `--periodic-hashes=<period>[,start:<mcycle>]` causes the command-line utility to periodically obtain and print the state hash.
-The `<period>` argument gives the distance between hashes in cycles. The optional `start:<mcycle>` sub-key gives the starting cycle for the periodic hashes. (Both `--initial-hash` and `--final-hash` are implied by this option.)
+The command-line option `--print-mcycle-root-hashes=<period>[,start:<mcycle>]` causes the command-line utility to periodically obtain and print the state hash.
+The `<period>` argument gives the distance between hashes in cycles. The optional `start:<mcycle>` sub-key gives the starting cycle for the hashes. (Both `--initial-hash` and `--final-hash` are implied by this option.)
 
 For example, to see the last 10 state hashes from the calculator machine computation, run the command
 
@@ -1676,7 +1676,7 @@ cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="label:input,data_filename:input.raw" \
-    --periodic-hashes=1,start:$initial_cycle
+    --print-mcycle-root-hashes=1,start:$initial_cycle
 # docs:end
 ```
 The output is
@@ -3405,8 +3405,8 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8086 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:0,input_index_end:2,hashes \
-    --cmio-inspect-state=hashes \
+    --cmio-advance-state=input_index_begin:0,input_index_end:2,print_input_state_hashes \
+    --cmio-inspect-state=print_query_state_hashes \
     --final-hash \
     -- /home/dapp/puppet
 # docs:end client

@@ -30,6 +30,28 @@ local function assertf(value, fmt, ...)
     error(string.format(fmt, ...), 2)
 end
 
+-- Unsigned minimum. Cycle counters are unsigned 64-bit integers, which math.min compares as signed.
+local function umin(a, b)
+    if math.ult(a, b) then return a end
+    return b
+end
+
+-- Shortcuts for the break reason a run returns and the reason a manual yield carries.
+local function is_halted(break_reason) return break_reason == cartesi.BREAK_REASON_HALTED end
+local function is_mcycle_overflow(break_reason) return break_reason == cartesi.BREAK_REASON_MCYCLE_OVERFLOW end
+local function is_yielded_manual(break_reason) return break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY end
+local function is_yielded_automatic(break_reason) return break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY end
+local function is_target_mcycle(break_reason) return break_reason == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE end
+-- A machine stopped at a halt, a manual yield, or an mcycle overflow no longer advances on its own.
+local function is_at_fixed_point(break_reason)
+    return is_halted(break_reason) or is_yielded_manual(break_reason) or is_mcycle_overflow(break_reason)
+end
+local function is_rx_accepted(yield_reason) return yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED end
+local function is_rx_rejected(yield_reason) return yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED end
+local function is_tx_exception(yield_reason) return yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION end
+local function is_tx_output(yield_reason) return yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT end
+local function is_tx_report(yield_reason) return yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT end
+
 local function adjust_images_path(path)
     if not path then return "" end
     return string.gsub(path, "/*$", "") .. "/"
@@ -86,8 +108,8 @@ where options are:
   --no-remote-destroy
     do not destroy the cartesi machine in the remote server after the execution.
 
-  --no-rollback
-    disable rollback for advance and inspect states.
+  --no-revert
+    disable revert for advance and inspect states.
     this allows to perform advance and inspect states on local cartesi machines,
     however the state is never reverted, even in case inspects or rejected advances.
 
@@ -351,7 +373,14 @@ where options are:
         output_hashes_root_hash:<filename-pattern>
         output_hashes_root_hash_proof:<filename-pattern>
         check_output_hashes_root_hash:<boolean>
-        hashes
+        print_input_state_hashes
+        mcycle_computation_hash:<filename>
+        log2_mcycle_computation_hash_period:<number>
+        mcycle_computation_hash_leaves
+        log2_bundle_mcycle_count:<number>
+        uarch_cycle_computation_hash:<filename>
+        mcycle_period_index:<number>
+        log2_bundle_uarch_cycle_count:<number>
 
         any file pattern can be set to the empty string to disable writing
         that file.
@@ -376,20 +405,18 @@ where options are:
         is the input.
 
         output_proof (default: "output-%%o-input-%%i-proof.<format>")
-        the pattern that derives the name of the file written for the Merkle
-        proof of each accepted output against the output hashes root hash of the
-        last input of the run. serialized according to "format". when left at the
-        default, its extension tracks "format".
+        write the proof of each accepted output against the final output hashes
+        root hash. serialized according to "format". when left at the default,
+        its extension tracks "format".
 
         last_output_proof (no default)
-        a single filename, not a pattern, holding the previous run's last output
-        proof. it resumes the output hashes Merkle tree so this run continues at
-        the running global output index. omit it for the first (genesis) run.
-        read according to "format".
+        read the previous run's last output proof from this file and resume the
+        output hashes tree. omit it for the genesis run. read according to
+        "format".
 
         format (optional)
-        selects the format for output_proof and last_output_proof. when omitted,
-        it is inferred from the filename extension (.json/.lua), defaulting to Lua.
+        selects the format of output proofs. when omitted, it is inferred from
+        the filename extension (.json/.lua), defaulting to Lua.
 
         report (default: "input-%%i-report-%%o.bin")
         the pattern that derives the name of the file written for report %%o
@@ -400,21 +427,54 @@ where options are:
         hashes root hash after input %%i.
 
         output_hashes_root_hash_proof (default: "input-%%i-output-hashes-root-hash-proof.<format>")
-        the pattern that derives the name of the file written for the Merkle
-        proof that the output hashes root hash occupied the tx buffer in
-        the machine state in which input %%i was accepted. it ties the output
-        hashes root hash (against which "output_proof" proves each output) back
-        into the machine state hash. serialized according to "format". when left
+        write the proof that the output hashes root hash occupied the tx buffer
+        when input %%i was accepted. serialized according to "format". when left
         at the default, its extension tracks "format".
 
         check_output_hashes_root_hash (default: true)
-        on each accepted input, check that the host's running output hashes root
-        hash equals the one the guest wrote to the tx buffer. it needs either the
-        genesis run or a last_output_proof seed to know the count of prior
-        outputs.
+        check that the output hashes root hash maintained by the host matches
+        the one written by the guest. requires the genesis run or
+        last_output_proof.
 
-        hashes
-        print out hashes before every input.
+        print_input_state_hashes
+        print the machine state root hash before and after delivering every input.
+
+        mcycle_computation_hash (default: "")
+        write the epoch's 32-byte mcycle computation hash to this file. it is
+        the root of the tree of state hashes sampled at the configured period.
+        the hash is printed when determined. requires
+        log2_mcycle_computation_hash_period.
+
+        log2_mcycle_computation_hash_period (no default)
+        log2 of the number of mcycles between computation hash leaves. must be
+        at most 48. enables the mcycle computation hash unless
+        uarch_cycle_computation_hash is selected.
+
+        mcycle_computation_hash_leaves
+        print each mcycle computation hash leaf, or each bundle root when
+        bundling. requires log2_mcycle_computation_hash_period.
+
+        log2_bundle_mcycle_count (default: 0)
+        collect one subtree root for every 2^log2_bundle_mcycle_count leaves.
+        bundling does not change the computation hash.
+        log2_mcycle_computation_hash_period + log2_bundle_mcycle_count must be
+        at most 48, the maximum number of mcycles per advance-state input.
+
+        uarch_cycle_computation_hash (default: "")
+        write the 32-byte uarch cycle computation hash for the period selected
+        by mcycle_period_index. the hash covers every uarch transition and
+        reset in that period and is printed when determined. requires
+        log2_mcycle_computation_hash_period and cannot be combined with
+        mcycle_computation_hash.
+
+        mcycle_period_index (no default)
+        0-based index of the mcycle computation hash period covered by
+        uarch_cycle_computation_hash.
+
+        log2_bundle_uarch_cycle_count (default: 16)
+        collect one subtree root for every 2^log2_bundle_uarch_cycle_count
+        uarch transitions. bundling does not change the computation hash.
+        must be between 0 and 19.
 
     the input index ranges in {input_index_begin, ..., input_index_end-1}.
     "%%i" is replaced by the input index. "%%o" is replaced by the global output
@@ -428,7 +488,7 @@ where options are:
     <key>:<value> is one of
         query:<filename>
         report:<filename-pattern>
-        hashes
+        print_query_state_hashes
 
         query (default: "query.bin")
         the name of the file from which to read the query.
@@ -437,8 +497,8 @@ where options are:
         the pattern that derives the name of the file written for report %%o
         of the query.
 
-        hashes
-        print out hashes before every query.
+        print_query_state_hashes
+        print the machine state root hash before and after delivering the query.
 
     while the query is processed, "%%o" is replaced by the current report index.
 
@@ -683,7 +743,7 @@ where options are:
     however this is the only safe way to create machines with large address spaces
     or to propagate "shared" backing stores to configuration files.
 
-    MUST BE USED WITH --no-rollback
+    MUST BE USED WITH --no-revert
 
   --load=<directory>[,<key>:<value>[,...]...]
     load machine stored in <directory>.
@@ -704,7 +764,7 @@ where options are:
             config: only configured "shared" backing stores operate on-disk and are modified.
             all: keeps state on-disk, modifying all backing stores.
         the default mode is "none", but if clone is present then the default mode is "all".
-        all modes except "none" MUST BE USED WITH --no-rollback.
+        all modes except "none" MUST BE USED WITH --no-revert.
 
   --store=<directory>[,<key>:<value>[,...]...]
     store machine to <directory>, where "%%h" is substituted by the
@@ -727,15 +787,19 @@ where options are:
     print final state hash when done.
     if <filename> is given, write the raw state hash to it instead.
 
-  --periodic-hashes=<period>[,start:<mcycle>]
-    prints root hash every <period> cycles.
-    if start: is given, the periodic hashing will start at that mcycle.
+  --print-mcycle-root-hashes=<period>[,start:<mcycle>][,log2_bundle_mcycle_count:<count>]
+    prints root hash every <period> cycles, and where the machine stops.
+    if start: is given, the hashing will start at that mcycle.
+    if log2_bundle_mcycle_count: is given, prints instead one subtree root for
+    every 2^log2_bundle_mcycle_count hashes, with the cycle range it covers.
     this option implies --initial-hash and --final-hash.
     (default: none)
 
-  --dense-uarch-hashes=<count>[,start:<mcycle>]
+  --print-uarch-cycle-root-hashes=<count>[,start:<mcycle>][,log2_bundle_uarch_cycle_count:<count>]
     prints root hash every uarch cycle for <count> mcycles.
-    if start: is given, the dense hashing will start at that mcycle.
+    if start: is given, the hashing will start at that mcycle.
+    if log2_bundle_uarch_cycle_count: is given, prints instead one subtree root
+    for every 2^log2_bundle_uarch_cycle_count hashes, with the range it covers.
 
   --initial-proof=<key>:<value>[,<key>:<value>[,...]...]
     print a Merkle proof for a target region of the initial machine state.
@@ -886,7 +950,7 @@ local remote_fork = false
 local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
-local perform_rollbacks = true
+local perform_reverts = true
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local flash_label_to_index = { root = 1 }
 local flash_drives = {
@@ -968,10 +1032,12 @@ local initial_hash = false
 local final_hash = false
 local initial_proof = {}
 local final_proof = {}
-local periodic_hashes_period = math.maxinteger
-local periodic_hashes_start = 0
-local dense_uarch_hashes_start
-local dense_uarch_hashes_end
+local mcycle_root_hashes_period = math.maxinteger
+local mcycle_root_hashes_start = 0
+local mcycle_root_hashes_log2_bundle = 0
+local uarch_cycle_root_hashes_start
+local uarch_cycle_root_hashes_count
+local uarch_cycle_root_hashes_log2_bundle = 0
 local dump_memory_ranges_dir = false
 local max_mcycle = math.maxinteger
 local max_uarch_cycle = 0
@@ -994,6 +1060,11 @@ local exec_arguments = {}
 local assert_rolling_template = false
 local log_step_mcycle_count
 local log_step_filename
+-- Epoch geometry, assigned from the exported rollup constants after the requires, before any
+-- option is parsed.
+local ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+local ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+local ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 
 -- Default omitted backing-store filenames to ""
 local function set_empty_omitted_filenames(f)
@@ -1750,6 +1821,76 @@ options = {
             r.output_hashes_root_hash_proof = r.output_hashes_root_hash_proof
                 or ("input-%i-output-hashes-root-hash-proof." .. (r.format or "lua"))
             if r.check_output_hashes_root_hash == nil then r.check_output_hashes_root_hash = true end
+            -- log2_mcycle_computation_hash_period enables the epoch computation hash: the mcycle
+            -- one by default, or the uarch cycle one covering the period mcycle_period_index
+            -- selects. The *_computation_hash keys name the files that receive them,
+            -- mcycle_computation_hash_leaves prints each mcycle leaf, and the other log2 sub-keys
+            -- set the bundling. The epoch geometry is fixed, matching the on-chain dispute.
+            local wants_mcycle_ch = r.mcycle_computation_hash or r.mcycle_computation_hash_leaves
+            local wants_uarch_cycle_ch = r.uarch_cycle_computation_hash or r.mcycle_period_index
+            if wants_mcycle_ch or wants_uarch_cycle_ch or r.log2_mcycle_computation_hash_period then
+                assertf(r.log2_mcycle_computation_hash_period, "need log2_mcycle_computation_hash_period in %s", all)
+                local log2_period = r.log2_mcycle_computation_hash_period
+                assertf(log2_period >= 0, "invalid log2_mcycle_computation_hash_period in %s", all)
+                assertf(
+                    log2_period <= ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
+                    "log2_mcycle_computation_hash_period cannot exceed the mcycles of an input in %s",
+                    all
+                )
+                assertf(
+                    ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
+                        <= 63,
+                    "computation hash tree with more than 2^63 leaves in %s",
+                    all
+                )
+                assertf(r.input_index_begin == 0, "computation hash requires input_index_begin 0 in %s", all)
+                assertf(
+                    r.input_index_end <= 1 << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH,
+                    "input_index_end past the inputs of an epoch in %s",
+                    all
+                )
+                if wants_uarch_cycle_ch then
+                    assertf(
+                        not wants_mcycle_ch,
+                        "uarch_cycle_computation_hash cannot be combined with mcycle_computation_hash in %s",
+                        all
+                    )
+                    r.uarch_cycle_computation_hash = r.uarch_cycle_computation_hash or ""
+                    assertf(r.mcycle_period_index, "need mcycle_period_index in %s", all)
+                    assertf(
+                        math.ult(
+                            r.mcycle_period_index,
+                            1
+                                << (
+                                    ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+                                    + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+                                    - log2_period
+                                )
+                        ),
+                        "mcycle_period_index past the periods of an epoch in %s",
+                        all
+                    )
+                    r.log2_bundle_uarch_cycle_count = r.log2_bundle_uarch_cycle_count
+                        or math.min(16, ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - 1)
+                    local log2_bundle = r.log2_bundle_uarch_cycle_count
+                    assertf(
+                        log2_bundle >= 0 and log2_bundle < ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
+                        "log2_bundle_uarch_cycle_count must be in {0, ..., %d} in %s",
+                        ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - 1,
+                        all
+                    )
+                else
+                    r.mcycle_computation_hash = r.mcycle_computation_hash or ""
+                    r.log2_bundle_mcycle_count = r.log2_bundle_mcycle_count or 0
+                    assertf(
+                        r.log2_bundle_mcycle_count >= 0
+                            and log2_period + r.log2_bundle_mcycle_count
+                                <= ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
+                        "computation hash bundle cannot exceed the mcycles of an input in %s",
+                        all
+                    )
+                end
+            end
             r.next_input_index = r.input_index_begin
             cmio_advance = r
             return true
@@ -1767,7 +1908,14 @@ options = {
             format = { lua = "lua", json = "json" },
             report = "file",
             check_output_hashes_root_hash = "boolean",
-            hashes = "boolean",
+            print_input_state_hashes = "boolean",
+            mcycle_computation_hash = "file",
+            log2_mcycle_computation_hash_period = "number",
+            mcycle_computation_hash_leaves = "boolean",
+            log2_bundle_mcycle_count = "number",
+            uarch_cycle_computation_hash = "file",
+            mcycle_period_index = "number",
+            log2_bundle_uarch_cycle_count = "number",
         },
     },
     {
@@ -1782,7 +1930,7 @@ options = {
         {
             query = "file",
             report = "file",
-            hashes = "boolean",
+            print_query_state_hashes = "boolean",
         },
     },
     {
@@ -2048,9 +2196,9 @@ options = {
         end,
     },
     {
-        "--no-rollback",
+        "--no-revert",
         function()
-            perform_rollbacks = false
+            perform_reverts = false
             return true
         end,
     },
@@ -2085,11 +2233,12 @@ options = {
         "filename",
     },
     {
-        "--periodic-hashes=",
+        "--print-mcycle-root-hashes=",
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
-            periodic_hashes_period = assertf(o.period, "need period in %s", all)
-            periodic_hashes_start = o.start or 0
+            mcycle_root_hashes_period = assertf(o.period, "need period in %s", all)
+            mcycle_root_hashes_start = o.start or 0
+            mcycle_root_hashes_log2_bundle = o.log2_bundle_mcycle_count or 0
             initial_hash = true
             final_hash = true
             return true
@@ -2098,21 +2247,23 @@ options = {
             "period",
             period = "number",
             start = "number",
+            log2_bundle_mcycle_count = "number",
         },
     },
     {
-        "--dense-uarch-hashes=",
+        "--print-uarch-cycle-root-hashes=",
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
-            assertf(o.count, "need count in %s", all)
-            dense_uarch_hashes_start = o.start or 0
-            dense_uarch_hashes_end = dense_uarch_hashes_start + o.count
+            uarch_cycle_root_hashes_count = assertf(o.count, "need count in %s", all)
+            uarch_cycle_root_hashes_start = o.start or 0
+            uarch_cycle_root_hashes_log2_bundle = o.log2_bundle_uarch_cycle_count or 0
             return true
         end,
         {
             "count",
             count = "number",
             start = "number",
+            log2_bundle_uarch_cycle_count = "number",
         },
     },
     {
@@ -2309,6 +2460,13 @@ util = require("cartesi.util")
 hash_tree = require("cartesi.hash-tree")
 
 -- And perform the dependant initializations
+ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+assert(
+    (1 << ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - 1 == cartesi.UARCH_CYCLE_MAX,
+    "uarch cycle limit does not match the rollup geometry"
+)
 local default_config = cartesi.machine:get_default_config()
 cmdline_config.dtb.bootargs = default_config.dtb.bootargs
 cmdline_config.hash_tree.hash_function = default_config.hash_tree.hash_function
@@ -2350,10 +2508,6 @@ end
 
 local function print_root_hash(machine, print)
     (print or stderr)("%u: %s\n", machine:read_reg("mcycle"), util.hexhash(machine:get_root_hash()))
-end
-
-local function print_uarch_root_hash(machine, mcycle, uarch_cycle, print)
-    (print or stderr)("%u,%u: %s\n", mcycle, uarch_cycle, util.hexhash(machine:get_root_hash()))
 end
 
 local function dump_value_proofs(machine, desired_proofs, config)
@@ -2625,24 +2779,24 @@ local function check_cmio_htif_config(htif)
 end
 
 local function get_and_print_yield(machine, htif)
-    local cmd, reason, data = machine:receive_cmio_request()
-    if cmd == cartesi.HTIF_YIELD_CMD_AUTOMATIC and reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS then
+    local cmd, yield_reason, data = machine:receive_cmio_request()
+    if cmd == cartesi.HTIF_YIELD_CMD_AUTOMATIC and yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS then
         stderr(
             "Progress: %6.2f" .. ((htif.iconsole & cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK) ~= 0 and "\n" or "\r"),
             string.unpack("I4", data) / 10
         )
-        return cmd, reason, data
+        return cmd, yield_reason, data
     end
     local cmd_str = cmio_yield_command[cmd] or "Unknown"
     local reason_str = "unknown"
     if cmd == cartesi.HTIF_YIELD_CMD_AUTOMATIC then
-        reason_str = cmio_yield_automatic_reason[reason] or reason_str
+        reason_str = cmio_yield_automatic_reason[yield_reason] or reason_str
     elseif cmd == cartesi.HTIF_YIELD_CMD_MANUAL then
-        reason_str = cmio_yield_manual_reason[reason] or reason_str
+        reason_str = cmio_yield_manual_reason[yield_reason] or reason_str
     end
-    stderr("\n%s yield %s (%d) (0x%06x data)\n", cmd_str, reason_str, reason, #data)
+    stderr("\n%s yield %s (%d) (0x%06x data)\n", cmd_str, reason_str, yield_reason, #data)
     stderr("Cycles: %u\n", machine:read_reg("mcycle"))
-    return cmd, reason, data
+    return cmd, yield_reason, data
 end
 
 local function instantiate_filename(pattern, values)
@@ -2730,11 +2884,12 @@ local function save_cmio_output_hashes_root_hash_proof(advance, proof)
     util.write_file(serialize_proof(proof, format), name)
 end
 
--- On the verdict of the just-run input, commit or discard its buffered outputs. Accepted outputs
+-- Once the just-run input was accepted or rejected, commit or discard its buffered outputs. Accepted outputs
 -- are saved, folded into the running frontier (for the root check), and accumulated for the
--- end-of-epoch proofs. Rejected outputs go to their own files and never enter the tree.
-local function flush_pending_outputs(machine, advance, reason, data)
-    if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+-- end-of-epoch proofs. Otherwise (a reject, halt, or exception) the outputs go to their own files
+-- and never enter the tree.
+local function flush_pending_outputs(machine, advance, yield_reason, data)
+    if is_rx_accepted(yield_reason) then
         for _, output in ipairs(advance.pending_outputs) do
             save_cmio_output(advance, output, advance.global_output_index)
             local leaf = cartesi.keccak256(output)
@@ -2756,7 +2911,7 @@ local function flush_pending_outputs(machine, advance, reason, data)
         local proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
         assert(proof.target_hash == cartesi.keccak256(data), "tx buffer does not hold the output hashes root hash")
         save_cmio_output_hashes_root_hash_proof(advance, proof)
-    elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+    else
         for position, output in ipairs(advance.pending_outputs) do
             save_cmio_rejected_output(advance, output, advance.global_output_index + position - 1)
         end
@@ -2768,7 +2923,7 @@ local function load_cmio_input(machine, advance)
     local values = { i = advance.next_input_index }
     local data = util.read_file(instantiate_filename(advance.input, values))
     -- The pre-input root hash is recorded so the EVM verifier can prove a reject
-    -- restores this state, regardless of how the host implements rollback.
+    -- restores this state, regardless of how the host implements the revert.
     machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data)
 end
 
@@ -2806,14 +2961,46 @@ local function dump_memory_ranges(machine, dir)
     end
 end
 
+-- The machine runs in one of two modes, and combinations that make no sense are precluded right
+-- away. In cmio mode (--cmio-advance-state and/or --cmio-inspect-state), the host feeds requests,
+-- optionally making a computation hash. In a plain run, it can instead print mcycle root hashes
+-- or uarch cycle root hashes, one excluding the other. Debugging combines with any of them, but
+-- hash collection assumes the debugger only observes, so that combination warns.
+local mcycle_root_hashes = mcycle_root_hashes_period ~= math.maxinteger
+local computation_hash = cmio_advance
+    and (cmio_advance.mcycle_computation_hash or cmio_advance.uarch_cycle_computation_hash)
+if cmio_advance or cmio_inspect then
+    assert(not uarch_cycle_root_hashes_count, "cmio cannot be combined with printing uarch cycle root hashes")
+    assert(not mcycle_root_hashes, "cmio cannot be combined with printing mcycle root hashes")
+end
+if gdb_address and (mcycle_root_hashes or uarch_cycle_root_hashes_count or computation_hash) then
+    stderr("Warning: writing to registers or memory from GDB produces hashes of states the computation never visits\n")
+end
+if uarch_cycle_root_hashes_count then
+    assert(not mcycle_root_hashes, "printing uarch cycle root hashes cannot be combined with mcycle root hashes")
+end
+-- Sampling any hashes needs a reproducible machine.
+if mcycle_root_hashes or computation_hash then
+    assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
+end
+-- Bundle roots collected from the machine are interior nodes of the epoch tree, which is keccak.
+-- The uarch cycle computation hash always bundles (and the machine only runs the uarch in keccak).
+if
+    cmio_advance
+    and (
+        (cmio_advance.mcycle_computation_hash and cmio_advance.log2_bundle_mcycle_count > 0)
+        or cmio_advance.uarch_cycle_computation_hash
+    )
+then
+    assert(
+        initial_config.hash_tree.hash_function == "keccak256",
+        "computation hash bundling requires the keccak256 hash function"
+    )
+end
 local machine = main_machine
 local gdb_stub
 if gdb_address then
-    assert(
-        periodic_hashes_start == 0 and periodic_hashes_period == math.maxinteger,
-        "periodic hashing is not supported when debugging"
-    )
-    gdb_stub = require("cartesi.gdbstub").new(machine)
+    gdb_stub = require("cartesi.gdbstub").new(machine, max_mcycle)
     local address, port = gdb_address:match("^(.*):(%d+)$")
     assert(address and port, "invalid address for GDB")
     gdb_stub:listen_and_wait_gdb(address, tonumber(port))
@@ -2821,7 +3008,7 @@ end
 if initial_config.processor.registers.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
 if cmio_advance or cmio_inspect then
     check_cmio_htif_config(initial_config.processor.registers.htif)
-    assert(remote_address or not perform_rollbacks, "cmio requires --remote-address for snapshot/commit/rollback")
+    assert(remote_address or not perform_reverts, "cmio requires --remote-address for snapshot/commit/revert")
 end
 -- Seed the outputs-tree frontier once, at the epoch start. With last_output_proof, resume the
 -- genesis-rooted tree from the previous epoch's last output, so this epoch's outputs continue at
@@ -2857,27 +3044,21 @@ if initial_hash then
 end
 dump_value_proofs(machine, initial_proof, initial_config)
 local exit_code = 0
-local next_hash_mcycle
-if periodic_hashes_start ~= 0 then
-    next_hash_mcycle = periodic_hashes_start
-else
-    next_hash_mcycle = periodic_hashes_period
-end
 
 -- To snapshot, we fork the current machine server to create a backup of the current machine.
 -- We leave the backup server alone, and keep going with the current server.
 -- If we already had a backup server, we simply shut it down.
 local backup_machine = nil
-local function do_snapshot(m)
-    if perform_rollbacks then
+local function snapshot(m)
+    if perform_reverts then
         if backup_machine then backup_machine:shutdown_server() end
         backup_machine = m:fork_server()
     end
 end
 
 -- To commit, we simply shut down the backup server.
-local function do_commit()
-    if perform_rollbacks then
+local function commit()
+    if perform_reverts then
         if backup_machine then
             backup_machine:shutdown_server()
             backup_machine = nil
@@ -2885,11 +3066,11 @@ local function do_commit()
     end
 end
 
--- To rollback, we get rid of the current machine server, then rebind the backup
+-- To revert, we get rid of the current machine server, then rebind the backup
 -- server with the address of the original one, and start communicating with it instead
-local function do_rollback(m)
-    if perform_rollbacks then
-        assert(backup_machine, "no snapshot to rollback to")
+local function revert(m)
+    if perform_reverts then
+        assert(backup_machine, "no snapshot to revert to")
         local address = m:get_server_address()
         m:shutdown_server()
         m:swap(backup_machine)
@@ -2902,171 +3083,721 @@ end
 -- luacheck: push ignore 211
 local backup_closer <close> = setmetatable({}, {
     __close = function()
-        -- If we have a backup on exit, we probably raised an error, so we rollback
-        if backup_machine then do_rollback(machine) end
+        -- If we have a backup on exit, we probably raised an error, so we revert
+        if backup_machine then revert(machine) end
     end,
 })
 -- luacheck: pop
 
--- the loop runs at most until max_mcycle. iterations happen because
---   1) we stopped to print a hash
---   2) the machine halted, so iflags_H is set
---   3) the machine yielded manual, so iflags_Y is set
---   4) the machine yielded automatic, so iflags_X is set
--- if the user selected the cmio advance state, then at every yield manual we check the reason
--- if the reason is rx-rejected, we rollback, otherwise it must be rx-accepted.
--- we then feed the next input, reset iflags_Y, snapshot, and resume the machine
--- the machine can now continue processing and may yield automatic to produce outputs and reports we save
--- once all inputs for advance state have been consumed, we check if the user selected cmio inspect state
--- if so, we feed the query, reset iflags_Y, and resume the machine
--- the machine can now continue processing and may yield automatic to produce reports we save
-while math.ult(machine:read_reg("mcycle"), max_mcycle) do
-    local next_mcycle = math.min(next_hash_mcycle, max_mcycle)
-    if gdb_stub and gdb_stub:is_connected() then
-        gdb_stub:run(next_mcycle)
-    elseif dense_uarch_hashes_start then
-        local current_mcycle = machine:read_reg("mcycle")
-        if
-            current_mcycle >= dense_uarch_hashes_start
-            and current_mcycle < dense_uarch_hashes_end
-            and current_mcycle < next_mcycle
-        then
-            if current_mcycle == dense_uarch_hashes_start then print_root_hash(machine) end
-            for step = 1, math.max(math.min(next_mcycle, dense_uarch_hashes_end) - current_mcycle, 0) do
-                for uarch_cycle = 1, math.maxinteger do
-                    local break_reason = machine:run_uarch(uarch_cycle)
-                    print_uarch_root_hash(machine, current_mcycle + step - 1, uarch_cycle)
-                    if machine:read_reg("uarch_halt") ~= 0 then
-                        machine:reset_uarch()
-                        print_root_hash(machine)
-                        break
-                    end
-                    assert(break_reason == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE)
-                end
-                if
-                    machine:read_reg("iflags_H") ~= 0
-                    or machine:read_reg("iflags_X") ~= 0
-                    or machine:read_reg("iflags_Y") ~= 0
-                then
-                    break
-                end
+-- run_to_stop resumes the machine through a "runner": any object with a
+-- run(self, mcycle_end) method returning the break reason, exactly like machine:run. The machine
+-- itself is the plain runner; gdb_stub, the two hash-printing runners, and
+-- the computation-hash object below are the others. The runner is the only thing that knows the
+-- mode. The machine and gdb_stub also implement the two collect calls, and the hash-sampling
+-- runners advance through either, so hashes can be collected while GDB drives the machine.
+
+-- Prints the hashes one uarch cycle collect call returned. Without bundling, each hash after a uarch
+-- cycle is printed as "<mcycle>,<uarch_cycle>: <hash>", and each hash after an implicit uarch reset
+-- (the entries that reset_indices point at) as "<mcycle>: <hash>", at the machine cycle the reset
+-- completed. With bundling, each entry is instead a bundle root covering a range of bundle_size
+-- uarch cycles, printed as "<mcycle>,<first>-<mcycle>,<last>: <hash>". A uarch halt repeats until
+-- the reset, so the ranges continue past it, and the reset entry, whose last covered position is
+-- the completed machine cycle, is printed as "<mcycle>,<first>-<mcycle+1>: <hash>".
+local function print_collected_uarch_hashes(hashes, reset_indices, mcycle, bundle_size)
+    local next_reset = 1
+    local uarch_cycle = 1
+    for i, hash in ipairs(hashes) do
+        if reset_indices[next_reset] == i then
+            if bundle_size == 1 then
+                stderr("%u: %s\n", mcycle + 1, util.hexhash(hash))
+            else
+                stderr("%u,%u-%u: %s\n", mcycle, uarch_cycle, mcycle + 1, util.hexhash(hash))
             end
-        elseif current_mcycle < dense_uarch_hashes_start then
-            machine:run(math.min(next_mcycle, dense_uarch_hashes_start))
+            mcycle = mcycle + 1
+            uarch_cycle = 1
+            next_reset = next_reset + 1
         else
-            machine:run(next_mcycle)
+            if bundle_size == 1 then
+                stderr("%u,%u: %s\n", mcycle, uarch_cycle, util.hexhash(hash))
+            else
+                stderr(
+                    "%u,%u-%u,%u: %s\n",
+                    mcycle,
+                    uarch_cycle,
+                    mcycle,
+                    uarch_cycle + bundle_size - 1,
+                    util.hexhash(hash)
+                )
+            end
+            uarch_cycle = uarch_cycle + bundle_size
         end
-    else
-        machine:run(next_mcycle)
     end
-    -- deal with halt
-    if machine:read_reg("iflags_H") ~= 0 then
-        exit_code = machine:read_reg("htif_tohost_data") >> 1
-        if exit_code ~= 0 then
-            stderr("\nHalted with payload: %u\n", exit_code)
-        else
-            stderr("\nHalted\n")
+end
+
+-- The --print-uarch-cycle-root-hashes runner. collect_uarch_cycle_root_hashes samples the machine state hash
+-- after every uarch cycle for the count machine cycles that follow start, resetting the uarch
+-- between machine cycles, optionally bundling every 2^log2_bundle samples into a subtree root, and
+-- each result is printed. Outside that window the machine runs plainly, all in this same call, so a
+-- stop is only reported once we reach the real target.
+local function uarch_cycle_root_hashes_runner_run(self, next_mcycle)
+    local m = self.machine
+    -- Run plainly up to the window start (once), and print the hash the window starts from.
+    if self.start then
+        if math.ult(m:read_reg("mcycle"), self.start) then
+            local break_reason = self.runner:run(umin(self.start, next_mcycle))
+            -- stopped before start (a halt, a yield, or max_mcycle): report it
+            if m:read_reg("mcycle") ~= self.start then return break_reason end
         end
-        stderr("Cycles: %u\n", machine:read_reg("mcycle"))
-        break
-    -- deal with yield manual
-    elseif machine:read_reg("iflags_Y") ~= 0 then
-        local _, reason, data = get_and_print_yield(machine, initial_config.processor.registers.htif)
-        -- there was an exception
-        if reason == cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
-            stderr("cmio exception with payload: %q\n", data)
-            exit_code = 1
-            do_rollback(machine)
-            break
-        -- there are advance state inputs to feed
-        elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
-            -- previous reason was an accept
-            if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-                do_commit()
-                -- flush only if we have already run an input and have just accepted it
-                if cmio_advance.next_input_index > cmio_advance.input_index_begin then
-                    flush_pending_outputs(machine, cmio_advance, reason, data)
-                end
-            -- previous reason was a reject
-            elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
-                flush_pending_outputs(machine, cmio_advance, reason, data)
-                do_rollback(machine)
+        print_root_hash(m)
+        self.window_end = self.start + self.count
+        self.start = nil
+    end
+    -- Collect within the window, one uarch cycle at a time.
+    local mcycle = m:read_reg("mcycle")
+    if math.ult(mcycle, self.window_end) and math.ult(mcycle, next_mcycle) then
+        -- The revert uarch tail only matters when the run stops at a rejected manual yield, which
+        -- never happens outside cmio mode. The minimal valid tail suffices: a single uarch cycle
+        -- landing on the machine's recorded revert root hash.
+        local revert_root_hash = m:read_revert_root_hash()
+        local revert_uarch_tail = { revert_root_hash, revert_root_hash }
+        local mcycle_end = umin(self.window_end, next_mcycle)
+        local collected = self.runner:collect_uarch_cycle_root_hashes(mcycle_end, self.log2_bundle, revert_uarch_tail)
+        print_collected_uarch_hashes(collected.hashes, collected.reset_indices, mcycle, 1 << self.log2_bundle)
+        -- a stop inside the window is reported (a serviced automatic yield resumes the window)
+        if not is_target_mcycle(collected.break_reason) or m:read_reg("mcycle") == next_mcycle then
+            return collected.break_reason
+        end
+    end
+    -- Past the window, run plainly.
+    return self.runner:run(next_mcycle)
+end
+local function make_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
+    return {
+        machine = machine,
+        runner = runner,
+        start = start,
+        count = count,
+        log2_bundle = log2_bundle,
+        run = uarch_cycle_root_hashes_runner_run,
+    }
+end
+
+-- Prints the hashes one collect call returned. Without bundling, each hash is a state hash printed as
+-- "<mcycle>: <hash>" at its own period boundary (the first at mcycle + period - mcycle_phase, then
+-- every period), and, when the machine stopped at a fixed point, the hash of the stopped state at
+-- the mcycle where it stopped, on a period boundary or not. With bundling, each hash is instead a
+-- bundle root covering bundle_size samples (fill of them left over from the previous call),
+-- printed as "<first>-<last>: <hash>" with the boundaries of the first and last samples it covers.
+-- A fixed point repeats until the end of its bundle, so the ranges continue past it.
+local function print_collected_hashes(m, hashes, mcycle, period, mcycle_phase, bundle_size, fill, at_fixed_point)
+    local boundary = mcycle + period - mcycle_phase
+    if bundle_size == 1 then
+        for i = 1, #hashes - (at_fixed_point and 1 or 0) do
+            stderr("%u: %s\n", boundary, util.hexhash(hashes[i]))
+            boundary = boundary + period
+        end
+        -- A machine already stopped on entry collects nothing.
+        if at_fixed_point and #hashes > 0 then
+            stderr("%u: %s\n", m:read_reg("mcycle"), util.hexhash(hashes[#hashes]))
+        end
+        return
+    end
+    for i, hash in ipairs(hashes) do
+        local first = boundary + ((i - 1) * bundle_size - fill) * period
+        local last = boundary + (i * bundle_size - 1 - fill) * period
+        stderr("%u-%u: %s\n", first, last, util.hexhash(hash))
+    end
+end
+
+-- The --print-mcycle-root-hashes runner. collect_mcycle_root_hashes samples the machine state hash every
+-- `period` mcycles (starting at `start`, or at mcycle 0), plus wherever the machine stops advancing,
+-- optionally bundling every 2^log2_bundle samples into a subtree root, and each result is printed.
+-- self.mcycle_phase and self.back_tree thread across calls so the sampling and the bundling stay
+-- continuous.
+local function mcycle_root_hashes_runner_run(self, next_mcycle)
+    local m = self.machine
+    -- Delay sampling to a start mcycle by running plainly up to it (once), then collect from there
+    -- in this same call, so a stop is only reported once we reach the real target.
+    if self.start then
+        if math.ult(m:read_reg("mcycle"), self.start) then
+            local break_reason = self.runner:run(umin(self.start, next_mcycle))
+            -- stopped before start (a halt, a yield, or max_mcycle): report it
+            if m:read_reg("mcycle") ~= self.start then return break_reason end
+        end
+        print_root_hash(m)
+        self.start = nil
+    end
+    local mcycle = m:read_reg("mcycle")
+    local mcycle_phase = self.mcycle_phase
+    -- the back tree holds the samples of the partially filled bundle a call leaves behind
+    local fill = self.back_tree and self.back_tree.leaf_count or 0
+    local collected =
+        self.runner:collect_mcycle_root_hashes(next_mcycle, self.period, mcycle_phase, self.log2_bundle, self.back_tree)
+    if collected.console_io_error then stderr("Console I/O error: %s\n", collected.console_io_error) end
+    local at_fixed_point = is_at_fixed_point(collected.break_reason)
+    print_collected_hashes(
+        m,
+        collected.hashes,
+        mcycle,
+        self.period,
+        mcycle_phase,
+        1 << self.log2_bundle,
+        fill,
+        at_fixed_point
+    )
+    self.mcycle_phase = collected.mcycle_phase
+    self.back_tree = collected.back_tree
+    return collected.break_reason
+end
+local function make_mcycle_root_hashes_runner(runner, period, start, log2_bundle)
+    return {
+        machine = machine,
+        runner = runner,
+        period = period,
+        start = start,
+        log2_bundle = log2_bundle,
+        mcycle_phase = 0,
+        run = mcycle_root_hashes_runner_run,
+    }
+end
+
+-- The computation hash commits to the history of the epoch: the root of the Merkle tree whose
+-- leaves are the machine state hashes sampled every 2^log2_mcycle_computation_hash_period mcycles, each
+-- input owning 2^ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE mcycles counted from the state that
+-- received it, and the epoch owning 2^ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH inputs. The state
+-- that receives the first input is implicit and not included. A machine stopped at a manual yield
+-- or halt no longer advances, so the leaves past it repeat its hash. The machine can bundle every
+-- 2^log2_bundle samples into a subtree root.
+-- Bundle roots are interior nodes of the epoch tree, so the frontier is that much shorter and the
+-- root is unchanged. The object below owns this:
+-- begin_epoch/begin_input/run/end_input/end_epoch, with its state in self. It is a runner too
+-- (run(self, mcycle_end)), used only while an input is being processed; boot and the inspect query
+-- run plainly.
+
+-- Folds one collected leaf (the state hash at a sample point, or a bundle root) into the epoch tree.
+local function mcycle_computation_hash_push_leaf(self, leaf)
+    assert(math.ult(self.input_leaf_count, self.input_leaf_capacity), "too many leaves in the input")
+    hash_tree.frontier_push_back(self.frontier, leaf)
+    self.input_leaf_count = self.input_leaf_count + 1
+    self.last_leaf_hash = leaf
+end
+
+-- Sets up the empty epoch tree.
+local function mcycle_computation_hash_begin_epoch(self)
+    local log2_leaves_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - self.log2_period - self.log2_bundle
+    self.frontier = hash_tree.frontier(ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_leaves_per_input)
+    self.input_leaf_capacity = 1 << log2_leaves_per_input
+    self.last_leaf_hash = nil
+end
+
+-- Opens an input's sampling at its boundary (the current mcycle), which the machine has just been
+-- fed at, bounding the input to its last sample point (where the next input boundary must sit).
+local function mcycle_computation_hash_begin_input(self, input_index)
+    self.input_index = input_index
+    self.input_leaf_count = 0
+    self.mcycle_phase = 0
+    self.back_tree = nil
+    self.input_end_mcycle = self.machine:read_reg("mcycle") + (1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+end
+
+-- Samples the input's state hashes up to mcycle_end, folding each into the epoch tree (and printing
+-- it when mcycle_computation_hash_leaves is set). self.mcycle_phase and self.back_tree thread the period
+-- and the partially filled bundle across calls.
+local function mcycle_computation_hash_run(self, mcycle_end)
+    local m = self.machine
+    local mcycle = m:read_reg("mcycle")
+    mcycle_end = umin(self.input_end_mcycle, mcycle_end)
+    local fill = self.back_tree and self.back_tree.leaf_count or 0
+    local collected = self.runner:collect_mcycle_root_hashes(
+        mcycle_end,
+        self.period,
+        self.mcycle_phase,
+        self.log2_bundle,
+        self.back_tree
+    )
+    if collected.console_io_error then stderr("Console I/O error: %s\n", collected.console_io_error) end
+    local at_fixed_point = is_at_fixed_point(collected.break_reason)
+    if self.print_leaves then
+        print_collected_hashes(
+            m,
+            collected.hashes,
+            mcycle,
+            self.period,
+            self.mcycle_phase,
+            1 << self.log2_bundle,
+            fill,
+            at_fixed_point
+        )
+    end
+    self.mcycle_phase = collected.mcycle_phase
+    self.back_tree = collected.back_tree
+    -- At a fixed point the machine pads the stream one bundle past the input's last. That bundle
+    -- is not a leaf of this input, but, being pure repetitions of the stopped state hash, it is
+    -- the value that pads the rest of the epoch.
+    local leaf_count = umin(#collected.hashes, self.input_leaf_capacity - self.input_leaf_count)
+    for i = 1, leaf_count do
+        mcycle_computation_hash_push_leaf(self, collected.hashes[i])
+    end
+    if leaf_count < #collected.hashes then self.last_leaf_hash = collected.hashes[#collected.hashes] end
+    return collected.break_reason
+end
+
+-- Closes the open input, if any. The machine stopped inside it, so the input's remaining leaves
+-- repeat the hash of the stopped state, collected as the input's last leaf (the reverted state hash
+-- when the input was rejected).
+local function mcycle_computation_hash_end_input(self)
+    if not self.input_leaf_count then return end
+    assert(self.last_leaf_hash, "no leaf to pad the input with")
+    hash_tree.frontier_pad_back(self.frontier, self.last_leaf_hash, self.input_leaf_capacity - self.input_leaf_count)
+    self.input_leaf_count = nil
+end
+
+-- Ends the epoch, emitting the computation hash. Only ever called at a fixed point (every input
+-- processed, a halt, or an exception), where the leaves past the last input repeat the hash of the
+-- state in which the machine stopped, to the end of the epoch, so the frontier's empty leaves take
+-- that hash as their pad. An epoch that received no inputs repeats the hash of the waiting or
+-- halted machine everywhere, so its pad is that hash bundled up to a frontier leaf.
+local function mcycle_computation_hash_end_epoch(self)
+    self:end_input()
+    local pad = self.last_leaf_hash
+    if not pad then
+        pad = self.machine:get_root_hash()
+        for _ = 1, self.log2_bundle do
+            pad = cartesi.keccak256(pad, pad)
+        end
+    end
+    local root = hash_tree.frontier_get_root_hash(self.frontier, pad)
+    stderr("\nMcycle computation hash: %s\n", util.hexhash(root))
+    if self.filename ~= "" then
+        stderr("Storing %s\n", self.filename)
+        util.write_file(root, self.filename)
+    end
+end
+
+-- Builds the computation-hash object for an epoch, reading its geometry and output settings from the
+-- advance-state options, advancing the machine through the given runner (the machine itself, or gdb).
+local function make_mcycle_computation_hash(m, advance, runner)
+    return {
+        machine = m,
+        runner = runner,
+        period = 1 << advance.log2_mcycle_computation_hash_period,
+        log2_period = advance.log2_mcycle_computation_hash_period,
+        log2_bundle = advance.log2_bundle_mcycle_count,
+        filename = advance.mcycle_computation_hash,
+        print_leaves = advance.mcycle_computation_hash_leaves,
+        begin_epoch = mcycle_computation_hash_begin_epoch,
+        begin_input = mcycle_computation_hash_begin_input,
+        run = mcycle_computation_hash_run,
+        end_input = mcycle_computation_hash_end_input,
+        end_epoch = mcycle_computation_hash_end_epoch,
+    }
+end
+
+-- The uarch cycle computation hash is the second-level claim of a dispute: once the first level
+-- names the mcycle computation hash period where the players diverge, each posts the root of the
+-- Merkle tree whose leaves are the state hashes after every uarch transition of that one period,
+-- the target period, running from target_mcycle_start to target_mcycle_end within the target
+-- input. Each mcycle of the period expands into
+-- 2^ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE transitions: its uarch cycles (the last being the one
+-- where the uarch halts), repetitions of the halt state (a halted uarch no longer advances), and
+-- the implicit reset, which lands on the recorded revert root hash when the input was rejected,
+-- exactly the transitions the blockchain verifies one by one
+-- at the bottom of a dispute. The machine streams each mcycle as bundle roots with the halt
+-- repetitions compressed into one entry, and the claim folds the whole target period through a
+-- single frontier over those entries, one mcycle at a time. An input stopped at a manual yield
+-- or halt no longer advances, so the target period's mcycles past the stop repeat the no-op
+-- uarch period of the stopped state (the reverted state for a rejected input), whose root pads
+-- the tree when it closes. The object below is the mcycle claim above restricted to one period:
+-- same lifecycle, same runner interface, with the leaves collected per uarch transition instead
+-- of per sample point.
+
+-- Adds one reset-delimited mcycle returned by collect_uarch_cycle_root_hashes to the frontier.
+-- The final two entries are the all-fixed-point bundle, repeated to fill the positions before
+-- the reset, and the bundle containing the uarch reset. All preceding entries were produced
+-- while executing the mcycle.
+local function uarch_cycle_computation_hash_push_period(self, frontier, entries, first, last)
+    local capacity = 1 << self.log2_bundles_per_mcycle
+    local real_count = last - first - 1
+    assertf(
+        real_count >= 0 and real_count <= capacity - 1,
+        "too many uarch cycles in an mcycle, reduce log2_bundle_uarch_cycle_count"
+    )
+    for i = first, last - 2 do
+        hash_tree.frontier_push_back(frontier, entries[i])
+    end
+    hash_tree.frontier_pad_back(frontier, entries[last - 1], capacity - 1 - real_count)
+    hash_tree.frontier_push_back(frontier, entries[last])
+end
+
+-- Captures the root that pads the target period's remaining mcycles: the no-op uarch period of
+-- the state the machine stopped in, collected and folded here, while the machine still stands in
+-- it. The driver has committed or reverted the input, so the machine never stands at a rejected
+-- yield, no tail is needed, and the call leaves it unchanged.
+local function uarch_cycle_computation_hash_capture_pad(self)
+    if self.mcycle_count == self.period or self.pad_period_root then return end
+    local m = self.machine
+    local collected = m:collect_uarch_cycle_root_hashes(math.maxinteger, self.log2_bundle)
+    assert(#collected.reset_indices == 1, "expected a single fixed-point uarch period")
+    local frontier = hash_tree.frontier(self.log2_bundles_per_mcycle)
+    uarch_cycle_computation_hash_push_period(self, frontier, collected.hashes, 1, collected.reset_indices[1])
+    self.pad_period_root = hash_tree.frontier_get_root_hash(frontier)
+end
+
+-- Emits the uarch cycle computation hash, printing it and writing the file when one was named.
+-- Unlike the mcycle claim, whose tree is only complete when the whole epoch is, the target
+-- period's tree is complete once its collection finishes, or once the machine reaches the fixed
+-- point whose no-op period pads the rest. The hash is emitted right there, so a run stopped by
+-- --max-mcycle before the epoch ends still emits it. Both callers stand at such a point.
+local function uarch_cycle_computation_hash_emit(self)
+    if self.emitted then return end
+    self.emitted = true
+    local root = hash_tree.frontier_get_root_hash(self.frontier, self.pad_period_root, self.log2_bundles_per_mcycle)
+    stderr("\nUarch cycle computation hash: %s\n", util.hexhash(root))
+    if self.filename ~= "" then
+        stderr("Storing %s\n", self.filename)
+        util.write_file(root, self.filename)
+    end
+end
+
+-- Sets up the empty target period tree, one entry per bundle, 2^log2_bundles_per_mcycle of them
+-- per mcycle.
+local function uarch_cycle_computation_hash_begin_epoch(self)
+    self.frontier = hash_tree.frontier(self.log2_period + self.log2_bundles_per_mcycle)
+    self.mcycle_count = 0
+    self.pad_period_root = nil
+    self.emitted = false
+end
+
+-- Opens the target input at its boundary (before it is fed), which the target period's mcycles
+-- are counted from, bounding the input to its mcycle budget. Every other input is ignored. The
+-- revert uarch tail is the root hashes after each uarch cycle of the boundary machine's no-op
+-- period, the last cycle being the one where the uarch halts, followed by the boundary root hash
+-- itself, which is what the machine records as the revert root hash when the input is fed, and
+-- what a reject reverts to. One unbundled collect call at the boundary emits exactly these
+-- entries (the boundary is a fixed point, not a rejected yield, so no tail is required, and the
+-- call leaves the machine unchanged).
+local function uarch_cycle_computation_hash_begin_input(self, input_index)
+    if input_index ~= self.target_input then return end
+    local m = self.machine
+    local mcycle = m:read_reg("mcycle")
+    self.input_end_mcycle = mcycle + (1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+    self.target_mcycle_start = mcycle + self.target_offset * self.period
+    self.target_mcycle_end = self.target_mcycle_start + self.period
+    self.revert_uarch_tail = m:collect_uarch_cycle_root_hashes(math.maxinteger, 0).hashes
+end
+
+-- Advances the machine up to mcycle_end. Every input other than the target runs plainly. The
+-- target input runs plainly up to the target period, collects within it (folding one leaf per
+-- mcycle into the tree, with the machine threading across calls split by automatic yields, each
+-- ending at a reset entry), and runs plainly past it.
+local function uarch_cycle_computation_hash_run(self, mcycle_end)
+    if not self.target_mcycle_start then return self.runner:run(mcycle_end) end
+    local m = self.machine
+    local mcycle = m:read_reg("mcycle")
+    mcycle_end = umin(self.input_end_mcycle, mcycle_end)
+    local break_reason
+    -- Run plainly up to the target period, or to mcycle_end when it comes first. A stop short of
+    -- the wanted mcycle is reported to the caller, and so is a call that ends before the period.
+    if math.ult(mcycle, self.target_mcycle_start) then
+        local wanted_mcycle = umin(self.target_mcycle_start, mcycle_end)
+        break_reason = self.runner:run(wanted_mcycle)
+        if not is_target_mcycle(break_reason) or wanted_mcycle ~= self.target_mcycle_start then return break_reason end
+        mcycle = self.target_mcycle_start
+    end
+    -- Collect within the target period, pushing each reset-delimited group of stream entries
+    -- into the tree as one mcycle.
+    if math.ult(mcycle, self.target_mcycle_end) then
+        local collected = self.runner:collect_uarch_cycle_root_hashes(
+            umin(self.target_mcycle_end, mcycle_end),
+            self.log2_bundle,
+            self.revert_uarch_tail
+        )
+        break_reason = collected.break_reason
+        -- At a machine fixed point, collection returns one additional no-op mcycle containing
+        -- the fixed-point padding bundle and the reset bundle. Include it if it belongs to the
+        -- target period. Otherwise, capture_pad obtains the same root from the stopped machine.
+        local reset_indices = collected.reset_indices
+        local count = umin(#reset_indices, self.period - self.mcycle_count)
+        local first = 1
+        for i = 1, count do
+            uarch_cycle_computation_hash_push_period(self, self.frontier, collected.hashes, first, reset_indices[i])
+            first = reset_indices[i] + 1
+        end
+        self.mcycle_count = self.mcycle_count + count
+        if self.mcycle_count == self.period then uarch_cycle_computation_hash_emit(self) end
+    end
+    -- Past the target period, run plainly. A stop inside it is instead reported as is.
+    if (not break_reason or is_target_mcycle(break_reason)) and math.ult(m:read_reg("mcycle"), mcycle_end) then
+        break_reason = self.runner:run(mcycle_end)
+    end
+    return break_reason
+end
+
+-- Closes the target input, if open. The machine stopped inside it, so the target period's
+-- remaining mcycles repeat the no-op period of the stopped state (the reverted state when the
+-- input was rejected), captured now, while the machine still stands in it.
+local function uarch_cycle_computation_hash_end_input(self)
+    if not self.target_mcycle_start then return end
+    self.target_mcycle_start, self.target_mcycle_end, self.revert_uarch_tail = nil, nil, nil
+    uarch_cycle_computation_hash_capture_pad(self)
+    uarch_cycle_computation_hash_emit(self)
+end
+
+-- Ends the epoch. Only ever called at a fixed point. A target period never reached (its input
+-- never processed, or past the last input) is pure repetitions of the no-op period of the state
+-- the epoch stopped in, and is padded here.
+local function uarch_cycle_computation_hash_end_epoch(self)
+    self:end_input()
+    uarch_cycle_computation_hash_capture_pad(self)
+    uarch_cycle_computation_hash_emit(self)
+end
+
+-- Builds the uarch cycle computation hash object for an epoch, locating the period
+-- mcycle_period_index selects within the epoch geometry, and advancing the machine through the
+-- given runner (the machine itself, or gdb).
+local function make_uarch_cycle_computation_hash(m, advance, runner)
+    local log2_period = advance.log2_mcycle_computation_hash_period
+    local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
+    return {
+        machine = m,
+        runner = runner,
+        period = 1 << log2_period,
+        log2_period = log2_period,
+        log2_bundle = advance.log2_bundle_uarch_cycle_count,
+        log2_bundles_per_mcycle = ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - advance.log2_bundle_uarch_cycle_count,
+        target_input = advance.mcycle_period_index >> log2_periods_per_input,
+        target_offset = advance.mcycle_period_index & ((1 << log2_periods_per_input) - 1),
+        filename = advance.uarch_cycle_computation_hash,
+        begin_epoch = uarch_cycle_computation_hash_begin_epoch,
+        begin_input = uarch_cycle_computation_hash_begin_input,
+        run = uarch_cycle_computation_hash_run,
+        end_input = uarch_cycle_computation_hash_end_input,
+        end_epoch = uarch_cycle_computation_hash_end_epoch,
+    }
+end
+
+-- The do-nothing computation hash, for an epoch that does not compute one. Its lifecycle methods are
+-- no-ops and its run just delegates to the given runner (the machine itself, or gdb), so
+-- run_advance_state_epoch drives every epoch through the same calls without testing whether a
+-- computation hash is wanted.
+local function null_computation_hash_noop() end
+local function null_computation_hash_run(self, mcycle_end) return self.runner:run(mcycle_end) end
+local function make_null_computation_hash(runner)
+    return {
+        runner = runner,
+        begin_epoch = null_computation_hash_noop,
+        begin_input = null_computation_hash_noop,
+        run = null_computation_hash_run,
+        end_input = null_computation_hash_noop,
+        end_epoch = null_computation_hash_noop,
+    }
+end
+
+-- Resumes the machine, running to each target cycle with the given runner (the machine itself for
+-- a plain run) and servicing each automatic yield through on_yield_automatic(yield_reason, data),
+-- until it reaches a fixed point or max_mcycle, and returns the break reason it stopped for.
+-- This is the host's inner loop. A terminal manual yield is left unread, for the caller to
+-- service.
+local function run_to_stop(m, on_yield_automatic, runner)
+    while true do
+        local break_reason = runner:run(max_mcycle)
+        if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
+            return break_reason
+        elseif is_yielded_automatic(break_reason) then
+            local _, yield_reason, data = get_and_print_yield(m, initial_config.processor.registers.htif)
+            on_yield_automatic(yield_reason, data)
+        end
+        -- any other reason (a soft yield or console output) just keeps going
+    end
+end
+
+-- Prints the halt banner and records the guest exit code.
+local function report_halt(m)
+    exit_code = m:read_reg("htif_tohost_data") >> 1
+    if exit_code ~= 0 then
+        stderr("\nHalted with payload: %u\n", exit_code)
+    else
+        stderr("\nHalted\n")
+    end
+    stderr("Cycles: %u\n", m:read_reg("mcycle"))
+end
+
+-- Prints the mcycle overflow banner. The machine stopped at its mcycle limit without completing
+-- its work, so the run is reported as a failure.
+local function report_mcycle_overflow(m)
+    exit_code = 1
+    stderr("\nMcycle overflow\n")
+    stderr("Cycles: %u\n", m:read_reg("mcycle"))
+end
+
+-- Reports where a run stopped: the halt banner on a halt, the overflow banner on an mcycle
+-- overflow, or the manual yield it left unread.
+local function report_stop(m, break_reason)
+    if is_halted(break_reason) then
+        report_halt(m)
+    elseif is_mcycle_overflow(break_reason) then
+        report_mcycle_overflow(m)
+    elseif is_yielded_manual(break_reason) then
+        get_and_print_yield(m, initial_config.processor.registers.htif)
+    end
+end
+
+-- The inner loop of a run with no cmio requests ignores automatic yields.
+local function ignore_yield_automatic() end
+
+-- Runs the inspect-state query against the machine at an accept manual yield, saving its reports
+-- and reverting the state afterward, leaving cmio_inspect nil. First reaches that accept yield: it
+-- boots the machine when inspecting on its own, and is a noop right after an advance-state epoch
+-- (already there). The yield is announced only when reached by advancing, since after an epoch the
+-- advance loop already announced this same yield.
+local function run_inspect_state_query(m, runner)
+    local htif = initial_config.processor.registers.htif
+    local mcycle = m:read_reg("mcycle")
+    -- Boot always runs the machine plainly, and only the query itself runs with the runner. If the
+    -- machine did not stop at a manual yield (it halted, or ran out of mcycles), it is not at an
+    -- accept yield waiting for a request, so there is nothing to inspect.
+    local break_reason = run_to_stop(m, ignore_yield_automatic, m)
+    if not is_yielded_manual(break_reason) then return end
+    -- Announce the yield we advanced to reach (after an epoch it is the epoch's already-announced
+    -- accept yield, at the same mcycle, so skip it). load_cmio_query is the gate on the reason: it
+    -- fails unless the machine is at an rx-accepted manual yield, rejecting a reject or exception.
+    if m:read_reg("mcycle") ~= mcycle then get_and_print_yield(m, htif) end
+    stderr("\nBefore query\n")
+    if cmio_inspect.print_query_state_hashes then print_root_hash(m) end
+    snapshot(m)
+    load_cmio_query(m, cmio_inspect)
+    if cmio_inspect.print_query_state_hashes then print_root_hash(m) end
+    cmio_inspect.report_index = 0
+    local function on_yield_automatic(yield_reason, data)
+        if is_tx_report(yield_reason) then
+            save_cmio_inspect_state_report(cmio_inspect, data)
+            cmio_inspect.report_index = cmio_inspect.report_index + 1
+        end
+    end
+    break_reason = run_to_stop(m, on_yield_automatic, runner)
+    report_stop(m, break_reason)
+    stderr("\nAfter query\n")
+    revert(m)
+    cmio_inspect = nil
+end
+
+-- Drives an advance-state epoch actively, as the README host loop does. Boots to the rolling
+-- template's first accept yield, then for each input snapshots, feeds, resumes until the input
+-- is accepted or rejected, collecting outputs and reports, and commits or reverts. Every input
+-- processed, a halt, an mcycle overflow, or an exception is a fixed point that determines the
+-- computation hash (the stopped state pads the rest of the epoch). Only reaching max_mcycle
+-- leaves it undetermined. On a halt, overflow, or exception the interrupted input's outputs are
+-- flushed as rejected, and output proofs are written only on full completion.
+-- Leaves the machine wherever the epoch stopped. A trailing inspect query, if any, runs against that
+-- state and does nothing unless it is an accept yield. Boot always runs the machine plainly. The
+-- inputs run with the claim, which either collects a computation hash (advancing through the
+-- given runner) or delegates to the runner directly (the machine itself, or gdb).
+local function run_advance_state_epoch(m, runner)
+    local htif = initial_config.processor.registers.htif
+    local advance = cmio_advance
+    local claim = advance.mcycle_computation_hash and make_mcycle_computation_hash(m, advance, runner)
+        or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(m, advance, runner)
+        or make_null_computation_hash(runner)
+    claim:begin_epoch()
+    -- outputs are buffered until the input is accepted or rejected, reports are saved at once
+    local function on_yield_automatic(yield_reason, data)
+        if is_tx_output(yield_reason) then
+            advance.pending_outputs[#advance.pending_outputs + 1] = data
+        elseif is_tx_report(yield_reason) then
+            save_cmio_report(advance, data)
+            advance.report_index = advance.report_index + 1
+        end
+    end
+    -- boot plainly to the rolling template's first accept yield, then process each input in turn.
+    -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
+    local break_reason = run_to_stop(m, ignore_yield_automatic, m)
+    if is_yielded_manual(break_reason) then
+        get_and_print_yield(m, htif)
+        for input_index = advance.input_index_begin, advance.input_index_end - 1 do
+            snapshot(m)
+            stderr("\nBefore input %d\n", input_index)
+            if advance.print_input_state_hashes then print_root_hash(m) end
+            -- the claim opens the input at its boundary, before it is fed (the uarch cycle claim
+            -- collects the boundary's revert uarch tail there, and feeding does not advance mcycle)
+            claim:begin_input(input_index)
+            load_cmio_input(m, advance)
+            if advance.print_input_state_hashes then print_root_hash(m) end
+            advance.report_index = 0
+            -- labeling: from now the producing input is next_input_index - 1
+            advance.next_input_index = input_index + 1
+            break_reason = run_to_stop(m, on_yield_automatic, claim)
+            -- a halt, overflow, or max_mcycle before the accept or reject yield ends the epoch;
+            -- it closes below
+            if not is_yielded_manual(break_reason) then break end
+            local _, yield_reason, data = get_and_print_yield(m, htif)
+            if is_rx_accepted(yield_reason) then
+                flush_pending_outputs(m, advance, yield_reason, data)
+                commit()
+            elseif is_rx_rejected(yield_reason) then
+                assert(
+                    perform_reverts or not (advance.mcycle_computation_hash or advance.uarch_cycle_computation_hash),
+                    "the computation hash of a rejected input requires reverts"
+                )
+                flush_pending_outputs(m, advance, yield_reason, data)
+                revert(m)
+            elseif is_tx_exception(yield_reason) then
+                -- an exception is a fixed point like a halt: report it, flush the interrupted input's
+                -- outputs as rejected, and end the epoch, leaving the machine at the exception
+                -- yield (no revert). A following inspect query fails against this non-accept yield,
+                -- which the CLI just reports.
+                stderr("cmio exception with payload: %q\n", data)
+                exit_code = 1
+                flush_pending_outputs(m, advance, yield_reason, data)
+                claim:end_epoch()
+                return
             else
                 error("unexpected manual yield reason")
             end
-            stderr("\nBefore input %d\n", cmio_advance.next_input_index)
-            if cmio_advance.hashes then print_root_hash(machine) end
-            do_snapshot(machine)
-            load_cmio_input(machine, cmio_advance)
-            if cmio_advance.hashes then print_root_hash(machine) end
-            cmio_advance.report_index = 0
-            cmio_advance.next_input_index = cmio_advance.next_input_index + 1
-        else
-            if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
-                -- the last input's verdict closes the epoch
-                if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-                    flush_pending_outputs(machine, cmio_advance, reason, data)
-                    do_commit()
-                elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
-                    flush_pending_outputs(machine, cmio_advance, reason, data)
-                    do_rollback(machine)
-                end
-                -- all accepted outputs are known, so the per-output proofs against the final root
-                -- can be written (the proofs share the last input's checked root)
-                save_cmio_output_proofs(cmio_advance)
-                cmio_advance = nil
-            end
-            -- not done with inspect state query
-            if cmio_inspect then
-                -- haven't even fed it
-                if cmio_inspect.query then
-                    stderr("\nBefore query\n")
-                    if cmio_inspect.hashes then print_root_hash(machine) end
-                    do_snapshot(machine)
-                    load_cmio_query(machine, cmio_inspect)
-                    if cmio_inspect.hashes then print_root_hash(machine) end
-                    cmio_inspect.report_index = 0
-                    cmio_inspect.query = nil
-                -- fed it already
-                else
-                    stderr("\nAfter query\n")
-                    do_rollback(machine)
-                    cmio_inspect = nil
-                end
-            end
+            claim:end_input()
         end
-    -- deal with yield automatic
-    elseif machine:read_reg("iflags_X") ~= 0 then
-        local _, reason, data = get_and_print_yield(machine, initial_config.processor.registers.htif)
-        -- we have fed an advance state input
-        if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
-            if reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
-                -- buffer until the input's accept/reject verdict is known
-                cmio_advance.pending_outputs[#cmio_advance.pending_outputs + 1] = data
-            elseif reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
-                save_cmio_report(cmio_advance, data)
-                cmio_advance.report_index = cmio_advance.report_index + 1
-            end
-        -- ignore other reasons
-        -- we have feed the inspect state query
-        elseif cmio_inspect and not cmio_inspect.query then
-            if reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
-                save_cmio_inspect_state_report(cmio_inspect, data)
-                cmio_inspect.report_index = cmio_inspect.report_index + 1
-            end
-            -- ignore other reasons
-        end
-        -- otherwise ignore
     end
-    if machine:read_reg("iflags_Y") ~= 0 then
-        -- commit any pending snapshot
-        do_commit()
-        break
+    if is_halted(break_reason) then
+        report_halt(m)
+        flush_pending_outputs(m, advance)
+        claim:end_epoch()
+    elseif is_mcycle_overflow(break_reason) then
+        report_mcycle_overflow(m)
+        flush_pending_outputs(m, advance)
+        claim:end_epoch()
+    elseif is_yielded_manual(break_reason) then
+        save_cmio_output_proofs(advance)
+        claim:end_epoch()
     end
-    if machine:read_reg("mcycle") == next_hash_mcycle then
-        print_root_hash(machine)
-        next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
-    end
+end
+
+-- Pick the runner for the run. The machine itself is the plain runner, or gdb_stub when
+-- debugging, and the hash-sampling runners advance through one of them. In cmio mode those were
+-- precluded up front, so the runner is the machine or gdb, and requests run with it (a
+-- computation hash advances through it too).
+local runner = gdb_stub or machine
+if uarch_cycle_root_hashes_count then
+    runner = make_uarch_cycle_root_hashes_runner(
+        runner,
+        uarch_cycle_root_hashes_start,
+        uarch_cycle_root_hashes_count,
+        uarch_cycle_root_hashes_log2_bundle
+    )
+elseif mcycle_root_hashes then
+    local start = mcycle_root_hashes_start ~= 0 and mcycle_root_hashes_start or nil
+    runner = make_mcycle_root_hashes_runner(runner, mcycle_root_hashes_period, start, mcycle_root_hashes_log2_bundle)
+end
+
+-- The host drives an advance-state epoch (which may end with an inspect query) actively, an
+-- inspect-state query on its own, or otherwise just runs the machine to a stop.
+if cmio_advance then
+    run_advance_state_epoch(machine, runner)
+    -- an inspect query, if any, runs against the state the epoch left; it does nothing unless that
+    -- is an accept yield (a completed epoch), so it is safe to always attempt
+    if cmio_inspect then run_inspect_state_query(machine, runner) end
+elseif cmio_inspect then
+    run_inspect_state_query(machine, runner)
+else
+    report_stop(machine, run_to_stop(machine, ignore_yield_automatic, runner))
 end
 -- log step
 if log_step_mcycle_count then
@@ -3113,10 +3844,8 @@ end
 dump_value_proofs(machine, final_proof, initial_config)
 if store_dir then store_machine(machine, initial_config, store_dir, store_sharing) end
 if assert_rolling_template then
-    local cmd, reason = machine:receive_cmio_request()
-    if not (cmd == cartesi.HTIF_YIELD_CMD_MANUAL and reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED) then
-        exit_code = 2
-    end
+    local cmd, yield_reason = machine:receive_cmio_request()
+    if not (cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(yield_reason)) then exit_code = 2 end
 end
 if not remote_address or remote_destroy then machine:destroy() end
 os.exit(exit_code, true)

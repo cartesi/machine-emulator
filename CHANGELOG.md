@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added LuaCov-based coverage tracking for Lua code, integrated with the gcov report pipeline
 - Added a JSON-RPC C API coverage suite and converted `test-cm-cli` and `test-evmu` to the lester spec format
 - Added `spec-cm-cli.lua` covering every command-line option of `cartesi-machine.lua`
+- Added `mcycle_computation_hash`, `log2_mcycle_computation_hash_period`, `mcycle_computation_hash_leaves`, and `log2_bundle_mcycle_count` sub-options to `--cmio-advance-state`, emitting the epoch's mcycle computation hash (the Merkle tree of state hashes sampled every 2^`log2_mcycle_computation_hash_period` mcycles, each input owning 2^48 mcycles and the epoch 2^24 inputs, matching the on-chain dispute geometry, with fixed points padding each input's span and the end of the epoch), optionally printing its leaves, and optionally bundling every 2^N samples into one machine call
+- Added `uarch_cycle_computation_hash`, `mcycle_period_index`, and `log2_bundle_uarch_cycle_count` sub-options to `--cmio-advance-state`, emitting the uarch cycle computation hash of one mcycle computation hash period: the Merkle tree of the state hashes after every uarch transition of that period, matching the state transitions verified on-chain during the second level of a dispute
+- Added `frontier_pad_back` to the `cartesi.hash-tree` Lua module, padding a frontier with copies of a leaf, a top slot to the frontier so an exactly-full tree keeps its root, and optional log2 entry sizes to `frontier_push_back`, `frontier_pad_back`, and `frontier_get_root_hash`, pushing or padding with complete subtree roots instead of leaves
 
 ## Fixed
 - Fixed unbundled uarch-cycle hash collection to include the fixed-point padding hash immediately before each reset, matching bundled collection
@@ -47,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed the uarch halt register and cycle break reasons to consistently use `uarch_halt`, `reached_target_uarch_cycle`, and `uarch_cycle_overflow`
 - Renamed the yield constants in `cm.h` and the Lua API from `CM_CMIO_YIELD_*` to `CM_HTIF_YIELD_*` (and the command suffix from `COMMAND` to `CMD`)
 - Renamed the PMA "device id" to "driver id" across the public API (`CM_PMA_*_DID` constants, `driver_id` in `get_address_ranges`)
+- Renamed `--no-rollback` to `--no-revert`, matching the machine's revert terminology (the revert root hash a reject restores)
+- Changed conflicting run modes to be precluded up front: cmio advance/inspect state cannot be combined with `--print-mcycle-root-hashes` or `--print-uarch-cycle-root-hashes`, and those two cannot be combined with each other; `--gdb` combines with hash collection (the stub implements the machine's collect calls, so hashes thread across debugger stops), with a warning that debugger writes produce hashes of states the computation never visits
 - Changed `get_address_ranges` to report per-range attributes (`is_memory`, `is_device`, `is_readable`, `is_writeable`, `is_executable`, `is_read_idempotent`, `is_write_idempotent`, and `driver_id`)
 - Replaced the `--store-json-config`/`--load-json-config` options with a `format:<lua|json>` sub-option on `--store-config`/`--load-config`, defaulting to the format inferred from the filename extension
 - Changed `--initial-proof`/`--final-proof` to default to Lua tables and accept `format:<lua|json>` and `label:` sub-options, where before they were dumped only as JSON
@@ -60,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved the `/run/cartesi/memoryranges/` sysfs setup from the DTB init script into `cartesi-init`
 - Updated guest bootargs to bind `uio_pdrv_genirq` to generic-uio nodes
 - Bumped test `linux.bin` and `rootfs.ext2` images
+- Renamed `--periodic-hashes` to `--print-mcycle-root-hashes` and `--dense-uarch-hashes` to `--print-uarch-cycle-root-hashes`, matching the machine's collect calls
+- Changed `--print-mcycle-root-hashes` to collect through `collect_mcycle_root_hashes`: hashes are also printed where the machine stops advancing (a manual yield or halt), and the machine must be reproducible
+- Changed `--print-uarch-cycle-root-hashes` to collect through `collect_uarch_cycle_root_hashes`: when the window ends at a fixed point (a manual yield or halt), the hashes of one extra machine cycle at that fixed point are also printed
+- Added a `log2_bundle_mcycle_count` sub-option to `--print-mcycle-root-hashes` and a `log2_bundle_uarch_cycle_count` sub-option to `--print-uarch-cycle-root-hashes`, bundling every 2^N sampled hashes into a subtree root printed with the range of cycles it covers
+- Reworked the main loop of `cartesi-machine.lua` into a runner that dispatches manual and automatic yields to handler callbacks
 
 ## Removed
 - Removed the `--store-json-config` and `--load-json-config` options (folded into the `format:` sub-option of `--store-config`/`--load-config`)

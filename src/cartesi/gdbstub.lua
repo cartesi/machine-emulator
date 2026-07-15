@@ -14,13 +14,15 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
+local cartesi = require("cartesi")
+
 local GDBSTUB_DEBUG_PROTOCOL = false
 
 local signals = {
     SIGINT = 2, -- signal sent to GDB when reaching a fixed number of cycle steps
     SIGQUIT = 3, -- signal sent to GDB when max cycle is reached
     SIGTRAP = 5, -- signal sent to GDB when a breakpoint is reached
-    SIGTERM = 15, -- signal sent to GDB when the machine halts
+    SIGTERM = 15, -- signal sent to GDB when the machine halts or overflows its mcycle limit
 }
 
 local GDBStub = {}
@@ -54,9 +56,12 @@ local function stderr(fmt, ...)
 end
 
 -- Creates a new GDBStub.
-function GDBStub.new(machine)
+-- max_mcycle is where the whole run ends. Reaching it is reported to GDB. Reaching the smaller
+-- target of an outer run or collect call instead suspends that call.
+function GDBStub.new(machine, max_mcycle)
     return setmetatable({
         machine = machine,
+        max_mcycle = max_mcycle or math.maxinteger,
         breakpoints = {},
     }, GDBStub)
 end
@@ -394,13 +399,52 @@ function GDBStub:_handle_write_mem(payload)
     return self:_send_ok()
 end
 
+-- One advance function per outer call (run and the two collect calls). Each advances the machine
+-- as machine:run would, also collecting hashes when the outer call collects them. Every inner
+-- call of one outer collect call aggregates into self.collect.
+local advance_modes = {}
+
+function advance_modes.run(self, mcycle_end) return self.machine:run(mcycle_end) end
+
+function advance_modes.collect_mcycle_root_hashes(self, mcycle_end)
+    local collect = self.collect
+    local collected = self.machine:collect_mcycle_root_hashes(
+        mcycle_end,
+        collect.mcycle_period,
+        collect.mcycle_phase,
+        collect.log2_bundle,
+        collect.back_tree
+    )
+    collect.mcycle_phase = collected.mcycle_phase
+    collect.back_tree = collected.back_tree
+    collect.console_io_error = collect.console_io_error or collected.console_io_error
+    table.move(collected.hashes, 1, #collected.hashes, #collect.hashes + 1, collect.hashes)
+    return collected.break_reason
+end
+
+function advance_modes.collect_uarch_cycle_root_hashes(self, mcycle_end)
+    local collect = self.collect
+    local collected =
+        self.machine:collect_uarch_cycle_root_hashes(mcycle_end, collect.log2_bundle, collect.revert_uarch_tail)
+    local offset = #collect.hashes
+    table.move(collected.hashes, 1, #collected.hashes, offset + 1, collect.hashes)
+    local reset_indices = collect.reset_indices
+    for _, reset_index in ipairs(collected.reset_indices) do
+        reset_indices[#reset_indices + 1] = reset_index + offset
+    end
+    return collected.break_reason
+end
+
+-- Advances the machine up to mcycle_end on behalf of the outer call in progress.
+function GDBStub:_advance(mcycle_end) return advance_modes[self.mode](self, mcycle_end) end
+
 -- GDB is asking to let the machine continue.
 function GDBStub:_handle_continue()
     local machine = self.machine
     local mcycle = machine:read_reg("mcycle")
-    local mcycle_end = self.max_mcycle
+    local mcycle_end = self.mcycle_end
     local ult = math.ult -- localized to speed up Lua loop
-    if self.mcycle_limit and ult(self.mcycle_limit, self.max_mcycle) then
+    if self.mcycle_limit and ult(self.mcycle_limit, self.mcycle_end) then
         -- we want to advance just a fixed number of cycles
         mcycle_end = self.mcycle_limit
     end
@@ -408,26 +452,35 @@ function GDBStub:_handle_continue()
         local breakpoints = self.breakpoints -- localized to speed up Lua loop
         -- need to run cycle by cycle, while checking breakpoints
         while ult(mcycle, mcycle_end) do
-            machine:run(mcycle + 1)
+            self.break_reason = self:_advance(mcycle + 1)
             if breakpoints[machine:read_reg("pc")] then -- breakpoint reached
                 return self:_send_signal(signals.SIGTRAP)
+            elseif self.break_reason == cartesi.BREAK_REASON_MCYCLE_OVERFLOW then -- machine overflowed
+                return self:_send_signal(signals.SIGTERM)
             elseif machine:read_reg("iflags_H") ~= 0 then -- machined halted
                 return self:_send_signal(signals.SIGTERM)
             elseif machine:read_reg("iflags_Y") ~= 0 or machine:read_reg("iflags_X") ~= 0 then -- machine yielded
-                self.yielded = true
+                self.suspended = true
                 return true -- a reply will be sent to GDB in the next run loop
             end
             mcycle = machine:read_reg("mcycle")
         end
     else -- no breakpoint set, we can run through the fast path
-        machine:run(mcycle_end)
+        self.break_reason = self:_advance(mcycle_end)
     end
-    if machine:read_reg("iflags_H") ~= 0 then -- machine halted
+    if self.break_reason == cartesi.BREAK_REASON_MCYCLE_OVERFLOW then -- machine overflowed
         return self:_send_signal(signals.SIGTERM)
-    elseif machine:read_reg("mcycle") == self.max_mcycle then -- reached max cycles
-        return self:_send_signal(signals.SIGQUIT)
+    elseif machine:read_reg("iflags_H") ~= 0 then -- machine halted
+        return self:_send_signal(signals.SIGTERM)
+    elseif machine:read_reg("mcycle") == self.mcycle_end then -- reached the target of the outer call
+        if self.mcycle_end == self.max_mcycle then -- reached max cycles
+            return self:_send_signal(signals.SIGQUIT)
+        end
+        -- suspend the outer call at an intermediate target, its caller regains control there
+        self.suspended = true
+        return true
     elseif machine:read_reg("iflags_Y") ~= 0 or machine:read_reg("iflags_X") ~= 0 then -- machine yielded
-        self.yielded = true
+        self.suspended = true
         return true -- a reply will be sent to GDB in the next run loop
     else -- reached step cycles limit
         return self:_send_signal(signals.SIGINT)
@@ -520,23 +573,17 @@ function GDBStub:_handle_packet(data)
     end
 end
 
--- Runs the machine until GDB detaches.
--- The machine runs up to max_mcycle mcycles, or halts, or GDB detaches.
--- The machine may not necessary reaches max_mcycle (in case GDB detached early).
--- This function will return early if the machine yields (to let the caller deal with yields).
--- Returns false if GDB session ended (GDB detached),
--- otherwise true if GDB session is still going on (when yielding).
-function GDBStub:run(max_mcycle)
-    if not self.conn then return false end
-    -- set max mcycle for continue operations
-    self.max_mcycle = max_mcycle or math.maxinteger
-    -- when resuming from a yield, we have a pending GDB continue packet to reply
-    if self.yielded then
-        self.yielded = nil
+-- Pumps the GDB session. Resumes a pending continue packet, then handles incoming packets until
+-- the outer call is suspended (a yield, or an intermediate target) or GDB detaches. Returns the
+-- break reason of the last advancement when suspended, or nil when there is no live session.
+function GDBStub:_pump_session()
+    -- when resuming a suspended call, we have a pending GDB continue packet to reply
+    if self.suspended then
+        self.suspended = nil
         self:_handle_continue() -- resume handling last continue packet
     end
-    -- run while GDB is connected and the machine has not yielded
-    while self.conn and not self.yielded do
+    -- run while GDB is connected and the machine has not suspended the call
+    while self.conn and not self.suspended do
         local c = assert(self.conn:receive(1))
         if c == "$" then -- incoming packet
             local data = self:_recv()
@@ -550,7 +597,92 @@ function GDBStub:run(max_mcycle)
             error("Received unexpected protocol character from GDB: " .. c)
         end
     end
-    return self.yielded
+    if self.suspended then return self.break_reason end
+    return nil
+end
+
+-- Runs the machine until GDB detaches.
+-- The machine runs up to mcycle_end mcycles, or halts, or GDB detaches.
+-- The machine may not reach mcycle_end (GDB may detach early).
+-- This function will return early if the machine yields (to let the caller deal with yields).
+-- Returns the machine break reason, like machine:run. On a yield it returns that reason, for the
+-- caller to service the yield. An mcycle_end short of max_mcycle is an intermediate target from
+-- a runner above, and reaching it also returns, with the pending continue resuming on the next
+-- call. Otherwise there is no live GDB session driving the machine (never connected, or just
+-- detached), so the caller regains control: run advances the machine to mcycle_end, or its next
+-- stop, and returns that reason (halt and max_mcycle are consumed by the debugger while it stays
+-- live, so those never unwind a live session to the caller).
+function GDBStub:run(mcycle_end)
+    mcycle_end = mcycle_end or math.maxinteger
+    self.mode = "run"
+    if self.conn then
+        -- set the target for continue operations
+        self.mcycle_end = mcycle_end
+        local break_reason = self:_pump_session()
+        if break_reason ~= nil then return break_reason end
+    end
+    -- no live GDB session: advance the machine, as machine:run would, and report its break reason
+    return self.machine:run(mcycle_end)
+end
+
+-- Like run, but collecting hashes, so hash-sampling runners can advance the machine through the
+-- debugger. Each continue issues one collect call, and the aggregate result, shaped like the
+-- machine's,
+-- is returned when the call suspends. When GDB never connected or detached mid-call, the
+-- collection finishes against the machine, as run does.
+function GDBStub:collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase, log2_bundle, back_tree)
+    self.mode = "collect_mcycle_root_hashes"
+    local collect = {
+        hashes = {},
+        mcycle_period = mcycle_period,
+        mcycle_phase = mcycle_phase,
+        log2_bundle = log2_bundle,
+        back_tree = back_tree,
+    }
+    self.collect = collect
+    local break_reason
+    if self.conn then
+        self.mcycle_end = mcycle_end
+        break_reason = self:_pump_session()
+    end
+    if break_reason == nil then
+        -- no live GDB session: finish the collection against the machine
+        break_reason = self:_advance(mcycle_end)
+    end
+    self.collect = nil
+    return {
+        break_reason = break_reason,
+        hashes = collect.hashes,
+        mcycle_phase = collect.mcycle_phase,
+        back_tree = collect.back_tree,
+        console_io_error = collect.console_io_error,
+    }
+end
+
+function GDBStub:collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle, revert_uarch_tail)
+    self.mode = "collect_uarch_cycle_root_hashes"
+    local collect = {
+        hashes = {},
+        reset_indices = {},
+        log2_bundle = log2_bundle,
+        revert_uarch_tail = revert_uarch_tail,
+    }
+    self.collect = collect
+    local break_reason
+    if self.conn then
+        self.mcycle_end = mcycle_end
+        break_reason = self:_pump_session()
+    end
+    if break_reason == nil then
+        -- no live GDB session: finish the collection against the machine
+        break_reason = self:_advance(mcycle_end)
+    end
+    self.collect = nil
+    return {
+        break_reason = break_reason,
+        hashes = collect.hashes,
+        reset_indices = collect.reset_indices,
+    }
 end
 
 -- Returns true if GDB is connected.

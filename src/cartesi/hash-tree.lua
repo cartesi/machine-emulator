@@ -74,11 +74,12 @@ end
 -- output-specific; the caller feeds keccak256(output) leaves.
 --
 -- A frontier captures the complete left subtrees standing over the leaves seen so far. It is a
--- length-log2_max_leaves array indexed by a 1-based level, where level 1 corresponds to bit 0 (the
--- 0-based leaves). Entry level holds that level's complete left subtree when the matching bit of
--- the leaf count is set, else false (false, not nil, so the array stays dense and round-trips as
--- JSON). The present subtrees' sizes sum to the leaf count, so the count is recovered from the
--- array rather than stored.
+-- length-(log2_max_leaves + 1) array indexed by a 1-based level, where level 1 corresponds to bit
+-- 0 (the 0-based leaves). Entry level holds that level's complete left subtree when the matching
+-- bit of the leaf count is set, else false (false, not nil, so the array stays dense and
+-- round-trips as JSON). The present subtrees' sizes sum to the leaf count, so the count is
+-- recovered from the array rather than stored. The top entry holds the root when the tree is
+-- exactly full, matching back_merkle_tree's context.
 
 -- The pristine leaf, the all-zero subtree of height 0, is literally HASH_SIZE zero bytes. Larger
 -- pristine subtrees double on demand inside each loop (keccak256(pristine, pristine)).
@@ -112,12 +113,18 @@ local function frontier_node(frontier_entry, base, active, pristine_entry, index
 end
 -- docs:end frontier_node
 
--- Folds one new leaf into the frontier by the binary-carry update: combine with the present
--- low levels up to the first empty one, O(1) amortized. Mutates the frontier in place.
+-- Folds one new entry into the frontier by the binary-carry update: combine with the present
+-- low levels up to the first empty one, O(1) amortized. Mutates the frontier in place. The entry
+-- is a leaf, or, when log2_hash_size is given, the root of a complete subtree of that height,
+-- which requires the levels below it to be empty (the filled leaf count must be a multiple of
+-- the entry size).
 -- docs:begin frontier_push_back
-local function frontier_push_back(frontier, hash)
+local function frontier_push_back(frontier, hash, log2_hash_size)
+    local level = (log2_hash_size or 0) + 1
+    for below = 1, level - 1 do
+        assert(not frontier[below], "frontier is not aligned to the hash size")
+    end
     local right = hash
-    local level = 1
     while frontier[level] do
         right = cartesi.keccak256(frontier[level], right)
         frontier[level] = false
@@ -127,23 +134,89 @@ local function frontier_push_back(frontier, hash)
 end
 -- docs:end frontier_push_back
 
--- Pristine-pads the current frontier up to its root, O(log2_max_leaves). Does not mutate the
--- frontier.
+-- Pads the current frontier up to its root, O(log2_max_leaves). Does not mutate the frontier. The
+-- empty leaves take pad, or the pristine leaf when pad is omitted. When log2_pad_size is given,
+-- pad is instead the root of a complete subtree of that height, repeated over the empty positions,
+-- which requires the levels below it to be empty (the filled leaf count must be a multiple of the
+-- pad size). An exactly-full tree needs no padding: its root sits in the top entry.
 -- docs:begin frontier_get_root_hash
-local function frontier_get_root_hash(frontier)
-    local root = pristine_leaf
-    local pristine = pristine_leaf
-    for level = 1, #frontier do
+local function frontier_get_root_hash(frontier, pad, log2_pad_size)
+    local height = #frontier - 1
+    if frontier[height + 1] then return frontier[height + 1] end
+    pad = pad or pristine_leaf
+    local root = pad
+    for level = 1, log2_pad_size or 0 do
+        assert(not frontier[level], "frontier is not aligned to the pad size")
+    end
+    -- pad doubles into the all-pad subtree of each level, the right sibling of every empty one
+    for level = (log2_pad_size or 0) + 1, height do
         if frontier[level] then
             root = cartesi.keccak256(frontier[level], root)
         else
-            root = cartesi.keccak256(root, pristine)
+            root = cartesi.keccak256(root, pad)
         end
-        pristine = cartesi.keccak256(pristine, pristine)
+        pad = cartesi.keccak256(pad, pad)
     end
     return root
 end
 -- docs:end frontier_get_root_hash
+
+-- Pads the frontier with count copies of an entry (a leaf hash, or, when log2_pad_size is given,
+-- the root of a complete subtree of that height, which requires the levels below it to be empty),
+-- the same two-phase algorithm as back_merkle_tree::pad_back. First complete the occupied low
+-- levels, each time folding one pad subtree into the smallest occupied subtree and carrying
+-- upward like push_back. Once no occupied level is small enough to matter, the bits of the
+-- remaining count land each pad subtree directly in its own empty level. The level cursor only
+-- moves forward across both phases, so each level is hashed at most once: O(log2_max_leaves)
+-- hashes. Mutates the frontier in place. Padding to exactly full leaves the root in the top
+-- entry.
+local function frontier_pad_back(frontier, hash, count, log2_pad_size)
+    -- Counts and sizes reach 2^63 for the tallest trees, so they compare as unsigned.
+    log2_pad_size = log2_pad_size or 0
+    local first_level = log2_pad_size + 1
+    local top = #frontier
+    for level = 1, log2_pad_size do
+        assert(not frontier[level], "frontier is not aligned to the pad size")
+    end
+    -- capacity and filled count, in entries
+    local capacity = 1 << (top - first_level)
+    local filled = frontier_leaf_count(frontier) >> log2_pad_size
+    assert(not math.ult(capacity - filled, count), "too many leaves")
+    -- pad_hashes[level] is the root of the complete subtree whose 2^(level-first_level) entries
+    -- are all hash
+    local pad_hashes = { [first_level] = hash }
+    for level = first_level + 1, top do
+        pad_hashes[level] = cartesi.keccak256(pad_hashes[level - 1], pad_hashes[level - 1])
+    end
+    -- Complete the occupied low levels with pad subtrees, carrying upward.
+    local level = first_level
+    while level <= top do
+        local size = 1 << (level - first_level)
+        if math.ult(count, size) then break end
+        if frontier[level] then
+            local right = pad_hashes[level]
+            while frontier[level] do
+                right = cartesi.keccak256(frontier[level], right)
+                frontier[level] = false
+                level = level + 1
+            end
+            frontier[level] = right
+            count = count - size
+        else
+            level = level + 1
+        end
+    end
+    -- Drop the remaining pad subtrees directly into their own empty levels.
+    for pad_level = first_level, top do
+        if count == 0 then break end
+        local size = 1 << (pad_level - first_level)
+        if count & size ~= 0 then
+            frontier[pad_level] = pad_hashes[pad_level]
+            count = count - size
+        end
+    end
+    assert(count == 0)
+end
 
 -- Given the frontier at the start of an epoch and the ordered keccak256(output) leaves accepted
 -- during it, returns one Proof per new output, all against the single final root (the tree of all
@@ -153,7 +226,7 @@ end
 -- O(next_output_count * log2_max_leaves).
 -- docs:begin frontier_next_proofs
 local function frontier_next_proofs(frontier, next_output_hashes)
-    local log2_max_leaves = #frontier
+    local log2_max_leaves = #frontier - 1
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
     local leaf_count = frontier_leaf_count(frontier)
@@ -202,10 +275,10 @@ local function frontier_next_proofs(frontier, next_output_hashes)
 end
 -- docs:end frontier_next_proofs
 
--- An empty frontier of the given height: all log2_max_leaves levels unfilled (false).
+-- An empty frontier of the given height: all log2_max_leaves + 1 levels unfilled (false).
 local function frontier_genesis(log2_max_leaves)
     local f = {}
-    for level = 1, log2_max_leaves do
+    for level = 1, log2_max_leaves + 1 do
         f[level] = false
     end
     return f
@@ -262,6 +335,7 @@ return {
     frontier = frontier,
     frontier_copy = frontier_copy,
     frontier_push_back = frontier_push_back,
+    frontier_pad_back = frontier_pad_back,
     frontier_get_root_hash = frontier_get_root_hash,
     frontier_next_proofs = frontier_next_proofs,
 }

@@ -175,7 +175,7 @@ cm_error cm_result_success() {
 // Conversion functions
 // --------------------------------------------
 
-static cartesi::machine_reg convert_from_c(cm_reg r) {
+static constexpr cartesi::machine_reg convert_from_c(cm_reg r) {
     using reg = cartesi::machine_reg;
     switch (r) {
         case CM_REG_X0:
@@ -480,9 +480,22 @@ static cartesi::machine_reg convert_from_c(cm_reg r) {
             return reg::htif_fromhost_data;
         case CM_REG_UNKNOWN_:
             return reg::unknown_;
+        case CM_REG_FIRST_:
+            return reg::first_;
+        case CM_REG_LAST_:
+            return reg::last_;
+        case CM_REG_UARCH_FIRST_:
+            return reg::uarch_first_;
+        case CM_REG_UARCH_LAST_:
+            return reg::uarch_last_;
     }
     throw std::domain_error{"unknown register"};
 }
+
+static_assert(convert_from_c(CM_REG_FIRST_) == cartesi::machine_reg::first_);
+static_assert(convert_from_c(CM_REG_LAST_) == cartesi::machine_reg::last_);
+static_assert(convert_from_c(CM_REG_UARCH_FIRST_) == cartesi::machine_reg::uarch_first_);
+static_assert(convert_from_c(CM_REG_UARCH_LAST_) == cartesi::machine_reg::uarch_last_);
 
 static cartesi::sharing_mode convert_from_c(cm_sharing_mode sharing) {
     switch (sharing) {

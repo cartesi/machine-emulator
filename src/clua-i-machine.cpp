@@ -214,6 +214,8 @@ cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) try {
         {"unknown_", CM_REG_UNKNOWN_},
         {"first_", CM_REG_FIRST_},
         {"last_", CM_REG_LAST_},
+        {"uarch_first_", CM_REG_UARCH_FIRST_},
+        {"uarch_last_", CM_REG_UARCH_LAST_},
         // clang-format on
     };
     const char *name = luaL_checkstring(L, idx);

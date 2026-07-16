@@ -373,8 +373,10 @@ typedef enum cm_reg {
     CM_REG_HTIF_FROMHOST_DATA,
     // Enumeration helpers
     CM_REG_UNKNOWN_,
-    CM_REG_FIRST_ = CM_REG_X0,
-    CM_REG_LAST_ = CM_REG_UARCH_HALT,
+    CM_REG_FIRST_,
+    CM_REG_LAST_,
+    CM_REG_UARCH_FIRST_,
+    CM_REG_UARCH_LAST_,
 } cm_reg;
 
 /// \brief Hash function types.

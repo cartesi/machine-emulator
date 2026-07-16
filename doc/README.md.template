@@ -3584,14 +3584,31 @@ In contrast, the x86 ISA defines at least 2000 (potentially complex) instruction
 In fact, the only complex operation in RISC-V is the virtual-to-physical address translation.
 Instruction decoding is particularly simple due to the reduced number of formats taking 32 or 16 bits.
 
-The entire processor state fits within 856 bytes, divided into 107 registers, each holding 64 bits.
-It consists of 32 general-purpose integer registers (`x0`&hellip;`x31`), 32 floating-point registers (`f0`&hellip;`f31`), and 43 standard or Cartesi-specific control registers.
-The last 8 of those control registers persist the externally-visible state of the board's CLINT, PLIC, and HTIF subsystems, which is otherwise also reachable through the device-mapped addresses described in the next section.
+The entire processor state fits within []{replace=reg_addr/state_size} bytes, divided into []{replace=reg_addr/register_count} registers, each holding 64 bits.
+It consists of 32 general-purpose integer registers (`x0`&hellip;`x31`), 32 floating-point registers (`f0`&hellip;`f31`), and []{replace=reg_addr/control_register_count} standard or Cartesi-specific control registers.
+The last []{replace=reg_addr/board_register_count} of those control registers persist the externally-visible state of the board's CLINT, PLIC, and HTIF subsystems, which is otherwise also reachable through the device-mapped addresses described in the next section.
 The processor makes its entire state available, externally and read-only, by mapping every register to the start of the physical address space (in the <i>processor shadow</i>, a 4KiB range).
 The mapping is given in the following table:
 
-```{.lua key=reg_addr replace=null outputs=x0,x1,x31,mcycle,pc,fcsr,f0,f1,f31,iprv,mstatus,mtvec,mscratch,mepc,mcause,mtval,misa,mie,mip,medeleg,mideleg,mcounteren,menvcfg,mvendorid,marchid,mimpid,stvec,sscratch,sepc,scause,stval,satp,scounteren,senvcfg,ilrsc,icycleinstret,iunrep,imcyclemax,iflags_X,iflags_Y,iflags_H,clint_mtimecmp,plic_girqpend,plic_girqsrvd,htif_tohost,htif_fromhost,htif_ihalt,htif_iconsole,htif_iyield}
+```{.lua key=reg_addr replace=null outputs=state_size,register_count,control_register_count,board_register_count,x0,x1,x31,mcycle,pc,fcsr,f0,f1,f31,iprv,mstatus,mtvec,mscratch,mepc,mcause,mtval,misa,mie,mip,medeleg,mideleg,mcounteren,menvcfg,mvendorid,marchid,mimpid,stvec,sscratch,sepc,scause,stval,satp,scounteren,senvcfg,ilrsc,icycleinstret,iunrep,imcyclemax,iflags_X,iflags_Y,iflags_H,clint_mtimecmp,plic_girqpend,plic_girqsrvd,htif_tohost,htif_fromhost,htif_ihalt,htif_iconsole,htif_iyield}
 local cartesi = require "cartesi"
+local util = require "cartesi.util"
+local first_address = cartesi.machine:get_reg_address("first_")
+local last_address = cartesi.machine:get_reg_address("last_")
+local register_size = cartesi.machine:get_reg_address("x1") - cartesi.machine:get_reg_address("x0")
+local function count_registers(first, last)
+    return (cartesi.machine:get_reg_address(last) - cartesi.machine:get_reg_address(first)) // register_size + 1
+end
+local register_count = count_registers("first_", "last_")
+local values = {
+    state_size = register_count * register_size,
+    register_count = register_count,
+    control_register_count = register_count - 32 - 32,
+    board_register_count = count_registers("clint_mtimecmp", "last_"),
+}
+for name, value in pairs(values) do
+    util.write_file(tostring(value), name)
+end
 local names = {"x0", "x1", "x31", "mcycle", "pc", "fcsr", "f0", "f1", "f31", "iprv",
     "mstatus", "mtvec", "mscratch", "mepc", "mcause", "mtval", "misa", "mie", "mip",
     "medeleg", "mideleg", "mcounteren", "menvcfg", "mvendorid", "marchid", "mimpid",
@@ -3601,9 +3618,7 @@ local names = {"x0", "x1", "x31", "mcycle", "pc", "fcsr", "f0", "f1", "f31", "ip
     "clint_mtimecmp", "plic_girqpend", "plic_girqsrvd",
     "htif_tohost", "htif_fromhost", "htif_ihalt", "htif_iconsole", "htif_iyield"}
 for _, name in ipairs(names) do
-    local f = assert(io.open(name, "w"))
-    f:write(string.format("0x%03x", cartesi.machine:get_reg_address(name)))
-    f:close()
+    util.write_file(string.format("0x%03x", cartesi.machine:get_reg_address(name)), name)
 end
 ```
 
@@ -3662,12 +3677,11 @@ The mapping is given in the following table:
 
 ```{.lua key=uarch_reg_addr replace=null outputs=uarch_halt,uarch_cycle,uarch_pc,uarch_x0,uarch_x1,uarch_x31}
 local cartesi = require "cartesi"
+local util = require "cartesi.util"
 local names = {"uarch_halt", "uarch_cycle", "uarch_pc",
     "uarch_x0", "uarch_x1", "uarch_x31"}
 for _, name in ipairs(names) do
-    local f = assert(io.open(name, "w"))
-    f:write(string.format("0x%06x", cartesi.machine:get_reg_address(name)))
-    f:close()
+    util.write_file(string.format("0x%06x", cartesi.machine:get_reg_address(name)), name)
 end
 ```
 

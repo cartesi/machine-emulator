@@ -384,6 +384,10 @@ do_test("should return address value for registers", function(machine)
     for k, v in pairs(initial_reg_values) do
         assert(machine:read_reg(k) == machine:read_word(machine:get_reg_address(k)), "invalid return for " .. v)
     end
+    assert(machine:get_reg_address("first_") == machine:get_reg_address("x0"))
+    assert(machine:get_reg_address("last_") == machine:get_reg_address("htif_iyield"))
+    assert(machine:get_reg_address("uarch_first_") == machine:get_reg_address("uarch_halt"))
+    assert(machine:get_reg_address("uarch_last_") == machine:get_reg_address("uarch_x31"))
 end)
 
 print("\n\ntesting get x address function binding")

@@ -20,7 +20,7 @@
 --- machine state at every unique PC during interesting execution phases.
 ---
 --- Each seed file has the layout expected by the fuzz harnesses:
----   [1B priv] [1B flags] [848B registers_state] [page_table_data...] [code...]
+---   [1B priv] [1B flags] [registers_state] [page_table_data...] [code...]
 ---
 --- The script steps through each test one instruction at a time and snapshots
 --- the first time each unique PC value is seen (in non-M-mode for VM tests).
@@ -29,7 +29,7 @@
 --- deduplicating loop iterations.
 ---
 --- At each snapshot:
----   - registers_state is read from shadow memory (address 0x0, 848 bytes)
+---   - registers_state is read from shadow memory
 ---   - code is read from the current PC (via read_virtual_memory if VM is on)
 ---   - PC is patched to CODE_START so the harness overlay PTE ensures executability
 ---   - SV39 page tables are extracted and remapped to the harness layout (VM tests)
@@ -47,9 +47,10 @@ local CODE_START <const> = RAM_START + PAGE_TABLE_REGION
 local MAX_CODE_SIZE <const> = 4096
 
 -- Shadow state
-local SHADOW_REGISTERS_START <const> = 0x0
-local REGISTERS_STATE_SIZE <const> = 107 * 8 -- 856 bytes
-local PC_OFFSET <const> = 33 * 8 -- pc is the 34th uint64 in registers_state
+local SHADOW_REGISTERS_START <const> = cartesi.machine:get_reg_address("first_")
+local REGISTERS_STATE_SIZE <const> =
+    cartesi.machine:get_reg_address("last_") + 8 - SHADOW_REGISTERS_START
+local PC_OFFSET <const> = cartesi.machine:get_reg_address("pc") - SHADOW_REGISTERS_START
 
 -- SV39
 local PTE_V <const> = 1 << 0

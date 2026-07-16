@@ -156,7 +156,7 @@ run-fuzz-config: $(BUILDDIR)/fuzz-config
 #
 # Generates seed inputs by running riscv-tests ISA binaries and snapshotting
 # machine state at interesting points. Each seed is structured as:
-#   [2 control bytes] [848 registers_state bytes] [page_table_data...] [code...]
+#   [2 control bytes] [registers_state] [page_table_data...] [code...]
 #
 # The Lua generator runs tests, captures live register state from shadow memory,
 # and extracts SV39 page tables for VM tests.

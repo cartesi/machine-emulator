@@ -6660,17 +6660,17 @@ virtual-to-physical address translation. Instruction decoding is
 particularly simple due to the reduced number of formats taking 32 or 16
 bits.
 
-The entire processor state fits within 856 bytes, divided into 107
+The entire processor state fits within `856` bytes, divided into `107`
 registers, each holding 64 bits. It consists of 32 general-purpose
 integer registers (`x0`…`x31`), 32 floating-point registers
-(`f0`…`f31`), and 43 standard or Cartesi-specific control registers. The
-last 8 of those control registers persist the externally-visible state
-of the board’s CLINT, PLIC, and HTIF subsystems, which is otherwise also
-reachable through the device-mapped addresses described in the next
-section. The processor makes its entire state available, externally and
-read-only, by mapping every register to the start of the physical
-address space (in the <i>processor shadow</i>, a 4KiB range). The
-mapping is given in the following table:
+(`f0`…`f31`), and `43` standard or Cartesi-specific control registers.
+The last `8` of those control registers persist the externally-visible
+state of the board’s CLINT, PLIC, and HTIF subsystems, which is
+otherwise also reachable through the device-mapped addresses described
+in the next section. The processor makes its entire state available,
+externally and read-only, by mapping every register to the start of the
+physical address space (in the <i>processor shadow</i>, a 4KiB range).
+The mapping is given in the following table:
 
 | Offset  | Register  | Offset  | Register     | Offset  | Register        | Offset  | Register         |
 |---------|-----------|---------|--------------|---------|-----------------|---------|------------------|

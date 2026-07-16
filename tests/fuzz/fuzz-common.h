@@ -22,8 +22,9 @@
 ///   Offset  Size     Field
 ///   0       1        Privilege byte (2 bits used: U/S/M)
 ///   1       1        Flags byte (VM, MPRV, SUM, MXR, FS)
-///   2       848      registers_state struct (GPRs, FPRs, CSRs, etc.)
-///   850     0/20480  Page table data (5 pages, only when VM enabled)
+///   2       sizeof(registers_state)
+///                    registers_state struct (GPRs, FPRs, CSRs, etc.)
+///   ...     0/20480  Page table data (5 pages, only when VM enabled)
 ///   ...     varies   Code/data (written at CODE_START in RAM)
 ///
 /// The code region also doubles as TLB seed data: the fuzz reader is NOT

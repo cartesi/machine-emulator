@@ -501,7 +501,7 @@ end
 local function create_json_reset_log()
     local machine <close> = build_machine()
     local test_name = "reset-uarch"
-    machine:write_reg("uarch_halt", cartesi.UARCH_HALT_HALTED)
+    machine:write_reg("uarch_halt", 1)
     local initial_root_hash = machine:get_root_hash()
     local log = machine:log_reset_uarch()
     local out = create_json_log_file(test_name .. "-steps")
@@ -523,7 +523,7 @@ end
 local function create_json_reset_rejected_log()
     local machine <close> = build_machine()
     local test_name = "reset-uarch-rejected"
-    machine:write_reg("uarch_halt", cartesi.UARCH_HALT_HALTED)
+    machine:write_reg("uarch_halt", 1)
     -- pretend an input was fed from a state with this root hash and later rejected
     local revert_root_hash = machine:get_root_hash()
     machine:write_revert_root_hash(revert_root_hash)
@@ -553,7 +553,7 @@ end
 local function create_json_reset_accepted_log()
     local machine <close> = build_machine()
     local test_name = "reset-uarch-accepted"
-    machine:write_reg("uarch_halt", cartesi.UARCH_HALT_HALTED)
+    machine:write_reg("uarch_halt", 1)
     -- pretend an input was fed and later accepted, so the reset must not revert
     machine:write_reg("iflags_Y", 1)
     machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)

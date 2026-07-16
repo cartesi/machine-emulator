@@ -707,7 +707,7 @@ do_test("advance one micro cycle without halting", function(machine)
 end)
 
 do_test("do not advance micro cycle if uarch is halted", function(machine)
-    machine:write_reg("uarch_halt", cartesi.UARCH_HALT_HALTED)
+    machine:write_reg("uarch_halt", 1)
     assert(machine:read_reg("uarch_cycle") == 0, "uarch cycle should be 0")
     assert(machine:read_reg("uarch_halt") ~= 0, "uarch halt should be set")
     assert(machine:read_reg("iflags_Y") == 0, "iflags.Y should be cleared")
@@ -726,7 +726,7 @@ do_test("do not advance micro cycle if uarch cycle overflows", function(machine)
         "run_uarch should return UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW"
     )
     assert(machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX, "uarch cycle should still be 0")
-    assert(machine:read_reg("uarch_halt") == cartesi.UARCH_HALT_CYCLE_OVERFLOW)
+    assert(machine:read_reg("uarch_halt") == 0)
 end)
 
 do_test("final micro cycle should immediately overflow", function(machine)
@@ -734,7 +734,7 @@ do_test("final micro cycle should immediately overflow", function(machine)
     local status = machine:run_uarch(cartesi.UARCH_CYCLE_MAX)
     assert(status == cartesi.UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW)
     assert(machine:read_reg("uarch_cycle") == cartesi.UARCH_CYCLE_MAX)
-    assert(machine:read_reg("uarch_halt") == cartesi.UARCH_HALT_CYCLE_OVERFLOW)
+    assert(machine:read_reg("uarch_halt") == 0)
 end)
 
 do_test("advance micro cycles until halt", function(machine)
@@ -743,8 +743,8 @@ do_test("advance micro cycles until halt", function(machine)
     local status = machine:run_uarch(3)
     assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
     assert(machine:read_reg("uarch_cycle") == 3, "uarch cycle should be 4")
-    assert(machine:read_reg("uarch_halt") == cartesi.UARCH_HALT_HALTED, "uarch should be halted")
-    assert(machine:run_uarch(3) == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE)
+    assert(machine:read_reg("uarch_halt") == 1, "uarch should be halted")
+    assert(machine:run_uarch(3) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
 end)
 
 print("\n\n run machine to 1000 mcycle")
@@ -770,7 +770,7 @@ do_test("machine should overflow exactly at imcyclemax", function(machine)
     assert(machine:read_reg("mcycle") == 4)
     assert(machine:run(5) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
     assert(machine:read_reg("mcycle") == 5)
-    assert(machine:read_reg("iflags_H") == cartesi.IFLAGS_H_MCYCLE_OVERFLOW)
+    assert(machine:read_reg("iflags_H") == 0)
     assert(machine:run(6) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
 end)
 
@@ -810,8 +810,8 @@ do_test("dumped step log content should match", function(machine)
     local log_output = temp_file:read_all()
     -- luacheck: push no max line length
     local expected_output = "begin step\n"
-        .. "  1: read uarch.halt@0x400000(4194304): 0x0(0)\n"
-        .. "  2: read uarch.cycle@0x400008(4194312): 0x0(0)\n"
+        .. "  1: read uarch.cycle@0x400008(4194312): 0x0(0)\n"
+        .. "  2: read uarch.halt@0x400000(4194304): 0x0(0)\n"
         .. "  3: read uarch.pc@0x400010(4194320): 0x600000(6291456)\n"
         .. "  4: read uarch.ram@0x600000(6291456): 0x10089307b00513(4513027209561363)\n"
         .. "  begin addi\n"
@@ -850,7 +850,7 @@ do_test("Step log must contain consistent data hashes", function(machine)
     -- ensure that verification fails with wrong read hash
     read_access.read_hash = wrong_hash
     local _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
-    check_error_find(err, "siblings and read hash do not match root hash before 1st access to uarch.halt")
+    check_error_find(err, "siblings and read hash do not match root hash before 1st access to uarch.cycle")
     read_access.read_hash = read_hash -- restore correct value
 
     -- ensure that verification fails with wrong read hash
@@ -868,15 +868,15 @@ do_test("Step log must contain consistent data hashes", function(machine)
     check_error_find(err, "written hash for uarch.cycle does not match expected hash in 8th access")
 end)
 
-do_test("step at max uarch cycle materializes overflow", function(machine)
+do_test("step at max uarch cycle preserves state", function(machine)
     machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     local initial_hash = machine:get_root_hash()
     local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
-    assert(machine:read_reg("uarch_halt") == cartesi.UARCH_HALT_CYCLE_OVERFLOW)
+    assert(machine:read_reg("uarch_halt") == 0)
     local final_hash = machine:get_root_hash()
-    assert(final_hash ~= initial_hash)
+    assert(final_hash == initial_hash)
     machine:verify_step_uarch(initial_hash, log, final_hash)
 end)
 
@@ -1298,25 +1298,25 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
         local _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
         check_error_find(err, expected_error)
     end
-    assert_error("log is missing access 1st access to uarch.halt", function(log)
+    assert_error("log is missing access 1st access to uarch.cycle", function(log)
         log.accesses = {}
     end)
-    assert_error("expected 1st access to read uarch.halt", function(log)
+    assert_error("expected 1st access to read uarch.cycle", function(log)
         log.accesses[1].address = 0
     end)
-    assert_error("expected 1st access to uarch.halt to read 2^3 bytes", function(log)
+    assert_error("expected 1st access to uarch.cycle to read 2^3 bytes", function(log)
         log.accesses[1].log2_size = 2
     end)
-    assert_error("expected 1st access to uarch.halt to read 2^3 bytes", function(log)
+    assert_error("expected 1st access to uarch.cycle to read 2^3 bytes", function(log)
         log.accesses[1].log2_size = 65
     end)
-    assert_error("missing read data for uarch.halt in 1st access", function(log)
+    assert_error("missing read data for uarch.cycle in 1st access", function(log)
         log.accesses[1].read = nil
     end)
     assert_error("access read data size is inconsistent with proof size", function(log)
         log.accesses[1].read = "\0"
     end)
-    assert_error("siblings and read hash do not match root hash before 1st access to uarch.halt", function(log)
+    assert_error("siblings and read hash do not match root hash before 1st access to uarch.cycle", function(log)
         log.accesses[1].read_hash = bad_hash
     end)
     assert_error("missing field", function(log)
@@ -1334,7 +1334,7 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
     assert_error("written data for uarch.cycle does not match written hash in 7th access", function(log)
         log.accesses[#log.accesses].written = string.rep("\0", cartesi.HASH_SIZE)
     end)
-    assert_error("siblings and read hash do not match root hash before 1st access to uarch.halt", function(log)
+    assert_error("siblings and read hash do not match root hash before 1st access to uarch.cycle", function(log)
         log.accesses[1].sibling_hashes[1] = bad_hash
     end)
 end)

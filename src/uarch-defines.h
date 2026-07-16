@@ -38,12 +38,6 @@
 /// \brief Initial value of the microarchitecture cycle register
 #define UARCH_CYCLE_INIT_DEF 0
 
-/// \brief Microarchitecture halted normally
-#define UARCH_HALT_HALTED_DEF 1
-
-/// \brief Microarchitecture halted due to cycle overflow
-#define UARCH_HALT_CYCLE_OVERFLOW_DEF 3
-
 /// \brief Log2 of the expected maximum uarch cycle
 #define UARCH_LOG2_CYCLE_MAX_DEF ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE_DEF
 

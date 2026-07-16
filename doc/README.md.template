@@ -2166,7 +2166,8 @@ The value `math.maxinteger` of `<max_mcycle>` used in the script is a very large
 Note that the `machine:run()` method can return prematurely for a variety of reasons (see below), so it should always be called inside a loop.
 It returns a break reason explaining why control was returned to the caller, taken from the `cartesi.BREAK_REASON_*` set.
 The script's loop terminates when the break reason is `BREAK_REASON_HALTED` or `BREAK_REASON_YIELDED_MANUALLY`, the two reasons that signal the machine has reached a state past which it cannot continue on its own.
-`BREAK_REASON_MCYCLE_OVERFLOW` likewise signals a fixed point: a requested transition that starts with `mcycle` at or above `imcyclemax`, or reaches `imcyclemax`, sets `iflags_H` to `IFLAGS_H_MCYCLE_OVERFLOW`, and subsequent requested transitions continue returning `BREAK_REASON_MCYCLE_OVERFLOW`.
+`BREAK_REASON_MCYCLE_OVERFLOW` likewise signals a fixed point when `mcycle` reaches `imcyclemax`.
+Overflow takes precedence over halt, manual yield, and reaching the requested target.
 
 At any point, the `machine:get_initial_config()` method can be used to obtain the configuration that was used to create a Cartesi Machine instance.
 
@@ -3634,12 +3635,11 @@ The emulator clears it again as soon as the machine resumes.
 * Register&nbsp;`iflags_Y` is set to 1 when the processor has yielded manual.
 It remains set until the host clears it (either directly, or as a side effect of `send_cmio_response`).
 * Register&nbsp;`iflags_H` is non-zero when the processor has been permanently halted.
-`IFLAGS_H_HALTED` identifies an ordinary halt and `IFLAGS_H_MCYCLE_OVERFLOW` identifies an mcycle overflow.
 * Register&nbsp;`ilrsc` holds the reservation address for the&nbsp;LR/SC atomic memory operations.
 * Register&nbsp;`icycleinstret` holds the difference between `mcycle` and the architectural instruction count.
 * Register&nbsp;`iunrep` is non-zero in machines configured as unreproducible, a creation-time mode that enables host VirtIO devices in exchange for giving up state-hash verifiability.
 * Register&nbsp;`imcyclemax` holds the inclusive mcycle limit.
-When a requested transition reaches this limit, or starts with `mcycle` already at or above it, `iflags_H` is set to `IFLAGS_H_MCYCLE_OVERFLOW`.
+When `mcycle` reaches this limit, the machine does not advance further.
 
 ### The microarchitecture
 
@@ -3839,7 +3839,7 @@ Unavailable commands are silently ignored by the machine.
 | `HTIF_HALT_CMD_HALT` | []{replace=htif_const/HTIF_HALT_CMD_HALT} |
 
 The Halt device (`DEV=HTIF_DEV_HALT`) is used to halt the machine.
-This will permanently set register `iflags_H` to `IFLAGS_H_HALTED` and return control back to the host.
+This will permanently set register `iflags_H` to a non-zero value and return control back to the host.
 
 Send request `CMD=HTIF_HALT_CMD_HALT` with bit 0 of the 32-bit `DATA` field (bits 31&ndash;0) set to&nbsp;1.
 The remaining bits 31&ndash;1 of `DATA` carry an arbitrary exit code, read as `DATA >> 1`, following the convention used by the RISC-V test framework.

@@ -2102,6 +2102,19 @@ static interpreter_break_reason interpret_with_console(STATE_ACCESS &a, machine_
     }
 }
 
+interpreter_break_reason machine::get_state_break_reason(interpreter_break_reason fallback) const {
+    if (read_reg(reg::mcycle) >= read_reg(reg::imcyclemax)) {
+        return interpreter_break_reason::mcycle_overflow;
+    }
+    if (read_reg(reg::iflags_H) != 0) {
+        return interpreter_break_reason::halted;
+    }
+    if (read_reg(reg::iflags_Y) != 0) {
+        return interpreter_break_reason::yielded_manually;
+    }
+    return fallback;
+}
+
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
     if (read_reg(reg::uarch_cycle) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
@@ -2154,7 +2167,7 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
         throw std::invalid_argument{"microarchitecture is not reset"};
     }
     const state_access a(*this);
-    return interpret_with_console(a, m_console, mcycle_end);
+    return get_state_break_reason(interpret_with_console(a, m_console, mcycle_end));
 }
 
 std::pair<uint64_t, execute_status> machine::poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
@@ -2266,7 +2279,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     // and set the break reason to indicate the target mcycle was reached
     mcycle_root_hashes result;
     result.mcycle_phase = mcycle_phase;
-    result.break_reason = interpreter_break_reason::reached_target_mcycle;
+    result.break_reason = get_state_break_reason(interpreter_break_reason::reached_target_mcycle);
 
     // Initialize back tree
     if (previous_back_tree.has_value()) {
@@ -2389,6 +2402,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
         result.back_tree.reset();
     }
 
+    result.break_reason = get_state_break_reason(result.break_reason);
     return result;
 }
 
@@ -2491,7 +2505,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     }
 
     uarch_cycle_root_hashes result;
-    result.break_reason = interpreter_break_reason::reached_target_mcycle;
+    result.break_reason = get_state_break_reason(interpreter_break_reason::reached_target_mcycle);
     if (mcycle_start == mcycle_end) {
         return result;
     }
@@ -2503,10 +2517,10 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     // any other fixed point can only perform a no-op mcycle that cannot reject, so it never
     // consumes the tail.
     const state_access sa(*this);
-    const bool start_rejected = is_rejected_manual_yield(sa);
+    const bool start_at_mcycle_overflow = mcycle_start >= read_reg(reg::imcyclemax);
+    const bool start_rejected = !start_at_mcycle_overflow && is_rejected_manual_yield(sa);
     const bool start_halted = read_reg(reg::iflags_H) != 0;
     const bool start_yielded_manual = read_reg(reg::iflags_Y) != 0;
-    const bool start_at_mcycle_overflow = !start_halted && mcycle_start >= read_reg(reg::imcyclemax);
     const bool start_at_fixed_point = start_halted || start_yielded_manual || start_at_mcycle_overflow;
     if (start_rejected || !start_at_fixed_point) {
         if (revert_uarch_tail.empty()) {
@@ -2640,7 +2654,8 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
 
         // When the machine has rejected an input, the reset folds in a revert, and the canonical
         // root hash after it is the recorded revert root hash
-        const bool rejected = is_rejected_manual_yield(sa);
+        const bool at_mcycle_overflow = mcycle_reached >= read_reg(reg::imcyclemax);
+        const bool rejected = !at_mcycle_overflow && is_rejected_manual_yield(sa);
         const auto reset_root_hash = rejected ? read_revert_root_hash() : m_ht.get_root_hash();
 
         // Finish the period by padding with the halt root hash and appending the reset root hash
@@ -2649,14 +2664,10 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
         // Sanity check to ensure the loop is working correctly, this should always be true
         assert(mcycle_reached == mcycle_target);
 
-        // Retrieve break reason
-        const uint64_t iflags_H = read_reg(reg::iflags_H);
-        if (iflags_H != 0) {
-            result.break_reason = iflags_H_to_interpreter_break_reason(iflags_H);
-        } else if (read_reg(reg::iflags_Y) != 0) {
-            result.break_reason = interpreter_break_reason::yielded_manually;
-        } else if (read_reg(reg::iflags_X) != 0) {
-            result.break_reason = interpreter_break_reason::yielded_automatically;
+        const auto fallback = read_reg(reg::iflags_X) != 0 ? interpreter_break_reason::yielded_automatically :
+                                                             interpreter_break_reason::reached_target_mcycle;
+        result.break_reason = get_state_break_reason(fallback);
+        if (result.break_reason == interpreter_break_reason::yielded_automatically) {
             break;
         }
 
@@ -2688,6 +2699,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
 
     assert(back_tree.empty());
 
+    result.break_reason = get_state_break_reason(result.break_reason);
     return result;
 }
 

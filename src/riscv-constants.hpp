@@ -425,12 +425,6 @@ enum COUNTEREN_rw_masks : uint64_t {
     SCOUNTEREN_RW_MASK = MCOUNTEREN_RW_MASK
 };
 
-/// \brief Main machine halt flag values
-enum IFLAGS_H_constants : uint64_t {
-    IFLAGS_H_HALTED = UINT64_C(1),
-    IFLAGS_H_MCYCLE_OVERFLOW = UINT64_C(3),
-};
-
 /// \brief Initial values for Cartesi machines
 enum CARTESI_init : uint64_t {
     // The machines starts executing instructions from RAM start by default,

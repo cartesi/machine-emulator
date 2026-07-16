@@ -27,12 +27,6 @@
 
 namespace cartesi {
 
-/// \brief Microarchitecture halt register values
-enum UARCH_HALT_constants : uint64_t {
-    UARCH_HALT_HALTED = EXPAND_UINT64_C(UARCH_HALT_HALTED_DEF),
-    UARCH_HALT_CYCLE_OVERFLOW = EXPAND_UINT64_C(UARCH_HALT_CYCLE_OVERFLOW_DEF),
-};
-
 /// \brief Initial values for the microarchitecture
 enum UARCH_init : uint64_t {
     UARCH_HALT_INIT = EXPAND_UINT64_C(UARCH_HALT_INIT_DEF),

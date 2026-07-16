@@ -59,10 +59,6 @@ typedef enum cm_constant {
     CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = 20,
     CM_ROLLUP_LOG2_MAX_OUTPUT_COUNT = 63,
     CM_ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH = 24,
-    CM_IFLAGS_H_HALTED = 1,
-    CM_IFLAGS_H_MCYCLE_OVERFLOW = 3,
-    CM_UARCH_HALT_HALTED = 1,
-    CM_UARCH_HALT_CYCLE_OVERFLOW = 3,
     CM_FLASH_DRIVE_MAX = 8,         ///< Maximum number of flash drives
     CM_NVRAM_MAX = 8,               ///< Maximum number of NVRAMs
     CM_MEMORY_RANGE_LABEL_MAX = 31, ///< Maximum length of a memory range user label (DT alias constraint)
@@ -792,7 +788,8 @@ CM_API cm_error cm_write_console_input(cm_machine *m, const uint8_t *data, uint6
 /// \param mcycle_end End cycle value.
 /// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error.
-/// \details You may want to receive cmio requests depending on the run break reason.
+/// \details You may want to receive cmio requests depending on the run break reason. The break reason precedence is
+/// cycle overflow, halt, manual yield, then reaching the target mcycle.
 CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
 /// \brief Collects the root hashes after every \p mcycle_period machine cycles
@@ -826,8 +823,8 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// \detail The first hash added to "hashes" is the root hash after (\p mcycle_period - \p mcycle_phase)
 /// machine cycles (if the function managed to get that far before returning).
 ///
-/// If \p mcycle_end equals the current mcycle, no transition is requested, no root hash is collected, and
-/// "break_reason" is "reached_target_mcycle", regardless of whether the machine is already at a fixed point.
+/// If \p mcycle_end equals the current mcycle, no transition is requested and no root hash is collected.
+/// "break_reason" is the same reason that cm_run() would return.
 /// If \p mcycle_end is greater than the current mcycle and the machine is already at a fixed point, the machine
 /// remains unchanged, "break_reason" reports that fixed point, and its root hash is collected.
 ///
@@ -879,8 +876,8 @@ CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_b
 /// (i.e., after each machine cycle).
 /// The field "break_reason" is a string with the reason why the function returned.
 /// (Set to "failed" on failure.)
-/// If \p mcycle_end equals the current mcycle, no transition is requested, no root hash is collected, and
-/// "break_reason" is "reached_target_mcycle", regardless of whether the machine is already at a fixed point.
+/// If \p mcycle_end equals the current mcycle, no transition is requested and no root hash is collected.
+/// "break_reason" is the same reason that cm_run() would return.
 /// For example:
 /// ```json
 /// {

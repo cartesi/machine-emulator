@@ -148,6 +148,9 @@ private:
     /// \returns True if HTIF console is present.
     bool has_htif_console() const;
 
+    /// \brief Returns the break reason implied by the current machine state, or \p fallback otherwise.
+    interpreter_break_reason get_state_break_reason(interpreter_break_reason fallback) const;
+
 public:
     /// \brief Shorthand for the proof type
     using proof_type = hash_tree::proof_type;
@@ -223,7 +226,7 @@ public:
     /// \returns The reason the machine was interrupted.
     /// \details Several conditions can cause the function to break before mcycle reaches mcycle_end. The most
     ///  frequent scenario is when the program executes a WFI instruction. Another example is when the machine
-    ///  halts.
+    ///  halts. The break reason precedence is cycle overflow, halt, manual yield, then reaching the target mcycle.
     interpreter_break_reason run(uint64_t mcycle_end);
 
     /// \brief Collects the root hashes after every \p mcycle_period machine cycles
@@ -241,11 +244,10 @@ public:
     /// Stores into result.back_tree the back tree context to continue collecting bundled root hashes.
     /// \detail The first hash added to \p result.hashes is the root hash after (\p mcycle_period - \p mcycle_phase)
     /// machine cycles (if the function managed to get that far before returning).
-    /// If \p mcycle_end equals the current mcycle, no transition is requested, no root hash is collected, and
-    /// result.break_reason is interpreter_break_reason::reached_target_mcycle, regardless of whether the machine is
-    /// already at a fixed point. If \p mcycle_end is greater than the current mcycle and the machine is already at a
-    /// fixed point, the machine remains unchanged, result.break_reason reports that fixed point, and its root hash is
-    /// collected.
+    /// If \p mcycle_end equals the current mcycle, no transition is requested and no root hash is collected.
+    /// result.break_reason is the same reason that run() would return. If \p mcycle_end is greater than the current
+    /// mcycle and the machine is already at a fixed point, the machine remains unchanged, result.break_reason reports
+    /// that fixed point, and its root hash is collected.
     /// When the machine stops on a manual yield whose reason is rx-rejected, the root hash collected at the
     /// yield and the padding that follows are substituted by the recorded revert root hash, which is the root
     /// hash verifiers accept for these state transitions.
@@ -286,9 +288,8 @@ public:
     /// Stores into result.reset_indices the indices of the root hashes after each implicit uarch reset
     /// (i.e., after each machine cycle).
     /// Stores into result.break_reason the reason why the function returned.
-    /// If \p mcycle_end equals the current mcycle, no transition is requested, no root hash is collected, and
-    /// result.break_reason is interpreter_break_reason::reached_target_mcycle, regardless of whether the machine is
-    /// already at a fixed point.
+    /// If \p mcycle_end equals the current mcycle, no transition is requested and no root hash is collected.
+    /// result.break_reason is the same reason that run() would return.
     /// \detail The first hash added to \p result.hashes is the root hash after the first uarch cycle, the last is the
     /// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
     /// For each reset index, the preceding entry is an all-fixed-point bundle and the indexed entry is a bundle of

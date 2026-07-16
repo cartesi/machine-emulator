@@ -120,11 +120,6 @@ static_assert(std::string_view{DTB_BOOTARGS_INIT_PART} == std::string_view{CM_DT
 static_assert(std::string_view{DTB_BOOTARGS_INIT} == std::string_view{CM_DTB_BOOTARGS_INIT});
 
 static_assert(UARCH_CYCLE_MAX_DEF == CM_UARCH_CYCLE_MAX);
-static_assert(static_cast<uint64_t>(cartesi::IFLAGS_H_HALTED) == static_cast<uint64_t>(CM_IFLAGS_H_HALTED));
-static_assert(
-    static_cast<uint64_t>(cartesi::IFLAGS_H_MCYCLE_OVERFLOW) == static_cast<uint64_t>(CM_IFLAGS_H_MCYCLE_OVERFLOW));
-static_assert(UARCH_HALT_HALTED_DEF == CM_UARCH_HALT_HALTED);
-static_assert(UARCH_HALT_CYCLE_OVERFLOW_DEF == CM_UARCH_HALT_CYCLE_OVERFLOW);
 static_assert(RTC_FREQ_DIV_DEF == CM_RTC_FREQ_DIV);
 
 static_assert(HTIF_DEV_SHIFT_DEF == CM_HTIF_DEV_SHIFT);

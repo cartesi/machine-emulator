@@ -51,9 +51,6 @@ enum class interpreter_break_reason {
     mcycle_overflow,
 };
 
-/// \brief Returns the interpreter break reason persisted in a non-zero iflags.H value.
-interpreter_break_reason iflags_H_to_interpreter_break_reason(uint64_t iflags_H);
-
 /// \brief Tries to run the interpreter until mcycle hits a target
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.

@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added fallback to `read_reg` in the GDB stub so `monitor reg <name>` works for any named register
 - Added `--bash-completion` to print a bash completion script for `cartesi-machine`
 - Added public C API constants `CM_FLASH_DRIVE_MAX`, `CM_NVRAM_MAX`, `CM_MEMORY_RANGE_LABEL_MAX`, `CM_RTC_FREQ_DIV`, and `CM_ROLLUP_LOG2_MAX_OUTPUT_COUNT`
-- Added explicit machine and uarch cycle-overflow halt values and break reasons across the C++, C, Lua, and JSON-RPC APIs
+- Added explicit machine and uarch cycle-overflow break reasons across the C++, C, Lua, and JSON-RPC APIs
 - Added the peripheral `CM_AR_*` address range constants, the `CM_PMA_*_DID` driver id constants, the HTIF device, command, shift, and mask constants, and the `CM_DTB_BOOTARGS_*` macros to the public C API
 - Added LuaCov-based coverage tracking for Lua code, integrated with the gcov report pipeline
 - Added a JSON-RPC C API coverage suite and converted `test-cm-cli` and `test-evmu` to the lester spec format
@@ -42,7 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a typo in the `cartesi-machine.lua` cmio handling
 
 ## Changed
-- Changed machine and uarch cycle overflow to persist as fixed-point state in `iflags.H` and `uarch.halt`; run and hash-collection APIs now distinguish reaching an unchanged target from requesting progress at a fixed point
+- Changed machine and uarch cycle overflow to be derived, state-preserving fixed points
+- Changed run calls whose target equals the current `mcycle` to return the break reason implied by the machine state instead of always returning `reached_target_mcycle`
 - Renamed the uarch halt register and cycle break reasons to consistently use `uarch_halt`, `reached_target_uarch_cycle`, and `uarch_cycle_overflow`
 - Renamed the yield constants in `cm.h` and the Lua API from `CM_CMIO_YIELD_*` to `CM_HTIF_YIELD_*` (and the command suffix from `COMMAND` to `CMD`)
 - Renamed the PMA "device id" to "driver id" across the public API (`CM_PMA_*_DID` constants, `driver_id` in `get_address_ranges`)

@@ -132,7 +132,7 @@ local function expect_next_mcycle_uarch_root_hashes(
             expect_consistent_root_hash(machine)
         end
     end
-    expect.equal(machine:read_reg("uarch_halt"), cartesi.UARCH_HALT_HALTED)
+    expect.equal(machine:read_reg("uarch_halt"), 1)
     local halt_root_hash = expect_consistent_root_hash(machine)
     machine:reset_uarch()
     expect_consistent_root_hash(machine)
@@ -428,7 +428,7 @@ describe("collect hashes", function()
                 local mcycle_period = 32
                 local mcycle_phase = 1
                 local machine <close> = create_machine({ ram = { length = 4096 } })
-                machine:write_reg("iflags_H", cartesi.IFLAGS_H_HALTED)
+                machine:write_reg("iflags_H", 1)
                 local expected_root_hash = machine:get_root_hash()
 
                 expect.equal(machine:collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase), {
@@ -453,7 +453,7 @@ describe("collect hashes", function()
                 local mcycle_period = 32
                 local mcycle_phase = 1
                 local machine <close> = create_machine({ ram = { length = 4096 } })
-                machine:write_reg("iflags_H", cartesi.IFLAGS_H_MCYCLE_OVERFLOW)
+                machine:write_reg("imcyclemax", mcycle_start)
                 local expected_root_hash = machine:get_root_hash()
 
                 expect.equal(machine:collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase), {
@@ -503,7 +503,7 @@ describe("collect hashes", function()
                 local mcycle_phase = 1
                 local log2_bundle_mcycle_count = 2
                 local machine <close> = create_machine({ ram = { length = 4096 } })
-                machine:write_reg("iflags_H", cartesi.IFLAGS_H_HALTED)
+                machine:write_reg("iflags_H", 1)
                 local expected_root_hash = machine:get_root_hash()
                 local expected_bundle_hash = expected_root_hash
                 for _ = 1, log2_bundle_mcycle_count do
@@ -527,17 +527,17 @@ describe("collect hashes", function()
                 expect.equal(machine:get_root_hash(), expected_root_hash)
             end)
 
-            it("should distinguish same-target mcycle and uarch collection on a halted machine", function()
+            it("should report halt on same-target mcycle and uarch collection", function()
                 local mcycle_end = 0
                 local mcycle_period = 32
                 local mcycle_phase = 1
                 local machine <close> = create_machine({ ram = { length = 4096 } })
-                machine:write_reg("iflags_H", cartesi.IFLAGS_H_HALTED)
+                machine:write_reg("iflags_H", 1)
                 local expected_root_hash = machine:get_root_hash()
 
                 expect.equal(machine:collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase), {
                     hashes = {},
-                    break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+                    break_reason = cartesi.BREAK_REASON_HALTED,
                     mcycle_phase = mcycle_phase,
                 })
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
@@ -545,12 +545,12 @@ describe("collect hashes", function()
 
                 local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
-                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_HALTED)
                 expect.equal(#collected_uarch.reset_indices, 0)
                 expect.equal(#collected_uarch.hashes, 0)
             end)
 
-            it("should distinguish same-target mcycle and uarch collection on a yielded machine", function()
+            it("should report yield on same-target mcycle and uarch collection", function()
                 local mcycle_end = 0
                 local mcycle_period = 32
                 local mcycle_phase = 1
@@ -560,7 +560,7 @@ describe("collect hashes", function()
 
                 expect.equal(machine:collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase), {
                     hashes = {},
-                    break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+                    break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
                     mcycle_phase = mcycle_phase,
                 })
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
@@ -568,7 +568,7 @@ describe("collect hashes", function()
 
                 local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
-                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
                 expect.equal(#collected_uarch.reset_indices, 0)
                 expect.equal(#collected_uarch.hashes, 0)
             end)
@@ -623,11 +623,11 @@ describe("collect hashes", function()
                 })
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                -- A same-target call performs no transition and therefore collects no hashes
+                -- A same-target call reports the fixed point but performs no transition
                 expect.equal(machine:collect_uarch_cycle_root_hashes(machine:read_reg("mcycle")), {
                     hashes = {},
                     reset_indices = {},
-                    break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+                    break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
                 })
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
@@ -654,7 +654,7 @@ describe("collect hashes", function()
                     mcycle_phase = machine:read_reg("mcycle") % mcycle_period,
                 })
                 expect.equal(machine:read_reg("mcycle"), cartesi.MCYCLE_MAX)
-                expect.equal(machine:read_reg("iflags_H"), cartesi.IFLAGS_H_MCYCLE_OVERFLOW)
+                expect.equal(machine:read_reg("iflags_H"), 0)
 
                 expect.equal(
                     machine:collect_mcycle_root_hashes(
@@ -664,7 +664,7 @@ describe("collect hashes", function()
                     ),
                     {
                         hashes = {},
-                        break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+                        break_reason = cartesi.BREAK_REASON_MCYCLE_OVERFLOW,
                         mcycle_phase = machine:read_reg("mcycle") % mcycle_period,
                     }
                 )
@@ -682,11 +682,11 @@ describe("collect hashes", function()
                 expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[2]], expected_root_hash)
                 expect.equal(#collected_uarch.reset_indices, 2)
                 expect.equal(machine:read_reg("mcycle"), cartesi.MCYCLE_MAX)
-                expect.equal(machine:read_reg("iflags_H"), cartesi.IFLAGS_H_MCYCLE_OVERFLOW)
+                expect.equal(machine:read_reg("iflags_H"), 0)
 
                 collected_uarch = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
-                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+                expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
                 expect.equal(#collected_uarch.reset_indices, 0)
                 expect.equal(#collected_uarch.hashes, 0)
             end)
@@ -934,7 +934,7 @@ describe("collect hashes", function()
                     )
                     expect.equal(collected, expected_collected)
                     expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
-                    expect.equal(machine:read_reg("iflags_H"), cartesi.IFLAGS_H_HALTED)
+                    expect.equal(machine:read_reg("iflags_H"), 1)
                 end
             end)
 
@@ -1051,7 +1051,7 @@ describe("collect hashes", function()
                 -- htif_yield.bin breaks twice on a rejected manual yield, once with the rx-rejected reason
                 -- and once with the tx-output automatic reason, which shares the same reason value
                 expect.equal(count_rejected_yields, 2)
-                expect.equal(machine:read_reg("iflags_H"), cartesi.IFLAGS_H_HALTED)
+                expect.equal(machine:read_reg("iflags_H"), 1)
             end)
 
             it("should collect across a rejected yield using a tail collected in advance", function()
@@ -1359,7 +1359,7 @@ describe("collect hashes", function()
                             count_manual_yields = count_manual_yields + 1
                         elseif machine:read_reg("iflags_X") == 1 then
                             count_automatic_yields = count_automatic_yields + 1
-                        elseif machine:read_reg("iflags_H") == cartesi.IFLAGS_H_HALTED then
+                        elseif machine:read_reg("iflags_H") == 1 then
                             halt_exit_code = machine:read_reg("htif_tohost_data") >> 1
                             break
                         end

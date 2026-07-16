@@ -223,10 +223,6 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_MEMORY_RANGE_LABEL_MAX, "MEMORY_RANGE_LABEL_MAX", -1);
     clua_setintegerfield(L, CM_MCYCLE_MAX, "MCYCLE_MAX", -1);
     clua_setintegerfield(L, CM_UARCH_CYCLE_MAX, "UARCH_CYCLE_MAX", -1);
-    clua_setintegerfield(L, CM_IFLAGS_H_HALTED, "IFLAGS_H_HALTED", -1);
-    clua_setintegerfield(L, CM_IFLAGS_H_MCYCLE_OVERFLOW, "IFLAGS_H_MCYCLE_OVERFLOW", -1);
-    clua_setintegerfield(L, CM_UARCH_HALT_HALTED, "UARCH_HALT_HALTED", -1);
-    clua_setintegerfield(L, CM_UARCH_HALT_CYCLE_OVERFLOW, "UARCH_HALT_CYCLE_OVERFLOW", -1);
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_WORD_SIZE, "HASH_TREE_LOG2_WORD_SIZE", -1);
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_PAGE_SIZE, "HASH_TREE_LOG2_PAGE_SIZE", -1);
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_ROOT_SIZE, "HASH_TREE_LOG2_ROOT_SIZE", -1);

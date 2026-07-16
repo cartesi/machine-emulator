@@ -168,7 +168,7 @@ describe("verify_step_uarch", function()
         end)
 
         it("should reject wrong type on 1st read access", function()
-            step_should_fail(build_default_machine, "expected 1st access to read uarch.halt", function(log)
+            step_should_fail(build_default_machine, "expected 1st access to read uarch.cycle", function(log)
                 log.accesses[1].type = "write"
             end)
         end)
@@ -186,13 +186,13 @@ describe("verify_step_uarch", function()
         end)
 
         it("should reject wrong address on read access", function()
-            step_should_fail(build_default_machine, "expected 1st access to read uarch.halt at address", function(log)
+            step_should_fail(build_default_machine, "expected 1st access to read uarch.cycle at address", function(log)
                 log.accesses[1].address = 0
             end)
         end)
 
         it("should reject wrong log2_size on read access", function()
-            step_should_fail(build_default_machine, "expected 1st access to uarch.halt to read 2^", function(log)
+            step_should_fail(build_default_machine, "expected 1st access to uarch.cycle to read 2^", function(log)
                 log.accesses[1].log2_size = 2
             end)
         end)
@@ -208,7 +208,7 @@ describe("verify_step_uarch", function()
         end)
 
         it("should reject missing read data", function()
-            step_should_fail(build_default_machine, "missing read data for uarch.halt in 1st access", function(log)
+            step_should_fail(build_default_machine, "missing read data for uarch.cycle in 1st access", function(log)
                 log.accesses[1].read = nil
             end)
         end)
@@ -216,7 +216,7 @@ describe("verify_step_uarch", function()
         it("should reject corrupt read data", function()
             step_should_fail(
                 build_default_machine,
-                "read data for uarch.halt does not match read hash in 1st access",
+                "read data for uarch.cycle does not match read hash in 1st access",
                 function(log)
                     log.accesses[1].read = string.rep("\xff", #log.accesses[1].read)
                 end

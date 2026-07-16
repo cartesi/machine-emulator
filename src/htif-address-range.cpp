@@ -63,7 +63,7 @@ bool htif_address_range::do_read_device(i_device_state_access *a, uint64_t offse
 
 static execute_status htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     if (cmd == HTIF_HALT_CMD_HALT && ((data & 1) != 0)) {
-        a->write_iflags_H(IFLAGS_H_HALTED);
+        a->write_iflags_H(1);
         return execute_status::success_and_halt;
     }
     //??D Write acknowledgement to fromhost???

@@ -65,7 +65,6 @@ LUA_CLI ?= $(LUA)
 SPEC_FILTER ?=
 
 LUACOV_DIR := $(BUILDDIR)/luacov
-COVERAGE_FORK_DIR := $(BUILDDIR)/coverage-forks
 
 ifeq ($(coverage),yes)
 # The lua test runners fork workers whose duplicate counter dumps would race the
@@ -82,10 +81,6 @@ $(LUACOV_DIR):
 # so it must exist before them. They are also ordered so their writes do not race.
 LUACOV_DIR_ORDER := $(LUACOV_DIR)
 TEST_EVMU_ORDER := $(LUACOV_DIR) run-lua-spec-cm-cli
-# Forked jsonrpc servers redirect their gcov counters here, one directory per
-# child pid, so concurrent parent and child dumps do not race the shared .gcda
-# files in ../src. The coverage report merges these subtrees back in.
-export CARTESI_COVERAGE_FORK_DIR := $(COVERAGE_FORK_DIR)
 endif
 
 ifeq ($(TARGET_OS),Darwin)
@@ -372,14 +367,7 @@ GCOVR_FLAGS=--gcov-ignore-parse-errors --use-gcov-files \
 	--exclude-lines-by-pattern '\s*contract_assert.*'
 
 coverage-report: $(COVERAGE_OUTPUT_DIR)
-	@# Colocate each redirected child .gcda with its matching .gcno so gcov can read it
-	@if [ -d "$(COVERAGE_FORK_DIR)" ]; then \
-		for d in $(COVERAGE_FORK_DIR)/*/; do \
-			[ -d "$$d" ] && ln -sf $(MACHINE_EMULATOR_SRC_DIR)/*.gcno "$$d"; \
-		done; \
-	fi
-	$(LUA) ./scripts/run-gcov.lua $(MACHINE_EMULATOR_SRC_DIR) '$(GCOV)' $$(ls $(COVERAGE_FORK_DIR)/*/*.gcda 2>/dev/null)
-	@rm -rf $(COVERAGE_FORK_DIR)
+	$(LUA) ./scripts/run-gcov.lua $(MACHINE_EMULATOR_SRC_DIR) '$(GCOV)'
 	$(UARCH_PCS_TO_GCOV_CMD)
 	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi-machine.lua ../src
 	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi/evmu.lua ../src
@@ -391,7 +379,7 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 # runs and inflate the report.
 clean-coverage:
 	@rm -f ../src/*.gcda ../src/*.gcov
-	@rm -rf $(COVERAGE_FORK_DIR) $(LUACOV_DIR) $(UARCH_PCS_DIR) $(COVERAGE_OUTPUT_DIR)
+	@rm -rf $(LUACOV_DIR) $(UARCH_PCS_DIR) $(COVERAGE_OUTPUT_DIR)
 
 # Full coverage run. It runs the parallel test group, then the in-place pristine-swap
 # uarch collection (both sequenced by order-only prerequisites), then the report. Run with

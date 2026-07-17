@@ -838,18 +838,9 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     const auto pid = fork();
     if (pid == 0) { // Child process and fork() succeeded
 #ifdef CODE_COVERAGE
-        // In a coverage build, the parent and this child would otherwise both flush their
-        // counters to the same per-object .gcda files in the source tree when they exit.
-        // Running concurrently, that races and corrupts the files ("Merge mismatch for
-        // function N"), and the warning pollutes captured test output. Redirect this child's
-        // counters to its own directory and reset them, so it records only its post-fork
-        // execution. The coverage report sums the per-child directories back in.
-        if (const char *fork_dir = std::getenv("CARTESI_COVERAGE_FORK_DIR")) {
-            const std::string child_dir = std::string{fork_dir} + "/" + std::to_string(getpid());
-            setenv("GCOV_PREFIX", child_dir.c_str(), 1);
-            setenv("GCOV_PREFIX_STRIP", "128", 1); // flatten the embedded path to <child_dir>/<obj>.gcda
-            __gcov_reset();
-        }
+        // Record only execution after the fork in the child. The coverage runtime
+        // serializes its update of the shared .gcda files when the process exits.
+        __gcov_reset();
 #endif
 #if defined(HAVE_OPENMP) && defined(_LIBCPP_VERSION)
         // omp_pause_hard deinitializes OpenMP but, on libc++, its atexit handler persists after fork.

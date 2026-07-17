@@ -27,24 +27,18 @@ overwrite cannot happen for either tool. We parse that stream instead of reading
 files back. The merge sums execution counts per line, so it is associative and
 commutative: the result does not depend on the order or grouping of the .gcda.
 
-Extra .gcda files may be given after the gcov command. They are merged in just
-like those in <src-dir>. gcov is always run from <src-dir> so sources resolve
-there; the caller must have symlinked each extra .gcda's matching .gcno next to
-it beforehand.
-
 Usage:
-  lua5.4 run-gcov.lua <src-dir> <gcov-command> [<extra.gcda> ...]
+  lua5.4 run-gcov.lua <src-dir> <gcov-command>
 
   <src-dir>       directory containing .gcda files (output .gcov files go here)
   <gcov-command>  gcov command to use (e.g. "gcov" or "llvm-cov gcov")
-  <extra.gcda>    additional .gcda files (absolute paths) to merge in
 ]]
 
 local src_dir = arg[1]
 local gcov_cmd = arg[2]
 
 if not src_dir or not gcov_cmd then
-    io.stderr:write("Usage: lua5.4 run-gcov.lua <src-dir> <gcov-command> [<extra.gcda> ...]\n")
+    io.stderr:write("Usage: lua5.4 run-gcov.lua <src-dir> <gcov-command>\n")
     os.exit(1)
 end
 
@@ -187,17 +181,12 @@ local function write_merged(merged, out_dir)
     return file_count
 end
 
--- Collect the .gcda to process: basenames found in src_dir, plus any extra paths
--- passed as arguments (merged in the same way).
+-- Collect the .gcda basenames found in src_dir.
 local gcda_files = {}
 local n = 0
 for f in popen("ls %s/*.gcda 2>/dev/null", src_dir) do
     n = n + 1
     gcda_files[n] = basename(f)
-end
-for i = 3, #arg do
-    n = n + 1
-    gcda_files[n] = arg[i]
 end
 
 if n == 0 then

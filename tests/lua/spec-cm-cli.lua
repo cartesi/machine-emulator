@@ -1698,9 +1698,10 @@ describe("cartesi-machine CLI", function()
     -- Post-run uarch advance path (--max-uarch-cycle, --auto-reset-uarch)
     --
     -- What: --max-uarch-cycle and --auto-reset-uarch exercise the uarch advance
-    --       path that runs after the main machine loop.
-    -- How:  run_ok() with --max-mcycle=0 so the main loop is bypassed; the
-    --       post-loop uarch-run branch is still entered.
+    --       path that runs after the main machine loop, including the uarch
+    --       cycle overflow fixed point.
+    -- How:  Run with --max-mcycle=0 so the main loop is bypassed. For overflow,
+    --       install a uarch program that loops until UARCH_CYCLE_MAX.
     -- -------------------------------------------------------------------------
     it("max uarch cycle runtime", function()
         -- max-uarch-cycle=1 runs one uarch step then stops (machine is still running)
@@ -1709,6 +1710,20 @@ describe("cartesi-machine CLI", function()
         run_ok({ "--auto-reset-uarch", "--max-uarch-cycle=1000000", "--max-mcycle=0", "--no-init-splash", "--quiet" })
         -- Without --auto-reset-uarch the uarch-halt path prints uCycles instead of resetting.
         run_ok({ "--max-uarch-cycle=1000000", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+
+        -- Uarch overflow is reported as a failure and is not cleared by automatic reset.
+        local _ <close>, loop_uarch = filesystem.write_scope_temp_file(string.pack("<I4", 0x0000006f)) -- jal x0, 0
+        local rc, _, err = run({
+            "--uarch-ram-image=" .. loop_uarch,
+            "--max-mcycle=0",
+            "--max-uarch-cycle=" .. cartesi.UARCH_CYCLE_MAX,
+            "--auto-reset-uarch",
+            "--no-init-splash",
+        })
+        expect.equal(rc, 1)
+        expect.truthy(err:find("Uarch cycle overflow", 1, true))
+        expect.truthy(err:find("Cycles: 0", 1, true))
+        expect.truthy(err:find("uCycles: " .. cartesi.UARCH_CYCLE_MAX, 1, true))
     end)
 
     -- -------------------------------------------------------------------------

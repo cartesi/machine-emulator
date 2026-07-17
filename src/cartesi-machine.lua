@@ -2778,6 +2778,10 @@ local function check_cmio_htif_config(htif)
     )
 end
 
+local function report_mcycles(machine) stderr("Cycles: %u\n", machine:read_reg("mcycle")) end
+
+local function report_uarch_cycles(machine) stderr("uCycles: %u\n", machine:read_reg("uarch_cycle")) end
+
 local function get_and_print_yield(machine, htif)
     local cmd, yield_reason, data = machine:receive_cmio_request()
     if cmd == cartesi.HTIF_YIELD_CMD_AUTOMATIC and yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS then
@@ -2795,7 +2799,7 @@ local function get_and_print_yield(machine, htif)
         reason_str = cmio_yield_manual_reason[yield_reason] or reason_str
     end
     stderr("\n%s yield %s (%d) (0x%06x data)\n", cmd_str, reason_str, yield_reason, #data)
-    stderr("Cycles: %u\n", machine:read_reg("mcycle"))
+    report_mcycles(machine)
     return cmd, yield_reason, data
 end
 
@@ -3619,7 +3623,7 @@ local function report_halt(m)
     else
         stderr("\nHalted\n")
     end
-    stderr("Cycles: %u\n", m:read_reg("mcycle"))
+    report_mcycles(m)
 end
 
 -- Prints the mcycle overflow banner. The machine stopped at its mcycle limit without completing
@@ -3627,7 +3631,7 @@ end
 local function report_mcycle_overflow(m)
     exit_code = 1
     stderr("\nMcycle overflow\n")
-    stderr("Cycles: %u\n", m:read_reg("mcycle"))
+    report_mcycles(m)
 end
 
 -- Reports where a run stopped: the halt banner on a halt, the overflow banner on an mcycle
@@ -3810,16 +3814,23 @@ end
 if max_uarch_cycle > 0 then
     -- Save halt flag before micro cycles
     local previously_halted = machine:read_reg("iflags_H") ~= 0
-    if machine:run_uarch(max_uarch_cycle) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
-        -- Microarchitecture  halted. This means that one "macro" instruction was totally executed
-        -- The mcycle counter was incremented, unless the machine was already halted
-        if machine:read_reg("iflags_H") ~= 0 and not previously_halted then stderr("Halted\n") end
-        stderr("Cycles: %u\n", machine:read_reg("mcycle"))
-        if auto_reset_uarch then
-            machine:reset_uarch()
+    local break_reason = machine:run_uarch(max_uarch_cycle)
+    if break_reason == cartesi.UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW then
+        exit_code = 1
+        stderr("\nUarch cycle overflow\n")
+        report_mcycles(machine)
+        report_uarch_cycles(machine)
+    elseif break_reason == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
+        -- The microarchitecture halted after completing one main processor instruction.
+        -- The mcycle counter was incremented unless the machine was already halted.
+        local newly_halted = machine:read_reg("iflags_H") ~= 0 and not previously_halted
+        if auto_reset_uarch then machine:reset_uarch() end
+        if newly_halted then
+            report_halt(machine)
         else
-            stderr("uCycles: %u\n", machine:read_reg("uarch_cycle"))
+            report_mcycles(machine)
         end
+        if not auto_reset_uarch then report_uarch_cycles(machine) end
     end
 end
 if gdb_stub then gdb_stub:close() end

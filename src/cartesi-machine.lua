@@ -787,8 +787,8 @@ where options are:
     print final state hash when done.
     if <filename> is given, write the raw state hash to it instead.
 
-  --print-mcycle-root-hashes=<period>[,start:<mcycle>][,log2_bundle_mcycle_count:<count>]
-    prints root hash every <period> cycles, and where the machine stops.
+  --print-mcycle-root-hashes=<log2_mcycle_period>[,start:<mcycle>][,log2_bundle_mcycle_count:<count>]
+    prints root hash every 2^log2_mcycle_period cycles, and where the machine stops.
     if start: is given, the hashing will start at that mcycle.
     if log2_bundle_mcycle_count: is given, prints instead one subtree root for
     every 2^log2_bundle_mcycle_count hashes, with the cycle range it covers.
@@ -1032,7 +1032,7 @@ local initial_hash = false
 local final_hash = false
 local initial_proof = {}
 local final_proof = {}
-local mcycle_root_hashes_period = math.maxinteger
+local mcycle_root_hashes_log2_period
 local mcycle_root_hashes_start = 0
 local mcycle_root_hashes_log2_bundle = 0
 local uarch_cycle_root_hashes_start
@@ -2236,7 +2236,12 @@ options = {
         "--print-mcycle-root-hashes=",
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
-            mcycle_root_hashes_period = assertf(o.period, "need period in %s", all)
+            mcycle_root_hashes_log2_period = assertf(o.log2_mcycle_period, "need log2_mcycle_period in %s", all)
+            assertf(
+                mcycle_root_hashes_log2_period >= 0 and mcycle_root_hashes_log2_period < 63,
+                "log2_mcycle_period must be in {0, ..., 62} in %s",
+                all
+            )
             mcycle_root_hashes_start = o.start or 0
             mcycle_root_hashes_log2_bundle = o.log2_bundle_mcycle_count or 0
             initial_hash = true
@@ -2244,8 +2249,8 @@ options = {
             return true
         end,
         {
-            "period",
-            period = "number",
+            "log2_mcycle_period",
+            log2_mcycle_period = "number",
             start = "number",
             log2_bundle_mcycle_count = "number",
         },
@@ -2970,7 +2975,7 @@ end
 -- optionally making a computation hash. In a plain run, it can instead print mcycle root hashes
 -- or uarch cycle root hashes, one excluding the other. Debugging combines with any of them, but
 -- hash collection assumes the debugger only observes, so that combination warns.
-local mcycle_root_hashes = mcycle_root_hashes_period ~= math.maxinteger
+local mcycle_root_hashes = mcycle_root_hashes_log2_period ~= nil
 local computation_hash = cmio_advance
     and (cmio_advance.mcycle_computation_hash or cmio_advance.uarch_cycle_computation_hash)
 if cmio_advance or cmio_inspect then
@@ -3268,8 +3273,13 @@ local function mcycle_root_hashes_runner_run(self, next_mcycle)
         -- the back tree holds the samples of the partially filled bundle a call leaves behind
         local fill = back_tree and back_tree.leaf_count or 0
         local chunk_end = get_mcycle_hashes_chunk_end(mcycle, next_mcycle, self.period, self.log2_bundle)
-        local collected =
-            self.runner:collect_mcycle_root_hashes(chunk_end, self.period, mcycle_phase, self.log2_bundle, back_tree)
+        local collected = self.runner:collect_mcycle_root_hashes(
+            chunk_end,
+            self.log2_period,
+            mcycle_phase,
+            self.log2_bundle,
+            back_tree
+        )
         if collected.console_io_error then stderr("Console I/O error: %s\n", collected.console_io_error) end
         local at_fixed_point = is_at_fixed_point(collected.break_reason)
         print_collected_hashes(
@@ -3293,11 +3303,12 @@ local function mcycle_root_hashes_runner_run(self, next_mcycle)
         end
     end
 end
-local function make_mcycle_root_hashes_runner(runner, period, start, log2_bundle)
+local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
     return {
         machine = machine,
         runner = runner,
-        period = period,
+        period = 1 << log2_period,
+        log2_period = log2_period,
         start = start,
         log2_bundle = log2_bundle,
         mcycle_phase = 0,
@@ -3356,8 +3367,13 @@ local function mcycle_computation_hash_run(self, mcycle_end)
         local mcycle = m:read_reg("mcycle")
         local fill = back_tree and back_tree.leaf_count or 0
         local chunk_end = get_mcycle_hashes_chunk_end(mcycle, mcycle_end, self.period, self.log2_bundle)
-        local collected =
-            self.runner:collect_mcycle_root_hashes(chunk_end, self.period, mcycle_phase, self.log2_bundle, back_tree)
+        local collected = self.runner:collect_mcycle_root_hashes(
+            chunk_end,
+            self.log2_period,
+            mcycle_phase,
+            self.log2_bundle,
+            back_tree
+        )
         if collected.console_io_error then stderr("Console I/O error: %s\n", collected.console_io_error) end
         local at_fixed_point = is_at_fixed_point(collected.break_reason)
         if self.print_leaves then
@@ -3833,7 +3849,8 @@ if uarch_cycle_root_hashes_count then
     )
 elseif mcycle_root_hashes then
     local start = mcycle_root_hashes_start ~= 0 and mcycle_root_hashes_start or nil
-    runner = make_mcycle_root_hashes_runner(runner, mcycle_root_hashes_period, start, mcycle_root_hashes_log2_bundle)
+    runner =
+        make_mcycle_root_hashes_runner(runner, mcycle_root_hashes_log2_period, start, mcycle_root_hashes_log2_bundle)
 end
 
 -- The host drives an advance-state epoch (which may end with an inspect query) actively, an

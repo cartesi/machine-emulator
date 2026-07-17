@@ -2530,12 +2530,12 @@ cartesi-machine \
 ```
 
 The command-line option
-`--print-mcycle-root-hashes=<period>[,start:<mcycle>]` causes the
-command-line utility to periodically obtain and print the state hash.
-The `<period>` argument gives the distance between hashes in cycles. The
-optional `start:<mcycle>` sub-key gives the starting cycle for the
-hashes. (Both `--initial-hash` and `--final-hash` are implied by this
-option.)
+`--print-mcycle-root-hashes=<log2_mcycle_period>[,start:<mcycle>]`
+causes the command-line utility to periodically obtain and print the
+state hash. The `<log2_mcycle_period>` argument gives the log base 2 of
+the distance between hashes in cycles. The optional `start:<mcycle>`
+sub-key gives the starting cycle for the hashes. (Both `--initial-hash`
+and `--final-hash` are implied by this option.)
 
 For example, to see the last 10 state hashes from the calculator machine
 computation, run the command
@@ -2547,7 +2547,7 @@ cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="label:input,data_filename:input.raw" \
-    --print-mcycle-root-hashes=1,start:62993888
+    --print-mcycle-root-hashes=0,start:62993888
 ```
 
 The output is

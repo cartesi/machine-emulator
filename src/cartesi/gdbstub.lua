@@ -410,7 +410,7 @@ function advance_modes.collect_mcycle_root_hashes(self, mcycle_end)
     local collect = self.collect
     local collected = self.machine:collect_mcycle_root_hashes(
         mcycle_end,
-        collect.mcycle_period,
+        collect.log2_mcycle_period,
         collect.mcycle_phase,
         collect.log2_bundle,
         collect.back_tree
@@ -630,11 +630,11 @@ end
 -- machine's,
 -- is returned when the call suspends. When GDB never connected or detached mid-call, the
 -- collection finishes against the machine, as run does.
-function GDBStub:collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase, log2_bundle, back_tree)
+function GDBStub:collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period, mcycle_phase, log2_bundle, back_tree)
     self.mode = "collect_mcycle_root_hashes"
     local collect = {
         hashes = {},
-        mcycle_period = mcycle_period,
+        log2_mcycle_period = log2_mcycle_period,
         mcycle_phase = mcycle_phase,
         log2_bundle = log2_bundle,
         back_tree = back_tree,

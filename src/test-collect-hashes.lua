@@ -158,7 +158,7 @@ local function get_root_hashes_with_collect(input_count)
             index = index + 1
             if index >= input_count then break end
         end
-        local collected = m:collect_mcycle_root_hashes(cartesi.MCYCLE_MAX, MCYCLE_PERIOD, mcycle_phase)
+        local collected = m:collect_mcycle_root_hashes(cartesi.MCYCLE_MAX, LOG2_MCYCLE_PERIOD, mcycle_phase)
         break_reason, mcycle_phase = collected.break_reason, collected.mcycle_phase
         tappend(hashes, collected.hashes)
     end

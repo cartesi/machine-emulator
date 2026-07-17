@@ -967,17 +967,17 @@ static json jsonrpc_machine_collect_mcycle_root_hashes(const json &j, const std:
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *const param_name[] = {"mcycle_end", "mcycle_period", "mcycle_phase", "log2_bundle_mcycle_count",
-        "previous_back_tree"};
+    static const char *const param_name[] = {"mcycle_end", "log2_mcycle_period", "mcycle_phase",
+        "log2_bundle_mcycle_count", "previous_back_tree"};
     auto args =
         parse_args<uint64_t, uint64_t, uint64_t, uint64_t, std::optional<cartesi::back_merkle_tree>>(j, param_name);
     auto mcycle_end = std::get<0>(args);
-    auto mcycle_period = std::get<1>(args);
+    auto log2_mcycle_period = std::get<1>(args);
     auto mcycle_phase = std::get<2>(args);
     auto log2_bundle_mcycle_count = std::get<3>(args);
     auto previous_back_tree = std::get<4>(args);
-    const auto result = session->handler->machine->collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase,
-        static_cast<int>(log2_bundle_mcycle_count), previous_back_tree);
+    const auto result = session->handler->machine->collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period,
+        mcycle_phase, static_cast<int>(log2_bundle_mcycle_count), previous_back_tree);
     return jsonrpc_response_ok(j, result);
 }
 

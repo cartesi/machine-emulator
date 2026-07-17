@@ -92,11 +92,12 @@ public:
         return do_run(mcycle_end);
     }
 
-    /// \brief Collects the root hashes after every \p mcycle_period machine cycles until mcycle reaches \p mcycle_end,
-    /// or if the machine halts or yields.
-    mcycle_root_hashes collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period, uint64_t mcycle_phase,
-        int32_t log2_bundle_mcycle_count, const std::optional<back_merkle_tree> &previous_back_tree) {
-        return do_collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase, log2_bundle_mcycle_count,
+    /// \brief Collects the root hashes after every 2^\p log2_mcycle_period machine cycles until mcycle reaches
+    /// \p mcycle_end, or if the machine halts or yields.
+    mcycle_root_hashes collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
+        uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
+        const std::optional<back_merkle_tree> &previous_back_tree) {
+        return do_collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period, mcycle_phase, log2_bundle_mcycle_count,
             previous_back_tree);
     }
 
@@ -355,7 +356,7 @@ private:
         const std::string &dir) = 0;
     virtual void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) = 0;
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
-    virtual mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period,
+    virtual mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
         uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
         const std::optional<back_merkle_tree> &previous_back_tree) = 0;
     virtual void do_store(const std::string &dir, sharing_mode sharing) const = 0;

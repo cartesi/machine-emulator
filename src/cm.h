@@ -794,11 +794,11 @@ CM_API cm_error cm_write_console_input(cm_machine *m, const uint8_t *data, uint6
 /// cycle overflow, halt, manual yield, then reaching the target mcycle.
 CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
-/// \brief Collects the root hashes after every \p mcycle_period machine cycles
+/// \brief Collects the root hashes after every 2^\p log2_mcycle_period machine cycles
 /// until mcycle reaches \p mcycle_end, the machine yields, or halts.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param mcycle_end End machine cycle value.
-/// \param mcycle_period Number of machine cycles between root hashes to collect.
+/// \param log2_mcycle_period Log base 2 of the number of machine cycles between root hashes to collect.
 /// \param mcycle_phase Number of machine cycles elapsed since last root hash collected.
 /// \param log2_bundle_mcycle_count Log base 2 of the amount of mcycle root hashes to bundle.
 /// If greater than 0, it collects subtree root hashes for 2^log2_bundle_mcycle_count root hashes.
@@ -822,8 +822,9 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// }
 /// ```
 /// \returns 0 for success, non zero code for error.
-/// \detail The first hash added to "hashes" is the root hash after (\p mcycle_period - \p mcycle_phase)
-/// machine cycles (if the function managed to get that far before returning).
+/// \detail The first hash added to "hashes" is the root hash after
+/// (2^\p log2_mcycle_period - \p mcycle_phase) machine cycles
+/// (if the function managed to get that far before returning).
 ///
 /// If \p mcycle_end equals the current mcycle, no transition is requested and no root hash is collected.
 /// "break_reason" is the same reason that cm_run() would return.
@@ -841,7 +842,7 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// root hash, and the last hash in "hashes" represents a bundle consisting entirely of repetitions of that same final
 /// root hash.
 ///
-/// When execution stops at a mcycle_period boundary or at a fixed point, the "back_tree" field is omitted.
+/// When execution stops at a 2^log2_mcycle_period boundary or at a fixed point, the "back_tree" field is omitted.
 /// Otherwise the "back_tree" field is included in the result and contains partial root hashes as its context,
 /// and must be passed a subsequent function call to continue bundling root hashes properly.
 ///
@@ -849,7 +850,7 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// Instead, the machine continues running until completion. Any console I/O error message is returned
 /// in the "console_io_error" field of the result JSON object. This allows you to detect and handle
 /// console I/O issues without interrupting the main execution flow.
-CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint64_t mcycle_period,
+CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint64_t log2_mcycle_period,
     uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count, const char *previous_back_tree, const char **result);
 
 /// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.

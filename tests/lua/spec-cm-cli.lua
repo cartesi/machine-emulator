@@ -889,7 +889,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     -- Hashing and proof options
     --
-    -- What: --initial-hash, --final-hash, --print-mcycle-root-hashes (positional period
+    -- What: --initial-hash, --final-hash, --print-mcycle-root-hashes (positional log2 period
     --       with and without a start: sub-key), --initial-proof, --final-proof,
     --       --print-uarch-cycle-root-hashes, and --dump-memory-ranges.
     -- How:  run_ok() each flag; regex-match 64-hex-digit lines in stderr to
@@ -909,7 +909,7 @@ describe("cartesi-machine CLI", function()
         expect.truthy(hash_count >= 2)
 
         -- --print-mcycle-root-hashes
-        _, err = run_ok({ "--print-mcycle-root-hashes=1,start:0", "--max-mcycle=2", "--no-init-splash", "--quiet" })
+        _, err = run_ok({ "--print-mcycle-root-hashes=0,start:0", "--max-mcycle=2", "--no-init-splash", "--quiet" })
         hash_count = 0
         for line in err:gmatch("[^\n]+") do
             if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
@@ -918,17 +918,17 @@ describe("cartesi-machine CLI", function()
         end
         expect.truthy(hash_count >= 1)
 
-        -- --print-mcycle-root-hashes=<period> bare positional form (start defaults to 0)
-        run_ok({ "--print-mcycle-root-hashes=10", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        -- --print-mcycle-root-hashes=<log2-period> bare positional form (start defaults to 0)
+        run_ok({ "--print-mcycle-root-hashes=3", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --print-mcycle-root-hashes=<period>,start:<n> with start > 0: exercises the
+        -- --print-mcycle-root-hashes=<log2-period>,start:<n> with start > 0: exercises the
         -- next_hash_mcycle = mcycle_root_hashes_start branch.
-        run_ok({ "--print-mcycle-root-hashes=10,start:5", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        run_ok({ "--print-mcycle-root-hashes=3,start:5", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --print-mcycle-root-hashes=<period>,start:<n> must run PAST start, emitting a hash at start and at
+        -- --print-mcycle-root-hashes=<log2-period>,start:<n> must run PAST start, emitting a hash at start and at
         -- each period beyond it up to --max-mcycle (regression guard: run_to_cycle must not report a
         -- stop at the start waypoint and leave the machine parked there).
-        _, err = run_ok({ "--print-mcycle-root-hashes=100000,start:200000", "--max-mcycle=600000", "--no-init-splash" })
+        _, err = run_ok({ "--print-mcycle-root-hashes=17,start:200000", "--max-mcycle=600000", "--no-init-splash" })
         local seen = {}
         for line in err:gmatch("[^\n]+") do
             local mcycle = line:match("^(%d+): [0-9a-f]+$")
@@ -936,12 +936,12 @@ describe("cartesi-machine CLI", function()
                 seen[tonumber(mcycle)] = true
             end
         end
-        expect.truthy(seen[200000] and seen[300000] and seen[400000])
+        expect.truthy(seen[200000] and seen[331072] and seen[462144])
 
         -- Collection is chunked at about 256 returned hashes. With bundles of two samples, this
         -- crosses the first artificial boundary at mcycle 512 and must continue to the real target.
         _, err = run_ok({
-            "--print-mcycle-root-hashes=1,log2_bundle_mcycle_count:1",
+            "--print-mcycle-root-hashes=0,log2_bundle_mcycle_count:1",
             "--max-mcycle=514",
             "--no-init-splash",
         })
@@ -2522,7 +2522,7 @@ describe("cartesi-machine CLI", function()
         -- advance state runs plainly or collects the computation hash, so --print-mcycle-root-hashes is refused
         run_fail({
             "--cmio-advance-state=log2_mcycle_computation_hash_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
-            "--print-mcycle-root-hashes=" .. (1 << LOG2_MCYCLE_COMPUTATION_HASH_PERIOD),
+            "--print-mcycle-root-hashes=" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--no-revert",
             "--max-mcycle=0",
             "--no-init-splash",
@@ -3237,7 +3237,7 @@ describe("cartesi-machine CLI", function()
         -- Mcycle root hashes split across two continues: the first crosses the suspend
         -- at start and stops mid-period at the stepc limit, the second runs to
         -- --max-mcycle. No --quiet below, it would silence the hash streams.
-        local periodic_flags = { "--print-mcycle-root-hashes=100,start:150", "--max-mcycle=1000", "--no-init-splash" }
+        local periodic_flags = { "--print-mcycle-root-hashes=7,start:150", "--max-mcycle=1000", "--no-init-splash" }
         local _, plain = run_ok(periodic_flags)
         local under_gdb = run_under_gdb(periodic_flags, 53211, function(conn)
             expect.equal(gdb_rcmd(conn, "stepc 375"), "OK")
@@ -3260,7 +3260,7 @@ describe("cartesi-machine CLI", function()
         expect.equal(hash_lines(under_gdb_dense), hash_lines(plain_dense))
 
         -- Detach right away: the collection finishes against the machine.
-        local fallback_flags = { "--print-mcycle-root-hashes=100", "--max-mcycle=500", "--no-init-splash" }
+        local fallback_flags = { "--print-mcycle-root-hashes=7", "--max-mcycle=500", "--no-init-splash" }
         local _, plain_fallback = run_ok(fallback_flags)
         local under_gdb_fallback = run_under_gdb(fallback_flags, 53213, function(conn)
             expect.equal(gdb_command(conn, "D"), "OK")

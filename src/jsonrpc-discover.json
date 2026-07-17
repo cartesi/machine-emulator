@@ -309,8 +309,8 @@
           }
         },
         {
-          "name": "mcycle_period",
-          "description": "Number of machine cycles between root hashes to collect",
+          "name": "log2_mcycle_period",
+          "description": "Log base 2 of the number of machine cycles between root hashes to collect",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"

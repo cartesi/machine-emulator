@@ -89,11 +89,11 @@ interpreter_break_reason local_machine::do_run(uint64_t mcycle_end) {
     return get_machine()->run(mcycle_end);
 }
 
-mcycle_root_hashes local_machine::do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period,
+mcycle_root_hashes local_machine::do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
     uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
     const std::optional<back_merkle_tree> &previous_back_tree) {
-    return get_machine()->collect_mcycle_root_hashes(mcycle_end, mcycle_period, mcycle_phase, log2_bundle_mcycle_count,
-        previous_back_tree);
+    return get_machine()->collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period, mcycle_phase,
+        log2_bundle_mcycle_count, previous_back_tree);
 }
 
 interpreter_break_reason local_machine::do_log_step(uint64_t mcycle_count, const std::string &filename) {

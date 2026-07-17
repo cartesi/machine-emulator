@@ -2242,7 +2242,7 @@ void machine::write_counter(uint64_t val, const char *name, const char *domain) 
     m_counters[get_counter_key(name, domain)] = val;
 }
 
-mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t mcycle_period,
+mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
     uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
     const std::optional<back_merkle_tree> &previous_back_tree) {
     const uint64_t mcycle_start = read_reg(reg::mcycle);
@@ -2251,9 +2251,10 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     if (mcycle_end < mcycle_start) {
         throw std::runtime_error{"mcycle is past"};
     }
-    if (mcycle_period == 0) {
-        throw std::runtime_error{"mcycle_period cannot be 0"};
+    if (log2_mcycle_period >= 64) {
+        throw std::runtime_error{"log2_mcycle_period must be in {0, ..., 63}"};
     }
+    const uint64_t mcycle_period = UINT64_C(1) << log2_mcycle_period;
     if (mcycle_phase >= mcycle_period) {
         throw std::runtime_error{"mcycle_phase must be in {0, ..., mcycle_period-1}"};
     }
@@ -2295,10 +2296,11 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     // Reserve space before entering the loop to minimize dynamic memory allocations,
     // the reserved sizes below are based on empirical benchmarks to balance performance and memory usage,
     // and are clamped to avoid over-allocation
+    const uint64_t log2_mcycles_per_result = log2_mcycle_period + log2_bundle_mcycle_count;
     const uint64_t max_result_hashes =
-        ((mcycle_end - mcycle_start) / (mcycle_period * (UINT64_C(1) << log2_bundle_mcycle_count))) + 1;
+        log2_mcycles_per_result < 64 ? ((mcycle_end - mcycle_start) >> log2_mcycles_per_result) + 1 : 1;
     result.hashes.reserve(std::clamp<uint64_t>(max_result_hashes, 1, 16384));
-    context.dirty_pages.reserve(std::clamp<uint64_t>(mcycle_period * 4, 16, 4096));
+    context.dirty_pages.reserve(mcycle_period >= 1024 ? 4096 : std::clamp<uint64_t>(mcycle_period * 4, 16, 4096));
 
     // The first iteration will target the next mcycle_period boundary,
     // but will not exceed mcycle_end if that limit is reached first

@@ -945,7 +945,17 @@ describe("cartesi-machine CLI", function()
             "--max-mcycle=514",
             "--no-init-splash",
         })
-        expect.truthy(err:match("\n513%-514: [0-9a-f]+\n"))
+        local ranges = {}
+        for line in err:gmatch("[^\n]+") do
+            local first, last, hash = line:match("^(%d+)%-(%d+): ([0-9a-f]+)$")
+            if hash and #hash == 64 then
+                table.insert(ranges, { tonumber(first), tonumber(last) })
+            end
+        end
+        expect.equal(#ranges, 257)
+        for i, range in ipairs(ranges) do
+            expect.equal(range, { 2 * i - 1, 2 * i })
+        end
 
         -- --print-uarch-cycle-root-hashes=N single-argument form
         run_ok({ "--print-uarch-cycle-root-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -958,7 +968,25 @@ describe("cartesi-machine CLI", function()
             "--max-mcycle=87",
             "--no-init-splash",
         })
-        expect.truthy(err:match("\n86,[0-9]+%-87: [0-9a-f]+\n"))
+        local uarch_range_count = 0
+        local reset_ranges = {}
+        for line in err:gmatch("[^\n]+") do
+            local hash = line:match(":%s+([0-9a-f]+)$")
+            if hash and #hash == 64 and line:match("^%d+,") then
+                uarch_range_count = uarch_range_count + 1
+                local first, uarch_cycle, last = line:match("^(%d+),(%d+)%-(%d+):")
+                if first then
+                    table.insert(reset_ranges, { tonumber(first), tonumber(uarch_cycle), tonumber(last) })
+                end
+            end
+        end
+        expect.equal(uarch_range_count, 3 * 87)
+        expect.equal(#reset_ranges, 87)
+        for i, range in ipairs(reset_ranges) do
+            expect.equal(range[1], i - 1)
+            expect.truthy(range[2] > 0)
+            expect.equal(range[3], i)
+        end
 
         -- --dump-memory-ranges=<dir>: writes one <start>--<length>.bin per memory range under <dir>.
         -- The CLI creates the directory; we only own the cleanup.

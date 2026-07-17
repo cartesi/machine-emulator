@@ -6,6 +6,7 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
+local filesystem = require("cartesi.filesystem")
 local tabular = require("cartesi.tabular")
 local utils = require("cartesi.utils")
 local tests_util = require("cartesi.tests.util")
@@ -251,6 +252,68 @@ end
 
 local function create_local_machine(...)
     return cartesi.machine(...)
+end
+
+local function collect_mcycle_root_hashes_in_parts(
+    machine,
+    targets,
+    mcycle_period,
+    mcycle_phase,
+    log2_bundle_mcycle_count
+)
+    local hashes = {}
+    local last = {
+        break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+        mcycle_phase = mcycle_phase,
+    }
+    for _, target in ipairs(targets) do
+        last = machine:collect_mcycle_root_hashes(
+            target,
+            mcycle_period,
+            last.mcycle_phase,
+            log2_bundle_mcycle_count,
+            last.back_tree
+        )
+        tabular.append(hashes, last.hashes)
+        if last.break_reason ~= cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
+            break
+        end
+    end
+    return {
+        hashes = hashes,
+        break_reason = last.break_reason,
+        mcycle_phase = last.mcycle_phase,
+        back_tree = last.back_tree,
+    }
+end
+
+local function collect_uarch_cycle_root_hashes_in_parts(
+    machine,
+    targets,
+    log2_bundle_uarch_cycle_count,
+    revert_uarch_tail
+)
+    local hashes = {}
+    local reset_indices = {}
+    local break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
+    for _, target in ipairs(targets) do
+        local collected =
+            machine:collect_uarch_cycle_root_hashes(target, log2_bundle_uarch_cycle_count, revert_uarch_tail)
+        local hash_count = #hashes
+        tabular.append(hashes, collected.hashes)
+        for _, reset_index in ipairs(collected.reset_indices) do
+            table.insert(reset_indices, hash_count + reset_index)
+        end
+        break_reason = collected.break_reason
+        if break_reason ~= cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
+            break
+        end
+    end
+    return {
+        hashes = hashes,
+        reset_indices = reset_indices,
+        break_reason = break_reason,
+    }
 end
 
 describe("collect hashes", function()
@@ -715,6 +778,187 @@ describe("collect hashes", function()
                     },
                 },
             }
+
+            it("should collect the same mcycle hashes across irregular call partitions", function()
+                local mcycle_start = 1
+                local mcycle_end = 65
+                local mcycle_period = 4
+                local mcycle_phase = mcycle_start % mcycle_period
+                local targets = { 2, 7, 19, 34, mcycle_end }
+                for _, log2_bundle_mcycle_count in ipairs({ 0, 2 }) do
+                    local one_shot_machine <close> = create_machine(add_machine_config)
+                    local partitioned_machine <close> = create_machine(add_machine_config)
+                    one_shot_machine:run(mcycle_start)
+                    partitioned_machine:run(mcycle_start)
+
+                    local one_shot = one_shot_machine:collect_mcycle_root_hashes(
+                        mcycle_end,
+                        mcycle_period,
+                        mcycle_phase,
+                        log2_bundle_mcycle_count
+                    )
+                    local partitioned = collect_mcycle_root_hashes_in_parts(
+                        partitioned_machine,
+                        targets,
+                        mcycle_period,
+                        mcycle_phase,
+                        log2_bundle_mcycle_count
+                    )
+
+                    expect.equal(partitioned, one_shot)
+                    expect.equal(partitioned_machine:read_reg("mcycle"), one_shot_machine:read_reg("mcycle"))
+                    expect.equal(partitioned_machine:get_root_hash(), one_shot_machine:get_root_hash())
+                end
+            end)
+
+            it("should collect the same uarch hashes across irregular call partitions", function()
+                local mcycle_start = 1
+                local mcycle_end = 4
+                local targets = { 2, mcycle_end }
+                for _, log2_bundle_uarch_cycle_count in ipairs({ 0, 4 }) do
+                    local one_shot_machine <close> = create_machine(add_machine_config)
+                    local partitioned_machine <close> = create_machine(add_machine_config)
+                    one_shot_machine:run(mcycle_start)
+                    partitioned_machine:run(mcycle_start)
+
+                    local one_shot = one_shot_machine:collect_uarch_cycle_root_hashes(
+                        mcycle_end,
+                        log2_bundle_uarch_cycle_count,
+                        pristine_revert_uarch_tail
+                    )
+                    local partitioned = collect_uarch_cycle_root_hashes_in_parts(
+                        partitioned_machine,
+                        targets,
+                        log2_bundle_uarch_cycle_count,
+                        pristine_revert_uarch_tail
+                    )
+
+                    expect.equal(partitioned, one_shot)
+                    expect.equal(partitioned_machine:read_reg("mcycle"), one_shot_machine:read_reg("mcycle"))
+                    expect.equal(partitioned_machine:get_root_hash(), one_shot_machine:get_root_hash())
+                end
+            end)
+
+            it("should use the same fixed-point precedence across advancement APIs", function()
+                local cases = {
+                    {
+                        expected = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+                    },
+                    {
+                        registers = { iflags_Y = 1 },
+                        expected = cartesi.BREAK_REASON_YIELDED_MANUALLY,
+                    },
+                    {
+                        registers = { iflags_H = 1, iflags_Y = 1 },
+                        expected = cartesi.BREAK_REASON_HALTED,
+                    },
+                    {
+                        registers = { imcyclemax = 0, iflags_H = 1, iflags_Y = 1 },
+                        expected = cartesi.BREAK_REASON_MCYCLE_OVERFLOW,
+                    },
+                }
+
+                local function make_case_machine(case)
+                    local machine = create_machine({ ram = { length = 4096 } })
+                    for reg, value in pairs(case.registers or {}) do
+                        machine:write_reg(reg, value)
+                    end
+                    return machine
+                end
+
+                for _, case in ipairs(cases) do
+                    local run_machine <close> = make_case_machine(case)
+                    local root_hash = run_machine:get_root_hash()
+                    expect.equal(run_machine:run(0), case.expected)
+                    expect.equal(run_machine:get_root_hash(), root_hash)
+
+                    local log_machine <close> = make_case_machine(case)
+                    root_hash = log_machine:get_root_hash()
+                    local log_filename = filesystem.temp_pathname()
+                    local _ <close> = utils.scope_exit(function()
+                        os.remove(log_filename)
+                    end)
+                    expect.equal(log_machine:log_step(0, log_filename), case.expected)
+                    expect.equal(log_machine:get_root_hash(), root_hash)
+                    expect.equal(log_machine:verify_step(root_hash, log_filename, 0, root_hash), root_hash)
+
+                    local mcycle_machine <close> = make_case_machine(case)
+                    root_hash = mcycle_machine:get_root_hash()
+                    expect.equal(mcycle_machine:collect_mcycle_root_hashes(0, 4), {
+                        hashes = {},
+                        break_reason = case.expected,
+                        mcycle_phase = 0,
+                    })
+                    expect.equal(mcycle_machine:get_root_hash(), root_hash)
+
+                    local uarch_machine <close> = make_case_machine(case)
+                    root_hash = uarch_machine:get_root_hash()
+                    expect.equal(uarch_machine:collect_uarch_cycle_root_hashes(0), {
+                        hashes = {},
+                        reset_indices = {},
+                        break_reason = case.expected,
+                    })
+                    expect.equal(uarch_machine:get_root_hash(), root_hash)
+                end
+            end)
+
+            it("should preserve fixed-point streams across earlier partition targets", function()
+                local revert_root_hash = string.rep("\x5a", cartesi.HASH_SIZE)
+                local cases = {
+                    {
+                        registers = { iflags_H = 1 },
+                    },
+                    {
+                        registers = { iflags_Y = 1 },
+                    },
+                    {
+                        registers = { imcyclemax = 0, iflags_H = 1, iflags_Y = 1 },
+                    },
+                    {
+                        registers = {
+                            iflags_Y = 1,
+                            htif_tohost_dev = cartesi.HTIF_DEV_YIELD,
+                            htif_tohost_cmd = cartesi.HTIF_YIELD_CMD_MANUAL,
+                            htif_tohost_reason = cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED,
+                        },
+                        rejected = true,
+                    },
+                }
+
+                local function make_case_machine(case)
+                    local machine = create_machine({ ram = { length = 4096 } })
+                    if case.rejected then
+                        machine:write_revert_root_hash(revert_root_hash)
+                    end
+                    for reg, value in pairs(case.registers) do
+                        machine:write_reg(reg, value)
+                    end
+                    return machine
+                end
+
+                for _, case in ipairs(cases) do
+                    local one_shot_machine <close> = make_case_machine(case)
+                    local partitioned_machine <close> = make_case_machine(case)
+                    local one_shot = one_shot_machine:collect_mcycle_root_hashes(32, 4, 0, 2)
+                    local partitioned = collect_mcycle_root_hashes_in_parts(partitioned_machine, { 1, 32 }, 4, 0, 2)
+                    expect.equal(partitioned, one_shot)
+                    expect.equal(partitioned_machine:get_root_hash(), one_shot_machine:get_root_hash())
+
+                    local one_shot_uarch_machine <close> = make_case_machine(case)
+                    local partitioned_uarch_machine <close> = make_case_machine(case)
+                    local revert_uarch_tail = case.rejected and { revert_root_hash, revert_root_hash } or nil
+                    local one_shot_uarch =
+                        one_shot_uarch_machine:collect_uarch_cycle_root_hashes(32, 4, revert_uarch_tail)
+                    local partitioned_uarch = collect_uarch_cycle_root_hashes_in_parts(
+                        partitioned_uarch_machine,
+                        { 1, 32 },
+                        4,
+                        revert_uarch_tail
+                    )
+                    expect.equal(partitioned_uarch, one_shot_uarch)
+                    expect.equal(partitioned_uarch_machine:get_root_hash(), one_shot_uarch_machine:get_root_hash())
+                end
+            end)
 
             it("should bundle mcycle root hashes leaving no back tree context when last bundle is complete", function()
                 local max_log2_bundle_mcycle_count = 3

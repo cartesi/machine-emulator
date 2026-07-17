@@ -27,14 +27,6 @@ overwrite cannot happen for either tool. We parse that stream instead of reading
 files back. The merge sums execution counts per line, so it is associative and
 commutative: the result does not depend on the order or grouping of the .gcda.
 
-That property lets us run as a parallel map-reduce. The .gcda are partitioned
-across worker processes (map); each worker merges its own subset and writes a
-partial .gcov set to a private directory; the parent then merges all partials
-the same way (reduce) and writes the final .gcov into <src-dir>. The number of
-workers defaults to the number of online CPUs and can be overridden with the
-RUN_GCOV_JOBS environment variable. With a single job, or when luaposix is
-unavailable, everything runs in-process.
-
 Extra .gcda files may be given after the gcov command. They are merged in just
 like those in <src-dir>. gcov is always run from <src-dir> so sources resolve
 there; the caller must have symlinked each extra .gcda's matching .gcno next to
@@ -64,12 +56,6 @@ local function popen(fmt, ...)
         if not line then
             pipe:close()
         end
-        return line
-    end
-end
-
-local function popen_first(fmt, ...)
-    for line in popen(fmt, ...) do
         return line
     end
 end
@@ -160,12 +146,12 @@ local function merge_stream(lines, merged)
     end
 end
 
--- Run gcov on each .gcda in `chunk` (a basename in src_dir, or an absolute path)
+-- Run gcov on each .gcda (a basename in src_dir, or an absolute path)
 -- and merge the streamed output into one table. gcov runs from src_dir so
 -- Source: paths, filenames, and source text are consistent.
-local function process_chunk(chunk)
+local function process_files(gcda_files)
     local merged = {}
-    for _, gcda in ipairs(chunk) do
+    for _, gcda in ipairs(gcda_files) do
         merge_stream(popen(
             "cd %s && %s -t --demangled-names --relative-only --branch-probabilities %s 2>/dev/null",
             src_dir, gcov_cmd, gcda
@@ -219,71 +205,6 @@ if n == 0 then
     os.exit(0)
 end
 
--- Decide how many workers to use. luaposix (used for fork) is only required when
--- running more than one job, mirroring tests/lua/cartesi/parallel.lua.
-local jobs = tonumber(os.getenv("RUN_GCOV_JOBS"))
-if not jobs then
-    jobs = tonumber(popen_first("getconf _NPROCESSORS_ONLN 2>/dev/null") or "")
-end
-jobs = math.max(1, math.floor(jobs or 1))
-if jobs > 1 and not pcall(require, "posix.unistd") then
-    io.stderr:write("run-gcov: luaposix unavailable, falling back to a single job\n")
-    jobs = 1
-end
-if jobs > n then
-    jobs = n
-end
+local file_count = write_merged(process_files(gcda_files), src_dir)
 
-local file_count
-if jobs <= 1 then
-    file_count = write_merged(process_chunk(gcda_files), src_dir)
-else
-    -- Map: partition the .gcda round-robin so heavy files spread across workers,
-    -- then fork one worker per chunk. Each worker merges its subset and writes a
-    -- partial .gcov set into its own directory under part_base.
-    local unistd = require("posix.unistd")
-    local syswait = require("posix.sys.wait")
-
-    local chunks = {}
-    for j = 1, jobs do
-        chunks[j] = {}
-    end
-    for i, gcda in ipairs(gcda_files) do
-        local j = (i - 1) % jobs + 1
-        chunks[j][#chunks[j] + 1] = gcda
-    end
-
-    local part_base = assert(popen_first("mktemp -d 2>/dev/null"), "mktemp failed")
-
-    local pids = {}
-    for j = 1, jobs do
-        local pid = assert(unistd.fork())
-        if pid == 0 then
-            local part_dir = string.format("%s/%d", part_base, j)
-            assert(os.execute("mkdir -p " .. part_dir))
-            write_merged(process_chunk(chunks[j]), part_dir)
-            os.exit(0)
-        end
-        pids[#pids + 1] = pid
-    end
-
-    local failures = 0
-    for _ = 1, #pids do
-        local pid, reason, rc = syswait.wait(-1)
-        if pid and (reason == "exited" or reason == "killed") and rc ~= 0 then
-            failures = failures + 1
-        end
-    end
-    assert(failures == 0, "run-gcov: " .. failures .. " worker(s) failed")
-
-    -- Reduce: merge every worker's partial .gcov files, then write the result.
-    local merged = {}
-    for path in popen("ls %s/*/*.gcov 2>/dev/null", part_base) do
-        merge_stream(io.lines(path), merged)
-    end
-    file_count = write_merged(merged, src_dir)
-    os.execute("rm -rf " .. part_base)
-end
-
-io.stderr:write(string.format("run-gcov: processed %d .gcda files in %d job(s), produced %d .gcov files\n", n, jobs,
-    file_count))
+io.stderr:write(string.format("run-gcov: processed %d .gcda files, produced %d .gcov files\n", n, file_count))

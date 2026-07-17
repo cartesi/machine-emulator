@@ -938,8 +938,27 @@ describe("cartesi-machine CLI", function()
         end
         expect.truthy(seen[200000] and seen[300000] and seen[400000])
 
+        -- Collection is chunked at about 256 returned hashes. With bundles of two samples, this
+        -- crosses the first artificial boundary at mcycle 512 and must continue to the real target.
+        _, err = run_ok({
+            "--print-mcycle-root-hashes=1,log2_bundle_mcycle_count:1",
+            "--max-mcycle=514",
+            "--no-init-splash",
+        })
+        expect.truthy(err:match("\n513%-514: [0-9a-f]+\n"))
+
         -- --print-uarch-cycle-root-hashes=N single-argument form
         run_ok({ "--print-uarch-cycle-root-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+
+        -- Uarch collection estimates 1024 uarch cycles per mcycle and chunks for about 256 returned
+        -- hashes. A 2^16 bundle therefore spans 85 mcycles per call; the run must cross that
+        -- artificial boundary and reach its real target.
+        _, err = run_ok({
+            "--print-uarch-cycle-root-hashes=87,log2_bundle_uarch_cycle_count:16",
+            "--max-mcycle=87",
+            "--no-init-splash",
+        })
+        expect.truthy(err:match("\n86,[0-9]+%-87: [0-9a-f]+\n"))
 
         -- --dump-memory-ranges=<dir>: writes one <start>--<length>.bin per memory range under <dir>.
         -- The CLI creates the directory; we only own the cleanup.

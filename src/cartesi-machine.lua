@@ -3138,6 +3138,21 @@ local function print_collected_uarch_hashes(hashes, reset_indices, mcycle, bundl
     end
 end
 
+local LOG2_HASHES_PER_CHUNK = 8 -- target about 256 returned hashes per collect call
+local LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE = 10 -- assume about 1024 uarch cycles per mcycle
+
+local function get_uarch_hashes_chunk_end(mcycle, mcycle_end, log2_bundle)
+    -- Besides the uarch cycle bundles, each mcycle produces a halt-padding bundle and a reset bundle.
+    local cycle_bundle_count = log2_bundle < LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE
+            and (1 << (LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE - log2_bundle))
+        or 1
+    local estimated_hashes_per_mcycle = cycle_bundle_count + 2
+    local chunk_mcycles = math.max(1, (1 << LOG2_HASHES_PER_CHUNK) // estimated_hashes_per_mcycle)
+    local remaining = mcycle_end - mcycle
+    if not math.ult(chunk_mcycles, remaining) then return mcycle_end end
+    return mcycle + chunk_mcycles
+end
+
 -- The --print-uarch-cycle-root-hashes runner. collect_uarch_cycle_root_hashes samples the machine state hash
 -- after every uarch cycle for the count machine cycles that follow start, resetting the uarch
 -- between machine cycles, optionally bundling every 2^log2_bundle samples into a subtree root, and
@@ -3158,18 +3173,24 @@ local function uarch_cycle_root_hashes_runner_run(self, next_mcycle)
     end
     -- Collect within the window, one uarch cycle at a time.
     local mcycle = m:read_reg("mcycle")
-    if math.ult(mcycle, self.window_end) and math.ult(mcycle, next_mcycle) then
+    local collection_end = umin(self.window_end, next_mcycle)
+    if math.ult(mcycle, collection_end) then
         -- The revert uarch tail only matters when the run stops at a rejected manual yield, which
         -- never happens outside cmio mode. The minimal valid tail suffices: a single uarch cycle
         -- landing on the machine's recorded revert root hash.
         local revert_root_hash = m:read_revert_root_hash()
         local revert_uarch_tail = { revert_root_hash, revert_root_hash }
-        local mcycle_end = umin(self.window_end, next_mcycle)
-        local collected = self.runner:collect_uarch_cycle_root_hashes(mcycle_end, self.log2_bundle, revert_uarch_tail)
-        print_collected_uarch_hashes(collected.hashes, collected.reset_indices, mcycle, 1 << self.log2_bundle)
-        -- a stop inside the window is reported (a serviced automatic yield resumes the window)
-        if not is_target_mcycle(collected.break_reason) or m:read_reg("mcycle") == next_mcycle then
-            return collected.break_reason
+        while math.ult(mcycle, collection_end) do
+            local chunk_end = get_uarch_hashes_chunk_end(mcycle, collection_end, self.log2_bundle)
+            local collected =
+                self.runner:collect_uarch_cycle_root_hashes(chunk_end, self.log2_bundle, revert_uarch_tail)
+            print_collected_uarch_hashes(collected.hashes, collected.reset_indices, mcycle, 1 << self.log2_bundle)
+            mcycle = m:read_reg("mcycle")
+            -- A stop inside the window is reported (a serviced automatic yield resumes the window).
+            -- Hide artificial chunk boundaries from run_to_stop.
+            if not is_target_mcycle(collected.break_reason) or mcycle == next_mcycle then
+                return collected.break_reason
+            end
         end
     end
     -- Past the window, run plainly.
@@ -3218,6 +3239,15 @@ end
 -- optionally bundling every 2^log2_bundle samples into a subtree root, and each result is printed.
 -- self.mcycle_phase and self.back_tree thread across calls so the sampling and the bundling stay
 -- continuous.
+local function get_mcycle_hashes_chunk_end(mcycle, mcycle_end, period, log2_bundle)
+    -- Each returned hash covers 2^log2_bundle sampling periods. Check against the remaining
+    -- distance before shifting, so neither the scaled chunk size nor its addition can overflow.
+    local log2_chunk_mcycles = LOG2_HASHES_PER_CHUNK + log2_bundle
+    local remaining = mcycle_end - mcycle
+    if log2_chunk_mcycles >= 64 or math.ult(remaining >> log2_chunk_mcycles, period) then return mcycle_end end
+    return mcycle + (period << log2_chunk_mcycles)
+end
+
 local function mcycle_root_hashes_runner_run(self, next_mcycle)
     local m = self.machine
     -- Delay sampling to a start mcycle by running plainly up to it (once), then collect from there
@@ -3231,27 +3261,37 @@ local function mcycle_root_hashes_runner_run(self, next_mcycle)
         print_root_hash(m)
         self.start = nil
     end
-    local mcycle = m:read_reg("mcycle")
     local mcycle_phase = self.mcycle_phase
-    -- the back tree holds the samples of the partially filled bundle a call leaves behind
-    local fill = self.back_tree and self.back_tree.leaf_count or 0
-    local collected =
-        self.runner:collect_mcycle_root_hashes(next_mcycle, self.period, mcycle_phase, self.log2_bundle, self.back_tree)
-    if collected.console_io_error then stderr("Console I/O error: %s\n", collected.console_io_error) end
-    local at_fixed_point = is_at_fixed_point(collected.break_reason)
-    print_collected_hashes(
-        m,
-        collected.hashes,
-        mcycle,
-        self.period,
-        mcycle_phase,
-        1 << self.log2_bundle,
-        fill,
-        at_fixed_point
-    )
-    self.mcycle_phase = collected.mcycle_phase
-    self.back_tree = collected.back_tree
-    return collected.break_reason
+    local back_tree = self.back_tree
+    while true do
+        local mcycle = m:read_reg("mcycle")
+        -- the back tree holds the samples of the partially filled bundle a call leaves behind
+        local fill = back_tree and back_tree.leaf_count or 0
+        local chunk_end = get_mcycle_hashes_chunk_end(mcycle, next_mcycle, self.period, self.log2_bundle)
+        local collected =
+            self.runner:collect_mcycle_root_hashes(chunk_end, self.period, mcycle_phase, self.log2_bundle, back_tree)
+        if collected.console_io_error then stderr("Console I/O error: %s\n", collected.console_io_error) end
+        local at_fixed_point = is_at_fixed_point(collected.break_reason)
+        print_collected_hashes(
+            m,
+            collected.hashes,
+            mcycle,
+            self.period,
+            mcycle_phase,
+            1 << self.log2_bundle,
+            fill,
+            at_fixed_point
+        )
+        mcycle_phase = collected.mcycle_phase
+        back_tree = collected.back_tree
+        -- Hide artificial chunk boundaries from run_to_stop. A real target or any other break
+        -- reason must still propagate to its caller.
+        if not is_target_mcycle(collected.break_reason) or m:read_reg("mcycle") == next_mcycle then
+            self.mcycle_phase = mcycle_phase
+            self.back_tree = back_tree
+            return collected.break_reason
+        end
+    end
 end
 local function make_mcycle_root_hashes_runner(runner, period, start, log2_bundle)
     return {
@@ -3309,41 +3349,45 @@ end
 -- and the partially filled bundle across calls.
 local function mcycle_computation_hash_run(self, mcycle_end)
     local m = self.machine
-    local mcycle = m:read_reg("mcycle")
     mcycle_end = umin(self.input_end_mcycle, mcycle_end)
-    local fill = self.back_tree and self.back_tree.leaf_count or 0
-    local collected = self.runner:collect_mcycle_root_hashes(
-        mcycle_end,
-        self.period,
-        self.mcycle_phase,
-        self.log2_bundle,
-        self.back_tree
-    )
-    if collected.console_io_error then stderr("Console I/O error: %s\n", collected.console_io_error) end
-    local at_fixed_point = is_at_fixed_point(collected.break_reason)
-    if self.print_leaves then
-        print_collected_hashes(
-            m,
-            collected.hashes,
-            mcycle,
-            self.period,
-            self.mcycle_phase,
-            1 << self.log2_bundle,
-            fill,
-            at_fixed_point
-        )
+    local mcycle_phase = self.mcycle_phase
+    local back_tree = self.back_tree
+    while true do
+        local mcycle = m:read_reg("mcycle")
+        local fill = back_tree and back_tree.leaf_count or 0
+        local chunk_end = get_mcycle_hashes_chunk_end(mcycle, mcycle_end, self.period, self.log2_bundle)
+        local collected =
+            self.runner:collect_mcycle_root_hashes(chunk_end, self.period, mcycle_phase, self.log2_bundle, back_tree)
+        if collected.console_io_error then stderr("Console I/O error: %s\n", collected.console_io_error) end
+        local at_fixed_point = is_at_fixed_point(collected.break_reason)
+        if self.print_leaves then
+            print_collected_hashes(
+                m,
+                collected.hashes,
+                mcycle,
+                self.period,
+                mcycle_phase,
+                1 << self.log2_bundle,
+                fill,
+                at_fixed_point
+            )
+        end
+        mcycle_phase = collected.mcycle_phase
+        back_tree = collected.back_tree
+        -- At a fixed point the machine pads the stream one bundle past the input's last. That bundle
+        -- is not a leaf of this input, but, being pure repetitions of the stopped state hash, it is
+        -- the value that pads the rest of the epoch.
+        local leaf_count = umin(#collected.hashes, self.input_leaf_capacity - self.input_leaf_count)
+        for i = 1, leaf_count do
+            mcycle_computation_hash_push_leaf(self, collected.hashes[i])
+        end
+        if leaf_count < #collected.hashes then self.last_leaf_hash = collected.hashes[#collected.hashes] end
+        if not is_target_mcycle(collected.break_reason) or m:read_reg("mcycle") == mcycle_end then
+            self.mcycle_phase = mcycle_phase
+            self.back_tree = back_tree
+            return collected.break_reason
+        end
     end
-    self.mcycle_phase = collected.mcycle_phase
-    self.back_tree = collected.back_tree
-    -- At a fixed point the machine pads the stream one bundle past the input's last. That bundle
-    -- is not a leaf of this input, but, being pure repetitions of the stopped state hash, it is
-    -- the value that pads the rest of the epoch.
-    local leaf_count = umin(#collected.hashes, self.input_leaf_capacity - self.input_leaf_count)
-    for i = 1, leaf_count do
-        mcycle_computation_hash_push_leaf(self, collected.hashes[i])
-    end
-    if leaf_count < #collected.hashes then self.last_leaf_hash = collected.hashes[#collected.hashes] end
-    return collected.break_reason
 end
 
 -- Closes the open input, if any. The machine stopped inside it, so the input's remaining leaves
@@ -3510,12 +3554,11 @@ local function uarch_cycle_computation_hash_run(self, mcycle_end)
     end
     -- Collect within the target period, pushing each reset-delimited group of stream entries
     -- into the tree as one mcycle.
-    if math.ult(mcycle, self.target_mcycle_end) then
-        local collected = self.runner:collect_uarch_cycle_root_hashes(
-            umin(self.target_mcycle_end, mcycle_end),
-            self.log2_bundle,
-            self.revert_uarch_tail
-        )
+    local collection_end = umin(self.target_mcycle_end, mcycle_end)
+    while math.ult(mcycle, collection_end) do
+        local chunk_end = get_uarch_hashes_chunk_end(mcycle, collection_end, self.log2_bundle)
+        local collected =
+            self.runner:collect_uarch_cycle_root_hashes(chunk_end, self.log2_bundle, self.revert_uarch_tail)
         break_reason = collected.break_reason
         -- At a machine fixed point, collection returns one additional no-op mcycle containing
         -- the fixed-point padding bundle and the reset bundle. Include it if it belongs to the
@@ -3529,6 +3572,8 @@ local function uarch_cycle_computation_hash_run(self, mcycle_end)
         end
         self.mcycle_count = self.mcycle_count + count
         if self.mcycle_count == self.period then uarch_cycle_computation_hash_emit(self) end
+        mcycle = m:read_reg("mcycle")
+        if not is_target_mcycle(break_reason) then break end
     end
     -- Past the target period, run plainly. A stop inside it is instead reported as is.
     if (not break_reason or is_target_mcycle(break_reason)) and math.ult(m:read_reg("mcycle"), mcycle_end) then

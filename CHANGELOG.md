@@ -70,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `--print-uarch-cycle-root-hashes` to collect through `collect_uarch_cycle_root_hashes`: when the window ends at a fixed point (a manual yield or halt), the hashes of one extra machine cycle at that fixed point are also printed
 - Added a `log2_bundle_mcycle_count` sub-option to `--print-mcycle-root-hashes` and a `log2_bundle_uarch_cycle_count` sub-option to `--print-uarch-cycle-root-hashes`, bundling every 2^N sampled hashes into a subtree root printed with the range of cycles it covers
 - Reworked the main loop of `cartesi-machine.lua` into a runner that dispatches manual and automatic yields to handler callbacks
+- Bumped nlohmann JSON library to 3.12
 
 ## Removed
 - Removed the `--store-json-config` and `--load-json-config` options (folded into the `format:` sub-option of `--store-config`/`--load-config`)

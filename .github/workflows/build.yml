@@ -768,7 +768,7 @@ jobs:
           fi
 
       - name: Build documentation
-        run: make -C doc README.md
+        run: make -C doc README.md EMULATOR_IMAGE_READY=yes
 
       - name: Check README.md matches committed version
         run: |

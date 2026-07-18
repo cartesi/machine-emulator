@@ -1,2 +1,3 @@
 recipes/rootfs-docs.inputs.sha256
 recipes/rootfs-docs.inputs.sha256-have
+recipes/.rootfs-docs-*

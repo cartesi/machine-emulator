@@ -1,11 +1,19 @@
 # Docker image tag — must match the tag used by the root Makefile's
 # build-emulator-image target so the docs image layers on top of an
-# emulator built from the local source (kernel/rootfs images in
-# tests/dependencies are built against the unreleased branch and may
-# require emulator features not in any released base image).
+# emulator built from the local source. Locked kernel/rootfs images may require
+# emulator features not present in any released base image.
 TAG ?= devel
 
 DOCS_IMAGE = cartesi/machine-emulator-docs
+
+DEPENDENCIES_LOCK ?= $(abspath ../dependencies.lock)
+include $(DEPENDENCIES_LOCK)
+export MACHINE_GUEST_TOOLS_TAG
+export MACHINE_GUEST_TOOLS_DEB_SHA256
+export MACHINE_GUEST_TOOLS_TARBALL_SHA256
+export MACHINE_LINUX_IMAGE_TAG
+export MACHINE_LINUX_IMAGE_FILENAME
+export MACHINE_LINUX_IMAGE_SHA256
 
 # Docker image platform
 BUILD_PLATFORM ?=
@@ -23,7 +31,7 @@ export LUA_PATH := $(CURDIR)/?.lua;$(RECIPES_DIR)/?.lua;$(LUA_PATH);;
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --respect-ignores
 
-.PHONY: build-docs-image clean format-lua check-format-lua check-lua
+.PHONY: build-docs-image prepare-readme clean format-lua check-format-lua check-lua
 .DELETE_ON_ERROR:
 
 # Lua linting/formatting for the recipe snippets and pandoc filters. The
@@ -46,20 +54,33 @@ ROOTFS_DOCS_INPUTS := \
 
 ROOTFS_DOCS_EXT2 := $(RECIPES_DIR)/rootfs-docs.ext2
 ROOTFS_DOCS_KEY := $(RECIPES_DIR)/rootfs-docs.inputs.sha256
+ROOTFS_DOCS_INPUTS_HASH := $(shell { \
+	cat $(sort $(ROOTFS_DOCS_INPUTS)); \
+	printf '%s\n' \
+	    '$(MACHINE_GUEST_TOOLS_TAG)' \
+	    '$(MACHINE_GUEST_TOOLS_DEB_SHA256)' \
+	    '$(MACHINE_GUEST_TOOLS_TARBALL_SHA256)'; \
+	} | sha256sum | head -c 64)
+ROOTFS_DOCS_INPUTS_TRIGGER := $(RECIPES_DIR)/.rootfs-docs-$(ROOTFS_DOCS_INPUTS_HASH)
 
 # Fingerprint of the recipe inputs. Generated and gitignored, embedded into the
 # image at build time and re-derived here to spot a stale committed image
 # without rebuilding. Both sides use the same input list so they cannot drift.
-$(ROOTFS_DOCS_KEY): $(ROOTFS_DOCS_INPUTS)
-	cat $(sort $(ROOTFS_DOCS_INPUTS)) | sha256sum | head -c 64 > $@
+$(ROOTFS_DOCS_INPUTS_TRIGGER):
+	touch $@
 
-# Build the image. build-rootfs-docs.sh embeds $(ROOTFS_DOCS_KEY) into it.
-$(ROOTFS_DOCS_EXT2): $(ROOTFS_DOCS_INPUTS) $(ROOTFS_DOCS_KEY)
+$(ROOTFS_DOCS_KEY): $(ROOTFS_DOCS_INPUTS_TRIGGER)
+	printf '%s' '$(ROOTFS_DOCS_INPUTS_HASH)' > $@
+
+# Build the image. build-rootfs-docs.sh embeds $(ROOTFS_DOCS_KEY) into it. The
+# generated key is order-only because check-rootfs-docs validates it by content;
+# its checkout-time mtime must not make the committed image look stale.
+$(ROOTFS_DOCS_EXT2): $(ROOTFS_DOCS_INPUTS) | $(ROOTFS_DOCS_KEY)
 	cd $(RECIPES_DIR) && ./build-rootfs-docs.sh
 
-# Convenience alias, since the real target is an absolute path.
+# Content-aware convenience alias, since the real target is an absolute path.
 .PHONY: build-rootfs-docs
-build-rootfs-docs: $(ROOTFS_DOCS_EXT2)
+build-rootfs-docs: ensure-rootfs-docs
 
 # Verify the committed image matches the current recipe inputs. No rebuild and no
 # network, so CI runs it after a git lfs pull. A missing or stale image is a hard
@@ -77,15 +98,19 @@ check-rootfs-docs: $(ROOTFS_DOCS_KEY)
 	}
 
 ROOTFS_DOCS_LICENSES := $(RECIPES_DIR)/rootfs-docs.licenses.md
+ROOTFS_DOCS_LICENSE_INPUTS := \
+    $(RECIPES_DIR)/build-rootfs-docs-license.sh \
+    $(RECIPES_DIR)/Dockerfile.rootfs-docs \
+    $(wildcard $(RECIPES_DIR)/third-party/repo-info/*)
 
 # Package and license report for the committed image. It is derived from the
 # ext2 itself rather than from a rebuild, and committed alongside it so a
-# checkout carries the license information with the binary. Like the targets
-# above, freshness is judged by content rather than timestamps, so this always
-# regenerates the report. CI then diffs it against the committed version, as
-# it does for README.md.
+# checkout carries the license information with the binary.
 .PHONY: build-rootfs-docs-license
 build-rootfs-docs-license: | ensure-rootfs-docs
+	$(MAKE) $(ROOTFS_DOCS_LICENSES)
+
+$(ROOTFS_DOCS_LICENSES): $(ROOTFS_DOCS_EXT2) $(ROOTFS_DOCS_LICENSE_INPUTS)
 	cd $(RECIPES_DIR) && ./build-rootfs-docs-license.sh > $(ROOTFS_DOCS_LICENSES)
 
 # Local convenience used before the docs image is built. Fetch the image from
@@ -120,7 +145,16 @@ docs-image-exec: check-docs-image
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
+		-e DOCS_IMAGE_ID=$$(docker image inspect --format '{{.Id}}' $(DOCS_IMAGE):$(TAG)) \
+		-e DEPENDENCIES_LOCK=/dependencies.lock \
+		-e MACHINE_GUEST_TOOLS_TAG \
+		-e MACHINE_GUEST_TOOLS_DEB_SHA256 \
+		-e MACHINE_GUEST_TOOLS_TARBALL_SHA256 \
+		-e MACHINE_LINUX_IMAGE_TAG \
+		-e MACHINE_LINUX_IMAGE_FILENAME \
+		-e MACHINE_LINUX_IMAGE_SHA256 \
 		-v $(CURDIR):/work \
+		-v $(DEPENDENCIES_LOCK):/dependencies.lock:ro \
 		-w /work \
 		$(DOCS_IMAGE):$(TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
 
@@ -133,25 +167,53 @@ run-docs-image: check-docs-image
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
+		-e DOCS_IMAGE_ID=$$(docker image inspect --format '{{.Id}}' $(DOCS_IMAGE):$(TAG)) \
+		-e DEPENDENCIES_LOCK=/dependencies.lock \
+		-e MACHINE_GUEST_TOOLS_TAG \
+		-e MACHINE_GUEST_TOOLS_DEB_SHA256 \
+		-e MACHINE_GUEST_TOOLS_TARBALL_SHA256 \
+		-e MACHINE_LINUX_IMAGE_TAG \
+		-e MACHINE_LINUX_IMAGE_FILENAME \
+		-e MACHINE_LINUX_IMAGE_SHA256 \
 		-v $(CURDIR):/work \
+		-v $(DEPENDENCIES_LOCK):/dependencies.lock:ro \
 		-w /work \
 	    -it \
 		$(DOCS_IMAGE):$(TAG) \
 	    /bin/bash
 
 build-docs-image: | ensure-rootfs-docs
-	@if docker image inspect cartesi/machine-emulator:$(TAG) >/dev/null 2>&1; then \
-		echo "Docker image cartesi/machine-emulator:$(TAG) exists, reusing"; \
-	else \
+	@if [ "$(EMULATOR_IMAGE_READY)" != yes ]; then \
 		$(MAKE) -C .. build-emulator-image TAG=$(TAG); \
 	fi
 	base=$$(docker image inspect --format '{{ index .Config.Labels "io.cartesi.machine-emulator.base-image" }}' cartesi/machine-emulator:$(TAG)); \
-	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) $${base:+--build-arg BUILDER_BASE=$$base} -t $(DOCS_IMAGE):$(TAG) .
+	docker build $(DOCKER_PLATFORM) \
+	    --build-arg TAG=$(TAG) \
+	    --build-arg MACHINE_GUEST_TOOLS_TAG=$(MACHINE_GUEST_TOOLS_TAG) \
+	    --build-arg MACHINE_LINUX_IMAGE_TAG=$(MACHINE_LINUX_IMAGE_TAG) \
+	    --build-arg MACHINE_LINUX_IMAGE_FILENAME=$(MACHINE_LINUX_IMAGE_FILENAME) \
+	    --build-arg MACHINE_LINUX_IMAGE_SHA256=$(MACHINE_LINUX_IMAGE_SHA256) \
+	    $${base:+--build-arg BUILDER_BASE=$$base} \
+	    -t $(DOCS_IMAGE):$(TAG) .
+
+# Full local equivalent of the CI documentation setup. CI may skip the emulator
+# build after Depot has loaded the image by setting EMULATOR_IMAGE_READY=yes.
+prepare-readme:
+	$(MAKE) ensure-rootfs-docs
+	$(MAKE) build-rootfs-docs-license
+	@if [ "$(EMULATOR_IMAGE_READY)" != yes ]; then \
+	    $(MAKE) -C .. build-emulator-image TAG=$(TAG); \
+	fi
+	$(MAKE) build-docs-image EMULATOR_IMAGE_READY=yes
 
 $(REPLACE_CACHE_DIR):
 	mkdir -p $@
 
 ifeq ($(DEV_ENV_HAS_DOCGEN),yes)
+
+ifeq ($(DOCS_IMAGE_ID),)
+$(error DOCS_IMAGE_ID is not set)
+endif
 
 # Dry-run: scan the template, populate cache directories, and emit one make
 # rule per annotated block into template.d. The rendered output IS the .d
@@ -161,6 +223,7 @@ template.d: README.md.template replace.lua | $(REPLACE_CACHE_DIR)
 	    pandoc -f markdown -t plain \
 	    -M write-user-dependencies=README.md \
 	    -M docs_image=$(DOCS_IMAGE):$(TAG) \
+	    -M docs_image_id="$(DOCS_IMAGE_ID)" \
 	    --lua-filter replace.lua README.md.template -o $@
 
 ifeq (,$(filter clean,$(MAKECMDGOALS)))
@@ -221,21 +284,22 @@ else
 # container. Inside, DEV_ENV_HAS_DOCGEN=yes activates the rules above and
 # evaluates staleness against template.d.
 .PHONY: README.md README.html
-README.md: | check-docs-image
+README.md: | prepare-readme
 	@jobs=$(if $(JOBS),$(JOBS),$$(docker run --rm $(DOCS_IMAGE):$(TAG) nproc)); \
-	$(MAKE) docs-image-exec CONTAINER_COMMAND="make -j$$jobs README.md DEV_ENV_HAS_DOCGEN=yes"
+	$(MAKE) docs-image-exec CONTAINER_COMMAND="rm -f template.d && make -j$$jobs README.md DEV_ENV_HAS_DOCGEN=yes"
 
 # Inside, README.html depends on README.md, so one container invocation builds
 # both. Splitting them across two invocations lets the bind mount's attribute
 # cache serve the second one stale mtimes for files the first one touched,
 # which redoes work that is already up to date.
-README.html: | check-docs-image
+README.html: | prepare-readme
 	@jobs=$(if $(JOBS),$(JOBS),$$(docker run --rm $(DOCS_IMAGE):$(TAG) nproc)); \
-	$(MAKE) docs-image-exec CONTAINER_COMMAND="make -j$$jobs README.html DEV_ENV_HAS_DOCGEN=yes"
+	$(MAKE) docs-image-exec CONTAINER_COMMAND="rm -f template.d && make -j$$jobs README.html DEV_ENV_HAS_DOCGEN=yes"
 endif
 
 clean:
 	rm -f README.md README.html template.d
 	rm -f $(RECIPES_DIR)/rootfs-docs.tar
 	rm -f $(ROOTFS_DOCS_KEY) $(ROOTFS_DOCS_KEY)-have
+	rm -f $(RECIPES_DIR)/.rootfs-docs-*
 	rm -rf $(REPLACE_CACHE_DIR)

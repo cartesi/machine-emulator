@@ -75,8 +75,6 @@ ARG RUNTIME_BASE
 LABEL io.cartesi.machine-emulator.base-image="$RUNTIME_BASE"
 
 COPY --from=debian-packager /usr/src/emulator/machine-emulator_${TARGETARCH}.deb machine-emulator.deb
-COPY tests/dependencies tests/dependencies.sha256 /usr/share/cartesi-machine/
-
 RUN apt-get update && \
     apt-get install -y gosu ./machine-emulator.deb && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* machine-emulator.deb

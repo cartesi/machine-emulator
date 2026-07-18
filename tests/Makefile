@@ -17,6 +17,9 @@
 PREFIX = /opt/cartesi
 INSTALLDIR = $(PREFIX)/tests
 
+DEPENDENCIES_LOCK ?= $(abspath ../dependencies.lock)
+include $(DEPENDENCIES_LOCK)
+
 LUA_BIN ?= $(shell which lua5.4)
 
 BUILDDIR = $(abspath build)
@@ -110,10 +113,25 @@ endif
 
 RUN_ARCH_TEST = $(LUA) $(abspath ./lua/run-rv64i-arch-test.lua)
 
-CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin
+MACHINE_GUEST_TOOLS_ROOTFS_URL = https://github.com/cartesi/machine-guest-tools/releases/download/$(MACHINE_GUEST_TOOLS_TAG)/rootfs-tools.ext2
+MACHINE_LINUX_IMAGE_URL = https://github.com/cartesi/machine-linux-image/releases/download/$(MACHINE_LINUX_IMAGE_TAG)/$(MACHINE_LINUX_IMAGE_FILENAME)
+ROOTFS_TOOLS_IMAGE = $(CARTESI_IMAGES_PATH)/rootfs-tools.ext2
+LINUX_IMAGE = $(CARTESI_IMAGES_PATH)/$(MACHINE_LINUX_IMAGE_FILENAME)
+ROOTFS_TOOLS_INPUTS_HASH := $(shell printf '%s\n' \
+	'$(MACHINE_GUEST_TOOLS_TAG)' \
+	'$(MACHINE_GUEST_TOOLS_ROOTFS_SHA256)' | shasum -a 256 | head -c 64)
+LINUX_IMAGE_INPUTS_HASH := $(shell printf '%s\n' \
+	'$(MACHINE_LINUX_IMAGE_TAG)' \
+	'$(MACHINE_LINUX_IMAGE_FILENAME)' \
+	'$(MACHINE_LINUX_IMAGE_SHA256)' | shasum -a 256 | head -c 64)
+ROOTFS_TOOLS_INPUTS_KEY = $(CARTESI_IMAGES_PATH)/.rootfs-tools-$(ROOTFS_TOOLS_INPUTS_HASH)
+LINUX_IMAGE_INPUTS_KEY = $(CARTESI_IMAGES_PATH)/.linux-$(LINUX_IMAGE_INPUTS_HASH)
+CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin $(CARTESI_IMAGES_PATH)/rootfs.ext2
 
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --respect-ignores
+
+.DELETE_ON_ERROR:
 
 build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH) $(CARTESI_STEP_LOGS_PATH)
 
@@ -155,16 +173,26 @@ riscv-arch-test:
 $(BUILDDIR)/%:
 	@mkdir -p $@
 
-$(CARTESI_IMAGES): | $(CARTESI_IMAGES_PATH)
-	@wget -nc -i dependencies -P $(CARTESI_IMAGES_PATH)
-	@shasum -ca 256 dependencies.sha256
-	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools.ext2 rootfs.ext2
-	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.13-ctsi-2-uio-test1-v0.21.0.bin linux.bin
+$(ROOTFS_TOOLS_INPUTS_KEY) $(LINUX_IMAGE_INPUTS_KEY): | $(CARTESI_IMAGES_PATH)
+	touch $@
 
-images: | $(CARTESI_IMAGES)
+$(ROOTFS_TOOLS_IMAGE): $(ROOTFS_TOOLS_INPUTS_KEY)
+	wget -q -O $@ $(MACHINE_GUEST_TOOLS_ROOTFS_URL)
+	printf '%s  %s\n' '$(MACHINE_GUEST_TOOLS_ROOTFS_SHA256)' '$@' | shasum -a 256 -c -
+	touch $@
 
-dependencies.sha256:
-	@shasum -a 256 $(BUILDDIR)/images/* > $@
+$(LINUX_IMAGE): $(LINUX_IMAGE_INPUTS_KEY)
+	wget -q -O $@ $(MACHINE_LINUX_IMAGE_URL)
+	printf '%s  %s\n' '$(MACHINE_LINUX_IMAGE_SHA256)' '$@' | shasum -a 256 -c -
+	touch $@
+
+$(CARTESI_IMAGES_PATH)/rootfs.ext2: $(ROOTFS_TOOLS_IMAGE)
+	ln -sf $(notdir $<) $@
+
+$(CARTESI_IMAGES_PATH)/linux.bin: $(LINUX_IMAGE)
+	ln -sf $(notdir $<) $@
+
+images: $(CARTESI_IMAGES)
 
 clean:
 	@D=../third-party/riscv-arch-test/riscv-target/cartesi; \

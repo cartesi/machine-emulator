@@ -1,0 +1,12 @@
+# External artifacts used by tests and documentation.
+# Values are literal release tags and SHA-256 checksums. Make command-line
+# assignments override these defaults.
+
+MACHINE_GUEST_TOOLS_TAG?=v0.18.0-test5
+MACHINE_GUEST_TOOLS_ROOTFS_SHA256?=35e18b77ec70a5bebc259ee60f93f4183185f6ddc5f47f3682aa4f2900dda35b
+MACHINE_GUEST_TOOLS_DEB_SHA256?=6d8093297832095481aafc20e1d365f0311037b022c3a33f572798a565c3da0e
+MACHINE_GUEST_TOOLS_TARBALL_SHA256?=13ea50b1da445b6d203920d322806bce57570d7fc5daf13205c2a991327ab040
+
+MACHINE_LINUX_IMAGE_TAG?=v0.21.0-test1
+MACHINE_LINUX_IMAGE_FILENAME?=linux-6.5.13-ctsi-2-uio-test1-v0.21.0.bin
+MACHINE_LINUX_IMAGE_SHA256?=9fb5aaa623f35c0ef2138c8dadf1b0a1e388e0f51758cb6a5477ec5cecd3a029

@@ -5,24 +5,24 @@ ARG RUST_DIGEST=sha256:540c902e99c384163b688bbd8b5b8520e94e7731b27f7bd0eaa56ae19
 ARG GO_TAG=1.23-bookworm
 ARG GO_DIGEST=sha256:167053a2bb901972bf2c1611f8f52c44d5fe7e762e5cab213708d82c421614db
 ARG UBUNTU_SNAPSHOT=20260421T000000Z
-ARG MACHINE_GUEST_TOOLS_VERSION=0.18.0-test5
-ARG MACHINE_GUEST_TOOLS_DEB_SHA256=6d8093297832095481aafc20e1d365f0311037b022c3a33f572798a565c3da0e
-ARG MACHINE_GUEST_TOOLS_TARGZ_SHA256=13ea50b1da445b6d203920d322806bce57570d7fc5daf13205c2a991327ab040
+ARG MACHINE_GUEST_TOOLS_TAG
+ARG MACHINE_GUEST_TOOLS_DEB_SHA256
+ARG MACHINE_GUEST_TOOLS_TARBALL_SHA256
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Stage 1: cross-compile the C and C++ programs on the host architecture.
 FROM --platform=$BUILDPLATFORM ubuntu:${UBUNTU_TAG}@${UBUNTU_DIGEST} AS c-cpp-builder
 ARG DEBIAN_FRONTEND
-ARG MACHINE_GUEST_TOOLS_VERSION
-ARG MACHINE_GUEST_TOOLS_TARGZ_SHA256
+ARG MACHINE_GUEST_TOOLS_TAG
+ARG MACHINE_GUEST_TOOLS_TARBALL_SHA256
 ARG UBUNTU_SNAPSHOT
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates && \
     apt-get update --snapshot=${UBUNTU_SNAPSHOT} && \
     apt-get install -y --no-install-recommends --snapshot=${UBUNTU_SNAPSHOT} g++-14-riscv64-linux-gnu && \
     rm -rf /var/lib/apt/lists/*
-ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_TARGZ_SHA256} \
-    https://github.com/cartesi/machine-guest-tools/releases/download/v${MACHINE_GUEST_TOOLS_VERSION}/machine-guest-tools_riscv64.tar.gz \
+ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_TARBALL_SHA256} \
+    https://github.com/cartesi/machine-guest-tools/releases/download/${MACHINE_GUEST_TOOLS_TAG}/machine-guest-tools_riscv64.tar.gz \
     /tmp/machine-guest-tools_riscv64.tar.gz
 RUN mkdir -p /sysroot && \
     tar -xzf /tmp/machine-guest-tools_riscv64.tar.gz -C /sysroot && \
@@ -60,11 +60,11 @@ RUN go build -ldflags="-s -w" -o /work/hello-go /work/hello.go
 # The platform is set by `--platform=linux/riscv64` on the buildx invocation.
 FROM ubuntu:${UBUNTU_TAG}@${UBUNTU_DIGEST} AS rootfs
 ARG DEBIAN_FRONTEND
-ARG MACHINE_GUEST_TOOLS_VERSION
+ARG MACHINE_GUEST_TOOLS_TAG
 ARG MACHINE_GUEST_TOOLS_DEB_SHA256
 ARG UBUNTU_SNAPSHOT
 ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_DEB_SHA256} \
-    https://github.com/cartesi/machine-guest-tools/releases/download/v${MACHINE_GUEST_TOOLS_VERSION}/machine-guest-tools_riscv64.deb \
+    https://github.com/cartesi/machine-guest-tools/releases/download/${MACHINE_GUEST_TOOLS_TAG}/machine-guest-tools_riscv64.deb \
     /tmp/
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates && \

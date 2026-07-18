@@ -76,7 +76,9 @@
 --   idempotently (skipped when content is unchanged) to avoid spurious rebuilds.
 --   The runner (run-bash.sh / run-lua.sh) and vars.lua are listed as make
 --   prereqs for every rule that uses them, so editing those files triggers
---   a rebuild of all affected blocks.
+--   a rebuild of all affected blocks. Every executable rule also depends on
+--   cache/globals/docs_image_id, which this filter updates idempotently from
+--   dry-run metadata, so changing the image invalidates all executions.
 --
 -- LANGUAGES
 --
@@ -266,8 +268,9 @@
 --     changes. The older `sibling: primary` empty-recipe form could leave an
 --     indirect consumer (e.g. one reading another block's reordered stdout)
 --     stale on a timestamp tie across the two-pass rebuild.
---     prereqs: runner, body.<ext>, outputs, [vars.lua, spec] (iff contents-form
---              vars= exists), depends= prereqs, vars= file prereqs
+--     prereqs: runner, body.<ext>, outputs, cache/globals/docs_image_id,
+--              [vars.lua, spec] (iff contents-form vars= exists),
+--              depends= prereqs, vars= file prereqs
 --
 --   include= keys take a simpler shape: a single rule whose only prereq is
 --   the included file, with recipe `touch cache/<key>/both`. The content is
@@ -699,7 +702,12 @@ end
 function emit_rule(key, info, out_list, deps, vars_list, has_contents)
     local runner_path = info.runner
     local body_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
-    local prereqs = { runner_path, body_path, "$(REPLACE_CACHE_DIR)/" .. key .. "/outputs" }
+    local prereqs = {
+        runner_path,
+        body_path,
+        "$(REPLACE_CACHE_DIR)/" .. key .. "/outputs",
+        "$(REPLACE_CACHE_DIR)/globals/docs_image_id",
+    }
     if has_contents then
         prereqs[#prereqs + 1] = REPLACE_DIR .. "/vars.lua"
         prereqs[#prereqs + 1] = "$(REPLACE_CACHE_DIR)/" .. key .. "/spec"

@@ -1,8 +1,15 @@
 #!/bin/sh
 set -eu
 
+: "${MACHINE_GUEST_TOOLS_TAG:?}"
+: "${MACHINE_GUEST_TOOLS_DEB_SHA256:?}"
+: "${MACHINE_GUEST_TOOLS_TARBALL_SHA256:?}"
+
 # Cross-compile the dapp and assemble the rootfs as a flattened tarball.
 docker buildx build --platform=linux/riscv64 \
+    --build-arg MACHINE_GUEST_TOOLS_TAG \
+    --build-arg MACHINE_GUEST_TOOLS_DEB_SHA256 \
+    --build-arg MACHINE_GUEST_TOOLS_TARBALL_SHA256 \
     --output type=tar,dest=rootfs-docs.tar \
     -f Dockerfile.rootfs-docs .
 

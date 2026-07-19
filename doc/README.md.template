@@ -935,11 +935,9 @@ cartesi-machine \
     --initial-hash \
     --initial-proof="label:input,filename:pristine-input-proof.lua"
 # docs:end
-lua5.4 -e 'input_proof = require"pristine-input-proof"; print(input_proof.root_hash)' | \
-    hex --encode \ |
+lua5.4 -l cartesi -e 'print(cartesi.tohex((require"pristine-input-proof").root_hash))' | \
     $RECIPES_DIR/trunc8.sh > root_hash
-lua5.4 -e 'input_proof = require"pristine-input-proof"; print(input_proof.target_hash)' | \
-    hex --encode \ |
+lua5.4 -l cartesi -e 'print(cartesi.tohex((require"pristine-input-proof").target_hash))' | \
     $RECIPES_DIR/trunc8.sh > target_hash
 lua5.4 -e 'input_proof = require"pristine-input-proof"; print(string.format("0x%x", input_proof.target_address))' > target_address
 lua5.4 -e 'input_proof = require"pristine-input-proof"; print(input_proof.log2_target_size)' > log2_target_size
@@ -1003,11 +1001,9 @@ cartesi-machine \
     --initial-proof="label:input,filename:input-proof.lua" \
     --max-mcycle=0
 # docs:end
-lua5.4 -e 'input_proof = require"input-proof"; print(input_proof.root_hash)' | \
-    hex --encode \ |
+lua5.4 -l cartesi -e 'print(cartesi.tohex((require"input-proof").root_hash))' | \
     $RECIPES_DIR/trunc8.sh > root_hash
-lua5.4 -e 'input_proof = require"input-proof"; print(input_proof.target_hash)' | \
-    hex --encode \ |
+lua5.4 -l cartesi -e 'print(cartesi.tohex((require"input-proof").target_hash))' | \
     $RECIPES_DIR/trunc8.sh > target_hash
 ```
 This produces the output
@@ -1041,10 +1037,10 @@ cartesi-machine \
     --final-hash \
     --final-proof="label:output,filename:output-proof.lua"
 # docs:end
-lua5.4 -e 'proof = require"output-proof"; print(proof.root_hash)' | hex --encode \
-    | $RECIPES_DIR/trunc8.sh > root_hash
-lua5.4 -e 'proof = require"output-proof"; print(proof.target_hash)' | hex --encode \
-    | $RECIPES_DIR/trunc8.sh > target_hash
+lua5.4 -l cartesi -e 'print(cartesi.tohex((require"output-proof").root_hash))' | \
+    $RECIPES_DIR/trunc8.sh > root_hash
+lua5.4 -l cartesi -e 'print(cartesi.tohex((require"output-proof").target_hash))' | \
+    $RECIPES_DIR/trunc8.sh > target_hash
 ```
 
 This produces the output
@@ -4868,7 +4864,8 @@ lua5.4 rolling-verification-game.lua honest 127.0.0.1:8090 \
 } > /dev/null 2>&1 &
 wait
 # The hash the game settles must be the state hash the calculator's first epoch saved.
-grep -q "Final state hash is $(head -c 4 $rolling_calc_run/epoch-0-state-hash.bin | hex --encode)" verdict
+grep -q "Final state hash is $(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read(4)))' \
+    < $rolling_calc_run/epoch-0-state-hash.bin)" verdict
 # The referee leaves one file per narration phase. Show the short phases whole and reduce each
 # long bisection to its first and last three rounds.
 {

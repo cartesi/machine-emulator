@@ -189,7 +189,6 @@ build-docs-image: | ensure-rootfs-docs
 	base=$$(docker image inspect --format '{{ index .Config.Labels "io.cartesi.machine-emulator.base-image" }}' cartesi/machine-emulator:$(TAG)); \
 	docker build $(DOCKER_PLATFORM) \
 	    --build-arg TAG=$(TAG) \
-	    --build-arg MACHINE_GUEST_TOOLS_TAG=$(MACHINE_GUEST_TOOLS_TAG) \
 	    --build-arg MACHINE_LINUX_IMAGE_TAG=$(MACHINE_LINUX_IMAGE_TAG) \
 	    --build-arg MACHINE_LINUX_IMAGE_FILENAME=$(MACHINE_LINUX_IMAGE_FILENAME) \
 	    --build-arg MACHINE_LINUX_IMAGE_SHA256=$(MACHINE_LINUX_IMAGE_SHA256) \

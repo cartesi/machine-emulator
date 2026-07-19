@@ -19,7 +19,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <ranges>
+#include <span>
 #include <stdexcept>
 #include <string>
 
@@ -27,12 +29,15 @@
 
 namespace cartesi {
 
-namespace detail {
+/// \brief Encodes bytes into lowercase hexadecimal digits without a prefix
+/// \param input Input bytes
+/// \param output Output buffer, which must be exactly twice the input size
+void encode_hex_digits(std::span<const std::byte> input, std::span<char> output);
 
-void hexencode(uint8_t c, char *output);
-uint8_t hexdecode(uint8_t hi, uint8_t lo);
-
-} // namespace detail
+/// \brief Decodes hexadecimal digits without a prefix into bytes
+/// \param input Input digits, whose size must be even
+/// \param output Output buffer, which must be exactly half the input size
+void decode_hex_digits(std::span<const std::byte> input, std::span<std::byte> output);
 
 /// \brief Encodes binary data into lowercase, 0x-prefixed hexadecimal
 /// \param data Input data range
@@ -40,14 +45,19 @@ uint8_t hexdecode(uint8_t hi, uint8_t lo);
 template <ContiguousRangeOfByteLike R>
 std::string encode_hex(R &&data) { // NOLINT(cppcoreguidelines-missing-std-forward)
     const auto size = static_cast<size_t>(std::ranges::distance(data));
-    std::string output(2 + (2 * size), '\0');
-    output[0] = '0';
-    output[1] = 'x';
-    size_t offset = 2;
-    for (auto b : data) {
-        detail::hexencode(static_cast<uint8_t>(b), output.data() + offset);
-        offset += 2;
+    if (size > (std::numeric_limits<size_t>::max() - 2) / 2) {
+        throw std::length_error{"hex input is too large"};
     }
+    const auto input = std::span{std::ranges::data(data), size};
+    const auto input_bytes = std::as_bytes(input);
+    const auto output_size = 2 + (2 * size);
+    std::string output;
+    output.resize_and_overwrite(output_size, [&](char *buffer, size_t) {
+        buffer[0] = '0';
+        buffer[1] = 'x';
+        encode_hex_digits(input_bytes, {buffer + 2, output_size - 2});
+        return output_size;
+    });
     return output;
 }
 
@@ -68,12 +78,15 @@ std::string decode_hex(R &&data) { // NOLINT(cppcoreguidelines-missing-std-forwa
     if (size % 2 != 0) {
         throw std::domain_error{"hex string length must be even"};
     }
-    std::string output((size - 2) / 2, '\0');
-    for (auto &b : output) {
-        const auto hi = static_cast<uint8_t>(*it++);
-        const auto lo = static_cast<uint8_t>(*it++);
-        b = static_cast<char>(detail::hexdecode(hi, lo));
-    }
+    const auto input = std::span{std::ranges::data(data), size};
+    const auto input_bytes = std::as_bytes(input).subspan(2);
+    const auto output_size = (size - 2) / 2;
+    std::string output;
+    output.resize_and_overwrite(output_size, [&](char *buffer, size_t) {
+        auto output_bytes = std::as_writable_bytes(std::span{buffer, output_size});
+        decode_hex_digits(input_bytes, output_bytes);
+        return output_size;
+    });
     return output;
 }
 

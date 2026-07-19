@@ -18,36 +18,45 @@
 #define BASE64_HPP
 
 #include <cstddef>
-#include <cstdint>
-#include <sstream>
+#include <ranges>
+#include <span>
 #include <string>
 
 #include "concepts.hpp"
 
 namespace cartesi {
 
-namespace detail {
+/// \brief Returns the encoded size for a binary input
+/// \param input_size Input size in bytes
+/// \returns Base64 output size
+size_t encoded_base64_size(size_t input_size);
 
-size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout);
-size_t b64pad(const uint8_t *input, size_t size, std::ostringstream &sout);
-size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout);
+/// \brief Encodes binary input into Base64
+/// \param input Input bytes
+/// \param output Output buffer with encoded_base64_size(input.size()) bytes
+void encode_base64_digits(std::span<const std::byte> input, std::span<char> output);
 
-} // namespace detail
+/// \brief Decodes canonical Base64, ignoring ASCII whitespace
+/// \param input Base64 input
+/// \param output Output buffer large enough for the decoded bytes
+/// \returns Number of decoded bytes written
+size_t decode_base64_digits(std::span<const std::byte> input, std::span<std::byte> output);
 
 /// \brief Encodes binary data into base64
 /// \param data Input data range
 /// \returns String with encoded data
 template <ContiguousRangeOfByteLike R>
 std::string encode_base64(R &&data) { // NOLINT(cppcoreguidelines-missing-std-forward)
-    //??D we could make this faster by avoiding ostringstream altogether...
-    std::ostringstream sout;
-    uint8_t ctx[4]{};
-    size_t ctxlen = 0;
-    for (auto b : data) {
-        ctxlen = detail::b64encode(static_cast<uint8_t>(b), ctx, ctxlen, sout);
-    }
-    detail::b64pad(ctx, ctxlen, sout);
-    return sout.str();
+    const auto size = static_cast<size_t>(std::ranges::distance(data));
+    const auto input = std::span{std::ranges::data(data), size};
+    const auto input_bytes = std::as_bytes(input);
+    const auto output_size = encoded_base64_size(size);
+    std::string output;
+    output.resize_and_overwrite(output_size, [&](char *buffer, size_t) {
+        encode_base64_digits(input_bytes, {buffer, output_size});
+        return output_size;
+    });
+    return output;
 }
 
 /// \brief Decodes binary data from base64
@@ -55,13 +64,15 @@ std::string encode_base64(R &&data) { // NOLINT(cppcoreguidelines-missing-std-fo
 /// \returns String with decoded data
 template <ContiguousRangeOfByteLike R>
 std::string decode_base64(R &&data) { // NOLINT(cppcoreguidelines-missing-std-forward)
-    std::ostringstream sout;
-    uint8_t ctx[4]{};
-    size_t ctxlen = 0;
-    for (auto b : data) {
-        ctxlen = detail::b64decode(static_cast<uint8_t>(b), ctx, ctxlen, sout);
-    }
-    return sout.str();
+    const auto size = static_cast<size_t>(std::ranges::distance(data));
+    const auto input = std::span{std::ranges::data(data), size};
+    const auto input_bytes = std::as_bytes(input);
+    std::string output;
+    output.resize_and_overwrite(3 * (size / 4), [&](char *buffer, size_t buffer_size) {
+        const auto output_bytes = std::as_writable_bytes(std::span{buffer, buffer_size});
+        return decode_base64_digits(input_bytes, output_bytes);
+    });
+    return output;
 }
 
 } // namespace cartesi

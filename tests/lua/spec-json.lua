@@ -39,12 +39,70 @@ describe("tojson / fromjson schema dictionary", function()
         expect.equal(cartesi.fromjson(j, "Base64"), HASH)
     end)
 
+    it("should encode and decode canonical Base64", function()
+        local vectors = {
+            { "", "" },
+            { "f", "Zg==" },
+            { "fo", "Zm8=" },
+            { "foo", "Zm9v" },
+            { "foob", "Zm9vYg==" },
+            { "fooba", "Zm9vYmE=" },
+            { "foobar", "Zm9vYmFy" },
+        }
+        for _, vector in ipairs(vectors) do
+            expect.equal(cartesi.tobase64(vector[1]), vector[2])
+            expect.equal(cartesi.frombase64(vector[2]), vector[1])
+        end
+
+        local all = {}
+        for i = 0, 255 do
+            all[#all + 1] = string.char(i)
+        end
+        local all_bytes = table.concat(all)
+        expect.equal(cartesi.frombase64(cartesi.tobase64(all_bytes)), all_bytes)
+        expect.equal(cartesi.frombase64(" \tZm9v\r\nYmFy\v\f"), "foobar")
+    end)
+
+    it("should reject malformed Base64", function()
+        for _, base64 in ipairs({
+            "A",
+            "AAA",
+            "====",
+            "=AAA",
+            "A===",
+            "AA=A",
+            "AA==AA==",
+            "Zm=8",
+            "AB==",
+            "AAB=",
+            "Zm9v!",
+        }) do
+            expect.fail(function()
+                cartesi.frombase64(base64)
+            end, "base64")
+            expect.fail(function()
+                cartesi.fromjson(cartesi.tojson(base64), "Base64")
+            end, "base64")
+        end
+    end)
+
     it("should encode and decode 0x-prefixed hexadecimal", function()
         expect.equal(cartesi.tohex(BINARY), "0x0001feff")
         expect.equal(cartesi.fromhex("0x0001feff"), BINARY)
         expect.equal(cartesi.fromhex("0X0001FEFF"), BINARY)
         expect.equal(cartesi.tohex(""), "0x")
         expect.equal(cartesi.fromhex("0x"), "")
+
+        local all = {}
+        local all_hex = { "0x" }
+        for i = 0, 255 do
+            all[#all + 1] = string.char(i)
+            all_hex[#all_hex + 1] = string.format("%02x", i)
+        end
+        local all_bytes = table.concat(all)
+        local all_encoded = table.concat(all_hex)
+        expect.equal(cartesi.tohex(all_bytes), all_encoded)
+        expect.equal(cartesi.fromhex(all_encoded), all_bytes)
     end)
 
     it("should serialize a bare string under the Hex schema", function()

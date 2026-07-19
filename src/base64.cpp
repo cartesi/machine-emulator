@@ -6,142 +6,165 @@
 // Software Foundation, either version 3 of the License, or (at your option) any
 // later version.
 //
-// This program is distributed in the hope that it will be useful, but WITHOUT ANY
-// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-// PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+// details.
 //
 // You should have received a copy of the GNU Lesser General Public License along
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
-//
 
 #include "base64.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <sstream>
+#include <limits>
+#include <span>
 #include <stdexcept>
 #include <string>
 
-namespace cartesi::detail {
+namespace cartesi {
 
-// Base64 globals
-static constexpr uint8_t b64base[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static constexpr char base64_digits[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-static constexpr uint8_t b64unbase[] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 62, 255, 255, 255, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 255, 255, 255, 0, 255, 255, 255,
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 255, 255, 255, 255,
-    255, 255, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
-
-// Accumulates bytes in input buffer until 3 bytes are available.
-// Translate the 3 bytes into Base64 form and append to buffer.
-// Returns new number of bytes in buffer.
-size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout) {
-    input[size++] = c;
-    if (size == 3) {
-        uint8_t code[4];
-        uint64_t value = 0;
-        value += input[0];
-        value <<= 8;
-        value += input[1];
-        value <<= 8;
-        value += input[2];
-        code[3] = b64base[value & 0x3f];
-        value >>= 6;
-        code[2] = b64base[value & 0x3f];
-        value >>= 6;
-        code[1] = b64base[value & 0x3f];
-        value >>= 6;
-        code[0] = b64base[value];
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        sout << std::string_view(reinterpret_cast<char *>(code), 4);
-        size = 0;
+static constexpr auto make_base64_values() {
+    std::array<uint8_t, 256> values{};
+    values.fill(255);
+    for (uint8_t i = 0; i < 26; ++i) {
+        values[static_cast<size_t>('A') + i] = i;
+        values[static_cast<size_t>('a') + i] = i + 26;
     }
-    return size;
+    for (uint8_t i = 0; i < 10; ++i) {
+        values[static_cast<size_t>('0') + i] = i + 52;
+    }
+    values[static_cast<size_t>('+')] = 62;
+    values[static_cast<size_t>('/')] = 63;
+    return values;
 }
 
-// Encodes the Base64 last 1 or 2 bytes and adds padding '='
-// Result, if any, is appended to buffer.
-// Returns 0.
-size_t b64pad(const uint8_t *input, size_t size, std::ostringstream &sout) {
-    uint64_t value = 0;
-    uint8_t code[4] = {'=', '=', '=', '='};
-    switch (size) {
-        case 1:
-            value = input[0] << 4;
-            code[1] = b64base[value & 0x3f];
-            value >>= 6;
-            code[0] = b64base[value];
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            sout << std::string_view(reinterpret_cast<char *>(code), 4);
-            break;
-        case 2:
-            value = input[0];
-            value <<= 8;
-            value |= input[1];
-            value <<= 2;
-            code[2] = b64base[value & 0x3f];
-            value >>= 6;
-            code[1] = b64base[value & 0x3f];
-            value >>= 6;
-            code[0] = b64base[value];
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            sout << std::string_view(reinterpret_cast<char *>(code), 4);
-            break;
-        default:
-            break;
-    }
-    return 0;
+static constexpr auto base64_values = make_base64_values();
+
+static constexpr bool is_base64_whitespace(uint8_t character) {
+    return character == ' ' || character == '\t' || character == '\n' || character == '\v' || character == '\f' ||
+        character == '\r';
 }
 
-// Accumulates bytes in input buffer until 4 bytes are available.
-// Translate the 4 bytes from Base64 form and append to buffer.
-// Returns new number of bytes in buffer.
-size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout) {
-    if (b64unbase[c] > 64) {
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r') { // ignore whitespace characters
-            return size;
-        } // throw an error for invalid characters
-        throw std::domain_error(std::string("invalid base64 character code ") + std::to_string(c));
+static uint8_t decode_base64_digit(uint8_t character) {
+    if (character == '=') {
+        return 64;
     }
-    input[size++] = c;
-    // decode atom
-    if (size == 4) {
-        uint8_t decoded[3];
-        int valid = 0;
-        int value = 0;
-        value = b64unbase[input[0]];
-        value <<= 6;
-        value |= b64unbase[input[1]];
-        value <<= 6;
-        value |= b64unbase[input[2]];
-        value <<= 6;
-        value |= b64unbase[input[3]];
-        decoded[2] = static_cast<uint8_t>(value & 0xff);
-        value >>= 8;
-        decoded[1] = static_cast<uint8_t>(value & 0xff);
-        value >>= 8;
-        decoded[0] = static_cast<uint8_t>(value);
-        // take care of padding
-        if (input[2] == '=') {
-            valid = 1;
-        } else if (input[3] == '=') {
-            valid = 2;
-        } else {
-            valid = 3;
+    const auto value = base64_values[character];
+    if (value > 63) {
+        throw std::domain_error{"invalid base64 character code " + std::to_string(character)};
+    }
+    return value;
+}
+
+static size_t decode_base64_quartet(const std::array<uint8_t, 4> &quartet, std::span<std::byte> output) {
+    if (quartet[0] == 64 || quartet[1] == 64) {
+        throw std::domain_error{"invalid base64 padding"};
+    }
+
+    size_t decoded_size = 3;
+    if (quartet[2] == 64) {
+        if (quartet[3] != 64) {
+            throw std::domain_error{"invalid base64 padding"};
         }
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        sout << std::string_view(reinterpret_cast<char *>(decoded), valid);
-        return 0;
-        // need more data
+        if ((quartet[1] & 0x0f) != 0) {
+            throw std::domain_error{"non-zero base64 padding bits"};
+        }
+        decoded_size = 1;
+    } else if (quartet[3] == 64) {
+        if ((quartet[2] & 0x03) != 0) {
+            throw std::domain_error{"non-zero base64 padding bits"};
+        }
+        decoded_size = 2;
     }
-    return size;
+    if (output.size() < decoded_size) {
+        throw std::invalid_argument{"invalid base64 output size"};
+    }
+
+    output[0] = static_cast<std::byte>((quartet[0] << 2) | (quartet[1] >> 4));
+    if (decoded_size > 1) {
+        output[1] = static_cast<std::byte>(((quartet[1] & 0x0f) << 4) | (quartet[2] >> 2));
+    }
+    if (decoded_size > 2) {
+        output[2] = static_cast<std::byte>(((quartet[2] & 0x03) << 6) | quartet[3]);
+    }
+    return decoded_size;
 }
 
-} // namespace cartesi::detail
+size_t encoded_base64_size(size_t input_size) {
+    const size_t groups = input_size / 3;
+    const size_t tail_size = input_size % 3 == 0 ? 0 : 4;
+    if (groups > (std::numeric_limits<size_t>::max() - tail_size) / 4) {
+        throw std::length_error{"base64 input is too large"};
+    }
+    return (4 * groups) + tail_size;
+}
+
+void encode_base64_digits(std::span<const std::byte> input, std::span<char> output) {
+    if (output.size() != encoded_base64_size(input.size())) {
+        throw std::invalid_argument{"invalid base64 output size"};
+    }
+
+    while (input.size() >= 3) {
+        const auto first = std::to_integer<uint8_t>(input[0]);
+        const auto second = std::to_integer<uint8_t>(input[1]);
+        const auto third = std::to_integer<uint8_t>(input[2]);
+        output[0] = base64_digits[first >> 2];
+        output[1] = base64_digits[((first & 0x03) << 4) | (second >> 4)];
+        output[2] = base64_digits[((second & 0x0f) << 2) | (third >> 6)];
+        output[3] = base64_digits[third & 0x3f];
+        input = input.subspan(3);
+        output = output.subspan(4);
+    }
+
+    if (input.size() == 1) {
+        const auto first = std::to_integer<uint8_t>(input[0]);
+        output[0] = base64_digits[first >> 2];
+        output[1] = base64_digits[(first & 0x03) << 4];
+        output[2] = '=';
+        output[3] = '=';
+    } else if (input.size() == 2) {
+        const auto first = std::to_integer<uint8_t>(input[0]);
+        const auto second = std::to_integer<uint8_t>(input[1]);
+        output[0] = base64_digits[first >> 2];
+        output[1] = base64_digits[((first & 0x03) << 4) | (second >> 4)];
+        output[2] = base64_digits[(second & 0x0f) << 2];
+        output[3] = '=';
+    }
+}
+
+size_t decode_base64_digits(std::span<const std::byte> input, std::span<std::byte> output) {
+    std::array<uint8_t, 4> quartet{};
+    size_t quartet_size = 0;
+    size_t output_size = 0;
+    bool padded = false;
+    for (const auto input_byte : input) {
+        const auto character = std::to_integer<uint8_t>(input_byte);
+        if (is_base64_whitespace(character)) {
+            continue;
+        }
+        if (padded) {
+            throw std::domain_error{"base64 padding must appear only at the end"};
+        }
+        quartet[quartet_size++] = decode_base64_digit(character);
+        if (quartet_size != quartet.size()) {
+            continue;
+        }
+
+        const auto decoded_size = decode_base64_quartet(quartet, output);
+        output_size += decoded_size;
+        output = output.subspan(decoded_size);
+        padded = decoded_size != 3;
+        quartet_size = 0;
+    }
+    if (quartet_size != 0) {
+        throw std::domain_error{"base64 string length must be a multiple of 4"};
+    }
+    return output_size;
+}
+
+} // namespace cartesi

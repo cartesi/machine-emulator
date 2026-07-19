@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a typo in the `cartesi-machine.lua` cmio handling
 
 ## Changed
+- Optimized hex and Base64 encoding and decoding with bulk span-based operations, direct output string writes, and lookup-table decoding. Base64 decoding now rejects non-canonical padding and padding bits while continuing to accept ASCII whitespace
 - Changed `collect_mcycle_root_hashes` across the C++, C, Lua, and JSON-RPC APIs to take `log2_mcycle_period` instead of `mcycle_period`; `--print-mcycle-root-hashes` now takes the log base 2 period as well
 - Changed machine and uarch cycle overflow to be derived, state-preserving fixed points
 - Changed run calls whose target equals the current `mcycle` to return the break reason implied by the machine state instead of always returning `reached_target_mcycle`

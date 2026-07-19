@@ -1,26 +1,16 @@
 ARG TAG=0.20.0
-ARG MACHINE_GUEST_TOOLS_TAG
 ARG MACHINE_LINUX_IMAGE_TAG
 ARG MACHINE_LINUX_IMAGE_FILENAME
 ARG MACHINE_LINUX_IMAGE_SHA256
 ARG GENEXT2FS_VERSION=v1.5.6
-# Base for the host-tool builder stages below. These stages compile binaries
-# that are copied into the final emulator-based image, so the base must stay
+# Base for the host-tool builder stage below. This stage compiles a binary
+# that is copied into the final emulator-based image, so the base must stay
 # ABI-compatible with cartesi/machine-emulator:$TAG. It deliberately does NOT
 # reference $TAG, so bumping the emulator image reuses the builders' cache.
 # The Makefile overrides this with the emulator image's own base, read from its
 # io.cartesi.machine-emulator.base-image label, so it tracks automatically if
 # the emulator rebases.
 ARG BUILDER_BASE=debian:trixie-20250811-slim
-
-FROM $BUILDER_BASE AS hex-builder
-ARG MACHINE_GUEST_TOOLS_TAG
-USER root
-RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
-    apt-get install -y --no-install-recommends g++ wget ca-certificates && \
-    wget -qO- https://github.com/cartesi/machine-guest-tools/archive/refs/tags/$MACHINE_GUEST_TOOLS_TAG.tar.gz \
-        | tar -xz -C /tmp --wildcards --strip-components=3 '*/sys-utils/hex/hex.cpp' && \
-    g++ -O2 -o /usr/local/bin/hex /tmp/hex.cpp
 
 FROM $BUILDER_BASE AS xgenext2fs-builder
 ARG GENEXT2FS_VERSION
@@ -61,7 +51,6 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
 RUN cartesi-machine --bash-completion > /usr/share/bash-completion/completions/cartesi-machine && \
     sed -i '/^#if ! shopt -oq posix; then/,/^#fi$/ s/^#//' /etc/bash.bashrc
 
-COPY --from=hex-builder /usr/local/bin/hex /usr/local/bin/hex
 COPY --from=xgenext2fs-builder /usr/local/bin/xgenext2fs /usr/local/bin/xgenext2fs
 
 COPY --from=linux-image /linux.bin /usr/share/cartesi-machine/images/linux.bin

@@ -392,7 +392,7 @@ end
 local function write_sibling_hashes_to_log(sibling_hashes, out, indent)
     util.indentout(out, indent, '"sibling_hashes": [\n')
     for i, h in ipairs(sibling_hashes) do
-        util.indentout(out, indent + 1, '"%s"', util.hexhash(h))
+        util.indentout(out, indent + 1, '"%s"', cartesi.tohex(h))
         if sibling_hashes[i + 1] then
             out:write(",\n")
         else
@@ -409,16 +409,16 @@ local function write_access_to_log(access, out, indent, last)
     util.indentout(out, indent + 1, '"log2_size": %u,\n', access.log2_size)
     local read_value = "" -- Solidity JSON parser breaks, if this field is null
     if access.read then
-        read_value = util.hexstring(access.read)
+        read_value = cartesi.tohex(access.read)
     end
     util.indentout(out, indent + 1, '"read_value": "%s",\n', read_value)
-    util.indentout(out, indent + 1, '"read_hash": "%s",\n', util.hexhash(access.read_hash))
+    util.indentout(out, indent + 1, '"read_hash": "%s",\n', cartesi.tohex(access.read_hash))
     local written_value = ""
     local written_hash = ""
     if access.type == "write" then
-        written_hash = util.hexhash(access.written_hash)
+        written_hash = cartesi.tohex(access.written_hash)
         if access.written then
-            written_value = util.hexstring(access.written)
+            written_value = cartesi.tohex(access.written)
         end
     end
     util.indentout(out, indent + 1, '"written_value": "%s",\n', written_value)
@@ -464,8 +464,8 @@ local function write_catalog_json_log_entry(out, logFilename, ctx)
         logFilename,
         ctx.ram_image or "",
         ctx.step_count,
-        util.hexhash(ctx.initial_root_hash),
-        util.hexhash(ctx.final_root_hash)
+        cartesi.tohex(ctx.initial_root_hash),
+        cartesi.tohex(ctx.final_root_hash)
     )
 end
 

@@ -1190,7 +1190,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
         local expected_dump_pattern = "begin reset_uarch_state\n"
             .. "  1: write uarch.state@0x400000%(4194304%): "
-            .. 'hash:"[0-9a-f]+"%(2%^22 bytes%) %-> hash:"[0-9a-fA-F]+"%(2%^22 bytes%)\n'
+            .. 'hash:"0x[0-9a-f]+"%(2%^22 bytes%) %-> hash:"0x[0-9a-fA-F]+"%(2%^22 bytes%)\n'
             .. "  2: read iflags.Y@0x308%(776%): 0x0%(0%)\n"
             .. "end reset_uarch_state\n"
 
@@ -1548,10 +1548,10 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
         machine:log_send_cmio_response(machine:get_root_hash(), reason, data, cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     local expected_dump_pattern = "begin send_cmio_response\n"
         .. "  1: read iflags%.Y@0x308%(776%): 0x1%(1%)\n"
-        .. '  2: write revert root hash@0xfe0%(4064%): hash:"290decd9"%(2%^5 bytes%) %-> '
-        .. 'hash:"[0-9a-f]+"%(2%^5 bytes%)\n'
-        .. '  3: write cmio rx buffer@0x60000000%(1610612736%): hash:"290decd9"%(2%^5 bytes%) %-> '
-        .. 'hash:"555b1f6d"%(2%^5 bytes%)\n'
+        .. '  2: write revert root hash@0xfe0%(4064%): hash:"0x290decd9"%(2%^5 bytes%) %-> '
+        .. 'hash:"0x[0-9a-f]+"%(2%^5 bytes%)\n'
+        .. '  3: write cmio rx buffer@0x60000000%(1610612736%): hash:"0x290decd9"%(2%^5 bytes%) %-> '
+        .. 'hash:"0x555b1f6d"%(2%^5 bytes%)\n'
         .. "  4: write htif%.fromhost@0x338%(824%): 0x0%(0%) %-> 0x70000000a%(30064771082%)\n"
         .. "  5: write iflags%.Y@0x308%(776%): 0x1%(1%) %-> 0x0%(0%)\n"
         .. "end send_cmio_response\n"

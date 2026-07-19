@@ -2512,7 +2512,7 @@ while argi <= #arg do
 end
 
 local function print_root_hash(machine, print)
-    (print or stderr)("%u: %s\n", machine:read_reg("mcycle"), util.hexhash(machine:get_root_hash()))
+    (print or stderr)("%u: %s\n", machine:read_reg("mcycle"), cartesi.tohex(machine:get_root_hash()))
 end
 
 local function dump_value_proofs(machine, desired_proofs, config)
@@ -2953,7 +2953,7 @@ local function store_machine(machine, config, dir, sharing)
     assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     stderr("Storing machine: please wait\n")
     local values = {}
-    if dir:find("%%%d*h") then values.h = util.hexhash(machine:get_root_hash()) end
+    if dir:find("%%%d*h") then values.h = cartesi.tohex(machine:get_root_hash()) end
     local name = instantiate_filename(dir, values)
     machine:store(name, sharing)
 end
@@ -3118,16 +3118,16 @@ local function print_collected_uarch_hashes(hashes, reset_indices, mcycle, bundl
     for i, hash in ipairs(hashes) do
         if reset_indices[next_reset] == i then
             if bundle_size == 1 then
-                stderr("%u: %s\n", mcycle + 1, util.hexhash(hash))
+                stderr("%u: %s\n", mcycle + 1, cartesi.tohex(hash))
             else
-                stderr("%u,%u-%u: %s\n", mcycle, uarch_cycle, mcycle + 1, util.hexhash(hash))
+                stderr("%u,%u-%u: %s\n", mcycle, uarch_cycle, mcycle + 1, cartesi.tohex(hash))
             end
             mcycle = mcycle + 1
             uarch_cycle = 1
             next_reset = next_reset + 1
         else
             if bundle_size == 1 then
-                stderr("%u,%u: %s\n", mcycle, uarch_cycle, util.hexhash(hash))
+                stderr("%u,%u: %s\n", mcycle, uarch_cycle, cartesi.tohex(hash))
             else
                 stderr(
                     "%u,%u-%u,%u: %s\n",
@@ -3135,7 +3135,7 @@ local function print_collected_uarch_hashes(hashes, reset_indices, mcycle, bundl
                     uarch_cycle,
                     mcycle,
                     uarch_cycle + bundle_size - 1,
-                    util.hexhash(hash)
+                    cartesi.tohex(hash)
                 )
             end
             uarch_cycle = uarch_cycle + bundle_size
@@ -3223,19 +3223,19 @@ local function print_collected_hashes(m, hashes, mcycle, period, mcycle_phase, b
     local boundary = mcycle + period - mcycle_phase
     if bundle_size == 1 then
         for i = 1, #hashes - (at_fixed_point and 1 or 0) do
-            stderr("%u: %s\n", boundary, util.hexhash(hashes[i]))
+            stderr("%u: %s\n", boundary, cartesi.tohex(hashes[i]))
             boundary = boundary + period
         end
         -- A machine already stopped on entry collects nothing.
         if at_fixed_point and #hashes > 0 then
-            stderr("%u: %s\n", m:read_reg("mcycle"), util.hexhash(hashes[#hashes]))
+            stderr("%u: %s\n", m:read_reg("mcycle"), cartesi.tohex(hashes[#hashes]))
         end
         return
     end
     for i, hash in ipairs(hashes) do
         local first = boundary + ((i - 1) * bundle_size - fill) * period
         local last = boundary + (i * bundle_size - 1 - fill) * period
-        stderr("%u-%u: %s\n", first, last, util.hexhash(hash))
+        stderr("%u-%u: %s\n", first, last, cartesi.tohex(hash))
     end
 end
 
@@ -3431,7 +3431,7 @@ local function mcycle_computation_hash_end_epoch(self)
         end
     end
     local root = hash_tree.frontier_get_root_hash(self.frontier, pad)
-    stderr("\nMcycle computation hash: %s\n", util.hexhash(root))
+    stderr("\nMcycle computation hash: %s\n", cartesi.tohex(root))
     if self.filename ~= "" then
         stderr("Storing %s\n", self.filename)
         util.write_file(root, self.filename)
@@ -3516,7 +3516,7 @@ local function uarch_cycle_computation_hash_emit(self)
     if self.emitted then return end
     self.emitted = true
     local root = hash_tree.frontier_get_root_hash(self.frontier, self.pad_period_root, self.log2_bundles_per_mcycle)
-    stderr("\nUarch cycle computation hash: %s\n", util.hexhash(root))
+    stderr("\nUarch cycle computation hash: %s\n", cartesi.tohex(root))
     if self.filename ~= "" then
         stderr("Storing %s\n", self.filename)
         util.write_file(root, self.filename)

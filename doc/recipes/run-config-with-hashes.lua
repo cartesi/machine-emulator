@@ -6,19 +6,12 @@ local function stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
 end
 
--- Converts hash from binary to hexadecimal string
-local function hexhash(hash)
-    return (string.gsub(hash, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
-end
-
 -- Instantiate machine from configuration
 local config = require(arg[1])
 local machine = cartesi.machine(config)
 
 -- Print the initial cycle count and root hash
-stderr("%u: %s\n", machine:read_reg("mcycle"), hexhash(machine:get_root_hash()))
+stderr("%u: %s\n", machine:read_reg("mcycle"), cartesi.tohex(machine:get_root_hash()))
 
 -- Run machine until it halts or yields manual
 local break_reason
@@ -35,4 +28,4 @@ end
 stderr("Cycles: %u\n", machine:read_reg("mcycle"))
 
 -- Print the final cycle count and root hash
-stderr("%u: %s\n", machine:read_reg("mcycle"), hexhash(machine:get_root_hash()))
+stderr("%u: %s\n", machine:read_reg("mcycle"), cartesi.tohex(machine:get_root_hash()))

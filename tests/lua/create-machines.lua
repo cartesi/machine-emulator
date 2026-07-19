@@ -17,7 +17,6 @@
 --
 
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
 
 local function stderr_unsilenceable(fmt, ...)
@@ -153,7 +152,7 @@ local function instantiate_filename(pattern, values)
 end
 
 local function store_machine(machine, store_dir)
-    local h = util.hexhash(machine:get_root_hash())
+    local h = cartesi.tohex(machine:get_root_hash())
     local name = instantiate_filename(store_dir, { h = h })
     machine:store(name)
 end

@@ -22,14 +22,6 @@ local function indentout(f, indent, fmt, ...) f:write(string.rep("  ", indent), 
 
 _M.indentout = indentout
 
-local function hexstring(hash)
-    return (string.gsub(hash, ".", function(c) return string.format("%02x", string.byte(c)) end))
-end
-
-local hexhash = hexstring
-_M.hexstring = hexstring
-_M.hexhash = hexstring
-
 local function dump_table(what, out, whatdef, indent)
     whatdef = whatdef or {}
     indent = indent or ""
@@ -174,7 +166,7 @@ function _M.parse_options(keys, all, opts)
     return options
 end
 
-local function hexhash8(hash) return string.sub(hexhash(hash), 1, 8) end
+local function abbreviated_hash(hash) return string.sub(cartesi.tohex(hash), 1, 10) end
 
 local function accessdatastring(data, data_hash, data_log2_size, address)
     local data_size = 1 << data_log2_size
@@ -192,11 +184,11 @@ local function accessdatastring(data, data_hash, data_log2_size, address)
         return string.format("0x%x(%u)", data, data)
     else
         local data_snippet = ""
-        if data_hash ~= nil then data_snippet = string.format('hash:"%s"', hexhash8(data_hash)) end
+        if data_hash ~= nil then data_snippet = string.format('hash:"%s"', abbreviated_hash(data_hash)) end
         if data ~= nil then
             if data_snippet ~= "" then data_snippet = data_snippet .. " " end
             data_snippet = data_snippet
-                .. string.format("%s...%s", hexstring(data:sub(1, 3)), hexstring(data:sub(-3, -1)))
+                .. string.format("%s...%s", cartesi.tohex(data:sub(1, 3)), cartesi.tohex(data:sub(-3, -1)))
         end
         return string.format("%s(2^%d bytes)", data_snippet, data_log2_size)
     end

@@ -892,17 +892,17 @@ describe("cartesi-machine CLI", function()
     -- What: --initial-hash, --final-hash, --print-mcycle-root-hashes (positional log2 period
     --       with and without a start: sub-key), --initial-proof, --final-proof,
     --       --print-uarch-cycle-root-hashes, and --dump-memory-ranges.
-    -- How:  run_ok() each flag; regex-match 64-hex-digit lines in stderr to
+    -- How:  run_ok() each flag; regex-match 0x-prefixed, 64-hex-digit lines in stderr to
     --       count hash emissions; open proof output files and assert they are
     --       non-empty.  Format-specific proof assertions live in the dedicated
     --       "proof dump options" test below.
     -- -------------------------------------------------------------------------
     it("hashing options", function()
-        -- --initial-hash and --final-hash emit hashes to stderr as "<mcycle>: <hex64>"
+        -- --initial-hash and --final-hash emit hashes to stderr as "<mcycle>: 0x<hex64>"
         local _, err = run_ok({ "--initial-hash", "--final-hash", "--max-mcycle=0", "--no-init-splash", "--quiet" })
         local hash_count = 0
         for line in err:gmatch("[^\n]+") do
-            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
+            if line:match("^%d+: 0x[0-9a-f]+$") and #line:match("0x[0-9a-f]+$") == 66 then
                 hash_count = hash_count + 1
             end
         end
@@ -912,7 +912,7 @@ describe("cartesi-machine CLI", function()
         _, err = run_ok({ "--print-mcycle-root-hashes=0,start:0", "--max-mcycle=2", "--no-init-splash", "--quiet" })
         hash_count = 0
         for line in err:gmatch("[^\n]+") do
-            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
+            if line:match("^%d+: 0x[0-9a-f]+$") and #line:match("0x[0-9a-f]+$") == 66 then
                 hash_count = hash_count + 1
             end
         end
@@ -931,8 +931,8 @@ describe("cartesi-machine CLI", function()
         _, err = run_ok({ "--print-mcycle-root-hashes=17,start:200000", "--max-mcycle=600000", "--no-init-splash" })
         local seen = {}
         for line in err:gmatch("[^\n]+") do
-            local mcycle = line:match("^(%d+): [0-9a-f]+$")
-            if mcycle and #line:match("[0-9a-f]+$") == 64 then
+            local mcycle = line:match("^(%d+): 0x[0-9a-f]+$")
+            if mcycle and #line:match("0x[0-9a-f]+$") == 66 then
                 seen[tonumber(mcycle)] = true
             end
         end
@@ -947,8 +947,8 @@ describe("cartesi-machine CLI", function()
         })
         local ranges = {}
         for line in err:gmatch("[^\n]+") do
-            local first, last, hash = line:match("^(%d+)%-(%d+): ([0-9a-f]+)$")
-            if hash and #hash == 64 then
+            local first, last, hash = line:match("^(%d+)%-(%d+): (0x[0-9a-f]+)$")
+            if hash and #hash == 66 then
                 table.insert(ranges, { tonumber(first), tonumber(last) })
             end
         end
@@ -971,8 +971,8 @@ describe("cartesi-machine CLI", function()
         local uarch_range_count = 0
         local reset_ranges = {}
         for line in err:gmatch("[^\n]+") do
-            local hash = line:match(":%s+([0-9a-f]+)$")
-            if hash and #hash == 64 and line:match("^%d+,") then
+            local hash = line:match(":%s+(0x[0-9a-f]+)$")
+            if hash and #hash == 66 and line:match("^%d+,") then
                 uarch_range_count = uarch_range_count + 1
                 local first, uarch_cycle, last = line:match("^(%d+),(%d+)%-(%d+):")
                 if first then
@@ -1248,7 +1248,7 @@ describe("cartesi-machine CLI", function()
             local entries <close> = assert(io.popen("ls -1 " .. shquote(hash_store_base) .. " 2>/dev/null"))
             hash_subdir = entries:read("*l")
         end
-        expect.truthy(hash_subdir and #hash_subdir == 64)
+        expect.truthy(hash_subdir and #hash_subdir == 66 and hash_subdir:sub(1, 2) == "0x")
 
         -- --create=<dir>: create machine store
         local _ <close>, create_dir = scope_stored_dirname()
@@ -2219,16 +2219,12 @@ describe("cartesi-machine CLI", function()
     -- "Before input" (before and after feeding) share the boundary's mcycle label, while leaves
     -- sit at later mcycles. Lines before the first input are boot hashes, not epoch leaves.
     local function parse_epoch_leaves(log)
-        local function unhex(s)
-            return (s:gsub("%x%x", function(b)
-                return string.char(tonumber(b, 16))
-            end))
-        end
+        local unhex = cartesi.fromhex
         local input_leaves, boundaries = {}, {}
         local current, boundary_label
         for line in log:gmatch("[^\n]*") do
             local index = line:match("^Before input (%d+)$")
-            local label, hash = line:match("^(%d+): (%x+)$")
+            local label, hash = line:match("^(%d+): (0x%x+)$")
             if index then
                 current, boundary_label = {}, nil
                 input_leaves[tonumber(index) + 1] = current
@@ -2345,9 +2341,9 @@ describe("cartesi-machine CLI", function()
                 ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
             )
         )
-        local printed = log:match("Mcycle computation hash: (%x+)")
+        local printed = log:match("Mcycle computation hash: (0x%x+)")
         expect.truthy(printed)
-        expect.equal(#printed, 64)
+        expect.equal(#printed, 66)
         expect.truthy(log:find("Mcycle computation hash: " .. printed, 1, true))
 
         -- Bundle roots are interior nodes of the same epoch tree, so the same run with bundling
@@ -2730,7 +2726,7 @@ describe("cartesi-machine CLI", function()
             "--",
             entrypoint,
         })
-        local boundary = tonumber(log:match("Before input 1\n(%d+): %x+"))
+        local boundary = tonumber(log:match("Before input 1\n(%d+): 0x%x+"))
         local reject_mcycle = tonumber(log:match("Manual yield rx%-rejected[^\n]*\nCycles: (%d+)"))
         assert(boundary and reject_mcycle and reject_mcycle > boundary, "could not locate the rejected input")
         -- Add input 1's base period index to the reject's period within that input.
@@ -3170,7 +3166,7 @@ describe("cartesi-machine CLI", function()
         local function hash_lines(log)
             local lines = {}
             for line in log:gmatch("[^\n]+") do
-                if line:match("^[%d,%-]+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
+                if line:match("^[%d,%-]+: 0x[0-9a-f]+$") and #line:match("0x[0-9a-f]+$") == 66 then
                     lines[#lines + 1] = line
                 end
             end

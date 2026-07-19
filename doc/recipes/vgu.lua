@@ -5,7 +5,6 @@
 -- verification of the disputed transition.
 
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
 local socket = require("socket")
 
 --------------------------------------------------------------------------------
@@ -26,7 +25,7 @@ end
 -- The referee narrates the game, kept apart from the wire trace on stderr so the run reads as a
 -- story whether or not tracing is on. A hash is shown by its first four bytes.
 local function short_hash(hash)
-    return "0x" .. util.hexhash(hash):sub(1, 8) .. "..."
+    return cartesi.tohex(hash):sub(1, 10) .. "..."
 end
 
 -- The narration is split into phases, each written to its own file so the rendered walkthrough can

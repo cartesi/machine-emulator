@@ -17,10 +17,9 @@
 --
 
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
 
 local dir = assert(arg[1], "missing machine directory")
 local machine <close> = cartesi.machine(dir)
 local root_hash = machine:get_root_hash()
-local hex_root_hash = util.hexhash(root_hash)
+local hex_root_hash = cartesi.tohex(root_hash)
 print(hex_root_hash)

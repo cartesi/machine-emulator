@@ -686,7 +686,7 @@ local function prepost_suffix(prepost)
         return ""
     end
     local h = cartesi.keccak256(table.concat(prepost))
-    return string.format(".%s", string.sub(util.hexhash(h), 1, 8))
+    return string.format(".%s", string.sub(cartesi.tohex(h), 1, 8))
 end
 
 local function advance_machine_with_uarch_coverage(machine, pc_set)
@@ -826,7 +826,7 @@ local function hash(tests)
                     " ",
                     final_cycle,
                     " ",
-                    util.hexhash(machine:get_root_hash()),
+                    cartesi.tohex(machine:get_root_hash()),
                     "\n"
                 )
                 total_cycles = total_cycles + 1
@@ -849,7 +849,7 @@ local function hash(tests)
             " ",
             machine:read_reg("uarch_cycle"),
             " ",
-            util.hexhash(machine:get_root_hash()),
+            cartesi.tohex(machine:get_root_hash()),
             "\n"
         )
     end
@@ -1009,8 +1009,8 @@ local function run_host_and_uarch_machines(host_machine, uarch_machine, ctx, max
                 "%s: Hash mismatch at mcycle %d: %s ~= %s",
                 ctx.ram_image,
                 host_cycles,
-                util.hexhash(host_hash),
-                util.hexhash(uarch_hash)
+                cartesi.tohex(host_hash),
+                cartesi.tohex(uarch_hash)
             )
         end
         host_machine:run(1 + host_cycles)

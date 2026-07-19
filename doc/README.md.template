@@ -1221,6 +1221,9 @@ When prototyping, developers can create their own files simulating requests that
 #### Encoding requests
 
 The `cartesi-rollup-data.lua` command-line utility, available in the `cartesi/machine-emulator-docs` Docker image, can encode advance-state requests and inspect-state queries to files, and decode vouchers, notices, reports, exceptions, and delegate-call vouchers from files.
+Its `--utf8-payload` option represents payloads as JSON UTF-8 strings, with JSON escaping for quotes, backslashes, and control characters.
+Non-ASCII characters can appear directly or as JSON `\u` escapes; both decode to their UTF-8 byte representation.
+Use the default 0x-prefixed hex or `--base64-payload` instead when payloads contain arbitrary binary data rather than text.
 The calculator we will run treats the payload of each advance-state request as an arbitrary-precision arithmetic expression and emits the result as a notice.
 The following commands encode six such requests as `input-0.bin` through `input-5.bin`, sharing their common structure through a small `encode_input` shell function, and one inspect-state query as `query.bin`:
 
@@ -1228,7 +1231,7 @@ The following commands encode six such requests as `input-0.bin` through `input-
 rm -f *.bin
 # docs:begin
 encode_input() {
-  cartesi-rollup-data.lua encode advance <<EOF
+  cartesi-rollup-data.lua --utf8-payload encode advance <<EOF
 {
   "chain_id": 0,
   "app_contract": "0x0000000000000000000000000000000000000000",
@@ -1237,7 +1240,7 @@ encode_input() {
   "block_timestamp": 0,
   "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "index": $1,
-  "payload": "$(printf '%s\n' "$2" | hex --encode)"
+  "payload": "$2\n"
 }
 EOF
 }
@@ -1247,9 +1250,9 @@ encode_input 2 '2^2048' > input-2.bin
 encode_input 3 '(2^256 - 1) * (2^256 - 1)' > input-3.bin
 encode_input 4 'scale=80; sqrt(2)' > input-4.bin
 encode_input 5 'scale=100; 355/113' > input-5.bin
-cartesi-rollup-data.lua encode inspect > query.bin <<EOF
+cartesi-rollup-data.lua --utf8-payload encode inspect > query.bin <<EOF
 {
-  "payload": "$(printf 'scale=70; (1+sqrt(5))/2\n' | hex --encode)"
+  "payload": "scale=70; (1+sqrt(5))/2\n"
 }
 EOF
 # docs:end
@@ -1302,21 +1305,21 @@ and the output gives the index of the just-output notice as follows
 The `report` command takes the same input format as `notice`.
 However, since reports are not verifiable, there is no associated index to print out.
 
-Shell scripts become surprisingly powerful with the help of the `rollup`, `hex`, and `jq` command-line utilities.
+Shell scripts become surprisingly powerful with the help of the `rollup` and `jq` command-line utilities.
 A `bc`-based arbitrary precision application, for example, might look like this:
 ```{.bash key=rolling_calc_sh include=calc.sh title="calc.sh"}
 ```
 
 The loop in the `calc.sh` script calls `rollup accept` or `rollup reject` (shortcuts for `rollup finish`) to accept or reject the previous request and obtain the next one.
 It uses `jq` to read the `request_type` field, which selects the output verb: an advance-state request emits the result as a notice, and an inspect-state request emits it as a report.
-Both kinds of request carry the expression at `.data.payload`, which `jq` extracts.
-The hex-encoded payload is decoded back to bytes by `hex --decode` and passed to `bc`, which outputs the result split into lines terminated by `\`.
+Both kinds of request carry the expression at `.data.payload`, which `jq` extracts before passing it to `bc`.
+The `bc` utility outputs the result split into lines terminated by `\`.
 Unfortunately, `bc` does not exit with an error when it detects one.
 Instead, it prints a message to the error stream and exits successfully.
 The `grep .` exits with an error in that case, because the output stream of `bc` will be empty.
 Otherwise, `grep .` simply passes the output through unchanged.
-In that case, `tr` utility joins the lines back together.
-The joined result is hex-encoded by `hex --encode` and fed to `jq`, which assembles the proper JSON object with a `"payload"` field that is passed to `rollup notice` or `rollup report`, the verb chosen by the request type.
+In that case, the `tr` utility joins the lines back together.
+The joined result is read by `jq`, which assembles the proper JSON object with a `"payload"` field that is passed to `rollup notice` or `rollup report`, the verb chosen by the request type.
 
 To run `calc.sh`, first create a file-system with the program:
 ```{.bash key=calc_ext2 outputs=calc.ext2 replace=source}
@@ -1474,9 +1477,8 @@ For example, to see the value of `sqrt(2)` computed in the second epoch, decode 
 ```{.bash key=rolling_calc_decode vars=output_3_input_4_bin->rolling_calc_run/output-3-input-4.bin/path replace=source}
 ln -sf $output_3_input_4_bin .
 # docs:begin
-cartesi-rollup-data.lua decode notice < output-3-input-4.bin | \
-    jq -j .payload | \
-    hex --decode | \
+cartesi-rollup-data.lua --utf8-payload decode notice < output-3-input-4.bin | \
+    jq -jr .payload | \
     fold -w 68
 # docs:end
 ```
@@ -1489,9 +1491,8 @@ The inspect-state report is decoded the same way, with `decode report`
 ```{.bash key=rolling_calc_decode_report vars=query_report->rolling_calc_run/query-report-0.bin/path replace=source}
 ln -sf $query_report .
 # docs:begin
-cartesi-rollup-data.lua decode report < query-report-0.bin | \
-    jq -j .payload | \
-    hex --decode | \
+cartesi-rollup-data.lua --utf8-payload decode report < query-report-0.bin | \
+    jq -jr .payload | \
     fold -w 68
 # docs:end
 ```
@@ -1502,7 +1503,7 @@ This is the golden ratio to 70 decimal places.
 
 Vouchers, exceptions, and delegate-call vouchers are also supported by `cartesi-rollup-data.lua decode`.
 A voucher carries a _destination_, a _value_, and a _payload_.
-Payloads are 0x-prefixed hex.
+Payloads use the encoding selected on the command line, 0x-prefixed hex by default.
 
 ### Rolling Cartesi Machine templates
 
@@ -3353,7 +3354,7 @@ First, encode two advance-state requests and one inspect-state query:
 ```{.bash key=rolling_puppet_encode outputs=ls_bin replace=source}
 rm -f *.bin
 # docs:begin
-cartesi-rollup-data.lua encode advance > input-0.bin <<EOF
+cartesi-rollup-data.lua --utf8-payload encode advance > input-0.bin <<EOF
 {
   "chain_id": 0,
   "app_contract": "0x0000000000000000000000000000000000000000",
@@ -3362,10 +3363,10 @@ cartesi-rollup-data.lua encode advance > input-0.bin <<EOF
   "block_timestamp": 0,
   "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "index": 0,
-  "payload": "$(printf 'notice:hello from input 0' | hex --encode)"
+  "payload": "notice:hello from input 0"
 }
 EOF
-cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
+cartesi-rollup-data.lua --utf8-payload encode advance > input-1.bin <<EOF
 {
   "chain_id": 0,
   "app_contract": "0x0000000000000000000000000000000000000000",
@@ -3374,12 +3375,12 @@ cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
   "block_timestamp": 0,
   "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "index": 1,
-  "payload": "$(printf 'something the puppet does not understand' | hex --encode)"
+  "payload": "something the puppet does not understand"
 }
 EOF
-cartesi-rollup-data.lua encode inspect > query.bin <<EOF
+cartesi-rollup-data.lua --utf8-payload encode inspect > query.bin <<EOF
 {
-  "payload": "$(printf 'hello from query!' | hex --encode)"
+  "payload": "hello from query!"
 }
 EOF
 # docs:end
@@ -3436,18 +3437,18 @@ The advance-state request carries the command `puppet` acted on
 ```{.bash key=rolling_puppet_decode_advance vars=rolling_puppet replace=source}
 ln -sf $rolling_puppet/*.bin .
 # docs:begin
-cartesi-rollup-data.lua decode advance < input-0.bin
+cartesi-rollup-data.lua --utf8-payload decode advance < input-0.bin
 # docs:end
 ```
 ```{.js replace=rolling_puppet_decode_advance}
 ```
-The payload field carries the hex encoding of the bytes `notice:hello from input 0`, which the `puppet` parsed as a command to emit a notice with payload `hello from input 0`.
+The payload field shows the decoded bytes `notice:hello from input 0`, which the `puppet` parsed as a command to emit a notice with payload `hello from input 0`.
 
 Notices and reports carry only a payload, which we recover with
 ```{.bash key=rolling_puppet_decode_notice vars=notice->rolling_puppet/output-0-input-0.bin/path replace=source}
 ln -sf $notice .
 # docs:begin
-cartesi-rollup-data.lua decode notice < output-0-input-0.bin | jq -j .payload | hex --decode
+cartesi-rollup-data.lua --utf8-payload decode notice < output-0-input-0.bin | jq -jr .payload
 # docs:end
 ```
 ```{.text replace=rolling_puppet_decode_notice}
@@ -3455,7 +3456,7 @@ cartesi-rollup-data.lua decode notice < output-0-input-0.bin | jq -j .payload | 
 ```{.bash key=rolling_puppet_decode_report vars=report->rolling_puppet/query-report-0.bin/path replace=source}
 ln -sf $report .
 # docs:begin
-cartesi-rollup-data.lua decode report < query-report-0.bin | jq -j .payload | hex --decode
+cartesi-rollup-data.lua --utf8-payload decode report < query-report-0.bin | jq -jr .payload
 # docs:end
 ```
 ```{.text replace=rolling_puppet_decode_report}
@@ -4832,7 +4833,7 @@ ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
 ln -sf "$RECIPES_DIR/vgu.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
-cartesi-rollup-data.lua encode advance > fake-input-2.bin <<EOF
+cartesi-rollup-data.lua --utf8-payload encode advance > fake-input-2.bin <<EOF
 {
   "chain_id": 0,
   "app_contract": "0x0000000000000000000000000000000000000000",
@@ -4841,7 +4842,7 @@ cartesi-rollup-data.lua encode advance > fake-input-2.bin <<EOF
   "block_timestamp": 0,
   "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "index": 2,
-  "payload": "$(printf '%s\n' '2^1024' | hex --encode)"
+  "payload": "2^1024\n"
 }
 EOF
 {
@@ -4955,7 +4956,7 @@ ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
 ln -sf "$RECIPES_DIR/vgu.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
-cartesi-rollup-data.lua encode advance > fake-input-2.bin <<EOF
+cartesi-rollup-data.lua --utf8-payload encode advance > fake-input-2.bin <<EOF
 {
   "chain_id": 0,
   "app_contract": "0x0000000000000000000000000000000000000000",
@@ -4964,7 +4965,7 @@ cartesi-rollup-data.lua encode advance > fake-input-2.bin <<EOF
   "block_timestamp": 0,
   "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "index": 2,
-  "payload": "$(printf '%s\n' '2+2' | hex --encode)"
+  "payload": "2+2\n"
 }
 EOF
 {
@@ -5010,7 +5011,7 @@ ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
 ln -sf "$RECIPES_DIR/vgu.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
-cartesi-rollup-data.lua encode advance > fake-input-3.bin <<EOF
+cartesi-rollup-data.lua --utf8-payload encode advance > fake-input-3.bin <<EOF
 {
   "chain_id": 0,
   "app_contract": "0x0000000000000000000000000000000000000000",
@@ -5019,7 +5020,7 @@ cartesi-rollup-data.lua encode advance > fake-input-3.bin <<EOF
   "block_timestamp": 0,
   "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "index": 3,
-  "payload": "$(printf '%s\n' '3*5' | hex --encode)"
+  "payload": "3*5\n"
 }
 EOF
 {

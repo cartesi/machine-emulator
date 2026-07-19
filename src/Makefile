@@ -377,6 +377,7 @@ LIBCARTESI_OBJS:= \
 	base64.o \
 	clint-address-range.o \
 	dtb.o \
+	hex.o \
 	hash-tree.o \
 	htif-address-range.o \
 	interpret.o \
@@ -435,6 +436,7 @@ LIBCARTESI_JSONRPC_OBJS:= \
 	os.o \
 	cm-jsonrpc.o \
 	base64.o \
+	hex.o \
 	json-util.o
 
 LUACARTESI_JSONRPC_OBJS:= \

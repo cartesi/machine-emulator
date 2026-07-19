@@ -172,7 +172,7 @@ const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx = 
 /// \param ctxidx Index (or pseudo-index) of clua context
 /// \returns It traverses the Lua value while converting to a JSON object
 /// \details The value may be a table, string, number, boolean or nil, allowing a bare hash or scalar to
-/// be serialized (e.g. a binary string under the "Base64" schema), not only a table
+/// be serialized (e.g. a binary string under the "Base64" or "Hex" schema), not only a table
 const char *clua_tojson(lua_State *L, int idx, int indent = -1, const char *schema_name = nullptr,
     const nlohmann::json &user_schema_dict = nlohmann::json(), int ctxidx = lua_upvalueindex(1));
 

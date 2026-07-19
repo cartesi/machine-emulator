@@ -31,6 +31,7 @@ extern "C" {
 #include "clua.hpp"
 #include "cm-version.h"
 #include "cm.h"
+#include "hex.hpp"
 #include "htif-constants.hpp"
 #include "riscv-constants.hpp"
 #include "rollup-constants.hpp"
@@ -136,6 +137,30 @@ static int cartesi_mod_frombase64(lua_State *L) try {
     return 1;
 }
 
+static int cartesi_mod_tohex(lua_State *L) try {
+    size_t size = 0;
+    const char *data = luaL_checklstring(L, 1, &size);
+    std::string &value = *clua_push_new_managed_toclose_ptr(L, encode_hex(std::string_view(data, size)));
+    lua_pushlstring(L, value.data(), value.size());
+    value.clear();
+    return 1;
+} catch (const std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
+static int cartesi_mod_fromhex(lua_State *L) try {
+    size_t size = 0;
+    const char *data = luaL_checklstring(L, 1, &size);
+    std::string &value = *clua_push_new_managed_toclose_ptr(L, decode_hex(std::string_view(data, size)));
+    lua_pushlstring(L, value.data(), value.size());
+    value.clear();
+    return 1;
+} catch (const std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
 static int cartesi_mod_tojson(lua_State *L) try {
     lua_settop(L, 4);
     const int indent = static_cast<int>(luaL_optinteger(L, 2, -1));
@@ -175,6 +200,8 @@ static const auto cartesi_mod = clua_make_luaL_Reg_array({
     {.name = "sha256", .func = cartesi_mod_sha256},
     {.name = "tobase64", .func = cartesi_mod_tobase64},
     {.name = "frombase64", .func = cartesi_mod_frombase64},
+    {.name = "tohex", .func = cartesi_mod_tohex},
+    {.name = "fromhex", .func = cartesi_mod_fromhex},
     {.name = "tojson", .func = cartesi_mod_tojson},
     {.name = "fromjson", .func = cartesi_mod_fromjson},
     {.name = "new", .func = cartesi_mod_new},

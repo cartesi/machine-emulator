@@ -38,6 +38,7 @@ extern "C" {
 #include "clua.hpp"
 #include "cm.h"
 #include "hash-tree-constants.hpp"
+#include "hex.hpp"
 
 namespace cartesi {
 
@@ -281,7 +282,7 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L);
 /// \brief Resolves a type name to its schema definition, following alias chains.
 /// \details A name is looked up in the user dictionary first, then the machine dictionary. It maps
 /// either to an object schema, which is returned, or to a string. A string naming a different type
-/// is an alias and is followed. A string naming itself is a leaf primitive (Base64, ArrayIndex,
+/// is an alias and is followed. A string naming itself is a leaf primitive (Base64, Hex, ArrayIndex,
 /// Schema) and is returned as is. Following aliases is what lets a user type be a bare top-level
 /// alias to a compound machine type (e.g. "AccessLog"), not just to a leaf. An unknown name or a
 /// cyclic chain is an error.
@@ -389,6 +390,8 @@ static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx,
             const std::string_view data(ptr, len);
             if (schema.is_string() && schema.template get<std::string_view>() == "Base64") {
                 j = encode_base64(data);
+            } else if (schema.is_string() && schema.template get<std::string_view>() == "Hex") {
+                j = encode_hex(data);
             } else {
                 j = data;
             }
@@ -438,6 +441,12 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
                 lua_pushlstring(L, binary_data.data(), binary_data.length());
                 lua_replace(L, -3); // move into the placeholder slot
                 lua_pop(L, 1);      // pop binary_data reference
+            } else if (schema.is_string() && schema.template get<std::string_view>() == "Hex") {
+                lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
+                std::string &binary_data = *clua_push_new_managed_toclose_ptr(L, decode_hex(data), ctxidx);
+                lua_pushlstring(L, binary_data.data(), binary_data.length());
+                lua_replace(L, -3); // move into the placeholder slot
+                lua_pop(L, 1);      // pop binary_data reference
             } else if (schema.is_object() && schema.contains(data)) {
                 static const nlohmann::json empty_schema;
                 clua_push_json_value(L, schema.at(data), empty_schema, user_schema_dict, ctxidx);
@@ -480,11 +489,12 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nl
 static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
     // In order to convert Lua tables <-> JSON objects we have to define a schema
     // to transform some special fields, we only care about:
-    // - Binary strings (translate Base64 strings in JSON to binary strings in Lua
-    //   or convert to integers of an enumeration)
+    // - Binary strings (translate Base64 or Hex strings in JSON to binary strings in Lua)
+    // - Enumeration strings (convert to integers of an enumeration)
     // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
     static const nlohmann::json machine_schema_dict = {
         {"Base64", "Base64"},
+        {"Hex", "Hex"},
         {"Schema", "Schema"},
         {"InterpreterBreakReason",
             {{"failed", CM_BREAK_REASON_FAILED}, {"halted", CM_BREAK_REASON_HALTED},

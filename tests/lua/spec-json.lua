@@ -13,6 +13,7 @@ local describe, it, expect = lester.describe, lester.it, lester.expect
 describe("tojson / fromjson schema dictionary", function()
     local machine <close> = cartesi.machine({ ram = { length = 0x1000 } })
     local HASH = string.rep("\xa5", 32)
+    local BINARY = "\0\x01\xfe\xff"
 
     it("should roundtrip a plain table with no schema", function()
         local t = { a = 1, b = "x", c = true, d = { 1, 2, 3 } }
@@ -36,6 +37,42 @@ describe("tojson / fromjson schema dictionary", function()
         expect.equal(#cartesi.fromjson(j), 44)
         -- with the schema it decodes back to the original 32 binary bytes
         expect.equal(cartesi.fromjson(j, "Base64"), HASH)
+    end)
+
+    it("should encode and decode 0x-prefixed hexadecimal", function()
+        expect.equal(cartesi.tohex(BINARY), "0x0001feff")
+        expect.equal(cartesi.fromhex("0x0001feff"), BINARY)
+        expect.equal(cartesi.fromhex("0X0001FEFF"), BINARY)
+        expect.equal(cartesi.tohex(""), "0x")
+        expect.equal(cartesi.fromhex("0x"), "")
+    end)
+
+    it("should serialize a bare string under the Hex schema", function()
+        local j = cartesi.tojson(BINARY, nil, "Hex")
+        expect.equal(j, '"0x0001feff"')
+        expect.equal(cartesi.fromjson(j, "Hex"), BINARY)
+        expect.equal(cartesi.fromjson('"0X0001FEFF"', "Hex"), BINARY)
+    end)
+
+    it("should reject malformed hexadecimal", function()
+        for _, hex in ipairs({ "", "0001", "0y0001", "0x0", "0x00xz", "0x00 01" }) do
+            expect.fail(function()
+                cartesi.fromhex(hex)
+            end, "hex")
+            expect.fail(function()
+                cartesi.fromjson(cartesi.tojson(hex), "Hex")
+            end, "hex")
+        end
+    end)
+
+    it("should apply Hex and Base64 fields from a user schema", function()
+        local SCHEMA = { Msg = { hex = "Hex", base64 = "Base64" } }
+        local msg = { hex = BINARY, base64 = BINARY, label = "hi" }
+        local j = cartesi.tojson(msg, nil, "Msg", SCHEMA)
+        local plain = cartesi.fromjson(j)
+        expect.equal(plain.hex, "0x0001feff")
+        expect.equal(plain.base64, "AAH+/w==")
+        expect.equal(cartesi.fromjson(j, "Msg", SCHEMA), msg)
     end)
 
     it("should apply user schema types Base64 and ArrayIndex", function()

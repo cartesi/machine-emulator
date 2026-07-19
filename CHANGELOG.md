@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added reversion to the recorded revert root hash for rollup inputs that end rejected, when logging steps, logging uarch resets, verifying, and collecting root hashes
 - Added emission of per-output proofs from `--cmio-advance-state`
 - Added an optional user schema dictionary argument to `cartesi.tojson`/`cartesi.fromjson` to name binary and compound fields of caller-defined message types
+- Added `cartesi.tohex`/`cartesi.fromhex` and a `Hex` schema type for `cartesi.tojson`/`cartesi.fromjson`
 - Added a `cartesi.hash-tree` Lua module for hash-tree slice/splice verification and building the output-hashes frontier behind the output proofs
 - Added `get_address_name` to resolve a physical address to a descriptive name, across the C, Lua, and JSON-RPC APIs
 - Added the ability for `--initial-hash` and `--final-hash` to write the hash to a file

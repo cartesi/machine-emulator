@@ -449,7 +449,8 @@ where options are:
         mcycle_computation_hash (default: "")
         write the epoch's 32-byte mcycle computation hash to this file. it is
         the root of the tree of state hashes sampled at the configured period.
-        the hash is printed when determined. requires
+        unused tree positions reserved for an input repeat its final state hash.
+        a rejected input uses its revert root. the hash is printed when determined. requires
         log2_mcycle_computation_hash_period.
 
         log2_mcycle_computation_hash_period (no default)
@@ -465,8 +466,8 @@ where options are:
 
         uarch_cycle_computation_hash (default: "")
         write the 32-byte uarch cycle computation hash for the period selected
-        by mcycle_period_index. the hash covers every uarch transition and
-        reset in that period and is printed when determined. requires
+        by mcycle_period_index. the hash covers every uarch transition,
+        including repetitions of the halt state and reset. it is printed when determined. requires
         log2_mcycle_computation_hash_period and cannot be combined with
         mcycle_computation_hash.
 
@@ -2898,7 +2899,7 @@ local function save_cmio_output_hashes_root_hash_proof(advance, proof)
 end
 
 -- Once the just-run input was accepted or rejected, commit or discard its buffered outputs. Accepted outputs
--- are saved, folded into the running frontier (for the root check), and accumulated for the
+-- are saved, added to the running hash-tree frontier (for the root check), and accumulated for the
 -- end-of-epoch proofs. Otherwise (a reject, halt, or exception) the outputs go to their own files
 -- and never enter the tree.
 local function flush_pending_outputs(machine, advance, yield_reason, data)
@@ -3151,7 +3152,7 @@ local LOG2_HASHES_PER_CHUNK = 8 -- target about 256 returned hashes per collect 
 local LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE = 10 -- assume about 1024 uarch cycles per mcycle
 
 local function uarch_hashes_chunk_size(log2_bundle)
-    -- Besides the uarch cycle bundles, each mcycle produces a halt-padding bundle and a reset bundle.
+    -- Each mcycle also produces an all-halted bundle and a bundle ending at the reset state.
     local cycle_bundle_count = log2_bundle < LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE
             and (1 << (LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE - log2_bundle))
         or 1
@@ -3312,21 +3313,21 @@ local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_b
     }
 end
 
--- The computation hash commits to the history of the epoch: the root of the Merkle tree over
--- machine state hashes sampled every 2^log2_mcycle_computation_hash_period mcycles, each
--- input owning 2^ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE mcycles counted from the state that
--- received it, and the epoch owning 2^ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH inputs. The state
--- that receives the first input is implicit and not included. A machine stopped at a manual yield
--- or halt no longer advances, so the hashes past it repeat its hash. The machine can bundle every
--- 2^log2_bundle samples into a subtree root.
--- Bundle roots are interior nodes of the epoch tree, so the frontier is that much shorter and the
--- root is unchanged. The object below owns this:
--- begin_epoch/begin_input/run/end_input/end_epoch, with its state in self. It is a runner too
--- (run(self, mcycle_end)), used only while an input is being processed; boot and the inspect query
--- run plainly.
+-- The mcycle computation hash commits to an epoch's state history. Each input occupies
+-- 2^ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE mcycles, sampled every
+-- 2^log2_mcycle_computation_hash_period mcycles, and an epoch occupies
+-- 2^ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH inputs. The tree excludes the state at the start of
+-- the first input. If an input stops before using its full mcycle budget, its final state hash fills
+-- the remaining tree positions reserved for that input. A rejected input uses its revert root
+-- hash. The epoch's final state also fills the tree segments reserved for unprocessed inputs.
+-- Bundles are interior nodes of the same tree, so they shorten the frontier without changing its
+-- root.
+--
+-- The claim is a runner while an input executes. Its other methods delimit inputs and the epoch.
+-- boot and inspect queries bypass it.
 
--- Folds one collection into the epoch tree. At a fixed point, the final returned entry pads the
--- remainder of the input. Include it when it fits, then add as many further copies as needed.
+-- Adds a collection's entries to the epoch-tree frontier. At a fixed point, the final returned
+-- entry fills every unfilled position in the tree segment reserved for the current input.
 local function mcycle_computation_hash_push_collected(self, collected)
     local count = umin(#collected.hashes, self.input_entry_capacity - self.input_entry_count)
     for i = 1, count do
@@ -3334,13 +3335,12 @@ local function mcycle_computation_hash_push_collected(self, collected)
     end
     self.input_entry_count = self.input_entry_count + count
     if not is_at_fixed_point(collected.break_reason) then return end
-    assert(#collected.hashes > 0, "fixed-point mcycle collection has no padding entry")
+    assert(#collected.hashes > 0, "fixed-point mcycle collection has no final entry")
     self.pad_entry = collected.hashes[#collected.hashes]
     hash_tree.frontier_pad_back(self.frontier, self.pad_entry, self.input_entry_capacity - self.input_entry_count)
     self.input_entry_count = self.input_entry_capacity
 end
 
--- Sets up the empty epoch tree.
 local function mcycle_computation_hash_begin_epoch(self)
     local log2_entries_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - self.log2_period - self.log2_bundle
     self.frontier = hash_tree.frontier(ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_entries_per_input)
@@ -3348,8 +3348,8 @@ local function mcycle_computation_hash_begin_epoch(self)
     self.pad_entry = nil
 end
 
--- Opens an input's sampling at its boundary (the current mcycle), which the machine has just been
--- fed at, bounding the input to its last sample point (where the next input boundary must sit).
+-- Input delivery does not advance mcycle. Open at the pre-delivery boundary, exclude that boundary
+-- from the samples, and limit collection to one input's mcycle budget.
 local function mcycle_computation_hash_begin_input(self, input_index)
     self.input_index = input_index
     self.input_entry_count = 0
@@ -3358,9 +3358,9 @@ local function mcycle_computation_hash_begin_input(self, input_index)
     self.input_mcycle_end = self.machine:read_reg("mcycle") + (1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
 end
 
--- Samples the input's state hashes up to mcycle_end, folding each returned entry into the epoch
--- tree. self.mcycle_phase and self.partial_bundle thread the period and partially filled bundle
--- across calls.
+-- Samples the input's state hashes up to mcycle_end and adds each returned entry to the epoch-tree
+-- frontier. self.mcycle_phase and self.partial_bundle preserve the sampling period and partial
+-- bundle across calls.
 local function mcycle_computation_hash_run(self, mcycle_end)
     local m = self.machine
     mcycle_end = umin(self.input_mcycle_end, mcycle_end)
@@ -3386,17 +3386,15 @@ local function mcycle_computation_hash_run(self, mcycle_end)
     return collected.break_reason
 end
 
--- Closes the open input, if any. A fixed-point collection has already padded it to capacity.
+-- A completed input must have filled every position in its reserved tree segment.
 local function mcycle_computation_hash_end_input(self)
     if not self.input_entry_count then return end
     assert(self.input_entry_count == self.input_entry_capacity, "mcycle computation hash input is incomplete")
     self.input_entry_count = nil
 end
 
--- Ends the epoch, emitting the computation hash. Only ever called at a fixed point (every input
--- processed, a halt, or an exception), where the remaining positions repeat the hash of the state
--- in which the machine stopped to the end of the epoch. An epoch that received no inputs repeats
--- the hash of the waiting or halted machine everywhere, bundled to the frontier's entry level.
+-- Fill the tree segments reserved for unprocessed inputs with the final fixed-point entry. If no
+-- input ran, obtain that entry directly from the waiting, halted, or overflowed machine.
 local function mcycle_computation_hash_end_epoch(self)
     self:end_input()
     local pad = self.pad_entry
@@ -3409,7 +3407,7 @@ local function mcycle_computation_hash_end_epoch(self)
         )
         assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash ended outside a fixed point")
         pad = collected.hashes[#collected.hashes]
-        assert(pad, "fixed-point mcycle collection has no padding entry")
+        assert(pad, "fixed-point mcycle collection has no final entry")
     end
     local root = hash_tree.frontier_get_root_hash(self.frontier, pad)
     stderr("\nMcycle computation hash: %s\n", cartesi.tohex(root))
@@ -3419,8 +3417,6 @@ local function mcycle_computation_hash_end_epoch(self)
     end
 end
 
--- Builds the computation-hash object for an epoch, reading its geometry and output settings from the
--- advance-state options, advancing the machine through the given runner (the machine itself, or gdb).
 local function make_mcycle_computation_hash(m, advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
     return {
@@ -3438,26 +3434,19 @@ local function make_mcycle_computation_hash(m, advance, runner)
     }
 end
 
--- The uarch cycle computation hash is the second-level claim of a dispute: once the first level
--- names the mcycle computation hash period where the players diverge, each posts the root of the
--- Merkle tree whose leaves are the state hashes after every uarch transition of that one period,
--- the target period, running from target_mcycle_start to target_mcycle_end within the target
--- input. Each mcycle of the period expands into
--- 2^ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE transitions: its uarch cycles (the last being the one
--- where the uarch halts), repetitions of the halt state (a halted uarch no longer advances), and
--- the implicit reset, which lands on the recorded revert root hash when the input was rejected,
--- exactly the transitions the blockchain verifies one by one
--- at the bottom of a dispute. The machine streams each mcycle as bundle roots with the halt
--- repetitions compressed into one entry, and the claim folds the whole target period through a
--- single frontier over those entries, one mcycle at a time. An input stopped at a manual yield
--- or halt no longer advances the main processor, so the target period's mcycles past the stop
--- repeat the fixed-point uarch execution of the stopped state (the reverted state for a rejected
--- input), whose root pads the tree when it closes. The object below is the mcycle claim above
--- restricted to one period:
--- same lifecycle, same runner interface, with the leaves collected per uarch transition instead
--- of per sample point.
+-- The uarch cycle computation hash expands one period of the mcycle claim into the transitions a
+-- bottom-level dispute verifies. For each machine cycle in that period, the tree reserves
+-- 2^ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE leaves. They cover execution through uarch halt,
+-- repetitions of the halt state, and the implicit reset. For a rejected input, the state after
+-- reset has the recorded revert root hash. At a fixed point, collection returns one more group of
+-- uarch state hashes
+-- without advancing the main machine. That group's subtree root fills each remaining machine-cycle
+-- position in the selected period.
+-- collect_uarch_cycle_root_hashes returns bundle roots in hashes. mcycle_hash_offsets marks where
+-- the entries for each machine cycle begin. A bundle root replaces a complete subtree without
+-- changing the claim root.
 
--- Adds one reset-delimited mcycle returned by collect_uarch_cycle_root_hashes to the frontier.
+-- Adds the entries for one machine cycle to the frontier.
 -- The final two entries are the all-halted bundle and the bundle ending in the reset hash.
 -- Push the execution bundles, fill the remaining positions before the final one with copies of
 -- the all-halted bundle (possibly none), and close with the reset-ending bundle.
@@ -3471,9 +3460,10 @@ local function uarch_cycle_computation_hash_push_mcycle(self, frontier, entries,
     hash_tree.frontier_push_back(frontier, entries[last])
 end
 
--- Folds a collection into the target tree and emits its root as soon as it is determined. A
--- collection ending at a fixed point contains one final fixed-point uarch mcycle after the
--- mcycles that led there. That mcycle repeats throughout the remaining suffix.
+-- Adds each machine cycle's entries to the uarch computation-hash tree and emits its root when
+-- complete.
+-- A collection ending at a fixed point includes one extra group that does not advance the main
+-- machine. Its subtree root fills every unfilled machine-cycle position in the selected period.
 local function uarch_cycle_computation_hash_push_collected(self, collected)
     local mcycle_hash_offsets = collected.mcycle_hash_offsets
     local count = umin(#mcycle_hash_offsets - 1, self.period - self.mcycle_count)
@@ -3516,21 +3506,14 @@ local function uarch_cycle_computation_hash_push_collected(self, collected)
     end
 end
 
--- Sets up the empty target period tree, one entry per bundle, 2^log2_bundles_per_mcycle of them
--- per mcycle.
 local function uarch_cycle_computation_hash_begin_epoch(self)
     self.frontier = hash_tree.frontier(self.log2_period + self.log2_bundles_per_mcycle)
     self.mcycle_count = 0
 end
 
--- Opens the target input at its boundary (before it is fed), which the target period's mcycles
--- are counted from, bounding the input to its mcycle budget. Every other input is ignored. The
--- revert uarch tail is the root hashes after each uarch cycle of the boundary machine's fixed-point
--- mcycle, the last cycle being the one where the uarch halts, followed by the boundary root hash
--- itself, which is what the machine records as the revert root hash when the input is fed, and
--- what a reject reverts to. One unbundled collect call at the boundary emits exactly these
--- entries (the boundary is a fixed point, not a rejected yield, so no tail is required, and the
--- call leaves the machine unchanged).
+-- Capture the target input's pre-delivery fixed-point uarch tail. Its final entry is the boundary
+-- root that delivery records as the revert root, allowing collection to model a later rejection.
+-- Other inputs need no uarch collection.
 local function uarch_cycle_computation_hash_begin_input(self, input_index)
     if input_index ~= self.target_input then return end
     local m = self.machine
@@ -3541,10 +3524,7 @@ local function uarch_cycle_computation_hash_begin_input(self, input_index)
     self.revert_uarch_tail = m:collect_uarch_cycle_root_hashes(MCYCLE_MAX, 0).hashes
 end
 
--- Advances the machine up to mcycle_end. Every input other than the target runs plainly. The
--- target input runs plainly up to the target period, collects within it (folding one leaf per
--- mcycle into the tree, with the machine threading across calls split by automatic yields, each
--- ending at a reset entry), and runs plainly past it.
+-- Run plainly outside the target period and collect uarch state hashes within it.
 local function uarch_cycle_computation_hash_run(self, mcycle_end)
     if not self.target_mcycle_start then return self.runner:run(mcycle_end) end
     local m = self.machine
@@ -3559,16 +3539,15 @@ local function uarch_cycle_computation_hash_run(self, mcycle_end)
         if not is_target_mcycle(break_reason) or wanted_mcycle ~= self.target_mcycle_start then return break_reason end
         mcycle = self.target_mcycle_start
     end
-    -- Collect within the target period, pushing each reset-delimited group of stream entries
-    -- into the tree as one mcycle.
+    -- Add the groups returned for machine cycles within the target period.
     local collection_end = umin(self.target_mcycle_end, mcycle_end)
     while math.ult(mcycle, collection_end) do
         local chunk_end = usaturating_add(mcycle, self.chunk_size, collection_end)
         local collected =
             self.runner:collect_uarch_cycle_root_hashes(chunk_end, self.log2_bundle, self.revert_uarch_tail)
         break_reason = collected.break_reason
-        -- When collection reaches a fixed point, its final reset-delimited group is the repeating
-        -- fixed-point uarch mcycle, not another mcycle that advanced the main processor.
+        -- At a fixed point, the final group does not represent a machine cycle that advanced the
+        -- main processor.
         uarch_cycle_computation_hash_push_collected(self, collected)
         mcycle = m:read_reg("mcycle")
         if not is_target_mcycle(break_reason) then break end
@@ -3580,9 +3559,8 @@ local function uarch_cycle_computation_hash_run(self, mcycle_end)
     return break_reason
 end
 
--- Closes the target input, if open. If the target period reached a fixed point, its repeating
--- uarch mcycle already padded the remaining suffix. If execution stopped before the target
--- period, collect that mcycle now from the stopped state.
+-- If the input stopped before reaching the target period, collect one group of uarch state hashes
+-- at the fixed point. Its subtree root fills every machine-cycle position in the period.
 local function uarch_cycle_computation_hash_end_input(self)
     if not self.target_mcycle_start then return end
     self.target_mcycle_start, self.target_mcycle_end, self.revert_uarch_tail = nil, nil, nil
@@ -3594,9 +3572,8 @@ local function uarch_cycle_computation_hash_end_input(self)
     end
 end
 
--- Ends the epoch. Only ever called at a fixed point. A target period never reached (its input
--- never processed, or past the last input) repeats the fixed-point uarch mcycle of the state where
--- the epoch stopped, and is padded here.
+-- If the epoch never processed the target input, collect one group of uarch state hashes at the
+-- epoch's final fixed point and use its subtree root for every machine-cycle position.
 local function uarch_cycle_computation_hash_end_epoch(self)
     self:end_input()
     if self.mcycle_count < self.period then
@@ -3607,9 +3584,6 @@ local function uarch_cycle_computation_hash_end_epoch(self)
     end
 end
 
--- Builds the uarch cycle computation hash object for an epoch, locating the period
--- mcycle_period_index selects within the epoch geometry, and advancing the machine through the
--- given runner (the machine itself, or gdb).
 local function make_uarch_cycle_computation_hash(m, advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
     local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
@@ -3741,9 +3715,9 @@ end
 -- template's first accept yield, then for each input snapshots, feeds, resumes until the input
 -- is accepted or rejected, collecting outputs and reports, and commits or reverts. Every input
 -- processed, a halt, an mcycle overflow, or an exception is a fixed point that determines the
--- computation hash (the stopped state pads the rest of the epoch). Only reaching max_mcycle
--- leaves it undetermined. On a halt, overflow, or exception the interrupted input's outputs are
--- flushed as rejected, and output proofs are written only on full completion.
+-- values placed in all later tree positions reserved by the claim. Only reaching max_mcycle leaves
+-- the computation hash undetermined. On a halt, overflow, or exception the interrupted input's
+-- outputs are flushed as rejected, and output proofs are written only on full completion.
 -- Leaves the machine wherever the epoch stopped. A trailing inspect query, if any, runs against that
 -- state and does nothing unless it is an accept yield. Boot always runs the machine plainly. The
 -- inputs run with the claim, which either collects a computation hash (advancing through the

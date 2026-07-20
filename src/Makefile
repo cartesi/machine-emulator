@@ -238,7 +238,7 @@ ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
 # Enable strict aliasing otherwise the optimizer may generate indirections to the jump table
 # This is fine, because the interpreter is written to comply with strict aliasing rules
 INTERPRET_CXXFLAGS+=-fstrict-aliasing
-# Ensure frame pointers are omited to free an extra register (some distributions enable them by default)
+# Ensure frame pointers are omitted to free an extra register (some distributions enable them by default)
 INTERPTER_CXXFLAGS+=-fomit-frame-pointer
 ifneq (,$(findstring gcc,$(CC)))
 # The following improves computed goto dispatch as stated in GCC manual

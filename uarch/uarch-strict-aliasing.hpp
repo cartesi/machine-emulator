@@ -38,7 +38,7 @@ static inline void *cast_phys_addr_to_ptr(uint64_t paddr) {
     // Enforcement on type arguments
     static_assert(sizeof(void *) == sizeof(uintptr_t));
     static_assert(sizeof(paddr) >= sizeof(uintptr_t));
-    // Note that bellow we cast the address to void* first,
+    // Note that below we cast the address to void* first,
     // according to the C spec this is required is to ensure the same presentation, before casting to PTR
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,bugprone-casting-through-void,performance-no-int-to-ptr)
     return reinterpret_cast<void *>(static_cast<uintptr_t>(paddr));

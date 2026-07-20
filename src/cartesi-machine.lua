@@ -2466,7 +2466,7 @@ cartesi = require("cartesi")
 util = require("cartesi.util")
 hash_tree = require("cartesi.hash-tree")
 
--- And perform the dependant initializations
+-- And perform the dependent initializations
 MCYCLE_MAX = cartesi.MCYCLE_MAX
 max_mcycle = MCYCLE_MAX
 ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE

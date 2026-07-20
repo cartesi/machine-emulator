@@ -73,7 +73,7 @@ static constexpr host_addr operator-(host_addr a, uint64_t b) {
 static inline host_addr cast_ptr_to_host_addr(const void *ptr) {
     static_assert(sizeof(void *) == sizeof(uintptr_t));
     static_assert(sizeof(host_addr) >= sizeof(uintptr_t));
-    // Note that bellow we cast the pointer to void* first,
+    // Note that below we cast the pointer to void* first,
     // according to the C spec this is required is to ensure the same presentation, before casting to uintptr_t
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,bugprone-casting-through-void)
     return host_addr{reinterpret_cast<uintptr_t>(ptr)};
@@ -91,7 +91,7 @@ static inline void *cast_host_addr_to_ptr(host_addr host_addr) {
     // Enforcement on type arguments
     static_assert(sizeof(void *) == sizeof(uintptr_t));
     static_assert(sizeof(host_addr) >= sizeof(uintptr_t));
-    // Note that bellow we cast the address to void* first,
+    // Note that below we cast the address to void* first,
     // according to the C spec this is required is to ensure the same presentation, before casting to PTR
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,bugprone-casting-through-void,performance-no-int-to-ptr)
     return reinterpret_cast<void *>(static_cast<uintptr_t>(host_addr));

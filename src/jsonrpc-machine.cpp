@@ -682,10 +682,11 @@ interpreter_break_reason jsonrpc_machine::do_run(uint64_t mcycle_end) {
 
 mcycle_root_hashes jsonrpc_machine::do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
     uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
-    const std::optional<back_merkle_tree> &previous_back_tree) {
+    const std::optional<back_merkle_tree> &previous_partial_bundle) {
     mcycle_root_hashes result;
     request("machine.collect_mcycle_root_hashes",
-        std::tie(mcycle_end, log2_mcycle_period, mcycle_phase, log2_bundle_mcycle_count, previous_back_tree), result);
+        std::tie(mcycle_end, log2_mcycle_period, mcycle_phase, log2_bundle_mcycle_count, previous_partial_bundle),
+        result);
     return result;
 }
 

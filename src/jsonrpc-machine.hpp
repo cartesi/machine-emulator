@@ -118,7 +118,7 @@ private:
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
         uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
-        const std::optional<back_merkle_tree> &previous_back_tree) override;
+        const std::optional<back_merkle_tree> &previous_partial_bundle) override;
     interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     void do_store(const std::string &dir, sharing_mode sharing) const override;
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;

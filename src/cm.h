@@ -794,64 +794,72 @@ CM_API cm_error cm_write_console_input(cm_machine *m, const uint8_t *data, uint6
 /// cycle overflow, halt, manual yield, then reaching the target mcycle.
 CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
-/// \brief Collects the root hashes after every 2^\p log2_mcycle_period machine cycles
-/// until mcycle reaches \p mcycle_end, the machine yields, or halts.
+/// \brief Collects state root hashes after every 2^\p log2_mcycle_period machine cycles
+/// until mcycle reaches \p mcycle_end or the machine reaches a fixed point (manual yields, halts, mcycle overflows).
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param mcycle_end End machine cycle value.
-/// \param log2_mcycle_period Log base 2 of the number of machine cycles between root hashes to collect.
-/// \param mcycle_phase Number of machine cycles elapsed since last root hash collected.
-/// \param log2_bundle_mcycle_count Log base 2 of the amount of mcycle root hashes to bundle.
-/// If greater than 0, it collects subtree root hashes for 2^log2_bundle_mcycle_count root hashes.
-/// \param previous_back_tree Optional context to continue collecting bundled root hashes.
-/// If not NULL, it must be a JSON object as a string containing the back tree.
+/// \param log2_mcycle_period Log base 2 of the number of machine cycles between sampling points.
+/// \param mcycle_phase Number of machine cycles elapsed in the current sampling period.
+/// \param log2_bundle_mcycle_count Log base 2 of the number of state root hashes covered by each bundle root hash.
+/// \param previous_partial_bundle Optional partial bundle returned by a previous call.
+/// If not NULL, it must be a JSON object as a string containing the partial bundle.
 /// \param result Receives a JSON object as a string, guaranteed to remain valid only until
 /// the next CM_API function is called from the same thread.
-/// The field "hashes" is an array of root hashes (as base64-encoded strings) after each period.
-/// The field "mcycle_phase" is the number of machine cycles elapsed since last root hash collected.
+/// Each entry in "hashes" is a base64-encoded state root hash when \p log2_bundle_mcycle_count is zero, or a bundle
+/// root hash when it is greater than zero.
+/// The field "mcycle_phase" is the number of machine cycles elapsed in the current sampling period.
 /// The field "break_reason" is a string with the reason why the function returned.
 /// (Set to "failed" on failure.)
-/// The optional field "back_tree" is the back tree context to continue collecting bundled root hashes.
+/// The optional field "partial_bundle" contains the partial bundle needed to continue collecting bundled root hashes.
 /// For example:
 /// ```json
 /// {
 ///     "hashes": ["2av44Q3TaHKREgULA/iMoNe+btxCr+ja+hHGtXxaGjM=", ..., "FMAHn7mc2f+I30UjiywbAtOkw99iOa3NWS6fWql3UNU="],
 ///     "mcycle_phase": 1278,
 ///     "break_reason": "yielded_manually",
-///     "back_tree": { ... },
-///     "console_io_error": "...",
+///     "partial_bundle": { ... },
+///     "console_io_error": "..."
 /// }
 /// ```
 /// \returns 0 for success, non zero code for error.
-/// \detail The first hash added to "hashes" is the root hash after
-/// (2^\p log2_mcycle_period - \p mcycle_phase) machine cycles
-/// (if the function managed to get that far before returning).
+/// \detail Periodic sampling points are separated by 2^\p log2_mcycle_period machine cycles. Given
+/// \p mcycle_phase, the next sampling point is reached after
+/// (2^\p log2_mcycle_period - \p mcycle_phase) machine cycles. If execution reaches a fixed point before the next
+/// periodic sampling point, the state root hash at that fixed point is collected as the final state root hash.
 ///
-/// If \p mcycle_end equals the current mcycle, no transition is requested and no root hash is collected.
-/// "break_reason" is the same reason that cm_run() would return.
-/// If \p mcycle_end is greater than the current mcycle and the machine is already at a fixed point, the machine
-/// remains unchanged, "break_reason" reports that fixed point, and its root hash is collected.
+/// When \p log2_bundle_mcycle_count is greater than zero, each entry in "hashes" is the bundle root hash of
+/// 2^log2_bundle_mcycle_count consecutive state root hashes. State root hashes from \p previous_partial_bundle, when
+/// provided, precede those collected by this call in the first returned bundle.
 ///
-/// If "break_reason" is "yielded_manually", "halted", or "mcycle_overflow", execution stopped at a fixed point.
+/// If execution reaches a fixed point, its current state root hash is the final state root hash collected. Without
+/// bundling, that state root hash is the final entry in "hashes" and can be used for padding. With bundling, it is
+/// added to the current partial bundle, whose remaining positions are filled with copies of that state root hash.
+/// The resulting bundle root hash is appended to "hashes", followed by one final bundle root hash covering only
+/// copies of the fixed-point state root hash. This final fixed-point-only bundle root hash plays the same padding role
+/// as the final fixed-point state root hash does without bundling. The preceding bundle root hash may also cover state
+/// root hashes collected before the fixed point.
 ///
-/// If execution stopped on a manual yield whose reason is rx-rejected, the root hash collected at the yield
-/// and the padding that follows are substituted by the recorded revert root hash, which is the root hash
-/// verifiers accept for these state transitions.
+/// When the fixed point is a manual yield whose reason is rx-rejected, the recorded revert root hash is used instead
+/// of the current state root hash. Consequently, the final entry and the padding entry described above are derived
+/// from the recorded revert root hash.
 ///
-/// When \p log2_bundle_mcycle_count is greater than 0 and execution stops at a fixed point, then
-/// the next-to-last hash in "hashes" represents a bundle that is completed by padding with repetitions of the final
-/// root hash, and the last hash in "hashes" represents a bundle consisting entirely of repetitions of that same final
-/// root hash.
+/// If \p mcycle_end equals the current mcycle and the machine is not at a fixed point, no transition is requested
+/// and "hashes" is empty. At a fixed point, the fixed-point entries described above are always returned, and the
+/// machine remains unchanged.
 ///
-/// When execution stops at a 2^log2_mcycle_period boundary or at a fixed point, the "back_tree" field is omitted.
-/// Otherwise the "back_tree" field is included in the result and contains partial root hashes as its context,
-/// and must be passed a subsequent function call to continue bundling root hashes properly.
+/// "break_reason" is the same reason that cm_run() would return. The values "yielded_manually", "halted", and
+/// "mcycle_overflow" identify fixed points.
+///
+/// The "partial_bundle" field is omitted when no partial bundle remains, including whenever execution reaches a fixed
+/// point. Otherwise it contains the partial bundle and must be passed to a subsequent call to continue bundling the
+/// sequence of state root hashes correctly.
 ///
 /// If a console I/O error occurs during execution, it does NOT cause the operation to stop or fail.
 /// Instead, the machine continues running until completion. Any console I/O error message is returned
 /// in the "console_io_error" field of the result JSON object. This allows you to detect and handle
 /// console I/O issues without interrupting the main execution flow.
 CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint64_t log2_mcycle_period,
-    uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count, const char *previous_back_tree, const char **result);
+    uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count, const char *previous_partial_bundle, const char **result);
 
 /// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
@@ -860,54 +868,61 @@ CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason);
 
-/// \brief Collects the root hashes after every uarch cycle until mcycle reaches \p mcycle_end,
-/// the machine yields, or halts. Implicitly resetting the uarch between mcycles.
+/// \brief Collects state root hashes after every uarch cycle until mcycle reaches \p mcycle_end,
+/// or the machine reaches a fixed point (manual yields, halts, or mcycle overflows), implicitly
+/// resetting the uarch between mcycles.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param mcycle_end End machine cycle value to execute, uarch cycle by uarch cycle.
-/// \param log2_bundle_uarch_cycle_count Log base 2 of the amount of uarch cycle root hashes to bundle.
-/// If greater than 0, it collects subtree root hashes for 2^log2_bundle_uarch_cycle_count root hashes.
-/// \param revert_uarch_tail Optional JSON array (of hashes as base64-encoded strings) with the root hashes
-/// after each uarch cycle of the period of the machine the recorded revert root hash reverts to, the last
-/// two entries being the fixed-point hash and the revert root hash after reset (can be NULL).
-/// It is obtained by calling this function with no bundling on that machine, while it waits for a response.
-/// When \p mcycle_end is greater than the current mcycle, it is required unless the machine starts at a fixed point
-/// other than a rejected manual yield. Otherwise the call cannot consume it and ignores it.
+/// \param mcycle_end Value of mcycle to end execution, uarch cycle by uarch cycle.
+/// \param log2_bundle_uarch_cycle_count Log base 2 of the number of state root hashes covered by each bundle root
+/// hash.
+/// \param revert_uarch_tail Optional JSON array of base64-encoded state root hashes after each uarch cycle of the
+/// machine corresponding to the revert root hash. Its final two entries are the state root hash after the uarch
+/// halted and the state root hash after reset, which equals the revert root hash (can be NULL).
+/// It is obtained by calling this function with no bundling on the machine corresponding to revert root hash,
+/// while it waits for a response.
+/// It is required when the machine starts at a rejected manual yield, or when the call may execute a non-fixed-point
+/// mcycle. Otherwise the call cannot consume it and ignores it.
 /// \param result Receives an JSON object as a string, guaranteed to remain valid only until
 /// the next CM_API function is called from the same thread.
-/// The field "hashes" is an array (of hashes as base64-encoded strings) with the root hashes after each uarch cycle.
-/// The field "reset_indices" is an array with indices of the root hashes after each implicit uarch reset
-/// (i.e., after each machine cycle).
+/// Each entry in "hashes" is a base64-encoded state root hash when \p log2_bundle_uarch_cycle_count is zero, or a
+/// bundle root hash when it is greater than zero.
+/// The field "mcycle_hash_offsets" contains half-open offsets delimiting the entries for each mcycle in "hashes".
+/// Its first entry is zero and each subsequent entry is the offset immediately after an implicit uarch reset.
 /// The field "break_reason" is a string with the reason why the function returned.
 /// (Set to "failed" on failure.)
-/// If \p mcycle_end equals the current mcycle, no transition is requested and no root hash is collected.
+/// If \p mcycle_end equals the current mcycle and the machine is not at a fixed point, no transition is requested
+/// and "hashes" is empty. At a fixed point, one complete, reset-delimited mcycle is always represented in "hashes".
 /// "break_reason" is the same reason that cm_run() would return.
 /// For example:
 /// ```json
 /// {
 ///     "hashes": ["2av44Q3TaHKREgULA/iMoNe+btxCr+ja+hHGtXxaGjM=", ..., "FMAHn7mc2f+I30UjiywbAtOkw99iOa3NWS6fWql3UNU="],
-///     "reset_indices": [712, ..., 2293768],
+///     "mcycle_hash_offsets": [0, 713, ..., 2293769],
 ///     "break_reason": "yielded_manually"
 /// }
 /// ```
 /// \returns 0 for success, non zero code for error.
-/// \detail The first hash added to "hashes" is the root hash after the first uarch cycle, the last is the
-/// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
+/// \detail The first state root hash covered by "hashes" is the state root hash after the first uarch cycle. The
+/// final state root hash covered by each mcycle range is the state root hash immediately after the uarch reset.
 ///
-/// Each entry in the "hashes" array represents a bundle of 2^log2_bundle_uarch_cycle_count root hashes.
-/// With a log2 bundle count of zero, each bundle contains one root hash.
-/// For each reset_index value in the "reset_indices" array:
-///   - hashes[reset_index - 1] contains a bundle representing repeated root hashes at the point where the uarch halted
-///     just before the uarch reset.
-///   - hashes[reset_index] contains a bundle representing repeated root hashes at the point where the uarch halted,
-///     followed by a single root hash immediately after the uarch reset.
+/// When \p log2_bundle_uarch_cycle_count is greater than zero, each entry in "hashes" is the bundle root hash of
+/// 2^log2_bundle_uarch_cycle_count consecutive state root hashes.
+/// For each adjacent pair (begin, end) in "mcycle_hash_offsets", entries hashes[begin] through hashes[end - 1]
+/// represent one mcycle:
+///   - Without bundling, hashes[end - 2] is the state root hash after the uarch halted. With bundling, it is the
+///     bundle root hash of copies of that state root hash. It can be used to pad the mcycle up to its final entry.
+///   - Without bundling, hashes[end - 1] is the state root hash immediately after the uarch reset. With bundling, it
+///     is the root hash of the final bundle, which may cover state root hashes collected during execution, followed
+///     by zero or more copies of the state root hash after the uarch halted, and ends with the state root hash
+///     immediately after the uarch reset.
 ///
 /// If "break_reason" is "yielded_manually", "halted", or "mcycle_overflow", execution stopped at a fixed point. In
 /// these cases, the function will attempt to execute one additional mcycle at this fixed point, and collect the
-/// resulting root hashes as well. As a result, all root hashes collected after the next-to-last reset index correspond
-/// to this fixed point.
+/// resulting state root hashes as well. As a result, the range ending at the final mcycle hash offset corresponds to
+/// this fixed point.
 ///
 /// The rejected manual yield is the exception to the paragraph above. When execution stops on a manual yield
-/// whose reason is rx-rejected, the root hash after the final uarch reset is substituted by the recorded
+/// whose reason is rx-rejected, the state root hash after the final uarch reset is replaced by the recorded
 /// revert root hash, and instead of executing one additional mcycle, the function collects one extra period,
 /// that of the reverted machine, as given by \p revert_uarch_tail.
 CM_API cm_error cm_collect_uarch_cycle_root_hashes(cm_machine *m, uint64_t mcycle_end,

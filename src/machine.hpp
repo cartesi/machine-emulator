@@ -229,32 +229,33 @@ public:
     ///  halts. The break reason precedence is cycle overflow, halt, manual yield, then reaching the target mcycle.
     interpreter_break_reason run(uint64_t mcycle_end);
 
-    /// \brief Collects the root hashes after every 2^\p log2_mcycle_period machine cycles
-    /// until mcycle reaches \p mcycle_end, the machine yields, or halts.
+    /// \brief Collects state root hashes after every 2^\p log2_mcycle_period machine cycles until mcycle reaches
+    /// \p mcycle_end or the machine reaches a fixed point.
     /// \param mcycle_end Maximum value of mcycle before function returns.
-    /// \param log2_mcycle_period Log base 2 of the number of machine cycles between root hashes to collect.
-    /// \param mcycle_phase Number of machine cycles elapsed since last root hash collected.
-    /// \param log2_bundle_mcycle_count Log base 2 of the amount of mcycle root hashes to bundle.
-    /// If greater than 0, it collects subtree root hashes for 2^log2_bundle_mcycle_count root hashes.
-    /// \param previous_back_tree Optional context to continue collecting bundled root hashes.
+    /// \param log2_mcycle_period Log base 2 of the number of machine cycles between sampling points.
+    /// \param mcycle_phase Number of machine cycles elapsed in the current sampling period.
+    /// \param log2_bundle_mcycle_count Log base 2 of the number of state root hashes covered by each bundle root hash.
+    /// \param previous_partial_bundle Optional partial bundle returned by a previous call.
     /// \returns The collected mcycle root hashes.
-    /// Stores into result.hashes the root hashes after each period.
-    /// Stores into result.mcycle_phase the number of machine cycles after last root hash collected.
+    /// Each entry in result.hashes is a state root hash when \p log2_bundle_mcycle_count is zero, or a bundle root
+    /// hash when it is greater than zero.
+    /// Stores into result.mcycle_phase the number of machine cycles elapsed in the current sampling period.
     /// Stores into result.break_reason the reason the function returned.
-    /// Stores into result.back_tree the back tree context to continue collecting bundled root hashes.
-    /// \detail The first hash added to \p result.hashes is the root hash after
-    /// (2^\p log2_mcycle_period - \p mcycle_phase) machine cycles
-    /// (if the function managed to get that far before returning).
-    /// If \p mcycle_end equals the current mcycle, no transition is requested and no root hash is collected.
-    /// result.break_reason is the same reason that run() would return. If \p mcycle_end is greater than the current
-    /// mcycle and the machine is already at a fixed point, the machine remains unchanged, result.break_reason reports
-    /// that fixed point, and its root hash is collected.
-    /// When the machine stops on a manual yield whose reason is rx-rejected, the root hash collected at the
-    /// yield and the padding that follows are substituted by the recorded revert root hash, which is the root
-    /// hash verifiers accept for these state transitions.
+    /// Stores into result.partial_bundle the partial bundle needed to continue the collection.
+    /// \detail The next periodic sampling point is reached after
+    /// (2^\p log2_mcycle_period - \p mcycle_phase) machine cycles. If execution reaches a fixed point before that
+    /// sampling point, the state root hash at the fixed point is collected as the final state root hash. When
+    /// bundling, that state root hash is added to the current partial bundle, whose remaining positions are filled
+    /// with copies of it, and the resulting bundle root hash is returned. One additional bundle root hash covering
+    /// only copies of the fixed-point state root hash is returned afterward and can be used for padding. Without
+    /// bundling, the fixed-point state root hash itself can be used for padding. For an rx-rejected manual yield, the
+    /// recorded revert root hash is used instead of the current state root hash.
+    /// If \p mcycle_end equals the current mcycle and the machine is not at a fixed point, no transition is requested
+    /// and result.hashes is empty. At a fixed point, the fixed-point entries described above are always returned.
+    /// result.break_reason is the same reason that run() would return.
     mcycle_root_hashes collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
         uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
-        const std::optional<back_merkle_tree> &previous_back_tree = {});
+        const std::optional<back_merkle_tree> &previous_partial_bundle = {});
 
     /// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
     /// \param mcycle_count Number of mcycles to run the machine for.
@@ -276,30 +277,33 @@ public:
     /// \param uarch_cycle_end uarch_cycle limit
     uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end);
 
-    /// \brief Collects the root hashes after every uarch cycle until mcycle reaches \p mcycle_end,
+    /// \brief Collects state root hashes after every uarch cycle until mcycle reaches \p mcycle_end,
     /// the machine yields, or halts. Implicitly resetting the uarch between mcycles.
     /// \param mcycle_end End machine cycle value to execute, uarch cycle by uarch cycle.
-    /// \param log2_bundle_uarch_cycle_count Log base 2 of the amount of uarch cycle root hashes to bundle.
-    /// \param revert_uarch_tail Root hashes after each uarch cycle of the period of the machine the recorded
-    /// revert root hash reverts to. Its final two entries are the fixed-point hash and the revert root hash after
-    /// reset. It is obtained by calling this function with no bundling on that machine, while it waits for a response.
-    /// When \p mcycle_end is greater than the current mcycle, it is required unless the machine starts at a fixed
-    /// point other than a rejected manual yield. Otherwise the call cannot consume it and ignores it.
+    /// \param log2_bundle_uarch_cycle_count Log base 2 of the number of state root hashes covered by each bundle root
+    /// hash.
+    /// \param revert_uarch_tail State root hashes after each uarch cycle of the period of the machine the recorded
+    /// revert root hash reverts to. Its final two entries are the state root hash after the uarch halted and the
+    /// state root hash after reset, which equals the revert root hash. It is obtained by calling this function with
+    /// no bundling on that machine, while it waits for a response.
+    /// It is required when the machine starts at a rejected manual yield, or when the call may execute a
+    /// non-fixed-point mcycle. Otherwise the call cannot consume it and ignores it.
     /// \returns The collected uarch cycle root hashes.
-    /// Stores into result.hashes the root hashes after each uarch cycle.
-    /// Stores into result.reset_indices the indices of the root hashes after each implicit uarch reset
-    /// (i.e., after each machine cycle).
+    /// Each entry in result.hashes is a state root hash when \p log2_bundle_uarch_cycle_count is zero, or a bundle
+    /// root hash when it is greater than zero.
+    /// Stores into result.mcycle_hash_offsets half-open offsets delimiting the entries for each mcycle in
+    /// result.hashes. The first offset is zero and each subsequent offset immediately follows an implicit uarch reset.
     /// Stores into result.break_reason the reason why the function returned.
-    /// If \p mcycle_end equals the current mcycle, no transition is requested and no root hash is collected.
+    /// If \p mcycle_end equals the current mcycle and the machine is not at a fixed point, no transition is requested
+    /// and result.hashes is empty. At a fixed point, one complete, reset-delimited mcycle is always represented.
     /// result.break_reason is the same reason that run() would return.
-    /// \detail The first hash added to \p result.hashes is the root hash after the first uarch cycle, the last is the
-    /// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
-    /// For each reset index, the preceding entry is an all-fixed-point bundle and the indexed entry is a bundle of
-    /// fixed-point hashes ending with the reset hash. This also applies without bundling, when the two entries are
-    /// simply the fixed-point hash and the reset hash.
-    /// When the machine ends in a manual yield whose reason is rx-rejected, the root hash after the final uarch
-    /// reset is substituted by the recorded revert root hash, and one extra period, that of the reverted machine
-    /// as given by \p revert_uarch_tail, is collected after it.
+    /// \detail Without bundling, the final two entries in each mcycle range are the state root hash after the uarch
+    /// halted and the state root hash after reset. With bundling, the next-to-last entry is the bundle root hash of
+    /// copies of the halted state root hash and can be used for padding. The last entry is the final bundle root hash.
+    /// It may cover state root hashes collected during execution, followed by copies of the halted state root hash,
+    /// and ends with the state root hash after reset. When the machine ends in an rx-rejected manual yield, the state
+    /// root hash after reset is replaced by the recorded revert root hash, and one extra period from
+    /// \p revert_uarch_tail is collected after it.
     uarch_cycle_root_hashes collect_uarch_cycle_root_hashes(uint64_t mcycle_end, int32_t log2_bundle_uarch_cycle_count,
         const machine_hashes &revert_uarch_tail = {});
 

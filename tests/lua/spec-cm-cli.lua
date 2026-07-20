@@ -886,6 +886,18 @@ describe("cartesi-machine CLI", function()
         expect.truthy(err:find("Cycles: 1000", 1, true))
     end)
 
+    it("mcycle reaches the maximum unsigned value before overflowing", function()
+        local _ <close>, cfg_file = scope_temp_pathname()
+        run_ok({ "--max-mcycle=0", "--no-init-splash", "--quiet", "--store-config=" .. cfg_file })
+        local cfg_text, count = filesystem.read_file(cfg_file):gsub("mcycle = 0x%x+", "mcycle = 0xffffffffffffff00")
+        expect.equal(count, 1)
+        local _ <close>, overflow_cfg_file = filesystem.write_scope_temp_file(cfg_text)
+        local rc, _, err = run({ "--load-config=" .. overflow_cfg_file, "--no-init-splash" })
+        expect.equal(rc, 1)
+        expect.truthy(err:find("Mcycle overflow", 1, true))
+        expect.truthy(err:find("Cycles: 18446744073709551615", 1, true))
+    end)
+
     -- -------------------------------------------------------------------------
     -- Hashing and proof options
     --
@@ -2199,83 +2211,33 @@ describe("cartesi-machine CLI", function()
     --       the state hashes sampled every 2^log2_mcycle_computation_hash_period mcycles,
     --       each input owning the number of mcycles specified by
     --       ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE, counted from the state that received it,
-    --       leaves past a stop repeating the stopped
-    --       state's hash (the reverted state hash for a reject), and leaves
-    --       past the last input repeating the last such hash.
+    --       positions past a stop repeating the stopped state's hash (the
+    --       reverted state hash for a reject), and positions past the last
+    --       input repeating the last such hash.
     -- How:  Advance three inputs where ioctl-echo-loop --reject=1 rejects the
     --       middle one, on a remote server, which reverts require.
-    --       mcycle_computation_hash_leaves prints each leaf, and the
-    --       print_input_state_hashes sub-key
-    --       prints each input's boundary state. Rebuild the full epoch tree from
-    --       the printed leaves and compare it against the mcycle_computation_hash file,
-    --       and check the rejected input's last leaf is the boundary hash it
-    --       reverted to. Then rerun with bundling, whose bundle roots are
-    --       interior nodes of the same tree, and expect the same hash.
+    --       print_input_state_hashes prints each input's boundary state, showing
+    --       that the rejected input reverts to its boundary while accepted inputs
+    --       advance the state. Check that the printed and stored computation hashes
+    --       agree, then rerun with bundling and expect the same hash.
     -- -------------------------------------------------------------------------
 
-    -- Collects the leaves mcycle_computation_hash_leaves printed for each input, and each input's
-    -- boundary hash printed by the print_input_state_hashes sub-key. The two
-    -- print_input_state_hashes lines after
-    -- "Before input" (before and after feeding) share the boundary's mcycle label, while leaves
-    -- sit at later mcycles. Lines before the first input are boot hashes, not epoch leaves.
-    local function parse_epoch_leaves(log)
-        local unhex = cartesi.fromhex
-        local input_leaves, boundaries = {}, {}
-        local current, boundary_label
+    -- Collects the first state root hash printed after each "Before input" line: the input's
+    -- boundary state before its response is delivered.
+    local function parse_input_boundaries(log)
+        local boundaries = {}
+        local input
         for line in log:gmatch("[^\n]*") do
             local index = line:match("^Before input (%d+)$")
-            local label, hash = line:match("^(%d+): (0x%x+)$")
+            local hash = line:match("^%d+: (0x%x+)$")
             if index then
-                current, boundary_label = {}, nil
-                input_leaves[tonumber(index) + 1] = current
-            elseif line:match("^Mcycle computation hash: ") then
-                current = nil
-            elseif current and label then
-                if not boundary_label then
-                    boundary_label = label
-                    boundaries[#input_leaves] = unhex(hash)
-                elseif label ~= boundary_label then
-                    current[#current + 1] = unhex(hash)
-                end
+                input = tonumber(index) + 1
+            elseif input and hash then
+                boundaries[input] = cartesi.fromhex(hash)
+                input = nil
             end
         end
-        return input_leaves, boundaries
-    end
-
-    -- Root of the tree of the given height whose leaves are the given ones followed by
-    -- repetitions of pad to the end. Each level hashes the padding value with itself, since the
-    -- epoch geometry is far too large to enumerate.
-    local function padded_root(leaves, pad, height)
-        local level = leaves
-        for _ = 1, height do
-            local parents = {}
-            for k = 1, #level - 1, 2 do
-                parents[#parents + 1] = cartesi.keccak256(level[k], level[k + 1])
-            end
-            if #level % 2 == 1 then
-                parents[#parents + 1] = cartesi.keccak256(level[#level], pad)
-            end
-            pad = cartesi.keccak256(pad, pad)
-            level = parents
-        end
-        return level[1] or pad
-    end
-
-    -- The epoch tree over the collected leaves: each input's leaves padded to capacity with its
-    -- last leaf, and the rest of the epoch padded with the last leaf of all (a whole input's worth
-    -- of its repetitions per remaining input).
-    local function epoch_root(input_leaves, log2_leaves_per_input, log2_inputs)
-        local input_roots = {}
-        local pad
-        for _, leaves in ipairs(input_leaves) do
-            assert(#leaves > 0 and #leaves <= 1 << log2_leaves_per_input, "bad input leaf count")
-            pad = leaves[#leaves]
-            input_roots[#input_roots + 1] = padded_root(leaves, pad, log2_leaves_per_input)
-        end
-        for _ = 1, log2_leaves_per_input do
-            pad = cartesi.keccak256(pad, pad)
-        end
-        return padded_root(input_roots, pad, log2_inputs)
+        return boundaries
     end
 
     it("mcycle computation hash across an epoch with a reject", function()
@@ -2290,6 +2252,7 @@ describe("cartesi-machine CLI", function()
                 prefix .. "-chin-2.bin",
                 prefix .. "-ch.bin",
                 prefix .. "-chb.bin",
+                prefix .. "-final.bin",
             }) do
                 os.remove(p)
             end
@@ -2312,39 +2275,28 @@ describe("cartesi-machine CLI", function()
                 .. "-ch.bin,"
                 .. "log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
-                .. ",mcycle_computation_hash_leaves,print_input_state_hashes",
+                .. ",print_input_state_hashes",
+            "--final-hash=" .. prefix .. "-final.bin",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--",
             "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1",
         })
 
-        local input_leaves, boundaries = parse_epoch_leaves(log)
-        expect.equal(#input_leaves, 3)
-        -- the rejected input's last leaf is the reverted state's hash: the boundary it started
-        -- from, which is also where the next input starts
-        expect.equal(input_leaves[2][#input_leaves[2]], boundaries[2])
+        local boundaries = parse_input_boundaries(log)
+        expect.equal(#boundaries, 3)
+        -- The first input advances the state, the second reverts to its boundary, and the third
+        -- advances the final state.
+        expect.not_equal(boundaries[2], boundaries[1])
         expect.equal(boundaries[3], boundaries[2])
-        -- the accepted inputs advanced the state
-        expect.not_equal(input_leaves[1][#input_leaves[1]], boundaries[1])
-        expect.not_equal(input_leaves[3][#input_leaves[3]], boundaries[3])
+        expect.not_equal(filesystem.read_file(prefix .. "-final.bin"), boundaries[3])
 
-        -- the computation hash file holds the root of the tree over the printed leaves, and the
-        -- printed hash agrees with it
+        -- The computation hash is both printed and stored.
         local ch = filesystem.read_file(prefix .. "-ch.bin")
         expect.equal(#ch, 32)
-        expect.equal(
-            ch,
-            epoch_root(
-                input_leaves,
-                ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
-                ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
-            )
-        )
         local printed = log:match("Mcycle computation hash: (0x%x+)")
         expect.truthy(printed)
-        expect.equal(#printed, 66)
-        expect.truthy(log:find("Mcycle computation hash: " .. printed, 1, true))
+        expect.equal(cartesi.fromhex(printed), ch)
 
         -- Bundle roots are interior nodes of the same epoch tree, so the same run with bundling
         -- must produce the same computation hash.
@@ -2416,17 +2368,18 @@ describe("cartesi-machine CLI", function()
     --
     -- What: A halt is a fixed point like a manual yield, so a machine that
     --       halts while processing an input still determines the computation
-    --       hash: the input's remaining leaves and the rest of the epoch repeat
+    --       hash: the input's remaining positions and the rest of the epoch repeat
     --       the halted state hash.
     -- How:  The guest accepts one input and exits instead of yielding again.
-    --       Rebuild the tree from the printed leaves (the halt hash is the last
-    --       one) and compare with the mcycle_computation_hash file.
+    --       Check that the computation hash is emitted and that bundling does not
+    --       change it.
     -- -------------------------------------------------------------------------
     it("mcycle computation hash when the machine halts mid-input", function()
         local prefix = filesystem.temp_pathname()
         local _ <close> = utils.scope_exit(function()
             os.remove(prefix .. "-chh-0.bin")
             os.remove(prefix .. "-chh.bin")
+            os.remove(prefix .. "-chhb.bin")
         end)
         filesystem.write_file(prefix .. "-chh-0.bin", encode_advance(0, "last-input"))
         local _, log = run_ok({
@@ -2440,8 +2393,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-chh.bin,"
                 .. "log2_mcycle_computation_hash_period:"
-                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
-                .. ",mcycle_computation_hash_leaves,print_input_state_hashes",
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--no-revert",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -2449,23 +2401,38 @@ describe("cartesi-machine CLI", function()
             "rollup accept",
         })
         expect.truthy(log:find("\nHalted\n", 1, true))
-        local input_leaves = parse_epoch_leaves(log)
-        expect.equal(#input_leaves, 1)
-        expect.equal(
-            filesystem.read_file(prefix .. "-chh.bin"),
-            epoch_root(
-                input_leaves,
-                ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
-                ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
-            )
-        )
+        local ch = filesystem.read_file(prefix .. "-chh.bin")
+        expect.equal(#ch, 32)
+        expect.equal(cartesi.fromhex(log:match("Mcycle computation hash: (0x%x+)")), ch)
+
+        run_ok({
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-chh-%i.bin,"
+                .. "input_index_begin:0,input_index_end:1,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "mcycle_computation_hash:"
+                .. prefix
+                .. "-chhb.bin,"
+                .. "log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",log2_bundle_mcycle_count:2",
+            "--no-revert",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "rollup accept",
+        })
+        expect.equal(filesystem.read_file(prefix .. "-chhb.bin"), ch)
     end)
 
     -- -------------------------------------------------------------------------
     -- Computation hash option validation
     --
     -- What: The computation hash sub-keys reject inconsistent geometry, and the
-    --       run refuses configurations whose leaves could not stand a dispute
+    --       run refuses configurations whose state-hash sequence could not stand a dispute
     --       (--print-mcycle-root-hashes alongside it, a reject with reverts off, an
     --       input that overruns its mcycles). A run that stops before the epoch
     --       ends produces no computation hash.
@@ -2538,15 +2505,15 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- -------------------------------------------------------------------------
-    -- Computation hash needs consistent leaves
+    -- Rejected input computation hashes require reverts
     --
     -- What: A reject with reverts off leaves the machine in a state that does
-    --       not match the reverted leaves, so it must fail rather than emit a
+    --       not match the reverted computation history, so it must fail rather than emit a
     --       hash a dispute would lose. (The input-overrun error is untestable
     --       now that each input's budget is fixed by the exported rollup geometry.)
     -- How:  Boot and feed inputs that trigger the case, matching the error.
     -- -------------------------------------------------------------------------
-    it("mcycle computation hash needs consistent leaves", function()
+    it("mcycle computation hash requires reverts for rejected inputs", function()
         local prefix = filesystem.temp_pathname()
         local _ <close> = utils.scope_exit(function()
             os.remove(prefix .. "-chr-0.bin")

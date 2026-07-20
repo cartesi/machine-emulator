@@ -18,7 +18,7 @@
 #define COLLECT_UARCH_CYCLE_HASHES_STATE_ACCESS_HPP
 
 /// \file
-/// \brief State access implementation that record and logs all accesses
+/// \brief State access implementation used to track dirty words during uarch cycle hash collection.
 #include <cstdint>
 #include <stdexcept>
 
@@ -35,7 +35,7 @@
 
 namespace cartesi {
 
-/// \details The collect_uarch_cycle_hashes_state_access logs all access to the machine state.
+/// \brief Tracks dirty words while executing uarch cycles for state root hash collection.
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class collect_uarch_cycle_hashes_state_access :
     public i_uarch_state_access<collect_uarch_cycle_hashes_state_access>,
@@ -54,9 +54,9 @@ private:
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
-    /// \brief Constructor from machine and uarch states.
-    /// \param m Reference to machine state.
-    /// \param log Reference to log.
+    /// \brief Constructor.
+    /// \param c Context receiving dirty words.
+    /// \param m Machine being interpreted.
     collect_uarch_cycle_hashes_state_access(context &c, machine &m) : m_c(c), m_m(m) {}
 
 private:

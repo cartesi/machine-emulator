@@ -25,11 +25,11 @@
 
 namespace cartesi {
 
-/// \brief Collected uarch cycle root hashes
+/// \brief Result of collecting uarch cycle state root hashes
 struct uarch_cycle_root_hashes {
-    machine_hashes hashes;                   ///< Root hashes after each uarch cycle
-    std::vector<uint64_t> reset_indices;     ///< Indices into hashes[] after each uarch reset
-    interpreter_break_reason break_reason{}; ///< Reason why function returned
+    machine_hashes hashes;                        ///< Result entries: state root hashes or bundle root hashes
+    std::vector<uint64_t> mcycle_hash_offsets{0}; ///< Half-open offsets delimiting each mcycle's entries in hashes[]
+    interpreter_break_reason break_reason{};      ///< Reason why function returned
 };
 
 } // namespace cartesi

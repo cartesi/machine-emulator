@@ -699,15 +699,16 @@ cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reaso
 }
 
 cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint64_t log2_mcycle_period,
-    uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count, const char *previous_back_tree, const char **result) try {
+    uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count, const char *previous_partial_bundle,
+    const char **result) try {
     if (result == nullptr) {
         throw std::invalid_argument("invalid result output");
     }
     auto *cpp_m = convert_from_c(m);
-    const auto cpp_previous_back_tree =
-        cartesi::from_json<std::optional<cartesi::back_merkle_tree>>(previous_back_tree, "previous_back_tree");
+    const auto cpp_previous_partial_bundle = cartesi::from_json<std::optional<cartesi::back_merkle_tree>>(
+        previous_partial_bundle, "previous_partial_bundle");
     const auto cpp_res = cpp_m->collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period, mcycle_phase,
-        log2_bundle_mcycle_count, cpp_previous_back_tree);
+        log2_bundle_mcycle_count, cpp_previous_partial_bundle);
     *result = cm_set_temp_string(cartesi::to_json(cpp_res).dump());
     return cm_result_success();
 } catch (...) {

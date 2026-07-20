@@ -7,6 +7,7 @@ lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
 local filesystem = require("cartesi.filesystem")
+local hash_tree = require("cartesi.hash-tree")
 local tabular = require("cartesi.tabular")
 local util = require("cartesi.util")
 local utils = require("cartesi.utils")
@@ -84,7 +85,7 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
         -- this reference implementation does not support partial period
         assert(machine:read_reg("mcycle") == mcycle_end, "unsupported call")
     end
-    local back_tree
+    local partial_bundle
     if log2_bundle_mcycle_count and log2_bundle_mcycle_count > 0 then
         local bundle_mcycle_count = 1 << log2_bundle_mcycle_count
         if at_fixed_point then
@@ -97,7 +98,7 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
                 table.insert(hashes, hashes[#hashes])
             end
         elseif #hashes % bundle_mcycle_count ~= 0 then
-            back_tree = {
+            partial_bundle = {
                 log2_max_leaves = log2_bundle_mcycle_count,
                 leaf_count = #hashes % bundle_mcycle_count,
                 hash_function = machine:get_initial_config().hash_tree.hash_function,
@@ -111,7 +112,7 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
                 table.insert(next_hashes, cartesi.keccak256(hashes[i * 2 + 1], hashes[i * 2 + 2]))
             end
             if #hashes % 2 == 1 then
-                table.insert(back_tree.context, hashes[#hashes])
+                table.insert(partial_bundle.context, hashes[#hashes])
             end
             hashes = next_hashes
         end
@@ -120,7 +121,7 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
         hashes = hashes,
         break_reason = break_reason,
         mcycle_phase = mcycle_phase,
-        back_tree = back_tree,
+        partial_bundle = partial_bundle,
     }
 end
 
@@ -128,7 +129,7 @@ local function expect_next_mcycle_uarch_root_hashes(
     machine,
     mcycle,
     hashes,
-    reset_indices,
+    mcycle_hash_offsets,
     log2_bundle_uarch_cycle_count
 )
     for uarch_cycle = 1, math.maxinteger do
@@ -163,11 +164,16 @@ local function expect_next_mcycle_uarch_root_hashes(
         table.insert(hashes, halt_root_hash)
         table.insert(hashes, reset_root_hash)
     end
-    table.insert(reset_indices, #hashes)
+    table.insert(mcycle_hash_offsets, #hashes + 1)
 end
 
 -- Appends the period of the reverted machine, as given by the revert uarch tail
-local function expect_revert_uarch_tail_period(hashes, reset_indices, revert_uarch_tail, log2_bundle_uarch_cycle_count)
+local function expect_revert_uarch_tail_period(
+    hashes,
+    mcycle_hash_offsets,
+    revert_uarch_tail,
+    log2_bundle_uarch_cycle_count
+)
     for i = 1, #revert_uarch_tail - 2 do
         table.insert(hashes, revert_uarch_tail[i])
     end
@@ -189,7 +195,7 @@ local function expect_revert_uarch_tail_period(hashes, reset_indices, revert_uar
         table.insert(hashes, halt_root_hash)
         table.insert(hashes, reset_root_hash)
     end
-    table.insert(reset_indices, #hashes)
+    table.insert(mcycle_hash_offsets, #hashes + 1)
 end
 
 local function expect_uarch_cycle_root_hashes(machine, mcycle_end, log2_bundle_uarch_cycle_count, revert_uarch_tail)
@@ -198,14 +204,26 @@ local function expect_uarch_cycle_root_hashes(machine, mcycle_end, log2_bundle_u
     assert(machine:read_reg("iflags_H") == 0, "unsupported call")
     assert(machine:read_reg("iflags_Y") == 0, "unsupported call")
     local hashes = {}
-    local reset_indices = {}
+    local mcycle_hash_offsets = { 1 }
     local break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
     local mcycle_start = machine:read_reg("mcycle")
     for mcycle = mcycle_start + 1, mcycle_end do
-        expect_next_mcycle_uarch_root_hashes(machine, mcycle, hashes, reset_indices, log2_bundle_uarch_cycle_count)
+        expect_next_mcycle_uarch_root_hashes(
+            machine,
+            mcycle,
+            hashes,
+            mcycle_hash_offsets,
+            log2_bundle_uarch_cycle_count
+        )
         if machine:read_reg("iflags_H") ~= 0 then
             break_reason = cartesi.BREAK_REASON_HALTED
-            expect_next_mcycle_uarch_root_hashes(machine, mcycle, hashes, reset_indices, log2_bundle_uarch_cycle_count)
+            expect_next_mcycle_uarch_root_hashes(
+                machine,
+                mcycle,
+                hashes,
+                mcycle_hash_offsets,
+                log2_bundle_uarch_cycle_count
+            )
             break
         end
         if machine:read_reg("iflags_Y") ~= 0 then
@@ -213,13 +231,18 @@ local function expect_uarch_cycle_root_hashes(machine, mcycle_end, log2_bundle_u
             if is_rejected_manual_yield(machine) then
                 -- the canonical timeline continues from the reverted machine,
                 -- whose period is given by the revert uarch tail
-                expect_revert_uarch_tail_period(hashes, reset_indices, revert_uarch_tail, log2_bundle_uarch_cycle_count)
+                expect_revert_uarch_tail_period(
+                    hashes,
+                    mcycle_hash_offsets,
+                    revert_uarch_tail,
+                    log2_bundle_uarch_cycle_count
+                )
             else
                 expect_next_mcycle_uarch_root_hashes(
                     machine,
                     mcycle,
                     hashes,
-                    reset_indices,
+                    mcycle_hash_offsets,
                     log2_bundle_uarch_cycle_count
                 )
             end
@@ -239,15 +262,15 @@ local function expect_uarch_cycle_root_hashes(machine, mcycle_end, log2_bundle_u
                 table.insert(next_hashes, cartesi.keccak256(hashes[i * 2 + 1], hashes[i * 2 + 2]))
             end
             hashes = next_hashes
-            for i = 1, #reset_indices do
-                assert(reset_indices[i] % 2 == 0)
-                reset_indices[i] = reset_indices[i] // 2
+            for i = 1, #mcycle_hash_offsets do
+                assert((mcycle_hash_offsets[i] - 1) % 2 == 0)
+                mcycle_hash_offsets[i] = (mcycle_hash_offsets[i] - 1) // 2 + 1
             end
         end
     end
     return {
         hashes = hashes,
-        reset_indices = reset_indices,
+        mcycle_hash_offsets = mcycle_hash_offsets,
         break_reason = assert(break_reason),
     }
 end
@@ -279,7 +302,7 @@ local function collect_mcycle_root_hashes_in_parts(
             log2_mcycle_period(mcycle_period),
             last.mcycle_phase,
             log2_bundle_mcycle_count,
-            last.back_tree
+            last.partial_bundle
         )
         tabular.append(hashes, last.hashes)
         if last.break_reason ~= cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
@@ -290,7 +313,7 @@ local function collect_mcycle_root_hashes_in_parts(
         hashes = hashes,
         break_reason = last.break_reason,
         mcycle_phase = last.mcycle_phase,
-        back_tree = last.back_tree,
+        partial_bundle = last.partial_bundle,
     }
 end
 
@@ -301,15 +324,15 @@ local function collect_uarch_cycle_root_hashes_in_parts(
     revert_uarch_tail
 )
     local hashes = {}
-    local reset_indices = {}
+    local mcycle_hash_offsets = { 1 }
     local break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
     for _, target in ipairs(targets) do
         local collected =
             machine:collect_uarch_cycle_root_hashes(target, log2_bundle_uarch_cycle_count, revert_uarch_tail)
         local hash_count = #hashes
         tabular.append(hashes, collected.hashes)
-        for _, reset_index in ipairs(collected.reset_indices) do
-            table.insert(reset_indices, hash_count + reset_index)
+        for i = 2, #collected.mcycle_hash_offsets do
+            table.insert(mcycle_hash_offsets, hash_count + collected.mcycle_hash_offsets[i])
         end
         break_reason = collected.break_reason
         if break_reason ~= cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
@@ -318,7 +341,7 @@ local function collect_uarch_cycle_root_hashes_in_parts(
     end
     return {
         hashes = hashes,
-        reset_indices = reset_indices,
+        mcycle_hash_offsets = mcycle_hash_offsets,
         break_reason = break_reason,
     }
 end
@@ -353,7 +376,7 @@ describe("collect hashes", function()
                 end, "mcycle is past")
             end)
 
-            it("should fail when collecting with incompatible back trees", function()
+            it("should fail when collecting with an incompatible partial bundle", function()
                 local machine <close> = create_machine({ ram = { length = 4096 } })
                 expect.fail(function()
                     machine:collect_mcycle_root_hashes(32, log2_mcycle_period(32), 0, 0, {
@@ -364,7 +387,7 @@ describe("collect hashes", function()
                             string.rep("\x00", 32),
                         },
                     })
-                end, "back tree context is incompatible")
+                end, "partial bundle is incompatible")
                 expect.fail(function()
                     machine:collect_mcycle_root_hashes(32, log2_mcycle_period(32), 0, 0, {
                         log2_max_leaves = 0,
@@ -435,7 +458,7 @@ describe("collect hashes", function()
                 )
                 expect.equal(machine:collect_uarch_cycle_root_hashes(mcycle_end), {
                     hashes = {},
-                    reset_indices = {},
+                    mcycle_hash_offsets = { 1 },
                     break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
                 })
             end)
@@ -462,11 +485,9 @@ describe("collect hashes", function()
                     machine_uarch:collect_uarch_cycle_root_hashes(mcycle_end, 0, pristine_revert_uarch_tail)
                 expect.equal(machine_uarch:read_reg("mcycle"), mcycle_end)
                 expect.equal(machine_uarch:get_root_hash(), machine:get_root_hash())
-                expect.equal(#collected_uarch.reset_indices, mcycle_end - mcycle_start)
-                expect.equal(
-                    collected_uarch.hashes[collected_uarch.reset_indices[#collected_uarch.reset_indices]],
-                    machine_uarch:get_root_hash()
-                )
+                expect.equal(#collected_uarch.mcycle_hash_offsets - 1, mcycle_end - mcycle_start)
+                local last_offset = collected_uarch.mcycle_hash_offsets[#collected_uarch.mcycle_hash_offsets]
+                expect.equal(collected_uarch.hashes[last_offset - 1], machine_uarch:get_root_hash())
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
             end)
 
@@ -518,8 +539,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_HALTED)
-                expect.equal(#collected_uarch.reset_indices, 1)
-                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[1]], expected_root_hash)
+                expect.equal(#collected_uarch.mcycle_hash_offsets, 2)
+                expect.equal(collected_uarch.hashes[collected_uarch.mcycle_hash_offsets[2] - 1], expected_root_hash)
             end)
 
             it("should break as mcycle overflow when collecting with an mcycle overflow machine", function()
@@ -546,8 +567,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
-                expect.equal(#collected_uarch.reset_indices, 1)
-                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[1]], expected_root_hash)
+                expect.equal(#collected_uarch.mcycle_hash_offsets, 2)
+                expect.equal(collected_uarch.hashes[collected_uarch.mcycle_hash_offsets[2] - 1], expected_root_hash)
             end)
 
             it("should break as yielded when collecting with a yielded machine", function()
@@ -574,12 +595,12 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
-                expect.equal(#collected_uarch.reset_indices, 1)
-                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[1]], expected_root_hash)
+                expect.equal(#collected_uarch.mcycle_hash_offsets, 2)
+                expect.equal(collected_uarch.hashes[collected_uarch.mcycle_hash_offsets[2] - 1], expected_root_hash)
             end)
 
             it("should pad bundles when collecting from an existing fixed point", function()
-                local mcycle_end = 32
+                local mcycle_end = 0
                 local mcycle_period = 32
                 local mcycle_phase = 1
                 local log2_bundle_mcycle_count = 2
@@ -619,7 +640,7 @@ describe("collect hashes", function()
                 expect.equal(
                     machine:collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period(mcycle_period), mcycle_phase),
                     {
-                        hashes = {},
+                        hashes = { expected_root_hash },
                         break_reason = cartesi.BREAK_REASON_HALTED,
                         mcycle_phase = mcycle_phase,
                     }
@@ -630,8 +651,8 @@ describe("collect hashes", function()
                 local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_HALTED)
-                expect.equal(#collected_uarch.reset_indices, 0)
-                expect.equal(#collected_uarch.hashes, 0)
+                expect.equal(#collected_uarch.mcycle_hash_offsets, 2)
+                expect.equal(collected_uarch.hashes[collected_uarch.mcycle_hash_offsets[2] - 1], expected_root_hash)
             end)
 
             it("should report yield on same-target mcycle and uarch collection", function()
@@ -645,7 +666,7 @@ describe("collect hashes", function()
                 expect.equal(
                     machine:collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period(mcycle_period), mcycle_phase),
                     {
-                        hashes = {},
+                        hashes = { expected_root_hash },
                         break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
                         mcycle_phase = mcycle_phase,
                     }
@@ -656,8 +677,8 @@ describe("collect hashes", function()
                 local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
-                expect.equal(#collected_uarch.reset_indices, 0)
-                expect.equal(#collected_uarch.hashes, 0)
+                expect.equal(#collected_uarch.mcycle_hash_offsets, 2)
+                expect.equal(collected_uarch.hashes[collected_uarch.mcycle_hash_offsets[2] - 1], expected_root_hash)
             end)
 
             it("should require the revert uarch tail when collecting with a running machine", function()
@@ -705,18 +726,32 @@ describe("collect hashes", function()
                 -- the machine is not touched, the period comes entirely from the tail
                 expect.equal(machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, revert_uarch_tail), {
                     hashes = revert_uarch_tail,
-                    reset_indices = { #revert_uarch_tail },
+                    mcycle_hash_offsets = { 1, #revert_uarch_tail + 1 },
                     break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
                 })
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                -- A same-target call reports the fixed point but performs no transition
-                expect.equal(machine:collect_uarch_cycle_root_hashes(machine:read_reg("mcycle")), {
-                    hashes = {},
-                    reset_indices = {},
-                    break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
-                })
+                -- A same-target call still returns the fixed-point period, which requires the tail.
+                expect.fail(function()
+                    machine:collect_uarch_cycle_root_hashes(machine:read_reg("mcycle"))
+                end, "revert uarch tail is required")
+                expect.equal(
+                    machine:collect_uarch_cycle_root_hashes(machine:read_reg("mcycle"), 0, revert_uarch_tail),
+                    {
+                        hashes = revert_uarch_tail,
+                        mcycle_hash_offsets = { 1, #revert_uarch_tail + 1 },
+                        break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
+                    }
+                )
                 expect.equal(machine:get_root_hash(), expected_root_hash)
+
+                -- A running same-target call still performs no transition.
+                local running_machine <close> = create_machine({ ram = { length = 4096 } })
+                expect.equal(running_machine:collect_uarch_cycle_root_hashes(running_machine:read_reg("mcycle")), {
+                    hashes = {},
+                    mcycle_hash_offsets = { 1 },
+                    break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+                })
 
                 -- The mcycle collector substitutes the recorded revert root hash at the fixed point
                 expect.equal(machine:collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period(32), 1), {
@@ -724,6 +759,14 @@ describe("collect hashes", function()
                     break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
                     mcycle_phase = 1,
                 })
+                expect.equal(
+                    machine:collect_mcycle_root_hashes(machine:read_reg("mcycle"), log2_mcycle_period(32), 1),
+                    {
+                        hashes = { revert_root_hash },
+                        break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
+                        mcycle_phase = 1,
+                    }
+                )
             end)
 
             it("should collect mcycles during mcycle overflow", function()
@@ -750,7 +793,7 @@ describe("collect hashes", function()
                         machine:read_reg("mcycle") % 32
                     ),
                     {
-                        hashes = {},
+                        hashes = { machine:get_root_hash() },
                         break_reason = cartesi.BREAK_REASON_MCYCLE_OVERFLOW,
                         mcycle_phase = machine:read_reg("mcycle") % mcycle_period,
                     }
@@ -765,17 +808,17 @@ describe("collect hashes", function()
                     machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0, pristine_revert_uarch_tail)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
                 local expected_root_hash = machine:get_root_hash()
-                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[1]], expected_root_hash)
-                expect.equal(collected_uarch.hashes[collected_uarch.reset_indices[2]], expected_root_hash)
-                expect.equal(#collected_uarch.reset_indices, 2)
+                expect.equal(collected_uarch.hashes[collected_uarch.mcycle_hash_offsets[2] - 1], expected_root_hash)
+                expect.equal(collected_uarch.hashes[collected_uarch.mcycle_hash_offsets[3] - 1], expected_root_hash)
+                expect.equal(#collected_uarch.mcycle_hash_offsets, 3)
                 expect.equal(machine:read_reg("mcycle"), cartesi.MCYCLE_MAX)
                 expect.equal(machine:read_reg("iflags_H"), 0)
 
                 collected_uarch = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
-                expect.equal(#collected_uarch.reset_indices, 0)
-                expect.equal(#collected_uarch.hashes, 0)
+                expect.equal(#collected_uarch.mcycle_hash_offsets, 2)
+                expect.equal(collected_uarch.hashes[collected_uarch.mcycle_hash_offsets[2] - 1], expected_root_hash)
             end)
 
             local add_machine_config = {
@@ -908,20 +951,27 @@ describe("collect hashes", function()
 
                     local mcycle_machine <close> = make_case_machine(case)
                     root_hash = mcycle_machine:get_root_hash()
-                    expect.equal(mcycle_machine:collect_mcycle_root_hashes(0, log2_mcycle_period(4)), {
-                        hashes = {},
-                        break_reason = case.expected,
-                        mcycle_phase = 0,
-                    })
+                    local collected_mcycle = mcycle_machine:collect_mcycle_root_hashes(0, log2_mcycle_period(4))
+                    expect.equal(collected_mcycle.break_reason, case.expected)
+                    expect.equal(collected_mcycle.mcycle_phase, 0)
+                    if case.expected == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
+                        expect.equal(collected_mcycle.hashes, {})
+                    else
+                        expect.equal(collected_mcycle.hashes, { root_hash })
+                    end
                     expect.equal(mcycle_machine:get_root_hash(), root_hash)
 
                     local uarch_machine <close> = make_case_machine(case)
                     root_hash = uarch_machine:get_root_hash()
-                    expect.equal(uarch_machine:collect_uarch_cycle_root_hashes(0), {
-                        hashes = {},
-                        reset_indices = {},
-                        break_reason = case.expected,
-                    })
+                    local collected = uarch_machine:collect_uarch_cycle_root_hashes(0)
+                    expect.equal(collected.break_reason, case.expected)
+                    if case.expected == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
+                        expect.equal(collected.hashes, {})
+                        expect.equal(collected.mcycle_hash_offsets, { 1 })
+                    else
+                        expect.equal(#collected.mcycle_hash_offsets, 2)
+                        expect.equal(collected.hashes[collected.mcycle_hash_offsets[2] - 1], root_hash)
+                    end
                     expect.equal(uarch_machine:get_root_hash(), root_hash)
                 end
             end)
@@ -984,7 +1034,7 @@ describe("collect hashes", function()
                 end
             end)
 
-            it("should bundle mcycle root hashes leaving no back tree context when last bundle is complete", function()
+            it("should bundle mcycle root hashes leaving no partial bundle when the last bundle is complete", function()
                 local max_log2_bundle_mcycle_count = 3
                 local mcycle_start = 1
                 local mcycle_period = 8
@@ -1001,7 +1051,7 @@ describe("collect hashes", function()
                         mcycle_phase,
                         log2_bundle_mcycle_count
                     )
-                    expect.not_exist(collected.back_tree)
+                    expect.not_exist(collected.partial_bundle)
                     local expected_collected = expect_mcycle_root_hashes(
                         compare_machine,
                         mcycle_end,
@@ -1031,7 +1081,7 @@ describe("collect hashes", function()
                     mcycle_phase,
                     log2_bundle_mcycle_count
                 )
-                expect.not_exist(collected.back_tree)
+                expect.not_exist(collected.partial_bundle)
                 local expected_collected = expect_mcycle_root_hashes(
                     compare_machine,
                     mcycle_end,
@@ -1080,7 +1130,7 @@ describe("collect hashes", function()
                     expect.exist(collected.console_io_error)
                     expect.truthy(collected.console_io_error:find("console output flush failed"))
                     collected.console_io_error = nil
-                    expect.not_exist(collected.back_tree)
+                    expect.not_exist(collected.partial_bundle)
                     local expected_collected = expect_mcycle_root_hashes(
                         compare_machine,
                         mcycle_end,
@@ -1094,37 +1144,40 @@ describe("collect hashes", function()
                 end)
             end
 
-            it("should bundle mcycle root hashes leaving a back tree context when last bundle is incomplete", function()
-                local max_log2_bundle_mcycle_count = 3
-                local mcycle_start = 1
-                local mcycle_period = 8
-                local mcycle_end = mcycle_period * ((1 << max_log2_bundle_mcycle_count) + 1)
-                local mcycle_phase = mcycle_start % mcycle_period
-                for log2_bundle_mcycle_count = 1, max_log2_bundle_mcycle_count do
-                    local machine <close> = create_machine(add_machine_config)
-                    local compare_machine <close> = cartesi.machine(add_machine_config)
-                    machine:run(mcycle_start)
-                    compare_machine:run(mcycle_start)
-                    local collected = machine:collect_mcycle_root_hashes(
-                        mcycle_end,
-                        log2_mcycle_period(mcycle_period),
-                        mcycle_phase,
-                        log2_bundle_mcycle_count
-                    )
-                    expect.exist(collected.back_tree)
-                    local expected_collected = expect_mcycle_root_hashes(
-                        compare_machine,
-                        mcycle_end,
-                        mcycle_period,
-                        mcycle_phase,
-                        log2_bundle_mcycle_count
-                    )
-                    expect.equal(collected, expected_collected)
-                    expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+            it(
+                "should bundle mcycle root hashes leaving a partial bundle when the last bundle is incomplete",
+                function()
+                    local max_log2_bundle_mcycle_count = 3
+                    local mcycle_start = 1
+                    local mcycle_period = 8
+                    local mcycle_end = mcycle_period * ((1 << max_log2_bundle_mcycle_count) + 1)
+                    local mcycle_phase = mcycle_start % mcycle_period
+                    for log2_bundle_mcycle_count = 1, max_log2_bundle_mcycle_count do
+                        local machine <close> = create_machine(add_machine_config)
+                        local compare_machine <close> = cartesi.machine(add_machine_config)
+                        machine:run(mcycle_start)
+                        compare_machine:run(mcycle_start)
+                        local collected = machine:collect_mcycle_root_hashes(
+                            mcycle_end,
+                            log2_mcycle_period(mcycle_period),
+                            mcycle_phase,
+                            log2_bundle_mcycle_count
+                        )
+                        expect.exist(collected.partial_bundle)
+                        local expected_collected = expect_mcycle_root_hashes(
+                            compare_machine,
+                            mcycle_end,
+                            mcycle_period,
+                            mcycle_phase,
+                            log2_bundle_mcycle_count
+                        )
+                        expect.equal(collected, expected_collected)
+                        expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+                    end
                 end
-            end)
+            )
 
-            it("should bundle mcycle root hashes continuing from a previous back tree context", function()
+            it("should bundle mcycle root hashes continuing from a previous partial bundle", function()
                 local max_log2_bundle_mcycle_count = 3
                 local mcycle_start = 1
                 local mcycle_period = 8
@@ -1145,7 +1198,7 @@ describe("collect hashes", function()
                             log2_mcycle_period(mcycle_period),
                             last_collected.mcycle_phase,
                             log2_bundle_mcycle_count,
-                            last_collected.back_tree
+                            last_collected.partial_bundle
                         )
                         tabular.append(all_hashes, last_collected.hashes)
                         if
@@ -1160,9 +1213,9 @@ describe("collect hashes", function()
                         mcycle_phase = last_collected.mcycle_phase,
                         break_reason = last_collected.break_reason,
                         hashes = all_hashes,
-                        back_tree = last_collected.back_tree,
+                        partial_bundle = last_collected.partial_bundle,
                     }
-                    expect.not_exist(all_collected.back_tree)
+                    expect.not_exist(all_collected.partial_bundle)
                     local expected_collected = expect_mcycle_root_hashes(
                         compare_machine,
                         mcycle_end,
@@ -1175,7 +1228,7 @@ describe("collect hashes", function()
                 end
             end)
 
-            it("should bundle mcycle root hashes leaving no back tree context when halting", function()
+            it("should bundle mcycle root hashes leaving no partial bundle when halting", function()
                 local max_log2_bundle_mcycle_count = 6
                 local mcycle_start = 2
                 local mcycle_period = 32
@@ -1192,7 +1245,7 @@ describe("collect hashes", function()
                         mcycle_phase,
                         log2_bundle_mcycle_count
                     )
-                    expect.not_exist(collected.back_tree)
+                    expect.not_exist(collected.partial_bundle)
                     local expected_collected = expect_mcycle_root_hashes(
                         compare_machine,
                         mcycle_end,
@@ -1206,7 +1259,7 @@ describe("collect hashes", function()
                 end
             end)
 
-            it("should bundle mcycle root hashes leaving no back tree context when yielding", function()
+            it("should bundle mcycle root hashes leaving no partial bundle when yielding", function()
                 local max_log2_bundle_mcycle_count = 6
                 local mcycle_start = 3
                 local mcycle_period = 4
@@ -1223,7 +1276,7 @@ describe("collect hashes", function()
                         mcycle_phase,
                         log2_bundle_mcycle_count
                     )
-                    expect.not_exist(collected.back_tree)
+                    expect.not_exist(collected.partial_bundle)
                     local expected_collected = expect_mcycle_root_hashes(
                         compare_machine,
                         mcycle_end,
@@ -1258,6 +1311,55 @@ describe("collect hashes", function()
                 end
             end)
 
+            it("should end the last uarch bundle with the reset hash", function()
+                local log2_bundle_uarch_cycle_count = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+                local bundle_uarch_cycle_count = 1 << log2_bundle_uarch_cycle_count
+                local config = { ram = { length = 4096 } }
+                local machine <close> = create_machine(config)
+                local compare_machine <close> = cartesi.machine(config)
+                local revert_root_hash = machine:read_revert_root_hash()
+                local collected = machine:collect_uarch_cycle_root_hashes(1, log2_bundle_uarch_cycle_count, {
+                    revert_root_hash,
+                    revert_root_hash,
+                })
+
+                local frontier = hash_tree.frontier(log2_bundle_uarch_cycle_count)
+                local execution_uarch_cycle_count = 0
+                for uarch_cycle = 1, math.maxinteger do
+                    local break_reason = compare_machine:run_uarch(uarch_cycle)
+                    if break_reason == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
+                        break
+                    end
+                    hash_tree.frontier_push_back(frontier, compare_machine:get_root_hash())
+                    execution_uarch_cycle_count = execution_uarch_cycle_count + 1
+                end
+                expect.truthy(execution_uarch_cycle_count > 0)
+                expect.truthy(execution_uarch_cycle_count < bundle_uarch_cycle_count - 1)
+
+                local halt_root_hash = compare_machine:get_root_hash()
+                local all_halted_bundle_hash = halt_root_hash
+                for _ = 1, log2_bundle_uarch_cycle_count do
+                    all_halted_bundle_hash = cartesi.keccak256(all_halted_bundle_hash, all_halted_bundle_hash)
+                end
+                hash_tree.frontier_pad_back(
+                    frontier,
+                    halt_root_hash,
+                    bundle_uarch_cycle_count - execution_uarch_cycle_count - 1
+                )
+                compare_machine:reset_uarch()
+                hash_tree.frontier_push_back(frontier, compare_machine:get_root_hash())
+
+                expect.equal(collected, {
+                    hashes = {
+                        all_halted_bundle_hash,
+                        hash_tree.frontier_get_root_hash(frontier),
+                    },
+                    mcycle_hash_offsets = { 1, 3 },
+                    break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+                })
+                expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+            end)
+
             it("should include the halt root immediately before an unbundled reset", function()
                 local mcycle_start = 256
                 local machine <close> = create_machine(add_machine_config)
@@ -1277,8 +1379,8 @@ describe("collect hashes", function()
                 compare_machine:reset_uarch()
                 local reset_root_hash = compare_machine:get_root_hash()
 
-                expect.equal(#collected.reset_indices, 1)
-                local reset_index = collected.reset_indices[1]
+                expect.equal(#collected.mcycle_hash_offsets, 2)
+                local reset_index = collected.mcycle_hash_offsets[2] - 1
                 expect.equal(collected.hashes[reset_index - 1], halt_root_hash)
                 expect.equal(collected.hashes[reset_index], reset_root_hash)
             end)
@@ -1303,7 +1405,7 @@ describe("collect hashes", function()
                         log2_mcycle_period(mcycle_period),
                         last_collected.mcycle_phase,
                         log2_bundle_mcycle_count,
-                        last_collected.back_tree
+                        last_collected.partial_bundle
                     )
                     if collected.break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
                         if is_rejected_manual_yield(machine) then
@@ -1333,7 +1435,7 @@ describe("collect hashes", function()
                 local revert_root_hash = machine:get_root_hash()
                 local bootstrap = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX)
                 expect.equal(bootstrap.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
-                expect.equal(#bootstrap.reset_indices, 1)
+                expect.equal(#bootstrap.mcycle_hash_offsets, 2)
                 local revert_uarch_tail = bootstrap.hashes
                 expect.equal(revert_uarch_tail[#revert_uarch_tail], revert_root_hash)
                 expect.equal(machine:get_root_hash(), revert_root_hash)
@@ -1624,7 +1726,7 @@ describe("collect hashes", function()
                             if is_rejected_manual_yield(machine) then
                                 -- the last period is the reverted machine period, ending on the revert root hash
                                 expect.equal(
-                                    collected.hashes[collected.reset_indices[#collected.reset_indices]],
+                                    collected.hashes[collected.mcycle_hash_offsets[#collected.mcycle_hash_offsets] - 1],
                                     yield_revert_root_hash
                                 )
                                 count_rejected_yields = count_rejected_yields + 1

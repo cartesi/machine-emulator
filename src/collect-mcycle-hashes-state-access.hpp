@@ -46,7 +46,7 @@ struct i_state_access_fast_addr<collect_mcycle_hashes_state_access> {
 };
 
 /// \class collect_mcycle_hashes_state_access
-/// \brief Records machine state access into a step log file
+/// \brief Tracks dirty pages while executing machine cycles for state root hash collection.
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class collect_mcycle_hashes_state_access :
     public i_state_access<collect_mcycle_hashes_state_access>,
@@ -60,15 +60,14 @@ public:
 private:
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     processor_state &m_s; ///< reference to processor state
-    context &m_c;         ///< context for dirty words
+    context &m_c;         ///< context for dirty pages
     machine &m_m;         ///< reference to machine
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
-    /// \brief Constructor of record step state access
-    /// \param context Context for the recording with the log filename
-    /// \param m reference to machine
-    /// \details The log file is saved when finish() is called
+    /// \brief Constructor.
+    /// \param c Context receiving dirty pages.
+    /// \param m Machine being interpreted.
     collect_mcycle_hashes_state_access(context &c, machine &m) : m_s(m.get_state()), m_c(c), m_m(m) {}
 
 private:

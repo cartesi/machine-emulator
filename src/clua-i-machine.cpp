@@ -548,12 +548,12 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
             {
                 {"hashes", "Base64Array"},
                 {"break_reason", "InterpreterBreakReason"},
-                {"back_tree", "BackMerkleTree"},
+                {"partial_bundle", "PartialBundle"},
             }},
         {"UarchCycleRootHashes",
-            {{"hashes", "Base64Array"}, {"reset_indices", "ArrayArrayIndex"},
+            {{"hashes", "Base64Array"}, {"mcycle_hash_offsets", "ArrayArrayIndex"},
                 {"break_reason", "InterpreterBreakReason"}}},
-        {"BackMerkleTree",
+        {"PartialBundle",
             {
                 {"context", "Base64Array"},
             }},
@@ -1177,10 +1177,10 @@ static int machine_obj_index_collect_mcycle_root_hashes(lua_State *L) {
     const uint64_t log2_mcycle_period = luaL_checkinteger(L, 3);
     const uint64_t mcycle_phase = luaL_optinteger(L, 4, 0);
     const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_optinteger(L, 5, 0));
-    const char *previous_back_tree = !lua_isnil(L, 6) ? clua_tojson(L, 6, -1, "BackMerkleTree") : nullptr;
+    const char *previous_partial_bundle = !lua_isnil(L, 6) ? clua_tojson(L, 6, -1, "PartialBundle") : nullptr;
     const char *result = nullptr;
     if (cm_collect_mcycle_root_hashes(m.get(), mcycle_end, log2_mcycle_period, mcycle_phase,
-            log2_bundle_uarch_cycle_count, previous_back_tree, &result) != 0) {
+            log2_bundle_uarch_cycle_count, previous_partial_bundle, &result) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_fromjson(L, result, "McycleRootHashes");

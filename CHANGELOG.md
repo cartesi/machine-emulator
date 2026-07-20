@@ -27,11 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added LuaCov-based coverage tracking for Lua code, integrated with the gcov report pipeline
 - Added a JSON-RPC C API coverage suite and converted `test-cm-cli` and `test-evmu` to the lester spec format
 - Added `spec-cm-cli.lua` covering every command-line option of `cartesi-machine.lua`
-- Added `mcycle_computation_hash`, `log2_mcycle_computation_hash_period`, `mcycle_computation_hash_leaves`, and `log2_bundle_mcycle_count` sub-options to `--cmio-advance-state`, emitting the epoch's mcycle computation hash (the Merkle tree of state hashes sampled every 2^`log2_mcycle_computation_hash_period` mcycles, each input owning 2^48 mcycles and the epoch 2^24 inputs, matching the on-chain dispute geometry, with fixed points padding each input's span and the end of the epoch), optionally printing its leaves, and optionally bundling every 2^N samples into one machine call
+- Added `mcycle_computation_hash`, `log2_mcycle_computation_hash_period`, and `log2_bundle_mcycle_count` sub-options to `--cmio-advance-state`, emitting the epoch's mcycle computation hash (the Merkle tree of state hashes sampled every 2^`log2_mcycle_computation_hash_period` mcycles, each input owning 2^48 mcycles and the epoch 2^24 inputs, matching the on-chain dispute geometry, with fixed points padding each input's span and the end of the epoch), and optionally bundling every 2^N samples into one machine call
 - Added `uarch_cycle_computation_hash`, `mcycle_period_index`, and `log2_bundle_uarch_cycle_count` sub-options to `--cmio-advance-state`, emitting the uarch cycle computation hash of one mcycle computation hash period: the Merkle tree of the state hashes after every uarch transition of that period, matching the state transitions verified on-chain during the second level of a dispute
 - Added `frontier_pad_back` to the `cartesi.hash-tree` Lua module, padding a frontier with copies of a leaf, a top slot to the frontier so an exactly-full tree keeps its root, and optional log2 entry sizes to `frontier_push_back`, `frontier_pad_back`, and `frontier_get_root_hash`, pushing or padding with complete subtree roots instead of leaves
 
 ## Fixed
+- Fixed bundled uarch-cycle root-hash collection when the uarch halts in the final bundle, preserving the execution hashes that precede the halt padding and reset
+- Fixed `cartesi-machine` and GDB hash collection to use the full unsigned 64-bit mcycle range, allowing execution to reach mcycle overflow
 - Fixed unbundled uarch-cycle hash collection to include the fixed-point padding hash immediately before each reset, matching bundled collection
 - Fixed leaf size in `cartesi-hash-tree-hash`, which was 8 instead of 32
 - Fixed read-only flash drives not being mounted with `-o ro`, which trapped guest writes and panicked init
@@ -46,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a typo in the `cartesi-machine.lua` cmio handling
 
 ## Changed
+- Changed mcycle and uarch-cycle root-hash collection to include a repeatable fixed-point suffix whenever collection returns at a fixed point, including calls whose target equals the current mcycle
+- Renamed the mcycle collector's `back_tree` continuation context to `partial_bundle`, and the uarch collector's `reset_indices` result to `mcycle_hash_offsets`
 - Optimized hex and Base64 encoding and decoding with bulk span-based operations, direct output string writes, and lookup-table decoding. Base64 decoding now rejects non-canonical padding and padding bits while continuing to accept ASCII whitespace
 - Changed `collect_mcycle_root_hashes` across the C++, C, Lua, and JSON-RPC APIs to take `log2_mcycle_period` instead of `mcycle_period`; `--print-mcycle-root-hashes` now takes the log base 2 period as well
 - Changed machine and uarch cycle overflow to be derived, state-preserving fixed points

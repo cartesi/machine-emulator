@@ -331,6 +331,14 @@
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
+        },
+        {
+          "name": "previous_partial_bundle",
+          "description": "Partial bundle returned by the previous call",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/PartialBundle"
+          }
         }
       ],
       "result": {
@@ -2587,8 +2595,8 @@
           "break_reason": {
             "$ref": "#/components/schemas/InterpreterBreakReason"
           },
-          "back_tree": {
-            "$ref": "#/components/schemas/BackMerkleTree"
+          "partial_bundle": {
+            "$ref": "#/components/schemas/PartialBundle"
           },
           "console_io_error": {
             "type": "string"
@@ -2603,17 +2611,17 @@
           "hashes": {
             "$ref": "#/components/schemas/Base64HashArray"
           },
-          "reset_indices": {
+          "mcycle_hash_offsets": {
             "$ref": "#/components/schemas/UnsignedIntegerArray"
           },
           "break_reason": {
             "$ref": "#/components/schemas/InterpreterBreakReason"
           }
         },
-        "required": ["hashes", "reset_indices", "break_reason"]
+        "required": ["hashes", "mcycle_hash_offsets", "break_reason"]
       },
-      "BackMerkleTree": {
-        "title": "BackMerkleTree",
+      "PartialBundle": {
+        "title": "PartialBundle",
         "type": "object",
         "properties": {
           "log2_max_leaves": {

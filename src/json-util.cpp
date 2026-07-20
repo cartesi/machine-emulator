@@ -2123,7 +2123,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, mcycle_root_hashes 
     ju_get_vector_like_field(jconfig, "hashes"s, value.hashes, new_path);
     ju_get_field(jconfig, "mcycle_phase"s, value.mcycle_phase, new_path);
     ju_get_field(jconfig, "break_reason"s, value.break_reason, new_path);
-    ju_get_opt_field(jconfig, "back_tree"s, value.back_tree, new_path);
+    ju_get_opt_field(jconfig, "partial_bundle"s, value.partial_bundle, new_path);
     ju_get_opt_field(jconfig, "console_io_error"s, value.console_io_error, new_path);
 }
 
@@ -2141,7 +2141,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_cycle_root_ha
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
     ju_get_vector_like_field(jconfig, "hashes"s, value.hashes, new_path);
-    ju_get_vector_like_field(jconfig, "reset_indices"s, value.reset_indices, new_path);
+    ju_get_vector_like_field(jconfig, "mcycle_hash_offsets"s, value.mcycle_hash_offsets, new_path);
     ju_get_field(jconfig, "break_reason"s, value.break_reason, new_path);
 }
 
@@ -2596,8 +2596,8 @@ void to_json(nlohmann::json &j, const std::vector<uint64_t> &ints) {
 void to_json(nlohmann::json &j, const mcycle_root_hashes &result) {
     j = nlohmann::json{{"hashes", base64_machine_hashes(result.hashes)}, {"mcycle_phase", result.mcycle_phase},
         {"break_reason", result.break_reason}};
-    if (result.back_tree.has_value()) {
-        j["back_tree"] = result.back_tree;
+    if (result.partial_bundle.has_value()) {
+        j["partial_bundle"] = result.partial_bundle;
     }
     if (!result.console_io_error.empty()) {
         j["console_io_error"] = result.console_io_error;
@@ -2605,8 +2605,8 @@ void to_json(nlohmann::json &j, const mcycle_root_hashes &result) {
 }
 
 void to_json(nlohmann::json &j, const uarch_cycle_root_hashes &result) {
-    j = nlohmann::json{{"hashes", base64_machine_hashes(result.hashes)}, {"reset_indices", result.reset_indices},
-        {"break_reason", result.break_reason}};
+    j = nlohmann::json{{"hashes", base64_machine_hashes(result.hashes)},
+        {"mcycle_hash_offsets", result.mcycle_hash_offsets}, {"break_reason", result.break_reason}};
 }
 
 void to_json(nlohmann::json &j, const back_merkle_tree &back_tree) {

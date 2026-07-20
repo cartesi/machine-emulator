@@ -26,13 +26,13 @@
 
 namespace cartesi {
 
-/// \brief Collected mcycle root hashes
+/// \brief Result of collecting mcycle state root hashes
 struct mcycle_root_hashes {
-    machine_hashes hashes;                     ///< Root hashes collected after each machine cycle period
-    uint64_t mcycle_phase{};                   ///< Machine cycles elapsed since last collected root hash
-    interpreter_break_reason break_reason{};   ///< Reason why function returned
-    std::optional<back_merkle_tree> back_tree; ///< Root hashes context
-    std::string console_io_error;              ///< Console I/O error message, if any
+    machine_hashes hashes;                          ///< Result entries: state root hashes or bundle root hashes
+    uint64_t mcycle_phase{};                        ///< Machine cycles elapsed in the current sampling period
+    interpreter_break_reason break_reason{};        ///< Reason why function returned
+    std::optional<back_merkle_tree> partial_bundle; ///< Partial bundle context
+    std::string console_io_error;                   ///< Console I/O error message, if any
 };
 
 } // namespace cartesi

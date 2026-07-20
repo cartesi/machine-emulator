@@ -61,7 +61,7 @@ end
 function GDBStub.new(machine, max_mcycle)
     return setmetatable({
         machine = machine,
-        max_mcycle = max_mcycle or math.maxinteger,
+        max_mcycle = max_mcycle or cartesi.MCYCLE_MAX,
         breakpoints = {},
     }, GDBStub)
 end
@@ -413,10 +413,10 @@ function advance_modes.collect_mcycle_root_hashes(self, mcycle_end)
         collect.log2_mcycle_period,
         collect.mcycle_phase,
         collect.log2_bundle,
-        collect.back_tree
+        collect.partial_bundle
     )
     collect.mcycle_phase = collected.mcycle_phase
-    collect.back_tree = collected.back_tree
+    collect.partial_bundle = collected.partial_bundle
     collect.console_io_error = collect.console_io_error or collected.console_io_error
     table.move(collected.hashes, 1, #collected.hashes, #collect.hashes + 1, collect.hashes)
     return collected.break_reason
@@ -428,9 +428,9 @@ function advance_modes.collect_uarch_cycle_root_hashes(self, mcycle_end)
         self.machine:collect_uarch_cycle_root_hashes(mcycle_end, collect.log2_bundle, collect.revert_uarch_tail)
     local offset = #collect.hashes
     table.move(collected.hashes, 1, #collected.hashes, offset + 1, collect.hashes)
-    local reset_indices = collect.reset_indices
-    for _, reset_index in ipairs(collected.reset_indices) do
-        reset_indices[#reset_indices + 1] = reset_index + offset
+    local mcycle_hash_offsets = collect.mcycle_hash_offsets
+    for i = 2, #collected.mcycle_hash_offsets do
+        mcycle_hash_offsets[#mcycle_hash_offsets + 1] = collected.mcycle_hash_offsets[i] + offset
     end
     return collected.break_reason
 end
@@ -613,7 +613,7 @@ end
 -- stop, and returns that reason (halt and max_mcycle are consumed by the debugger while it stays
 -- live, so those never unwind a live session to the caller).
 function GDBStub:run(mcycle_end)
-    mcycle_end = mcycle_end or math.maxinteger
+    mcycle_end = mcycle_end or cartesi.MCYCLE_MAX
     self.mode = "run"
     if self.conn then
         -- set the target for continue operations
@@ -630,14 +630,20 @@ end
 -- machine's,
 -- is returned when the call suspends. When GDB never connected or detached mid-call, the
 -- collection finishes against the machine, as run does.
-function GDBStub:collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period, mcycle_phase, log2_bundle, back_tree)
+function GDBStub:collect_mcycle_root_hashes(
+    mcycle_end,
+    log2_mcycle_period,
+    mcycle_phase,
+    log2_bundle,
+    previous_partial_bundle
+)
     self.mode = "collect_mcycle_root_hashes"
     local collect = {
         hashes = {},
         log2_mcycle_period = log2_mcycle_period,
         mcycle_phase = mcycle_phase,
         log2_bundle = log2_bundle,
-        back_tree = back_tree,
+        partial_bundle = previous_partial_bundle,
     }
     self.collect = collect
     local break_reason
@@ -654,7 +660,7 @@ function GDBStub:collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period, mcyc
         break_reason = break_reason,
         hashes = collect.hashes,
         mcycle_phase = collect.mcycle_phase,
-        back_tree = collect.back_tree,
+        partial_bundle = collect.partial_bundle,
         console_io_error = collect.console_io_error,
     }
 end
@@ -663,7 +669,7 @@ function GDBStub:collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle, revert
     self.mode = "collect_uarch_cycle_root_hashes"
     local collect = {
         hashes = {},
-        reset_indices = {},
+        mcycle_hash_offsets = { 1 },
         log2_bundle = log2_bundle,
         revert_uarch_tail = revert_uarch_tail,
     }
@@ -681,7 +687,7 @@ function GDBStub:collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle, revert
     return {
         break_reason = break_reason,
         hashes = collect.hashes,
-        reset_indices = collect.reset_indices,
+        mcycle_hash_offsets = collect.mcycle_hash_offsets,
     }
 end
 

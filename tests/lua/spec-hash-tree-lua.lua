@@ -115,6 +115,14 @@ describe("hash-tree.lua", function()
         it("has nothing to prove for an empty epoch", function()
             expect.equal(#hash_tree.frontier_next_proofs(hash_tree.frontier(H), {}), 0)
         end)
+
+        it("rejects a frontier leaf count that exceeds 64 bits", function()
+            local frontier = hash_tree.frontier(64)
+            frontier[65] = leaf(1)
+            expect.fail(function()
+                hash_tree.frontier_next_proofs(frontier, { leaf(2) })
+            end, "frontier leaf count exceeds 64 bits")
+        end)
     end)
 
     describe("frontier_pad_back", function()
@@ -195,6 +203,24 @@ describe("hash-tree.lua", function()
             expect.fail(function()
                 hash_tree.frontier_pad_back(frontier, pad, SMALL_MAX)
             end)
+        end)
+
+        it("fills a tree taller than a Lua integer without materializing its capacity", function()
+            local height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+                + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+            local frontier = hash_tree.frontier(height)
+            local subtree = pad
+            -- These complete left subtrees represent every leaf except the final one.
+            for level = 1, height do
+                frontier[level] = subtree
+                subtree = cartesi.keccak256(subtree, subtree)
+            end
+            hash_tree.frontier_pad_back(frontier, pad, 1)
+            expect.equal(frontier[height + 1], subtree)
+            expect.equal(hash_tree.frontier_get_root_hash(frontier), subtree)
+            expect.fail(function()
+                hash_tree.frontier_pad_back(frontier, pad, 1)
+            end, "too many leaves")
         end)
 
         it("pads with subtree roots when log2_pad_size is given", function()

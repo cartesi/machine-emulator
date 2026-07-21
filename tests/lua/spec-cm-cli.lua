@@ -23,6 +23,7 @@
 local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local filesystem = require("cartesi.filesystem")
+local util = require("cartesi.util")
 local utils = require("cartesi.utils")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
@@ -37,6 +38,24 @@ describe("cartesi-machine CLI", function()
     local LOG2_EPOCH_LEAF_COUNT = ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
         + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
         - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+
+    it("parses signed decimal numbers and 64-bit hexadecimal patterns", function()
+        expect.equal(util.parse_number("9223372036854775807"), math.maxinteger)
+        expect.equal(util.parse_number("0x7fffffffffffffff"), math.maxinteger)
+        expect.equal(util.parse_number("0x8000000000000000"), math.mininteger)
+        expect.equal(util.parse_number("0xffffffffffffffff"), -1)
+        expect.equal(util.parse_number("1 << 63"), math.mininteger)
+        local value, parse_error = util.parse_number("9223372036854775808")
+        expect.equal(value, nil)
+        expect.equal(parse_error, "decimal literal exceeds maximum signed integer")
+        expect.equal(util.parse_number("18446744073709551616"), nil)
+        value, parse_error = util.parse_number("0x10000000000000000")
+        expect.equal(value, nil)
+        expect.equal(parse_error, "hexadecimal literal exceeds 64 bits")
+        value, parse_error = util.parse_number("2 << 63")
+        expect.equal(value, nil)
+        expect.equal(parse_error, "shifted number exceeds 64 bits")
+    end)
 
     local function zeros(n)
         return string.rep("\0", n)
@@ -2456,9 +2475,25 @@ describe("cartesi-machine CLI", function()
                 .. ",log2_bundle_mcycle_count:1",
             "--max-mcycle=0",
         }, "computation hash bundle cannot exceed the mcycles of an input")
-        run_fail(
-            { "--cmio-advance-state=log2_mcycle_computation_hash_period:0", "--max-mcycle=0" },
-            "computation hash tree with more than 2"
+        -- The computation-hash frontier represents the epoch tree structurally, including when
+        -- its height exceeds the width of a Lua integer. The warning is not suppressed by --quiet,
+        -- regardless of option order.
+        local _, tall_tree_log = run_ok({
+            "--quiet",
+            "--cmio-advance-state=log2_mcycle_computation_hash_period:0",
+            "--no-revert",
+            "--max-mcycle=0",
+            "--no-init-splash",
+        })
+        expect.truthy(
+            tall_tree_log:find(
+                string.format(
+                    "Warning: computation hash tree height %d exceeds 63",
+                    ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+                ),
+                1,
+                true
+            )
         )
         -- bundle roots are interior nodes of the keccak epoch tree, so the machine must hash with keccak
         run_fail({
@@ -2491,17 +2526,40 @@ describe("cartesi-machine CLI", function()
             "--no-init-splash",
             "--quiet",
         }, "cannot be combined with printing mcycle root hashes")
-        -- a run that stops before the epoch ends produces no computation hash
+        -- Runs truncated by --max-mcycle do not finalize or store either claim. Use scoped
+        -- input/result files so these local lifecycle checks stay out of the portable corpus.
+        local _ <close>, truncated_input = filesystem.write_scope_temp_file(encode_advance(0, "truncated"))
+        local _ <close>, truncated_result = scope_temp_pathname()
         local _, log = run_ok({
             "--cmio-advance-state=log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
-                .. ","
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:",
+                .. ",mcycle_computation_hash:"
+                .. truncated_result
+                .. ",input:"
+                .. truncated_input
+                .. ",input_index_begin:0,input_index_end:1,outputs_merkle_root:,outputs_merkle_root_proof:",
             "--no-revert",
             "--max-mcycle=1000",
             "--no-init-splash",
         })
         expect.falsy(log:find("Mcycle computation hash:", 1, true))
+        expect.falsy(io.open(truncated_result, "rb"))
+
+        local _ <close>, uarch_truncated_result = scope_temp_pathname()
+        local _, uarch_log = run_ok({
+            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",mcycle_period_index:0,uarch_cycle_computation_hash:"
+                .. uarch_truncated_result
+                .. ",input:"
+                .. truncated_input
+                .. ",input_index_begin:0,input_index_end:1,outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--no-revert",
+            "--max-mcycle=1000",
+            "--no-init-splash",
+        })
+        expect.falsy(uarch_log:find("Uarch cycle computation hash:", 1, true))
+        expect.falsy(io.open(uarch_truncated_result, "rb"))
     end)
 
     -- -------------------------------------------------------------------------
@@ -2559,6 +2617,22 @@ describe("cartesi-machine CLI", function()
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
         }, "need mcycle_period_index")
+        -- At 2^64 or more periods, every 64-bit index is within the epoch.
+        run_ok({
+            "--cmio-advance-state=mcycle_period_index:0xffffffffffffffff," .. "log2_mcycle_computation_hash_period:0",
+            "--no-revert",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        run_fail({
+            "--cmio-advance-state=mcycle_period_index:9223372036854775808," .. "log2_mcycle_computation_hash_period:0",
+            "--max-mcycle=0",
+        }, 'invalid number for option "mcycle_period_index"')
+        run_fail({
+            "--cmio-advance-state=mcycle_period_index:0x10000000000000000," .. "log2_mcycle_computation_hash_period:0",
+            "--max-mcycle=0",
+        }, 'invalid number for option "mcycle_period_index"')
         -- Use the index immediately past all periods in the epoch.
         run_fail({
             "--cmio-advance-state=mcycle_period_index:"

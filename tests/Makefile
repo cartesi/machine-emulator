@@ -37,12 +37,21 @@ CARTESI_CMIO_PATH ?= $(abspath ./build/cmio)
 CARTESI_STEP_LOGS_PATH ?= $(abspath ./build/step-logs)
 CARTESI_TESTS_PATH ?= $(abspath ./build/machine)
 CARTESI_TESTS_UARCH_PATH ?= $(abspath ./build/uarch)
+CARTESI_COMPUTATION_HASH_CORPUS_PATH ?= $(abspath ./build/computation-hash-corpus)
 
 export CARTESI_IMAGES_PATH
 export CARTESI_CMIO_PATH
 export CARTESI_STEP_LOGS_PATH
 export CARTESI_TESTS_PATH
 export CARTESI_TESTS_UARCH_PATH
+export CARTESI_COMPUTATION_HASH_CORPUS_PATH
+
+COMPUTATION_HASH_GUEST = $(CARTESI_TESTS_PATH)/computation_hash.bin
+COMPUTATION_HASH_UARCH_NEAR_LIMIT = $(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-computation-hash-near-limit.bin
+COMPUTATION_HASH_UARCH_OVERFLOW = $(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-computation-hash-overflow.bin
+COMPUTATION_HASH_MANIFEST = $(CARTESI_COMPUTATION_HASH_CORPUS_PATH)/manifest.json
+COMPUTATION_HASH_GENERATOR = lua/create-computation-hash-corpus.lua
+COMPUTATION_HASH_ARCHIVE = computation-hash-corpus.tar.gz
 
 TARGET_OS ?= $(shell uname -s)
 ifeq ($(TARGET_OS),Darwin)
@@ -84,6 +93,7 @@ $(LUACOV_DIR):
 # so it must exist before them. They are also ordered so their writes do not race.
 LUACOV_DIR_ORDER := $(LUACOV_DIR)
 TEST_EVMU_ORDER := $(LUACOV_DIR) run-lua-spec-cm-cli
+TEST_COMPUTATION_HASH_ORDER := $(LUACOV_DIR) run-lua-spec-cm-cli test-evmu
 endif
 
 ifeq ($(TARGET_OS),Darwin)
@@ -150,6 +160,39 @@ build-tests-fuzz:
 	@$(MAKE) -C fuzz CC=clang CXX=clang++ fuzz=yes all
 
 build-tests-images: images
+
+build-tests-computation-hash-fixtures: $(COMPUTATION_HASH_GUEST) \
+	$(COMPUTATION_HASH_UARCH_NEAR_LIMIT) $(COMPUTATION_HASH_UARCH_OVERFLOW)
+
+$(COMPUTATION_HASH_GUEST): machine/src/computation_hash.S
+	@$(MAKE) -C machine/src BUILDDIR=$(CARTESI_TESTS_PATH) $@
+
+$(COMPUTATION_HASH_UARCH_NEAR_LIMIT) $(COMPUTATION_HASH_UARCH_OVERFLOW): \
+	$(CARTESI_TESTS_UARCH_PATH)/rv64ui-uarch-%.bin: uarch/%.S
+	@$(MAKE) -C uarch BUILDDIR=$(CARTESI_TESTS_UARCH_PATH) $@
+
+build-computation-hash-corpus-with-toolchain:
+	$(MAKE) toolchain-exec CONTAINER_COMMAND="make build-tests-computation-hash-fixtures"
+	$(MAKE) create-computation-hash-corpus
+
+build-computation-hash-corpus: build-tests-computation-hash-fixtures
+	$(MAKE) create-computation-hash-corpus
+
+create-computation-hash-corpus: clean-computation-hash-corpus
+	$(LUA) ./lua/create-computation-hash-corpus.lua
+	RECORD_COMPUTATION_HASH_CORPUS=yes $(LUA) ./lua/test-computation-hash.lua
+
+archive-computation-hash-corpus: $(COMPUTATION_HASH_MANIFEST)
+	tar -czf $(COMPUTATION_HASH_ARCHIVE) -C $(BUILDDIR) computation-hash-corpus
+
+# Regenerate an existing artifact when its generator changes. Building missing fixture binaries
+# remains an explicit toolchain-managed step.
+$(COMPUTATION_HASH_MANIFEST): $(COMPUTATION_HASH_GENERATOR)
+	@test -f $(COMPUTATION_HASH_GUEST) -a -f $(COMPUTATION_HASH_UARCH_NEAR_LIMIT) \
+		-a -f $(COMPUTATION_HASH_UARCH_OVERFLOW) || \
+		{ echo 'Run make build-computation-hash-corpus-with-toolchain first' >&2; exit 1; }
+	@rm -rf $(CARTESI_COMPUTATION_HASH_CORPUS_PATH)
+	$(MAKE) create-computation-hash-corpus
 
 build-tests-uarch-with-toolchain uarch-with-toolchain riscv-arch-test-with-toolchain:
 machine uarch misc:
@@ -244,6 +287,16 @@ create-machines $(CARTESI_CMIO_PATH): | $(CARTESI_IMAGES)
 
 clean-machines:
 	@rm -rf $(CARTESI_CMIO_PATH)
+
+clean-computation-hash-corpus:
+	@rm -rf $(CARTESI_COMPUTATION_HASH_CORPUS_PATH) $(COMPUTATION_HASH_ARCHIVE)
+
+test-computation-hash: verify-existing-computation-hash-corpus
+
+# Downloaded corpora are immutable test inputs: deliberately do not make this target depend on
+# the generator or fixture timestamps.
+verify-existing-computation-hash-corpus: | $(TEST_COMPUTATION_HASH_ORDER)
+	$(LUA_CLI) ./lua/test-computation-hash.lua
 
 
 create-step-logs $(CARTESI_STEP_LOGS_PATH): | $(CARTESI_IMAGES)
@@ -357,7 +410,7 @@ test-coverage-uarch:
 PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
 	test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
 	test-uarch-rv64ui test-uarch-interpreter test-machine-with-log-step \
-	test-coverage-uarch
+	test-coverage-uarch test-computation-hash
 
 test-parallel: $(PARALLEL_TESTS)
 
@@ -418,7 +471,7 @@ coverage-all: | test-coverage-uarch-pcs
 	$(MAKE) coverage-report
 	$(MAKE) -C ../src swap-uarch-pristine-stock
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
 
 lint format check-format:
 	@$(MAKE) -C misc $@
@@ -435,3 +488,6 @@ check-lua:
 .PHONY: machine uarch misc riscv-tests riscv-arch-test build-tests-fuzz build-tests-fuzz-seed-corpus test-fuzz
 .PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-cm-cli test-evmu run-lua-spec-cm-cli \
 	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage
+.PHONY: build-tests-computation-hash-fixtures build-computation-hash-corpus \
+	build-computation-hash-corpus-with-toolchain create-computation-hash-corpus archive-computation-hash-corpus \
+	test-computation-hash verify-existing-computation-hash-corpus clean-computation-hash-corpus

@@ -166,6 +166,9 @@ export COVERAGE_TOOLCHAIN
 
 GENERATED_FILES= uarch/uarch-pristine-hash.c uarch/uarch-pristine-ram.c src/cm-version.h src/interpret-jump-table.hpp
 ADD_GENERATED_FILES_DIFF= add-generated-files.diff
+COMPUTATION_HASH_TARGETS= build-computation-hash-corpus build-computation-hash-corpus-with-toolchain \
+	create-computation-hash-corpus archive-computation-hash-corpus \
+	verify-existing-computation-hash-corpus clean-computation-hash-corpus
 
 all: source-default
 
@@ -188,6 +191,11 @@ help:
 	@echo '  test-risc0                         - Run risc0 tests'
 	@echo '  test-misc                           - Run miscellaneous tests'
 	@echo '  test-fuzz                           - Run fuzz tests (requires Clang with libFuzzer)'
+	@echo '  build-computation-hash-corpus       - Build fixtures and record the computation-hash corpus'
+	@echo '  build-computation-hash-corpus-with-toolchain - Build and record the corpus using the toolchain image'
+	@echo '  create-computation-hash-corpus      - Record the corpus using existing fixtures'
+	@echo '  test-computation-hash               - Verify an existing computation-hash corpus'
+	@echo '  archive-computation-hash-corpus     - Archive the recorded computation-hash corpus'
 	@echo '  test                                - Run all tests'
 	@echo '  coverage-all                        - Run all tests and generate the coverage report (requires coverage=yes builds, see tests/scripts/run-coverage-local.sh)'
 	@echo '  doc                                 - Build the doxygen documentation (requires doxygen)'
@@ -199,6 +207,7 @@ help:
 	@echo 'Cleaning targets:'
 	@echo '  clean                               - Clean the src/ artifacts'
 	@echo '  clean-coverage                      - Remove collected coverage data'
+	@echo '  clean-computation-hash-corpus       - Remove the computation-hash corpus and archive'
 	@echo '  depclean                            - Clean + dependencies'
 	@echo '  distclean                           - Depclean + profile information and downloads'
 
@@ -251,6 +260,9 @@ test-risc0:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C risc0 test
 
 test% coverage% build-tests%:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
+
+$(COMPUTATION_HASH_TARGETS):
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
 clean-coverage:
@@ -429,4 +441,4 @@ $(ADD_GENERATED_FILES_DIFF): $(GENERATED_FILES)
 	git reset -- $(GENERATED_FILES)
 
 .PHONY: help all submodules doc clean distclean src luacartesi hash uarch risc0 \
-	create-generated-files-patch $(SUBDIRS) $(SUBCLEAN)
+	create-generated-files-patch $(COMPUTATION_HASH_TARGETS) $(SUBDIRS) $(SUBCLEAN)

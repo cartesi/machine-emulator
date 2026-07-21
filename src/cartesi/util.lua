@@ -57,30 +57,43 @@ end
 _M.dump_table = dump_table
 
 function _M.parse_number(n)
-    if not n then return nil end
-    local base, rest = string.match(n, "^%s*(0x%x+)%s*(.-)%s*$")
-    if not base then
+    if not n then return nil, "number is missing" end
+    local base, rest = string.match(n, "^%s*(0[xX]%x+)%s*(.-)%s*$")
+    local format
+    if base then
+        base = base:lower():gsub("^0x0*", "0x")
+        if base == "0x" then base = "0x0" end
+        format = "0x%x"
+    else
         base, rest = string.match(n, "^%s*(%d+)%s*(.-)%s*$")
+        if not base then return nil, "invalid number syntax" end
+        base = base:gsub("^0+", "")
+        if base == "" then base = "0" end
+        format = "%d"
     end
-    base = tonumber(base)
-    if not base then return nil end
+    local value = tonumber(base)
+    if math.type(value) ~= "integer" or string.format(format, value) ~= base then
+        return nil,
+            format == "%d" and "decimal literal exceeds maximum signed integer" or "hexadecimal literal exceeds 64 bits"
+    end
+    local shift
     if rest == "Ki" then
-        return base << 10
+        shift = 10
     elseif rest == "Mi" then
-        return base << 20
+        shift = 20
     elseif rest == "Gi" then
-        return base << 30
+        shift = 30
     elseif rest == "Ti" then
-        return base << 40
+        shift = 40
     elseif rest == "" then
-        return base
+        return value
+    else
+        shift = tonumber(string.match(rest, "^%s*%<%<%s*(%d+)$"))
+        if not shift then return nil, "invalid number suffix" end
     end
-    local shift = string.match(rest, "^%s*%<%<%s*(%d+)$")
-    if shift then
-        shift = tonumber(shift)
-        if shift then return base << shift end
-    end
-    return nil
+    if value == 0 then return 0 end
+    if shift >= 64 or value >> (64 - shift) ~= 0 then return nil, "shifted number exceeds 64 bits" end
+    return value << shift
 end
 
 function _M.parse_boolean(b)
@@ -152,8 +165,9 @@ function _M.parse_options(keys, all, opts)
             end
             options[k] = v
         elseif keys[k] == "number" then
-            v = _M.parse_number(v)
-            if v == nil then error(string.format("invalid number for option %q in '%s'", k, all)) end
+            local parse_error
+            v, parse_error = _M.parse_number(v)
+            if v == nil then error(string.format("invalid number for option %q in '%s': %s", k, all, parse_error)) end
             options[k] = v
         elseif string_kinds[keys[k]] then
             if v == nil then error(string.format("missing string for option %q in '%s'", k, all)) end

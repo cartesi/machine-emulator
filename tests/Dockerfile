@@ -7,7 +7,6 @@ ARG SANITIZE=no
 
 RUN make -j$(nproc) build-tests-machine debug=$DEBUG coverage=$COVERAGE threads=$THREADS sanitize=$SANITIZE
 RUN make -j$(nproc) build-tests-misc build-tests-uarch build-tests-images debug=$DEBUG coverage=$COVERAGE threads=$THREADS sanitize=$SANITIZE
-
 ####################################################################################################
 FROM tests-builder AS tests-debian-packager
 
@@ -20,6 +19,7 @@ FROM cartesi/machine-emulator:$TAG
 ENV CARTESI_IMAGES_PATH=/usr/share/cartesi-machine/tests/data/images
 ENV CARTESI_TESTS_PATH=/usr/share/cartesi-machine/tests/data/machine
 ENV CARTESI_TESTS_UARCH_PATH=/usr/share/cartesi-machine/tests/data/uarch
+ENV CARTESI_COMPUTATION_HASH_CORPUS_PATH=/tmp/cartesi-machine/tests/data/computation-hash-corpus
 ENV CARTESI_CMIO_PATH=/tmp/cartesi-machine/tests/data/cmio
 ENV CARTESI_STEP_LOGS_PATH=/tmp/cartesi-machine/tests/data/step-logs
 ENV CM_CLI=/usr/share/lua/5.4/cartesi-machine.lua

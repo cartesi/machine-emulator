@@ -91,7 +91,10 @@ local function frontier_leaf_count(frontier)
     local leaf_count = 0
     for level = 1, #frontier do
         local bit = level - 1
-        if frontier[level] then leaf_count = leaf_count | (1 << bit) end
+        if frontier[level] then
+            assert(bit < 64, "frontier leaf count exceeds 64 bits")
+            leaf_count = leaf_count | (1 << bit)
+        end
     end
     return leaf_count
 end
@@ -170,18 +173,30 @@ end
 -- moves forward across both phases, so each level is hashed at most once: O(log2_max_leaves)
 -- hashes. Mutates the frontier in place. Padding to exactly full leaves the root in the top
 -- entry.
+local function frontier_padding_fits(frontier, count, first_level)
+    if count == 0 then return true end
+    if frontier[#frontier] then return false end
+    local height = #frontier - first_level
+    count = count - 1
+    local carry = 0
+    for bit = 0, math.max(height, 63) do
+        local sum = ((count >> bit) & 1) + carry
+        if bit < height and frontier[first_level + bit] then sum = sum + 1 end
+        if bit >= height and sum & 1 ~= 0 then return false end
+        carry = sum >> 1
+    end
+    return carry == 0
+end
+
 local function frontier_pad_back(frontier, hash, count, log2_pad_size)
-    -- Counts and sizes reach 2^63 for the tallest trees, so they compare as unsigned.
     log2_pad_size = log2_pad_size or 0
     local first_level = log2_pad_size + 1
     local top = #frontier
     for level = 1, log2_pad_size do
         assert(not frontier[level], "frontier is not aligned to the pad size")
     end
-    -- capacity and filled count, in entries
-    local capacity = 1 << (top - first_level)
-    local filled = frontier_leaf_count(frontier) >> log2_pad_size
-    assert(not math.ult(capacity - filled, count), "too many leaves")
+    assert(frontier_padding_fits(frontier, count, first_level), "too many leaves")
+    if count == 0 then return end
     -- pad_hashes[level] is the root of the complete subtree whose 2^(level-first_level) entries
     -- are all hash
     local pad_hashes = { [first_level] = hash }
@@ -191,11 +206,13 @@ local function frontier_pad_back(frontier, hash, count, log2_pad_size)
     -- Complete the occupied low levels with pad subtrees, carrying upward.
     local level = first_level
     while level <= top do
+        if count == 0 then break end
         local size = 1 << (level - first_level)
         if math.ult(count, size) then break end
         if frontier[level] then
             local right = pad_hashes[level]
             while frontier[level] do
+                assert(level < top, "too many leaves")
                 right = cartesi.keccak256(frontier[level], right)
                 frontier[level] = false
                 level = level + 1
@@ -211,6 +228,7 @@ local function frontier_pad_back(frontier, hash, count, log2_pad_size)
         if count == 0 then break end
         local size = 1 << (pad_level - first_level)
         if count & size ~= 0 then
+            assert(not frontier[pad_level], "too many leaves")
             frontier[pad_level] = pad_hashes[pad_level]
             count = count - size
         end

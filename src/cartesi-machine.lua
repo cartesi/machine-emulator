@@ -455,7 +455,8 @@ where options are:
 
         log2_mcycle_computation_hash_period (no default)
         log2 of the number of mcycles between sampled state root hashes. must be
-        at most 48. enables the mcycle computation hash unless
+        at most 48. an epoch computation hash tree taller than 63 emits a warning.
+        enables the mcycle computation hash unless
         uarch_cycle_computation_hash is selected.
 
         log2_bundle_mcycle_count (default: 0)
@@ -1845,12 +1846,15 @@ options = {
                     "log2_mcycle_computation_hash_period cannot exceed the mcycles of an input in %s",
                     all
                 )
-                assertf(
-                    ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
-                        <= 63,
-                    "computation hash tree with more than 2^63 state hashes in %s",
-                    all
-                )
+                local log2_epoch_computation_hash_leaf_count = ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+                    + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+                    - log2_period
+                if log2_epoch_computation_hash_leaf_count > 63 then
+                    stderr_unsilenceable(
+                        "Warning: computation hash tree height %d exceeds 63\n",
+                        log2_epoch_computation_hash_leaf_count
+                    )
+                end
                 assertf(r.input_index_begin == 0, "computation hash requires input_index_begin 0 in %s", all)
                 assertf(
                     r.input_index_end <= 1 << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH,
@@ -1865,19 +1869,15 @@ options = {
                     )
                     r.uarch_cycle_computation_hash = r.uarch_cycle_computation_hash or ""
                     assertf(r.mcycle_period_index, "need mcycle_period_index in %s", all)
-                    assertf(
-                        math.ult(
-                            r.mcycle_period_index,
-                            1
-                                << (
-                                    ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
-                                    + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
-                                    - log2_period
-                                )
-                        ),
-                        "mcycle_period_index past the periods of an epoch in %s",
-                        all
-                    )
+                    -- When an epoch has fewer than 2^64 periods, check the index against their
+                    -- exclusive upper bound. Otherwise every 64-bit mcycle_period_index is valid.
+                    if log2_epoch_computation_hash_leaf_count < 64 then
+                        assertf(
+                            math.ult(r.mcycle_period_index, 1 << log2_epoch_computation_hash_leaf_count),
+                            "mcycle_period_index past the periods of an epoch in %s",
+                            all
+                        )
+                    end
                     r.log2_bundle_uarch_cycle_count = r.log2_bundle_uarch_cycle_count
                         or math.min(16, ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - 1)
                     local log2_bundle = r.log2_bundle_uarch_cycle_count
@@ -3376,7 +3376,8 @@ local function mcycle_computation_hash_begin_input(self, input_index)
     self.input_entry_count = 0
     self.mcycle_phase = 0
     self.partial_bundle = nil
-    self.input_mcycle_end = self.machine:read_reg("mcycle") + (1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+    self.input_mcycle_end =
+        usaturating_add(self.machine:read_reg("mcycle"), 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
 end
 
 -- Samples the input's state hashes up to mcycle_end and adds each returned entry to the epoch-tree
@@ -3539,9 +3540,9 @@ local function uarch_cycle_computation_hash_begin_input(self, input_index)
     if input_index ~= self.target_input then return end
     local m = self.machine
     local mcycle = m:read_reg("mcycle")
-    self.input_mcycle_end = mcycle + (1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
-    self.target_mcycle_start = mcycle + self.target_offset * self.period
-    self.target_mcycle_end = self.target_mcycle_start + self.period
+    self.input_mcycle_end = usaturating_add(mcycle, 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+    self.target_mcycle_start = usaturating_add(mcycle, self.target_offset * self.period, self.input_mcycle_end)
+    self.target_mcycle_end = usaturating_add(self.target_mcycle_start, self.period, self.input_mcycle_end)
     self.revert_uarch_tail = m:collect_uarch_cycle_root_hashes(MCYCLE_MAX, 0).hashes
 end
 
@@ -3802,6 +3803,11 @@ local function run_advance_state_epoch(m, runner)
                 claim:end_epoch()
                 return
             else
+                -- An unexpected manual yield is still a fixed point. Finalize the claim before
+                -- reporting the protocol error so callers can dispute the computation that led
+                -- to it. In particular, the uarch claim may still need to pad a selected period
+                -- that execution never reached.
+                claim:end_epoch()
                 error("unexpected manual yield reason")
             end
             claim:end_input()

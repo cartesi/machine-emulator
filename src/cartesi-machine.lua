@@ -928,6 +928,10 @@ where options are:
     use the command "stepc" after adding the following in your ~/.gdbinit file:
       source <emulator-path>/tools/gdb/gdbinit
 
+  --gdb-fd=<fd>
+    wait for a GDB connection on the inherited listening TCP socket <fd>.
+    this option is mutually exclusive with --gdb.
+
 and command and arguments:
 
   command
@@ -1059,7 +1063,7 @@ local store_config = false
 local store_config_format
 local load_config = false
 local load_config_format
-local gdb_address
+local gdb
 local exec_arguments = {}
 local assert_rolling_template = false
 local log_step_mcycle_count
@@ -2409,17 +2413,30 @@ options = {
     {
         "--gdb",
         function()
-            gdb_address = "127.0.0.1:1234"
+            assert(not gdb or gdb.address, "--gdb and --gdb-fd are mutually exclusive")
+            gdb = { address = "127.0.0.1:1234" }
             return true
         end,
     },
     {
         "--gdb=",
         function(_, _, address)
-            gdb_address = address
+            assert(not gdb or gdb.address, "--gdb and --gdb-fd are mutually exclusive")
+            gdb = { address = address }
             return true
         end,
         "hostport",
+    },
+    {
+        "--gdb-fd=",
+        function(_, all, value)
+            local fd = tonumber(value)
+            assert(math.type(fd) == "integer" and fd >= 0, "invalid GDB socket file descriptor in " .. all)
+            assert(not gdb or gdb.fd, "--gdb and --gdb-fd are mutually exclusive")
+            gdb = { fd = fd }
+            return true
+        end,
+        "number",
     },
 }
 
@@ -2987,7 +3004,7 @@ if cmio_advance or cmio_inspect then
     assert(not uarch_cycle_root_hashes_count, "cmio cannot be combined with printing uarch cycle root hashes")
     assert(not mcycle_root_hashes, "cmio cannot be combined with printing mcycle root hashes")
 end
-if gdb_address and (mcycle_root_hashes or uarch_cycle_root_hashes_count or computation_hash) then
+if gdb and (mcycle_root_hashes or uarch_cycle_root_hashes_count or computation_hash) then
     stderr("Warning: writing to registers or memory from GDB produces hashes of states the computation never visits\n")
 end
 if uarch_cycle_root_hashes_count then
@@ -3013,11 +3030,15 @@ then
 end
 local machine = main_machine
 local gdb_stub
-if gdb_address then
+if gdb then
     gdb_stub = require("cartesi.gdbstub").new(machine, max_mcycle)
-    local address, port = gdb_address:match("^(.*):(%d+)$")
-    assert(address and port, "invalid address for GDB")
-    gdb_stub:listen_and_wait_gdb(address, tonumber(port))
+    if gdb.fd then
+        gdb_stub:wait_gdb_fd(gdb.fd)
+    else
+        local address, port = gdb.address:match("^(.*):(%d+)$")
+        assert(address and port, "invalid address for GDB")
+        gdb_stub:wait_gdb_address_port(address, tonumber(port))
+    end
 end
 if initial_config.processor.registers.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
 if cmio_advance or cmio_inspect then

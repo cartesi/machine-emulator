@@ -3044,49 +3044,111 @@ describe("cartesi-machine CLI", function()
         end
     end)
 
+    local socket = require("socket")
+
+    -- Sends one GDB packet and returns the payload of the stub's reply.
+    local function gdb_command(conn, payload)
+        local sum = 0
+        for i = 1, #payload do
+            sum = sum + payload:byte(i)
+        end
+        assert(conn:send(string.format("$%s#%02x", payload, sum % 256)))
+        assert(assert(conn:receive(1)) == "+", "GDB stub did not acknowledge the packet")
+        assert(assert(conn:receive(1)) == "$", "expected a reply packet")
+        local reply = {}
+        while true do
+            local c = assert(conn:receive(1))
+            if c == "#" then
+                break
+            end
+            reply[#reply + 1] = c
+        end
+        assert(conn:receive(2)) -- checksum
+        assert(conn:send("+"))
+        return table.concat(reply)
+    end
+
+    local function gdb_rcmd(conn, command)
+        return gdb_command(conn, "qRcmd," .. command:gsub(".", function(c)
+            return string.format("%02x", c:byte())
+        end))
+    end
+
+    -- Runs the CLI with an inherited listening socket, drives the GDB session,
+    -- and returns the CLI's stderr. Binding before launch removes both port
+    -- allocation and server-readiness races.
+    local function run_under_gdb(flags, script)
+        local listener = assert(socket.bind("127.0.0.1", 0))
+        local _ <close> = utils.scope_exit(function()
+            if listener then
+                listener:close()
+            end
+        end)
+        local address, port = assert(listener:getsockname())
+        local fd = assert(math.tointeger(listener:getfd()))
+        local _ <close>, log = scope_temp_pathname()
+        local _ <close>, done = scope_temp_pathname()
+        local args = {}
+        for _, f in ipairs(flags) do
+            args[#args + 1] = shquote(f)
+        end
+        local _ <close>, runner = filesystem.write_scope_temp_file(
+            string.format(
+                "#!/bin/sh\n(CARTESI_IMAGES_PATH=%s %s %s %s --gdb-fd=%d >/dev/null 2>%s; touch %s) &\n" .. "echo $!\n",
+                shquote(images_path),
+                CLI_LUA,
+                CLI,
+                table.concat(args, " "),
+                fd,
+                shquote(log),
+                shquote(done)
+            )
+        )
+        local pipe = assert(io.popen("sh " .. shquote(runner)))
+        local pid = pipe:read("*l")
+        pipe:close()
+        local _ <close> = utils.scope_exit(function()
+            if pid then
+                os.execute("kill " .. pid .. " 2>/dev/null")
+            end
+        end)
+        -- The child inherited the listener before its pid was printed. Keep only
+        -- the child's descriptor so a failed child cannot leave a live server.
+        assert(listener:close())
+        listener = nil
+        local conn = assert(socket.connect(address, port))
+        conn:settimeout(60)
+        assert(conn:setoption("tcp-nodelay", true))
+        assert(conn:send("+")) -- connection-start acknowledge expected by the stub
+        script(conn)
+        conn:close()
+        -- wait for the CLI to exit, so the log is complete
+        for _ = 1, 600 do
+            local f = io.open(done, "r")
+            if f then
+                f:close()
+                return filesystem.read_file(log)
+            end
+            socket.sleep(0.1)
+        end
+        error("CLI under GDB did not exit")
+    end
+
     -- -------------------------------------------------------------------------
     -- --gdb: GDB stub init and listen
     --
-    -- What: --gdb=<addr> initializes the GDB stub and waits for a TCP
-    --       connection before proceeding.
-    -- How:  Launch the CLI with --gdb in the background via a small shell
-    --       wrapper; poll-send the GDB detach packet (+$D#44) with nc to
-    --       trigger the listen path; then wait for the CLI process to exit.
+    -- What: --gdb-fd=<fd> initializes the GDB stub from an inherited listening
+    --       TCP socket and waits for a connection before proceeding.
+    -- How:  Bind an OS-selected port in the test process, pass its descriptor
+    --       to the CLI, connect, exchange a detach packet, and wait for exit.
     -- -------------------------------------------------------------------------
     it("GDB stub", function()
-        local port = 53210
-        local gdb_addr = "127.0.0.1:" .. port
-        local _ <close>, log = scope_temp_pathname()
-
-        -- Launch CLI with --gdb in background
-        local _ <close>, runner = filesystem.write_scope_temp_file(
-            string.format(
-                "#!/bin/sh\n%s %s --gdb=%s --max-mcycle=1000000 --no-init-splash --quiet >%s 2>&1 &\necho $!\n",
-                CLI_LUA,
-                CLI,
-                gdb_addr,
-                log
-            )
-        )
-        os.execute("chmod +x " .. runner)
-        local pipe = io.popen(runner)
-        local pid = pipe and pipe:read("*l")
-        if pipe then
-            pipe:close()
-        end
-
-        -- Wait for listen, send GDB detach packet, then wait for process
-        os.execute(
-            string.format(
-                "for i in 1 2 3 4 5 6 7 8 9 10; do "
-                    .. "printf '+$D#44' | nc -w 1 127.0.0.1 %d >/dev/null && break; sleep 0.2; "
-                    .. "done 2>/dev/null || true",
-                port
-            )
-        )
-        if pid then
-            os.execute("wait " .. pid .. " 2>/dev/null || kill " .. pid .. " 2>/dev/null")
-        end
+        run_fail({ "--gdb-fd=-1" }, "invalid GDB socket file descriptor")
+        run_fail({ "--gdb", "--gdb-fd=0" }, "mutually exclusive")
+        local log = run_under_gdb({ "--max-mcycle=1000000", "--no-init-splash", "--quiet" }, function(conn)
+            expect.equal(gdb_command(conn, "D"), "OK")
+        end)
+        expect.truthy(log:find("GDB connected!", 1, true))
     end)
 
     -- -------------------------------------------------------------------------
@@ -3099,36 +3161,6 @@ describe("cartesi-machine CLI", function()
     --       client, and compare the hash lines printed to the two stderr logs.
     -- -------------------------------------------------------------------------
     it("GDB with hash collection", function()
-        local socket = require("socket")
-
-        -- Sends one GDB packet and returns the payload of the stub's reply.
-        local function gdb_command(conn, payload)
-            local sum = 0
-            for i = 1, #payload do
-                sum = sum + payload:byte(i)
-            end
-            assert(conn:send(string.format("$%s#%02x", payload, sum % 256)))
-            assert(assert(conn:receive(1)) == "+", "GDB stub did not acknowledge the packet")
-            assert(assert(conn:receive(1)) == "$", "expected a reply packet")
-            local reply = {}
-            while true do
-                local c = assert(conn:receive(1))
-                if c == "#" then
-                    break
-                end
-                reply[#reply + 1] = c
-            end
-            assert(conn:receive(2)) -- checksum
-            assert(conn:send("+"))
-            return table.concat(reply)
-        end
-
-        local function gdb_rcmd(conn, command)
-            return gdb_command(conn, "qRcmd," .. command:gsub(".", function(c)
-                return string.format("%02x", c:byte())
-            end))
-        end
-
         -- Keeps only the hash lines, so gdb and plain logs can be compared.
         local function hash_lines(log)
             local lines = {}
@@ -3140,69 +3172,12 @@ describe("cartesi-machine CLI", function()
             return table.concat(lines, "\n")
         end
 
-        -- Runs the CLI with the given flags plus --gdb in the background, drives
-        -- the session with script(conn), and returns the CLI's stderr.
-        local function run_under_gdb(flags, port, script)
-            local _ <close>, log = scope_temp_pathname()
-            local _ <close>, done = scope_temp_pathname()
-            local args = {}
-            for _, f in ipairs(flags) do
-                args[#args + 1] = shquote(f)
-            end
-            local _ <close>, runner = filesystem.write_scope_temp_file(
-                string.format(
-                    "#!/bin/sh\n(CARTESI_IMAGES_PATH=%s %s %s %s --gdb=127.0.0.1:%d >/dev/null 2>%s; touch %s) &\n"
-                        .. "echo $!\n",
-                    shquote(images_path),
-                    CLI_LUA,
-                    CLI,
-                    table.concat(args, " "),
-                    port,
-                    shquote(log),
-                    shquote(done)
-                )
-            )
-            local pipe = assert(io.popen("sh " .. shquote(runner)))
-            local pid = pipe:read("*l")
-            pipe:close()
-            local _ <close> = utils.scope_exit(function()
-                if pid then
-                    os.execute("kill " .. pid .. " 2>/dev/null")
-                end
-            end)
-            -- wait for the stub to listen, then connect
-            local conn
-            for _ = 1, 100 do
-                conn = socket.connect("127.0.0.1", port)
-                if conn then
-                    break
-                end
-                socket.sleep(0.1)
-            end
-            assert(conn, "could not connect to the GDB stub")
-            conn:settimeout(60)
-            assert(conn:setoption("tcp-nodelay", true))
-            assert(conn:send("+")) -- connection-start acknowledge expected by the stub
-            script(conn)
-            conn:close()
-            -- wait for the CLI to exit, so the log is complete
-            for _ = 1, 600 do
-                local f = io.open(done, "r")
-                if f then
-                    f:close()
-                    return filesystem.read_file(log)
-                end
-                socket.sleep(0.1)
-            end
-            error("CLI under GDB did not exit")
-        end
-
         -- Mcycle root hashes split across two continues: the first crosses the suspend
         -- at start and stops mid-period at the stepc limit, the second runs to
         -- --max-mcycle. No --quiet below, it would silence the hash streams.
         local periodic_flags = { "--print-mcycle-root-hashes=7,start:150", "--max-mcycle=1000", "--no-init-splash" }
         local _, plain = run_ok(periodic_flags)
-        local under_gdb = run_under_gdb(periodic_flags, 53211, function(conn)
+        local under_gdb = run_under_gdb(periodic_flags, function(conn)
             expect.equal(gdb_rcmd(conn, "stepc 375"), "OK")
             expect.equal(gdb_command(conn, "c"), "S02") -- SIGINT at the stepc limit
             expect.equal(gdb_rcmd(conn, "stepc_clear"), "OK")
@@ -3215,7 +3190,7 @@ describe("cartesi-machine CLI", function()
         -- Uarch cycle root hashes: one continue crosses both window boundaries.
         local dense_flags = { "--print-uarch-cycle-root-hashes=2,start:5", "--max-mcycle=20", "--no-init-splash" }
         local _, plain_dense = run_ok(dense_flags)
-        local under_gdb_dense = run_under_gdb(dense_flags, 53212, function(conn)
+        local under_gdb_dense = run_under_gdb(dense_flags, function(conn)
             expect.equal(gdb_command(conn, "c"), "S03") -- SIGQUIT at --max-mcycle
             expect.equal(gdb_command(conn, "D"), "OK")
         end)
@@ -3225,7 +3200,7 @@ describe("cartesi-machine CLI", function()
         -- Detach right away: the collection finishes against the machine.
         local fallback_flags = { "--print-mcycle-root-hashes=7", "--max-mcycle=500", "--no-init-splash" }
         local _, plain_fallback = run_ok(fallback_flags)
-        local under_gdb_fallback = run_under_gdb(fallback_flags, 53213, function(conn)
+        local under_gdb_fallback = run_under_gdb(fallback_flags, function(conn)
             expect.equal(gdb_command(conn, "D"), "OK")
         end)
         expect.truthy(#hash_lines(plain_fallback) > 0)

@@ -66,13 +66,9 @@ function GDBStub.new(machine, max_mcycle)
     }, GDBStub)
 end
 
--- Listens at address:port and waits GDB to connect.
-function GDBStub:listen_and_wait_gdb(address, port)
-    address = address or "127.0.0.1"
-    port = port or 1234
-    -- listens and wair for GDB connection
-    local socket = require("socket")
-    local server = assert(socket.bind(address, port))
+-- Waits for GDB to connect to a listening socket.
+function GDBStub:_wait_gdb(server)
+    local address, port = assert(server:getsockname())
     stderr("Waiting GDB to connect at %s:%d...", address, port)
     local conn = assert(server:accept())
     -- GDB connected, we can close the server
@@ -84,6 +80,24 @@ function GDBStub:listen_and_wait_gdb(address, port)
     -- enable TCP nodelay, necessary to have fast interactive session
     assert(conn:setoption("tcp-nodelay", true))
     self.conn = conn
+end
+
+-- Listens at address:port and waits for GDB to connect.
+function GDBStub:wait_gdb_address_port(address, port)
+    local socket = require("socket")
+    local server = assert(socket.bind(address or "127.0.0.1", port or 1234))
+    self:_wait_gdb(server)
+end
+
+-- Takes ownership of an inherited listening socket and waits for GDB to connect.
+function GDBStub:wait_gdb_fd(fd)
+    local socket = require("socket")
+    local server = assert(socket.tcp())
+    server:setfd(fd)
+    -- setfd only replaces the descriptor. listen also changes the LuaSocket
+    -- object from tcp{master} to tcp{server}, which accept requires.
+    assert(server:listen())
+    self:_wait_gdb(server)
 end
 
 -- Receive a packet from GDB.

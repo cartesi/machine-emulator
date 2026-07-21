@@ -45,12 +45,12 @@ vgu.SCHEMA_DICT.LogCommitment = {
     step_log = "AccessLog",
     reset_log = "AccessLog",
 }
--- An output, its proof in the output hashes tree, and the proof tying that tree's root hash
+-- An output, its proof in the outputs Merkle tree, and the proof tying that tree's root hash
 -- into the final state hash.
 vgu.SCHEMA_DICT.EpochResult = {
     output = "Base64",
     output_proof = "Proof",
-    output_hashes_root_hash_proof = "Proof",
+    outputs_merkle_root_proof = "Proof",
 }
 
 local TEMPLATE = "rolling-calculator-template"
@@ -130,8 +130,8 @@ end
 -- docs:end revert_if_rejected
 
 -- Feeds one input and runs it out, leaving the machine at the next input boundary and
--- returning the reason of the request it yielded and, on acceptance, the output hashes root
--- hash the guest reported. An index past the epoch's last input carries no data and leaves the
+-- returning the reason of the request it yielded and, on acceptance, the outputs Merkle root
+-- the guest reported. An index past the epoch's last input carries no data and leaves the
 -- machine untouched. The run's target lies far past any yield, and a yielded machine no longer
 -- advances, so the run just stops at the accept or reject request. The snapshot taken at the
 -- feed is the recorded revert state. Inputs are typically accepted, and an accepted input
@@ -153,7 +153,7 @@ end
 
 -- The claimed final state. Forks the agreed machine, processes the whole epoch through it, and
 -- reports the final root hash. Along the way it collects the epoch result prove_output()
--- answers with later: each accepted input's outputs are folded into the output hashes tree
+-- answers with later: each accepted input's outputs are folded into the outputs Merkle tree
 -- frontier, checked against the root hash the guest reported, and the accepting state's
 -- tx-buffer word proof is kept, tying that root hash into the state hash. Once the epoch
 -- closes, the frontier proves the last output against the final root.
@@ -171,14 +171,14 @@ local function commit_final_hash(player)
                 leaves[#leaves + 1] = cartesi.keccak256(output)
                 hash_tree.frontier_push_back(frontier, leaves[#leaves])
             end
-            assert(hash_tree.frontier_get_root_hash(frontier) == reported_root, "output hashes root hash mismatch")
+            assert(hash_tree.frontier_get_root_hash(frontier) == reported_root, "outputs Merkle root mismatch")
             root_hash_proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
         end
     end
     player.epoch_result = {
         output = outputs[#outputs],
         output_proof = hash_tree.frontier_next_proofs(genesis_frontier, leaves)[#leaves],
-        output_hashes_root_hash_proof = root_hash_proof,
+        outputs_merkle_root_proof = root_hash_proof,
     }
     player.final_hash = machine:get_root_hash()
     machine:shutdown_server()
@@ -295,19 +295,19 @@ local function wait_for_output(players)
     return wait_for_any(players, "EpochResult", "return player:prove_output()")
 end
 
--- Checks an epoch result against a verified final hash. The output hashes root hash proof must
+-- Checks an epoch result against a verified final hash. The outputs Merkle root proof must
 -- be whole-machine, sit at the tx-buffer word, and roll up to the final hash. The output
 -- proof's root must be the value that word holds, and its target the hash of the output itself.
 -- Returns whether it all holds.
 -- docs:begin verify_result
 local function verify_result(result, final_hash)
-    local output_hashes_root_hash_proof, output_proof = result.output_hashes_root_hash_proof, result.output_proof
-    return output_hashes_root_hash_proof.root_hash == final_hash
-        and output_hashes_root_hash_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
-        and output_hashes_root_hash_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START
-        and output_hashes_root_hash_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE
-        and pcall(hash_tree.verify_slice, output_hashes_root_hash_proof)
-        and cartesi.keccak256(output_proof.root_hash) == output_hashes_root_hash_proof.target_hash
+    local outputs_merkle_root_proof, output_proof = result.outputs_merkle_root_proof, result.output_proof
+    return outputs_merkle_root_proof.root_hash == final_hash
+        and outputs_merkle_root_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
+        and outputs_merkle_root_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START
+        and outputs_merkle_root_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE
+        and pcall(hash_tree.verify_slice, outputs_merkle_root_proof)
+        and cartesi.keccak256(output_proof.root_hash) == outputs_merkle_root_proof.target_hash
         and pcall(hash_tree.verify_slice, output_proof)
         and cartesi.keccak256(result.output) == output_proof.target_hash
 end

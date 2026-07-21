@@ -378,9 +378,9 @@ where options are:
         last_output_proof:<filename>
         format:<lua|json>
         report:<filename-pattern>
-        output_hashes_root_hash:<filename-pattern>
-        output_hashes_root_hash_proof:<filename-pattern>
-        check_output_hashes_root_hash:<boolean>
+        outputs_merkle_root:<filename-pattern>
+        outputs_merkle_root_proof:<filename-pattern>
+        check_outputs_merkle_root:<boolean>
         print_input_state_hashes
         mcycle_computation_hash:<filename>
         log2_mcycle_computation_hash_period:<number>
@@ -412,13 +412,13 @@ where options are:
         is the input.
 
         output_proof (default: "output-%%o-input-%%i-proof.<format>")
-        write the proof of each accepted output against the final output hashes
-        root hash. serialized according to "format". when left at the default,
+        write the proof of each accepted output against the final outputs Merkle
+        root. serialized according to "format". when left at the default,
         its extension tracks "format".
 
         last_output_proof (no default)
         read the previous run's last output proof from this file and resume the
-        output hashes tree. omit it for the genesis run. read according to
+        outputs Merkle tree. omit it for the genesis run. read according to
         "format".
 
         format (optional)
@@ -429,17 +429,17 @@ where options are:
         the pattern that derives the name of the file written for report %%o
         of input %%i.
 
-        output_hashes_root_hash (default: "input-%%i-output-hashes-root-hash.bin")
-        the pattern that derives the name of the file written for the output
-        hashes root hash after input %%i.
+        outputs_merkle_root (default: "input-%%i-outputs-merkle-root.bin")
+        the pattern that derives the name of the file written for the outputs
+        Merkle root after input %%i.
 
-        output_hashes_root_hash_proof (default: "input-%%i-output-hashes-root-hash-proof.<format>")
-        write the proof that the output hashes root hash occupied the tx buffer
+        outputs_merkle_root_proof (default: "input-%%i-outputs-merkle-root-proof.<format>")
+        write the proof that the outputs Merkle root occupied the tx buffer
         when input %%i was accepted. serialized according to "format". when left
         at the default, its extension tracks "format".
 
-        check_output_hashes_root_hash (default: true)
-        check that the output hashes root hash maintained by the host matches
+        check_outputs_merkle_root (default: true)
+        check that the outputs Merkle root maintained by the host matches
         the one written by the guest. requires the genesis run or
         last_output_proof.
 
@@ -1820,11 +1820,11 @@ options = {
             -- output_proof is left as the user wrote it (format still selects the content).
             r.output_proof = r.output_proof or ("output-%o-input-%i-proof." .. (r.format or "lua"))
             r.report = r.report or "input-%i-report-%o.bin"
-            r.output_hashes_root_hash = r.output_hashes_root_hash or "input-%i-output-hashes-root-hash.bin"
+            r.outputs_merkle_root = r.outputs_merkle_root or "input-%i-outputs-merkle-root.bin"
             -- Like output_proof, the default extension tracks "format" while an explicit value is left as-is.
-            r.output_hashes_root_hash_proof = r.output_hashes_root_hash_proof
-                or ("input-%i-output-hashes-root-hash-proof." .. (r.format or "lua"))
-            if r.check_output_hashes_root_hash == nil then r.check_output_hashes_root_hash = true end
+            r.outputs_merkle_root_proof = r.outputs_merkle_root_proof
+                or ("input-%i-outputs-merkle-root-proof." .. (r.format or "lua"))
+            if r.check_outputs_merkle_root == nil then r.check_outputs_merkle_root = true end
             -- log2_mcycle_computation_hash_period enables the epoch computation hash: the mcycle
             -- one by default, or the uarch cycle one covering the period mcycle_period_index
             -- selects. The *_computation_hash keys name the files that receive them, and the
@@ -1903,15 +1903,15 @@ options = {
             input = "file",
             input_index_begin = "number",
             input_index_end = "number",
-            output_hashes_root_hash = "file",
-            output_hashes_root_hash_proof = "file",
+            outputs_merkle_root = "file",
+            outputs_merkle_root_proof = "file",
             output = "file",
             rejected_output = "file",
             output_proof = "file",
             last_output_proof = "file",
             format = { lua = "lua", json = "json" },
             report = "file",
-            check_output_hashes_root_hash = "boolean",
+            check_outputs_merkle_root = "boolean",
             print_input_state_hashes = "boolean",
             mcycle_computation_hash = "file",
             log2_mcycle_computation_hash_period = "number",
@@ -2844,8 +2844,8 @@ local function save_cmio_rejected_output(advance, data, index)
     return save_cmio_state_with_format(advance, data, advance.rejected_output, index)
 end
 
-local function save_cmio_output_hashes_root_hash(advance, data)
-    return save_cmio_state_with_format(advance, data, advance.output_hashes_root_hash)
+local function save_cmio_outputs_merkle_root(advance, data)
+    return save_cmio_state_with_format(advance, data, advance.outputs_merkle_root)
 end
 
 -- Serializes a Proof to a string in the resolved format. Lua keeps hashes raw (like
@@ -2886,14 +2886,14 @@ local function save_cmio_output_proofs(advance)
 end
 
 -- Writes the proof, in the machine state in which the just-accepted input was accepted, that the
--- output hashes root hash occupied the first word of the tx buffer (its 32 bytes are exactly one
--- tree word). This ties the output hashes root hash, against which "output_proof" proves each output,
+-- outputs Merkle root occupied the first word of the tx buffer (its 32 bytes are exactly one
+-- tree word). This ties the outputs Merkle root, against which "output_proof" proves each output,
 -- back into the machine state hash. Must be called while the machine still sits at the accept yield.
-local function save_cmio_output_hashes_root_hash_proof(advance, proof)
-    if advance.output_hashes_root_hash_proof == "" then return end
+local function save_cmio_outputs_merkle_root_proof(advance, proof)
+    if advance.outputs_merkle_root_proof == "" then return end
     local values = { i = advance.next_input_index - 1 }
-    local name = instantiate_filename(advance.output_hashes_root_hash_proof, values)
-    local format = resolve_format(advance.format, advance.output_hashes_root_hash_proof)
+    local name = instantiate_filename(advance.outputs_merkle_root_proof, values)
+    local format = resolve_format(advance.format, advance.outputs_merkle_root_proof)
     stderr("Storing %s\n", name)
     util.write_file(serialize_proof(proof, format), name)
 end
@@ -2912,19 +2912,19 @@ local function flush_pending_outputs(machine, advance, yield_reason, data)
             hash_tree.frontier_push_back(advance.running_frontier, leaf)
             advance.global_output_index = advance.global_output_index + 1
         end
-        assert(#data == cartesi.HASH_SIZE, "expected output hashes root hash in tx buffer")
-        save_cmio_output_hashes_root_hash(advance, data)
-        if advance.check_output_hashes_root_hash then
+        assert(#data == cartesi.HASH_SIZE, "expected outputs Merkle root in tx buffer")
+        save_cmio_outputs_merkle_root(advance, data)
+        if advance.check_outputs_merkle_root then
             assertf(
                 hash_tree.frontier_get_root_hash(advance.running_frontier) == data,
-                "output hashes root hash mismatch at input %d",
+                "outputs Merkle root mismatch at input %d",
                 advance.next_input_index - 1
             )
         end
         -- The accept-state proof that the tx buffer holds this root hash (target_hash = keccak256(data)).
         local proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
-        assert(proof.target_hash == cartesi.keccak256(data), "tx buffer does not hold the output hashes root hash")
-        save_cmio_output_hashes_root_hash_proof(advance, proof)
+        assert(proof.target_hash == cartesi.keccak256(data), "tx buffer does not hold the outputs Merkle root")
+        save_cmio_outputs_merkle_root_proof(advance, proof)
     else
         for position, output in ipairs(advance.pending_outputs) do
             save_cmio_rejected_output(advance, output, advance.global_output_index + position - 1)
@@ -3024,7 +3024,7 @@ if cmio_advance or cmio_inspect then
     check_cmio_htif_config(initial_config.processor.registers.htif)
     assert(remote_address or not perform_reverts, "cmio requires --remote-address for snapshot/commit/revert")
 end
--- Seed the outputs-tree frontier once, at the epoch start. With last_output_proof, resume the
+-- Seed the outputs Merkle tree frontier once, at the epoch start. With last_output_proof, resume the
 -- genesis-rooted tree from the previous epoch's last output, so this epoch's outputs continue at
 -- their running global indices. Otherwise start empty at genesis. The seed frontier produces the
 -- end-of-epoch proofs, and a copy tracks the running per-input root check.

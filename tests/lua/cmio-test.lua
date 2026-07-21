@@ -176,7 +176,7 @@ local function check_exception(machine, expected)
     assert(expected == output, string.format("expected: %q, got: %q", expected, output))
 end
 
-local function check_outputs_root_hash(root_hash, output_hashes)
+local function check_outputs_merkle_root(root_hash, output_hashes)
     local z = string.rep("\0", cartesi.HASH_SIZE)
     if #output_hashes == 0 then
         output_hashes = { z }
@@ -202,7 +202,7 @@ local function check_outputs_root_hash(root_hash, output_hashes)
         z = cartesi.keccak256(z, z)
         output_hashes = parent_output_hashes
     end
-    assert(root_hash == output_hashes[1], "output root hash mismatch")
+    assert(root_hash == output_hashes[1], "outputs Merkle root mismatch")
 end
 
 local function check_finish(machine, output_hashes, expected_reason)
@@ -211,10 +211,10 @@ local function check_finish(machine, output_hashes, expected_reason)
     assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL)
     assert(reason == expected_reason)
 
-    -- only check for output-hashes-root-hash if the input was accepted
+    -- only check for outputs-merkle-root if the input was accepted
     if expected_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
         assert(#output == cartesi.HASH_SIZE)
-        check_outputs_root_hash(output, output_hashes)
+        check_outputs_merkle_root(output, output_hashes)
     else
         assert(#output == 0)
     end

@@ -942,7 +942,7 @@ CM_API cm_error cm_reset_uarch(cm_machine *m);
 /// \details May fail if the machine is not in a valid yield state or data length isn't big enough.
 /// In case of an automatic yield with progress reason, length is 4 and data is the per mille progress as an integer.
 /// In case of other automatic yields, length is variable (up to 2MB) and data is an output or reports.
-/// In case of a manual yield with accepted reason, length is 32 and data is filled with the output hashes root hash.
+/// In case of a manual yield with accepted reason, length is 32 and data is filled with the outputs Merkle root.
 /// In case of a manual yield with rejected reason, length and data can be ignored. Machine state should be reverted.
 /// In case of a manual yield with exception reason, data/length point to a message. Machine state is irrecoverable.
 /// In case of other manual yields (GIO request), reason is set to the domain, and data/length is filled with an id.

@@ -2,7 +2,7 @@
 Test suite for the Lua hash-tree module.
 Specifically, it provides test coverage for:
     src/cartesi/hash-tree.lua
-It covers the outputs-tree frontier accumulator and the proof verifier at the outputs-tree depth.
+It covers the outputs Merkle tree frontier accumulator and the proof verifier at the outputs Merkle tree depth.
 Can be run independently during development of the mentioned file.
 ]]
 
@@ -14,8 +14,8 @@ local hash_tree = require("cartesi.hash-tree")
 
 local H = cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
 
--- Independent reference for the height-H pristine-padded keccak outputs root, mirroring
--- check_outputs_root_hash in tests/lua/cmio-test.lua. The leaves are already keccak256(output).
+-- Independent reference for the height-H pristine-padded keccak outputs Merkle root, mirroring
+-- check_outputs_merkle_root in tests/lua/cmio-test.lua. The leaves are already keccak256(output).
 local function reference_root(leaves)
     local z = string.rep("\0", cartesi.HASH_SIZE)
     local level = #leaves == 0 and { z } or leaves
@@ -342,7 +342,7 @@ describe("hash-tree.lua", function()
     end)
 
     describe("verify_slice", function()
-        it("verifies proofs at the outputs-tree depth", function()
+        it("verifies proofs at the outputs Merkle tree depth", function()
             local proofs = hash_tree.frontier_next_proofs(hash_tree.frontier(H), make_leaves(10))
             for _, proof in ipairs(proofs) do
                 expect.equal(proof.log2_root_size, H)

@@ -67,7 +67,7 @@ end
 -- docs:end get_root_hash
 
 -- The functions below are a generic incremental keccak Merkle accumulator (a "back merkle
--- tree") for the cmio outputs tree: a fixed-height tree whose leaves are keccak256(output),
+-- tree") for the CMIO outputs Merkle tree: a fixed-height tree whose leaves are keccak256(output),
 -- accumulating from genesis and padded on the right with pristine subtrees. Unlike the
 -- word-leaf memory tree above, its pristine leaf is literally HASH_SIZE zero bytes (not a
 -- hash of them), matching libcmt's cmt_merkle_t and tests/lua/cmio-test.lua. Nothing here is

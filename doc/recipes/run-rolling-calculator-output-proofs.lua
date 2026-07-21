@@ -101,13 +101,13 @@ local function flush_accepted(input_index, root_hash)
         hash_tree.frontier_push_back(running_frontier, leaf)
     end
     pending_outputs = {}
-    assert(#root_hash == cartesi.HASH_SIZE, "expected output hashes root hash in tx buffer")
-    assert(hash_tree.frontier_get_root_hash(running_frontier) == root_hash, "output hashes root hash mismatch")
+    assert(#root_hash == cartesi.HASH_SIZE, "expected outputs Merkle root in tx buffer")
+    assert(hash_tree.frontier_get_root_hash(running_frontier) == root_hash, "outputs Merkle root mismatch")
     local proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
     assert(proof.root_hash == machine:get_root_hash(), "proof root mismatch")
-    assert(proof.target_hash == cartesi.keccak256(root_hash), "tx buffer does not hold the output hashes root hash")
+    assert(proof.target_hash == cartesi.keccak256(root_hash), "tx buffer does not hold the outputs Merkle root")
     hash_tree.verify_slice(proof)
-    save_proof(proof, string.format("input-%d-output-hashes-root-hash-proof.lua", input_index))
+    save_proof(proof, string.format("input-%d-outputs-merkle-root-proof.lua", input_index))
 end
 
 -- Run the machine until it halts or stdin closes

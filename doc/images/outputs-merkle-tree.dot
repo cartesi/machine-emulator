@@ -1,11 +1,11 @@
-// Height-4 outputs tree (16 leaves), a stand-in for the real, much taller tree.
+// Height-4 outputs Merkle tree (16 leaves), a stand-in for the real, much taller tree.
 // Node positions are pinned for a perfectly symmetric binary tree (dot's own layout
 // leaves it skewed); render with "neato -n", which uses the positions and runs no
 // layout. leaf_count=6 entering: the frontier holds a complete 4-leaf subtree and a
 // complete 2-leaf subtree. Three new outputs form the active region. The last seven
 // leaves are pristine padding, a 4-leaf, a 2-leaf, and a 1-leaf subtree. Only the hashes
 // actually held are filled (the five subtree roots and the active region); the rest empty.
-digraph outputs_tree {
+digraph outputs_merkle_tree {
   graph [bgcolor=transparent];
   node [shape=circle, fixedsize=true, width=0.34, label="", style=filled, color="#555555", penwidth=2];
   edge [arrowhead=none, color="#555555"];

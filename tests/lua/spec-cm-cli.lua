@@ -1851,7 +1851,7 @@ describe("cartesi-machine CLI", function()
     --       ioctl-echo-loop from the guest rootfs.
     -- How:  Encode two EvmAdvance inputs with cartesi.evmu.encode_calldata and
     --       write a query file; run the CLI with both CMIO options and
-    --       --assert-rolling-template; assert that output, output-hash, and
+    --       --assert-rolling-template; assert that output, outputs-Merkle-root, and
     --       query-report files are produced.  This boots Linux and exercises
     --       the CMIO save/load helpers, yield dispatch, and the rolling-template
     --       success path.
@@ -1898,9 +1898,9 @@ describe("cartesi-machine CLI", function()
                 .. "report:"
                 .. prefix
                 .. "-rep-%i-%o.bin,"
-                .. "output_hashes_root_hash:"
+                .. "outputs_merkle_root:"
                 .. prefix
-                .. "-outh-%i.bin,output_hashes_root_hash_proof:",
+                .. "-outh-%i.bin,outputs_merkle_root_proof:",
             "--cmio-inspect-state=query:" .. prefix .. "-query.bin," .. "report:" .. prefix .. "-qrep-%o.bin",
             "--no-revert",
             "--assert-rolling-template",
@@ -1918,13 +1918,13 @@ describe("cartesi-machine CLI", function()
         expect.equal(out00.payload, "hello")
         local out12 = evmu.decode_calldata(voucher_sig, filesystem.read_file(prefix .. "-out-1-2.bin"), "raw")
         expect.equal(out12.payload, "world")
-        assert(io.open(prefix .. "-outh-0.bin", "r"), "no output-hash for input 0")
-        assert(io.open(prefix .. "-outh-1.bin", "r"), "no output-hash for input 1")
+        assert(io.open(prefix .. "-outh-0.bin", "r"), "no outputs Merkle root for input 0")
+        assert(io.open(prefix .. "-outh-1.bin", "r"), "no outputs Merkle root for input 1")
         expect.equal(filesystem.read_file(prefix .. "-qrep-0.bin"), "inspect-me")
 
-        -- Every output proof must verify against the outputs root of the last accepted input (the
+        -- Every output proof must verify against the outputs Merkle root of the last accepted input (the
         -- final epoch root), and its target must hash the saved output bytes. A passing run already
-        -- cross-checked that root against the guest via check_output_hashes_root_hash.
+        -- cross-checked that root against the guest via check_outputs_merkle_root.
         local final_root = filesystem.read_file(prefix .. "-outh-1.bin")
         local outputs = {
             { o = 0, i = 0, file = "-out-0-0.bin" },
@@ -1968,8 +1968,8 @@ describe("cartesi-machine CLI", function()
         end)
         filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "hello"))
 
-        -- This test inspects only the output proof files. Disable output_hashes_root_hash and
-        -- output_hashes_root_hash_proof so their cwd-relative defaults are not written (a stray
+        -- This test inspects only the output proof files. Disable outputs_merkle_root and
+        -- outputs_merkle_root_proof so their cwd-relative defaults are not written (a stray
         -- relative write fails on a read-only CI working directory).
         run_ok({
             "--cmio-advance-state=input:"
@@ -1979,7 +1979,7 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-lua-%o-%i.lua",
@@ -2008,7 +2008,7 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-json-%o-%i.lua,"
@@ -2030,20 +2030,20 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- -------------------------------------------------------------------------
-    -- Output hashes root hash accumulates across accepted inputs
+    -- Outputs Merkle root accumulates across accepted inputs
     --
-    -- What: The outputs tree grows from genesis and is NOT reset on each accept,
+    -- What: The outputs Merkle tree grows from genesis and is NOT reset on each accept,
     --       so the root the guest writes after the second input covers both
     --       inputs' outputs, not just the second's. A guest that reset its tree
     --       per accept (a real bug once present in the rollup guest utility)
     --       would write the single-leaf root instead.
     -- How:  Advance two accepted inputs, one output each, and compare each
-    --       input's output_hashes_root_hash against the root computed
+    --       input's outputs_merkle_root against the root computed
     --       independently over the accumulated leaves.
     -- -------------------------------------------------------------------------
-    it("output hashes root hash accumulates across inputs", function()
-        -- Root of the height-ROLLUP_LOG2_MAX_OUTPUT_COUNT pristine-padded outputs tree over leaves.
-        local function outputs_root(leaves)
+    it("outputs Merkle root accumulates across inputs", function()
+        -- Root of the height-ROLLUP_LOG2_MAX_OUTPUT_COUNT pristine-padded outputs Merkle tree over leaves.
+        local function outputs_merkle_root(leaves)
             local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
             for _, leaf in ipairs(leaves) do
                 hash_tree.frontier_push_back(frontier, leaf)
@@ -2076,9 +2076,9 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-out-%o-%i.bin,"
                 .. "output_proof:,rejected_output:,report:,"
-                .. "output_hashes_root_hash:"
+                .. "outputs_merkle_root:"
                 .. prefix
-                .. "-oh-%i.bin,output_hashes_root_hash_proof:",
+                .. "-oh-%i.bin,outputs_merkle_root_proof:",
             "--no-revert",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
@@ -2091,10 +2091,10 @@ describe("cartesi-machine CLI", function()
         local leaf0 = cartesi.keccak256(filesystem.read_file(prefix .. "-out-0-0.bin"))
         local leaf1 = cartesi.keccak256(filesystem.read_file(prefix .. "-out-1-1.bin"))
         -- After input 0 the guest root covers one leaf, after input 1 it covers both.
-        expect.equal(filesystem.read_file(prefix .. "-oh-0.bin"), outputs_root({ leaf0 }))
-        expect.equal(filesystem.read_file(prefix .. "-oh-1.bin"), outputs_root({ leaf0, leaf1 }))
+        expect.equal(filesystem.read_file(prefix .. "-oh-0.bin"), outputs_merkle_root({ leaf0 }))
+        expect.equal(filesystem.read_file(prefix .. "-oh-1.bin"), outputs_merkle_root({ leaf0, leaf1 }))
         -- A per-accept reset would have written the single-leaf root for input 1.
-        expect.truthy(filesystem.read_file(prefix .. "-oh-1.bin") ~= outputs_root({ leaf1 }))
+        expect.truthy(filesystem.read_file(prefix .. "-oh-1.bin") ~= outputs_merkle_root({ leaf1 }))
     end)
 
     -- -------------------------------------------------------------------------
@@ -2160,9 +2160,9 @@ describe("cartesi-machine CLI", function()
                 .. "report:"
                 .. prefix
                 .. "-rbr-%i-%o.bin,"
-                .. "output_hashes_root_hash:"
+                .. "outputs_merkle_root:"
                 .. prefix
-                .. "-rboh-%i.bin,output_hashes_root_hash_proof:",
+                .. "-rboh-%i.bin,outputs_merkle_root_proof:",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2186,12 +2186,12 @@ describe("cartesi-machine CLI", function()
             "reject-me"
         )
         assert(io.open(prefix .. "-rbrej-3-1.bin", "r"), "no rejected notice for input 1")
-        -- and never appear among the accepted outputs, nor get a proof or an output root hash
+        -- and never appear among the accepted outputs, nor get a proof or an outputs Merkle root
         assert(not io.open(prefix .. "-rbo-1-2.bin", "r"), "rejected output leaked into accepted outputs")
         assert(not io.open(prefix .. "-rbproof-2-1.json", "r"), "proof emitted for a rejected output")
-        assert(not io.open(prefix .. "-rboh-1.bin", "r"), "rejected input wrote an output root hash")
+        assert(not io.open(prefix .. "-rboh-1.bin", "r"), "rejected input wrote an outputs Merkle root")
 
-        -- every accepted output proof verifies against the last accepted input's outputs root
+        -- every accepted output proof verifies against the last accepted input's outputs Merkle root
         local final_root = filesystem.read_file(prefix .. "-rboh-2.bin")
         for _, p in ipairs({ { o = 0, i = 0 }, { o = 1, i = 0 }, { o = 2, i = 2 }, { o = 3, i = 2 } }) do
             local proof = cartesi.fromjson(
@@ -2269,7 +2269,7 @@ describe("cartesi-machine CLI", function()
                 .. "-chin-%i.bin,"
                 .. "input_index_begin:0,input_index_end:3,"
                 .. "output:,rejected_output:,output_proof:,report:,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "mcycle_computation_hash:"
                 .. prefix
                 .. "-ch.bin,"
@@ -2308,7 +2308,7 @@ describe("cartesi-machine CLI", function()
                 .. "-chin-%i.bin,"
                 .. "input_index_begin:0,input_index_end:3,"
                 .. "output:,rejected_output:,output_proof:,report:,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "mcycle_computation_hash:"
                 .. prefix
                 .. "-chb.bin,"
@@ -2342,7 +2342,7 @@ describe("cartesi-machine CLI", function()
         end)
         run_ok({
             "--cmio-advance-state=input_index_end:0,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "mcycle_computation_hash:"
                 .. prefix
                 .. "-ch0.bin,"
@@ -2388,7 +2388,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-chh-%i.bin,"
                 .. "input_index_begin:0,input_index_end:1,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "mcycle_computation_hash:"
                 .. prefix
                 .. "-chh.bin,"
@@ -2411,7 +2411,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-chh-%i.bin,"
                 .. "input_index_begin:0,input_index_end:1,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "mcycle_computation_hash:"
                 .. prefix
                 .. "-chhb.bin,"
@@ -2496,7 +2496,7 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                 .. ","
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:",
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:",
             "--no-revert",
             "--max-mcycle=1000",
             "--no-init-splash",
@@ -2527,7 +2527,7 @@ describe("cartesi-machine CLI", function()
                 .. "-chr-%i.bin,"
                 .. "input_index_begin:0,input_index_end:2,"
                 .. "output:,rejected_output:,output_proof:,report:,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--no-revert",
@@ -2569,7 +2569,7 @@ describe("cartesi-machine CLI", function()
         }, "mcycle_period_index past the periods of an epoch")
         run_ok({
             "--cmio-advance-state=output:,rejected_output:,output_proof:,report:,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "mcycle_period_index:0,log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                 .. ",log2_bundle_uarch_cycle_count:0",
@@ -2620,7 +2620,7 @@ describe("cartesi-machine CLI", function()
                 .. "-uchr-%i.bin,"
                 .. "input_index_begin:0,input_index_end:2,"
                 .. "output:,rejected_output:,output_proof:,report:,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "mcycle_period_index:"
                 .. (3 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD))
                 .. ",log2_mcycle_computation_hash_period:"
@@ -2678,7 +2678,7 @@ describe("cartesi-machine CLI", function()
             .. "-uin-%i.bin,"
             .. "input_index_begin:0,input_index_end:3,"
             .. "output:,rejected_output:,output_proof:,report:,"
-            .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+            .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
         local entrypoint = "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1"
 
         -- Locate the period of input 1's reject: its boundary mcycle is the label of the
@@ -2775,7 +2775,7 @@ describe("cartesi-machine CLI", function()
         end)
         run_ok({
             "--cmio-advance-state=input_index_end:0,"
-                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "uarch_cycle_computation_hash:"
                 .. prefix
                 .. "-uch0.bin,"
@@ -2826,9 +2826,9 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     -- Two-epoch continuation via last_output_proof, with a reject mid-epoch
     --
-    -- What: A later epoch's output proofs continue the genesis-rooted outputs tree
+    -- What: A later epoch's output proofs continue the genesis-rooted outputs Merkle tree
     --       of an earlier one when seeded with the previous epoch's last output
-    --       proof, and check_output_hashes_root_hash (default on) keeps holding
+    --       proof, and check_outputs_merkle_root (default on) keeps holding
     --       even when an input in the middle is rejected and rolls the tree back.
     -- How:  Spawn one server and keep it alive. Epoch 1 (--no-remote-destroy)
     --       instantiates the machine and advances inputs 0 and 1 against it. The
@@ -2889,7 +2889,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-ein-%i.bin,"
                 .. "input_index_begin:0,input_index_end:2,"
-                .. "output:,rejected_output:,report:,output_hashes_root_hash:,output_hashes_root_hash_proof:,"
+                .. "output:,rejected_output:,report:,outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-e1proof-%o-%i.json",
@@ -2901,8 +2901,8 @@ describe("cartesi-machine CLI", function()
         })
 
         -- Epoch 2: reuse the same live machine (no new entrypoint), seeded with epoch 1's last output
-        -- proof. Input 3 is rejected, so the guest rolls its outputs tree back. The default root-hash
-        -- check still holds because the host frontier rolls back in step.
+        -- proof. Input 3 is rejected, so the guest rolls its outputs Merkle tree back. The default outputs
+        -- Merkle root check still holds because the host frontier rolls back in step.
         run_ok({
             "--remote-address=" .. address,
             "--no-remote-create",
@@ -2923,9 +2923,9 @@ describe("cartesi-machine CLI", function()
                 .. "output_proof:"
                 .. prefix
                 .. "-e2proof-%o-%i.json,"
-                .. "output_hashes_root_hash:"
+                .. "outputs_merkle_root:"
                 .. prefix
-                .. "-e2oh-%i.bin,output_hashes_root_hash_proof:",
+                .. "-e2oh-%i.bin,outputs_merkle_root_proof:",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2948,7 +2948,7 @@ describe("cartesi-machine CLI", function()
         assert(io.open(prefix .. "-e2rej-6-3.bin", "r"), "no rejected voucher for input 3")
         assert(io.open(prefix .. "-e2rej-7-3.bin", "r"), "no rejected notice for input 3")
         assert(not io.open(prefix .. "-e2o-6-3.bin", "r"), "rejected output leaked into accepted outputs")
-        assert(not io.open(prefix .. "-e2oh-3.bin", "r"), "rejected input wrote an output root hash")
+        assert(not io.open(prefix .. "-e2oh-3.bin", "r"), "rejected input wrote an outputs Merkle root")
     end)
 
     -- -------------------------------------------------------------------------
@@ -2987,7 +2987,7 @@ describe("cartesi-machine CLI", function()
                 .. "report:"
                 .. prefix
                 .. "-rtrp-%i-%o.bin,"
-                .. "output_hashes_root_hash:"
+                .. "outputs_merkle_root:"
                 .. prefix
                 .. "-rth-%i.bin",
             "--no-revert",

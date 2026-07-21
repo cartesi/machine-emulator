@@ -11,10 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a `label` field to memory range configurations, exposed to the guest through a standard DTB `/aliases` node (`flashdriveN`, `nvramN`, and any user label)
 - Added recording of a revert root hash as a logged input of `send_cmio_response`, with `read_revert_root_hash`/`write_revert_root_hash` accessors across all API layers
 - Added reversion to the recorded revert root hash for rollup inputs that end rejected, when logging steps, logging uarch resets, verifying, and collecting root hashes
-- Added emission of per-output proofs from `--cmio-advance-state`
+- Added outputs Merkle tree tracking and proof emission to `--cmio-advance-state`, including the `output_proof`, `last_output_proof`, `outputs_merkle_root`, `outputs_merkle_root_proof`, and `check_outputs_merkle_root` sub-options
 - Added an optional user schema dictionary argument to `cartesi.tojson`/`cartesi.fromjson` to name binary and compound fields of caller-defined message types
 - Added `cartesi.tohex`/`cartesi.fromhex` and a `Hex` schema type for `cartesi.tojson`/`cartesi.fromjson`
-- Added a `cartesi.hash-tree` Lua module for hash-tree slice/splice verification and building the output-hashes frontier behind the output proofs
+- Added a `cartesi.hash-tree` Lua module for hash-tree slice/splice verification and building the outputs Merkle tree frontier behind the output proofs
 - Added `get_address_name` to resolve a physical address to a descriptive name, across the C, Lua, and JSON-RPC APIs
 - Added the ability for `--initial-hash` and `--final-hash` to write the hash to a file
 - Added an optional directory argument to `--dump-memory-ranges` to support read-only install locations

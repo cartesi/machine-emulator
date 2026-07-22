@@ -1839,6 +1839,41 @@ uint64_t machine::write_console_input(const uint8_t *data, uint64_t length) {
     return m_console.write_input(data, length);
 }
 
+machine_cmio_request machine::receive_cmio_request(std::span<uint8_t> data) const {
+    if ((read_reg(reg::iflags_X) == 0) && (read_reg(reg::iflags_Y) == 0)) {
+        throw std::runtime_error{"machine is not yielded"};
+    }
+    const uint64_t tohost = read_reg(reg::htif_tohost);
+    machine_cmio_request request;
+    request.cmd = HTIF_CMD_FIELD(tohost);
+    request.reason = HTIF_REASON_FIELD(tohost);
+    const uint32_t tohost_data = HTIF_DATA_FIELD(tohost);
+    if (request.cmd == HTIF_YIELD_CMD_AUTOMATIC && request.reason == HTIF_YIELD_AUTOMATIC_REASON_PROGRESS) {
+        request.available_length = sizeof(uint32_t);
+        if (!data.empty()) {
+            if (request.available_length > data.size()) {
+                throw std::invalid_argument{"data buffer length is too small"};
+            }
+            std::memcpy(data.data(), &tohost_data, request.available_length);
+        }
+    } else {
+        request.available_length = tohost_data;
+        if (request.available_length > AR_CMIO_TX_BUFFER_LENGTH) {
+            throw std::runtime_error{"CMIO request data is too large"};
+        }
+        if (!data.empty()) {
+            if (request.available_length > data.size()) {
+                throw std::invalid_argument{"data buffer length is too small"};
+            }
+            read_memory(AR_CMIO_TX_BUFFER_START, data.data(), request.available_length);
+        }
+    }
+    if (!data.empty()) {
+        request.data = data.first(request.available_length);
+    }
+    return request;
+}
+
 uint64_t machine::read_word(uint64_t paddr) const {
     // Make sure address is aligned
     if ((paddr & (sizeof(uint64_t) - 1)) != 0) {

@@ -1079,29 +1079,37 @@ static int machine_obj_index_destroy(lua_State *L) {
 
 /// \brief This is the machine:receive_cmio_request() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_receive_cmio_request(lua_State *L) {
+static int machine_obj_index_receive_cmio_request(lua_State *L) try {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    uint64_t length{};
-    if (cm_receive_cmio_request(m.get(), nullptr, nullptr, nullptr, &length) != 0) {
+    bool remote{};
+    if (cm_is_jsonrpc_machine(m.get(), &remote) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    unsigned char *data{};
-    try {
-        data = new unsigned char[length];
-    } catch (const std::bad_alloc &e) {
-        luaL_error(L, "failed to allocate memory for buffer");
+    // For remote machines, a worst-case buffer avoids the extra roundtrip of a length query
+    uint64_t length{CM_AR_CMIO_TX_BUFFER_LENGTH};
+    if (!remote && cm_receive_cmio_request(m.get(), nullptr, nullptr, nullptr, &length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
+    std::string &data = *clua_push_new_managed_toclose_ptr(L, std::string());
     uint8_t cmd{};
     uint16_t reason{};
-    if (cm_receive_cmio_request(m.get(), &cmd, &reason, data, &length) != 0) {
+    cm_error error{};
+    data.resize_and_overwrite(length, [&](char *buf, size_t n) -> size_t {
+        uint64_t data_length = n;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        error = cm_receive_cmio_request(m.get(), &cmd, &reason, reinterpret_cast<unsigned char *>(buf), &data_length);
+        return error != 0 ? 0 : data_length;
+    });
+    if (error != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_pushinteger(L, cmd);
     lua_pushinteger(L, reason);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    lua_pushlstring(L, reinterpret_cast<const char *>(managed_data.get()), length);
-    managed_data.reset();
+    lua_pushlstring(L, data.data(), data.size());
+    data.clear();
+    return 3;
+} catch (const std::exception &e) {
+    luaL_error(L, "%s", e.what());
     return 3;
 }
 

@@ -29,6 +29,7 @@
 #include "hash-tree-proof.hpp"
 #include "hash-tree-stats.hpp"
 #include "interpret.hpp"
+#include "machine-cmio-request.hpp"
 #include "machine-config-fwd.hpp"
 #include "machine-hash.hpp"
 #include "machine-reg.hpp"
@@ -291,6 +292,11 @@ public:
         return do_get_address_ranges();
     }
 
+    /// \brief Receives a cmio request into a caller-provided buffer.
+    machine_cmio_request receive_cmio_request(std::span<uint8_t> data = {}) const {
+        return do_receive_cmio_request(data);
+    }
+
     /// \brief Sends cmio response.
     void send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
         uint64_t length) {
@@ -392,6 +398,7 @@ private:
     virtual uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
         int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) = 0;
     virtual address_range_descriptions do_get_address_ranges() const = 0;
+    virtual machine_cmio_request do_receive_cmio_request(std::span<uint8_t> data) const = 0;
     virtual void do_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
         const unsigned char *data, uint64_t length) = 0;
     virtual access_log do_log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,

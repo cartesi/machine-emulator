@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `cartesi.tohex`/`cartesi.fromhex` and a `Hex` schema type for `cartesi.tojson`/`cartesi.fromjson`
 - Added a `cartesi.hash-tree` Lua module supporting Keccak-256 and SHA-256 tree construction, proof verification, and frontiers
 - Added `get_address_name` to resolve a physical address to a descriptive name, across the C, Lua, and JSON-RPC APIs
+- Added `receive_cmio_request` to the C++ and JSON-RPC machine APIs, with length-only queries and caller-provided buffer support
+- Added `cm_is_jsonrpc_machine` to check whether a machine object is a remote JSON-RPC machine
 - Added the ability for `--initial-hash` and `--final-hash` to write the hash to a file
 - Added an optional directory argument to `--dump-memory-ranges` to support read-only install locations
 - Added decoding of RISC-V Zcb compressed instructions (required by kernels built with GCC 14)

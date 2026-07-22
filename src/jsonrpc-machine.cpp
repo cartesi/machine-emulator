@@ -74,6 +74,7 @@
 #include "i-machine.hpp"
 #include "interpret.hpp"
 #include "json-util.hpp"
+#include "jsonrpc-cmio-request.hpp"
 #include "jsonrpc-fork-result.hpp"
 #include "jsonrpc-version.hpp"
 #include "machine-config.hpp"
@@ -918,6 +919,28 @@ address_range_descriptions jsonrpc_machine::do_get_address_ranges() const {
     address_range_descriptions result;
     request("machine.get_address_ranges", std::tie(), result);
     return result;
+}
+
+machine_cmio_request jsonrpc_machine::do_receive_cmio_request(std::span<uint8_t> data) const {
+    jsonrpc_cmio_request result;
+    const uint64_t max_length = data.size();
+    request("machine.receive_cmio_request", std::tie(max_length), result);
+    if (!data.empty()) {
+        if (result.available_length > data.size()) {
+            throw std::invalid_argument{"data buffer length is too small"};
+        }
+        if (result.data.size() != result.available_length) {
+            throw std::runtime_error{"jsonrpc server returned inconsistent CMIO request data length"};
+        }
+        std::ranges::copy(result.data, data.begin());
+    } else if (!result.data.empty()) {
+        throw std::runtime_error{"jsonrpc server returned data for a CMIO request length query"};
+    }
+    return machine_cmio_request{.cmd = result.cmd,
+        .reason = result.reason,
+        .available_length = result.available_length,
+        .data =
+            !data.empty() ? std::span<const uint8_t>{data.first(result.available_length)} : std::span<const uint8_t>{}};
 }
 
 void jsonrpc_machine::do_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,

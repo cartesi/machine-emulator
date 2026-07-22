@@ -1043,6 +1043,27 @@
       }
     },
     {
+      "name": "machine.receive_cmio_request",
+      "summary": "Receives a cmio request.",
+      "params": [
+        {
+          "name": "length",
+          "description": "Maximum data length to return, or zero to return only the available length",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "request",
+        "description": "Yield command, reason, available length, and requested data of the cmio request",
+        "schema": {
+          "$ref": "#/components/schemas/CmioRequest"
+        }
+      }
+    },
+    {
       "name": "machine.send_cmio_response",
       "summary": "Sends cmio response.",
       "params": [
@@ -1276,6 +1297,25 @@
           },
           "pid": {
             "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      },
+      "CmioRequest": {
+        "title": "CmioRequest",
+        "type": "object",
+        "required": ["cmd", "reason", "available_length", "data"],
+        "properties": {
+          "cmd": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "available_length": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Base64String"
           }
         }
       },

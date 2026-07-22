@@ -42,7 +42,9 @@
 #include "hash-tree-proof.hpp"
 #include "hash-tree-stats.hpp"
 #include "interpret.hpp"
+#include "jsonrpc-cmio-request.hpp"
 #include "jsonrpc-fork-result.hpp"
+#include "machine-cmio-request.hpp"
 #include "machine-config.hpp"
 #include "machine-hash.hpp"
 #include "machine-reg.hpp"
@@ -897,6 +899,19 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint16_t &value, co
     value = static_cast<uint16_t>(value64);
 }
 
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uint8_t &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    uint64_t value64 = 0;
+    ju_get_field(j, key, value64, path);
+    if (value64 > UINT8_MAX) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" out of range");
+    }
+    value = static_cast<uint8_t>(value64);
+}
+
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uint32_t &value,
     const std::string &path);
 
@@ -906,6 +921,9 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uint16_t &value,
     const std::string &path);
 
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uint8_t &value,
+    const std::string &path);
+
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uint32_t &value,
     const std::string &path);
 
@@ -913,6 +931,9 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uint16_t &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uint8_t &value,
     const std::string &path);
 
 template <typename K>
@@ -2114,6 +2135,25 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, jsonrpc_cmio_request &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "cmd"s, value.cmd, new_path);
+    ju_get_opt_field(jconfig, "reason"s, value.reason, new_path);
+    ju_get_opt_field(jconfig, "available_length"s, value.available_length, new_path);
+    ju_get_opt_field(jconfig, "data"s, value.data, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, jsonrpc_cmio_request &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    jsonrpc_cmio_request &value, const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, mcycle_root_hashes &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
@@ -2553,6 +2593,11 @@ void to_json(nlohmann::json &j, const address_range_descriptions &mrds) {
 
 void to_json(nlohmann::json &j, const fork_result &fork_result) {
     j = nlohmann::json{{"address", fork_result.address}, {"pid", fork_result.pid}};
+}
+
+void to_json(nlohmann::json &j, const machine_cmio_request &request) {
+    j = nlohmann::json{{"cmd", request.cmd}, {"reason", request.reason}, {"available_length", request.available_length},
+        {"data", encode_base64(request.data)}};
 }
 
 void to_json(nlohmann::json &j, const semantic_version &version) {

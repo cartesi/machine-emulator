@@ -38,6 +38,7 @@
 #include "i-device-state-access-fwd.hpp"
 #include "interpret.hpp"
 #include "machine-address-ranges.hpp"
+#include "machine-cmio-request.hpp"
 #include "machine-config.hpp"
 #include "machine-console.hpp"
 #include "machine-hash.hpp"
@@ -594,6 +595,14 @@ public:
     /// \details The range can be identified by label, by start and length, or both.
     /// When both label and start/length are given, they must be consistent.
     void replace_memory_range(const memory_range_config &config);
+
+    /// \brief Receives a cmio request.
+    /// \param data Buffer that receives the yield data. If empty, only the data length is returned.
+    /// \returns Yield command, reason, available data length, and a view into the portion of \p data that was
+    /// filled.
+    /// \details May fail if the machine is not in a valid yield state, the yield data does not fit in the
+    /// CMIO TX buffer, or the data buffer is too small.
+    machine_cmio_request receive_cmio_request(std::span<uint8_t> data = {}) const;
 
     /// \brief Sends cmio response
     /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.

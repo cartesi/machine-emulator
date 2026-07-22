@@ -33,7 +33,9 @@
 #include "hash-tree-proof.hpp"
 #include "hash-tree-stats.hpp"
 #include "interpret.hpp"
+#include "jsonrpc-cmio-request.hpp"
 #include "jsonrpc-fork-result.hpp"
+#include "machine-cmio-request.hpp"
 #include "machine-config.hpp"
 #include "machine-hash.hpp"
 #include "machine-reg.hpp"
@@ -175,6 +177,15 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, int32_t &value, con
 /// \param path Path to j
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uint16_t &value, const std::string &path = "params/");
+
+/// \brief Attempts to load an uint8_t from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uint8_t &value, const std::string &path = "params/");
 
 /// \brief Attempts to load a semantic_version object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
@@ -659,6 +670,16 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, address_range_descr
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, fork_result &value, const std::string &path = "params/");
 
+/// \brief Attempts to load a jsonrpc_cmio_request object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, jsonrpc_cmio_request &value,
+    const std::string &path = "params/");
+
 /// \brief Attempts to load an mcycle_root_hashes object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
@@ -825,6 +846,7 @@ void to_json(nlohmann::json &j, const sharing_mode &sharing);
 void to_json(nlohmann::json &j, const address_range_description &mrd);
 void to_json(nlohmann::json &j, const address_range_descriptions &mrds);
 void to_json(nlohmann::json &j, const fork_result &fork_result);
+void to_json(nlohmann::json &j, const machine_cmio_request &request);
 void to_json(nlohmann::json &j, const semantic_version &version);
 void to_json(nlohmann::json &j, const std::vector<uint64_t> &uints);
 void to_json(nlohmann::json &j, const mcycle_root_hashes &result);
@@ -856,6 +878,8 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const std::string
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, uint32_t &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, uint16_t &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, uint8_t &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, semantic_version &value,
     const std::string &base = "params/");
@@ -932,6 +956,8 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const std::string
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, uint32_t &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, uint16_t &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, uint8_t &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key,
     not_default_constructible<access_log> &value, const std::string &base = "params/");
@@ -1032,6 +1058,10 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const std::string
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, fork_result &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, fork_result &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, jsonrpc_cmio_request &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, jsonrpc_cmio_request &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, mcycle_root_hashes &value,
     const std::string &base = "params/");

@@ -1327,6 +1327,86 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_mach
     BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x11111111));
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(is_jsonrpc_machine_test, ordinary_machine_fixture) {
+    bool yes{};
+    BOOST_REQUIRE_EQUAL(cm_is_jsonrpc_machine(_machine, &yes), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(yes, (g_server != nullptr));
+}
+
+class cmio_request_machine_fixture : public ordinary_machine_fixture {
+public:
+    cmio_request_machine_fixture() {
+        BOOST_REQUIRE_EQUAL(cm_write_reg(_machine, CM_REG_IFLAGS_Y, 1), CM_ERROR_OK);
+        BOOST_REQUIRE_EQUAL(cm_write_reg(_machine, CM_REG_HTIF_TOHOST_DEV, CM_HTIF_DEV_YIELD), CM_ERROR_OK);
+        BOOST_REQUIRE_EQUAL(cm_write_reg(_machine, CM_REG_HTIF_TOHOST_CMD, CM_HTIF_YIELD_CMD_MANUAL), CM_ERROR_OK);
+        BOOST_REQUIRE_EQUAL(cm_write_reg(_machine, CM_REG_HTIF_TOHOST_REASON, CM_HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED),
+            CM_ERROR_OK);
+        BOOST_REQUIRE_EQUAL(cm_write_reg(_machine, CM_REG_HTIF_TOHOST_DATA, _expected_data.size()), CM_ERROR_OK);
+        BOOST_REQUIRE_EQUAL(
+            cm_write_memory(_machine, CM_AR_CMIO_TX_BUFFER_START, _expected_data.data(), _expected_data.size()),
+            CM_ERROR_OK);
+    }
+
+protected:
+    const std::array<uint8_t, 8> _expected_data{{0x00, 0x11, 0x22, 0x33, 0xaa, 0xbb, 0xcc, 0xff}};
+};
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(receive_cmio_request_length_query_test, cmio_request_machine_fixture) {
+    uint8_t cmd{};
+    uint16_t reason{};
+    uint64_t length{};
+    const cm_error error_code = cm_receive_cmio_request(_machine, &cmd, &reason, nullptr, &length);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
+    BOOST_CHECK_EQUAL(cmd, CM_HTIF_YIELD_CMD_MANUAL);
+    BOOST_CHECK_EQUAL(reason, CM_HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED);
+    BOOST_CHECK_EQUAL(length, _expected_data.size());
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(receive_cmio_request_zero_length_buffer_query_test, cmio_request_machine_fixture) {
+    uint8_t cmd{};
+    uint16_t reason{};
+    std::array<uint8_t, 1> data{{0x5a}};
+    uint64_t length{};
+    const cm_error error_code = cm_receive_cmio_request(_machine, &cmd, &reason, data.data(), &length);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
+    BOOST_CHECK_EQUAL(cmd, CM_HTIF_YIELD_CMD_MANUAL);
+    BOOST_CHECK_EQUAL(reason, CM_HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED);
+    BOOST_CHECK_EQUAL(length, _expected_data.size());
+    BOOST_CHECK_EQUAL(data.front(), 0x5a);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(receive_cmio_request_exact_buffer_test, cmio_request_machine_fixture) {
+    uint8_t cmd{};
+    uint16_t reason{};
+    std::array<uint8_t, 8> data{};
+    uint64_t length{data.size()};
+    const cm_error error_code = cm_receive_cmio_request(_machine, &cmd, &reason, data.data(), &length);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
+    BOOST_CHECK_EQUAL(cmd, CM_HTIF_YIELD_CMD_MANUAL);
+    BOOST_CHECK_EQUAL(reason, CM_HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED);
+    BOOST_CHECK_EQUAL(length, _expected_data.size());
+    BOOST_CHECK_EQUAL_COLLECTIONS(data.begin(), data.end(), _expected_data.begin(), _expected_data.end());
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(receive_cmio_request_small_buffer_test, cmio_request_machine_fixture) {
+    uint8_t cmd{UINT8_MAX};
+    uint16_t reason{UINT16_MAX};
+    std::array<uint8_t, 7> data{};
+    data.fill(0x5a);
+    const auto original_data = data;
+    uint64_t length{data.size()};
+    const cm_error error_code = cm_receive_cmio_request(_machine, &cmd, &reason, data.data(), &length);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), std::string("data buffer length is too small"));
+    BOOST_CHECK_EQUAL(cmd, 0);
+    BOOST_CHECK_EQUAL(reason, 0);
+    BOOST_CHECK_EQUAL(length, 0);
+    BOOST_CHECK_EQUAL_COLLECTIONS(data.begin(), data.end(), original_data.begin(), original_data.end());
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_machine_fixture) {
     uint64_t write_data = 0x0;
     cm_error error_code = cm_write_reg(_machine, CM_REG_HTIF_FROMHOST, write_data);

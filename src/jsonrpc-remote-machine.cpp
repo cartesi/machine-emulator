@@ -72,6 +72,7 @@
 #endif
 
 #include "access-log.hpp"
+#include "address-range-constants.hpp"
 #include "back-merkle-tree.hpp"
 #include "base64.hpp"
 #include "cm-exception.hpp"
@@ -1615,6 +1616,21 @@ static json jsonrpc_machine_get_address_ranges_handler(const json &j, const std:
     return jsonrpc_response_ok(j, session->handler->machine->get_address_ranges());
 }
 
+/// \brief JSONRPC handler for the machine.receive_cmio_request method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_receive_cmio_request_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *const param_name[] = {"length"};
+    auto args = parse_args<uint64_t>(j, param_name);
+    const uint64_t max_length = std::get<0>(args);
+    std::vector<uint8_t> data(std::min<uint64_t>(max_length, cartesi::AR_CMIO_TX_BUFFER_LENGTH));
+    return jsonrpc_response_ok(j, session->handler->machine->receive_cmio_request(data));
+}
+
 /// \brief JSONRPC handler for the machine.send_cmio_response method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1767,6 +1783,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.set_runtime_config", jsonrpc_machine_set_runtime_config_handler},
         {"machine.verify_hash_tree", jsonrpc_machine_verify_hash_tree_handler},
         {"machine.get_address_ranges", jsonrpc_machine_get_address_ranges_handler},
+        {"machine.receive_cmio_request", jsonrpc_machine_receive_cmio_request_handler},
         {"machine.send_cmio_response", jsonrpc_machine_send_cmio_response_handler},
         {"machine.log_send_cmio_response", jsonrpc_machine_log_send_cmio_response_handler},
         {"machine.verify_send_cmio_response", jsonrpc_machine_verify_send_cmio_response_handler},

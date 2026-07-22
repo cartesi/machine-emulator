@@ -218,6 +218,10 @@ address_range_descriptions local_machine::do_get_address_ranges() const {
     return get_machine()->get_address_ranges();
 }
 
+machine_cmio_request local_machine::do_receive_cmio_request(std::span<uint8_t> data) const {
+    return get_machine()->receive_cmio_request(data);
+}
+
 void local_machine::do_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
     const unsigned char *data, uint64_t length) {
     get_machine()->send_cmio_response(revert_root_hash, reason, data, length);

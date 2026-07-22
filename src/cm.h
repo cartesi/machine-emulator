@@ -473,6 +473,12 @@ CM_API cm_error cm_clone_empty(const cm_machine *m, cm_machine **new_m);
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_is_empty(const cm_machine *m, bool *yes);
 
+/// \brief Checks if an object is a remote machine controlled via the JSONRPC API.
+/// \param m Pointer to the existing machine object.
+/// \param yes Receives true if remote, false otherwise.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_is_jsonrpc_machine(const cm_machine *m, bool *yes);
+
 /// \brief Deletes a machine object.
 /// \param m Pointer to the existing machine object (can be NULL).
 /// \details The pointer to the machine object must not be used after this call.
@@ -939,7 +945,9 @@ CM_API cm_error cm_reset_uarch(cm_machine *m);
 /// \param reason Receives the yield reason (see below).
 /// \param data Receives the yield data. If NULL, length will still be set without reading any data.
 /// \param length Receives the yield data length. Must be initialized to the size of data buffer.
-/// \details May fail if the machine is not in a valid yield state or data length isn't big enough.
+/// If initialized to 0, length will still be set without reading any data, as if data were NULL.
+/// \details May fail if the machine is not in a valid yield state, the yield data does not fit in the
+/// CMIO TX buffer, or the data buffer is too small.
 /// In case of an automatic yield with progress reason, length is 4 and data is the per mille progress as an integer.
 /// In case of other automatic yields, length is variable (up to 2MB) and data is an output or reports.
 /// In case of a manual yield with accepted reason, length is 32 and data is filled with the outputs Merkle root.

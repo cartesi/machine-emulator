@@ -591,6 +591,17 @@ cm_error cm_is_empty(const cm_machine *m, bool *yes) try {
     return cm_result_failure();
 }
 
+cm_error cm_is_jsonrpc_machine(const cm_machine *m, bool *yes) try {
+    if (yes == nullptr) {
+        throw std::invalid_argument("invalid yes output");
+    }
+    const auto *cpp_m = convert_from_c(m);
+    *yes = cpp_m->is_jsonrpc_machine();
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
 cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir) try {
     auto *cpp_m = convert_from_c(m);
     if (config == nullptr) {
@@ -1229,44 +1240,14 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
         throw std::invalid_argument("invalid length output");
     }
     const auto *cpp_m = convert_from_c(m);
-    // NOTE(edubart): This can be implemented on top of other APIs,
-    // implementing in the C++ machine class would add lot of boilerplate code in all interfaces.
-    if ((cpp_m->read_reg(cartesi::machine::reg::iflags_X) == 0) &&
-        (cpp_m->read_reg(cartesi::machine::reg::iflags_Y) == 0)) {
-        throw std::runtime_error{"machine is not yielded"};
-    }
-    const uint64_t tohost = cpp_m->read_reg(cartesi::machine::reg::htif_tohost);
-    const uint8_t tohost_cmd = cartesi::HTIF_CMD_FIELD(tohost);
-    const uint16_t tohost_reason = cartesi::HTIF_REASON_FIELD(tohost);
-    const uint32_t tohost_data = cartesi::HTIF_DATA_FIELD(tohost);
-    uint64_t data_length{};
-    // Reason progress is an special case where it doesn't need to read cmio TX buffer
-    if (tohost_cmd == cartesi::HTIF_YIELD_CMD_AUTOMATIC &&
-        tohost_reason == cartesi::HTIF_YIELD_AUTOMATIC_REASON_PROGRESS) {
-        data_length = sizeof(uint32_t);
-        if (data != nullptr) { // Only actually read when data is not NULL
-            if (data_length > *length) {
-                throw std::invalid_argument{"data buffer length is too small"};
-            }
-            memcpy(data, &tohost_data, data_length);
-        }
-    } else {
-        data_length = tohost_data;
-        if (data != nullptr) { // Only actually read when data is not NULL
-            if (data_length > *length) {
-                throw std::invalid_argument{"data buffer length is too small"};
-            }
-            cpp_m->read_memory(cartesi::AR_CMIO_TX_BUFFER_START, data, data_length);
-        }
-    }
+    const std::span<uint8_t> cpp_data = data != nullptr ? std::span<uint8_t>{data, *length} : std::span<uint8_t>{};
+    const auto request = cpp_m->receive_cmio_request(cpp_data);
+    *length = request.available_length;
     if (cmd != nullptr) {
-        *cmd = tohost_cmd;
+        *cmd = request.cmd;
     }
     if (reason != nullptr) {
-        *reason = tohost_reason;
-    }
-    if (length != nullptr) {
-        *length = data_length;
+        *reason = request.reason;
     }
     return cm_result_success();
 } catch (...) {

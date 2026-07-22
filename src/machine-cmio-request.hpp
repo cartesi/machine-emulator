@@ -15,19 +15,21 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef JSONRPC_FORK_RESULT_HPP
-#define JSONRPC_FORK_RESULT_HPP
+#ifndef MACHINE_CMIO_REQUEST_HPP
+#define MACHINE_CMIO_REQUEST_HPP
 
 #include <cstdint>
-#include <string>
+#include <span>
 
 namespace cartesi {
 
-struct fork_result final {
-    std::string address;
-    uint32_t pid{};
+struct machine_cmio_request final {
+    uint8_t cmd{};
+    uint16_t reason{};
+    uint64_t available_length{};
+    std::span<const uint8_t> data;
 };
 
 } // namespace cartesi
 
-#endif // JSONRPC_FORK_RESULT_HPP
+#endif // MACHINE_CMIO_REQUEST_HPP

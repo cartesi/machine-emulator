@@ -159,7 +159,7 @@ end
 -- closes, the frontier proves the last output against the final root.
 local function commit_final_hash(player)
     local machine = assert(player.agreed.machine:fork_server())
-    local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
+    local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     local frontier = hash_tree.frontier_copy(genesis_frontier)
     local outputs, leaves, root_hash_proof = {}, {}, nil
     for _, data in ipairs(player.inputs) do

@@ -8,14 +8,14 @@ Can be run independently during development the mentioned files.
 
 local lester = require("cartesi.third-party.lester")
 lester.parse_args()
-local tests_util = require("cartesi.tests.util")
+local cartesi = require("cartesi")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
 describe("hash function", function()
     describe("keccak256", function()
-        local keccak256 = require("cartesi").keccak256
+        local keccak256 = cartesi.keccak256
         local function hexkeccak256(...)
-            return tests_util.tohex(keccak256(...)):lower()
+            return cartesi.tohex(keccak256(...)):sub(3)
         end
 
         it("should fail when passing invalid arguments", function()
@@ -81,9 +81,9 @@ describe("hash function", function()
     end)
 
     describe("sha256", function()
-        local sha256 = require("cartesi").sha256
+        local sha256 = cartesi.sha256
         local function hexsha256(...)
-            return tests_util.tohex(sha256(...)):lower()
+            return cartesi.tohex(sha256(...)):sub(3)
         end
 
         it("should fail when passing invalid arguments", function()

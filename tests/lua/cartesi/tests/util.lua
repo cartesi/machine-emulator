@@ -15,11 +15,14 @@
 --
 
 local cartesi = require("cartesi")
+local hash_tree = require("cartesi.hash-tree")
 
 local ROOT_LOG2_SIZE = 64
 local PAGE_LOG2_SIZE = 12
 local PAGE_SIZE = 1 << PAGE_LOG2_SIZE
 local WORD_LOG2_SIZE = 5
+local PAGE_LOG2_WORD_COUNT = PAGE_LOG2_SIZE - WORD_LOG2_SIZE
+local ZERO_PAGE = string.rep("\0", PAGE_SIZE)
 
 local function adjust_path(path)
     return string.gsub(path or ".", "/*$", "") .. "/"
@@ -70,7 +73,11 @@ local zero_hash_tables = {
     keccak256 = compute_zero_hash_table("keccak256"),
     sha256 = compute_zero_hash_table("sha256"),
 }
-local ZERO_PAGE = string.rep("\x00", PAGE_SIZE)
+
+local function append_page(frontier, page, pristine_page_hash, hash_fn)
+    local page_hash = page == ZERO_PAGE and pristine_page_hash or hash_tree.get_root_hash(page, PAGE_LOG2_SIZE, hash_fn)
+    hash_tree.frontier_push_back(frontier, page_hash, PAGE_LOG2_WORD_COUNT)
+end
 
 tests_util.uarch_programs = {
     halt = {
@@ -107,117 +114,9 @@ function tests_util.disabled_test(description)
     print("Disabled test - " .. description)
 end
 
-local back_merkle_tree_meta = { __index = {} }
-
-function back_merkle_tree_meta.__index:push_back(new_leaf_hash)
-    local right = new_leaf_hash
-    assert(self.m_leaf_count < self.m_max_leaves, "too many leaves")
-    local depth = self.m_log2_root_size - self.m_log2_leaf_size
-    for i = 0, depth do
-        if self.m_leaf_count & (0x01 << i) ~= 0x0 then
-            local left = self.m_context[i]
-            right = cartesi[self.hash_fn](left, right)
-        else
-            self.m_context[i] = right
-            break
-        end
-    end
-    self.m_leaf_count = self.m_leaf_count + 1
-end
-
-function back_merkle_tree_meta.__index:pad_back(new_leaf_count)
-    assert(
-        new_leaf_count <= self.m_max_leaves and self.m_leaf_count + new_leaf_count <= self.m_max_leaves,
-        "too many leaves"
-    )
-    local depth = self.m_log2_root_size - self.m_log2_leaf_size
-    -- pad with progressively larger trees until our smallest tree has more leaves than the leaf count left
-    local j = 0
-    while j <= depth do
-        local j_span = 0x1 << j
-        if j_span > new_leaf_count then
-            break
-        end
-        -- is our smallest tree at depth j?
-        if (self.m_leaf_count & j_span) ~= 0x0 then
-            -- if so, we can add 2^j pristine leaves directly
-            local right = self.zero_hash_table[self.m_log2_leaf_size + j]
-            for i = j, depth do
-                local i_span = 0x1 << i
-                if (self.m_leaf_count & i_span) ~= 0x0 then
-                    local left = self.m_context[i]
-                    right = cartesi[self.hash_fn](left, right)
-                else
-                    self.m_context[i] = right
-                    -- next outer loop starts again from where inner loop left off
-                    j = i
-                    break
-                end
-            end
-            new_leaf_count = new_leaf_count - j_span
-            self.m_leaf_count = self.m_leaf_count + j_span
-        else
-            j = j + 1
-        end
-    end
-    -- now add the rest of the padding directly to the context
-    for i = 0, depth do
-        local i_span = 0x1 << i
-        if (new_leaf_count & i_span) ~= 0x0 then
-            self.m_context[i] = self.zero_hash_table[self.m_log2_leaf_size + i]
-            new_leaf_count = new_leaf_count - i_span
-            self.m_leaf_count = self.m_leaf_count + i_span
-        end
-    end
-end
-
-function back_merkle_tree_meta.__index:get_root_hash()
-    assert(self.m_leaf_count <= self.m_max_leaves, "too many leaves")
-    local depth = self.m_log2_root_size - self.m_log2_leaf_size
-    if self.m_leaf_count < self.m_max_leaves then
-        local root = self.zero_hash_table[self.m_log2_leaf_size]
-        for i = 0, depth - 1 do
-            if (self.m_leaf_count & (0x01 << i)) ~= 0 then
-                local left = self.m_context[i]
-                root = cartesi[self.hash_fn](left, root)
-            else
-                local right = self.zero_hash_table[self.m_log2_leaf_size + i]
-                root = cartesi[self.hash_fn](root, right)
-            end
-        end
-        return root
-    else
-        return self.m_context[depth]
-    end
-end
-
-function tests_util.new_back_merkle_tree(log2_root_size, log2_leaf_size, hash_fn)
-    local self = {}
-    self.hash_fn = hash_fn
-    self.zero_hash_table = zero_hash_tables[hash_fn]
-    self.m_context = {}
-    self.m_log2_leaf_size = log2_leaf_size
-    self.m_log2_root_size = log2_root_size
-    self.m_leaf_count = 0
-    self.m_max_leaves = 0x01 << (log2_root_size - log2_leaf_size)
-    return setmetatable(self, back_merkle_tree_meta)
-end
-
 function tests_util.file_exists(name)
     local f <close> = io.open(name, "r")
     return f ~= nil
-end
-
-function tests_util.tohex(str)
-    return (str:gsub(".", function(c)
-        return string.format("%02X", string.byte(c))
-    end))
-end
-
-function tests_util.fromhex(str)
-    return (str:gsub("..", function(cc)
-        return string.char(tonumber(cc, 16))
-    end))
 end
 
 function tests_util.split_string(inputstr, sep)
@@ -229,22 +128,6 @@ function tests_util.split_string(inputstr, sep)
         table.insert(t, str)
     end
     return t
-end
-
-function tests_util.check_proof(proof, hash_fn)
-    assert(hash_fn, "hash_fn is nil")
-    local hash = proof.target_hash
-    for log2_size = proof.log2_target_size, proof.log2_root_size - 1 do
-        local bit = (proof.target_address & (1 << log2_size)) ~= 0
-        local first, second
-        if bit then
-            first, second = proof.sibling_hashes[log2_size - proof.log2_target_size + 1], hash
-        else
-            first, second = hash, proof.sibling_hashes[log2_size - proof.log2_target_size + 1]
-        end
-        hash = cartesi[hash_fn](first, second)
-    end
-    return hash == proof.root_hash
 end
 
 function tests_util.slice_proof(proof, new_log2_root_size, new_log2_target_size, hash_fn)
@@ -285,7 +168,7 @@ function tests_util.slice_proof(proof, new_log2_root_size, new_log2_target_size,
         hash = cartesi[hash_fn](first, second)
     end
     sliced.root_hash = hash
-    assert(tests_util.check_proof(sliced, hash_fn), "produced invalid sliced proof")
+    hash_tree.verify_slice(sliced, hash_fn)
     return sliced
 end
 
@@ -293,45 +176,27 @@ function tests_util.align(v, el)
     return (v >> el << el)
 end
 
-function tests_util.load_file(filename)
-    local fd <close> = assert(io.open(filename, "rb"))
-    local data = assert(fd:read("*all"))
-    return data
-end
-
-local function merkle_hash(data, start, log2_size, hash_fn)
-    assert(hash_fn, "hash_fn is nil")
-    local zero_hash_table = zero_hash_tables[hash_fn]
-    if log2_size == PAGE_LOG2_SIZE and data:sub(start + 1, start + PAGE_SIZE) == ZERO_PAGE then
-        return zero_hash_table[PAGE_LOG2_SIZE]
-    elseif log2_size > WORD_LOG2_SIZE then
-        local child_log2_size = log2_size - 1
-        local left = merkle_hash(data, start, child_log2_size, hash_fn)
-        local right = merkle_hash(data, start + (1 << child_log2_size), child_log2_size, hash_fn)
-        return cartesi[hash_fn](left, right)
-    else
-        return cartesi[hash_fn](data:sub(start + 1, start + (1 << WORD_LOG2_SIZE)), nil)
-    end
-end
-
-tests_util.merkle_hash = merkle_hash
-
 -- Take data from dumped memory files
 -- and calculate root hash of the machine
 function tests_util.calculate_emulator_hash(machine, hash_fn)
     hash_fn = hash_fn or machine:get_initial_config().hash_tree.hash_function
-    local tree = tests_util.new_back_merkle_tree(64, PAGE_LOG2_SIZE, hash_fn)
+    local frontier = hash_tree.frontier(ROOT_LOG2_SIZE - WORD_LOG2_SIZE, hash_fn)
+    local pristine_page_hash = zero_hash_tables[hash_fn][PAGE_LOG2_SIZE]
     local last = 0
     for _, v in ipairs(machine:get_address_ranges()) do
-        tree:pad_back((v.start - last) >> PAGE_LOG2_SIZE)
+        hash_tree.frontier_pad_back(
+            frontier,
+            pristine_page_hash,
+            (v.start - last) >> PAGE_LOG2_SIZE,
+            PAGE_LOG2_WORD_COUNT
+        )
         local finish = v.start + v.length
         for j = v.start, finish - 1, PAGE_SIZE do
-            local page_hash = merkle_hash(machine:read_memory(j, PAGE_SIZE), 0, PAGE_LOG2_SIZE, hash_fn)
-            tree:push_back(page_hash)
+            append_page(frontier, machine:read_memory(j, PAGE_SIZE), pristine_page_hash, hash_fn)
         end
         last = finish
     end
-    return tree:get_root_hash()
+    return hash_tree.frontier_get_root_hash(frontier, pristine_page_hash, PAGE_LOG2_WORD_COUNT)
 end
 
 -- Read memory from given machine and calculate uarch state hash
@@ -339,20 +204,22 @@ function tests_util.calculate_uarch_state_hash(machine)
     local hash_fn = machine:get_initial_config().hash_tree.hash_function
     local shadow_data = machine:read_memory(cartesi.UARCH_SHADOW_START_ADDRESS, cartesi.UARCH_SHADOW_LENGTH)
     local ram_data = machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, cartesi.UARCH_RAM_LENGTH)
-    local tree = tests_util.new_back_merkle_tree(cartesi.UARCH_STATE_LOG2_SIZE, PAGE_LOG2_SIZE, hash_fn)
+    local frontier = hash_tree.frontier(cartesi.UARCH_STATE_LOG2_SIZE - WORD_LOG2_SIZE, hash_fn)
+    local pristine_page_hash = zero_hash_tables[hash_fn][PAGE_LOG2_SIZE]
     for j = 0, #shadow_data - 1, PAGE_SIZE do
-        local page_hash = merkle_hash(shadow_data, j, PAGE_LOG2_SIZE, hash_fn)
-        tree:push_back(page_hash)
+        append_page(frontier, shadow_data:sub(j + 1, j + PAGE_SIZE), pristine_page_hash, hash_fn)
     end
     -- pad the region between the end of shadow data and start of ram
-    tree:pad_back(
-        (cartesi.UARCH_RAM_START_ADDRESS - cartesi.UARCH_SHADOW_START_ADDRESS - #shadow_data) >> PAGE_LOG2_SIZE
+    hash_tree.frontier_pad_back(
+        frontier,
+        pristine_page_hash,
+        (cartesi.UARCH_RAM_START_ADDRESS - cartesi.UARCH_SHADOW_START_ADDRESS - #shadow_data) >> PAGE_LOG2_SIZE,
+        PAGE_LOG2_WORD_COUNT
     )
     for j = 0, #ram_data - 1, PAGE_SIZE do
-        local page_hash = merkle_hash(ram_data, j, PAGE_LOG2_SIZE, hash_fn)
-        tree:push_back(page_hash)
+        append_page(frontier, ram_data:sub(j + 1, j + PAGE_SIZE), pristine_page_hash, hash_fn)
     end
-    return tree:get_root_hash()
+    return hash_tree.frontier_get_root_hash(frontier, pristine_page_hash, PAGE_LOG2_WORD_COUNT)
 end
 
 -- Executes a function and asserts that it throws an error and that the error message matches the expected pattern

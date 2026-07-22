@@ -10,6 +10,7 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
+local hash_tree = require("cartesi.hash-tree")
 local tests_util = require("cartesi.tests.util")
 
 local LOG2_ROOT_SIZE = 64
@@ -213,9 +214,8 @@ describe("hash tree", function()
                         for _, v in ipairs(machine:get_address_ranges()) do
                             for address = v.start, v.start + v.length - 1, PAGE_SIZE do
                                 local node_hash = machine:get_node_hash(address, LOG2_PAGE_SIZE)
-                                local external_node_hash = tests_util.merkle_hash(
+                                local external_node_hash = hash_tree.get_root_hash(
                                     machine:read_memory(address, PAGE_SIZE),
-                                    0,
                                     LOG2_PAGE_SIZE,
                                     hash_function
                                 )

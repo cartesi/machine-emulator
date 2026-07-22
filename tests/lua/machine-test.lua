@@ -17,6 +17,7 @@
 --
 
 local cartesi = require("cartesi")
+local hash_tree = require("cartesi.hash-tree")
 local tests_util = require("cartesi.tests.util")
 local jsonrpc
 
@@ -169,7 +170,7 @@ do_test("machine initial hash should match", function(machine)
 
     local calculated_root_hash = tests_util.calculate_emulator_hash(machine)
 
-    print("Root hash:", tests_util.tohex(root_hash), " calculated root hash:", tests_util.tohex(calculated_root_hash))
+    print("Root hash:", cartesi.tohex(root_hash), " calculated root hash:", cartesi.tohex(calculated_root_hash))
 
     assert(root_hash == calculated_root_hash, "Initial root hash does not match")
 end)
@@ -178,7 +179,7 @@ print("\n\ntesting root hash after step one")
 do_test("machine root hash after step one should match", function(machine)
     -- Get starting root hash
     local root_hash = machine:get_root_hash()
-    print("Root hash:", tests_util.tohex(root_hash))
+    print("Root hash:", cartesi.tohex(root_hash))
 
     local calculated_root_hash = tests_util.calculate_emulator_hash(machine)
     assert(root_hash == calculated_root_hash, "Initial root hash does not match")
@@ -205,16 +206,16 @@ do_test("proof check should pass", function(machine)
     local ram_log2_size = math.ceil(math.log(ram.length, 2))
     local hash_fn = machine:get_initial_config().hash_tree.hash_function
     local calculated_ram_hash =
-        tests_util.merkle_hash(machine:read_memory(ram.start, ram.length), 0, ram_log2_size, hash_fn)
+        hash_tree.get_root_hash(machine:read_memory(ram.start, ram.length), ram_log2_size, hash_fn)
     -- Get proof of ram and check if hashes match
     local ram_proof = machine:get_proof(ram.start, ram_log2_size)
     local root_hash = machine:get_root_hash()
     assert(root_hash == ram_proof.root_hash, "root hash in proof does not match")
     print(
         "target hash:",
-        tests_util.tohex(ram_proof.target_hash),
+        cartesi.tohex(ram_proof.target_hash),
         " calculated target hash:",
-        tests_util.tohex(calculated_ram_hash)
+        cartesi.tohex(calculated_ram_hash)
     )
     assert(calculated_ram_hash == ram_proof.target_hash, "target hash in proof does not match")
 end)
@@ -234,7 +235,7 @@ do_test("mcycle and root hash should match", function(machine)
 
     local calculated_root_hash_1000 = tests_util.calculate_emulator_hash(machine)
 
-    print("1000 cycle hash: ", tests_util.tohex(root_hash))
+    print("1000 cycle hash: ", cartesi.tohex(root_hash))
     assert(root_hash == calculated_root_hash_1000, "machine hash does not match after 1000 cycles")
 end)
 
@@ -255,7 +256,7 @@ do_test("mcycle and root hash should match", function(machine)
     assert(end_mcycle == 3, "machine mcycle should be 3")
 
     local root_hash = machine:get_root_hash()
-    print("End hash: ", tests_util.tohex(root_hash))
+    print("End hash: ", cartesi.tohex(root_hash))
 
     local calculated_end_hash = tests_util.calculate_emulator_hash(machine)
 
@@ -299,14 +300,14 @@ do_test("proof  and root hash should match", function(machine)
     -- Calculate hash
     local initial_memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
     local hash_fn = machine:get_initial_config().hash_tree.hash_function
-    local initial_calculated_hash = tests_util.merkle_hash(initial_memory_read, 0, 10, hash_fn)
+    local initial_calculated_hash = hash_tree.get_root_hash(initial_memory_read, 10, hash_fn)
     assert(initial_ram_proof.target_hash == initial_calculated_hash, "initial hash does not match")
 
     print(
         "initial target hash:",
-        tests_util.tohex(initial_ram_proof.target_hash),
+        cartesi.tohex(initial_ram_proof.target_hash),
         " calculated initial target hash:",
-        tests_util.tohex(initial_calculated_hash)
+        cartesi.tohex(initial_calculated_hash)
     )
 
     machine:write_memory(0x8000000F, "mydataol12345678", 0x10)
@@ -318,13 +319,13 @@ do_test("proof  and root hash should match", function(machine)
     local ram_proof = machine:get_proof(ram_address_start, 10)
     -- Calculate hash
     local memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local calculated_hash = tests_util.merkle_hash(memory_read, 0, 10, hash_fn)
+    local calculated_hash = hash_tree.get_root_hash(memory_read, 10, hash_fn)
 
     print(
         "end target hash:",
-        tests_util.tohex(ram_proof.target_hash),
+        cartesi.tohex(ram_proof.target_hash),
         " calculated end target hash:",
-        tests_util.tohex(calculated_hash)
+        cartesi.tohex(calculated_hash)
     )
 
     assert(initial_ram_proof.target_hash ~= ram_proof.target_hash, "hash is same after memory is written")

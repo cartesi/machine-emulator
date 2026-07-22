@@ -2735,8 +2735,9 @@ The blockchain then verifies any output with its *output proof* alone, checking 
 The `hash-tree.lua` sample module accumulates the outputs Merkle tree with an incremental keccak Merkle accumulator
 whose leaves are `keccak256(<output>)`.
 A *frontier* captures the outputs accepted so far.
-At genesis, the frontier is `hash_tree.frontier(<log2_max_leaves>)`.
-The frontier for a later epoch can be obtained from the previous epoch's last output using `hash_tree.frontier(<last_output_proof>)`.
+At genesis, the frontier is `hash_tree.frontier(<log2_max_leaves>, <hash_type>)`.
+The frontier for a later epoch can be obtained from the previous epoch's last output using
+`hash_tree.frontier(<last_output_proof>, <hash_type>)`.
 As each output is accepted, `hash_tree.frontier_push_back(<frontier>, <leaf>)` folds its leaf in, and
 `hash_tree.frontier_get_root_hash(<frontier>)` yields the outputs Merkle root to check against the one
 the guest wrote.

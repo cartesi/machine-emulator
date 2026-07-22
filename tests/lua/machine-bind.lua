@@ -17,6 +17,7 @@
 --
 
 local cartesi = require("cartesi")
+local hash_tree = require("cartesi.hash-tree")
 local util = require("cartesi.util")
 local tests_util = require("cartesi.tests.util")
 local jsonrpc
@@ -358,7 +359,7 @@ do_test("should provide proof for values in registers", function(machine)
     for _, v in pairs(initial_reg_values) do
         for el = cartesi.HASH_TREE_LOG2_WORD_SIZE, cartesi.HASH_TREE_LOG2_ROOT_SIZE - 1 do
             local a = tests_util.align(v, el)
-            assert(tests_util.check_proof(assert(machine:get_proof(a, el), "no proof"), hash_fn), "proof failed")
+            hash_tree.verify_slice(assert(machine:get_proof(a, el), "no proof"), hash_fn)
         end
     end
 end)
@@ -553,7 +554,7 @@ print("\n\n test calculation of initial root hash")
 do_test("should return expected value", function(machine)
     -- Get starting root hash
     local root_hash = machine:get_root_hash()
-    print("Root hash: ", tests_util.tohex(root_hash))
+    print("Root hash: ", cartesi.tohex(root_hash))
 
     local calculated_root_hash = tests_util.calculate_emulator_hash(machine)
 
@@ -1438,11 +1439,11 @@ local function test_send_cmio_input_with_different_arguments()
     local reason = 1
     local max_rx_buffer_len = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE
     local hash_fn = "keccak256"
-    local data_hash = tests_util.merkle_hash(data, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
+    local data_hash = hash_tree.get_root_hash(data, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
     local all_zeros = string.rep("\0", max_rx_buffer_len)
-    local all_zeros_hash = tests_util.merkle_hash(all_zeros, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
+    local all_zeros_hash = hash_tree.get_root_hash(all_zeros, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
     local zero_leaf = string.rep("\0", 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE)
-    local zero_leaf_hash = tests_util.merkle_hash(zero_leaf, 0, cartesi.HASH_TREE_LOG2_WORD_SIZE, hash_fn)
+    local zero_leaf_hash = hash_tree.get_root_hash(zero_leaf, cartesi.HASH_TREE_LOG2_WORD_SIZE, hash_fn)
     -- prepares and asserts the state before send_cmio_response is called
     local function assert_before_cmio_response_sent(machine)
         machine:write_reg("iflags_Y", 1)
@@ -1494,12 +1495,7 @@ local function test_send_cmio_input_with_different_arguments()
                     log2_size = cartesi.HASH_TREE_LOG2_WORD_SIZE,
                     read_hash = zero_leaf_hash,
                     read = large_data and zero_leaf or nil,
-                    written_hash = tests_util.merkle_hash(
-                        root_hash_before,
-                        0,
-                        cartesi.HASH_TREE_LOG2_WORD_SIZE,
-                        hash_fn
-                    ),
+                    written_hash = hash_tree.get_root_hash(root_hash_before, cartesi.HASH_TREE_LOG2_WORD_SIZE, hash_fn),
                     written = large_data and root_hash_before or nil,
                 })
                 assert_access(accesses, 3, {

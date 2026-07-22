@@ -1322,7 +1322,7 @@ describe("collect hashes", function()
                     revert_root_hash,
                 })
 
-                local frontier = hash_tree.frontier(log2_bundle_uarch_cycle_count)
+                local frontier = hash_tree.frontier(log2_bundle_uarch_cycle_count, "keccak256")
                 local execution_uarch_cycle_count = 0
                 for uarch_cycle = 1, math.maxinteger do
                     local break_reason = compare_machine:run_uarch(uarch_cycle)

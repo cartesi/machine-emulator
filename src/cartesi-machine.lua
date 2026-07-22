@@ -3014,18 +3014,11 @@ end
 if mcycle_root_hashes or computation_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
 end
--- Bundle roots collected from the machine are interior nodes of the epoch tree, which is keccak.
--- The uarch cycle computation hash always bundles (and the machine only runs the uarch in keccak).
-if
-    cmio_advance
-    and (
-        (cmio_advance.mcycle_computation_hash and cmio_advance.log2_bundle_mcycle_count > 0)
-        or cmio_advance.uarch_cycle_computation_hash
-    )
-then
+-- The microarchitecture only runs in machines configured with keccak256.
+if cmio_advance and cmio_advance.uarch_cycle_computation_hash then
     assert(
         initial_config.hash_tree.hash_function == "keccak256",
-        "computation hash bundling requires the keccak256 hash function"
+        "uarch cycle computation hash requires the keccak256 hash function"
     )
 end
 local machine = main_machine
@@ -3058,10 +3051,10 @@ if cmio_advance then
             "%s is not an outputs proof",
             cmio_advance.last_output_proof
         )
-        cmio_advance.frontier = hash_tree.frontier(proof)
+        cmio_advance.frontier = hash_tree.frontier(proof, "keccak256")
         cmio_advance.global_output_index = proof.target_address + 1
     else
-        cmio_advance.frontier = hash_tree.frontier(depth)
+        cmio_advance.frontier = hash_tree.frontier(depth, "keccak256")
         cmio_advance.global_output_index = 0
     end
     cmio_advance.running_frontier = hash_tree.frontier_copy(cmio_advance.frontier)
@@ -3364,7 +3357,8 @@ end
 
 local function mcycle_computation_hash_begin_epoch(self)
     local log2_entries_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - self.log2_period - self.log2_bundle
-    self.frontier = hash_tree.frontier(ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_entries_per_input)
+    self.frontier =
+        hash_tree.frontier(ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_entries_per_input, self.hash_type)
     self.input_entry_capacity = 1 << log2_entries_per_input
     self.pad_entry = nil
 end
@@ -3447,6 +3441,7 @@ local function make_mcycle_computation_hash(m, advance, runner)
         chunk_size = mcycle_hashes_chunk_size(log2_period, advance.log2_bundle_mcycle_count),
         log2_period = log2_period,
         log2_bundle = advance.log2_bundle_mcycle_count,
+        hash_type = initial_config.hash_tree.hash_function,
         filename = advance.mcycle_computation_hash,
         begin_epoch = mcycle_computation_hash_begin_epoch,
         begin_input = mcycle_computation_hash_begin_input,
@@ -3501,7 +3496,7 @@ local function uarch_cycle_computation_hash_push_collected(self, collected)
     self.mcycle_count = self.mcycle_count + count
 
     if self.mcycle_count < self.period and is_at_fixed_point(collected.break_reason) then
-        local pad_frontier = hash_tree.frontier(self.log2_bundles_per_mcycle)
+        local pad_frontier = hash_tree.frontier(self.log2_bundles_per_mcycle, self.hash_type)
         uarch_cycle_computation_hash_push_mcycle(
             self,
             pad_frontier,
@@ -3529,7 +3524,7 @@ local function uarch_cycle_computation_hash_push_collected(self, collected)
 end
 
 local function uarch_cycle_computation_hash_begin_epoch(self)
-    self.frontier = hash_tree.frontier(self.log2_period + self.log2_bundles_per_mcycle)
+    self.frontier = hash_tree.frontier(self.log2_period + self.log2_bundles_per_mcycle, self.hash_type)
     self.mcycle_count = 0
 end
 
@@ -3616,6 +3611,7 @@ local function make_uarch_cycle_computation_hash(m, advance, runner)
         chunk_size = uarch_hashes_chunk_size(advance.log2_bundle_uarch_cycle_count),
         log2_period = log2_period,
         log2_bundle = advance.log2_bundle_uarch_cycle_count,
+        hash_type = initial_config.hash_tree.hash_function,
         log2_bundles_per_mcycle = ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - advance.log2_bundle_uarch_cycle_count,
         target_input = advance.mcycle_period_index >> log2_periods_per_input,
         target_offset = advance.mcycle_period_index & ((1 << log2_periods_per_input) - 1),

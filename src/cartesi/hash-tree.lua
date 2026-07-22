@@ -5,7 +5,8 @@ local WORD_LOG2_SIZE = cartesi.HASH_TREE_LOG2_WORD_SIZE
 local WORD_LENGTH = 1 << WORD_LOG2_SIZE
 
 -- docs:begin roll_hash_up_tree
-local function roll_hash_up_tree(proof, target_hash)
+local function roll_hash_up_tree(proof, target_hash, hash_type)
+    local hash_function = cartesi[hash_type or "keccak256"]
     local hash = target_hash
     for log2_size = proof.log2_target_size, proof.log2_root_size - 1 do
         local sibling = assert(proof.sibling_hashes[log2_size - proof.log2_target_size + 1], "too few siblings")
@@ -16,22 +17,22 @@ local function roll_hash_up_tree(proof, target_hash)
         else
             first, second = hash, sibling
         end
-        hash = cartesi.keccak256(first, second)
+        hash = hash_function(first, second)
     end
     return hash
 end
 -- docs:end roll_hash_up_tree
 
 -- docs:begin verify_slice
-local function verify_slice(proof)
-    assert(roll_hash_up_tree(proof, proof.target_hash) == proof.root_hash, "target node not in tree")
+local function verify_slice(proof, hash_type)
+    assert(roll_hash_up_tree(proof, proof.target_hash, hash_type) == proof.root_hash, "target node not in tree")
 end
 -- docs:end verify_slice
 
 -- docs:begin verify_splice
-local function verify_splice(proof, new_target_hash, new_root_hash)
-    verify_slice(proof)
-    assert(roll_hash_up_tree(proof, new_target_hash) == new_root_hash, "target node not in tree")
+local function verify_splice(proof, new_target_hash, new_root_hash, hash_type)
+    verify_slice(proof, hash_type)
+    assert(roll_hash_up_tree(proof, new_target_hash, hash_type) == new_root_hash, "target node not in tree")
 end
 -- docs:end verify_splice
 
@@ -41,26 +42,27 @@ end
 -- their two children. Every node the data does not reach takes its level's pristine hash, the
 -- root of an all-zero subtree, which doubles each level climbed. Overflow is rejected.
 -- docs:begin get_root_hash
-local function get_root_hash(data, log2_root_size)
+local function get_root_hash(data, log2_root_size, hash_type)
+    local hash_function = cartesi[hash_type or "keccak256"]
     assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
     -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
     local level = {}
     local full = #data - #data % WORD_LENGTH
     for i = 1, full, WORD_LENGTH do
-        level[#level + 1] = cartesi.keccak256(data:sub(i, i + WORD_LENGTH - 1))
+        level[#level + 1] = hash_function(data:sub(i, i + WORD_LENGTH - 1))
     end
     if full < #data then
         local word = data:sub(full + 1)
-        level[#level + 1] = cartesi.keccak256(word .. string.rep("\0", WORD_LENGTH - #word))
+        level[#level + 1] = hash_function(word .. string.rep("\0", WORD_LENGTH - #word))
     end
     -- Pair upward to the root, the pristine hash standing in for every node the data misses.
-    local pristine = cartesi.keccak256(string.rep("\0", WORD_LENGTH))
+    local pristine = hash_function(string.rep("\0", WORD_LENGTH))
     for _ = WORD_LOG2_SIZE, log2_root_size - 1 do
         local parents = {}
         for i = 1, #level, 2 do
-            parents[#parents + 1] = cartesi.keccak256(level[i], level[i + 1] or pristine)
+            parents[#parents + 1] = hash_function(level[i], level[i + 1] or pristine)
         end
-        level, pristine = parents, cartesi.keccak256(pristine, pristine)
+        level, pristine = parents, hash_function(pristine, pristine)
     end
     return level[1]
 end
@@ -74,12 +76,12 @@ end
 -- output-specific; the caller feeds keccak256(output) leaves.
 --
 -- A frontier captures the complete left subtrees standing over the leaves seen so far. It is a
--- length-(log2_max_leaves + 1) array indexed by a 1-based level, where level 1 corresponds to bit
--- 0 (the 0-based leaves). Entry level holds that level's complete left subtree when the matching
--- bit of the leaf count is set, else false (false, not nil, so the array stays dense and
--- round-trips as JSON). The present subtrees' sizes sum to the leaf count, so the count is
--- recovered from the array rather than stored. The top entry holds the root when the tree is
--- exactly full, matching back_merkle_tree's context.
+-- table with a length-(log2_max_leaves + 1) array part indexed by a 1-based level, where level 1
+-- corresponds to bit 0 (the 0-based leaves). Entry level holds that level's complete left subtree
+-- when the matching bit of the leaf count is set, else false (false, not nil, so the array stays
+-- dense). Its hash_function field holds the resolved hash function. The present subtrees' sizes sum to
+-- the leaf count, so the count is recovered from the array rather than stored. The top entry holds
+-- the root when the tree is exactly full.
 
 -- The pristine leaf, the all-zero subtree of height 0, is literally HASH_SIZE zero bytes. Larger
 -- pristine subtrees double on demand inside each loop (keccak256(pristine, pristine)).
@@ -123,13 +125,14 @@ end
 -- the entry size).
 -- docs:begin frontier_push_back
 local function frontier_push_back(frontier, hash, log2_hash_size)
+    local hash_function = assert(frontier.hash_function)
     local level = (log2_hash_size or 0) + 1
     for below = 1, level - 1 do
         assert(not frontier[below], "frontier is not aligned to the hash size")
     end
     local right = hash
     while frontier[level] do
-        right = cartesi.keccak256(frontier[level], right)
+        right = hash_function(frontier[level], right)
         frontier[level] = false
         level = level + 1
     end
@@ -144,6 +147,7 @@ end
 -- pad size). An exactly-full tree needs no padding: its root sits in the top entry.
 -- docs:begin frontier_get_root_hash
 local function frontier_get_root_hash(frontier, pad, log2_pad_size)
+    local hash_function = assert(frontier.hash_function)
     local height = #frontier - 1
     if frontier[height + 1] then return frontier[height + 1] end
     pad = pad or pristine_leaf
@@ -154,11 +158,11 @@ local function frontier_get_root_hash(frontier, pad, log2_pad_size)
     -- pad doubles into the all-pad subtree of each level, the right sibling of every empty one
     for level = (log2_pad_size or 0) + 1, height do
         if frontier[level] then
-            root = cartesi.keccak256(frontier[level], root)
+            root = hash_function(frontier[level], root)
         else
-            root = cartesi.keccak256(root, pad)
+            root = hash_function(root, pad)
         end
-        pad = cartesi.keccak256(pad, pad)
+        pad = hash_function(pad, pad)
     end
     return root
 end
@@ -189,6 +193,7 @@ local function frontier_padding_fits(frontier, count, first_level)
 end
 
 local function frontier_pad_back(frontier, hash, count, log2_pad_size)
+    local hash_function = assert(frontier.hash_function)
     log2_pad_size = log2_pad_size or 0
     local first_level = log2_pad_size + 1
     local top = #frontier
@@ -201,7 +206,7 @@ local function frontier_pad_back(frontier, hash, count, log2_pad_size)
     -- are all hash
     local pad_hashes = { [first_level] = hash }
     for level = first_level + 1, top do
-        pad_hashes[level] = cartesi.keccak256(pad_hashes[level - 1], pad_hashes[level - 1])
+        pad_hashes[level] = hash_function(pad_hashes[level - 1], pad_hashes[level - 1])
     end
     -- Complete the occupied low levels with pad subtrees, carrying upward.
     local level = first_level
@@ -213,7 +218,7 @@ local function frontier_pad_back(frontier, hash, count, log2_pad_size)
             local right = pad_hashes[level]
             while frontier[level] do
                 assert(level < top, "too many leaves")
-                right = cartesi.keccak256(frontier[level], right)
+                right = hash_function(frontier[level], right)
                 frontier[level] = false
                 level = level + 1
             end
@@ -244,6 +249,7 @@ end
 -- O(next_output_count * log2_max_leaves).
 -- docs:begin frontier_next_proofs
 local function frontier_next_proofs(frontier, next_output_hashes)
+    local hash_function = assert(frontier.hash_function)
     local log2_max_leaves = #frontier - 1
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
@@ -272,10 +278,10 @@ local function frontier_next_proofs(frontier, next_output_hashes)
         for p = parents_base, (base + #active - 1) >> 1 do
             local left = frontier_node(frontier_entry, base, active, pristine, 2 * p)
             local right = frontier_node(frontier_entry, base, active, pristine, 2 * p + 1)
-            parents[p - parents_base + 1] = cartesi.keccak256(left, right)
+            parents[p - parents_base + 1] = hash_function(left, right)
         end
         active, base = parents, parents_base
-        pristine = cartesi.keccak256(pristine, pristine)
+        pristine = hash_function(pristine, pristine)
     end
     local root_hash = active[1] -- after the last level the single active node is the root
     local proofs = {}
@@ -294,8 +300,8 @@ end
 -- docs:end frontier_next_proofs
 
 -- An empty frontier of the given height: all log2_max_leaves + 1 levels unfilled (false).
-local function frontier_genesis(log2_max_leaves)
-    local f = {}
+local function frontier_genesis(log2_max_leaves, hash_type)
+    local f = { hash_function = assert(cartesi[hash_type], "unsupported hash function") }
     for level = 1, log2_max_leaves + 1 do
         f[level] = false
     end
@@ -303,23 +309,30 @@ local function frontier_genesis(log2_max_leaves)
 end
 
 -- A shallow copy of a frontier, so the original keeps its leaves while the copy advances independently.
-local function frontier_copy(frontier) return { table.unpack(frontier, 1, #frontier) } end
+local function frontier_copy(frontier)
+    local copy = { table.unpack(frontier) }
+    copy.hash_function = frontier.hash_function
+    return copy
+end
 
 -- Whether a frontier constructor argument is a last-output proof rather than a tree height.
 local function is_proof(log2_max_leaves_or_last_proof) return type(log2_max_leaves_or_last_proof) == "table" end
 
--- The single frontier constructor. A number is the tree height log2_max_leaves and yields an empty
--- frontier (leaf count 0) used for genesis. Otherwise the argument is the previous epoch's
+-- The single frontier constructor resolves the required hash_type once and stores the function
+-- in the frontier. A number is the tree height log2_max_leaves and yields an empty frontier (leaf
+-- count 0) used for genesis. Otherwise the argument is the previous epoch's
 -- last-output Proof, and the result is the left frontier for the start of the next epoch, rebuilt
 -- from that proof (its height taken from log2_root_size). The last leaf has index target_address,
 -- so the leaf count is target_address + 1. The lowest complete level is the level whose complete
 -- left subtree ends exactly at the leaf count.
 -- docs:begin frontier
-local function frontier(log2_max_leaves_or_last_proof)
+local function frontier(log2_max_leaves_or_last_proof, hash_type)
+    assert(hash_type ~= nil, "hash type is required")
     if is_proof(log2_max_leaves_or_last_proof) then
         local proof = log2_max_leaves_or_last_proof
         local log2_max_leaves = proof.log2_root_size
-        local f = frontier_genesis(log2_max_leaves)
+        local f = frontier_genesis(log2_max_leaves, hash_type)
+        local hash_function = f.hash_function
         local leaf_count = proof.target_address + 1
         local lowest_complete_level = 1
         while leaf_count & (1 << (lowest_complete_level - 1)) == 0 do
@@ -336,12 +349,12 @@ local function frontier(log2_max_leaves_or_last_proof)
         -- count.
         local hash = proof.target_hash
         for level = 1, lowest_complete_level - 1 do
-            hash = cartesi.keccak256(proof.sibling_hashes[level], hash)
+            hash = hash_function(proof.sibling_hashes[level], hash)
         end
         f[lowest_complete_level] = hash
         return f
     end
-    return frontier_genesis(log2_max_leaves_or_last_proof)
+    return frontier_genesis(log2_max_leaves_or_last_proof, hash_type)
 end
 -- docs:end frontier
 

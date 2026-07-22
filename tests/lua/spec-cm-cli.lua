@@ -2063,7 +2063,7 @@ describe("cartesi-machine CLI", function()
     it("outputs Merkle root accumulates across inputs", function()
         -- Root of the height-ROLLUP_LOG2_MAX_OUTPUT_COUNT pristine-padded outputs Merkle tree over leaves.
         local function outputs_merkle_root(leaves)
-            local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
+            local frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
             for _, leaf in ipairs(leaves) do
                 hash_tree.frontier_push_back(frontier, leaf)
             end
@@ -2382,6 +2382,43 @@ describe("cartesi-machine CLI", function()
         expect.equal(filesystem.read_file(prefix .. "-ch0.bin"), hash)
     end)
 
+    it("SHA-256 mcycle computation hash is invariant under bundling", function()
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            os.remove(prefix .. "-sha.bin")
+            os.remove(prefix .. "-sha-bundled.bin")
+            os.remove(prefix .. "-sha-final.bin")
+        end)
+        local function run_sha256(filename, log2_bundle)
+            run_ok({
+                "--hash-tree=hash_function:sha256",
+                "--cmio-advance-state=input_index_end:0,"
+                    .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
+                    .. "mcycle_computation_hash:"
+                    .. filename
+                    .. ",log2_mcycle_computation_hash_period:"
+                    .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                    .. ",log2_bundle_mcycle_count:"
+                    .. log2_bundle,
+                "--final-hash=" .. prefix .. "-sha-final.bin",
+                "--no-revert",
+                "--max-mcycle=2000000000",
+                "--no-init-splash",
+                "--quiet",
+                "--",
+                "ioctl-echo-loop",
+            })
+        end
+        run_sha256(prefix .. "-sha.bin", 0)
+        run_sha256(prefix .. "-sha-bundled.bin", 2)
+        local hash = filesystem.read_file(prefix .. "-sha-final.bin")
+        for _ = 1, LOG2_EPOCH_LEAF_COUNT do
+            hash = cartesi.sha256(hash, hash)
+        end
+        expect.equal(filesystem.read_file(prefix .. "-sha.bin"), hash)
+        expect.equal(filesystem.read_file(prefix .. "-sha-bundled.bin"), hash)
+    end)
+
     -- -------------------------------------------------------------------------
     -- Computation hash when the machine halts mid-input
     --
@@ -2495,15 +2532,6 @@ describe("cartesi-machine CLI", function()
                 true
             )
         )
-        -- bundle roots are interior nodes of the keccak epoch tree, so the machine must hash with keccak
-        run_fail({
-            "--hash-tree=hash_function:sha256",
-            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
-                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
-                .. ",log2_bundle_mcycle_count:2",
-            "--no-revert",
-            "--max-mcycle=0",
-        }, "computation hash bundling requires the keccak256 hash function")
         run_fail({
             "--cmio-advance-state=log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
@@ -2671,14 +2699,14 @@ describe("cartesi-machine CLI", function()
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
         }, "uarch_cycle_computation_hash cannot be combined with mcycle_computation_hash")
-        -- bundle roots are interior nodes of the keccak tree, so the machine must hash with keccak
+        -- The microarchitecture only runs with keccak256.
         run_fail({
             "--hash-tree=hash_function:sha256",
             "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--no-revert",
             "--max-mcycle=0",
-        }, "computation hash bundling requires the keccak256 hash function")
+        }, "uarch cycle computation hash requires the keccak256 hash function")
         -- a reject with reverts off leaves no boundary to pad the reverted timeline from, even
         -- when the disputed period sits in an input the run never reaches
         local prefix = filesystem.temp_pathname()
@@ -2882,7 +2910,7 @@ describe("cartesi-machine CLI", function()
         table.insert(tail, m:get_root_hash())
         -- Construct the period: positions 1..n are the cycle hashes, the halt hash repeats up to the
         -- last position, where the reset hash sits.
-        local frontier = hash_tree.frontier(ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)
+        local frontier = hash_tree.frontier(ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE, "keccak256")
         for i = 1, #tail - 1 do
             hash_tree.frontier_push_back(frontier, tail[i])
         end

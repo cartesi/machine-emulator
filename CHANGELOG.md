@@ -6,35 +6,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ## Added
-- Added a user manual under `doc/`, generated from a template by a docgen pipeline that executes and verifies every code snippet against the locally built emulator
-- Added `--nvram` command line option and `nvram` machine configuration for UIO-backed memory ranges, exposed to the guest as `/dev/uio*` via `generic-uio`
-- Added a `label` field to memory range configurations, exposed to the guest through a standard DTB `/aliases` node (`flashdriveN`, `nvramN`, and any user label)
-- Added recording of a revert root hash as a logged input of `send_cmio_response`, with `read_revert_root_hash`/`write_revert_root_hash` accessors across all API layers
-- Added reversion to the recorded revert root hash for rollup inputs that end rejected, when logging steps, logging uarch resets, verifying, and collecting root hashes
-- Added outputs Merkle tree tracking and proof emission to `--cmio-advance-state`, including the `output_proof`, `last_output_proof`, `outputs_merkle_root`, `outputs_merkle_root_proof`, and `check_outputs_merkle_root` sub-options
-- Added an optional user schema dictionary argument to `cartesi.tojson`/`cartesi.fromjson` to name binary and compound fields of caller-defined message types
+- Added a generated user manual under `doc/` with verified examples
+- Added `--nvram` and `nvram` machine configuration for guest-visible UIO memory ranges
+- Added labels and DTB aliases to flash drives and NVRAM ranges
+- Added revert root hash accessors and logging to `send_cmio_response` across all APIs
+- Added rejected rollup input reversion to logging, verification, and hash collection
+- Added outputs Merkle tree tracking and proof emission to `--cmio-advance-state`
+- Added user-defined schema dictionaries to `cartesi.tojson`/`cartesi.fromjson`
 - Added `cartesi.tohex`/`cartesi.fromhex` and a `Hex` schema type for `cartesi.tojson`/`cartesi.fromjson`
-- Added a `cartesi.hash-tree` Lua module for hash-tree slice/splice verification and building the outputs Merkle tree frontier behind the output proofs
+- Added a `cartesi.hash-tree` Lua module supporting Keccak-256 and SHA-256 tree construction, proof verification, and frontiers
 - Added `get_address_name` to resolve a physical address to a descriptive name, across the C, Lua, and JSON-RPC APIs
 - Added the ability for `--initial-hash` and `--final-hash` to write the hash to a file
 - Added an optional directory argument to `--dump-memory-ranges` to support read-only install locations
 - Added decoding of RISC-V Zcb compressed instructions (required by kernels built with GCC 14)
 - Added fallback to `read_reg` in the GDB stub so `monitor reg <name>` works for any named register
 - Added `--bash-completion` to print a bash completion script for `cartesi-machine`
-- Added public C API constants `CM_FLASH_DRIVE_MAX`, `CM_NVRAM_MAX`, `CM_MEMORY_RANGE_LABEL_MAX`, `CM_RTC_FREQ_DIV`, and `CM_ROLLUP_LOG2_MAX_OUTPUT_COUNT`
+- Added public C API limits for flash drives, NVRAM, labels, RTC, and rollup outputs
 - Added explicit machine and uarch cycle-overflow break reasons across the C++, C, Lua, and JSON-RPC APIs
-- Added the peripheral `CM_AR_*` address range constants, the `CM_PMA_*_DID` driver id constants, the HTIF device, command, shift, and mask constants, and the `CM_DTB_BOOTARGS_*` macros to the public C API
+- Added peripheral address, driver ID, HTIF, and default boot argument constants to the public C API
 - Added LuaCov-based coverage tracking for Lua code, integrated with the gcov report pipeline
 - Added a JSON-RPC C API coverage suite and converted `test-cm-cli` and `test-evmu` to the lester spec format
 - Added `spec-cm-cli.lua` covering every command-line option of `cartesi-machine.lua`
-- Added `mcycle_computation_hash`, `log2_mcycle_computation_hash_period`, and `log2_bundle_mcycle_count` sub-options to `--cmio-advance-state`, emitting the epoch's mcycle computation hash (the Merkle tree of state hashes sampled every 2^`log2_mcycle_computation_hash_period` mcycles, each input owning 2^48 mcycles and the epoch 2^24 inputs, matching the on-chain dispute geometry, with fixed points padding each input's span and the end of the epoch), and optionally bundling every 2^N samples into one machine call
-- Added `uarch_cycle_computation_hash`, `mcycle_period_index`, and `log2_bundle_uarch_cycle_count` sub-options to `--cmio-advance-state`, emitting the uarch cycle computation hash of one mcycle computation hash period: the Merkle tree of the state hashes after every uarch transition of that period, matching the state transitions verified on-chain during the second level of a dispute
-- Added `frontier_pad_back` to the `cartesi.hash-tree` Lua module, padding a frontier with copies of a leaf, a top slot to the frontier so an exactly-full tree keeps its root, and optional log2 entry sizes to `frontier_push_back`, `frontier_pad_back`, and `frontier_get_root_hash`, pushing or padding with complete subtree roots instead of leaves
+- Added `--gdb-fd` to accept GDB connections on an inherited listening socket
+- Added configurable mcycle computation hashes to `--cmio-advance-state`
+- Added uarch-cycle computation hashes for selected mcycle periods to `--cmio-advance-state`
+- Added a portable computation-hash corpus to CI artifacts and tagged releases
+- Added frontier padding and complete-subtree operations to `cartesi.hash-tree`
 
 ## Fixed
-- Fixed bundled uarch-cycle root-hash collection when the uarch halts in the final bundle, preserving the execution hashes that precede the halt padding and reset
+- Fixed bundled uarch-cycle root-hash collection when the uarch halts in the final bundle
 - Fixed `cartesi-machine` and GDB hash collection to use the full unsigned 64-bit mcycle range, allowing execution to reach mcycle overflow
 - Fixed unbundled uarch-cycle hash collection to include the fixed-point padding hash immediately before each reset, matching bundled collection
+- Fixed overflow handling in numeric command-line options
 - Fixed leaf size in `cartesi-hash-tree-hash`, which was 8 instead of 32
 - Fixed read-only flash drives not being mounted with `-o ro`, which trapped guest writes and panicked init
 - Fixed missing `#address-cells` on the per-CPU `interrupt-controller` node in the DTB, silencing a `dtc` interrupt-provider lint warning
@@ -48,23 +51,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a typo in the `cartesi-machine.lua` cmio handling
 
 ## Changed
-- Changed mcycle and uarch-cycle root-hash collection to include a repeatable fixed-point suffix whenever collection returns at a fixed point, including calls whose target equals the current mcycle
-- Renamed the mcycle collector's `back_tree` continuation context to `partial_bundle`, and the uarch collector's `reset_indices` result to `mcycle_hash_offsets`
-- Optimized hex and Base64 encoding and decoding with bulk span-based operations, direct output string writes, and lookup-table decoding. Base64 decoding now rejects non-canonical padding and padding bits while continuing to accept ASCII whitespace
-- Changed `collect_mcycle_root_hashes` across the C++, C, Lua, and JSON-RPC APIs to take `log2_mcycle_period` instead of `mcycle_period`; `--print-mcycle-root-hashes` now takes the log base 2 period as well
+- Changed root-hash collection to append repeatable padding at fixed points
+- Renamed collector results to `partial_bundle` and `mcycle_hash_offsets`
+- Optimized hex and Base64 codecs and tightened Base64 validation
+- Changed `collect_mcycle_root_hashes` and `--print-mcycle-root-hashes` to take a log2 period
 - Changed machine and uarch cycle overflow to be derived, state-preserving fixed points
-- Changed run calls whose target equals the current `mcycle` to return the break reason implied by the machine state instead of always returning `reached_target_mcycle`
+- Changed zero-length run calls to return the break reason implied by the machine state
 - Renamed the uarch halt register and cycle break reasons to consistently use `uarch_halt`, `reached_target_uarch_cycle`, and `uarch_cycle_overflow`
 - Renamed the yield constants in `cm.h` and the Lua API from `CM_CMIO_YIELD_*` to `CM_HTIF_YIELD_*` (and the command suffix from `COMMAND` to `CMD`)
 - Renamed the PMA "device id" to "driver id" across the public API (`CM_PMA_*_DID` constants, `driver_id` in `get_address_ranges`)
 - Renamed `--no-rollback` to `--no-revert`, matching the machine's revert terminology (the revert root hash a reject restores)
-- Changed conflicting run modes to be precluded up front: cmio advance/inspect state cannot be combined with `--print-mcycle-root-hashes` or `--print-uarch-cycle-root-hashes`, and those two cannot be combined with each other; `--gdb` combines with hash collection (the stub implements the machine's collect calls, so hashes thread across debugger stops), with a warning that debugger writes produce hashes of states the computation never visits
-- Changed `get_address_ranges` to report per-range attributes (`is_memory`, `is_device`, `is_readable`, `is_writeable`, `is_executable`, `is_read_idempotent`, `is_write_idempotent`, and `driver_id`)
-- Replaced the `--store-json-config`/`--load-json-config` options with a `format:<lua|json>` sub-option on `--store-config`/`--load-config`, defaulting to the format inferred from the filename extension
-- Changed `--initial-proof`/`--final-proof` to default to Lua tables and accept `format:<lua|json>` and `label:` sub-options, where before they were dumped only as JSON
-- Reworked command-line option parsing so compound options such as `--volume` and `--port-forward` take `key:value` sub-options, and short options take a space-separated value (`-u <name>` instead of `-u=<name>`)
-- Changed memory ranges with an unset start to be placed past the end of RAM, rounded up to a power of two and aligned to their length, with flash drives and nvrams drawn from a shared pool
-- Changed `log_send_cmio_response` and `verify_send_cmio_response` to treat invalid responses and advance-state responses delivered outside an rx-accepted manual yield as no-ops, while the live `send_cmio_response` still rejects them as errors
+- Changed CLI validation to reject conflicting CMIO and hash-collection modes
+- Changed `get_address_ranges` to report access, idempotence, and driver attributes
+- Folded JSON configuration into the `format:` sub-option of `--store-config`/`--load-config`
+- Added `format:` and `label:` sub-options to `--initial-proof`/`--final-proof`
+- Changed compound CLI options to use `key:value` arguments and short options to use space-separated values
+- Changed automatic memory range placement to share one aligned address pool after RAM
+- Changed logged and verified invalid CMIO responses outside accepted inputs to be no-ops
 - Changed the uarch state-access layer to align misaligned accesses down to their natural size instead of rejecting them
 - Changed JSON-RPC error logs to omit the Boost `source_location` suffix at non-debug levels
 - Renamed all C++ headers from `.h` to `.hpp`, and renamed `machine-c-api.{h,cpp}` to `cm.{h,cpp}`
@@ -72,11 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved the `/run/cartesi/memoryranges/` sysfs setup from the DTB init script into `cartesi-init`
 - Updated guest bootargs to bind `uio_pdrv_genirq` to generic-uio nodes
 - Bumped test `linux.bin` and `rootfs.ext2` images
-- Renamed `--periodic-hashes` to `--print-mcycle-root-hashes` and `--dense-uarch-hashes` to `--print-uarch-cycle-root-hashes`, matching the machine's collect calls
-- Changed `--print-mcycle-root-hashes` to collect through `collect_mcycle_root_hashes`: hashes are also printed where the machine stops advancing (a manual yield or halt), and the machine must be reproducible
-- Changed `--print-uarch-cycle-root-hashes` to collect through `collect_uarch_cycle_root_hashes`: when the window ends at a fixed point (a manual yield or halt), the hashes of one extra machine cycle at that fixed point are also printed
-- Added a `log2_bundle_mcycle_count` sub-option to `--print-mcycle-root-hashes` and a `log2_bundle_uarch_cycle_count` sub-option to `--print-uarch-cycle-root-hashes`, bundling every 2^N sampled hashes into a subtree root printed with the range of cycles it covers
+- Renamed hash-printing options to `--print-mcycle-root-hashes` and `--print-uarch-cycle-root-hashes`
+- Changed `--print-mcycle-root-hashes` to use collection semantics and require reproducible machines
+- Changed `--print-uarch-cycle-root-hashes` to include fixed-point padding
+- Added bundle-size options to printed mcycle and uarch-cycle root hashes
 - Reworked the main loop of `cartesi-machine.lua` into a runner that dispatches manual and automatic yields to handler callbacks
+- Updated machine guest tools to v0.18.0-test8
 - Bumped nlohmann JSON library to 3.12
 
 ## Removed

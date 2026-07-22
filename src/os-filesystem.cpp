@@ -183,6 +183,28 @@ void change_writable(const std::string &pathname, bool writable) {
         }
     }
 
+#ifdef _WIN32
+    // Flush the file while it can still be opened for writing. Once the
+    // read-only attribute is set, FlushFileBuffers() cannot be used on it.
+    if (!writable && new_mode != st.st_mode) {
+        const auto sync_file_fd = open(pathname.c_str(), O_RDWR | O_BINARY); // NOLINT(misc-redundant-expression)
+        if (sync_file_fd < 0) {
+            throw make_path_system_error(errno, "unable to change write perms of path"s, pathname,
+                "open() for sync failed"s);
+        }
+        auto failure_sync_close =
+            scope_fail([&] { std::ignore = retry_on_eintr([&] { return close(sync_file_fd); }); });
+        if (retry_on_eintr([&] { return fsync(sync_file_fd); }) != 0) {
+            throw make_path_system_error(errno, "unable to change write perms of path"s, pathname, "fsync() failed"s);
+        }
+        failure_sync_close.release();
+        if (retry_on_eintr([&] { return close(sync_file_fd); }) != 0) {
+            throw make_path_system_error(errno, "unable to change write perms of path"s, pathname,
+                "close() after sync failed"s);
+        }
+    }
+#endif
+
     // Change permissions
     if (new_mode != st.st_mode && fchmod(fd, new_mode) != 0) {
         throw make_path_system_error(errno, "unable to change write perms of path"s, pathname, "chmod() failed"s);
@@ -425,6 +447,15 @@ void copy_file(const std::string &from, const std::string &to, uint64_t size) {
 #endif
     }
 
+#ifdef _WIN32
+    // The destination inherits the source permissions. When these are read-only, flush the
+    // destination while it is still open for writing. Once it is closed and the read-only
+    // attribute takes effect, FlushFileBuffers() cannot be used on it anymore.
+    if ((st.st_mode & S_WRITE_ALL) == 0 && retry_on_eintr([&] { return fsync(to_fd); }) != 0) {
+        throw make_copy_path_system_error(errno, "unable to copy file"s, from, to, "fsync() failed"s);
+    }
+#endif
+
     // Ensure destination file is closed gracefully
     failure_close_to.release();
     if (retry_on_eintr([&] { return close(to_fd); }) != 0) {
@@ -539,6 +570,97 @@ void clone_file(const std::string &from, const std::string &to) {
             throw;
         }
     }
+}
+
+/// \brief Flushes all modifications of an open file descriptor to permanent storage.
+/// \param fd Open file descriptor.
+/// \param description Description for error messages.
+/// \param pathname Path name for error messages.
+static void sync_fd(int fd, const std::string &description, const std::string &pathname) {
+#ifdef HAVE_F_FULLFSYNC
+    // On macOS, fsync() does not flush the storage device write cache,
+    // F_FULLFSYNC is needed for durability.
+    // Fall back to fsync() on filesystems that do not support F_FULLFSYNC.
+    if (retry_on_eintr([&] { return fcntl(fd, F_FULLFSYNC); }) == 0) {
+        return;
+    }
+    const auto f_fullfsync_errno = errno;
+    if (f_fullfsync_errno != EINVAL && f_fullfsync_errno != ENOTSUP) {
+        throw make_path_system_error(f_fullfsync_errno, description, pathname, "fcntl(F_FULLFSYNC) failed"s);
+    }
+#endif
+    if (retry_on_eintr([&] { return fsync(fd); }) != 0) {
+        throw make_path_system_error(errno, description, pathname, "fsync() failed"s);
+    }
+}
+
+#ifndef HAVE_UNIFIED_PAGE_CACHE
+#warning "sync_file() cannot flush changes still held in shared mappings of a running machine on this platform"
+#endif
+
+void sync_file(const std::string &filename) {
+    // Open the file
+#ifdef _WIN32
+    // On Windows, FlushFileBuffers() requires a handle with write access,
+    // so the file must be opened for read-write
+    constexpr int open_flags = O_RDWR | O_BINARY; // NOLINT(misc-redundant-expression)
+#else
+    constexpr int open_flags = O_RDONLY | O_BINARY; // NOLINT(misc-redundant-expression)
+#endif
+    const auto fd = open(filename.c_str(), open_flags);
+    if (fd < 0) {
+#ifdef _WIN32
+        // Read-only files cannot be opened for write and are skipped,
+        // their contents were flushed before being marked read-only.
+        // Check the file is indeed read-only, so that a genuine access
+        // denial is still reported as an error
+        if (errno == EACCES) {
+            struct stat st{};
+            if (stat(filename.c_str(), &st) == 0 && (st.st_mode & S_WRITE_ALL) == 0) {
+                return;
+            }
+            errno = EACCES;
+        }
+#endif
+        throw make_path_system_error(errno, "unable to sync file"s, filename, "open() failed"s);
+    }
+    auto failure_close = scope_fail([&] { std::ignore = retry_on_eintr([&] { return close(fd); }); });
+
+    // The file is deliberately not locked,
+    // it may be locked by a running machine that maps it.
+
+    // Flush all file modifications to permanent storage
+    sync_fd(fd, "unable to sync file"s, filename);
+
+    // Ensure the file is closed gracefully
+    failure_close.release();
+    if (retry_on_eintr([&] { return close(fd); }) != 0) {
+        throw make_path_system_error(errno, "unable to sync file"s, filename, "close() failed"s);
+    }
+}
+
+void sync_directory(const std::string &dirname) {
+#ifndef _WIN32
+    // Open the directory
+    const auto fd = open(dirname.c_str(), O_RDONLY | O_DIRECTORY);
+    if (fd < 0) {
+        throw make_path_system_error(errno, "unable to sync directory"s, dirname, "open() failed"s);
+    }
+    auto failure_close = scope_fail([&] { std::ignore = retry_on_eintr([&] { return close(fd); }); });
+
+    // Flush all directory entry modifications to permanent storage
+    sync_fd(fd, "unable to sync directory"s, dirname);
+
+    // Ensure the directory is closed gracefully
+    failure_close.release();
+    if (retry_on_eintr([&] { return close(fd); }) != 0) {
+        throw make_path_system_error(errno, "unable to sync directory"s, dirname, "close() failed"s);
+    }
+#else
+    // On Windows, directories cannot be opened as file descriptors,
+    // and directory metadata durability is handled by the filesystem journal.
+    static_cast<void>(dirname);
+#endif
 }
 
 } // namespace cartesi::os

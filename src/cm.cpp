@@ -677,8 +677,11 @@ cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const char *
     if (to_dir == nullptr) {
         throw std::invalid_argument("invalid to dir");
     }
-    const auto *cpp_m = convert_from_c(m);
-    cpp_m->clone_stored(from_dir, to_dir);
+    if (m == nullptr) {
+        cartesi::machine::clone_stored(from_dir, to_dir);
+    } else {
+        convert_from_c(m)->clone_stored(from_dir, to_dir);
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -688,8 +691,25 @@ cm_error cm_remove_stored(const cm_machine *m, const char *dir) try {
     if (dir == nullptr) {
         throw std::invalid_argument("invalid dir");
     }
-    const auto *cpp_m = convert_from_c(m);
-    cpp_m->remove_stored(dir);
+    if (m == nullptr) {
+        cartesi::machine::remove_stored(dir);
+    } else {
+        convert_from_c(m)->remove_stored(dir);
+    }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_sync_stored(const cm_machine *m, const char *dir) try {
+    if (dir == nullptr) {
+        throw std::invalid_argument("invalid dir");
+    }
+    if (m == nullptr) {
+        cartesi::machine::sync_stored(dir);
+    } else {
+        convert_from_c(m)->sync_stored(dir);
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

@@ -809,6 +809,58 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_current_dir_path_test, ordinary_machine_fix
     BOOST_REQUIRE(result.find("unable to create directory") == 0);
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(sync_stored_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    error_code = cm_sync_stored(_machine, _machine_dir_path.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(sync_stored_null_dir_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_sync_stored(_machine, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string("invalid dir"), std::string(cm_get_last_error_message()));
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(sync_stored_nonexistent_dir_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_sync_stored(_machine, _machine_dir_path.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
+    std::string result = cm_get_last_error_message();
+    BOOST_REQUIRE(result.find("unable to read file") == 0);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(clone_stored_null_machine_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    const std::string clone_dir_path = _machine_dir_path + "-clone";
+    error_code = cm_clone_stored(nullptr, _machine_dir_path.c_str(), clone_dir_path.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    std::filesystem::remove_all(clone_dir_path);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(remove_stored_null_machine_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    error_code = cm_remove_stored(nullptr, _machine_dir_path.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    BOOST_CHECK(!std::filesystem::exists(_machine_dir_path));
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(sync_stored_null_machine_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    error_code = cm_sync_stored(nullptr, _machine_dir_path.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_machine_test, ordinary_machine_fixture) {
     cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);

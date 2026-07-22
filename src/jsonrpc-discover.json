@@ -276,6 +276,27 @@
       }
     },
     {
+      "name": "machine.sync_stored",
+      "summary": "Flushes a stored machine instance in a directory to permanent storage",
+      "params": [
+        {
+          "name": "dir",
+          "description": "Directory to stored machine instance",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
       "name": "machine.run",
       "summary": "Runs the emulator until a given cycle",
       "params": [

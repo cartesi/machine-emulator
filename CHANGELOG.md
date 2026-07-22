@@ -34,9 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added uarch-cycle computation hashes for selected mcycle periods to `--cmio-advance-state`
 - Added a portable computation-hash corpus to CI artifacts and tagged releases
 - Added frontier padding and complete-subtree operations to `cartesi.hash-tree`
+- Added `sync_stored` to flush a stored machine to permanent storage, across the C, Lua, and JSON-RPC APIs
 
 ## Fixed
 - Fixed bundled uarch-cycle root-hash collection when the uarch halts in the final bundle
+- Fixed `cm_clone_stored` and `cm_remove_stored` to accept a NULL machine object, as documented
 - Fixed `cartesi-machine` and GDB hash collection to use the full unsigned 64-bit mcycle range, allowing execution to reach mcycle overflow
 - Fixed unbundled uarch-cycle hash collection to include the fixed-point padding hash immediately before each reset, matching bundled collection
 - Fixed overflow handling in numeric command-line options

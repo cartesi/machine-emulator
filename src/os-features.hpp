@@ -88,6 +88,14 @@
 #define HAVE_CLONEFILE
 #endif
 
+#if !defined(NO_F_FULLFSYNC) && defined(__APPLE__)
+#define HAVE_F_FULLFSYNC
+#endif
+
+#if !defined(NO_UNIFIED_PAGE_CACHE) && (defined(__linux__) || defined(__APPLE__))
+#define HAVE_UNIFIED_PAGE_CACHE
+#endif
+
 #if !defined(NO_DUP) && !defined(__wasi__)
 #define HAVE_DUP
 #endif

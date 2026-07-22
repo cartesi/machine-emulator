@@ -185,6 +185,10 @@ public:
     /// \param dir Path to the directory containing the stored machine to be removed.
     static void remove_stored(const std::string &dir);
 
+    /// \brief Flushes all files of a previously stored machine to permanent storage.
+    /// \param dir Path to the directory containing the stored machine to be synced.
+    static void sync_stored(const std::string &dir);
+
     /// \brief Returns address range that covers a given physical memory region
     /// \param paddr Target physical address of start of region.
     /// \param length Length of region, in bytes.

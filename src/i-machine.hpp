@@ -117,6 +117,11 @@ public:
         do_remove_stored(dir);
     }
 
+    /// \brief Flushes a stored machine in a directory to permanent storage
+    void sync_stored(const std::string &dir) const {
+        do_sync_stored(dir);
+    }
+
     /// \brief  Runs the machine for the given mcycle count and generates a log file of accessed pages and proof data.
     interpreter_break_reason log_step(uint64_t mcycle_count, const std::string &filename) {
         return do_log_step(mcycle_count, filename);
@@ -368,6 +373,7 @@ private:
     virtual void do_store(const std::string &dir, sharing_mode sharing) const = 0;
     virtual void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
     virtual void do_remove_stored(const std::string &dir) const = 0;
+    virtual void do_sync_stored(const std::string &dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
     virtual hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const = 0;

@@ -63,6 +63,7 @@ private:
     void do_store(const std::string &directory, sharing_mode sharing) const override;
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
     void do_remove_stored(const std::string &dir) const override;
+    void do_sync_stored(const std::string &dir) const override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
     hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const override;
     machine_hash do_get_root_hash() const override;

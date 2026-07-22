@@ -580,6 +580,18 @@ CM_API cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const
 /// On failure, some files or the directory may remain.
 CM_API cm_error cm_remove_stored(const cm_machine *m, const char *dir);
 
+/// \brief Flushes all files of a previously stored machine to permanent storage.
+/// \param m Pointer to a machine object. Can be NULL (for local machines).
+/// \param dir Path to the directory containing the stored machine to be synced.
+/// \returns 0 for success, non zero code for error.
+/// \details The expected usage is to sync after the machine using the stored files has been closed.
+/// On success, all previous changes to the stored machine files are durable on disk.
+/// \warning Syncing while a machine is still using the stored files commits to disk only
+/// the changes that were meant to persist on disk (changes to shared backing stores), and
+/// only on systems with a unified page cache (Linux, macOS). Elsewhere, only data already
+/// written back to the files is made durable.
+CM_API cm_error cm_sync_stored(const cm_machine *m, const char *dir);
+
 /// \brief Destroy a machine instance and remove it from the object.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \returns 0 for success, non zero code for error.

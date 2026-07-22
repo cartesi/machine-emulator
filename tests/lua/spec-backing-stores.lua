@@ -194,6 +194,77 @@ describe("backing stores", function()
         end
     end)
 
+    it("should sync a stored machine", function()
+        local stored_dirname = filesystem.temp_pathname()
+        local expected_root_hash
+
+        do -- store new machine
+            local machine <close> = cartesi.machine(base_machine_config)
+            machine:run()
+            expected_root_hash = machine:get_root_hash()
+            machine:store(stored_dirname, cartesi.SHARING_ALL)
+        end
+        local _ <close> = tests_util.scope_exit(function()
+            cartesi.machine:remove_stored(stored_dirname)
+        end)
+
+        -- sync stored machine after the machine using it is closed
+        cartesi.machine:sync_stored(stored_dirname)
+
+        do -- load stored machine
+            local machine <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_NONE)
+            expect.equal(machine:get_root_hash(), expected_root_hash)
+        end
+    end)
+
+    it("should sync a stored machine while it is in use", function()
+        local stored_dirname = filesystem.temp_pathname()
+
+        do -- store new machine
+            local machine <close> = cartesi.machine(base_machine_config)
+            machine:store(stored_dirname, cartesi.SHARING_ALL)
+        end
+        local _ <close> = tests_util.scope_exit(function()
+            cartesi.machine:remove_stored(stored_dirname)
+        end)
+
+        do -- load stored machine with all backing stores shared and sync while it is running
+            local machine <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_ALL)
+            machine:run()
+            cartesi.machine:sync_stored(stored_dirname)
+        end
+    end)
+
+    it("should fail to sync a stored machine with invalid arguments", function()
+        expect.fail(function()
+            cartesi.machine:sync_stored()
+        end, "bad argument")
+        expect.fail(function()
+            cartesi.machine:sync_stored(filesystem.temp_pathname())
+        end, "unable to read file")
+    end)
+
+    it("should fail to remove a stored machine containing an extraneous file", function()
+        local stored_dirname = filesystem.temp_pathname()
+
+        do -- store new machine
+            local machine <close> = cartesi.machine(base_machine_config)
+            machine:store(stored_dirname, cartesi.SHARING_ALL)
+        end
+
+        -- an extraneous file makes the removal fail, and the file survives
+        local extraneous_filename = stored_dirname .. "/extraneous"
+        filesystem.write_file(extraneous_filename, "keep")
+        expect.fail(function()
+            cartesi.machine:remove_stored(stored_dirname)
+        end, "unable to remove directory")
+        expect.equal(filesystem.read_file(extraneous_filename), "keep")
+
+        -- the machine files were already removed, only the extraneous file remains
+        filesystem.remove_file(extraneous_filename)
+        assert(os.remove(stored_dirname))
+    end)
+
     it("should create a machine fully mapped on disk", function()
         local stored_dirname = filesystem.temp_pathname()
         local expected_root_hash

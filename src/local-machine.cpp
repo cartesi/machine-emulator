@@ -85,6 +85,10 @@ void local_machine::do_remove_stored(const std::string &dir) const {
     machine::remove_stored(dir);
 }
 
+void local_machine::do_sync_stored(const std::string &dir) const {
+    machine::sync_stored(dir);
+}
+
 interpreter_break_reason local_machine::do_run(uint64_t mcycle_end) {
     return get_machine()->run(mcycle_end);
 }

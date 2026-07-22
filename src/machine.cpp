@@ -537,57 +537,62 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     remover.retain_all();
 }
 
-void machine::remove_stored(const std::string &dir) {
+/// \brief Calls a function for each file of a previously stored machine.
+/// \param dir Path to the directory containing the stored machine.
+/// \param func Function to call with the filename of each file.
+template <typename F>
+static void for_each_stored_filename(const std::string &dir, const F &func) {
     if (dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
     const auto config = machine_config::load(dir);
+    const auto for_each_backing_store_filename = [&](const auto &backing_store) {
+        func(backing_store.data_filename);
+        func(backing_store.dht_filename);
+        func(backing_store.dpt_filename);
+    };
 
-    // Remove all address ranges
-    os::remove_file(config.processor.backing_store.data_filename);
-    os::remove_file(config.processor.backing_store.dht_filename);
-    os::remove_file(config.processor.backing_store.dpt_filename);
-    os::remove_file(config.pmas.backing_store.data_filename);
-    os::remove_file(config.pmas.backing_store.dht_filename);
-    os::remove_file(config.pmas.backing_store.dpt_filename);
-    os::remove_file(config.dtb.backing_store.data_filename);
-    os::remove_file(config.dtb.backing_store.dht_filename);
-    os::remove_file(config.dtb.backing_store.dpt_filename);
-    os::remove_file(config.ram.backing_store.data_filename);
-    os::remove_file(config.ram.backing_store.dht_filename);
-    os::remove_file(config.ram.backing_store.dpt_filename);
-    os::remove_file(config.cmio.rx_buffer.backing_store.data_filename);
-    os::remove_file(config.cmio.rx_buffer.backing_store.dht_filename);
-    os::remove_file(config.cmio.rx_buffer.backing_store.dpt_filename);
-    os::remove_file(config.cmio.tx_buffer.backing_store.data_filename);
-    os::remove_file(config.cmio.tx_buffer.backing_store.dht_filename);
-    os::remove_file(config.cmio.tx_buffer.backing_store.dpt_filename);
-    os::remove_file(config.uarch.processor.backing_store.data_filename);
-    os::remove_file(config.uarch.processor.backing_store.dht_filename);
-    os::remove_file(config.uarch.processor.backing_store.dpt_filename);
-    os::remove_file(config.uarch.ram.backing_store.data_filename);
-    os::remove_file(config.uarch.ram.backing_store.dht_filename);
-    os::remove_file(config.uarch.ram.backing_store.dpt_filename);
+    // All address ranges
+    for_each_backing_store_filename(config.processor.backing_store);
+    for_each_backing_store_filename(config.pmas.backing_store);
+    for_each_backing_store_filename(config.dtb.backing_store);
+    for_each_backing_store_filename(config.ram.backing_store);
+    for_each_backing_store_filename(config.cmio.rx_buffer.backing_store);
+    for_each_backing_store_filename(config.cmio.tx_buffer.backing_store);
+    for_each_backing_store_filename(config.uarch.processor.backing_store);
+    for_each_backing_store_filename(config.uarch.ram.backing_store);
     for (const auto &f : config.flash_drive) {
-        os::remove_file(f.backing_store.data_filename);
-        os::remove_file(f.backing_store.dht_filename);
-        os::remove_file(f.backing_store.dpt_filename);
+        for_each_backing_store_filename(f.backing_store);
     }
     for (const auto &n : config.nvram) {
-        os::remove_file(n.backing_store.data_filename);
-        os::remove_file(n.backing_store.dht_filename);
-        os::remove_file(n.backing_store.dpt_filename);
+        for_each_backing_store_filename(n.backing_store);
     }
 
-    // Remove hash tree files
-    os::remove_file(config.hash_tree.sht_filename);
-    os::remove_file(config.hash_tree.phtc_filename);
+    // Hash tree files
+    func(config.hash_tree.sht_filename);
+    func(config.hash_tree.phtc_filename);
 
-    // Remove config
-    os::remove_file(machine_config::get_config_filename(dir));
+    // Config file
+    func(machine_config::get_config_filename(dir));
+}
+
+void machine::remove_stored(const std::string &dir) {
+    // Remove all files
+    for_each_stored_filename(dir, os::remove_file);
 
     // Remove directory
     os::remove_directory(dir);
+}
+
+void machine::sync_stored(const std::string &dir) {
+    // Sync all files
+    for_each_stored_filename(dir, os::sync_file);
+
+    // Sync directory entries
+    os::sync_directory(dir);
+
+    // Sync the stored directory entry in its parent
+    os::sync_directory(dir + "/..");
 }
 
 void machine::replace_memory_range(const memory_range_config &config) {

@@ -124,6 +124,19 @@ void reflink_file(const std::string &from, const std::string &to);
 /// The destination file may be locked for exclusive writing during the operation.
 void clone_file(const std::string &from, const std::string &to);
 
+/// \brief Flushes all modifications of a file to permanent storage.
+/// \param filename Path to the file, must exist.
+/// \throw std::system_error on error.
+/// \details The file is deliberately not locked during the operation,
+/// so it may be locked by a running machine that maps it.
+void sync_file(const std::string &filename);
+
+/// \brief Flushes all modifications of a directory entry list to permanent storage.
+/// \param dirname Path to the directory, must exist.
+/// \throw std::system_error on error.
+/// \details On Windows this is a no-op, directory metadata durability is handled by the filesystem.
+void sync_directory(const std::string &dirname);
+
 } // namespace cartesi::os
 
 #endif // OS_FILESYSTEM_HPP

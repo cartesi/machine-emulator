@@ -6,7 +6,6 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local cartesi = require("cartesi")
 local filesystem = require("cartesi.filesystem")
-local utils = require("cartesi.utils")
 local tabular = require("cartesi.tabular")
 local tests_util = require("cartesi.tests.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
@@ -68,7 +67,7 @@ describe("backing stores", function()
             expected_root_hash = machine:get_root_hash()
             machine:store(stored_dirname, cartesi.SHARING_ALL)
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(stored_dirname)
         end)
 
@@ -88,7 +87,7 @@ describe("backing stores", function()
             machine:store(stored_dirname)
             expected_root_hash = machine:get_root_hash()
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(stored_dirname)
         end)
 
@@ -98,7 +97,7 @@ describe("backing stores", function()
             machine:run()
             machine:store(cloned_dirname, cartesi.SHARING_NONE)
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(cloned_dirname)
         end)
 
@@ -130,7 +129,7 @@ describe("backing stores", function()
             machine:write_memory(root_drive.start, string.rep("X", root_drive.length))
             expected_root_hash = machine:get_root_hash()
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(stored_dirname)
         end)
 
@@ -140,7 +139,7 @@ describe("backing stores", function()
             machine:run()
             machine:store(cloned_dirname, cartesi.SHARING_CONFIG)
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(cloned_dirname)
         end)
 
@@ -170,13 +169,13 @@ describe("backing stores", function()
             machine:run()
             expected_end_root_hash = machine:get_root_hash()
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(stored_dirname)
         end)
 
         -- clone machine
         cartesi.machine:clone_stored(stored_dirname, cloned_dirname)
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(cloned_dirname)
         end)
 
@@ -204,7 +203,7 @@ describe("backing stores", function()
             machine:run()
             expected_root_hash = machine:get_root_hash()
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(stored_dirname)
         end)
 
@@ -226,7 +225,7 @@ describe("backing stores", function()
             machine:run()
             expected_end_root_hash = machine:get_root_hash()
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(stored_dirname)
         end)
 
@@ -257,7 +256,7 @@ describe("backing stores", function()
             expected2_root_hash = machine:get_root_hash()
             machine:store(stored2_dirname)
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(stored1_dirname)
             cartesi.machine:remove_stored(stored2_dirname)
         end)
@@ -290,7 +289,7 @@ describe("backing stores", function()
             expected2_root_hash = machine:get_root_hash()
             machine:store(stored2_dirname)
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             cartesi.machine:remove_stored(stored1_dirname)
             cartesi.machine:remove_stored(stored2_dirname)
         end)
@@ -421,7 +420,7 @@ describe("backing stores", function()
             expected_root_hash = machine:get_root_hash()
             initial_config = machine:get_initial_config()
         end
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             for _, k, v in tabular.deep_traverse(initial_config) do
                 if k:find("^%w+_filename$") then
                     filesystem.remove_file(v)

@@ -17,7 +17,7 @@
 --
 
 local cartesi = require("cartesi")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 
 local config_base = {
     processor = {
@@ -27,7 +27,7 @@ local config_base = {
     },
     ram = {
         backing_store = {
-            data_filename = test_util.tests_path .. "htif_console.bin",
+            data_filename = tests_util.tests_path .. "htif_console.bin",
         },
         length = 0x4000000,
     },

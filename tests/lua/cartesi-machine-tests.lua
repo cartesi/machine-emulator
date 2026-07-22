@@ -18,7 +18,7 @@
 
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 local tabular = require("cartesi.tabular")
 local parallel = require("cartesi.parallel")
 local jsonrpc
@@ -405,7 +405,7 @@ or a left shift (e.g., 2 << 20).
     os.exit()
 end
 
-local test_path = test_util.tests_path
+local test_path = tests_util.tests_path
 local prepost_path = os.getenv("CARTESI_TESTS_PREPOST_PATH") or arg[0]:match("(.*/)") or "./"
 local test_pattern = ".*"
 local remote_address

@@ -23,11 +23,11 @@ uarch-replay-state-access.h and replay-send-cmio-state-access.h.
 local cartesi = require("cartesi")
 local lester = require("cartesi.third-party.lester")
 lester.parse_args()
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
-local uarch_test_path = test_util.tests_uarch_path
+local uarch_test_path = tests_util.tests_uarch_path
 
 -- Uarch halt program: li a7,halt; ecall
 local UARCH_HALT_INSN = (cartesi.UARCH_ECALL_FN_HALT << 20) | 0x00893

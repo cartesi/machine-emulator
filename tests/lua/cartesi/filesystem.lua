@@ -14,7 +14,7 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
-local utils = require("cartesi.utils")
+local tests_util = require("cartesi.tests.util")
 
 -- Module providing helpers for filesystem operations.
 local filesystem = {}
@@ -65,7 +65,7 @@ end
 -- Writes a binary data to a temporary file that is auto removed when scoped ends.
 function filesystem.write_scope_temp_file(data)
     local filename = filesystem.write_temp_file(data)
-    return utils.scope_exit(function()
+    return tests_util.scope_exit(function()
         filesystem.remove_file(filename)
     end), filename
 end

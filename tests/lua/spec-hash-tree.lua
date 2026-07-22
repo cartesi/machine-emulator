@@ -10,7 +10,7 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
-local util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 
 local LOG2_ROOT_SIZE = 64
 local LOG2_PAGE_SIZE = 12
@@ -78,7 +78,7 @@ end
 local function expect_consistent_root_hash(machine)
     expect.truthy(machine:verify_hash_tree())
     local root_hash = machine:get_root_hash()
-    local external_root_hash = util.calculate_emulator_hash(machine)
+    local external_root_hash = tests_util.calculate_emulator_hash(machine)
     expect.truthy(machine:verify_hash_tree())
     local node_hash = machine:get_node_hash(0, cartesi.HASH_TREE_LOG2_ROOT_SIZE)
     expect.truthy(root_hash == node_hash)
@@ -95,7 +95,7 @@ describe("hash tree", function()
                 },
                 ram = {
                     backing_store = {
-                        data_filename = util.tests_path .. "rv64ui-p-addi.bin",
+                        data_filename = tests_util.tests_path .. "rv64ui-p-addi.bin",
                     },
                     length = 0x10000,
                 },
@@ -213,7 +213,7 @@ describe("hash tree", function()
                         for _, v in ipairs(machine:get_address_ranges()) do
                             for address = v.start, v.start + v.length - 1, PAGE_SIZE do
                                 local node_hash = machine:get_node_hash(address, LOG2_PAGE_SIZE)
-                                local external_node_hash = util.merkle_hash(
+                                local external_node_hash = tests_util.merkle_hash(
                                     machine:read_memory(address, PAGE_SIZE),
                                     0,
                                     LOG2_PAGE_SIZE,
@@ -327,8 +327,12 @@ describe("hash tree", function()
                                     and log2_root_size > log2_target_size
                                     and log2_root_size <= LOG2_ROOT_SIZE
                                 then
-                                    local sproof =
-                                        util.slice_proof(full_proof, log2_root_size, log2_target_size, hash_function)
+                                    local sproof = tests_util.slice_proof(
+                                        full_proof,
+                                        log2_root_size,
+                                        log2_target_size,
+                                        hash_function
+                                    )
                                     expect_consistent_proof(sproof, hash_function)
                                     local aligned = get_aligned_address(address, log2_target_size)
                                     local mproof = machine:get_proof(aligned, log2_target_size, log2_root_size)

@@ -24,7 +24,7 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local filesystem = require("cartesi.filesystem")
 local util = require("cartesi.util")
-local utils = require("cartesi.utils")
+local tests_util = require("cartesi.tests.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
 describe("cartesi-machine CLI", function()
@@ -63,14 +63,14 @@ describe("cartesi-machine CLI", function()
 
     local function scope_temp_pathname()
         local path = filesystem.temp_pathname()
-        return utils.scope_exit(function()
+        return tests_util.scope_exit(function()
             os.remove(path)
         end), path
     end
 
     local function scope_stored_dirname()
         local dir = filesystem.temp_pathname()
-        return utils.scope_exit(function()
+        return tests_util.scope_exit(function()
             pcall(cartesi.machine.remove_stored, cartesi.machine, dir)
         end),
             dir
@@ -1022,7 +1022,7 @@ describe("cartesi-machine CLI", function()
         -- --dump-memory-ranges=<dir>: writes one <start>--<length>.bin per memory range under <dir>.
         -- The CLI creates the directory; we only own the cleanup.
         local dump_dir = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             os.remove(dump_dir)
         end)
         run_ok({ "--dump-memory-ranges=" .. dump_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -1227,7 +1227,7 @@ describe("cartesi-machine CLI", function()
         -- JSON via .json filename extension (no explicit format:), round-tripped
         -- by --load-config which also infers JSON from the extension.
         local json_ext_file = filesystem.temp_pathname() .. ".json"
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             os.remove(json_ext_file)
         end)
         run_ok({
@@ -1262,7 +1262,7 @@ describe("cartesi-machine CLI", function()
         local hash_store_base = filesystem.temp_pathname()
         assert(os.execute("mkdir " .. shquote(hash_store_base)))
         local hash_subdir
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             if hash_subdir then
                 pcall(cartesi.machine.remove_stored, cartesi.machine, hash_store_base .. "/" .. hash_subdir)
             end
@@ -1877,7 +1877,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("rollup advance and inspect", function()
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
                 prefix .. "-input-0.bin",
                 prefix .. "-input-1.bin",
@@ -1975,7 +1975,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("output proof format", function()
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
                 prefix .. "-input-0.bin",
                 prefix .. "-out-0-0.bin",
@@ -2071,7 +2071,7 @@ describe("cartesi-machine CLI", function()
         end
 
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
                 prefix .. "-input-0.bin",
                 prefix .. "-input-1.bin",
@@ -2130,7 +2130,7 @@ describe("cartesi-machine CLI", function()
         local server <close>, address = jsonrpc.spawn_server()
         server:set_cleanup_call(jsonrpc.NOTHING)
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
                 prefix .. "-inpr-0.bin",
                 prefix .. "-inpr-1.bin",
@@ -2264,7 +2264,7 @@ describe("cartesi-machine CLI", function()
         local server <close>, address = jsonrpc.spawn_server()
         server:set_cleanup_call(jsonrpc.NOTHING)
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
                 prefix .. "-chin-0.bin",
                 prefix .. "-chin-1.bin",
@@ -2355,7 +2355,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("mcycle computation hash of an epoch with no inputs", function()
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             os.remove(prefix .. "-ch0.bin")
             os.remove(prefix .. "-final.bin")
         end)
@@ -2395,7 +2395,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("mcycle computation hash when the machine halts mid-input", function()
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             os.remove(prefix .. "-chh-0.bin")
             os.remove(prefix .. "-chh.bin")
             os.remove(prefix .. "-chhb.bin")
@@ -2573,7 +2573,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("mcycle computation hash requires reverts for rejected inputs", function()
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             os.remove(prefix .. "-chr-0.bin")
             os.remove(prefix .. "-chr-1.bin")
         end)
@@ -2682,7 +2682,7 @@ describe("cartesi-machine CLI", function()
         -- a reject with reverts off leaves no boundary to pad the reverted timeline from, even
         -- when the disputed period sits in an input the run never reaches
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             os.remove(prefix .. "-uchr-0.bin")
             os.remove(prefix .. "-uchr-1.bin")
         end)
@@ -2731,7 +2731,7 @@ describe("cartesi-machine CLI", function()
         local server <close>, address = jsonrpc.spawn_server()
         server:set_cleanup_call(jsonrpc.NOTHING)
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
                 prefix .. "-uin-0.bin",
                 prefix .. "-uin-1.bin",
@@ -2844,7 +2844,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("uarch cycle computation hash of an epoch with no inputs", function()
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             os.remove(prefix .. "-uch0.bin")
         end)
         run_ok({
@@ -2942,7 +2942,7 @@ describe("cartesi-machine CLI", function()
             prefix .. "-e2oh-2.bin",
             prefix .. "-e2oh-4.bin",
         }
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs(files) do
                 os.remove(p)
             end
@@ -3035,7 +3035,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("rollup rolling template failure", function()
         local prefix = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs({
                 prefix .. "-inrt-0.bin",
                 prefix .. "-rt-0-0.bin",
@@ -3153,7 +3153,7 @@ describe("cartesi-machine CLI", function()
     -- allocation and server-readiness races.
     local function run_under_gdb(flags, script)
         local listener = assert(socket.bind("127.0.0.1", 0))
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             if listener then
                 listener:close()
             end
@@ -3181,7 +3181,7 @@ describe("cartesi-machine CLI", function()
         local pipe = assert(io.popen("sh " .. shquote(runner)))
         local pid = pipe:read("*l")
         pipe:close()
-        local _ <close> = utils.scope_exit(function()
+        local _ <close> = tests_util.scope_exit(function()
             if pid then
                 os.execute("kill " .. pid .. " 2>/dev/null")
             end

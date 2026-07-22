@@ -45,7 +45,7 @@ local function get_script_path(dirlevel, calllevel)
     return path
 end
 
-local test_util = {
+local tests_util = {
     images_path = adjust_path(os.getenv("CARTESI_IMAGES_PATH") or get_script_path(5) .. "/src"),
     tests_path = adjust_path(os.getenv("CARTESI_TESTS_PATH") or get_script_path(4) .. "/build/machine"),
     cmio_path = adjust_path(os.getenv("CARTESI_CMIO_PATH") or get_script_path(4) .. "/build/cmio"),
@@ -72,19 +72,19 @@ local zero_hash_tables = {
 }
 local ZERO_PAGE = string.rep("\x00", PAGE_SIZE)
 
-test_util.uarch_programs = {
+tests_util.uarch_programs = {
     halt = {
         (cartesi.UARCH_ECALL_FN_HALT << 20) | 0x00893, -- li a7,halt
         0x00000073, -- ecall
     },
 }
 
-test_util.uarch_programs.default = {
+tests_util.uarch_programs.default = {
     0x07b00513, --   li	a0,123
-    table.unpack(test_util.uarch_programs.halt),
+    table.unpack(tests_util.uarch_programs.halt),
 }
 
-function test_util.create_test_uarch_program(instructions)
+function tests_util.create_test_uarch_program(instructions)
     assert(instructions, "missing instructions")
     local file_path = os.tmpname()
     local f <close> = assert(io.open(file_path, "wb"))
@@ -94,7 +94,7 @@ function test_util.create_test_uarch_program(instructions)
     return file_path
 end
 
-function test_util.make_do_test(build_machine, type, config, runtime_config)
+function tests_util.make_do_test(build_machine, type, config, runtime_config)
     return function(description, f)
         io.write("  " .. description .. "...\n")
         local machine <close> = build_machine(type, config, runtime_config)
@@ -103,7 +103,7 @@ function test_util.make_do_test(build_machine, type, config, runtime_config)
     end
 end
 
-function test_util.disabled_test(description)
+function tests_util.disabled_test(description)
     print("Disabled test - " .. description)
 end
 
@@ -191,7 +191,7 @@ function back_merkle_tree_meta.__index:get_root_hash()
     end
 end
 
-function test_util.new_back_merkle_tree(log2_root_size, log2_leaf_size, hash_fn)
+function tests_util.new_back_merkle_tree(log2_root_size, log2_leaf_size, hash_fn)
     local self = {}
     self.hash_fn = hash_fn
     self.zero_hash_table = zero_hash_tables[hash_fn]
@@ -203,24 +203,24 @@ function test_util.new_back_merkle_tree(log2_root_size, log2_leaf_size, hash_fn)
     return setmetatable(self, back_merkle_tree_meta)
 end
 
-function test_util.file_exists(name)
+function tests_util.file_exists(name)
     local f <close> = io.open(name, "r")
     return f ~= nil
 end
 
-function test_util.tohex(str)
+function tests_util.tohex(str)
     return (str:gsub(".", function(c)
         return string.format("%02X", string.byte(c))
     end))
 end
 
-function test_util.fromhex(str)
+function tests_util.fromhex(str)
     return (str:gsub("..", function(cc)
         return string.char(tonumber(cc, 16))
     end))
 end
 
-function test_util.split_string(inputstr, sep)
+function tests_util.split_string(inputstr, sep)
     if sep == nil then
         sep = "%s"
     end
@@ -231,7 +231,7 @@ function test_util.split_string(inputstr, sep)
     return t
 end
 
-function test_util.check_proof(proof, hash_fn)
+function tests_util.check_proof(proof, hash_fn)
     assert(hash_fn, "hash_fn is nil")
     local hash = proof.target_hash
     for log2_size = proof.log2_target_size, proof.log2_root_size - 1 do
@@ -247,7 +247,7 @@ function test_util.check_proof(proof, hash_fn)
     return hash == proof.root_hash
 end
 
-function test_util.slice_proof(proof, new_log2_root_size, new_log2_target_size, hash_fn)
+function tests_util.slice_proof(proof, new_log2_root_size, new_log2_target_size, hash_fn)
     assert(hash_fn, "hash_fn is nil")
     assert(new_log2_root_size <= proof.log2_root_size, "log2_root_size is too large")
     assert(new_log2_target_size >= proof.log2_target_size, "log2_target_size is too small")
@@ -285,15 +285,15 @@ function test_util.slice_proof(proof, new_log2_root_size, new_log2_target_size, 
         hash = cartesi[hash_fn](first, second)
     end
     sliced.root_hash = hash
-    assert(test_util.check_proof(sliced, hash_fn), "produced invalid sliced proof")
+    assert(tests_util.check_proof(sliced, hash_fn), "produced invalid sliced proof")
     return sliced
 end
 
-function test_util.align(v, el)
+function tests_util.align(v, el)
     return (v >> el << el)
 end
 
-function test_util.load_file(filename)
+function tests_util.load_file(filename)
     local fd <close> = assert(io.open(filename, "rb"))
     local data = assert(fd:read("*all"))
     return data
@@ -314,13 +314,13 @@ local function merkle_hash(data, start, log2_size, hash_fn)
     end
 end
 
-test_util.merkle_hash = merkle_hash
+tests_util.merkle_hash = merkle_hash
 
 -- Take data from dumped memory files
 -- and calculate root hash of the machine
-function test_util.calculate_emulator_hash(machine, hash_fn)
+function tests_util.calculate_emulator_hash(machine, hash_fn)
     hash_fn = hash_fn or machine:get_initial_config().hash_tree.hash_function
-    local tree = test_util.new_back_merkle_tree(64, PAGE_LOG2_SIZE, hash_fn)
+    local tree = tests_util.new_back_merkle_tree(64, PAGE_LOG2_SIZE, hash_fn)
     local last = 0
     for _, v in ipairs(machine:get_address_ranges()) do
         tree:pad_back((v.start - last) >> PAGE_LOG2_SIZE)
@@ -335,11 +335,11 @@ function test_util.calculate_emulator_hash(machine, hash_fn)
 end
 
 -- Read memory from given machine and calculate uarch state hash
-function test_util.calculate_uarch_state_hash(machine)
+function tests_util.calculate_uarch_state_hash(machine)
     local hash_fn = machine:get_initial_config().hash_tree.hash_function
     local shadow_data = machine:read_memory(cartesi.UARCH_SHADOW_START_ADDRESS, cartesi.UARCH_SHADOW_LENGTH)
     local ram_data = machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, cartesi.UARCH_RAM_LENGTH)
-    local tree = test_util.new_back_merkle_tree(cartesi.UARCH_STATE_LOG2_SIZE, PAGE_LOG2_SIZE, hash_fn)
+    local tree = tests_util.new_back_merkle_tree(cartesi.UARCH_STATE_LOG2_SIZE, PAGE_LOG2_SIZE, hash_fn)
     for j = 0, #shadow_data - 1, PAGE_SIZE do
         local page_hash = merkle_hash(shadow_data, j, PAGE_LOG2_SIZE, hash_fn)
         tree:push_back(page_hash)
@@ -356,7 +356,7 @@ function test_util.calculate_uarch_state_hash(machine)
 end
 
 -- Executes a function and asserts that it throws an error and that the error message matches the expected pattern
-function test_util.assert_error(expected_error_text_pattern, fn)
+function tests_util.assert_error(expected_error_text_pattern, fn)
     local status, actual_error_text = pcall(fn)
     assert(status == false, "Expected error to be thrown, but it was not")
     assert(
@@ -386,11 +386,23 @@ function temp_file_meta:__close()
     self:close()
 end
 
-function test_util.new_temp_file()
+function tests_util.new_temp_file()
     local self = {}
     self.file_name = os.tmpname()
     self.file = io.open(self.file_name, "w+")
     return setmetatable(self, temp_file_meta)
 end
 
-return test_util
+-- Executes a callback when the scope exits.
+-- REMARKS: Use <close> on its returned value to make it behave deterministically.
+function tests_util.scope_exit(callback)
+    local function do_callback()
+        if callback then
+            callback()
+            callback = nil
+        end
+    end
+    return setmetatable({}, { __gc = do_callback, __close = do_callback })
+end
+
+return tests_util

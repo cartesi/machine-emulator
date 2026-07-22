@@ -17,7 +17,7 @@
 --
 
 local cartesi = require("cartesi")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 
 local function help()
     io.stderr:write(string.format(
@@ -46,7 +46,7 @@ end
 
 local uarch
 local run_with_uarch = false
-local test_path = test_util.tests_path
+local test_path = tests_util.tests_path
 
 -- List of supported options
 -- Options are processed in order

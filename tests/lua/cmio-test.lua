@@ -17,14 +17,14 @@
 --
 
 local cartesi = require("cartesi")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 local test_data = require("cartesi.tests.data")
 local jsonrpc
 
 local function adjust_images_path(path)
     return string.gsub(path or ".", "/*$", "") .. "/"
 end
-local MACHINES_DIR = adjust_images_path(test_util.cmio_path)
+local MACHINES_DIR = adjust_images_path(tests_util.cmio_path)
 
 local remote_address
 

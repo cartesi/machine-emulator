@@ -18,8 +18,7 @@
 
 local cartesi = require("cartesi")
 local filesystem = require("cartesi.filesystem")
-local test_util = require("cartesi.tests.util")
-local utils = require("cartesi.utils")
+local tests_util = require("cartesi.tests.util")
 
 local MAX_MCYCLE = cartesi.MCYCLE_MAX
 local MAX_UARCH_CYCLE = cartesi.UARCH_CYCLE_MAX
@@ -29,7 +28,7 @@ local function build_machine()
         ram = {
             length = 32 << 20,
             backing_store = {
-                data_filename = test_util.tests_path .. "mcycle_overflow.bin",
+                data_filename = tests_util.tests_path .. "mcycle_overflow.bin",
             },
         },
     }
@@ -126,7 +125,7 @@ do_test("logged mcycle steps should preserve target and overflow semantics", fun
 
     local zero_step_filename = filesystem.temp_pathname()
     local overflow_step_filename = filesystem.temp_pathname()
-    local _ <close> = utils.scope_exit(function()
+    local _ <close> = tests_util.scope_exit(function()
         os.remove(zero_step_filename)
         os.remove(overflow_step_filename)
     end)
@@ -148,7 +147,7 @@ end)
 do_test("logged mcycle step should do nothing at max mcycle", function(machine)
     machine:write_reg("mcycle", MAX_MCYCLE)
     local step_filename = filesystem.temp_pathname()
-    local _ <close> = utils.scope_exit(function()
+    local _ <close> = tests_util.scope_exit(function()
         os.remove(step_filename)
     end)
 
@@ -163,7 +162,7 @@ end)
 do_test("logged mcycle step should overflow from one cycle before max mcycle", function(machine)
     machine:write_reg("mcycle", MAX_MCYCLE - 1)
     local step_filename = filesystem.temp_pathname()
-    local _ <close> = utils.scope_exit(function()
+    local _ <close> = tests_util.scope_exit(function()
         os.remove(step_filename)
     end)
 

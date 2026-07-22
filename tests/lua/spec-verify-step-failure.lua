@@ -23,7 +23,7 @@ This exercises the validation error paths in replay-step-state-access.h
 local cartesi = require("cartesi")
 local lester = require("cartesi.third-party.lester")
 lester.parse_args()
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
@@ -441,7 +441,7 @@ local function register_verify_step_tests(machine)
             local fresh_machine <close> = cartesi.machine(config, {})
             local pma_page_addr = pma_page_index << LOG2_PAGE_SIZE
             -- Start with the Merkle tree hash of the corrupted page data
-            local node_hash = test_util.merkle_hash(pages[pma_page_pos].data, 0, LOG2_PAGE_SIZE, hash_fn)
+            local node_hash = tests_util.merkle_hash(pages[pma_page_pos].data, 0, LOG2_PAGE_SIZE, hash_fn)
             -- Walk up from page level to root, combining with sibling hashes
             for log2_size = LOG2_PAGE_SIZE, LOG2_ROOT_SIZE - 1 do
                 local bit = 1 << log2_size

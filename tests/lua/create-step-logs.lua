@@ -22,7 +22,7 @@
 -- Files are stored in CARTESI_STEP_LOGS_PATH.
 
 local cartesi = require("cartesi")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 
 local function stderr_unsilenceable(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
@@ -74,8 +74,8 @@ local function adjust_images_path(path)
     return string.gsub(path or ".", "/*$", "") .. "/"
 end
 
-local IMAGES_DIR = adjust_images_path(test_util.images_path)
-local STEP_LOGS_PATH = adjust_images_path(test_util.step_logs_path)
+local IMAGES_DIR = adjust_images_path(tests_util.images_path)
+local STEP_LOGS_PATH = adjust_images_path(tests_util.step_logs_path)
 
 local function create_machine(command)
     local config = create_default_config(IMAGES_DIR, command)

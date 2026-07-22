@@ -17,7 +17,7 @@
 --
 
 local cartesi = require("cartesi")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 
 local function stderr_unsilenceable(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
@@ -31,8 +31,8 @@ local function basedir(s)
     s = string.gsub(s, "/$", "")
     return string.match(s, "/.+[^/]+/") or "."
 end
-local IMAGES_DIR = adjust_images_path(test_util.images_path)
-local MACHINES_DIR = adjust_images_path(test_util.cmio_path)
+local IMAGES_DIR = adjust_images_path(tests_util.images_path)
+local MACHINES_DIR = adjust_images_path(tests_util.cmio_path)
 
 -- Print help and exit
 local function help()

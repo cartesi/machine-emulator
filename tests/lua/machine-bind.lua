@@ -18,7 +18,7 @@
 
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 local jsonrpc
 
 local remote_address
@@ -238,7 +238,7 @@ local function build_machine_config(config_options)
                 ram = {
                     length = 0x1000,
                     backing_store = {
-                        data_filename = test_util.create_test_uarch_program(test_util.uarch_programs.default),
+                        data_filename = tests_util.create_test_uarch_program(tests_util.uarch_programs.default),
                     },
                 },
             },
@@ -266,7 +266,7 @@ local function build_machine(type, config_options)
     return new_machine
 end
 
-local do_test = test_util.make_do_test(build_machine, machine_type)
+local do_test = tests_util.make_do_test(build_machine, machine_type)
 
 print("Testing machine bindings for type " .. machine_type)
 
@@ -279,7 +279,7 @@ do_test("Hash tree hash function should be keccak256 by default", function(machi
     )
 end)
 
-test_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = "keccak256" } })(
+tests_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = "keccak256" } })(
     "Hash tree hash function keccak256 should work properly",
     function(machine)
         assert(
@@ -287,14 +287,14 @@ test_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_functio
             "hash tree hash function should be uarch"
         )
         local root_hash = machine:get_root_hash()
-        local keccak256_calculated = test_util.calculate_emulator_hash(machine, "keccak256")
+        local keccak256_calculated = tests_util.calculate_emulator_hash(machine, "keccak256")
         assert(root_hash == keccak256_calculated, "initial root hash does not match")
-        local sha256_calculated = test_util.calculate_emulator_hash(machine, "sha256")
+        local sha256_calculated = tests_util.calculate_emulator_hash(machine, "sha256")
         assert(root_hash ~= sha256_calculated, "initial root hash should not match sha256")
     end
 )
 
-test_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = "sha256" } })(
+tests_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = "sha256" } })(
     "Hash tree hash function sha256 should work properly",
     function(machine)
         assert(
@@ -302,14 +302,14 @@ test_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_functio
             "hash tree hash function should be sha256"
         )
         local root_hash = machine:get_root_hash()
-        local sha256_calculated = test_util.calculate_emulator_hash(machine, "sha256")
+        local sha256_calculated = tests_util.calculate_emulator_hash(machine, "sha256")
         assert(root_hash == sha256_calculated, "initial root hash does not match")
-        local keccak256_calculated = test_util.calculate_emulator_hash(machine, "keccak256")
+        local keccak256_calculated = tests_util.calculate_emulator_hash(machine, "keccak256")
         assert(root_hash ~= keccak256_calculated, "initial root hash should not match keccak256")
     end
 )
 
-test_util.make_do_test(function() end, machine_type, {})(
+tests_util.make_do_test(function() end, machine_type, {})(
     "Fails to construct machine of unsupported hash tree hash function",
     function()
         local success, err = pcall(function()
@@ -357,8 +357,8 @@ do_test("should provide proof for values in registers", function(machine)
     local hash_fn = machine:get_initial_config().hash_tree.hash_function
     for _, v in pairs(initial_reg_values) do
         for el = cartesi.HASH_TREE_LOG2_WORD_SIZE, cartesi.HASH_TREE_LOG2_ROOT_SIZE - 1 do
-            local a = test_util.align(v, el)
-            assert(test_util.check_proof(assert(machine:get_proof(a, el), "no proof"), hash_fn), "proof failed")
+            local a = tests_util.align(v, el)
+            assert(tests_util.check_proof(assert(machine:get_proof(a, el), "no proof"), hash_fn), "proof failed")
         end
     end
 end)
@@ -553,9 +553,9 @@ print("\n\n test calculation of initial root hash")
 do_test("should return expected value", function(machine)
     -- Get starting root hash
     local root_hash = machine:get_root_hash()
-    print("Root hash: ", test_util.tohex(root_hash))
+    print("Root hash: ", tests_util.tohex(root_hash))
 
-    local calculated_root_hash = test_util.calculate_emulator_hash(machine)
+    local calculated_root_hash = tests_util.calculate_emulator_hash(machine)
 
     assert(root_hash == calculated_root_hash, "initial root hash does not match")
 end)
@@ -809,7 +809,7 @@ end)
 print("\n\n dump step log to console")
 do_test("dumped step log content should match", function(machine)
     local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS | cartesi.ACCESS_LOG_TYPE_LARGE_DATA)
-    local temp_file <close> = test_util.new_temp_file()
+    local temp_file <close> = tests_util.new_temp_file()
     util.print_log(log, temp_file)
     local log_output = temp_file:read_all()
     -- luacheck: push no max line length
@@ -894,9 +894,9 @@ local uarch_proof_step_program = {
     0x0062b023, -- sd	t1,0(t0) [0xca]
 }
 
-test_util.make_do_test(build_machine, machine_type, {
+tests_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_proof_step_program) } },
+        ram = { backing_store = { data_filename = tests_util.create_test_uarch_program(uarch_proof_step_program) } },
     },
 })("hash tree must be consistent when stepping alternating with and without proofs", function(machine)
     local t0 = 5
@@ -927,9 +927,9 @@ test_util.make_do_test(build_machine, machine_type, {
     assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
 end)
 
-test_util.make_do_test(build_machine, machine_type, {
+tests_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_proof_step_program) } },
+        ram = { backing_store = { data_filename = tests_util.create_test_uarch_program(uarch_proof_step_program) } },
     },
 })("It should load the uarch ram image from a file", function(machine)
     local expected_ram_image = ""
@@ -943,7 +943,7 @@ test_util.make_do_test(build_machine, machine_type, {
     assert(ram_image == expected_ram_image)
 end)
 
-test_util.make_do_test(build_machine, machine_type, { processor = { registers = { mcycle = 1 } }, uarch = {} })(
+tests_util.make_do_test(build_machine, machine_type, { processor = { registers = { mcycle = 1 } }, uarch = {} })(
     "It should use the embedded uarch-ram.bin when the uarch config is not provided",
     function(machine)
         assert(machine:read_reg("mcycle") == 1)
@@ -959,7 +959,7 @@ test_util.make_do_test(build_machine, machine_type, { processor = { registers = 
 
 print("\n\n testing reset uarch")
 
-test_util.make_do_test(build_machine, machine_type, { uarch = {} })(
+tests_util.make_do_test(build_machine, machine_type, { uarch = {} })(
     "uarch reset using default uarch configuration ",
     function(machine)
         local initial_hash = machine:get_root_hash()
@@ -1012,7 +1012,7 @@ local function test_reset_uarch(machine, with_log, with_annotations)
     machine:write_memory(cartesi.UARCH_RAM_START_ADDRESS, gibberish, #gibberish)
     assert(machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, #gibberish) == gibberish)
     -- assert uarch state hash is not pristine
-    local uarch_state_hash = test_util.calculate_uarch_state_hash(machine)
+    local uarch_state_hash = tests_util.calculate_uarch_state_hash(machine)
     assert(uarch_state_hash ~= cartesi.UARCH_PRISTINE_STATE_HASH)
     -- reset uarch state
     if with_log then
@@ -1044,12 +1044,12 @@ local function test_reset_uarch(machine, with_log, with_annotations)
     -- assert that gibberish was removed from uarch ram
     assert(machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, #gibberish) ~= gibberish)
     -- compute current uarch state hash
-    uarch_state_hash = test_util.calculate_uarch_state_hash(machine)
+    uarch_state_hash = tests_util.calculate_uarch_state_hash(machine)
     -- assert computed and pristine hash match
     assert(uarch_state_hash == cartesi.UARCH_PRISTINE_STATE_HASH)
 end
 
-test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Testing reset_uarch without logging",
     function(machine)
         test_reset_uarch(machine, false, false)
@@ -1057,7 +1057,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
 )
 
 for _, with_annotations in ipairs({ true, false }) do
-    test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
         "Testing reset_uarch with logging, annotations=" .. tostring(with_annotations),
         function(machine)
             test_reset_uarch(machine, true, with_annotations)
@@ -1065,7 +1065,7 @@ for _, with_annotations in ipairs({ true, false }) do
     )
 end
 
-test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Testing verify_reset_uarch",
     function(machine)
         local initial_hash = machine:get_root_hash()
@@ -1083,7 +1083,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     end
 )
 
-test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Testing verify_reset_uarch",
     function(machine)
         local initial_hash = machine:get_root_hash()
@@ -1102,7 +1102,7 @@ local function set_rejected_input_state(machine, revert_hash)
     machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
 end
 
-test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Testing log_reset_uarch reverts to the revert root hash when the input was rejected",
     function(machine)
         local revert_hash = string.rep("\x5a", cartesi.HASH_SIZE)
@@ -1130,7 +1130,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     end
 )
 
-test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Testing log_reset_uarch does not revert when the yield reason is not rx-rejected",
     function(machine)
         local revert_hash = string.rep("\x5a", cartesi.HASH_SIZE)
@@ -1148,7 +1148,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     end
 )
 
-test_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = "sha256" } })(
+tests_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = "sha256" } })(
     "Uarch operations should fail if hash tree hash function is not keccak256",
     function(machine)
         assert(
@@ -1184,7 +1184,7 @@ test_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_functio
     end
 )
 
-test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Dump of log produced by log_reset_uarch should match",
     function(machine)
         local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
@@ -1217,7 +1217,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     end
 )
 
-test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Log uarch reset with large_data option set must have consistent read and written data",
     function(machine)
         -- reset uarch and get log
@@ -1349,9 +1349,9 @@ local uarch_illegal_insn_program = {
     0x00000000, -- some illegal instruction
 }
 
-test_util.make_do_test(build_machine, machine_type, {
+tests_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_illegal_insn_program) } },
+        ram = { backing_store = { data_filename = tests_util.create_test_uarch_program(uarch_illegal_insn_program) } },
     },
 })("Detect illegal instruction", function(machine)
     local success, err = pcall(machine.run_uarch, machine)
@@ -1362,7 +1362,7 @@ end)
 do_test("uarch ecall putchar should print char to console", function()
     local lua_code = [[ "
                                  local cartesi = require 'cartesi'
-                                 local test_util = require 'cartesi.tests.util'
+                                 local tests_util = require 'cartesi.tests.util'
                                  local cartesi_util = require 'cartesi.util'
                                  local initial_reg_values = {}
                                  local program = {
@@ -1370,7 +1370,7 @@ do_test("uarch ecall putchar should print char to console", function()
                                     0x05800513, -- li a0,'X'
                                     0x00000073, -- ecall
                                  }
-                                 local uarch_ram_path = test_util.create_test_uarch_program(program)
+                                 local uarch_ram_path = tests_util.create_test_uarch_program(program)
                                  local machine = cartesi.machine {
                                      registers = initial_reg_values,
                                      ram = {length = 1 << 20},
@@ -1398,7 +1398,7 @@ do_test("send_cmio_response fails if iflags.Y is not set", function(machine)
     local data = string.rep("a", 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
     machine:write_reg("iflags_Y", 0)
     assert(machine:read_reg("iflags_Y") == 0)
-    test_util.assert_error("iflags.Y is not set", function()
+    tests_util.assert_error("iflags.Y is not set", function()
         machine:send_cmio_response(machine:get_root_hash(), reason, data)
     end)
     -- the logged operation cannot fail, it is a no-op instead
@@ -1413,7 +1413,7 @@ do_test("send_cmio_response fails if data is too big", function(machine)
     local reason = 1
     local data_too_big = string.rep("a", 1 + (1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE))
     machine:write_reg("iflags_Y", 1)
-    test_util.assert_error("CMIO response data is too large", function()
+    tests_util.assert_error("CMIO response data is too large", function()
         machine:send_cmio_response(machine:get_root_hash(), reason, data_too_big)
     end)
     -- the logged operation cannot fail, it is a no-op instead
@@ -1438,11 +1438,11 @@ local function test_send_cmio_input_with_different_arguments()
     local reason = 1
     local max_rx_buffer_len = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE
     local hash_fn = "keccak256"
-    local data_hash = test_util.merkle_hash(data, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
+    local data_hash = tests_util.merkle_hash(data, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
     local all_zeros = string.rep("\0", max_rx_buffer_len)
-    local all_zeros_hash = test_util.merkle_hash(all_zeros, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
+    local all_zeros_hash = tests_util.merkle_hash(all_zeros, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
     local zero_leaf = string.rep("\0", 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE)
-    local zero_leaf_hash = test_util.merkle_hash(zero_leaf, 0, cartesi.HASH_TREE_LOG2_WORD_SIZE, hash_fn)
+    local zero_leaf_hash = tests_util.merkle_hash(zero_leaf, 0, cartesi.HASH_TREE_LOG2_WORD_SIZE, hash_fn)
     -- prepares and asserts the state before send_cmio_response is called
     local function assert_before_cmio_response_sent(machine)
         machine:write_reg("iflags_Y", 1)
@@ -1494,7 +1494,7 @@ local function test_send_cmio_input_with_different_arguments()
                     log2_size = cartesi.HASH_TREE_LOG2_WORD_SIZE,
                     read_hash = zero_leaf_hash,
                     read = large_data and zero_leaf or nil,
-                    written_hash = test_util.merkle_hash(
+                    written_hash = tests_util.merkle_hash(
                         root_hash_before,
                         0,
                         cartesi.HASH_TREE_LOG2_WORD_SIZE,
@@ -1555,7 +1555,7 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
         .. "  4: write htif%.fromhost@0x338%(824%): 0x0%(0%) %-> 0x70000000a%(30064771082%)\n"
         .. "  5: write iflags%.Y@0x308%(776%): 0x1%(1%) %-> 0x0%(0%)\n"
         .. "end send_cmio_response\n"
-    local temp_file <close> = test_util.new_temp_file()
+    local temp_file <close> = tests_util.new_temp_file()
     util.print_log(log, temp_file)
     local actual_dump = temp_file:read_all()
     print("Output of log_send_cmio_response dump:")
@@ -1799,7 +1799,7 @@ local function test_cmio_buffers_backed_by_files()
     local tx_new_data = string.rep("x", 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE)
     local rx_new_data = string.rep("y", 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
 
-    test_util.make_do_test(build_machine, machine_type, {
+    tests_util.make_do_test(build_machine, machine_type, {
         cmio = {
             rx_buffer = { backing_store = { data_filename = rx_filename, shared = false } },
             tx_buffer = { backing_store = { data_filename = tx_filename, shared = false } },
@@ -1814,7 +1814,7 @@ local function test_cmio_buffers_backed_by_files()
         machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_new_data)
     end)
     -- the shared=false from last test should prevent saving the new data to files
-    test_util.make_do_test(build_machine, machine_type, {
+    tests_util.make_do_test(build_machine, machine_type, {
         cmio = {
             rx_buffer = { backing_store = { data_filename = rx_filename, shared = true } },
             tx_buffer = { backing_store = { data_filename = tx_filename, shared = true } },
@@ -1829,7 +1829,7 @@ local function test_cmio_buffers_backed_by_files()
         machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_new_data)
     end)
     -- the shared=true from last test should save memory changes to files
-    test_util.make_do_test(build_machine, machine_type, {
+    tests_util.make_do_test(build_machine, machine_type, {
         cmio = {
             rx_buffer = { backing_store = { data_filename = rx_filename, shared = false } },
             tx_buffer = { backing_store = { data_filename = tx_filename, shared = false } },
@@ -1846,10 +1846,10 @@ test_cmio_buffers_backed_by_files()
 local uarch_store_double_in_t0_to_t1 = {
     0x00533023, -- sd	t0,0(t1)
 }
-test_util.make_do_test(build_machine, machine_type, {
+tests_util.make_do_test(build_machine, machine_type, {
     uarch = {
         ram = {
-            backing_store = { data_filename = test_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
+            backing_store = { data_filename = tests_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
         },
     },
 })("Log of word access unaligned to hash tree leaf ", function(machine)
@@ -1873,7 +1873,7 @@ test_util.make_do_test(build_machine, machine_type, {
     -- returns raw and formatted log
     local function log_step()
         local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
-        local temp_file <close> = test_util.new_temp_file()
+        local temp_file <close> = tests_util.new_temp_file()
         util.print_log(log, temp_file)
         return log, temp_file:read_all()
     end
@@ -2018,7 +2018,7 @@ local function copy_step_log(original_filename, new_filename, callback)
 end
 
 for _, hash_fn in pairs({ "keccak256", "sha256" }) do
-    test_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = hash_fn }, uarch = {} })(
+    tests_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_function = hash_fn }, uarch = {} })(
         "log_step sanity check",
         function(machine)
             local success, err, _

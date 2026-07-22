@@ -17,7 +17,7 @@
 --
 
 local cartesi = require("cartesi")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 
 local config_base = {
     ram = {
@@ -25,7 +25,7 @@ local config_base = {
         -- that `rx_buffer` is filled with a byte pattern;
         -- then write a byte pattern into `tx_buffer` to be checked inside.
         backing_store = {
-            data_filename = test_util.tests_path .. "htif_cmio.bin",
+            data_filename = tests_util.tests_path .. "htif_cmio.bin",
         },
         length = 0x4000000,
     },

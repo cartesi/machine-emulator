@@ -18,7 +18,7 @@
 
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 local parallel = require("cartesi.parallel")
 
 -- Tests Cases
@@ -123,7 +123,7 @@ and command can be:
     os.exit()
 end
 
-local test_path = test_util.tests_uarch_path
+local test_path = tests_util.tests_uarch_path
 local test_pattern = ".*"
 local output_dir
 local jobs = 1

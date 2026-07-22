@@ -11,7 +11,7 @@ Specifically, it provides test coverage for:
 local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local cartesi = require("cartesi")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
 local variants = {
@@ -283,7 +283,7 @@ for _, variant in ipairs(variants) do
                 -- Overwrite the shadow with the snapshot, whose TLB no longer
                 -- references the written page.
                 m:write_memory(cartesi.AR_SHADOW_STATE_START, shadow)
-                expect.equal(m:get_root_hash(), test_util.calculate_emulator_hash(m))
+                expect.equal(m:get_root_hash(), tests_util.calculate_emulator_hash(m))
             end)
         end)
     end)

@@ -2,7 +2,7 @@
   "openrpc": "1.0.0-rc1",
   "info": {
     "title": "Remote Cartesi Machine",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "description": "API for controlling a remote Cartesi Machine server",
     "license": {
       "name": "MIT"

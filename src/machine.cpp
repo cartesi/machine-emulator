@@ -693,6 +693,10 @@ void machine::dump_stats() {
     d_printf("tlb.flush_fence_vma_asid: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid"]);
     d_printf("tlb.flush_fence_vma_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_vaddr"]);
     d_printf("tlb.flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid_vaddr"]);
+    d_printf("hard float hit ratio: %.4f\n",
+        hr(m_counters["stats.hard_float_fallback"], m_counters["stats.hard_float_hit"]));
+    d_printf("hard_float_hit: %" PRIu64 "\n", m_counters["stats.hard_float_hit"]);
+    d_printf("hard_float_fallback: %" PRIu64 "\n", m_counters["stats.hard_float_fallback"]);
 #undef TLB_HIT_RATIO
 #endif
 }

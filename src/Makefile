@@ -294,6 +294,11 @@ INTERPRET_CXXFLAGS+=-DTC_PAGE_SEGMENT=1
 endif
 endif
 
+# The hard-float fast path requires host floating-point operations exactly as written:
+# no contraction of separate operations into fused ones, and bare sqrt instructions
+# without errno bookkeeping
+INTERPRET_CXXFLAGS+=-ffp-contract=off -fno-math-errno
+
 # Make testing new optimization options easier
 INTERPRET_CXXFLAGS+=$(MYINTERPRET_CXXFLAGS)
 

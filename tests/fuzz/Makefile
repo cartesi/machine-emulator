@@ -33,7 +33,12 @@
 #                     3. cm_log/verify_step_uarch() cycle-by-cycle -- uarch fraud proofs
 #                     4. cm_log/verify_step()  -- page-based fraud proofs
 #
-# Both targets share the same input format and corpus directory. Run
+#   fuzz-hard-float  Differential floating-point fuzzer. Asserts that the
+#                   hard-float fast path (host FPU with guards) produces
+#                   exactly the soft-float result bits and fflags for fuzzed
+#                   operations, rounding modes, flags, and operands.
+#
+# The interpret targets share the same input format and corpus directory. Run
 # fuzz-interpret first to build up the corpus quickly, then run the step
 # fuzzer to verify all execution paths agree on the discovered inputs.
 #
@@ -60,7 +65,7 @@ threads ?= yes
 BUILDDIR ?= .
 SRCDIR = ../../src
 
-INCS = -I$(SRCDIR) -I../../third-party/ankerl -I../../third-party/nlohmann-json -I../../third-party/downloads
+INCS = -I$(SRCDIR) -I../../third-party/ankerl -I../../third-party/llvm-flang-uint128 -I../../third-party/nlohmann-json -I../../third-party/downloads
 
 # Core flags: C++23, fuzzer + sanitizers
 CXXFLAGS += -std=gnu++23 -g -O1 -fno-omit-frame-pointer
@@ -94,10 +99,11 @@ endif
 FUZZ_TARGETS = \
 	$(BUILDDIR)/fuzz-interpret \
 	$(BUILDDIR)/fuzz-interpret-step \
-	$(BUILDDIR)/fuzz-config
+	$(BUILDDIR)/fuzz-config \
+	$(BUILDDIR)/fuzz-hard-float
 
 .PHONY: all clean distclean run-fuzz \
-	run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config \
+	run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config run-fuzz-hard-float \
 	check-seed-corpus fuzz-seed-corpus fuzz-coverage fuzz-coverage-clean
 
 all: $(FUZZ_TARGETS)
@@ -122,16 +128,23 @@ $(BUILDDIR)/fuzz-interpret-step: fuzz-interpret-step.cpp fuzz-common.h $(SRCDIR)
 $(BUILDDIR)/fuzz-config: fuzz-config.cpp fuzz-common.h $(SRCDIR)/libcartesi.a $(SRCDIR)/libcartesi_hash_tree.a
 	$(CXX) $(CXXFLAGS) -o $@ $< $(FUZZ_LINK)
 
+# Header-only differential fuzzer, needs no libcartesi. The extra flags keep host
+# floating-point operations exactly as written, as required by the fast path.
+$(BUILDDIR)/fuzz-hard-float: fuzz-hard-float.cpp $(SRCDIR)/hard-float.hpp $(SRCDIR)/soft-float.hpp
+	$(CXX) $(CXXFLAGS) -ffp-contract=off -fno-math-errno -o $@ $< $(LDFLAGS)
+
 # -- Run targets --------------------------------------------------------------
 
 CORPUS_DIR = corpus
 CONFIG_CORPUS_DIR = corpus-config
+HARD_FLOAT_CORPUS_DIR = corpus-hard-float
 FUZZ_INTERPRET_ARGS ?=
 FUZZ_INTERPRET_STEP_ARGS ?=
 FUZZ_CONFIG_ARGS ?=
+FUZZ_HARD_FLOAT_ARGS ?=
 
 # Recommended entry point: runs all fuzzers in sequence.
-run-fuzz: run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config
+run-fuzz: run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config run-fuzz-hard-float
 
 check-seed-corpus:
 	@test -d $(SEED_DIR) && test "$$(ls -A $(SEED_DIR) 2>/dev/null)" || \
@@ -151,6 +164,10 @@ run-fuzz-interpret-step: $(BUILDDIR)/fuzz-interpret-step check-seed-corpus
 run-fuzz-config: $(BUILDDIR)/fuzz-config
 	@mkdir -p $(CONFIG_CORPUS_DIR)
 	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-config $(CONFIG_CORPUS_DIR) $(FUZZ_CONFIG_ARGS)
+
+run-fuzz-hard-float: $(BUILDDIR)/fuzz-hard-float
+	@mkdir -p $(HARD_FLOAT_CORPUS_DIR)
+	$(BUILDDIR)/fuzz-hard-float $(HARD_FLOAT_CORPUS_DIR) $(FUZZ_HARD_FLOAT_ARGS)
 
 # -- Seed corpus --------------------------------------------------------------
 #

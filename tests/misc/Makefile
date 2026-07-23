@@ -91,7 +91,7 @@ CLANG_TIDY_FLAGS=--header-filter='^$(abspath ../..)/'
 CLANG_FORMAT=clang-format
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.h)
 
-INCS=-I../../src -I../../third-party/ankerl -I../../third-party/nlohmann-json -I../../third-party/downloads
+INCS=-I../../src -I../../third-party/ankerl -I../../third-party/llvm-flang-uint128 -I../../third-party/nlohmann-json -I../../third-party/downloads
 WARNS=-Wall -Wpedantic $(BOOST_INC)
 
 CXXFLAGS+=-O2 -g -std=gnu++23 -fopenmp -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
@@ -100,7 +100,7 @@ ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)
 endif
 
-all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api
+all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-hard-float
 
 ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a:
 	$(info libcartesi.a and/or libcartesi_hash_tree.a were not found! Build them first.)
@@ -111,6 +111,15 @@ $(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi_jsonrp
 
 $(BUILDDIR)/test-machine-c-jsonrpc-api: test-machine-c-jsonrpc-api.o ../../src/libcartesi_jsonrpc.a ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
+
+# The hard-float fast path requires host floating-point operations exactly as written
+HARD_FLOAT_CXXFLAGS=-ffp-contract=off -fno-math-errno
+
+$(BUILDDIR)/test-hard-float: test-hard-float.o
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(OMP_LIB)
+
+test-hard-float.o: test-hard-float.cpp ../../src/hard-float.hpp ../../src/soft-float.hpp
+	$(CXX) $(CXXFLAGS) $(HARD_FLOAT_CXXFLAGS) -c -o $@ $<
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
@@ -141,6 +150,6 @@ clean-objs:
 	@rm -f *.o *.d
 
 clean: clean-tidy clean-objs
-	@rm -f $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api
+	@rm -f $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api $(BUILDDIR)/test-hard-float
 
 .SUFFIXES:

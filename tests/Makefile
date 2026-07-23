@@ -380,7 +380,10 @@ test-yield-and-save: | $(CARTESI_IMAGES)
 test-fuzz: build-tests-fuzz
 	@$(MAKE) -C fuzz CC=clang CXX=clang++ fuzz=yes run-fuzz-interpret
 
-test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save
+test-hard-float:
+	./build/misc/test-hard-float
+
+test-misc: test-hard-float test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
 	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs
@@ -408,7 +411,7 @@ test-coverage-uarch:
 # the .gcda files, which libgcov merges under a lock. Excludes the two coverage
 # tail steps ordered below.
 PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
-	test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
+	test-hard-float test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
 	test-uarch-rv64ui test-uarch-interpreter test-machine-with-log-step \
 	test-coverage-uarch test-computation-hash
 

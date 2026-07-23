@@ -254,8 +254,8 @@ void require([[maybe_unused]] T1 condition, [[maybe_unused]] T2 message) {
 }
 
 template <typename UarchState>
-static auto dumpInsn([[maybe_unused]] const UarchState a, [[maybe_unused]] uint64 pc, [[maybe_unused]] uint32 insn,
-    [[maybe_unused]] const char *name) {
+[[maybe_unused]] static auto dumpInsn([[maybe_unused]] const UarchState a, [[maybe_unused]] uint64 pc,
+    [[maybe_unused]] uint32 insn, [[maybe_unused]] const char *name) {
 #ifdef DUMP_UARCH_INSN
     d_printf("ua %08" PRIx64, pc);
     d_printf(":   %08" PRIx32 "   ", insn);

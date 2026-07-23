@@ -1209,19 +1209,6 @@ static FORCE_INLINE execute_status raise_illegal_insn_exception(const STATE_ACCE
     return execute_status::failure;
 }
 
-/// \brief Raises an misaligned-fetch exception, updating the pc.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Interpreter loop program counter (will be overwritten).
-/// \return execute_status::failure
-/// \details This function is tail-called whenever the caller identified that the next value of pc is misaligned.
-template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status raise_misaligned_fetch_exception(const STATE_ACCESS a, uint64_t &pc,
-    uint64_t new_pc) {
-    pc = raise_exception(a, pc, MCAUSE_INSN_ADDRESS_MISALIGNED, new_pc);
-    return execute_status::failure;
-}
-
 /// \brief Returns from execution due to raised exception, updating the pc.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
@@ -5708,7 +5695,7 @@ static FORCE_INLINE fetch_status fetch_insn(const STATE_ACCESS a, uint64_t &pc, 
 /// may still be pending (e.g. M-mode interrupts while in S/U-mode). These are expected
 /// and will be serviced by the outer loop's raise_interrupt_if_any.
 template <typename STATE_ACCESS>
-static void assert_no_brk([[maybe_unused]] const STATE_ACCESS a) {
+[[maybe_unused]] static void assert_no_brk([[maybe_unused]] const STATE_ACCESS a) {
     const auto pending = get_pending_irq_mask(a); // LCOV_EXCL_LINE
     // In M-mode, there is no higher privilege level, so nothing can be deferred:
     // all pending interrupts must have been serviced.

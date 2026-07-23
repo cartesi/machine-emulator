@@ -1260,7 +1260,8 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
         throw std::invalid_argument("invalid length output");
     }
     const auto *cpp_m = convert_from_c(m);
-    const std::span<uint8_t> cpp_data = data != nullptr ? std::span<uint8_t>{data, *length} : std::span<uint8_t>{};
+    const std::span<uint8_t> cpp_data =
+        data != nullptr ? std::span<uint8_t>{data, static_cast<size_t>(*length)} : std::span<uint8_t>{};
     const auto request = cpp_m->receive_cmio_request(cpp_data);
     *length = request.available_length;
     if (cmd != nullptr) {

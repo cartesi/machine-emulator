@@ -239,7 +239,7 @@ ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
 # This is fine, because the interpreter is written to comply with strict aliasing rules
 INTERPRET_CXXFLAGS+=-fstrict-aliasing
 # Ensure frame pointers are omitted to free an extra register (some distributions enable them by default)
-INTERPTER_CXXFLAGS+=-fomit-frame-pointer
+INTERPRET_CXXFLAGS+=-fomit-frame-pointer
 ifneq (,$(findstring gcc,$(CC)))
 # The following improves computed goto dispatch as stated in GCC manual
 INTERPRET_CXXFLAGS+=-fno-gcse

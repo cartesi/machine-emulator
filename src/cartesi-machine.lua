@@ -952,123 +952,126 @@ or a left shift (e.g., 2 << 20).
 end
 
 local remote_closer = {}
-local remote_spawn
-local remote_address
-local remote_health_check = false
-local remote_fork = false
-local remote_shutdown = false
-local remote_create = true
-local remote_destroy = true
-local perform_reverts = true
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
-local flash_label_to_index = { root = 1 }
-local flash_drives = {
-    {
-        label = "root",
-        backing_store = { data_filename = images_path .. "rootfs.ext2" },
-    },
-}
-local flash_drive_count = 1
-local nvram_label_to_index = {}
-local nvrams = {}
-local nvram_count = 0
-local virtio_net_user_config
-local virtio_volume_count = 0
-local has_virtio_console = false
-local has_network = false
-local has_sync_init_date = false
-local memory_range_replace = {}
-local init_splash = true
-local append_bootargs = ""
-local append_init = ""
-local append_entrypoint = ""
-local cmio_advance
-local cmio_inspect
--- The machine configuration, assembled in place by the option handlers below and passed to
--- machine:create. It is the requested ("command line") config; after creation, the machine's
--- actual config is read back into initial_config.
-local cmdline_config = {
-    processor = {
-        registers = {
-            iunrep = 0,
+-- The values parsed from the command-line options, assembled in place by the option handlers
+-- below. Fields default to nil unless initialized here.
+local cmdline = {
+    remote_spawn = nil,
+    remote_address = nil,
+    remote_health_check = false,
+    remote_fork = false,
+    remote_shutdown = false,
+    remote_create = true,
+    remote_destroy = true,
+    perform_reverts = true,
+    flash_label_to_index = { root = 1 },
+    flash_drives = {
+        {
+            label = "root",
+            backing_store = { data_filename = images_path .. "rootfs.ext2" },
         },
     },
-    ram = {
-        length = 128 << 20, -- 128MB
-        backing_store = {
-            data_filename = images_path .. "linux.bin",
-            dht_filename = "",
-            dpt_filename = "",
-        },
-    },
-    dtb = {
-        init = "",
-        entrypoint = "",
-    },
-    flash_drive = {},
-    nvram = {},
-    tlb = {},
-    virtio = {},
-    cmio = {
-        rx_buffer = {},
-        tx_buffer = {},
-    },
-    pmas = {},
-    uarch = {
+    flash_drive_count = 1,
+    nvram_label_to_index = {},
+    nvrams = {},
+    nvram_count = 0,
+    virtio_net_user_config = nil,
+    virtio_volume_count = 0,
+    has_virtio_console = false,
+    has_network = false,
+    has_sync_init_date = false,
+    memory_range_replace = {},
+    init_splash = true,
+    append_bootargs = "",
+    append_init = "",
+    append_entrypoint = "",
+    cmio_advance = nil,
+    cmio_inspect = nil,
+    -- The machine configuration, passed to machine:create. It is the requested ("command line")
+    -- config; after creation, the machine's actual config is read back into initial_config.
+    config = {
         processor = {
-            registers = {},
-            backing_store = {
-                data_filename = "",
-                dht_filename = "",
-                dpt_filename = "",
+            registers = {
+                iunrep = 0,
             },
         },
         ram = {
+            length = 128 << 20, -- 128MB
             backing_store = {
-                data_filename = "",
+                data_filename = images_path .. "linux.bin",
                 dht_filename = "",
                 dpt_filename = "",
             },
         },
+        dtb = {
+            init = "",
+            entrypoint = "",
+        },
+        flash_drive = {},
+        nvram = {},
+        tlb = {},
+        virtio = {},
+        cmio = {
+            rx_buffer = {},
+            tx_buffer = {},
+        },
+        pmas = {},
+        uarch = {
+            processor = {
+                registers = {},
+                backing_store = {
+                    data_filename = "",
+                    dht_filename = "",
+                    dpt_filename = "",
+                },
+            },
+            ram = {
+                backing_store = {
+                    data_filename = "",
+                    dht_filename = "",
+                    dpt_filename = "",
+                },
+            },
+        },
+        hash_tree = {},
     },
-    hash_tree = {},
+    console = {},
+    concurrency_update_hash_tree = 0,
+    skip_version_check = false,
+    no_reserve = false,
+    initial_hash = false,
+    final_hash = false,
+    initial_proof = {},
+    final_proof = {},
+    mcycle_root_hashes_log2_period = nil,
+    mcycle_root_hashes_start = 0,
+    mcycle_root_hashes_log2_bundle = 0,
+    uarch_cycle_root_hashes_start = nil,
+    uarch_cycle_root_hashes_count = nil,
+    uarch_cycle_root_hashes_log2_bundle = 0,
+    dump_memory_ranges_dir = false,
+    max_mcycle = nil,
+    max_uarch_cycle = 0,
+    log_step_uarch = false,
+    auto_reset_uarch = false,
+    log_reset_uarch = false,
+    store_dir = nil,
+    load_dir = nil,
+    create_dir = nil,
+    clone_dir = nil,
+    load_sharing = nil,
+    store_sharing = nil,
+    opts_finished = false,
+    store_config = false,
+    store_config_format = nil,
+    load_config = false,
+    load_config_format = nil,
+    gdb = nil,
+    exec_arguments = {},
+    assert_rolling_template = false,
+    log_step_mcycle_count = nil,
+    log_step_filename = nil,
 }
-local console = {}
-local concurrency_update_hash_tree = 0
-local skip_version_check = false
-local no_reserve = false
-local initial_hash = false
-local final_hash = false
-local initial_proof = {}
-local final_proof = {}
-local mcycle_root_hashes_log2_period
-local mcycle_root_hashes_start = 0
-local mcycle_root_hashes_log2_bundle = 0
-local uarch_cycle_root_hashes_start
-local uarch_cycle_root_hashes_count
-local uarch_cycle_root_hashes_log2_bundle = 0
-local dump_memory_ranges_dir = false
-local max_mcycle
-local max_uarch_cycle = 0
-local log_step_uarch = false
-local auto_reset_uarch = false
-local log_reset_uarch = false
-local store_dir
-local load_dir
-local create_dir
-local clone_dir
-local load_sharing
-local store_sharing
-local cmdline_opts_finished = false
-local store_config = false
-local store_config_format
-local load_config = false
-local load_config_format
-local gdb
-local exec_arguments = {}
-local assert_rolling_template = false
-local log_step_mcycle_count
-local log_step_filename
 -- Epoch geometry, assigned from the exported rollup constants after the requires, before any
 -- option is parsed.
 local ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
@@ -1171,61 +1174,61 @@ local function parse_backing_store(keys, all, opts, def)
 end
 
 local function handle_sync_init_date()
-    if has_sync_init_date then return true end
-    cmdline_config.processor.registers.iunrep = 1
-    has_sync_init_date = true
+    if cmdline.has_sync_init_date then return true end
+    cmdline.config.processor.registers.iunrep = 1
+    cmdline.has_sync_init_date = true
     -- round up time by 1, to decrease chance of guest time being in the past
     local seconds = os.time() + 1
-    append_init = append_init .. "busybox date -s @" .. seconds .. " >> /dev/null\n"
+    cmdline.append_init = cmdline.append_init .. "busybox date -s @" .. seconds .. " >> /dev/null\n"
     return true
 end
 
 local function handle_virtio_9p(tag, host_directory)
-    cmdline_config.processor.registers.iunrep = 1
-    table.insert(cmdline_config.virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
+    cmdline.config.processor.registers.iunrep = 1
+    table.insert(cmdline.config.virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
     return true
 end
 
 local function handle_volume_option(host_directory, guest_directory)
-    cmdline_config.processor.registers.iunrep = 1
-    local tag = "vfs" .. virtio_volume_count
-    virtio_volume_count = virtio_volume_count + 1
-    table.insert(cmdline_config.virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
-    append_init = append_init .. "busybox mkdir -p " .. guest_directory .. " && "
-    append_init = append_init .. "busybox mount -t 9p " .. tag .. " " .. guest_directory .. "\n"
+    cmdline.config.processor.registers.iunrep = 1
+    local tag = "vfs" .. cmdline.virtio_volume_count
+    cmdline.virtio_volume_count = cmdline.virtio_volume_count + 1
+    table.insert(cmdline.config.virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
+    cmdline.append_init = cmdline.append_init .. "busybox mkdir -p " .. guest_directory .. " && "
+    cmdline.append_init = cmdline.append_init .. "busybox mount -t 9p " .. tag .. " " .. guest_directory .. "\n"
     -- sync guest date with host date, otherwise file system updates will have wrong dates
     handle_sync_init_date()
     return true
 end
 
 local function handle_htif_console_getchar()
-    cmdline_config.processor.registers.htif.iconsole = cmdline_config.processor.registers.htif.iconsole
+    cmdline.config.processor.registers.htif.iconsole = cmdline.config.processor.registers.htif.iconsole
         | cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK
-    cmdline_config.processor.registers.iunrep = 1
-    console.input_source = console.input_source or "from_stdin"
-    console.output_flush_mode = console.output_flush_mode or "every_char"
+    cmdline.config.processor.registers.iunrep = 1
+    cmdline.console.input_source = cmdline.console.input_source or "from_stdin"
+    cmdline.console.output_flush_mode = cmdline.console.output_flush_mode or "every_char"
     return true
 end
 
 local function handle_user(_, _, user)
-    append_init = append_init .. "USER=" .. user .. "\n"
+    cmdline.append_init = cmdline.append_init .. "USER=" .. user .. "\n"
     return true
 end
 
 local function handle_env(_, _, opts)
     local name, value = opts:match("^([%w_]+)=(.+)$")
     assertf(name and value, "invalid env %s, expected NAME=VALUE", opts)
-    append_init = append_init .. "export " .. name .. "=" .. value .. "\n"
+    cmdline.append_init = cmdline.append_init .. "export " .. name .. "=" .. value .. "\n"
     return true
 end
 
 local function handle_workdir(_, _, value)
-    append_init = append_init .. "WORKDIR=" .. value .. "\n"
+    cmdline.append_init = cmdline.append_init .. "WORKDIR=" .. value .. "\n"
     return true
 end
 
 local function handle_hostname(_, _, name)
-    append_init = append_init .. "busybox hostname " .. name .. "\n"
+    cmdline.append_init = cmdline.append_init .. "busybox hostname " .. name .. "\n"
     return true
 end
 
@@ -1246,10 +1249,10 @@ local function parse_port_forward_address(s, all)
 end
 
 local function add_port_forward(host_ip, host_port, guest_ip, guest_port, is_udp)
-    assert(virtio_net_user_config, "--port-forward option requires --network or --virtio-net=user option")
+    assert(cmdline.virtio_net_user_config, "--port-forward option requires --network or --virtio-net=user option")
     assert(host_port, "missing host port in port forward")
-    virtio_net_user_config.hostfwd = virtio_net_user_config.hostfwd or {}
-    table.insert(virtio_net_user_config.hostfwd, {
+    cmdline.virtio_net_user_config.hostfwd = cmdline.virtio_net_user_config.hostfwd or {}
+    table.insert(cmdline.virtio_net_user_config.hostfwd, {
         is_udp = is_udp,
         host_ip = host_ip or parse_ipv4("127.0.0.1"),
         guest_ip = guest_ip or parse_ipv4("10.0.2.15"),
@@ -1260,24 +1263,24 @@ local function add_port_forward(host_ip, host_port, guest_ip, guest_port, is_udp
 end
 
 local function handle_virtio_net(mode)
-    cmdline_config.processor.registers.iunrep = 1
+    cmdline.config.processor.registers.iunrep = 1
     if mode == "user" then
-        if not virtio_net_user_config then
-            virtio_net_user_config = { type = "net-user" }
-            table.insert(cmdline_config.virtio, virtio_net_user_config)
+        if not cmdline.virtio_net_user_config then
+            cmdline.virtio_net_user_config = { type = "net-user" }
+            table.insert(cmdline.config.virtio, cmdline.virtio_net_user_config)
         end
     else
-        table.insert(cmdline_config.virtio, { type = "net-tuntap", iface = mode })
+        table.insert(cmdline.config.virtio, { type = "net-tuntap", iface = mode })
     end
     return true
 end
 
 local function handle_network_option()
-    if has_network then return true end
+    if cmdline.has_network then return true end
     handle_virtio_net("user")
-    has_network = true
+    cmdline.has_network = true
     -- initialize network
-    append_init = append_init
+    cmdline.append_init = cmdline.append_init
         .. [[
 busybox ip link set dev eth0 up
 busybox ip addr add 10.0.2.15/24 dev eth0
@@ -1290,14 +1293,14 @@ busybox ip route add default via 10.0.2.2 dev eth0
 end
 
 local function handle_virtio_console()
-    if has_virtio_console then return true end
-    cmdline_config.processor.registers.iunrep = 1
-    console.input_source = console.input_source or "from_stdin"
-    console.output_flush_mode = console.output_flush_mode or "every_char"
-    has_virtio_console = true
+    if cmdline.has_virtio_console then return true end
+    cmdline.config.processor.registers.iunrep = 1
+    cmdline.console.input_source = cmdline.console.input_source or "from_stdin"
+    cmdline.console.output_flush_mode = cmdline.console.output_flush_mode or "every_char"
+    cmdline.has_virtio_console = true
     -- Switch from HTIF Console (hvc0) to VirtIO console (hvc1)
-    cmdline_config.dtb.bootargs = cmdline_config.dtb.bootargs:gsub("console=hvc0", "console=hvc1")
-    table.insert(cmdline_config.virtio, 1, { type = "console" })
+    cmdline.config.dtb.bootargs = cmdline.config.dtb.bootargs:gsub("console=hvc0", "console=hvc1")
+    table.insert(cmdline.config.virtio, 1, { type = "console" })
     return true
 end
 
@@ -1306,8 +1309,8 @@ local function handle_interactive()
     handle_sync_init_date()
     -- Expose current terminal features to the virtual terminal
     local term, lang = os.getenv("TERM"), os.getenv("LANG")
-    if term then append_init = append_init .. "export TERM=" .. term .. "\n" end
-    if lang and lang:find("utf8") then append_init = append_init .. "export LANG=C.utf8\n" end
+    if term then cmdline.append_init = cmdline.append_init .. "export TERM=" .. term .. "\n" end
+    if lang and lang:find("utf8") then cmdline.append_init = cmdline.append_init .. "export LANG=C.utf8\n" end
     return true
 end
 
@@ -1410,8 +1413,8 @@ options = {
     {
         "--dtb-image=",
         function(_, _, opts)
-            cmdline_config.dtb.backing_store = cmdline_config.dtb.backing_store or {}
-            cmdline_config.dtb.backing_store.data_filename = opts
+            cmdline.config.dtb.backing_store = cmdline.config.dtb.backing_store or {}
+            cmdline.config.dtb.backing_store.data_filename = opts
             return true
         end,
         "file",
@@ -1419,17 +1422,17 @@ options = {
     {
         "--no-bootargs",
         function()
-            cmdline_config.dtb.bootargs = ""
+            cmdline.config.dtb.bootargs = ""
             return true
         end,
     },
     {
         "--append-bootargs=",
         function(_, _, opts)
-            if #append_bootargs == 0 then
-                append_bootargs = opts
+            if #cmdline.append_bootargs == 0 then
+                cmdline.append_bootargs = opts
             else
-                append_bootargs = append_bootargs .. " " .. opts
+                cmdline.append_bootargs = cmdline.append_bootargs .. " " .. opts
             end
             return true
         end,
@@ -1437,7 +1440,7 @@ options = {
     {
         "--dtb=",
         function(keys, all, opts)
-            cmdline_config.dtb.backing_store = parse_backing_store(keys, all, opts, cmdline_config.dtb.backing_store)
+            cmdline.config.dtb.backing_store = parse_backing_store(keys, all, opts, cmdline.config.dtb.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1445,8 +1448,8 @@ options = {
     {
         "--processor=",
         function(keys, all, opts)
-            cmdline_config.processor.backing_store =
-                parse_backing_store(keys, all, opts, cmdline_config.processor.backing_store)
+            cmdline.config.processor.backing_store =
+                parse_backing_store(keys, all, opts, cmdline.config.processor.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1454,8 +1457,8 @@ options = {
     {
         "--uarch-processor=",
         function(keys, all, opts)
-            cmdline_config.uarch.processor.backing_store =
-                parse_backing_store(keys, all, opts, cmdline_config.uarch.processor.backing_store)
+            cmdline.config.uarch.processor.backing_store =
+                parse_backing_store(keys, all, opts, cmdline.config.uarch.processor.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1463,14 +1466,14 @@ options = {
     {
         "--ram-length=",
         function(_, _, n)
-            cmdline_config.ram.length = assertf(util.parse_number(n), "invalid RAM length %s", n)
+            cmdline.config.ram.length = assertf(util.parse_number(n), "invalid RAM length %s", n)
             return true
         end,
     },
     {
         "--ram-image=",
         function(_, _, opts)
-            cmdline_config.ram.backing_store.data_filename = opts
+            cmdline.config.ram.backing_store.data_filename = opts
             return true
         end,
         "file",
@@ -1478,14 +1481,14 @@ options = {
     {
         "--no-ram-image",
         function()
-            cmdline_config.ram.backing_store.data_filename = ""
+            cmdline.config.ram.backing_store.data_filename = ""
             return true
         end,
     },
     {
         "--ram=",
         function(keys, all, opts)
-            cmdline_config.ram.backing_store = parse_backing_store(keys, all, opts, cmdline_config.ram.backing_store)
+            cmdline.config.ram.backing_store = parse_backing_store(keys, all, opts, cmdline.config.ram.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1493,7 +1496,7 @@ options = {
     {
         "--pmas=",
         function(keys, all, opts)
-            cmdline_config.pmas.backing_store = parse_backing_store(keys, all, opts, cmdline_config.pmas.backing_store)
+            cmdline.config.pmas.backing_store = parse_backing_store(keys, all, opts, cmdline.config.pmas.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1501,7 +1504,7 @@ options = {
     {
         "--uarch-ram-image=",
         function(_, _, opts)
-            cmdline_config.uarch.ram.backing_store.data_filename = opts
+            cmdline.config.uarch.ram.backing_store.data_filename = opts
             return true
         end,
         "file",
@@ -1509,8 +1512,8 @@ options = {
     {
         "--uarch-ram=",
         function(keys, all, opts)
-            cmdline_config.uarch.ram.backing_store =
-                parse_backing_store(keys, all, opts, cmdline_config.uarch.ram.backing_store)
+            cmdline.config.uarch.ram.backing_store =
+                parse_backing_store(keys, all, opts, cmdline.config.uarch.ram.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1523,7 +1526,7 @@ options = {
             h.phtc_filename = h.phtc_filename or ""
             h.hash_function = h.hash_function or "keccak256"
             for i, v in pairs(h) do
-                cmdline_config.hash_tree[i] = v
+                cmdline.config.hash_tree[i] = v
             end
             return true
         end,
@@ -1538,7 +1541,7 @@ options = {
     {
         "--unreproducible",
         function()
-            cmdline_config.processor.registers.iunrep = 1
+            cmdline.config.processor.registers.iunrep = 1
             return true
         end,
     },
@@ -1650,7 +1653,7 @@ options = {
                     "conflicting console output destination option"
                 )
                 c.output_destination = "to_fd"
-                console.output_fd = c.output_fd
+                cmdline.console.output_fd = c.output_fd
             end
             if c.output_filename then
                 assert(
@@ -1658,12 +1661,12 @@ options = {
                     "conflicting console output destination option"
                 )
                 c.output_destination = "to_file"
-                console.output_filename = c.output_filename
+                cmdline.console.output_filename = c.output_filename
             end
             if c.input_fd then
                 assert(c.input_source == nil or c.input_source == "from_fd", "conflicting console input source option")
                 c.input_source = "from_fd"
-                console.input_fd = c.input_fd
+                cmdline.console.input_fd = c.input_fd
             end
             if c.input_filename then
                 assert(
@@ -1671,15 +1674,15 @@ options = {
                     "conflicting console input source option"
                 )
                 c.input_source = "from_file"
-                console.input_filename = c.input_filename
+                cmdline.console.input_filename = c.input_filename
             end
-            if c.output_destination then console.output_destination = c.output_destination end
-            if c.output_flush_mode then console.output_flush_mode = c.output_flush_mode end
-            if c.output_buffer_size then console.output_buffer_size = c.output_buffer_size end
-            if c.input_source then console.input_source = c.input_source end
-            if c.input_buffer_size then console.input_buffer_size = c.input_buffer_size end
-            if c.tty_cols then console.tty_cols = c.tty_cols end
-            if c.tty_rows then console.tty_rows = c.tty_rows end
+            if c.output_destination then cmdline.console.output_destination = c.output_destination end
+            if c.output_flush_mode then cmdline.console.output_flush_mode = c.output_flush_mode end
+            if c.output_buffer_size then cmdline.console.output_buffer_size = c.output_buffer_size end
+            if c.input_source then cmdline.console.input_source = c.input_source end
+            if c.input_buffer_size then cmdline.console.input_buffer_size = c.input_buffer_size end
+            if c.tty_cols then cmdline.console.tty_cols = c.tty_cols end
+            if c.tty_rows then cmdline.console.tty_rows = c.tty_rows end
             return true
         end,
         {
@@ -1716,7 +1719,7 @@ options = {
     {
         "--no-htif-yield-manual",
         function()
-            cmdline_config.processor.registers.htif.iyield = cmdline_config.processor.registers.htif.iyield
+            cmdline.config.processor.registers.htif.iyield = cmdline.config.processor.registers.htif.iyield
                 & ~cartesi.HTIF_YIELD_CMD_MANUAL_MASK
             return true
         end,
@@ -1724,7 +1727,7 @@ options = {
     {
         "--no-htif-yield-automatic",
         function()
-            cmdline_config.processor.registers.htif.iyield = cmdline_config.processor.registers.htif.iyield
+            cmdline.config.processor.registers.htif.iyield = cmdline.config.processor.registers.htif.iyield
                 & ~cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK
             return true
         end,
@@ -1733,15 +1736,15 @@ options = {
         "--flash-drive=",
         function(keys, all, opts)
             local f = parse_memory_range(keys, all, opts)
-            if f.label and flash_label_to_index[f.label] then
-                local prev_f = flash_drives[flash_label_to_index[f.label]]
+            if f.label and cmdline.flash_label_to_index[f.label] then
+                local prev_f = cmdline.flash_drives[cmdline.flash_label_to_index[f.label]]
                 override_memory_range(prev_f, f)
                 prev_f.mount = override_bool(prev_f.mount, f.mount)
                 prev_f.mke2fs = override_bool(prev_f.mke2fs, f.mke2fs)
             else
-                flash_drive_count = flash_drive_count + 1
-                flash_drives[flash_drive_count] = f
-                if f.label then flash_label_to_index[f.label] = flash_drive_count end
+                cmdline.flash_drive_count = cmdline.flash_drive_count + 1
+                cmdline.flash_drives[cmdline.flash_drive_count] = f
+                if f.label then cmdline.flash_label_to_index[f.label] = cmdline.flash_drive_count end
             end
             return true
         end,
@@ -1766,13 +1769,13 @@ options = {
         "--nvram=",
         function(keys, all, opts)
             local f = parse_memory_range(keys, all, opts)
-            if f.label and nvram_label_to_index[f.label] then
-                local prev_f = nvrams[nvram_label_to_index[f.label]]
+            if f.label and cmdline.nvram_label_to_index[f.label] then
+                local prev_f = cmdline.nvrams[cmdline.nvram_label_to_index[f.label]]
                 override_memory_range(prev_f, f)
             else
-                nvram_count = nvram_count + 1
-                nvrams[nvram_count] = f
-                if f.label then nvram_label_to_index[f.label] = nvram_count end
+                cmdline.nvram_count = cmdline.nvram_count + 1
+                cmdline.nvrams[cmdline.nvram_count] = f
+                if f.label then cmdline.nvram_label_to_index[f.label] = cmdline.nvram_count end
             end
             return true
         end,
@@ -1795,7 +1798,7 @@ options = {
         "--replace-memory-range=",
         function(keys, all, opts)
             local f = parse_memory_range(keys, all, opts)
-            memory_range_replace[#memory_range_replace + 1] = f
+            cmdline.memory_range_replace[#cmdline.memory_range_replace + 1] = f
             return true
         end,
         {
@@ -1900,7 +1903,7 @@ options = {
                 end
             end
             r.next_input_index = r.input_index_begin
-            cmio_advance = r
+            cmdline.cmio_advance = r
             return true
         end,
         {
@@ -1931,7 +1934,7 @@ options = {
             local r = util.parse_options(keys, all, opts)
             r.query = r.query or "query.bin"
             r.report = r.report or "query-report-%o.bin"
-            cmio_inspect = r
+            cmdline.cmio_inspect = r
             return true
         end,
         {
@@ -1943,7 +1946,7 @@ options = {
     {
         "--cmio-inspect-state",
         function()
-            cmio_inspect = {
+            cmdline.cmio_inspect = {
                 query = "query.bin",
                 report = "query-report-%o.bin",
             }
@@ -1955,7 +1958,7 @@ options = {
         function(keys, all, opts)
             local c = util.parse_options(keys, all, opts)
             c.update_hash_tree = assertf(c.update_hash_tree, "invalid update_hash_tree number in %s", all)
-            concurrency_update_hash_tree = c.update_hash_tree
+            cmdline.concurrency_update_hash_tree = c.update_hash_tree
             return true
         end,
         { update_hash_tree = "number" },
@@ -1963,14 +1966,14 @@ options = {
     {
         "--skip-version-check",
         function()
-            skip_version_check = true
+            cmdline.skip_version_check = true
             return true
         end,
     },
     {
         "--no-reserve",
         function()
-            no_reserve = true
+            cmdline.no_reserve = true
             return true
         end,
     },
@@ -1981,7 +1984,7 @@ options = {
             assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
             p.cmdline = all
             p.format = resolve_format(p.format, p.filename)
-            initial_proof[#initial_proof + 1] = p
+            cmdline.initial_proof[#cmdline.initial_proof + 1] = p
             return true
         end,
         {
@@ -1999,7 +2002,7 @@ options = {
             assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
             p.cmdline = all
             p.format = resolve_format(p.format, p.filename)
-            final_proof[#final_proof + 1] = p
+            cmdline.final_proof[#cmdline.final_proof + 1] = p
             return true
         end,
         {
@@ -2013,27 +2016,27 @@ options = {
     {
         "--no-root-flash-drive",
         function()
-            assert(flash_drives[1] and flash_drives[1].label == "root", "no root flash drive to remove")
-            flash_drives[1] = nil
-            flash_label_to_index.root = nil
-            cmdline_config.dtb.bootargs =
-                cmdline_config.dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_ROOT_PART:gsub("[^%w]", "%%%1"), "")
-            cmdline_config.dtb.bootargs =
-                cmdline_config.dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_INIT_PART:gsub("[^%w]", "%%%1"), "")
+            assert(cmdline.flash_drives[1] and cmdline.flash_drives[1].label == "root", "no root flash drive to remove")
+            cmdline.flash_drives[1] = nil
+            cmdline.flash_label_to_index.root = nil
+            cmdline.config.dtb.bootargs =
+                cmdline.config.dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_ROOT_PART:gsub("[^%w]", "%%%1"), "")
+            cmdline.config.dtb.bootargs =
+                cmdline.config.dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_INIT_PART:gsub("[^%w]", "%%%1"), "")
             return true
         end,
     },
     {
         "--dump-memory-ranges",
         function()
-            dump_memory_ranges_dir = true
+            cmdline.dump_memory_ranges_dir = true
             return true
         end,
     },
     {
         "--dump-memory-ranges=",
         function(_, _, v)
-            dump_memory_ranges_dir = v
+            cmdline.dump_memory_ranges_dir = v
             return true
         end,
         "dir",
@@ -2041,7 +2044,7 @@ options = {
     {
         "--assert-rolling-template",
         function()
-            assert_rolling_template = true
+            cmdline.assert_rolling_template = true
             return true
         end,
     },
@@ -2057,8 +2060,8 @@ options = {
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
             assertf(o.filename and o.count, "need filename and count in %s", all)
-            log_step_mcycle_count = o.count
-            log_step_filename = o.filename
+            cmdline.log_step_mcycle_count = o.count
+            cmdline.log_step_filename = o.filename
             return true
         end,
         {
@@ -2070,35 +2073,35 @@ options = {
     {
         "--log-step-uarch",
         function()
-            log_step_uarch = true
+            cmdline.log_step_uarch = true
             return true
         end,
     },
     {
         "--log-reset-uarch",
         function()
-            log_reset_uarch = true
+            cmdline.log_reset_uarch = true
             return true
         end,
     },
     {
         "--max-mcycle=",
         function(_, all, n)
-            max_mcycle = assertf(util.parse_number(n), "invalid option %s", all)
+            cmdline.max_mcycle = assertf(util.parse_number(n), "invalid option %s", all)
             return true
         end,
     },
     {
         "--max-uarch-cycle=",
         function(_, all, n)
-            max_uarch_cycle = assertf(util.parse_number(n), "invalid option %s", all)
+            cmdline.max_uarch_cycle = assertf(util.parse_number(n), "invalid option %s", all)
             return true
         end,
     },
     {
         "--auto-reset-uarch",
         function()
-            auto_reset_uarch = true
+            cmdline.auto_reset_uarch = true
             return true
         end,
     },
@@ -2106,7 +2109,7 @@ options = {
         "--create=",
         function(_, _, opts)
             if not opts or #opts < 1 then return false end
-            create_dir = opts
+            cmdline.create_dir = opts
             return true
         end,
         "dir",
@@ -2116,10 +2119,10 @@ options = {
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
             assertf(o.directory, "need directory in %s", all)
-            clone_dir = o.clone
-            load_sharing = to_sharing(o.sharing)
-            if clone_dir and not load_sharing then load_sharing = cartesi.SHARING_ALL end
-            load_dir = o.directory
+            cmdline.clone_dir = o.clone
+            cmdline.load_sharing = to_sharing(o.sharing)
+            if cmdline.clone_dir and not cmdline.load_sharing then cmdline.load_sharing = cartesi.SHARING_ALL end
+            cmdline.load_dir = o.directory
             return true
         end,
         {
@@ -2134,8 +2137,8 @@ options = {
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
             assertf(o.directory, "need directory in %s", all)
-            store_sharing = to_sharing(o.sharing)
-            store_dir = o.directory
+            cmdline.store_sharing = to_sharing(o.sharing)
+            cmdline.store_dir = o.directory
             return true
         end,
         {
@@ -2147,7 +2150,7 @@ options = {
     {
         "--remote-spawn",
         function()
-            remote_spawn = true
+            cmdline.remote_spawn = true
             return true
         end,
     },
@@ -2155,21 +2158,21 @@ options = {
         "--remote-address=",
         function(_, _, opts)
             if not opts or #opts < 1 then return false end
-            remote_address = opts
+            cmdline.remote_address = opts
             return true
         end,
     },
     {
         "--remote-fork",
         function()
-            remote_fork = true
+            cmdline.remote_fork = true
             return true
         end,
     },
     {
         "--remote-fork=",
         function(_, _, v)
-            remote_fork = v
+            cmdline.remote_fork = v
             return true
         end,
         "hostport",
@@ -2177,49 +2180,49 @@ options = {
     {
         "--remote-health-check",
         function()
-            remote_health_check = true
+            cmdline.remote_health_check = true
             return true
         end,
     },
     {
         "--remote-shutdown",
         function()
-            remote_shutdown = true
+            cmdline.remote_shutdown = true
             return true
         end,
     },
     {
         "--no-remote-create",
         function()
-            remote_create = false
+            cmdline.remote_create = false
             return true
         end,
     },
     {
         "--no-remote-destroy",
         function()
-            remote_destroy = false
+            cmdline.remote_destroy = false
             return true
         end,
     },
     {
         "--no-revert",
         function()
-            perform_reverts = false
+            cmdline.perform_reverts = false
             return true
         end,
     },
     {
         "--initial-hash",
         function()
-            initial_hash = true
+            cmdline.initial_hash = true
             return true
         end,
     },
     {
         "--initial-hash=",
         function(_, _, v)
-            initial_hash = v
+            cmdline.initial_hash = v
             return true
         end,
         "filename",
@@ -2227,14 +2230,14 @@ options = {
     {
         "--final-hash",
         function()
-            final_hash = true
+            cmdline.final_hash = true
             return true
         end,
     },
     {
         "--final-hash=",
         function(_, _, v)
-            final_hash = v
+            cmdline.final_hash = v
             return true
         end,
         "filename",
@@ -2243,16 +2246,16 @@ options = {
         "--print-mcycle-root-hashes=",
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
-            mcycle_root_hashes_log2_period = assertf(o.log2_mcycle_period, "need log2_mcycle_period in %s", all)
+            cmdline.mcycle_root_hashes_log2_period = assertf(o.log2_mcycle_period, "need log2_mcycle_period in %s", all)
             assertf(
-                mcycle_root_hashes_log2_period >= 0 and mcycle_root_hashes_log2_period < 63,
+                cmdline.mcycle_root_hashes_log2_period >= 0 and cmdline.mcycle_root_hashes_log2_period < 63,
                 "log2_mcycle_period must be in {0, ..., 62} in %s",
                 all
             )
-            mcycle_root_hashes_start = o.start or 0
-            mcycle_root_hashes_log2_bundle = o.log2_bundle_mcycle_count or 0
-            initial_hash = true
-            final_hash = true
+            cmdline.mcycle_root_hashes_start = o.start or 0
+            cmdline.mcycle_root_hashes_log2_bundle = o.log2_bundle_mcycle_count or 0
+            cmdline.initial_hash = true
+            cmdline.final_hash = true
             return true
         end,
         {
@@ -2266,9 +2269,9 @@ options = {
         "--print-uarch-cycle-root-hashes=",
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
-            uarch_cycle_root_hashes_count = assertf(o.count, "need count in %s", all)
-            uarch_cycle_root_hashes_start = o.start or 0
-            uarch_cycle_root_hashes_log2_bundle = o.log2_bundle_uarch_cycle_count or 0
+            cmdline.uarch_cycle_root_hashes_count = assertf(o.count, "need count in %s", all)
+            cmdline.uarch_cycle_root_hashes_start = o.start or 0
+            cmdline.uarch_cycle_root_hashes_log2_bundle = o.log2_bundle_uarch_cycle_count or 0
             return true
         end,
         {
@@ -2282,8 +2285,8 @@ options = {
         -- bare: dump config to stdout in Lua
         "--store-config",
         function()
-            store_config = true
-            store_config_format = resolve_format(nil, nil)
+            cmdline.store_config = true
+            cmdline.store_config_format = resolve_format(nil, nil)
             return true
         end,
     },
@@ -2292,8 +2295,8 @@ options = {
         "--store-config=",
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
-            store_config = o.filename or true
-            store_config_format = resolve_format(o.format, o.filename)
+            cmdline.store_config = o.filename or true
+            cmdline.store_config_format = resolve_format(o.format, o.filename)
             return true
         end,
         {
@@ -2307,8 +2310,8 @@ options = {
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
             assertf(o.filename, "need filename in %s", all)
-            load_config = o.filename
-            load_config_format = resolve_format(o.format, o.filename)
+            cmdline.load_config = o.filename
+            cmdline.load_config_format = resolve_format(o.format, o.filename)
             return true
         end,
         {
@@ -2321,8 +2324,8 @@ options = {
         "--cmio-rx-buffer=",
         function(keys, all, opts)
             if not opts then return false end
-            cmdline_config.cmio.rx_buffer.backing_store =
-                parse_backing_store(keys, all, opts, cmdline_config.cmio.rx_buffer.backing_store)
+            cmdline.config.cmio.rx_buffer.backing_store =
+                parse_backing_store(keys, all, opts, cmdline.config.cmio.rx_buffer.backing_store)
             return true
         end,
         backing_store_keys,
@@ -2331,8 +2334,8 @@ options = {
         "--cmio-tx-buffer=",
         function(keys, all, opts)
             if not opts then return false end
-            cmdline_config.cmio.tx_buffer.backing_store =
-                parse_backing_store(keys, all, opts, cmdline_config.cmio.tx_buffer.backing_store)
+            cmdline.config.cmio.tx_buffer.backing_store =
+                parse_backing_store(keys, all, opts, cmdline.config.cmio.tx_buffer.backing_store)
             return true
         end,
         backing_store_keys,
@@ -2340,7 +2343,7 @@ options = {
     {
         "--no-init-splash",
         function()
-            init_splash = false
+            cmdline.init_splash = false
             return true
         end,
     },
@@ -2379,7 +2382,7 @@ options = {
     {
         "--append-init=",
         function(_, _, opts)
-            append_init = append_init .. opts .. "\n"
+            cmdline.append_init = cmdline.append_init .. opts .. "\n"
             return true
         end,
     },
@@ -2388,7 +2391,7 @@ options = {
         function(_, _, opts)
             local contents = util.read_file(opts)
             if not contents:find("\n$") then contents = contents .. "\n" end
-            append_init = append_init .. contents
+            cmdline.append_init = cmdline.append_init .. contents
             return true
         end,
         "file",
@@ -2396,7 +2399,7 @@ options = {
     {
         "--append-entrypoint=",
         function(_, _, opts)
-            append_entrypoint = append_entrypoint .. opts .. "\n"
+            cmdline.append_entrypoint = cmdline.append_entrypoint .. opts .. "\n"
             return true
         end,
     },
@@ -2405,7 +2408,7 @@ options = {
         function(_, _, opts)
             local contents = util.read_file(opts)
             if not contents:find("\n$") then contents = contents .. "\n" end
-            append_entrypoint = append_entrypoint .. contents
+            cmdline.append_entrypoint = cmdline.append_entrypoint .. contents
             return true
         end,
         "file",
@@ -2413,16 +2416,16 @@ options = {
     {
         "--gdb",
         function()
-            assert(not gdb or gdb.address, "--gdb and --gdb-fd are mutually exclusive")
-            gdb = { address = "127.0.0.1:1234" }
+            assert(not cmdline.gdb or cmdline.gdb.address, "--gdb and --gdb-fd are mutually exclusive")
+            cmdline.gdb = { address = "127.0.0.1:1234" }
             return true
         end,
     },
     {
         "--gdb=",
         function(_, _, address)
-            assert(not gdb or gdb.address, "--gdb and --gdb-fd are mutually exclusive")
-            gdb = { address = address }
+            assert(not cmdline.gdb or cmdline.gdb.address, "--gdb and --gdb-fd are mutually exclusive")
+            cmdline.gdb = { address = address }
             return true
         end,
         "hostport",
@@ -2432,8 +2435,8 @@ options = {
         function(_, all, value)
             local fd = tonumber(value)
             assert(math.type(fd) == "integer" and fd >= 0, "invalid GDB socket file descriptor in " .. all)
-            assert(not gdb or gdb.fd, "--gdb and --gdb-fd are mutually exclusive")
-            gdb = { fd = fd }
+            assert(not cmdline.gdb or cmdline.gdb.fd, "--gdb and --gdb-fd are mutually exclusive")
+            cmdline.gdb = { fd = fd }
             return true
         end,
         "number",
@@ -2486,7 +2489,7 @@ hash_tree = require("cartesi.hash-tree")
 
 -- And perform the dependent initializations
 MCYCLE_MAX = cartesi.MCYCLE_MAX
-max_mcycle = MCYCLE_MAX
+cmdline.max_mcycle = MCYCLE_MAX
 ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
@@ -2495,9 +2498,9 @@ assert(
     "uarch cycle limit does not match the rollup geometry"
 )
 local default_config = cartesi.machine:get_default_config()
-cmdline_config.dtb.bootargs = default_config.dtb.bootargs
-cmdline_config.hash_tree.hash_function = default_config.hash_tree.hash_function
-cmdline_config.processor.registers.htif = {
+cmdline.config.dtb.bootargs = default_config.dtb.bootargs
+cmdline.config.hash_tree.hash_function = default_config.hash_tree.hash_function
+cmdline.config.processor.registers.htif = {
     iconsole = cartesi.HTIF_CONSOLE_CMD_PUTCHAR_MASK,
     iyield = cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK | cartesi.HTIF_YIELD_CMD_MANUAL_MASK,
 }
@@ -2511,8 +2514,8 @@ to_sharing_map = {
 local argi = 1
 while argi <= #arg do
     local a = arg[argi]
-    if cmdline_opts_finished then
-        exec_arguments[#exec_arguments + 1] = a
+    if cmdline.opts_finished then
+        cmdline.exec_arguments[#cmdline.exec_arguments + 1] = a
         argi = argi + 1
     else
         local nextarg = arg[argi + 1]
@@ -2526,8 +2529,8 @@ while argi <= #arg do
             -- option processing; a leftover "-..." is an error.
             local not_option = a:sub(1, 1) ~= "-"
             assertf(not_option or a == "--", "unrecognized option %s", a)
-            cmdline_opts_finished = true
-            if not_option then exec_arguments = { a } end
+            cmdline.opts_finished = true
+            if not_option then cmdline.exec_arguments = { a } end
         end
         argi = argi + (consumed and 2 or 1)
     end
@@ -2567,26 +2570,26 @@ local function dump_value_proofs(machine, desired_proofs, config)
 end
 
 local function new_machine()
-    assert(not remote_health_check or remote_address, "missing remote address")
-    if remote_address then
+    assert(not cmdline.remote_health_check or cmdline.remote_address, "missing remote address")
+    if cmdline.remote_address then
         local jsonrpc = require("cartesi.jsonrpc")
-        local new_m = assert(jsonrpc.connect_server(remote_address))
-        if remote_fork then
+        local new_m = assert(jsonrpc.connect_server(cmdline.remote_address))
+        if cmdline.remote_fork then
             local fork_address, fork_pid
             new_m, fork_address, fork_pid = assert(new_m:fork_server())
             stderr("Forked JSONRPC remote cartesi machine at '%s' with pid %d\n", fork_address, fork_pid)
-            if remote_fork ~= true then
-                new_m:rebind_server(remote_fork)
-                stderr("Rebound forked JSONRPC remote cartesi machine at '%s'\n", remote_fork)
+            if cmdline.remote_fork ~= true then
+                new_m:rebind_server(cmdline.remote_fork)
+                stderr("Rebound forked JSONRPC remote cartesi machine at '%s'\n", cmdline.remote_fork)
             end
         end
-        if remote_health_check then os.exit(0, true) end
-        stderr("Connected to JSONRPC remote cartesi machine at '%s'\n", remote_address)
+        if cmdline.remote_health_check then os.exit(0, true) end
+        stderr("Connected to JSONRPC remote cartesi machine at '%s'\n", cmdline.remote_address)
         local shutdown = function() new_m:shutdown_server() end
         setmetatable(remote_closer, {
             __gc = function()
                 local address = new_m:get_server_address()
-                if remote_shutdown then
+                if cmdline.remote_shutdown then
                     local ok, err = pcall(shutdown)
                     if ok then
                         stderr("Shutdown JSONRPC remote cartesi machine at '%s'\n", address)
@@ -2596,8 +2599,8 @@ local function new_machine()
                 else
                     stderr("Left alive JSONRPC remote cartesi machine at '%s'\n", address)
                 end
-                if remote_fork then
-                    stderr("Left alive original JSONRPC remote cartesi machine at '%s'\n", remote_address)
+                if cmdline.remote_fork then
+                    stderr("Left alive original JSONRPC remote cartesi machine at '%s'\n", cmdline.remote_address)
                 end
             end,
         })
@@ -2609,37 +2612,40 @@ end
 
 local runtime_config = {
     concurrency = {
-        update_hash_tree = concurrency_update_hash_tree,
+        update_hash_tree = cmdline.concurrency_update_hash_tree,
     },
-    console = console,
-    skip_version_check = skip_version_check,
-    no_reserve = no_reserve,
+    console = cmdline.console,
+    skip_version_check = cmdline.skip_version_check,
+    no_reserve = cmdline.no_reserve,
 }
 
-if remote_spawn then
+if cmdline.remote_spawn then
     local jsonrpc = require("cartesi.jsonrpc")
-    local server <close>, address, pid = jsonrpc.spawn_server(remote_address)
+    local server <close>, address, pid = jsonrpc.spawn_server(cmdline.remote_address)
     server:set_cleanup_call(jsonrpc.NOTHING) -- we will perform shutdown manually
     stderr("Spawned JSONRPC remote cartesi machine at '%s' with pid %d\n", address, pid)
-    remote_address = address
+    cmdline.remote_address = address
 end
 
-if create_dir then
-    assert(not (remote_address and not remote_create), "cannot use --create and --no-remote-create at the same time")
-    assert(not load_dir, "cannot use --create and --load at the same time")
+if cmdline.create_dir then
+    assert(
+        not (cmdline.remote_address and not cmdline.remote_create),
+        "cannot use --create and --no-remote-create at the same time"
+    )
+    assert(not cmdline.load_dir, "cannot use --create and --load at the same time")
 end
 
 local main_machine = new_machine()
-if load_dir then
+if cmdline.load_dir then
     stderr("Loading machine: please wait\n")
-    if clone_dir then main_machine:clone_stored(clone_dir, load_dir) end
-    main_machine = main_machine:load(load_dir, runtime_config, load_sharing)
-elseif not (remote_address and not remote_create) then
+    if cmdline.clone_dir then main_machine:clone_stored(cmdline.clone_dir, cmdline.load_dir) end
+    main_machine = main_machine:load(cmdline.load_dir, runtime_config, cmdline.load_sharing)
+elseif not (cmdline.remote_address and not cmdline.remote_create) then
     -- Use the command-line config (a --load-config file may still override it below).
-    local config = cmdline_config
+    local config = cmdline.config
 
     -- show splash on init
-    if init_splash then
+    if cmdline.init_splash then
         config.dtb.init = config.dtb.init
             .. ([[
 echo "
@@ -2656,8 +2662,8 @@ echo "
 ]]):gsub("\\", "\\\\")
     end
 
-    for idx = 1, flash_drive_count do
-        local entry = flash_drives[idx]
+    for idx = 1, cmdline.flash_drive_count do
+        local entry = cmdline.flash_drives[idx]
         if entry then -- skip removed drives (e.g. --no-root-flash-drive)
             set_empty_omitted_filenames(entry)
             local dt_label = entry.label or "flashdrive" .. #config.flash_drive
@@ -2711,8 +2717,8 @@ echo "
         end
     end
 
-    for idx = 1, nvram_count do
-        local entry = nvrams[idx]
+    for idx = 1, cmdline.nvram_count do
+        local entry = cmdline.nvrams[idx]
         if entry then
             set_empty_omitted_filenames(entry)
             local dt_label = entry.label or "nvram" .. #config.nvram
@@ -2730,29 +2736,33 @@ echo "
         end
     end
 
-    if #append_bootargs > 0 then config.dtb.bootargs = config.dtb.bootargs .. " " .. append_bootargs end
-    if #append_init > 0 then config.dtb.init = config.dtb.init .. append_init end
-    if #append_entrypoint > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. append_entrypoint end
-    if #exec_arguments > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. table.concat(exec_arguments, " ") end
+    if #cmdline.append_bootargs > 0 then config.dtb.bootargs = config.dtb.bootargs .. " " .. cmdline.append_bootargs end
+    if #cmdline.append_init > 0 then config.dtb.init = config.dtb.init .. cmdline.append_init end
+    if #cmdline.append_entrypoint > 0 then
+        config.dtb.entrypoint = config.dtb.entrypoint .. cmdline.append_entrypoint
+    end
+    if #cmdline.exec_arguments > 0 then
+        config.dtb.entrypoint = config.dtb.entrypoint .. table.concat(cmdline.exec_arguments, " ")
+    end
 
-    if load_config and load_config_format == "json" then
-        config = setmetatable(cartesi.fromjson(util.read_file(load_config)), { __index = config })
-    elseif load_config then
+    if cmdline.load_config and cmdline.load_config_format == "json" then
+        config = setmetatable(cartesi.fromjson(util.read_file(cmdline.load_config)), { __index = config })
+    elseif cmdline.load_config then
         local env = {}
-        local chunk, err = loadfile(load_config, "t", env)
+        local chunk, err = loadfile(cmdline.load_config, "t", env)
         if not chunk then
-            stderr("Failed to load machine config (%s):\n", load_config)
+            stderr("Failed to load machine config (%s):\n", cmdline.load_config)
             error(err)
         end
         local ok, ret = pcall(chunk)
         if not ok then
-            stderr("Failed to load machine config (%s):\n", load_config)
+            stderr("Failed to load machine config (%s):\n", cmdline.load_config)
             error(ret)
         end
         config = setmetatable(ret, { __index = config })
     end
 
-    main_machine = main_machine:create(config, runtime_config, create_dir)
+    main_machine = main_machine:create(config, runtime_config, cmdline.create_dir)
 end
 
 local function serialize_config(out, config, format)
@@ -2768,16 +2778,16 @@ end
 -- obtain config from instantiated machine
 local initial_config = main_machine:get_initial_config()
 
-for _, r in ipairs(memory_range_replace) do
+for _, r in ipairs(cmdline.memory_range_replace) do
     set_empty_omitted_filenames(r)
     main_machine:replace_memory_range(r)
 end
 
-if type(store_config) == "string" then
-    local f <close> = assert(io.open(store_config, "w"))
-    serialize_config(f, initial_config, store_config_format)
-elseif store_config then
-    serialize_config(io.stdout, initial_config, store_config_format)
+if type(cmdline.store_config) == "string" then
+    local f <close> = assert(io.open(cmdline.store_config, "w"))
+    serialize_config(f, initial_config, cmdline.store_config_format)
+elseif cmdline.store_config then
+    serialize_config(io.stdout, initial_config, cmdline.store_config_format)
 end
 
 local cmio_yield_automatic_reason = {
@@ -2997,17 +3007,17 @@ end
 -- optionally making a computation hash. In a plain run, it can instead print mcycle root hashes
 -- or uarch cycle root hashes, one excluding the other. Debugging combines with any of them, but
 -- hash collection assumes the debugger only observes, so that combination warns.
-local mcycle_root_hashes = mcycle_root_hashes_log2_period ~= nil
-local computation_hash = cmio_advance
-    and (cmio_advance.mcycle_computation_hash or cmio_advance.uarch_cycle_computation_hash)
-if cmio_advance or cmio_inspect then
-    assert(not uarch_cycle_root_hashes_count, "cmio cannot be combined with printing uarch cycle root hashes")
+local mcycle_root_hashes = cmdline.mcycle_root_hashes_log2_period ~= nil
+local computation_hash = cmdline.cmio_advance
+    and (cmdline.cmio_advance.mcycle_computation_hash or cmdline.cmio_advance.uarch_cycle_computation_hash)
+if cmdline.cmio_advance or cmdline.cmio_inspect then
+    assert(not cmdline.uarch_cycle_root_hashes_count, "cmio cannot be combined with printing uarch cycle root hashes")
     assert(not mcycle_root_hashes, "cmio cannot be combined with printing mcycle root hashes")
 end
-if gdb and (mcycle_root_hashes or uarch_cycle_root_hashes_count or computation_hash) then
+if cmdline.gdb and (mcycle_root_hashes or cmdline.uarch_cycle_root_hashes_count or computation_hash) then
     stderr("Warning: writing to registers or memory from GDB produces hashes of states the computation never visits\n")
 end
-if uarch_cycle_root_hashes_count then
+if cmdline.uarch_cycle_root_hashes_count then
     assert(not mcycle_root_hashes, "printing uarch cycle root hashes cannot be combined with mcycle root hashes")
 end
 -- Sampling any hashes needs a reproducible machine.
@@ -3015,7 +3025,7 @@ if mcycle_root_hashes or computation_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
 end
 -- The microarchitecture only runs in machines configured with keccak256.
-if cmio_advance and cmio_advance.uarch_cycle_computation_hash then
+if cmdline.cmio_advance and cmdline.cmio_advance.uarch_cycle_computation_hash then
     assert(
         initial_config.hash_tree.hash_function == "keccak256",
         "uarch cycle computation hash requires the keccak256 hash function"
@@ -3023,54 +3033,57 @@ if cmio_advance and cmio_advance.uarch_cycle_computation_hash then
 end
 local machine = main_machine
 local gdb_stub
-if gdb then
-    gdb_stub = require("cartesi.gdbstub").new(machine, max_mcycle)
-    if gdb.fd then
-        gdb_stub:wait_gdb_fd(gdb.fd)
+if cmdline.gdb then
+    gdb_stub = require("cartesi.gdbstub").new(machine, cmdline.max_mcycle)
+    if cmdline.gdb.fd then
+        gdb_stub:wait_gdb_fd(cmdline.gdb.fd)
     else
-        local address, port = gdb.address:match("^(.*):(%d+)$")
+        local address, port = cmdline.gdb.address:match("^(.*):(%d+)$")
         assert(address and port, "invalid address for GDB")
         gdb_stub:wait_gdb_address_port(address, tonumber(port))
     end
 end
 if initial_config.processor.registers.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
-if cmio_advance or cmio_inspect then
+if cmdline.cmio_advance or cmdline.cmio_inspect then
     check_cmio_htif_config(initial_config.processor.registers.htif)
-    assert(remote_address or not perform_reverts, "cmio requires --remote-address for snapshot/commit/revert")
+    assert(
+        cmdline.remote_address or not cmdline.perform_reverts,
+        "cmio requires --remote-address for snapshot/commit/revert"
+    )
 end
 -- Seed the outputs Merkle tree frontier once, at the epoch start. With last_output_proof, resume the
 -- genesis-rooted tree from the previous epoch's last output, so this epoch's outputs continue at
 -- their running global indices. Otherwise start empty at genesis. The seed frontier produces the
 -- end-of-epoch proofs, and a copy tracks the running per-input root check.
-if cmio_advance then
+if cmdline.cmio_advance then
     local depth = cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
-    if cmio_advance.last_output_proof then
-        local proof = read_proof(cmio_advance.last_output_proof, cmio_advance.format)
+    if cmdline.cmio_advance.last_output_proof then
+        local proof = read_proof(cmdline.cmio_advance.last_output_proof, cmdline.cmio_advance.format)
         assertf(
             proof.log2_root_size == depth and proof.log2_target_size == 0,
             "%s is not an outputs proof",
-            cmio_advance.last_output_proof
+            cmdline.cmio_advance.last_output_proof
         )
-        cmio_advance.frontier = hash_tree.frontier(proof, "keccak256")
-        cmio_advance.global_output_index = proof.target_address + 1
+        cmdline.cmio_advance.frontier = hash_tree.frontier(proof, "keccak256")
+        cmdline.cmio_advance.global_output_index = proof.target_address + 1
     else
-        cmio_advance.frontier = hash_tree.frontier(depth, "keccak256")
-        cmio_advance.global_output_index = 0
+        cmdline.cmio_advance.frontier = hash_tree.frontier(depth, "keccak256")
+        cmdline.cmio_advance.global_output_index = 0
     end
-    cmio_advance.running_frontier = hash_tree.frontier_copy(cmio_advance.frontier)
-    cmio_advance.output_hashes = {}
-    cmio_advance.output_inputs = {}
-    cmio_advance.pending_outputs = {}
+    cmdline.cmio_advance.running_frontier = hash_tree.frontier_copy(cmdline.cmio_advance.frontier)
+    cmdline.cmio_advance.output_hashes = {}
+    cmdline.cmio_advance.output_inputs = {}
+    cmdline.cmio_advance.pending_outputs = {}
 end
-if initial_hash then
+if cmdline.initial_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
-    if type(initial_hash) == "string" then
-        util.write_file(machine:get_root_hash(), initial_hash)
+    if type(cmdline.initial_hash) == "string" then
+        util.write_file(machine:get_root_hash(), cmdline.initial_hash)
     else
         print_root_hash(machine, stderr_unsilenceable)
     end
 end
-dump_value_proofs(machine, initial_proof, initial_config)
+dump_value_proofs(machine, cmdline.initial_proof, initial_config)
 local exit_code = 0
 
 -- To snapshot, we fork the current machine server to create a backup of the current machine.
@@ -3078,7 +3091,7 @@ local exit_code = 0
 -- If we already had a backup server, we simply shut it down.
 local backup_machine = nil
 local function snapshot(m)
-    if perform_reverts then
+    if cmdline.perform_reverts then
         if backup_machine then backup_machine:shutdown_server() end
         backup_machine = m:fork_server()
     end
@@ -3086,7 +3099,7 @@ end
 
 -- To commit, we simply shut down the backup server.
 local function commit()
-    if perform_reverts then
+    if cmdline.perform_reverts then
         if backup_machine then
             backup_machine:shutdown_server()
             backup_machine = nil
@@ -3097,7 +3110,7 @@ end
 -- To revert, we get rid of the current machine server, then rebind the backup
 -- server with the address of the original one, and start communicating with it instead
 local function revert(m)
-    if perform_reverts then
+    if cmdline.perform_reverts then
         assert(backup_machine, "no snapshot to revert to")
         local address = m:get_server_address()
         m:shutdown_server()
@@ -3648,7 +3661,7 @@ end
 -- service.
 local function run_to_stop(m, on_yield_automatic, runner)
     while true do
-        local break_reason = runner:run(max_mcycle)
+        local break_reason = runner:run(cmdline.max_mcycle)
         if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
             return break_reason
         elseif is_yielded_automatic(break_reason) then
@@ -3711,22 +3724,22 @@ local function run_inspect_state_query(m, runner)
     -- fails unless the machine is at an rx-accepted manual yield, rejecting a reject or exception.
     if m:read_reg("mcycle") ~= mcycle then get_and_print_yield(m, htif) end
     stderr("\nBefore query\n")
-    if cmio_inspect.print_query_state_hashes then print_root_hash(m) end
+    if cmdline.cmio_inspect.print_query_state_hashes then print_root_hash(m) end
     snapshot(m)
-    load_cmio_query(m, cmio_inspect)
-    if cmio_inspect.print_query_state_hashes then print_root_hash(m) end
-    cmio_inspect.report_index = 0
+    load_cmio_query(m, cmdline.cmio_inspect)
+    if cmdline.cmio_inspect.print_query_state_hashes then print_root_hash(m) end
+    cmdline.cmio_inspect.report_index = 0
     local function on_yield_automatic(yield_reason, data)
         if is_tx_report(yield_reason) then
-            save_cmio_inspect_state_report(cmio_inspect, data)
-            cmio_inspect.report_index = cmio_inspect.report_index + 1
+            save_cmio_inspect_state_report(cmdline.cmio_inspect, data)
+            cmdline.cmio_inspect.report_index = cmdline.cmio_inspect.report_index + 1
         end
     end
     break_reason = run_to_stop(m, on_yield_automatic, runner)
     report_stop(m, break_reason)
     stderr("\nAfter query\n")
     revert(m)
-    cmio_inspect = nil
+    cmdline.cmio_inspect = nil
 end
 
 -- Drives an advance-state epoch actively, as the README host loop does. Boots to the rolling
@@ -3742,7 +3755,7 @@ end
 -- given runner) or delegates to the runner directly (the machine itself, or gdb).
 local function run_advance_state_epoch(m, runner)
     local htif = initial_config.processor.registers.htif
-    local advance = cmio_advance
+    local advance = cmdline.cmio_advance
     local claim = advance.mcycle_computation_hash and make_mcycle_computation_hash(m, advance, runner)
         or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(m, advance, runner)
         or make_null_computation_hash(runner)
@@ -3783,7 +3796,8 @@ local function run_advance_state_epoch(m, runner)
                 commit()
             elseif is_rx_rejected(yield_reason) then
                 assert(
-                    perform_reverts or not (advance.mcycle_computation_hash or advance.uarch_cycle_computation_hash),
+                    cmdline.perform_reverts
+                        or not (advance.mcycle_computation_hash or advance.uarch_cycle_computation_hash),
                     "the computation hash of a rejected input requires reverts"
                 )
                 flush_pending_outputs(m, advance, yield_reason, data)
@@ -3828,43 +3842,47 @@ end
 -- precluded up front, so the runner is the machine or gdb, and requests run with it (a
 -- computation hash advances through it too).
 local runner = gdb_stub or machine
-if uarch_cycle_root_hashes_count then
+if cmdline.uarch_cycle_root_hashes_count then
     runner = make_uarch_cycle_root_hashes_runner(
         runner,
-        uarch_cycle_root_hashes_start,
-        uarch_cycle_root_hashes_count,
-        uarch_cycle_root_hashes_log2_bundle
+        cmdline.uarch_cycle_root_hashes_start,
+        cmdline.uarch_cycle_root_hashes_count,
+        cmdline.uarch_cycle_root_hashes_log2_bundle
     )
 elseif mcycle_root_hashes then
-    local start = mcycle_root_hashes_start ~= 0 and mcycle_root_hashes_start or nil
-    runner =
-        make_mcycle_root_hashes_runner(runner, mcycle_root_hashes_log2_period, start, mcycle_root_hashes_log2_bundle)
+    local start = cmdline.mcycle_root_hashes_start ~= 0 and cmdline.mcycle_root_hashes_start or nil
+    runner = make_mcycle_root_hashes_runner(
+        runner,
+        cmdline.mcycle_root_hashes_log2_period,
+        start,
+        cmdline.mcycle_root_hashes_log2_bundle
+    )
 end
 
 -- The host drives an advance-state epoch (which may end with an inspect query) actively, an
 -- inspect-state query on its own, or otherwise just runs the machine to a stop.
-if cmio_advance then
+if cmdline.cmio_advance then
     run_advance_state_epoch(machine, runner)
     -- an inspect query, if any, runs against the state the epoch left; it does nothing unless that
     -- is an accept yield (a completed epoch), so it is safe to always attempt
-    if cmio_inspect then run_inspect_state_query(machine, runner) end
-elseif cmio_inspect then
+    if cmdline.cmio_inspect then run_inspect_state_query(machine, runner) end
+elseif cmdline.cmio_inspect then
     run_inspect_state_query(machine, runner)
 else
     report_stop(machine, run_to_stop(machine, ignore_yield_automatic, runner))
 end
 -- log step
-if log_step_mcycle_count then
-    stderr(string.format("Logging step of %d cycles to %s\n", log_step_mcycle_count, log_step_filename))
+if cmdline.log_step_mcycle_count then
+    stderr(string.format("Logging step of %d cycles to %s\n", cmdline.log_step_mcycle_count, cmdline.log_step_filename))
     print_root_hash(machine, stderr_unsilenceable)
-    machine:log_step(log_step_mcycle_count, log_step_filename)
+    machine:log_step(cmdline.log_step_mcycle_count, cmdline.log_step_filename)
     print_root_hash(machine, stderr_unsilenceable)
 end
 -- Advance micro cycles
-if max_uarch_cycle > 0 then
+if cmdline.max_uarch_cycle > 0 then
     -- Save halt flag before micro cycles
     local previously_halted = machine:read_reg("iflags_H") ~= 0
-    local break_reason = machine:run_uarch(max_uarch_cycle)
+    local break_reason = machine:run_uarch(cmdline.max_uarch_cycle)
     if break_reason == cartesi.UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW then
         exit_code = 1
         stderr("\nUarch cycle overflow\n")
@@ -3874,39 +3892,39 @@ if max_uarch_cycle > 0 then
         -- The microarchitecture halted after completing one main processor instruction.
         -- The mcycle counter was incremented unless the machine was already halted.
         local newly_halted = machine:read_reg("iflags_H") ~= 0 and not previously_halted
-        if auto_reset_uarch then machine:reset_uarch() end
+        if cmdline.auto_reset_uarch then machine:reset_uarch() end
         if newly_halted then
             report_halt(machine)
         else
             report_mcycles(machine)
         end
-        if not auto_reset_uarch then report_uarch_cycles(machine) end
+        if not cmdline.auto_reset_uarch then report_uarch_cycles(machine) end
     end
 end
 if gdb_stub then gdb_stub:close() end
-if log_step_uarch then
+if cmdline.log_step_uarch then
     assert(initial_config.processor.registers.iunrep == 0, "uarch step proof is meaningless in unreproducible mode")
     stderr("Gathering uarch step log: please wait\n")
     util.print_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
-if log_reset_uarch then
+if cmdline.log_reset_uarch then
     stderr("Resetting microarchitecture state: please wait\n")
     util.print_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
-if dump_memory_ranges_dir then dump_memory_ranges(machine, dump_memory_ranges_dir) end
-if final_hash then
+if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_memory_ranges_dir) end
+if cmdline.final_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
-    if type(final_hash) == "string" then
-        util.write_file(machine:get_root_hash(), final_hash)
+    if type(cmdline.final_hash) == "string" then
+        util.write_file(machine:get_root_hash(), cmdline.final_hash)
     else
         print_root_hash(machine, stderr_unsilenceable)
     end
 end
-dump_value_proofs(machine, final_proof, initial_config)
-if store_dir then store_machine(machine, initial_config, store_dir, store_sharing) end
-if assert_rolling_template then
+dump_value_proofs(machine, cmdline.final_proof, initial_config)
+if cmdline.store_dir then store_machine(machine, initial_config, cmdline.store_dir, cmdline.store_sharing) end
+if cmdline.assert_rolling_template then
     local cmd, yield_reason = machine:receive_cmio_request()
     if not (cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(yield_reason)) then exit_code = 2 end
 end
-if not remote_address or remote_destroy then machine:destroy() end
+if not cmdline.remote_address or cmdline.remote_destroy then machine:destroy() end
 os.exit(exit_code, true)

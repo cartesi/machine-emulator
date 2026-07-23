@@ -3691,6 +3691,20 @@ local function report_mcycle_overflow(m)
     report_mcycles(m)
 end
 
+-- Prints the cmio exception banner and its payload. The guest gave up on the epoch, so the run
+-- is reported as a failure.
+local function report_exception(data)
+    exit_code = 1
+    stderr("cmio exception with payload: %q\n", data)
+end
+
+-- Prints the unexpected manual yield banner. The guest broke the cmio protocol, so the run is
+-- reported as a failure.
+local function report_unexpected_manual_yield(yield_reason)
+    exit_code = 1
+    stderr("\nUnexpected manual yield reason %d\n", yield_reason)
+end
+
 -- Reports where a run stopped: the halt banner on a halt, the overflow banner on an mcycle
 -- overflow, or the manual yield it left unread.
 local function report_stop(m, break_reason)
@@ -3745,10 +3759,12 @@ end
 -- Drives an advance-state epoch actively, as the README host loop does. Boots to the rolling
 -- template's first accept yield, then for each input snapshots, feeds, resumes until the input
 -- is accepted or rejected, collecting outputs and reports, and commits or reverts. Every input
--- processed, a halt, an mcycle overflow, or an exception is a fixed point that determines the
--- values placed in all later tree positions reserved by the claim. Only reaching max_mcycle leaves
--- the computation hash undetermined. On a halt, overflow, or exception the interrupted input's
--- outputs are flushed as rejected, and output proofs are written only on full completion.
+-- processed, a halt, an mcycle overflow, an exception, or an unexpected manual yield is a fixed
+-- point that determines the values placed in all later tree positions reserved by the claim. Only
+-- reaching max_mcycle leaves the computation hash undetermined. At any of these fixed points the
+-- interrupted input's outputs are flushed as rejected and its snapshot is committed (a fixed
+-- point is sticky, so there is no state worth restoring), and output proofs are written only on
+-- full completion.
 -- Leaves the machine wherever the epoch stopped. A trailing inspect query, if any, runs against that
 -- state and does nothing unless it is an accept yield. Boot always runs the machine plainly. The
 -- inputs run with the claim, which either collects a computation hash (advancing through the
@@ -3807,18 +3823,22 @@ local function run_advance_state_epoch(m, runner)
                 -- outputs as rejected, and end the epoch, leaving the machine at the exception
                 -- yield (no revert). A following inspect query fails against this non-accept yield,
                 -- which the CLI just reports.
-                stderr("cmio exception with payload: %q\n", data)
-                exit_code = 1
+                report_exception(data)
                 flush_pending_outputs(m, advance, yield_reason, data)
+                commit()
                 claim:end_epoch()
                 return
             else
-                -- An unexpected manual yield is still a fixed point. Finalize the claim before
-                -- reporting the protocol error so callers can dispute the computation that led
-                -- to it. In particular, the uarch claim may still need to pad a selected period
-                -- that execution never reached.
+                -- An unexpected manual yield is a protocol violation, but still a fixed point, and
+                -- fixed points are sticky, so it ends the epoch the same way an exception does.
+                -- The claim is finalized so callers can dispute the computation that led here. In
+                -- particular, the uarch claim may still need to pad a selected period that
+                -- execution never reached.
+                report_unexpected_manual_yield(yield_reason)
+                flush_pending_outputs(m, advance, yield_reason, data)
+                commit()
                 claim:end_epoch()
-                error("unexpected manual yield reason")
+                return
             end
             claim:end_input()
         end
@@ -3826,10 +3846,12 @@ local function run_advance_state_epoch(m, runner)
     if is_halted(break_reason) then
         report_halt(m)
         flush_pending_outputs(m, advance)
+        commit()
         claim:end_epoch()
     elseif is_mcycle_overflow(break_reason) then
         report_mcycle_overflow(m)
         flush_pending_outputs(m, advance)
+        commit()
         claim:end_epoch()
     elseif is_yielded_manual(break_reason) then
         save_cmio_output_proofs(advance)

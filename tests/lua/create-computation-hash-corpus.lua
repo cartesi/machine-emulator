@@ -398,7 +398,7 @@ local mcycle_cases = {
             { action = "manual-other", manual_reason = 9, terminal_mcycle = initial_mcycle + 128, payload = 23 },
         },
         category = "nonzero-hash",
-        stderr_contains = "unexpected manual yield reason",
+        stderr_contains = "Unexpected manual yield reason",
     },
     {
         id = "mcycle-before-first-sample",
@@ -692,7 +692,7 @@ add_uarch_case({
         { action = "manual-other", manual_reason = 9, terminal_mcycle = window_start + 4, payload = 23 },
     },
     category = "nonzero-hash",
-    stderr_contains = "unexpected manual yield reason",
+    stderr_contains = "Unexpected manual yield reason",
 })
 add_uarch_case({
     id = "uarch-near-limit-tail",

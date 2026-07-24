@@ -55,15 +55,39 @@ static_assert(std::numeric_limits<float>::digits == 24 && std::numeric_limits<do
 
 /// \brief Per-thread hard-float dispatch state.
 struct hard_float_context {
-    bool enabled{false};   // fast path may be used (set while a hard_float_scope is active)
+    bool enabled{false}; // fast path may be used (set while a hard_float_scope is active)
+#ifdef DUMP_STATS
     uint64_t hits{0};      // operations completed by the host FPU
     uint64_t fallbacks{0}; // operations that fell back to soft-float
+#endif
 };
 
 /// \brief Returns the calling thread's hard-float dispatch state.
+/// \details This is read on every accelerated operation, so the access must stay cheap. On ELF hosts
+/// the initial-exec TLS model reduces it to one register-relative load, where the general-dynamic
+/// model that shared objects get by default would call __tls_get_addr instead. The variable is small
+/// enough to always fit the static TLS surplus reserved for dynamically loaded objects.
 inline hard_float_context &hard_float_ctx() {
+#ifdef __ELF__
+    static thread_local hard_float_context ctx [[gnu::tls_model("initial-exec")]];
+#else
     static thread_local hard_float_context ctx;
+#endif
     return ctx;
+}
+
+/// \brief Counts an operation completed by the host FPU (statistics builds only).
+inline void hard_float_count_hit() {
+#ifdef DUMP_STATS
+    hard_float_ctx().hits++;
+#endif
+}
+
+/// \brief Counts an operation that fell back to soft-float (statistics builds only).
+inline void hard_float_count_fallback() {
+#ifdef DUMP_STATS
+    hard_float_ctx().fallbacks++;
+#endif
 }
 
 /// \class hard_float_scope
@@ -157,8 +181,10 @@ struct i_hfloat : SFLOAT {
     }
 
     /// \brief Checks the operand-independent pre-guard conditions.
+    /// \details The plain integer tests come first, so operations that cannot take the fast path
+    /// short-circuit past the thread-local access.
     static bool use_hard(FRM_modes rm, uint32_t fflags) {
-        return hard_float_ctx().enabled && rm == FRM_RNE && (fflags & FFLAGS_NX_MASK) != 0;
+        return rm == FRM_RNE && (fflags & FFLAGS_NX_MASK) != 0 && hard_float_ctx().enabled;
     }
 
     /// \brief Attempts a unary operation on the host FPU.
@@ -168,11 +194,11 @@ struct i_hfloat : SFLOAT {
         if (use_hard(rm, fflags) && is_zero_or_normal(a)) [[likely]] {
             const auto r = std::bit_cast<F_UINT>(hop(std::bit_cast<F_HOST>(a)));
             if (is_safe_result(r)) [[likely]] {
-                hard_float_ctx().hits++;
+                hard_float_count_hit();
                 return r;
             }
         }
-        hard_float_ctx().fallbacks++;
+        hard_float_count_fallback();
         return std::nullopt;
     }
 
@@ -183,11 +209,11 @@ struct i_hfloat : SFLOAT {
         if (use_hard(rm, fflags) && is_zero_or_normal(a) && is_zero_or_normal(b)) [[likely]] {
             const auto r = std::bit_cast<F_UINT>(hop(std::bit_cast<F_HOST>(a), std::bit_cast<F_HOST>(b)));
             if (is_safe_result(r)) [[likely]] {
-                hard_float_ctx().hits++;
+                hard_float_count_hit();
                 return r;
             }
         }
-        hard_float_ctx().fallbacks++;
+        hard_float_count_fallback();
         return std::nullopt;
     }
 
@@ -200,11 +226,11 @@ struct i_hfloat : SFLOAT {
             const auto r = std::bit_cast<F_UINT>(
                 hop(std::bit_cast<F_HOST>(a), std::bit_cast<F_HOST>(b), std::bit_cast<F_HOST>(c)));
             if (is_safe_result(r)) [[likely]] {
-                hard_float_ctx().hits++;
+                hard_float_count_hit();
                 return r;
             }
         }
-        hard_float_ctx().fallbacks++;
+        hard_float_count_fallback();
         return std::nullopt;
     }
 

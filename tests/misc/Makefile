@@ -112,8 +112,9 @@ $(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi_jsonrp
 $(BUILDDIR)/test-machine-c-jsonrpc-api: test-machine-c-jsonrpc-api.o ../../src/libcartesi_jsonrpc.a ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
-# The hard-float fast path requires host floating-point operations exactly as written
-HARD_FLOAT_CXXFLAGS=-ffp-contract=off -fno-math-errno
+# The hard-float fast path requires host floating-point operations exactly as written.
+# The dispatch counters used by the fast-path-coverage checks exist only under DUMP_STATS.
+HARD_FLOAT_CXXFLAGS=-ffp-contract=off -fno-math-errno -DDUMP_STATS
 
 $(BUILDDIR)/test-hard-float: test-hard-float.o
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(OMP_LIB)

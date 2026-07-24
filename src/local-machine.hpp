@@ -95,22 +95,20 @@ private:
         int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) override;
     address_range_descriptions do_get_address_ranges() const override;
     machine_cmio_request do_receive_cmio_request(std::span<uint8_t> data) const override;
-    void do_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
-        uint64_t length) override;
-    access_log do_log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-        const unsigned char *data, uint64_t length, const access_log::type &log_type) override;
+    void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        std::optional<const_machine_hash_view> revert_root_hash) override;
+    access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const_machine_hash_view revert_root_hash, const access_log::type &log_type) override;
     uint64_t do_get_reg_address(reg r) const override;
     machine_config do_get_default_config() const override;
     std::string do_get_address_name(uint64_t paddr) const override;
     machine_hash do_verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, std::optional<const_machine_hash_view> root_hash_after) const override;
-    machine_hash do_verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-        std::optional<const_machine_hash_view> root_hash_after) const override;
-    machine_hash do_verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-        std::optional<const_machine_hash_view> root_hash_after) const override;
-    machine_hash do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-        const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
-        std::optional<const_machine_hash_view> root_hash_after) const override;
+        uint64_t mcycle_count) const override;
+    machine_hash do_verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log) const override;
+    machine_hash do_verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log) const override;
+    machine_hash do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const_machine_hash_view root_hash_before, const access_log &log,
+        const_machine_hash_view revert_root_hash) const override;
 
     machine *get_machine();
     const machine *get_machine() const;

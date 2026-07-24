@@ -2170,7 +2170,7 @@ Storing output-4-input-5-proof.lua
 
 Before query
 304077300: 0xf75d84913d56874831b7ef4e0ac1af2fad16e393c63f6ecbecc33e91a7efe4e2
-304077300: 0xa13bd527993ed24f9d4cc5c4e4bb8b00bf033707cfb81fdeea3c71d24b83ccec
+304077300: 0x7d8a3b348d798cb7b0d2d925367555a67e184d950a493f924b00338df2f49b14
 
 Automatic yield tx-report (4) (0x000048 data)
 Cycles: 344044801
@@ -4558,12 +4558,15 @@ memory range defined by the `memory_range_config` entry stored in the
 with responses (or exceptions) is obtained from the machine in the
 `cmio.tx_buffer` memory range. The host does not need to access these
 ranges directly. The call
-`machine:send_cmio_response(<revert_root_hash>, <reason>, <data>)`
-records `<revert_root_hash>` in the machine state, writes `<data>` into
-`cmio.rx_buffer`, records the reason and length in `htif_fromhost`, and
-clears `iflags_Y` so the machine can resume. Conversely, the *data*
-value returned by `machine:receive_cmio_request()` is the contents of
-`cmio.tx_buffer` at the yield.
+`machine:send_cmio_response(<reason>, <data>[, <revert_root_hash>])`
+writes `<data>` into `cmio.rx_buffer`, records the reason and length in
+`htif_fromhost`, and clears `iflags_Y` so the machine can resume. The
+optional last argument `<revert_root_hash>` is required exactly when
+`<reason>` is `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, and only then
+is it recorded in the machine state (all other reasons refuse it).
+Conversely, the *data* value returned by
+`machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at
+the yield.
 
 Advance-state inputs are passed as ABI-encoded
 `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)`
@@ -4662,12 +4665,14 @@ end
 
 -- Run the machine until it halts or stdin closes
 local i = 0
+local revert_root_hash
 repeat
     local break_reason = machine:run(math.maxinteger)
     if break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
         local _, yield_reason = machine:receive_cmio_request()
         if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
             commit()
+            revert_root_hash = machine:get_root_hash()
             stderr("type expression\n")
             local expr = io.read()
             if not expr then
@@ -4676,9 +4681,9 @@ repeat
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
             snapshot()
             machine:send_cmio_response(
-                machine:get_root_hash(),
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-                encode_advance(expr, i)
+                encode_advance(expr, i),
+                revert_root_hash
             )
             i = i + 1
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
@@ -4723,16 +4728,18 @@ script then attempts to obtain a mathematical expression from the
 console. If the user provides one, it creates a new snapshot,
 ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`,
 and feeds the encoded input through
-`machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ...)`.
+`machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ..., revert_root_hash)`.
 If, however, the reason was anything else, the script rolls back the
 machine and continues with the next loop iteration.
 
 > [!NOTE]
 >
-> The `machine:get_root_hash()` passed to `machine:send_cmio_response()`
-> is recorded into the machine state as the state hash to revert to in
-> case the guest application rejects the input. This is required for
-> dispute resolution to operate properly.
+> The `revert_root_hash` passed to `machine:send_cmio_response()` is
+> recorded into the machine state as the state hash to revert to in case
+> the guest application rejects the input. The script collects it
+> whenever the guest accepts, and a rejection keeps it as it was, since
+> the rollback restores the machine to that same state. This is required
+> for dispute resolution to operate properly.
 
 If the machine yielded automatic, the script once again checks for the
 yield reason. If the reason was
@@ -4953,12 +4960,14 @@ end
 
 -- Run the machine until it halts or stdin closes
 local i = 0
+local revert_root_hash
 repeat
     local break_reason = machine:run(math.maxinteger)
     if break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
         local _, yield_reason, data = machine:receive_cmio_request()
         if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
             commit()
+            revert_root_hash = machine:get_root_hash()
             -- the just-run input was accepted, so close it out before feeding the next one
             if i > 0 then
                 flush_accepted(i - 1, data)
@@ -4971,9 +4980,9 @@ repeat
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
             snapshot()
             machine:send_cmio_response(
-                machine:get_root_hash(),
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-                encode_advance(expr, i)
+                encode_advance(expr, i),
+                revert_root_hash
             )
             i = i + 1
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
@@ -5253,13 +5262,13 @@ state hash. Doing this for each access in sequence yields the state hash
 at the end of the step.
 
 The method
-`machine:verify_step_uarch(<state_hash_before>, <access_log>[, <state_hash_after>])`
-performs this verification, additionally checking that the accesses
-correspond to the operation of the Cartesi Machine uarch starting from
+`machine:verify_step_uarch(<state_hash_before>, <access_log>)` performs
+this verification, additionally checking that the accesses correspond to
+the operation of the Cartesi Machine uarch starting from
 `<state_hash_before>`. It returns the state hash at the end of the step,
-and checks it against `<state_hash_after>` when the optional argument is
-given. Note there is no need for a Cartesi Machine instance to verify a
-transition: all required state information is in the access log.
+for the caller to compare against the state hash under dispute. Note
+there is no need for a Cartesi Machine instance to verify a transition:
+all required state information is in the access log.
 
 The following script illustrates the verification of a state transition.
 
@@ -5289,8 +5298,8 @@ if arg[4] then
     f()
 end
 
--- Verify the uarch step access log
-machine:verify_step_uarch(hash_before, log, hash_after)
+-- Verify the uarch step access log and check the hash it advances to
+assert(machine:verify_step_uarch(hash_before, log) == hash_after, "state transition rejected")
 io.stderr:write("State transition accepted!\n")
 ```
 
@@ -6328,7 +6337,7 @@ Storing output-0-input-0-proof.lua
 
 Before query
 50514508: 0x82b618c4efc063ebab9f33568a3db4868900bcc6ab460c18f23fd06419a9292a
-50514508: 0x628e4025c24a2987429ae4035aea3a1b31d63f3221e6e06ec5a8316eb9014612
+50514508: 0x0c74ef27c6204d8bf74b17c518dbc9f97cb5612423533e6dcf621fd5bdc3dc8e
 
 Automatic yield tx-report (4) (0x000011 data)
 Cycles: 50515720
@@ -8635,7 +8644,8 @@ local function advance(player, machine, data, sink)
         return
     end
     local snapshot = assert(machine:fork_server())
-    machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data)
+    local revert_root_hash = machine:get_root_hash()
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
     run_to(machine, machine:read_reg("mcycle") + MCYCLES_PER_INPUT, sink)
     local request_reason, accept_data = player:revert_if_rejected(machine, snapshot)
     snapshot:shutdown_server()
@@ -8703,7 +8713,8 @@ local function commit_bisection(player, branch, level, target)
         player.boundary = boundary
         local machine = assert(agreed.machine:fork_server())
         if not agreed.offset and boundary.data then
-            machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, boundary.data)
+            local revert_root_hash = machine:get_root_hash()
+            machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, boundary.data, revert_root_hash)
         end
         local offset = agreed.offset or 0
         if level == "mcycle" then
@@ -8738,10 +8749,11 @@ local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
+        local revert_root_hash = agreed:get_root_hash()
         local send_cmio_log = agreed:log_send_cmio_response(
-            agreed:get_root_hash(),
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-            player.boundary.data
+            player.boundary.data,
+            revert_root_hash
         )
         return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch() }
     end
@@ -8776,7 +8788,7 @@ local function verify_state_transition(
         if mcycle_offset == 0 and uarch_cycle == 0 and data then
             eventf("Verifying input inclusion log!")
             local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-            hash = machine:verify_send_cmio_response(hash, reason, data, hash, log.send_cmio_log)
+            hash = machine:verify_send_cmio_response(reason, data, hash, log.send_cmio_log, hash)
         end
         eventf("Verifying uarch step log!")
         hash = machine:verify_step_uarch(hash, log.step_log)

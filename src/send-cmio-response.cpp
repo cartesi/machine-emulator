@@ -31,7 +31,7 @@
 namespace cartesi {
 
 template <typename STATE_ACCESS>
-void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, bytes data, uint32 dataLength) {
+void send_cmio_response(STATE_ACCESS a, uint16 reason, bytes data, uint32 dataLength, bytes32 revertRootHash) {
     // This function cannot fail. When a failure is detected, the operation is a no-op instead,
     // so the honest party can always log and prove the resulting state transition.
     // A response to a machine that is not waiting on a manual yield is a no-op.
@@ -69,9 +69,9 @@ void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, b
         const uint64 maxUint64 = ~uint64(0);
         const uint64 imcyclemax = mcycle > maxUint64 - maxMcycles ? maxUint64 : mcycle + maxMcycles;
         writeImcyclemax(a, imcyclemax);
+        // Record the machine root hash to revert to in case the response is eventually rejected
+        writeRevertRootHash(a, revertRootHash);
     }
-    // Record the machine root hash to revert to in case the response is eventually rejected
-    writeRevertRootHash(a, revertRootHash);
     if (dataLength > 0) {
         writeMemoryWithPadding(a, AR_CMIO_RX_BUFFER_START, data, dataLength, writeLengthLog2Size);
     }
@@ -85,16 +85,16 @@ void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, b
 }
 
 // Explicit instantiation for state_access
-template void send_cmio_response(state_access a, bytes32 revertRootHash, uint16_t reason, const unsigned char *data,
-    uint32 length);
+template void send_cmio_response(state_access a, uint16_t reason, const unsigned char *data, uint32 length,
+    bytes32 revertRootHash);
 
-// Explicit instantiation for record_state_access
-template void send_cmio_response(record_send_cmio_state_access a, bytes32 revertRootHash, uint16_t reason,
-    const unsigned char *data, uint32 length);
+// Explicit instantiation for record_send_cmio_state_access
+template void send_cmio_response(record_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
+    uint32 length, bytes32 revertRootHash);
 
-// Explicit instantiation for replay_state_access
-template void send_cmio_response(replay_send_cmio_state_access a, bytes32 revertRootHash, uint16_t reason,
-    const unsigned char *data, uint32 length);
+// Explicit instantiation for replay_send_cmio_state_access
+template void send_cmio_response(replay_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
+    uint32 length, bytes32 revertRootHash);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max,modernize-avoid-c-style-cast)

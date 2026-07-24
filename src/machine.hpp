@@ -128,14 +128,16 @@ private:
     static std::string get_counter_key(const char *name, const char *domain = nullptr);
 
     /// \brief Checks that the machine can receive a cmio response with the given revert root hash.
-    /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
     /// \param reason Reason for sending the response.
     /// \param length Length of response data.
+    /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
     /// \details Throws when the machine is not waiting on a manual yield or when the response data
-    /// does not fit in the rx buffer. For advance-state responses, also throws when the machine is
-    /// not waiting on an rx-accepted manual yield or when \p revert_root_hash differs from the
-    /// machine root hash. Called by send_cmio_response before any state changes.
-    void check_pending_cmio_request(const_machine_hash_view revert_root_hash, uint16_t reason, uint64_t length) const;
+    /// does not fit in the rx buffer. Advance-state responses throw when the machine is not waiting
+    /// on an rx-accepted manual yield, when \p revert_root_hash is absent, or when it differs from
+    /// the machine root hash. All other responses refuse \p revert_root_hash and throw when it is
+    /// present. Called by send_cmio_response before any state changes.
+    void check_pending_cmio_request(uint16_t reason, uint64_t length,
+        const std::optional<const_machine_hash_view> &revert_root_hash) const;
 
     /// \brief Checks if the machine has VirtIO devices.
     /// \returns True if at least one VirtIO device is present.
@@ -272,10 +274,9 @@ public:
     /// \param root_hash_before Hash of the state before the step.
     /// \param log_filename Name of the file containing the log.
     /// \param mcycle_count Number of mcycles the machine was run for.
-    /// \param root_hash_after Hash to check against the state after the step (optional).
-    /// \returns Hash of the state after the step.
+    /// \returns Hash of the state after the step, for the caller to check.
     static machine_hash verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, std::optional<const_machine_hash_view> root_hash_after = {});
+        uint64_t mcycle_count);
 
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
@@ -332,19 +333,15 @@ public:
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
-    /// \param root_hash_after Hash to check against the state after the step (optional).
-    /// \returns State hash after step.
-    static machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-        std::optional<const_machine_hash_view> root_hash_after = {});
+    /// \returns State hash after step, for the caller to check.
+    static machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log);
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset
     /// \param log Step state access log.
-    /// \param root_hash_after Hash to check against the state after the step (optional).
-    /// \returns State hash after uarch reset. When the machine has rejected an input,
-    /// this is the recorded revert root hash.
-    static machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-        std::optional<const_machine_hash_view> root_hash_after = {});
+    /// \returns State hash after uarch reset, for the caller to check. When the machine
+    /// has rejected an input, this is the recorded revert root hash.
+    static machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log);
 
     /// \brief Returns copy of default machine config
     static machine_config get_default_config();
@@ -609,15 +606,16 @@ public:
     machine_cmio_request receive_cmio_request(std::span<uint8_t> data = {}) const;
 
     /// \brief Sends cmio response
-    /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-    /// For advance-state responses, it must be the root hash of the machine itself, and the machine must be
-    /// waiting on an rx-accepted manual yield, both checked before any state changes. Other responses
-    /// (inspect-state queries and GIO responses) are not checked.
     /// \param reason Reason for sending response.
     /// \param data Response data.
     /// \param length Length of response data.
-    void send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
-        uint64_t length);
+    /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
+    /// Required for advance-state responses, and only then recorded in the machine state. It must be the
+    /// root hash of the machine itself, and the machine must be waiting on an rx-accepted manual yield,
+    /// both checked before any state changes. Other responses (inspect-state queries and GIO responses)
+    /// refuse it.
+    void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        std::optional<const_machine_hash_view> revert_root_hash = {});
 
     /// \brief Converts from machine host address to target physical address
     /// \param haddr Machine host address to convert
@@ -719,33 +717,32 @@ public:
     }
 
     /// \brief Sends cmio response and returns an access log
-    /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-    /// Unlike send_cmio_response, it is not checked against the machine root hash.
     /// \param reason Reason for sending response.
     /// \param data Response data.
     /// \param length Length of response data.
+    /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
+    /// Unlike send_cmio_response, it is not checked against the machine root hash.
     /// \param log_type Type of access log to generate.
     /// \return The state access log.
-    /// \details The logged operation cannot fail, so the honest party can always prove the resulting
-    /// state transition. It is a no-op that leaves the state unchanged when the machine is not waiting
-    /// on a manual yield, when an advance-state response finds the machine yielded with a reason other
-    /// than rx-accepted (e.g., it rejected an input or threw an exception), or when the response data
-    /// does not fit in the rx buffer.
-    access_log log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-        const unsigned char *data, uint64_t length, const access_log::type &log_type);
+    /// \details Only advance-state responses make sense here, since they are the responses whose state
+    /// transitions are proved. The logged operation cannot fail, so the honest party can always prove
+    /// the resulting state transition. It is a no-op that leaves the state unchanged when the machine
+    /// is not waiting on a manual yield, when an advance-state response finds the machine yielded with
+    /// a reason other than rx-accepted (e.g., it rejected an input or threw an exception), or when the
+    /// response data does not fit in the rx buffer.
+    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const_machine_hash_view revert_root_hash, const access_log::type &log_type);
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
-    /// \param revert_root_hash The revert root hash recorded when the log was generated.
     /// \param reason Reason for sending response.
     /// \param data The response sent when the log was generated.
     /// \param length Length of response
     /// \param root_hash_before State hash before response was sent.
     /// \param log Log containing the state accesses performed by the load operation
-    /// \param root_hash_after Hash to check against the state after the response was sent (optional).
-    /// \returns State hash after response was sent.
-    static machine_hash verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-        const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
-        std::optional<const_machine_hash_view> root_hash_after = {});
+    /// \param revert_root_hash The revert root hash recorded when the log was generated.
+    /// \returns State hash after response was sent, for the caller to check.
+    static machine_hash verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const_machine_hash_view root_hash_before, const access_log &log, const_machine_hash_view revert_root_hash);
 
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest

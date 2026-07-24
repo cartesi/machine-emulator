@@ -1068,7 +1068,7 @@ local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
     end
     machine:log_step(mcycle_count, log_filename)
     local root_hash_after = machine:get_root_hash()
-    cartesi.machine:verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after)
+    assert(cartesi.machine:verify_step(root_hash_before, log_filename, mcycle_count) == root_hash_after)
     -- run the reference machine normally and check final hashes
     reference_machine:run(mcycle_count)
     reference_hash = reference_machine:get_root_hash()

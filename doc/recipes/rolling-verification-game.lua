@@ -143,7 +143,8 @@ local function advance(player, machine, data, sink)
         return
     end
     local snapshot = assert(machine:fork_server())
-    machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data)
+    local revert_root_hash = machine:get_root_hash()
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
     run_to(machine, machine:read_reg("mcycle") + MCYCLES_PER_INPUT, sink)
     local request_reason, accept_data = player:revert_if_rejected(machine, snapshot)
     snapshot:shutdown_server()
@@ -214,7 +215,8 @@ local function commit_bisection(player, branch, level, target)
         player.boundary = boundary
         local machine = assert(agreed.machine:fork_server())
         if not agreed.offset and boundary.data then
-            machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, boundary.data)
+            local revert_root_hash = machine:get_root_hash()
+            machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, boundary.data, revert_root_hash)
         end
         local offset = agreed.offset or 0
         if level == "mcycle" then
@@ -242,10 +244,11 @@ local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
+        local revert_root_hash = agreed:get_root_hash()
         local send_cmio_log = agreed:log_send_cmio_response(
-            agreed:get_root_hash(),
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-            player.boundary.data
+            player.boundary.data,
+            revert_root_hash
         )
         return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch() }
     end
@@ -340,7 +343,7 @@ local function verify_state_transition(
         if mcycle_offset == 0 and uarch_cycle == 0 and data then
             eventf("Verifying input inclusion log!")
             local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-            hash = machine:verify_send_cmio_response(hash, reason, data, hash, log.send_cmio_log)
+            hash = machine:verify_send_cmio_response(reason, data, hash, log.send_cmio_log, hash)
         end
         eventf("Verifying uarch step log!")
         hash = machine:verify_step_uarch(hash, log.step_log)

@@ -112,12 +112,14 @@ end
 
 -- Run the machine until it halts or stdin closes
 local i = 0
+local revert_root_hash
 repeat
     local break_reason = machine:run(math.maxinteger)
     if break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
         local _, yield_reason, data = machine:receive_cmio_request()
         if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
             commit()
+            revert_root_hash = machine:get_root_hash()
             -- the just-run input was accepted, so close it out before feeding the next one
             if i > 0 then
                 flush_accepted(i - 1, data)
@@ -130,9 +132,9 @@ repeat
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
             snapshot()
             machine:send_cmio_response(
-                machine:get_root_hash(),
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-                encode_advance(expr, i)
+                encode_advance(expr, i),
+                revert_root_hash
             )
             i = i + 1
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then

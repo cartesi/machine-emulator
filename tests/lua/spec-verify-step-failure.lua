@@ -59,14 +59,16 @@ local function produce_valid_step_log()
     return root_hash_before, mcycle_count, root_hash_after, log_data
 end
 
--- Write log_data to a temp file, call verify_step on machine, clean up
+-- Write log_data to a temp file, call verify_step on machine, clean up.
+-- The obtained root hash is compared against root_hash_after on behalf of the caller.
 local function verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, log_data)
     local log_filename = os.tmpname()
     local f <close> = assert(io.open(log_filename, "wb"))
     f:write(log_data)
     f:close()
     local ok, err = pcall(function()
-        machine:verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after)
+        local obtained_root_hash = machine:verify_step(root_hash_before, log_filename, mcycle_count)
+        assert(obtained_root_hash == root_hash_after, "obtained root hash does not match root hash after")
     end)
     os.remove(log_filename)
     return ok, err
@@ -309,14 +311,12 @@ local function register_verify_step_tests(machine)
 
     describe("finish: final root hash", function()
         it("should reject final root hash mismatch", function()
-            -- Pass a wrong root_hash_after to verify_step
+            -- The obtained root hash must differ from a wrong root_hash_after
             local bad_hash = string.rep("\xba", HASH_SIZE)
             local root_hash_before, mcycle_count, _, log_data = produce_valid_step_log()
             local ok, err = verify_step_with_data(machine, root_hash_before, mcycle_count, bad_hash, log_data)
             expect.falsy(ok)
-            -- The error could be "root hash after does not match" (from machine::verify_step)
-            -- or "final root hash mismatch" (from replay_step_state_access::finish)
-            expect.truthy(err and (err:find("root hash", 1, true) or err:find("hash", 1, true)), err)
+            expect.truthy(err and err:find("obtained root hash does not match", 1, true), err)
         end)
     end)
 

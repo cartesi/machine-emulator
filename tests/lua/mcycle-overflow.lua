@@ -134,14 +134,14 @@ do_test("logged mcycle steps should preserve target and overflow semantics", fun
     assert(machine:log_step(0, zero_step_filename) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
     assert(machine:get_root_hash() == root_hash_before)
     assert(machine:read_reg("iflags_H") == 0)
-    assert(machine:verify_step(root_hash_before, zero_step_filename, 0, root_hash_before) == root_hash_before)
+    assert(machine:verify_step(root_hash_before, zero_step_filename, 0) == root_hash_before)
 
     assert(machine:log_step(1, overflow_step_filename) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
     local root_hash_after = machine:get_root_hash()
     assert(machine:read_reg("mcycle") == mcycle)
     assert(machine:read_reg("iflags_H") == 0)
     assert(root_hash_after == root_hash_before)
-    assert(machine:verify_step(root_hash_before, overflow_step_filename, 1, root_hash_after) == root_hash_after)
+    assert(machine:verify_step(root_hash_before, overflow_step_filename, 1) == root_hash_after)
 end)
 
 do_test("logged mcycle step should do nothing at max mcycle", function(machine)
@@ -156,7 +156,7 @@ do_test("logged mcycle step should do nothing at max mcycle", function(machine)
     assert(machine:read_reg("mcycle") == MAX_MCYCLE)
     assert(machine:read_reg("iflags_H") == 0)
     assert(machine:get_root_hash() == root_hash)
-    assert(machine:verify_step(root_hash, step_filename, 1, root_hash) == root_hash)
+    assert(machine:verify_step(root_hash, step_filename, 1) == root_hash)
 end)
 
 do_test("logged mcycle step should overflow from one cycle before max mcycle", function(machine)
@@ -171,7 +171,7 @@ do_test("logged mcycle step should overflow from one cycle before max mcycle", f
     local root_hash_after = machine:get_root_hash()
     assert(machine:read_reg("mcycle") == MAX_MCYCLE)
     assert(machine:read_reg("iflags_H") == 0)
-    assert(machine:verify_step(root_hash_before, step_filename, 1, root_hash_after) == root_hash_after)
+    assert(machine:verify_step(root_hash_before, step_filename, 1) == root_hash_after)
 end)
 
 do_test("run_uarch should report overflow without changing halt at max uarch_cycle", function(machine)
@@ -209,7 +209,7 @@ do_test("logged uarch step should preserve state at max uarch cycle", function(m
     -- log data has 32 bytes. The uarch_cycle is the 2nd 8-byte word
     assert(log.accesses[1].read:sub(9, 16) == string.pack("J", MAX_UARCH_CYCLE))
     assert(log.accesses[1].sibling_hashes ~= nil)
-    assert(machine:verify_step_uarch(root_hash_before, log, root_hash_after) == root_hash_after)
+    assert(machine:verify_step_uarch(root_hash_before, log) == root_hash_after)
 end)
 
 print("passed all")

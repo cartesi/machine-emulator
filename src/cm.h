@@ -971,18 +971,19 @@ CM_API cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint1
 
 /// \brief Sends a cmio response.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-/// For advance-state responses, it must be the root hash of the machine itself, and the machine must be
-/// waiting on an rx-accepted manual yield, both checked before any state changes. Other responses
-/// (inspect-state queries and GIO responses) are not checked.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
 /// \param length Length of response data.
+/// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
+/// Required for advance-state responses, and only then recorded in the machine state. It must be the
+/// root hash of the machine itself, and the machine must be waiting on an rx-accepted manual yield,
+/// both checked before any state changes. Other responses (inspect-state queries and GIO responses)
+/// refuse it, so it must be NULL.
 /// \returns 0 for success, non zero code for error.
 /// \details This method should only be called as a response to cmio requests with manual yield command,
 /// where the reason is either accepted or a GIO request, may fail otherwise.
-CM_API cm_error cm_send_cmio_response(cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason,
-    const uint8_t *data, uint64_t length);
+CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+    const cm_hash *revert_root_hash);
 
 // ------------------------------------
 // Logging
@@ -1021,22 +1022,23 @@ CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char *
 
 /// \brief Sends a cmio response logging all accesses to the state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-/// Unlike cm_send_cmio_response, it is not checked against the machine root hash.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
 /// \param length Length of response data.
+/// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
+/// Unlike cm_send_cmio_response, it is not checked against the machine root hash.
 /// \param log_type Type of access log to generate.
 /// \param log Receives the state access log as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
-/// \details The logged operation cannot fail, so the honest party can always prove the resulting
-/// state transition. It is a no-op that leaves the state unchanged when the machine is not waiting
-/// on a manual yield, when an advance-state response finds the machine yielded with a reason other
-/// than rx-accepted (e.g., it rejected an input or threw an exception), or when the response data
-/// does not fit in the rx buffer.
-CM_API cm_error cm_log_send_cmio_response(cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason,
-    const uint8_t *data, uint64_t length, int32_t log_type, const char **log);
+/// \details Only advance-state responses make sense here, since they are the responses whose state
+/// transitions are proved. The logged operation cannot fail, so the honest party can always prove
+/// the resulting state transition. It is a no-op that leaves the state unchanged when the machine
+/// is not waiting on a manual yield, when an advance-state response finds the machine yielded with
+/// a reason other than rx-accepted (e.g., it rejected an input or threw an exception), or when the
+/// response data does not fit in the rx buffer.
+CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+    const cm_hash *revert_root_hash, int32_t log_type, const char **log);
 
 // ------------------------------------
 // Verifying
@@ -1046,50 +1048,41 @@ CM_API cm_error cm_log_send_cmio_response(cm_machine *m, const cm_hash *revert_r
 /// \param root_hash_before State hash before step.
 /// \param log_filename Path to the step log file to be verified.
 /// \param mcycle_count Number of mcycles in the step.
-/// \param root_hash_after State hash to check against the state after step (can be NULL,
-/// in which case no check is performed).
-/// \param obtained_root_hash Receives the state hash after step (can be NULL).
+/// \param obtained_root_hash Receives the state hash after step, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_step(const cm_hash *root_hash_before, const char *log_filename, uint64_t mcycle_count,
-    const cm_hash *root_hash_after, cm_hash *obtained_root_hash);
+    cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_step_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before step.
 /// \param log State access log to be verified as a JSON object in a string.
-/// \param root_hash_after State hash to check against the state after step (can be NULL,
-/// in which case no check is performed).
-/// \param obtained_root_hash Receives the state hash after step (can be NULL).
+/// \param obtained_root_hash Receives the state hash after step, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log,
-    const cm_hash *root_hash_after, cm_hash *obtained_root_hash);
+    cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_reset_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before reset.
 /// \param log State access log to be verified as a JSON object in a string.
-/// \param root_hash_after State hash to check against the state after reset (can be NULL,
-/// in which case no check is performed).
-/// \param obtained_root_hash Receives the state hash after reset (can be NULL).
+/// \param obtained_root_hash Receives the state hash after reset, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log,
-    const cm_hash *root_hash_after, cm_hash *obtained_root_hash);
+    cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_send_cmio_response.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
-/// \param revert_root_hash The revert root hash recorded when the log was generated.
 /// \param reason Reason for sending the response.
 /// \param data The response sent when the log was generated.
 /// \param length Length of response.
 /// \param root_hash_before State hash before response.
 /// \param log State access log to be verified as a JSON object in a string.
-/// \param root_hash_after State hash to check against the state after response (can be NULL,
-/// in which case no check is performed).
-/// \param obtained_root_hash Receives the state hash after response (can be NULL).
+/// \param revert_root_hash The revert root hash recorded when the log was generated.
+/// \param obtained_root_hash Receives the state hash after response, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason,
-    const uint8_t *data, uint64_t length, const cm_hash *root_hash_before, const char *log,
-    const cm_hash *root_hash_after, cm_hash *obtained_root_hash);
+CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+    const cm_hash *root_hash_before, const char *log, const cm_hash *revert_root_hash, cm_hash *obtained_root_hash);
 
 // ------------------------------------
 // Integrity checking

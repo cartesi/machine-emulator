@@ -176,7 +176,7 @@ end
 local function check_small_mcycle(case)
     local machine <close> = cartesi.machine(artifact_dir .. "/" .. case.template)
     local input = filesystem.read_file(artifact_dir .. "/" .. case.inputs[1])
-    machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input)
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input, machine:get_root_hash())
     local period = 1 << case.geometry.log2_mcycle_period
     local first_sample = case.geometry.initial_mcycle + period
     assert(machine:run(first_sample) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
@@ -244,18 +244,18 @@ local function check_small_uarch(case)
 
     local machine <close> = cartesi.machine(artifact_dir .. "/" .. case.template)
     local revert_tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0).hashes
-    machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input)
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input, machine:get_root_hash())
     assert(machine:run(window_start) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     local collected = machine:collect_uarch_cycle_root_hashes(window_end, log2_bundle, revert_tail)
 
     local reference <close> = cartesi.machine(artifact_dir .. "/" .. case.template)
     reference:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0)
-    reference:send_cmio_response(reference:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input)
+    reference:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input, reference:get_root_hash())
     assert(reference:run(window_start) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
 
     local boundaries <close> = cartesi.machine(artifact_dir .. "/" .. case.template)
     local boundary_revert_tail = boundaries:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0).hashes
-    boundaries:send_cmio_response(boundaries:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input)
+    boundaries:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input, boundaries:get_root_hash())
     assert(boundaries:run(window_start) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     local boundary_hashes = boundaries:collect_uarch_cycle_root_hashes(window_end, 0, boundary_revert_tail)
 
@@ -287,7 +287,7 @@ local function check_uarch_mcycle_overflow(case)
     assert(machine:read_reg("mcycle") == cartesi.MCYCLE_MAX - 255)
     local revert_tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0).hashes
     local input = filesystem.read_file(artifact_dir .. "/" .. case.inputs[1])
-    machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input)
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input, machine:get_root_hash())
     local collected = machine:collect_uarch_cycle_root_hashes(
         cartesi.MCYCLE_MAX,
         case.geometry.log2_bundle_uarch_cycle_count,

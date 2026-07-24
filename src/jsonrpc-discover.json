@@ -460,14 +460,6 @@
           "schema": {
             "$ref": "#/components/schemas/AccessLog"
           }
-        },
-        {
-          "name": "root_hash_after",
-          "description": "State hash to check against the state after transition",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/Base64Hash"
-          }
         }
       ],
       "result": {
@@ -496,14 +488,6 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/AccessLog"
-          }
-        },
-        {
-          "name": "root_hash_after",
-          "description": "State hash to check against the state after transition",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/Base64Hash"
           }
         }
       ],
@@ -1089,14 +1073,6 @@
       "summary": "Sends cmio response.",
       "params": [
         {
-          "name": "revert_root_hash",
-          "description": "Machine root hash to revert to in case the response is eventually rejected",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/Base64Hash"
-          }
-        },
-        {
           "name": "reason",
           "description": "Reason for sending response",
           "required": true,
@@ -1110,6 +1086,14 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64String"
+          }
+        },
+        {
+          "name": "revert_root_hash",
+          "description": "Machine root hash to revert to in case the response is eventually rejected. Required for advance-state responses, and refused for any other reason",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
           }
         }
       ],
@@ -1126,14 +1110,6 @@
       "summary": "Sends cmio response and returns an access log",
       "params": [
         {
-          "name": "revert_root_hash",
-          "description": "Machine root hash to revert to in case the response is eventually rejected",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/Base64Hash"
-          }
-        },
-        {
           "name": "reason",
           "description": "Reason for sending response",
           "required": true,
@@ -1147,6 +1123,14 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64String"
+          }
+        },
+        {
+          "name": "revert_root_hash",
+          "description": "Machine root hash to revert to in case the response is eventually rejected",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
           }
         },
         {
@@ -1170,14 +1154,6 @@
       "name": "machine.verify_send_cmio_response",
       "summary": "Verifies a state transition caused by log_send_cmio_response",
       "params": [
-        {
-          "name": "revert_root_hash",
-          "description": "The revert root hash recorded when the log was generated",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/Base64Hash"
-          }
-        },
         {
           "name": "reason",
           "description": "Reason for sending response",
@@ -1211,9 +1187,9 @@
           }
         },
         {
-          "name": "root_hash_after",
-          "description": "State hash to check against the state after response was sent.",
-          "required": false,
+          "name": "revert_root_hash",
+          "description": "The revert root hash recorded when the log was generated",
+          "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
           }
@@ -1282,14 +1258,6 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        },
-        {
-          "name": "root_hash_after",
-          "description": "State hash to check against the state after step",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/Base64Hash"
           }
         }
       ],

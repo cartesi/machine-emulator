@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a generated user manual under `doc/` with verified examples
 - Added `--nvram` and `nvram` machine configuration for guest-visible UIO memory ranges
 - Added labels and DTB aliases to flash drives and NVRAM ranges
-- Added revert root hash accessors and logging to `send_cmio_response` across all APIs
+- Added revert root hash accessors and logging to `send_cmio_response` across all APIs, with the hash as an optional last argument that is required (and recorded) only for advance-state responses
 - Added rejected rollup input reversion to logging, verification, and hash collection
 - Added outputs Merkle tree tracking and proof emission to `--cmio-advance-state`
 - Added user-defined schema dictionaries to `cartesi.tojson`/`cartesi.fromjson`
@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a typo in the `cartesi-machine.lua` cmio handling
 
 ## Changed
+- Removed the optional `root_hash_after` argument from `verify_step`, `verify_step_uarch`, `verify_reset_uarch`, and `verify_send_cmio_response` across all APIs, which return the obtained root hash for the caller to compare
 - Changed root-hash collection to append repeatable padding at fixed points
 - Renamed collector results to `partial_bundle` and `mcycle_hash_offsets`
 - Optimized hex and Base64 codecs and tightened Base64 validation

@@ -180,8 +180,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 fuzz_abort("cm_log_step_uarch failed");
             }
             cm_get_root_hash(m3, &ha);
-            if (cm_verify_step_uarch(m3, &hb, log, &ha, nullptr) != CM_ERROR_OK) {
+            cm_hash obtained{};
+            if (cm_verify_step_uarch(m3, &hb, log, &obtained) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_step_uarch failed");
+            }
+            if (memcmp(&obtained, &ha, sizeof(cm_hash)) != 0) {
+                fuzz_abort("hash mismatch: cm_verify_step_uarch vs machine state");
             }
             uint64_t halt = 0;
             cm_read_reg(m3, CM_REG_UARCH_HALT, &halt);
@@ -204,8 +208,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 fuzz_abort("cm_log_reset_uarch failed");
             }
             cm_get_root_hash(m3, &ha);
-            if (cm_verify_reset_uarch(m3, &hb, log, &ha, nullptr) != CM_ERROR_OK) {
+            cm_hash obtained{};
+            if (cm_verify_reset_uarch(m3, &hb, log, &obtained) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_reset_uarch failed");
+            }
+            if (memcmp(&obtained, &ha, sizeof(cm_hash)) != 0) {
+                fuzz_abort("hash mismatch: cm_verify_reset_uarch vs machine state");
             }
         }
 
@@ -219,8 +227,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 fuzz_abort("cm_log_step failed");
             }
             cm_get_root_hash(m4, &ha);
-            if (cm_verify_step(&hb, log_file.c_str(), 1, &ha, nullptr) != CM_ERROR_OK) {
+            cm_hash obtained{};
+            if (cm_verify_step(&hb, log_file.c_str(), 1, &obtained) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_step failed");
+            }
+            if (memcmp(&obtained, &ha, sizeof(cm_hash)) != 0) {
+                fuzz_abort("hash mismatch: cm_verify_step vs machine state");
             }
             // Remove log file so the next iteration can create it
             std::filesystem::remove(log_file);

@@ -948,20 +948,24 @@ machine_cmio_request jsonrpc_machine::do_receive_cmio_request(std::span<uint8_t>
             !data.empty() ? std::span<const uint8_t>{data.first(result.available_length)} : std::span<const uint8_t>{}};
 }
 
-void jsonrpc_machine::do_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-    const unsigned char *data, uint64_t length) {
+void jsonrpc_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    std::optional<const_machine_hash_view> revert_root_hash) {
     bool result = false;
-    auto b64_revert_root_hash = encode_base64(revert_root_hash);
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
-    request("machine.send_cmio_response", std::tie(b64_revert_root_hash, reason, b64), result);
+    if (revert_root_hash.has_value()) {
+        auto b64_revert_root_hash = encode_base64(*revert_root_hash);
+        request("machine.send_cmio_response", std::tie(reason, b64, b64_revert_root_hash), result);
+    } else {
+        request("machine.send_cmio_response", std::tie(reason, b64), result);
+    }
 }
 
-access_log jsonrpc_machine::do_log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-    const unsigned char *data, uint64_t length, const access_log::type &log_type) {
+access_log jsonrpc_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    const_machine_hash_view revert_root_hash, const access_log::type &log_type) {
     not_default_constructible<access_log> result;
     auto b64_revert_root_hash = encode_base64(revert_root_hash);
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
-    request("machine.log_send_cmio_response", std::tie(b64_revert_root_hash, reason, b64, log_type), result);
+    request("machine.log_send_cmio_response", std::tie(reason, b64, b64_revert_root_hash, log_type), result);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
     }
@@ -987,60 +991,37 @@ std::string jsonrpc_machine::do_get_address_name(uint64_t paddr) const {
 }
 
 machine_hash jsonrpc_machine::do_verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
-    uint64_t mcycle_count, std::optional<const_machine_hash_view> root_hash_after) const {
+    uint64_t mcycle_count) const {
     machine_hash result;
     auto b64_root_hash_before = encode_base64(root_hash_before);
-    if (root_hash_after.has_value()) {
-        auto b64_root_hash_after = encode_base64(*root_hash_after);
-        request("machine.verify_step", std::tie(b64_root_hash_before, log_filename, mcycle_count, b64_root_hash_after),
-            result);
-    } else {
-        request("machine.verify_step", std::tie(b64_root_hash_before, log_filename, mcycle_count), result);
-    }
+    request("machine.verify_step", std::tie(b64_root_hash_before, log_filename, mcycle_count), result);
     return result;
 }
 
-machine_hash jsonrpc_machine::do_verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-    std::optional<const_machine_hash_view> root_hash_after) const {
+machine_hash jsonrpc_machine::do_verify_step_uarch(const_machine_hash_view root_hash_before,
+    const access_log &log) const {
     machine_hash result;
     auto b64_root_hash_before = encode_base64(root_hash_before);
-    if (root_hash_after.has_value()) {
-        auto b64_root_hash_after = encode_base64(*root_hash_after);
-        request("machine.verify_step_uarch", std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
-    } else {
-        request("machine.verify_step_uarch", std::tie(b64_root_hash_before, log), result);
-    }
+    request("machine.verify_step_uarch", std::tie(b64_root_hash_before, log), result);
     return result;
 }
 
-machine_hash jsonrpc_machine::do_verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-    std::optional<const_machine_hash_view> root_hash_after) const {
+machine_hash jsonrpc_machine::do_verify_reset_uarch(const_machine_hash_view root_hash_before,
+    const access_log &log) const {
     machine_hash result;
     auto b64_root_hash_before = encode_base64(root_hash_before);
-    if (root_hash_after.has_value()) {
-        auto b64_root_hash_after = encode_base64(*root_hash_after);
-        request("machine.verify_reset_uarch", std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
-    } else {
-        request("machine.verify_reset_uarch", std::tie(b64_root_hash_before, log), result);
-    }
+    request("machine.verify_reset_uarch", std::tie(b64_root_hash_before, log), result);
     return result;
 }
 
-machine_hash jsonrpc_machine::do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-    const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
-    std::optional<const_machine_hash_view> root_hash_after) const {
+machine_hash jsonrpc_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    const_machine_hash_view root_hash_before, const access_log &log, const_machine_hash_view revert_root_hash) const {
     machine_hash result;
-    auto b64_revert_root_hash = encode_base64(revert_root_hash);
     std::string b64_data = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     auto b64_root_hash_before = encode_base64(root_hash_before);
-    if (root_hash_after.has_value()) {
-        auto b64_root_hash_after = encode_base64(*root_hash_after);
-        request("machine.verify_send_cmio_response",
-            std::tie(b64_revert_root_hash, reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result);
-    } else {
-        request("machine.verify_send_cmio_response",
-            std::tie(b64_revert_root_hash, reason, b64_data, b64_root_hash_before, log), result);
-    }
+    auto b64_revert_root_hash = encode_base64(revert_root_hash);
+    request("machine.verify_send_cmio_response",
+        std::tie(reason, b64_data, b64_root_hash_before, log, b64_revert_root_hash), result);
     return result;
 }
 

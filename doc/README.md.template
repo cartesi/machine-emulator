@@ -2636,7 +2636,8 @@ When generating a new response to a request, the reason can take the self-explan
 The data associated with new requests is sent to the machine in the CMIO memory range defined by the `memory_range_config` entry stored in the `machine_config` as `cmio.rx_buffer`.
 Conversely, the data associated with responses (or exceptions) is obtained from the machine in the `cmio.tx_buffer` memory range.
 The host does not need to access these ranges directly.
-The call `machine:send_cmio_response(<revert_root_hash>, <reason>, <data>)` records `<revert_root_hash>` in the machine state, writes `<data>` into `cmio.rx_buffer`, records the reason and length in `htif_fromhost`, and clears `iflags_Y` so the machine can resume.
+The call `machine:send_cmio_response(<reason>, <data>[, <revert_root_hash>])` writes `<data>` into `cmio.rx_buffer`, records the reason and length in `htif_fromhost`, and clears `iflags_Y` so the machine can resume.
+The optional last argument `<revert_root_hash>` is required exactly when `<reason>` is `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, and only then is it recorded in the machine state (all other reasons refuse it).
 Conversely, the _data_ value returned by `machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at the yield.
 
 Advance-state inputs are passed as ABI-encoded `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)` calldata blobs.
@@ -2665,11 +2666,12 @@ If so, it checks the reason for the yield.
 
 If the reason was `cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED`, the application accepted the previous request and is ready for the next.
 The script then attempts to obtain a mathematical expression from the console.
-If the user provides one, it creates a new snapshot, ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input through `machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ...)`.
+If the user provides one, it creates a new snapshot, ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input through `machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ..., revert_root_hash)`.
 If, however, the reason was anything else, the script rolls back the machine and continues with the next loop iteration.
 
 :::note
-The `machine:get_root_hash()` passed to `machine:send_cmio_response()` is recorded into the machine state as the state hash to revert to in case the guest application rejects the input.
+The `revert_root_hash` passed to `machine:send_cmio_response()` is recorded into the machine state as the state hash to revert to in case the guest application rejects the input.
+The script collects it whenever the guest accepts, and a rejection keeps it as it was, since the rollback restores the machine to that same state.
 This is required for dispute resolution to operate properly.
 :::
 
@@ -2932,8 +2934,8 @@ Using the known state hash before the access, it is possible to verify that the 
 For a `"write"` access, the `sibling_hashes` in the proof can be used to compute the new state hash.
 Doing this for each access in sequence yields the state hash at the end of the step.
 
-The method `machine:verify_step_uarch(<state_hash_before>, <access_log>[, <state_hash_after>])` performs this verification, additionally checking that the accesses correspond to the operation of the Cartesi Machine uarch starting from `<state_hash_before>`.
-It returns the state hash at the end of the step, and checks it against `<state_hash_after>` when the optional argument is given.
+The method `machine:verify_step_uarch(<state_hash_before>, <access_log>)` performs this verification, additionally checking that the accesses correspond to the operation of the Cartesi Machine uarch starting from `<state_hash_before>`.
+It returns the state hash at the end of the step, for the caller to compare against the state hash under dispute.
 Note there is no need for a Cartesi Machine instance to verify a transition: all required state information is in the access log.
 
 The following script illustrates the verification of a state transition.

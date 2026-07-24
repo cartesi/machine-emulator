@@ -124,19 +124,13 @@ local function load_machine(name)
     end
 end
 
-local function next_input(machine, reason, data)
-    machine:send_cmio_response(machine:get_root_hash(), reason, data)
-end
-
 local function setup_advance(machine, data)
     assert(data)
-    local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-    next_input(machine, reason, data)
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, machine:get_root_hash())
 end
 
 local function setup_inspect(machine, data)
-    local reason = cartesi.HTIF_YIELD_REASON_INSPECT_STATE
-    next_input(machine, reason, data)
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_INSPECT_STATE, data)
 end
 
 local function get_exit_code(machine)

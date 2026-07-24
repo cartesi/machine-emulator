@@ -2960,17 +2960,17 @@ local function flush_pending_outputs(machine, advance, yield_reason, data)
     advance.pending_outputs = {}
 end
 
-local function load_cmio_input(machine, advance)
+local function load_cmio_input(machine, advance, revert_root_hash)
     local values = { i = advance.next_input_index }
     local data = util.read_file(instantiate_filename(advance.input, values))
     -- The pre-input root hash is recorded so the EVM verifier can prove a reject
     -- restores this state, regardless of how the host implements the revert.
-    machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data)
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
 end
 
 local function load_cmio_query(machine, inspect)
     local data = util.read_file(inspect.query)
-    machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_INSPECT_STATE, data)
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_INSPECT_STATE, data)
 end
 
 local function save_cmio_inspect_state_report(inspect, data)
@@ -3790,14 +3790,18 @@ local function run_advance_state_epoch(m, runner)
     local break_reason = run_to_stop(m, ignore_yield_automatic, m)
     if is_yielded_manual(break_reason) then
         get_and_print_yield(m, htif)
+        local revert_root_hash
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
-            snapshot(m)
             stderr("\nBefore input %d\n", input_index)
-            if advance.print_input_state_hashes then print_root_hash(m) end
             -- the claim opens the input at its boundary, before it is fed (the uarch cycle claim
-            -- collects the boundary's revert uarch tail there, and feeding does not advance mcycle)
+            -- collects the boundary's revert uarch tail there). Capture and snapshot that boundary
+            -- so a rejection restores the same root hash the input records. Feeding does not
+            -- advance mcycle.
             claim:begin_input(input_index)
-            load_cmio_input(m, advance)
+            revert_root_hash = m:get_root_hash()
+            snapshot(m)
+            if advance.print_input_state_hashes then print_root_hash(m) end
+            load_cmio_input(m, advance, revert_root_hash)
             if advance.print_input_state_hashes then print_root_hash(m) end
             advance.report_index = 0
             -- labeling: from now the producing input is next_input_index - 1

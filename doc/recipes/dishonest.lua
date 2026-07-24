@@ -118,12 +118,13 @@ end
 -- Each records its own root hash, since their states diverge past the cheat input's feed. The
 -- cheat machine takes the doctored input in place of the cheat input and is then run to the
 -- switch point, where later rounds expect to find it.
-function composite_meta.send_cmio_response(self, _, reason, input)
+function composite_meta.send_cmio_response(self, reason, input, _)
     local data = self.data
     for _, machine in ipairs({ data.real_machine, data.cheat_machine }) do
         run_idle(machine, math.maxinteger)
         local fed = input == data.cheat_input_data and machine == data.cheat_machine and data.cheat_data or input
-        machine:send_cmio_response(machine:get_root_hash(), reason, fed)
+        local revert_root_hash = machine:get_root_hash()
+        machine:send_cmio_response(reason, fed, revert_root_hash)
     end
     if input == data.cheat_input_data then
         data.cheated, data.feed_mcycle = true, data.real_machine:read_reg("mcycle")

@@ -140,9 +140,9 @@ end
 do
     local machine <close> = cartesi.machine(artifact_dir .. "/templates/mcycle-boundary")
     machine:send_cmio_response(
-        machine:get_root_hash(),
         cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-        encode_command({ action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX - 1 })
+        encode_command({ action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX - 1 }),
+        machine:get_root_hash()
     )
     local break_reason = machine:run(cartesi.MCYCLE_MAX)
     assert(
@@ -159,9 +159,9 @@ end
 do
     local machine <close> = cartesi.machine(artifact_dir .. "/templates/mcycle-boundary")
     machine:send_cmio_response(
-        machine:get_root_hash(),
         cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-        encode_command({ action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX })
+        encode_command({ action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX }),
+        machine:get_root_hash()
     )
     assert(machine:run(cartesi.MCYCLE_MAX) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
     assert(machine:read_reg("mcycle") == cartesi.MCYCLE_MAX)
@@ -172,9 +172,9 @@ do
     local target = initial_mcycle + 256
     local machine <close> = cartesi.machine(artifact_dir .. "/templates/normal")
     machine:send_cmio_response(
-        machine:get_root_hash(),
         cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
-        encode_command({ action = "accept", terminal_mcycle = target })
+        encode_command({ action = "accept", terminal_mcycle = target }),
+        machine:get_root_hash()
     )
     assert(machine:run(math.maxinteger) == cartesi.BREAK_REASON_YIELDED_MANUALLY)
     assert(

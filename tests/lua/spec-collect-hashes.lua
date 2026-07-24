@@ -946,7 +946,7 @@ describe("collect hashes", function()
                     end)
                     expect.equal(log_machine:log_step(0, log_filename), case.expected)
                     expect.equal(log_machine:get_root_hash(), root_hash)
-                    expect.equal(log_machine:verify_step(root_hash, log_filename, 0, root_hash), root_hash)
+                    expect.equal(log_machine:verify_step(root_hash, log_filename, 0), root_hash)
 
                     local mcycle_machine <close> = make_case_machine(case)
                     root_hash = mcycle_machine:get_root_hash()

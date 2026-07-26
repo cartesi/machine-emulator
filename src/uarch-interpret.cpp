@@ -19,11 +19,11 @@
 #include <cstdint>
 
 #include "collect-uarch-cycle-hashes-state-access.hpp" // IWYU pragma: keep
-#include "step-pretty-printer.hpp" // IWYU pragma: keep
+#include "step-pretty-printer.hpp"                     // IWYU pragma: keep
 #include "uarch-constants.hpp"
 #include "uarch-record-step-state-access.hpp" // IWYU pragma: keep
 #include "uarch-replay-step-state-access.hpp" // IWYU pragma: keep
-#include "uarch-state-access.hpp" // IWYU pragma: keep
+#include "uarch-state-access.hpp"             // IWYU pragma: keep
 #include "uarch-step.hpp"
 
 namespace cartesi {

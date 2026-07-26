@@ -13,6 +13,7 @@ machine:run_uarch(ucycle)
 
 -- Obtain state hash before the step and record the step into a binary log file
 local hash_before = machine:get_root_hash()
+os.remove("uarch-step.log")
 machine:log_step_uarch(1, "uarch-step.log")
 local hash_after = machine:get_root_hash()
 

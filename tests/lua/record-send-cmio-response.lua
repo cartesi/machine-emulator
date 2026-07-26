@@ -74,7 +74,9 @@ local function create_send_cmio_response_step_log(data_length, label, reason, mc
     local name = "send-cmio-response-" .. label .. ".log"
     local log_path = output_dir .. "/" .. name
     os.remove(log_path)
-    if mcycle then machine:write_reg("mcycle", mcycle) end
+    if mcycle then
+        machine:write_reg("mcycle", mcycle)
+    end
     machine:write_reg("iflags_Y", 1)
     reason = reason or 1
     local ctx = {

@@ -245,17 +245,21 @@ local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
+        os.remove("cmio.log")
         agreed:log_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             player.boundary.data,
             agreed:get_root_hash(),
             "cmio.log"
         )
+        os.remove("uarch-step.log")
         agreed:log_step_uarch(1, "uarch-step.log")
         return { send_cmio_log = read_file("cmio.log"), step_log = read_file("uarch-step.log") }
     end
+    os.remove("uarch-step.log")
     agreed:log_step_uarch(1, "uarch-step.log")
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+        os.remove("uarch-reset.log")
         agreed:log_reset_uarch("uarch-reset.log")
         return { step_log = read_file("uarch-step.log"), reset_log = read_file("uarch-reset.log") }
     end

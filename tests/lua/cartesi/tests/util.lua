@@ -147,7 +147,6 @@ function tests_util.fromhex(str)
     end))
 end
 
-
 local function merkle_hash(data, start, log2_size, hash_fn)
     assert(hash_fn, "hash_fn is nil")
     local zero_hash_table = zero_hash_tables[hash_fn]

@@ -4121,6 +4121,7 @@ if gdb_stub then gdb_stub:close() end
 if cmdline.log_step_uarch then
     assert(initial_config.processor.registers.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")
+    os.remove(cmdline.log_step_uarch.filename)
     machine:log_step_uarch(cmdline.log_step_uarch.count, cmdline.log_step_uarch.filename)
     if cmdline.log_step_uarch.pretty then
         io.stderr:write(cartesi.machine:pretty_print_step_uarch(cmdline.log_step_uarch.filename))
@@ -4128,6 +4129,7 @@ if cmdline.log_step_uarch then
 end
 if cmdline.log_reset_uarch then
     stderr("Resetting microarchitecture state: please wait\n")
+    os.remove(cmdline.log_reset_uarch.filename)
     machine:log_reset_uarch(cmdline.log_reset_uarch.filename)
 end
 if cmdline.log_send_cmio_response then
@@ -4143,6 +4145,7 @@ if cmdline.log_send_cmio_response then
         data = o.str
     end
     stderr("Logging cmio response: please wait\n")
+    os.remove(o.filename)
     machine:log_send_cmio_response(o.reason, data, machine:get_root_hash(), o.filename)
 end
 if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_memory_ranges_dir) end

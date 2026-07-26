@@ -115,8 +115,10 @@ end
 local function commit_log(player, branch, _mcycle, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
+    os.remove("uarch-step.log")
     agreed:log_step_uarch(1, "uarch-step.log")
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+        os.remove("uarch-reset.log")
         agreed:log_reset_uarch("uarch-reset.log")
         return { step_log = read_file("uarch-step.log"), reset_log = read_file("uarch-reset.log") }
     end

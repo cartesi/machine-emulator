@@ -61,13 +61,13 @@ local function build_machine()
 end
 
 -- Records a uarch reset step log. The uarch state must be non-pristine to be meaningful;
--- setting uarch_halt_flag is the minimum perturbation.
+-- setting uarch_halt is the minimum perturbation.
 local function create_reset_uarch_step_log()
     local machine <close> = build_machine()
     local name = "reset-uarch.log"
     local log_path = output_dir .. "/" .. name
     os.remove(log_path)
-    machine:write_reg("uarch_halt_flag", 1)
+    machine:write_reg("uarch_halt", 1)
     -- Seed the revert-root-hash slot so the reset accesses it, forcing its shadow page into the log.
     machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, REVERT_ROOT_HASH)
     local ctx = {
@@ -106,7 +106,7 @@ local function create_rejected_reset_uarch_step_log()
     local name = "reset-uarch-rejected.log"
     local log_path = output_dir .. "/" .. name
     os.remove(log_path)
-    machine:write_reg("uarch_halt_flag", 1)
+    machine:write_reg("uarch_halt", 1)
     machine:write_reg("iflags_Y", 1)
     machine:write_reg("htif_tohost", TOHOST_RX_REJECTED)
     machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, REVERT_ROOT_HASH)
@@ -133,7 +133,7 @@ local function create_accepted_reset_uarch_step_log()
     local name = "reset-uarch-accepted.log"
     local log_path = output_dir .. "/" .. name
     os.remove(log_path)
-    machine:write_reg("uarch_halt_flag", 1)
+    machine:write_reg("uarch_halt", 1)
     machine:write_reg("iflags_Y", 1)
     machine:write_reg("htif_tohost", TOHOST_RX_ACCEPTED)
     machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, REVERT_ROOT_HASH)

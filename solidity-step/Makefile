@@ -27,7 +27,7 @@ FIXTURES_DIR := test/fixtures
 #   make UARCH_TEST_PATTERN='rv64ui%-uarch%-add.-%.bin' fixtures
 UARCH_TEST_PATTERN ?= rv64ui%-uarch%-.+%.bin
 
-.PHONY: all dep build test coverage fmt fmt-check fixtures fixtures-clean clean \
+.PHONY: all dep build test coverage format check-format fixtures fixtures-clean clean \
         gen-constants check-gen-constants \
         gen-transpiled check-gen-transpiled \
         gen-all check-gen-all test-transpile
@@ -48,17 +48,19 @@ dep:
 build: dep
 	forge build
 
-test: dep fmt-check
+test: dep check-format
 	forge test -vv
 
-# --ir-minimum is required because the test profile compiles with via_ir.
+# --ir-minimum is required because the test profile compiles with via_ir. Its line
+# attribution undercounts SendCmioResponse's tail (no-op return, imcyclemax grant);
+# those paths are proven by root-hash equality in the cmio replay fixtures.
 coverage: dep
 	forge coverage --ir-minimum --no-match-coverage 'test/'
 
-fmt:
+format:
 	forge fmt
 
-fmt-check:
+check-format:
 	forge fmt --check
 
 # gen-constants reads the live cartesi Lua module, so it needs the emulator's

@@ -852,6 +852,13 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, uint8_t &value,
     const std::string &base = "params/");
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, std::vector<uint8_t> &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, std::vector<uint8_t> &value,
+    const std::string &base);
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, std::vector<uint8_t> &value,
+    const std::string &base);
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, registers_state &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, registers_state &value,

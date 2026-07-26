@@ -13,7 +13,7 @@ library EmulatorConstants {
     uint64 internal constant UARCH_PC_INIT = AR_UARCH_RAM_START;
 
     // Uarch shadow-state register addresses (cartesi.machine:get_reg_address).
-    uint64 internal constant UARCH_HALT_FLAG_ADDR = 0x400000;
+    uint64 internal constant UARCH_HALT_ADDR = 0x400000;
     uint64 internal constant UARCH_CYCLE_ADDR = 0x400008;
     uint64 internal constant UARCH_PC_ADDR = 0x400010;
     uint64 internal constant UARCH_X_BASE_ADDR = 0x400018;
@@ -21,7 +21,7 @@ library EmulatorConstants {
     uint8 internal constant UARCH_X_REG_COUNT = 32;
 
     // Uarch cycle limit (cartesi.UARCH_CYCLE_MAX).
-    uint64 internal constant UARCH_CYCLE_MAX = 1048576;
+    uint64 internal constant UARCH_CYCLE_MAX = 1048575;
 
     // Uarch ECALL function codes (cartesi.UARCH_ECALL_FN_*).
     uint64 internal constant UARCH_ECALL_FN_HALT = 1;
@@ -34,7 +34,7 @@ library EmulatorConstants {
 
     // Root hash of the pristine uarch state (cartesi.UARCH_PRISTINE_STATE_HASH).
     bytes32 internal constant UARCH_PRISTINE_STATE_HASH =
-        0xfec4c4fc5eb740590973a1a9813f126ff6c42cebc9254199729cf8ca1bc48a30;
+        0x4260c6a4593287f6e3d75c018d5514db422f8ba34ea7294afb25773e797a98cf;
 
     // Hash tree geometry (cartesi.HASH_TREE_LOG2_*).
     uint8 internal constant HASH_TREE_LOG2_WORD_SIZE = 5;
@@ -63,9 +63,14 @@ library EmulatorConstants {
     uint64 internal constant SHADOW_TLB_SET_LENGTH = TLB_SET_SIZE * SHADOW_TLB_SLOT_SIZE;
 
     // Shadow register addresses (cartesi.machine:get_reg_address).
-    uint64 internal constant IFLAGS_Y_ADDRESS = 0x300;
-    uint64 internal constant HTIF_TOHOST_ADDRESS = 0x328;
-    uint64 internal constant HTIF_FROMHOST_ADDR = 0x330;
+    uint64 internal constant IFLAGS_Y_ADDRESS = 0x308;
+    uint64 internal constant HTIF_TOHOST_ADDRESS = 0x330;
+    uint64 internal constant HTIF_FROMHOST_ADDR = 0x338;
+    uint64 internal constant MCYCLE_ADDRESS = 0x100;
+    uint64 internal constant IMCYCLEMAX_ADDRESS = 0x2f8;
+
+    // Rollup geometry (cartesi.ROLLUP_LOG2_*); bounds the imcyclemax grant per accepted input.
+    uint32 internal constant ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = 48;
 
     // HTIF tohost field layout [dev:8][cmd:8][reason:16][data:32]; hand-mirrored from htif-constants.hpp.
     uint32 internal constant HTIF_DEV_SHIFT = 0x38;

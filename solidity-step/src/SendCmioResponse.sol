@@ -65,6 +65,15 @@ library SendCmioResponse {
                 return;
             }
         }
+        if (reason == EmulatorConstants.HTIF_YIELD_REASON_ADVANCE_STATE) {
+            uint64 mcycle = StateAccess.readMcycle(a);
+            uint64 maxMcycles = StateAccess.uint64ShiftLeft(
+                1, uint32(EmulatorConstants.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+            ) - 1;
+            uint64 maxUint64 = ~uint64(0);
+            uint64 imcyclemax = mcycle > maxUint64 - maxMcycles ? maxUint64 : mcycle + maxMcycles;
+            StateAccess.writeImcyclemax(a, imcyclemax);
+        }
         // Record the machine root hash to revert to in case the response is eventually rejected. A consumer
         // recovers it from the uarch-reset step log (whose reset accesses this slot) to revert to this state
         // if the response is later rejected.

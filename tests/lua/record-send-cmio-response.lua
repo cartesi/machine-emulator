@@ -63,7 +63,9 @@ end
 -- Records one send_cmio_response step log of `data_length` bytes. The payload is a
 -- repeated ASCII pattern; the Solidity verifier hashes it on-chain via
 -- HashTree.merkleTreeHashPadded.
-local function create_send_cmio_response_step_log(data_length, label)
+-- An advance-state reason additionally exercises the imcyclemax budget grant in the
+-- transpiled verifier; a near-max mcycle exercises the grant's saturation arm.
+local function create_send_cmio_response_step_log(data_length, label, reason, mcycle)
     local machine <close> = build_machine()
     local data = string.rep("a", data_length)
     -- Seed the rx-buffer page non-zero so a replayer that skips zero-padding can't match the
@@ -72,8 +74,9 @@ local function create_send_cmio_response_step_log(data_length, label)
     local name = "send-cmio-response-" .. label .. ".log"
     local log_path = output_dir .. "/" .. name
     os.remove(log_path)
+    if mcycle then machine:write_reg("mcycle", mcycle) end
     machine:write_reg("iflags_Y", 1)
-    local reason = 1
+    reason = reason or 1
     local ctx = {
         kind = "send_cmio_response",
         name = name,
@@ -153,8 +156,54 @@ local CMIO_FIXTURE_SIZES = {
 test_util.prepare_empty_output_dir(output_dir)
 local manifest <close> = assert(io.open(output_dir .. "/" .. manifest_mod.MANIFEST_NAME, "w"))
 manifest:write(manifest_mod.HEADER)
+-- A response larger than the rx buffer replays as a pure no-op: the verifier returns
+-- before touching any state, including the advance-state budget grant. The manifest
+-- stores only the repeat unit; dataLength tells the replayer how far to expand it.
+local function create_oversized_send_cmio_response_step_log()
+    local machine <close> = build_machine()
+    local data = string.rep("a", (1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE) + 1)
+    machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, string.rep("X", 4096))
+    local name = "send-cmio-response-oversized.log"
+    local log_path = output_dir .. "/" .. name
+    os.remove(log_path)
+    machine:write_reg("iflags_Y", 1)
+    local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+    local ctx = {
+        kind = "send_cmio_response",
+        name = name,
+        hash_function = HASH_FUNCTION,
+        requested_cycle_count = 0,
+        reason = reason,
+        data = "a",
+        data_length = #data,
+        revert_root_hash = REVERT_ROOT_HASH,
+    }
+    ctx.initial_root_hash = machine:get_root_hash()
+    machine:log_send_cmio_response(REVERT_ROOT_HASH, reason, data, log_path)
+    ctx.final_root_hash = machine:get_root_hash()
+    assert(ctx.initial_root_hash == ctx.final_root_hash, "oversized response must be a no-op")
+    cartesi.machine:verify_send_cmio_response(
+        REVERT_ROOT_HASH,
+        reason,
+        data,
+        ctx.initial_root_hash,
+        log_path,
+        ctx.final_root_hash
+    )
+    return ctx
+end
+
 for _, sz in ipairs(CMIO_FIXTURE_SIZES) do
     manifest_mod.write_row(manifest, create_send_cmio_response_step_log(sz[1], sz[2]))
 end
+manifest_mod.write_row(
+    manifest,
+    create_send_cmio_response_step_log(32, "advance-grant", cartesi.HTIF_YIELD_REASON_ADVANCE_STATE)
+)
+manifest_mod.write_row(
+    manifest,
+    create_send_cmio_response_step_log(32, "advance-grant-saturated", cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, -1)
+)
 manifest_mod.write_row(manifest, create_send_cmio_response_noop_step_log())
+manifest_mod.write_row(manifest, create_oversized_send_cmio_response_step_log())
 stderr("\nsend_cmio_response step logs (%d sizes + no-op) written to %s\n", #CMIO_FIXTURE_SIZES, output_dir)

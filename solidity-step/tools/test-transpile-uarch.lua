@@ -66,7 +66,7 @@ test("uarch-step: templates stripped, STATE access prefixed, UINT64_MAX rewritte
         UArchStepStatus uarch_step(const	UarchState a) {
             uint64 cycle = readCycle(a);
             if (cycle >= UINT64_MAX) {
-                return UArchStepStatus::CycleOverflow;
+                return UArchStepStatus::UArchCycleOverflow;
             }
         }
 
@@ -94,7 +94,7 @@ test("uarch-step: templates stripped, STATE access prefixed, UINT64_MAX rewritte
             function uarchStep(StepLog.Context memory a) internal pure returns (UArchStepStatus) {
                 uint64 cycle = StateAccess.readCycle(a);
                 if (cycle >= type(uint64).max) {
-                    return UArchStepStatus.CycleOverflow;
+                    return UArchStepStatus.UArchCycleOverflow;
                 }
             }
         }

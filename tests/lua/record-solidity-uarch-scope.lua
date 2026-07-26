@@ -67,7 +67,7 @@ local function create_two_cycle_uarch_step_log()
     local initial_root_hash = machine:get_root_hash()
     local status = machine:log_step_uarch(CYCLE_COUNT, log_path)
     assert(
-        status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
+        status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE,
         "expected the uarch to advance the full cycle budget, not halt early"
     )
     local final_root_hash = machine:get_root_hash()

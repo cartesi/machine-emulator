@@ -851,10 +851,10 @@ do_test("pretty_print_step_uarch writes a readable printout", function(machine)
     -- Match the whole printout line by line; addresses and values are wildcarded so the expectation
     -- survives shadow-layout/cycle drift while order, numbering, names, and brackets stay pinned.
     local expected = {
-        -- Every cycle has the same shape: uarch_step's cycle/halt_flag/pc reads, the fetch,
+        -- Every cycle has the same shape: uarch_step's cycle/halt/pc reads, the fetch,
         -- the bracketed instruction body, and the cycle increment.
         "^1: read uarch%.cycle@0x%x+: 0x%x+$",
-        "^2: read uarch%.halt_flag@0x%x+: 0x%x+$",
+        "^2: read uarch%.halt@0x%x+: 0x%x+$",
         "^3: read uarch%.pc@0x%x+: 0x%x+$",
         "^4: read @0x%x+: 0x%x+$",
         "^begin addi$",
@@ -864,7 +864,7 @@ do_test("pretty_print_step_uarch writes a readable printout", function(machine)
         "^end addi$",
         "^8: write uarch%.cycle@0x%x+: 0x%x+ %-> 0x%x+$",
         "^9: read uarch%.cycle@0x%x+: 0x%x+$",
-        "^10: read uarch%.halt_flag@0x%x+: 0x%x+$",
+        "^10: read uarch%.halt@0x%x+: 0x%x+$",
         "^11: read uarch%.pc@0x%x+: 0x%x+$",
         "^12: read @0x%x+: 0x%x+$",
         "^begin addi$",
@@ -1212,7 +1212,7 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
         -- instead of recomputing it, so the unconsumed-node check must hold there too.
         local revert_root_hash = string.rep("\171", 32)
         local tohost_rx_rejected = (2 << 56) | (1 << 48) | (cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED << 32)
-        machine:write_reg("uarch_halt_flag", 1)
+        machine:write_reg("uarch_halt", 1)
         machine:write_reg("iflags_Y", 1)
         machine:write_reg("htif_tohost", tohost_rx_rejected)
         machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, revert_root_hash)

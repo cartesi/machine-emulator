@@ -30,7 +30,7 @@
 --      target mcycle; machine:run_uarch(k) then executes uarch cycles up to k.
 --      Stepping k = 1, 2, 3, ... executes one uarch cycle per call; uarch_pc read
 --      before each call is the instruction that cycle executes.
---   3. The loop ends when uarch_halt_flag is set (the uarch signals mcycle done).
+--   3. The loop ends when uarch_halt is set (the uarch signals mcycle done).
 --
 -- OUTPUT
 --   One line per symbol (cycles, %, name), descending, then a summary line
@@ -86,7 +86,7 @@ m:run(target)
 assert(m:read_reg("mcycle") == target, "program halted before the target mcycle")
 
 local counts, cycles = {}, 0
-while m:read_reg("uarch_halt_flag") == 0 do
+while m:read_reg("uarch_halt") == 0 do
     local name = sym_for(syms, m:read_reg("uarch_pc")) or "(unmapped pc)"
     counts[name] = (counts[name] or 0) + 1
     cycles = cycles + 1

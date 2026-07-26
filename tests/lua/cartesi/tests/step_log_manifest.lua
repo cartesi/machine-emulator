@@ -22,9 +22,10 @@
 -- header is caught (verifier Layer 2). For reject rows they are deliberately
 -- wrong call arguments.
 --
--- The cmio `data` column is the raw payload as plain ASCII. Safe only because
--- the recorder controls the payload and emits no CSV-breaking byte (comma,
--- newline, or quote).
+-- The cmio `data` column is the payload's repeat unit as plain ASCII: consumers
+-- cycle it and trim to dataLength (full payloads are the identity case). Safe
+-- only because the recorder controls the unit and emits no CSV-breaking byte
+-- (comma, newline, or quote).
 
 local M = {}
 

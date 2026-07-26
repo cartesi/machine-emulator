@@ -1881,6 +1881,25 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, std::vector<uint8_t> &data, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
+    }
+    const auto &bin = decode_base64(jk.template get<std::string>());
+    std::copy(bin.begin(), bin.end(), std::back_inserter(data));
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, std::vector<uint8_t> &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    std::vector<uint8_t> &value, const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, jsonrpc_cmio_request &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;

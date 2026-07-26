@@ -20,7 +20,8 @@ contract UarchFixedPointTest is ManifestParser {
 
     function testCycleOverflowIsFixedPoint() public view {
         assertEq(
-            this.stepStatusAtCycleCeiling(stepLog), uint8(UArchStep.UArchStepStatus.CycleOverflow)
+            this.stepStatusAtCycleCeiling(stepLog),
+            uint8(UArchStep.UArchStepStatus.UArchCycleOverflow)
         );
     }
 
@@ -36,7 +37,7 @@ contract UarchFixedPointTest is ManifestParser {
 
     function stepStatusWhenHalted(bytes calldata log) external pure returns (uint8) {
         StepLog.Context memory ctx = StepLog.decode(log);
-        StateAccess.writeHaltFlag(ctx, 1);
+        StateAccess.writeHalt(ctx, 1);
         return uint8(UArchStep.uarchStep(ctx));
     }
 }

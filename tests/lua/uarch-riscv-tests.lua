@@ -17,7 +17,7 @@
 --
 
 local cartesi = require("cartesi")
-local test_util = require("cartesi.tests.util")
+local tests_util = require("cartesi.tests.util")
 local parallel = require("cartesi.parallel")
 local manifest_mod = require("cartesi.tests.step_log_manifest")
 
@@ -391,7 +391,7 @@ end
 local function record_per_cycle_step_logs(ram_image, ctx)
     local per_cycle_dir = ctx.test_name
     local dir_abs = output_dir .. "/" .. per_cycle_dir
-    test_util.prepare_empty_output_dir(dir_abs)
+    tests_util.prepare_empty_output_dir(dir_abs)
     local manifest <close> = assert(io.open(dir_abs .. "/" .. manifest_mod.MANIFEST_NAME, "w"))
     manifest:write(manifest_mod.HEADER)
     local machine <close> = build_machine(ram_image)
@@ -401,7 +401,7 @@ local function record_per_cycle_step_logs(ram_image, ctx)
         local cycle_name = string.format("%05d.log", cycle)
         local cycle_path = dir_abs .. "/" .. cycle_name
         local status = machine:log_step_uarch(1, cycle_path)
-        if status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE then
+        if status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE then
             local after_hash = machine:get_root_hash()
             manifest_mod.write_row(manifest, {
                 kind = "cycle",
@@ -450,7 +450,7 @@ local function record_uarch_tests(tests)
         -- plus its own _manifest.csv. No top-level manifest; consumers discover the
         -- per-test dirs directly from the directory listing (Solidity uses vm.readDir).
         -- Require an empty root so no stale program dir survives into that discovery.
-        test_util.prepare_empty_output_dir(output_dir)
+        tests_util.prepare_empty_output_dir(output_dir)
         local failures = parallel.run(loggable_tests, jobs, function(test)
             local ctx = {
                 ram_image = test[1],
@@ -469,7 +469,7 @@ local function record_uarch_tests(tests)
 
     -- Batched mode: each test produces <output_dir>/<test_name>.log; manifest
     -- rows accumulate from worker fragments, then merge into <output_dir>/_manifest.csv.
-    test_util.prepare_empty_output_dir(output_dir)
+    tests_util.prepare_empty_output_dir(output_dir)
     local failures = parallel.run(loggable_tests, jobs, function(test)
         local ctx = {
             ram_image = test[1],
@@ -520,7 +520,7 @@ local function verify(tests)
     -- os.tmpname reserves a unique name (and may create an empty file); turn it into our temp dir.
     output_dir = os.tmpname()
     os.remove(output_dir)
-    test_util.prepare_empty_output_dir(output_dir)
+    tests_util.prepare_empty_output_dir(output_dir)
     local failures = parallel.run(loggable_tests, jobs, function(test)
         local ctx = {
             ram_image = test[1],

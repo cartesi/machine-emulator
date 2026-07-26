@@ -870,7 +870,7 @@ void jsonrpc_machine::do_replace_memory_range(const memory_range_config &new_ran
 
 uarch_interpreter_break_reason jsonrpc_machine::do_log_step_uarch(uint64_t uarch_cycle_count,
     const std::string &filename) {
-    uarch_interpreter_break_reason result = uarch_interpreter_break_reason::reached_target_cycle;
+    uarch_interpreter_break_reason result = uarch_interpreter_break_reason::reached_target_uarch_cycle;
     request("machine.log_step_uarch", std::tie(uarch_cycle_count, filename), result);
     return result;
 }

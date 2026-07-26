@@ -48,12 +48,12 @@ library StateAccess {
         }
     }
 
-    function readHaltFlag(StepLog.Context memory ctx) internal pure returns (uint64) {
-        return readWord(ctx, EmulatorConstants.UARCH_HALT_FLAG_ADDR);
+    function readHalt(StepLog.Context memory ctx) internal pure returns (uint64) {
+        return readWord(ctx, EmulatorConstants.UARCH_HALT_ADDR);
     }
 
-    function writeHaltFlag(StepLog.Context memory ctx, uint64 val) internal pure {
-        writeWord(ctx, EmulatorConstants.UARCH_HALT_FLAG_ADDR, val);
+    function writeHalt(StepLog.Context memory ctx, uint64 val) internal pure {
+        writeWord(ctx, EmulatorConstants.UARCH_HALT_ADDR, val);
     }
 
     function readCycle(StepLog.Context memory ctx) internal pure returns (uint64) {
@@ -97,6 +97,14 @@ library StateAccess {
 
     function readHtifTohost(StepLog.Context memory ctx) internal pure returns (uint64) {
         return readWord(ctx, EmulatorConstants.HTIF_TOHOST_ADDRESS);
+    }
+
+    function readMcycle(StepLog.Context memory ctx) internal pure returns (uint64) {
+        return readWord(ctx, EmulatorConstants.MCYCLE_ADDRESS);
+    }
+
+    function writeImcyclemax(StepLog.Context memory ctx, uint64 val) internal pure {
+        writeWord(ctx, EmulatorConstants.IMCYCLEMAX_ADDRESS, val);
     }
 
     // The revert root hash occupies a full 32-byte shadow slot, stored raw (no byte swap) so the

@@ -147,6 +147,24 @@ function tests_util.fromhex(str)
     end))
 end
 
+
+local function merkle_hash(data, start, log2_size, hash_fn)
+    assert(hash_fn, "hash_fn is nil")
+    local zero_hash_table = zero_hash_tables[hash_fn]
+    if log2_size == PAGE_LOG2_SIZE and data:sub(start + 1, start + PAGE_SIZE) == ZERO_PAGE then
+        return zero_hash_table[PAGE_LOG2_SIZE]
+    elseif log2_size > WORD_LOG2_SIZE then
+        local child_log2_size = log2_size - 1
+        local left = merkle_hash(data, start, child_log2_size, hash_fn)
+        local right = merkle_hash(data, start + (1 << child_log2_size), child_log2_size, hash_fn)
+        return cartesi[hash_fn](left, right)
+    else
+        return cartesi[hash_fn](data:sub(start + 1, start + (1 << WORD_LOG2_SIZE)), nil)
+    end
+end
+
+tests_util.merkle_hash = merkle_hash
+
 function tests_util.split_string(inputstr, sep)
     if sep == nil then
         sep = "%s"

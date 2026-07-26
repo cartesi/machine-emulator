@@ -12,7 +12,7 @@ local machine = cartesi.machine
 
 local function hex(n) return string.format("0x%x", n) end
 
-local function hex_bytes(s) return "0x" .. util.hexstring(s) end
+local function hex_bytes(s) return cartesi.tohex(s) end
 
 local function reg_addr(name) return machine:get_reg_address(name) end
 
@@ -44,7 +44,7 @@ local lines = {
 "    uint64 internal constant UARCH_PC_INIT = AR_UARCH_RAM_START;",
 "",
 "    // Uarch shadow-state register addresses (cartesi.machine:get_reg_address).",
-"    uint64 internal constant UARCH_HALT_FLAG_ADDR = " .. hex(reg_addr("uarch_halt_flag")) .. ";",
+"    uint64 internal constant UARCH_HALT_ADDR = " .. hex(reg_addr("uarch_halt")) .. ";",
 "    uint64 internal constant UARCH_CYCLE_ADDR     = " .. hex(reg_addr("uarch_cycle"))     .. ";",
 "    uint64 internal constant UARCH_PC_ADDR        = " .. hex(reg_addr("uarch_pc"))        .. ";",
 "    uint64 internal constant UARCH_X_BASE_ADDR    = " .. hex(reg_addr("uarch_x0"))        .. ";",
@@ -97,6 +97,12 @@ local lines = {
 "    uint64 internal constant IFLAGS_Y_ADDRESS    = " .. hex(reg_addr("iflags_Y"))      .. ";",
 "    uint64 internal constant HTIF_TOHOST_ADDRESS = " .. hex(reg_addr("htif_tohost"))   .. ";",
 "    uint64 internal constant HTIF_FROMHOST_ADDR  = " .. hex(reg_addr("htif_fromhost")) .. ";",
+"    uint64 internal constant MCYCLE_ADDRESS      = " .. hex(reg_addr("mcycle"))        .. ";",
+"    uint64 internal constant IMCYCLEMAX_ADDRESS  = " .. hex(reg_addr("imcyclemax"))    .. ";",
+"",
+"    // Rollup geometry (cartesi.ROLLUP_LOG2_*); bounds the imcyclemax grant per accepted input.",
+"    uint32 internal constant ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = "
+    .. cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE .. ";",
 "",
 "    // HTIF tohost field layout [dev:8][cmd:8][reason:16][data:32]; hand-mirrored from htif-constants.hpp.",
 "    uint32 internal constant HTIF_DEV_SHIFT    = 0x38;",

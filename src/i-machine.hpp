@@ -29,7 +29,7 @@
 #include "hash-tree-stats.hpp"
 #include "interpret.hpp"
 #include "machine-cmio-request.hpp"
-#include "machine-config-fwd.hpp"
+#include "machine-config.hpp"
 #include "machine-hash.hpp"
 #include "machine-reg.hpp"
 #include "machine-runtime-config.hpp"

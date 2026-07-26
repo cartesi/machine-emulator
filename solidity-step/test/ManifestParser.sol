@@ -20,7 +20,10 @@ abstract contract ManifestParser is Test {
     // verifier and either success (blank expectError) or the named rejection it must
     // revert with. Valid rows carry recorded truth; reject rows carry deliberately
     // wrong call arguments.
-    // The cmio `data` column is plain ASCII (recorder-controlled, CSV-safe).
+    // The cmio `data` column is the payload's repeat unit: the payload is the unit
+    // cycled and trimmed to dataLength. Full payloads are the identity case (unit
+    // length == dataLength); oversized fixtures store a tiny unit instead of
+    // megabytes of CSV. Plain ASCII, recorder-controlled, CSV-safe.
     struct Row {
         Kind kind;
         string name;
@@ -123,6 +126,9 @@ abstract contract ManifestParser is Test {
         if (bytes(cols[7]).length > 0) r.reason = uint16(vm.parseUint(cols[7]));
         if (bytes(cols[8]).length > 0) r.dataLength = uint32(vm.parseUint(cols[8]));
         r.data = bytes(cols[9]);
+        if (r.data.length != r.dataLength && r.dataLength > 0) {
+            r.data = expandPayload(r.data, r.dataLength);
+        }
         if (bytes(cols[10]).length > 0) r.revertRootHash = vm.parseBytes32(cols[10]);
     }
 
@@ -133,5 +139,31 @@ abstract contract ManifestParser is Test {
         if (h == keccak256(bytes("reset_uarch"))) return Kind.ResetUarch;
         if (h == keccak256(bytes("send_cmio_response"))) return Kind.SendCmioResponse;
         return Kind.Unknown;
+    }
+
+    /// Expands a payload repeat unit to dataLength bytes by doubling the filled prefix
+    /// (word-wise copies; the trailing partial word stays inside the array's padded slot).
+    function expandPayload(bytes memory unit, uint256 length)
+        internal
+        pure
+        returns (bytes memory out)
+    {
+        require(unit.length > 0, "manifest: empty data unit with nonzero dataLength");
+        out = new bytes(length);
+        uint256 filled = unit.length < length ? unit.length : length;
+        for (uint256 i = 0; i < filled; i++) {
+            out[i] = unit[i];
+        }
+        while (filled < length) {
+            uint256 chunk = filled <= length - filled ? filled : length - filled;
+            assembly ("memory-safe") {
+                let src := add(out, 32)
+                let dst := add(add(out, 32), filled)
+                for { let off := 0 } lt(off, chunk) { off := add(off, 32) } {
+                    mstore(add(dst, off), mload(add(src, off)))
+                }
+            }
+            filled += chunk;
+        }
     }
 }

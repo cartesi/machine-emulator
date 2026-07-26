@@ -25,8 +25,8 @@ import {StepLog} from "src/StepLog.sol";
 library UArchStep {
     enum UArchStepStatus {
         Success, // one micro instruction was executed successfully
-        CycleOverflow, // already at fixed point: uarch cycle has reached its maximum value
-        UArchHalted // already at fixed point: microarchitecture is halted
+        UArchCycleOverflow, // uarch cycle reached or was already at its maximum value
+        UArchHalted // microarchitecture reached or was already at its halted fixed point
 
     }
 
@@ -790,7 +790,7 @@ library UArchStep {
         // return value is in a0 (and maybe also in a1)
         uint64 fn = StateAccess.readX(a, 17); // a7 contains the function number
         if (fn == EmulatorConstants.UARCH_ECALL_FN_HALT) {
-            return StateAccess.writeHaltFlag(a, 1);
+            return StateAccess.writeHalt(a, 1);
         }
         if (fn == EmulatorConstants.UARCH_ECALL_FN_PUTCHAR) {
             uint64 c = StateAccess.readX(a, 10); // a0 contains the character to print
@@ -815,7 +815,7 @@ library UArchStep {
 
     /// \brief Returns true if the opcode field of an instruction matches the provided argument
     function insnMatchOpcode(uint32 insn, uint32 opcode) private pure returns (bool) {
-        return ((insn & 0x7f)) == opcode;
+        return (insn & 0x7f) == opcode;
     }
 
     /// \brief Returns true if the opcode and funct3 fields of an instruction match the provided arguments
@@ -835,7 +835,7 @@ library UArchStep {
         returns (bool)
     {
         uint32 mask = (0x7f << 25) | (7 << 12) | 0x7f;
-        return ((insn & mask))
+        return (insn & mask)
             == (
                 StateAccess.uint32ShiftLeft(funct7, 25) | StateAccess.uint32ShiftLeft(funct3, 12)
                     | opcode
@@ -851,7 +851,7 @@ library UArchStep {
         uint32 funct7Sr1
     ) private pure returns (bool) {
         uint32 mask = (0x3f << 26) | (7 << 12) | 0x7f;
-        return ((insn & mask))
+        return (insn & mask)
             == (
                 StateAccess.uint32ShiftLeft(funct7Sr1, 26) | StateAccess.uint32ShiftLeft(funct3, 12)
                     | opcode
@@ -1021,22 +1021,31 @@ library UArchStep {
     }
 
     function uarchStep(StepLog.Context memory a) internal pure returns (UArchStepStatus) {
-        // Read the cycle first so the overflow guard below runs before any state is mutated
+        // Report the derived overflow fixed point before all other break reasons.
         uint64 cycle = StateAccess.readCycle(a);
-        // do not advance if cycle will overflow
         if (cycle >= EmulatorConstants.UARCH_CYCLE_MAX) {
-            return UArchStepStatus.CycleOverflow;
+            return UArchStepStatus.UArchCycleOverflow;
         }
-        // do not advance if machine is halted
-        if (StateAccess.readHaltFlag(a) != 0) {
+        // Report an existing ordinary halt fixed point.
+        if (StateAccess.readHalt(a) != 0) {
             return UArchStepStatus.UArchHalted;
         }
-        // execute next instruction
+        // Execute next instruction
         uint64 pc = StateAccess.readPc(a);
         uint32 insn = readUint32(a, pc);
         executeInsn(a, insn, pc);
         cycle = cycle + 1;
         StateAccess.writeCycle(a, cycle);
+        // Overflow has precedence when this step reaches the cycle limit.
+        if (cycle >= EmulatorConstants.UARCH_CYCLE_MAX) {
+            return UArchStepStatus.UArchCycleOverflow;
+        }
+        // ECALL is the only instruction that can halt the uarch.
+        if (insn == uint32(0x73)) {
+            if (StateAccess.readHalt(a) != 0) {
+                return UArchStepStatus.UArchHalted;
+            }
+        }
         return UArchStepStatus.Success;
     }
 }

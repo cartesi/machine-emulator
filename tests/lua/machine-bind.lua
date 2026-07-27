@@ -1415,8 +1415,7 @@ do_test("advance-state response to a rejected machine logs as a no-op", function
     assert(machine:read_reg("iflags_Y") == 1)
     local hash_after = machine:get_root_hash()
     assert(hash_after == hash_before)
-    local obtained_hash =
-        machine:verify_send_cmio_response(advance_reason, data, hash_before, filename, hash_before)
+    local obtained_hash = machine:verify_send_cmio_response(advance_reason, data, hash_before, filename, hash_before)
     assert(obtained_hash == hash_after)
 end)
 
@@ -1613,15 +1612,7 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     -- sanity: happy path
     assert(machine:verify_send_cmio_response(reason, data, hash_before, filename, CMIO_REVERT_HASH) == hash_after)
     -- bad root_hash_before arg
-    local _, err = pcall(
-        machine.verify_send_cmio_response,
-        machine,
-        reason,
-        data,
-        bad_hash,
-        filename,
-        CMIO_REVERT_HASH
-    )
+    local _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, bad_hash, filename, CMIO_REVERT_HASH)
     check_error_find(err, "root hash before does not match")
     -- a wrong belief about the final state is the caller's to detect via the returned hash
     assert(machine:verify_send_cmio_response(reason, data, hash_before, filename, CMIO_REVERT_HASH) ~= bad_hash)
@@ -1629,44 +1620,21 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     -- bytes differ, so the recomputed padded merkle hash will not match the
     -- logged node's hash_after.
     local bad_data = string.rep("b", #data)
-    _, err = pcall(
-        machine.verify_send_cmio_response,
-        machine,
-        reason,
-        bad_data,
-        hash_before,
-        filename,
-        CMIO_REVERT_HASH
-    )
+    _, err =
+        pcall(machine.verify_send_cmio_response, machine, reason, bad_data, hash_before, filename, CMIO_REVERT_HASH)
     check_error_find(err, "write_memory_with_padding does not match logged hash")
     -- node log2_size below page size: caught by replay parser
     copy_step_log(filename, corrupted, function(log_data)
         assert(#log_data.nodes >= 1, "cmio supra-page log should have at least one node")
         log_data.nodes[1].log2_size = cartesi.HASH_TREE_LOG2_PAGE_SIZE
     end)
-    _, err = pcall(
-        machine.verify_send_cmio_response,
-        machine,
-        reason,
-        data,
-        hash_before,
-        corrupted,
-        CMIO_REVERT_HASH
-    )
+    _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
     check_error_find(err, "invalid log format: node log2 size out of range")
     -- node address not aligned to its size: caught by replay parser
     copy_step_log(filename, corrupted, function(log_data)
         log_data.nodes[1].address = log_data.nodes[1].address + 1
     end)
-    _, err = pcall(
-        machine.verify_send_cmio_response,
-        machine,
-        reason,
-        data,
-        hash_before,
-        corrupted,
-        CMIO_REVERT_HASH
-    )
+    _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
     check_error_find(err, "node address not aligned to its size")
     -- duplicate the node so the combined pages+nodes stream has overlap
     copy_step_log(filename, corrupted, function(log_data)
@@ -1677,57 +1645,25 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
             hash_after = log_data.nodes[1].hash_after,
         })
     end)
-    _, err = pcall(
-        machine.verify_send_cmio_response,
-        machine,
-        reason,
-        data,
-        hash_before,
-        corrupted,
-        CMIO_REVERT_HASH
-    )
+    _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
     check_error_find(err, "page or node overlaps a previous entry")
     -- node log2_size == HASH_TREE_LOG2_ROOT_SIZE spans the whole address space, so the
     -- parser requires address 0; the rx-buffer node's nonzero address trips "not aligned".
     copy_step_log(filename, corrupted, function(log_data)
         log_data.nodes[1].log2_size = cartesi.HASH_TREE_LOG2_ROOT_SIZE
     end)
-    _, err = pcall(
-        machine.verify_send_cmio_response,
-        machine,
-        reason,
-        data,
-        hash_before,
-        corrupted,
-        CMIO_REVERT_HASH
-    )
+    _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
     check_error_find(err, "node address not aligned to its size")
     -- a second node that no write consumes: its hash_after is folded into the
     -- post-state root verbatim, so the replayer must reject it
     copy_step_log(filename, corrupted, tests_util.inject_unconsumed_node)
-    _, err = pcall(
-        machine.verify_send_cmio_response,
-        machine,
-        reason,
-        data,
-        hash_before,
-        corrupted,
-        CMIO_REVERT_HASH
-    )
+    _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
     check_error_find(err, "unconsumed node in step log")
     -- canonical form: send_cmio_response logs must record requested_cycle_count = 0
     copy_step_log(filename, corrupted, function(log_data)
         log_data.requested_cycle_count = 1
     end)
-    _, err = pcall(
-        machine.verify_send_cmio_response,
-        machine,
-        reason,
-        data,
-        hash_before,
-        corrupted,
-        CMIO_REVERT_HASH
-    )
+    _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
     check_error_find(err, "requested_cycle_count must be zero in send_cmio_response log")
     os.remove(filename)
     os.remove(corrupted)
@@ -1875,7 +1811,6 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
             assert(obtained_root_hash == root_hash_after)
             os.remove(filename)
 
-
             if hash_fn == "keccak256" then
                 -- log_step requires uarch to be reset
                 machine:run_uarch(1)
@@ -1917,6 +1852,5 @@ do_test("log_step from a rejected input state verifies against the revert root h
     assert(machine:verify_step(root_hash_before, filename, 1) == revert_hash)
     assert(revert_hash ~= root_hash_before)
 end)
-
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

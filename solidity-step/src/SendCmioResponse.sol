@@ -25,10 +25,10 @@ import {StepLog} from "src/StepLog.sol";
 library SendCmioResponse {
     function sendCmioResponse(
         StepLog.Context memory a,
-        bytes32 revertRootHash,
         uint16 reason,
         bytes calldata data,
-        uint32 dataLength
+        uint32 dataLength,
+        bytes32 revertRootHash
     ) internal pure {
         // This function cannot fail. When a failure is detected, the operation is a no-op instead,
         // so the honest party can always log and prove the resulting state transition.
@@ -73,11 +73,9 @@ library SendCmioResponse {
             uint64 maxUint64 = ~uint64(0);
             uint64 imcyclemax = mcycle > maxUint64 - maxMcycles ? maxUint64 : mcycle + maxMcycles;
             StateAccess.writeImcyclemax(a, imcyclemax);
+            // Record the machine root hash to revert to in case the response is eventually rejected
+            StateAccess.writeRevertRootHash(a, revertRootHash);
         }
-        // Record the machine root hash to revert to in case the response is eventually rejected. A consumer
-        // recovers it from the uarch-reset step log (whose reset accesses this slot) to revert to this state
-        // if the response is later rejected.
-        StateAccess.writeRevertRootHash(a, revertRootHash);
         if (dataLength > 0) {
             StateAccess.writeMemoryWithPadding(
                 a, EmulatorConstants.AR_CMIO_RX_BUFFER_START, data, dataLength, writeLengthLog2Size

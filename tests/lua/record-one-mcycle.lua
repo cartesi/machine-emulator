@@ -73,7 +73,7 @@ local ctx = {
 ctx.initial_root_hash = machine:get_root_hash()
 machine:log_step(1, log_path)
 ctx.final_root_hash = machine:get_root_hash()
-cartesi.machine:verify_step(ctx.initial_root_hash, log_path, 1, ctx.final_root_hash)
+assert(cartesi.machine:verify_step(ctx.initial_root_hash, log_path, 1) == ctx.final_root_hash)
 
 local manifest <close> = assert(io.open(output_dir .. "/" .. manifest_mod.MANIFEST_NAME, "w"))
 manifest:write(manifest_mod.HEADER)

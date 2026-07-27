@@ -103,7 +103,7 @@ library Verify {
             revert RequestedCycleCountMustBeZero(ctx.requestedCycleCount);
         }
 
-        SendCmioResponse.sendCmioResponse(ctx, revertRootHash, reason, data, uint32(data.length));
+        SendCmioResponse.sendCmioResponse(ctx, reason, data, uint32(data.length), revertRootHash);
 
         if (StepLog.computeRootHash(ctx, true) != ctx.rootHashAfter) {
             revert FinalRootHashMismatch();

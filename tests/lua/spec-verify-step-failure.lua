@@ -267,11 +267,12 @@ describe("verify_step", function()
 
         it("verify_step accepts a sha256 log", function()
             local filename, root_hash_before, root_hash_after = produce_valid_log("sha256")
-            local ok, err = pcall(function()
-                cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT, root_hash_after)
+            local ok, obtained = pcall(function()
+                return cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT)
             end)
             os.remove(filename)
-            expect.truthy(ok, err)
+            expect.truthy(ok, obtained)
+            expect.truthy(obtained == root_hash_after)
         end)
 
         it("verify_step_uarch rejects a log declaring sha256", function()
@@ -282,8 +283,8 @@ describe("verify_step", function()
                 os.remove(filename)
                 machine:log_step_uarch(1, filename)
                 return filename, root_hash_before, machine:get_root_hash()
-            end, function(root_hash_before, filename, root_hash_after)
-                cartesi.machine:verify_step_uarch(root_hash_before, filename, 1, root_hash_after)
+            end, function(root_hash_before, filename)
+                cartesi.machine:verify_step_uarch(root_hash_before, filename, 1)
             end)
         end)
 
@@ -295,8 +296,8 @@ describe("verify_step", function()
                 os.remove(filename)
                 machine:log_reset_uarch(filename)
                 return filename, root_hash_before, machine:get_root_hash()
-            end, function(root_hash_before, filename, root_hash_after)
-                cartesi.machine:verify_reset_uarch(root_hash_before, filename, root_hash_after)
+            end, function(root_hash_before, filename)
+                cartesi.machine:verify_reset_uarch(root_hash_before, filename)
             end)
         end)
 
@@ -308,17 +309,10 @@ describe("verify_step", function()
                 local root_hash_before = machine:get_root_hash()
                 local filename = os.tmpname()
                 os.remove(filename)
-                machine:log_send_cmio_response(BAD_HASH, 1, data, filename)
+                machine:log_send_cmio_response(1, data, BAD_HASH, filename)
                 return filename, root_hash_before, machine:get_root_hash()
-            end, function(root_hash_before, filename, root_hash_after)
-                cartesi.machine:verify_send_cmio_response(
-                    BAD_HASH,
-                    1,
-                    data,
-                    root_hash_before,
-                    filename,
-                    root_hash_after
-                )
+            end, function(root_hash_before, filename)
+                cartesi.machine:verify_send_cmio_response(1, data, root_hash_before, filename, BAD_HASH)
             end)
         end)
     end)

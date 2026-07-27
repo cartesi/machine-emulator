@@ -1349,8 +1349,8 @@ cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, cons
         cpp_obtained_root_hash = cpp_m->verify_send_cmio_response(reason, data, length, cpp_root_hash_before,
             log_filename, cpp_revert_root_hash);
     } else {
-        cpp_obtained_root_hash = cartesi::machine::verify_send_cmio_response(reason, data, length,
-            cpp_root_hash_before, log_filename, cpp_revert_root_hash);
+        cpp_obtained_root_hash = cartesi::machine::verify_send_cmio_response(reason, data, length, cpp_root_hash_before,
+            log_filename, cpp_revert_root_hash);
     }
     if (obtained_root_hash != nullptr) {
         convert_to_c(cpp_obtained_root_hash, obtained_root_hash);

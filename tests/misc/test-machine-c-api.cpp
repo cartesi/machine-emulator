@@ -2106,7 +2106,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, step_log_machine_fixtu
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(0, memcmp(obtained, hash3, sizeof(cm_hash)));
 
-
     // step 4
     const auto filename4 = make_log_filename();
     error_code = cm_log_step_uarch(_machine, 1, filename4.c_str(), nullptr);

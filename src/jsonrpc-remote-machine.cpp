@@ -1673,8 +1673,8 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
     auto args = parse_args<uint16_t, std::string, cartesi::machine_hash, std::string>(j, param_name);
     auto bin = cartesi::decode_base64(std::get<1>(args));
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-    session->handler->machine->log_send_cmio_response(std::get<0>(args),
-        reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args), std::get<3>(args));
+    session->handler->machine->log_send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
+        bin.size(), std::get<2>(args), std::get<3>(args));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
     return jsonrpc_response_ok(j);
 }

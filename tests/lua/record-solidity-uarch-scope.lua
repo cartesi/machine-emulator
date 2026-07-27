@@ -72,7 +72,7 @@ local function create_two_cycle_uarch_step_log()
     )
     local final_root_hash = machine:get_root_hash()
     -- Valid in C++: a multi-cycle log replays and verifies. Solidity rejects it only on scope.
-    cartesi.machine:verify_step_uarch(initial_root_hash, log_path, CYCLE_COUNT, final_root_hash)
+    assert(cartesi.machine:verify_step_uarch(initial_root_hash, log_path, CYCLE_COUNT) == final_root_hash)
     return {
         kind = "program",
         name = name,

@@ -63,8 +63,10 @@ end
 -- Records one send_cmio_response step log of `data_length` bytes. The payload is a
 -- repeated ASCII pattern; the Solidity verifier hashes it on-chain via
 -- HashTree.merkleTreeHashPadded.
--- An advance-state reason additionally exercises the imcyclemax budget grant in the
--- transpiled verifier; a near-max mcycle exercises the grant's saturation arm.
+-- An advance-state reason additionally exercises the imcyclemax budget grant and the
+-- revert-root-hash write in the transpiled verifier; a near-max mcycle exercises the
+-- grant's saturation arm. Advance responses only apply to a machine waiting on an
+-- rx-accepted manual yield, so the recorder puts the machine in that state.
 local function create_send_cmio_response_step_log(data_length, label, reason, mcycle)
     local machine <close> = build_machine()
     local data = string.rep("a", data_length)
@@ -79,6 +81,11 @@ local function create_send_cmio_response_step_log(data_length, label, reason, mc
     end
     machine:write_reg("iflags_Y", 1)
     reason = reason or 1
+    if reason == cartesi.HTIF_YIELD_REASON_ADVANCE_STATE then
+        machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+        machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+        machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+    end
     local ctx = {
         kind = "send_cmio_response",
         name = name,
@@ -90,16 +97,20 @@ local function create_send_cmio_response_step_log(data_length, label, reason, mc
         revert_root_hash = REVERT_ROOT_HASH,
     }
     ctx.initial_root_hash = machine:get_root_hash()
-    machine:log_send_cmio_response(REVERT_ROOT_HASH, reason, data, log_path)
+    machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH, log_path)
     ctx.final_root_hash = machine:get_root_hash()
-    cartesi.machine:verify_send_cmio_response(
-        REVERT_ROOT_HASH,
+    if reason == cartesi.HTIF_YIELD_REASON_ADVANCE_STATE then
+        assert(ctx.final_root_hash ~= ctx.initial_root_hash, "advance response must change the state")
+        assert(machine:read_revert_root_hash() == REVERT_ROOT_HASH, "advance response must record the revert root hash")
+    end
+    local obtained = cartesi.machine:verify_send_cmio_response(
         reason,
         data,
         ctx.initial_root_hash,
         log_path,
-        ctx.final_root_hash
+        REVERT_ROOT_HASH
     )
+    assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
     return ctx
 end
 
@@ -127,17 +138,17 @@ local function create_send_cmio_response_noop_step_log()
         revert_root_hash = REVERT_ROOT_HASH,
     }
     ctx.initial_root_hash = machine:get_root_hash()
-    machine:log_send_cmio_response(REVERT_ROOT_HASH, reason, data, log_path)
+    machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH, log_path)
     ctx.final_root_hash = machine:get_root_hash()
     assert(ctx.final_root_hash == ctx.initial_root_hash, "no-op must leave the root hash unchanged")
-    cartesi.machine:verify_send_cmio_response(
-        REVERT_ROOT_HASH,
+    local obtained = cartesi.machine:verify_send_cmio_response(
         reason,
         data,
         ctx.initial_root_hash,
         log_path,
-        ctx.final_root_hash
+        REVERT_ROOT_HASH
     )
+    assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
     return ctx
 end
 
@@ -170,6 +181,9 @@ local function create_oversized_send_cmio_response_step_log()
     os.remove(log_path)
     machine:write_reg("iflags_Y", 1)
     local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
     local ctx = {
         kind = "send_cmio_response",
         name = name,
@@ -181,17 +195,17 @@ local function create_oversized_send_cmio_response_step_log()
         revert_root_hash = REVERT_ROOT_HASH,
     }
     ctx.initial_root_hash = machine:get_root_hash()
-    machine:log_send_cmio_response(REVERT_ROOT_HASH, reason, data, log_path)
+    machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH, log_path)
     ctx.final_root_hash = machine:get_root_hash()
     assert(ctx.initial_root_hash == ctx.final_root_hash, "oversized response must be a no-op")
-    cartesi.machine:verify_send_cmio_response(
-        REVERT_ROOT_HASH,
+    local obtained = cartesi.machine:verify_send_cmio_response(
         reason,
         data,
         ctx.initial_root_hash,
         log_path,
-        ctx.final_root_hash
+        REVERT_ROOT_HASH
     )
+    assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
     return ctx
 end
 

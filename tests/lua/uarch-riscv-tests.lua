@@ -381,7 +381,10 @@ local function record_test_step_log(machine, ctx)
     machine:log_step_uarch(ctx.requested_cycle_count, log_path)
     ctx.final_root_hash = machine:get_root_hash()
     ctx.uarch_run_success = true
-    cartesi.machine:verify_step_uarch(ctx.initial_root_hash, log_path, ctx.requested_cycle_count, ctx.final_root_hash)
+    assert(
+        cartesi.machine:verify_step_uarch(ctx.initial_root_hash, log_path, ctx.requested_cycle_count)
+            == ctx.final_root_hash
+    )
 end
 
 -- Records one step log per uarch cycle in <output_dir>/<test_name>/.

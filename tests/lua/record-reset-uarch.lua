@@ -80,7 +80,7 @@ local function create_reset_uarch_step_log()
     ctx.initial_root_hash = machine:get_root_hash()
     machine:log_reset_uarch(log_path)
     ctx.final_root_hash = machine:get_root_hash()
-    cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log_path, ctx.final_root_hash)
+    assert(cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log_path) == ctx.final_root_hash)
     return ctx
 end
 
@@ -121,7 +121,7 @@ local function create_rejected_reset_uarch_step_log()
     machine:log_reset_uarch(log_path)
     -- The reset reverted, so the canonical post-state is the revert root hash, not get_root_hash().
     ctx.final_root_hash = REVERT_ROOT_HASH
-    cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log_path, ctx.final_root_hash)
+    assert(cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log_path) == ctx.final_root_hash)
     return ctx
 end
 
@@ -148,7 +148,7 @@ local function create_accepted_reset_uarch_step_log()
     machine:log_reset_uarch(log_path)
     -- Not reverted: the post-state is the actual post-reset root, not the revert root hash.
     ctx.final_root_hash = machine:get_root_hash()
-    cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log_path, ctx.final_root_hash)
+    assert(cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log_path) == ctx.final_root_hash)
     return ctx
 end
 

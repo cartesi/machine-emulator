@@ -1164,7 +1164,7 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
             found.data:sub(offset + 1, offset + cartesi.HASH_SIZE) == CMIO_REVERT_HASH,
             "revert root hash not found at its shadow slot in the reset log"
         )
-        machine:verify_reset_uarch(initial_hash, filename, final_hash)
+        assert(machine:verify_reset_uarch(initial_hash, filename) == final_hash)
         os.remove(filename)
     end
 )
@@ -1689,34 +1689,23 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     local hash_before = machine:get_root_hash()
     local filename = tmpname_for_log()
     local corrupted = tmpname_for_log()
-    machine:log_send_cmio_response(CMIO_REVERT_HASH, reason, data, filename)
+    machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH, filename)
     local hash_after = machine:get_root_hash()
     -- sanity: happy path
-    machine:verify_send_cmio_response(CMIO_REVERT_HASH, reason, data, hash_before, filename, hash_after)
+    assert(machine:verify_send_cmio_response(reason, data, hash_before, filename, CMIO_REVERT_HASH) == hash_after)
     -- bad root_hash_before arg
     local _, err = pcall(
         machine.verify_send_cmio_response,
         machine,
-        CMIO_REVERT_HASH,
         reason,
         data,
         bad_hash,
         filename,
-        hash_after
+        CMIO_REVERT_HASH
     )
     check_error_find(err, "root hash before does not match")
-    -- bad root_hash_after arg
-    _, err = pcall(
-        machine.verify_send_cmio_response,
-        machine,
-        CMIO_REVERT_HASH,
-        reason,
-        data,
-        hash_before,
-        filename,
-        bad_hash
-    )
-    check_error_find(err, "root hash after does not match")
+    -- a wrong belief about the final state is the caller's to detect via the returned hash
+    assert(machine:verify_send_cmio_response(reason, data, hash_before, filename, CMIO_REVERT_HASH) ~= bad_hash)
     -- tampered data: same length so the write_length_log2_size matches, but the
     -- bytes differ, so the recomputed padded merkle hash will not match the
     -- logged node's hash_after.
@@ -1724,12 +1713,11 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     _, err = pcall(
         machine.verify_send_cmio_response,
         machine,
-        CMIO_REVERT_HASH,
         reason,
         bad_data,
         hash_before,
         filename,
-        hash_after
+        CMIO_REVERT_HASH
     )
     check_error_find(err, "write_memory_with_padding does not match logged hash")
     -- node log2_size below page size: caught by replay parser
@@ -1740,12 +1728,11 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     _, err = pcall(
         machine.verify_send_cmio_response,
         machine,
-        CMIO_REVERT_HASH,
         reason,
         data,
         hash_before,
         corrupted,
-        hash_after
+        CMIO_REVERT_HASH
     )
     check_error_find(err, "invalid log format: node log2 size out of range")
     -- node address not aligned to its size: caught by replay parser
@@ -1755,12 +1742,11 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     _, err = pcall(
         machine.verify_send_cmio_response,
         machine,
-        CMIO_REVERT_HASH,
         reason,
         data,
         hash_before,
         corrupted,
-        hash_after
+        CMIO_REVERT_HASH
     )
     check_error_find(err, "node address not aligned to its size")
     -- duplicate the node so the combined pages+nodes stream has overlap
@@ -1775,12 +1761,11 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     _, err = pcall(
         machine.verify_send_cmio_response,
         machine,
-        CMIO_REVERT_HASH,
         reason,
         data,
         hash_before,
         corrupted,
-        hash_after
+        CMIO_REVERT_HASH
     )
     check_error_find(err, "page or node overlaps a previous entry")
     -- node log2_size == HASH_TREE_LOG2_ROOT_SIZE spans the whole address space, so the
@@ -1791,12 +1776,11 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     _, err = pcall(
         machine.verify_send_cmio_response,
         machine,
-        CMIO_REVERT_HASH,
         reason,
         data,
         hash_before,
         corrupted,
-        hash_after
+        CMIO_REVERT_HASH
     )
     check_error_find(err, "node address not aligned to its size")
     -- a second node that no write consumes: its hash_after is folded into the
@@ -1805,12 +1789,11 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     _, err = pcall(
         machine.verify_send_cmio_response,
         machine,
-        CMIO_REVERT_HASH,
         reason,
         data,
         hash_before,
         corrupted,
-        hash_after
+        CMIO_REVERT_HASH
     )
     check_error_find(err, "unconsumed node in step log")
     -- canonical form: send_cmio_response logs must record requested_cycle_count = 0
@@ -1820,12 +1803,11 @@ do_test("verify_send_cmio_response rejects mismatched Layer 2 args and tampered 
     _, err = pcall(
         machine.verify_send_cmio_response,
         machine,
-        CMIO_REVERT_HASH,
         reason,
         data,
         hash_before,
         corrupted,
-        hash_after
+        CMIO_REVERT_HASH
     )
     check_error_find(err, "requested_cycle_count must be zero in send_cmio_response log")
     os.remove(filename)
@@ -1843,9 +1825,9 @@ do_test("verify_send_cmio_response round-trips a single-byte sub-page write", fu
     machine:write_reg("iflags_Y", 1)
     local hash_before = machine:get_root_hash()
     local filename = tmpname_for_log()
-    machine:log_send_cmio_response(CMIO_REVERT_HASH, reason, data, filename)
+    machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH, filename)
     local hash_after = machine:get_root_hash()
-    machine:verify_send_cmio_response(CMIO_REVERT_HASH, reason, data, hash_before, filename, hash_after)
+    assert(machine:verify_send_cmio_response(reason, data, hash_before, filename, CMIO_REVERT_HASH) == hash_after)
     os.remove(filename)
 end)
 

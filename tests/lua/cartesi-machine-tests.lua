@@ -1047,7 +1047,7 @@ local function run_machine_step_uarch(machine, reference_machine, ctx, max_mcycl
         os.remove(log_filename)
         machine:log_step_uarch(math.maxinteger, log_filename)
         local root_hash_after = machine:get_root_hash()
-        cartesi.machine:verify_step_uarch(root_hash_before, log_filename, math.maxinteger, root_hash_after)
+        assert(cartesi.machine:verify_step_uarch(root_hash_before, log_filename, math.maxinteger) == root_hash_after)
         machine:reset_uarch()
         test_cycles = machine:read_reg("mcycle")
         ref_cycles = reference_machine:read_reg("mcycle")

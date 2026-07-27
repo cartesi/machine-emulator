@@ -24,6 +24,7 @@
 #include <functional>
 #include <optional>
 #include <ranges>
+#include <utility>
 #include <variant>
 
 #include "address-range-constants.hpp"
@@ -458,7 +459,7 @@ private:
         if (write_length_log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
             // Supra-page: hash data + zero-pad via pristine-streaming and compare to the logged node.
             const auto *node = m_context.log.try_find_node(paddr);
-            if (node == nullptr || node->log2_size != static_cast<uint64_t>(write_length_log2_size)) {
+            if (node == nullptr || !std::cmp_equal(node->log2_size, write_length_log2_size)) {
                 THROW(std::runtime_error, "write_memory_with_padding node not found in log");
             }
             machine_hash data_hash{};

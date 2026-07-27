@@ -57,6 +57,7 @@ struct no_step_printout {
 /// \tparam Printer Printout sink for the replay. Defaults to no_step_printout, which compiles to
 /// nothing; the host selects step_pretty_printer to obtain a human-readable dump of the replay.
 template <typename Printer = no_step_printout>
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class uarch_replay_step_state_access :
     public i_uarch_state_access<uarch_replay_step_state_access<Printer>>,
     public i_accept_scoped_notes<uarch_replay_step_state_access<Printer>>,

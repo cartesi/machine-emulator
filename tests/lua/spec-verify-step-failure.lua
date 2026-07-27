@@ -35,7 +35,6 @@ agnostic (RISC0 proves SHA-256 logs).
 ]]
 
 local cartesi = require("cartesi")
-local hash_tree = require("cartesi.hash-tree")
 local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local test_util = require("cartesi.tests.util")

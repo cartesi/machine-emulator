@@ -103,13 +103,8 @@ local function create_send_cmio_response_step_log(data_length, label, reason, mc
         assert(ctx.final_root_hash ~= ctx.initial_root_hash, "advance response must change the state")
         assert(machine:read_revert_root_hash() == REVERT_ROOT_HASH, "advance response must record the revert root hash")
     end
-    local obtained = cartesi.machine:verify_send_cmio_response(
-        reason,
-        data,
-        ctx.initial_root_hash,
-        log_path,
-        REVERT_ROOT_HASH
-    )
+    local obtained =
+        cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log_path, REVERT_ROOT_HASH)
     assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
     return ctx
 end
@@ -141,13 +136,8 @@ local function create_send_cmio_response_noop_step_log()
     machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH, log_path)
     ctx.final_root_hash = machine:get_root_hash()
     assert(ctx.final_root_hash == ctx.initial_root_hash, "no-op must leave the root hash unchanged")
-    local obtained = cartesi.machine:verify_send_cmio_response(
-        reason,
-        data,
-        ctx.initial_root_hash,
-        log_path,
-        REVERT_ROOT_HASH
-    )
+    local obtained =
+        cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log_path, REVERT_ROOT_HASH)
     assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
     return ctx
 end
@@ -198,13 +188,8 @@ local function create_oversized_send_cmio_response_step_log()
     machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH, log_path)
     ctx.final_root_hash = machine:get_root_hash()
     assert(ctx.initial_root_hash == ctx.final_root_hash, "oversized response must be a no-op")
-    local obtained = cartesi.machine:verify_send_cmio_response(
-        reason,
-        data,
-        ctx.initial_root_hash,
-        log_path,
-        REVERT_ROOT_HASH
-    )
+    local obtained =
+        cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log_path, REVERT_ROOT_HASH)
     assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
     return ctx
 end

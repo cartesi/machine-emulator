@@ -34,6 +34,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -144,6 +145,32 @@ void create_directory(const std::string &dirname) {
 void remove_directory(const std::string &dirname) {
     if (rmdir(dirname.c_str()) != 0) {
         throw make_path_system_error(errno, "unable to remove directory"s, dirname);
+    }
+}
+
+void rename_directory(const std::string &from, const std::string &to) {
+    // Refuse to replace an existing destination, atomically where the platform allows
+#if defined(HAVE_RENAMEAT2) // Linux
+    int failed = renameat2(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), RENAME_NOREPLACE);
+#elif defined(HAVE_RENAMEX_NP) // macOS
+    int failed = renamex_np(from.c_str(), to.c_str(), RENAME_EXCL);
+#else
+    int failed = -1;
+    errno = ENOTSUP;
+#endif
+    if (failed != 0 && (errno == EINVAL || errno == ENOTSUP)) {
+        // The filesystem does not support no-replace rename; use a checked rename
+        if (exists(to)) {
+            errno = EEXIST;
+        } else {
+            failed = rename(from.c_str(), to.c_str());
+        }
+    }
+    if (failed != 0) {
+        if (errno == EEXIST || errno == ENOTEMPTY) {
+            throw make_copy_path_system_error(EEXIST, "unable to rename directory"s, from, to, "destination exists"s);
+        }
+        throw make_copy_path_system_error(errno, "unable to rename directory"s, from, to, "rename() failed"s);
     }
 }
 

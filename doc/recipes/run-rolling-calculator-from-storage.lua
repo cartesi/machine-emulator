@@ -1,6 +1,5 @@
--- Load the JSON-RPC submodule and the EVM ABI helpers
+-- Load the Cartesi machine module and the EVM ABI helpers
 local cartesi = require("cartesi")
-local cartesi_jsonrpc = require("cartesi.jsonrpc")
 local evmu = require("cartesi.evmu")
 
 local EVM_ADVANCE = "EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, "
@@ -41,40 +40,38 @@ local function print_decoded_notice(data)
     fold(evmu.decode_calldata(NOTICE, data, "raw").payload, 68)
 end
 
--- Connect to remote Cartesi Machine server (and shut it down on exit)
-local remote_address = assert(arg[1], "missing remote address")
-stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-local cartesi_jsonrpc_machine <close> =
-    assert(cartesi_jsonrpc.connect_server(remote_address)):set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
+-- docs:begin storage
+-- Load a fresh clone of the rolling-calculator template, operating directly on its backing stores
+cartesi.machine:clone_stored("rolling-calculator-template", "machine")
+local machine = cartesi.machine("machine", nil, cartesi.SHARING_ALL)
 
--- Print server version (and test connection)
-local v = assert(cartesi_jsonrpc_machine:get_server_version())
-stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
-
--- Load remote machine from the rolling-calculator template
-local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
-
--- Snapshot via fork: the backup server keeps the pre-input state
+-- Snapshot via storage: backup_machine keeps a copy of the pre-input state.
 local backup
 local function snapshot(m)
-    backup = m:fork_server()
+    m:destroy()
+    m:clone_stored("machine", "backup_machine")
+    m:sync_stored("backup_machine")
+    m:load("machine", nil, cartesi.SHARING_ALL)
+    backup = true
 end
 
-local function commit(_)
+local function commit(m)
+    m:sync_stored("machine")
     if backup then
-        backup:shutdown_server()
+        m:remove_stored("backup_machine")
     end
     backup = nil
 end
 
 local function rollback(m)
     assert(backup, "no snapshot to rollback to")
-    local address = m:get_server_address()
-    m:shutdown_server()
-    m:swap(backup)
-    m:rebind_server(address)
+    m:destroy()
+    m:remove_stored("machine")
+    m:rename_stored("backup_machine", "machine")
+    m:load("machine", nil, cartesi.SHARING_ALL)
     backup = nil
 end
+-- docs:end storage
 
 -- Run the machine until it halts or the expressions run out
 local i = 0
@@ -115,3 +112,7 @@ repeat
     end
 until break_reason == cartesi.BREAK_REASON_HALTED
 commit(machine)
+
+-- Make the final on-disk state durable and print its hash
+machine:sync_stored("machine")
+stderr("final state hash: %s\n", cartesi.tohex(machine:get_root_hash()))

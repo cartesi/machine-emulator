@@ -22,9 +22,9 @@ local function encode_advance(expr, index)
     return evmu.encode_calldata(EVM_ADVANCE, {
         chain_id = bint.new(0),
         app_contract = ZERO_ADDRESS,
-        msg_sender = ZERO_ADDRESS,
+        msg_sender = string.format("0x%040d", index),
         block_number = bint.new(0),
-        block_timestamp = bint.new(os.time()),
+        block_timestamp = bint.new(0),
         prev_randao = bint.new(0),
         index = bint.new(index),
         payload = evmu.raw(expr .. "\n"),
@@ -110,7 +110,7 @@ local function flush_accepted(input_index, root_hash)
     save_proof(proof, string.format("input-%d-outputs-merkle-root-proof.lua", input_index))
 end
 
--- Run the machine until it halts or stdin closes
+-- Run the machine until it halts or the expressions run out
 local i = 0
 local revert_root_hash
 repeat
@@ -124,12 +124,12 @@ repeat
             if i > 0 then
                 flush_accepted(i - 1, data)
             end
-            stderr("type expression\n")
-            local expr = io.read()
-            if not expr then
+            local input <close> = io.open(string.format("expression-%d.txt", i), "r")
+            if not input then
                 break
             end
-            stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
+            local expr = assert(input:read("l"), string.format("empty expression file: expression-%d.txt", i))
+            stderr("feeding expression %d\n%s\n", i, expr)
             snapshot()
             machine:send_cmio_response(
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,

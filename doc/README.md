@@ -21,10 +21,14 @@
     - [Running as root](#running-as-root)
     - [Cartesi Machine templates](#cartesi-machine-templates)
     - [State value proofs](#state-value-proofs)
+    - [Accessing constants from
+      scripts](#accessing-constants-from-scripts)
     - [Remote Cartesi Machines](#remote-cartesi-machines)
     - [Rolling Cartesi Machines](#rolling-cartesi-machines)
     - [Rolling Cartesi Machine
       templates](#rolling-cartesi-machine-templates)
+    - [Rolling Cartesi Machines directly from
+      storage](#rolling-cartesi-machines-directly-from-storage)
     - [Additional options](#additional-options)
   - [Lua interface](#lua-interface)
     - [Instantiation by configuration](#instantiation-by-configuration)
@@ -44,6 +48,8 @@
     - [Remote Cartesi Machines](#remote-cartesi-machines-1)
     - [Rolling Cartesi Machines](#rolling-cartesi-machines-1)
     - [Output proofs](#output-proofs)
+    - [Rolling Cartesi Machines directly from
+      storage](#rolling-cartesi-machines-directly-from-storage-1)
     - [State-transition proofs](#state-transition-proofs)
 - [The guest perspective](#the-guest-perspective)
   - [Linux environment](#linux-environment)
@@ -462,6 +468,16 @@ where options are:
   --version-json
     display cartesi machine semantic version and exit.
 
+  --dump-constants
+    print the constants of the cartesi Lua module to stdout and exit,
+    one <NAME>=<value> shell assignment per line, sorted by name
+    (e.g. CARTESI_HTIF_YIELD_MANUAL_REASON_RX_REJECTED=2).
+    integer values that do not fit a signed 64-bit integer are printed in
+    hexadecimal. string values are printed single-quoted, and constants
+    with non-printable contents are omitted.
+    intended for shell scripts:
+        eval "$(cartesi-machine --dump-constants)"
+
   --bash-completion
     print a bash completion script for this program to stdout and exit.
     Install with: source <(cartesi-machine --bash-completion)
@@ -477,16 +493,6 @@ where options are:
   --remote-address=<ip>:<port>
     use a remote cartesi machine listening to <ip>:<port> instead of
     running a local cartesi machine.
-
-  --remote-health-check
-    checks health of remote server and exit
-
-  --remote-fork[=<ip>:<port>]
-    fork the remote cartesi machine before the execution,
-    in case an address is specified the new forked server will be rebound to it.
-
-  --remote-shutdown
-    shutdown the remote cartesi machine after the execution.
 
 ...
 ```
@@ -1127,6 +1133,74 @@ produces the output
 0x507b71ffe95ed6a94b1bcda9be504fcfdcfee5af671b5c51d93fd1d7a33ae0ee
 ```
 
+A stored machine can also be cloned. The option
+`--load=<directory>,clone:<source_directory>` first clones the machine
+stored in `<source_directory>` into `<directory>`, then loads the clone.
+Cloning is cheap. Read-only backing files are hard-linked, writable ones
+use reference links on copy-on-write filesystems, and file sparsity is
+preserved. A clone is therefore a natural snapshot. Experiments run on
+the clone while the source directory stays untouched.
+
+By default, a loaded machine keeps its state in memory, and the stored
+directory is only read. The `sharing:<mode>` key controls how state
+modifications reflect on the loaded directory. Mode `none` is the
+in-memory default: nothing is changed in disk storage. Mode `config`
+operates on-disk only for the memory ranges configured as `shared`. Mode
+`all` keeps every backing store up to date with changes made while the
+machine runs. When `cartesi-machine` exits, the directory already holds
+the machine as it was left, ready to be loaded again, obviating the need
+for the store step. When `clone:` is present, the default mode changes
+from `none` to `all`, since experimenting on a disposable copy is the
+most common reason to clone. Mode `config` requires
+`--revert-mode=none`. Mode `all` supports `--revert-mode=stored` and
+`--revert-mode=none`.
+
+One caveat remains. Process exit does not guarantee that the
+modifications have reached permanent storage. They may still be sitting
+in the host page cache, and a badly timed host crash could leave a
+partial directory on disk. The `sync` key closes this gap. It flushes
+every backing store file, the directory, and its parent to permanent
+storage right before `cartesi-machine` exits. Syncing requires a sharing
+mode other than `none`, since otherwise there is nothing to sync.
+
+For example, the command
+
+``` bash
+cartesi-machine \
+    --revert-mode=none \
+    --load="cloned-machine,clone:machine-0x507b71,sharing:all,sync" \
+    --final-hash
+```
+
+clones the machine stored above into `cloned-machine` and continues its
+execution directly on disk, producing
+
+``` text
+Loading machine: please wait
+
+Halted
+Cycles: 41860472
+41860472: 0xbcaf67c6dd283369e8091f05b17bc475e633902977375bafa9ee6e7ded40962b
+Syncing machine: please wait
+```
+
+No `--store` was given, yet the finished machine is on disk. The command
+
+``` bash
+cartesi-machine-stored-hash cloned-machine
+cartesi-machine-stored-hash machine-0x507b71
+```
+
+produces the output
+
+``` text
+0xbcaf67c6dd283369e8091f05b17bc475e633902977375bafa9ee6e7ded40962b
+0x507b71ffe95ed6a94b1bcda9be504fcfdcfee5af671b5c51d93fd1d7a33ae0ee
+```
+
+The clone advanced to the final state hash `bcaf67c6…`, while the source
+still holds the machine at the stored state hash `507b71ff…`.
+
 ### Running as root
 
 Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided
@@ -1557,6 +1631,39 @@ requested.
 To read more about proofs, refer to [the blockchain
 perspective](#hash-view-of-state).
 
+### Accessing constants from scripts
+
+Shell scripts that drive `cartesi-machine` often need values that are
+defined by the emulator, such as address-range boundaries, break
+reasons, or yield reason codes. The `--dump-constants` option prints
+every constant of the `cartesi` Lua module as a shell assignment and
+exits
+
+``` bash
+cartesi-machine --dump-constants
+```
+
+to produce
+
+``` text
+CARTESI_ACCESS_LOG_TYPE_ANNOTATIONS=1
+CARTESI_ACCESS_LOG_TYPE_LARGE_DATA=2
+CARTESI_AR_CLINT_LENGTH=786432
+CARTESI_AR_CLINT_START=33554432
+CARTESI_AR_CMIO_RX_BUFFER_LOG2_SIZE=21
+...
+CARTESI_VERSION_LABEL=''
+CARTESI_VERSION_MAJOR=0
+CARTESI_VERSION_MINOR=21
+CARTESI_VERSION_NUM=21000
+CARTESI_VERSION_PATCH=0
+```
+
+Integers that do not fit a signed 64-bit value are printed in
+hexadecimal, which shell arithmetic accepts, and strings are quoted. A
+script imports all of them at once with
+`eval "$(cartesi-machine --dump-constants)"`.
+
 ### Remote Cartesi Machines
 
 The `cartesi-machine` command-line utility, as used until now, has
@@ -1959,7 +2066,7 @@ xgenext2fs \
 Running a Rolling Cartesi Machine in the command line requires using the
 `cartesi-jsonrpc-machine` server in combination with the
 `cartesi-machine` client. The server provides the fork functionality the
-client uses to roll the machine state back when an input to
+client uses to roll the machine state back when an input to an
 advance-state request is rejected, or after an inspect-state request.
 With the encoded inputs and `calc.ext2` in the working directory, run
 the remote server with the command
@@ -2358,6 +2465,71 @@ Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8083'
 The outputs and their hashes are identical to those produced in the
 previous section, because the template captured exactly the same genesis
 state.
+
+### Rolling Cartesi Machines directly from storage
+
+The epoch runs above use a JSON-RPC server to snapshot the machine
+before each input and restore the snapshot when an input is rejected.
+The `--revert-mode` option selects how `cartesi-machine` implements
+these snapshots. Its default value, `fork`, uses a remote server fork.
+Mode `stored` instead clones the directory of a machine loaded with
+`sharing:all` or created with `--create`. With a remote server, stored
+directory names refer to its filesystem. Mode `none` disables snapshots
+and never reverts rejected inputs or inspect-state queries.
+
+Stored mode performs the whole epoch in one invocation without a server
+
+``` bash
+cartesi-machine \
+    --revert-mode=stored \
+    --load="machine,clone:rolling-calculator-template,sharing:all" \
+    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,print_input_state_hashes \
+    --final-hash=final-hash.bin
+```
+
+Before modifying an input boundary, the command syncs `machine`, clones
+it to `machine.revert`, and syncs the clone. An accepted input syncs
+`machine` before removing the snapshot. A rejected input or
+inspect-state query discards `machine`, durably renames the snapshot
+back to it, and reloads it. Stored-machine operations never overwrite an
+existing directory, so the initial clone check fails without touching
+`machine.revert` if it already exists.
+
+The output files, rejected output, outputs Merkle roots, and root
+state-value proofs are byte-for-byte identical to those of the
+server-backed epoch runs. Output proofs are disabled by passing an empty
+`output_proof` filename pattern because this example does not use them.
+Loading `machine` after the command exits reproduces `final-hash.bin`,
+confirming that the accepted final state is durable. An abbreviated log
+shows the six inputs advancing in the same invocation
+
+``` text
+Loading machine: please wait
+
+Manual yield rx-accepted (1) (0x000020 data)
+Cycles: 65015445
+
+Before input 0
+65015445: 0xb9a6535c5a2c2151580109ee66f753fcf75d89e6d31a3d39d2073bcfa8afd022
+65015445: 0x9d1118c224b7c2bcdf3cebf35c3cc2f356563830de3be8d2d68ed380fb4c2d27
+
+Automatic yield tx-output (2) (0x000184 data)
+Cycles: 107667416
+
+Manual yield rx-accepted (1) (0x000020 data)
+Cycles: 114530896
+Storing output-0-input-0.bin
+Storing input-0-outputs-merkle-root.bin
+...
+Automatic yield tx-output (2) (0x0000c4 data)
+Cycles: 297099062
+
+Manual yield rx-accepted (1) (0x000020 data)
+Cycles: 304077300
+Storing output-4-input-5.bin
+Storing input-5-outputs-merkle-root.bin
+Storing input-5-outputs-merkle-root-proof.lua
+```
 
 ### Additional options
 
@@ -4609,9 +4781,9 @@ local function encode_advance(expr, index)
     return evmu.encode_calldata(EVM_ADVANCE, {
         chain_id = bint.new(0),
         app_contract = ZERO_ADDRESS,
-        msg_sender = ZERO_ADDRESS,
+        msg_sender = string.format("0x%040d", index),
         block_number = bint.new(0),
-        block_timestamp = bint.new(os.time()),
+        block_timestamp = bint.new(0),
         prev_randao = bint.new(0),
         index = bint.new(index),
         payload = evmu.raw(expr .. "\n"),
@@ -4645,25 +4817,27 @@ local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
 
 -- Snapshot via fork: the backup server keeps the pre-input state
 local backup
-local function snapshot()
-    backup = machine:fork_server()
+local function snapshot(m)
+    backup = m:fork_server()
 end
-local function commit()
+
+local function commit(_)
     if backup then
         backup:shutdown_server()
     end
     backup = nil
 end
-local function rollback()
+
+local function rollback(m)
     assert(backup, "no snapshot to rollback to")
-    local address = machine:get_server_address()
-    machine:shutdown_server()
-    machine:swap(backup)
-    machine:rebind_server(address)
+    local address = m:get_server_address()
+    m:shutdown_server()
+    m:swap(backup)
+    m:rebind_server(address)
     backup = nil
 end
 
--- Run the machine until it halts or stdin closes
+-- Run the machine until it halts or the expressions run out
 local i = 0
 local revert_root_hash
 repeat
@@ -4671,15 +4845,15 @@ repeat
     if break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
         local _, yield_reason = machine:receive_cmio_request()
         if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-            commit()
+            commit(machine)
             revert_root_hash = machine:get_root_hash()
-            stderr("type expression\n")
-            local expr = io.read()
-            if not expr then
+            local input <close> = io.open(string.format("expression-%d.txt", i), "r")
+            if not input then
                 break
             end
-            stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
-            snapshot()
+            local expr = assert(input:read("l"), string.format("empty expression file: expression-%d.txt", i))
+            stderr("feeding expression %d\n%s\n", i, expr)
+            snapshot(machine)
             machine:send_cmio_response(
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
                 encode_advance(expr, i),
@@ -4688,7 +4862,7 @@ repeat
             i = i + 1
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
-            rollback()
+            rollback(machine)
         else
             stderr("machine initialization failed\n")
             break
@@ -4701,7 +4875,7 @@ repeat
         end
     end
 until break_reason == cartesi.BREAK_REASON_HALTED
-commit()
+commit(machine)
 ```
 
 Rolling Cartesi Machines must be rolled-back to the state they were at
@@ -4724,10 +4898,10 @@ the yield.
 
 If the reason was `cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED`, the
 application accepted the previous request and is ready for the next. The
-script then attempts to obtain a mathematical expression from the
-console. If the user provides one, it creates a new snapshot,
-ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`,
-and feeds the encoded input through
+script then attempts to read the next numbered expression file. If there
+is one, it creates a new snapshot, ABI-encodes the expression as
+`EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input
+through
 `machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ..., revert_root_hash)`.
 If, however, the reason was anything else, the script rolls back the
 machine and continues with the next loop iteration.
@@ -4761,21 +4935,22 @@ Then, run the `run-rolling-calculator.lua` client script in the other
 shell
 
 ``` bash
+printf '6*2^1024 + 3*2^512' > expression-0.txt
+printf '1+(' > expression-1.txt
 lua5.4 run-rolling-calculator.lua 127.0.0.1:8085
 ```
 
-The client prints the connection status to the console and then prompts
-us to type an expression. Entering `6*2^1024 + 3*2^512` causes the
-expected result to be printed, after which the client asks for a new
-expression. Entering an invalid expression `1+(` causes the `calc.sh`
-script running inside the Rolling Cartesi Machine to reject the input.
-Finally, entering `^D` causes the client script to exit and shut down
-the server. The full transcript is
+The client prints the connection status to the console and then feeds
+the expressions one by one. Expression `6*2^1024 + 3*2^512` causes the
+expected result to be printed. The invalid expression `1+(` causes the
+`calc.sh` script running inside the Rolling Cartesi Machine to reject
+the input. Finally, when the expression files run out, the client script
+exits and shuts down the server. The full transcript is
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8085'
 Connected: remote version is 0.7.0
-type expression
+feeding expression 0
 6*2^1024 + 3*2^512
 result is
 10786158809173895446375831144734148401707861873653839436405804869463
@@ -4783,11 +4958,10 @@ result is
 73495708458383684478649003115037698421037988831222501494715481595948
 96901677837132352593468675094844090688678579236903861342030923488978
 36036892526733668721977278692363075584
-type expression
+feeding expression 1
 1+(
 result is
 input rejected
-type expression
 ```
 
 The remote console shows only the error generated when the invalid
@@ -4870,9 +5044,9 @@ local function encode_advance(expr, index)
     return evmu.encode_calldata(EVM_ADVANCE, {
         chain_id = bint.new(0),
         app_contract = ZERO_ADDRESS,
-        msg_sender = ZERO_ADDRESS,
+        msg_sender = string.format("0x%040d", index),
         block_number = bint.new(0),
-        block_timestamp = bint.new(os.time()),
+        block_timestamp = bint.new(0),
         prev_randao = bint.new(0),
         index = bint.new(index),
         payload = evmu.raw(expr .. "\n"),
@@ -4958,7 +5132,7 @@ local function flush_accepted(input_index, root_hash)
     save_proof(proof, string.format("input-%d-outputs-merkle-root-proof.lua", input_index))
 end
 
--- Run the machine until it halts or stdin closes
+-- Run the machine until it halts or the expressions run out
 local i = 0
 local revert_root_hash
 repeat
@@ -4972,12 +5146,12 @@ repeat
             if i > 0 then
                 flush_accepted(i - 1, data)
             end
-            stderr("type expression\n")
-            local expr = io.read()
-            if not expr then
+            local input <close> = io.open(string.format("expression-%d.txt", i), "r")
+            if not input then
                 break
             end
-            stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
+            local expr = assert(input:read("l"), string.format("empty expression file: expression-%d.txt", i))
+            stderr("feeding expression %d\n%s\n", i, expr)
             snapshot()
             machine:send_cmio_response(
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
@@ -5025,18 +5199,20 @@ Then, run the `run-rolling-calculator-output-proofs.lua` client script
 in the other shell
 
 ``` bash
+printf '6*2^1024 + 3*2^512' > expression-0.txt
 lua5.4 run-rolling-calculator-output-proofs.lua 127.0.0.1:8089
 ```
 
-Entering `6*2^1024 + 3*2^512` produces the expected result, after which
-the client saves the tx-buffer-word proof tying the outputs Merkle root
-into the accepting state, and then, once `^D` closes the epoch, the
-per-output proof against that root. The full transcript is
+The expression `6*2^1024 + 3*2^512` produces the expected result, after
+which the client saves the tx-buffer-word proof tying the outputs Merkle
+root into the accepting state, and then, once the expressions run out
+and the epoch closes, the per-output proof against that root. The full
+transcript is
 
 ``` text
 Connecting to remote cartesi machine at '127.0.0.1:8089'
 Connected: remote version is 0.7.0
-type expression
+feeding expression 0
 6*2^1024 + 3*2^512
 result is
 10786158809173895446375831144734148401707861873653839436405804869463
@@ -5045,7 +5221,6 @@ result is
 96901677837132352593468675094844090688678579236903861342030923488978
 36036892526733668721977278692363075584
 saved input-0-outputs-merkle-root-proof.lua
-type expression
 saved output-0-input-0-proof.lua
 ```
 
@@ -5055,6 +5230,148 @@ writes for each accepted input and output when given
 Verifying these proofs against a machine state hash, from the
 blockchain’s perspective, is shown under [Output
 verification](#output-verification).
+
+### Rolling Cartesi Machines directly from storage
+
+The command-line example under [Rolling Cartesi Machines directly from
+storage](#rolling-cartesi-machines-directly-from-storage) uses stored
+directories as filesystem-level snapshots instead of a server. The Lua
+interface can drive the same scheme in one script.
+
+Four functions manage stored machines.
+`machine:clone_stored(<source_directory>, <destination_directory>)`
+clones a stored machine cheaply, hard-linking read-only backing files
+and using reference links for writable ones where the filesystem
+supports them.
+`machine:rename_stored(<source_directory>, <destination_directory>)`
+atomically renames a stored machine without overwriting the destination
+and syncs the affected parent directories before returning.
+`machine:sync_stored(<directory>)` flushes the state held in the backing
+stores of a loaded directory to permanent storage.
+`machine:remove_stored(<directory>)` removes a stored machine from disk
+and makes the removal durable. All four are also available on
+`cartesi.machine` itself, so a script can manipulate stored machines
+without holding a loaded instance. These functions are the basis for the
+`clone:` and `sync` keys of the command-line utility’s `--load` option.
+
+The disk-based driver is the calculator driver from the Rolling Cartesi
+Machine [example](#rolling-cartesi-machines-1), with the fork-based
+`snapshot`, `commit`, and `rollback` reimplemented over stored machines,
+feeding the same expressions the command-line example processed so the
+resulting state hashes can be compared. The helpers and the main loop
+are unchanged, and the script ends by syncing the final on-disk state
+and printing its hash, so the excerpt below shows only the reimplemented
+part
+
+``` lua
+-- Load a fresh clone of the rolling-calculator template, operating directly on its backing stores
+cartesi.machine:clone_stored("rolling-calculator-template", "machine")
+local machine = cartesi.machine("machine", nil, cartesi.SHARING_ALL)
+
+-- Snapshot via storage: backup_machine keeps a copy of the pre-input state.
+local backup
+local function snapshot(m)
+    m:destroy()
+    m:clone_stored("machine", "backup_machine")
+    m:sync_stored("backup_machine")
+    m:load("machine", nil, cartesi.SHARING_ALL)
+    backup = true
+end
+
+local function commit(m)
+    m:sync_stored("machine")
+    if backup then
+        m:remove_stored("backup_machine")
+    end
+    backup = nil
+end
+
+local function rollback(m)
+    assert(backup, "no snapshot to rollback to")
+    m:destroy()
+    m:remove_stored("machine")
+    m:rename_stored("backup_machine", "machine")
+    m:load("machine", nil, cartesi.SHARING_ALL)
+    backup = nil
+end
+```
+
+The live machine is loaded from a clone of the template with
+`cartesi.SHARING_ALL` (the third argument of the `cartesi.machine`
+constructor), so every modification lands directly on the backing stores
+of `machine` and there is no store step. `commit` syncs `machine` at
+every accepted boundary, including the initial boundary, so `snapshot`
+can clone the already-durable directory to `backup_machine` and sync the
+clone before execution modifies `machine`. The backing stores of a
+loaded directory are locked, so the machine is closed around the clone
+and reloaded afterward, a cheap operation that copies nothing. When a
+backup exists, `commit` removes it after syncing the accepted machine.
+`rollback` discards the rejected state with `remove_stored`, durably
+renames `backup_machine` as `machine`, and reloads it. The script still
+records `revert_root_hash` when feeding each input, as every
+advance-state request requires, even though a rejection here is undone
+at the filesystem level.
+
+Run the script with the expressions and the stored template in the
+working directory
+
+``` bash
+lua5.4 run-rolling-calculator-from-storage.lua
+```
+
+to produce
+
+``` text
+feeding expression 0
+6*2^1024 + 3*2^512
+result is
+10786158809173895446375831144734148401707861873653839436405804869463
+96054833005778796250863934445216126720683279228360145952738612886499
+73495708458383684478649003115037698421037988831222501494715481595948
+96901677837132352593468675094844090688678579236903861342030923488978
+36036892526733668721977278692363075584
+feeding expression 1
+invalid input
+(standard_in) 1: syntax error
+result is
+input rejected
+feeding expression 2
+2^2048
+result is
+32317006071311007300714876688669951960444102669715484032130345427524
+65513886789089319720141152291346368871796092189801949411955915049092
+10950881523864482831206308773673009960917501977503896521067960576383
+84067568276792218642619756161838094338476170470581645852036305042887
+57589154106580860755239912393038552191433338966834242068497478656456
+94948561760353263220580778056593310261927084603141502585928641771167
+25943603718461857357598351152301645904403697613233287231227125684710
+82020972515710172693132346967854258065669793504599726835299863821552
+51663894373355436021354332296046453184786049521481935558536110595962
+30656
+feeding expression 3
+(2^256 - 1) * (2^256 - 1)
+result is
+13407807929942597099574024998205846127479365820592393377723561443721
+76403007331539262339966577605628572001448237077951088442260168386765
+4778417822746804225
+feeding expression 4
+scale=80; sqrt(2)
+result is
+1.414213562373095048801688724209698078569671875376948073176679737990
+73247846210703
+feeding expression 5
+scale=100; 355/113
+result is
+3.141592920353982300884955752212389380530973451327433628318584070796
+4601769911504424778761061946902654
+final state hash: 0xf75d84913d56874831b7ef4e0ac1af2fad16e393c63f6ecbecc33e91a7efe4e2
+```
+
+The final state hash matches the command-line stored-mode run, so both
+drivers commit exactly the same machine. Since the whole epoch runs in
+one process, resuming the outputs Merkle tree across invocations is not
+a concern, and collecting outputs and their proofs works exactly as in
+the previous sections.
 
 ### State-transition proofs
 

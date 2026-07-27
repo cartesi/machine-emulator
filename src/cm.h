@@ -571,12 +571,23 @@ CM_API cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode s
 /// The source directory machine must not have a running instance.
 CM_API cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const char *to_dir);
 
+/// \brief Renames a previously stored machine and makes the rename durable.
+/// \param m Pointer to a machine object. Can be NULL (for local machines).
+/// \param from_dir Path to the source directory containing a valid stored machine.
+/// \param to_dir Path to the destination directory, which must not exist.
+/// \returns 0 for success, non zero code for error.
+/// \details The stored machine must not be in use.
+/// The operation fails if source and destination are on different filesystems.
+/// On success, the rename and the affected parent directory entries are durable on disk.
+CM_API cm_error cm_rename_stored(const cm_machine *m, const char *from_dir, const char *to_dir);
+
 /// \brief Removes all files and the directory of a previously stored machine.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param dir Path to the directory containing the stored machine to be removed.
 /// \returns 0 for success, non zero code for error.
 /// \details The stored machine must not be in use.
-/// On success, the entire directory and all machine files are deleted.
+/// On success, the entire directory and all machine files are deleted, and the
+/// removed parent directory entry is durable on disk.
 /// On failure, some files or the directory may remain.
 CM_API cm_error cm_remove_stored(const cm_machine *m, const char *dir);
 

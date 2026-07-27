@@ -194,6 +194,44 @@ describe("backing stores", function()
         end
     end)
 
+    it("should rename a stored machine without overwriting", function()
+        local stored_dirname = filesystem.temp_pathname()
+        local renamed_dirname = filesystem.temp_pathname()
+        local occupied_dirname = filesystem.temp_pathname()
+        local expected_root_hash
+
+        do
+            local machine <close> = cartesi.machine(base_machine_config, {})
+            machine:run(100)
+            machine:store(stored_dirname)
+            expected_root_hash = machine:get_root_hash()
+        end
+        local _ <close> = tests_util.scope_exit(function()
+            for _, dirname in ipairs({ stored_dirname, renamed_dirname, occupied_dirname }) do
+                pcall(cartesi.machine.remove_stored, cartesi.machine, dirname)
+            end
+        end)
+
+        cartesi.machine:rename_stored(stored_dirname, renamed_dirname)
+        expect.falsy(os.rename(stored_dirname, stored_dirname))
+        do
+            local machine <close> = cartesi.machine(renamed_dirname, {}, cartesi.SHARING_NONE)
+            expect.equal(machine:get_root_hash(), expected_root_hash)
+        end
+
+        cartesi.machine:clone_stored(renamed_dirname, stored_dirname)
+        cartesi.machine:clone_stored(renamed_dirname, occupied_dirname)
+        expect.fail(function()
+            cartesi.machine:rename_stored(stored_dirname, occupied_dirname)
+        end, "destination exists")
+        do
+            local source <close> = cartesi.machine(stored_dirname, {}, cartesi.SHARING_NONE)
+            local destination <close> = cartesi.machine(occupied_dirname, {}, cartesi.SHARING_NONE)
+            expect.equal(source:get_root_hash(), expected_root_hash)
+            expect.equal(destination:get_root_hash(), expected_root_hash)
+        end
+    end)
+
     it("should sync a stored machine", function()
         local stored_dirname = filesystem.temp_pathname()
         local expected_root_hash

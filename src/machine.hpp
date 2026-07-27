@@ -183,8 +183,14 @@ public:
     /// \param to_dir Path to the destination directory where the cloned machine will be stored.
     static void clone_stored(const std::string &from_dir, const std::string &to_dir);
 
+    /// \brief Renames a previously stored machine and makes the rename durable.
+    /// \param from_dir Path to the source directory where the machine is stored.
+    /// \param to_dir Path to the destination directory, which must not exist.
+    static void rename_stored(const std::string &from_dir, const std::string &to_dir);
+
     /// \brief Removes all files and the directory of a previously stored machine.
     /// \param dir Path to the directory containing the stored machine to be removed.
+    /// \details On success, the removed parent directory entry is durable on disk.
     static void remove_stored(const std::string &dir);
 
     /// \brief Flushes all files of a previously stored machine to permanent storage.

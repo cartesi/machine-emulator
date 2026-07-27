@@ -62,6 +62,7 @@ private:
     interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     void do_store(const std::string &directory, sharing_mode sharing) const override;
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
+    void do_rename_stored(const std::string &from_dir, const std::string &to_dir) const override;
     void do_remove_stored(const std::string &dir) const override;
     void do_sync_stored(const std::string &dir) const override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;

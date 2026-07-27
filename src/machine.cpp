@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <ranges>
@@ -537,6 +538,32 @@ void machine::clone_stored(const std::string &from_dir, const std::string &to_di
     remover.retain_all();
 }
 
+/// \brief Returns the parent directory whose entries must be synced when a directory changes.
+/// \param dir Path to the directory.
+static std::string parent_directory(const std::string &dir) {
+    const auto parent = std::filesystem::path(dir).parent_path();
+    if (parent.empty()) {
+        return ".";
+    }
+    return parent.string();
+}
+
+void machine::rename_stored(const std::string &from_dir, const std::string &to_dir) {
+    if (from_dir.empty() || to_dir.empty()) {
+        throw std::invalid_argument{"directory name cannot be empty"};
+    }
+    static_cast<void>(machine_config::load(from_dir));
+
+    const auto from_parent = parent_directory(from_dir);
+    const auto to_parent = parent_directory(to_dir);
+
+    os::rename_directory(from_dir, to_dir);
+    os::sync_directory(to_parent);
+    if (from_parent != to_parent) {
+        os::sync_directory(from_parent);
+    }
+}
+
 /// \brief Calls a function for each file of a previously stored machine.
 /// \param dir Path to the directory containing the stored machine.
 /// \param func Function to call with the filename of each file.
@@ -582,6 +609,9 @@ void machine::remove_stored(const std::string &dir) {
 
     // Remove directory
     os::remove_directory(dir);
+
+    // Sync the removed directory entry in its parent, making the removal durable
+    os::sync_directory(parent_directory(dir));
 }
 
 void machine::sync_stored(const std::string &dir) {

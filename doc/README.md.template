@@ -708,6 +708,59 @@ produces the output
 ```{replace=persistent_htif_putchar_stored_hash}
 ```
 
+A stored machine can also be cloned.
+The option `--load=<directory>,clone:<source_directory>` first clones the machine stored in `<source_directory>` into `<directory>`, then loads the clone.
+Cloning is cheap.
+Read-only backing files are hard-linked, writable ones use reference links on copy-on-write filesystems, and file sparsity is preserved.
+A clone is therefore a natural snapshot.
+Experiments run on the clone while the source directory stays untouched.
+
+By default, a loaded machine keeps its state in memory, and the stored directory is only read.
+The `sharing:<mode>` key controls how state modifications reflect on the loaded directory.
+Mode `none` is the in-memory default: nothing is changed in disk storage.
+Mode `config` operates on-disk only for the memory ranges configured as `shared`.
+Mode `all` keeps every backing store up to date with changes made while the machine runs.
+When `cartesi-machine` exits, the directory already holds the machine as it was left, ready to be loaded again, obviating the need for the store step.
+When `clone:` is present, the default mode changes from `none` to `all`, since experimenting on a disposable copy is the most common reason to clone.
+Mode `config` requires `--revert-mode=none`.
+Mode `all` supports `--revert-mode=stored` and `--revert-mode=none`.
+
+One caveat remains.
+Process exit does not guarantee that the modifications have reached permanent storage.
+They may still be sitting in the host page cache, and a badly timed host crash could leave a partial directory on disk.
+The `sync` key closes this gap.
+It flushes every backing store file, the directory, and its parent to permanent storage right before `cartesi-machine` exits.
+Syncing requires a sharing mode other than `none`, since otherwise there is nothing to sync.
+
+For example, the command
+```{.bash key=persistent_clone_shared replace=source vars=persistent_htif_putchar,dirname->persistent_htif_putchar/dirname outputs=cloned-machine}
+ln -sf "$persistent_htif_putchar/$dirname" .
+rm -rf cloned-machine
+# docs:begin
+cartesi-machine \
+    --revert-mode=none \
+    --load="cloned-machine,clone:$dirname,sharing:all,sync" \
+    --final-hash
+# docs:end
+```
+clones the machine stored above into `cloned-machine` and continues its execution directly on disk, producing
+```{replace=persistent_clone_shared/stderr}
+```
+No `--store` was given, yet the finished machine is on disk.
+The command
+```{.bash key=persistent_clone_shared_hashes replace=source vars=persistent_htif_putchar,persistent_clone_shared,dirname->persistent_htif_putchar/dirname}
+ln -sf "$persistent_htif_putchar/$dirname" .
+ln -sf "$persistent_clone_shared/cloned-machine" .
+# docs:begin
+cartesi-machine-stored-hash cloned-machine
+cartesi-machine-stored-hash $dirname
+# docs:end
+```
+produces the output
+```{replace=persistent_clone_shared_hashes}
+```
+The clone advanced to the final state hash [...]{replace=state_hashes_final_no_limit}, while the source still holds the machine at the stored state hash [...]{replace=state_hashes_final_limit_exec}.
+
 ### Running as root
 
 Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/usr/sbin/cartesi-init` script runs the entrypoint command as []{replace=run_as_dapp}.
@@ -845,7 +898,7 @@ The directory `calculator-template/` now contains the Cartesi Machine template.
 And indeed, running
 
 ```{.bash key=calc_template_hash vars=template->calc_template/calculator-template/path replace=source}
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 # docs:begin
 cartesi-machine-stored-hash calculator-template/
 # docs:end
@@ -869,7 +922,7 @@ For example, the following command loads the calculator template, and replaces i
 Then, it replaces the pristine output NVRAM so the machine saves results in the file `output.raw`.
 
 ```{.bash key=calc_template_instantiated vars=template->calc_template/calculator-template/path replace=source}
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 # docs:begin
 rm -f output.raw
 truncate -s 4K output.raw
@@ -926,7 +979,7 @@ Otherwise, the contents will be displayed on screen.
 
 For example, to generate a proof that the Cartesi Machine template above indeed contains a pristine input drive, use the command line
 ```{.bash key=proofs_pristine_run vars=template->calc_template/calculator-template/path replace=source outputs=pristine-input-proof.lua,root_hash,target_hash,target_address,log2_target_size}
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 # docs:begin
 cartesi-machine \
     --no-init-splash \
@@ -988,7 +1041,7 @@ to obtain
 
 The initial state hash for the instantiated template can be seen with the `cartesi-machine` command-line
 ```{.bash key=input_raw_proof vars=template->calc_template/calculator-template/path outputs=input-proof.lua,root_hash,target_hash replace=source}
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 rm -f input-proof.lua input.raw
 # docs:begin
 echo "6*2^1024 + 3*2^512" > input.raw
@@ -1024,7 +1077,7 @@ To obtain this proof, run
 
 ```{.bash key=output_raw_proof outputs=output.raw,output-proof.lua,root_hash,target_hash vars=template->calc_template/calculator-template/path replace=source}
 rm -f output-proof input.raw output.raw
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 # docs:begin
 truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
@@ -1064,6 +1117,20 @@ The `cartesi-machine` command-line utility accepts an arbitrary number of `--ini
 They are computed one-by-one, and either printed or stored in the specified files, as requested.
 
 To read more about proofs, refer to [the blockchain perspective](#hash-view-of-state).
+
+### Accessing constants from scripts
+
+Shell scripts that drive `cartesi-machine` often need values that are defined by the emulator, such as address-range boundaries, break reasons, or yield reason codes.
+The `--dump-constants` option prints every constant of the `cartesi` Lua module as a shell assignment and exits
+```{.bash key=dump_constants replace=source}
+cartesi-machine --dump-constants
+```
+to produce
+```{.text key=dump_constants_elided runner=bash replace=stdout vars=constants->dump_constants/stdout/path}
+{ head -n 5 "$constants"; echo ...; tail -n 5 "$constants"; }
+```
+Integers that do not fit a signed 64-bit value are printed in hexadecimal, which shell arithmetic accepts, and strings are quoted.
+A script imports all of them at once with `eval "$(cartesi-machine --dump-constants)"`.
 
 ### Remote Cartesi Machines
 
@@ -1343,7 +1410,7 @@ xgenext2fs \
 ```
 
 Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
-The server provides the fork functionality the client uses to roll the machine state back when an input to advance-state request is rejected, or after an inspect-state request.
+The server provides the fork functionality the client uses to roll the machine state back when an input to an advance-state request is rejected, or after an inspect-state request.
 With the encoded inputs and `calc.ext2` in the working directory, run the remote server with the command
 ```{.bash key=rolling_calc_run vars=rolling_calc_encode,calc_ext2->calc_ext2/calc.ext2/path outputs=server,client1,client2,output-0-input-0.bin,output-1-input-2.bin,output-2-input-3.bin,output-3-input-4.bin,output-4-input-5.bin,rejected-output-1-input-1.bin,output-0-input-0-proof.lua,output-1-input-2-proof.lua,output-2-input-3-proof.lua,output-3-input-4-proof.lua,output-4-input-5-proof.lua,input-0-outputs-merkle-root.bin,input-2-outputs-merkle-root.bin,input-3-outputs-merkle-root.bin,input-4-outputs-merkle-root.bin,input-5-outputs-merkle-root.bin,input-0-outputs-merkle-root-proof.lua,input-2-outputs-merkle-root-proof.lua,input-3-outputs-merkle-root-proof.lua,input-4-outputs-merkle-root-proof.lua,input-5-outputs-merkle-root-proof.lua,epoch-0-state-hash.bin,query-report-0.bin replace=source/server}
 ln -sf $rolling_calc_encode/*.bin .
@@ -1542,7 +1609,7 @@ To run the application, load the template into a server and feed it the same inp
 With the encoded inputs and the stored template in the working directory, run the remote server with the command
 ```{.bash key=rolling_calc_template_run vars=rolling_calc_encode,tmpl->rolling_calc_template/rolling-calculator-template/path outputs=server,client,output-0-input-0.bin,output-1-input-2.bin,output-2-input-3.bin,output-3-input-4.bin,output-4-input-5.bin replace=source/server}
 ln -sf $rolling_calc_encode/input-?.bin .
-ln -sf "$tmpl" rolling-calculator-template
+ln -sfn "$tmpl" rolling-calculator-template
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
@@ -1578,6 +1645,50 @@ Abbreviated, the client shell shows
 ```{replace=rolling_calc_template_run_elided/elided}
 ```
 The outputs and their hashes are identical to those produced in the previous section, because the template captured exactly the same genesis state.
+
+### Rolling Cartesi Machines directly from storage
+
+The epoch runs above use a JSON-RPC server to snapshot the machine before each input and restore the snapshot when an input is rejected.
+The `--revert-mode` option selects how `cartesi-machine` implements these snapshots.
+Its default value, `fork`, uses a remote server fork.
+Mode `stored` instead clones the directory of a machine loaded with `sharing:all` or created with `--create`.
+With a remote server, stored directory names refer to its filesystem.
+Mode `none` disables snapshots and never reverts rejected inputs or inspect-state queries.
+
+Stored mode performs the whole epoch in one invocation without a server
+```{.bash key=rolling_calc_stored vars=rolling_calc_encode,rolling_calc_run,tmpl->rolling_calc_template/rolling-calculator-template/path outputs=run,machine,final-hash.bin replace=source}
+ln -sf $rolling_calc_encode/input-?.bin .
+ln -sfn "$tmpl" rolling-calculator-template
+rm -rf machine machine.revert
+rm -f output-* rejected-output-* input-*-outputs-merkle-root* final-hash.bin stored-hash.bin
+{
+# docs:begin
+cartesi-machine \
+    --revert-mode=stored \
+    --load="machine,clone:rolling-calculator-template,sharing:all" \
+    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,print_input_state_hashes \
+    --final-hash=final-hash.bin
+# docs:end
+} > run 2>&1
+cartesi-machine --load=machine --initial-hash=stored-hash.bin > /dev/null 2>&1
+cmp final-hash.bin stored-hash.bin
+for f in output-?-input-?.bin rejected-output-1-input-1.bin \
+    input-?-outputs-merkle-root.bin input-?-outputs-merkle-root-proof.lua; do
+    cmp "$f" "$rolling_calc_run/$f"
+done
+```
+Before modifying an input boundary, the command syncs `machine`, clones it to `machine.revert`, and syncs the clone.
+An accepted input syncs `machine` before removing the snapshot.
+A rejected input or inspect-state query discards `machine`, durably renames the snapshot back to it, and reloads it.
+Stored-machine operations never overwrite an existing directory, so the initial clone check fails without touching `machine.revert` if it already exists.
+
+The output files, rejected output, outputs Merkle roots, and root state-value proofs are byte-for-byte identical to those of the server-backed epoch runs.
+Output proofs are disabled by passing an empty `output_proof` filename pattern because this example does not use them.
+Loading `machine` after the command exits reproduces `final-hash.bin`, confirming that the accepted final state is durable.
+An abbreviated log shows the six inputs advancing in the same invocation
+```{.text key=rolling_calc_stored_elided runner=bash replace=stdout vars=log->rolling_calc_stored/run/path}
+{ head -n 16 "$log"; echo ...; tail -n 8 "$log"; }
+```
 
 ### Additional options
 
@@ -1665,7 +1776,7 @@ printf '%d\n' "$((cycles - 10))"
 ```
 ```{.bash key=rarely_periodic_hashes vars=initial_cycle->periodic_initial_cycle/stdout,template->calc_template/calculator-template/path replace=source}
 rm -f input.raw
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 # docs:begin
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
@@ -2220,7 +2331,7 @@ has exactly the same effect as the example [above](#run-cat-foo-bar), where the 
 
 ```{.text key=run_load_cat_foo_bar runner=bash replace=both vars=template->run_store_cat_foo_bar/cat-foo-bar/path depends=load_cat_foo_bar}
 ln -sf "$RECIPES_DIR/load-cat-foo-bar.lua" .
-ln -sf "$template" .
+ln -sfn "$template" cat-foo-bar
 lua5.4 load-cat-foo-bar.lua
 ```
 
@@ -2330,7 +2441,7 @@ Finally, the script runs the machine until it halts or yields manual.
 
 To see the example running,
 ```{.bash key=lua_calculator_with_new_drives vars=template->calc_template/calculator-template/path depends=run_calculator_with_new_drives replace=source}
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 ln -sf "$RECIPES_DIR/run-calculator-with-new-drives.lua" .
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
@@ -2665,8 +2776,8 @@ When the call returns, it checks if the machine yielded manual.
 If so, it checks the reason for the yield.
 
 If the reason was `cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED`, the application accepted the previous request and is ready for the next.
-The script then attempts to obtain a mathematical expression from the console.
-If the user provides one, it creates a new snapshot, ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input through `machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ..., revert_root_hash)`.
+The script then attempts to read the next numbered expression file.
+If there is one, it creates a new snapshot, ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input through `machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ..., revert_root_hash)`.
 If, however, the reason was anything else, the script rolls back the machine and continues with the next loop iteration.
 
 :::note
@@ -2681,8 +2792,8 @@ If the reason was `cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT`, the script de
 Here is what a session looks like.
 First, open a separate shell into the same docker container (for example, by running `docker exec -it playground /bin/bash`) and run the `cartesi-jsonrpc-machine` server in it
 ```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator vars=template->rolling_calc_template/rolling-calculator-template/path replace=source/server}
-rm -f rolling-calculator-template run-rolling-calculator.lua
-ln -sf "$template" .
+rm -f rolling-calculator-template run-rolling-calculator.lua expression-*.txt
+ln -sfn "$template" rolling-calculator-template
 ln -sf "$RECIPES_DIR/run-rolling-calculator.lua" .
 {
 # docs:begin server
@@ -2694,12 +2805,11 @@ srv_pid=$!
 while ! cartesi-machine --remote-address=127.0.0.1:8085 --remote-health-check 2>/dev/null; do sleep 1; done
 {
 # docs:begin client
+printf '6*2^1024 + 3*2^512' > expression-0.txt
+printf '1+(' > expression-1.txt
 lua5.4 run-rolling-calculator.lua 127.0.0.1:8085
 # docs:end client
-} > client 2>&1 <<EOF
-6*2^1024 + 3*2^512
-1+(
-EOF
+} > client 2>&1
 client_status=$?
 # If the client failed, it never sent SHUTDOWN, so the server would hang forever
 [ "$client_status" -ne 0 ] && kill "$srv_pid" 2>/dev/null
@@ -2708,10 +2818,10 @@ wait "$srv_pid"
 Then, run the `run-rolling-calculator.lua` client script in the other shell
 ```{.bash replace=lua_rolling_calculator/source/client}
 ```
-The client prints the connection status to the console and then prompts us to type an expression.
-Entering `6*2^1024 + 3*2^512` causes the expected result to be printed, after which the client asks for a new expression.
-Entering an invalid expression `1+(` causes the `calc.sh` script running inside the Rolling Cartesi Machine to reject the input.
-Finally, entering `^D` causes the client script to exit and shut down the server.
+The client prints the connection status to the console and then feeds the expressions one by one.
+Expression `6*2^1024 + 3*2^512` causes the expected result to be printed.
+The invalid expression `1+(` causes the `calc.sh` script running inside the Rolling Cartesi Machine to reject the input.
+Finally, when the expression files run out, the client script exits and shuts down the server.
 The full transcript is
 ```{replace=lua_rolling_calculator/client}
 ```
@@ -2765,8 +2875,8 @@ Here is what a session looks like.
 As before, open a separate shell into the same docker container and run the `cartesi-jsonrpc-machine` server
 in it
 ```{.bash key=lua_rolling_calculator_output_proofs outputs=client,server depends=run_rolling_calculator_output_proofs vars=template->rolling_calc_template/rolling-calculator-template/path replace=source/server}
-rm -f rolling-calculator-template run-rolling-calculator-output-proofs.lua
-ln -sf "$template" .
+rm -f rolling-calculator-template run-rolling-calculator-output-proofs.lua expression-*.txt
+ln -sfn "$template" rolling-calculator-template
 ln -sf "$RECIPES_DIR/run-rolling-calculator-output-proofs.lua" .
 {
 # docs:begin server
@@ -2778,11 +2888,10 @@ srv_pid=$!
 while ! cartesi-machine --remote-address=127.0.0.1:8089 --remote-health-check 2>/dev/null; do sleep 1; done
 {
 # docs:begin client
+printf '6*2^1024 + 3*2^512' > expression-0.txt
 lua5.4 run-rolling-calculator-output-proofs.lua 127.0.0.1:8089
 # docs:end client
-} > client 2>&1 <<EOF
-6*2^1024 + 3*2^512
-EOF
+} > client 2>&1
 client_status=$?
 # If the client failed, it never sent SHUTDOWN, so the server would hang forever
 [ "$client_status" -ne 0 ] && kill "$srv_pid" 2>/dev/null
@@ -2791,9 +2900,9 @@ wait "$srv_pid"
 Then, run the `run-rolling-calculator-output-proofs.lua` client script in the other shell
 ```{.bash replace=lua_rolling_calculator_output_proofs/source/client}
 ```
-Entering `6*2^1024 + 3*2^512` produces the expected result, after which the client saves the tx-buffer-word
-proof tying the outputs Merkle root into the accepting state, and then, once `^D` closes the epoch, the
-per-output proof against that root.
+The expression `6*2^1024 + 3*2^512` produces the expected result, after which the client saves the
+tx-buffer-word proof tying the outputs Merkle root into the accepting state, and then, once the expressions
+run out and the epoch closes, the per-output proof against that root.
 The full transcript is
 ```{replace=lua_rolling_calculator_output_proofs/client}
 ```
@@ -2802,6 +2911,57 @@ The same proofs are what the `cartesi-machine` command-line utility writes for e
 when given `--cmio-advance-state=outputs_merkle_root_proof:<pattern>,output_proof:<pattern>`.
 Verifying these proofs against a machine state hash, from the blockchain's perspective, is shown under
 [Output verification](#output-verification).
+
+### Rolling Cartesi Machines directly from storage
+
+The command-line example under [Rolling Cartesi Machines directly from storage](#rolling-cartesi-machines-directly-from-storage) uses stored directories as filesystem-level snapshots instead of a server.
+The Lua interface can drive the same scheme in one script.
+
+Four functions manage stored machines.
+`machine:clone_stored(<source_directory>, <destination_directory>)` clones a stored machine cheaply, hard-linking read-only backing files and using reference links for writable ones where the filesystem supports them.
+`machine:rename_stored(<source_directory>, <destination_directory>)` atomically renames a stored machine without overwriting the destination and syncs the affected parent directories before returning.
+`machine:sync_stored(<directory>)` flushes the state held in the backing stores of a loaded directory to permanent storage.
+`machine:remove_stored(<directory>)` removes a stored machine from disk and makes the removal durable.
+All four are also available on `cartesi.machine` itself, so a script can manipulate stored machines without holding a loaded instance.
+These functions are the basis for the `clone:` and `sync` keys of the command-line utility's `--load` option.
+
+The disk-based driver is the calculator driver from the Rolling Cartesi Machine [example](#rolling-cartesi-machines-1), with the fork-based `snapshot`, `commit`, and `rollback` reimplemented over stored machines, feeding the same expressions the command-line example processed so the resulting state hashes can be compared.
+The helpers and the main loop are unchanged, and the script ends by syncing the final on-disk state and printing its hash, so the excerpt below shows only the reimplemented part
+```{.lua key=run_rolling_calculator_from_storage include=run-rolling-calculator-from-storage.lua/storage title="run-rolling-calculator-from-storage.lua (excerpt)"}
+```
+The live machine is loaded from a clone of the template with `cartesi.SHARING_ALL` (the third argument of the `cartesi.machine` constructor), so every modification lands directly on the backing stores of `machine` and there is no store step.
+`commit` syncs `machine` at every accepted boundary, including the initial boundary, so `snapshot` can clone the already-durable directory to `backup_machine` and sync the clone before execution modifies `machine`.
+The backing stores of a loaded directory are locked, so the machine is closed around the clone and reloaded afterward, a cheap operation that copies nothing.
+When a backup exists, `commit` removes it after syncing the accepted machine.
+`rollback` discards the rejected state with `remove_stored`, durably renames `backup_machine` as `machine`, and reloads it.
+The script still records `revert_root_hash` when feeding each input, as every advance-state request requires, even though a rejection here is undone at the filesystem level.
+
+Run the script with the expressions and the stored template in the working directory
+```{.bash key=lua_rolling_calculator_from_storage depends=run_rolling_calculator_from_storage vars=template->rolling_calc_template/rolling-calculator-template/path,hash5->rolling_calc_stored/final-hash.bin/path outputs=transcript replace=source}
+rm -f rolling-calculator-template run-rolling-calculator-from-storage.lua expression-*.txt
+ln -sfn "$template" rolling-calculator-template
+ln -sf "$RECIPES_DIR/run-rolling-calculator-from-storage.lua" .
+rm -rf backup_machine machine
+printf '6*2^1024 + 3*2^512' > expression-0.txt
+printf 'invalid input' > expression-1.txt
+printf '2^2048' > expression-2.txt
+printf '(2^256 - 1) * (2^256 - 1)' > expression-3.txt
+printf 'scale=80; sqrt(2)' > expression-4.txt
+printf 'scale=100; 355/113' > expression-5.txt
+{
+# docs:begin
+lua5.4 run-rolling-calculator-from-storage.lua
+# docs:end
+} > transcript 2>&1
+# the final on-disk state matches the command-line stored-mode run
+cartesi-machine --load=machine --initial-hash=lua-final-hash.bin > /dev/null 2>&1
+cmp lua-final-hash.bin "$hash5"
+```
+to produce
+```{replace=lua_rolling_calculator_from_storage/transcript}
+```
+The final state hash matches the command-line stored-mode run, so both drivers commit exactly the same machine.
+Since the whole epoch runs in one process, resuming the outputs Merkle tree across invocations is not a concern, and collecting outputs and their proofs works exactly as in the previous sections.
 
 ### State-transition proofs
 
@@ -4375,7 +4535,7 @@ In this way, the function recovers the drive's root hash efficiently, without ev
 
 Running the script with the command-line
 ```{.bash key=lua_splice_calculator_with_new_drive vars=template->calc_template/calculator-template/path,proofs_pristine_run depends=splice_calculator_with_new_drive,proof_module replace=source}
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 ln -sf "$proofs_pristine_run/pristine-input-proof.lua" .
 ln -sf "$RECIPES_DIR/splice-calculator-with-new-drive.lua" .
 # docs:begin
@@ -4404,7 +4564,7 @@ Assuming this to be the case, and in possession of the output proof and the resu
 It then passes the output proof, this reconstructed hash, and the agreed hash *M'* to `verify_splice`, which confirms that an output NVRAM with exactly this content sits in the machine whose state hash is *M'*.
 In other words, once everyone agrees on *M'*, the result really is there.
 ```{.bash key=lua_slice_calculator_output vars=template->calc_template/calculator-template/path,output_raw_proof depends=slice_calculator_output,proof_module replace=source}
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 ln -sf "$output_raw_proof/output-proof.lua" .
 ln -sf "$RECIPES_DIR/slice-calculator-output.lua" .
 # docs:begin
@@ -4611,7 +4771,7 @@ The parties who settle it are not necessarily the parties who later rely on the 
 To run the whole game, start the referee.
 This is the server the players connect to:
 ```{.bash key=vg_run vars=template->calc_template/calculator-template/path depends=vg_verify_output,vg_bisect_level,vg_dishonest outputs=referee replace=source/server}
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 ln -sf "$RECIPES_DIR/verification-game.lua" .
 ln -sf "$RECIPES_DIR/vgu.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
@@ -4672,7 +4832,7 @@ Cheating instead at the last uarch cycle, `cartesi.UARCH_CYCLE_MAX - 1`, moves t
 closes the instruction.
 In this case, the referee checks with `verify_step_uarch` followed by `verify_reset_uarch`:
 ```{.bash key=vg_run_reset vars=template->calc_template/calculator-template/path,last_uarch_cycle->vg_last_uarch_cycle/stdout depends=vg_verify_output,vg_bisect_level,vg_dishonest outputs=referee replace=source/dishonest}
-ln -sf "$template" .
+ln -sfn "$template" calculator-template
 ln -sf "$RECIPES_DIR/verification-game.lua" .
 ln -sf "$RECIPES_DIR/vgu.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
@@ -4827,7 +4987,7 @@ The input it wishes had been posted is fabricated as `fake-input-2.bin`, mirrori
 To run the game, start the referee, giving it the epoch's input files:
 ```{.bash key=rvg_run vars=template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,rolling_calc_run depends=rvg_verify_transition,vg_bisect_level,vg_dishonest outputs=referee replace=source/server}
 rm -f rolling-calculator-template
-ln -sf "$template" .
+ln -sfn "$template" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
 ln -sf "$RECIPES_DIR/vgu.lua" .
@@ -4906,7 +5066,7 @@ The dispute ends on the same state the direct run produced.
 The second dishonest player runs the honest code over the true inputs, but keeps the rejecting machine when the guest rejects input 1:
 ```{.bash key=rvg_run_no_rollback vars=template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=rvg_verify_transition,vg_bisect_level,vg_dishonest outputs=referee replace=source/dishonest}
 rm -f rolling-calculator-template
-ln -sf "$template" .
+ln -sfn "$template" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
 ln -sf "$RECIPES_DIR/vgu.lua" .
@@ -4951,7 +5111,7 @@ The uarch step in player 1's logs verifies, but the reset replays to the recorde
 The third dishonest player cheats like the one in the verification game, switching to a machine fed a fabricated `2+2` input in place of input 2, at mcycle offset 25 and uarch cycle 7 of its processing:
 ```{.bash key=rvg_run_composite vars=template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=rvg_verify_transition,vg_bisect_level,vg_dishonest outputs=referee replace=source/dishonest}
 rm -f rolling-calculator-template
-ln -sf "$template" .
+ln -sfn "$template" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
 ln -sf "$RECIPES_DIR/vgu.lua" .
@@ -5006,7 +5166,7 @@ The dispute crosses the three levels and converges on an ordinary uarch step, an
 The last dishonest player claims the epoch received a fourth input, a fabricated `3*5` request that was never posted:
 ```{.bash key=rvg_run_extra_input vars=template->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=rvg_verify_transition,vg_bisect_level,vg_dishonest outputs=referee replace=source/dishonest}
 rm -f rolling-calculator-template
-ln -sf "$template" .
+ln -sfn "$template" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/rolling-verification-game.lua" .
 ln -sf "$RECIPES_DIR/vgu.lua" .

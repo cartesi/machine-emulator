@@ -842,6 +842,25 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(clone_stored_null_machine_test, ordinary_machine_
     std::filesystem::remove_all(clone_dir_path);
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(rename_stored_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    const std::string renamed_dir_path = _machine_dir_path + "-renamed";
+    error_code = cm_rename_stored(_machine, _machine_dir_path.c_str(), renamed_dir_path.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK(!std::filesystem::exists(_machine_dir_path));
+    BOOST_CHECK(std::filesystem::exists(renamed_dir_path));
+
+    error_code = cm_remove_stored(_machine, renamed_dir_path.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(rename_stored_null_arguments_test, ordinary_machine_fixture) {
+    BOOST_CHECK_EQUAL(cm_rename_stored(_machine, nullptr, _machine_dir_path.c_str()), CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(cm_rename_stored(_machine, _machine_dir_path.c_str(), nullptr), CM_ERROR_INVALID_ARGUMENT);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(remove_stored_null_machine_test, ordinary_machine_fixture) {
     cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);

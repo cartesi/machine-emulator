@@ -687,6 +687,23 @@ cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const char *
     return cm_result_failure();
 }
 
+cm_error cm_rename_stored(const cm_machine *m, const char *from_dir, const char *to_dir) try {
+    if (from_dir == nullptr) {
+        throw std::invalid_argument("invalid from dir");
+    }
+    if (to_dir == nullptr) {
+        throw std::invalid_argument("invalid to dir");
+    }
+    if (m == nullptr) {
+        cartesi::machine::rename_stored(from_dir, to_dir);
+    } else {
+        convert_from_c(m)->rename_stored(from_dir, to_dir);
+    }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
 cm_error cm_remove_stored(const cm_machine *m, const char *dir) try {
     if (dir == nullptr) {
         throw std::invalid_argument("invalid dir");

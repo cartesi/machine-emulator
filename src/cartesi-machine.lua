@@ -83,6 +83,16 @@ where options are:
   --version-json
     display cartesi machine semantic version and exit.
 
+  --dump-constants
+    print the constants of the cartesi Lua module to stdout and exit,
+    one <NAME>=<value> shell assignment per line, sorted by name
+    (e.g. CARTESI_HTIF_YIELD_MANUAL_REASON_RX_REJECTED=2).
+    integer values that do not fit a signed 64-bit integer are printed in
+    hexadecimal. string values are printed single-quoted, and constants
+    with non-printable contents are omitted.
+    intended for shell scripts:
+        eval "$(cartesi-machine --dump-constants)"
+
   --bash-completion
     print a bash completion script for this program to stdout and exit.
     Install with: source <(cartesi-machine --bash-completion)
@@ -116,12 +126,22 @@ where options are:
   --no-remote-destroy
     do not destroy the cartesi machine in the remote server after the execution.
 
-  --no-revert
-    disable revert for advance and inspect states.
-    this allows to perform advance and inspect states on local cartesi machines,
-    however the state is never reverted, even in case inspects or rejected advances.
+  --revert-mode=<fork|stored|none>
+    select how advance and inspect states are reverted (default: fork).
 
-    DON'T USE THIS OPTION IN PRODUCTION
+    fork snapshots by forking a remote machine server.
+
+    stored snapshots a machine loaded from <directory> with sharing:all or
+    created with --create=<directory> by cloning it to <directory>.revert.
+    accepted state is synced before the snapshot is removed, and rejected or
+    inspected state is replaced by the synced snapshot.
+
+    none disables snapshots. inspect states and rejected advances are not reverted.
+
+    DON'T USE revert-mode=none IN PRODUCTION
+
+  --no-revert
+    alias for --revert-mode=none.
 
   --ram-image=<filename>
     name of file containing RAM image (default: "linux.bin").
@@ -748,7 +768,7 @@ where options are:
     however this is the only safe way to create machines with large address spaces
     or to propagate "shared" backing stores to configuration files.
 
-    MUST BE USED WITH --no-revert
+    MUST BE USED WITH --revert-mode=stored or none
 
   --load=<directory>[,<key>:<value>[,...]...]
     load machine stored in <directory>.
@@ -756,6 +776,7 @@ where options are:
     <key>:<value> is one of
         clone:<source_directory>
         sharing:<mode>
+        sync
 
         clone (optional)
         clones previously stored machine from <source_directory> to <directory> and loads it.
@@ -769,7 +790,16 @@ where options are:
             config: only configured "shared" backing stores operate on-disk and are modified.
             all: keeps state on-disk, modifying all backing stores.
         the default mode is "none", but if clone is present then the default mode is "all".
-        all modes except "none" MUST BE USED WITH --no-revert.
+        mode "config" MUST BE USED WITH --revert-mode=none.
+        mode "all" MUST BE USED WITH --revert-mode=stored or none.
+
+        sync (optional)
+        flush the machine state held in the backing stores of <directory> to
+        permanent storage before exiting. with a sharing mode other than "none"
+        there is no final store, and process exit does not guarantee the
+        modifications are durable on disk; sync fsyncs every backing store file,
+        the directory, and its parent before exit.
+        requires a sharing mode other than "none".
 
   --store=<directory>[,<key>:<value>[,...]...]
     store machine to <directory>, where "%%h" is substituted by the
@@ -963,7 +993,7 @@ local cmdline = {
     remote_shutdown = false,
     remote_create = true,
     remote_destroy = true,
-    perform_reverts = true,
+    revert_mode = "fork",
     flash_label_to_index = { root = 1 },
     flash_drives = {
         {
@@ -1060,6 +1090,7 @@ local cmdline = {
     create_dir = nil,
     clone_dir = nil,
     load_sharing = nil,
+    load_sync = nil,
     store_sharing = nil,
     opts_finished = false,
     store_config = false,
@@ -1382,6 +1413,28 @@ options = {
             print(string.format('  "compiler": "%s",', cartesi.COMPILER))
             print(string.format('  "platform": "%s"', cartesi.PLATFORM))
             print("}")
+            os.exit()
+            -- return true
+        end,
+    },
+    {
+        "--dump-constants",
+        function()
+            local names = {}
+            for name, value in pairs(cartesi) do
+                if math.type(value) == "integer" or (type(value) == "string" and not value:find("[^\32-\126]")) then
+                    names[#names + 1] = name
+                end
+            end
+            table.sort(names)
+            for _, name in ipairs(names) do
+                local value = cartesi[name]
+                if math.type(value) == "integer" then
+                    print(string.format(value >= 0 and "CARTESI_%s=%d" or "CARTESI_%s=0x%x", name, value))
+                else
+                    print(string.format("CARTESI_%s='%s'", name, (value:gsub("'", "'\\''"))))
+                end
+            end
             os.exit()
             -- return true
         end,
@@ -2123,6 +2176,14 @@ options = {
             cmdline.load_sharing = to_sharing(o.sharing)
             if cmdline.clone_dir and not cmdline.load_sharing then cmdline.load_sharing = cartesi.SHARING_ALL end
             cmdline.load_dir = o.directory
+            cmdline.load_sync = o.sync
+            if cmdline.load_sync then
+                assertf(
+                    cmdline.load_sharing and cmdline.load_sharing ~= cartesi.SHARING_NONE,
+                    "sync requires a sharing mode other than none in %s",
+                    all
+                )
+            end
             return true
         end,
         {
@@ -2130,6 +2191,7 @@ options = {
             directory = "dir",
             clone = "dir",
             sharing = { none = "none", config = "config", all = "all" },
+            sync = "boolean",
         },
     },
     {
@@ -2206,9 +2268,20 @@ options = {
         end,
     },
     {
+        "--revert-mode=",
+        function(keys, all, opts)
+            cmdline.revert_mode = util.parse_options(keys, all, opts).mode
+            return true
+        end,
+        {
+            "mode",
+            mode = { fork = "fork", stored = "stored", none = "none" },
+        },
+    },
+    {
         "--no-revert",
         function()
-            cmdline.perform_reverts = false
+            cmdline.revert_mode = "none"
             return true
         end,
     },
@@ -2633,7 +2706,27 @@ if cmdline.create_dir then
         "cannot use --create and --no-remote-create at the same time"
     )
     assert(not cmdline.load_dir, "cannot use --create and --load at the same time")
+    assert(
+        cmdline.revert_mode == "stored" or cmdline.revert_mode == "none",
+        "--create requires --revert-mode=stored or none"
+    )
 end
+
+if cmdline.load_sharing and cmdline.load_sharing ~= cartesi.SHARING_NONE then
+    assert(
+        cmdline.revert_mode == "stored" or cmdline.revert_mode == "none",
+        "shared stored machines require --revert-mode=stored or none"
+    )
+end
+if cmdline.revert_mode == "stored" then
+    assertf(cmdline.load_dir or cmdline.create_dir, "--revert-mode=stored requires --load or --create")
+    if cmdline.load_dir then
+        assert(cmdline.load_sharing == cartesi.SHARING_ALL, "--revert-mode=stored requires --load sharing:all")
+    end
+end
+
+local stored_machine_dir = cmdline.load_dir or cmdline.create_dir
+local stored_backup_dir = stored_machine_dir and (stored_machine_dir .. ".revert")
 
 local main_machine = new_machine()
 if cmdline.load_dir then
@@ -3046,10 +3139,9 @@ end
 if initial_config.processor.registers.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
 if cmdline.cmio_advance or cmdline.cmio_inspect then
     check_cmio_htif_config(initial_config.processor.registers.htif)
-    assert(
-        cmdline.remote_address or not cmdline.perform_reverts,
-        "cmio requires --remote-address for snapshot/commit/revert"
-    )
+    if cmdline.revert_mode == "fork" then
+        assert(cmdline.remote_address, "--revert-mode=fork requires --remote-address for cmio")
+    end
 end
 -- Seed the outputs Merkle tree frontier once, at the epoch start. With last_output_proof, resume the
 -- genesis-rooted tree from the previous epoch's last output, so this epoch's outputs continue at
@@ -3086,31 +3178,30 @@ end
 dump_value_proofs(machine, cmdline.initial_proof, initial_config)
 local exit_code = 0
 
--- To snapshot, we fork the current machine server to create a backup of the current machine.
--- We leave the backup server alone, and keep going with the current server.
--- If we already had a backup server, we simply shut it down.
-local backup_machine = nil
-local function snapshot(m)
-    if cmdline.perform_reverts then
+-- Select the snapshot implementation once. Callers do not need to know which mode is active.
+local snapshot = function() end
+
+local commit = function() end
+
+local revert = function() end
+
+local has_snapshot = function() return false end
+
+if cmdline.revert_mode == "fork" then
+    local backup_machine = nil
+    snapshot = function(m)
         if backup_machine then backup_machine:shutdown_server() end
         backup_machine = m:fork_server()
     end
-end
 
--- To commit, we simply shut down the backup server.
-local function commit()
-    if cmdline.perform_reverts then
+    commit = function()
         if backup_machine then
             backup_machine:shutdown_server()
             backup_machine = nil
         end
     end
-end
 
--- To revert, we get rid of the current machine server, then rebind the backup
--- server with the address of the original one, and start communicating with it instead
-local function revert(m)
-    if cmdline.perform_reverts then
+    revert = function(m)
         assert(backup_machine, "no snapshot to revert to")
         local address = m:get_server_address()
         m:shutdown_server()
@@ -3118,14 +3209,49 @@ local function revert(m)
         m:rebind_server(address)
         backup_machine = nil
     end
+
+    has_snapshot = function() return backup_machine ~= nil end
+elseif cmdline.revert_mode == "stored" then
+    local stored_backup = false
+
+    snapshot = function(m)
+        m:destroy()
+        m:clone_stored(stored_machine_dir, stored_backup_dir)
+        m:sync_stored(stored_backup_dir)
+        m:load(stored_machine_dir, runtime_config, cartesi.SHARING_ALL)
+        stored_backup = true
+    end
+
+    commit = function(m)
+        m:sync_stored(stored_machine_dir)
+        if stored_backup then
+            m:remove_stored(stored_backup_dir)
+            stored_backup = false
+        end
+    end
+
+    revert = function(m)
+        assert(stored_backup, "no stored snapshot to revert to")
+        m:destroy()
+        m:remove_stored(stored_machine_dir)
+        m:rename_stored(stored_backup_dir, stored_machine_dir)
+        m:load(stored_machine_dir, runtime_config, cartesi.SHARING_ALL)
+        stored_backup = false
+    end
+
+    has_snapshot = function() return stored_backup end
+
+    -- Cloning fails without overwriting anything if the backup directory already exists.
+    snapshot(machine)
+    commit(machine)
 end
 
--- Make sure we do not leave backup servers lying around when we exit.
+-- Make sure an error does not leave a fork or an incomplete stored transaction behind.
 -- luacheck: push ignore 211
 local backup_closer <close> = setmetatable({}, {
     __close = function()
         -- If we have a backup on exit, we probably raised an error, so we revert
-        if backup_machine then revert(machine) end
+        if has_snapshot() then revert(machine) end
     end,
 })
 -- luacheck: pop
@@ -3737,6 +3863,7 @@ local function run_inspect_state_query(m, runner)
     -- accept yield, at the same mcycle, so skip it). load_cmio_query is the gate on the reason: it
     -- fails unless the machine is at an rx-accepted manual yield, rejecting a reject or exception.
     if m:read_reg("mcycle") ~= mcycle then get_and_print_yield(m, htif) end
+    commit(m)
     stderr("\nBefore query\n")
     if cmdline.cmio_inspect.print_query_state_hashes then print_root_hash(m) end
     snapshot(m)
@@ -3790,6 +3917,7 @@ local function run_advance_state_epoch(m, runner)
     local break_reason = run_to_stop(m, ignore_yield_automatic, m)
     if is_yielded_manual(break_reason) then
         get_and_print_yield(m, htif)
+        commit(m)
         local revert_root_hash
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
             stderr("\nBefore input %d\n", input_index)
@@ -3813,10 +3941,10 @@ local function run_advance_state_epoch(m, runner)
             local _, yield_reason, data = get_and_print_yield(m, htif)
             if is_rx_accepted(yield_reason) then
                 flush_pending_outputs(m, advance, yield_reason, data)
-                commit()
+                commit(m)
             elseif is_rx_rejected(yield_reason) then
                 assert(
-                    cmdline.perform_reverts
+                    cmdline.revert_mode ~= "none"
                         or not (advance.mcycle_computation_hash or advance.uarch_cycle_computation_hash),
                     "the computation hash of a rejected input requires reverts"
                 )
@@ -3829,7 +3957,7 @@ local function run_advance_state_epoch(m, runner)
                 -- which the CLI just reports.
                 report_exception(data)
                 flush_pending_outputs(m, advance, yield_reason, data)
-                commit()
+                commit(m)
                 claim:end_epoch()
                 return
             else
@@ -3840,7 +3968,7 @@ local function run_advance_state_epoch(m, runner)
                 -- execution never reached.
                 report_unexpected_manual_yield(yield_reason)
                 flush_pending_outputs(m, advance, yield_reason, data)
-                commit()
+                commit(m)
                 claim:end_epoch()
                 return
             end
@@ -3850,12 +3978,12 @@ local function run_advance_state_epoch(m, runner)
     if is_halted(break_reason) then
         report_halt(m)
         flush_pending_outputs(m, advance)
-        commit()
+        commit(m)
         claim:end_epoch()
     elseif is_mcycle_overflow(break_reason) then
         report_mcycle_overflow(m)
         flush_pending_outputs(m, advance)
-        commit()
+        commit(m)
         claim:end_epoch()
     elseif is_yielded_manual(break_reason) then
         save_cmio_output_proofs(advance)
@@ -3948,6 +4076,10 @@ if cmdline.final_hash then
 end
 dump_value_proofs(machine, cmdline.final_proof, initial_config)
 if cmdline.store_dir then store_machine(machine, initial_config, cmdline.store_dir, cmdline.store_sharing) end
+if cmdline.load_sync then
+    stderr("Syncing machine: please wait\n")
+    machine:sync_stored(cmdline.load_dir)
+end
 if cmdline.assert_rolling_template then
     local cmd, yield_reason = machine:receive_cmio_request()
     if not (cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(yield_reason)) then exit_code = 2 end

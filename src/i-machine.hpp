@@ -112,7 +112,12 @@ public:
         do_clone_stored(from_dir, to_dir);
     }
 
-    /// \brief Removes a stored machine from a directory
+    /// \brief Renames a stored machine and makes the rename durable
+    void rename_stored(const std::string &from_dir, const std::string &to_dir) const {
+        do_rename_stored(from_dir, to_dir);
+    }
+
+    /// \brief Removes a stored machine from a directory and makes the removal durable
     void remove_stored(const std::string &dir) const {
         do_remove_stored(dir);
     }
@@ -369,6 +374,7 @@ private:
         const std::optional<back_merkle_tree> &previous_partial_bundle) = 0;
     virtual void do_store(const std::string &dir, sharing_mode sharing) const = 0;
     virtual void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
+    virtual void do_rename_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
     virtual void do_remove_stored(const std::string &dir) const = 0;
     virtual void do_sync_stored(const std::string &dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;

@@ -49,6 +49,13 @@ void create_directory(const std::string &dirname);
 /// \throw std::system_error on error.
 void remove_directory(const std::string &dirname);
 
+/// \brief Renames a directory.
+/// \param from Source directory, must exist.
+/// \param to Destination directory, must not exist.
+/// \throw std::system_error on error.
+/// \details The operation fails when the directories are on different filesystems.
+void rename_directory(const std::string &from, const std::string &to);
+
 /// \brief Removes a file.
 /// \param filename Path to the file, must exist.
 /// \throw std::system_error on error.

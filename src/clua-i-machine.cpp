@@ -900,6 +900,18 @@ static int machine_obj_index_clone_stored(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:rename_stored() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_rename_stored(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const char *from_dir = luaL_checkstring(L, 2);
+    const char *to_dir = luaL_checkstring(L, 3);
+    if (cm_rename_stored(m.get(), from_dir, to_dir) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    return 0;
+}
+
 /// \brief This is the machine:remove_stored() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_remove_stored(lua_State *L) {
@@ -1394,6 +1406,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {.name = "set_runtime_config", .func = machine_obj_index_set_runtime_config},
     {.name = "store", .func = machine_obj_index_store},
     {.name = "clone_stored", .func = machine_obj_index_clone_stored},
+    {.name = "rename_stored", .func = machine_obj_index_rename_stored},
     {.name = "remove_stored", .func = machine_obj_index_remove_stored},
     {.name = "sync_stored", .func = machine_obj_index_sync_stored},
     {.name = "swap", .func = machine_obj_index_swap},

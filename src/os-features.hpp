@@ -88,6 +88,14 @@
 #define HAVE_CLONEFILE
 #endif
 
+#if !defined(NO_RENAMEAT2) && defined(__linux__)
+#define HAVE_RENAMEAT2
+#endif
+
+#if !defined(NO_RENAMEX_NP) && defined(__APPLE__)
+#define HAVE_RENAMEX_NP
+#endif
+
 #if !defined(NO_F_FULLFSYNC) && defined(__APPLE__)
 #define HAVE_F_FULLFSYNC
 #endif

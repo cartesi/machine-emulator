@@ -221,7 +221,8 @@ describe("cartesi-machine CLI", function()
     -- Early-exit options
     --
     -- What: Options that print information and exit before building a machine:
-    --       -h/--help, --version, --version-json, and --assert-version.
+    --       -h/--help, --version, --version-json, --dump-constants, and
+    --       --assert-version.
     -- How:  run() each flag, assert rc == 0 and expected stdout substrings;
     --       run_fail() for a version mismatch to confirm the non-zero exit path.
     -- -------------------------------------------------------------------------
@@ -243,6 +244,29 @@ describe("cartesi-machine CLI", function()
         expect.truthy(stdout:find('"version"'))
         expect.truthy(stdout:find('"marchid"'))
 
+        -- --dump-constants emits sorted shell assignments for the module constants
+        rc, stdout = run({ "--dump-constants" })
+        expect.equal(rc, 0)
+        local values = {}
+        local prev
+        for line in stdout:gmatch("[^\n]+") do
+            local name, value = line:match("^CARTESI_([%w_]+)=(.+)$")
+            assert(name, string.format("not a shell assignment: %q", line))
+            assert(not prev or prev < name, string.format("not sorted: %s after %s", name, prev))
+            prev = name
+            values[name] = value
+        end
+        expect.equal(
+            tonumber(values.HTIF_YIELD_MANUAL_REASON_RX_REJECTED),
+            cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+        )
+        expect.equal(values.SHARING_ALL, tostring(cartesi.SHARING_ALL))
+        -- values past the signed 64-bit range are hexadecimal, accepted by bash arithmetic
+        expect.equal(values.MCYCLE_MAX, string.format("0x%x", cartesi.MCYCLE_MAX))
+        -- printable strings are single-quoted, binary constants are omitted
+        expect.equal(values.VERSION, "'" .. cartesi.VERSION .. "'")
+        expect.equal(values.UARCH_PRISTINE_STATE_HASH, nil)
+
         run_fail({ "--assert-version=999.0" }, "version mismatch")
 
         -- assert-version with current major.minor should succeed and continue
@@ -256,6 +280,7 @@ describe("cartesi-machine CLI", function()
         expect.equal(rc, 0)
         expect.truthy(stdout:find("bash completion for cartesi%-machine"))
         expect.truthy(stdout:find("_cm_flag_kind"))
+        expect.truthy(stdout:find("_cm_positional_values%['%-%-revert%-mode'%]='fork none stored'"))
     end)
 
     -- -------------------------------------------------------------------------
@@ -1283,7 +1308,13 @@ describe("cartesi-machine CLI", function()
 
         -- --create=<dir>: create machine store
         local _ <close>, create_dir = scope_stored_dirname()
-        run_ok({ "--create=" .. create_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        run_ok({
+            "--create=" .. create_dir,
+            "--revert-mode=stored",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
         assert(os.execute("test -d " .. create_dir), "--create: directory not created")
 
         -- --store=<dir>,sharing:all: store with memory sharing enabled
@@ -1297,16 +1328,32 @@ describe("cartesi-machine CLI", function()
         assert(os.execute("test -d " .. shared_store), "--store sharing:all: directory not created")
 
         -- --load=<dir>,sharing:all: load with memory sharing
-        local cfg_sh = config_for({ "--load=" .. shared_store .. ",sharing:all" })
+        local cfg_sh = config_for({ "--load=" .. shared_store .. ",sharing:all", "--revert-mode=none" })
         expect.truthy(cfg_sh.ram ~= nil)
 
         -- --load=<dir>,clone:<src>,sharing:all: clone from src to dir, then load from dir
         local _ <close>, clone_dst = scope_stored_dirname()
         local cfg_cl = config_for({
             "--load=" .. clone_dst .. ",clone:" .. shared_store .. ",sharing:all",
+            "--revert-mode=none",
         })
         expect.truthy(cfg_cl.ram ~= nil)
         assert(os.execute("test -d " .. clone_dst), "--load clone: clone directory not created")
+
+        -- --load=<dir>,clone:<src>,sync: flush the destination backing stores before exit
+        local _ <close>, sync_dst = scope_stored_dirname()
+        run_ok({
+            "--load=" .. sync_dst .. ",clone:" .. shared_store .. ",sync",
+            "--revert-mode=none",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        assert(os.execute("test -d " .. sync_dst), "--load sync: clone directory not created")
+
+        -- sync requires a sharing mode other than none
+        run_fail({ "--load=" .. shared_store .. ",sync" }, "sync requires a sharing mode")
+        run_fail({ "--load=" .. shared_store .. ",sharing:none,sync" }, "sync requires a sharing mode")
     end)
 
     -- -------------------------------------------------------------------------
@@ -1431,7 +1478,7 @@ describe("cartesi-machine CLI", function()
     --
     -- What: --cmio-advance-state and --cmio-inspect-state option-string parsing,
     --       including both the key:value form and the bare --cmio-inspect-state.
-    -- How:  run_ok() with --no-revert and --max-mcycle=0 so the option parser
+    -- How:  run_ok() with --revert-mode=none and --max-mcycle=0 so the option parser
     --       and HTIF config check run but the guest is never booted.
     -- -------------------------------------------------------------------------
     it("cmio advance/inspect options", function()
@@ -1439,7 +1486,7 @@ describe("cartesi-machine CLI", function()
         run_ok({
             "--cmio-advance-state=input:inp-%i.bin,input_index_begin:0,input_index_end:0,"
                 .. "report:rep-%i-%o.bin,output:out-%i-%o.bin,print_input_state_hashes",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1448,7 +1495,7 @@ describe("cartesi-machine CLI", function()
         -- --cmio-inspect-state=<opts>
         run_ok({
             "--cmio-inspect-state=query:q.bin,report:qrep-%o.bin,print_query_state_hashes",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1457,19 +1504,25 @@ describe("cartesi-machine CLI", function()
         -- bare --cmio-inspect-state (no arguments)
         run_ok({
             "--cmio-inspect-state",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
     end)
 
+    it("revert mode options", function()
+        run_ok({ "--revert-mode=none", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        run_ok({ "--no-revert", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        run_fail({ "--revert-mode=invalid" }, "invalid value")
+        run_fail({ "--revert-mode=stored" }, "requires")
+    end)
+
     -- -------------------------------------------------------------------------
     -- Remote / JSON-RPC options
     --
     -- What: --remote-address, --remote-health-check, --remote-spawn,
-    --       --remote-shutdown, --no-remote-create, --no-remote-destroy, and
-    --       --no-revert.
+    --       --remote-shutdown, --no-remote-create, and --no-remote-destroy.
     -- How:  Each case spawns a real server with jsonrpc.spawn_server(), runs
     --       the CLI against it, and asserts the expected rc or config fields.
     --       --no-remote-create is verified by first creating a machine then
@@ -1541,9 +1594,6 @@ describe("cartesi-machine CLI", function()
                 "--quiet",
             })
         end
-
-        -- --no-revert parses without error
-        run_ok({ "--no-revert", "--max-mcycle=0", "--no-init-splash", "--quiet" })
     end)
 
     -- -------------------------------------------------------------------------
@@ -1921,7 +1971,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-outh-%i.bin,outputs_merkle_root_proof:",
             "--cmio-inspect-state=query:" .. prefix .. "-query.bin," .. "report:" .. prefix .. "-qrep-%o.bin",
-            "--no-revert",
+            "--revert-mode=none",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -2002,7 +2052,7 @@ describe("cartesi-machine CLI", function()
                 .. "output_proof:"
                 .. prefix
                 .. "-lua-%o-%i.lua",
-            "--no-revert",
+            "--revert-mode=none",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -2032,7 +2082,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-json-%o-%i.lua,"
                 .. "format:json",
-            "--no-revert",
+            "--revert-mode=none",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -2098,7 +2148,7 @@ describe("cartesi-machine CLI", function()
                 .. "outputs_merkle_root:"
                 .. prefix
                 .. "-oh-%i.bin,outputs_merkle_root_proof:",
-            "--no-revert",
+            "--revert-mode=none",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -2221,6 +2271,128 @@ describe("cartesi-machine CLI", function()
             expect.equal(proof.root_hash, final_root)
             hash_tree.verify_slice(proof)
         end
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Guest failures surface in the exit status of an advance-state run
+    --
+    -- What: A guest halt during --cmio-advance-state surfaces the halt payload
+    --       in the exit status, like in a plain run.
+    -- How:  Advance a single accepted input after which the guest halts with a
+    --       nonzero payload and assert the rc.
+    -- -------------------------------------------------------------------------
+    it("advance state reports a guest halt in the exit status", function()
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            os.remove(prefix .. "-st-0.bin")
+        end)
+        filesystem.write_file(prefix .. "-st-0.bin", encode_advance(0, "last-input"))
+        local rc, _, log = run({
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-st-%i.bin,"
+                .. "input_index_begin:0,input_index_end:1,"
+                .. "output:,rejected_output:,output_proof:,report:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--revert-mode=none",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--",
+            "rollup accept; exit 7",
+        })
+        expect.equal(rc, 7)
+        expect.truthy(log:find("Halted with payload: 7", 1, true))
+    end)
+
+    it("rollup stored revert flow", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local server <close>, address = jsonrpc.spawn_server()
+        server:set_cleanup_call(jsonrpc.NOTHING)
+        local _ <close>, template_dir = scope_stored_dirname()
+        local _ <close>, machine_dir = scope_stored_dirname()
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            pcall(cartesi.machine.remove_stored, cartesi.machine, machine_dir .. ".revert")
+            for _, suffix in ipairs({
+                "-input-0.bin",
+                "-input-1.bin",
+                "-input-2.bin",
+                "-output-0-0.bin",
+                "-output-1-2.bin",
+                "-rejected-1-1.bin",
+                "-query.bin",
+                "-report-0.bin",
+                "-before-inspect.bin",
+                "-after-inspect.bin",
+            }) do
+                os.remove(prefix .. suffix)
+            end
+        end)
+
+        run_ok({
+            "--store=" .. template_dir,
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=0 --notices=1 --reports=1 --reject=1",
+        })
+        filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "first"))
+        filesystem.write_file(prefix .. "-input-1.bin", encode_advance(1, "rejected"))
+        filesystem.write_file(prefix .. "-input-2.bin", encode_advance(2, "third"))
+
+        run_ok({
+            "--remote-address=" .. address,
+            "--load=" .. machine_dir .. ",clone:" .. template_dir .. ",sharing:all",
+            "--revert-mode=stored",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-input-%i.bin,input_index_begin:0,input_index_end:3,output:"
+                .. prefix
+                .. "-output-%o-%i.bin,rejected_output:"
+                .. prefix
+                .. "-rejected-%o-%i.bin,output_proof:,report:,outputs_merkle_root:,"
+                .. "outputs_merkle_root_proof:",
+            "--final-hash=" .. prefix .. "-before-inspect.bin",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+        })
+
+        local notice_sig = "Notice(bytes payload)"
+        expect.equal(
+            evmu.decode_calldata(notice_sig, filesystem.read_file(prefix .. "-output-0-0.bin"), "raw").payload,
+            "first"
+        )
+        expect.equal(
+            evmu.decode_calldata(notice_sig, filesystem.read_file(prefix .. "-rejected-1-1.bin"), "raw").payload,
+            "rejected"
+        )
+        expect.equal(
+            evmu.decode_calldata(notice_sig, filesystem.read_file(prefix .. "-output-1-2.bin"), "raw").payload,
+            "third"
+        )
+        expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
+
+        filesystem.write_file(prefix .. "-query.bin", "inspect")
+        run_ok({
+            "--remote-address=" .. address,
+            "--load=" .. machine_dir .. ",sharing:all",
+            "--revert-mode=stored",
+            "--cmio-inspect-state=query:" .. prefix .. "-query.bin,report:" .. prefix .. "-report-%o.bin",
+            "--final-hash=" .. prefix .. "-after-inspect.bin",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+        })
+        expect.equal(filesystem.read_file(prefix .. "-report-0.bin"), "inspect")
+        expect.equal(
+            filesystem.read_file(prefix .. "-after-inspect.bin"),
+            filesystem.read_file(prefix .. "-before-inspect.bin")
+        )
+        expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
     end)
 
     -- -------------------------------------------------------------------------
@@ -2368,7 +2540,7 @@ describe("cartesi-machine CLI", function()
                 .. "log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--final-hash=" .. prefix .. "-final.bin",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2401,7 +2573,7 @@ describe("cartesi-machine CLI", function()
                     .. ",log2_bundle_mcycle_count:"
                     .. log2_bundle,
                 "--final-hash=" .. prefix .. "-sha-final.bin",
-                "--no-revert",
+                "--revert-mode=none",
                 "--max-mcycle=2000000000",
                 "--no-init-splash",
                 "--quiet",
@@ -2450,7 +2622,7 @@ describe("cartesi-machine CLI", function()
                 .. "-chh.bin,"
                 .. "log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--",
@@ -2474,7 +2646,7 @@ describe("cartesi-machine CLI", function()
                 .. "log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                 .. ",log2_bundle_mcycle_count:2",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2518,7 +2690,7 @@ describe("cartesi-machine CLI", function()
         local _, tall_tree_log = run_ok({
             "--quiet",
             "--cmio-advance-state=log2_mcycle_computation_hash_period:0",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
         })
@@ -2549,7 +2721,7 @@ describe("cartesi-machine CLI", function()
         run_fail({
             "--cmio-advance-state=log2_mcycle_computation_hash_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--print-mcycle-root-hashes=" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -2566,7 +2738,7 @@ describe("cartesi-machine CLI", function()
                 .. ",input:"
                 .. truncated_input
                 .. ",input_index_begin:0,input_index_end:1,outputs_merkle_root:,outputs_merkle_root_proof:",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=1000",
             "--no-init-splash",
         })
@@ -2582,7 +2754,7 @@ describe("cartesi-machine CLI", function()
                 .. ",input:"
                 .. truncated_input
                 .. ",input_index_begin:0,input_index_end:1,outputs_merkle_root:,outputs_merkle_root_proof:",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=1000",
             "--no-init-splash",
         })
@@ -2616,7 +2788,7 @@ describe("cartesi-machine CLI", function()
                 .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
                 .. "log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2648,7 +2820,7 @@ describe("cartesi-machine CLI", function()
         -- At 2^64 or more periods, every 64-bit index is within the epoch.
         run_ok({
             "--cmio-advance-state=mcycle_period_index:0xffffffffffffffff," .. "log2_mcycle_computation_hash_period:0",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -2675,7 +2847,7 @@ describe("cartesi-machine CLI", function()
                 .. "mcycle_period_index:0,log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                 .. ",log2_bundle_uarch_cycle_count:0",
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -2704,7 +2876,7 @@ describe("cartesi-machine CLI", function()
             "--hash-tree=hash_function:sha256",
             "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=0",
         }, "uarch cycle computation hash requires the keccak256 hash function")
         -- a reject with reverts off leaves no boundary to pad the reverted timeline from, even
@@ -2727,7 +2899,7 @@ describe("cartesi-machine CLI", function()
                 .. (3 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD))
                 .. ",log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2883,7 +3055,7 @@ describe("cartesi-machine CLI", function()
                 .. "-uch0.bin,"
                 .. "mcycle_period_index:7,log2_mcycle_computation_hash_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
-            "--no-revert",
+            "--revert-mode=none",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -3092,7 +3264,7 @@ describe("cartesi-machine CLI", function()
                 .. "outputs_merkle_root:"
                 .. prefix
                 .. "-rth-%i.bin",
-            "--no-revert",
+            "--revert-mode=none",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",

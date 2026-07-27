@@ -81,6 +81,10 @@ void local_machine::do_clone_stored(const std::string &from_dir, const std::stri
     machine::clone_stored(from_dir, to_dir);
 }
 
+void local_machine::do_rename_stored(const std::string &from_dir, const std::string &to_dir) const {
+    machine::rename_stored(from_dir, to_dir);
+}
+
 void local_machine::do_remove_stored(const std::string &dir) const {
     machine::remove_stored(dir);
 }

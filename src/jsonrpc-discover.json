@@ -256,11 +256,40 @@
     },
     {
       "name": "machine.remove_stored",
-      "summary": "Removes a stored machine instance from a directory",
+      "summary": "Removes a stored machine instance from a directory and makes the removal durable",
       "params": [
         {
           "name": "dir",
           "description": "Directory to stored machine instance",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "machine.rename_stored",
+      "summary": "Renames a stored machine and makes the rename durable",
+      "params": [
+        {
+          "name": "from_dir",
+          "description": "Source directory",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "to_dir",
+          "description": "Destination directory, which must not exist",
           "required": true,
           "schema": {
             "type": "string"

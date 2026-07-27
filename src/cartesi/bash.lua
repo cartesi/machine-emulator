@@ -56,9 +56,20 @@ local function describe_option(entry)
         desc.kind = "compound"
         desc.subkeys = {}
         desc.subkey_values = {}
-        -- The array part (hint[1]) names the positional sub-key; record its kind
-        -- so a bare value can be completed as a file/dir.
-        if hint[1] then desc.positional_kind = hint[hint[1]] end
+        -- The array part (hint[1]) names the positional sub-key. Record either
+        -- its enum values or its kind so a bare value can be completed.
+        if hint[1] then
+            local positional = hint[hint[1]]
+            if type(positional) == "table" then
+                desc.positional_values = {}
+                for value in pairs(positional) do
+                    desc.positional_values[#desc.positional_values + 1] = value
+                end
+                table.sort(desc.positional_values)
+            else
+                desc.positional_kind = positional
+            end
+        end
         for k, v in pairs(hint) do
             -- skip the array part (the positional sub-key name, handled above)
             if type(k) == "string" then
@@ -155,6 +166,8 @@ _cartesi_complete() {
                     file) COMPREPLY+=( $(compgen -f -- "$partial") ) ;;
                     dir)  COMPREPLY+=( $(compgen -d -- "$partial") ) ;;
                 esac
+                local positional_values="${_cm_positional_values[$flag]:-}"
+                [[ -n "$positional_values" ]] && COMPREPLY+=( $(compgen -W "$positional_values" -- "$partial") )
                 compopt -o nospace 2>/dev/null
             fi
             ;;
@@ -175,6 +188,7 @@ function _M.dump_bash_completion(options, program_names)
                 if prev.kind == "bare" and d.kind ~= "bare" then
                     prev.kind, prev.subkeys, prev.subkey_values = d.kind, d.subkeys, d.subkey_values
                     prev.positional_kind = d.positional_kind
+                    prev.positional_values = d.positional_values
                     prev.optional = true
                 elseif d.kind == "bare" and prev.kind ~= "bare" then
                     prev.optional = true
@@ -198,12 +212,22 @@ function _M.dump_bash_completion(options, program_names)
     w("declare -gA _cm_compound_keys=()")
     w("declare -gA _cm_subkey_values=()")
     w("declare -gA _cm_positional_kind=()")
+    w("declare -gA _cm_positional_values=()")
     for _, flag in ipairs(ordered) do
         local d = flags[flag]
         w(string.format("_cm_flag_kind[%s]=%s", bash_quote(flag), bash_quote(d.kind)))
         if d.optional then w(string.format("_cm_flag_optional[%s]=1", bash_quote(flag))) end
         if d.positional_kind then
             w(string.format("_cm_positional_kind[%s]=%s", bash_quote(flag), bash_quote(d.positional_kind)))
+        end
+        if d.positional_values then
+            w(
+                string.format(
+                    "_cm_positional_values[%s]=%s",
+                    bash_quote(flag),
+                    bash_quote(table.concat(d.positional_values, " "))
+                )
+            )
         end
         if d.subkeys then
             w(string.format("_cm_compound_keys[%s]=%s", bash_quote(flag), bash_quote(table.concat(d.subkeys, " "))))

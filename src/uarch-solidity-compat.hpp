@@ -262,7 +262,7 @@ static inline bool isYieldedManualWith(uint64 tohost, uint64 yieldReason) {
 // rejects (e.g. a misaligned uarch pc). Host-only header, so throwing is always available.
 template <typename T1, typename T2>
 void require(T1 condition, T2 message) {
-    if (!(condition)) {
+    if (!condition) {
         throw std::runtime_error(message);
     }
 }

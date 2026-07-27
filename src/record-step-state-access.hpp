@@ -269,7 +269,7 @@ private:
         if (!page_in && !node_in) {
             sibling_hashes.push_back(m_m.get_node_hash(subtree_start_addr, subtree_log2_size, skip_hash_tree_update));
         } else if (node_in && next_node_it->first == subtree_start_addr &&
-            next_node_it->second.log2_size == static_cast<uint64_t>(subtree_log2_size)) {
+            std::cmp_equal(next_node_it->second.log2_size, subtree_log2_size)) {
             ++next_node_it;
         } else if (page_count_log2_size > 0) {
             get_sibling_hashes_impl(page_index, page_count_log2_size - 1, page_indices, next_page_index, next_node_it,

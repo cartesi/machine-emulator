@@ -1,0 +1,13 @@
+[package]
+name = "cartesi-sp1-execute"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "cartesi-sp1-execute"
+path = "src/main.rs"
+
+[dependencies]
+sp1-sdk = "6.3.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

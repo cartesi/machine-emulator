@@ -323,15 +323,63 @@ via `TC_PRELOAD_ENABLED`), one repetition each, all pairs hash-identical:
 | syscall | 31.72 | 36.08 | +13.7% |
 | **Total** | **203.14** | **219.21** | **+7.9%** |
 
-GCC therefore regresses 7.9% aggregate with the tail-call structure,
-winning only sieve. The design's wins are not compiler-neutral structure:
-they are enabled by preserve_none keeping the interpreter state in
-registers across every boundary. Transitions are already branch-shaped
-under GCC, so GCC 15's musttail would add only a guarantee, not speed;
-the entire gap is the register budget (the ninth argument on the stack in
-the fetch chain, callee-save shuffling per handler). On GCC the correct
-configuration remains the stock computed-goto loop, which the opt-in
-build flag delivers by default.
+GCC therefore regresses 7.9% aggregate with the tail-call structure in
+this form, winning only sieve. The design's wins are not compiler-neutral
+structure: they are enabled by keeping the interpreter state in registers
+across every boundary. Transitions are already branch-shaped under GCC,
+so GCC 15's musttail would add only a guarantee, not speed; the entire
+gap is the register budget (the ninth argument on the stack in the fetch
+chain, callee-save shuffling per handler). Section 5.10 closes that gap
+with pinned global register variables.
+
+### 5.10 Pinned global registers for GCC (current best under GCC)
+
+GCC's native substitute for preserve_none is stronger than argument
+passing: file-scope register variables (`register uint64_t mcycle
+asm("x23");` and friends, x22-x27, under a GCC-only guard) bind the
+interpreter's hot state permanently to call-saved registers. The state is
+never passed at all; the handler signature shrinks to the accessor and
+the instruction word, and the values survive helpers, cold calls, and
+external code because call-saved discipline preserves them. pc is the one
+exception (execute_* takes it by reference and register globals have no
+address), so handlers bind it to a local and sync one register move at
+each exit; the same proxying covers the privileged handler's by-reference
+mcycle.
+
+The first attempt crashed the benchmark harness while passing every
+C-API exactness check, which isolated a lesson worth recording: the
+reservation removes those registers from the compiler's save/restore
+discipline, but the interpreter is itself a callee, and its caller
+(liblua here) may hold live values in call-saved registers. The crash was
+lua's own state corrupted across machine:run. The fix is a boundary
+wrapper that saves the six registers' incoming values before the run and
+restores them after, so the globals own the registers only while the
+interpreter runs. With it, every workload passes the cycle and hash gates
+through both the C API and the Lua host (the unrelated GCC Lua teardown
+segfault from section 5.8 remains, after results are written).
+
+One repetition each against the same GCC stock baselines as before, all
+pairs hash-identical:
+
+| Workload | GCC stock (s) | GCC pinned tail-call (s) | Change |
+|---|---:|---:|---:|
+| sieve | 28.76 | 22.17 | -22.9% |
+| qsort | 29.81 | 28.20 | -5.4% |
+| zlib | 25.67 | 23.67 | -7.8% |
+| hash | 30.62 | 27.12 | -11.4% |
+| double | 56.56 | 55.53 | -1.8% |
+| syscall | 31.72 | 28.14 | -11.3% |
+| **Total** | **203.14** | **184.83** | **-9.0%** |
+
+GCC flips from +7.9% to -9.0% aggregate, faster than its stock on every
+workload, and this is the experiment's first configuration on any
+compiler to beat stock on zlib. Cross-compiler, Clang keeps the better
+aggregate (174.69 total on its own same-day stock baselines) and wins
+qsort, hash, double, and syscall, while pinned GCC wins the two most
+chain-bound workloads, sieve (22.17 vs 23.32) and zlib (23.67 vs 25.47).
+That split suggests full pinning beats argument-passing exactly where the
+dispatch chain dominates, and motivates trying pinned globals under
+Clang (section 8, item 5).
 
 Separately, the GCC-built Lua module segfaults deterministically at process
 exit after producing correct results (teardown only; the C API path used in
@@ -498,15 +546,17 @@ attempts, in order:
    transition as a branch (zero call-shaped transitions); the earlier
    count of residual `bl` transitions was an unrelocated-object
    misreading. Nothing to convert.
-3. GCC global register variables plus -ffixed-* as the GCC-native
-   preserve_none substitute: pin pc, mcycle, tick end, and the context
-   pointer in fixed registers under a GCC-only guard, building all of
-   libcartesi with the same -ffixed flags so calls preserve them. This
-   restores the register budget and would let the pre-load re-enable for
-   GCC (TC_PRELOAD_ENABLED becomes capability-based, not compiler-based).
-   Now the only structural lever left for GCC.
+3. DONE, LARGE WIN (section 5.10). GCC global register variables pin the
+   interpreter's hot state in call-saved registers under a GCC-only
+   guard, flipping GCC from +7.9% to -9.0% aggregate. No -ffixed flags
+   or library-wide changes were needed; see 5.10 for the caller-save
+   boundary lesson learned on the way.
 4. Profile-guided optimization as an orthogonal probe
    (-fprofile-generate / -fprofile-use, one workload of training).
+5. Opened by item 3: try pinned globals under Clang (it supports
+   register-asm globals with -ffixed flags) in place of or on top of the
+   preserve_none argument scheme, and try re-enabling the pre-load for
+   GCC now that the register budget is restored.
 
 Rejected: -fcall-saved-xN per TU (silent ABI mismatch with
 default-convention TUs, the same hazard class as the mixed-toolchain

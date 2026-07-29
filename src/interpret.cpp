@@ -6373,20 +6373,57 @@ struct tc_context {
 // registers across the handler body; without preserve_none it turns into
 // hot-path stack traffic on already ABI-strained handlers.
 #define TC_PRELOAD_ENABLED 1
+#define TC_GLOBAL_REGS 0
+#define TC_MUSTTAIL [[clang::musttail]]
+#elif defined(__GNUC__) && defined(__aarch64__)
+// GCC has no preserve_none; pin the interpreter's hot state in call-saved
+// registers instead. The register-asm declarations reserve those registers
+// in this translation unit, and being call-saved they survive calls into
+// code compiled elsewhere. pc still crosses the execute_* reference
+// boundary, so handlers bind it to a local and sync it at every exit.
+#define TC_CALLCONV
+#define TC_PRELOAD_ENABLED 0
+#define TC_GLOBAL_REGS 1
+#define TC_MUSTTAIL
 #else
 #define TC_CALLCONV
 #define TC_PRELOAD_ENABLED 0
+#define TC_GLOBAL_REGS 0
+#define TC_MUSTTAIL
 #endif
 
+#if TC_GLOBAL_REGS
+// The interpreter's hot state lives in reserved call-saved registers, named
+// so the shared handler body text resolves to them directly. pc is the
+// exception (execute_* takes it by reference and register globals have no
+// address), so handlers bind it to a local via TC_ENTER and sync it back
+// via TC_SYNC before dispatching.
+register uint64_t tc_reg_pc asm("x22");
+register uint64_t mcycle asm("x23");
+register uint64_t mcycle_tick_end asm("x24");
+register uint64_t fetch_vaddr_page asm("x25");
+register i_state_access_fast_addr_t<state_access> fetch_vf_offset asm("x26");
+register tc_context<state_access> *tcc asm("x27");
+#define TC_HOT_PARAMS
+#define TC_HOT_ARGS
+#define TC_ENTER() uint64_t pc = tc_reg_pc
+#define TC_SYNC() (tc_reg_pc = pc)
+#else
 // The fetch cache's two hot fields travel as handler arguments: the pre-load
 // consumes them at the head of its dependency chain, where keeping them in
 // registers is worth several percent. The tc_context copies are kept coherent
 // at every outlined-helper call and chain exit, and remain the storage the
 // outer loop and the helpers use.
+#define TC_HOT_PARAMS                                                                                                  \
+    , uint64_t pc, uint64_t mcycle, uint64_t mcycle_tick_end, tc_context<STATE_ACCESS> *tcc,                           \
+        uint64_t fetch_vaddr_page, i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset
+#define TC_HOT_ARGS , pc, mcycle, mcycle_tick_end, tcc, fetch_vaddr_page, fetch_vf_offset
+#define TC_ENTER() ((void) 0)
+#define TC_SYNC() ((void) 0)
+#endif
+
 template <typename STATE_ACCESS>
-using tc_handler_fn = TC_CALLCONV execute_status(STATE_ACCESS a, uint64_t pc, uint64_t mcycle, uint32_t insn,
-    uint64_t mcycle_tick_end, tc_context<STATE_ACCESS> *tcc, uint64_t fetch_vaddr_page,
-    i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset);
+using tc_handler_fn = TC_CALLCONV execute_status(STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
 
 template <typename STATE_ACCESS>
 using tc_handler_ptr = tc_handler_fn<STATE_ACCESS> *;
@@ -6394,9 +6431,7 @@ using tc_handler_ptr = tc_handler_fn<STATE_ACCESS> *;
 // Forward-declare one handler per jump-table label so the table can reference them all
 #define TC_CASE(NAME, PRELOAD, LEN, EXPR)                                                                              \
     template <typename STATE_ACCESS>                                                                                   \
-    TC_CALLCONV static execute_status tc_handler_##NAME(STATE_ACCESS a, uint64_t pc, uint64_t mcycle, uint32_t insn,   \
-        uint64_t mcycle_tick_end, tc_context<STATE_ACCESS> *tcc, uint64_t fetch_vaddr_page,                            \
-        i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset);
+    TC_CALLCONV static execute_status tc_handler_##NAME(STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
 #include "interpret-tc-cases.inc"
 #undef TC_CASE
 
@@ -6599,10 +6634,31 @@ static FORCE_INLINE tc_predecode<STATE_ACCESS> tc_predecode_next(const STATE_ACC
 /// frameless. Handles translation, page crossing, and raising fetches, then
 /// dispatches to the next handler.
 template <typename STATE_ACCESS>
-TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint64_t pc, uint64_t mcycle,
-    uint32_t /*insn*/, uint64_t mcycle_tick_end, tc_context<STATE_ACCESS> *tcc, uint64_t fetch_vaddr_page,
-    i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset) {
+TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /*insn*/ TC_HOT_PARAMS) {
+    TC_ENTER();
     uint32_t tc_next_insn = 0;
+#if TC_GLOBAL_REGS
+    // tc_fetch_insn takes the fetch cache by reference and register globals
+    // have no address, so proxy through locals on this cold path
+    uint64_t proxy_vaddr_page = fetch_vaddr_page;
+    i_state_access_fast_addr_t<STATE_ACCESS> proxy_vf_offset = fetch_vf_offset;
+    for (;;) {
+        if (tc_fetch_insn(a, pc, tc_next_insn, proxy_vaddr_page, proxy_vf_offset, tcc) == fetch_status::success)
+            [[likely]] {
+            break;
+        }
+        // The raising fetch consumed one cycle; execution continues from the
+        // exception handler pc
+        ++mcycle;
+        if (mcycle >= mcycle_tick_end) [[unlikely]] {
+            fetch_vaddr_page = proxy_vaddr_page;
+            fetch_vf_offset = proxy_vf_offset;
+            TC_RETURN(execute_status::success);
+        }
+    }
+    fetch_vaddr_page = proxy_vaddr_page;
+    fetch_vf_offset = proxy_vf_offset;
+#else
     for (;;) {
         if (tc_fetch_insn(a, pc, tc_next_insn, fetch_vaddr_page, fetch_vf_offset, tcc) == fetch_status::success)
             [[likely]] {
@@ -6615,8 +6671,9 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint64_t p
             TC_RETURN(execute_status::success);
         }
     }
-    [[clang::musttail]] return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, pc, mcycle, tc_next_insn,
-        mcycle_tick_end, tcc, fetch_vaddr_page, fetch_vf_offset);
+#endif
+    TC_SYNC();
+    TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS);
 }
 
 // Each handler pre-decodes its fall-through successor (when its class allows),
@@ -6630,9 +6687,8 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint64_t p
 // fetch leaves by tail call so the hot path reaches no call.
 #define TC_CASE(NAME, PRELOAD, LEN, EXPR)                                                                              \
     template <typename STATE_ACCESS>                                                                                   \
-    TC_CALLCONV static execute_status tc_handler_##NAME(const STATE_ACCESS a, uint64_t pc, uint64_t mcycle,            \
-        uint32_t insn, uint64_t mcycle_tick_end, tc_context<STATE_ACCESS> *tcc, uint64_t fetch_vaddr_page,             \
-        i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset) {                                                    \
+    TC_CALLCONV static execute_status tc_handler_##NAME(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS) {           \
+        TC_ENTER();                                                                                                    \
         [[maybe_unused]] tc_predecode<STATE_ACCESS> tc_next{};                                                         \
         if constexpr (TC_PRELOAD_ENABLED != 0 && (PRELOAD) != 0) {                                                     \
             tc_next = tc_predecode_next(a, pc, (LEN), fetch_vaddr_page, fetch_vf_offset, tcc);                         \
@@ -6655,24 +6711,24 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint64_t p
            (class 1) need the pc comparison */                                                                         \
         if constexpr (TC_PRELOAD_ENABLED != 0 && (PRELOAD) == 2) {                                                     \
             if (status == execute_status::success && tc_next.hit) [[likely]] {                                         \
-                [[clang::musttail]] return tc_next.handler(a, pc, mcycle, tc_next.insn, mcycle_tick_end, tcc,          \
-                    fetch_vaddr_page, fetch_vf_offset);                                                                \
+                TC_SYNC();                                                                                             \
+                TC_MUSTTAIL return tc_next.handler(a, tc_next.insn TC_HOT_ARGS);                                       \
             }                                                                                                          \
         } else if constexpr (TC_PRELOAD_ENABLED != 0 && (PRELOAD) == 1) {                                              \
             if (status == execute_status::success && tc_next.hit && pc == tc_next.pc) [[likely]] {                     \
-                [[clang::musttail]] return tc_next.handler(a, pc, mcycle, tc_next.insn, mcycle_tick_end, tcc,          \
-                    fetch_vaddr_page, fetch_vf_offset);                                                                \
+                TC_SYNC();                                                                                             \
+                TC_MUSTTAIL return tc_next.handler(a, tc_next.insn TC_HOT_ARGS);                                       \
             }                                                                                                          \
         }                                                                                                              \
         if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {                                                     \
             uint32_t tc_next_insn = 0;                                                                                 \
             a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index,                \
                 &tc_next_insn);                                                                                        \
-            [[clang::musttail]] return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, pc, mcycle,            \
-                tc_next_insn, mcycle_tick_end, tcc, fetch_vaddr_page, fetch_vf_offset);                                \
+            TC_SYNC();                                                                                                 \
+            TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS);     \
         }                                                                                                              \
-        [[clang::musttail]] return tc_fetch_miss<STATE_ACCESS>(a, pc, mcycle, insn, mcycle_tick_end, tcc,              \
-            fetch_vaddr_page, fetch_vf_offset);                                                                        \
+        TC_SYNC();                                                                                                     \
+        TC_MUSTTAIL return tc_fetch_miss<STATE_ACCESS>(a, insn TC_HOT_ARGS);                                           \
     }
 #include "interpret-tc-cases.inc"
 #undef TC_CASE
@@ -6680,7 +6736,7 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint64_t p
 
 /// \brief Tail-call variant of the interpreter hot loop; same observable behavior as interpret_loop().
 template <typename STATE_ACCESS>
-static NO_INLINE execute_status interpret_loop_tc(const STATE_ACCESS a, uint64_t mcycle_end, uint64_t mcycle) {
+static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uint64_t mcycle_end, uint64_t mcycle) {
     uint64_t pc = a.read_pc();
     if ((pc & 1) != 0) {
         pc = raise_exception(a, pc, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
@@ -6712,8 +6768,18 @@ static NO_INLINE execute_status interpret_loop_tc(const STATE_ACCESS a, uint64_t
             uint32_t insn = 0;
             if (fetch_insn(a, pc, insn, tcc.fetch_vaddr_page, tcc.fetch_vf_offset, tcc.fetch_pma_index) ==
                 fetch_status::success) [[likely]] {
-                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, pc, mcycle, insn, mcycle_tick_end, &tcc,
+#if TC_GLOBAL_REGS
+                cartesi::tc_reg_pc = pc;
+                cartesi::mcycle = mcycle;
+                cartesi::mcycle_tick_end = mcycle_tick_end;
+                cartesi::tcc = &tcc;
+                cartesi::fetch_vaddr_page = tcc.fetch_vaddr_page;
+                cartesi::fetch_vf_offset = tcc.fetch_vf_offset;
+                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
+#else
+                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, mcycle, mcycle_tick_end, &tcc,
                     tcc.fetch_vaddr_page, tcc.fetch_vf_offset);
+#endif
                 pc = tcc.pc;
                 mcycle = tcc.mcycle;
                 break;
@@ -6737,6 +6803,31 @@ static NO_INLINE execute_status interpret_loop_tc(const STATE_ACCESS a, uint64_t
     a.write_pc(pc);
     a.write_mcycle(mcycle);
     return execute_status::success;
+}
+
+template <typename STATE_ACCESS>
+static execute_status interpret_loop_tc(const STATE_ACCESS a, uint64_t mcycle_end, uint64_t mcycle) {
+#if TC_GLOBAL_REGS
+    // The reserved registers belong to the interpreter only while it runs.
+    // They are call-saved in the standard convention, so the caller may hold
+    // live values in them; preserve those values across the run.
+    const uint64_t saved_pc = tc_reg_pc;
+    const uint64_t saved_mcycle = cartesi::mcycle;
+    const uint64_t saved_tick_end = cartesi::mcycle_tick_end;
+    const uint64_t saved_vaddr_page = cartesi::fetch_vaddr_page;
+    const i_state_access_fast_addr_t<state_access> saved_vf_offset = cartesi::fetch_vf_offset;
+    tc_context<state_access> *const saved_tcc = cartesi::tcc;
+    const execute_status status = interpret_loop_tc_body(a, mcycle_end, mcycle);
+    tc_reg_pc = saved_pc;
+    cartesi::mcycle = saved_mcycle;
+    cartesi::mcycle_tick_end = saved_tick_end;
+    cartesi::fetch_vaddr_page = saved_vaddr_page;
+    cartesi::fetch_vf_offset = saved_vf_offset;
+    cartesi::tcc = saved_tcc;
+    return status;
+#else
+    return interpret_loop_tc_body(a, mcycle_end, mcycle);
+#endif
 }
 
 #endif // TAILCALL_INTERPRET

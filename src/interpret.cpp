@@ -100,7 +100,8 @@
 #include "collect-mcycle-hashes-state-access.hpp" // IWYU pragma: keep
 #include "record-step-state-access.hpp"           // IWYU pragma: keep
 #include "replay-step-state-access.hpp"           // IWYU pragma: keep
-#include "state-access.hpp"                       // IWYU pragma: keep
+#include "scope-exit.hpp"
+#include "state-access.hpp" // IWYU pragma: keep
 
 #endif
 
@@ -6810,24 +6811,21 @@ static execute_status interpret_loop_tc(const STATE_ACCESS a, uint64_t mcycle_en
 #if TC_GLOBAL_REGS
     // The reserved registers belong to the interpreter only while it runs.
     // They are call-saved in the standard convention, so the caller may hold
-    // live values in them; preserve those values across the run.
-    const uint64_t saved_pc = tc_reg_pc;
-    const uint64_t saved_mcycle = cartesi::mcycle;
-    const uint64_t saved_tick_end = cartesi::mcycle_tick_end;
-    const uint64_t saved_vaddr_page = cartesi::fetch_vaddr_page;
-    const i_state_access_fast_addr_t<state_access> saved_vf_offset = cartesi::fetch_vf_offset;
-    tc_context<state_access> *const saved_tcc = cartesi::tcc;
-    const execute_status status = interpret_loop_tc_body(a, mcycle_end, mcycle);
-    tc_reg_pc = saved_pc;
-    cartesi::mcycle = saved_mcycle;
-    cartesi::mcycle_tick_end = saved_tick_end;
-    cartesi::fetch_vaddr_page = saved_vaddr_page;
-    cartesi::fetch_vf_offset = saved_vf_offset;
-    cartesi::tcc = saved_tcc;
-    return status;
-#else
-    return interpret_loop_tc_body(a, mcycle_end, mcycle);
+    // live values in them; preserve those values across the run, including
+    // when an exception unwinds out of the interpreter.
+    const auto restore =
+        scope_exit([saved_pc = tc_reg_pc, saved_mcycle = cartesi::mcycle, saved_tick_end = cartesi::mcycle_tick_end,
+                       saved_vaddr_page = cartesi::fetch_vaddr_page, saved_vf_offset = cartesi::fetch_vf_offset,
+                       saved_tcc = cartesi::tcc] {
+            tc_reg_pc = saved_pc;
+            cartesi::mcycle = saved_mcycle;
+            cartesi::mcycle_tick_end = saved_tick_end;
+            cartesi::fetch_vaddr_page = saved_vaddr_page;
+            cartesi::fetch_vf_offset = saved_vf_offset;
+            cartesi::tcc = saved_tcc;
+        });
 #endif
+    return interpret_loop_tc_body(a, mcycle_end, mcycle);
 }
 
 #endif // TAILCALL_INTERPRET

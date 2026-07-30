@@ -49,6 +49,12 @@ if [ -e /etc/apt/sources.list ] || [ -d /etc/apt/sources.list.d ]; then
 	find /etc/apt/sources.list* \
 		-type f -name '*.sources' \
 		-exec sed -i 's/^Types: deb$/Types: deb deb-src/' '{}' +
+	if [ "${#apt_snapshot_opt[@]}" -gt 0 ]; then
+		# Require --snapshot for these sources instead of falling back to the live archive.
+		find /etc/apt/sources.list* \
+			-type f -name '*.sources' \
+			-exec sed -i -e '/^Snapshot:/d' -e '/^Types:/a Snapshot: enable' '{}' +
+	fi
 	find /etc/apt/sources.list* \
 		-type f ! -name '*.sources' \
 		-exec sed -i 'p; s/^deb /deb-src /' '{}' +

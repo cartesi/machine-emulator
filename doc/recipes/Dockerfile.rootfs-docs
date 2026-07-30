@@ -10,17 +10,26 @@ ARG MACHINE_GUEST_TOOLS_DEB_SHA256
 ARG MACHINE_GUEST_TOOLS_TARBALL_SHA256
 ARG DEBIAN_FRONTEND=noninteractive
 
+# Supply TLS trust to snapshot-only stages without installing live packages into them.
+FROM --platform=$BUILDPLATFORM ubuntu:${UBUNTU_TAG}@${UBUNTU_DIGEST} AS apt-ca
+ARG DEBIAN_FRONTEND
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 # Stage 1: cross-compile the C and C++ programs on the host architecture.
 FROM --platform=$BUILDPLATFORM ubuntu:${UBUNTU_TAG}@${UBUNTU_DIGEST} AS c-cpp-builder
 ARG DEBIAN_FRONTEND
 ARG MACHINE_GUEST_TOOLS_TAG
 ARG MACHINE_GUEST_TOOLS_TARBALL_SHA256
 ARG UBUNTU_SNAPSHOT
+COPY --from=apt-ca /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# Snapshot: enable makes --snapshot fail instead of falling back to the live archive.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
+    sed -i '/^Types:/a Snapshot: enable' /etc/apt/sources.list.d/ubuntu.sources && \
     apt-get update --snapshot=${UBUNTU_SNAPSHOT} && \
     apt-get install -y --no-install-recommends --snapshot=${UBUNTU_SNAPSHOT} g++-14-riscv64-linux-gnu && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /etc/ssl/certs/ca-certificates.crt
 ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_TARBALL_SHA256} \
     https://github.com/cartesi/machine-guest-tools/releases/download/${MACHINE_GUEST_TOOLS_TAG}/machine-guest-tools_riscv64.tar.gz \
     /tmp/machine-guest-tools_riscv64.tar.gz
@@ -66,14 +75,13 @@ ARG UBUNTU_SNAPSHOT
 ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_DEB_SHA256} \
     https://github.com/cartesi/machine-guest-tools/releases/download/${MACHINE_GUEST_TOOLS_TAG}/machine-guest-tools_riscv64.deb \
     /tmp/
+COPY --from=apt-ca /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
+    sed -i '/^Types:/a Snapshot: enable' /etc/apt/sources.list.d/ubuntu.sources && \
     apt-get update --snapshot=${UBUNTU_SNAPSHOT} && \
     apt-get install -y --no-install-recommends --snapshot=${UBUNTU_SNAPSHOT} \
-        /tmp/machine-guest-tools_riscv64.deb \
-        libstdc++6 \
-        bc curl device-tree-compiler gforth jq lua5.4 lua-socket \
-        python3-minimal tcl && \
+        /tmp/machine-guest-tools_riscv64.deb ca-certificates libstdc++6 \
+        bc curl device-tree-compiler gforth jq lua5.4 lua-socket python3-minimal tcl && \
     apt-get purge -y --auto-remove ca-certificates && \
     rm -f /var/cache/ldconfig/aux-cache && \
     rm -rf /var/log/* && \

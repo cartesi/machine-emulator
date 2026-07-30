@@ -1669,11 +1669,11 @@ $ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/o/openldap/openldap_2.6.10%2bdfsg.orig.tar.xz' openldap_2.6.10+dfsg.orig.tar.xz 3754560
 ```
 
-### `dpkg` source package: `openssl=3.0.13-0ubuntu3.11`
+### `dpkg` source package: `openssl=3.0.13-0ubuntu3.9`
 
 Binary Packages:
 
-- `libssl3t64:riscv64=3.0.13-0ubuntu3.11`
+- `libssl3t64:riscv64=3.0.13-0ubuntu3.9`
 
 Licenses: (parsed from: `/usr/share/doc/libssl3t64/copyright`)
 
@@ -1685,9 +1685,9 @@ Licenses: (parsed from: `/usr/share/doc/libssl3t64/copyright`)
 Source:
 
 ```console
-$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris openssl=3.0.13-0ubuntu3.11
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/o/openssl/openssl_3.0.13-0ubuntu3.11.debian.tar.xz' openssl_3.0.13-0ubuntu3.11.debian.tar.xz 195932
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/o/openssl/openssl_3.0.13-0ubuntu3.11.dsc' openssl_3.0.13-0ubuntu3.11.dsc 2516
+$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris openssl=3.0.13-0ubuntu3.9
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/o/openssl/openssl_3.0.13-0ubuntu3.9.debian.tar.xz' openssl_3.0.13-0ubuntu3.9.debian.tar.xz 181192
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/o/openssl/openssl_3.0.13-0ubuntu3.9.dsc' openssl_3.0.13-0ubuntu3.9.dsc 2512
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/o/openssl/openssl_3.0.13.orig.tar.gz' openssl_3.0.13.orig.tar.gz 15294843
 ```
 

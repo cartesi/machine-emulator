@@ -67,7 +67,7 @@
       }
     },
     {
-      "name": "is_empty",
+      "name": "machine.is_empty",
       "summary": "Checks if server has no machine instance",
       "params": [],
       "result": {
@@ -904,7 +904,7 @@
       }
     },
     {
-      "name": "machine.read_register",
+      "name": "machine.read_reg",
       "summary": "Reads the value of a register",
       "params": [
         {

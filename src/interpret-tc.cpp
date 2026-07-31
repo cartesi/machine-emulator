@@ -67,8 +67,8 @@ struct tc_context {
 #endif
 #endif
 
-#if TC_GLOBAL_REGS && !defined(__aarch64__)
-#error "TC_GLOBAL_REGS requires AArch64"
+#if TC_GLOBAL_REGS && !defined(__aarch64__) && !defined(__x86_64__)
+#error "TC_GLOBAL_REGS requires AArch64 or x86-64"
 #endif
 
 // preserve_none composes with pinned registers: the pinned state is not
@@ -130,11 +130,23 @@ struct tc_context {
 // countdown at the few points that observe it. The countdown is unsigned
 // but compared as signed: the privileged handler (WFI polling in
 // interactive mode) can push mcycle past the tick end, driving it negative.
+#if defined(__aarch64__)
 register uint64_t tc_reg_pc asm("x23");
 register uint64_t tc_remaining asm("x24");
 register uint64_t fetch_vaddr_page asm("x25");
 register uint64_t tc_reg_vf_offset asm("x26");
 register tc_context<state_access> *tcc asm("x27");
+#else
+// x86-64: the five pinned fields exactly fill the callee-saved set minus
+// rbp. GCC only: Clang's preserve_none argument order starts at r12, so
+// pinned registers and preserve_none cannot coexist here; Clang uses the
+// argument-passing shape on this architecture instead.
+register uint64_t tc_reg_pc asm("rbx");
+register uint64_t tc_remaining asm("r12");
+register uint64_t fetch_vaddr_page asm("r13");
+register uint64_t tc_reg_vf_offset asm("r14");
+register tc_context<state_access> *tcc asm("r15");
+#endif
 #define TC_HOT_PARAMS
 #define TC_HOT_ARGS
 #define TC_ENTER()                                                                                                     \
@@ -553,19 +565,33 @@ struct tc_saved_regs {
 /// the caller's callee-saved registers.
 static FORCE_INLINE tc_saved_regs tc_save_pinned_regs() {
     tc_saved_regs s;
+#if defined(__aarch64__)
     asm volatile("mov %0, x23\n\tmov %1, x24\n\tmov %2, x25\n\tmov %3, x26\n\tmov %4, x27"
         : "=r"(s.r[0]), "=r"(s.r[1]), "=r"(s.r[2]), "=r"(s.r[3]), "=r"(s.r[4])
         :
         : "memory");
+#else
+    asm volatile("mov %%rbx, %0\n\tmov %%r12, %1\n\tmov %%r13, %2\n\tmov %%r14, %3\n\tmov %%r15, %4"
+        : "=r"(s.r[0]), "=r"(s.r[1]), "=r"(s.r[2]), "=r"(s.r[3]), "=r"(s.r[4])
+        :
+        : "memory");
+#endif
     return s;
 }
 
 /// \brief Writes the reserved registers through asm the compiler cannot analyze.
 static FORCE_INLINE void tc_restore_pinned_regs(const tc_saved_regs &s) {
+#if defined(__aarch64__)
     asm volatile("mov x23, %0\n\tmov x24, %1\n\tmov x25, %2\n\tmov x26, %3\n\tmov x27, %4"
         :
         : "r"(s.r[0]), "r"(s.r[1]), "r"(s.r[2]), "r"(s.r[3]), "r"(s.r[4])
         : "memory");
+#else
+    asm volatile("mov %0, %%rbx\n\tmov %1, %%r12\n\tmov %2, %%r13\n\tmov %3, %%r14\n\tmov %4, %%r15"
+        :
+        : "r"(s.r[0]), "r"(s.r[1]), "r"(s.r[2]), "r"(s.r[3]), "r"(s.r[4])
+        : "memory");
+#endif
 }
 #endif
 

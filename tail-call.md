@@ -543,25 +543,36 @@ container, Clang via -target on the host); no timings, which need real
 x64 hardware.
 
 - GCC, args shape (no pinning, no preserve_none): every transition is
-  branch-shaped, so the structure survives, but the nine-slot hot state
-  overflows SysV's six integer argument registers. Each dispatch performs
-  three stack loads at entry, three stack stores at exit, and heavy
-  register shuffling, in handlers whose real work is a handful of
-  instructions. A regression against stock is near certain.
-- GCC, pinned: x86-64 has exactly six callee-saved GPRs (rbx, rbp,
-  r12-r15). Pinning all six leaves handlers no callee-saved scratch, so
-  anything live across a cold call spills. The viable experiment is a
-  partial pin (pc, mcycle, the fetch cache pair) with the rest demoted to
-  the context, a different shape from AArch64's.
+  branch-shaped, so the structure survives, but the hot state overflows
+  SysV's six integer argument registers. At the original nine slots each
+  dispatch performed three stack loads and three stack stores; the
+  countdown (section 5.15) brings it to eight slots and two of each.
+  Still likely a regression against stock.
+- GCC, pinned: the countdown's five-field pinned set exactly fits rbx and
+  r12-r15, so the AArch64 shape now compiles unchanged on x86-64
+  (-DTC_GLOBAL_REGS=1, GCC only): state in registers, countdown in r12,
+  dispatch by indirect jmp. The cost moved rather than vanished: with
+  every callee-saved register confiscated, handler locals (the accessor,
+  the preload's predicted target) spill to the red zone, so the pinned
+  shape trades the args shape's state traffic for locals traffic of
+  similar volume. Which side wins needs real x86-64 hardware to time.
 - Clang, preserve_none args: compiles with musttail honored, the
   convention's twelve argument registers hold the whole state, no
-  boundary stack traffic. Structurally equivalent to the healthy
-  pre-pinning AArch64 Clang shape, consistent with CPython's x86-64
-  tail-call result.
+  boundary stack traffic, and the countdown decrements in place in an
+  argument register. The pre-load's predicted dispatch target still
+  spills to one red-zone slot on the hot path (a store and a reload per
+  dispatch): fifteen GPRs do not cover state plus the pre-load's three
+  extra live values plus decode temporaries under any convention, which
+  is the budget AArch64's thirty-one registers absorbed. Structurally
+  the best x86-64 shape observed, consistent with CPython's x86-64
+  tail-call result; whether the pre-load still pays on this register
+  budget is an open timing question. Pinned plus preserve_none is
+  impossible here: the convention's argument order starts at r12, inside
+  any viable pinned set, with no headroom to renumber around it.
 
-Consequence: on x86-64 Clang can ship the args shape today, while GCC
-wants either the stock loop or a to-be-designed partial pin. The
-defaults already encode this (TC_GLOBAL_REGS is AArch64-only).
+Consequence: on x86-64 Clang can ship the args shape today, and GCC has
+a structurally sound pinned shape pending hardware timing. The defaults
+keep TC_GLOBAL_REGS AArch64-only until that timing exists.
 
 ### 5.15 Countdown mcycle (current best)
 

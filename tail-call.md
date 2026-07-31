@@ -803,6 +803,15 @@ Remaining before promotion:
 3. Run the formal gates on the flag, and a full timing campaign on the
    TU-split shape (the recorded campaigns used library-wide -ffixed).
 
+GCC 16 reportedly gains preserve_none-equivalent conventions on both
+AArch64 and x86-64, under different attribute names per target. When it
+is available here, add the names to the TC_USE_PRESERVE_NONE and
+TC_CALLCONV ladder behind __has_attribute probes and re-measure: on
+AArch64 the convention composes over the pinned set exactly as under
+Clang (where it was worth about a point), and on x86-64 it makes the
+argument-passing shape available to GCC, dissolving that architecture's
+stock-or-partial-pin fork.
+
 Standing goal: a single interpreter implementation, so there is one loop
 to audit instead of two. Currently blocked by portability (section 5.14:
 GCC on x86-64 has neither preserve_none nor the register budget for the
@@ -828,11 +837,20 @@ local to the handlers that host the hooks; the fetch-tail hit path stays
 untouched, which the stock loop could never offer (its instrumented
 shell cost +66% with tracing idle).
 
-1. Shell cost. Add the selective hotcounts and head lookup to the
-   backward-branch and call handlers, no recording, no traces. Measure
-   the six workloads against the plain tail-call build. Target is noise;
-   the stock-loop equivalent was +66%. This number alone decides whether
-   to continue.
+1. DONE, GREEN LIGHT. Shell cost: the selective hotcounts and head
+   lookup live behind -DTC_JIT_SHELL=1 (hooks in the conditional-branch
+   handlers for taken-backward edges and TC_HOOK_CALL wrappers on the
+   JAL/JALR/C_JALR cases; a 64-counter, 64-head tc_hot_state in the
+   context). Measured against same-source no-shell controls, all pairs
+   hash-identical: Clang +1.71%, GCC 15 +1.40% aggregate, versus +66%
+   for the stock loop's instrumented shell. The split confirms the
+   boundary argument: workloads with few hook events sit at noise
+   (qsort -0.2%, zlib +0.3%, double +0.4%), so instrumentation no
+   longer poisons uninstrumented handlers, and the residual is honest
+   per-event cost concentrated where events are dense (sieve +3.8%,
+   syscall +6.0%). Both concentrations are upper bounds for a real
+   tracer, which replaces its hottest sites with trace entries and
+   avoids the head probe at unestablished sites.
 2. AOT through the interpreter's convention. Reuse the tracing-experiment
    offline generator, but emit traces as C functions honoring the
    handler convention (pinned registers, preserve_none where available),

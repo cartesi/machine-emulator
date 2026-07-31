@@ -28,6 +28,26 @@
 
 namespace cartesi {
 
+// Measurement shell for the tracing plan (tail-call.md section 8b, step 1):
+// LuaJIT-shaped selective hotcounts and a trace-head probe at taken backward
+// branches and call targets, with no recording and no traces. -DTC_JIT_SHELL=1
+// compiles the hooks in; the difference against the same build without them is
+// the profiling shell's cost.
+#ifndef TC_JIT_SHELL
+#define TC_JIT_SHELL 0
+#endif
+
+#if TC_JIT_SHELL
+/// \brief Selective profiling state: 64 colliding 16-bit hotcounts (loops
+/// weighted double, hot after 56 loop events or 112 call events) and a
+/// direct-mapped trace-head table, empty in the shell so probes always miss.
+struct tc_hot_state {
+    uint16_t hotcount[64];
+    uint64_t head_pc[64];
+    uint64_t entries;
+};
+#endif
+
 /// \brief Mutable interpreter loop state committed by the tail-call handler chain when it stops.
 /// \details Hot values (pc, insn, the cycle countdown) travel in the fixed
 /// handler state instead; pc and mcycle are stored here only when a handler
@@ -44,6 +64,9 @@ struct tc_context {
     uint64_t fetch_vaddr_page;
     i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset;
     uint64_t fetch_pma_index;
+#if TC_JIT_SHELL
+    tc_hot_state hot;
+#endif
 };
 
 // Both compilers default to the unified shape: the interpreter's hot state
@@ -73,21 +96,31 @@ struct tc_context {
 
 // preserve_none composes with pinned registers: the pinned state is not
 // passed at all, but the convention still frees handlers from callee-saved
-// prologue obligations. Its argument assignment uses x20-x28 in order and
-// ignores -ffixed reservations, which is why the pinned set starts at x23,
-// leaving x20-x22 for the (accessor, insn) arguments.
+// prologue obligations. Under Clang its argument assignment uses x20-x28 in
+// order and ignores -ffixed reservations, which is why the pinned set starts
+// at x23, leaving x20-x22 for the (accessor, insn) arguments.
+// GCC 16 gains the convention on both targets under different spellings:
+// a plain attribute on x86-64 (probeable) and a target attribute string on
+// AArch64 (not probeable, gated on the version instead). Untested until a
+// GCC 16 is available here.
 #ifndef TC_USE_PRESERVE_NONE
 #if defined(__clang__) && __has_attribute(preserve_none)
+#define TC_USE_PRESERVE_NONE 1
+#elif defined(__GNUC__) && defined(__x86_64__) && __has_attribute(preserve_none)
+#define TC_USE_PRESERVE_NONE 1
+#elif defined(__GNUC__) && defined(__aarch64__) && __GNUC__ >= 16
 #define TC_USE_PRESERVE_NONE 1
 #else
 #define TC_USE_PRESERVE_NONE 0
 #endif
 #endif
 
-#if TC_USE_PRESERVE_NONE
-#define TC_CALLCONV __attribute__((preserve_none))
-#else
+#if !TC_USE_PRESERVE_NONE
 #define TC_CALLCONV
+#elif defined(__GNUC__) && !defined(__clang__) && defined(__aarch64__)
+#define TC_CALLCONV __attribute__((target("preserve_none")))
+#else
+#define TC_CALLCONV __attribute__((preserve_none))
 #endif
 
 // The next-instruction pre-load pays for itself only when the register
@@ -172,6 +205,36 @@ register tc_context<state_access> *tcc asm("r15");
 #define TC_MCYCLE_SET(v) (tc_remaining = tcc->mcycle_tick_end - (v))
 // One instruction retires: count it and test for the tick boundary
 #define TC_TICK_ENDED() (static_cast<int64_t>(--tc_remaining) <= 0)
+
+/// \brief Probes the trace-head table and updates the hotcount at a profiling
+/// site. In the shell the head table stays empty and hot trips only reset the
+/// counter; entries counts would-be trace entries so the probe is not dead.
+/// Defined unconditionally so discarded constexpr branches can name it; the
+/// body only instantiates under TC_JIT_SHELL.
+template <typename STATE_ACCESS>
+static FORCE_INLINE void tc_hook_site(tc_context<STATE_ACCESS> *c, uint64_t pc, uint16_t weight) {
+    const uint32_t h = (static_cast<uint32_t>(pc) >> 1) & 63;
+    if (c->hot.head_pc[h] == pc) [[unlikely]] {
+        ++c->hot.entries; // a trace would be entered here
+    }
+    c->hot.hotcount[h] -= weight;
+    if (static_cast<int16_t>(c->hot.hotcount[h]) <= 0) [[unlikely]] {
+        c->hot.hotcount[h] = 112; // a trace would be recorded here
+    }
+}
+#if TC_JIT_SHELL
+// Calls hook unconditionally at the callee; the expression yields the status
+#define TC_HOOK_CALL(expr)                                                                                             \
+    ({                                                                                                                 \
+        const execute_status tc_call_status = (expr);                                                                  \
+        if (tc_call_status == execute_status::success) {                                                               \
+            tc_hook_site(tcc, pc, 1);                                                                                  \
+        }                                                                                                              \
+        tc_call_status;                                                                                                \
+    })
+#else
+#define TC_HOOK_CALL(expr) (expr)
+#endif
 
 template <typename STATE_ACCESS>
 using tc_handler_fn = TC_CALLCONV execute_status(STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
@@ -438,6 +501,7 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
     TC_CALLCONV static execute_status tc_handler_##NAME(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS) {           \
         TC_ENTER();                                                                                                    \
         [[maybe_unused]] tc_predecode<STATE_ACCESS> tc_next{};                                                         \
+        [[maybe_unused]] const uint64_t tc_pc_in = pc;                                                                 \
         if constexpr (TC_PRELOAD_ENABLED != 0 && (PRELOAD) != 0) {                                                     \
             tc_next = tc_predecode_next(a, pc, (LEN), fetch_vaddr_page, fetch_vf_offset, tcc);                         \
         }                                                                                                              \
@@ -467,6 +531,12 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
                 TC_MUSTTAIL return tc_next.handler(a, tc_next.insn TC_HOT_ARGS);                                       \
             }                                                                                                          \
         }                                                                                                              \
+        if constexpr (TC_JIT_SHELL != 0 && (PRELOAD) == 1) {                                                           \
+            /* conditional branch taken backward: a loop back-edge profiling site */                                   \
+            if (status == execute_status::success && pc < tc_pc_in) {                                                  \
+                tc_hook_site(tcc, pc, 2);                                                                              \
+            }                                                                                                          \
+        }                                                                                                              \
         if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {                                                     \
             uint32_t tc_next_insn = 0;                                                                                 \
             a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index,                \
@@ -493,6 +563,15 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
     tcc.mcycle_end = mcycle_end;
     tcc.fetch_vaddr_page = ensure_fetch_cache_miss(pc);
     tcc.fetch_pma_index = TLB_INVALID_PMA_INDEX;
+#if TC_JIT_SHELL
+    for (auto &c : tcc.hot.hotcount) {
+        c = 112;
+    }
+    for (auto &p : tcc.hot.head_pc) {
+        p = UINT64_MAX;
+    }
+    tcc.hot.entries = 0;
+#endif
 
     while (mcycle < mcycle_end) {
         if (rtc_is_tick(mcycle)) {

@@ -37,6 +37,10 @@
 #include <typeinfo>
 #include <variant>
 
+#if defined(__APPLE__) && defined(__GNUC__) && !defined(__clang__)
+#include <dlfcn.h>
+#endif
+
 #include "access-log.hpp"
 #include "address-range-constants.hpp"
 #include "address-range-defines.h"
@@ -65,6 +69,22 @@
 #include "send-cmio-response.hpp"
 #include "sha-256-hasher.hpp"
 #include "uarch-defines.h"
+
+#if defined(__APPLE__) && defined(__GNUC__) && !defined(__clang__)
+// The C API keeps thread_local buffers below, whose per-thread destructors
+// point into whatever image this file is linked into. GCC on macOS uses
+// emulated TLS, which never unregisters those destructors, so a host that
+// dlcloses the image crashes at process exit. The other runtimes prevent
+// this by making images with pending thread-local destructors unloadable
+// (glibc marks them nodelete, Clang on macOS tracks native TLVs per image);
+// provide the same guarantee here by pinning the image as soon as it loads.
+__attribute__((constructor)) static void pin_containing_image() {
+    Dl_info info{};
+    if (dladdr(reinterpret_cast<const void *>(&pin_containing_image), &info) != 0 && info.dli_fname != nullptr) {
+        dlopen(info.dli_fname, RTLD_NOLOAD | RTLD_NODELETE | RTLD_LAZY);
+    }
+}
+#endif
 
 static std::string &get_last_err_msg_storage() {
     static THREAD_LOCAL std::string last_err_msg;

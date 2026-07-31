@@ -23,7 +23,7 @@ use sp1_sdk::{Elf, ProveRequest, Prover, ProverClient, ProvingKey, SP1Stdin};
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        eprintln!("usage: {} <guest.elf> <step.log> [prove]", args[0]);
+        eprintln!("usage: {} <guest.elf> <step.log> [prove [cpu|cuda]]", args[0]);
         std::process::exit(1);
     }
     let elf_bytes = std::fs::read(&args[1]).expect("failed to read guest elf");
@@ -36,14 +36,20 @@ async fn main() {
     stdin.write_slice(&log_bytes);
 
     if args.len() > 3 && args[3] == "prove" {
-        let client = ProverClient::builder().cpu().build().await;
-        let pk = client.setup(elf).await.unwrap();
-        let start = std::time::Instant::now();
-        let proof = client.prove(&pk, stdin).core().await.unwrap();
-        println!("proved in {:?}", start.elapsed());
-        client.verify(&proof, pk.verifying_key(), None).unwrap();
-        println!("proof verified");
-        println!("public_values 0x{}", hex(proof.public_values.as_slice()));
+        match args.get(4).map_or("cpu", String::as_str) {
+            "cpu" => prove(ProverClient::builder().cpu().build().await, elf, stdin).await,
+            #[cfg(feature = "cuda")]
+            "cuda" => prove(ProverClient::builder().cuda().build().await, elf, stdin).await,
+            #[cfg(not(feature = "cuda"))]
+            "cuda" => {
+                eprintln!("cuda prover not compiled in; rebuild with --features cuda");
+                std::process::exit(1);
+            }
+            other => {
+                eprintln!("unknown prover backend {other:?}, expected cpu or cuda");
+                std::process::exit(1);
+            }
+        }
         return;
     }
 
@@ -67,6 +73,16 @@ async fn main() {
     for (name, n) in syscalls {
         println!("  syscall {name:?} {n}");
     }
+}
+
+async fn prove<P: Prover>(client: P, elf: Elf, stdin: SP1Stdin) {
+    let pk = client.setup(elf).await.unwrap();
+    let start = std::time::Instant::now();
+    let proof = client.prove(&pk, stdin).core().await.unwrap();
+    println!("proved in {:?}", start.elapsed());
+    client.verify(&proof, pk.verifying_key(), None).unwrap();
+    println!("proof verified");
+    println!("public_values 0x{}", hex(proof.public_values.as_slice()));
 }
 
 fn hex(bytes: &[u8]) -> String {

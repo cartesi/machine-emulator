@@ -8,6 +8,11 @@ publish = false
 name = "cartesi-sp1-execute"
 path = "src/main.rs"
 
+[features]
+# Off by default: sp1-cuda pulls a CUDA-linked prover that only builds where the
+# toolkit is present. Enable on the GPU host with --features cuda.
+cuda = ["sp1-sdk/cuda"]
+
 [dependencies]
 sp1-sdk = "6.3.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

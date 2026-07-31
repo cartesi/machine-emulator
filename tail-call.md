@@ -851,15 +851,54 @@ shell cost +66% with tracing idle).
    syscall +6.0%). Both concentrations are upper bounds for a real
    tracer, which replaces its hottest sites with trace entries and
    avoids the head probe at unestablished sites.
-2. AOT through the interpreter's convention. Reuse the tracing-experiment
-   offline generator, but emit traces as C functions honoring the
-   handler convention (pinned registers, preserve_none where available),
-   compiled by the host compiler and dispatched from the head table.
-   Zero new backend code, production-quality trace bodies, and it
-   isolates the one question tracing.md left open: how much of the old
-   -2.9% AOT ceiling was boundary cost that the shared-convention
-   entry and exit remove.
-3. Backend choice, only after 2 shows margin. MIR generates standard-ABI
+2. DONE, DECISIVE. AOT through the interpreter's convention: traces
+   captured offline (machine-emulator-2's aot-six-capture build against
+   the current images, TRACE_HOT_THRESHOLD=64, TRACE_MAX_COUNT=1024),
+   emitted by scratch/tracing-experiment/gen-tc-traces.lua as functions
+   with the handler signature whose bodies are the recorded sequences:
+   per step, the TC case's own execute expression with the recorded
+   word, the handler macro's status handling, the countdown decrement,
+   and a pc guard against the recorded successor; cyclic traces loop
+   natively; every exit leaves through the interpreter's fetch tail.
+   Dispatch rides the shell's head probe (-DTC_AOT=1, trace file in
+   TC_AOT_TRACES, 64 traces per workload). Against the tail-call
+   interpreter itself, gated on cycles and hashes:
+
+   | Workload | Change |
+   |---|---:|
+   | sieve | -49.5% |
+   | zlib | -22.0% |
+   | hash | -19.4% |
+   | qsort | -12.9% |
+   | syscall | -10.0% |
+   | double | -1.6% |
+   | aggregate | -16.9% |
+
+   That is roughly -27% against stock, versus the old campaign's -2.9%
+   AOT ceiling through the stock loop's boundary: the shared-convention
+   entry and exit were the decisive cost, as section 7 predicted. zlib,
+   unmoved by every interpreter-side iteration, drops 22%. Caveats: an
+   execution oracle (recorded bytes are not re-verified and stores do
+   not invalidate; the gates validate every run), offline traces, a
+   64-trace budget, and double barely moves (19.5% capture coverage).
+3. Online recording, with LuaJIT's memory policy (decided): every
+   structure lives in fixed pools allocated when the machine is created,
+   so allocation can fail only at cm_create, never mid-run. A fixed
+   trace pool and recording buffer, bump-pointer install, flush-all when
+   the pool fills (hotcounts re-warm at measured shell cost), and the
+   penalty blacklist against re-record churn. No recency ordering on
+   the entry path ever; if flush-thrash appears, the fallback is an
+   epoch stamp in the already-loaded head-table line with a cold
+   second-chance sweep, not an LRU list. Intrusive per-page membership
+   lists (page-hash-tree-cache style, nodes embedded in the fixed pool)
+   serve store invalidation and are touched only at install, invalidate,
+   and flush. Design consequence: the profiling and trace state must
+   move out of the stack tc_context into per-machine state, because
+   interpret() runs in mcycle_end chunks and hotcounts, traces, and
+   blacklists must survive across calls (today's shell re-warms per
+   interpret() call, which the single-run benchmarks never notice).
+
+4. Backend choice, only after 2 shows margin. MIR generates standard-ABI
    code, so every trace entry and exit would re-marshal the interpreter
    state, exactly the boundary cost the LuaJIT architecture avoids, and
    the prior experiments recorded short traces, where boundary

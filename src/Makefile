@@ -265,7 +265,7 @@ INTERPRET_CXXFLAGS+=-DTAILCALL_INTERPRET
 # reserved on the command line; GCC reserves them from the declarations alone
 ifneq (,$(findstring clang,$(CC)))
 ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
-TC_FFIXED_FLAGS=-ffixed-x23 -ffixed-x24 -ffixed-x25 -ffixed-x26 -ffixed-x27 -ffixed-x28
+TC_FFIXED_FLAGS=-ffixed-x23 -ffixed-x24 -ffixed-x25 -ffixed-x26 -ffixed-x27
 endif
 endif
 endif

@@ -18,7 +18,7 @@
 // Tail-call threaded interpreter (see tail-call.md). It lives in its own
 // translation unit because the pinned register discipline is TU-wide: GCC's
 // register-asm declarations reserve the registers for the whole translation
-// unit, and Clang additionally requires -ffixed-x23 through -ffixed-x28 on
+// unit, and Clang additionally requires -ffixed-x23 through -ffixed-x27 on
 // the command line of this file. Keeping it out of interpret.cpp spares the
 // stock loop instantiations (record, replay, collect) that reservation.
 // Only direct execution (state_access) dispatches through this loop.
@@ -29,20 +29,25 @@
 namespace cartesi {
 
 /// \brief Mutable interpreter loop state committed by the tail-call handler chain when it stops.
-/// \details Hot values (pc, mcycle, insn) travel in the fixed handler arguments instead;
-/// pc and mcycle are stored here only when a handler returns to the outer loop.
+/// \details Hot values (pc, insn, the cycle countdown) travel in the fixed
+/// handler state instead; pc and mcycle are stored here only when a handler
+/// returns to the outer loop. mcycle itself is not kept live: the chain
+/// carries a countdown of cycles until the tick end, and the architectural
+/// mcycle is materialized as mcycle_tick_end - countdown at the few points
+/// that observe it (the privileged handler, chain exits).
 template <typename STATE_ACCESS>
 struct tc_context {
     uint64_t pc;
     uint64_t mcycle;
     uint64_t mcycle_end;
+    uint64_t mcycle_tick_end;
     uint64_t fetch_vaddr_page;
     i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset;
     uint64_t fetch_pma_index;
 };
 
 // Both compilers default to the unified shape: the interpreter's hot state
-// pinned in the call-saved registers x23-x28, with the next-instruction
+// pinned in the call-saved registers x23-x27, with the next-instruction
 // pre-load, and (under Clang) the preserve_none convention and guaranteed
 // tail calls layered on. Every choice can be overridden from the build for
 // experiments (-DTC_GLOBAL_REGS=0/1, -DTC_PRELOAD_ENABLED=0/1,
@@ -50,7 +55,7 @@ struct tc_context {
 //
 // The register-asm declarations reserve the pinned registers in this
 // translation unit (Clang additionally requires -ffixed-x23 through
-// -ffixed-x28 on this file's command line, which the tailcall=yes build
+// -ffixed-x27 on this file's command line, which the tailcall=yes build
 // passes), and being call-saved they survive calls into code compiled
 // elsewhere. pc crosses the execute_* reference boundary, so handlers bind
 // it to a local and sync it at every exit.
@@ -119,12 +124,17 @@ struct tc_context {
 // assigns the handler arguments to x20-x22 even when those registers are
 // reserved with -ffixed; pinning x22 would let every dispatch clobber pc
 // with the instruction word.
+// mcycle is not kept live: tc_remaining counts down the cycles until the
+// tick end, one fused decrement-and-branch per instruction, and the
+// architectural mcycle is materialized as tcc->mcycle_tick_end minus the
+// countdown at the few points that observe it. The countdown is unsigned
+// but compared as signed: the privileged handler (WFI polling in
+// interactive mode) can push mcycle past the tick end, driving it negative.
 register uint64_t tc_reg_pc asm("x23");
-register uint64_t mcycle asm("x24");
-register uint64_t mcycle_tick_end asm("x25");
-register uint64_t fetch_vaddr_page asm("x26");
-register uint64_t tc_reg_vf_offset asm("x27");
-register tc_context<state_access> *tcc asm("x28");
+register uint64_t tc_remaining asm("x24");
+register uint64_t fetch_vaddr_page asm("x25");
+register uint64_t tc_reg_vf_offset asm("x26");
+register tc_context<state_access> *tcc asm("x27");
 #define TC_HOT_PARAMS
 #define TC_HOT_ARGS
 #define TC_ENTER()                                                                                                     \
@@ -138,12 +148,18 @@ register tc_context<state_access> *tcc asm("x28");
 // at every outlined-helper call and chain exit, and remain the storage the
 // outer loop and the helpers use.
 #define TC_HOT_PARAMS                                                                                                  \
-    , uint64_t pc, uint64_t mcycle, uint64_t mcycle_tick_end, tc_context<STATE_ACCESS> *tcc,                           \
-        uint64_t fetch_vaddr_page, i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset
-#define TC_HOT_ARGS , pc, mcycle, mcycle_tick_end, tcc, fetch_vaddr_page, fetch_vf_offset
+    , uint64_t pc, uint64_t tc_remaining, tc_context<STATE_ACCESS> *tcc, uint64_t fetch_vaddr_page,                    \
+        i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset
+#define TC_HOT_ARGS , pc, tc_remaining, tcc, fetch_vaddr_page, fetch_vf_offset
 #define TC_ENTER() ((void) 0)
 #define TC_SYNC() ((void) 0)
 #endif
+
+// The architectural cycle counter, derived from the countdown on demand
+#define TC_MCYCLE_GET() (tcc->mcycle_tick_end - tc_remaining)
+#define TC_MCYCLE_SET(v) (tc_remaining = tcc->mcycle_tick_end - (v))
+// One instruction retires: count it and test for the tick boundary
+#define TC_TICK_ENDED() (static_cast<int64_t>(--tc_remaining) <= 0)
 
 template <typename STATE_ACCESS>
 using tc_handler_fn = TC_CALLCONV execute_status(STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
@@ -344,7 +360,7 @@ static FORCE_INLINE tc_predecode<STATE_ACCESS> tc_predecode_next(const STATE_ACC
 #define TC_RETURN(st)                                                                                                  \
     do {                                                                                                               \
         tcc->pc = pc;                                                                                                  \
-        tcc->mcycle = mcycle;                                                                                          \
+        tcc->mcycle = TC_MCYCLE_GET();                                                                                 \
         tcc->fetch_vaddr_page = fetch_vaddr_page;                                                                      \
         tcc->fetch_vf_offset = fetch_vf_offset;                                                                        \
         return (st);                                                                                                   \
@@ -371,8 +387,7 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
         }
         // The raising fetch consumed one cycle; execution continues from the
         // exception handler pc
-        ++mcycle;
-        if (mcycle >= mcycle_tick_end) [[unlikely]] {
+        if (TC_TICK_ENDED()) [[unlikely]] {
             fetch_vaddr_page = proxy_vaddr_page;
             tc_reg_vf_offset = static_cast<uint64_t>(proxy_vf_offset);
             TC_RETURN(execute_status::success);
@@ -388,8 +403,7 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
         }
         // The raising fetch consumed one cycle; execution continues from the
         // exception handler pc
-        ++mcycle;
-        if (mcycle >= mcycle_tick_end) [[unlikely]] {
+        if (TC_TICK_ENDED()) [[unlikely]] {
             TC_RETURN(execute_status::success);
         }
     }
@@ -420,12 +434,11 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
             fetch_vaddr_page = ensure_fetch_cache_miss(pc);                                                            \
             tcc->fetch_vaddr_page = fetch_vaddr_page;                                                                  \
             if (status >= execute_status::success_and_serve_interrupts) [[unlikely]] {                                 \
-                ++mcycle;                                                                                              \
+                --tc_remaining;                                                                                        \
                 TC_RETURN(status);                                                                                     \
             }                                                                                                          \
         }                                                                                                              \
-        ++mcycle;                                                                                                      \
-        if (mcycle >= mcycle_tick_end) [[unlikely]] {                                                                  \
+        if (TC_TICK_ENDED()) [[unlikely]] {                                                                            \
             TC_RETURN(execute_status::success);                                                                        \
         }                                                                                                              \
         /* Straight-line handlers (class 2) reach pc == tc_next.pc whenever                                            \
@@ -484,6 +497,7 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 #endif
 
         const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
+        tcc.mcycle_tick_end = mcycle_tick_end;
 
         execute_status status = execute_status::success;
         while (mcycle < mcycle_tick_end) {
@@ -492,14 +506,13 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 fetch_status::success) [[likely]] {
 #if TC_GLOBAL_REGS
                 cartesi::tc_reg_pc = pc;
-                cartesi::mcycle = mcycle;
-                cartesi::mcycle_tick_end = mcycle_tick_end;
+                cartesi::tc_remaining = mcycle_tick_end - mcycle;
                 cartesi::tcc = &tcc;
                 cartesi::fetch_vaddr_page = tcc.fetch_vaddr_page;
                 cartesi::tc_reg_vf_offset = static_cast<uint64_t>(tcc.fetch_vf_offset);
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
 #else
-                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, mcycle, mcycle_tick_end, &tcc,
+                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, mcycle_tick_end - mcycle, &tcc,
                     tcc.fetch_vaddr_page, tcc.fetch_vf_offset);
 #endif
                 pc = tcc.pc;
@@ -530,7 +543,7 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 #if TC_GLOBAL_REGS
 /// \brief Snapshot of the six reserved registers' values.
 struct tc_saved_regs {
-    uint64_t r[6];
+    uint64_t r[5];
 };
 
 /// \brief Reads the reserved registers through asm the compiler cannot analyze.
@@ -540,8 +553,8 @@ struct tc_saved_regs {
 /// the caller's callee-saved registers.
 static FORCE_INLINE tc_saved_regs tc_save_pinned_regs() {
     tc_saved_regs s;
-    asm volatile("mov %0, x23\n\tmov %1, x24\n\tmov %2, x25\n\tmov %3, x26\n\tmov %4, x27\n\tmov %5, x28"
-        : "=r"(s.r[0]), "=r"(s.r[1]), "=r"(s.r[2]), "=r"(s.r[3]), "=r"(s.r[4]), "=r"(s.r[5])
+    asm volatile("mov %0, x23\n\tmov %1, x24\n\tmov %2, x25\n\tmov %3, x26\n\tmov %4, x27"
+        : "=r"(s.r[0]), "=r"(s.r[1]), "=r"(s.r[2]), "=r"(s.r[3]), "=r"(s.r[4])
         :
         : "memory");
     return s;
@@ -549,9 +562,9 @@ static FORCE_INLINE tc_saved_regs tc_save_pinned_regs() {
 
 /// \brief Writes the reserved registers through asm the compiler cannot analyze.
 static FORCE_INLINE void tc_restore_pinned_regs(const tc_saved_regs &s) {
-    asm volatile("mov x23, %0\n\tmov x24, %1\n\tmov x25, %2\n\tmov x26, %3\n\tmov x27, %4\n\tmov x28, %5"
+    asm volatile("mov x23, %0\n\tmov x24, %1\n\tmov x25, %2\n\tmov x26, %3\n\tmov x27, %4"
         :
-        : "r"(s.r[0]), "r"(s.r[1]), "r"(s.r[2]), "r"(s.r[3]), "r"(s.r[4]), "r"(s.r[5])
+        : "r"(s.r[0]), "r"(s.r[1]), "r"(s.r[2]), "r"(s.r[3]), "r"(s.r[4])
         : "memory");
 }
 #endif

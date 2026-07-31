@@ -3,10 +3,10 @@
 ## 1. Current conclusion
 
 A tail-call threaded interpreter, built from Mike Pall's design advice but
-with no assembly, beats the stock computed-goto interpreter by 11.8% under
-Clang and 10.6% under GCC 15, in aggregate over the six continuity
-workloads, from one source-code shape shared by both compilers (section
-5.12, built with `make tailcall=yes`), while reusing the stock
+with no assembly, beats the stock computed-goto interpreter by 12.5% under
+Clang and about 10.8% under GCC 15, in aggregate over the six continuity
+workloads, from one source-code shape shared by both compilers (sections
+5.12 and 5.15, built with `make tailcall=yes`), while reusing the stock
 instruction semantics unchanged. Every
 variant of every iteration retired identical cycles and produced identical
 root hashes and guest exits against a same-source stock build. For scale,
@@ -14,10 +14,10 @@ tracing.md's best offline native AOT result was -2.9% aggregate against
 the plain interpreter.
 
 The register discipline Pall obtains from assembly is obtained here from
-pinned global register variables (x23-x28 hold pc, mcycle, the tick limit,
-the fetch cache, and the context pointer), with the preserve_none
-convention and guaranteed tail calls layered on where the compiler
-provides them (Clang). Each instruction handler is a separate function
+pinned global register variables (x23-x27 hold pc, a cycle countdown, the
+fetch cache, and the context pointer), with the preserve_none convention
+and guaranteed tail calls layered on where the compiler provides them
+(Clang). Each instruction handler is a separate function
 with one fixed signature and dispatches by tail call through the jump
 table. A handler pre-decodes its fall-through successor (instruction word
 and dispatch target, using its compile-time instruction length) in
@@ -562,6 +562,45 @@ x64 hardware.
 Consequence: on x86-64 Clang can ship the args shape today, while GCC
 wants either the stock loop or a to-be-designed partial pin. The
 defaults already encode this (TC_GLOBAL_REGS is AArch64-only).
+
+### 5.15 Countdown mcycle (current best)
+
+mcycle is not architectural state between observation points, so the
+chain no longer carries it. A single pinned countdown of cycles until the
+tick end replaces the (mcycle, mcycle_tick_end) register pair: handlers
+retire an instruction with one decrement-and-test, and the architectural
+mcycle is materialized as tcc->mcycle_tick_end minus the countdown at the
+points that observe it (the 47 load/store/AMO/CSR cases whose semantics
+take mcycle for device accesses, the privileged handler, and chain
+exits). The countdown is compared as signed because WFI's interactive
+poll can advance mcycle past the tick end, driving it negative; two's
+complement keeps the materialization identity exact there too.
+
+The change shrinks the pinned set to x23-x27 (x28 returns to the
+allocator), drops the args-shape signature from nine slots to eight (one
+step closer to fitting x86-64's argument registers), and gives trace
+exits their natural form: a compiled trace needs no per-instruction
+accounting, only an entry guard (enter only if the countdown covers the
+longest run to any exit) and a constant adjustment at each exit, with a
+per-iteration decrement at loop back-edges. Measured against a same-day
+stock anchor, all pairs cycle- and hash-identical:
+
+| Workload | Clang stock (s) | Clang countdown (s) | GCC15 countdown (s) |
+|---|---:|---:|---:|
+| sieve | 30.52 | 25.80 | 22.82 |
+| qsort | 29.81 | 25.48 | 28.03 |
+| zlib | 27.21 | 27.50 | 24.71 |
+| hash | 31.59 | 24.92 | 26.58 |
+| double | 52.49 | 48.27 | 55.30 |
+| syscall | 32.24 | 26.32 | 26.76 |
+| **Total** | **203.86** | **178.29 (-12.5%)** | **184.20** |
+
+Clang improves from -11.8% to -12.5% (better on five of six workloads,
+each delta small), the best result of the experiment; GCC 15 is
+unchanged within noise (184.20 vs 184.45, about -10.8% vs its stock).
+The compiler does not fuse the decrement into a flag-setting subtract
+(it emits sub, mov, cmp, branch where subs plus one branch would do), so
+a little is still on the table if that shape ever matters.
 
 ## 6. Hardware counters explain zlib
 

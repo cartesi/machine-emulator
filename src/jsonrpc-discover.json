@@ -67,7 +67,7 @@
       }
     },
     {
-      "name": "is_empty",
+      "name": "machine.is_empty",
       "summary": "Checks if server has no machine instance",
       "params": [],
       "result": {
@@ -409,6 +409,14 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "revert_uarch_tail",
+          "description": "Root hashes after each uarch cycle of the period the recorded revert root hash reverts to, the last entry being the revert root hash itself. Required when mcycle_end is greater than the current mcycle, unless the machine starts at a fixed point other than a rejected manual yield",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/Base64HashArray"
           }
         }
       ],
@@ -875,7 +883,7 @@
       }
     },
     {
-      "name": "machine.read_register",
+      "name": "machine.read_reg",
       "summary": "Reads the value of a register",
       "params": [
         {

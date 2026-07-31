@@ -256,8 +256,25 @@ INTERPRET_CXXFLAGS+=-fno-stack-protector
 endif
 endif
 
+# Experimental tail-call threaded interpreter (see tail-call.md). The loop
+# lives in interpret-tc.cpp, whose pinned-register discipline is TU-wide;
+# interpret.o only gets the define, which routes direct execution there.
+ifeq ($(tailcall),yes)
+INTERPRET_CXXFLAGS+=-DTAILCALL_INTERPRET
+# Clang only honors the pinned register globals when the registers are
+# reserved on the command line; GCC reserves them from the declarations alone
+ifneq (,$(findstring clang,$(CC)))
+ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
+TC_FFIXED_FLAGS=-ffixed-x23 -ffixed-x24 -ffixed-x25 -ffixed-x26 -ffixed-x27 -ffixed-x28
+endif
+endif
+endif
+
 # Make testing new optimization options easier
 INTERPRET_CXXFLAGS+=$(MYINTERPRET_CXXFLAGS)
+
+# interpret-tc.o wants the same interpreter flags plus the reservation
+TC_INTERPRET_CXXFLAGS=$(INTERPRET_CXXFLAGS) $(TC_FFIXED_FLAGS)
 
 # Link time optimizations
 ifeq ($(lto),yes)
@@ -410,6 +427,10 @@ LIBCARTESI_OBJS:= \
 	virtio-net-address-range.o \
 	virtio-net-tuntap-address-range.o \
 	virtio-net-user-address-range.o
+
+ifeq ($(tailcall),yes)
+LIBCARTESI_OBJS+=interpret-tc.o
+endif
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \
@@ -616,6 +637,10 @@ interpret-jump-table.hpp: ../tools/gen-interpret-jump-table.lua
 
 interpret.o: interpret.cpp cm-version.h interpret-jump-table.hpp
 	$(CXX) $(CXXFLAGS) $(INTERPRET_CXXFLAGS) -c -o $@ $<
+
+interpret-tc.o: interpret-tc.cpp interpret.cpp cm-version.h interpret-jump-table.hpp \
+		interpret-tc-cases.inc interpret-tc-table.inc
+	$(CXX) $(CXXFLAGS) $(TC_INTERPRET_CXXFLAGS) -c -o $@ $<
 
 keccak-256-hasher.o: keccak-256-hasher.cpp
 	$(CXX) $(CXXFLAGS) $(HASH_CFLAGS) -c -o $@ $<

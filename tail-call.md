@@ -3,21 +3,25 @@
 ## 1. Current conclusion
 
 A tail-call threaded interpreter, built from Mike Pall's design advice but
-with no assembly, beats the stock computed-goto interpreter by 12.5% under
-Clang and about 10.8% under GCC 15, in aggregate over the six continuity
-workloads, from one source-code shape shared by both compilers (sections
-5.12 and 5.15, built with `make tailcall=yes`), while reusing the stock
-instruction semantics unchanged. Every
-variant of every iteration retired identical cycles and produced identical
-root hashes and guest exits against a same-source stock build. For scale,
-tracing.md's best offline native AOT result was -2.9% aggregate against
-the plain interpreter.
+with no assembly, beats the stock computed-goto interpreter on AArch64 by
+12.5% under Clang and about 10.8% under GCC 15, in aggregate over the six
+continuity workloads (sections 5.12 and 5.15, built with
+`make tailcall=yes`), while reusing the stock instruction semantics
+unchanged. The result is architecture-specific: on x86-64 the shipped
+defaults are +1.4% under Clang 22 and +10.9% under GCC 16, and the only
+measured win is Clang with the next-instruction pre-load disabled, at a
+marginal -1.2% (section 5.14). Every variant of every iteration retired
+identical cycles and produced identical root hashes and guest exits against
+a same-source stock build. For scale, tracing.md's best offline native AOT
+result was -2.9% aggregate against the plain interpreter.
 
-The register discipline Pall obtains from assembly is obtained here from
-pinned global register variables (x23-x27 hold pc, a cycle countdown, the
-fetch cache, and the context pointer), with the preserve_none convention
-and guaranteed tail calls layered on where the compiler provides them
-(Clang). Each instruction handler is a separate function
+On AArch64, the register discipline Pall obtains from assembly is obtained
+here from pinned global register variables (x23-x27 hold pc, a cycle
+countdown, the fetch cache, and the context pointer), with the preserve_none
+convention and guaranteed tail calls layered on where the compiler provides
+them (Clang). On x86-64, the smaller register file changes that balance and
+the default is the argument-passing shape instead. Each instruction handler
+is a separate function
 with one fixed signature and dispatches by tail call through the jump
 table. A handler pre-decodes its fall-through successor (instruction word
 and dispatch target, using its compile-time instruction length) in
@@ -418,15 +422,15 @@ sieve +7.4%, zlib neutral), much milder than GCC 14's regression. The
 uniform shape adopted in section 5.12 keeps the pre-load on anyway; the
 cost of uniformity under GCC 15 is those 1.5 points.
 
-### 5.12 Pinned registers under Clang: one shape for both compilers
+### 5.12 Pinned registers on AArch64: one shape for both compilers
 
 Making TC_GLOBAL_REGS, TC_PRELOAD_ENABLED, and the calling convention
 independently overridable from the build allowed measuring the full cross
-product, and ended with one source shape serving both compilers: pinned
-globals in x23-x28, pre-load on, plus preserve_none and musttail where the
-compiler has them. Clang needs -ffixed-x23 through -ffixed-x28 (wired via
-MYCXXFLAGS so the flags reach only the host build, not the uarch cross
-build). Three Clang-specific obstacles, each diagnosed from disassembly:
+product, and ended with one AArch64 source shape serving both compilers:
+pinned globals in x23-x28, pre-load on, plus preserve_none and musttail where
+the compiler has them. Clang needs -ffixed-x23 through -ffixed-x28 (wired via
+MYCXXFLAGS so the flags reach only the host build, not the uarch cross build).
+Three Clang-specific obstacles, each diagnosed from disassembly:
 
 - Clang restricts named register variables to integer and pointer types,
   rejecting the host_addr strong type. The register holds the raw
@@ -466,8 +470,8 @@ gated (the first two are from the campaign preceding the renumber):
 Without the pre-load, pinned Clang reproduces the serial-fetch-chain
 disease on zlib (36.33 vs stock 27.22); with it, zlib returns to parity
 (27.22 vs 27.09). Composing preserve_none over the pinned shape recovers
-the handler-frame savings and closes the remaining gap: the unified shape
-is the best Clang result measured in the whole experiment. The same
+the handler-frame savings and closes the remaining gap: the unified AArch64
+shape is the best Clang result measured in the whole experiment. The same
 campaign re-validated GCC 15 on the renumbered registers (-9.1% vs own
 stock, unchanged from -9.2% before the renumber):
 
@@ -536,43 +540,79 @@ configs. Pinning in the Lua binding instead was rejected because any
 host language can dlclose the library. The harness's os.exit(0, false)
 workaround in run-workload.lua predates the fix and is now redundant.
 
-### 5.14 x86-64 shape (compile-only inspection)
+### 5.14 x86-64 measurements and constraints
 
-Compile-and-disassemble only (GCC 14.2 in an emulated amd64 Debian
-container, Clang via -target on the host); no timings, which need real
-x64 hardware.
+The compile-only predictions were replaced by a full campaign on real
+x86-64 hardware (Raptor Lake), using Clang 22.1.8 and GCC 16.1.1. Stock
+baselines reproduced within 0.1%, and all 357 runs agreed on mcycle, exit
+reason, and root hash. The auto-detected defaults are `TC_GLOBAL_REGS=0`
+and `TC_USE_PRESERVE_NONE=1` for both compilers, with
+`TC_PRELOAD_ENABLED=1` for Clang only.
 
-- GCC, args shape (no pinning, no preserve_none): every transition is
-  branch-shaped, so the structure survives, but the hot state overflows
-  SysV's six integer argument registers. At the original nine slots each
-  dispatch performed three stack loads and three stack stores; the
-  countdown (section 5.15) brings it to eight slots and two of each.
-  Still likely a regression against stock.
-- GCC, pinned: the countdown's five-field pinned set exactly fits rbx and
-  r12-r15, so the AArch64 shape now compiles unchanged on x86-64
-  (-DTC_GLOBAL_REGS=1, GCC only): state in registers, countdown in r12,
-  dispatch by indirect jmp. The cost moved rather than vanished: with
-  every callee-saved register confiscated, handler locals (the accessor,
-  the preload's predicted target) spill to the red zone, so the pinned
-  shape trades the args shape's state traffic for locals traffic of
-  similar volume. Which side wins needs real x86-64 hardware to time.
-- Clang, preserve_none args: compiles with musttail honored, the
-  convention's twelve argument registers hold the whole state, no
-  boundary stack traffic, and the countdown decrements in place in an
-  argument register. The pre-load's predicted dispatch target still
-  spills to one red-zone slot on the hot path (a store and a reload per
-  dispatch): fifteen GPRs do not cover state plus the pre-load's three
-  extra live values plus decode temporaries under any convention, which
-  is the budget AArch64's thirty-one registers absorbed. Structurally
-  the best x86-64 shape observed, consistent with CPython's x86-64
-  tail-call result; whether the pre-load still pays on this register
-  budget is an open timing question. Pinned plus preserve_none is
-  impossible here: the convention's argument order starts at r12, inside
-  any viable pinned set, with no headroom to renumber around it.
+| Build | Total (s) | vs stock |
+|---|---:|---:|
+| Clang stock | 61.97 | -- |
+| Clang `tailcall=yes` | 62.82 | +1.4% |
+| Clang tail-call, `TC_PRELOAD_ENABLED=0` | 61.26 | **-1.2%** |
+| GCC stock | 61.30 | -- |
+| GCC `tailcall=yes` | 67.96 | +10.9% |
+| GCC tail-call, `TC_PRELOAD_ENABLED=1` | 70.94 | +15.7% |
+| GCC tail-call, pinned | 66.32 | +8.2% |
 
-Consequence: on x86-64 Clang can ship the args shape today, and GCC has
-a structurally sound pinned shape pending hardware timing. The defaults
-keep TC_GLOBAL_REGS AArch64-only until that timing exists.
+The countdown and GCC 16's preserve_none support improve substantially on
+the previous x86-64 branch state (Clang +2.6% to +1.4%, GCC +25.8% to
++10.9%), but no x86-64 configuration reproduces the AArch64 headline. The
+only win is Clang without the pre-load, driven primarily by `regs` (-15.0%)
+and `nop` (-12.5%); complex workloads remain around parity or regress
+slightly.
+
+The pre-load question is now settled for this register budget. On Clang,
+disabling it saves 2.6 percentage points in aggregate. On zlib it removes
+6.2 host instructions and 0.6 stores per guest instruction: the predicted
+dispatch target no longer spills through a red-zone slot on every dispatch.
+Unlike AArch64, x86-64 has too few registers for the overlap to pay for its
+spill traffic. Forcing the pre-load on under GCC costs another 4.8 points,
+so the GCC default reaches the right answer even though the condition's
+stated rationale is stale.
+
+| Build, workload | Host insn/guest | Cycles/guest | IPC | Stores/guest | Branch miss/1k |
+|---|---:|---:|---:|---:|---:|
+| Clang stock, zlib | 31.6 | 7.06 | 4.48 | 0.86 | 18.4 |
+| Clang tail-call, zlib | 39.1 | 7.55 | 5.18 | 2.21 | 18.2 |
+| Clang tail-call, no pre-load, zlib | 32.9 | 7.01 | 4.69 | 1.61 | 18.4 |
+| GCC stock, zlib | 29.5 | 6.98 | 4.23 | 0.82 | 18.2 |
+| GCC tail-call, zlib | 36.7 | 7.39 | 4.97 | 3.13 | 18.6 |
+| GCC tail-call, pinned, zlib | 42.7 | 7.66 | 5.57 | 3.82 | 18.6 |
+| GCC stock, nop | 14.9 | 3.33 | 4.47 | 0.05 | 16.7 |
+| GCC tail-call, nop | 22.8 | 4.39 | 5.19 | 2.06 | 16.7 |
+| GCC tail-call, pinned, nop | 20.3 | 3.74 | 5.42 | 0.14 | 16.7 |
+
+Pinned GCC beats its argument shape by 2.4 points overall, confirming that
+pinning trades state traffic for locals traffic rather than eliminating
+traffic. It is handler-dependent: on nop it collapses stores from 2.06 to
+0.14 per guest instruction, while on zlib it executes more instructions and
+stores than the argument shape. Branch-miss rates are unchanged across the
+x86-64 builds, so the dispatch-site prediction mechanism discussed in
+sections 5.6 and 6 does not explain this host's result; register pressure and
+spill traffic do.
+
+The campaign also exposed two configuration hazards:
+
+- GCC 16's x86-64 preserve_none argument registers collide with the pinned
+  rbx/r12-r15 set. `TC_GLOBAL_REGS=1` with the auto-detected
+  `TC_USE_PRESERVE_NONE=1` compiles but corrupts state at runtime (`mcycle is
+  past`). The pinned measurements therefore explicitly used
+  `TC_USE_PRESERVE_NONE=0`; the source must force that combination off.
+- Clang cannot use the pinned shape on x86-64 even with preserve_none
+  disabled: it rejects general-purpose global register variables on this
+  target. The unified pinned shape is therefore AArch64-only, not merely
+  blocked by preserve_none's argument order.
+
+The pre-load default should consequently be narrowed to `TC_GLOBAL_REGS`.
+That preserves the measured AArch64 shape and selects the winning no-pre-load
+shape for x86-64 Clang. Until the two guards are implemented and the marginal
+Clang result is judged worthwhile, the stock loop remains the appropriate
+x86-64 default.
 
 ### 5.15 Countdown mcycle (current best)
 
@@ -756,11 +796,11 @@ gets its measured-best shape from one source.
   hand-written assembly function honoring the same convention, one at a
   time, measured one at a time. So far no assembly has been needed.
 
-## 8. Next work: closing the GCC gap
+## 8. Portability and promotion
 
-GCC 14 lacks preserve_none and musttail, and section 5.8 shows the
-tail-call structure regressing 7.9% aggregate without them. Planned
-attempts, in order:
+The original work in this section targeted GCC 14, which lacks
+preserve_none and musttail; section 5.8 showed the tail-call structure
+regressing 7.9% aggregate without them. The attempts were:
 
 1. TRIED, SPLIT BY CONVENTION. Slimming the handler signature to eight
    integer slots (fetch-cache fields back in the tc_context) regressed
@@ -781,12 +821,11 @@ attempts, in order:
    boundary lesson learned on the way.
 4. Profile-guided optimization as an orthogonal probe
    (-fprofile-generate / -fprofile-use, one workload of training).
-5. DONE, UNIFIED SHAPE (sections 5.11 and 5.12). Pinned globals under
+5. DONE, UNIFIED AARCH64 SHAPE (sections 5.11 and 5.12). Pinned globals under
    Clang, composed with preserve_none and the pre-load, are the best
    Clang result measured (-11.4%), and the pre-load under GCC 15 costs
-   1.5 points. One shape now serves both compilers; the per-compiler
-   defaults in interpret.cpp select it, with every choice overridable
-   from the build.
+   1.5 points. One shape serves both compilers on AArch64; the defaults in
+   interpret-tc.cpp select it, with every choice overridable from the build.
 
 Rejected: -fcall-saved-xN per TU (silent ABI mismatch with
 default-convention TUs, the same hazard class as the mixed-toolchain
@@ -798,31 +837,34 @@ Remaining before promotion:
 1. DONE. `make tailcall=yes` compiles interpret-tc.cpp with the pinned
    register flags; interpret.o gets only the routing define (section
    5.12).
-2. DONE. The interpret.cpp defaults select the unified shape on AArch64
+2. DONE. The interpret-tc.cpp defaults select the unified shape on AArch64
    for both compilers.
-3. Run the formal gates on the flag, and a full timing campaign on the
-   TU-split shape (the recorded campaigns used library-wide -ffixed).
+3. DONE. Run a full x86-64 timing campaign (section 5.14). The result is
+   near parity for Clang only after disabling the pre-load, and a regression
+   for GCC under every measured shape.
+4. Force preserve_none off when GCC's x86-64 pinned shape is selected, so a
+   configuration that silently corrupts state cannot compile.
+5. Narrow the pre-load default to the pinned shape; on x86-64 Clang this is
+   worth 2.6 points and does not change AArch64.
+6. Complete the formal gates on the experimental flag.
 
-GCC 16 reportedly gains preserve_none-equivalent conventions on both
-AArch64 and x86-64, under different attribute names per target. When it
-is available here, add the names to the TC_USE_PRESERVE_NONE and
-TC_CALLCONV ladder behind __has_attribute probes and re-measure: on
-AArch64 the convention composes over the pinned set exactly as under
-Clang (where it was worth about a point), and on x86-64 it makes the
-argument-passing shape available to GCC, dissolving that architecture's
-stock-or-partial-pin fork.
+GCC 16 does provide preserve_none-equivalent conventions on both AArch64
+and x86-64, under different attribute spellings. On x86-64 it improves the
+argument-passing shape substantially but does not dissolve the architecture's
+register-budget problem: the default remains +10.9%, and composing the
+convention with pinning is invalid because their registers overlap.
 
 Standing goal: a single interpreter implementation, so there is one loop
 to audit instead of two. Currently blocked by portability (section 5.14:
-GCC on x86-64 has neither preserve_none nor the register budget for the
-full pin) and by the flat cost models of the uarch and zk builds, where
+x86-64 has neither AArch64's register budget nor a consistently winning
+shape) and by the flat cost models of the uarch and zk builds, where
 the tail-call shape's instruction-count overhead (section 6: 35-46 host
 instructions per guest instruction against stock's ~29) would directly
-inflate proof cost. Both blockers are measurable: a partial-pin x64
-variant timed on real hardware, and a TC-shaped uarch build compared on
-retired uarch cycles, which are architectural and exact. Neither has been
-measured; until they are, the stock loop remains the portable fallback
-and the verified paths (record, replay, collect, uarch, zk) stay on it.
+inflate proof cost. The x86-64 blocker is now measured; the remaining probe
+is a TC-shaped uarch build compared on retired uarch cycles, which are
+architectural and exact. Until that is measured, the stock loop remains the
+portable fallback and the verified paths (record, replay, collect, uarch,
+zk) stay on it.
 
 ## 8b. Next work: the jitter on the tail-call structure
 
@@ -928,14 +970,18 @@ shell cost +66% with tracing idle).
 ## 9. Validation status
 
 All timing pairs in this document passed cycle, hash, and exit equality
-against same-source stock builds, including full Linux boots (see section
-5.12 for the uarch __LINE__ caveat that makes same-source a hard
-requirement). The formal project gates (formatting, clang-tidy, the 267
-machine tests, the 102 host/uarch comparisons) have not been run on the
-experimental flag and are required before this becomes more than an
-experiment. The generated .inc files are one-shot extractions; if the
-stock switch or jump table changes, they must be regenerated (the
-extraction scripts live in the session scratchpad and should be made into
-checked-in tools if the experiment is promoted). The emutls exit-crash fix
-in cm.cpp (section 5.13) is a product change independent of the flag and
-can be upstreamed on its own.
+against same-source stock builds, including full Linux boots and the 357-run
+x86-64 campaign (see section 5.12 for the uarch __LINE__ caveat that makes
+same-source a hard requirement). Formatting and format checks pass. The
+prototype still fails the project's clang-tidy policy, principally around
+its macro-generated handlers, inline assembly, casts, and pinned-register
+shape; the lint target also lacks the fixed-register flags used to compile
+the translation unit. The 267 machine tests could not start in this checkout
+because their binaries under tests/build/machine were absent, and the 102
+host/uarch comparisons have not been run. Those formal gates remain required
+before this becomes more than an experiment. The generated .inc files are
+one-shot extractions; if the stock switch or jump table changes, they must be
+regenerated (the extraction scripts live in the session scratchpad and
+should be made into checked-in tools if the experiment is promoted). The
+emutls exit-crash fix in cm.cpp (section 5.13) is a product change independent
+of the flag and can be upstreamed on its own.

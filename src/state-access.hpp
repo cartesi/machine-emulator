@@ -43,6 +43,42 @@
 
 namespace cartesi {
 
+// How the accessor reaches the machine is an x86-64 register-budget question,
+// and the two compilers want opposite answers. See tail-call-x86_64.md
+// section 10; AArch64 keeps the one-pointer shape exactly as measured in
+// tail-call.md section 5.16, so nothing below applies there.
+//
+// Storing the reference costs one argument slot: the tail-call handler
+// signature is six slots with the one-pointer accessor and seven with the
+// stored one. Clang's x86-64 preserve_none passes twelve arguments in
+// registers, so seven still fits and storing is free; GCC's passes six, so
+// storing spills on every dispatch.
+//
+// The one-pointer shape is not free either. Its back-pointer load, inlined
+// into the stock computed-goto loop, costs GCC 16 on x86-64 a third of that
+// loop's throughput -- not by executing (instruction count barely moves, and
+// the worst-hit workload hardly touches the machine) but by introducing a
+// memory dependency across a ten-thousand-instruction function, which pushes
+// the register allocator over a cliff: ~40% more loads and ~100% more stores
+// of spill traffic. Clang's stock loop is unaffected.
+//
+// So on x86-64: Clang stores the reference (best for both its loops), GCC
+// keeps the one-pointer accessor and merely out-of-lines the load, which
+// recovers most of the stock loop while preserving the six-slot signature.
+// noinline, NOT cold -- `cold` also optimizes callers for size and wrecks the
+// TLB refill path, costing GCC's tail-call build 23% aggregate.
+#if defined(__x86_64__) && defined(__clang__)
+#define CM_ACCESSOR_STORES_MACHINE 1
+#else
+#define CM_ACCESSOR_STORES_MACHINE 0
+#endif
+
+#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__)
+#define CM_OUTLINE_OWNER [[gnu::noinline]]
+#else
+#define CM_OUTLINE_OWNER
+#endif
+
 class state_access;
 
 // Type trait that should return the fast_addr type for a state access class
@@ -64,14 +100,23 @@ class state_access :
 
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     processor_state &m_s; ///< Associated processor state
+#if CM_ACCESSOR_STORES_MACHINE
+    machine &m_m; ///< Associated machine, when the ABI has a slot to spare
+#endif
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
     /// \brief Constructor from machine state.
     /// \param m Pointer to machine state.
+#if CM_ACCESSOR_STORES_MACHINE
+    explicit state_access(machine &m) : m_s(m.get_state()), m_m(m) {
+        ;
+    }
+#else
     explicit state_access(machine &m) : m_s(m.get_state()) {
         ;
     }
+#endif
 
     /// \brief Returns the penumbra state.
     penumbra_state &get_penumbra() const {
@@ -80,11 +125,18 @@ public:
 
 private:
     /// \brief Machine associated with the processor state.
-    /// \details Reached through the penumbra back-pointer, so the accessor
-    /// itself carries a single reference; only cold paths need the machine.
+    /// \details Either stored directly or reached through the penumbra
+    /// back-pointer, depending on whether the ABI has an argument slot to
+    /// spare; only cold paths need the machine either way.
+#if CM_ACCESSOR_STORES_MACHINE
     machine &owner() const {
+        return m_m;
+    }
+#else
+    CM_OUTLINE_OWNER machine &owner() const {
         return *m_s.penumbra.owner;
     }
+#endif
 
     // -----
     // i_state_access interface implementation

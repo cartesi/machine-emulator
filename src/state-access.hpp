@@ -73,7 +73,13 @@ namespace cartesi {
 #define CM_ACCESSOR_STORES_MACHINE 0
 #endif
 
-#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__)
+// Not needed in a tail-call build: interpret() routes state_access to
+// interpret_loop_tc_run under `if constexpr`, so the stock computed-goto loop
+// this protects is not even instantiated for this accessor there, and the
+// out-of-line call costs the handlers 0.83% for nothing. CM_TAILCALL_BUILD is
+// a build-wide define precisely so every translation unit that includes this
+// header agrees on the attribute.
+#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__) && !defined(CM_TAILCALL_BUILD)
 #define CM_OUTLINE_OWNER [[gnu::noinline]]
 #else
 #define CM_OUTLINE_OWNER

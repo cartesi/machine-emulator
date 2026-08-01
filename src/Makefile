@@ -261,6 +261,10 @@ endif
 # interpret.o only gets the define, which routes direct execution there.
 ifeq ($(tailcall),yes)
 INTERPRET_CXXFLAGS+=-DTAILCALL_INTERPRET
+# Build-wide, not just for the interpreter objects: state-access.hpp keys an
+# attribute off it and is included by ~25 translation units, so every one of
+# them has to agree or the class would differ across the build.
+DEFS+=-DCM_TAILCALL_BUILD=1
 # Clang only honors the pinned register globals when the registers are
 # reserved on the command line; GCC reserves them from the declarations alone
 ifneq (,$(findstring clang,$(CC)))

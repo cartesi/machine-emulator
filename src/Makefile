@@ -276,6 +276,19 @@ INTERPRET_CXXFLAGS+=$(MYINTERPRET_CXXFLAGS)
 # interpret-tc.o wants the same interpreter flags plus the reservation
 TC_INTERPRET_CXXFLAGS=$(INTERPRET_CXXFLAGS) $(TC_FFIXED_FLAGS)
 
+# The stock loop pays a per-function cost like the stack protector once per
+# interpret_loop() call; the tail-call loop is 153 functions and pays it once
+# per dispatched instruction, in every handler with an address-taken local
+# (which is every memory handler, via the status out-parameter). Distributions
+# that default to -fstack-protector-strong therefore hit this build far harder
+# than the stock one: measured on x86-64/Clang, 200 canary instructions across
+# 39 handlers, worth 1.5% of the whole interpreter. The existing
+# -fno-stack-protector above is inside the GCC-only block, so Clang never got
+# it. Applied here rather than to INTERPRET_CXXFLAGS on purpose: the same flag
+# on the stock computed-goto loop costs Clang 4% by perturbing register
+# allocation across that one huge function.
+TC_INTERPRET_CXXFLAGS+=-fno-stack-protector
+
 # Link time optimizations
 ifeq ($(lto),yes)
 OPTFLAGS+=-flto=auto

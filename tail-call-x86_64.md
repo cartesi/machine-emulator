@@ -10,14 +10,14 @@ six argument slots"), against merge-base `c1d19122` on `main`. Everything here
 was re-derived from scratch; no result from the previous round was assumed to
 still hold, and several no longer do.
 
-Sections 1–9 are the measurement of your branch as it stands. Sections 10–13
-are four changes I made on top of it and what they are worth; they are on
-branch `x86_64-tuning`, four commits, ~120 lines, all x86-64-gated so AArch64
+Sections 1–9 are the measurement of your branch as it stands. Sections 10–14
+are five changes I made on top of it and what they are worth; they are on
+branch `x86_64-tuning`, five commits, ~130 lines, all x86-64-gated so AArch64
 compiles exactly the shape section 5.16 measured.
 
-**Headline: `make tailcall=yes` under Clang goes from -1.6% to -6.8% against
-main, winning all seventeen workloads instead of five, and the GCC stock
-regression drops from +32.7% to +4.2%.**
+**Headline: `make tailcall=yes` goes from -1.6% to -6.8% under Clang and from
++1.4% to +0.6% under GCC, the GCC stock regression drops from +32.7% to
++4.4%, and all seventeen workloads win under Clang instead of five.**
 
 ## 1. Summary
 
@@ -80,9 +80,9 @@ Everything the commit message claims about code shape is confirmed on x86-64:
 
 Boot 256 Mi mcycles untimed, then time a fixed 2 Gi mcycle window with
 `os.clock()`, best of 3, `taskset -c 2`. Guest work is identical across builds
-by construction. **All 3468 runs across 32 builds agreed on final mcycle,
+by construction. **All 4284 runs across 39 builds agreed on final mcycle,
 guest exit reason and root hash** -- including every experimental variant in
-sections 10-13.
+sections 10-14.
 
 Two protocol changes from the previous round, both of which matter:
 
@@ -624,6 +624,83 @@ are larger than "avoid huge refactors" allows: making the handler take
 (section 10), and giving the raise and TLB-refill paths the section 5.7
 treatment so the 91 call-carrying handlers become frameless.
 
+## 14. Chasing the GCC tail-call build
+
+Section 13 concluded on the Clang side. GCC was left at +1.4% against its own
+stock loop, so I went back for it specifically. One change came out of it,
+worth 0.83%, and six other ideas measured as wash-or-worse. The negative
+results are the more useful half, so they are all recorded.
+
+Note the bar is higher for GCC than the percentages suggest: **GCC's stock
+computed-goto loop is 4.5% faster than Clang's on this machine** (60.84 s
+against 63.73 s). GCC's tail-call build at +0.6% is 61.24 s absolute, which
+beats Clang's *stock* loop comfortably; it is only "behind" because it is
+measured against a much stronger baseline.
+
+### 14.1 What worked: the attribute the tail-call build does not need
+
+The `[[gnu::noinline]]` I put on `state_access::owner()` in section 10 is
+there to keep the back-pointer load out of the stock computed-goto loop. A
+`tailcall=yes` build does not have that loop for this accessor —
+`interpret()` routes `state_access` to `interpret_loop_tc_run` under
+`if constexpr`, so `interpret_loop<state_access>` is never instantiated. The
+attribute was therefore pure cost, and `owner()` was the **single most
+frequent call target in the whole GCC tail-call build**: 125 calls across the
+handlers, ahead of `raise_exception` (114) and `init_hot_tlb_slot` (112).
+
+Gated on a build-wide `CM_TAILCALL_BUILD` define — deliberately not
+`TAILCALL_INTERPRET`, which only reaches two of the ~25 translation units that
+include the header — GCC's tail-call build goes **61.68 → 61.17 s, +1.5% to
++0.7%**. Clang and the GCC stock build are untouched.
+
+### 14.2 What did not work
+
+| Idea | Result | Why |
+|---|---|---|
+| `-finline-limit=100` on the TC TU | wash (61.72 → 61.91) | Handler text -18% and frameless 31→62/153, `regs` -11.5% and `nop` -7.2% — but it also stops inlining the soft-float bodies, and `matrix-3d` (the largest workload) pays +4.9%. |
+| Move the `noinline` to the 13 cold `owner()` callers | worse for TC | Helps the *stock* loop more than attributing `owner()` does, but costs the tail-call build ~1.3%: frameless drops 31→13 and handler text grows 13%. |
+| Plain SysV instead of `preserve_none` | much worse | `push`/`pop` across the handlers goes 118 → 774. Confirms the convention is load-bearing, not incidental. |
+| `-freorder-blocks-and-partition` | neutral | Output essentially unchanged; the interpreter's `-freorder-blocks-algorithm=simple` already fixes layout. |
+| `-fipa-ra -fipa-icf` | no-op | Byte-identical output; already on at -O2. |
+| `-fno-tree-tail-merge` | neutral/worse | +164 handler instructions, no timing gain. |
+| Pre-load for GCC, with the fused miss | +0.27% | Re-tested after 14.1 changed the register pressure. `nop` -20.8% and `regs` -9.9%, cancelled by `memcpy` +7.1%, `hash` +3.2%, `fp` +3.0%. The existing gate reaches the right answer. |
+
+### 14.3 Why GCC's handlers are 35% bigger, and why it does not matter much
+
+GCC emits 19383 instructions across the 153 handlers against Clang's 14347.
+That sounds like the explanation for the gap, and it is not: the *hot paths*
+are equivalent. On `ADDI` GCC's hot path is **23 instructions against Clang's
+24**, and GCC actually emits the tighter dispatch — it folds the jump-table
+load into the branch as `jmp *(%rax,%r8,8)` where Clang needs a separate
+`mov` then `jmp *%rcx`.
+
+The extra 35% is all cold blocks: raise paths, TLB refill, page-crossing. They
+cost i-cache footprint, not executed instructions, and section 13's topdown
+already showed front-end bound is not where this loop's time goes.
+
+So GCC's remaining gap to Clang is not code quality per handler. It is the
+pre-load, which Clang can afford (twelve argument registers) and GCC cannot
+(six), and which is worth -1.1% to Clang and +0.27% to GCC. That is the same
+register-budget conclusion section 5.16 reached, now with the pre-load's own
+cost removed so the comparison is clean.
+
+### 14.4 Where GCC stands
+
+| Build | Total (s) | vs main stock, same compiler |
+|---|---:|---:|
+| main gcc stock | 60.84 | -- |
+| gcc stock, branch + fixes | 63.51 | +4.4% |
+| **gcc `tailcall=yes`** | **61.24** | **+0.6%** |
+| main clang stock | 63.73 | -- |
+| **clang `tailcall=yes`** | **59.40** | **-6.8%** |
+
+GCC's tail-call build is now within noise of the strongest baseline on the
+machine. I do not have another lever for it that does not require the two
+structural changes in section 13 — and of those, the first (handler takes
+`processor_state &`) is the one that would help GCC most, because it would let
+the accessor store the machine reference *and* keep six slots, closing both
+the +4.4% stock residual and the last of the tail-call gap in one move.
+
 ## Appendix: reproduction
 
 ```sh
@@ -648,7 +725,7 @@ untimed, time a 2 Gi mcycle window with `os.clock()`, report elapsed time,
 mcycle, exit reason and `get_root_hash()`. Per-handler profiles come from
 `perf record` against the built `.so`, which the tail-call structure makes
 trivial since every handler is its own symbol. Raw per-run data is in
-`tail-call-x86_64-rawdata.tsv` (3468 rows: rep, build, workload, seconds,
+`tail-call-x86_64-rawdata.tsv` (4284 rows: rep, build, workload, seconds,
 MIPS, mcycle, exit reason, root hash).
 
 The four changes of sections 10-13 are on branch `x86_64-tuning`:
@@ -658,6 +735,7 @@ ab78c5f9 fix(interpret): recover the x86-64 stock interpreter under GCC
 cd748a6d build: keep the stack protector off the tail-call translation unit
 d7d87975 perf(interpret): narrow the pre-load default to the pinned shape
 8f1888e3 perf(interpret): fuse the pre-decode miss into the dispatch target
+7d0520eb perf(interpret): drop the owner() out-of-lining in tail-call builds
 ```
 
 The third and fourth read as if they cancel: the third turns the pre-load off

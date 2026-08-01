@@ -45,12 +45,34 @@ namespace cartesi {
 #define TC_AOT 0
 #endif
 
+// Online trace recording (section 8b, step 3): -DTC_ONLINE=1 records trace
+// bodies at hotcount trips into fixed statically-allocated pools (LuaJIT's
+// memory policy: nothing is allocated at runtime, so nothing can fail at
+// runtime), installs them by bump pointer, flushes everything when the pool
+// fills, and blacklists heads whose recordings keep failing. Installed heads
+// register in the shell's head table so the probe counts would-be entries;
+// execution of online recordings waits for the backend step.
+#ifndef TC_ONLINE
+#define TC_ONLINE 0
+#endif
+
 #ifndef TC_JIT_SHELL
-#if TC_AOT
-#define TC_JIT_SHELL 1 // trace dispatch rides the shell's hook sites
+#if TC_AOT || TC_ONLINE
+#define TC_JIT_SHELL 1 // trace dispatch and recording ride the shell's hook sites
 #else
 #define TC_JIT_SHELL 0
 #endif
+#endif
+
+// Hotness gate: loops trip at half this many events, calls at all of them.
+// The pure shell keeps LuaJIT's low bar (its cost was measured with it); the
+// online recorder observes execution one instruction at a time, so its
+// sessions are expensive and the gate follows the PyPy/capture-build order
+// of magnitude instead, starving the lukewarm-head tail.
+#if TC_ONLINE
+#define TC_HOT_RESET 2048
+#else
+#define TC_HOT_RESET 112
 #endif
 
 #if TC_JIT_SHELL
@@ -64,6 +86,44 @@ struct tc_hot_state {
     const void *head_fn[64];
 #endif
     uint64_t entries;
+};
+#endif
+
+#if TC_ONLINE
+/// \brief One recorded instruction: its address, its word, and the pc that
+/// actually followed it (whatever happened, including raises).
+struct tc_online_entry {
+    uint64_t vaddr;
+    uint64_t next_pc;
+    uint32_t insn;
+};
+
+/// \brief Online tracer, all storage fixed at translation time.
+/// \details One tracer per thread for the experiment; the production shape
+/// is a per-machine pool allocated at machine creation. Sizes follow the
+/// capture experiments: 1024 trace slots of up to 64 entries.
+struct tc_online_state {
+    static constexpr uint32_t max_traces = 1024;
+    static constexpr uint32_t max_len = 64;
+    static constexpr uint32_t min_len = 4;
+    static constexpr uint16_t max_penalty = 3;
+    struct trace {
+        uint64_t head;
+        uint32_t len;
+        int32_t cycle; // entry index the tail loops back to, or -1
+        tc_online_entry entries[max_len];
+    };
+    static constexpr uint32_t set_slots = 4096; // >= 4x max_traces, power of two
+    trace pool[max_traces];
+    uint64_t installed_set[set_slots]; // open-addressed pc set, 0 = empty
+    uint16_t penalty[64];
+    uint64_t penalty_pc[64];
+    uint32_t ntraces;
+    bool recording;
+    // statistics
+    uint64_t installed;
+    uint64_t aborted;
+    uint64_t flushes;
 };
 #endif
 
@@ -85,6 +145,12 @@ struct tc_context {
     uint64_t fetch_pma_index;
 #if TC_JIT_SHELL
     tc_hot_state hot;
+#endif
+#if TC_ONLINE
+    tc_online_state *online;
+    uint64_t online_trip_pc;
+    uint16_t online_trip_weight;
+    bool online_trip;
 #endif
 };
 
@@ -111,6 +177,10 @@ struct tc_context {
 
 #if TC_GLOBAL_REGS && !defined(__aarch64__) && !defined(__x86_64__)
 #error "TC_GLOBAL_REGS requires AArch64 or x86-64"
+#endif
+
+#if TC_ONLINE && !TC_GLOBAL_REGS
+#error "TC_ONLINE currently requires the pinned-register interpreter shape"
 #endif
 
 // preserve_none composes with pinned registers: the pinned state is not
@@ -225,6 +295,171 @@ register tc_context<state_access> *tcc asm("r15");
 // One instruction retires: count it and test for the tick boundary
 #define TC_TICK_ENDED() (static_cast<int64_t>(--tc_remaining) <= 0)
 
+#if TC_ONLINE
+#if TC_AOT
+#error "TC_ONLINE and TC_AOT flush rules conflict; enable one at a time"
+#endif
+
+static THREAD_LOCAL tc_online_state tc_online_storage;
+
+/// \brief Membership test in the fixed installed-head set.
+static FORCE_INLINE bool tc_online_installed(const tc_online_state *o, uint64_t pc) {
+    uint32_t s = (static_cast<uint32_t>(pc) >> 1) & (tc_online_state::set_slots - 1);
+    while (o->installed_set[s] != 0) {
+        if (o->installed_set[s] == pc) {
+            return true;
+        }
+        s = (s + 1) & (tc_online_state::set_slots - 1);
+    }
+    return false;
+}
+
+/// \brief Inserts into the fixed installed-head set (capacity guaranteed by flush).
+static FORCE_INLINE void tc_online_insert(tc_online_state *o, uint64_t pc) {
+    uint32_t s = (static_cast<uint32_t>(pc) >> 1) & (tc_online_state::set_slots - 1);
+    while (o->installed_set[s] != 0 && o->installed_set[s] != pc) {
+        s = (s + 1) & (tc_online_state::set_slots - 1);
+    }
+    o->installed_set[s] = pc;
+}
+
+/// \brief Debug event print, first 200 events only, when TC_ONLINE_DEBUG is set.
+static NO_INLINE void tc_online_debug(const char *what, uint64_t pc, uint64_t extra) {
+    static THREAD_LOCAL int budget = -1;
+    if (budget < 0) {
+        budget = (std::getenv("TC_ONLINE_DEBUG") != nullptr) ? 200 : 0;
+    }
+    if (budget > 0) {
+        --budget;
+        std::fprintf(stderr, "tc-online: %s pc %llx extra %llu\n", what, static_cast<unsigned long long>(pc),
+            static_cast<unsigned long long>(extra));
+    }
+}
+
+/// \brief Prints recorder statistics at exit when TC_ONLINE_STATS is set.
+__attribute__((destructor)) static void tc_online_report() {
+    if (std::getenv("TC_ONLINE_STATS") == nullptr) {
+        return;
+    }
+    const auto &o = tc_online_storage;
+    std::fprintf(stderr, "tc-online: installed %llu aborted %llu flushes %llu live %u\n",
+        static_cast<unsigned long long>(o.installed), static_cast<unsigned long long>(o.aborted),
+        static_cast<unsigned long long>(o.flushes), static_cast<unsigned>(o.ntraces));
+}
+
+/// \brief Discards all installed traces and profiling progress (pool full).
+template <typename STATE_ACCESS>
+static void tc_online_flush(tc_context<STATE_ACCESS> *c) {
+    tc_online_state *o = c->online;
+    o->ntraces = 0;
+    ++o->flushes;
+    tc_online_debug("flush", 0, o->flushes);
+    for (auto &s : o->installed_set) {
+        s = 0;
+    }
+    for (auto &p : c->hot.head_pc) {
+        p = UINT64_MAX;
+    }
+    for (auto &h : c->hot.hotcount) {
+        h = TC_HOT_RESET;
+    }
+    // Penalties survive the flush: heads that never produce installable
+    // recordings would otherwise churn again after every flush
+}
+
+/// \brief Ends the active recording, installing or penalizing its head.
+template <typename STATE_ACCESS>
+static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle) {
+    tc_online_state *o = c->online;
+    o->recording = false;
+    auto &t = o->pool[o->ntraces];
+    tc_online_debug(t.len < tc_online_state::min_len ? "abort" : "install", t.head, t.len);
+    const uint32_t h = (static_cast<uint32_t>(t.head) >> 1) & 63;
+    if (t.len < tc_online_state::min_len) {
+        ++o->aborted;
+        if (o->penalty_pc[h] == t.head) {
+            ++o->penalty[h];
+        } else {
+            o->penalty_pc[h] = t.head;
+            o->penalty[h] = 1;
+        }
+        return;
+    }
+    t.cycle = cycle;
+    c->hot.head_pc[h] = t.head;
+    tc_online_insert(o, t.head);
+    ++o->installed;
+    ++o->ntraces;
+    if (o->ntraces == tc_online_state::max_traces) {
+        tc_online_flush(c);
+    }
+}
+
+/// \brief Starts recording at a hot head unless it is installed or blacklisted.
+template <typename STATE_ACCESS>
+static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc) {
+    tc_online_state *o = c->online;
+    const uint32_t h = (static_cast<uint32_t>(pc) >> 1) & 63;
+    if (o->recording || tc_online_installed(o, pc) ||
+        (o->penalty_pc[h] == pc && o->penalty[h] >= tc_online_state::max_penalty)) {
+        return;
+    }
+    auto &t = o->pool[o->ntraces];
+    t.head = pc;
+    t.len = 0;
+    t.cycle = -1;
+    o->recording = true;
+    tc_online_debug("begin", pc, o->ntraces);
+}
+
+/// \brief Appends the instruction about to execute to the active recording.
+/// \details The previous entry's successor is this pc, whatever happened in
+/// between; the recording ends when execution leaves the head's page, closes
+/// a cycle over a recorded address, or fills the slot.
+template <typename STATE_ACCESS>
+static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t insn) {
+    tc_online_state *o = c->online;
+    auto &t = o->pool[o->ntraces];
+    if (t.len > 0) {
+        t.entries[t.len - 1].next_pc = pc;
+        for (uint32_t i = 0; i < t.len; ++i) {
+            if (t.entries[i].vaddr == pc) {
+                tc_online_finish(c, static_cast<int32_t>(i));
+                return;
+            }
+        }
+        if ((pc >> 12) != (t.head >> 12)) {
+            tc_online_finish(c, -1);
+            return;
+        }
+        if (t.len == tc_online_state::max_len) {
+            tc_online_finish(c, -1);
+            return;
+        }
+    }
+    t.entries[t.len] = tc_online_entry{pc, 0, insn};
+    ++t.len;
+}
+/// \brief Leaves the chain when a hot loop requests recording. The request is
+/// handled by the outer loop, keeping all recorder calls out of handlers.
+#define TC_ONLINE_TRIP_RETURN()                                                                                        \
+    do {                                                                                                               \
+        if (tcc->online_trip) [[unlikely]] {                                                                           \
+            TC_RETURN(execute_status::success);                                                                        \
+        }                                                                                                              \
+    } while (0)
+#define TC_ONLINE_CALL_TRIP_RETURN()                                                                                   \
+    do {                                                                                                               \
+        if (tcc->online_trip) [[unlikely]] {                                                                           \
+            --tc_remaining;                                                                                            \
+            TC_RETURN(execute_status::success);                                                                        \
+        }                                                                                                              \
+    } while (0)
+#else
+#define TC_ONLINE_TRIP_RETURN() ((void) 0)
+#define TC_ONLINE_CALL_TRIP_RETURN() ((void) 0)
+#endif // TC_ONLINE
+
 /// \brief Probes the trace-head table and updates the hotcount at a profiling
 /// site, returning the installed trace function on a head hit (never under
 /// the plain shell, whose head table stays empty; entries counts hits so the
@@ -242,7 +477,14 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
     }
     c->hot.hotcount[h] -= weight;
     if (static_cast<int16_t>(c->hot.hotcount[h]) <= 0) [[unlikely]] {
-        c->hot.hotcount[h] = 112; // a trace would be recorded here
+        c->hot.hotcount[h] = TC_HOT_RESET;
+#if TC_ONLINE
+        // Recorder setup contains calls and must stay out of the handler:
+        // request a chain exit and let the outer loop start it.
+        c->online_trip_pc = pc;
+        c->online_trip_weight = weight;
+        c->online_trip = true;
+#endif
     }
     return fn;
 }
@@ -255,6 +497,7 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
         const execute_status tc_call_status = (expr);                                                                  \
         if (tc_call_status == execute_status::success) {                                                               \
             (void) tc_hook_site(tcc, pc, 1);                                                                           \
+            TC_ONLINE_CALL_TRIP_RETURN();                                                                              \
         }                                                                                                              \
         tc_call_status;                                                                                                \
     })
@@ -568,6 +811,7 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
                             const_cast<void *>(tc_tfn))(a, insn TC_HOT_ARGS);                                          \
                     }                                                                                                  \
                 }                                                                                                      \
+                TC_ONLINE_TRIP_RETURN();                                                                               \
             }                                                                                                          \
         }                                                                                                              \
         if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {                                                     \
@@ -656,7 +900,7 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
     tcc.fetch_pma_index = TLB_INVALID_PMA_INDEX;
 #if TC_JIT_SHELL
     for (auto &c : tcc.hot.hotcount) {
-        c = 112;
+        c = TC_HOT_RESET;
     }
     for (auto &p : tcc.hot.head_pc) {
         p = UINT64_MAX;
@@ -671,6 +915,14 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
             tcc.hot.head_pc[h] = head.pc;
             tcc.hot.head_fn[h] = reinterpret_cast<const void *>(head.fn);
         }
+    }
+#endif
+#if TC_ONLINE
+    tcc.online = &tc_online_storage;
+    // Re-register heads installed by earlier interpret() calls
+    for (uint32_t i = 0; i < tc_online_storage.ntraces; ++i) {
+        const uint64_t head = tc_online_storage.pool[i].head;
+        tcc.hot.head_pc[(static_cast<uint32_t>(head) >> 1) & 63] = head;
     }
 #endif
 
@@ -696,9 +948,33 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
             uint32_t insn = 0;
             if (fetch_insn(a, pc, insn, tcc.fetch_vaddr_page, tcc.fetch_vf_offset, tcc.fetch_pma_index) ==
                 fetch_status::success) [[likely]] {
+#if TC_ONLINE
+                if (tcc.online_trip) [[unlikely]] {
+                    tcc.online_trip = false;
+                    tc_online_debug("trip", tcc.online_trip_pc, tcc.online_trip_weight);
+                    tc_online_begin(&tcc, tcc.online_trip_pc);
+                }
+                if (tcc.online->recording) [[unlikely]] {
+                    tc_online_record(&tcc, pc, insn);
+                }
+#endif
 #if TC_GLOBAL_REGS
                 cartesi::tc_reg_pc = pc;
-                cartesi::tc_remaining = mcycle_tick_end - mcycle;
+#if TC_ONLINE
+                const bool tc_is_recording = tcc.online->recording;
+                // One-instruction chains while recording; the adjusted tick
+                // base keeps the mcycle materialization identity exact.
+                const uint64_t tc_chain_remaining = tc_is_recording ? 1 : mcycle_tick_end - mcycle;
+                const uint64_t tc_chain_tick_end = tc_is_recording ? mcycle + 1 : mcycle_tick_end;
+#else
+                const uint64_t tc_chain_remaining = mcycle_tick_end - mcycle;
+                const uint64_t tc_chain_tick_end = mcycle_tick_end;
+#endif
+                // Write the pinned countdown only once, after the conditional.
+                // Multiple writes around the branch make Clang 22 incorrectly
+                // hoist the recording value (1) onto the non-recording path.
+                cartesi::tc_remaining = tc_chain_remaining;
+                tcc.mcycle_tick_end = tc_chain_tick_end;
                 cartesi::tcc = &tcc;
                 cartesi::fetch_vaddr_page = tcc.fetch_vaddr_page;
                 cartesi::tc_reg_vf_offset = static_cast<uint64_t>(tcc.fetch_vf_offset);

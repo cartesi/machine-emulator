@@ -44,15 +44,16 @@
 namespace cartesi {
 
 // How the accessor reaches the machine is an x86-64 register-budget question,
-// and the two compilers want opposite answers. See tail-call-x86_64.md
-// section 10; AArch64 keeps the one-pointer shape exactly as measured in
+// and the answer differs per compiler *and* per build. See tail-call-x86_64.md
+// sections 10 and 15. AArch64 always keeps the one-pointer shape measured in
 // tail-call.md section 5.16, so nothing below applies there.
 //
-// Storing the reference costs one argument slot: the tail-call handler
+// Storing the reference costs one tail-call handler argument slot: the
 // signature is six slots with the one-pointer accessor and seven with the
 // stored one. Clang's x86-64 preserve_none passes twelve arguments in
-// registers, so seven still fits and storing is free; GCC's passes six, so
-// storing spills on every dispatch.
+// registers, so seven still fits and storing is free -- 1.0% faster, in fact,
+// since the handlers stop loading the back-pointer too. GCC's passes six, so
+// storing spills on every dispatch and costs its tail-call build 6.4%.
 //
 // The one-pointer shape is not free either. Its back-pointer load, inlined
 // into the stock computed-goto loop, costs GCC 16 on x86-64 a third of that
@@ -62,27 +63,18 @@ namespace cartesi {
 // the register allocator over a cliff: ~40% more loads and ~100% more stores
 // of spill traffic. Clang's stock loop is unaffected.
 //
-// So on x86-64: Clang stores the reference (best for both its loops), GCC
-// keeps the one-pointer accessor and merely out-of-lines the load, which
-// recovers most of the stock loop while preserving the six-slot signature.
-// noinline, NOT cold -- `cold` also optimizes callers for size and wrecks the
-// TLB refill path, costing GCC's tail-call build 23% aggregate.
-#if defined(__x86_64__) && defined(__clang__)
+// The two costs never apply to the same build. A tail-call build has no stock
+// loop for this accessor -- interpret() routes state_access to
+// interpret_loop_tc_run under `if constexpr`, so interpret_loop<state_access>
+// is never instantiated -- and a non-tail-call build has no handler signature
+// to widen. So GCC stores the reference exactly when there is no tail-call
+// loop to feed, and Clang always stores it. state_access is internal to the
+// library build (only cm.h, cm-jsonrpc.h and cm-version.h are installed), so
+// keying a layout off a build flag stays inside a single link.
+#if defined(__x86_64__) && (defined(__clang__) || !defined(CM_TAILCALL_BUILD))
 #define CM_ACCESSOR_STORES_MACHINE 1
 #else
 #define CM_ACCESSOR_STORES_MACHINE 0
-#endif
-
-// Not needed in a tail-call build: interpret() routes state_access to
-// interpret_loop_tc_run under `if constexpr`, so the stock computed-goto loop
-// this protects is not even instantiated for this accessor there, and the
-// out-of-line call costs the handlers 0.83% for nothing. CM_TAILCALL_BUILD is
-// a build-wide define precisely so every translation unit that includes this
-// header agrees on the attribute.
-#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__) && !defined(CM_TAILCALL_BUILD)
-#define CM_OUTLINE_OWNER [[gnu::noinline]]
-#else
-#define CM_OUTLINE_OWNER
 #endif
 
 class state_access;
@@ -139,7 +131,7 @@ private:
         return m_m;
     }
 #else
-    CM_OUTLINE_OWNER machine &owner() const {
+    machine &owner() const {
         return *m_s.penumbra.owner;
     }
 #endif

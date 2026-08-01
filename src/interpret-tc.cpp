@@ -215,13 +215,20 @@ struct tc_context {
 #define TC_CALLCONV
 #endif
 
-// The next-instruction pre-load pays for itself only when the register
-// budget keeps the extra predicted state (word, dispatch target) in
-// registers across the handler body; with neither pinned globals nor
-// preserve_none it turns into hot-path stack traffic on already
-// ABI-strained handlers.
+// The next-instruction pre-load pays for itself only when the register budget
+// keeps the extra predicted state (word, dispatch target) in registers across
+// the handler body; otherwise it turns into hot-path stack traffic on already
+// ABI-strained handlers. The pinned shape is the condition that actually
+// supplies that budget: it takes the whole interpreter state out of the
+// argument registers, leaving the allocator free for the predicted values.
+// preserve_none alone does not, however many argument registers it has, which
+// is why the condition is no longer keyed on the convention or the compiler.
+// On x86-64 Clang the old condition enabled the pre-load and it cost 1.9%
+// aggregate on Raptor Lake; on AArch64 TC_GLOBAL_REGS is 1 anyway, so the
+// measured shape there is unchanged. See tail-call.md section 5.14, which
+// reaches this same conclusion, and tail-call-x86_64.md section 11.
 #ifndef TC_PRELOAD_ENABLED
-#if TC_GLOBAL_REGS || (defined(__clang__) && __has_attribute(preserve_none))
+#if TC_GLOBAL_REGS
 #define TC_PRELOAD_ENABLED 1
 #else
 #define TC_PRELOAD_ENABLED 0

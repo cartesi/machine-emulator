@@ -218,17 +218,40 @@ struct tc_context {
 // The next-instruction pre-load pays for itself only when the register budget
 // keeps the extra predicted state (word, dispatch target) in registers across
 // the handler body; otherwise it turns into hot-path stack traffic on already
-// ABI-strained handlers. The pinned shape is the condition that actually
-// supplies that budget: it takes the whole interpreter state out of the
-// argument registers, leaving the allocator free for the predicted values.
-// preserve_none alone does not, however many argument registers it has, which
-// is why the condition is no longer keyed on the convention or the compiler.
-// On x86-64 Clang the old condition enabled the pre-load and it cost 1.9%
-// aggregate on Raptor Lake; on AArch64 TC_GLOBAL_REGS is 1 anyway, so the
-// measured shape there is unchanged. See tail-call.md section 5.14, which
-// reaches this same conclusion, and tail-call-x86_64.md section 11.
+// ABI-strained handlers.
+//
+// Route a pre-decode miss to tc_fetch_miss instead of flagging it, so the
+// dispatch tail never re-tests the hit. Measured on Raptor Lake that re-test
+// was the entire cost of the pre-load on x86-64: a straight-line handler's
+// hot path went 23 -> 26 instructions purely from computing the fetch-cache
+// hit at the top and testing it again at the bottom, which matches the +12%
+// host instructions topdown attributes the loss to. The overlap itself always
+// worked -- it cuts backend-bound slots by 4-6 points under both compilers --
+// but this loop retires at 70-82% of issue slots, so it is throughput-bound
+// rather than stall-bound and the extra instructions dominated. With the
+// re-test gone the hot path is 24 instructions and the overlap is finally
+// profitable: -1.1% aggregate under Clang.
+// Defaulted on for x86-64 only; AArch64 keeps the shape measured in
+// tail-call.md pending a measurement on that hardware.
+#ifndef TC_PRELOAD_FUSED_MISS
+#if defined(__x86_64__)
+#define TC_PRELOAD_FUSED_MISS 1
+#else
+#define TC_PRELOAD_FUSED_MISS 0
+#endif
+#endif
+
+// The pinned shape always has the budget: it takes the whole interpreter
+// state out of the argument registers. Clang's preserve_none also does, with
+// twelve argument registers, but only once the miss is fused -- unfused it
+// costs 1.25% under Clang and 2.4% under GCC. GCC's six argument registers
+// leave nothing over even fused (measured dead even, +0.02%), so it stays off
+// there rather than carry the code for nothing.
+// See tail-call.md section 5.14 and tail-call-x86_64.md section 11.
 #ifndef TC_PRELOAD_ENABLED
 #if TC_GLOBAL_REGS
+#define TC_PRELOAD_ENABLED 1
+#elif defined(__clang__) && TC_USE_PRESERVE_NONE && TC_PRELOAD_FUSED_MISS
 #define TC_PRELOAD_ENABLED 1
 #else
 #define TC_PRELOAD_ENABLED 0
@@ -716,6 +739,9 @@ struct tc_predecode {
 /// call site (each handler serves exactly one encoding length), so the
 /// rotation adds no length computation to the loop.
 template <typename STATE_ACCESS>
+TC_CALLCONV static execute_status tc_fetch_miss(STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
+
+template <typename STATE_ACCESS>
 static FORCE_INLINE tc_predecode<STATE_ACCESS> tc_predecode_next(const STATE_ACCESS a, uint64_t pc, uint64_t insn_len,
     uint64_t fetch_vaddr_page, i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset,
     tc_context<STATE_ACCESS> *tcc) {
@@ -726,6 +752,20 @@ static FORCE_INLINE tc_predecode<STATE_ACCESS> tc_predecode_next(const STATE_ACC
         a.template read_memory_word<uint32_t, uint16_t>(next.pc + fetch_vf_offset, tcc->fetch_pma_index, &next.insn);
         next.handler = tc_jumptable<STATE_ACCESS>[insn_get_id(next.insn)];
     }
+#if TC_PRELOAD_FUSED_MISS
+    // A pre-decode miss lands on the generic continuation instead of setting a
+    // flag the dispatch tail has to re-test. The tail then dispatches through
+    // next.handler unconditionally, which is where the whole cost of the
+    // pre-load sat on x86-64: the hit was computed at the top of the handler
+    // and tested again at the bottom, two instructions and a branch per
+    // dispatch, about +13% host instructions on an ADDI. tc_fetch_miss carries
+    // the handler signature, ignores the instruction word, and recomputes the
+    // fetch from the architectural pc, so routing a miss through it is exactly
+    // what the inline generic tail would have done.
+    else {
+        next.handler = tc_fetch_miss<STATE_ACCESS>;
+    }
+#endif
     return next;
 }
 
@@ -818,12 +858,13 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
            execution status is plain success, so only conditional branches                                             \
            (class 1) need the pc comparison */                                                                         \
         if constexpr (TC_PRELOAD_ENABLED != 0 && (PRELOAD) == 2) {                                                     \
-            if (status == execute_status::success && tc_next.hit) [[likely]] {                                         \
+            if (status == execute_status::success && (TC_PRELOAD_FUSED_MISS || tc_next.hit)) [[likely]] {              \
                 TC_SYNC();                                                                                             \
                 TC_MUSTTAIL return tc_next.handler(a, tc_next.insn TC_HOT_ARGS);                                       \
             }                                                                                                          \
         } else if constexpr (TC_PRELOAD_ENABLED != 0 && (PRELOAD) == 1) {                                              \
-            if (status == execute_status::success && tc_next.hit && pc == tc_next.pc) [[likely]] {                     \
+            if (status == execute_status::success && (TC_PRELOAD_FUSED_MISS || tc_next.hit) &&                         \
+                pc == tc_next.pc) [[likely]] {                                                                         \
                 TC_SYNC();                                                                                             \
                 TC_MUSTTAIL return tc_next.handler(a, tc_next.insn TC_HOT_ARGS);                                       \
             }                                                                                                          \

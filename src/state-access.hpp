@@ -63,22 +63,29 @@ class state_access :
     public i_accept_dirty_pages<state_access> {
 
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-    //??(edubart): Storing reference to the processor state removes an extra indirection when accessing registers,
-    // however other indirections are happening on operations that access the processor state through the machine state
-    // (eg. TLB write). We should rethink in the future how to make state accessor use a single reference again
-    // without causing extra indirections.
     processor_state &m_s; ///< Associated processor state
-    machine &m_m;         ///< Associated machine
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
     /// \brief Constructor from machine state.
     /// \param m Pointer to machine state.
-    explicit state_access(machine &m) : m_s(m.get_state()), m_m(m) {
+    explicit state_access(machine &m) : m_s(m.get_state()) {
         ;
     }
 
+    /// \brief Returns the penumbra state.
+    penumbra_state &get_penumbra() const {
+        return m_s.penumbra;
+    }
+
 private:
+    /// \brief Machine associated with the processor state.
+    /// \details Reached through the penumbra back-pointer, so the accessor
+    /// itself carries a single reference; only cold paths need the machine.
+    machine &owner() const {
+        return *m_s.penumbra.owner;
+    }
+
     // -----
     // i_state_access interface implementation
     // -----
@@ -425,7 +432,7 @@ private:
         //??(edubart): Treating exceptions here is not ideal, we should probably
         // move read_memory() method implementation inside state access later
         try {
-            m_m.read_memory(paddr, data, length);
+            owner().read_memory(paddr, data, length);
             return true;
         } catch (...) {
             return false;
@@ -436,7 +443,7 @@ private:
         //??(edubart): Treating exceptions here is not ideal, we should probably
         // move write_memory() method implementation inside state access later
         try {
-            m_m.write_memory(paddr, data, length);
+            owner().write_memory(paddr, data, length);
             return true;
         } catch (...) {
             return false;
@@ -444,7 +451,7 @@ private:
     }
 
     address_range &do_read_pma(uint64_t index) const {
-        return m_m.read_pma(index);
+        return owner().read_pma(index);
     }
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
@@ -456,9 +463,9 @@ private:
         if (write_length < data_length) {
             throw std::runtime_error("write_length is less than data_length");
         }
-        m_m.write_memory(paddr, data, data_length);
+        owner().write_memory(paddr, data, data_length);
         if (write_length > data_length) {
-            m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
+            owner().fill_memory(paddr + data_length, 0, write_length - data_length);
         }
     }
 
@@ -497,12 +504,12 @@ private:
 
     template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
-        m_m.write_verified_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
+        owner().write_verified_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
     }
 
     template <TLB_set_index SET>
     uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
-        return m_m.init_hot_tlb_slot(SET, slot_index);
+        return owner().init_hot_tlb_slot(SET, slot_index);
     }
 
     template <TLB_set_index SET>
@@ -511,12 +518,12 @@ private:
     }
 
     fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {
-        return m_m.get_host_addr(paddr, pma_index);
+        return owner().get_host_addr(paddr, pma_index);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool do_putchar(uint8_t c) const {
-        return m_m.putchar(c);
+        return owner().putchar(c);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -530,16 +537,16 @@ private:
     friend i_interactive_state_access<state_access>;
 
     NO_INLINE auto do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) const {
-        return m_m.poll_external_interrupts(mcycle, mcycle_max);
+        return owner().poll_external_interrupts(mcycle, mcycle_max);
     }
 
     bool do_get_soft_yield() const {
-        return m_m.get_soft_yield();
+        return owner().get_soft_yield();
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     std::pair<int, bool> do_getchar() const {
-        return m_m.getchar();
+        return owner().getchar();
     }
 
     // -----
@@ -548,15 +555,15 @@ private:
     friend i_accept_counters<state_access>;
 
     void do_increment_counter(const char *name, const char *domain) const {
-        m_m.increment_counter(name, domain);
+        owner().increment_counter(name, domain);
     }
 
     uint64_t do_read_counter(const char *name, const char *domain) const {
-        return m_m.read_counter(name, domain);
+        return owner().read_counter(name, domain);
     }
 
     void do_write_counter(uint64_t val, const char *name, const char *domain) const {
-        m_m.write_counter(val, name, domain);
+        owner().write_counter(val, name, domain);
     }
 
     // -----
@@ -565,7 +572,7 @@ private:
     friend i_accept_dirty_pages<state_access>;
 
     void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
-        m_m.mark_dirty_page(paddr, pma_index);
+        owner().mark_dirty_page(paddr, pma_index);
     }
 };
 

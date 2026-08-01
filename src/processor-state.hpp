@@ -41,10 +41,14 @@ struct shadow_state final {
     uint64_t tlb_padding_[512]{};       ///< Padding to align next field to a page boundary
 };
 
+class machine;
+
 /// \brief Penumbra state.
 /// \details It's not stored in the processor backing file, it's only visible in host memory during runtime.
 struct penumbra_state final {
-    hot_tlb_state tlb; ///< Hot TLB state
+    hot_tlb_state tlb;       ///< Hot TLB state
+    machine *owner{};        ///< Machine holding this state
+    uint64_t scratch[511]{}; ///< Interpreter loop scratch area; also aligns penumbra state size to a page boundary
 };
 
 /// \brief Machine processor state.

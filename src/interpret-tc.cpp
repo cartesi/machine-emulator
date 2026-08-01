@@ -26,6 +26,8 @@
 #define TC_TRANSLATION_UNIT
 #include "interpret.cpp"
 
+#include <new>
+
 namespace cartesi {
 
 // Measurement shell for the tracing plan (tail-call.md section 8b, step 1):
@@ -183,33 +185,34 @@ struct tc_context {
 #error "TC_ONLINE currently requires the pinned-register interpreter shape"
 #endif
 
-// preserve_none composes with pinned registers: the pinned state is not
-// passed at all, but the convention still frees handlers from callee-saved
-// prologue obligations. Under Clang its argument assignment uses x20-x28 in
-// order and ignores -ffixed reservations, which is why the pinned set starts
-// at x23, leaving x20-x22 for the (accessor, insn) arguments.
-// GCC 16 gains the convention on both targets under different spellings:
-// a plain attribute on x86-64 (probeable) and a target attribute string on
-// AArch64 (not probeable, gated on the version instead). Untested until a
-// GCC 16 is available here.
+// preserve_none composes with pinned registers on AArch64: the pinned state
+// is not passed at all, but the convention still frees handlers from
+// callee-saved prologue obligations. Both compilers assign its arguments to
+// x20-x28 in order (Clang ignoring -ffixed reservations while doing it),
+// which is why the pinned set starts at x23, leaving x20-x22 for the
+// (accessor, insn) arguments. GCC 16 gains the convention on both targets
+// under the same plain attribute spelling Clang uses, so presence is
+// probeable everywhere.
 #ifndef TC_USE_PRESERVE_NONE
-#if defined(__clang__) && __has_attribute(preserve_none)
-#define TC_USE_PRESERVE_NONE 1
-#elif defined(__GNUC__) && defined(__x86_64__) && __has_attribute(preserve_none)
-#define TC_USE_PRESERVE_NONE 1
-#elif defined(__GNUC__) && defined(__aarch64__) && __GNUC__ >= 16
+#if __has_attribute(preserve_none)
 #define TC_USE_PRESERVE_NONE 1
 #else
 #define TC_USE_PRESERVE_NONE 0
 #endif
 #endif
 
-#if !TC_USE_PRESERVE_NONE
-#define TC_CALLCONV
-#elif defined(__GNUC__) && !defined(__clang__) && defined(__aarch64__)
-#define TC_CALLCONV __attribute__((target("preserve_none")))
-#else
+// On x86-64 the two cannot compose: GCC's preserve_none argument registers
+// are r12-r15, the pinned set itself, and the assignment does not respect
+// the register-asm reservations, so the combination compiles and then
+// corrupts state at runtime.
+#if TC_GLOBAL_REGS && TC_USE_PRESERVE_NONE && defined(__x86_64__)
+#error "pinned registers and preserve_none collide on x86-64; build with TC_USE_PRESERVE_NONE=0"
+#endif
+
+#if TC_USE_PRESERVE_NONE
 #define TC_CALLCONV __attribute__((preserve_none))
+#else
+#define TC_CALLCONV
 #endif
 
 // The next-instruction pre-load pays for itself only when the register
@@ -233,6 +236,19 @@ struct tc_context {
 #endif
 #endif
 
+/// \brief Returns the loop context, which lives in the penumbra scratch area.
+/// \details The context sits at a constant offset from the processor state,
+/// so in the argument-passing shape reaching it consumes no handler
+/// argument; the outer loop places it there before dispatching into a
+/// chain. The pinned shape keeps a register on it instead (see below).
+template <typename STATE_ACCESS>
+static FORCE_INLINE tc_context<STATE_ACCESS> *tc_ctx(const STATE_ACCESS a) {
+    static_assert(sizeof(tc_context<STATE_ACCESS>) <= sizeof(penumbra_state::scratch));
+    static_assert(alignof(tc_context<STATE_ACCESS>) <= alignof(uint64_t));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return std::launder(reinterpret_cast<tc_context<STATE_ACCESS> *>(a.get_penumbra().scratch));
+}
+
 #if TC_GLOBAL_REGS
 // The interpreter's hot state lives in reserved call-saved registers, named
 // so the shared handler body text resolves to them directly. pc is one
@@ -252,6 +268,11 @@ struct tc_context {
 // countdown at the few points that observe it. The countdown is unsigned
 // but compared as signed: the privileged handler (WFI polling in
 // interactive mode) can push mcycle past the tick end, driving it negative.
+// The context pointer stays pinned as well, although the context is
+// reachable from the processor state: its penumbra offset exceeds the
+// AArch64 load immediate range, so deriving it inline puts address
+// arithmetic on the mcycle materialization of every memory instruction
+// (measured at about 2% aggregate under GCC 15).
 #if defined(__aarch64__)
 register uint64_t tc_reg_pc asm("x23");
 register uint64_t tc_remaining asm("x24");
@@ -282,10 +303,10 @@ register tc_context<state_access> *tcc asm("r15");
 // at every outlined-helper call and chain exit, and remain the storage the
 // outer loop and the helpers use.
 #define TC_HOT_PARAMS                                                                                                  \
-    , uint64_t pc, uint64_t tc_remaining, tc_context<STATE_ACCESS> *tcc, uint64_t fetch_vaddr_page,                    \
+    , uint64_t pc, uint64_t tc_remaining, uint64_t fetch_vaddr_page,                                                   \
         i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset
-#define TC_HOT_ARGS , pc, tc_remaining, tcc, fetch_vaddr_page, fetch_vf_offset
-#define TC_ENTER() ((void) 0)
+#define TC_HOT_ARGS , pc, tc_remaining, fetch_vaddr_page, fetch_vf_offset
+#define TC_ENTER() auto *const tcc = tc_ctx(a)
 #define TC_SYNC() ((void) 0)
 #endif
 
@@ -894,35 +915,35 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
         pc = raise_exception(a, pc, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
     }
 
-    tc_context<STATE_ACCESS> tcc{};
-    tcc.mcycle_end = mcycle_end;
-    tcc.fetch_vaddr_page = ensure_fetch_cache_miss(pc);
-    tcc.fetch_pma_index = TLB_INVALID_PMA_INDEX;
+    auto *const tcc = new (a.get_penumbra().scratch) tc_context<STATE_ACCESS>{};
+    tcc->mcycle_end = mcycle_end;
+    tcc->fetch_vaddr_page = ensure_fetch_cache_miss(pc);
+    tcc->fetch_pma_index = TLB_INVALID_PMA_INDEX;
 #if TC_JIT_SHELL
-    for (auto &c : tcc.hot.hotcount) {
+    for (auto &c : tcc->hot.hotcount) {
         c = TC_HOT_RESET;
     }
-    for (auto &p : tcc.hot.head_pc) {
+    for (auto &p : tcc->hot.head_pc) {
         p = UINT64_MAX;
     }
-    tcc.hot.entries = 0;
+    tcc->hot.entries = 0;
 #endif
 #if TC_AOT
     // Install the generated traces, hottest first, first claim per slot
     for (const auto &head : tc_trace_heads<STATE_ACCESS>) {
         const uint32_t h = (static_cast<uint32_t>(head.pc) >> 1) & 63;
-        if (tcc.hot.head_pc[h] == UINT64_MAX) {
-            tcc.hot.head_pc[h] = head.pc;
-            tcc.hot.head_fn[h] = reinterpret_cast<const void *>(head.fn);
+        if (tcc->hot.head_pc[h] == UINT64_MAX) {
+            tcc->hot.head_pc[h] = head.pc;
+            tcc->hot.head_fn[h] = reinterpret_cast<const void *>(head.fn);
         }
     }
 #endif
 #if TC_ONLINE
-    tcc.online = &tc_online_storage;
+    tcc->online = &tc_online_storage;
     // Re-register heads installed by earlier interpret() calls
     for (uint32_t i = 0; i < tc_online_storage.ntraces; ++i) {
         const uint64_t head = tc_online_storage.pool[i].head;
-        tcc.hot.head_pc[(static_cast<uint32_t>(head) >> 1) & 63] = head;
+        tcc->hot.head_pc[(static_cast<uint32_t>(head) >> 1) & 63] = head;
     }
 #endif
 
@@ -934,34 +955,34 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
             }
         }
 
-        pc = raise_interrupt_if_any(a, pc, tcc.fetch_vaddr_page);
+        pc = raise_interrupt_if_any(a, pc, tcc->fetch_vaddr_page);
 
 #ifndef NDEBUG
         assert_no_brk(a);
 #endif
 
         const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
-        tcc.mcycle_tick_end = mcycle_tick_end;
+        tcc->mcycle_tick_end = mcycle_tick_end;
 
         execute_status status = execute_status::success;
         while (mcycle < mcycle_tick_end) {
             uint32_t insn = 0;
-            if (fetch_insn(a, pc, insn, tcc.fetch_vaddr_page, tcc.fetch_vf_offset, tcc.fetch_pma_index) ==
+            if (fetch_insn(a, pc, insn, tcc->fetch_vaddr_page, tcc->fetch_vf_offset, tcc->fetch_pma_index) ==
                 fetch_status::success) [[likely]] {
 #if TC_ONLINE
-                if (tcc.online_trip) [[unlikely]] {
-                    tcc.online_trip = false;
-                    tc_online_debug("trip", tcc.online_trip_pc, tcc.online_trip_weight);
-                    tc_online_begin(&tcc, tcc.online_trip_pc);
+                if (tcc->online_trip) [[unlikely]] {
+                    tcc->online_trip = false;
+                    tc_online_debug("trip", tcc->online_trip_pc, tcc->online_trip_weight);
+                    tc_online_begin(tcc, tcc->online_trip_pc);
                 }
-                if (tcc.online->recording) [[unlikely]] {
-                    tc_online_record(&tcc, pc, insn);
+                if (tcc->online->recording) [[unlikely]] {
+                    tc_online_record(tcc, pc, insn);
                 }
 #endif
 #if TC_GLOBAL_REGS
                 cartesi::tc_reg_pc = pc;
 #if TC_ONLINE
-                const bool tc_is_recording = tcc.online->recording;
+                const bool tc_is_recording = tcc->online->recording;
                 // One-instruction chains while recording; the adjusted tick
                 // base keeps the mcycle materialization identity exact.
                 const uint64_t tc_chain_remaining = tc_is_recording ? 1 : mcycle_tick_end - mcycle;
@@ -974,17 +995,17 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 // Multiple writes around the branch make Clang 22 incorrectly
                 // hoist the recording value (1) onto the non-recording path.
                 cartesi::tc_remaining = tc_chain_remaining;
-                tcc.mcycle_tick_end = tc_chain_tick_end;
-                cartesi::tcc = &tcc;
-                cartesi::fetch_vaddr_page = tcc.fetch_vaddr_page;
-                cartesi::tc_reg_vf_offset = static_cast<uint64_t>(tcc.fetch_vf_offset);
+                tcc->mcycle_tick_end = tc_chain_tick_end;
+                cartesi::tcc = tcc;
+                cartesi::fetch_vaddr_page = tcc->fetch_vaddr_page;
+                cartesi::tc_reg_vf_offset = static_cast<uint64_t>(tcc->fetch_vf_offset);
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
 #else
-                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, mcycle_tick_end - mcycle, &tcc,
-                    tcc.fetch_vaddr_page, tcc.fetch_vf_offset);
+                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, mcycle_tick_end - mcycle,
+                    tcc->fetch_vaddr_page, tcc->fetch_vf_offset);
 #endif
-                pc = tcc.pc;
-                mcycle = tcc.mcycle;
+                pc = tcc->pc;
+                mcycle = tcc->mcycle;
                 break;
             }
             // Fetch raised an exception: it consumes one cycle and execution continues
@@ -1009,7 +1030,7 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 }
 
 #if TC_GLOBAL_REGS
-/// \brief Snapshot of the six reserved registers' values.
+/// \brief Snapshot of the five reserved registers' values.
 struct tc_saved_regs {
     uint64_t r[5];
 };

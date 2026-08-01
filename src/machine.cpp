@@ -308,6 +308,8 @@ machine::machine(machine_config c, machine_runtime_config r, const std::string &
     m_us{reinterpret_cast<uarch_processor_state *>(
         m_ars.find(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH).get_host_memory())} {
     init_processor(m_c.processor, m_r);
+    // State accessors reach the machine through the penumbra back-pointer
+    m_s->penumbra.owner = this;
     init_uarch_processor(m_c.uarch.processor);
     init_pmas_contents(m_c.pmas);
     init_hot_tlb_contents();

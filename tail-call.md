@@ -4,13 +4,15 @@
 
 A tail-call threaded interpreter, built from Mike Pall's design advice but
 with no assembly, beats the stock computed-goto interpreter on AArch64 by
-12.5% under Clang and about 10.8% under GCC 15, in aggregate over the six
-continuity workloads (sections 5.12 and 5.15, built with
+11.4% under Clang and 9.2% under GCC 15, in aggregate over the six
+continuity workloads (sections 5.15 and 5.16, built with
 `make tailcall=yes`), while reusing the stock instruction semantics
 unchanged. The result is architecture-specific: on x86-64 the shipped
 defaults are +1.4% under Clang 22 and +10.9% under GCC 16, and the only
 measured win is Clang with the next-instruction pre-load disabled, at a
-marginal -1.2% (section 5.14). Every variant of every iteration retired
+marginal -1.2% (section 5.14); those numbers predate the six-slot
+signature of section 5.16, which removes all stack-argument traffic on
+x86-64 and awaits re-measurement there. Every variant of every iteration retired
 identical cycles and produced identical root hashes and guest exits against
 a same-source stock build. For scale, tracing.md's best offline native AOT
 result was -2.9% aggregate against the plain interpreter.
@@ -653,6 +655,97 @@ The compiler does not fuse the decrement into a flag-setting subtract
 (it emits sub, mov, cmp, branch where subs plus one branch would do), so
 a little is still on the table if that shape ever matters.
 
+### 5.16 One-pointer accessor and the six-slot signature (current best)
+
+The x86-64 campaign left the register budget as the standing diagnosis,
+and a disassembly study against GCC 16.1 made it exact. GCC 16's x86-64
+preserve_none passes arguments in only six registers (r12-r15, rdi, rsi,
+measured with a probe function), where Clang's uses twelve. The
+eight-slot handler signature therefore overflows GCC's set by exactly
+two, and the overflow lands on the fetch-cache pair: every handler
+loaded both fields from incoming stack slots at entry and stored both
+back before every dispatch, a store-to-load round trip through memory at
+the head of the critical fetch chain, section 5.8's ninth-argument
+disease reborn as arguments seven and eight. The same study settled two
+side questions. Adding [[gnu::musttail]] to the preserve_none shape
+leaves GCC 16's output byte-identical (every dispatch is already a
+sibling call), while in the plain-convention shape IPA-SRA rewrote
+tc_fetch_miss's signature, sibling calls became impossible there, and
+GCC silently emitted that dispatch as a real call carrying a live frame
+per fetch miss; the same build with the attribute compiles clean with
+the call gone. The attribute is free where codegen is already right and
+turns this silent-regression class into a compile error.
+
+Two of the eight slots turned out to be cold cargo. state_access carried
+{processor_state*, machine*}, but all sixteen of its machine uses are
+cold paths (device and slow memory access, PMA reads, TLB refill,
+console, counters, dirty marking at walk and fill time). The context
+pointer is likewise never touched by the hot dispatch path. Both are now
+derived instead of passed. penumbra_state gained a host-only
+back-pointer to the machine (set at construction, never hashed, never in
+the backing file), and state_access shrank to the processor-state
+reference alone, so the accessor occupies one register in every
+instantiation, the stock loop included. tc_context moved into a penumbra
+scratch area, placement-newed by the outer loop, so the args shape
+derives it from the state pointer at a constant offset.
+
+The signature is then six slots (accessor, insn, pc, countdown, and the
+fetch-cache pair), which fits every convention in play fully in
+registers: SysV x86-64 has exactly six argument GPRs, GCC 16's
+preserve_none six, Clang's twelve, and AAPCS eight, so even GCC 14/15's
+x86-64 args shape stops spilling. Static evidence under GCC 16.1 on
+x86-64, same protocol as the 5.14 disassembly work: stack-argument
+traffic zero (was two loads and two stores per dispatch), aggregate
+handler text -11%, push/pop -68%, and the lean and memory handlers' hot
+paths contain no stack memory access at all (BNE is fully frameless, and
+LD's TLB-hit path runs entirely in registers, the data-TLB consult
+folding into disp32 addressing off the state pointer). The remaining
+stack traffic is cold-block spill save/restores and the fat handlers'
+execute bodies (FD, the AMOs, PRIVILEGED), operand pressure the stock
+loop pays as well.
+
+The first AArch64 measurement caught a regression hiding in the cleanup:
+freeing x27 by deriving the context in the pinned shape cost GCC 15
+about two points aggregate, reproducible across repetitions. The context
+offset in the penumbra exceeds AArch64's scaled load immediate range, so
+the derivation put address arithmetic on the mcycle materialization of
+every memory instruction, and the pinned shape gains nothing from the
+freed register because its state never travels through arguments. The
+context pointer is therefore pinned again (x27, r15 on x86-64) while the
+context storage stays in the penumbra; x86-64's args shape keeps
+deriving it, which disp32 addressing makes free there.
+
+Same-day anchors, one repetition (a second GCC repetition agreed within
+noise), all 48 runs of the campaign cycle- and hash-identical:
+
+| Workload | Clang stock (s) | Clang tc (s) | GCC15 stock (s) | GCC15 tc (s) |
+|---|---:|---:|---:|---:|
+| sieve | 29.70 | 25.69 | 27.97 | 22.81 |
+| qsort | 29.78 | 25.48 | 29.23 | 27.22 |
+| zlib | 26.98 | 27.71 | 27.06 | 24.67 |
+| hash | 31.17 | 24.94 | 30.19 | 26.54 |
+| double | 51.74 | 48.27 | 56.19 | 55.19 |
+| syscall | 32.23 | 26.43 | 31.04 | 26.70 |
+| **Total** | **201.60** | **178.52 (-11.4%)** | **201.68** | **183.13 (-9.2%)** |
+
+The absolute tail-call times equal or beat 5.15's record on every
+workload under both compilers (GCC's qsort improves by 0.8 seconds); the
+relative aggregates read lower than 5.15's -12.5% and -10.8% only
+because the same-day stock anchors ran about a percent faster than on
+the earlier campaign's day. The cost of the whole change is one
+host-only page per machine instance, the penumbra padding that houses
+the back-pointer and the context. The x86-64 shapes, the ones the
+six-slot signature actually targets, await re-measurement on hardware.
+
+Also in this round, GCC 16's AArch64 preserve_none turned out to use the
+same plain attribute spelling as Clang and x86-64 (the target-string
+spelling the source speculatively gated on is rejected), so the enable
+collapses to a __has_attribute probe and the GCC 16 AArch64 build now
+compiles; its argument order is x20-x28 like Clang's, composing with the
+pinned set unchanged. The x86-64 combination of pinned registers and
+preserve_none, which corrupts state at runtime (section 5.14), is now a
+compile error.
+
 ## 6. Hardware counters explain zlib
 
 Eliminated first by construction and measurement: per-handler prologue
@@ -842,17 +935,20 @@ Remaining before promotion:
 3. DONE. Run a full x86-64 timing campaign (section 5.14). The result is
    near parity for Clang only after disabling the pre-load, and a regression
    for GCC under every measured shape.
-4. Force preserve_none off when GCC's x86-64 pinned shape is selected, so a
-   configuration that silently corrupts state cannot compile.
+4. DONE (section 5.16). The pinned x86-64 shape with preserve_none is a
+   compile error.
 5. Narrow the pre-load default to the pinned shape; on x86-64 Clang this is
    worth 2.6 points and does not change AArch64.
 6. Complete the formal gates on the experimental flag.
 
-GCC 16 does provide preserve_none-equivalent conventions on both AArch64
-and x86-64, under different attribute spellings. On x86-64 it improves the
-argument-passing shape substantially but does not dissolve the architecture's
-register-budget problem: the default remains +10.9%, and composing the
-convention with pinning is invalid because their registers overlap.
+GCC 16 does provide preserve_none on both AArch64 and x86-64, under the
+same plain attribute spelling Clang uses (section 5.16). On x86-64 it
+improves the argument-passing shape substantially but passes arguments in
+only six registers, so by itself it does not dissolve the architecture's
+register-budget problem; the six-slot signature of section 5.16 does. The
++10.9% default predates that change, and composing the convention with
+pinning remains invalid because their registers overlap (now a compile
+error).
 
 Standing goal: a single interpreter implementation, so there is one loop
 to audit instead of two. Currently blocked by portability (section 5.14:

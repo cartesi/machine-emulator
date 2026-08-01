@@ -29,6 +29,8 @@
 
 #define NO_INLINE __attribute__((noinline))
 
+#define NO_INLINE_COLD __attribute__((noinline, cold))
+
 #define NO_RETURN [[noreturn]]
 
 #define PACKED __attribute__((packed))

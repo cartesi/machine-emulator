@@ -82,7 +82,12 @@ private:
     /// \brief Machine associated with the processor state.
     /// \details Reached through the penumbra back-pointer, so the accessor
     /// itself carries a single reference; only cold paths need the machine.
-    machine &owner() const {
+    /// The load must stay out of the callers that inline into the stock
+    /// interpreter loop: inlined there, it is a memory dependency GCC cannot
+    /// hoist, and its register allocation collapses across the whole
+    /// computed-goto function (a measured 32.7% stock slowdown on x86-64,
+    /// see tail-call-x86_64.md).
+    NO_INLINE_COLD machine &owner() const {
         return *m_s.penumbra.owner;
     }
 

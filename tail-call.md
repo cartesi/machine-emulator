@@ -881,22 +881,37 @@ shell cost +66% with tracing idle).
    execution oracle (recorded bytes are not re-verified and stores do
    not invalidate; the gates validate every run), offline traces, a
    64-trace budget, and double barely moves (19.5% capture coverage).
-3. Online recording, with LuaJIT's memory policy (decided): every
-   structure lives in fixed pools allocated when the machine is created,
-   so allocation can fail only at cm_create, never mid-run. A fixed
-   trace pool and recording buffer, bump-pointer install, flush-all when
-   the pool fills (hotcounts re-warm at measured shell cost), and the
-   penalty blacklist against re-record churn. No recency ordering on
-   the entry path ever; if flush-thrash appears, the fallback is an
-   epoch stamp in the already-loaded head-table line with a cold
-   second-chance sweep, not an LRU list. Intrusive per-page membership
-   lists (page-hash-tree-cache style, nodes embedded in the fixed pool)
-   serve store invalidation and are touched only at install, invalidate,
-   and flush. Design consequence: the profiling and trace state must
-   move out of the stack tc_context into per-machine state, because
-   interpret() runs in mcycle_end chunks and hotcounts, traces, and
-   blacklists must survive across calls (today's shell re-warms per
-   interpret() call, which the single-run benchmarks never notice).
+3. DONE, FORMATION PROTOTYPE. `-DTC_ONLINE=1` records both loop and call
+   heads into a fixed 1024-slot pool, closes traces on cycles, page exits,
+   or 64 instructions, installs by bump pointer, uses a separate
+   open-addressed installed-head set so collisions in the 64-slot dispatch
+   table cannot cause re-recording, and retains a penalty blacklist across
+   flush-all. Normal handler chains contain no per-instruction recorder
+   call: a hot hook leaves a pending request in the context, returns to the
+   outer loop, and recording proceeds through one-instruction chains only
+   for the duration of a trace.
+
+   Two code-shape failures were found while bringing it up. Calling recorder
+   setup directly from the inlined hook gave every conditional handler a
+   frame for a cold call, so setup moved behind the outer-loop boundary.
+   More severely, writing the pinned countdown before and inside the
+   `recording` conditional made Clang 22 hoist `x24 = 1` onto the false path,
+   reducing all execution to one-instruction chains. Computing the countdown
+   in ordinary locals and writing the pinned register exactly once after the
+   branch fixes the lowering. A full sieve run then recorded 653 traces (62
+   short aborts, no flush), retired the stock 16,791,353,500 cycles with the
+   identical root hash and exit, and took 26.34 user seconds against the
+   measured shell's 25.71 (+2.4%). Formation overhead is therefore back in
+   the same low-single-digit range as the shell rather than the pathological
+   6-30x debugging runs.
+
+   The prototype deliberately keeps one pool per host thread. Production
+   still needs the decided LuaJIT memory policy: allocate the fixed pool at
+   machine creation, keep profiling/traces/blacklists per machine across
+   interpret() calls, add intrusive per-page membership for store
+   invalidation, and flush-all on exhaustion. No recency ordering belongs on
+   the entry path; if flush-thrash appears, use an epoch stamp and cold
+   second-chance sweep rather than an LRU list.
 
 4. Backend choice, only after 2 shows margin. MIR generates standard-ABI
    code, so every trace entry and exit would re-marshal the interpreter

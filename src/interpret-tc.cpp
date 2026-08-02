@@ -58,6 +58,21 @@ namespace cartesi {
 #define TC_ONLINE 0
 #endif
 
+// Page-segment fetch validation (tail-call.md section 8c): the chain
+// countdown is additionally bounded by the number of fall-through fetches
+// that provably stay within the validated page, so in-segment dispatches
+// need no per-instruction fetch-cache check; only control transfers and
+// cold paths validate pages, tightening the bound when pc moves, and
+// segment expiry re-derives the bound in-chain without leaving to the
+// outer loop. Off by default until measured (-DTC_PAGE_SEGMENT=1).
+#ifndef TC_PAGE_SEGMENT
+#define TC_PAGE_SEGMENT 0
+#endif
+
+#if TC_PAGE_SEGMENT && (TC_AOT || TC_ONLINE)
+#error "TC_PAGE_SEGMENT is not yet composed with the trace prototypes"
+#endif
+
 #ifndef TC_JIT_SHELL
 #if TC_AOT || TC_ONLINE
 #define TC_JIT_SHELL 1 // trace dispatch and recording ride the shell's hook sites
@@ -142,6 +157,9 @@ struct tc_context {
     uint64_t mcycle;
     uint64_t mcycle_end;
     uint64_t mcycle_tick_end;
+#if TC_PAGE_SEGMENT
+    uint64_t mcycle_seg_end; ///< Countdown base: end of the current page segment (never past mcycle_tick_end)
+#endif
     uint64_t fetch_vaddr_page;
     i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset;
     uint64_t fetch_pma_index;
@@ -236,6 +254,7 @@ struct tc_context {
 #endif
 #endif
 
+
 /// \brief Returns the loop context, which lives in the penumbra scratch area.
 /// \details The context sits at a constant offset from the processor state,
 /// so in the argument-passing shape reaching it consumes no handler
@@ -296,6 +315,23 @@ register tc_context<state_access> *tcc asm("r15");
     uint64_t pc = tc_reg_pc;                                                                                           \
     const auto fetch_vf_offset = static_cast<i_state_access_fast_addr_t<state_access>>(tc_reg_vf_offset)
 #define TC_SYNC() (tc_reg_pc = pc)
+#define TC_FETCH_TAG fetch_vaddr_page
+#define TC_FETCH_TAG_INVALIDATE()                                                                                      \
+    (fetch_vaddr_page = ensure_fetch_cache_miss(pc), tcc->fetch_vaddr_page = fetch_vaddr_page)
+#define TC_FETCH_TAG_SYNC() (tcc->fetch_vaddr_page = fetch_vaddr_page)
+#elif TC_PAGE_SEGMENT
+// With page segments the fetch tag is read only by control transfers and
+// cold paths, so it leaves the signature and lives in the context alone,
+// returning one argument register to the allocator; vf_offset stays, since
+// the fetch translation feeds every instruction load.
+#define TC_HOT_PARAMS                                                                                                  \
+    , uint64_t pc, uint64_t tc_remaining, i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset
+#define TC_HOT_ARGS , pc, tc_remaining, fetch_vf_offset
+#define TC_ENTER() auto *const tcc = tc_ctx(a)
+#define TC_SYNC() ((void) 0)
+#define TC_FETCH_TAG (tcc->fetch_vaddr_page)
+#define TC_FETCH_TAG_INVALIDATE() (tcc->fetch_vaddr_page = ensure_fetch_cache_miss(pc))
+#define TC_FETCH_TAG_SYNC() ((void) 0)
 #else
 // The fetch cache's two hot fields travel as handler arguments: the pre-load
 // consumes them at the head of its dependency chain, where keeping them in
@@ -308,11 +344,22 @@ register tc_context<state_access> *tcc asm("r15");
 #define TC_HOT_ARGS , pc, tc_remaining, fetch_vaddr_page, fetch_vf_offset
 #define TC_ENTER() auto *const tcc = tc_ctx(a)
 #define TC_SYNC() ((void) 0)
+#define TC_FETCH_TAG fetch_vaddr_page
+#define TC_FETCH_TAG_INVALIDATE()                                                                                      \
+    (fetch_vaddr_page = ensure_fetch_cache_miss(pc), tcc->fetch_vaddr_page = fetch_vaddr_page)
+#define TC_FETCH_TAG_SYNC() (tcc->fetch_vaddr_page = fetch_vaddr_page)
 #endif
 
+// The countdown base: with page segments the chain counts to the segment
+// end and the true tick end keeps its own field; otherwise they coincide
+#if TC_PAGE_SEGMENT
+#define TC_CHAIN_END (tcc->mcycle_seg_end)
+#else
+#define TC_CHAIN_END (tcc->mcycle_tick_end)
+#endif
 // The architectural cycle counter, derived from the countdown on demand
-#define TC_MCYCLE_GET() (tcc->mcycle_tick_end - tc_remaining)
-#define TC_MCYCLE_SET(v) (tc_remaining = tcc->mcycle_tick_end - (v))
+#define TC_MCYCLE_GET() (TC_CHAIN_END - tc_remaining)
+#define TC_MCYCLE_SET(v) (tc_remaining = TC_CHAIN_END - (v))
 // One instruction retires: count it and test for the tick boundary
 #define TC_TICK_ENDED() (static_cast<int64_t>(--tc_remaining) <= 0)
 
@@ -647,7 +694,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status tc_fetch_insn(const STATE_ACCESS a, uint64_t &pc, uint32_t &insn,
     uint64_t &fetch_vaddr_page, i_state_access_fast_addr_t<STATE_ACCESS> &fetch_vf_offset,
     tc_context<STATE_ACCESS> *tcc) {
-    if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {
+    if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {
         a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index, &insn);
         return fetch_status::success;
     }
@@ -702,19 +749,57 @@ struct tc_predecode {
     tc_handler_ptr<STATE_ACCESS> handler;
 };
 
+#if TC_PAGE_SEGMENT
+/// \brief Number of fall-through fetches from pc that provably stay within
+/// the fetchable region of pc's page.
+/// \details A fetch at page offset o reads bytes o..o+3, so it is safe iff
+/// o <= PAGE_OFFSET_MASK - 3 (the same bound fetch_cache_is_hit enforces
+/// for 2-byte-aligned pc), and successors advance by at most 4 bytes each.
+/// Negative when pc itself sits in the crossing region; callers rely on
+/// signed arithmetic throughout.
+static FORCE_INLINE int64_t tc_seg_allowance(uint64_t pc) {
+    return (static_cast<int64_t>(PAGE_OFFSET_MASK) - 3 - static_cast<int64_t>(pc & PAGE_OFFSET_MASK)) >> 2;
+}
+
+/// \brief Re-establishes the segment invariant after pc may have left the
+/// fall-through path (taken branches, raises, new mappings).
+/// \details Tighten-only: the countdown and its base move together by the
+/// same amount, preserving the mcycle materialization identity, and the
+/// bound never extends, so it can never pass the true tick end. Chains
+/// that tighten to nothing exit early and re-derive in the outer loop.
+#define TC_SEG_TIGHTEN()                                                                                               \
+    do {                                                                                                               \
+        const int64_t tc_seg_nb = tc_seg_allowance(pc);                                                                \
+        const int64_t tc_seg_d = static_cast<int64_t>(tc_remaining) - tc_seg_nb;                                       \
+        if (tc_seg_d > 0) {                                                                                            \
+            TC_CHAIN_END -= static_cast<uint64_t>(tc_seg_d);                                                           \
+            tc_remaining = static_cast<uint64_t>(tc_seg_nb);                                                           \
+        }                                                                                                              \
+    } while (0)
+
+// The pre-decode reads one instruction ahead of retirement, so its guard is
+// the countdown itself: entering with at least one more instruction to
+// retire proves the fall-through fetch is within the segment budget (the
+// budget covers one fetch past the last retirement for exactly this read).
+#define TC_PREDECODE_SAFE(LEN) (static_cast<int64_t>(tc_remaining) >= 1)
+#else
+#define TC_SEG_TIGHTEN() ((void) 0)
+#define TC_PREDECODE_SAFE(LEN) fetch_cache_is_hit(pc + (LEN), fetch_vaddr_page)
+#endif
+
 /// \brief Pre-decodes the fall-through successor of the current instruction.
 /// \details Uses the same fetch primitives as the generic tail; performs
 /// only side-effect-free host reads of guest RAM through the current valid
 /// fetch mapping. The instruction length is a compile-time constant at every
 /// call site (each handler serves exactly one encoding length), so the
-/// rotation adds no length computation to the loop.
+/// rotation adds no length computation to the loop. The caller supplies the
+/// page-safety predicate for the read (see TC_PREDECODE_SAFE).
 template <typename STATE_ACCESS>
 static FORCE_INLINE tc_predecode<STATE_ACCESS> tc_predecode_next(const STATE_ACCESS a, uint64_t pc, uint64_t insn_len,
-    uint64_t fetch_vaddr_page, i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset,
-    tc_context<STATE_ACCESS> *tcc) {
+    bool safe, i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset, tc_context<STATE_ACCESS> *tcc) {
     tc_predecode<STATE_ACCESS> next{};
     next.pc = pc + insn_len;
-    next.hit = fetch_cache_is_hit(next.pc, fetch_vaddr_page);
+    next.hit = safe;
     if (next.hit) [[likely]] {
         a.template read_memory_word<uint32_t, uint16_t>(next.pc + fetch_vf_offset, tcc->fetch_pma_index, &next.insn);
         next.handler = tc_jumptable<STATE_ACCESS>[insn_get_id(next.insn)];
@@ -726,7 +811,7 @@ static FORCE_INLINE tc_predecode<STATE_ACCESS> tc_predecode_next(const STATE_ACC
     do {                                                                                                               \
         tcc->pc = pc;                                                                                                  \
         tcc->mcycle = TC_MCYCLE_GET();                                                                                 \
-        tcc->fetch_vaddr_page = fetch_vaddr_page;                                                                      \
+        TC_FETCH_TAG_SYNC();                                                                                           \
         tcc->fetch_vf_offset = fetch_vf_offset;                                                                        \
         return (st);                                                                                                   \
     } while (0)
@@ -760,6 +845,23 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
     }
     fetch_vaddr_page = proxy_vaddr_page;
     tc_reg_vf_offset = static_cast<uint64_t>(proxy_vf_offset);
+#elif TC_PAGE_SEGMENT
+    // The demoted fetch tag lives in the context; proxy it through a local
+    // for tc_fetch_insn's reference parameter on this cold path
+    uint64_t proxy_vaddr_page = tcc->fetch_vaddr_page;
+    for (;;) {
+        if (tc_fetch_insn(a, pc, tc_next_insn, proxy_vaddr_page, fetch_vf_offset, tcc) == fetch_status::success)
+            [[likely]] {
+            break;
+        }
+        // The raising fetch consumed one cycle; execution continues from the
+        // exception handler pc
+        if (TC_TICK_ENDED()) [[unlikely]] {
+            tcc->fetch_vaddr_page = proxy_vaddr_page;
+            TC_RETURN(execute_status::success);
+        }
+    }
+    tcc->fetch_vaddr_page = proxy_vaddr_page;
 #else
     for (;;) {
         if (tc_fetch_insn(a, pc, tc_next_insn, fetch_vaddr_page, fetch_vf_offset, tcc) == fetch_status::success)
@@ -773,9 +875,50 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
         }
     }
 #endif
+    // The fetch may have established a new mapping or moved pc off the
+    // fall-through path; re-establish the segment bound before dispatching
+    TC_SEG_TIGHTEN();
     TC_SYNC();
     TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS);
 }
+
+#if TC_PAGE_SEGMENT
+/// \brief Continuation for a chain whose countdown expired.
+/// \details Distinguishes the true tick end (chain exit, as before) from a
+/// mere segment end, which re-derives the bound from the current pc and
+/// the true tick end and continues the chain in place through the
+/// validated fetch path, so segment expiry never pays an outer-loop round
+/// trip. The materialization identity holds for zero and negative
+/// countdowns alike, so the arithmetic is exact even after WFI overshoot
+/// or a crossing-tightened bound.
+template <typename STATE_ACCESS>
+TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS) {
+    TC_ENTER();
+    const uint64_t tc_mcycle_now = TC_MCYCLE_GET();
+    const int64_t tc_ticks_left = static_cast<int64_t>(tcc->mcycle_tick_end - tc_mcycle_now);
+    if (tc_ticks_left <= 0) [[unlikely]] {
+        TC_RETURN(execute_status::success);
+    }
+    const int64_t tc_seg = std::min(tc_ticks_left, std::max(int64_t{0}, tc_seg_allowance(pc)));
+    tc_remaining = static_cast<uint64_t>(tc_seg);
+    tcc->mcycle_seg_end = tc_mcycle_now + static_cast<uint64_t>(tc_seg);
+    TC_SYNC();
+    TC_MUSTTAIL return tc_fetch_miss<STATE_ACCESS>(a, insn TC_HOT_ARGS);
+}
+#endif
+
+// The countdown expiry exit: with page segments it resegments in-chain
+// (only tc_seg_next decides whether the tick truly ended); otherwise the
+// chain returns to the outer loop
+#if TC_PAGE_SEGMENT
+#define TC_COUNTDOWN_EXPIRED()                                                                                         \
+    do {                                                                                                               \
+        TC_SYNC();                                                                                                     \
+        TC_MUSTTAIL return tc_seg_next<STATE_ACCESS>(a, insn TC_HOT_ARGS);                                             \
+    } while (0)
+#else
+#define TC_COUNTDOWN_EXPIRED() TC_RETURN(execute_status::success)
+#endif
 
 // Each handler pre-decodes its fall-through successor (when its class allows),
 // executes its instruction, performs the same status handling as the stock
@@ -793,19 +936,18 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
         [[maybe_unused]] tc_predecode<STATE_ACCESS> tc_next{};                                                         \
         [[maybe_unused]] const uint64_t tc_pc_in = pc;                                                                 \
         if constexpr (TC_PRELOAD_ENABLED != 0 && (PRELOAD) != 0) {                                                     \
-            tc_next = tc_predecode_next(a, pc, (LEN), fetch_vaddr_page, fetch_vf_offset, tcc);                         \
+            tc_next = tc_predecode_next(a, pc, (LEN), TC_PREDECODE_SAFE(LEN), fetch_vf_offset, tcc);                   \
         }                                                                                                              \
         const execute_status status = (EXPR);                                                                          \
         if (status > execute_status::success) [[unlikely]] {                                                           \
-            fetch_vaddr_page = ensure_fetch_cache_miss(pc);                                                            \
-            tcc->fetch_vaddr_page = fetch_vaddr_page;                                                                  \
+            TC_FETCH_TAG_INVALIDATE();                                                                                 \
             if (status >= execute_status::success_and_serve_interrupts) [[unlikely]] {                                 \
                 --tc_remaining;                                                                                        \
                 TC_RETURN(status);                                                                                     \
             }                                                                                                          \
         }                                                                                                              \
         if (TC_TICK_ENDED()) [[unlikely]] {                                                                            \
-            TC_RETURN(execute_status::success);                                                                        \
+            TC_COUNTDOWN_EXPIRED();                                                                                    \
         }                                                                                                              \
         /* Straight-line handlers (class 2) reach pc == tc_next.pc whenever                                            \
            execution status is plain success, so only conditional branches                                             \
@@ -835,8 +977,20 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
                 TC_ONLINE_TRIP_RETURN();                                                                               \
             }                                                                                                          \
         }                                                                                                              \
-        if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {                                                     \
+        /* In-segment fall-through: surviving the tick test proves the next                                            \
+           fetch stays within the validated page, no cache check needed */                                             \
+        if constexpr (TC_PAGE_SEGMENT != 0 && TC_PRELOAD_ENABLED == 0 && (PRELOAD) != 0) {                             \
+            if (status == execute_status::success && ((PRELOAD) == 2 || pc == tc_pc_in + (LEN))) [[likely]] {          \
+                uint32_t tc_next_insn = 0;                                                                             \
+                a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index,            \
+                    &tc_next_insn);                                                                                    \
+                TC_SYNC();                                                                                             \
+                TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS); \
+            }                                                                                                          \
+        }                                                                                                              \
+        if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {                                                     \
             uint32_t tc_next_insn = 0;                                                                                 \
+            TC_SEG_TIGHTEN();                                                                                          \
             a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index,                \
                 &tc_next_insn);                                                                                        \
             TC_SYNC();                                                                                                 \
@@ -856,8 +1010,7 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
     do {                                                                                                               \
         const execute_status tc_st = (EXPR);                                                                           \
         if (tc_st > execute_status::success) [[unlikely]] {                                                            \
-            fetch_vaddr_page = ensure_fetch_cache_miss(pc);                                                            \
-            tcc->fetch_vaddr_page = fetch_vaddr_page;                                                                  \
+            TC_FETCH_TAG_INVALIDATE();                                                                                 \
             if (tc_st >= execute_status::success_and_serve_interrupts) [[unlikely]] {                                  \
                 --tc_remaining;                                                                                        \
                 TC_RETURN(tc_st);                                                                                      \
@@ -874,7 +1027,7 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
 /// \brief Leaves a trace at the current pc through the interpreter's fetch tail.
 #define TC_TRACE_EXIT()                                                                                                \
     do {                                                                                                               \
-        if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {                                                     \
+        if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {                                                     \
             uint32_t tc_next_insn = 0;                                                                                 \
             a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index,                \
                 &tc_next_insn);                                                                                        \
@@ -979,30 +1132,47 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                     tc_online_record(tcc, pc, insn);
                 }
 #endif
+#if TC_PAGE_SEGMENT
+                // Bound the chain by the fall-through fetches that provably
+                // stay within pc's page, in addition to the tick
+                const uint64_t tc_avail = std::min(mcycle_tick_end - mcycle,
+                    static_cast<uint64_t>(std::max(int64_t{0}, tc_seg_allowance(pc))));
+#else
+                const uint64_t tc_avail = mcycle_tick_end - mcycle;
+#endif
 #if TC_GLOBAL_REGS
                 cartesi::tc_reg_pc = pc;
 #if TC_ONLINE
                 const bool tc_is_recording = tcc->online->recording;
                 // One-instruction chains while recording; the adjusted tick
                 // base keeps the mcycle materialization identity exact.
-                const uint64_t tc_chain_remaining = tc_is_recording ? 1 : mcycle_tick_end - mcycle;
-                const uint64_t tc_chain_tick_end = tc_is_recording ? mcycle + 1 : mcycle_tick_end;
+                const uint64_t tc_chain_remaining = tc_is_recording ? 1 : tc_avail;
+                const uint64_t tc_chain_tick_end = tc_is_recording ? mcycle + 1 : mcycle + tc_avail;
 #else
-                const uint64_t tc_chain_remaining = mcycle_tick_end - mcycle;
-                const uint64_t tc_chain_tick_end = mcycle_tick_end;
+                const uint64_t tc_chain_remaining = tc_avail;
+                const uint64_t tc_chain_tick_end = mcycle + tc_avail;
 #endif
                 // Write the pinned countdown only once, after the conditional.
                 // Multiple writes around the branch make Clang 22 incorrectly
                 // hoist the recording value (1) onto the non-recording path.
                 cartesi::tc_remaining = tc_chain_remaining;
+#if TC_PAGE_SEGMENT
+                tcc->mcycle_seg_end = tc_chain_tick_end;
+#else
                 tcc->mcycle_tick_end = tc_chain_tick_end;
+#endif
                 cartesi::tcc = tcc;
                 cartesi::fetch_vaddr_page = tcc->fetch_vaddr_page;
                 cartesi::tc_reg_vf_offset = static_cast<uint64_t>(tcc->fetch_vf_offset);
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
 #else
-                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, mcycle_tick_end - mcycle,
+#if TC_PAGE_SEGMENT
+                tcc->mcycle_seg_end = mcycle + tc_avail;
+                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_avail, tcc->fetch_vf_offset);
+#else
+                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_avail,
                     tcc->fetch_vaddr_page, tcc->fetch_vf_offset);
+#endif
 #endif
                 pc = tcc->pc;
                 mcycle = tcc->mcycle;

@@ -1063,6 +1063,155 @@ shell cost +66% with tracing idle).
    backend targets one contract regardless of how the host emulator was
    built.
 
+## 8c. Filed: block-amortized accounting on x86-64
+
+Section 5.16 established what each of the six slots is for: three
+irreducibles (accessor, insn, pc), the fetch-cache pair whose eviction
+costs a measured 5-7% because its reads sit at the head of the fetch
+chain, and the countdown, whose per-instruction touch is a predictable
+write rather than a chain-head read. Two independent ideas would shave
+the signature further on x86-64; the second also happens to build the
+segment machinery the first would ride on, which sets their order.
+Neither is worth anything on AArch64, where the accounting hides in
+issue slack and the pinned shape holds its registers for free.
+
+1. Evict the countdown by unrolling the accounting, not the loop. Four
+   phase-templated copies of each handler (the same TC_CASE macro with a
+   phase parameter, four generated tables), where phases 0-2 dispatch
+   with no accounting and phase 3 decrements a memory-resident count by
+   four; the outer loop Duff-enters at the phase that makes the tick
+   boundary land exactly on a check. Exactness survives because the
+   phase is a compile-time constant per copy: the mcycle materialization
+   and every exit path fold their phase offset. The audited source grows
+   by a phase constant and the entry computation; the binary grows 4x
+   (handler text and tables), and per-(handler, phase) indirect sites
+   split branch-target history four ways, which 5.14's flat
+   branch-miss rates suggest this host tolerates.
+
+2. Move page-transition validation off the straight-line path. Fuse the
+   two exit reasons into one segment countdown,
+   min(tick_remaining, floor(bytes_to_page_end / 4)), conservative
+   because four bytes is the maximum instruction length; when it fires
+   early (compressed instructions), re-derive and continue, about twice
+   per page. Straight-line handlers then need no per-instruction hit
+   check at all. Taken branches and jumps (~12% of instructions)
+   validate the target page and recompute the bound (forward branches
+   shrink it; backward ones only enlarge it, but recomputing
+   unconditionally is simpler). Everything that can change the mapping
+   is already on cold or chain-exiting paths and kills the segment
+   through the existing invalidation hook. Stores need nothing: only
+   the mapping check is amortized, every fetch still reads guest RAM,
+   so same-page self-modifying code is observed exactly as today.
+   fetch_vaddr_page then demotes to the context, read only by the
+   control-flow minority.
+
+Together they bring the x86-64 args signature to four slots (accessor,
+insn, pc, vf_offset -- the floor, since the fetch translation feeds
+every instruction load) and strip straight-line handlers to the real
+work plus dispatch. The freed registers and removed instructions are
+also exactly what the pre-load lacked on this architecture: its loss
+was the predicted state spilling across the execute body (5.14, and
+still -1.9% on the six-slot shape), so the pre-load should be
+re-measured on the four-slot shape before being written off on x86-64.
+
+Try the page idea (2) first. It is independent of the countdown
+eviction (the countdown keeps its register and its per-instruction
+decrement; only what it bounds changes), it carries none of the
+replication costs (no extra copies, tables, or split branch history),
+it frees the vaddr_page slot on its own, and it is sound as written, so
+it gates with the normal harness. If it wins, the countdown eviction
+(1) becomes a cheaper increment on the shared segment machinery, and
+its remaining ceiling -- by then just the decrement, test, and branch
+-- can be bounded first with an unsound measurement-only build that
+compiles the tick test out (gates knowingly red, timing valid). Both
+ideas are the interpreter converging on per-block accounting without
+translation, the same amortization traces collect at block lengths of
+tens instead of four; if the ceilings do not clear a few percent, the
+trace path collects the same win anyway and these stay filed.
+
+A first implementation of (2) (TC_PAGE_SEGMENT, default off) passed
+every gate (36 runs across six configurations, cycle- and
+hash-identical with the prior campaigns) and produced the intended
+x86-64 code shape: the ADDI dispatch tail fell from 17 instructions to
+9, frameless, with GCC 16 folding the table load into the indirect
+jump. Measured on AArch64, though, it lost to the flag-off tail-call
+build on every workload: +4.8% aggregate under Clang and +3.3% under
+GCC 15 (sieve worst at about +7%). The cost is not the removed check
+but the exit that replaced it. Fusing the page bound into the countdown
+makes every segment expiry a full chain exit through the outer loop,
+and the tighten-only rule makes hot loops inherit the page position of
+their loop head: a tight loop whose head sits late in a page has its
+countdown capped to that small allowance at the first backward branch
+and restarts the chain every few dozen instructions from then on. The
+per-instruction check it replaced was three perfectly predicted
+instructions that never exited anything; on a core with issue slack to
+hide them, trading them for chain restarts loses. The v2 refinement
+keeps the removed check but makes segment expiry a tail call into an
+in-chain resegmentation continuation (the tc_fetch_miss pattern) that
+re-derives the bound from the current pc and the true tick end, held in
+a new context field, and re-dispatches without leaving the chain.
+
+v2 measured almost identically on AArch64 (Clang +4.9%, GCC 15 +2.8%
+against the flag-off build, every gate green across both rounds), which
+corrects the diagnosis: the exit cost was a minor term. The structural
+reason is that under the pre-load the per-instruction page check was
+already amortized -- the eor/cmp/b.hi in the hot path is the
+predecode's guard, paid once as part of the rotation -- so on this
+shape the segment scheme can only convert a three-instruction guard
+into a two-instruction one, while charging the tighten to every checked
+dispatch (taken branches, stores, jumps) and growing handler text with
+the dual tails. On the pre-load shape there is no headroom by
+construction. The scheme's target is therefore exclusively the
+no-pre-load x86-64 args shape, where the removed check is the generic
+tail's own and the ADDI dispatch falls from 17 instructions to 9,
+frameless. The flag stays off; the x86-64 measurement, with v2's
+bounded expiry in place, happens on hardware.
+
+The register the scheme was meant to free is now actually freed: under
+the flag the args shape drops fetch_vaddr_page from the signature (five
+slots: accessor, insn, pc, countdown, vf_offset), the tag lives in the
+context alone, control transfers and cold paths read it there, and
+invalidation writes only the context copy. Static effect under GCC 16.1
+on x86-64: the no-pre-load shape's stack stores fall 29% and loads 23%
+against the six-slot segment build, with the LD hit path fully
+frameless; the pre-load shape's stores fall 23% and its LD hot path
+drops from five spill round trips to three, so the pre-load re-test on
+this architecture is an open question rather than a foregone loss. The
+demoted shape passes the full gates (cm-cli specs plus the six-workload
+harness, cycle- and hash-identical against stock anchors), validated on
+AArch64 by forcing the args shape. One build caveat from that exercise:
+the AArch64 args shape must clear the pinned-register reservations
+(make tailcall=yes TC_FFIXED_FLAGS=), because Clang's preserve_none
+assigns arguments into x23-x27 and the -ffixed flags of the default
+pinned shape make that combination crash at run time.
+
+The AArch64 gate run doubles as a first timing hint for the demotion:
+the demoted args shape with the pre-load measured -10.4% against stock
+under Clang, two points better than the pinned segment build (-8.5%)
+though still behind the shipped pinned shape without segments (-12.8%,
+cross-day anchors, args-vs-pinned and the freed register conflated). A
+released register recovering two points on the architecture with
+register slack is the encouraging case for the architecture without it.
+
+Proposed x86-64 experiment, the next Raptor campaign: isolate the
+register released by the segment trick by measuring the full two-by-two,
+per compiler, against same-day stock anchors with the usual gates:
+
+| | no pre-load | pre-load |
+|---|---|---|
+| no segments (six slots) | `tailcall=yes` as shipped | `TC_PRELOAD_ENABLED=1` |
+| segments + demotion (five slots) | `TC_PAGE_SEGMENT=1` | `TC_PAGE_SEGMENT=1 TC_PRELOAD_ENABLED=1` |
+
+The no-pre-load column isolates the segment trick itself (the check
+removal plus the freed register; static evidence: ADDI dispatch 17 to 9
+frameless, stack stores -29%). The pre-load row tests whether the freed
+register finally lets the pre-load pay on this architecture (its loss
+was always predicted-state spill traffic; the demotion cuts LD's
+hot-path spill round trips from five to three, and 5.14's verdict
+predates both). The comparison of the two columns within the segment
+row re-answers the pre-load question at the lower register pressure,
+where 5.14's answer no longer applies.
+
 ## 9. Validation status
 
 All timing pairs in this document passed cycle, hash, and exit equality

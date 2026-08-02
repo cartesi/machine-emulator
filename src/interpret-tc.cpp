@@ -1004,25 +1004,33 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
 
 #if TC_AOT
 /// \brief One recorded instruction inside a trace body: the case expression
-/// with the recorded word, the handler macro's status handling, the countdown
-/// decrement, and a guard that execution reached the recorded successor.
-#define TC_TRACE_STEP(EXPR, NEXT)                                                                                      \
+/// with the recorded word, the handler macro's status handling, and a guard
+/// that execution reached the recorded successor.
+/// \details Accounting is deferred to block granularity: the generator's
+/// entry and back-edge guards prove the tick cannot end inside the block,
+/// so the straight path carries no per-step countdown work at all, early
+/// exits charge their static pending count K, and the generator charges the
+/// straight path once per block. Steps that observe mcycle materialize it
+/// through TC_TRACE_MCYCLE with the same static K. Steps that write mcycle
+/// (PRIVILEGED) are excluded at selection time.
+#define TC_TRACE_STEP(EXPR, NEXT, K)                                                                                   \
     do {                                                                                                               \
         const execute_status tc_st = (EXPR);                                                                           \
         if (tc_st > execute_status::success) [[unlikely]] {                                                            \
             TC_FETCH_TAG_INVALIDATE();                                                                                 \
             if (tc_st >= execute_status::success_and_serve_interrupts) [[unlikely]] {                                  \
-                --tc_remaining;                                                                                        \
+                tc_remaining -= (K);                                                                                   \
                 TC_RETURN(tc_st);                                                                                      \
             }                                                                                                          \
         }                                                                                                              \
-        if (TC_TICK_ENDED()) [[unlikely]] {                                                                            \
-            TC_RETURN(execute_status::success);                                                                        \
-        }                                                                                                              \
         if (pc != (NEXT)) [[unlikely]] {                                                                               \
+            tc_remaining -= (K);                                                                                       \
             TC_TRACE_EXIT();                                                                                           \
         }                                                                                                              \
     } while (0)
+
+/// \brief The architectural mcycle at pending step K of the current block.
+#define TC_TRACE_MCYCLE(K) (TC_MCYCLE_GET() + (K) - 1)
 
 /// \brief Leaves a trace at the current pc through the interpreter's fetch tail.
 #define TC_TRACE_EXIT()                                                                                                \

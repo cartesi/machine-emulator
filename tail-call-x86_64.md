@@ -1,23 +1,45 @@
-# Tail-call interpreter on x86-64: second measurement round
+# Tail-call interpreter on x86-64: measurement, defects and tuning
 
-Companion to `tail-call.md`. Section 5.16 closes with "The x86-64 shapes, the
-ones the six-slot signature actually targets, await re-measurement on
-hardware." This is that re-measurement, on the same Raptor Lake machine as the
-campaign recorded in section 5.14.
+## 0. Introduction
 
-Branch measured: `0ff046c1` ("perf(interpreter): fit the tail-call hot state in
-six argument slots"), against merge-base `c1d19122` on `main`. Everything here
-was re-derived from scratch; no result from the previous round was assumed to
-still hold, and several no longer do.
+`tail-call.md` section 5.16 closes with "The x86-64 shapes, the ones the
+six-slot signature actually targets, await re-measurement on hardware." This
+document is that re-measurement, plus everything that came out of chasing it.
 
-Sections 1–9 are the measurement of your branch as it stands. Sections 10–14
-are five changes I made on top of it and what they are worth; they are on
-branch `x86_64-tuning`, five commits, ~130 lines, all x86-64-gated so AArch64
-compiles exactly the shape section 5.16 measured.
+**What this is.** An independent evaluation of `feat/tailcall-interpreter` at
+`0ff046c1` on an Intel i9-14900K (Raptor Lake), under GCC 16.1.1 and
+Clang 22.1.8, against merge-base `c1d19122` on `main`. It is written for the
+branch author: it assumes `tail-call.md` and refers to its sections by number.
 
-**Headline: `make tailcall=yes` goes from -1.6% to -6.8% under Clang and from
-+1.4% to +0.6% under GCC, the GCC stock regression drops from +32.7% to
-+4.4%, and all seventeen workloads win under Clang instead of five.**
+**What I did.** Three things, in order:
+
+1. **Measured** the branch as it stands (sections 1-9). Everything was
+   re-derived from scratch — no result from my previous round was assumed to
+   still hold, and several did not.
+2. **Fixed and tuned** it for this hardware (sections 10-15), in small
+   x86-64-gated changes that leave the AArch64 shape compiling exactly as
+   section 5.16 measured it. Seven commits, ~150 lines, no restructuring of
+   the design.
+3. **Explained where the remaining time goes** (sections 13 and 16), so the
+   stopping point is a measurement rather than an opinion.
+
+**How to read it.** Sections 1-9 are findings about your branch, most
+important first. Section 4 is the one I would read before anything else — it
+is a 32.7% regression in the default Linux build configuration. Sections
+10-15 are what I changed and what each change is worth. Section 16 is the
+conclusion.
+
+**Ground rules for every number here.** Guest work is identical across builds
+by construction (a fixed 2 Gi mcycle window after an untimed boot), the
+baseline is always `main` built with the same compiler, and **all 5763 runs
+across 49 builds agreed on final mcycle, guest exit reason and root hash.**
+Where I got something wrong mid-round — and I did, twice — the correction is
+in the text rather than quietly removed.
+
+**Headline.** `make tailcall=yes` goes from -1.6% to **-6.9%** under Clang and
+from +1.4% to **-2.2%** under GCC (the latter with PGO, section 15.3). The
+32.7% GCC stock regression is closed to +0.1%. The fastest configuration on
+this machine is Clang `tailcall=yes` at 59.29 s against main's 63.67 s.
 
 ## 1. Summary
 
@@ -80,9 +102,9 @@ Everything the commit message claims about code shape is confirmed on x86-64:
 
 Boot 256 Mi mcycles untimed, then time a fixed 2 Gi mcycle window with
 `os.clock()`, best of 3, `taskset -c 2`. Guest work is identical across builds
-by construction. **All 4284 runs across 39 builds agreed on final mcycle,
+by construction. **All 5763 runs across 49 builds agreed on final mcycle,
 guest exit reason and root hash** -- including every experimental variant in
-sections 10-14.
+sections 10-15.
 
 Two protocol changes from the previous round, both of which matter:
 
@@ -311,7 +333,11 @@ This is the one place where a previous conclusion was invalidated by the new
 code, and it is a good outcome — it means the six-slot change fixed the
 specific pathology the class-1 finding was describing.
 
-## 6. Best configuration on this machine
+## 6. Best configuration on this machine (as measured, before section 10)
+
+This is the hand-configured best of the *unmodified* branch. Sections 10-15
+fold both levers into the defaults, so the equivalent build is now plain
+`make tailcall=yes`; section 16.1 has the final numbers.
 
 ```sh
 make -j32 cartesi.so CC=clang CXX=clang++ tailcall=yes \
@@ -544,9 +570,10 @@ measurement on your hardware before it changes the shape section 5.16 tuned.
   tuned for one huge function. Countermanding them for the 153 small ones is
   +0.24% — slightly worse. Leave them.
 
-## 12. Result
+## 12. Result after the first four changes
 
-`make tailcall=yes` under Clang, no extra flags:
+`make tailcall=yes` under Clang, no extra flags. (Sections 14-15 then went
+after GCC; section 16.1 is the final state.)
 
 | Workload | main stock (s) | tuned branch (s) | change |
 |---|---:|---:|---:|
@@ -583,9 +610,11 @@ compiler:
 `TC_JIT_SHELL` on the final configuration costs **+1.97%**, against +1.71% on
 AArch64 — section 8b's dependency survives all of this.
 
-## 13. Why I stopped
+## 13. Why I stopped on the Clang side
 
-The final configuration's topdown budget says where the remaining time is:
+The topdown budget of the Clang configuration says where its remaining time
+is. This is what closed out the Clang work; sections 14 and 15 then went after
+GCC, which had a different answer.
 
 | Build | wl | Retiring | FE-bound | BE-bound | Bad-spec |
 |---|---|---:|---:|---:|---:|
@@ -684,7 +713,9 @@ pre-load, which Clang can afford (twelve argument registers) and GCC cannot
 register-budget conclusion section 5.16 reached, now with the pre-load's own
 cost removed so the comparison is clean.
 
-### 14.4 Where GCC stands
+### 14.4 Where GCC stood at this point
+
+(Section 15.3 later improves this with PGO.)
 
 | Build | Total (s) | vs main stock, same compiler |
 |---|---:|---:|
@@ -700,6 +731,201 @@ structural changes in section 13 — and of those, the first (handler takes
 `processor_state &`) is the one that would help GCC most, because it would let
 the accessor store the machine reference *and* keep six slots, closing both
 the +4.4% stock residual and the last of the tail-call gap in one move.
+
+## 15. Structural experiments
+
+Section 14 exhausted the flag-level ideas for GCC. These three needed changes
+with more structure to them. The first closed the last defect; the second was
+marginal; the third produced the most surprising result in the document.
+
+### 15.1 The accessor shape belongs to the build, not just the compiler
+
+Section 10 left GCC's stock loop at +4.2% — the residual cost of out-of-lining
+`owner()`. That residual is now gone, and the `[[gnu::noinline]]` workaround
+with it.
+
+The observation is that the accessor's two costs **never apply to the same
+build**:
+
+- storing the machine reference costs one handler argument slot (six become
+  seven), which Clang's twelve `preserve_none` argument registers absorb and
+  GCC's six do not — it costs GCC's tail-call build 6.4%;
+- the one-pointer accessor's back-pointer load, inlined into the stock
+  computed-goto loop, costs GCC's stock loop a third of its throughput.
+
+A tail-call build has no stock loop for this accessor, and a non-tail-call
+build has no handler signature to widen. So GCC now stores the reference
+exactly when there is no tail-call loop to feed, keyed on the build-wide
+`CM_TAILCALL_BUILD` define introduced in section 14.1.
+
+| Build | before | after |
+|---|---:|---:|
+| GCC stock | +4.2% | **+0.1%** |
+| GCC `tailcall=yes` | +0.7% | +0.7% |
+| Clang stock | +0.2% | +0.2% |
+| Clang `tailcall=yes` | -6.9% | -6.9% |
+
+Keying a class layout off a build flag is confined to one link — `state_access`
+is internal, and only `cm.h`, `cm-jsonrpc.h` and `cm-version.h` are installed.
+That is the distinction I drew in section 10 when I rejected gating on
+`TAILCALL_INTERPRET`: that define reaches two of ~25 translation units, so it
+would have differed *within* a build; `CM_TAILCALL_BUILD` is global to one.
+
+### 15.2 Selective pre-load by handler weight (marginal, not taken)
+
+The pre-load's per-workload split suggests it pays for lean handlers and loses
+for fat ones whose execute bodies already consume the registers. I tested that
+directly by demoting the 36 "fat" class-2 cases — loads, FP, CSR — to class 0
+and enabling the pre-load for the rest.
+
+| | vs no selective pre-load |
+|---|---:|
+| GCC | -0.13% |
+| Clang | -0.16% |
+
+Both are below this campaign's noise floor. The per-workload wins are real and
+large (`nop` -20.8%, `regs` -10.9%) but the losses simply moved: `memcpy`
++3.0%, `zlib` +2.1%, `fp` +2.0% — workloads whose handlers I did *not* demote,
+so the classification is not capturing the right property. Not taken; it would
+mean hand-maintaining a classification in a generated file for nothing.
+
+### 15.3 PGO, and an inversion worth knowing about
+
+`tail-call.md` section 8 lists profile-guided optimization as an untried
+orthogonal probe. It is worth trying, and the result is not orthogonal at all.
+
+The repository's own `luacartesi-pgo` target is broken here for an unrelated
+reason (`cartesi-machine.lua:2570` dereferences a nil
+`ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE`), so I drove it manually — which is
+better anyway, because it let me **train on a workload deliberately outside the
+measurement set**: the guest running `tar c -C / bin | gzip | sha256sum`, the
+repository's own choice of PGO workload. No stress-ng workload is in the
+training profile, so none of the numbers below are overfitted to what they
+measure.
+
+| Build | no PGO | with PGO | PGO effect |
+|---|---:|---:|---:|
+| GCC stock | 60.88 | 65.50 | **+7.6%** |
+| GCC `tailcall=yes` | 61.30 | 59.50 | **-2.9%** |
+| Clang stock | 63.81 | 59.82 | **-6.3%** |
+| Clang `tailcall=yes` | 59.34 | 60.55 | **+2.0%** |
+
+**PGO helps each compiler's weaker shape and hurts its stronger one.** Under
+GCC it is worth 2.9% to the tail-call build and actively harms the monolithic
+loop by 7.6%; under Clang it is worth 6.3% to the monolithic loop and harms
+the tail-call build by 2.0%. I did not expect the Clang half and would not have
+predicted its sign.
+
+The honest reading is that this is *not* the clean argument for the design it
+first looked like. A GCC-only result would have been one — 153 small
+ABI-bounded functions are exactly what a per-function profile should optimise
+well, and one ten-thousand-instruction computed-goto function is exactly what
+it should optimise badly. The Clang inversion says the effect is dominated by
+compiler-specific heuristics, not by the structure.
+
+What it *is*, concretely, is the best GCC configuration on this machine:
+
+```sh
+make cartesi.so CC=gcc CXX=g++ tailcall=yes \
+     MYCXXFLAGS=-fprofile-generate MYSOLDFLAGS=-fprofile-generate MYLDFLAGS=-fprofile-generate
+# ...train...
+make cartesi.so CC=gcc CXX=g++ tailcall=yes \
+     "MYCXXFLAGS=-fprofile-use -Wno-missing-profile -fprofile-correction"
+```
+
+**59.53 s against main GCC stock's 60.85 s: -2.2%**, and within 0.4% of the
+fastest build measured. Per workload, `regs` -15.1%, `syscall` -7.7%,
+`nop` -4.9%, `qsort` -3.7%, `malloc` -3.3%, `tree` -3.2%, against `fp` +2.6%
+and `hash` +2.3%.
+
+## 16. Conclusion
+
+### 16.1 Where the branch stands on this hardware
+
+One campaign, same day, all builds interleaved, every run cycle- and
+hash-identical:
+
+| Build | Total (s) | vs own main stock |
+|---|---:|---:|
+| **Clang `tailcall=yes`** | **59.29** | **-6.9%** |
+| GCC `tailcall=yes` + PGO | 59.53 | -2.2% |
+| Clang stock + PGO | 59.76 | -6.1% |
+| main GCC stock | 60.85 | -- |
+| GCC `tailcall=yes` | 61.27 | +0.7% |
+| main Clang stock | 63.67 | -- |
+
+The tail-call interpreter is a real win on x86-64 under Clang and a small one
+under GCC once PGO is applied. Both beat the strongest baseline this machine
+has, which is GCC's stock loop at 60.85 s — a bar 4.4% higher than Clang's
+stock loop, and the reason GCC's percentages look worse than its absolute
+times deserve.
+
+Note the top three land within 0.8% of each other by three different routes.
+There appears to be a floor near 59.3 s for this workload set on this machine,
+and all of Clang's tail-call shape, GCC's tail-call shape with PGO, and
+Clang's stock loop with PGO reach it. That is worth knowing before investing
+in further micro-optimisation of dispatch: section 13's topdown says the same
+thing from the other direction, with the tuned build retiring 84% of issue
+slots.
+
+### 16.2 What I would ask you to take upstream
+
+In descending order of how much I think it matters:
+
+1. **The GCC stock regression** (sections 4, 10, 15.1). 32.7% in the default
+   Linux build configuration, from one isolated commit, with a known fix. Even
+   if you take nothing else, take this — and add a same-compiler
+   `main`-stock-vs-branch-stock check to the gate, since the branch's own
+   stock build is no longer a valid baseline.
+2. **Fusing the pre-decode miss into the dispatch target** (section 11.2). It
+   removes a redundant re-test of the fetch-cache hit from every dispatch and
+   is what turns the pre-load from a 1.25% loss into a 1.10% win on x86-64
+   Clang. It strictly removes a test and a branch, so it should help AArch64
+   too, but I cannot measure that.
+3. **`-fno-stack-protector` on the tail-call TU** (section 5.1). The general
+   hazard is worth a sentence in `tail-call.md`: the tail-call structure
+   converts per-function costs into per-instruction costs, so anything the
+   toolchain adds per function is amortised over a tick by the stock loop and
+   paid 153 times per tick here.
+4. **Two retractions from my earlier rounds**, both invalidated by the
+   six-slot signature: the per-class pre-load knob (now worth -0.06%) and
+   section 5.14's "pinned GCC beats its argument shape by 2.4 points" (now
+   +6.6% against +0.7%, inverted).
+
+### 16.3 What I could not close
+
+- **GCC's tail-call build without PGO** sits at +0.7%. Section 14 records six
+  measured dead ends. Its *hot* paths are already equal to Clang's — 23
+  instructions against 24 on `ADDI`, with a tighter dispatch — so this is not
+  a code-quality gap; it is the pre-load, which Clang can afford with twelve
+  argument registers and GCC cannot with six.
+- **The 91 call-carrying handlers keep their frames.** Giving the raise and
+  TLB-refill paths the section 5.7 treatment is the remaining structural item,
+  and it needs restructuring `execute_*` bodies shared with the stock
+  interpreter — beyond what this exercise was scoped to touch.
+- **`matrix-3d` and `memcpy` do not move** and structurally cannot: one is
+  dominated by soft-float execute bodies that dispatch improvements never
+  reach, the other runs in store-capable handlers that are class 0 by
+  construction, because a store over the fall-through bytes must be observed
+  by the next fetch.
+
+### 16.4 On the design itself
+
+Two of `tail-call.md`'s claims reproduce here independently of raw speed, and
+they are the ones I would keep.
+
+The first is section 8b's: `TC_JIT_SHELL` costs **+1.97%** on the final
+configuration, against +1.71% on AArch64 — the third consecutive round it has
+reproduced, and the most portable number in the whole experiment. Whatever
+happens to the interpreter, the boundary argument the tracing plan rests on
+holds on this hardware.
+
+The second is section 2's, and it arrived as a defect rather than a
+demonstration. A single added indirection — one load, on cold paths, in an
+accessor — cost the monolithic computed-goto loop a third of its throughput
+under GCC, while the same change cost the 153-handler build nothing under
+either compiler. That is the register-allocation fragility the whole design
+exists to escape, measured accidentally and about as starkly as it could be.
 
 ## Appendix: reproduction
 
@@ -725,7 +951,7 @@ untimed, time a 2 Gi mcycle window with `os.clock()`, report elapsed time,
 mcycle, exit reason and `get_root_hash()`. Per-handler profiles come from
 `perf record` against the built `.so`, which the tail-call structure makes
 trivial since every handler is its own symbol. Raw per-run data is in
-`tail-call-x86_64-rawdata.tsv` (4284 rows: rep, build, workload, seconds,
+`tail-call-x86_64-rawdata.tsv` (5763 rows: rep, build, workload, seconds,
 MIPS, mcycle, exit reason, root hash).
 
 The four changes of sections 10-13 are on branch `x86_64-tuning`:
@@ -736,6 +962,7 @@ cd748a6d build: keep the stack protector off the tail-call translation unit
 d7d87975 perf(interpret): narrow the pre-load default to the pinned shape
 8f1888e3 perf(interpret): fuse the pre-decode miss into the dispatch target
 7d0520eb perf(interpret): drop the owner() out-of-lining in tail-call builds
+94e92d13 perf(interpret): pick the accessor shape per build, not just per compiler
 ```
 
 The third and fourth read as if they cancel: the third turns the pre-load off

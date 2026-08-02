@@ -5788,9 +5788,21 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
         // Limit mcycle_tick_end up to the next RTC tick, while avoiding unsigned overflows
         const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
 
+        // The inner loop does not carry mcycle: a countdown of cycles until
+        // the tick end replaces it, retiring an instruction with one
+        // decrement-and-test, and the architectural mcycle is materialized
+        // on demand at the points that observe it. This frees the loop from
+        // keeping two hot values live (mcycle and the tick end) across the
+        // whole switch. The countdown is compared as signed because WFI can
+        // advance mcycle past the tick end, driving it negative; two's
+        // complement keeps the materialization identity exact there too.
+        uint64_t mcycle_remaining = mcycle_tick_end - mcycle;
+#define MCYCLE_GET() (mcycle_tick_end - mcycle_remaining)
+#define MCYCLE_SET(v) (mcycle_remaining = mcycle_tick_end - (v))
+
         // The inner loop continues until there is an interrupt condition
-        // or mcycle reaches mcycle_tick_end
-        while (mcycle < mcycle_tick_end) {
+        // or the countdown runs out at mcycle_tick_end
+        while (static_cast<int64_t>(mcycle_remaining) > 0) {
             DUMP_STATS_INCR(a, "inner_loop");
 
             uint32_t insn = 0;
@@ -5925,37 +5937,37 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         status = execute_REMUW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LD_rdN):
-                        status = execute_LD<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LD<rd_kind::xN>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LW_rdN):
-                        status = execute_LW<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LW<rd_kind::xN>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LWU_rdN):
-                        status = execute_LWU<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LWU<rd_kind::xN>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LH_rdN):
-                        status = execute_LH<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LH<rd_kind::xN>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LHU_rdN):
-                        status = execute_LHU<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LHU<rd_kind::xN>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LB_rdN):
-                        status = execute_LB<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LB<rd_kind::xN>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LBU_rdN):
-                        status = execute_LBU<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LBU<rd_kind::xN>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(SD):
-                        status = execute_SD(a, pc, mcycle, insn);
+                        status = execute_SD(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(SW):
-                        status = execute_SW(a, pc, mcycle, insn);
+                        status = execute_SW(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(SH):
-                        status = execute_SH(a, pc, mcycle, insn);
+                        status = execute_SH(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(SB):
-                        status = execute_SB(a, pc, mcycle, insn);
+                        status = execute_SB(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     // C extension
                     INSN_CASE(C_HINT):
@@ -6032,59 +6044,59 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         status = execute_C_SUBW(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_LD):
-                        status = execute_C_LD(a, pc, mcycle, insn);
+                        status = execute_C_LD(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_LW):
-                        status = execute_C_LW(a, pc, mcycle, insn);
+                        status = execute_C_LW(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_LDSP):
-                        status = execute_C_LDSP(a, pc, mcycle, insn);
+                        status = execute_C_LDSP(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_LWSP):
-                        status = execute_C_LWSP(a, pc, mcycle, insn);
+                        status = execute_C_LWSP(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_SD):
-                        status = execute_C_SD(a, pc, mcycle, insn);
+                        status = execute_C_SD(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_SW):
-                        status = execute_C_SW(a, pc, mcycle, insn);
+                        status = execute_C_SW(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_SDSP):
-                        status = execute_C_SDSP(a, pc, mcycle, insn);
+                        status = execute_C_SDSP(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_SWSP):
-                        status = execute_C_SWSP(a, pc, mcycle, insn);
+                        status = execute_C_SWSP(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_FLD):
-                        status = execute_C_FLD(a, pc, mcycle, insn);
+                        status = execute_C_FLD(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_FLDSP):
-                        status = execute_C_FLDSP(a, pc, mcycle, insn);
+                        status = execute_C_FLDSP(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_FSD):
-                        status = execute_C_FSD(a, pc, mcycle, insn);
+                        status = execute_C_FSD(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_FSDSP):
-                        status = execute_C_FSDSP(a, pc, mcycle, insn);
+                        status = execute_C_FSDSP(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_EBREAK):
                         status = execute_C_EBREAK(a, pc, insn);
                         INSN_BREAK();
                     // Zcb extension
                     INSN_CASE(C_LBU):
-                        status = execute_C_LBU(a, pc, mcycle, insn);
+                        status = execute_C_LBU(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_LHU):
-                        status = execute_C_LHU(a, pc, mcycle, insn);
+                        status = execute_C_LHU(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_LH):
-                        status = execute_C_LH(a, pc, mcycle, insn);
+                        status = execute_C_LH(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_SB):
-                        status = execute_C_SB(a, pc, mcycle, insn);
+                        status = execute_C_SB(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_SH):
-                        status = execute_C_SH(a, pc, mcycle, insn);
+                        status = execute_C_SH(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(C_ZEXT_B):
                         status = execute_C_ZEXT_B(a, pc, insn);
@@ -6112,16 +6124,16 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         status = execute_FD(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(FLD):
-                        status = execute_FLD(a, pc, mcycle, insn);
+                        status = execute_FLD(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(FLW):
-                        status = execute_FLW(a, pc, mcycle, insn);
+                        status = execute_FLW(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(FSD):
-                        status = execute_FSD(a, pc, mcycle, insn);
+                        status = execute_FSD(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(FSW):
-                        status = execute_FSW(a, pc, mcycle, insn);
+                        status = execute_FSW(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(FMADD):
                         status = execute_FMADD(a, pc, insn);
@@ -6137,29 +6149,29 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         INSN_BREAK();
                     // A extension
                     INSN_CASE(AMO_D):
-                        status = execute_AMO_D(a, pc, mcycle, insn);
+                        status = execute_AMO_D(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(AMO_W):
-                        status = execute_AMO_W(a, pc, mcycle, insn);
+                        status = execute_AMO_W(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     // Zicsr extension
                     INSN_CASE(CSRRW):
-                        status = execute_CSRRW(a, pc, mcycle, insn);
+                        status = execute_CSRRW(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRS):
-                        status = execute_CSRRS(a, pc, mcycle, insn);
+                        status = execute_CSRRS(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRC):
-                        status = execute_CSRRC(a, pc, mcycle, insn);
+                        status = execute_CSRRC(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRWI):
-                        status = execute_CSRRWI(a, pc, mcycle, insn);
+                        status = execute_CSRRWI(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRSI):
-                        status = execute_CSRRSI(a, pc, mcycle, insn);
+                        status = execute_CSRRSI(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRCI):
-                        status = execute_CSRRCI(a, pc, mcycle, insn);
+                        status = execute_CSRRCI(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     // Special instructions that are less frequent
                     INSN_CASE(FENCE):
@@ -6169,7 +6181,13 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         status = execute_FENCE_I(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(PRIVILEGED):
-                        status = execute_privileged(a, pc, mcycle, mcycle_end, insn);
+                        {
+                            // execute_privileged advances mcycle by reference
+                            // (WFI), so proxy it through a materialized local
+                            uint64_t prv_mcycle = MCYCLE_GET();
+                            status = execute_privileged(a, pc, prv_mcycle, mcycle_end, insn);
+                            MCYCLE_SET(prv_mcycle);
+                        }
                         INSN_BREAK();
                     // Instructions with hints where rd=0
                     INSN_CASE(LUI_rd0):
@@ -6254,25 +6272,25 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                         status = execute_REMUW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LD_rd0):
-                        status = execute_LD<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LD<rd_kind::x0>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LW_rd0):
-                        status = execute_LW<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LW<rd_kind::x0>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LWU_rd0):
-                        status = execute_LWU<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LWU<rd_kind::x0>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LH_rd0):
-                        status = execute_LH<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LH<rd_kind::x0>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LHU_rd0):
-                        status = execute_LHU<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LHU<rd_kind::x0>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LB_rd0):
-                        status = execute_LB<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LB<rd_kind::x0>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     INSN_CASE(LBU_rd0):
-                        status = execute_LBU<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LBU<rd_kind::x0>(a, pc, MCYCLE_GET(), insn);
                         INSN_BREAK();
                     // Illegal instructions
                     INSN_CASE(ILLEGAL):
@@ -6295,7 +6313,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
 #ifdef DUMP_REGS
                 // Commit machine state
                 a.write_pc(pc);
-                a.write_mcycle(mcycle + 1);
+                a.write_mcycle(MCYCLE_GET() + 1);
 #endif
 
                 // When execute status is above success, we have to deal with special loop conditions,
@@ -6309,8 +6327,8 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                     fetch_vaddr_page = ensure_fetch_cache_miss(pc);
                     // All status above execute_status::success_and_serve_interrupts will require breaking the loop
                     if (status >= execute_status::success_and_serve_interrupts) [[unlikely]] {
-                        // Increment the cycle counter mcycle
-                        ++mcycle;
+                        // Retire the instruction in the countdown
+                        --mcycle_remaining;
 
                         if (status == execute_status::success_and_serve_interrupts) [[likely]] {
                             // We have to break the inner loop to check and serve any pending interrupt immediately
@@ -6324,21 +6342,26 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
 
                         // Commit machine state
                         a.write_pc(pc);
-                        a.write_mcycle(mcycle);
+                        a.write_mcycle(MCYCLE_GET());
                         // Got an interruption that must be handled externally
                         return status;
                     }
                 }
             }
 
-            // Increment the cycle counter mcycle
-            ++mcycle;
+            // Retire the instruction (or the raising fetch) in the countdown
+            --mcycle_remaining;
 
 #ifndef NDEBUG
             // After a inner loop iteration, there can be no pending interrupts
             assert_no_brk(a);
 #endif
         }
+
+        // Materialize the architectural mcycle for the outer loop
+        mcycle = MCYCLE_GET();
+#undef MCYCLE_GET
+#undef MCYCLE_SET
     }
 
     // Commit machine state

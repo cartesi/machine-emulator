@@ -1019,6 +1019,36 @@ shell cost +66% with tracing idle).
    execution oracle (recorded bytes are not re-verified and stores do
    not invalidate; the gates validate every run), offline traces, a
    64-trace budget, and double barely moves (19.5% capture coverage).
+
+   A re-run of the same oracle on the current shape (six-slot accessor,
+   countdown, re-pinned context; same captures, gates identical
+   including against stock) anchored at -15.3% against the tail-call
+   interpreter, preserving the old margin on a faster baseline. The one
+   real shift is qsort, -12.9% to -6.7%, because the countdown rewrite
+   sped its interpreter baseline specifically.
+
+   The trace macros and generator then moved to block-granular
+   accounting, realizing 5.15's prediction and 8c's countdown eviction
+   where it belongs: the entry guard proves the body fits before the
+   tick end, the back-edge guard proves it for the next iteration,
+   straight-line steps carry no accounting at all, early exits charge a
+   static pending count, cyclic prologues are charged once where the
+   loop begins so the constants hold on every iteration, mcycle
+   observers materialize from the pending index, and traces containing
+   mcycle-writing steps (PRIVILEGED) are rejected at selection (none of
+   the six workloads' captures contain any). Gates held across two
+   rounds. The M3 timing carries a conditions caveat the protocol
+   requires stating: the block round ran under three times the
+   background load of the per-step round (mean 10 against 3.5, the
+   repetition peaking at 29), and still measured best-of-two -1.0%
+   aggregate, with hash at -24% -- the per-step decrement is a serial
+   dependency chain through the countdown register across the whole
+   trace body, and hash's long traces were bound by it -- against +5%
+   on zlib and double that the load asymmetry can account for. The
+   expected beneficiary is x86-64, where the removed per-step work is
+   real instruction count and the freed register rotates into trace
+   bodies (the args shape spills the entry countdown naturally once no
+   step touches it); it travels with the queued Raptor campaign.
 3. DONE, FORMATION PROTOTYPE. `-DTC_ONLINE=1` records both loop and call
    heads into a fixed 1024-slot pool, closes traces on cycles, page exits,
    or 64 instructions, installs by bump pointer, uses a separate
@@ -1211,6 +1241,90 @@ hot-path spill round trips from five to three, and 5.14's verdict
 predates both). The comparison of the two columns within the segment
 row re-answers the pre-load question at the lower register pressure,
 where 5.14's answer no longer applies.
+
+A third idea joins the register-budget series: keep pc as a fast
+address. The handler state holds the host address of the current
+instruction, typed as fast_addr so the two spaces cannot mix silently
+(the same strong-typing discipline the code already uses for host
+addresses), and vf_offset leaves the hot path entirely: the fetch is a
+plain load through the fast pc, the advance is the same add it always
+was, and the fetch-cache tag and the page-segment allowance move to
+host space unchanged, because a per-page mapping preserves the offset
+bits. Combined with segments and the demotion, the args signature
+reaches four slots: accessor, insn, fast pc, countdown.
+
+The contract change is that the execute bodies receive the fast pc as
+such, written in the type, and any body that wants the architectural
+pc translates back explicitly through the accessor's fetch mapping
+(reachable from the state alone since the penumbra work). The
+observation points are few and mostly cold: AUIPC and the JAL/JALR
+link values, and mepc/mtval on every raise. Putting the translation
+inside the bodies at those points, rather than materializing a virtual
+pc eagerly at handler entry, means the raise paths pay for it only
+when they actually raise, and the type system marks every observation
+site instead of leaving the space of a bare uint64_t to the reader's
+memory. pc-relative control flow needs no translation at all: branch
+and JAL targets are same-mapping adds, valid in host space, and the
+host-space tag check catches cross-page targets exactly as the virtual
+one did. Targets that are born virtual (JALR, trap vectors, MRET) come
+out of their bodies typed as virtual addresses, so the type system
+itself forces them through the translating miss path; a false
+host-space tag hit on a virtual value cannot be written by accident.
+
+Unlike the first two ideas this one is not TC-local: typing pc through
+the execute bodies changes the shared semantics, stock loop included.
+That is a feature, not a cost. The stock loop runs the same fetch
+economics (it carries the virtual pc and the vf offset and adds them
+per fetch), so it collects the same register relief and the same
+shortened fetch expression, and one uniform typed-pc representation
+serves every instantiation instead of a TC-only dialect. It therefore
+lands as an interpreter-wide refactor gated by the full hash suite
+rather than behind a TC flag, and it stands alone: it does not depend
+on segments, the demotion, or the Raptor verdict, though the fourth
+freed slot it gives the TC args shape is priced by that campaign.
+Verification items for the pass: every observation point is found by
+the type change itself (the build breaks where a fast pc meets a
+virtual consumer), branch bodies must be confirmed unable to raise
+with the C extension enabled (2-byte alignment leaves misaligned-target
+exceptions unreachable, to be verified rather than assumed), and
+mapping invalidations must poison the host-space tag exactly as they
+poison the virtual one today.
+
+The countdown of 5.15 is the same kind of stock-uniformity companion:
+the stock loop still carries mcycle and the tick end live across the
+whole computed-goto function and pays increment, compare, branch per
+instruction, where the countdown pays one decrement-and-sign-test and
+frees a register. In the TC loop that was worth 0.7 points on a core
+with allocator slack; the stock loop is the opposite regime, the
+ten-thousand-instruction function whose GCC register allocation the
+accessor incident showed to be one memory dependency away from
+collapse, on the architecture where registers are scarcest and in the
+default Linux build. Observation points materialize base minus
+remaining exactly as in 5.15; the record, replay, and collect logs are
+unaffected because the counter is a loop local and only materialized
+values reach the accessors. Together, countdown plus typed fast pc
+drop two live registers from the stock loop and converge both loops
+onto one register discipline. Sequencing decided: these two land in
+the stock interpreter first, before any further TC work, gated per
+compiler and architecture by the full suite (the same fragility that
+makes the relief promising means nothing is assumed), with the uarch
+image rebuild accepted as part of the change.
+
+The stock countdown is done and measured, and it is the largest
+stock-loop win of the whole experiment: against same-day stock anchors
+on the M3, Clang -5.4% aggregate with every workload improving, GCC 15
+-2.3%. The transformation is 5.15 verbatim (47 observation cases
+materialize on demand, the privileged case proxies its by-reference
+mcycle, both raising fetches and retirements pay one signed
+decrement). The gates exercised the 5.12 same-source discipline in its
+strongest form yet: editing interpret.cpp rebuilds the embedded uarch
+image, whose bytes change from both the shifted assert line numbers
+and the uarch's own recompiled inner loop, so the root hash moves
+while every architectural value stays put (cycles, exits, and
+cross-compiler hashes agreed throughout). Attribution was proven, not
+assumed: relinking the countdown build against the uarch image
+generated from the pre-change source reproduces the old anchors bit
+for bit on all six workloads.
 
 ## 9. Validation status
 

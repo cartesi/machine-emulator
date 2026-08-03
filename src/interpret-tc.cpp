@@ -529,11 +529,10 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
 /// probe is not dead). Defined unconditionally so discarded constexpr
 /// branches can name it; the body only instantiates under TC_JIT_SHELL.
 template <typename STATE_ACCESS>
-static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c,
-    i_state_access_fast_addr_t<STATE_ACCESS> pc, uint16_t weight) {
-    const uint32_t h = (static_cast<uint32_t>(static_cast<uint64_t>(pc)) >> 1) & 63;
+static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64_t vpc, uint16_t weight) {
+    const uint32_t h = (static_cast<uint32_t>(vpc) >> 1) & 63;
     const void *fn = nullptr;
-    if (c->hot.head_pc[h] == static_cast<uint64_t>(pc)) [[unlikely]] {
+    if (c->hot.head_pc[h] == vpc) [[unlikely]] {
         ++c->hot.entries;
 #if TC_AOT
         fn = c->hot.head_fn[h];
@@ -545,7 +544,7 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c,
 #if TC_ONLINE
         // Recorder setup contains calls and must stay out of the handler:
         // request a chain exit and let the outer loop start it.
-        c->online_trip_pc = pc;
+        c->online_trip_pc = vpc;
         c->online_trip_weight = weight;
         c->online_trip = true;
 #endif
@@ -560,7 +559,7 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c,
     ({                                                                                                                 \
         const execute_status tc_call_status = (expr);                                                                  \
         if (tc_call_status == execute_status::success) {                                                               \
-            (void) tc_hook_site(tcc, pc, 1);                                                                           \
+            (void) tc_hook_site(tcc, pc_to_virtual(a, pc), 1);                                                                           \
             TC_ONLINE_CALL_TRIP_RETURN();                                                                              \
         }                                                                                                              \
         tc_call_status;                                                                                                \
@@ -964,7 +963,7 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
         if constexpr (TC_JIT_SHELL != 0 && (PRELOAD) == 1) {                                                           \
             /* conditional branch taken backward: a loop back-edge profiling site */                                   \
             if (status == execute_status::success && pc < tc_pc_in) {                                                  \
-                [[maybe_unused]] const void *tc_tfn = tc_hook_site(tcc, pc, 2);                                        \
+                [[maybe_unused]] const void *tc_tfn = tc_hook_site(tcc, pc_to_virtual(a, pc), 2);                                        \
                 if constexpr (TC_AOT != 0) {                                                                           \
                     if (tc_tfn != nullptr) {                                                                           \
                         TC_SYNC();                                                                                     \

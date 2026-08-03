@@ -1049,6 +1049,19 @@ shell cost +66% with tracing idle).
    real instruction count and the freed register rotates into trace
    bodies (the args shape spills the entry countdown naturally once no
    step touches it); it travels with the queued Raptor campaign.
+
+   The typed fast pc (8c) required one repair and rewarded it: trace
+   heads must stay keyed by the architectural pc (fast encodings are
+   not stable across mappings or runs), so the hook converts at its
+   probe sites and the generated back-edge guards compare against the
+   eagerly encoded head, with the mapping offset provably stable inside
+   a trace. Without the repair every probe misses silently, gates stay
+   green, and the oracle measures as nothing, a failure mode worth
+   remembering. Re-anchored on the current shape, all gates bit-exact:
+   -18.5% against the tail-call interpreter (sieve -52.7%, hash -34.2%,
+   zlib -16.8%), the best trace result of the experiment; hash nearly
+   doubled its margin as block accounting's removal of the per-step
+   countdown chain composed with the typed pc's leaner trace bodies.
 3. DONE, FORMATION PROTOTYPE. `-DTC_ONLINE=1` records both loop and call
    heads into a fixed 1024-slot pool, closes traces on cycles, page exits,
    or 64 instructions, installs by bump pointer, uses a separate

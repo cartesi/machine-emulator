@@ -55,6 +55,18 @@
       }
     },
     {
+      "name": "emancipate",
+      "summary": "Breaks the server out of its parent process group, making it the leader of its own process group",
+      "params": [],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
       "name": "get_version",
       "summary": "Returns the server version",
       "params": [],
@@ -134,6 +146,7 @@
         {
           "name": "directory",
           "description": "Directory to create an on-disk machine instance",
+          "required": false,
           "schema": {
             "type": "string"
           }
@@ -384,10 +397,17 @@
         },
         {
           "name": "previous_partial_bundle",
-          "description": "Partial bundle returned by the previous call",
-          "required": false,
+          "description": "Partial bundle returned by the previous call, or null on the first call. The entry must be present either way",
+          "required": true,
           "schema": {
-            "$ref": "#/components/schemas/PartialBundle"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PartialBundle"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       ],
@@ -463,7 +483,7 @@
       "params": [
         {
           "name": "log_type",
-          "description": "The maximum value of the cycle counter",
+          "description": "The log type to generate",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/AccessLogType"
@@ -578,6 +598,37 @@
         "description": "True on success",
         "schema": {
           "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "machine.get_node_hash",
+      "summary": "Obtains the hash of a node in the hash tree",
+      "params": [
+        {
+          "name": "address",
+          "description": "Address of node (must be aligned to size)",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "log2_size",
+          "description": "Log2 of size of node",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger",
+            "minimum": 5,
+            "maximum": 64
+          }
+        }
+      ],
+      "result": {
+        "name": "hash",
+        "description": "Hash of node",
+        "schema": {
+          "$ref": "#/components/schemas/Base64Hash"
         }
       }
     },
@@ -838,6 +889,7 @@
         {
           "name": "max_length",
           "description": "Maximum number of bytes to read",
+          "required": false,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
@@ -845,26 +897,14 @@
       ],
       "result": {
         "name": "result",
-        "description": "Console output data or available read length",
+        "description": "Console output data when max_length is given, otherwise the number of bytes available to read",
         "schema": {
           "oneOf": [
             {
-              "type": "object",
-              "properties": {
-                "data": {
-                  "$ref": "#/components/schemas/Base64String"
-                }
-              },
-              "required": ["data"]
+              "$ref": "#/components/schemas/Base64String"
             },
             {
-              "type": "object",
-              "properties": {
-                "read_len": {
-                  "$ref": "#/components/schemas/UnsignedInteger"
-                }
-              },
-              "required": ["read_len"]
+              "$ref": "#/components/schemas/UnsignedInteger"
             }
           ]
         }
@@ -876,7 +916,8 @@
       "params": [
         {
           "name": "data",
-          "description": "Data to write to console input buffer",
+          "description": "Data to write to console input buffer, or omitted to query the number of bytes available to write",
+          "required": false,
           "schema": {
             "$ref": "#/components/schemas/Base64String"
           }
@@ -884,7 +925,7 @@
       ],
       "result": {
         "name": "written_len",
-        "description": "Number of bytes actually written",
+        "description": "Number of bytes actually written when data is given, otherwise the number of bytes available to write",
         "schema": {
           "$ref": "#/components/schemas/UnsignedInteger"
         }
@@ -1000,7 +1041,7 @@
       "params": [
         {
           "name": "log_type",
-          "description": "The maximum value of the cycle counter",
+          "description": "The log type to generate",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/AccessLogType"
@@ -1811,20 +1852,23 @@
           "iprv": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "iflags_X": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "iflags_Y": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "iflags_H": {
-            "$ref": "#/components/schemas/UnsignedInteger"
+          "iflags": {
+            "$ref": "#/components/schemas/IflagsConfig"
           },
           "iunrep": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
           "imcyclemax": {
             "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "clint": {
+            "$ref": "#/components/schemas/CLINTConfig"
+          },
+          "plic": {
+            "$ref": "#/components/schemas/PLICConfig"
+          },
+          "htif": {
+            "$ref": "#/components/schemas/HTIFConfig"
           }
         }
       },
@@ -1974,6 +2018,21 @@
           "$ref": "#/components/schemas/MemoryRangeConfig"
         }
       },
+      "IflagsConfig": {
+        "title": "IflagsConfig",
+        "type": "object",
+        "properties": {
+          "X": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "Y": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "H": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      },
       "CLINTConfig": {
         "title": "CLINTConfig",
         "type": "object",
@@ -2005,14 +2064,14 @@
           "tohost": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "console_getchar": {
-            "type": "boolean"
+          "ihalt": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "yield_manual": {
-            "type": "boolean"
+          "iconsole": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "yield_automatic": {
-            "type": "boolean"
+          "iyield": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           }
         }
       },
@@ -2143,9 +2202,6 @@
         "title": "UarchRAMConfig",
         "type": "object",
         "properties": {
-          "length": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
           "backing_store": {
             "$ref": "#/components/schemas/BackingStoreConfig"
           }
@@ -2166,6 +2222,7 @@
       "CMIOConfig": {
         "title": "CMIOConfig",
         "type": "object",
+        "required": ["rx_buffer", "tx_buffer"],
         "properties": {
           "rx_buffer": {
             "$ref": "#/components/schemas/CMIOBufferConfig"
@@ -2234,15 +2291,6 @@
           "nvram": {
             "$ref": "#/components/schemas/MemoryRangeConfigs"
           },
-          "clint": {
-            "$ref": "#/components/schemas/CLINTConfig"
-          },
-          "plic": {
-            "$ref": "#/components/schemas/PLICConfig"
-          },
-          "htif": {
-            "$ref": "#/components/schemas/HTIFConfig"
-          },
           "virtio": {
             "$ref": "#/components/schemas/VirtIOConfigs"
           },
@@ -2293,8 +2341,8 @@
         "type": "string",
         "description": "32-byte hash encoded in base64",
         "contentEncoding": "base64",
-        "minLength": 45,
-        "maxLength": 45
+        "minLength": 44,
+        "maxLength": 44
       },
       "Base64HashArray": {
         "title": "Base64HashArray",

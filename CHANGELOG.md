@@ -5,7 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-## Added
+### Added
 - Added a generated user manual under `doc/` with verified examples
 - Added `--nvram` and `nvram` machine configuration for guest-visible UIO memory ranges
 - Added labels and DTB aliases to flash drives and NVRAM ranges
@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added frontier padding and complete-subtree operations to `cartesi.hash-tree`
 - Added `sync_stored` to flush a stored machine to permanent storage, across the C, Lua, and JSON-RPC APIs
 
-## Fixed
+### Fixed
 - Fixed bundled uarch-cycle root-hash collection when the uarch halts in the final bundle
 - Fixed `cm_clone_stored` and `cm_remove_stored` to accept a NULL machine object, as documented
 - Fixed `cartesi-machine` and GDB hash collection to use the full unsigned 64-bit mcycle range, allowing execution to reach mcycle overflow
@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `help()` internally calling `os.exit()`
 - Fixed a typo in the `cartesi-machine.lua` cmio handling
 
-## Changed
+### Changed
 - Removed the optional `root_hash_after` argument from `verify_step`, `verify_step_uarch`, `verify_reset_uarch`, and `verify_send_cmio_response` across all APIs, which return the obtained root hash for the caller to compare
 - Changed root-hash collection to append repeatable padding at fixed points
 - Renamed collector results to `partial_bundle` and `mcycle_hash_offsets`
@@ -88,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated machine guest tools to v0.18.0-test8
 - Bumped nlohmann JSON library to 3.12
 
-## Removed
+### Removed
 - Removed the `--store-json-config` and `--load-json-config` options (folded into the `format:` sub-option of `--store-config`/`--load-config`)
 - Removed the `--replace-flash-drive` option, subsumed by `--replace-memory-range`
 - Removed `CM_ERROR_REGEX_ERROR` (covered by `CM_ERROR_RUNTIME_ERROR`) and `CM_ERROR_SYSTEM_ERROR`, and renumbered the error enum
@@ -96,7 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `mark_dirty_page` from the uarch and state-access interfaces
 
 ## [0.20.0] - 2026-04-09
-## Added
+### Added
 - Added RISC0 zkVM integration for fraud proof verification, with C++, Rust, and Solidity implementations
 - Added `cm_collect_mcycle_root_hashes` and `cm_collect_uarch_cycle_root_hashes` C API functions for bulk hash collection with subtree bundling support
 - Added `cm_get_version` C API function to retrieve emulator semantic version at runtime
@@ -133,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `ankerl::unordered_dense` third-party library for high-performance hash maps
 - Added bundled third-party pure Lua libraries: BINT big integer and Lester testing framework
 
-## Fixed
+### Fixed
 - Fixed linting errors and compiler warnings with recent Clang
 - Fixed `cm_jsonrpc_spawn_server` not respecting the specific bind address
 - Fixed zombie processes left behind by Lua tests
@@ -144,7 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `errno` code not shown on `fork()` errors
 - Fixed issues with `likely`/`unlikely` macros by replacing them with C++20 `[[likely]]`/`[[unlikely]]` attributes
 
-## Changed
+### Changed
 - Bumped C++ standard from C++20 to C++23
 - Bumped base Docker image from Debian 12 (Bookworm) to Debian 13 (Trixie)
 - Bumped MARCHID version to 20
@@ -182,7 +182,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optimized hash tree computation using OpenMP for threading and vectorized hashing
 - Optimized shadow register access in replay step by using caches
 
-## Removed
+### Removed
 - Removed `hash` file from stored machine snapshot directories (root hash is now computed on demand from the hash tree)
 - Removed `default_ram_image` and `default_rootfs_image` fields from `--version-json` output
 - Removed `--htif-no-console-putchar` command line option (replaced by `--console-io=output_destination:to_null`)
@@ -195,7 +195,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed old Merkle tree implementation (`complete-merkle-tree`, `full-merkle-tree`, `machine-merkle-tree`, `pristine-merkle-tree`)
 
 ## [0.19.0] - 2024-05-27
-## Added
+### Added
 - Added `libluacartesi.a` and `libluacartesi_jsonrpc.a` static libraries when installing to allow packaging statically linked Lua programs
 - Added `--remote-spawn` command line option to spawn remote machines
 - Added `--remote-health-check` command line option to check availability of remote machines
@@ -213,7 +213,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the `cm_receive_cmio_request` method, the counterpart of `cm_send_cmio_response` method
 - Added timeout support for jsonrpc requests
 
-## Fixed
+### Fixed
 - Fixed various linting errors with the latest Clang static analyzer
 - Fixed broken link when running `make bundle-boost`
 - Fixed many broken links in the README and markdown files
@@ -228,7 +228,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed various issues when forking jsonrpc machines inside a Go environment
 - Fixed potential data races in multi-threaded environments
 
-## Changed
+### Changed
 - Optimized RISC-V instruction decoder to use token threading, computed goto, and big jump tables
 - Optimized RISC-V instruction fetcher to cache latest accessed pages
 - Refactored the code to use C++20 standard, which is now a minimum requirement
@@ -261,7 +261,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped MARCHID version to 19
 - Updated test rootfs to guest tools 0.17.1
 
-## Removed
+### Removed
 - Removed publishing of Debian package artifacts in favor of official Linux package repositories
 - Removed use of `cartesi/toolchain` image
 - Removed automatic strip of binaries when performing `make install` (stripping should now be done when packaging)
@@ -746,7 +746,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.1.0]
 
 [Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.20.0...HEAD
-[0.20.0]: https://github.com/cartesi/machine-emulator/compare/v0.19.0...v0.20.0
+[0.20.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.20.0
 [0.19.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.19.0
 [0.18.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.18.1
 [0.18.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.18.0

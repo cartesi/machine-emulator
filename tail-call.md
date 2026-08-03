@@ -1223,24 +1223,30 @@ cross-day anchors, args-vs-pinned and the freed register conflated). A
 released register recovering two points on the architecture with
 register slack is the encouraging case for the architecture without it.
 
-Proposed x86-64 experiment, the next Raptor campaign: isolate the
-register released by the segment trick by measuring the full two-by-two,
-per compiler, against same-day stock anchors with the usual gates:
+Proposed x86-64 experiment, the next Raptor campaign, two phases per
+compiler with the usual gates. Phase one is the landing gate: main
+stock against branch stock, which that machine has never measured with
+the cold-owner fix, the countdown, and the typed pc composed (the
+countdown alone was -5.4% under Clang on the M3, and instruction count
+converts to time on this host). Phase two is the tail-call two-by-two
+against those same-batch stock anchors:
 
 | | no pre-load | pre-load |
 |---|---|---|
 | no segments (six slots) | `tailcall=yes` as shipped | `TC_PRELOAD_ENABLED=1` |
-| segments + demotion (five slots) | `TC_PAGE_SEGMENT=1` | `TC_PAGE_SEGMENT=1 TC_PRELOAD_ENABLED=1` |
+| segments + demotion (four slots) | `TC_PAGE_SEGMENT=1` | `TC_PAGE_SEGMENT=1 TC_PRELOAD_ENABLED=1` |
 
-The no-pre-load column isolates the segment trick itself (the check
-removal plus the freed register; static evidence: ADDI dispatch 17 to 9
-frameless, stack stores -29%). The pre-load row tests whether the freed
-register finally lets the pre-load pay on this architecture (its loss
-was always predicted-state spill traffic; the demotion cuts LD's
-hot-path spill round trips from five to three, and 5.14's verdict
-predates both). The comparison of the two columns within the segment
-row re-answers the pre-load question at the lower register pressure,
-where 5.14's answer no longer applies.
+The no-pre-load column isolates the segment machinery, now carrying the
+typed-pc dividend (the dispatch fetch is a single load with the
+fall-through folded into pc's addressing). The pre-load row tests
+whether the freed registers finally let the pre-load pay on this
+architecture: its loss was always predicted-state spill traffic, the
+demotion at six slots already cut LD's hot-path spill round trips from
+five to three, and at four slots 5.14's verdict is genuinely open.
+Both configuration recommendations from the second x86-64 round are now
+defaults, so the campaign measures the shipped shape: the tail-call
+translation unit compiles with -fno-stack-protector, and the pre-load
+default follows the pinned shape alone.
 
 A fourth idea for the series, applicable on the Linux x86-64 target:
 registers held purely to reach per-machine state (the pinned context
@@ -1399,6 +1405,24 @@ gone (segments), to about 10 whose entire fetch is one load with the
 fall-through folded into pc's addressing mode (4). The stock loop rode
 along: the countdown freed one of its two hot loop registers, and the
 typed pc merged its pc and offset into one.
+
+The same GCC 16.1 disassembly tracks what the freed registers do to
+the pre-load, whose x86-64 loss was always the predicted state
+spilling across the execute body (5.14). Hot-path stack round trips
+with the pre-load enabled, LD as the representative memory op:
+
+| shape | LD spill round trips | ALU handlers |
+|---|---:|---:|
+| six slots, pre-load | 5 | some |
+| five slots (segments + demotion) | 3 | few |
+| four slots (typed pc) | 1 | 0 |
+
+At four slots the predicted word and dispatch target finally fit the
+register file, so the pre-load's cost side is one residual spill on
+memory ops against its unchanged benefit, the next fetch chain
+overlapping the current execute body (the mechanism that collapsed
+zlib on AArch64 in 5.9). The 5.14 verdict was rendered at five spills;
+the two-by-two campaign re-prices it at one.
 
 The identified floor: insn is the message and pc is the control point,
 genuinely irreducible. The countdown can leave via block accounting

@@ -234,11 +234,12 @@ struct tc_context {
 
 // The next-instruction pre-load pays for itself only when the register
 // budget keeps the extra predicted state (word, dispatch target) in
-// registers across the handler body; with neither pinned globals nor
-// preserve_none it turns into hot-path stack traffic on already
-// ABI-strained handlers.
+// registers across the handler body. That holds for the pinned shape
+// (AArch64); on the x86-64 args shape it is a measured net loss even
+// under preserve_none, the predicted state spilling across the execute
+// body, so the default follows the pinned shape alone.
 #ifndef TC_PRELOAD_ENABLED
-#if TC_GLOBAL_REGS || (defined(__clang__) && __has_attribute(preserve_none))
+#if TC_GLOBAL_REGS
 #define TC_PRELOAD_ENABLED 1
 #else
 #define TC_PRELOAD_ENABLED 0

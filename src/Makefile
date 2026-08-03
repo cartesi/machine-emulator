@@ -274,7 +274,13 @@ endif
 INTERPRET_CXXFLAGS+=$(MYINTERPRET_CXXFLAGS)
 
 # interpret-tc.o wants the same interpreter flags plus the reservation
-TC_INTERPRET_CXXFLAGS=$(INTERPRET_CXXFLAGS) $(TC_FFIXED_FLAGS)
+# The tail-call structure converts per-function costs into per-dispatch
+# costs, so toolchain-inserted prologues (stack canaries in particular,
+# which some distributions enable by default) are paid once per guest
+# instruction; keep them off in the tail-call translation unit only.
+# Adding the flag to the stock loop instead costs Clang's stock build
+# measurably by perturbing its register allocation.
+TC_INTERPRET_CXXFLAGS=$(INTERPRET_CXXFLAGS) $(TC_FFIXED_FLAGS) -fno-stack-protector
 
 # Link time optimizations
 ifeq ($(lto),yes)

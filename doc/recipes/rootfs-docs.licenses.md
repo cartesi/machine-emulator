@@ -1491,11 +1491,11 @@ $ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/l/lz4/lz4_1.9.4.orig.tar.gz' lz4_1.9.4.orig.tar.gz 354063
 ```
 
-### `dpkg` source package: `machine-guest-tools=0.18.0test-1`
+### `dpkg` source package: `machine-guest-tools=0.18.0`
 
 Binary Packages:
 
-- `machine-guest-tools:riscv64=0.18.0test-1`
+- `machine-guest-tools:riscv64=0.18.0`
 
 **WARNING:** unable to detect licenses! (package likely not compliant with DEP-5)  
 If source is available (seen below), check the contents of `debian/copyright` within it.

@@ -6,106 +6,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.21.0] - 2026-08-03
+## [0.21.0] - 2026-08-04
 ### Added
-- Added a generated user manual under `doc/` with verified examples
 - Added `--nvram` and `nvram` machine configuration for guest-visible UIO memory ranges
+- Added `--bash-completion` to print a bash completion script for `cartesi-machine`
+- Added outputs Merkle tree tracking and proof emission to `--cmio-advance-state`
+- Added the ability for `--initial-hash` and `--final-hash` to write the hash to a file
+- Added an optional directory argument to `--dump-memory-ranges` to support read-only install locations
+- Added `--gdb-fd` to accept GDB connections on an inherited listening socket
+- Added configurable mcycle computation hashes to `--cmio-advance-state`
+- Added uarch-cycle computation hashes for selected mcycle periods to `--cmio-advance-state`
+- Added `--revert-mode=stored`, which snapshots a machine loaded with `sharing:all` or created with `--create` by cloning its stored directory, and works both locally and against a remote server
+- Added the `sync` key to `--load`, flushing the loaded backing stores to permanent storage before exit
+- Added `--dump-constants` to print the constants of the `cartesi` Lua module as shell assignments
+- Added `label:` to `--replace-memory-range`, so a range can be identified by label instead of by start and length, and made `replace_memory_range` reject inconsistent or ambiguous arguments with specific errors
+- Added `format:` and `label:` sub-options to `--initial-proof`/`--final-proof`
 - Added labels and DTB aliases to flash drives and NVRAM ranges
 - Added revert root hash accessors and logging to `send_cmio_response` across all APIs, with the hash as an optional last argument that is required (and recorded) only for advance-state responses
 - Added rejected rollup input reversion to logging, verification, and hash collection
-- Added outputs Merkle tree tracking and proof emission to `--cmio-advance-state`
 - Added user-defined schema dictionaries to `cartesi.tojson`/`cartesi.fromjson`
 - Added `cartesi.tohex`/`cartesi.fromhex` and a `Hex` schema type for `cartesi.tojson`/`cartesi.fromjson`
 - Added a `cartesi.hash-tree` Lua module supporting Keccak-256 and SHA-256 tree construction, proof verification, and frontiers with padding and complete-subtree operations
 - Added `get_address_name` to resolve a physical address to a descriptive name, across the C, Lua, and JSON-RPC APIs
 - Added `receive_cmio_request` to the C++ and JSON-RPC machine APIs, with length-only queries and caller-provided buffer support
 - Added `cm_is_jsonrpc_machine` to check whether a machine object is a remote JSON-RPC machine
-- Added the ability for `--initial-hash` and `--final-hash` to write the hash to a file
-- Added an optional directory argument to `--dump-memory-ranges` to support read-only install locations
 - Added support for RISC-V Zcb compressed instructions (required by kernels built with GCC 14)
 - Added fallback to `read_reg` in the GDB stub so `monitor reg <name>` works for any named register
-- Added `--bash-completion` to print a bash completion script for `cartesi-machine`
 - Added public C API constants for flash drive, NVRAM, and label limits, the RTC frequency divisor, and the rollup limits
 - Added an explicit machine cycle-overflow break reason across the C++, C, Lua, and JSON-RPC APIs
 - Added peripheral address, driver ID, HTIF, and default boot argument constants to the public C API
 - Added LuaCov-based coverage tracking for Lua code, integrated with the gcov report pipeline
 - Added a JSON-RPC C API coverage suite
 - Added `spec-cm-cli.lua` covering nearly every command-line option of `cartesi-machine.lua`
-- Added `--gdb-fd` to accept GDB connections on an inherited listening socket
-- Added configurable mcycle computation hashes to `--cmio-advance-state`
-- Added uarch-cycle computation hashes for selected mcycle periods to `--cmio-advance-state`
 - Added a portable computation-hash corpus to CI artifacts and tagged releases
 - Added `sync_stored` to flush a stored machine to permanent storage, across the C, Lua, and JSON-RPC APIs
 - Added `rename_stored` to atomically rename a stored machine, refusing to replace an existing destination, across the C, Lua, and JSON-RPC APIs
-- Added `--revert-mode=stored`, which snapshots a machine loaded with `sharing:all` or created with `--create` by cloning its stored directory, and works both locally and against a remote server
-- Added the `sync` key to `--load`, flushing the loaded backing stores to permanent storage before exit
-- Added `--dump-constants` to print the constants of the `cartesi` Lua module as shell assignments
 - Added the `imcyclemax` register, which bounds how far an advance-state input may run: `send_cmio_response` sets it 2^48-1 mcycles ahead, and reaching it is an mcycle-overflow fixed point (`CM_REG_IMCYCLEMAX` renumbers the registers that follow it)
-- Added `label:` to `--replace-memory-range`, so a range can be identified by label instead of by start and length, and made `replace_memory_range` reject inconsistent or ambiguous arguments with specific errors
+- Added bundle-size options to printed mcycle and uarch-cycle root hashes
+- Added `ilog2`, `find_drive`, `read_file`, and `write_file` to `cartesi.util`
+- Added a generated user manual under `doc/` with verified examples
 
 ### Fixed
+- Fixed the default `--log2-word-size` in `cartesi-hash-tree-hash`, which subintended 8 bytes instead of the hash tree's 32
+- Fixed `--no-root-flash-drive` bootargs substitution pattern
+- Fixed `--cmio-advance-state` snapshot handling at a fixed point: the interrupted input's snapshot is now committed on a halt, mcycle overflow, exception, or unexpected manual yield (a halt previously left it uncommitted and an exception reverted it), and an unexpected manual yield is now a reported failure instead of a Lua error
+- Fixed unanchored patterns matching `--quiet` and `--assert-rolling-template`
 - Fixed bundled uarch-cycle root-hash collection when the uarch halts in the final bundle
 - Fixed `cm_clone_stored` and `cm_remove_stored` to accept a NULL machine object, as documented
 - Fixed `cartesi-machine` and GDB hash collection to use the full unsigned 64-bit mcycle range, allowing execution to reach mcycle overflow
 - Fixed unbundled uarch-cycle hash collection to include the fixed-point padding hash immediately before each reset, matching bundled collection
 - Fixed overflow handling in numeric command-line options
-- Fixed the default `--log2-word-size` in `cartesi-hash-tree-hash`, which subintended 8 bytes instead of the hash tree's 32
 - Fixed read-only flash drives not being mounted with `-o ro`, which trapped guest writes and panicked init
 - Fixed missing `#address-cells` on the per-CPU `interrupt-controller` node in the DTB, silencing a `dtc` interrupt-provider lint warning
 - Fixed firmware reserved region in the DTB being too small for OpenSBI built with GCC 14
 - Fixed boolean merging when a memory range is redefined, so sub-options such as `shared` can be explicitly overridden to `false`
-- Fixed `--no-root-flash-drive` bootargs substitution pattern
 - Fixed `dump_pmas()` still calling the removed `get_memory_ranges()` method
-- Fixed unanchored patterns matching `--quiet` and `--assert-rolling-template`
 - Fixed `help()` internally calling `os.exit()`
 - Fixed a typo in the `cartesi-machine.lua` cmio handling
 - Fixed `write_memory` over the shadow state discarding pending write-TLB dirty pages, which could produce a root hash that did not reflect memory
-- Fixed `--cmio-advance-state` snapshot handling at a fixed point: the interrupted input's snapshot is now committed on a halt, mcycle overflow, exception, or unexpected manual yield (a halt previously left it uncommitted and an exception reverted it), and an unexpected manual yield is now a reported failure instead of a Lua error
 - Fixed the read-only root drive bootargs substitution replacing every occurrence of `rw` instead of only the standalone `rw` flag
 - Fixed compile errors when targeting Windows and WebAssembly System Interface (WASI)
 - Fixed the JSON-RPC service description to match the implementation
 
 ### Changed
-- Removed the required `root_hash_after` argument from `verify_step`, `verify_step_uarch`, `verify_reset_uarch`, and `verify_send_cmio_response` across all APIs, which return the obtained root hash for the caller to compare
-- Changed root-hash collection to append repeatable padding at fixed points
-- Renamed the collector results `back_tree` to `partial_bundle` and `reset_indices` to `mcycle_hash_offsets`, which now holds half-open offsets delimiting the hashes of each mcycle
-- Optimized the Base64 codec and tightened its validation, rejecting misplaced `=` and non-zero padding bits
 - Changed `collect_mcycle_root_hashes` and `--print-mcycle-root-hashes` to take a log2 period
 - Changed `collect_uarch_cycle_root_hashes` to take a `revert_uarch_tail` argument, used to collect the extra period of the reverted machine on a rejected input
-- Renamed the `hashes` sub-option of `--cmio-advance-state` and `--cmio-inspect-state` to `print_input_state_hashes` and `print_query_state_hashes`
-- Renamed the `output_hashes_root_hash:` sub-option of `--cmio-advance-state` to `outputs_merkle_root:`
 - Changed `--cmio-advance-state` outputs to be named by a global output index across accepted inputs (default `output-%o-input-%i.bin`), and let any of its file patterns be set to the empty string to disable writing that file
 - Changed the default of `--max-mcycle` from 2^63-1 to 2^64-1, so runs can reach mcycle overflow
-- Made mcycle overflow (against the new `imcyclemax`) a derived, state-preserving fixed point, and gave the pre-existing uarch cycle overflow the same derivation and precedence
+- Changed `--print-mcycle-root-hashes` to use collection semantics and require reproducible machines
+- Changed `--print-uarch-cycle-root-hashes` to include fixed-point padding
+- Changed root-hash collection to append repeatable padding at fixed points
 - Changed zero-length run calls to return the break reason implied by the machine state
-- Renamed the uarch halt register and cycle break reasons to consistently use `uarch_halt`, `reached_target_uarch_cycle`, and `uarch_cycle_overflow`
-- Renamed the yield constants in `cm.h` and the Lua API from `CM_CMIO_YIELD_*` to `CM_HTIF_YIELD_*` (and the command suffix from `COMMAND` to `CMD`)
-- Replaced `--no-rollback` with `--revert-mode=<fork|stored|none>`, matching the machine's revert terminology (the revert root hash a reject restores), with `--no-revert` kept as an alias for `--revert-mode=none`
 - Changed CLI validation to reject conflicting CMIO and hash-collection modes
 - Changed `get_address_ranges` to report access, idempotence, and driver attributes
-- Folded JSON configuration into the `format:` sub-option of `--store-config`/`--load-config`
-- Added `format:` and `label:` sub-options to `--initial-proof`/`--final-proof`
 - Changed compound CLI options to use `key:value` arguments and short options to use space-separated values
 - Changed automatic memory range placement to share one aligned address pool after RAM
 - Changed logged and verified invalid CMIO responses outside accepted inputs to be no-ops
 - Changed the uarch state-access layer to align misaligned accesses down to their natural size instead of rejecting them
 - Changed JSON-RPC error logs to omit the Boost `source_location` suffix at non-debug levels
-- Renamed the installed public headers `machine-c-api.h`, `jsonrpc-machine-c-api.h`, and `machine-c-version.h` to `cm.h`, `cm-jsonrpc.h`, and `cm-version.h`, and renamed all C++ headers from `.h` to `.hpp`
-- Bumped machine configuration archive version from 6 to 7 (for the new `nvram` and `label` fields)
-- Dropped the `/run/drive-label/` label-to-device map from the DTB init script, which now resolves labels with the `flashdrive` and `nvram` guest tools
-- Updated guest bootargs to bind `uio_pdrv_genirq` to generic-uio nodes
-- Bumped test Linux image to v0.21.0 (kernel 6.5.13-ctsi-2)
+- Changed guest bootargs to bind `uio_pdrv_genirq` to generic-uio nodes
+- Replaced `--no-rollback` with `--revert-mode=<fork|stored|none>`, matching the machine's revert terminology with `--no-revert` kept as an alias for `--revert-mode=none`
+- Renamed the `output_hashes_root_hash:` sub-option of `--cmio-advance-state` to `outputs_merkle_root:`
 - Renamed hash-printing options to `--print-mcycle-root-hashes` and `--print-uarch-cycle-root-hashes`
-- Changed `--print-mcycle-root-hashes` to use collection semantics and require reproducible machines
-- Changed `--print-uarch-cycle-root-hashes` to include fixed-point padding
-- Added bundle-size options to printed mcycle and uarch-cycle root hashes
-- Reworked the main loop of `cartesi-machine.lua` into an inner loop driven by pluggable runners (the machine, the GDB stub, and the hash-printing and computation-hash runners), dispatching automatic yields to a handler callback and returning manual yields to the caller
-- Renamed `cartesi.util.dump_log` to `cartesi.util.print_log`, dropped `cartesi.util.dump_json_log` (JSON logs are dumped with `cartesi.tojson`), and added `ilog2`, `find_drive`, `read_file`, and `write_file` to `cartesi.util`
+- Renamed the `hashes` sub-option of `--cmio-advance-state` and `--cmio-inspect-state` to `print_input_state_hashes` and `print_query_state_hashes`
+- Renamed the collector results `back_tree` to `partial_bundle` and `reset_indices` to `mcycle_hash_offsets`, which now holds half-open offsets delimiting the hashes of each mcycle
+- Renamed the uarch halt register and cycle break reasons to consistently use `uarch_halt`, `reached_target_uarch_cycle`, and `uarch_cycle_overflow`
+- Renamed the yield constants in `cm.h` and the Lua API from `CM_CMIO_YIELD_*` to `CM_HTIF_YIELD_*` (and the command suffix from `COMMAND` to `CMD`)
+- Renamed the installed public headers `machine-c-api.h`, `jsonrpc-machine-c-api.h`, and `machine-c-version.h` to `cm.h`, `cm-jsonrpc.h`, and `cm-version.h`, and renamed all C++ headers from `.h` to `.hpp`
+- Renamed `cartesi.util.dump_log` to `cartesi.util.print_log`
+- Reworked the main loop of `cartesi-machine.lua` into an inner loop driven by pluggable runners
+- Folded JSON configuration into the `format:` sub-option of `--store-config`/`--load-config`
 - Converted `test-evmu` to the lester spec format
-- Updated machine guest tools to v0.18.0
+- Optimized the Base64 codec and tightened its validation, rejecting misplaced `=` and non-zero padding bits
+- Made mcycle overflow (against the new `imcyclemax`) a derived, state-preserving fixed point, and gave the pre-existing uarch cycle overflow the same derivation and precedence
 - Bumped MARCHID version to 21
+- Bumped machine configuration archive version from 6 to 7 (for the new `nvram` and `label` fields)
 - Bumped JSON-RPC protocol version to 0.7.0
+- Bumped machine guest tools to v0.18.0
 - Bumped nlohmann JSON library to 3.12
+- Bumped test Linux image to v0.21.0 (kernel 6.5.13-ctsi-2)
 
 ### Removed
 - Removed the `--store-json-config` and `--load-json-config` options (folded into the `format:` sub-option of `--store-config`/`--load-config`)
@@ -113,6 +112,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `CM_ERROR_REGEX_ERROR` (covered by `CM_ERROR_RUNTIME_ERROR`) and `CM_ERROR_SYSTEM_ERROR`, and renumbered the error enum
 - Removed the break reason output of `cm_verify_step`
 - Removed the `mark_dirty_page` uarch ECALL (function code 3 now traps) and the `UARCH_ECALL_FN_MARK_DIRTY_PAGE` constant in the Lua API
+- Removed the required `root_hash_after` argument from `verify_step`, `verify_step_uarch`, `verify_reset_uarch`, and `verify_send_cmio_response` across all APIs, which return the obtained root hash for the caller to compare
+- Removed the `/run/drive-label/` label-to-device map from the DTB init script, which now resolves labels with the `flashdrive` and `nvram` guest tools
+- Removed `cartesi.util.dump_json_log` (JSON logs are dumped with `cartesi.tojson`)
 
 ## [0.20.0] - 2026-04-09
 ### Added

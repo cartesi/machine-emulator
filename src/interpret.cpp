@@ -5543,9 +5543,16 @@ enum class fetch_status : int {
 /// \brief Ensures address will fail fetch cache
 /// \param pc Current pc (fast address)
 /// \returns Sentinel tag guaranteed to fail the fetch cache test
+/// \details Adding 2^63 modulo 2^64 flips the top bit of pc, the same
+/// operation as pc ^ 2^63. The difference between the sentinel and pc,
+/// or any probe within 2^63 of pc (the pre-decode probes pc plus an
+/// instruction length), then has its top bit set, so the
+/// subtraction-window test of fetch_cache_is_hit fails by construction.
+/// The xor spelling would need an operator^ between host_addr and
+/// uint64_t; the addition uses an operator host_addr already provides.
 template <typename FAST_ADDR>
 static FORCE_INLINE FAST_ADDR ensure_fetch_cache_miss(FAST_ADDR pc) {
-    return ~pc;
+    return pc + (UINT64_C(1) << 63);
 }
 
 /// \brief Checks if pc is within the fetchable region of the last fetch page

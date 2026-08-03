@@ -57,11 +57,6 @@ static constexpr host_addr operator-(uint64_t a, host_addr b) {
     return host_addr{a - static_cast<uint64_t>(b)};
 }
 
-// Subtraction between host_addr and uint64_t
-static constexpr host_addr operator~(host_addr a) {
-    return host_addr{~static_cast<uint64_t>(a)};
-}
-
 static constexpr host_addr &operator+=(host_addr &a, uint64_t b) {
     a = a + b;
     return a;

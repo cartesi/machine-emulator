@@ -83,6 +83,7 @@ public:
         std::string filename;             ///<  where to save the log
         hash_function_type hash_function; ///<  hash function type to use for the log
         mutable pages_type touched_pages; ///<  copy of all pages touched during execution
+        mutable host_addr fetch_vf_offset{}; ///< fetch mapping offset of the current code page
     };
 
 private:
@@ -366,6 +367,14 @@ private:
     // i_accept_dirty_pages interface implementation
     // -----
     friend i_accept_dirty_pages<record_step_state_access>;
+
+    host_addr do_read_fetch_vf_offset() const {
+        return m_context.fetch_vf_offset;
+    }
+
+    void do_write_fetch_vf_offset(host_addr vf_offset) const {
+        m_context.fetch_vf_offset = vf_offset;
+    }
 
     void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
         m_m.mark_dirty_page(paddr, pma_index);

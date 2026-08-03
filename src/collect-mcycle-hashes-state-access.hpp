@@ -487,6 +487,14 @@ private:
         return m_m.init_hot_tlb_slot(SET, slot_index);
     }
 
+    host_addr do_read_fetch_vf_offset() const {
+        return m_s.penumbra.fetch_vf_offset;
+    }
+
+    void do_write_fetch_vf_offset(host_addr vf_offset) const {
+        m_s.penumbra.fetch_vf_offset = vf_offset;
+    }
+
     template <TLB_set_index SET>
     constexpr bool do_verify_cold_tlb_slot(uint64_t /*slot_index*/) const {
         return true;

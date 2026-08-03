@@ -1242,6 +1242,23 @@ predates both). The comparison of the two columns within the segment
 row re-answers the pre-load question at the lower register pressure,
 where 5.14's answer no longer applies.
 
+A fourth idea for the series, applicable on the Linux x86-64 target:
+registers held purely to reach per-machine state (the pinned context
+pointer in r15, the accessor pointer itself in the args shape) can be
+returned to the allocator by placing the pointer in initial-exec
+thread-local storage (-ftls-model=initial-exec, or local-exec in the
+main executable), making each access a single fs-relative load instead
+of a pinned callee-saved register. The pointer is set once at interpret
+entry (one machine per thread while it runs, which interpret already
+assumes), each handler loads it on demand, and the allocator regains
+the register between uses. Taken to its end the args signature reaches
+three slots (insn, pc, countdown). Caveats: Darwin's TLV mechanism and
+GCC's emutls are call-based (see the dlclose incident of 5.13), so this
+is a Linux-target technique, measured on Raptor or not at all; and the
+accessor pointer through TLS re-adds a per-handler load that the
+current argument passing does not pay, so it prices register relief
+against load slots exactly like the rest of the series.
+
 A third idea joins the register-budget series: keep pc as a fast
 address. The handler state holds the host address of the current
 instruction, typed as fast_addr so the two spaces cannot mix silently
@@ -1290,6 +1307,27 @@ exceptions unreachable, to be verified rather than assumed), and
 mapping invalidations must poison the host-space tag exactly as they
 poison the virtual one today.
 
+The typed fast pc is implemented through both loops and measured on
+AArch64. Every gate held across a 54-run campaign with same-batch
+pre-change anchors: cycles and exits identical over nine
+configurations, and the attribution build (new source linked against
+the uarch image generated from the pre-change source) reproduced the
+anchor hashes bit for bit, so the root-hash shift is entirely the
+embedded image. Timing against the same-batch anchors: Clang stock
+-1.2%, GCC 15 stock +0.3%, Clang tail-call +0.1%, GCC 15 tail-call
+-0.7%, i.e. neutral with a small Clang stock win, as expected on the
+architecture where the removed offset add was already folded into
+addressing. The refactor's real product is the register economics on
+x86-64: with segments the args signature is four slots (accessor,
+insn, fast pc, countdown) and the ADDI dispatch tail under GCC 16 is
+about ten instructions whose fetch is a single load through the pc
+register with the fall-through folded into the addressing mode. The
+port also uncovered one hazard worth its own sentence: when a register
+leaves the pinned set, the boundary save/restore asm must shrink with
+it, because a hard-coded write to a now-allocatable register silently
+clobbers compiler-owned state (the crash presented as a jump to
+address zero out of a musttail chain).
+
 The countdown of 5.15 is the same kind of stock-uniformity companion:
 the stock loop still carries mcycle and the tick end live across the
 whole computed-goto function and pays increment, compare, branch per
@@ -1325,6 +1363,53 @@ cross-compiler hashes agreed throughout). Attribution was proven, not
 assumed: relinking the countdown build against the uarch image
 generated from the pre-change source reproduces the old anchors bit
 for bit on all six workloads.
+
+## 8d. The register ledger
+
+A running summary of the hot-path register evolution, kept up to date as
+the series advances. The measure is the handler contract: the values
+that must cross every handler boundary in the args shape, with the
+pinned set of the register-global shape alongside.
+
+| stage | args slots | contents | pinned set (AArch64) |
+|---|---|---|---|
+| original design (section 3) | 9 | a (2 regs), pc, mcycle, tick end, insn, tcc, fetch tag, fetch offset | x23-x28 (6) |
+| countdown (5.15) | 8 | mcycle and the tick end fuse into one countdown | x23-x27 (5) |
+| one-pointer accessor and penumbra context (5.16) | 6 | a shrinks to one pointer, tcc derived from the state | 5, x27 re-pinned after the offset regression |
+| segments plus demotion (8c) | 5 | the fetch tag moves to the context, read only by control transfers | 5 |
+| typed fast pc (8c third idea, done) | 4 | the fetch offset dissolves into pc itself | x23, x24, x25, x27 (4) |
+
+Each step removed a register by finding that its content was derivable
+rather than essential. mcycle is not architectural between observation
+points, only its materialization is, so a countdown and a memory base
+replaced the pair. The machine pointer was cold cargo reachable through
+the penumbra back-pointer, so the accessor halved. The context sits at a
+constant offset from the state, so its pointer became derivable, with
+the AArch64 re-pin as the one concession to load immediate range. The
+tag is consulted per instruction only when the future is unknown, and
+the segment bound proves straight-line fetches safe in advance, so the
+tag retreated to control transfers. The fetch offset existed only to
+turn pc into an address, so making pc be the address eliminated it,
+K-cancellation keeping the architectural pc recoverable exactly.
+
+The visible consequence tracks the slot count: the GCC 16 x86-64
+dispatch tail went from 22 instructions with two stack-argument round
+trips (8 slots), to 17 in registers (6), to 9 frameless with the check
+gone (segments), to about 10 whose entire fetch is one load with the
+fall-through folded into pc's addressing mode (4). The stock loop rode
+along: the countdown freed one of its two hot loop registers, and the
+typed pc merged its pc and offset into one.
+
+The identified floor: insn is the message and pc is the control point,
+genuinely irreducible. The countdown can leave via block accounting
+(the phase idea of 8c for the interpreter; already real inside traces,
+where it is charged per block), and the accessor pointer can leave via
+initial-exec TLS on the Linux target (the fourth idea of 8c). The args
+contract could therefore reach two slots, insn and pc: an interpreter
+whose entire inter-handler state is the instruction and where it came
+from, with everything else derivable, deposited, or proven unnecessary
+in advance. Whether the slots below six actually price as wins is what
+the pending x86-64 campaign measures.
 
 ## 9. Validation status
 

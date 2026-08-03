@@ -457,6 +457,20 @@ public:
             get_name(), SET, slot_index, vaddr_page, fast_addr_name, static_cast<uint64_t>(vf_offset), pma_index);
     }
 
+    /// \brief Reads the fetch mapping offset of the current code page
+    /// \details The interpreter deposits the offset here whenever the fetch
+    /// translation changes, so instruction bodies can convert the fast pc
+    /// they receive back to the architectural (virtual) pc at the few
+    /// points that observe it.
+    fast_addr read_fetch_vf_offset() const {
+        return derived().do_read_fetch_vf_offset();
+    }
+
+    /// \brief Deposits the fetch mapping offset of the current code page
+    void write_fetch_vf_offset(fast_addr vf_offset) const {
+        derived().do_write_fetch_vf_offset(vf_offset);
+    }
+
     /// \brief Verifies shadow TLB slot and initializes hot TLB slot
     /// \tparam SET TLB set
     /// \param slot_index Slot index

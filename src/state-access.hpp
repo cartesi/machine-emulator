@@ -79,6 +79,14 @@ public:
     }
 
 private:
+    i_state_access_fast_addr_t<state_access> do_read_fetch_vf_offset() const {
+        return m_s.penumbra.fetch_vf_offset;
+    }
+
+    void do_write_fetch_vf_offset(host_addr vf_offset) const {
+        m_s.penumbra.fetch_vf_offset = vf_offset;
+    }
+
     /// \brief Machine associated with the processor state.
     /// \details Reached through the penumbra back-pointer, so the accessor
     /// itself carries a single reference; only cold paths need the machine.

@@ -153,15 +153,14 @@ struct tc_online_state {
 /// that observe it (the privileged handler, chain exits).
 template <typename STATE_ACCESS>
 struct tc_context {
-    uint64_t pc;
+    i_state_access_fast_addr_t<STATE_ACCESS> pc; ///< Fast pc (vpc + the deposited fetch mapping offset)
     uint64_t mcycle;
     uint64_t mcycle_end;
     uint64_t mcycle_tick_end;
 #if TC_PAGE_SEGMENT
     uint64_t mcycle_seg_end; ///< Countdown base: end of the current page segment (never past mcycle_tick_end)
 #endif
-    uint64_t fetch_vaddr_page;
-    i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset;
+    i_state_access_fast_addr_t<STATE_ACCESS> fetch_vaddr_page; ///< Fast address of the current code page start
     uint64_t fetch_pma_index;
 #if TC_JIT_SHELL
     tc_hot_state hot;
@@ -272,11 +271,10 @@ static FORCE_INLINE tc_context<STATE_ACCESS> *tc_ctx(const STATE_ACCESS a) {
 // The interpreter's hot state lives in reserved call-saved registers, named
 // so the shared handler body text resolves to them directly. pc is one
 // exception (execute_* takes it by reference and register globals have no
-// address), so handlers bind it to a local via TC_ENTER and sync it back
-// via TC_SYNC before dispatching. The fetch offset is the other (Clang
-// restricts named registers to integer and pointer types, so the register
-// holds the raw value): TC_ENTER binds a read-only local of the strong
-// type, and the few writers cast.
+// address, and Clang restricts named registers to integer types while pc
+// carries the fast-address strong type): the register holds the raw fast
+// value, TC_ENTER binds a typed local, and TC_SYNC casts it back. The
+// fetch tag is treated the same way through the TC_FETCH_TAG macros.
 // The pinned set starts at x23 because Clang's preserve_none argument order
 // assigns the handler arguments to x20-x22 even when those registers are
 // reserved with -ffixed; pinning x22 would let every dispatch clobber pc
@@ -295,38 +293,34 @@ static FORCE_INLINE tc_context<STATE_ACCESS> *tc_ctx(const STATE_ACCESS a) {
 #if defined(__aarch64__)
 register uint64_t tc_reg_pc asm("x23");
 register uint64_t tc_remaining asm("x24");
-register uint64_t fetch_vaddr_page asm("x25");
-register uint64_t tc_reg_vf_offset asm("x26");
+register uint64_t tc_reg_fetch_page asm("x25");
 register tc_context<state_access> *tcc asm("x27");
 #else
-// x86-64: the five pinned fields exactly fill the callee-saved set minus
-// rbp. GCC only: Clang's preserve_none argument order starts at r12, so
-// pinned registers and preserve_none cannot coexist here; Clang uses the
-// argument-passing shape on this architecture instead.
+// x86-64: the four pinned fields fit the callee-saved set with rbp and
+// r14 to spare. GCC only: Clang's preserve_none argument order starts at
+// r12, so pinned registers and preserve_none cannot coexist here; Clang
+// uses the argument-passing shape on this architecture instead.
 register uint64_t tc_reg_pc asm("rbx");
 register uint64_t tc_remaining asm("r12");
-register uint64_t fetch_vaddr_page asm("r13");
-register uint64_t tc_reg_vf_offset asm("r14");
+register uint64_t tc_reg_fetch_page asm("r13");
 register tc_context<state_access> *tcc asm("r15");
 #endif
 #define TC_HOT_PARAMS
 #define TC_HOT_ARGS
-#define TC_ENTER()                                                                                                     \
-    uint64_t pc = tc_reg_pc;                                                                                           \
-    const auto fetch_vf_offset = static_cast<i_state_access_fast_addr_t<state_access>>(tc_reg_vf_offset)
-#define TC_SYNC() (tc_reg_pc = pc)
-#define TC_FETCH_TAG fetch_vaddr_page
+#define TC_ENTER() auto pc = host_addr{tc_reg_pc}
+#define TC_SYNC() (tc_reg_pc = static_cast<uint64_t>(pc))
+#define TC_FETCH_TAG (host_addr{tc_reg_fetch_page})
 #define TC_FETCH_TAG_INVALIDATE()                                                                                      \
-    (fetch_vaddr_page = ensure_fetch_cache_miss(pc), tcc->fetch_vaddr_page = fetch_vaddr_page)
-#define TC_FETCH_TAG_SYNC() (tcc->fetch_vaddr_page = fetch_vaddr_page)
+    (tc_reg_fetch_page = static_cast<uint64_t>(ensure_fetch_cache_miss(pc)),                                           \
+        tcc->fetch_vaddr_page = host_addr{tc_reg_fetch_page})
+#define TC_FETCH_TAG_SYNC() (tcc->fetch_vaddr_page = host_addr{tc_reg_fetch_page})
 #elif TC_PAGE_SEGMENT
 // With page segments the fetch tag is read only by control transfers and
-// cold paths, so it leaves the signature and lives in the context alone,
-// returning one argument register to the allocator; vf_offset stays, since
-// the fetch translation feeds every instruction load.
-#define TC_HOT_PARAMS                                                                                                  \
-    , uint64_t pc, uint64_t tc_remaining, i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset
-#define TC_HOT_ARGS , pc, tc_remaining, fetch_vf_offset
+// cold paths, so it leaves the signature and lives in the context alone;
+// and with pc as a fast address the fetch needs no offset either, so the
+// signature is four slots: accessor, insn, pc, countdown.
+#define TC_HOT_PARAMS , i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t tc_remaining
+#define TC_HOT_ARGS , pc, tc_remaining
 #define TC_ENTER() auto *const tcc = tc_ctx(a)
 #define TC_SYNC() ((void) 0)
 #define TC_FETCH_TAG (tcc->fetch_vaddr_page)
@@ -534,10 +528,11 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
 /// probe is not dead). Defined unconditionally so discarded constexpr
 /// branches can name it; the body only instantiates under TC_JIT_SHELL.
 template <typename STATE_ACCESS>
-static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64_t pc, uint16_t weight) {
-    const uint32_t h = (static_cast<uint32_t>(pc) >> 1) & 63;
+static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c,
+    i_state_access_fast_addr_t<STATE_ACCESS> pc, uint16_t weight) {
+    const uint32_t h = (static_cast<uint32_t>(static_cast<uint64_t>(pc)) >> 1) & 63;
     const void *fn = nullptr;
-    if (c->hot.head_pc[h] == pc) [[unlikely]] {
+    if (c->hot.head_pc[h] == static_cast<uint64_t>(pc)) [[unlikely]] {
         ++c->hot.entries;
 #if TC_AOT
         fn = c->hot.head_fn[h];
@@ -598,34 +593,36 @@ static const tc_handler_ptr<STATE_ACCESS> tc_jumptable[65536] = {
 /// here instead of through a reference: a reference parameter to a genuine
 /// call would make the handler's pc local address-taken, forcing a stack
 /// store/reload of pc onto the hot dispatch path of every handler.
+template <typename STATE_ACCESS>
 struct tc_walk_result {
     fetch_status status;
-    uint64_t pc;
+    i_state_access_fast_addr_t<STATE_ACCESS> pc;
+    i_state_access_fast_addr_t<STATE_ACCESS> vf_offset;
 };
-static_assert(sizeof(tc_walk_result) <= 16);
 
 /// \brief Outlined page-table walk for the tail-call fetch path (true code TLB miss).
-/// \details On success, the translated vf_offset/pma_index are stored into the
-/// tc_context; on exception, fetch_translate_pc_slow updates
-/// tcc->fetch_vaddr_page (the fetch-cache invalidation) through the reference
-/// it receives.
+/// \details Cold, so returning the mapping by value through memory is fine.
+/// On success, pma_index is stored into the tc_context and the new mapping
+/// offset is returned (the caller deposits it after committing); on
+/// exception, fetch_translate_pc_slow updates tcc->fetch_vaddr_page (the
+/// fetch-cache invalidation) through the reference it receives.
 template <typename STATE_ACCESS>
-[[gnu::noinline]] static tc_walk_result tc_fetch_translate_pc_walk(const STATE_ACCESS a, uint64_t pc, uint64_t vaddr,
-    tc_context<STATE_ACCESS> *tcc) {
+[[gnu::noinline]] static tc_walk_result<STATE_ACCESS> tc_fetch_translate_pc_walk(const STATE_ACCESS a,
+    i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t vaddr, tc_context<STATE_ACCESS> *tcc) {
     i_state_access_fast_addr_t<STATE_ACCESS> vf_offset{};
     uint64_t pma_index{};
     const fetch_status status = fetch_translate_pc_slow(a, pc, vaddr, vf_offset, pma_index, tcc->fetch_vaddr_page);
     if (status == fetch_status::success) [[likely]] {
-        tcc->fetch_vf_offset = vf_offset;
         tcc->fetch_pma_index = pma_index;
     }
-    return {status, pc};
+    return {status, pc, vf_offset};
 }
 
 /// \brief TLB consult for the tail-call fetch path; mirrors fetch_translate_pc
 /// but keeps only the TLB-hit path inline, outlining the walk.
 template <typename STATE_ACCESS>
-static FORCE_INLINE fetch_status tc_fetch_translate_pc(const STATE_ACCESS a, uint64_t &pc, uint64_t vaddr,
+static FORCE_INLINE fetch_status tc_fetch_translate_pc(const STATE_ACCESS a,
+    i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t vaddr,
     i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index, tc_context<STATE_ACCESS> *tcc) {
     const uint64_t slot_index = tlb_slot_index(vaddr);
     uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
@@ -639,10 +636,10 @@ static FORCE_INLINE fetch_status tc_fetch_translate_pc(const STATE_ACCESS a, uin
     }
     if (walk) [[unlikely]] {
         DUMP_STATS_INCR(a, "tlb.cmiss");
-        const tc_walk_result result = tc_fetch_translate_pc_walk(a, pc, vaddr, tcc);
+        const tc_walk_result<STATE_ACCESS> result = tc_fetch_translate_pc_walk(a, pc, vaddr, tcc);
         pc = result.pc;
         if (result.status == fetch_status::success) [[likely]] {
-            vf_offset = tcc->fetch_vf_offset;
+            vf_offset = result.vf_offset;
             pma_index = tcc->fetch_pma_index;
         }
         return result.status;
@@ -654,33 +651,38 @@ static FORCE_INLINE fetch_status tc_fetch_translate_pc(const STATE_ACCESS a, uin
 }
 
 /// \brief Result of the outlined page-boundary-crossing fetch; fits in a register pair.
+template <typename STATE_ACCESS>
 struct tc_crossing_result {
     fetch_status status;
     uint32_t insn;
-    uint64_t pc;
+    i_state_access_fast_addr_t<STATE_ACCESS> pc;
 };
-static_assert(sizeof(tc_crossing_result) <= 16);
+static_assert(sizeof(tc_crossing_result<state_access>) <= 16);
 
 /// \brief Outlined fetch for a pc crossing a page boundary (rare: last 2 bytes of a page).
+/// \details pc arrives as the valid fast address of the crossing
+/// instruction; on an uncompressed crossing the cache moves to the next
+/// page and pc is re-encoded with the new deposit, exactly as in
+/// fetch_insn.
 template <typename STATE_ACCESS>
-[[gnu::noinline]] static tc_crossing_result tc_fetch_insn_crossing(const STATE_ACCESS a, uint64_t pc,
-    i_state_access_fast_addr_t<STATE_ACCESS> faddr, tc_context<STATE_ACCESS> *tcc) {
+[[gnu::noinline]] static tc_crossing_result<STATE_ACCESS> tc_fetch_insn_crossing(const STATE_ACCESS a, uint64_t vpc,
+    i_state_access_fast_addr_t<STATE_ACCESS> pc, tc_context<STATE_ACCESS> *tcc) {
     uint16_t insn16 = 0;
-    a.template read_memory_word<uint16_t>(faddr, tcc->fetch_pma_index, &insn16);
+    a.template read_memory_word<uint16_t>(pc, tcc->fetch_pma_index, &insn16);
     uint32_t insn = insn16;
     if (insn_is_uncompressed(insn)) [[unlikely]] {
-        const uint64_t pc2 = pc + 2;
+        const uint64_t vpc2 = vpc + 2;
         i_state_access_fast_addr_t<STATE_ACCESS> pc2_vf_offset{};
         uint64_t pc2_pma_index{};
-        if (fetch_translate_pc(a, pc, pc2, pc2_vf_offset, pc2_pma_index, tcc->fetch_vaddr_page) ==
+        if (fetch_translate_pc(a, pc, vpc2, pc2_vf_offset, pc2_pma_index, tcc->fetch_vaddr_page) ==
             fetch_status::exception) [[unlikely]] {
             return {fetch_status::exception, 0, pc};
         }
-        tcc->fetch_vaddr_page = tlb_addr_page(pc2);
-        tcc->fetch_vf_offset = pc2_vf_offset;
+        a.write_fetch_vf_offset(pc2_vf_offset);
+        pc = vpc + pc2_vf_offset;
+        tcc->fetch_vaddr_page = vpc2 + pc2_vf_offset;
         tcc->fetch_pma_index = pc2_pma_index;
-        faddr = pc2 + pc2_vf_offset;
-        a.template read_memory_word<uint16_t>(faddr, tcc->fetch_pma_index, &insn16);
+        a.template read_memory_word<uint16_t>(tcc->fetch_vaddr_page, tcc->fetch_pma_index, &insn16);
         insn |= static_cast<uint32_t>(insn16) << 16;
     }
     return {fetch_status::success, insn, pc};
@@ -691,42 +693,40 @@ template <typename STATE_ACCESS>
 /// stay inline in each handler; only the page-table walk and the boundary
 /// crossing are out of line.
 template <typename STATE_ACCESS>
-static FORCE_INLINE fetch_status tc_fetch_insn(const STATE_ACCESS a, uint64_t &pc, uint32_t &insn,
-    uint64_t &fetch_vaddr_page, i_state_access_fast_addr_t<STATE_ACCESS> &fetch_vf_offset,
-    tc_context<STATE_ACCESS> *tcc) {
-    if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {
-        a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index, &insn);
+static FORCE_INLINE fetch_status tc_fetch_insn(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
+    uint32_t &insn, i_state_access_fast_addr_t<STATE_ACCESS> &fetch_vaddr_page, tc_context<STATE_ACCESS> *tcc) {
+    if (fetch_cache_is_hit(pc, fetch_vaddr_page)) [[likely]] {
+        a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index, &insn);
         return fetch_status::success;
     }
-    i_state_access_fast_addr_t<STATE_ACCESS> faddr{0};
-    const uint64_t pc_vaddr_page = tlb_addr_page(pc);
-    if (pc_vaddr_page == fetch_vaddr_page) [[unlikely]] {
-        faddr = pc + fetch_vf_offset;
-    } else {
+    // Decode the architectural pc through the same deposit that encoded it
+    const uint64_t vpc = pc_to_virtual(a, pc);
+    const uint64_t vpc_page = tlb_addr_page(vpc);
+    if (pc_to_fast(a, vpc_page) != fetch_vaddr_page) [[likely]] {
         i_state_access_fast_addr_t<STATE_ACCESS> pc_vf_offset{};
         uint64_t pc_pma_index{};
-        if (tc_fetch_translate_pc(a, pc, pc, pc_vf_offset, pc_pma_index, tcc) == fetch_status::exception) [[unlikely]] {
+        if (tc_fetch_translate_pc(a, pc, vpc, pc_vf_offset, pc_pma_index, tcc) == fetch_status::exception)
+            [[unlikely]] {
             // The slow path invalidated the stored fetch cache with the exception handler pc
             fetch_vaddr_page = tcc->fetch_vaddr_page;
             return fetch_status::exception;
         }
-        fetch_vaddr_page = pc_vaddr_page;
-        fetch_vf_offset = pc_vf_offset;
-        tcc->fetch_vaddr_page = pc_vaddr_page;
-        tcc->fetch_vf_offset = pc_vf_offset;
+        // Deposit the new mapping and re-encode pc and the tag with it
+        a.write_fetch_vf_offset(pc_vf_offset);
+        pc = vpc + pc_vf_offset;
+        fetch_vaddr_page = pc - (vpc & PAGE_OFFSET_MASK);
+        tcc->fetch_vaddr_page = fetch_vaddr_page;
         tcc->fetch_pma_index = pc_pma_index;
-        faddr = pc + pc_vf_offset;
     }
-    if (((~pc & PAGE_OFFSET_MASK) >> 1) == 0) [[unlikely]] {
-        const tc_crossing_result result = tc_fetch_insn_crossing(a, pc, faddr, tcc);
+    if (((~vpc & PAGE_OFFSET_MASK) >> 1) == 0) [[unlikely]] {
+        const tc_crossing_result<STATE_ACCESS> result = tc_fetch_insn_crossing(a, vpc, pc, tcc);
         pc = result.pc;
         insn = result.insn;
         // The crossing may have replaced or invalidated the stored fetch cache
         fetch_vaddr_page = tcc->fetch_vaddr_page;
-        fetch_vf_offset = tcc->fetch_vf_offset;
         return result.status;
     }
-    a.template read_memory_word<uint32_t, uint16_t>(faddr, tcc->fetch_pma_index, &insn);
+    a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index, &insn);
     return fetch_status::success;
 }
 
@@ -743,7 +743,7 @@ static FORCE_INLINE fetch_status tc_fetch_insn(const STATE_ACCESS a, uint64_t &p
 /// fetch.
 template <typename STATE_ACCESS>
 struct tc_predecode {
-    uint64_t pc;
+    i_state_access_fast_addr_t<STATE_ACCESS> pc;
     uint32_t insn;
     bool hit;
     tc_handler_ptr<STATE_ACCESS> handler;
@@ -757,7 +757,11 @@ struct tc_predecode {
 /// for 2-byte-aligned pc), and successors advance by at most 4 bytes each.
 /// Negative when pc itself sits in the crossing region; callers rely on
 /// signed arithmetic throughout.
-static FORCE_INLINE int64_t tc_seg_allowance(uint64_t pc) {
+template <typename FAST_ADDR>
+static FORCE_INLINE int64_t tc_seg_allowance(FAST_ADDR pc) {
+    // Valid on the fast encoding because state_access's mapping offsets
+    // are page-aligned (host memory comes from page-aligned mappings),
+    // preserving the page offset bits
     return (static_cast<int64_t>(PAGE_OFFSET_MASK) - 3 - static_cast<int64_t>(pc & PAGE_OFFSET_MASK)) >> 2;
 }
 
@@ -784,7 +788,7 @@ static FORCE_INLINE int64_t tc_seg_allowance(uint64_t pc) {
 #define TC_PREDECODE_SAFE(LEN) (static_cast<int64_t>(tc_remaining) >= 1)
 #else
 #define TC_SEG_TIGHTEN() ((void) 0)
-#define TC_PREDECODE_SAFE(LEN) fetch_cache_is_hit(pc + (LEN), fetch_vaddr_page)
+#define TC_PREDECODE_SAFE(LEN) fetch_cache_is_hit(pc + (LEN), TC_FETCH_TAG)
 #endif
 
 /// \brief Pre-decodes the fall-through successor of the current instruction.
@@ -795,13 +799,13 @@ static FORCE_INLINE int64_t tc_seg_allowance(uint64_t pc) {
 /// rotation adds no length computation to the loop. The caller supplies the
 /// page-safety predicate for the read (see TC_PREDECODE_SAFE).
 template <typename STATE_ACCESS>
-static FORCE_INLINE tc_predecode<STATE_ACCESS> tc_predecode_next(const STATE_ACCESS a, uint64_t pc, uint64_t insn_len,
-    bool safe, i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset, tc_context<STATE_ACCESS> *tcc) {
+static FORCE_INLINE tc_predecode<STATE_ACCESS> tc_predecode_next(const STATE_ACCESS a,
+    i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t insn_len, bool safe, tc_context<STATE_ACCESS> *tcc) {
     tc_predecode<STATE_ACCESS> next{};
     next.pc = pc + insn_len;
     next.hit = safe;
     if (next.hit) [[likely]] {
-        a.template read_memory_word<uint32_t, uint16_t>(next.pc + fetch_vf_offset, tcc->fetch_pma_index, &next.insn);
+        a.template read_memory_word<uint32_t, uint16_t>(next.pc, tcc->fetch_pma_index, &next.insn);
         next.handler = tc_jumptable<STATE_ACCESS>[insn_get_id(next.insn)];
     }
     return next;
@@ -812,7 +816,6 @@ static FORCE_INLINE tc_predecode<STATE_ACCESS> tc_predecode_next(const STATE_ACC
         tcc->pc = pc;                                                                                                  \
         tcc->mcycle = TC_MCYCLE_GET();                                                                                 \
         TC_FETCH_TAG_SYNC();                                                                                           \
-        tcc->fetch_vf_offset = fetch_vf_offset;                                                                        \
         return (st);                                                                                                   \
     } while (0)
 
@@ -827,45 +830,39 @@ TC_CALLCONV static execute_status tc_fetch_miss(const STATE_ACCESS a, uint32_t /
     uint32_t tc_next_insn = 0;
 #if TC_GLOBAL_REGS
     // tc_fetch_insn takes the fetch cache by reference and register globals
-    // have no address, so proxy through locals on this cold path
-    uint64_t proxy_vaddr_page = fetch_vaddr_page;
-    i_state_access_fast_addr_t<STATE_ACCESS> proxy_vf_offset = fetch_vf_offset;
+    // have no address, so proxy through a local on this cold path
+    auto proxy_fetch_page = TC_FETCH_TAG;
     for (;;) {
-        if (tc_fetch_insn(a, pc, tc_next_insn, proxy_vaddr_page, proxy_vf_offset, tcc) == fetch_status::success)
-            [[likely]] {
+        if (tc_fetch_insn(a, pc, tc_next_insn, proxy_fetch_page, tcc) == fetch_status::success) [[likely]] {
             break;
         }
         // The raising fetch consumed one cycle; execution continues from the
         // exception handler pc
         if (TC_TICK_ENDED()) [[unlikely]] {
-            fetch_vaddr_page = proxy_vaddr_page;
-            tc_reg_vf_offset = static_cast<uint64_t>(proxy_vf_offset);
+            tc_reg_fetch_page = static_cast<uint64_t>(proxy_fetch_page);
             TC_RETURN(execute_status::success);
         }
     }
-    fetch_vaddr_page = proxy_vaddr_page;
-    tc_reg_vf_offset = static_cast<uint64_t>(proxy_vf_offset);
+    tc_reg_fetch_page = static_cast<uint64_t>(proxy_fetch_page);
 #elif TC_PAGE_SEGMENT
     // The demoted fetch tag lives in the context; proxy it through a local
     // for tc_fetch_insn's reference parameter on this cold path
-    uint64_t proxy_vaddr_page = tcc->fetch_vaddr_page;
+    auto proxy_fetch_page = tcc->fetch_vaddr_page;
     for (;;) {
-        if (tc_fetch_insn(a, pc, tc_next_insn, proxy_vaddr_page, fetch_vf_offset, tcc) == fetch_status::success)
-            [[likely]] {
+        if (tc_fetch_insn(a, pc, tc_next_insn, proxy_fetch_page, tcc) == fetch_status::success) [[likely]] {
             break;
         }
         // The raising fetch consumed one cycle; execution continues from the
         // exception handler pc
         if (TC_TICK_ENDED()) [[unlikely]] {
-            tcc->fetch_vaddr_page = proxy_vaddr_page;
+            tcc->fetch_vaddr_page = proxy_fetch_page;
             TC_RETURN(execute_status::success);
         }
     }
-    tcc->fetch_vaddr_page = proxy_vaddr_page;
+    tcc->fetch_vaddr_page = proxy_fetch_page;
 #else
     for (;;) {
-        if (tc_fetch_insn(a, pc, tc_next_insn, fetch_vaddr_page, fetch_vf_offset, tcc) == fetch_status::success)
-            [[likely]] {
+        if (tc_fetch_insn(a, pc, tc_next_insn, fetch_vaddr_page, tcc) == fetch_status::success) [[likely]] {
             break;
         }
         // The raising fetch consumed one cycle; execution continues from the
@@ -934,9 +931,9 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
     TC_CALLCONV static execute_status tc_handler_##NAME(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS) {           \
         TC_ENTER();                                                                                                    \
         [[maybe_unused]] tc_predecode<STATE_ACCESS> tc_next{};                                                         \
-        [[maybe_unused]] const uint64_t tc_pc_in = pc;                                                                 \
+        [[maybe_unused]] const auto tc_pc_in = pc;                                                                 \
         if constexpr (TC_PRELOAD_ENABLED != 0 && (PRELOAD) != 0) {                                                     \
-            tc_next = tc_predecode_next(a, pc, (LEN), TC_PREDECODE_SAFE(LEN), fetch_vf_offset, tcc);                   \
+            tc_next = tc_predecode_next(a, pc, (LEN), TC_PREDECODE_SAFE(LEN), tcc);                   \
         }                                                                                                              \
         const execute_status status = (EXPR);                                                                          \
         if (status > execute_status::success) [[unlikely]] {                                                           \
@@ -982,7 +979,7 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
         if constexpr (TC_PAGE_SEGMENT != 0 && TC_PRELOAD_ENABLED == 0 && (PRELOAD) != 0) {                             \
             if (status == execute_status::success && ((PRELOAD) == 2 || pc == tc_pc_in + (LEN))) [[likely]] {          \
                 uint32_t tc_next_insn = 0;                                                                             \
-                a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index,            \
+                a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index,            \
                     &tc_next_insn);                                                                                    \
                 TC_SYNC();                                                                                             \
                 TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS); \
@@ -991,7 +988,7 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
         if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {                                                     \
             uint32_t tc_next_insn = 0;                                                                                 \
             TC_SEG_TIGHTEN();                                                                                          \
-            a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index,                \
+            a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index,                \
                 &tc_next_insn);                                                                                        \
             TC_SYNC();                                                                                                 \
             TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS);     \
@@ -1023,7 +1020,7 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
                 TC_RETURN(tc_st);                                                                                      \
             }                                                                                                          \
         }                                                                                                              \
-        if (pc != (NEXT)) [[unlikely]] {                                                                               \
+        if (pc != pc_to_fast(a, (NEXT))) [[unlikely]] {                                                                \
             tc_remaining -= (K);                                                                                       \
             TC_TRACE_EXIT();                                                                                           \
         }                                                                                                              \
@@ -1037,7 +1034,7 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
     do {                                                                                                               \
         if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {                                                     \
             uint32_t tc_next_insn = 0;                                                                                 \
-            a.template read_memory_word<uint32_t, uint16_t>(pc + fetch_vf_offset, tcc->fetch_pma_index,                \
+            a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index,                \
                 &tc_next_insn);                                                                                        \
             TC_SYNC();                                                                                                 \
             TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS);     \
@@ -1071,9 +1068,14 @@ static const tc_trace_head<STATE_ACCESS> tc_trace_heads[] = {
 /// \brief Tail-call variant of the interpreter hot loop; same observable behavior as interpret_loop().
 template <typename STATE_ACCESS>
 static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uint64_t mcycle_end, uint64_t mcycle) {
-    uint64_t pc = a.read_pc();
+    // pc travels as a fast address encoding vpc + K (the deposited fetch
+    // mapping offset); at entry there is no mapping, so K = 0 encodes the
+    // architectural pc directly and the invalidated fetch cache routes the
+    // first fetch through the translating miss path
+    a.write_fetch_vf_offset(i_state_access_fast_addr_t<STATE_ACCESS>{});
+    auto pc = pc_to_fast(a, a.read_pc());
     if ((pc & 1) != 0) {
-        pc = raise_exception(a, pc, MCAUSE_INSN_ADDRESS_MISALIGNED, pc);
+        pc = raise_exception(a, pc, MCAUSE_INSN_ADDRESS_MISALIGNED, pc_to_virtual(a, pc));
     }
 
     auto *const tcc = new (a.get_penumbra().scratch) tc_context<STATE_ACCESS>{};
@@ -1128,8 +1130,8 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
         execute_status status = execute_status::success;
         while (mcycle < mcycle_tick_end) {
             uint32_t insn = 0;
-            if (fetch_insn(a, pc, insn, tcc->fetch_vaddr_page, tcc->fetch_vf_offset, tcc->fetch_pma_index) ==
-                fetch_status::success) [[likely]] {
+            if (fetch_insn(a, pc, insn, tcc->fetch_vaddr_page, tcc->fetch_pma_index) == fetch_status::success)
+                [[likely]] {
 #if TC_ONLINE
                 if (tcc->online_trip) [[unlikely]] {
                     tcc->online_trip = false;
@@ -1149,7 +1151,7 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 const uint64_t tc_avail = mcycle_tick_end - mcycle;
 #endif
 #if TC_GLOBAL_REGS
-                cartesi::tc_reg_pc = pc;
+                cartesi::tc_reg_pc = static_cast<uint64_t>(pc);
 #if TC_ONLINE
                 const bool tc_is_recording = tcc->online->recording;
                 // One-instruction chains while recording; the adjusted tick
@@ -1170,16 +1172,15 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 tcc->mcycle_tick_end = tc_chain_tick_end;
 #endif
                 cartesi::tcc = tcc;
-                cartesi::fetch_vaddr_page = tcc->fetch_vaddr_page;
-                cartesi::tc_reg_vf_offset = static_cast<uint64_t>(tcc->fetch_vf_offset);
+                cartesi::tc_reg_fetch_page = static_cast<uint64_t>(tcc->fetch_vaddr_page);
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
 #else
 #if TC_PAGE_SEGMENT
                 tcc->mcycle_seg_end = mcycle + tc_avail;
-                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_avail, tcc->fetch_vf_offset);
+                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_avail);
 #else
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_avail,
-                    tcc->fetch_vaddr_page, tcc->fetch_vf_offset);
+                    tcc->fetch_vaddr_page);
 #endif
 #endif
                 pc = tcc->pc;
@@ -1193,7 +1194,7 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 
         if (status >= execute_status::success_and_yield) [[unlikely]] {
             // Got an interruption that must be handled externally
-            a.write_pc(pc);
+            a.write_pc(pc_to_virtual(a, pc));
             a.write_mcycle(mcycle);
             return status;
         }
@@ -1202,15 +1203,15 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
     }
 
     // Commit machine state
-    a.write_pc(pc);
+    a.write_pc(pc_to_virtual(a, pc));
     a.write_mcycle(mcycle);
     return execute_status::success;
 }
 
 #if TC_GLOBAL_REGS
-/// \brief Snapshot of the five reserved registers' values.
+/// \brief Snapshot of the four reserved registers' values.
 struct tc_saved_regs {
-    uint64_t r[5];
+    uint64_t r[4];
 };
 
 /// \brief Reads the reserved registers through asm the compiler cannot analyze.
@@ -1221,13 +1222,13 @@ struct tc_saved_regs {
 static FORCE_INLINE tc_saved_regs tc_save_pinned_regs() {
     tc_saved_regs s;
 #if defined(__aarch64__)
-    asm volatile("mov %0, x23\n\tmov %1, x24\n\tmov %2, x25\n\tmov %3, x26\n\tmov %4, x27"
-        : "=r"(s.r[0]), "=r"(s.r[1]), "=r"(s.r[2]), "=r"(s.r[3]), "=r"(s.r[4])
+    asm volatile("mov %0, x23\n\tmov %1, x24\n\tmov %2, x25\n\tmov %3, x27"
+        : "=r"(s.r[0]), "=r"(s.r[1]), "=r"(s.r[2]), "=r"(s.r[3])
         :
         : "memory");
 #else
-    asm volatile("mov %%rbx, %0\n\tmov %%r12, %1\n\tmov %%r13, %2\n\tmov %%r14, %3\n\tmov %%r15, %4"
-        : "=r"(s.r[0]), "=r"(s.r[1]), "=r"(s.r[2]), "=r"(s.r[3]), "=r"(s.r[4])
+    asm volatile("mov %%rbx, %0\n\tmov %%r12, %1\n\tmov %%r13, %2\n\tmov %%r15, %3"
+        : "=r"(s.r[0]), "=r"(s.r[1]), "=r"(s.r[2]), "=r"(s.r[3])
         :
         : "memory");
 #endif
@@ -1237,14 +1238,14 @@ static FORCE_INLINE tc_saved_regs tc_save_pinned_regs() {
 /// \brief Writes the reserved registers through asm the compiler cannot analyze.
 static FORCE_INLINE void tc_restore_pinned_regs(const tc_saved_regs &s) {
 #if defined(__aarch64__)
-    asm volatile("mov x23, %0\n\tmov x24, %1\n\tmov x25, %2\n\tmov x26, %3\n\tmov x27, %4"
+    asm volatile("mov x23, %0\n\tmov x24, %1\n\tmov x25, %2\n\tmov x27, %3"
         :
-        : "r"(s.r[0]), "r"(s.r[1]), "r"(s.r[2]), "r"(s.r[3]), "r"(s.r[4])
+        : "r"(s.r[0]), "r"(s.r[1]), "r"(s.r[2]), "r"(s.r[3])
         : "memory");
 #else
-    asm volatile("mov %0, %%rbx\n\tmov %1, %%r12\n\tmov %2, %%r13\n\tmov %3, %%r14\n\tmov %4, %%r15"
+    asm volatile("mov %0, %%rbx\n\tmov %1, %%r12\n\tmov %2, %%r13\n\tmov %3, %%r15"
         :
-        : "r"(s.r[0]), "r"(s.r[1]), "r"(s.r[2]), "r"(s.r[3]), "r"(s.r[4])
+        : "r"(s.r[0]), "r"(s.r[1]), "r"(s.r[2]), "r"(s.r[3])
         : "memory");
 #endif
 }

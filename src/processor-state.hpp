@@ -46,9 +46,10 @@ class machine;
 /// \brief Penumbra state.
 /// \details It's not stored in the processor backing file, it's only visible in host memory during runtime.
 struct penumbra_state final {
-    hot_tlb_state tlb;       ///< Hot TLB state
-    machine *owner{};        ///< Machine holding this state
-    uint64_t scratch[511]{}; ///< Interpreter loop scratch area; also aligns penumbra state size to a page boundary
+    hot_tlb_state tlb;           ///< Hot TLB state
+    machine *owner{};            ///< Machine holding this state
+    host_addr fetch_vf_offset{}; ///< Fetch mapping offset of the current code page
+    uint64_t scratch[510]{};     ///< Interpreter loop scratch area; also aligns penumbra state size to a page boundary
 };
 
 /// \brief Machine processor state.

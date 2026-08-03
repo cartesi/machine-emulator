@@ -170,6 +170,18 @@ private:
         return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
     }
 
+    // The microcode runs single-threaded with one interpret step per entry,
+    // so the fetch mapping deposit lives in a translation-time global
+    static inline uint64_t s_fetch_vf_offset{};
+
+    uint64_t do_read_fetch_vf_offset() const {
+        return s_fetch_vf_offset;
+    }
+
+    void do_write_fetch_vf_offset(uint64_t vf_offset) const {
+        s_fetch_vf_offset = vf_offset;
+    }
+
     template <TLB_set_index SET>
     uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
         // No hot TLB -- just return the shadow vaddr_page

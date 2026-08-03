@@ -3,50 +3,53 @@
 ## 1. Current conclusion
 
 A tail-call threaded interpreter, built from Mike Pall's design advice but
-with no assembly, beats the stock computed-goto interpreter on AArch64 by
-11.4% under Clang and 9.2% under GCC 15, in aggregate over the six
-continuity workloads (sections 5.15 and 5.16, built with
-`make tailcall=yes`), while reusing the stock instruction semantics
-unchanged. The result is architecture-specific: on x86-64 the shipped
-defaults are +1.4% under Clang 22 and +10.9% under GCC 16, and the only
-measured win is Clang with the next-instruction pre-load disabled, at a
-marginal -1.2% (section 5.14); those numbers predate the six-slot
-signature of section 5.16, which removes all stack-argument traffic on
-x86-64 and awaits re-measurement there. Every variant of every iteration retired
-identical cycles and produced identical root hashes and guest exits against
-a same-source stock build. For scale, tracing.md's best offline native AOT
-result was -2.9% aggregate against the plain interpreter.
+with no assembly, beats the stock computed-goto interpreter on AArch64
+while reusing the stock instruction semantics unchanged (built with
+`make tailcall=yes`). The campaign also made the stock interpreter itself
+faster: the countdown mcycle (section 5.18) and the typed fast pc
+(section 5.19) are stock-loop products of the tail-call work, together
+worth about 6.5% under Clang on the M3 Max. Against that improved stock,
+the tail-call interpreter stands at -7.1% under Clang and -10.3% under
+GCC 15 in aggregate over the six continuity workloads, which composes to
+about -13% under Clang against the stock interpreter as it stood before
+the campaign. Every variant of every iteration retired identical cycles
+and produced identical root hashes and guest exits against a same-source
+stock build.
 
-On AArch64, the register discipline Pall obtains from assembly is obtained
-here from pinned global register variables (x23-x27 hold pc, a cycle
-countdown, the fetch cache, and the context pointer), with the preserve_none
-convention and guaranteed tail calls layered on where the compiler provides
-them (Clang). On x86-64, the smaller register file changes that balance and
-the default is the argument-passing shape instead. Each instruction handler
-is a separate function
-with one fixed signature and dispatches by tail call through the jump
-table. A handler pre-decodes its fall-through successor (instruction word
-and dispatch target, using its compile-time instruction length) in
-parallel with executing its own semantics, verifies the prediction, and
-dispatches through it; the generic fetch tail handles everything else, and
-every non-hit fetch leaves by tail call so the hot path reaches no call.
-Handlers whose semantics cannot raise are fully frameless; the rest keep
-one x29/x30 pair for their cold raise blocks.
+The result is architecture-specific. On x86-64 (Raptor Lake) the shipped
+defaults measured +1.4% under Clang 22 and +10.9% under GCC 16, and the
+only win was Clang with the next-instruction pre-load disabled, at a
+marginal -1.2% (section 5.14). Those numbers predate the register-budget
+series that followed (the six-slot signature of 5.16, page segments and
+the fetch-tag demotion of 5.17, and the typed fast pc of 5.19), which
+brings the handler signature down to four register slots with no
+stack-argument traffic; a two-phase re-measurement campaign is queued
+for that hardware (section 8c).
 
-The decisive last step (section 5.9) was hardware-counter driven: zlib's
-former +26% residual was low IPC from a serial fetch chain with nothing to
-overlap it, and rotating the loop so the fetch of instruction n+1 overlaps
-the execution of instruction n removed it, but only once the rotation was
-made free by passing each handler's instruction length as a compile-time
-constant instead of recomputing it from the instruction word at the head of
-the very chain being shortened.
+On AArch64, the register discipline Pall obtains from assembly is
+obtained here from pinned global register variables (x23-x25 and x27
+hold pc, the cycle countdown, the fetch tag, and the context pointer),
+with the preserve_none convention and guaranteed tail calls layered on
+where the compiler provides them (Clang). On x86-64 the smaller register
+file changes that balance and the default is the argument-passing shape
+instead. The design is in section 3, the iteration history in section 5
+(the single most consequential step was the next-instruction pre-load of
+5.9), and the register evolution from nine handler slots to four, with
+an identified floor of two, is the ledger of section 8d.
+
+Beyond the interpreter, an ahead-of-time trace oracle riding the handler
+convention measured -18.5% against the tail-call interpreter itself
+(sieve -52.7%), roughly -25% against stock (section 8b, item 2). For
+scale, the best offline native AOT result of the earlier tracing
+experiments, entered and left through the stock loop's boundary, was
+-2.9% aggregate.
 
 ## 2. Background and motivation
 
-tracing.md records that Clang's lowering of the stock computed-goto loop is
-host and compiler sensitive, and that compiling trace machinery into
-`interpret_loop` damaged stock code generation by tens of percent even when
-no trace ran. Pall's diagnosis of interpreter loops (lua-l, February 2011,
+Earlier tracing experiments on this codebase showed that Clang's lowering
+of the stock computed-goto loop is host and compiler sensitive, and that
+compiling trace machinery into `interpret_loop` damaged stock code
+generation by tens of percent even when no trace ran. Pall's diagnosis of interpreter loops (lua-l, February 2011,
 "Suggestions on implementing an efficient instruction set simulator in
 LuaJIT2") predicts exactly this: the register allocator cannot maintain a
 consistent assignment across a large computed-goto graph, and slow paths
@@ -57,30 +60,27 @@ of line, and replicated dispatch at the end of every handler.
 Two preliminary experiments framed the work:
 
 - The whole emulator builds on macOS with MacPorts GCC 14
-  (`make CC=gcc-mp-14 CXX=g++-mp-14`), produces bit-identical machine hashes,
-  and one exception-path microbenchmark ran 13.7% faster than the Clang
-  build. Compiler slack in the dispatch shape is real even between good
-  compilers.
-- Linking a GCC-compiled `interpret.o` into the Clang build is mechanically
-  easy (nine unresolved symbols, all shimmable) but semantically unsound.
-  libc++ and libstdc++ disagree on `std::string` layout, so
-  `sizeof(machine_config)` differs (2000 vs 2232 bytes), every `machine`
-  member after `m_c` sits at a different offset, and the mixed build
-  diverged at mcycle 1 (instruction access fault instead of illegal
-  instruction, the PMA list read at the wrong offset). `interpret.cpp` has
-  almost no libstdc++ symbol dependency but a real layout dependency through
-  `machine`'s inline accessors. Reordering members cannot fix it because
-  constructor initialization order forces the divergent members first.
-  Incidentally, `cm_create` silently ignores unknown config keys, which is
-  how an `image_filename` key (the correct key is
-  `backing_store.data_filename`) turned the intended addi/bne loop of the
-  GCC microbenchmark into a trap loop; the 13.7% therefore describes the
-  exception-heavy path, not plain dispatch.
+  (`make CC=gcc-mp-14 CXX=g++-mp-14`), produces bit-identical machine
+  hashes, and one microbenchmark ran 13.7% faster than the Clang build.
+  The benchmark turned out to measure the exception-heavy path, not plain
+  dispatch (a mistyped config key, silently ignored by `cm_create`,
+  turned the intended addi/bne loop into a trap loop), but compiler slack
+  in the dispatch shape is real even between good compilers.
+- Linking a GCC-compiled `interpret.o` into the Clang build is
+  mechanically easy but semantically unsound: libc++ and libstdc++
+  disagree on `std::string` layout, so every `machine` member after `m_c`
+  sits at a different offset, and the mixed build diverged at mcycle 1.
+  `interpret.cpp` has almost no libstdc++ symbol dependency but a real
+  layout dependency through `machine`'s inline accessors, which member
+  reordering cannot fix.
 
 ## 3. Design
 
-The stock switch bodies are perfectly uniform, so the implementation is
-mechanical and semantics are shared, not duplicated:
+This section records the design as first built; the structure is
+unchanged today, but the handler signature has since evolved from the
+nine slots shown here to four (the ledger of section 8d tracks each
+step). The stock switch bodies are perfectly uniform, so the
+implementation is mechanical and semantics are shared, not duplicated:
 
 - `interpret-tc-cases.inc` (generated): 153 `TC_CASE(LABEL, execute_...)`
   entries extracted from the stock `INSN_CASE` region of `interpret.cpp`.
@@ -88,13 +88,15 @@ mechanical and semantics are shared, not duplicated:
   extracted from `interpret-jump-table.hpp` with `INSN_LABEL` rewritten to
   `TC_LABEL`, expanded into function pointers.
 - `interpret.cpp`, guarded by `#ifdef TAILCALL_INTERPRET`: the handler
-  macro, the fetch helpers, and `interpret_loop_tc`. The stock interpreter
-  is untouched and the flag is off by default. Only the direct
-  `state_access` instantiation uses the tail-call loop; uarch, record,
-  replay, and collect instantiations keep the stock loop over the same
-  `execute_FOO` bodies.
+  macro, the fetch helpers, and `interpret_loop_tc`. The flag is off by
+  default. Only the direct `state_access` instantiation uses the
+  tail-call loop; uarch, record, replay, and collect instantiations keep
+  the stock loop over the same `execute_FOO` bodies. (The stock loop
+  itself later adopted two findings of the campaign, the countdown of
+  5.18 and the typed fast pc of 5.19, for every instantiation.)
 
-Handler signature (preserve_none, AArch64 arguments in x20-x28):
+The original nine-slot handler signature (preserve_none, AArch64
+arguments in x20-x28):
 
     execute_status tc_handler_FOO(state_access a,        // x20, x21
         uint64_t pc,                                     // x22
@@ -127,19 +129,24 @@ Two ABI rules proved essential:
 
 Build with `make tailcall=yes`. The switch compiles interpret-tc.cpp (the
 tail-call translation unit, see section 5.12) with the pinned-register
-flags and gives interpret.o only the routing define. The historical
-campaigns predate the switch and were built with hand-passed OPTFLAGS.
+flags and -fno-stack-protector, and gives interpret.o only the routing
+define. TC_PAGE_SEGMENT=1 selects the page-segment shape of 5.17
+(default off), and the args shape on AArch64 additionally requires
+clearing the pinned-register reservations (TC_FFIXED_FLAGS=, see 5.17).
+The historical campaigns predate the switch and were built with
+hand-passed OPTFLAGS.
 
 ## 4. Measurement protocol
 
-Six stress-ng workloads from the tracing.md continuity suite (sieve, qsort,
-zlib, hash, double, syscall), run by the tracing-experiment harness against
-install prefixes, Apple M3 Max, macOS, Apple clang 17. Timings are user CPU
+Six stress-ng continuity workloads (sieve, qsort, zlib, hash, double,
+syscall), run by the tracing-experiment harness against install
+prefixes, Apple M3 Max, macOS, Apple clang 17. Timings are user CPU
 from single no-warm-up repetitions unless stated; where warmup and measured
 pairs exist they agreed to within noise on every workload. Correctness
 gates, not timing, are the acceptance criterion: every pair in every table
 below matched guest cycles, final root hash, and guest exit byte for byte
-(sieve retires 16,802,042,474 cycles). A stray runaway process from an
+(sieve retires 16,802,042,474 cycles; after the rootfs refresh of 5.11 it
+retires 16,791,353,500). A stray runaway process from an
 older experiment consumed one core during part of the campaign; pairs ran
 under like conditions, so relative comparisons stand.
 
@@ -249,12 +256,10 @@ dispatch-site pressure nor handler text size.
 The shrink-wrapping observation cuts the other way for the retained
 variant: its handlers keep an unconditional frame pair only because the
 inline fetch tail's two cold calls (walk and crossing) sit inside the hot
-function. Restructuring those continuations to be reached without a call
-from the hot path would let handlers drop their last frame instructions.
-Section 5.7 does this, with a much larger effect than the frame pair
-predicts.
+function. Section 5.7 removes them, with a much larger effect than the
+frame pair predicts.
 
-### 5.7 Miss continuation (current best)
+### 5.7 Miss continuation
 
 The handler tail was restructured so only the fetch-cache hit path remains
 inline (tick check, hit check, instruction load, table dispatch) and every
@@ -282,8 +287,9 @@ machinery from the handler function removed the miss-path register
 pressure and the hoisted setup (TLB base and offset constants computed
 ahead of the hit check in every earlier variant) from the hot path, and
 left the allocator a small dense function. This is the same
-miss-preparations-ahead-of-dispatch disease tracing.md diagnosed in
-Clang's decoded-cache loop, removed here by making the miss path a
+miss-preparations-ahead-of-dispatch disease the earlier tracing
+experiments diagnosed in Clang's decoded-cache loop, removed here by
+making the miss path a
 different function rather than by fighting the allocator. The feared cost
 of the shared miss-dispatch site did not materialize; zlib improved to its
 best value. Every workload improved over section 5.4, qsort flipped from
@@ -342,7 +348,81 @@ gap is the register budget (the ninth argument on the stack in the fetch
 chain, callee-save shuffling per handler). Section 5.10 closes that gap
 with pinned global register variables.
 
-### 5.10 Pinned global registers for GCC (current best under GCC)
+### 5.9 Next-instruction pre-load
+
+Prompted by the counters diagnosis of section 6, each handler
+pre-decodes its fall-through successor before executing its
+own semantics: predicted pc, the instruction word fetched at it, and the
+resolved dispatch target, produced by one reusable `tc_predecode_next`
+built on the same fetch primitives as the generic tail. The prediction is
+verified before use (execution status is plain success, and for
+conditional branches the architectural pc equals the predicted pc;
+straight-line handlers need no pc comparison because success implies the
+fall-through). The generated case list classifies each handler:
+straight-line pre-load, guarded pre-load (conditional branches), or none
+(store-capable handlers, whose stores over the fall-through bytes must be
+observed by the next fetch; always-jumping handlers; raising handlers).
+Pre-decoding performs only side-effect-free host reads through the valid
+fetch mapping, so stock semantics are preserved exactly, including
+same-page self-modifying code, translation changes, and traps.
+
+The first implementation regressed sieve 27% while barely helping zlib:
+it recomputed the instruction length from the instruction word at
+runtime, five instructions sitting at the head of the dependency chain
+the rotation was supposed to shorten, plus a redundant pc guard. The
+repair came from first principles (rotating (fetch;execute)* into
+fetch;(execute;fetch)* must not add work): each handler serves exactly
+one encoding length, so the length is a compile-time constant per case,
+and the pre-decode's loads then replace the generic tail's loads
+one-for-one. Clang even merges the predicted-pc add with the execute
+body's own pc advance. One repetition, identical cycles and hashes on
+every pair:
+
+| Workload | Stock (s) | Tail-call (s) | Change |
+|---|---:|---:|---:|
+| sieve | 30.26 | 23.52 | -22.3% |
+| qsort | 29.70 | 25.03 | -15.7% |
+| zlib | 24.70 | 25.53 | +3.4% |
+| hash | 31.06 | 25.06 | -19.3% |
+| double | 52.33 | 48.86 | -6.6% |
+| syscall | 32.26 | 26.69 | -17.3% |
+| **Total** | **200.31** | **174.69** | **-12.8%** |
+
+Every workload except sieve improved over section 5.7 (sieve sits within
+a couple percent of its best), and zlib collapsed from +26% to +3.4%: its
+stall was the serial fetch chain, and overlapping it with execution
+removed it. The clumsy-versus-free comparison is itself a finding:
+pre-load buys chain latency with issue slots, so on a wide core it is
+profitable exactly when it adds no instructions, which the static length
+makes possible.
+
+GCC 14 is the counterexample that proves the register-budget condition.
+The same pre-load source regressed both poles under GCC relative to its
+own best tail-call build (sieve 25.63 to 27.70 seconds, zlib 28.12 to
+28.83, hashes identical): without preserve_none, the predicted word and
+dispatch target become hot-path stack traffic on handlers that already
+spill their ninth argument. The pre-load is therefore compiled in only
+when preserve_none is available (`TC_PRELOAD_ENABLED`), so each compiler
+gets its measured-best shape from one source.
+
+A closing hardware-counters run on the final pre-load build corrected
+the mechanism section 6 predicted. The prediction on record was that
+mispredicts would stay at ~22 per 1000 guest instructions with the gain
+coming purely from latency overlap. Instead the counted indirect
+mispredicts collapsed below stock (zlib 22.5 to 3.40 per 1000, stock
+3.52; sieve 8.7 to 4.3), while the identical-source GCC build without
+the pre-load stayed at 21.7. Since the predictor's inputs did not
+change, the consistent interpretation is that loading the dispatch
+target a whole execute-body early lets the core redirect from the known
+register value almost immediately on a wrong prediction, and such early
+redirects neither cost nor count like late mispredicts. Final figures
+for the pre-load build: zlib 39.6 host instructions per guest
+instruction at 8.57 cycles per guest instruction and IPC 4.62 (stock:
+29.5, 8.29, 3.56), sieve 35.6 at 5.81 and IPC 6.13. The tail-call
+interpreter now pays essentially stock's cycle price on stock's best
+workload and wins everywhere else.
+
+### 5.10 Pinned global registers for GCC
 
 GCC's native substitute for preserve_none is stronger than argument
 passing: file-scope register variables (`register uint64_t mcycle
@@ -389,7 +469,7 @@ qsort, hash, double, and syscall, while pinned GCC wins the two most
 chain-bound workloads, sieve (22.17 vs 23.32) and zlib (23.67 vs 25.47).
 That split suggests full pinning beats argument-passing exactly where the
 dispatch chain dominates, and motivates trying pinned globals under
-Clang (section 8, item 5).
+Clang (section 8, attempts item 5).
 
 Separately, the GCC-built Lua module segfaults deterministically at process
 exit after producing correct results (teardown only; the C API path used in
@@ -419,7 +499,7 @@ GCC 15 improves the pinned shape's aggregate from GCC 14's -9.0% to
 the same day (181.37 vs 179.21, with the same pole split: GCC wins sieve
 and zlib, Clang wins qsort, hash, and double). Re-enabling the pre-load
 under GCC 15 (possible now that the pinned globals restore the register
-budget, section 8 item 5) is a small net loss (+1.5% over pinned alone,
+budget, section 8 attempts item 5) is a small net loss (+1.5% over pinned alone,
 sieve +7.4%, zlib neutral), much milder than GCC 14's regression. The
 uniform shape adopted in section 5.12 keeps the pre-load on anyway; the
 cost of uniformity under GCC 15 is those 1.5 points.
@@ -438,11 +518,9 @@ Three Clang-specific obstacles, each diagnosed from disassembly:
   rejecting the host_addr strong type. The register holds the raw
   uint64_t; TC_ENTER binds a read-only local of the strong type and the
   few writers cast.
-- Clang assumes -ffixed registers cannot change across calls. It deleted
-  the entire save/restore of the caller's x23-x28 around the run (the
-  callee-saved values of the embedding host, liblua's VM state in the
-  observed crash), because a same-value restore of registers no call can
-  change is dead code by its reasoning. The boundary save/restore
+- Clang assumes -ffixed registers cannot change across calls, and
+  deleted the boundary save/restore of the caller's x23-x28 around the
+  run (section 5.10's caller-save lesson) as dead code. The save/restore
   therefore goes through volatile asm the compiler cannot analyze, held
   by a scope_exit so exceptional unwinds restore too.
 - Clang's preserve_none argument order assigns arguments to x20-x28 in
@@ -535,12 +613,10 @@ that leaves the dangling pointer.
 The fix follows what the mainstream runtimes do: a constructor in cm.cpp
 (gated to Apple GCC) pins its own image with dlopen(RTLD_NOLOAD |
 RTLD_NODELETE) as soon as it loads, so dlclose never unmaps it. Leaking
-the buffers instead was rejected: the C API is a public FFI boundary and
-hosts with thread churn (Go in particular) would leak one buffer pair per
-dead thread, with cm_set_temp_string's buffer sized by returned JSON
-configs. Pinning in the Lua binding instead was rejected because any
-host language can dlclose the library. The harness's os.exit(0, false)
-workaround in run-workload.lua predates the fix and is now redundant.
+the buffers instead was rejected (the C API is a public FFI boundary,
+and hosts with thread churn would leak one buffer pair per dead thread),
+as was pinning in the Lua binding (any host language can dlclose the
+library). The fix shipped independently of the tail-call flag.
 
 ### 5.14 x86-64 measurements and constraints
 
@@ -568,7 +644,8 @@ only win is Clang without the pre-load, driven primarily by `regs` (-15.0%)
 and `nop` (-12.5%); complex workloads remain around parity or regress
 slightly.
 
-The pre-load question is now settled for this register budget. On Clang,
+The pre-load question was settled for this register budget (and reopened
+later at four slots, section 8d). On Clang,
 disabling it saves 2.6 percentage points in aggregate. On zlib it removes
 6.2 host instructions and 0.6 stores per guest instruction: the predicted
 dispatch target no longer spills through a red-zone slot on every dispatch.
@@ -604,19 +681,19 @@ The campaign also exposed two configuration hazards:
   rbx/r12-r15 set. `TC_GLOBAL_REGS=1` with the auto-detected
   `TC_USE_PRESERVE_NONE=1` compiles but corrupts state at runtime (`mcycle is
   past`). The pinned measurements therefore explicitly used
-  `TC_USE_PRESERVE_NONE=0`; the source must force that combination off.
+  `TC_USE_PRESERVE_NONE=0`; the source now rejects the combination at
+  compile time (section 5.16).
 - Clang cannot use the pinned shape on x86-64 even with preserve_none
   disabled: it rejects general-purpose global register variables on this
   target. The unified pinned shape is therefore AArch64-only, not merely
   blocked by preserve_none's argument order.
 
-The pre-load default should consequently be narrowed to `TC_GLOBAL_REGS`.
-That preserves the measured AArch64 shape and selects the winning no-pre-load
-shape for x86-64 Clang. Until the two guards are implemented and the marginal
-Clang result is judged worthwhile, the stock loop remains the appropriate
-x86-64 default.
+The pre-load default was consequently narrowed to `TC_GLOBAL_REGS`, which
+preserves the measured AArch64 shape and selects the winning no-pre-load
+shape for x86-64 Clang; both guards are implemented. The stock loop
+remains the x86-64 default pending the queued re-measurement of 8c.
 
-### 5.15 Countdown mcycle (current best)
+### 5.15 Countdown mcycle
 
 mcycle is not architectural state between observation points, so the
 chain no longer carries it. A single pinned countdown of cycles until the
@@ -655,7 +732,7 @@ The compiler does not fuse the decrement into a flag-setting subtract
 (it emits sub, mov, cmp, branch where subs plus one branch would do), so
 a little is still on the table if that shape ever matters.
 
-### 5.16 One-pointer accessor and the six-slot signature (current best)
+### 5.16 One-pointer accessor and the six-slot signature
 
 The x86-64 campaign left the register budget as the standing diagnosis,
 and a disassembly study against GCC 16.1 made it exact. GCC 16's x86-64
@@ -734,8 +811,9 @@ relative aggregates read lower than 5.15's -12.5% and -10.8% only
 because the same-day stock anchors ran about a percent faster than on
 the earlier campaign's day. The cost of the whole change is one
 host-only page per machine instance, the penumbra padding that houses
-the back-pointer and the context. The x86-64 shapes, the ones the
-six-slot signature actually targets, await re-measurement on hardware.
+the back-pointer and the context. The x86-64 shapes, the ones this
+series targets, are re-measured by the queued campaign of 8c, by now at
+four slots (8d).
 
 Also in this round, GCC 16's AArch64 preserve_none turned out to use the
 same plain attribute spelling as Clang and x86-64 (the target-string
@@ -745,6 +823,173 @@ compiles; its argument order is x20-x28 like Clang's, composing with the
 pinned set unchanged. The x86-64 combination of pinned registers and
 preserve_none, which corrupts state at runtime (section 5.14), is now a
 compile error.
+
+### 5.17 Page segments and the fetch-tag demotion
+
+The fetch-cache tag is consulted per instruction only because the future
+is unknown. The page-segment idea (filed as 8c item 2) proves
+straight-line fetches safe in advance instead: fuse the two exit reasons
+into one segment countdown, min(tick_remaining, floor(bytes_to_page_end
+/ 4)), conservative because four bytes is the maximum instruction
+length; when it fires early (compressed instructions), re-derive and
+continue, about twice per page. Straight-line handlers then need no
+per-instruction hit check at all. Taken branches and jumps (~12% of
+instructions) validate the target page and recompute the bound.
+Everything that can change the mapping is already on cold or
+chain-exiting paths and kills the segment through the existing
+invalidation hook. Stores need nothing: only the mapping check is
+amortized, every fetch still reads guest RAM, so same-page
+self-modifying code is observed exactly as today. fetch_vaddr_page then
+demotes to the context, read only by the control-flow minority.
+
+The first implementation (TC_PAGE_SEGMENT, default off) passed every
+gate (36 runs across six configurations, cycle- and hash-identical with
+the prior campaigns) and produced the intended x86-64 code shape: the
+ADDI dispatch tail fell from 17 instructions to 9, frameless, with GCC
+16 folding the table load into the indirect jump. Measured on AArch64,
+though, it lost to the flag-off tail-call build on every workload: +4.8%
+aggregate under Clang and +3.3% under GCC 15 (sieve worst at about +7%).
+The first diagnosis blamed the exit that replaced the check: fusing the
+page bound into the countdown makes every segment expiry a full chain
+exit through the outer loop, and the tighten-only rule makes hot loops
+inherit the page position of their loop head, restarting the chain every
+few dozen instructions. The v2 refinement keeps the removed check but
+makes segment expiry a tail call into an in-chain resegmentation
+continuation (the tc_fetch_miss pattern) that re-derives the bound from
+the current pc and the true tick end, held in a new context field, and
+re-dispatches without leaving the chain.
+
+v2 measured almost identically on AArch64 (Clang +4.9%, GCC 15 +2.8%
+against the flag-off build, every gate green across both rounds), which
+corrects the diagnosis: the exit cost was a minor term. The structural
+reason is that under the pre-load the per-instruction page check was
+already amortized -- the eor/cmp/b.hi in the hot path is the
+predecode's guard, paid once as part of the rotation -- so on this
+shape the segment scheme can only convert a three-instruction guard
+into a two-instruction one, while charging the tighten to every checked
+dispatch (taken branches, stores, jumps) and growing handler text with
+the dual tails. On the pre-load shape there is no headroom by
+construction. The scheme's target is therefore exclusively the
+no-pre-load x86-64 args shape, where the removed check is the generic
+tail's own and the ADDI dispatch falls from 17 instructions to 9,
+frameless. The flag stays off; the x86-64 measurement, with v2's
+bounded expiry in place, happens on hardware.
+
+The register the scheme was meant to free is now actually freed: under
+the flag the args shape drops fetch_vaddr_page from the signature (five
+slots: accessor, insn, pc, countdown, vf_offset), the tag lives in the
+context alone, control transfers and cold paths read it there, and
+invalidation writes only the context copy. Static effect under GCC 16.1
+on x86-64: the no-pre-load shape's stack stores fall 29% and loads 23%
+against the six-slot segment build, with the LD hit path fully
+frameless; the pre-load shape's stores fall 23% and its LD hot path
+drops from five spill round trips to three, so the pre-load re-test on
+this architecture is an open question rather than a foregone loss. The
+demoted shape passes the full gates (cm-cli specs plus the six-workload
+harness, cycle- and hash-identical against stock anchors), validated on
+AArch64 by forcing the args shape. One build caveat from that exercise:
+the AArch64 args shape must clear the pinned-register reservations
+(make tailcall=yes TC_FFIXED_FLAGS=), because Clang's preserve_none
+assigns arguments into x23-x27 and the -ffixed flags of the default
+pinned shape make that combination crash at run time.
+
+The AArch64 gate run doubles as a first timing hint for the demotion:
+the demoted args shape with the pre-load measured -10.4% against stock
+under Clang, two points better than the pinned segment build (-8.5%)
+though still behind the shipped pinned shape without segments (-12.8%,
+cross-day anchors, args-vs-pinned and the freed register conflated). A
+released register recovering two points on the architecture with
+register slack is the encouraging case for the architecture without it.
+
+### 5.18 Countdown mcycle in the stock loop
+
+The countdown of 5.15 is a stock-uniformity companion: the stock loop
+still carried mcycle and the tick end live across the whole
+computed-goto function and paid increment, compare, branch per
+instruction, where the countdown pays one decrement-and-sign-test and
+frees a register. In the TC loop that was worth 0.7 points on a core
+with allocator slack; the stock loop is the opposite regime, the
+ten-thousand-instruction function whose GCC register allocation the
+accessor incident showed to be one memory dependency away from
+collapse, on the architecture where registers are scarcest and in the
+default Linux build. The transformation is 5.15 verbatim: the 47
+observation cases materialize mcycle on demand as base minus remaining,
+the privileged case proxies its by-reference mcycle, and both raising
+fetches and retirements pay one signed decrement. The record, replay,
+and collect logs are unaffected because the counter is a loop local and
+only materialized values reach the accessors. It landed in the stock
+interpreter first, before any further TC work, with the uarch image
+rebuild accepted as part of the change.
+
+Measured, it is the largest stock-loop win of the whole experiment:
+against same-day stock anchors on the M3, Clang -5.4% aggregate with
+every workload improving, GCC 15 -2.3%. The gates exercised the 5.12
+same-source discipline in its strongest form yet: editing interpret.cpp
+rebuilds the embedded uarch image, whose bytes change from both the
+shifted assert line numbers and the uarch's own recompiled inner loop,
+so the root hash moves while every architectural value stays put
+(cycles, exits, and cross-compiler hashes agreed throughout).
+Attribution was proven, not assumed: relinking the countdown build
+against the uarch image generated from the pre-change source reproduces
+the old anchors bit for bit on all six workloads.
+
+### 5.19 Typed fast pc through both loops
+
+The typed fast pc (filed as 8c item 3) keeps pc as a fast address: the
+handler state holds the host address of the current instruction, typed
+as fast_addr so the two spaces cannot mix silently, and vf_offset
+leaves the hot path entirely. The fetch is a plain load through the
+fast pc, the advance is the same add it always was, and the fetch-cache
+tag and the page-segment allowance move to host space unchanged,
+because a per-page mapping preserves the offset bits.
+
+The contract change is that the execute bodies receive the fast pc as
+such, written in the type, and any body that wants the architectural pc
+translates back explicitly through the accessor's fetch mapping. The
+observation points are few and mostly cold (AUIPC and the JAL/JALR link
+values, and mepc/mtval on every raise), so the raise paths pay for the
+translation only when they actually raise, and the type system marks
+every observation site. pc-relative control flow needs no translation
+at all: branch and JAL targets are same-mapping adds, valid in host
+space, and the host-space tag check catches cross-page targets exactly
+as the virtual one did. Targets that are born virtual (JALR, trap
+vectors, MRET) come out of their bodies typed as virtual addresses, so
+the type system itself forces them through the translating miss path.
+
+The change is not TC-local: typing pc through the execute bodies
+changes the shared semantics, stock loop included. That is a feature,
+not a cost. The stock loop runs the same fetch economics (it carried
+the virtual pc and the vf offset and added them per fetch), so it
+collects the same register relief and the same shortened fetch
+expression, and one uniform representation serves every instantiation
+instead of a TC-only dialect. It landed as an interpreter-wide refactor
+gated by the full hash suite rather than behind a TC flag. The pass's
+verification items all held: every observation point was found by the
+type change itself (the build breaks where a fast pc meets a virtual
+consumer), branch bodies were confirmed unable to raise with the C
+extension enabled (2-byte alignment leaves misaligned-target exceptions
+unreachable), and mapping invalidations poison the host-space tag
+exactly as they poison the virtual one.
+
+Measured on AArch64, every gate held across a 54-run campaign with
+same-batch pre-change anchors: cycles and exits identical over nine
+configurations, and the attribution build (new source linked against
+the uarch image generated from the pre-change source) reproduced the
+anchor hashes bit for bit, so the root-hash shift is entirely the
+embedded image. Timing against the same-batch anchors: Clang stock
+-1.2%, GCC 15 stock +0.3%, Clang tail-call +0.1%, GCC 15 tail-call
+-0.7%, i.e. neutral with a small Clang stock win, as expected on the
+architecture where the removed offset add was already folded into
+addressing. The refactor's real product is the register economics on
+x86-64: with segments the args signature is four slots (accessor, insn,
+fast pc, countdown) and the ADDI dispatch tail under GCC 16 is about
+ten instructions whose fetch is a single load through the pc register
+with the fall-through folded into the addressing mode. The port also
+uncovered one hazard worth its own sentence: when a register leaves the
+pinned set, the boundary save/restore asm must shrink with it, because
+a hard-coded write to a now-allocatable register silently clobbers
+compiler-owned state (the crash presented as a jump to address zero out
+of a musttail chain).
 
 ## 6. Hardware counters explain zlib
 
@@ -797,90 +1042,21 @@ Two findings:
 
 The indicated fix was the one element of Pall's design not yet
 implemented: pre-load the next instruction inside the handler. Section
-5.9 implements it and resolves zlib.
+5.9 implements it and resolves zlib; its closing counters run, recorded
+there, corrected the mechanism predicted here.
 
-A closing counters run on the final pre-load build corrected the
-mechanism. The prediction on record was that mispredicts would stay at
-~22 per 1000 guest instructions with the gain coming purely from latency
-overlap. Instead the counted indirect mispredicts collapsed below stock
-(zlib 22.5 to 3.40 per 1000, stock 3.52; sieve 8.7 to 4.3), while the
-identical-source GCC build without the pre-load stayed at 21.7. Since the
-predictor's inputs did not change, the consistent interpretation is that
-loading the dispatch target a whole execute-body early lets the core
-redirect from the known register value almost immediately on a wrong
-prediction, and such early redirects neither cost nor count like late
-mispredicts. Final figures for the pre-load build: zlib 39.6 host
-instructions per guest instruction at 8.57 cycles per guest instruction
-and IPC 4.62 (stock: 29.5, 8.29, 3.56), sieve 35.6 at 5.81 and IPC 6.13.
-The tail-call interpreter now pays essentially stock's cycle price on
-stock's best workload and wins everywhere else.
+## 7. Implications for tracing
 
-### 5.9 Next-instruction pre-load (current best)
-
-Each handler pre-decodes its fall-through successor before executing its
-own semantics: predicted pc, the instruction word fetched at it, and the
-resolved dispatch target, produced by one reusable `tc_predecode_next`
-built on the same fetch primitives as the generic tail. The prediction is
-verified before use (execution status is plain success, and for
-conditional branches the architectural pc equals the predicted pc;
-straight-line handlers need no pc comparison because success implies the
-fall-through). The generated case list classifies each handler:
-straight-line pre-load, guarded pre-load (conditional branches), or none
-(store-capable handlers, whose stores over the fall-through bytes must be
-observed by the next fetch; always-jumping handlers; raising handlers).
-Pre-decoding performs only side-effect-free host reads through the valid
-fetch mapping, so stock semantics are preserved exactly, including
-same-page self-modifying code, translation changes, and traps.
-
-The first implementation regressed sieve 27% while barely helping zlib:
-it recomputed the instruction length from the instruction word at
-runtime, five instructions sitting at the head of the dependency chain
-the rotation was supposed to shorten, plus a redundant pc guard. The
-repair came from first principles (rotating (fetch;execute)* into
-fetch;(execute;fetch)* must not add work): each handler serves exactly
-one encoding length, so the length is a compile-time constant per case,
-and the pre-decode's loads then replace the generic tail's loads
-one-for-one. Clang even merges the predicted-pc add with the execute
-body's own pc advance. One repetition, identical cycles and hashes on
-every pair:
-
-| Workload | Stock (s) | Tail-call (s) | Change |
-|---|---:|---:|---:|
-| sieve | 30.26 | 23.52 | -22.3% |
-| qsort | 29.70 | 25.03 | -15.7% |
-| zlib | 24.70 | 25.53 | +3.4% |
-| hash | 31.06 | 25.06 | -19.3% |
-| double | 52.33 | 48.86 | -6.6% |
-| syscall | 32.26 | 26.69 | -17.3% |
-| **Total** | **200.31** | **174.69** | **-12.8%** |
-
-Every workload except sieve improved over section 5.7 (sieve sits within
-a couple percent of its best), and zlib collapsed from +26% to +3.4%: its
-stall was the serial fetch chain, and overlapping it with execution
-removed it. The clumsy-versus-free comparison is itself a finding:
-pre-load buys chain latency with issue slots, so on a wide core it is
-profitable exactly when it adds no instructions, which the static length
-makes possible.
-
-GCC 14 is the counterexample that proves the register-budget condition.
-The same pre-load source regressed both poles under GCC relative to its
-own best tail-call build (sieve 25.63 to 27.70 seconds, zlib 28.12 to
-28.83, hashes identical): without preserve_none, the predicted word and
-dispatch target become hot-path stack traffic on handlers that already
-spill their ninth argument. The pre-load is therefore compiled in only
-when preserve_none is available (`TC_PRELOAD_ENABLED`), so each compiler
-gets its measured-best shape from one source.
-
-## 7. Relevance to the tracing plan
-
-- The +66% "tracing shell" penalty in tracing.md came from compiling trace
-  machinery into the stock loop's CFG. In the tail-call structure,
-  hotcounts and trace entries become ordinary functions behind an
-  ABI-fixed boundary and cannot perturb stock handler code generation.
+- The earlier tracing experiments measured a +66% "tracing shell"
+  penalty from compiling trace machinery into the stock loop's CFG. In
+  the tail-call structure, hotcounts and trace entries become ordinary
+  functions behind an ABI-fixed boundary and cannot perturb stock
+  handler code generation.
 - A trace executor or native backend can share the handler convention, so
   entering and leaving a trace moves no state. This is the LuaJIT
-  architecture (interpreter and JIT sharing register conventions), which
-  the doc's amortization findings say is the decisive boundary cost.
+  architecture (interpreter and JIT sharing register conventions); the
+  earlier experiments measured that boundary cost as the decisive one
+  for short traces.
 - The sieve result from section 5.6 quantifies per-site branch prediction:
   dispatch sites private to a code region are worth double-digit percent
   on predictable code. Trace-side dispatch should be per-trace, never
@@ -900,9 +1076,9 @@ regressing 7.9% aggregate without them. The attempts were:
    Clang 5-7% with the pre-load in place: the demoted fields feed the
    head of the pre-load's dependency chain, where register residency now
    matters (the earlier neutrality measurement predates the pre-load).
-   Keep the fields in registers under preserve_none; if pursued for GCC,
-   the signature must differ by convention (a parameter-pack macro on the
-   same TC_PRELOAD_ENABLED condition).
+   The fields stay in registers under preserve_none; section 5.17 later
+   demotes the tag without this cost by proving straight-line fetches
+   safe in advance.
 2. RESOLVED, MOOT. The linked library shows GCC 14 already emits every
    transition as a branch (zero call-shaped transitions); the earlier
    count of residual `bl` transitions was an unrelocated-object
@@ -912,7 +1088,7 @@ regressing 7.9% aggregate without them. The attempts were:
    guard, flipping GCC from +7.9% to -9.0% aggregate. No -ffixed flags
    or library-wide changes were needed; see 5.10 for the caller-save
    boundary lesson learned on the way.
-4. Profile-guided optimization as an orthogonal probe
+4. OPEN, NEVER TRIED. Profile-guided optimization as an orthogonal probe
    (-fprofile-generate / -fprofile-use, one workload of training).
 5. DONE, UNIFIED AARCH64 SHAPE (sections 5.11 and 5.12). Pinned globals under
    Clang, composed with preserve_none and the pre-load, are the best
@@ -937,36 +1113,36 @@ Remaining before promotion:
    for GCC under every measured shape.
 4. DONE (section 5.16). The pinned x86-64 shape with preserve_none is a
    compile error.
-5. Narrow the pre-load default to the pinned shape; on x86-64 Clang this is
-   worth 2.6 points and does not change AArch64.
-6. Complete the formal gates on the experimental flag.
+5. DONE. The pre-load default follows the pinned shape; on x86-64 Clang
+   this is worth 2.6 points and does not change AArch64.
+6. OPEN. Complete the formal gates on the experimental flag (section 9).
 
 GCC 16 does provide preserve_none on both AArch64 and x86-64, under the
 same plain attribute spelling Clang uses (section 5.16). On x86-64 it
 improves the argument-passing shape substantially but passes arguments in
 only six registers, so by itself it does not dissolve the architecture's
-register-budget problem; the six-slot signature of section 5.16 does. The
-+10.9% default predates that change, and composing the convention with
-pinning remains invalid because their registers overlap (now a compile
-error).
+register-budget problem; the register series does (six slots in 5.16,
+four with segments and the typed pc, section 8d). The +10.9% default
+predates those changes, and composing the convention with pinning
+remains invalid because their registers overlap (now a compile error).
 
 Standing goal: a single interpreter implementation, so there is one loop
-to audit instead of two. Currently blocked by portability (section 5.14:
-x86-64 has neither AArch64's register budget nor a consistently winning
-shape) and by the flat cost models of the uarch and zk builds, where
-the tail-call shape's instruction-count overhead (section 6: 35-46 host
-instructions per guest instruction against stock's ~29) would directly
-inflate proof cost. The x86-64 blocker is now measured; the remaining probe
-is a TC-shaped uarch build compared on retired uarch cycles, which are
-architectural and exact. Until that is measured, the stock loop remains the
-portable fallback and the verified paths (record, replay, collect, uarch,
-zk) stay on it.
+to audit instead of two. Currently blocked by portability (x86-64 has
+not yet measured a consistently winning shape; the queued campaign of 8c
+re-prices that at four slots) and by the flat cost models of the uarch
+and zk builds, where the tail-call shape's instruction-count overhead
+(section 6: 35-46 host instructions per guest instruction against
+stock's ~29) would directly inflate proof cost. The remaining probe
+there is a TC-shaped uarch build compared on retired uarch cycles, which
+are architectural and exact. Until both are measured, the stock loop
+remains the portable fallback and the verified paths (record, replay,
+collect, uarch, zk) stay on it.
 
 ## 8b. Next work: the jitter on the tail-call structure
 
 Section 7's arguments now have a concrete staging. The guiding worry is
 the cost of trace collection and lookup; the answer is LuaJIT's shape,
-which the tracing.md prototypes already validated piecemeal: hotcounts
+already validated piecemeal by the earlier tracing prototypes: hotcounts
 only at taken backward branches and call targets (the 64-entry colliding
 16-bit counter prototype), trace-head lookup only at those same sites,
 per-page trace tables with eviction, probation and blacklisting so cold
@@ -999,8 +1175,10 @@ shell cost +66% with tracing idle).
    and a pc guard against the recorded successor; cyclic traces loop
    natively; every exit leaves through the interpreter's fetch tail.
    Dispatch rides the shell's head probe (-DTC_AOT=1, trace file in
-   TC_AOT_TRACES, 64 traces per workload). Against the tail-call
-   interpreter itself, gated on cycles and hashes:
+   TC_AOT_TRACES, 64 traces per workload). The first round, against the
+   tail-call interpreter itself, gated on cycles and hashes (two
+   re-anchors on the evolving shape follow below; the current figure is
+   -18.5%):
 
    | Workload | Change |
    |---|---:|
@@ -1050,7 +1228,7 @@ shell cost +66% with tracing idle).
    bodies (the args shape spills the entry countdown naturally once no
    step touches it); it travels with the queued Raptor campaign.
 
-   The typed fast pc (8c) required one repair and rewarded it: trace
+   The typed fast pc (5.19) required one repair and rewarded it: trace
    heads must stay keyed by the architectural pc (fast encodings are
    not stable across mappings or runs), so the hook converts at its
    probe sites and the generated back-edge guards compare against the
@@ -1082,9 +1260,8 @@ shell cost +66% with tracing idle).
    branch fixes the lowering. A full sieve run then recorded 653 traces (62
    short aborts, no flush), retired the stock 16,791,353,500 cycles with the
    identical root hash and exit, and took 26.34 user seconds against the
-   measured shell's 25.71 (+2.4%). Formation overhead is therefore back in
-   the same low-single-digit range as the shell rather than the pathological
-   6-30x debugging runs.
+   measured shell's 25.71 (+2.4%), formation overhead in the same
+   low-single-digit range as the shell.
 
    The prototype deliberately keeps one pool per host thread. Production
    still needs the decided LuaJIT memory policy: allocate the fixed pool at
@@ -1094,7 +1271,7 @@ shell cost +66% with tracing idle).
    the entry path; if flush-thrash appears, use an epoch stamp and cold
    second-chance sweep rather than an LRU list.
 
-4. Backend choice, only after 2 shows margin. MIR generates standard-ABI
+4. OPEN, unblocked by 2's margin. Backend choice. MIR generates standard-ABI
    code, so every trace entry and exit would re-marshal the interpreter
    state, exactly the boundary cost the LuaJIT architecture avoids, and
    the prior experiments recorded short traces, where boundary
@@ -1106,143 +1283,84 @@ shell cost +66% with tracing idle).
    backend targets one contract regardless of how the host emulator was
    built.
 
-## 8c. Filed: block-amortized accounting on x86-64
+## 8c. The register-budget series: filed ideas and the queued campaign
 
 Section 5.16 established what each of the six slots is for: three
 irreducibles (accessor, insn, pc), the fetch-cache pair whose eviction
 costs a measured 5-7% because its reads sit at the head of the fetch
 chain, and the countdown, whose per-instruction touch is a predictable
-write rather than a chain-head read. Two independent ideas would shave
-the signature further on x86-64; the second also happens to build the
-segment machinery the first would ride on, which sets their order.
-Neither is worth anything on AArch64, where the accounting hides in
-issue slack and the pinned shape holds its registers for free.
+write rather than a chain-head read. Four ideas followed, attacking the
+slots in that inventory. Two are implemented and have their own history
+entries (5.17 and 5.19); two remain filed. None of them is worth
+anything on AArch64, where the accounting hides in issue slack and the
+pinned shape holds its registers for free; the target is x86-64.
 
-1. Evict the countdown by unrolling the accounting, not the loop. Four
-   phase-templated copies of each handler (the same TC_CASE macro with a
-   phase parameter, four generated tables), where phases 0-2 dispatch
-   with no accounting and phase 3 decrements a memory-resident count by
-   four; the outer loop Duff-enters at the phase that makes the tick
-   boundary land exactly on a check. Exactness survives because the
-   phase is a compile-time constant per copy: the mcycle materialization
-   and every exit path fold their phase offset. The audited source grows
-   by a phase constant and the entry computation; the binary grows 4x
-   (handler text and tables), and per-(handler, phase) indirect sites
-   split branch-target history four ways, which 5.14's flat
-   branch-miss rates suggest this host tolerates.
+1. FILED. Evict the countdown by unrolling the accounting, not the
+   loop. Four phase-templated copies of each handler (the same TC_CASE
+   macro with a phase parameter, four generated tables), where phases
+   0-2 dispatch with no accounting and phase 3 decrements a
+   memory-resident count by four; the outer loop Duff-enters at the
+   phase that makes the tick boundary land exactly on a check.
+   Exactness survives because the phase is a compile-time constant per
+   copy: the mcycle materialization and every exit path fold their
+   phase offset. The audited source grows by a phase constant and the
+   entry computation; the binary grows 4x (handler text and tables),
+   and per-(handler, phase) indirect sites split branch-target history
+   four ways, which 5.14's flat branch-miss rates suggest this host
+   tolerates. If the segment machinery of 5.17 wins on x86-64, the
+   eviction becomes a cheaper increment on it, and its remaining
+   ceiling -- by then just the decrement, test, and branch -- can be
+   bounded first with an unsound measurement-only build that compiles
+   the tick test out (gates knowingly red, timing valid).
 
-2. Move page-transition validation off the straight-line path. Fuse the
-   two exit reasons into one segment countdown,
-   min(tick_remaining, floor(bytes_to_page_end / 4)), conservative
-   because four bytes is the maximum instruction length; when it fires
-   early (compressed instructions), re-derive and continue, about twice
-   per page. Straight-line handlers then need no per-instruction hit
-   check at all. Taken branches and jumps (~12% of instructions)
-   validate the target page and recompute the bound (forward branches
-   shrink it; backward ones only enlarge it, but recomputing
-   unconditionally is simpler). Everything that can change the mapping
-   is already on cold or chain-exiting paths and kills the segment
-   through the existing invalidation hook. Stores need nothing: only
-   the mapping check is amortized, every fetch still reads guest RAM,
-   so same-page self-modifying code is observed exactly as today.
-   fetch_vaddr_page then demotes to the context, read only by the
-   control-flow minority.
+2. DONE (section 5.17). Page segments prove straight-line fetches safe
+   in advance and demote the fetch tag to the context: a measured
+   AArch64 loss, the intended x86-64 code shape, default off, queued
+   for hardware.
 
-Together they bring the x86-64 args signature to four slots (accessor,
-insn, pc, vf_offset -- the floor, since the fetch translation feeds
-every instruction load) and strip straight-line handlers to the real
-work plus dispatch. The freed registers and removed instructions are
+3. DONE (section 5.19). The typed fast pc dissolves vf_offset into pc
+   itself, through both loops; neutral on AArch64, and the last step
+   to the four-slot args signature. Its stock-uniformity companion,
+   the countdown in the stock loop, is section 5.18.
+
+4. FILED, Linux-only. Registers held purely to reach per-machine state
+   (the pinned context pointer in r15, the accessor pointer itself in
+   the args shape) can be returned to the allocator by placing the
+   pointer in initial-exec thread-local storage
+   (-ftls-model=initial-exec, or local-exec in the main executable),
+   making each access a single fs-relative load instead of a pinned
+   callee-saved register. The pointer is set once at interpret entry
+   (one machine per thread while it runs, which interpret already
+   assumes), each handler loads it on demand, and the allocator
+   regains the register between uses. Caveats: Darwin's TLV mechanism
+   and GCC's emutls are call-based (see the dlclose incident of 5.13),
+   so this is a Linux-target technique, measured on Raptor or not at
+   all; and the accessor pointer through TLS re-adds a per-handler
+   load that the current argument passing does not pay, so it prices
+   register relief against load slots exactly like the rest of the
+   series.
+
+The implemented pair brings the x86-64 args signature to four slots
+(accessor, insn, fast pc, countdown) and strips straight-line handlers
+to the real work plus dispatch; the filed pair would take it toward the
+two-slot floor of 8d. The freed registers and removed instructions are
 also exactly what the pre-load lacked on this architecture: its loss
 was the predicted state spilling across the execute body (5.14, and
-still -1.9% on the six-slot shape), so the pre-load should be
-re-measured on the four-slot shape before being written off on x86-64.
+still -1.9% on the six-slot shape), so the pre-load is re-measured on
+the four-slot shape rather than written off. Both filed ideas are the
+interpreter converging on per-block accounting without translation, the
+same amortization traces collect at block lengths of tens instead of
+four; if their ceilings do not clear a few percent, the trace path
+collects the same win anyway and they stay filed.
 
-Try the page idea (2) first. It is independent of the countdown
-eviction (the countdown keeps its register and its per-instruction
-decrement; only what it bounds changes), it carries none of the
-replication costs (no extra copies, tables, or split branch history),
-it frees the vaddr_page slot on its own, and it is sound as written, so
-it gates with the normal harness. If it wins, the countdown eviction
-(1) becomes a cheaper increment on the shared segment machinery, and
-its remaining ceiling -- by then just the decrement, test, and branch
--- can be bounded first with an unsound measurement-only build that
-compiles the tick test out (gates knowingly red, timing valid). Both
-ideas are the interpreter converging on per-block accounting without
-translation, the same amortization traces collect at block lengths of
-tens instead of four; if the ceilings do not clear a few percent, the
-trace path collects the same win anyway and these stay filed.
+### The queued Raptor campaign
 
-A first implementation of (2) (TC_PAGE_SEGMENT, default off) passed
-every gate (36 runs across six configurations, cycle- and
-hash-identical with the prior campaigns) and produced the intended
-x86-64 code shape: the ADDI dispatch tail fell from 17 instructions to
-9, frameless, with GCC 16 folding the table load into the indirect
-jump. Measured on AArch64, though, it lost to the flag-off tail-call
-build on every workload: +4.8% aggregate under Clang and +3.3% under
-GCC 15 (sieve worst at about +7%). The cost is not the removed check
-but the exit that replaced it. Fusing the page bound into the countdown
-makes every segment expiry a full chain exit through the outer loop,
-and the tighten-only rule makes hot loops inherit the page position of
-their loop head: a tight loop whose head sits late in a page has its
-countdown capped to that small allowance at the first backward branch
-and restarts the chain every few dozen instructions from then on. The
-per-instruction check it replaced was three perfectly predicted
-instructions that never exited anything; on a core with issue slack to
-hide them, trading them for chain restarts loses. The v2 refinement
-keeps the removed check but makes segment expiry a tail call into an
-in-chain resegmentation continuation (the tc_fetch_miss pattern) that
-re-derives the bound from the current pc and the true tick end, held in
-a new context field, and re-dispatches without leaving the chain.
-
-v2 measured almost identically on AArch64 (Clang +4.9%, GCC 15 +2.8%
-against the flag-off build, every gate green across both rounds), which
-corrects the diagnosis: the exit cost was a minor term. The structural
-reason is that under the pre-load the per-instruction page check was
-already amortized -- the eor/cmp/b.hi in the hot path is the
-predecode's guard, paid once as part of the rotation -- so on this
-shape the segment scheme can only convert a three-instruction guard
-into a two-instruction one, while charging the tighten to every checked
-dispatch (taken branches, stores, jumps) and growing handler text with
-the dual tails. On the pre-load shape there is no headroom by
-construction. The scheme's target is therefore exclusively the
-no-pre-load x86-64 args shape, where the removed check is the generic
-tail's own and the ADDI dispatch falls from 17 instructions to 9,
-frameless. The flag stays off; the x86-64 measurement, with v2's
-bounded expiry in place, happens on hardware.
-
-The register the scheme was meant to free is now actually freed: under
-the flag the args shape drops fetch_vaddr_page from the signature (five
-slots: accessor, insn, pc, countdown, vf_offset), the tag lives in the
-context alone, control transfers and cold paths read it there, and
-invalidation writes only the context copy. Static effect under GCC 16.1
-on x86-64: the no-pre-load shape's stack stores fall 29% and loads 23%
-against the six-slot segment build, with the LD hit path fully
-frameless; the pre-load shape's stores fall 23% and its LD hot path
-drops from five spill round trips to three, so the pre-load re-test on
-this architecture is an open question rather than a foregone loss. The
-demoted shape passes the full gates (cm-cli specs plus the six-workload
-harness, cycle- and hash-identical against stock anchors), validated on
-AArch64 by forcing the args shape. One build caveat from that exercise:
-the AArch64 args shape must clear the pinned-register reservations
-(make tailcall=yes TC_FFIXED_FLAGS=), because Clang's preserve_none
-assigns arguments into x23-x27 and the -ffixed flags of the default
-pinned shape make that combination crash at run time.
-
-The AArch64 gate run doubles as a first timing hint for the demotion:
-the demoted args shape with the pre-load measured -10.4% against stock
-under Clang, two points better than the pinned segment build (-8.5%)
-though still behind the shipped pinned shape without segments (-12.8%,
-cross-day anchors, args-vs-pinned and the freed register conflated). A
-released register recovering two points on the architecture with
-register slack is the encouraging case for the architecture without it.
-
-Proposed x86-64 experiment, the next Raptor campaign, two phases per
-compiler with the usual gates. Phase one is the landing gate: main
-stock against branch stock, which that machine has never measured with
-the cold-owner fix, the countdown, and the typed pc composed (the
-countdown alone was -5.4% under Clang on the M3, and instruction count
-converts to time on this host). Phase two is the tail-call two-by-two
-against those same-batch stock anchors:
+Two phases per compiler with the usual gates. Phase one is the landing
+gate: main stock against branch stock, which that machine has never
+measured with the cold-owner fix, the countdown, and the typed pc
+composed (the countdown alone was -5.4% under Clang on the M3, and
+instruction count converts to time on this host). Phase two is the
+tail-call two-by-two against those same-batch stock anchors:
 
 | | no pre-load | pre-load |
 |---|---|---|
@@ -1261,128 +1379,6 @@ defaults, so the campaign measures the shipped shape: the tail-call
 translation unit compiles with -fno-stack-protector, and the pre-load
 default follows the pinned shape alone.
 
-A fourth idea for the series, applicable on the Linux x86-64 target:
-registers held purely to reach per-machine state (the pinned context
-pointer in r15, the accessor pointer itself in the args shape) can be
-returned to the allocator by placing the pointer in initial-exec
-thread-local storage (-ftls-model=initial-exec, or local-exec in the
-main executable), making each access a single fs-relative load instead
-of a pinned callee-saved register. The pointer is set once at interpret
-entry (one machine per thread while it runs, which interpret already
-assumes), each handler loads it on demand, and the allocator regains
-the register between uses. Taken to its end the args signature reaches
-three slots (insn, pc, countdown). Caveats: Darwin's TLV mechanism and
-GCC's emutls are call-based (see the dlclose incident of 5.13), so this
-is a Linux-target technique, measured on Raptor or not at all; and the
-accessor pointer through TLS re-adds a per-handler load that the
-current argument passing does not pay, so it prices register relief
-against load slots exactly like the rest of the series.
-
-A third idea joins the register-budget series: keep pc as a fast
-address. The handler state holds the host address of the current
-instruction, typed as fast_addr so the two spaces cannot mix silently
-(the same strong-typing discipline the code already uses for host
-addresses), and vf_offset leaves the hot path entirely: the fetch is a
-plain load through the fast pc, the advance is the same add it always
-was, and the fetch-cache tag and the page-segment allowance move to
-host space unchanged, because a per-page mapping preserves the offset
-bits. Combined with segments and the demotion, the args signature
-reaches four slots: accessor, insn, fast pc, countdown.
-
-The contract change is that the execute bodies receive the fast pc as
-such, written in the type, and any body that wants the architectural
-pc translates back explicitly through the accessor's fetch mapping
-(reachable from the state alone since the penumbra work). The
-observation points are few and mostly cold: AUIPC and the JAL/JALR
-link values, and mepc/mtval on every raise. Putting the translation
-inside the bodies at those points, rather than materializing a virtual
-pc eagerly at handler entry, means the raise paths pay for it only
-when they actually raise, and the type system marks every observation
-site instead of leaving the space of a bare uint64_t to the reader's
-memory. pc-relative control flow needs no translation at all: branch
-and JAL targets are same-mapping adds, valid in host space, and the
-host-space tag check catches cross-page targets exactly as the virtual
-one did. Targets that are born virtual (JALR, trap vectors, MRET) come
-out of their bodies typed as virtual addresses, so the type system
-itself forces them through the translating miss path; a false
-host-space tag hit on a virtual value cannot be written by accident.
-
-Unlike the first two ideas this one is not TC-local: typing pc through
-the execute bodies changes the shared semantics, stock loop included.
-That is a feature, not a cost. The stock loop runs the same fetch
-economics (it carries the virtual pc and the vf offset and adds them
-per fetch), so it collects the same register relief and the same
-shortened fetch expression, and one uniform typed-pc representation
-serves every instantiation instead of a TC-only dialect. It therefore
-lands as an interpreter-wide refactor gated by the full hash suite
-rather than behind a TC flag, and it stands alone: it does not depend
-on segments, the demotion, or the Raptor verdict, though the fourth
-freed slot it gives the TC args shape is priced by that campaign.
-Verification items for the pass: every observation point is found by
-the type change itself (the build breaks where a fast pc meets a
-virtual consumer), branch bodies must be confirmed unable to raise
-with the C extension enabled (2-byte alignment leaves misaligned-target
-exceptions unreachable, to be verified rather than assumed), and
-mapping invalidations must poison the host-space tag exactly as they
-poison the virtual one today.
-
-The typed fast pc is implemented through both loops and measured on
-AArch64. Every gate held across a 54-run campaign with same-batch
-pre-change anchors: cycles and exits identical over nine
-configurations, and the attribution build (new source linked against
-the uarch image generated from the pre-change source) reproduced the
-anchor hashes bit for bit, so the root-hash shift is entirely the
-embedded image. Timing against the same-batch anchors: Clang stock
--1.2%, GCC 15 stock +0.3%, Clang tail-call +0.1%, GCC 15 tail-call
--0.7%, i.e. neutral with a small Clang stock win, as expected on the
-architecture where the removed offset add was already folded into
-addressing. The refactor's real product is the register economics on
-x86-64: with segments the args signature is four slots (accessor,
-insn, fast pc, countdown) and the ADDI dispatch tail under GCC 16 is
-about ten instructions whose fetch is a single load through the pc
-register with the fall-through folded into the addressing mode. The
-port also uncovered one hazard worth its own sentence: when a register
-leaves the pinned set, the boundary save/restore asm must shrink with
-it, because a hard-coded write to a now-allocatable register silently
-clobbers compiler-owned state (the crash presented as a jump to
-address zero out of a musttail chain).
-
-The countdown of 5.15 is the same kind of stock-uniformity companion:
-the stock loop still carries mcycle and the tick end live across the
-whole computed-goto function and pays increment, compare, branch per
-instruction, where the countdown pays one decrement-and-sign-test and
-frees a register. In the TC loop that was worth 0.7 points on a core
-with allocator slack; the stock loop is the opposite regime, the
-ten-thousand-instruction function whose GCC register allocation the
-accessor incident showed to be one memory dependency away from
-collapse, on the architecture where registers are scarcest and in the
-default Linux build. Observation points materialize base minus
-remaining exactly as in 5.15; the record, replay, and collect logs are
-unaffected because the counter is a loop local and only materialized
-values reach the accessors. Together, countdown plus typed fast pc
-drop two live registers from the stock loop and converge both loops
-onto one register discipline. Sequencing decided: these two land in
-the stock interpreter first, before any further TC work, gated per
-compiler and architecture by the full suite (the same fragility that
-makes the relief promising means nothing is assumed), with the uarch
-image rebuild accepted as part of the change.
-
-The stock countdown is done and measured, and it is the largest
-stock-loop win of the whole experiment: against same-day stock anchors
-on the M3, Clang -5.4% aggregate with every workload improving, GCC 15
--2.3%. The transformation is 5.15 verbatim (47 observation cases
-materialize on demand, the privileged case proxies its by-reference
-mcycle, both raising fetches and retirements pay one signed
-decrement). The gates exercised the 5.12 same-source discipline in its
-strongest form yet: editing interpret.cpp rebuilds the embedded uarch
-image, whose bytes change from both the shifted assert line numbers
-and the uarch's own recompiled inner loop, so the root hash moves
-while every architectural value stays put (cycles, exits, and
-cross-compiler hashes agreed throughout). Attribution was proven, not
-assumed: relinking the countdown build against the uarch image
-generated from the pre-change source reproduces the old anchors bit
-for bit on all six workloads.
-
 ## 8d. The register ledger
 
 A running summary of the hot-path register evolution, kept up to date as
@@ -1395,8 +1391,8 @@ pinned set of the register-global shape alongside.
 | original design (section 3) | 9 | a (2 regs), pc, mcycle, tick end, insn, tcc, fetch tag, fetch offset | x23-x28 (6) |
 | countdown (5.15) | 8 | mcycle and the tick end fuse into one countdown | x23-x27 (5) |
 | one-pointer accessor and penumbra context (5.16) | 6 | a shrinks to one pointer, tcc derived from the state | 5, x27 re-pinned after the offset regression |
-| segments plus demotion (8c) | 5 | the fetch tag moves to the context, read only by control transfers | 5 |
-| typed fast pc (8c third idea, done) | 4 | the fetch offset dissolves into pc itself | x23, x24, x25, x27 (4) |
+| segments plus demotion (5.17) | 5 | the fetch tag moves to the context, read only by control transfers | 5 |
+| typed fast pc (5.19) | 4 | the fetch offset dissolves into pc itself | x23, x24, x25, x27 (4) |
 
 Each step removed a register by finding that its content was derivable
 rather than essential. mcycle is not architectural between observation
@@ -1450,19 +1446,24 @@ the pending x86-64 campaign measures.
 
 ## 9. Validation status
 
-All timing pairs in this document passed cycle, hash, and exit equality
-against same-source stock builds, including full Linux boots and the 357-run
-x86-64 campaign (see section 5.12 for the uarch __LINE__ caveat that makes
-same-source a hard requirement). Formatting and format checks pass. The
-prototype still fails the project's clang-tidy policy, principally around
-its macro-generated handlers, inline assembly, casts, and pinned-register
-shape; the lint target also lacks the fixed-register flags used to compile
-the translation unit. The 267 machine tests could not start in this checkout
-because their binaries under tests/build/machine were absent, and the 102
-host/uarch comparisons have not been run. Those formal gates remain required
-before this becomes more than an experiment. The generated .inc files are
-one-shot extractions; if the stock switch or jump table changes, they must be
-regenerated (the extraction scripts live in the session scratchpad and
-should be made into checked-in tools if the experiment is promoted). The
-emutls exit-crash fix in cm.cpp (section 5.13) is a product change independent
-of the flag and can be upstreamed on its own.
+Every timing pair in this document passed cycle, hash, and exit equality
+against same-source stock builds, including full Linux boots and the
+357-run x86-64 campaign. Section 5.12 records the uarch __LINE__ caveat
+that makes same-source a hard requirement, and 5.18 the attribution
+protocol used when a change legitimately rebuilds the embedded uarch
+image (relink the new build against the old-source image and require
+the old anchors bit for bit). The routine gates for any change are the
+cm-cli spec suite and the six-workload harness; formatting and format
+checks pass.
+
+Remaining before the experiment can be promoted: the tail-call
+translation unit still fails the project's clang-tidy policy
+(macro-generated handlers, inline assembly, casts, and the
+pinned-register shape, with the lint target also lacking the unit's
+compile flags), the full machine and host/uarch test suites have not
+been run against the flag, and the generated .inc extraction scripts
+and the trace tooling live in a session scratchpad and would need to
+become checked-in tools (the .inc files are one-shot extractions and
+must be regenerated if the stock switch or jump table changes). The
+emutls exit-crash fix in cm.cpp (section 5.13) shipped independently of
+the flag.

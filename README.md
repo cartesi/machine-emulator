@@ -265,8 +265,8 @@ please see our [benchmarks](https://github.com/cartesi/machine-emulator/wiki/Ben
 
 ## Documentation
 
-The Cartesi Machine emulator documentation is undergoing a comprehensive update.
-While the full documentation is being refreshed, you can find guides and tutorials in our [wiki](https://github.com/cartesi/machine-emulator/wiki).
+A comprehensive documentation of the Cartesi Machine is kept up to date in [doc/README](doc/README.md).
+We also have some guides in our [wiki](https://github.com/cartesi/machine-emulator/wiki)
 
 ## Change Log
 

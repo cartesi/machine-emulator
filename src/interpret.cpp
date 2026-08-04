@@ -523,6 +523,50 @@ static FORCE_INLINE i_state_access_fast_addr_t<STATE_ACCESS> pc_to_fast(const ST
     return vpc + a.read_fetch_vf_offset();
 }
 
+/// \brief Resolves a guest-data-dependent condition to a concrete branch direction.
+/// \details Every condition computed from guest values must pass through this
+/// hook before execution branches on it, so that a staged backend can observe
+/// the direction taken. For direct execution it is the condition itself.
+template <typename STATE_ACCESS>
+static FORCE_INLINE bool observe(const STATE_ACCESS /*a*/, bool cond) {
+    return cond;
+}
+
+/// \brief Converts a guest value between representations (signedness and width).
+/// \details Overloadable counterpart of static_cast, used on guest values so
+/// that a staged backend can retype them.
+template <typename T, typename V>
+static FORCE_INLINE T value_cast(V v) {
+    return static_cast<T>(v);
+}
+
+/// \brief Wrapping (two's complement) addition of guest values.
+/// \details The result has the type of the first operand.
+template <typename T, typename U>
+static FORCE_INLINE T wrapping_add(T x, U y) {
+    T val = 0;
+    __builtin_add_overflow(x, y, &val);
+    return val;
+}
+
+/// \brief Wrapping (two's complement) subtraction of guest values.
+/// \details The result has the type of the first operand.
+template <typename T, typename U>
+static FORCE_INLINE T wrapping_sub(T x, U y) {
+    T val = 0;
+    __builtin_sub_overflow(x, y, &val);
+    return val;
+}
+
+/// \brief Wrapping (two's complement) multiplication of guest values.
+/// \details The result has the type of the first operand.
+template <typename T, typename U>
+static FORCE_INLINE T wrapping_mul(T x, U y) {
+    T val = 0;
+    __builtin_mul_overflow(x, y, &val);
+    return val;
+}
+
 /// \brief Obtains a mask of pending and enabled interrupts.
 /// \param a Machine state accessor object.
 /// \returns The mask.
@@ -1056,14 +1100,14 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, i_state_acces
     // Try hitting the TLB
     const auto slot_index = tlb_slot_index(vaddr);
     auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
-    if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
+    if (observe(a, !tlb_is_hit<T>(slot_vaddr_page, vaddr))) [[unlikely]] {
         // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
         // slot it uses to check for hits and to perform the translation itself.
         // At startup, all slot_vaddr_page are initialized to cause a first miss.
         // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
         // slot and use it to initialize the hot slot.
         slot_vaddr_page = a.template init_hot_tlb_slot<TLB_READ>(slot_index);
-        if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) {
+        if (observe(a, !tlb_is_hit<T>(slot_vaddr_page, vaddr))) {
             // If we still have a miss after that, we replace the entry.
             // Outline the slow path into a function call to minimize host CPU code cache pressure
             T val = 0; // Don't pass pval reference directly so the compiler can store it in a register
@@ -1168,14 +1212,14 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, i_
     // Try hitting the TLB
     const uint64_t slot_index = tlb_slot_index(vaddr);
     uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
-    if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
+    if (observe(a, !tlb_is_hit<T>(slot_vaddr_page, vaddr))) [[unlikely]] {
         // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
         // slot it uses to check for hits and to perform the translation itself.
         // At startup, all slot_vaddr_page are initialized to cause a first miss.
         // At misses, we ask the STATE_ACCESS to check if the hot slot was uninitialized and, if so, verify the cold
         // slot and use it to initialize the hot slot.
         slot_vaddr_page = a.template init_hot_tlb_slot<TLB_WRITE>(slot_index);
-        if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) {
+        if (observe(a, !tlb_is_hit<T>(slot_vaddr_page, vaddr))) {
             // If we still have a miss after that, we replace the entry.
             // Outline the slow path into a function call to minimize host CPU code cache pressure
             DUMP_STATS_INCR(a, "tlb.wmiss");
@@ -1198,7 +1242,7 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, i_
     const auto pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
     const auto vf_offset = a.template read_tlb_vf_offset<TLB_WRITE>(slot_index);
     const auto faddr = vaddr + vf_offset;
-    a.template write_memory_word<T>(faddr, pma_index, static_cast<T>(val64));
+    a.template write_memory_word<T>(faddr, pma_index, value_cast<T>(val64));
     DUMP_STATS_INCR(a, "tlb.whit");
     return execute_status::success;
 }
@@ -1579,13 +1623,11 @@ static FORCE_INLINE execute_status execute_ADDW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
         // Discard upper 32 bits
-        auto rs1w = static_cast<int32_t>(rs1);
-        auto rs2w = static_cast<int32_t>(rs2);
-        int32_t val = 0;
-        __builtin_add_overflow(rs1w, rs2w, &val);
-        return static_cast<uint64_t>(val);
+        auto rs1w = value_cast<int32_t>(rs1);
+        auto rs2w = value_cast<int32_t>(rs2);
+        return value_cast<uint64_t>(wrapping_add(rs1w, rs2w));
     });
 }
 
@@ -1596,13 +1638,11 @@ static FORCE_INLINE execute_status execute_SUBW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
         // Convert 64-bit to 32-bit
-        auto rs1w = static_cast<int32_t>(rs1);
-        auto rs2w = static_cast<int32_t>(rs2);
-        int32_t val = 0;
-        __builtin_sub_overflow(rs1w, rs2w, &val);
-        return static_cast<uint64_t>(val);
+        auto rs1w = value_cast<int32_t>(rs1);
+        auto rs2w = value_cast<int32_t>(rs2);
+        return value_cast<uint64_t>(wrapping_sub(rs1w, rs2w));
     });
 }
 
@@ -1616,9 +1656,9 @@ static FORCE_INLINE execute_status execute_SLLW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        const auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (rs2 & 31));
-        return static_cast<uint64_t>(rs1w);
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+        const auto rs1w = value_cast<int32_t>(value_cast<uint32_t>(rs1) << (rs2 & 31));
+        return value_cast<uint64_t>(rs1w);
     });
 }
 
@@ -1629,9 +1669,9 @@ static FORCE_INLINE execute_status execute_SRLW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (rs2 & 31));
-        return static_cast<uint64_t>(rs1w);
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+        auto rs1w = value_cast<int32_t>(value_cast<uint32_t>(rs1) >> (rs2 & 31));
+        return value_cast<uint64_t>(rs1w);
     });
 }
 
@@ -1642,9 +1682,9 @@ static FORCE_INLINE execute_status execute_SRAW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        const int32_t rs1w = static_cast<int32_t>(rs1) >> (rs2 & 31);
-        return static_cast<uint64_t>(rs1w);
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+        const auto rs1w = value_cast<int32_t>(rs1) >> (rs2 & 31);
+        return value_cast<uint64_t>(rs1w);
     });
 }
 
@@ -1655,12 +1695,10 @@ static FORCE_INLINE execute_status execute_MULW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto rs1w = static_cast<int32_t>(rs1);
-        auto rs2w = static_cast<int32_t>(rs2);
-        int32_t val = 0;
-        __builtin_mul_overflow(rs1w, rs2w, &val);
-        return static_cast<uint64_t>(val);
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+        auto rs1w = value_cast<int32_t>(rs1);
+        auto rs2w = value_cast<int32_t>(rs2);
+        return value_cast<uint64_t>(wrapping_mul(rs1w, rs2w));
     });
 }
 
@@ -1674,16 +1712,16 @@ static FORCE_INLINE execute_status execute_DIVW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto rs1w = static_cast<int32_t>(rs1);
-        auto rs2w = static_cast<int32_t>(rs2);
-        if (rs2w == 0) [[unlikely]] {
+    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+        auto rs1w = value_cast<int32_t>(rs1);
+        auto rs2w = value_cast<int32_t>(rs2);
+        if (observe(a, rs2w == 0)) [[unlikely]] {
             return static_cast<uint64_t>(-1);
         }
-        if (rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1))) [[unlikely]] {
-            return static_cast<uint64_t>(rs1w);
+        if (observe(a, rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1)))) [[unlikely]] {
+            return value_cast<uint64_t>(rs1w);
         }
-        return static_cast<uint64_t>(rs1w / rs2w);
+        return value_cast<uint64_t>(rs1w / rs2w);
     });
 }
 
@@ -1694,13 +1732,13 @@ static FORCE_INLINE execute_status execute_DIVUW(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto rs1w = static_cast<uint32_t>(rs1);
-        auto rs2w = static_cast<uint32_t>(rs2);
-        if (rs2w == 0) [[unlikely]] {
+    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+        auto rs1w = value_cast<uint32_t>(rs1);
+        auto rs2w = value_cast<uint32_t>(rs2);
+        if (observe(a, rs2w == 0)) [[unlikely]] {
             return static_cast<uint64_t>(-1);
         }
-        return static_cast<uint64_t>(static_cast<int32_t>(rs1w / rs2w));
+        return value_cast<uint64_t>(value_cast<int32_t>(rs1w / rs2w));
     });
 }
 
@@ -1714,16 +1752,16 @@ static FORCE_INLINE execute_status execute_REMW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto rs1w = static_cast<int32_t>(rs1);
-        auto rs2w = static_cast<int32_t>(rs2);
-        if (rs2w == 0) [[unlikely]] {
-            return static_cast<uint64_t>(rs1w);
+    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+        auto rs1w = value_cast<int32_t>(rs1);
+        auto rs2w = value_cast<int32_t>(rs2);
+        if (observe(a, rs2w == 0)) [[unlikely]] {
+            return value_cast<uint64_t>(rs1w);
         }
-        if (rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1))) [[unlikely]] {
+        if (observe(a, rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1)))) [[unlikely]] {
             return static_cast<uint64_t>(0);
         }
-        return static_cast<uint64_t>(rs1w % rs2w);
+        return value_cast<uint64_t>(rs1w % rs2w);
     });
 }
 
@@ -1737,13 +1775,13 @@ static FORCE_INLINE execute_status execute_REMUW(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto rs1w = static_cast<uint32_t>(rs1);
-        auto rs2w = static_cast<uint32_t>(rs2);
-        if (rs2w == 0) [[unlikely]] {
-            return static_cast<uint64_t>(static_cast<int32_t>(rs1w));
+    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+        auto rs1w = value_cast<uint32_t>(rs1);
+        auto rs2w = value_cast<uint32_t>(rs2);
+        if (observe(a, rs2w == 0)) [[unlikely]] {
+            return value_cast<uint64_t>(value_cast<int32_t>(rs1w));
         }
-        return static_cast<uint64_t>(static_cast<int32_t>(rs1w % rs2w));
+        return value_cast<uint64_t>(value_cast<int32_t>(rs1w % rs2w));
     });
 }
 
@@ -2895,8 +2933,8 @@ static FORCE_INLINE execute_status execute_arithmetic(const STATE_ACCESS a, i_st
     const uint32_t rd = insn_get_rd(insn);
     // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
     // the order of evaluation of arguments in a function call is undefined.
-    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-    const uint64_t rs2 = a.read_x(insn_get_rs2(insn));
+    const auto rs1 = a.read_x(insn_get_rs1(insn));
+    const auto rs2 = a.read_x(insn_get_rs2(insn));
     // Now we can safely invoke f()
     a.write_x(rd, f(rs1, rs2));
     return advance_to_next_insn(a, pc);
@@ -2909,11 +2947,7 @@ static FORCE_INLINE execute_status execute_ADD(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        uint64_t val = 0;
-        __builtin_add_overflow(rs1, rs2, &val);
-        return val;
-    });
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) { return wrapping_add(rs1, rs2); });
 }
 
 /// \brief Implementation of the SUB instruction.
@@ -2923,11 +2957,7 @@ static FORCE_INLINE execute_status execute_SUB(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        uint64_t val = 0;
-        __builtin_sub_overflow(rs1, rs2, &val);
-        return val;
-    });
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) { return wrapping_sub(rs1, rs2); });
 }
 
 /// \brief Implementation of the SLL instruction.
@@ -2938,7 +2968,7 @@ static FORCE_INLINE execute_status execute_SLL(const STATE_ACCESS a, i_state_acc
         return advance_to_next_insn(a, pc);
     }
     return execute_arithmetic(a, pc, insn,
-        [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 << (rs2 & (XLEN - 1)); });
+        [](auto rs1, auto rs2) -> decltype(rs1) { return rs1 << (rs2 & (XLEN - 1)); });
 }
 
 /// \brief Implementation of the SLT instruction.
@@ -2949,7 +2979,7 @@ static FORCE_INLINE execute_status execute_SLT(const STATE_ACCESS a, i_state_acc
         return advance_to_next_insn(a, pc);
     }
     return execute_arithmetic(a, pc, insn,
-        [](uint64_t rs1, uint64_t rs2) -> uint64_t { return static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2); });
+        [](auto rs1, auto rs2) -> decltype(rs1) { return value_cast<int64_t>(rs1) < value_cast<int64_t>(rs2); });
 }
 
 /// \brief Implementation of the SLTU instruction.
@@ -2959,7 +2989,7 @@ static FORCE_INLINE execute_status execute_SLTU(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 < rs2; });
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) { return rs1 < rs2; });
 }
 
 /// \brief Implementation of the XOR instruction.
@@ -2969,7 +2999,7 @@ static FORCE_INLINE execute_status execute_XOR(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 ^ rs2; });
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) { return rs1 ^ rs2; });
 }
 
 /// \brief Implementation of the SRL instruction.
@@ -2980,7 +3010,7 @@ static FORCE_INLINE execute_status execute_SRL(const STATE_ACCESS a, i_state_acc
         return advance_to_next_insn(a, pc);
     }
     return execute_arithmetic(a, pc, insn,
-        [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 >> (rs2 & (XLEN - 1)); });
+        [](auto rs1, auto rs2) -> decltype(rs1) { return rs1 >> (rs2 & (XLEN - 1)); });
 }
 
 /// \brief Implementation of the SRA instruction.
@@ -2990,8 +3020,8 @@ static FORCE_INLINE execute_status execute_SRA(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        return static_cast<uint64_t>(static_cast<int64_t>(rs1) >> (rs2 & (XLEN - 1)));
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+        return value_cast<uint64_t>(value_cast<int64_t>(rs1) >> (rs2 & (XLEN - 1)));
     });
 }
 
@@ -3002,7 +3032,7 @@ static FORCE_INLINE execute_status execute_OR(const STATE_ACCESS a, i_state_acce
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 | rs2; });
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) { return rs1 | rs2; });
 }
 
 /// \brief Implementation of the AND instruction.
@@ -3012,7 +3042,7 @@ static FORCE_INLINE execute_status execute_AND(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t { return rs1 & rs2; });
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) { return rs1 & rs2; });
 }
 
 /// \brief Implementation of the MUL instruction.
@@ -3022,12 +3052,10 @@ static FORCE_INLINE execute_status execute_MUL(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto srs1 = static_cast<int64_t>(rs1);
-        auto srs2 = static_cast<int64_t>(rs2);
-        int64_t val = 0;
-        __builtin_mul_overflow(srs1, srs2, &val);
-        return static_cast<uint64_t>(val);
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+        auto srs1 = value_cast<int64_t>(rs1);
+        auto srs2 = value_cast<int64_t>(rs2);
+        return value_cast<uint64_t>(wrapping_mul(srs1, srs2));
     });
 }
 
@@ -3038,10 +3066,10 @@ static FORCE_INLINE execute_status execute_MULH(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto srs1 = static_cast<int64_t>(rs1);
-        auto srs2 = static_cast<int64_t>(rs2);
-        return static_cast<uint64_t>(static_cast<int64_t>((static_cast<int128_t>(srs1) * srs2) >> 64));
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+        auto srs1 = value_cast<int64_t>(rs1);
+        auto srs2 = value_cast<int64_t>(rs2);
+        return value_cast<uint64_t>(value_cast<int64_t>((value_cast<int128_t>(srs1) * srs2) >> 64));
     });
 }
 
@@ -3052,10 +3080,10 @@ static FORCE_INLINE execute_status execute_MULHSU(const STATE_ACCESS a, i_state_
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto srs1 = static_cast<int64_t>(rs1);
-        return static_cast<uint64_t>(
-            static_cast<int64_t>((static_cast<int128_t>(srs1) * static_cast<int128_t>(rs2)) >> 64));
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+        auto srs1 = value_cast<int64_t>(rs1);
+        return value_cast<uint64_t>(
+            value_cast<int64_t>((value_cast<int128_t>(srs1) * value_cast<int128_t>(rs2)) >> 64));
     });
 }
 
@@ -3066,8 +3094,8 @@ static FORCE_INLINE execute_status execute_MULHU(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        return static_cast<uint64_t>((static_cast<uint128_t>(rs1) * static_cast<uint128_t>(rs2)) >> 64);
+    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+        return value_cast<uint64_t>((value_cast<uint128_t>(rs1) * value_cast<uint128_t>(rs2)) >> 64);
     });
 }
 
@@ -3078,16 +3106,16 @@ static FORCE_INLINE execute_status execute_DIV(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto srs1 = static_cast<int64_t>(rs1);
-        auto srs2 = static_cast<int64_t>(rs2);
-        if (srs2 == 0) [[unlikely]] {
+    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+        auto srs1 = value_cast<int64_t>(rs1);
+        auto srs2 = value_cast<int64_t>(rs2);
+        if (observe(a, srs2 == 0)) [[unlikely]] {
             return static_cast<uint64_t>(-1);
         }
-        if (srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1))) [[unlikely]] {
-            return static_cast<uint64_t>(srs1);
+        if (observe(a, srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1)))) [[unlikely]] {
+            return value_cast<uint64_t>(srs1);
         }
-        return static_cast<uint64_t>(srs1 / srs2);
+        return value_cast<uint64_t>(srs1 / srs2);
     });
 }
 
@@ -3098,8 +3126,8 @@ static FORCE_INLINE execute_status execute_DIVU(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        if (rs2 == 0) [[unlikely]] {
+    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+        if (observe(a, rs2 == 0)) [[unlikely]] {
             return static_cast<uint64_t>(-1);
         }
         return rs1 / rs2;
@@ -3113,16 +3141,16 @@ static FORCE_INLINE execute_status execute_REM(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        auto srs1 = static_cast<int64_t>(rs1);
-        auto srs2 = static_cast<int64_t>(rs2);
-        if (srs2 == 0) [[unlikely]] {
-            return srs1;
+    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+        auto srs1 = value_cast<int64_t>(rs1);
+        auto srs2 = value_cast<int64_t>(rs2);
+        if (observe(a, srs2 == 0)) [[unlikely]] {
+            return value_cast<uint64_t>(srs1);
         }
-        if (srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1))) [[unlikely]] {
+        if (observe(a, srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1)))) [[unlikely]] {
             return 0;
         }
-        return static_cast<uint64_t>(srs1 % srs2);
+        return value_cast<uint64_t>(srs1 % srs2);
     });
 }
 
@@ -3133,8 +3161,8 @@ static FORCE_INLINE execute_status execute_REMU(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        if (rs2 == 0) [[unlikely]] {
+    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+        if (observe(a, rs2 == 0)) [[unlikely]] {
             return rs1;
         }
         return rs1 % rs2;
@@ -3145,7 +3173,7 @@ template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_arithmetic_immediate(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn,
     const F &f) {
     const uint32_t rd = insn_get_rd(insn);
-    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    const auto rs1 = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_I_get_imm(insn);
     a.write_x(rd, f(rs1, imm));
     return advance_to_next_insn(a, pc);
@@ -3159,7 +3187,7 @@ static FORCE_INLINE execute_status execute_SRLI(const STATE_ACCESS a, i_state_ac
         return advance_to_next_insn(a, pc);
     }
     return execute_arithmetic_immediate(a, pc, insn,
-        [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 >> (imm & (XLEN - 1)); });
+        [](auto rs1, int32_t imm) -> decltype(rs1) { return rs1 >> (imm & (XLEN - 1)); });
 }
 
 /// \brief Implementation of the SRAI instruction.
@@ -3169,8 +3197,8 @@ static FORCE_INLINE execute_status execute_SRAI(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-        return static_cast<uint64_t>(static_cast<int64_t>(rs1) >> (imm & (XLEN - 1)));
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) {
+        return value_cast<uint64_t>(value_cast<int64_t>(rs1) >> (imm & (XLEN - 1)));
     });
 }
 
@@ -3181,10 +3209,8 @@ static FORCE_INLINE execute_status execute_ADDI(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-        int64_t val = 0;
-        __builtin_add_overflow(static_cast<int64_t>(rs1), static_cast<int64_t>(imm), &val);
-        return static_cast<uint64_t>(val);
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) {
+        return value_cast<uint64_t>(wrapping_add(value_cast<int64_t>(rs1), static_cast<int64_t>(imm)));
     });
 }
 
@@ -3195,9 +3221,9 @@ static FORCE_INLINE execute_status execute_SLTI(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) {
         // NOLINTNEXTLINE(modernize-use-integer-sign-comparison)
-        return static_cast<int64_t>(rs1) < static_cast<int64_t>(imm);
+        return value_cast<int64_t>(rs1) < static_cast<int64_t>(imm);
     });
 }
 
@@ -3208,7 +3234,7 @@ static FORCE_INLINE execute_status execute_SLTIU(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) {
         // NOLINTNEXTLINE(modernize-use-integer-sign-comparison)
         return rs1 < static_cast<uint64_t>(imm);
     });
@@ -3221,7 +3247,7 @@ static FORCE_INLINE execute_status execute_XORI(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 ^ imm; });
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) { return rs1 ^ imm; });
 }
 
 /// \brief Implementation of the ORI instruction.
@@ -3231,7 +3257,7 @@ static FORCE_INLINE execute_status execute_ORI(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 | imm; });
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) { return rs1 | imm; });
 }
 
 /// \brief Implementation of the ANDI instruction.
@@ -3241,7 +3267,7 @@ static FORCE_INLINE execute_status execute_ANDI(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 & imm; });
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) { return rs1 & imm; });
 }
 
 /// \brief Implementation of the SLLI instruction.
@@ -3254,7 +3280,7 @@ static FORCE_INLINE execute_status execute_SLLI(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) {
         // No need to mask lower 6 bits in imm because of the if condition a above
         // We do it anyway here to prevent problems if this code is moved
         return rs1 << (imm & 0b111111);
@@ -3268,10 +3294,8 @@ static FORCE_INLINE execute_status execute_ADDIW(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-        int32_t val = 0;
-        __builtin_add_overflow(static_cast<int32_t>(rs1), imm, &val);
-        return static_cast<uint64_t>(val);
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) {
+        return value_cast<uint64_t>(wrapping_add(value_cast<int32_t>(rs1), imm));
     });
 }
 
@@ -3285,11 +3309,11 @@ static FORCE_INLINE execute_status execute_SLLIW(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) {
         // No need to mask lower 5 bits in imm because of the if condition a above
         // We do it anyway here to prevent problems if this code is moved
-        const auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (imm & 0b11111));
-        return static_cast<uint64_t>(rs1w);
+        const auto rs1w = value_cast<int32_t>(value_cast<uint32_t>(rs1) << (imm & 0b11111));
+        return value_cast<uint64_t>(rs1w);
     });
 }
 
@@ -3300,11 +3324,11 @@ static FORCE_INLINE execute_status execute_SRLIW(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) {
         // No need to mask lower 5 bits in imm because of funct7 test in caller
         // We do it anyway here to prevent problems if this code is moved
-        auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) >> (imm & 0b11111));
-        return static_cast<uint64_t>(rs1w);
+        auto rs1w = value_cast<int32_t>(value_cast<uint32_t>(rs1) >> (imm & 0b11111));
+        return value_cast<uint64_t>(rs1w);
     });
 }
 
@@ -3322,17 +3346,17 @@ static FORCE_INLINE execute_status execute_SRAIW(const STATE_ACCESS a, i_state_a
         }
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-        const int32_t rs1w = static_cast<int32_t>(rs1) >> (imm & 0b11111);
-        return static_cast<uint64_t>(rs1w);
+    return execute_arithmetic_immediate(a, pc, insn, [](auto rs1, int32_t imm) -> decltype(rs1) {
+        const auto rs1w = value_cast<int32_t>(rs1) >> (imm & 0b11111);
+        return value_cast<uint64_t>(rs1w);
     });
 }
 
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
-    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    const auto vaddr = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_S_get_imm(insn);
-    const uint64_t val = a.read_x(insn_get_rs2(insn));
+    const auto val = a.read_x(insn_get_rs2(insn));
     const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
     if (status != execute_status::success) [[unlikely]] {
         if (status == execute_status::failure) {
@@ -3373,7 +3397,7 @@ static FORCE_INLINE execute_status execute_SD(const STATE_ACCESS a, i_state_acce
 
 template <typename T, rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_L(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
-    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    const auto vaddr = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_I_get_imm(insn);
     T val = 0;
     if (!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val)) [[unlikely]] {
@@ -3386,9 +3410,9 @@ static FORCE_INLINE execute_status execute_L(const STATE_ACCESS a, i_state_acces
     }
     // This static branch is eliminated by the compiler
     if constexpr (std::is_signed_v<T>) {
-        a.write_x(rd, static_cast<int64_t>(val));
+        a.write_x(rd, value_cast<int64_t>(val));
     } else {
-        a.write_x(rd, static_cast<uint64_t>(val));
+        a.write_x(rd, value_cast<uint64_t>(val));
     }
     return advance_to_next_insn(a, pc);
 }
@@ -3444,9 +3468,9 @@ static FORCE_INLINE execute_status execute_LWU(const STATE_ACCESS a, i_state_acc
 
 template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_branch(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
-    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-    const uint64_t rs2 = a.read_x(insn_get_rs2(insn));
-    if (f(rs1, rs2)) {
+    const auto rs1 = a.read_x(insn_get_rs1(insn));
+    const auto rs2 = a.read_x(insn_get_rs2(insn));
+    if (observe(a, f(rs1, rs2))) {
         const auto new_pc = pc + insn_B_get_imm(insn);
         return execute_jump(a, pc, new_pc);
     }
@@ -3457,14 +3481,14 @@ static FORCE_INLINE execute_status execute_branch(const STATE_ACCESS a, i_state_
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_BEQ(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "beq");
-    return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 == rs2; });
+    return execute_branch(a, pc, insn, [](auto rs1, auto rs2) { return rs1 == rs2; });
 }
 
 /// \brief Implementation of the BNE instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_BNE(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bne");
-    return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 != rs2; });
+    return execute_branch(a, pc, insn, [](auto rs1, auto rs2) { return rs1 != rs2; });
 }
 
 /// \brief Implementation of the BLT instruction.
@@ -3472,7 +3496,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_BLT(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "blt");
     return execute_branch(a, pc, insn,
-        [](uint64_t rs1, uint64_t rs2) -> bool { return static_cast<int64_t>(rs1) < static_cast<int64_t>(rs2); });
+        [](auto rs1, auto rs2) { return value_cast<int64_t>(rs1) < value_cast<int64_t>(rs2); });
 }
 
 /// \brief Implementation of the BGE instruction.
@@ -3480,21 +3504,21 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_BGE(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bge");
     return execute_branch(a, pc, insn,
-        [](uint64_t rs1, uint64_t rs2) -> bool { return static_cast<int64_t>(rs1) >= static_cast<int64_t>(rs2); });
+        [](auto rs1, auto rs2) { return value_cast<int64_t>(rs1) >= value_cast<int64_t>(rs2); });
 }
 
 /// \brief Implementation of the BLTU instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_BLTU(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bltu");
-    return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 < rs2; });
+    return execute_branch(a, pc, insn, [](auto rs1, auto rs2) { return rs1 < rs2; });
 }
 
 /// \brief Implementation of the BGEU instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_BGEU(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "bgeu");
-    return execute_branch(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> bool { return rs1 >= rs2; });
+    return execute_branch(a, pc, insn, [](auto rs1, auto rs2) { return rs1 >= rs2; });
 }
 
 /// \brief Implementation of the LUI instruction.
@@ -3539,8 +3563,8 @@ template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_JALR(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "jalr");
     const uint64_t val = pc_to_virtual(a, pc) + 4;
-    const uint64_t new_pc =
-        static_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
+    const auto new_pc =
+        value_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
     const uint32_t rd = insn_get_rd(insn);
     if constexpr (rd_kind != rd_kind::x0) {
         a.write_x(rd, val);
@@ -4919,16 +4943,16 @@ static FORCE_INLINE execute_status execute_FD(const STATE_ACCESS a, i_state_acce
 template <typename T, typename U, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_L(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t rd,
     uint32_t rs1, U imm) {
-    const uint64_t vaddr = a.read_x(rs1);
+    const auto vaddr = a.read_x(rs1);
     T val = 0;
     if (!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val)) [[unlikely]] {
         return advance_to_raised_exception(a, pc);
     }
     // This static branch is eliminated by the compiler
     if constexpr (std::is_signed_v<T>) {
-        a.write_x(rd, static_cast<uint64_t>(static_cast<int64_t>(val)));
+        a.write_x(rd, value_cast<uint64_t>(value_cast<int64_t>(val)));
     } else {
-        a.write_x(rd, static_cast<uint64_t>(val));
+        a.write_x(rd, value_cast<uint64_t>(val));
     }
     return advance_to_next_insn<2>(a, pc);
 }
@@ -4936,8 +4960,8 @@ static FORCE_INLINE execute_status execute_C_L(const STATE_ACCESS a, i_state_acc
 template <typename T, typename U, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t rs2,
     uint32_t rs1, U imm) {
-    const uint64_t vaddr = a.read_x(rs1);
-    const uint64_t val = a.read_x(rs2);
+    const auto vaddr = a.read_x(rs1);
+    const auto val = a.read_x(rs2);
     const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
     if (status != execute_status::success) [[unlikely]] {
         if (status == execute_status::failure) {
@@ -4988,10 +5012,8 @@ static FORCE_INLINE execute_status execute_C_ADDI4SPN(const STATE_ACCESS a, i_st
     const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     // imm cannot be zero (guaranteed by the jump table)
     const uint32_t imm = insn_get_CIW_imm(insn);
-    const uint64_t rs1 = a.read_x(2);
-    int64_t val = 0;
-    __builtin_add_overflow(static_cast<int64_t>(rs1), static_cast<int64_t>(imm), &val);
-    a.write_x(rd, static_cast<uint64_t>(val));
+    const auto rs1 = a.read_x(2);
+    a.write_x(rd, value_cast<uint64_t>(wrapping_add(value_cast<int64_t>(rs1), static_cast<int64_t>(imm))));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5079,10 +5101,8 @@ static FORCE_INLINE execute_status execute_C_ADDI(const STATE_ACCESS a, i_state_
     const uint32_t rd = insn_get_rd(insn);
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
     // imm cannot be zero (guaranteed by jump table)
-    const uint64_t rd_value = a.read_x(rd);
-    int64_t val = 0;
-    __builtin_add_overflow(static_cast<int64_t>(rd_value), static_cast<int64_t>(imm), &val);
-    a.write_x(rd, static_cast<uint64_t>(val));
+    const auto rd_value = a.read_x(rd);
+    a.write_x(rd, value_cast<uint64_t>(wrapping_add(value_cast<int64_t>(rd_value), static_cast<int64_t>(imm))));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5092,11 +5112,9 @@ static FORCE_INLINE execute_status execute_C_ADDIW(const STATE_ACCESS a, i_state
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.addiw");
     // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
-    const uint64_t rd_value = a.read_x(rd);
+    const auto rd_value = a.read_x(rd);
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
-    int32_t val = 0;
-    __builtin_add_overflow(static_cast<int32_t>(rd_value), imm, &val);
-    a.write_x(rd, static_cast<uint64_t>(val));
+    a.write_x(rd, value_cast<uint64_t>(wrapping_add(value_cast<int32_t>(rd_value), imm)));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5117,10 +5135,8 @@ static FORCE_INLINE execute_status execute_C_ADDI16SP(const STATE_ACCESS a, i_st
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.addi16sp");
     // imm cannot be zero (guaranteed by the jump table)
     const int32_t imm = insn_get_C_ADDI16SP_imm(insn);
-    const uint64_t rs1_value = a.read_x(2);
-    int64_t val = 0;
-    __builtin_add_overflow(static_cast<int64_t>(rs1_value), static_cast<int64_t>(imm), &val);
-    a.write_x(2, static_cast<uint64_t>(val));
+    const auto rs1_value = a.read_x(2);
+    a.write_x(2, value_cast<uint64_t>(wrapping_add(value_cast<int64_t>(rs1_value), static_cast<int64_t>(imm))));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5143,7 +5159,7 @@ static FORCE_INLINE execute_status execute_C_SRLI(const STATE_ACCESS a, i_state_
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     // imm cannot be zero (guaranteed by the jump table)
     const uint32_t imm = insn_get_CI_CB_imm(insn);
-    const uint64_t rs1_value = a.read_x(rs1);
+    const auto rs1_value = a.read_x(rs1);
     a.write_x(rs1, rs1_value >> imm);
     return advance_to_next_insn<2>(a, pc);
 }
@@ -5155,8 +5171,8 @@ static FORCE_INLINE execute_status execute_C_SRAI(const STATE_ACCESS a, i_state_
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     // imm cannot be zero (guaranteed by the jump table)
     const uint32_t imm = insn_get_CI_CB_imm(insn);
-    const auto rs1_value = static_cast<int64_t>(a.read_x(rs1));
-    a.write_x(rs1, static_cast<uint64_t>(rs1_value >> imm));
+    const auto rs1_value = value_cast<int64_t>(a.read_x(rs1));
+    a.write_x(rs1, value_cast<uint64_t>(rs1_value >> imm));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5166,7 +5182,7 @@ static FORCE_INLINE execute_status execute_C_ANDI(const STATE_ACCESS a, i_state_
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.andi");
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
-    const uint64_t rs1_value = a.read_x(rs1);
+    const auto rs1_value = a.read_x(rs1);
     a.write_x(rs1, rs1_value & static_cast<uint64_t>(imm));
     return advance_to_next_insn<2>(a, pc);
 }
@@ -5176,8 +5192,8 @@ static FORCE_INLINE execute_status execute_C_arithmetic(const STATE_ACCESS a, i_
     // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
     // the order of evaluation of arguments in a function call is undefined.
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint64_t rs1_value = a.read_x(rs1);
-    const uint64_t rs2_value = a.read_x(insn_get_CIW_CL_rd_CS_CA_rs2(insn));
+    const auto rs1_value = a.read_x(rs1);
+    const auto rs2_value = a.read_x(insn_get_CIW_CL_rd_CS_CA_rs2(insn));
     // Now we can safely invoke f()
     a.write_x(rs1, f(rs1_value, rs2_value));
     return advance_to_next_insn<2>(a, pc);
@@ -5187,11 +5203,8 @@ static FORCE_INLINE execute_status execute_C_arithmetic(const STATE_ACCESS a, i_
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SUB(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sub");
-    return execute_C_arithmetic(a, pc, insn, [](uint64_t rs1_value, uint64_t rs2_value) -> uint64_t {
-        uint64_t val = 0;
-        __builtin_sub_overflow(rs1_value, rs2_value, &val);
-        return val;
-    });
+    return execute_C_arithmetic(a, pc, insn,
+        [](auto rs1_value, auto rs2_value) -> decltype(rs1_value) { return wrapping_sub(rs1_value, rs2_value); });
 }
 
 /// \brief Implementation of the C.XOR instruction.
@@ -5199,7 +5212,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_XOR(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.xor");
     return execute_C_arithmetic(a, pc, insn,
-        [](uint64_t rs1_value, uint64_t rs2_value) -> uint64_t { return rs1_value ^ rs2_value; });
+        [](auto rs1_value, auto rs2_value) -> decltype(rs1_value) { return rs1_value ^ rs2_value; });
 }
 
 /// \brief Implementation of the C.OR instruction.
@@ -5207,7 +5220,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_OR(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.or");
     return execute_C_arithmetic(a, pc, insn,
-        [](uint64_t rs1_value, uint64_t rs2_value) -> uint64_t { return rs1_value | rs2_value; });
+        [](auto rs1_value, auto rs2_value) -> decltype(rs1_value) { return rs1_value | rs2_value; });
 }
 
 /// \brief Implementation of the C.AND instruction.
@@ -5215,20 +5228,18 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_AND(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.and");
     return execute_C_arithmetic(a, pc, insn,
-        [](uint64_t rs1_value, uint64_t rs2_value) -> uint64_t { return rs1_value & rs2_value; });
+        [](auto rs1_value, auto rs2_value) -> decltype(rs1_value) { return rs1_value & rs2_value; });
 }
 
 /// \brief Implementation of the C.SUBW instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SUBW(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.subw");
-    return execute_C_arithmetic(a, pc, insn, [](uint64_t rs1_value, uint64_t rs2_value) -> uint64_t {
+    return execute_C_arithmetic(a, pc, insn, [](auto rs1_value, auto rs2_value) -> decltype(rs1_value) {
         // Convert 64-bit to 32-bit
-        auto rs1w = static_cast<int32_t>(rs1_value);
-        auto rs2w = static_cast<int32_t>(rs2_value);
-        int32_t val = 0;
-        __builtin_sub_overflow(rs1w, rs2w, &val);
-        return static_cast<uint64_t>(val);
+        auto rs1w = value_cast<int32_t>(rs1_value);
+        auto rs2w = value_cast<int32_t>(rs2_value);
+        return value_cast<uint64_t>(wrapping_sub(rs1w, rs2w));
     });
 }
 
@@ -5236,13 +5247,11 @@ static FORCE_INLINE execute_status execute_C_SUBW(const STATE_ACCESS a, i_state_
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDW(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.addw");
-    return execute_C_arithmetic(a, pc, insn, [](uint64_t rs1_value, uint64_t rs2_value) -> uint64_t {
+    return execute_C_arithmetic(a, pc, insn, [](auto rs1_value, auto rs2_value) -> decltype(rs1_value) {
         // Discard upper 32 bits
-        auto rs1w = static_cast<int32_t>(rs1_value);
-        auto rs2w = static_cast<int32_t>(rs2_value);
-        int32_t val = 0;
-        __builtin_add_overflow(rs1w, rs2w, &val);
-        return static_cast<uint64_t>(val);
+        auto rs1w = value_cast<int32_t>(rs1_value);
+        auto rs2w = value_cast<int32_t>(rs2_value);
+        return value_cast<uint64_t>(wrapping_add(rs1w, rs2w));
     });
 }
 
@@ -5301,8 +5310,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ZEXT_B(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.zext.b");
     const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint64_t rs1_value = a.read_x(rd);
-    a.write_x(rd, static_cast<uint8_t>(rs1_value));
+    const auto rs1_value = a.read_x(rd);
+    a.write_x(rd, value_cast<uint8_t>(rs1_value));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5311,8 +5320,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SEXT_B(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sext.b");
     const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint64_t rs1_value = a.read_x(rd);
-    a.write_x(rd, static_cast<uint64_t>(static_cast<int8_t>(rs1_value)));
+    const auto rs1_value = a.read_x(rd);
+    a.write_x(rd, value_cast<uint64_t>(value_cast<int8_t>(rs1_value)));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5321,8 +5330,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ZEXT_H(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.zext.h");
     const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint64_t rs1_value = a.read_x(rd);
-    a.write_x(rd, static_cast<uint16_t>(rs1_value));
+    const auto rs1_value = a.read_x(rd);
+    a.write_x(rd, value_cast<uint16_t>(rs1_value));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5331,8 +5340,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SEXT_H(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sext.h");
     const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint64_t rs1_value = a.read_x(rd);
-    a.write_x(rd, static_cast<uint64_t>(static_cast<int16_t>(rs1_value)));
+    const auto rs1_value = a.read_x(rd);
+    a.write_x(rd, value_cast<uint64_t>(value_cast<int16_t>(rs1_value)));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5341,8 +5350,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ZEXT_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.zext.w");
     const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint64_t rs1_value = a.read_x(rd);
-    a.write_x(rd, static_cast<uint64_t>(static_cast<uint32_t>(rs1_value)));
+    const auto rs1_value = a.read_x(rd);
+    a.write_x(rd, value_cast<uint64_t>(value_cast<uint32_t>(rs1_value)));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5351,7 +5360,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_NOT(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.not");
     const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint64_t rs1_value = a.read_x(rd);
+    const auto rs1_value = a.read_x(rd);
     a.write_x(rd, ~rs1_value);
     return advance_to_next_insn<2>(a, pc);
 }
@@ -5360,10 +5369,8 @@ static FORCE_INLINE execute_status execute_C_NOT(const STATE_ACCESS a, i_state_a
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_MUL(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.mul");
-    return execute_C_arithmetic(a, pc, insn, [](uint64_t rs1_value, uint64_t rs2_value) -> uint64_t {
-        int64_t val = 0;
-        __builtin_mul_overflow(static_cast<int64_t>(rs1_value), static_cast<int64_t>(rs2_value), &val);
-        return static_cast<uint64_t>(val);
+    return execute_C_arithmetic(a, pc, insn, [](auto rs1_value, auto rs2_value) -> decltype(rs1_value) {
+        return value_cast<uint64_t>(wrapping_mul(value_cast<int64_t>(rs1_value), value_cast<int64_t>(rs2_value)));
     });
 }
 
@@ -5380,7 +5387,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_BEQZ(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.beqz");
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    if (a.read_x(rs1) == 0) {
+    if (observe(a, a.read_x(rs1) == 0)) {
         const int32_t imm = insn_get_C_BEQZ_BNEZ_imm(insn);
         const auto new_pc = pc + static_cast<uint64_t>(imm);
         return execute_jump(a, pc, new_pc);
@@ -5393,7 +5400,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_BNEZ(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.bnez");
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    if (a.read_x(rs1) != 0) {
+    if (observe(a, a.read_x(rs1) != 0)) {
         const int32_t imm = insn_get_C_BEQZ_BNEZ_imm(insn);
         const auto new_pc = pc + static_cast<uint64_t>(imm);
         return execute_jump(a, pc, new_pc);
@@ -5409,7 +5416,7 @@ static FORCE_INLINE execute_status execute_C_SLLI(const STATE_ACCESS a, i_state_
     const uint32_t rd = insn_get_rd(insn);
     // imm cannot be zero (guaranteed by jump table)
     const uint32_t imm = insn_get_CI_CB_imm(insn);
-    const uint64_t rs1_value = a.read_x(rd);
+    const auto rs1_value = a.read_x(rd);
     a.write_x(rd, rs1_value << imm);
     return advance_to_next_insn<2>(a, pc);
 }
@@ -5453,7 +5460,7 @@ static FORCE_INLINE execute_status execute_C_JR(const STATE_ACCESS a, i_state_ac
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.jr");
     // rs1 cannot be zero (guaranteed by the jump table)
     const uint32_t rs1 = insn_get_rd(insn);
-    const uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
+    const auto new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
     return execute_jump(a, pc, pc_to_fast(a, new_pc));
 }
 
@@ -5464,7 +5471,7 @@ static FORCE_INLINE execute_status execute_C_MV(const STATE_ACCESS a, i_state_ac
     // rd cannot be zero (guaranteed by the jump table)
     const uint32_t rd = insn_get_rd(insn);
     const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
-    const uint64_t val = a.read_x(rs2);
+    const auto val = a.read_x(rs2);
     a.write_x(rd, val);
     return advance_to_next_insn<2>(a, pc);
 }
@@ -5482,7 +5489,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_JALR(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.jalr");
     const uint32_t rs1 = insn_get_rd(insn);
-    const uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
+    const auto new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
     const uint64_t val = pc_to_virtual(a, pc) + 2;
     a.write_x(0x1, val);
     return execute_jump(a, pc, pc_to_fast(a, new_pc));
@@ -5495,11 +5502,9 @@ static FORCE_INLINE execute_status execute_C_ADD(const STATE_ACCESS a, i_state_a
     // rd cannot be zero (guaranteed by the jump table)
     const uint32_t rd = insn_get_rd(insn);
     const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
-    const uint64_t rd_value = a.read_x(rd);
-    const uint64_t rs2_value = a.read_x(rs2);
-    uint64_t val = 0;
-    __builtin_add_overflow(rd_value, rs2_value, &val);
-    a.write_x(rd, val);
+    const auto rd_value = a.read_x(rd);
+    const auto rs2_value = a.read_x(rs2);
+    a.write_x(rd, wrapping_add(rd_value, rs2_value));
     return advance_to_next_insn<2>(a, pc);
 }
 

@@ -849,7 +849,7 @@ jobs:
 
   publish_artifacts:
     name: Publish artifacts
-    needs: [build, lint, coverage, sanitize, test_amd64, test_arm64, risc0, docs]
+    needs: [build, lint, coverage, sanitize, test_amd64, test_arm64, risc0, sp1, docs]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout emulator source code
@@ -929,6 +929,8 @@ jobs:
             tests-arm64/machine-emulator-tests_*.deb
             risc0-artifacts/cartesi-risc0-guest-step-prover.bin
             risc0-artifacts/cartesi-risc0-guest-step-prover-image-id.txt
+            sp1-artifacts/cartesi-sp1-replay-steps.elf
+            sp1-artifacts/cartesi-sp1-replay-steps-vkey-hash.txt
             computation-hash-corpus/computation-hash-corpus.tar.gz
 
   risc0:
@@ -1262,7 +1264,28 @@ jobs:
           free -h
 
       - name: Run on-chain tests (Sepolia fork)
+        env:
+          ETH_RPC_URL: ${{ vars.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com' }}
         run: make -C sp1 test-solidity
+
+      # Coverage is informational and re-runs the suite instrumented, so it
+      # never gates the job.
+      - name: SP1 coverage report
+        continue-on-error: true
+        run: |
+          cargo install cargo-llvm-cov --version 0.8.7 --locked
+          rustup component add llvm-tools
+          make -C sp1 coverage
+
+      - name: Upload SP1 coverage
+        continue-on-error: true
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: sp1-coverage
+          path: |
+            sp1/rust/lcov.info
+            sp1/rust/coverage-summary.txt
+          if-no-files-found: warn
 
       - name: Export SP1 artifacts
         run: make -C sp1 export-artifacts
@@ -1276,7 +1299,15 @@ jobs:
             sp1/artifacts/cartesi-sp1-replay-steps-vkey-hash.txt
             sp1/artifacts/cartesi-sp1-replay-steps-vkey.bin
             sp1/artifacts/VKeyHash.sol
-            sp1/solidity/test/fixtures/seal.bin
+
+      # The seal is a test fixture, not a prover artifact: it proves one
+      # transition under one vkey. Uploaded separately so anyone can run the
+      # on-chain tests locally without regenerating it.
+      - name: Upload SP1 test seal
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: sp1-test-seal
+          path: sp1/solidity/test/fixtures/seal.bin
 
   solidity-step:
     name: Solidity Step

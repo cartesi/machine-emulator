@@ -61,7 +61,7 @@ endif
 
 export SP1_FEATURES
 
-.PHONY: all cpp rust solidity test test-solidity fixtures seal export-artifacts vkey clean help
+.PHONY: all cpp rust solidity test test-solidity fixtures seal export-artifacts vkey coverage clean help
 
 help:
 	@echo "SP1 backend"
@@ -140,6 +140,9 @@ export-artifacts: cpp rust
 
 vkey: rust
 	@$(MAKE) -C rust vkey
+
+coverage: cpp
+	@$(MAKE) -C rust coverage coverage-report
 
 test: cpp rust
 	$(MAKE) -C rust test

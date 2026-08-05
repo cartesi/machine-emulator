@@ -58,7 +58,10 @@ fn fixtures_dir() -> PathBuf {
 fn guest_elf() -> Elf {
     let path = repo_root().join("sp1/cpp/guest.elf");
     let bytes = fs::read(&path).unwrap_or_else(|e| {
-        panic!("guest.elf not built ({}): {e}. Run make -C sp1/cpp", path.display())
+        panic!(
+            "guest.elf not built ({}): {e}. Run make -C sp1/cpp",
+            path.display()
+        )
     });
     Elf::Static(Box::leak(bytes.into_boxed_slice()))
 }
@@ -113,7 +116,11 @@ async fn host_rejects_wrong_belief() {
     use cartesi_sp1::{parse_hash, JOURNAL_SIZE};
 
     let path = fixtures_dir().join("one-mcycle/one-mcycle.log");
-    assert!(path.exists(), "positive fixture missing: {}", path.display());
+    assert!(
+        path.exists(),
+        "positive fixture missing: {}",
+        path.display()
+    );
 
     let client = ProverClient::builder().light().build().await;
     let (public_values, _) = try_execute(&client, guest_elf(), path.to_str().unwrap())
@@ -127,9 +134,22 @@ async fn host_rejects_wrong_belief() {
     assert_eq!(logged_mcycle, 1, "fixture changed; update this test");
 
     // And the hashes must be exactly what the manifest recorded.
-    let text = fs::read_to_string(fixtures_dir().join("one-mcycle/_manifest.csv"))
-        .expect("manifest");
-    let row: Vec<&str> = text.lines().nth(1).expect("manifest row").split(',').collect();
-    assert_eq!(&pv[0..32], &parse_hash(row[5]).unwrap()[..], "root_hash_before");
-    assert_eq!(&pv[64..96], &parse_hash(row[6]).unwrap()[..], "root_hash_after");
+    let text =
+        fs::read_to_string(fixtures_dir().join("one-mcycle/_manifest.csv")).expect("manifest");
+    let row: Vec<&str> = text
+        .lines()
+        .nth(1)
+        .expect("manifest row")
+        .split(',')
+        .collect();
+    assert_eq!(
+        &pv[0..32],
+        &parse_hash(row[5]).unwrap()[..],
+        "root_hash_before"
+    );
+    assert_eq!(
+        &pv[64..96],
+        &parse_hash(row[6]).unwrap()[..],
+        "root_hash_after"
+    );
 }

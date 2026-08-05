@@ -18,8 +18,10 @@
 
 use std::{fs, process::exit};
 
-use cartesi_sp1::{export_artifacts, hex, parse_hash, prove, try_execute, verify, verify_seal,
-    vkey_hash, MachineHash, Mode};
+use cartesi_sp1::{
+    export_artifacts, hex, parse_hash, prove, try_execute, verify, verify_seal, vkey_hash,
+    MachineHash, Mode,
+};
 use sp1_sdk::{Elf, Prover, ProverClient, SP1ProofWithPublicValues};
 
 fn usage(program: &str) {
@@ -91,10 +93,15 @@ async fn main() {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--guest-elf" => {
-                guest_elf_path = Some(iter.next().unwrap_or_else(|| die("--guest-elf requires a path")))
+                guest_elf_path = Some(
+                    iter.next()
+                        .unwrap_or_else(|| die("--guest-elf requires a path")),
+                )
             }
             "--prover" => {
-                backend = iter.next().unwrap_or_else(|| die("--prover requires a backend"))
+                backend = iter
+                    .next()
+                    .unwrap_or_else(|| die("--prover requires a backend"))
             }
             _ => args.push(arg),
         }
@@ -113,12 +120,16 @@ async fn main() {
         "help" => usage(&program),
 
         "execute" => {
-            let log = args.get(2).unwrap_or_else(|| die("execute needs <log_file_path>"));
+            let log = args
+                .get(2)
+                .unwrap_or_else(|| die("execute needs <log_file_path>"));
             let client = ProverClient::builder().light().build().await;
-            let (public_values, report) =
-                try_execute(&client, elf, log).await.unwrap_or_else(die);
+            let (public_values, report) = try_execute(&client, elf, log).await.unwrap_or_else(die);
             print_public_values(public_values.as_slice());
-            println!("total_instruction_count {}", report.total_instruction_count());
+            println!(
+                "total_instruction_count {}",
+                report.total_instruction_count()
+            );
             println!("total_syscall_count     {}", report.total_syscall_count());
             println!("gas                     {:?}", report.gas());
         }
@@ -129,7 +140,9 @@ async fn main() {
             }
             let before = parse_hash(&args[2]).unwrap_or_else(die);
             let log = args[3].clone();
-            let mcycle: u64 = args[4].parse().unwrap_or_else(|e| die(format!("mcycle_count: {e}")));
+            let mcycle: u64 = args[4]
+                .parse()
+                .unwrap_or_else(|e| die(format!("mcycle_count: {e}")));
             let after = parse_hash(&args[5]).unwrap_or_else(die);
             let proof_path = args[6].clone();
             let mode = Mode::parse(args.get(7).map_or("core", String::as_str)).unwrap_or_else(die);
@@ -139,7 +152,9 @@ async fn main() {
                     .await
                     .unwrap_or_else(die)
             });
-            proof.save(&proof_path).unwrap_or_else(|e| die(format!("saving proof: {e}")));
+            proof
+                .save(&proof_path)
+                .unwrap_or_else(|e| die(format!("saving proof: {e}")));
             println!("Proof saved to: {proof_path}");
             print_public_values(proof.public_values.as_slice());
         }
@@ -152,7 +167,9 @@ async fn main() {
                 .unwrap_or_else(|e| die(format!("loading proof: {e}")));
             let seal = proof.bytes();
             if seal.is_empty() {
-                bad_usage("proof carries no seal: it is not a groth16 proof (prove with mode groth16)");
+                bad_usage(
+                    "proof carries no seal: it is not a groth16 proof (prove with mode groth16)",
+                );
             }
             fs::write(&args[3], &seal).unwrap_or_else(|e| die(format!("writing seal: {e}")));
             fs::write(&args[4], proof.public_values.as_slice())
@@ -163,16 +180,23 @@ async fn main() {
 
         "verify" => {
             if args.len() != 6 {
-                bad_usage("verify <proof-path> <root_hash_before> <mcycle_count> <root_hash_after>");
+                bad_usage(
+                    "verify <proof-path> <root_hash_before> <mcycle_count> <root_hash_after>",
+                );
             }
             let proof = SP1ProofWithPublicValues::load(&args[2])
                 .unwrap_or_else(|e| die(format!("loading proof: {e}")));
             let before = parse_hash(&args[3]).unwrap_or_else(die);
-            let mcycle: u64 = args[4].parse().unwrap_or_else(|e| die(format!("mcycle_count: {e}")));
+            let mcycle: u64 = args[4]
+                .parse()
+                .unwrap_or_else(|e| die(format!("mcycle_count: {e}")));
             let after = parse_hash(&args[5]).unwrap_or_else(die);
 
             with_prover!(backend.as_str(), |client| {
-                let pk = client.setup(elf).await.unwrap_or_else(|e| die(format!("setup: {e}")));
+                let pk = client
+                    .setup(elf)
+                    .await
+                    .unwrap_or_else(|e| die(format!("setup: {e}")));
                 verify(&client, &pk, &proof, &before, mcycle, &after).unwrap_or_else(die)
             });
             println!("Proof verified");
@@ -184,9 +208,12 @@ async fn main() {
                 bad_usage("verify-seal <seal-path> <journal-path> <vkey_hash> <root_hash_before> <mcycle_count> <root_hash_after>");
             }
             let seal = fs::read(&args[2]).unwrap_or_else(|e| die(format!("reading seal: {e}")));
-            let journal = fs::read(&args[3]).unwrap_or_else(|e| die(format!("reading journal: {e}")));
+            let journal =
+                fs::read(&args[3]).unwrap_or_else(|e| die(format!("reading journal: {e}")));
             let before = parse_hash(&args[5]).unwrap_or_else(die);
-            let mcycle: u64 = args[6].parse().unwrap_or_else(|e| die(format!("mcycle_count: {e}")));
+            let mcycle: u64 = args[6]
+                .parse()
+                .unwrap_or_else(|e| die(format!("mcycle_count: {e}")));
             let after = parse_hash(&args[7]).unwrap_or_else(die);
             verify_seal(&seal, &journal, &args[4], &before, mcycle, &after).unwrap_or_else(die);
             println!("Seal verified");
@@ -194,9 +221,13 @@ async fn main() {
         }
 
         "export-artifacts" => {
-            let dir = args.get(2).unwrap_or_else(|| die("export-artifacts <output-dir>"));
+            let dir = args
+                .get(2)
+                .unwrap_or_else(|| die("export-artifacts <output-dir>"));
             let hash = with_prover!(backend.as_str(), |client| {
-                export_artifacts(&client, elf, &guest_bytes, dir).await.unwrap_or_else(die)
+                export_artifacts(&client, elf, &guest_bytes, dir)
+                    .await
+                    .unwrap_or_else(die)
             });
             println!("Exported guest.elf and vkey-hash.txt to {dir}");
             println!("vkey hash: {hash}");
@@ -223,7 +254,10 @@ fn print_public_values(pv: &[u8]) {
         let before: MachineHash = pv[0..32].try_into().unwrap();
         let after: MachineHash = pv[64..96].try_into().unwrap();
         println!("  root_hash_before 0x{}", hex(&before));
-        println!("  mcycle_count     {}", u64::from_be_bytes(pv[56..64].try_into().unwrap()));
+        println!(
+            "  mcycle_count     {}",
+            u64::from_be_bytes(pv[56..64].try_into().unwrap())
+        );
         println!("  root_hash_after  0x{}", hex(&after));
     } else {
         println!("  raw 0x{}", hex(pv));

@@ -50,7 +50,9 @@ impl Mode {
         match s {
             "core" => Ok(Self::Core),
             "groth16" => Ok(Self::Groth16),
-            other => Err(format!("unknown proof mode {other:?}, expected core or groth16")),
+            other => Err(format!(
+                "unknown proof mode {other:?}, expected core or groth16"
+            )),
         }
     }
 }
@@ -96,8 +98,7 @@ fn check_journal(
 /// Read a step log into an SP1 stdin buffer. The whole log must go in a single
 /// write_slice: the guest-side read_input returns only the first chunk.
 pub fn stdin_for_log(log_file_path: &str) -> Result<SP1Stdin, String> {
-    let log_data =
-        fs::read(log_file_path).map_err(|e| format!("could not read log file: {e}"))?;
+    let log_data = fs::read(log_file_path).map_err(|e| format!("could not read log file: {e}"))?;
     let mut stdin = SP1Stdin::new();
     stdin.write_slice(&log_data);
     Ok(stdin)
@@ -117,8 +118,10 @@ pub async fn try_execute<P: Prover>(
     log_file_path: &str,
 ) -> Result<(SP1PublicValues, ExecutionReport), String> {
     let stdin = stdin_for_log(log_file_path)?;
-    let (public_values, report) =
-        client.execute(elf, stdin).await.map_err(|e| format!("{e}"))?;
+    let (public_values, report) = client
+        .execute(elf, stdin)
+        .await
+        .map_err(|e| format!("{e}"))?;
     if report.exit_code != 0 {
         return Err(format!("guest aborted with exit code {}", report.exit_code));
     }
@@ -142,7 +145,10 @@ pub async fn prove<P: Prover>(
 ) -> Result<SP1ProofWithPublicValues, String> {
     try_execute(client, elf.clone(), log_file_path).await?;
     let stdin = stdin_for_log(log_file_path)?;
-    let pk = client.setup(elf).await.map_err(|e| format!("setup failed: {e}"))?;
+    let pk = client
+        .setup(elf)
+        .await
+        .map_err(|e| format!("setup failed: {e}"))?;
     let request = client.prove(&pk, stdin);
     let proof = match mode {
         Mode::Core => request.core().await,
@@ -204,7 +210,10 @@ pub fn verify_seal(
 /// The guest's on-chain identity. Deriving it needs a proving key, so it costs
 /// a setup.
 pub async fn vkey_hash<P: Prover>(client: &P, elf: Elf) -> Result<String, String> {
-    let pk = client.setup(elf).await.map_err(|e| format!("setup failed: {e}"))?;
+    let pk = client
+        .setup(elf)
+        .await
+        .map_err(|e| format!("setup failed: {e}"))?;
     Ok(pk.verifying_key().bytes32())
 }
 
@@ -216,8 +225,7 @@ pub async fn export_artifacts<P: Prover>(
     guest_bytes: &[u8],
     output_dir: &str,
 ) -> Result<String, String> {
-    fs::create_dir_all(output_dir)
-        .map_err(|e| format!("could not create {output_dir}: {e}"))?;
+    fs::create_dir_all(output_dir).map_err(|e| format!("could not create {output_dir}: {e}"))?;
     let hash = vkey_hash(client, elf).await?;
     fs::write(format!("{output_dir}/guest.elf"), guest_bytes)
         .map_err(|e| format!("could not write guest.elf: {e}"))?;
@@ -283,7 +291,8 @@ mod tests {
     #[test]
     fn parse_hash_accepts_both_prefixes() {
         let with = parse_hash("0x00e6b3d37dabb6d5e104909838f6534cc48e85bf5f13a35ad4820ad9b45a936d");
-        let without = parse_hash("00e6b3d37dabb6d5e104909838f6534cc48e85bf5f13a35ad4820ad9b45a936d");
+        let without =
+            parse_hash("00e6b3d37dabb6d5e104909838f6534cc48e85bf5f13a35ad4820ad9b45a936d");
         assert_eq!(with.unwrap(), without.unwrap());
         assert!(parse_hash("00ff").is_err());
     }

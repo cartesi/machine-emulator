@@ -40,7 +40,10 @@ fn guest() -> Elf {
         .expect("sp1 dir")
         .join("cpp/sha-abi-guest.elf");
     let bytes = fs::read(&path).unwrap_or_else(|e| {
-        panic!("{}: {e}. Run make -C sp1/cpp sha-abi-guest.elf", path.display())
+        panic!(
+            "{}: {e}. Run make -C sp1/cpp sha-abi-guest.elf",
+            path.display()
+        )
     });
     Elf::Static(Box::leak(bytes.into_boxed_slice()))
 }
@@ -53,7 +56,9 @@ fn vectors() -> Vec<(u8, Vec<u8>)> {
     let all_ff = vec![0xffu8; 32];
     let mut concat_incrementing: Vec<u8> = (0u8..64).collect();
     concat_incrementing[0] = 0xfe; // break the symmetry between the halves
-    let concat_mixed: Vec<u8> = (0u8..64).map(|i| if i % 2 == 0 { i } else { 0xff - i }).collect();
+    let concat_mixed: Vec<u8> = (0u8..64)
+        .map(|i| if i % 2 == 0 { i } else { 0xff - i })
+        .collect();
 
     vec![
         (TAG_LEAF, incrementing),

@@ -95,7 +95,7 @@ DEPDIR = third-party
 SRCDIR = $(abspath src)
 TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
-# risc0 is optional and handled separately to allow clean without risc0 tooling installed
+# risc0 and sp1 are optional and handled separately to allow clean without their tooling installed
 SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
 
 # Pass down received UARCH_DEFS to sub-makefiles
@@ -177,7 +177,8 @@ help:
 	@echo '* all                                 - Build the src/ code. To build from a clean clone, run: make submodules all'
 	@echo '  uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  uarch-with-toolchain                - Build microarchitecture using the toolchain docker image'
-	@echo '  risc0                               - Build risc0 (requires cargo'
+	@echo '  risc0                               - Build risc0 (requires cargo)'
+	@echo '  sp1                                 - Build sp1 (requires cargo and the SP1 C toolchain)'
 	@echo '  build-tests-all                     - Build all tests (machine, uarch and misc)'
 	@echo '  build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image'
@@ -189,6 +190,7 @@ help:
 	@echo '  test-machine                        - Run machine emulator tests'
 	@echo '  test-uarch                          - Run uarch tests'
 	@echo '  test-risc0                         - Run risc0 tests'
+	@echo '  test-sp1                            - Run sp1 tests'
 	@echo '  test-misc                           - Run miscellaneous tests'
 	@echo '  test-fuzz                           - Run fuzz tests (requires Clang with libFuzzer)'
 	@echo '  build-computation-hash-corpus       - Build fixtures and record the computation-hash corpus'
@@ -216,6 +218,7 @@ $(SUBCLEAN): %.clean:
 
 clean: $(SUBCLEAN)
 	@$(MAKE) -C risc0 clean
+	@$(MAKE) -C sp1 clean
 	@$(MAKE) -C solidity-step clean
 	@rm -rf machine-emulator*.deb
 	@rm -rf $(ADD_GENERATED_FILES_DIFF)
@@ -260,6 +263,9 @@ test:
 test-risc0:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C risc0 test
 
+test-sp1:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C sp1 test
+
 test% coverage% build-tests%:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
@@ -288,6 +294,9 @@ uarch: $(SRCDIR)/cm-version.h $(SRCDIR)/interpret-jump-table.hpp
 
 risc0: $(SRCDIR)/cm-version.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C risc0
+
+sp1: $(SRCDIR)/cm-version.h
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C sp1 all
 
 $(SRCDIR)/cm-version.h:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) cm-version.h
@@ -441,5 +450,5 @@ $(ADD_GENERATED_FILES_DIFF): $(GENERATED_FILES)
 	git diff --default-prefix --staged --output=$(ADD_GENERATED_FILES_DIFF)
 	git reset -- $(GENERATED_FILES)
 
-.PHONY: help all submodules doc clean distclean src luacartesi hash uarch risc0 \
+.PHONY: help all submodules doc clean distclean src luacartesi hash uarch risc0 sp1 test-sp1 \
 	create-generated-files-patch $(COMPUTATION_HASH_TARGETS) $(SUBDIRS) $(SUBCLEAN)

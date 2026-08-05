@@ -113,8 +113,7 @@ static void sha256_leaf_or_concat(const uint8_t *data, unsigned long size, uint8
     }
 }
 
-// The zk_* hash primitives reproduce the host word-tree exactly, matching the
-// RISC0 guest implementation in risc0/rust/methods/guest/src/main.rs.
+// The zk_* hash primitives reproduce the host word-tree exactly.
 // hash_tree_target 1 selects SHA-256, the only target the zk guests support.
 
 extern "C" void zk_concat_hash(uint64_t hash_tree_target, const char *left, const char *right, char *result) {

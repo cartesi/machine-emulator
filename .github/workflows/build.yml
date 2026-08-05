@@ -1265,15 +1265,17 @@ jobs:
         run: make -C sp1 test-solidity
 
       - name: Export SP1 artifacts
-        run: make -C sp1/rust export-artifacts
+        run: make -C sp1 export-artifacts
 
       - name: Upload SP1 artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: sp1-artifacts
           path: |
-            sp1/artifacts/guest.elf
-            sp1/artifacts/vkey-hash.txt
+            sp1/artifacts/cartesi-sp1-replay-steps.elf
+            sp1/artifacts/cartesi-sp1-replay-steps-vkey-hash.txt
+            sp1/artifacts/cartesi-sp1-replay-steps-vkey.bin
+            sp1/artifacts/VKeyHash.sol
             sp1/solidity/test/fixtures/seal.bin
 
   solidity-step:

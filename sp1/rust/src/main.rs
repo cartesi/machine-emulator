@@ -19,8 +19,8 @@
 use std::{fs, process::exit};
 
 use cartesi_sp1::{
-    export_artifacts, hex, parse_hash, prove, try_execute, verify, verify_seal, vkey_hash,
-    MachineHash, Mode,
+    export_artifacts, hex, load_vkey, parse_hash, prove, try_execute, verify, verify_seal,
+    vkey_hash, MachineHash, Mode, GUEST_ARTIFACT, VKEY_ARTIFACT, VKEY_HASH_ARTIFACT,
 };
 use sp1_sdk::{Elf, HashableKey, Prover, ProverClient, ProvingKey, SP1ProofWithPublicValues};
 
@@ -31,6 +31,8 @@ fn usage(program: &str) {
 Options:
   --guest-elf <path>   Guest binary to prove against (required)
   --prover <backend>   cpu (default) or cuda
+  --vkey <path>        Verifying key exported by export-artifacts; lets verify
+                       skip the setup that deriving one from the guest costs
 
 Commands:
   execute <log_file_path>
@@ -42,7 +44,7 @@ Commands:
   verify <proof-path> <root_hash_before> <mcycle_count> <root_hash_after>
   verify-seal <seal-path> <journal-path> <vkey_hash> <root_hash_before> <mcycle_count> <root_hash_after>
   export-artifacts <output-dir>
-  vkey                 Print the guest's vkey hash (SP1's analog of an Image ID)"
+  vkey                 Print the guest's vkey hash (its on-chain identity)"
     );
 }
 
@@ -88,6 +90,7 @@ async fn main() {
 
     let mut guest_elf_path: Option<String> = None;
     let mut backend = "cpu".to_string();
+    let mut vkey_path: Option<String> = None;
     let mut args: Vec<String> = vec![program.clone()];
     let mut iter = argv.into_iter().skip(1);
     while let Some(arg) = iter.next() {
@@ -102,6 +105,9 @@ async fn main() {
                 backend = iter
                     .next()
                     .unwrap_or_else(|| die("--prover requires a backend"))
+            }
+            "--vkey" => {
+                vkey_path = Some(iter.next().unwrap_or_else(|| die("--vkey requires a path")))
             }
             _ => args.push(arg),
         }
@@ -193,12 +199,18 @@ async fn main() {
             let after = parse_hash(&args[5]).unwrap_or_else(die);
 
             let vkey = with_prover!(backend.as_str(), |client| {
-                let pk = client
-                    .setup(elf)
-                    .await
-                    .unwrap_or_else(|e| die(format!("setup: {e}")));
-                verify(&client, &pk, &proof, &before, mcycle, &after).unwrap_or_else(die);
-                pk.verifying_key().bytes32()
+                let vk = match &vkey_path {
+                    Some(path) => load_vkey(path).unwrap_or_else(die),
+                    None => {
+                        let pk = client
+                            .setup(elf)
+                            .await
+                            .unwrap_or_else(|e| die(format!("setup: {e}")));
+                        pk.verifying_key().clone()
+                    }
+                };
+                verify(&client, &vk, &proof, &before, mcycle, &after).unwrap_or_else(die);
+                vk.bytes32()
             });
             println!("Proof verified");
             println!("vkey hash: {vkey}");
@@ -232,7 +244,9 @@ async fn main() {
                     .await
                     .unwrap_or_else(die)
             });
-            println!("Exported guest.elf and vkey-hash.txt to {dir}");
+            println!(
+                "Exported {GUEST_ARTIFACT}, {VKEY_HASH_ARTIFACT} and {VKEY_ARTIFACT} to {dir}"
+            );
             println!("vkey hash: {hash}");
         }
 

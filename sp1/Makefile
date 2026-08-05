@@ -61,7 +61,7 @@ endif
 
 export SP1_FEATURES
 
-.PHONY: all cpp rust solidity test test-solidity fixtures seal clean help
+.PHONY: all cpp rust solidity test test-solidity fixtures seal export-artifacts vkey clean help
 
 help:
 	@echo "SP1 backend"
@@ -129,6 +129,17 @@ $(SEAL): $(STEP_LOG) $(CARTESI_SP1_CLI) $(GUEST_ELF)
 	  $(CARTESI_SP1_CLI) --guest-elf $(GUEST_ELF) seal $(PROOF) $(SEAL) $(JOURNAL)
 
 seal: $(SEAL)
+
+ARTIFACTS_DIR ?= $(abspath artifacts)
+
+export-artifacts: cpp rust
+	@$(MAKE) -C rust export-artifacts ARTIFACTS_DIR=$(ARTIFACTS_DIR)
+	@$(MAKE) -C solidity src/VKeyHash.sol
+	@cp solidity/src/VKeyHash.sol $(ARTIFACTS_DIR)/VKeyHash.sol
+	@echo "VKeyHash.sol copied to $(ARTIFACTS_DIR)"
+
+vkey: rust
+	@$(MAKE) -C rust vkey
 
 test: cpp rust
 	$(MAKE) -C rust test

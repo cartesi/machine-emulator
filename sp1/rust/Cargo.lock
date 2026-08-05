@@ -437,6 +437,7 @@ dependencies = [
 name = "cartesi-sp1"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "sha2",
  "sp1-sdk",
  "sp1-verifier",

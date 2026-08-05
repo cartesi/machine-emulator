@@ -54,8 +54,8 @@ int main() {
     interpret<replay_step_state_access &>(a, mcycle_end);
     a.finish();
 
-    // Public values are ABI-encoded as abi.encode(bytes32, uint64, bytes32) -- 96
-    // bytes, identical to the RISC0 journal.
+    // Public values are ABI-encoded as abi.encode(bytes32, uint64, bytes32) -- the
+    // 96-byte journal layout shared by every zk backend of the emulator.
     uint8_t journal[96]{};
     std::memcpy(journal, context.log.root_hash_before.data(), 32);
     const uint64_t mcycle_count = context.log.requested_cycle_count;

@@ -24,10 +24,16 @@ use std::fs;
 
 use sp1_sdk::{
     Elf, ExecutionReport, HashableKey, ProveRequest, Prover, ProvingKey, SP1ProofWithPublicValues,
-    SP1PublicValues, SP1Stdin,
+    SP1PublicValues, SP1Stdin, SP1VerifyingKey,
 };
 
 pub type MachineHash = [u8; 32];
+
+/// Exported artifact names. The guest is the step replayer: the arithmetized
+/// checker whose acceptance the proof attests.
+pub const GUEST_ARTIFACT: &str = "cartesi-sp1-replay-steps.elf";
+pub const VKEY_HASH_ARTIFACT: &str = "cartesi-sp1-replay-steps-vkey-hash.txt";
+pub const VKEY_ARTIFACT: &str = "cartesi-sp1-replay-steps-vkey.bin";
 
 /// Journal layout (ABI-encoded, 96 bytes):
 /// - root_hash_before: bytes32
@@ -172,14 +178,14 @@ pub async fn prove<P: Prover>(
 /// caller's claim.
 pub fn verify<P: Prover>(
     client: &P,
-    pk: &P::ProvingKey,
+    vk: &SP1VerifyingKey,
     proof: &SP1ProofWithPublicValues,
     root_hash_before: &MachineHash,
     mcycle_count: u64,
     root_hash_after: &MachineHash,
 ) -> Result<(), String> {
     client
-        .verify(proof, pk.verifying_key(), None)
+        .verify(proof, vk, None)
         .map_err(|e| format!("verification failed: {e}"))?;
     check_journal(
         proof.public_values.as_slice(),
@@ -221,8 +227,16 @@ pub async fn vkey_hash<P: Prover>(client: &P, elf: Elf) -> Result<String, String
     Ok(pk.verifying_key().bytes32())
 }
 
-/// Write the guest binary and its vkey hash to a directory, so a machine that
-/// cannot build the guest can still prove against the canonical one.
+/// Load a verifying key exported by `export_artifacts`, so `verify` can skip
+/// the setup that deriving one from the guest costs.
+pub fn load_vkey(path: &str) -> Result<SP1VerifyingKey, String> {
+    let bytes = fs::read(path).map_err(|e| format!("could not read vkey {path}: {e}"))?;
+    bincode::deserialize(&bytes).map_err(|e| format!("could not decode vkey {path}: {e}"))
+}
+
+/// Write the guest binary, its vkey hash, and the full verifying key to a
+/// directory, so a machine that cannot build the guest can still prove and
+/// verify against the canonical one.
 pub async fn export_artifacts<P: Prover>(
     client: &P,
     elf: Elf,
@@ -230,11 +244,23 @@ pub async fn export_artifacts<P: Prover>(
     output_dir: &str,
 ) -> Result<String, String> {
     fs::create_dir_all(output_dir).map_err(|e| format!("could not create {output_dir}: {e}"))?;
-    let hash = vkey_hash(client, elf).await?;
-    fs::write(format!("{output_dir}/guest.elf"), guest_bytes)
-        .map_err(|e| format!("could not write guest.elf: {e}"))?;
-    fs::write(format!("{output_dir}/vkey-hash.txt"), format!("{hash}\n"))
-        .map_err(|e| format!("could not write vkey-hash.txt: {e}"))?;
+    let pk = client
+        .setup(elf)
+        .await
+        .map_err(|e| format!("setup failed: {e}"))?;
+    let vk = pk.verifying_key();
+    let hash = vk.bytes32();
+    fs::write(format!("{output_dir}/{GUEST_ARTIFACT}"), guest_bytes)
+        .map_err(|e| format!("could not write {GUEST_ARTIFACT}: {e}"))?;
+    fs::write(
+        format!("{output_dir}/{VKEY_HASH_ARTIFACT}"),
+        format!("{hash}\n"),
+    )
+    .map_err(|e| format!("could not write {VKEY_HASH_ARTIFACT}: {e}"))?;
+    let vk_bytes =
+        bincode::serialize(vk).map_err(|e| format!("could not encode verifying key: {e}"))?;
+    fs::write(format!("{output_dir}/{VKEY_ARTIFACT}"), vk_bytes)
+        .map_err(|e| format!("could not write {VKEY_ARTIFACT}: {e}"))?;
     Ok(hash)
 }
 

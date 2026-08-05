@@ -26,6 +26,9 @@ groth16-cuda = ["sp1-sdk/groth16-cuda"]
 # as the guest ELF: bumping sp1-sdk is a consensus change.
 sp1-sdk = "6.3.1"
 sp1-verifier = "6.3.1"
+# Same serializer the SDK uses for its own proof files; the exported verifying
+# key is written with it.
+bincode = "1.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]

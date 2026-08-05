@@ -1373,6 +1373,82 @@ shell cost +66% with tracing idle).
    23.4% below the 10.19-second 64-head compiled-C AOT median, and 9.9% below
    the earlier 8.67-second online median.
 
+7. DONE, CONSERVATIVE TRACE LINKING. Each bounded straight trace now records
+   its normal successor and carries a patchable target slot. When either end
+   of a predecessor/successor pair is installed, the cold installation path
+   patches the slot; the execution entry path remains the exact head lookup
+   from item 6. At a linked boundary the generated code flushes the guest
+   registers used by that independently allocated fragment and jumps directly
+   into the successor, whose normal entry reloads its own allocation. A
+   64-instruction fragment may continue recording a successor in the same code
+   page, so long in-page paths can form chains without a new hot-head event.
+
+   A same-page link needs no entry or exit stub because both fragments share
+   the pinned handler contract and the current fast-pc mapping. Cross-page
+   links add a generated code-translation node before the jump. The node
+   performs only the verified hot code-TLB path: it checks the recorded
+   successor page's hot tag, loads the host offset and PMA index, re-encodes
+   the pinned fast pc, and updates the fetch offset, page tag, and context.
+   A hit jumps directly to the patched trace. A miss leaves the successor pc
+   encoded with the old deposit and branches to the existing fetch
+   continuation, which decodes it and performs the normal refill or page walk.
+   There is no privilege-address test, baked host mapping, runtime trampoline,
+   or page walk in generated code.
+
+   Two rejected policies established the boundary around this mechanism.
+   Allowing cross-page traces while leaving the fast pc encoded for the old
+   page produced pathological execution; treating only PCs with the high bit
+   clear as eligible avoided the symptom but was an architecture-specific
+   supervisor/user heuristic and was removed. After the translation node was
+   added, automatically admitting every short page fragment was still
+   pathological: qsort exceeded 74 seconds while compiling 149 mostly short
+   straight fragments before completion. Trace linking is sound, but short
+   fragments must not become globally visible before their whole chain proves
+   profitable.
+
+   One no-warm-up M3 Max run per workload compared the conservative linker
+   with the item-6 exact-head build. All runs reproduced the established guest
+   cycles, final root hash, and exit. `links` counts statically patched pairs,
+   not dynamic link executions, and the single timings are exploratory:
+
+   | workload | exact heads (wall s) | linked (wall s) | change | installed links |
+   |---|---:|---:|---:|---:|
+   | sieve | 7.81 (five-run median) | 7.17 | -8.2% | 9 |
+   | qsort | 24.86 | 25.21 | +1.4% | 4 |
+   | zlib | 25.90 | 25.63 | -1.0% | 9 |
+   | hash | 13.85 | 13.74 | -0.8% | 12 |
+   | double | 48.06 | 47.98 | -0.2% | 5 |
+   | syscall | 22.88 | 22.98 | +0.4% | 9 |
+   | **total** | **143.36** | **142.71** | **-0.5%** | **48** |
+
+   Except for sieve, the changes are noise-sized; the result is a correctness
+   and mechanism checkpoint, not yet a qsort win. Qsort's hottest offline
+   fragments are straight paths of 9, 16, and 15 instructions around a
+   5-instruction cyclic comparator loop. The current minimum rejects those
+   straight fragments, and the comparator loop leaves through a guarded side
+   exit while this stage links only normal straight-trace ends. The four qsort
+   links therefore do not form its hot partition/comparator/return cycle.
+
+8. NEXT, TRANSACTIONAL CHAINS AND SIDE EXITS. Record page-bounded successor
+   fragments into provisional pool slots, invisible to the exact head map.
+   Commit and patch the group only after it closes onto its root, an installed
+   trace, or another profitable cyclic fragment; discard it as a unit on NYI,
+   instability, or the length bound. This imports LuaJIT's central policy
+   property: a hot root may grow side traces, but an incomplete side path does
+   not pollute global dispatch. Each generated guard exit then receives the
+   same patchable successor slot and hot-exit counter as a straight end.
+   Repeated exits record a provisional side chain and patch directly once it
+   closes. Keep all selection and patching off the entry path, measure dynamic
+   link hits separately from installed links, and retain the existing exact
+   map, persistent NYI blacklist, and flush-all pool policy.
+
+   The first performance gate is qsort: recover its call/comparator/return
+   chain without regressing the other five workloads. Once selection proves
+   useful, linked fragments can share a register assignment (or carry explicit
+   boundary moves) so hot links no longer flush and reload every mapped guest
+   register. Per-page membership and invalidation remain required before this
+   execution oracle becomes a production JIT.
+
 ## 8c. The register-budget series: filed ideas and the queued campaign
 
 Section 5.16 established what each of the six slots is for: three

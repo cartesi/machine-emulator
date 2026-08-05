@@ -143,10 +143,12 @@ struct tc_online_state {
     static constexpr uint16_t max_penalty = 3;
     struct trace {
         uint64_t head;
+        uint64_t successor; // normal successor of a bounded straight trace
         uint32_t len;
         int32_t cycle; // entry index the tail loops back to, or -1
 #if TC_LIGHTNING
         const void *fn;
+        const void *link_fn; // patched when successor becomes compiled
         jit_state_t *jit;
 #endif
         tc_online_entry entries[max_len];
@@ -166,6 +168,7 @@ struct tc_online_state {
     uint64_t short_aborted;
     uint64_t compile_aborted;
     uint64_t flushes;
+    uint64_t links;
 };
 #endif
 
@@ -483,10 +486,11 @@ __attribute__((destructor)) static void tc_online_report() {
     }
     const auto &o = tc_online_storage;
     std::fprintf(stderr,
-        "tc-online: installed %llu aborted %llu (short %llu compile %llu) flushes %llu live %u\n",
+        "tc-online: installed %llu aborted %llu (short %llu compile %llu) flushes %llu links %llu live %u\n",
         static_cast<unsigned long long>(o.installed), static_cast<unsigned long long>(o.aborted),
         static_cast<unsigned long long>(o.short_aborted), static_cast<unsigned long long>(o.compile_aborted),
-        static_cast<unsigned long long>(o.flushes), static_cast<unsigned>(o.ntraces));
+        static_cast<unsigned long long>(o.flushes), static_cast<unsigned long long>(o.links),
+        static_cast<unsigned>(o.ntraces));
 }
 
 /// \brief Discards all installed traces and profiling progress (pool full).
@@ -522,8 +526,11 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle) {
     o->recording = false;
     auto &t = o->pool[o->ntraces];
     t.cycle = cycle;
+    t.successor = cycle < 0 ? t.entries[t.len - 1].next_pc : 0;
+    const bool closes_in_page =
+        t.cycle < 0 && (t.successor >> 12) == (t.head >> 12) && tc_online_find(o, t.successor) != nullptr;
     const bool too_short = t.len < tc_online_state::min_len ||
-        (t.cycle < 0 && t.len < tc_online_state::min_straight_len);
+        (t.cycle < 0 && t.len < tc_online_state::min_straight_len && !closes_in_page);
     tc_online_debug(too_short ? "abort" : "install", t.head, t.len);
     if (too_short) {
         ++o->aborted;
@@ -533,6 +540,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle) {
     }
 #if TC_LIGHTNING
     t.jit = nullptr;
+    t.link_fn = nullptr;
     t.fn = tc_lightning_compile_trace(t, &t.jit);
     if (t.fn == nullptr) {
         ++o->aborted;
@@ -547,6 +555,23 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle) {
     tc_online_insert(o, t.head, o->ntraces);
     ++o->installed;
     ++o->ntraces;
+#if TC_LIGHTNING
+    // The generated link node handles the code-TLB transition when successor
+    // is on another page; a miss retains the normal fetch continuation.
+    if (t.cycle < 0) {
+        if (const auto *const successor = tc_online_find(o, t.successor); successor != nullptr) {
+            t.link_fn = successor->fn;
+            ++o->links;
+        }
+    }
+    for (uint32_t i = 0; i + 1 < o->ntraces; ++i) {
+        auto &predecessor = o->pool[i];
+        if (predecessor.cycle < 0 && predecessor.successor == t.head && predecessor.link_fn == nullptr) {
+            predecessor.link_fn = t.fn;
+            ++o->links;
+        }
+    }
+#endif
 }
 
 /// \brief Starts recording at a hot head unless it is installed or blacklisted.
@@ -561,10 +586,12 @@ static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc) {
     }
     auto &t = o->pool[o->ntraces];
     t.head = pc;
+    t.successor = 0;
     t.len = 0;
     t.cycle = -1;
 #if TC_LIGHTNING
     t.fn = nullptr;
+    t.link_fn = nullptr;
     t.jit = nullptr;
 #endif
     o->recording = true;
@@ -573,8 +600,9 @@ static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc) {
 
 /// \brief Appends the instruction about to execute to the active recording.
 /// \details The previous entry's successor is this pc, whatever happened in
-/// between; the recording ends when execution leaves the head's page, closes
-/// a cycle over a recorded address, or fills the slot.
+/// between; the recording ends when it leaves the head's page, closes a cycle,
+/// or reaches an installed head. A full slot starts a successor fragment in
+/// the same page; cross-page links re-establish the mapping in generated code.
 template <typename STATE_ACCESS>
 static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t insn) {
     tc_online_state *o = c->online;
@@ -587,12 +615,27 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
                 return;
             }
         }
+        if (tc_online_find(o, pc) != nullptr) {
+            tc_online_finish(c, -1);
+            return;
+        }
         if ((pc >> 12) != (t.head >> 12)) {
             tc_online_finish(c, -1);
             return;
         }
         if (t.len == tc_online_state::max_len) {
+            const uint32_t previous_ntraces = o->ntraces;
             tc_online_finish(c, -1);
+            if (o->ntraces != previous_ntraces + 1) {
+                return;
+            }
+            tc_online_begin(c, pc);
+            if (!o->recording) {
+                return;
+            }
+            auto &successor = o->pool[o->ntraces];
+            successor.entries[0] = tc_online_entry{pc, 0, insn};
+            successor.len = 1;
             return;
         }
     }
@@ -2336,9 +2379,57 @@ static const void *tc_lightning_compile_trace(const tc_online_state::trace &trac
         jit_movi(JIT_R0, reinterpret_cast<jit_word_t>(&tc_lightning_continue));
         jit_jmpr(JIT_R0);
     };
+    const auto emit_link_or_continue = [&] {
+        if (trace.cycle < 0) {
+            // Keep the patched target in a scratch register while a
+            // cross-page link updates the pinned fetch mapping. Guest
+            // registers have already been flushed at this boundary.
+            jit_movi(JIT_V7, reinterpret_cast<jit_word_t>(&trace.link_fn));
+            jit_ldr(JIT_V7, JIT_V7);
+            auto *const unlinked = jit_beqi(JIT_V7, 0);
+            jit_node_t *tlb_miss = nullptr;
+            if ((trace.successor >> LOG2_PAGE_SIZE) != (trace.head >> LOG2_PAGE_SIZE)) {
+                constexpr jit_word_t hot_tlb_base = offsetof(processor_state, penumbra) +
+                    offsetof(penumbra_state, tlb) + TLB_CODE * sizeof(hot_tlb_set);
+                constexpr jit_word_t shadow_tlb_base = offsetof(processor_state, shadow) +
+                    offsetof(shadow_state, tlb) + TLB_CODE * sizeof(shadow_tlb_set);
+                constexpr jit_word_t fetch_offset =
+                    offsetof(processor_state, penumbra) + offsetof(penumbra_state, fetch_vf_offset);
+                constexpr jit_word_t context_fetch_page = offsetof(tc_context<state_access>, fetch_vaddr_page);
+                constexpr jit_word_t context_pma_index = offsetof(tc_context<state_access>, fetch_pma_index);
+                const uint64_t successor_page = tlb_addr_page(trace.successor);
+                const uint64_t slot_index = tlb_slot_index(trace.successor);
+                const jit_word_t hot_slot = hot_tlb_base + slot_index * sizeof(hot_tlb_slot);
+                const jit_word_t shadow_slot = shadow_tlb_base + slot_index * sizeof(shadow_tlb_slot);
+
+                // This node deliberately implements only the verified hot-TLB
+                // path. On a miss, pc still carries the successor encoded with
+                // the old deposit, so tc_lightning_continue can decode it and
+                // run the normal refill/page-walk path.
+                jit_ldxi(JIT_R0, JIT_V1, hot_slot + offsetof(hot_tlb_slot, vaddr_page));
+                tlb_miss = jit_bnei(JIT_R0, static_cast<jit_word_t>(successor_page));
+                jit_ldxi(JIT_R0, JIT_V1, hot_slot + offsetof(hot_tlb_slot, vh_offset));
+                jit_movi(JIT_V3, static_cast<jit_word_t>(trace.successor));
+                jit_addr(JIT_V4, JIT_V3, JIT_R0);
+                jit_movi(JIT_V3, static_cast<jit_word_t>(successor_page));
+                jit_addr(JIT_V6, JIT_V3, JIT_R0);
+                jit_stxi(fetch_offset, JIT_V1, JIT_R0);
+                jit_stxi(context_fetch_page, JIT_V8, JIT_V6);
+                jit_ldxi(JIT_R0, JIT_V1, shadow_slot + offsetof(shadow_tlb_slot, pma_index));
+                jit_stxi(context_pma_index, JIT_V8, JIT_R0);
+            }
+            jit_jmpr(JIT_V7);
+            auto *const fallback = jit_label();
+            jit_patch_at(unlinked, fallback);
+            if (tlb_miss != nullptr) {
+                jit_patch_at(tlb_miss, fallback);
+            }
+        }
+        emit_continue();
+    };
 
     emit_flush();
-    emit_continue();
+    emit_link_or_continue();
 
     for (uint16_t i = 0; i < execution.nexits; ++i) {
         auto *const label = jit_label();

@@ -16,11 +16,14 @@
 
 //! The soundness statement: a malicious prover cannot get a proof for a forged
 //! log. The reject fixtures are structurally invalid step logs and the guest
-//! must abort on every one.
+//! must abort on every one, each for its own reason.
 //!
-//! Generate them with `make -C sp1 fixtures` (needs a built emulator).
+//! The abort reason only surfaces on the process stderr, so the reject
+//! assertions run the CLI as a subprocess and match the reason there.
+//!
+//! Generate the fixtures with `make -C sp1 fixtures` (needs a built emulator).
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, process::Command};
 
 use cartesi_sp1::try_execute;
 use sp1_sdk::{Elf, ProverClient};
@@ -66,8 +69,8 @@ fn guest_elf() -> Elf {
     Elf::Static(Box::leak(bytes.into_boxed_slice()))
 }
 
-#[tokio::test]
-async fn guest_rejects_forged_logs() {
+#[test]
+fn guest_rejects_forged_logs() {
     let dir = fixtures_dir().join("reject-machine");
     assert!(
         dir.exists(),
@@ -77,8 +80,8 @@ async fn guest_rejects_forged_logs() {
     let text = fs::read_to_string(dir.join("_manifest.csv"))
         .unwrap_or_else(|e| panic!("failed to read reject manifest: {e}"));
 
-    let client = ProverClient::builder().light().build().await;
-    let elf = guest_elf();
+    let cli = env!("CARGO_BIN_EXE_cartesi-sp1-cli");
+    let guest = repo_root().join("sp1/cpp/guest.elf");
     let mut checked = 0;
     for line in text.lines().skip(1) {
         if line.is_empty() {
@@ -93,16 +96,22 @@ async fn guest_rejects_forged_logs() {
         let (name, tag) = (cols[1], cols[2]);
         let path = dir.join(name);
 
-        // Rejection is the soundness property. SP1 surfaces only the exit code;
-        // the guest's reason goes to the process stderr and is not retrievable
-        // here, so WHICH check fired cannot be asserted. expected_message() is
-        // the documented contract and rejects an unknown tag, so a new fixture
-        // still fails loudly.
-        let _ = expected_message(tag);
-        try_execute(&client, elf.clone(), path.to_str().unwrap())
-            .await
-            .err()
-            .unwrap_or_else(|| panic!("guest ACCEPTED forged log {name} (tag {tag})"));
+        let output = Command::new(cli)
+            .args(["--guest-elf", guest.to_str().unwrap()])
+            .args(["execute", path.to_str().unwrap()])
+            .output()
+            .unwrap_or_else(|e| panic!("running {cli}: {e}"));
+        assert!(
+            !output.status.success(),
+            "guest ACCEPTED forged log {name} (tag {tag})"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let expected = expected_message(tag);
+        assert!(
+            stderr.contains(expected),
+            "forged log {name} (tag {tag}) rejected for the wrong reason:\n  \
+             expected substring {expected:?}\n  stderr: {stderr}"
+        );
         checked += 1;
     }
     assert!(checked > 0, "no machine reject rows in {}", dir.display());

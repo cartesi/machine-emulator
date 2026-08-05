@@ -31,6 +31,8 @@ extern "C" void write_output(const uint8_t *output, size_t size);
 extern "C" void zk_merkle_tree_hash(uint64_t hash_tree_target, const char *data, unsigned long size, char *hash);
 extern "C" void zk_concat_hash(uint64_t hash_tree_target, const char *left, const char *right, char *result);
 extern "C" [[noreturn]] void zk_abort_with_msg(const char *msg);
+extern "C" void syscall_sha256_extend(uint64_t w[64]);
+extern "C" void syscall_sha256_compress(uint64_t w[64], uint64_t state[8]);
 
 namespace {
 
@@ -41,12 +43,60 @@ constexpr uint8_t TAG_CONCAT = 1;
 constexpr size_t DIGEST_SIZE = 32;
 constexpr size_t MAX_RECORDS = 64;
 
+// The executor addresses w as 64 and state as 8 8-byte slots. If a bump ever
+// widens that footprint, the digests can stay plausible while neighboring
+// stack is silently smashed — the sentinels bordering the buffers are what
+// turn that into an abort.
+void check_precompile_footprint() {
+    constexpr uint64_t CANARY = 0x5ca1ab1edeadbeef;
+    struct {
+        uint64_t pre[4];
+        uint64_t w[64];
+        uint64_t mid[4];
+        uint64_t state[8];
+        uint64_t post[4];
+    } probe = {};
+    for (auto &word : probe.pre) {
+        word = CANARY;
+    }
+    for (auto &word : probe.mid) {
+        word = CANARY;
+    }
+    for (auto &word : probe.post) {
+        word = CANARY;
+    }
+    for (size_t i = 0; i < 64; i++) {
+        probe.w[i] = i;
+    }
+    for (size_t i = 0; i < 8; i++) {
+        probe.state[i] = i;
+    }
+    syscall_sha256_extend(probe.w);
+    syscall_sha256_compress(probe.w, probe.state);
+    for (const auto &word : probe.pre) {
+        if (word != CANARY) {
+            zk_abort_with_msg("sha-abi-guest: precompile wrote before its buffer");
+        }
+    }
+    for (const auto &word : probe.mid) {
+        if (word != CANARY) {
+            zk_abort_with_msg("sha-abi-guest: precompile overran w");
+        }
+    }
+    for (const auto &word : probe.post) {
+        if (word != CANARY) {
+            zk_abort_with_msg("sha-abi-guest: precompile overran state");
+        }
+    }
+}
+
 } // namespace
 
 int main() {
     const uint8_t *input = nullptr;
     size_t input_size = 0;
     read_input(&input, &input_size);
+    check_precompile_footprint();
 
     alignas(8) uint8_t digests[MAX_RECORDS * DIGEST_SIZE];
     size_t produced = 0;

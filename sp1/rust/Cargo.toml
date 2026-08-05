@@ -22,6 +22,8 @@ cuda = ["sp1-sdk/cuda"]
 groth16-cuda = ["sp1-sdk/groth16-cuda"]
 
 [dependencies]
+# The vkey (the guest's on-chain identity) depends on the SDK version as well
+# as the guest ELF: bumping sp1-sdk is a consensus change.
 sp1-sdk = "6.3.1"
 sp1-verifier = "6.3.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

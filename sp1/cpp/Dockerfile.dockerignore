@@ -1,0 +1,12 @@
+# Context allowlist: only what the Dockerfile COPYs, minus build artifacts.
+*
+!src/
+!tools/
+!third-party/
+!sp1/cpp/
+**/*.o
+**/*.d
+**/*.a
+**/*.so
+**/*.dylib
+sp1/cpp/*.elf

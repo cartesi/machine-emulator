@@ -1,18 +1,30 @@
 [package]
-name = "cartesi-sp1-execute"
+name = "cartesi-sp1"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
+[lib]
+name = "cartesi_sp1"
+path = "src/lib.rs"
+
 [[bin]]
-name = "cartesi-sp1-execute"
+name = "cartesi-sp1-cli"
 path = "src/main.rs"
 
 [features]
 # Off by default: sp1-cuda pulls a CUDA-linked prover that only builds where the
 # toolkit is present. Enable on the GPU host with --features cuda.
 cuda = ["sp1-sdk/cuda"]
+# GPU acceleration for the Groth16 wrap, which `cuda` alone does not cover: it
+# accelerates the STARK only, leaving gnark on the CPU. Pulls in native-gnark,
+# so the host needs a Go toolchain to build gnark from source.
+groth16-cuda = ["sp1-sdk/groth16-cuda"]
 
 [dependencies]
 sp1-sdk = "6.3.1"
+sp1-verifier = "6.3.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+sha2 = "0.10"

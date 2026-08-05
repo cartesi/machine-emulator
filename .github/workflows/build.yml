@@ -1096,6 +1096,172 @@ jobs:
             risc0/artifacts/cartesi-risc0-guest-step-prover-image-id.txt
             risc0/artifacts/ImageID.sol
 
+  sp1:
+    name: SP1
+    needs: [check-format, check-commits]
+    # 8-core runners are amd64 with 32 GB RAM: the Groth16 wrap needs ~14-16 GB
+    # (a 15.7 GB VM was OOM-killed; 24 GB succeeds) and the sp1-gnark image is
+    # published for linux/amd64 only.
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - name: Checkout machine emulator source code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Setup variables
+        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Depot CLI
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
+
+      - name: Build machine-emulator "builder" docker image
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
+        with:
+          file: Dockerfile
+          context: .
+          target: builder
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:builder
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            GIT_COMMIT=${GITHUB_SHA}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build machine-emulator docker image
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
+        with:
+          file: Dockerfile
+          context: .
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:devel
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            GIT_COMMIT=${GITHUB_SHA}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build machine-emulator "tests" docker image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          file: tests/Dockerfile
+          context: .
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:tests
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+
+      - name: Generate sp1 fixtures
+        # Mirrors sp1/Makefile's fixtures target through the tests image (no built
+        # emulator on the runner). The machine-tests logs are recorded because
+        # record-adversarial-machine.lua tampers one of them as its base.
+        run: |
+          mkdir -p sp1/test/fixtures/cartesi-machine-tests sp1/test/fixtures/one-mcycle
+          chmod -R 777 sp1/test/fixtures
+          docker run --rm -t -v ${{ github.workspace }}/sp1/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
+            cartesi-machine-tests --jobs=$(nproc) --hash-function=sha256 --save-step-logs=/fixtures/cartesi-machine-tests run_step
+          docker run --rm -t -v ${{ github.workspace }}/sp1/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
+            /usr/share/cartesi-machine/tests/lua/record-one-mcycle.lua --hash-function=sha256 --output-dir=/fixtures/one-mcycle
+          docker run --rm -t -v ${{ github.workspace }}/sp1/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
+            /usr/share/cartesi-machine/tests/lua/record-adversarial-machine.lua --fixtures-dir=/fixtures --output-dir=/fixtures/reject-machine
+          ls sp1/test/fixtures/one-mcycle sp1/test/fixtures/reject-machine
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          # sp1-sdk 6.3.1 declares rust-version 1.88; pinned to the toolchain the
+          # committed Cargo.lock was built with.
+          toolchain: 1.93.1
+          override: true
+
+      - name: Check Rust formatting
+        run: make -C sp1/rust check-format
+
+      - name: Install SP1 C toolchain and zkevm SDK
+        # Same pins as sp1/cpp/Dockerfile: toolchain tag must match
+        # SP1_CPP_TOOLCHAIN_TAG in sp1/cpp/Makefile, SDK version matches the
+        # sp1-sdk crate. lld links the guest; libmpc3/libmpfr6/libgmp10 are
+        # cc1plus runtime dependencies the toolchain tarball ships without.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lld libmpc3 libmpfr6 libgmp10
+          mkdir -p $HOME/.sp1 && cd $HOME/.sp1
+          curl -sSL -o toolchain.tar.gz \
+            https://github.com/succinctlabs/riscv-gnu-toolchain/releases/download/2026.02.13/riscv64im-linux-amd64.tar.gz
+          echo "toolchain sha256: $(sha256sum toolchain.tar.gz)"
+          mkdir -p riscv64im-2026.02.13
+          tar xzf toolchain.tar.gz -C riscv64im-2026.02.13 --strip-components=1
+          curl -sSL -o zkevm-sdk.tar.gz \
+            https://github.com/succinctlabs/sp1/releases/download/v6.3.1/zkevm-sdk-v6.3.1.tar.gz
+          echo "zkevm-sdk sha256: $(sha256sum zkevm-sdk.tar.gz)"
+          mkdir -p zkevm-sdk-v6.3.1
+          tar xzf zkevm-sdk.tar.gz -C zkevm-sdk-v6.3.1 --strip-components=1
+          rm toolchain.tar.gz zkevm-sdk.tar.gz
+
+      - name: Build interpret-jump-table.hpp
+        # -t omitted so the redirected stdout is not corrupted by a tty.
+        run: docker run --rm -v .:/this-dir ${{ github.repository_owner }}/machine-emulator:tests /this-dir/tools/gen-interpret-jump-table.lua > src/interpret-jump-table.hpp
+
+      - name: Build SP1 guests
+        run: make -C sp1/cpp guest.elf sha-abi-guest.elf
+
+      - name: Run SP1 host tests
+        run: make -C sp1/rust test
+
+      - name: Install Foundry
+        # Pinned to the same forge version as the other jobs.
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.0.0
+
+      - name: Generate Groth16 seal (CPU prover)
+        # The experiment this job exists for: prove the one-mcycle fixture to a
+        # contract-ready seal on a GitHub runner. Downloads ~8 GB of circuit
+        # artifacts on first prove; the gnark stage runs in the sp1-gnark
+        # container, native amd64 here.
+        run: |
+          free -h
+          time make -C sp1 seal
+          free -h
+
+      - name: Run on-chain tests (Sepolia fork)
+        run: make -C sp1 test-solidity
+
+      - name: Export SP1 artifacts
+        run: make -C sp1/rust export-artifacts
+
+      - name: Upload SP1 artifacts
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: sp1-artifacts
+          path: |
+            sp1/artifacts/guest.elf
+            sp1/artifacts/vkey-hash.txt
+            sp1/solidity/test/fixtures/seal.bin
+
   solidity-step:
     name: Solidity Step
     needs: [check-format, check-commits]

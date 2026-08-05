@@ -1,6 +1,6 @@
 # The SP1 GNU toolchain is installed by 'sp1up --c-toolchain' (or by hand) under ~/.sp1.
-# Unlike risc0 there is no reproducible-build story for C guests yet: the compiler is not
-# pinned by SP1's Docker builder, so the toolchain tag below is our own pin.
+# The compiler is not pinned by SP1's Docker builder, which covers Rust guests only,
+# so the toolchain tag below is our own pin. See Dockerfile for the canonical build.
 SP1_CPP_TOOLCHAIN_TAG := 2026.02.13
 
 # Only detect toolchain for non-clean targets (allows clean to work without it installed)
@@ -38,6 +38,7 @@ CXX := $(SP1_CPP_TOOLCHAIN_PREFIX)g++
 OBJCOPY := $(SP1_CPP_TOOLCHAIN_PREFIX)objcopy
 OBJDUMP := $(SP1_CPP_TOOLCHAIN_PREFIX)objdump
 READELF := $(SP1_CPP_TOOLCHAIN_PREFIX)readelf
+STRIP := $(SP1_CPP_TOOLCHAIN_PREFIX)strip
 
 OPTFLAGS=-O2 -g0
 
@@ -60,9 +61,9 @@ endif
 UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks
 
 # SP1's executor has no misaligned load/store support (a misaligned access makes the
-# program unprovable), hence -mstrict-align. Unlike the rv32 risc0 guest we keep
-# native uint128 (no AVOID_NATIVE_UINT128_T): rv64 synthesizes it natively.
-# NO_STD_VECTOR is still required: freestanding libstdc++ has no <vector>.
+# program unprovable), hence -mstrict-align. rv64 synthesizes uint128 natively, so
+# AVOID_NATIVE_UINT128_T is not needed. NO_STD_VECTOR is: freestanding libstdc++
+# has no <vector>.
 CFLAGS := -march=rv64im -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) -MMD -MP \
 	-DZKARCHITECTURE=1 \
 	-DNO_STD_VECTOR=1 \
@@ -102,6 +103,13 @@ EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,
 
 all: guest.elf
 
+# Exercises the sha precompiles against a host reference; not shipped.
+sha-abi-guest.elf: sha-abi-guest.sp1arch_cpp.o sp1-runtime.sp1arch_cpp.o $(SP1_THIRDPARTY_OBJS)
+	$(LD) -static --gc-sections -u _start -T $(SP1_ZKEVM_SDK_DIR)/zkvm.ld \
+		sha-abi-guest.sp1arch_cpp.o sp1-runtime.sp1arch_cpp.o $(SP1_THIRDPARTY_OBJS) \
+		$(SP1_ZKEVM_SDK_DIR)/libzkevm.a -o $@
+	$(STRIP) --strip-all $@
+
 GENERATED_HEADERS := $(EMULATOR_SRC_DIR)/cm-version.h $(EMULATOR_SRC_DIR)/interpret-jump-table.hpp
 
 %.emulator_cpp.o: $(EMULATOR_SRC_DIR)/%.cpp | $(GENERATED_HEADERS)
@@ -125,6 +133,12 @@ $(EMULATOR_SRC_DIR)/interpret-jump-table.hpp: $(EMULATOR_TOOLS_DIR)/gen-interpre
 # SP1's loader rejects any ELF segment below STACK_TOP (0x78000000), and never runs
 # static constructors (__start calls main() directly, skipping .init_array); the
 # post-link checks turn either mistake into a build failure instead of a silent one.
+#
+# Stripping is not cosmetic. SP1 builds the program from PT_LOAD segments plus a
+# symbol-table lookup, so a symbol table is an input to the vkey that no build
+# flag controls; with none, host-to-host differences in linker symbol ordering
+# cannot reach it. Stripped builds come out byte-identical across hosts, which
+# also makes a plain sha256 of the ELF a usable check.
 guest.elf: $(EMULATOR_OBJS) $(SP1ARCH_OBJS) $(SP1_THIRDPARTY_OBJS)
 	$(LD) -static --gc-sections -u _start -T $(SP1_ZKEVM_SDK_DIR)/zkvm.ld \
 		$(EMULATOR_OBJS) $(SP1ARCH_OBJS) $(SP1_THIRDPARTY_OBJS) \
@@ -139,9 +153,14 @@ guest.elf: $(EMULATOR_OBJS) $(SP1ARCH_OBJS) $(SP1_THIRDPARTY_OBJS)
 			rm -f $@; exit 1; \
 		fi; \
 	done
+	@if $(READELF) -l $@ | grep -q '\bNOTE\b'; then \
+		echo "ERROR: $@ has a PT_NOTE segment; SP1 parses it into untrusted memory"; \
+		rm -f $@; exit 1; \
+	fi
+	$(STRIP) --strip-all $@
 
 # Rebuild objects when an included header (e.g. shared emulator sources) changes.
 -include $(wildcard *.d)
 
 clean:
-	@rm -f *.o *.d guest.elf
+	@rm -f *.o *.d guest.elf sha-abi-guest.elf

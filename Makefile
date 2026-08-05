@@ -95,6 +95,9 @@ DEPDIR = third-party
 SRCDIR = $(abspath src)
 TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
+LIGHTNING_VERSION = 2.2.3
+LIGHTNING_DIR = $(DOWNLOADDIR)/lightning
+LIGHTNING_LIB = $(LIGHTNING_DIR)/lib/.libs/liblightning.a
 # risc0 is optional and handled separately to allow clean without risc0 tooling installed
 SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
 
@@ -240,6 +243,19 @@ $(DEPDIR)/downloads/boost:
 	tar -C $(DEPDIR)/downloads -xzf $(DEPDIR)/downloads/boost_1_83_0.tar.gz boost_1_83_0/boost
 	mv $(DEPDIR)/downloads/boost_1_83_0/boost $(DEPDIR)/downloads/boost
 	rm -rf $(DEPDIR)/downloads/boost_1_83_0.tar.gz $(DEPDIR)/downloads/boost_1_83_0
+
+# Experimental trace-JIT backend dependency. Keep the build private to the
+# workspace: normal emulator builds do not download or link GNU lightning.
+bundle-lightning: $(LIGHTNING_LIB)
+$(LIGHTNING_LIB):
+	mkdir -p $(DOWNLOADDIR)
+	wget -O $(DOWNLOADDIR)/lightning-$(LIGHTNING_VERSION).tar.gz \
+		https://ftp.gnu.org/gnu/lightning/lightning-$(LIGHTNING_VERSION).tar.gz
+	tar -C $(DOWNLOADDIR) -xzf $(DOWNLOADDIR)/lightning-$(LIGHTNING_VERSION).tar.gz
+	mv $(DOWNLOADDIR)/lightning-$(LIGHTNING_VERSION) $(LIGHTNING_DIR)
+	rm -f $(DOWNLOADDIR)/lightning-$(LIGHTNING_VERSION).tar.gz
+	cd $(LIGHTNING_DIR) && ./configure --disable-shared --enable-static --disable-disassembler CFLAGS="-O2 -fPIC"
+	$(MAKE) -C $(LIGHTNING_DIR)
 
 submodules:
 	git submodule update --init --recursive

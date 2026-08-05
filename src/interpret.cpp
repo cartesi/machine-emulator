@@ -527,8 +527,8 @@ static FORCE_INLINE i_state_access_fast_addr_t<STATE_ACCESS> pc_to_fast(const ST
 /// \details Every condition computed from guest values must pass through this
 /// hook before execution branches on it, so that a staged backend can observe
 /// the direction taken. For direct execution it is the condition itself.
-template <typename STATE_ACCESS>
-static FORCE_INLINE bool observe(const STATE_ACCESS /*a*/, bool cond) {
+template <typename STATE_ACCESS, typename CONDITION>
+static FORCE_INLINE auto observe(const STATE_ACCESS /*a*/, CONDITION cond) {
     return cond;
 }
 
@@ -536,35 +536,51 @@ static FORCE_INLINE bool observe(const STATE_ACCESS /*a*/, bool cond) {
 /// \details Overloadable counterpart of static_cast, used on guest values so
 /// that a staged backend can retype them.
 template <typename T, typename V>
-static FORCE_INLINE T value_cast(V v) {
-    return static_cast<T>(v);
+static FORCE_INLINE auto value_cast(V v) {
+    if constexpr (requires { v.template value_cast<T>(); }) {
+        return v.template value_cast<T>();
+    } else {
+        return static_cast<T>(v);
+    }
 }
 
 /// \brief Wrapping (two's complement) addition of guest values.
 /// \details The result has the type of the first operand.
 template <typename T, typename U>
-static FORCE_INLINE T wrapping_add(T x, U y) {
-    T val = 0;
-    __builtin_add_overflow(x, y, &val);
-    return val;
+static FORCE_INLINE auto wrapping_add(T x, U y) {
+    if constexpr (requires { x.wrapping_add(y); }) {
+        return x.wrapping_add(y);
+    } else {
+        T val = 0;
+        __builtin_add_overflow(x, y, &val);
+        return val;
+    }
 }
 
 /// \brief Wrapping (two's complement) subtraction of guest values.
 /// \details The result has the type of the first operand.
 template <typename T, typename U>
-static FORCE_INLINE T wrapping_sub(T x, U y) {
-    T val = 0;
-    __builtin_sub_overflow(x, y, &val);
-    return val;
+static FORCE_INLINE auto wrapping_sub(T x, U y) {
+    if constexpr (requires { x.wrapping_sub(y); }) {
+        return x.wrapping_sub(y);
+    } else {
+        T val = 0;
+        __builtin_sub_overflow(x, y, &val);
+        return val;
+    }
 }
 
 /// \brief Wrapping (two's complement) multiplication of guest values.
 /// \details The result has the type of the first operand.
 template <typename T, typename U>
-static FORCE_INLINE T wrapping_mul(T x, U y) {
-    T val = 0;
-    __builtin_mul_overflow(x, y, &val);
-    return val;
+static FORCE_INLINE auto wrapping_mul(T x, U y) {
+    if constexpr (requires { x.wrapping_mul(y); }) {
+        return x.wrapping_mul(y);
+    } else {
+        T val = 0;
+        __builtin_mul_overflow(x, y, &val);
+        return val;
+    }
 }
 
 /// \brief Obtains a mask of pending and enabled interrupts.
@@ -1278,7 +1294,11 @@ static auto dump_insn([[maybe_unused]] const STATE_ACCESS a,
 /// illegal.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status raise_illegal_insn_exception(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
-    pc = raise_exception(a, pc, MCAUSE_ILLEGAL_INSN, insn);
+    if constexpr (requires { a.stage_unsupported(); }) {
+        a.stage_unsupported();
+    } else {
+        pc = raise_exception(a, pc, MCAUSE_ILLEGAL_INSN, insn);
+    }
     return execute_status::failure;
 }
 
@@ -1712,7 +1732,12 @@ static FORCE_INLINE execute_status execute_DIVW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+    if constexpr (requires { a.template stage_divide_signed<32>(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+            return a.template stage_divide_signed<32>(value_cast<int32_t>(rs1), value_cast<int32_t>(rs2));
+        });
+    } else {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
         auto rs1w = value_cast<int32_t>(rs1);
         auto rs2w = value_cast<int32_t>(rs2);
         if (observe(a, rs2w == 0)) [[unlikely]] {
@@ -1722,7 +1747,8 @@ static FORCE_INLINE execute_status execute_DIVW(const STATE_ACCESS a, i_state_ac
             return value_cast<uint64_t>(rs1w);
         }
         return value_cast<uint64_t>(rs1w / rs2w);
-    });
+        });
+    }
 }
 
 /// \brief Implementation of the DIVUW instruction.
@@ -1732,14 +1758,20 @@ static FORCE_INLINE execute_status execute_DIVUW(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+    if constexpr (requires { a.template stage_divide_unsigned<32>(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+            return a.template stage_divide_unsigned<32>(value_cast<uint32_t>(rs1), value_cast<uint32_t>(rs2));
+        });
+    } else {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
         auto rs1w = value_cast<uint32_t>(rs1);
         auto rs2w = value_cast<uint32_t>(rs2);
         if (observe(a, rs2w == 0)) [[unlikely]] {
             return static_cast<uint64_t>(-1);
         }
         return value_cast<uint64_t>(value_cast<int32_t>(rs1w / rs2w));
-    });
+        });
+    }
 }
 
 /// \brief Implementation of the REMW instruction.
@@ -1752,7 +1784,12 @@ static FORCE_INLINE execute_status execute_REMW(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+    if constexpr (requires { a.template stage_remainder_signed<32>(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+            return a.template stage_remainder_signed<32>(value_cast<int32_t>(rs1), value_cast<int32_t>(rs2));
+        });
+    } else {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
         auto rs1w = value_cast<int32_t>(rs1);
         auto rs2w = value_cast<int32_t>(rs2);
         if (observe(a, rs2w == 0)) [[unlikely]] {
@@ -1762,7 +1799,8 @@ static FORCE_INLINE execute_status execute_REMW(const STATE_ACCESS a, i_state_ac
             return static_cast<uint64_t>(0);
         }
         return value_cast<uint64_t>(rs1w % rs2w);
-    });
+        });
+    }
 }
 
 /// \brief Implementation of the REMUW instruction.
@@ -1775,14 +1813,20 @@ static FORCE_INLINE execute_status execute_REMUW(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+    if constexpr (requires { a.template stage_remainder_unsigned<32>(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+            return a.template stage_remainder_unsigned<32>(value_cast<uint32_t>(rs1), value_cast<uint32_t>(rs2));
+        });
+    } else {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
         auto rs1w = value_cast<uint32_t>(rs1);
         auto rs2w = value_cast<uint32_t>(rs2);
         if (observe(a, rs2w == 0)) [[unlikely]] {
             return value_cast<uint64_t>(value_cast<int32_t>(rs1w));
         }
         return value_cast<uint64_t>(value_cast<int32_t>(rs1w % rs2w));
-    });
+        });
+    }
 }
 
 static inline uint64_t read_csr_fail(bool *status) {
@@ -3066,11 +3110,16 @@ static FORCE_INLINE execute_status execute_MULH(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
-        auto srs1 = value_cast<int64_t>(rs1);
-        auto srs2 = value_cast<int64_t>(rs2);
-        return value_cast<uint64_t>(value_cast<int64_t>((value_cast<int128_t>(srs1) * srs2) >> 64));
-    });
+    if constexpr (requires { a.stage_multiply_high_signed(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn,
+            [a](auto rs1, auto rs2) -> decltype(rs1) { return a.stage_multiply_high_signed(rs1, rs2); });
+    } else {
+        return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+            auto srs1 = value_cast<int64_t>(rs1);
+            auto srs2 = value_cast<int64_t>(rs2);
+            return value_cast<uint64_t>(value_cast<int64_t>((value_cast<int128_t>(srs1) * srs2) >> 64));
+        });
+    }
 }
 
 /// \brief Implementation of the MULHSU instruction.
@@ -3080,11 +3129,16 @@ static FORCE_INLINE execute_status execute_MULHSU(const STATE_ACCESS a, i_state_
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
-        auto srs1 = value_cast<int64_t>(rs1);
-        return value_cast<uint64_t>(
-            value_cast<int64_t>((value_cast<int128_t>(srs1) * value_cast<int128_t>(rs2)) >> 64));
-    });
+    if constexpr (requires { a.stage_multiply_high_signed_unsigned(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn,
+            [a](auto rs1, auto rs2) -> decltype(rs1) { return a.stage_multiply_high_signed_unsigned(rs1, rs2); });
+    } else {
+        return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+            auto srs1 = value_cast<int64_t>(rs1);
+            return value_cast<uint64_t>(
+                value_cast<int64_t>((value_cast<int128_t>(srs1) * value_cast<int128_t>(rs2)) >> 64));
+        });
+    }
 }
 
 /// \brief Implementation of the MULHU instruction.
@@ -3094,9 +3148,14 @@ static FORCE_INLINE execute_status execute_MULHU(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
-        return value_cast<uint64_t>((value_cast<uint128_t>(rs1) * value_cast<uint128_t>(rs2)) >> 64);
-    });
+    if constexpr (requires { a.stage_multiply_high_unsigned(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn,
+            [a](auto rs1, auto rs2) -> decltype(rs1) { return a.stage_multiply_high_unsigned(rs1, rs2); });
+    } else {
+        return execute_arithmetic(a, pc, insn, [](auto rs1, auto rs2) -> decltype(rs1) {
+            return value_cast<uint64_t>((value_cast<uint128_t>(rs1) * value_cast<uint128_t>(rs2)) >> 64);
+        });
+    }
 }
 
 /// \brief Implementation of the DIV instruction.
@@ -3106,7 +3165,12 @@ static FORCE_INLINE execute_status execute_DIV(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+    if constexpr (requires { a.template stage_divide_signed<64>(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+            return a.template stage_divide_signed<64>(value_cast<int64_t>(rs1), value_cast<int64_t>(rs2));
+        });
+    } else {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
         auto srs1 = value_cast<int64_t>(rs1);
         auto srs2 = value_cast<int64_t>(rs2);
         if (observe(a, srs2 == 0)) [[unlikely]] {
@@ -3116,7 +3180,8 @@ static FORCE_INLINE execute_status execute_DIV(const STATE_ACCESS a, i_state_acc
             return value_cast<uint64_t>(srs1);
         }
         return value_cast<uint64_t>(srs1 / srs2);
-    });
+        });
+    }
 }
 
 /// \brief Implementation of the DIVU instruction.
@@ -3126,12 +3191,18 @@ static FORCE_INLINE execute_status execute_DIVU(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+    if constexpr (requires { a.template stage_divide_unsigned<64>(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+            return a.template stage_divide_unsigned<64>(rs1, rs2);
+        });
+    } else {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
         if (observe(a, rs2 == 0)) [[unlikely]] {
             return static_cast<uint64_t>(-1);
         }
         return rs1 / rs2;
-    });
+        });
+    }
 }
 
 /// \brief Implementation of the REM instruction.
@@ -3141,7 +3212,12 @@ static FORCE_INLINE execute_status execute_REM(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+    if constexpr (requires { a.template stage_remainder_signed<64>(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+            return a.template stage_remainder_signed<64>(value_cast<int64_t>(rs1), value_cast<int64_t>(rs2));
+        });
+    } else {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
         auto srs1 = value_cast<int64_t>(rs1);
         auto srs2 = value_cast<int64_t>(rs2);
         if (observe(a, srs2 == 0)) [[unlikely]] {
@@ -3151,7 +3227,8 @@ static FORCE_INLINE execute_status execute_REM(const STATE_ACCESS a, i_state_acc
             return 0;
         }
         return value_cast<uint64_t>(srs1 % srs2);
-    });
+        });
+    }
 }
 
 /// \brief Implementation of the REMU instruction.
@@ -3161,12 +3238,18 @@ static FORCE_INLINE execute_status execute_REMU(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+    if constexpr (requires { a.template stage_remainder_unsigned<64>(a.read_x(0), a.read_x(0)); }) {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
+            return a.template stage_remainder_unsigned<64>(rs1, rs2);
+        });
+    } else {
+        return execute_arithmetic(a, pc, insn, [a](auto rs1, auto rs2) -> decltype(rs1) {
         if (observe(a, rs2 == 0)) [[unlikely]] {
             return rs1;
         }
         return rs1 % rs2;
-    });
+        });
+    }
 }
 
 template <typename STATE_ACCESS, typename F>
@@ -3357,14 +3440,22 @@ static FORCE_INLINE execute_status execute_S(const STATE_ACCESS a, i_state_acces
     const auto vaddr = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_S_get_imm(insn);
     const auto val = a.read_x(insn_get_rs2(insn));
-    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
-    if (status != execute_status::success) [[unlikely]] {
-        if (status == execute_status::failure) {
-            return advance_to_raised_exception(a, pc);
+    if constexpr (requires { a.template stage_write_virtual_memory<T>(pc, mcycle, vaddr + imm, val); }) {
+        const execute_status status = a.template stage_write_virtual_memory<T>(pc, mcycle, vaddr + imm, val);
+        if (status != execute_status::success) {
+            return status;
         }
-        return advance_to_next_insn(a, pc, status);
+        return advance_to_next_insn(a, pc);
+    } else {
+        const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+        if (status != execute_status::success) [[unlikely]] {
+            if (status == execute_status::failure) {
+                return advance_to_raised_exception(a, pc);
+            }
+            return advance_to_next_insn(a, pc, status);
+        }
+        return advance_to_next_insn(a, pc);
     }
-    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the SB instruction.
@@ -3399,22 +3490,36 @@ template <typename T, rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_L(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     const auto vaddr = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_I_get_imm(insn);
-    T val = 0;
-    if (!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val)) [[unlikely]] {
-        return advance_to_raised_exception(a, pc);
-    }
-    const uint32_t rd = insn_get_rd(insn);
-    // don't write x0
-    if constexpr (rd_kind == rd_kind::x0) {
+    if constexpr (requires { a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr + imm); }) {
+        const uint32_t rd = insn_get_rd(insn);
+        if constexpr (rd_kind == rd_kind::x0) {
+            return advance_to_next_insn(a, pc);
+        }
+        const auto val = a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr + imm);
+        if constexpr (std::is_signed_v<T>) {
+            a.write_x(rd, value_cast<uint64_t>(value_cast<int64_t>(val)));
+        } else {
+            a.write_x(rd, value_cast<uint64_t>(val));
+        }
+        return advance_to_next_insn(a, pc);
+    } else {
+        T val = 0;
+        if (!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val)) [[unlikely]] {
+            return advance_to_raised_exception(a, pc);
+        }
+        const uint32_t rd = insn_get_rd(insn);
+        // don't write x0
+        if constexpr (rd_kind == rd_kind::x0) {
+            return advance_to_next_insn(a, pc);
+        }
+        // This static branch is eliminated by the compiler
+        if constexpr (std::is_signed_v<T>) {
+            a.write_x(rd, value_cast<int64_t>(val));
+        } else {
+            a.write_x(rd, value_cast<uint64_t>(val));
+        }
         return advance_to_next_insn(a, pc);
     }
-    // This static branch is eliminated by the compiler
-    if constexpr (std::is_signed_v<T>) {
-        a.write_x(rd, value_cast<int64_t>(val));
-    } else {
-        a.write_x(rd, value_cast<uint64_t>(val));
-    }
-    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the LB instruction.
@@ -3566,11 +3671,18 @@ static FORCE_INLINE execute_status execute_JALR(const STATE_ACCESS a, i_state_ac
     const auto new_pc =
         value_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
     const uint32_t rd = insn_get_rd(insn);
-    if constexpr (rd_kind != rd_kind::x0) {
-        a.write_x(rd, val);
+    if constexpr (requires { a.stage_indirect_jump(pc, new_pc); }) {
+        if constexpr (rd_kind != rd_kind::x0) {
+            a.write_x(rd, val);
+        }
+        return a.stage_indirect_jump(pc, new_pc);
+    } else {
+        if constexpr (rd_kind != rd_kind::x0) {
+            a.write_x(rd, val);
+            return execute_jump(a, pc, pc_to_fast(a, new_pc));
+        }
         return execute_jump(a, pc, pc_to_fast(a, new_pc));
     }
-    return execute_jump(a, pc, pc_to_fast(a, new_pc));
 }
 
 /// \brief Implementation of the SFENCE.VMA instruction.
@@ -4944,15 +5056,24 @@ template <typename T, typename U, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_L(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t rd,
     uint32_t rs1, U imm) {
     const auto vaddr = a.read_x(rs1);
-    T val = 0;
-    if (!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val)) [[unlikely]] {
-        return advance_to_raised_exception(a, pc);
-    }
-    // This static branch is eliminated by the compiler
-    if constexpr (std::is_signed_v<T>) {
-        a.write_x(rd, value_cast<uint64_t>(value_cast<int64_t>(val)));
+    if constexpr (requires { a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr + imm); }) {
+        const auto val = a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr + imm);
+        if constexpr (std::is_signed_v<T>) {
+            a.write_x(rd, value_cast<uint64_t>(value_cast<int64_t>(val)));
+        } else {
+            a.write_x(rd, value_cast<uint64_t>(val));
+        }
     } else {
-        a.write_x(rd, value_cast<uint64_t>(val));
+        T val = 0;
+        if (!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val)) [[unlikely]] {
+            return advance_to_raised_exception(a, pc);
+        }
+        // This static branch is eliminated by the compiler
+        if constexpr (std::is_signed_v<T>) {
+            a.write_x(rd, value_cast<uint64_t>(value_cast<int64_t>(val)));
+        } else {
+            a.write_x(rd, value_cast<uint64_t>(val));
+        }
     }
     return advance_to_next_insn<2>(a, pc);
 }
@@ -4962,7 +5083,13 @@ static FORCE_INLINE execute_status execute_C_S(const STATE_ACCESS a, i_state_acc
     uint32_t rs1, U imm) {
     const auto vaddr = a.read_x(rs1);
     const auto val = a.read_x(rs2);
-    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+    const execute_status status = [&] {
+        if constexpr (requires { a.template stage_write_virtual_memory<T>(pc, mcycle, vaddr + imm, val); }) {
+            return a.template stage_write_virtual_memory<T>(pc, mcycle, vaddr + imm, val);
+        } else {
+            return write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+        }
+    }();
     if (status != execute_status::success) [[unlikely]] {
         if (status == execute_status::failure) {
             return advance_to_raised_exception(a, pc);
@@ -5461,7 +5588,11 @@ static FORCE_INLINE execute_status execute_C_JR(const STATE_ACCESS a, i_state_ac
     // rs1 cannot be zero (guaranteed by the jump table)
     const uint32_t rs1 = insn_get_rd(insn);
     const auto new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
-    return execute_jump(a, pc, pc_to_fast(a, new_pc));
+    if constexpr (requires { a.stage_indirect_jump(pc, new_pc); }) {
+        return a.stage_indirect_jump(pc, new_pc);
+    } else {
+        return execute_jump(a, pc, pc_to_fast(a, new_pc));
+    }
 }
 
 /// \brief Implementation of the C.MV instruction.
@@ -5492,7 +5623,11 @@ static FORCE_INLINE execute_status execute_C_JALR(const STATE_ACCESS a, i_state_
     const auto new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
     const uint64_t val = pc_to_virtual(a, pc) + 2;
     a.write_x(0x1, val);
-    return execute_jump(a, pc, pc_to_fast(a, new_pc));
+    if constexpr (requires { a.stage_indirect_jump(pc, new_pc); }) {
+        return a.stage_indirect_jump(pc, new_pc);
+    } else {
+        return execute_jump(a, pc, pc_to_fast(a, new_pc));
+    }
 }
 
 /// \brief Implementation of the C.ADD instruction.

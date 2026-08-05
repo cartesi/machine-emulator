@@ -1144,9 +1144,12 @@ Section 7's arguments now have a concrete staging. The guiding worry is
 the cost of trace collection and lookup; the answer is LuaJIT's shape,
 already validated piecemeal by the earlier tracing prototypes: hotcounts
 only at taken backward branches and call targets (the 64-entry colliding
-16-bit counter prototype), trace-head lookup only at those same sites,
-per-page trace tables with eviction, probation and blacklisting so cold
-or failing heads stop paying. In the tail-call structure all of it is
+16-bit counter prototype), exact persistent trace entries independent of
+those counters, exponential retry penalties and eventual blacklisting, and
+flush-all when the fixed trace pool is exhausted. LuaJIT does not evict an
+installed trace because another PC collides with its hot counter: it patches
+the exact bytecode head with the trace number, and patches side exits directly.
+In the tail-call structure all of it is
 local to the handlers that host the hooks; the fetch-tail hit path stays
 untouched, which the stock loop could never offer (its instrumented
 shell cost +66% with tracing idle).
@@ -1243,8 +1246,8 @@ shell cost +66% with tracing idle).
 3. DONE, FORMATION PROTOTYPE. `-DTC_ONLINE=1` records both loop and call
    heads into a fixed 1024-slot pool, closes traces on cycles, page exits,
    or 64 instructions, installs by bump pointer, uses a separate
-   open-addressed installed-head set so collisions in the 64-slot dispatch
-   table cannot cause re-recording, and retains a penalty blacklist across
+   open-addressed installed-head set so counter collisions cannot cause
+   re-recording, and retains a penalty blacklist across
    flush-all. Normal handler chains contain no per-instruction recorder
    call: a hot hook leaves a pending request in the context, returns to the
    outer loop, and recording proceeds through one-instruction chains only
@@ -1271,17 +1274,104 @@ shell cost +66% with tracing idle).
    the entry path; if flush-thrash appears, use an epoch stamp and cold
    second-chance sweep rather than an LRU list.
 
-4. OPEN, unblocked by 2's margin. Backend choice. MIR generates standard-ABI
-   code, so every trace entry and exit would re-marshal the interpreter
-   state, exactly the boundary cost the LuaJIT architecture avoids, and
-   the prior experiments recorded short traces, where boundary
-   dominates. MIR behind a marshalling shim is acceptable as a cheap
-   probe; the endgame backend must honor the register contract (traces
-   are straight-line with side exits, register allocation is nearly
-   trivial, which is why LuaJIT's backend is bespoke). The pinned shape
-   helps here: with state at fixed registers under both compilers, the
-   backend targets one contract regardless of how the host emulator was
-   built.
+4. DONE, GNU LIGHTNING GREEN LIGHT. MIR's standard-ABI boundary was avoided:
+   GNU lightning 2.2.3 emits directly into the pinned AArch64 handler contract.
+   The first vertical slice replaces the hottest cyclic sieve head with a
+   generated 440-byte body, keeps state/pc/countdown/fetch/context in
+   x20/x23/x24/x25/x27, and branches directly to the interpreter fetch-tail
+   continuation on side exits. `jit_tramp(0)` is only lightning's generator
+   declaration that this code shares the caller's frame; the emitted body has
+   no runtime trampoline, stack adjustment, LR save, prologue, epilogue, or
+   argument reshuffle.
+
+   Five M3 Max repetitions after one warmup, all at the identical
+   16,791,353,500 cycles, root hash, and exit, measured these medians:
+
+   | sieve variant | wall | user | wall vs portable | wall vs AOT |
+   |---|---:|---:|---:|---:|
+   | current portable tail-call | 22.34 | 24.19 | -- | -- |
+   | 64 compiled-C AOT traces | 10.19 | 12.08 | -54.4% | -- |
+   | lightning hottest head | 9.29 | 11.15 | -58.4% | -8.8% |
+
+   This is deliberately a backend-quality probe rather than a full JIT: the
+   other 63 installed sieve heads remain the compiled-C AOT bodies, and the
+   generated head is specialized from the captured oracle. It nonetheless
+   answers the boundary and code-quality questions cleanly. A contract-native
+   runtime backend can beat the best AOT result, and the direct entry is real;
+   the next implementation step is to lower the online recorder's staged
+   trace representation through lightning, then replace the remaining AOT
+   bodies and add the per-machine executable pool and invalidation policy from
+   item 3.
+
+5. DONE, PHASE-B VERTICAL SLICE. The online recorder now feeds a separate
+   Lightning execution/collection object. A thin state-access adapter carries
+   that object, but does not implement collection itself. Collector entry
+   points are generated from the same `TC_CASE(..., EXPR)` source as the normal
+   tail-call handlers, and their 65,536-entry dispatch table is generated from
+   the existing `interpret-tc-table.inc`; there is no second decoder or
+   instruction-specific staging switch. A temporary capability trait limits
+   this first backend slice to operations observed in the hottest sieve
+   traces, so unsupported traces return to the recorder's ordinary penalty
+   path.
+
+   The online compiler replays the recorded words twice through that collector
+   (register discovery, then Lightning emission), installs the resulting head,
+   and enters it with the unchanged pinned-register contract. The first
+   ten-operation version installed one 472-byte cyclic head. Five M3 Max
+   repetitions after one warmup all produced the exact 16,791,353,500 cycles,
+   root hash, and guest exit; median wall/user time was 14.35/16.23 seconds,
+   35.8% below the portable tail-call wall time.
+
+   The next coverage step began following the LuaJIT policy rather than trying
+   to reproduce the offline AOT count. Penalties moved from a colliding 64-slot
+   array to a persistent open-addressed table; permanent backend-NYI failures
+   blacklist after one attempt, while short formation failures retain three
+   rounds of probation. This reduced failed sieve
+   recordings from 2,349 to 711 (63 short, 641 compile, 7 dispatch collisions),
+   despite adding more candidates. Generated mappings retain their Lightning
+   owner and are reclaimed at the existing flush-all boundary.
+
+   Supporting one-shot traces and split prefix/cycle accounting, then adding
+   only `C.ADDIW` and `C.BEQZ`, unlocked the decisive second head: a
+   64-instruction, 1,644-byte straight trace. Five repetitions after one warmup
+   measured 8.67/10.54 seconds wall/user, still bit-exact: 61.2% below portable,
+   14.9% below the 64-head compiled-C AOT result, and 6.7% below the hand-written
+   Lightning/AOT hybrid. Three more observed semantics installed two small
+   388-byte roots (four live heads total); the exact final smoke was 8.61
+   seconds, no material improvement, confirming that installed-head count is
+   not the target. The remaining production work is the per-machine executable
+   pool and per-page invalidation policy from item 3; until then this remains an
+   execution oracle for workloads without self-modifying code.
+
+6. DONE, INTEGER COVERAGE AND EXACT HEADS. The collection object now lowers
+   the RV64 integer instruction families directly through operation-owned
+   callbacks: base and compressed integer arithmetic, comparisons, branches,
+   direct and guarded indirect jumps, all integer load/store widths, and the M
+   extension including high multiply and RISC-V's division corner cases. The
+   normal execution expressions remain the single semantic source; the state
+   accessor merely carries the separate execution/collection object. There is
+   no central lowering opcode switch.
+
+   Broad coverage exposed the policy error precisely. A one-way 64-head table
+   filled with boot and kernel traces, excluding sieve's hot heads; replacement
+   thrashed badly, and four-way associativity recovered the workload only as a
+   compromise. LuaJIT's actual split is stronger: its 64 hashed counters only
+   detect heat, while a successful root is installed at its exact bytecode PC.
+   The online backend now mirrors that split with a fixed open-addressed exact
+   PC-to-trace map. Hash collisions probe for another slot; they never reject,
+   replace, or evict compiled code. An installed hit bypasses hot counting.
+   Pool exhaustion keeps the final trace and triggers a global flush only when
+   the next recording requests a slot. The AOT table uses the same exact-map
+   rule.
+
+   Five M3 Max sieve runs, without a warmup, were 7.85, 7.71, 7.81, 7.63, and
+   7.84 seconds wall time (median 7.81; median user 9.61). Every run retired
+   exactly 16,791,353,500 cycles with the same final hash and guest exit. All
+   four decisive sieve heads installed; the run retained 104 traces, rejected
+   687 short formations and 185 backend failures, and performed no flush. The
+   exact-head result is 65.0% below the 22.34-second portable tail-call median,
+   23.4% below the 10.19-second 64-head compiled-C AOT median, and 9.9% below
+   the earlier 8.67-second online median.
 
 ## 8c. The register-budget series: filed ideas and the queued campaign
 

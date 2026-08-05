@@ -43,6 +43,7 @@ fuzz?=no
 coverage?=no
 threads?=yes
 slirp?=yes
+lightning?=no
 
 CARTESI_TESTS_PATH?=../tests/build/machine
 
@@ -267,6 +268,20 @@ ifneq (,$(findstring clang,$(CC)))
 ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
 TC_FFIXED_FLAGS=-ffixed-x23 -ffixed-x24 -ffixed-x25 -ffixed-x27
 endif
+endif
+endif
+
+ifeq ($(lightning),yes)
+ifneq ($(tailcall),yes)
+$(error lightning=yes requires tailcall=yes)
+endif
+LIGHTNING_DIR=../third-party/downloads/lightning
+LIGHTNING_LIB=$(LIGHTNING_DIR)/lib/.libs/liblightning.a
+INTERPRET_CXXFLAGS+=-DTC_LIGHTNING=1
+INCS+=-I$(LIGHTNING_DIR)/include
+LDFLAGS+=$(LIGHTNING_LIB)
+ifeq ($(TARGET_OS),Linux)
+LDFLAGS+=-ldl
 endif
 endif
 
@@ -647,6 +662,9 @@ interpret.o: interpret.cpp cm-version.h interpret-jump-table.hpp
 interpret-tc.o: interpret-tc.cpp interpret.cpp cm-version.h interpret-jump-table.hpp \
 		interpret-tc-cases.inc interpret-tc-table.inc
 	$(CXX) $(CXXFLAGS) $(TC_INTERPRET_CXXFLAGS) -c -o $@ $<
+
+$(LIGHTNING_LIB):
+	$(MAKE) -C .. bundle-lightning
 
 keccak-256-hasher.o: keccak-256-hasher.cpp
 	$(CXX) $(CXXFLAGS) $(HASH_CFLAGS) -c -o $@ $<

@@ -28,6 +28,16 @@
 
 #include <new>
 
+#ifndef TC_LIGHTNING
+#define TC_LIGHTNING 0
+#endif
+
+#if TC_LIGHTNING
+extern "C" {
+#include <lightning.h>
+}
+#endif
+
 namespace cartesi {
 
 // Measurement shell for the tracing plan (tail-call.md section 8b, step 1):
@@ -56,6 +66,10 @@ namespace cartesi {
 // execution of online recordings waits for the backend step.
 #ifndef TC_ONLINE
 #define TC_ONLINE 0
+#endif
+
+#if TC_LIGHTNING && !(TC_AOT || TC_ONLINE)
+#error "TC_LIGHTNING requires either captured AOT traces or the online recorder"
 #endif
 
 // Page-segment fetch validation (tail-call.md section 8c): the chain
@@ -93,14 +107,16 @@ namespace cartesi {
 #endif
 
 #if TC_JIT_SHELL
-/// \brief Selective profiling state: 64 colliding 16-bit hotcounts (loops
-/// weighted double, hot after 56 loop events or 112 call events) and a
-/// direct-mapped trace-head table, empty in the shell so probes always miss.
+/// \brief Selective profiling state: 64 colliding 16-bit hotcounts.
+/// \details The counters only decide when to record. Compiled traces live in
+/// an exact per-PC map, so counter collisions cannot displace installed code.
 struct tc_hot_state {
-    uint16_t hotcount[64];
-    uint64_t head_pc[64];
+    static constexpr uint32_t sets = 64;
+    uint16_t hotcount[sets];
 #if TC_AOT
-    const void *head_fn[64];
+    static constexpr uint32_t head_slots = 128;
+    uint64_t head_pc[head_slots];
+    const void *head_fn[head_slots];
 #endif
     uint64_t entries;
 };
@@ -123,23 +139,32 @@ struct tc_online_state {
     static constexpr uint32_t max_traces = 1024;
     static constexpr uint32_t max_len = 64;
     static constexpr uint32_t min_len = 4;
+    static constexpr uint32_t min_straight_len = 32;
     static constexpr uint16_t max_penalty = 3;
     struct trace {
         uint64_t head;
         uint32_t len;
         int32_t cycle; // entry index the tail loops back to, or -1
+#if TC_LIGHTNING
+        const void *fn;
+        jit_state_t *jit;
+#endif
         tc_online_entry entries[max_len];
     };
     static constexpr uint32_t set_slots = 4096; // >= 4x max_traces, power of two
     trace pool[max_traces];
-    uint64_t installed_set[set_slots]; // open-addressed pc set, 0 = empty
-    uint16_t penalty[64];
-    uint64_t penalty_pc[64];
+    // Exact open-addressed mapping: pc+1 -> pool index+1; zero is empty.
+    uint64_t installed_pc[set_slots];
+    uint32_t installed_trace[set_slots];
+    uint64_t penalty_pc[set_slots]; // Persistent open-addressed failure set.
+    uint16_t penalty[set_slots];
     uint32_t ntraces;
     bool recording;
     // statistics
     uint64_t installed;
     uint64_t aborted;
+    uint64_t short_aborted;
+    uint64_t compile_aborted;
     uint64_t flushes;
 };
 #endif
@@ -191,6 +216,10 @@ struct tc_context {
 #define TC_GLOBAL_REGS 1
 #else
 #define TC_GLOBAL_REGS 0
+#endif
+
+#if TC_LIGHTNING && (!defined(__aarch64__) || !TC_GLOBAL_REGS)
+#error "TC_LIGHTNING currently targets the pinned-register AArch64 shape"
 #endif
 #endif
 
@@ -363,27 +392,75 @@ register tc_context<state_access> *tcc asm("r15");
 #error "TC_ONLINE and TC_AOT flush rules conflict; enable one at a time"
 #endif
 
+#if TC_LIGHTNING
+static const void *tc_lightning_compile_trace(const tc_online_state::trace &trace, jit_state_t **owner);
+#endif
+
 static THREAD_LOCAL tc_online_state tc_online_storage;
 
-/// \brief Membership test in the fixed installed-head set.
-static FORCE_INLINE bool tc_online_installed(const tc_online_state *o, uint64_t pc) {
-    uint32_t s = (static_cast<uint32_t>(pc) >> 1) & (tc_online_state::set_slots - 1);
-    while (o->installed_set[s] != 0) {
-        if (o->installed_set[s] == pc) {
-            return true;
+static FORCE_INLINE uint32_t tc_online_pc_slot(uint64_t pc) {
+    pc ^= pc >> 12;
+    return (static_cast<uint32_t>(pc) >> 1) & (tc_online_state::set_slots - 1);
+}
+
+/// \brief Finds the exact installed trace for a head.
+static FORCE_INLINE const tc_online_state::trace *tc_online_find(const tc_online_state *o, uint64_t pc) {
+    const uint64_t tag = pc + 1;
+    uint32_t s = tc_online_pc_slot(pc);
+    while (o->installed_pc[s] != 0) {
+        if (o->installed_pc[s] == tag) {
+            return &o->pool[o->installed_trace[s] - 1];
         }
         s = (s + 1) & (tc_online_state::set_slots - 1);
     }
-    return false;
+    return nullptr;
 }
 
-/// \brief Inserts into the fixed installed-head set (capacity guaranteed by flush).
-static FORCE_INLINE void tc_online_insert(tc_online_state *o, uint64_t pc) {
-    uint32_t s = (static_cast<uint32_t>(pc) >> 1) & (tc_online_state::set_slots - 1);
-    while (o->installed_set[s] != 0 && o->installed_set[s] != pc) {
+/// \brief Installs an exact PC-to-trace mapping. The map is four times larger
+/// than the trace pool, so insertion cannot fail before the pool flushes.
+static FORCE_INLINE void tc_online_insert(tc_online_state *o, uint64_t pc, uint32_t trace_index) {
+    const uint64_t tag = pc + 1;
+    uint32_t s = tc_online_pc_slot(pc);
+    while (o->installed_pc[s] != 0 && o->installed_pc[s] != tag) {
         s = (s + 1) & (tc_online_state::set_slots - 1);
     }
-    o->installed_set[s] = pc;
+    o->installed_pc[s] = tag;
+    o->installed_trace[s] = trace_index + 1;
+}
+
+/// \brief Finds the persistent penalty slot for a head.
+static FORCE_INLINE uint32_t tc_online_penalty_slot(const tc_online_state *o, uint64_t pc) {
+    const uint32_t first = (static_cast<uint32_t>(pc) >> 1) & (tc_online_state::set_slots - 1);
+    uint32_t s = first;
+    for (uint32_t probe = 0; probe < tc_online_state::set_slots; ++probe) {
+        if (o->penalty_pc[s] == 0 || o->penalty_pc[s] == pc) {
+            return s;
+        }
+        s = (s + 1) & (tc_online_state::set_slots - 1);
+    }
+    // Saturation is a cold failure mode. Reuse the directly hashed slot; this
+    // may give one old head another probation, but cannot stall execution.
+    return first;
+}
+
+static FORCE_INLINE bool tc_online_blacklisted(const tc_online_state *o, uint64_t pc) {
+    const uint32_t s = tc_online_penalty_slot(o, pc);
+    return o->penalty_pc[s] == pc && o->penalty[s] >= tc_online_state::max_penalty;
+}
+
+static FORCE_INLINE void tc_online_penalize(tc_online_state *o, uint64_t pc, bool permanent = false) {
+    const uint32_t s = tc_online_penalty_slot(o, pc);
+    if (o->penalty_pc[s] == 0) {
+        o->penalty_pc[s] = pc;
+        o->penalty[s] = permanent ? tc_online_state::max_penalty : 1;
+    } else if (o->penalty_pc[s] != pc) {
+        o->penalty_pc[s] = pc;
+        o->penalty[s] = permanent ? tc_online_state::max_penalty : 1;
+    } else if (permanent) {
+        o->penalty[s] = tc_online_state::max_penalty;
+    } else if (o->penalty[s] < tc_online_state::max_penalty) {
+        ++o->penalty[s];
+    }
 }
 
 /// \brief Debug event print, first 200 events only, when TC_ONLINE_DEBUG is set.
@@ -405,8 +482,10 @@ __attribute__((destructor)) static void tc_online_report() {
         return;
     }
     const auto &o = tc_online_storage;
-    std::fprintf(stderr, "tc-online: installed %llu aborted %llu flushes %llu live %u\n",
+    std::fprintf(stderr,
+        "tc-online: installed %llu aborted %llu (short %llu compile %llu) flushes %llu live %u\n",
         static_cast<unsigned long long>(o.installed), static_cast<unsigned long long>(o.aborted),
+        static_cast<unsigned long long>(o.short_aborted), static_cast<unsigned long long>(o.compile_aborted),
         static_cast<unsigned long long>(o.flushes), static_cast<unsigned>(o.ntraces));
 }
 
@@ -414,14 +493,20 @@ __attribute__((destructor)) static void tc_online_report() {
 template <typename STATE_ACCESS>
 static void tc_online_flush(tc_context<STATE_ACCESS> *c) {
     tc_online_state *o = c->online;
+#if TC_LIGHTNING
+    for (uint32_t i = 0; i < o->ntraces; ++i) {
+        if (o->pool[i].jit != nullptr) {
+            jit_state_t *_jit = o->pool[i].jit;
+            jit_destroy_state();
+            o->pool[i].jit = nullptr;
+        }
+    }
+#endif
     o->ntraces = 0;
     ++o->flushes;
     tc_online_debug("flush", 0, o->flushes);
-    for (auto &s : o->installed_set) {
+    for (auto &s : o->installed_pc) {
         s = 0;
-    }
-    for (auto &p : c->hot.head_pc) {
-        p = UINT64_MAX;
     }
     for (auto &h : c->hot.hotcount) {
         h = TC_HOT_RESET;
@@ -436,41 +521,52 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle) {
     tc_online_state *o = c->online;
     o->recording = false;
     auto &t = o->pool[o->ntraces];
-    tc_online_debug(t.len < tc_online_state::min_len ? "abort" : "install", t.head, t.len);
-    const uint32_t h = (static_cast<uint32_t>(t.head) >> 1) & 63;
-    if (t.len < tc_online_state::min_len) {
+    t.cycle = cycle;
+    const bool too_short = t.len < tc_online_state::min_len ||
+        (t.cycle < 0 && t.len < tc_online_state::min_straight_len);
+    tc_online_debug(too_short ? "abort" : "install", t.head, t.len);
+    if (too_short) {
         ++o->aborted;
-        if (o->penalty_pc[h] == t.head) {
-            ++o->penalty[h];
-        } else {
-            o->penalty_pc[h] = t.head;
-            o->penalty[h] = 1;
-        }
+        ++o->short_aborted;
+        tc_online_penalize(o, t.head);
         return;
     }
-    t.cycle = cycle;
-    c->hot.head_pc[h] = t.head;
-    tc_online_insert(o, t.head);
+#if TC_LIGHTNING
+    t.jit = nullptr;
+    t.fn = tc_lightning_compile_trace(t, &t.jit);
+    if (t.fn == nullptr) {
+        ++o->aborted;
+        ++o->compile_aborted;
+        // Missing backend operations cannot become available later in this
+        // run. LuaJIT-style NYI failures blacklist immediately; only
+        // formation failures receive repeated probation.
+        tc_online_penalize(o, t.head, true);
+        return;
+    }
+#endif
+    tc_online_insert(o, t.head, o->ntraces);
     ++o->installed;
     ++o->ntraces;
-    if (o->ntraces == tc_online_state::max_traces) {
-        tc_online_flush(c);
-    }
 }
 
 /// \brief Starts recording at a hot head unless it is installed or blacklisted.
 template <typename STATE_ACCESS>
 static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc) {
     tc_online_state *o = c->online;
-    const uint32_t h = (static_cast<uint32_t>(pc) >> 1) & 63;
-    if (o->recording || tc_online_installed(o, pc) ||
-        (o->penalty_pc[h] == pc && o->penalty[h] >= tc_online_state::max_penalty)) {
+    if (o->recording || tc_online_find(o, pc) != nullptr || tc_online_blacklisted(o, pc)) {
         return;
+    }
+    if (o->ntraces == tc_online_state::max_traces) {
+        tc_online_flush(c);
     }
     auto &t = o->pool[o->ntraces];
     t.head = pc;
     t.len = 0;
     t.cycle = -1;
+#if TC_LIGHTNING
+    t.fn = nullptr;
+    t.jit = nullptr;
+#endif
     o->recording = true;
     tc_online_debug("begin", pc, o->ntraces);
 }
@@ -523,30 +619,963 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
 #define TC_ONLINE_CALL_TRIP_RETURN() ((void) 0)
 #endif // TC_ONLINE
 
-/// \brief Probes the trace-head table and updates the hotcount at a profiling
-/// site, returning the installed trace function on a head hit (never under
-/// the plain shell, whose head table stays empty; entries counts hits so the
-/// probe is not dead). Defined unconditionally so discarded constexpr
-/// branches can name it; the body only instantiates under TC_JIT_SHELL.
+#if TC_LIGHTNING && TC_ONLINE
+struct tc_lightning_execution;
+
+/// \brief Symbolic expression node used while instantiating interpreter
+/// semantics against GNU lightning.
+/// \details A node carries its lowering behavior.  There is deliberately no
+/// second operation enum or central lowering dispatcher.
+struct tc_lightning_node {
+    using emit_fn = void (*)(tc_lightning_execution &, const tc_lightning_node &, jit_gpr_t, unsigned);
+    emit_fn emit{};
+    uint16_t lhs{};
+    uint16_t rhs{};
+    uint64_t immediate{};
+};
+
+struct tc_lightning_value;
+
+struct tc_lightning_condition {
+    using branch_fn = jit_node_t *(*)(tc_lightning_execution &, const tc_lightning_condition &, bool);
+    tc_lightning_execution *execution{};
+    uint16_t lhs{};
+    uint16_t rhs{};
+    branch_fn branch{};
+    tc_lightning_node::emit_fn value_emit{};
+    explicit operator bool() const;
+    operator tc_lightning_value() const;
+};
+
+/// \brief A guest value represented by a small expression DAG.
+/// \details Operators build nodes only; the execution object materializes the
+/// expression into the destination guest register. This lets the unchanged
+/// execute bodies remain the single source of instruction semantics.
+struct tc_lightning_value {
+    tc_lightning_execution *execution{};
+    uint16_t node{};
+    bool signed_value{};
+    uint8_t bits{64};
+
+    template <typename T>
+    tc_lightning_value value_cast() const;
+    tc_lightning_value wrapping_add(tc_lightning_value rhs) const;
+    tc_lightning_value wrapping_sub(tc_lightning_value rhs) const;
+    tc_lightning_value wrapping_mul(tc_lightning_value rhs) const;
+    tc_lightning_value operator~() const;
+    tc_lightning_value operator+(tc_lightning_value rhs) const;
+    tc_lightning_value operator-(tc_lightning_value rhs) const;
+    tc_lightning_value operator*(tc_lightning_value rhs) const;
+    tc_lightning_value operator/(tc_lightning_value rhs) const;
+    tc_lightning_value operator%(tc_lightning_value rhs) const;
+    tc_lightning_value operator&(tc_lightning_value rhs) const;
+    tc_lightning_value operator|(tc_lightning_value rhs) const;
+    tc_lightning_value operator^(tc_lightning_value rhs) const;
+    tc_lightning_value operator<<(tc_lightning_value rhs) const;
+    tc_lightning_value operator>>(tc_lightning_value rhs) const;
+
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_value operator+(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_value operator-(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_value operator&(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_value operator|(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_value operator^(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_value operator<<(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_value operator>>(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_value wrapping_add(T rhs) const;
+
+    tc_lightning_condition operator==(tc_lightning_value rhs) const;
+    tc_lightning_condition operator!=(tc_lightning_value rhs) const;
+    tc_lightning_condition operator<(tc_lightning_value rhs) const;
+    tc_lightning_condition operator>=(tc_lightning_value rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_condition operator==(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_condition operator!=(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_condition operator<(T rhs) const;
+    template <typename T>
+        requires std::is_integral_v<T>
+    tc_lightning_condition operator>=(T rhs) const;
+};
+
+template <typename T>
+    requires std::is_integral_v<T>
+static tc_lightning_value operator+(T lhs, tc_lightning_value rhs) {
+    return rhs + lhs;
+}
+
+/// \brief Phase-B collection/execution policy and minimal register allocator.
+struct tc_lightning_execution {
+    static constexpr jit_gpr_t guest_registers[] = {JIT_R1, JIT_R2, JIT_R3, JIT_R4, JIT_R5, JIT_R6, JIT_V0, JIT_V2};
+    static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_V3, JIT_V7};
+    static constexpr size_t max_nodes = 256;
+    static constexpr size_t max_exits = 32;
+
+    struct side_exit {
+        jit_node_t *branch{};
+        uint64_t pc{};
+        uint64_t base_pc{};
+        uint32_t pending{};
+    };
+
+    jit_state_t *jit{};
+    const tc_online_state::trace *trace{};
+    tc_lightning_node nodes[max_nodes]{};
+    side_exit exits[max_exits]{};
+    int8_t guest_slot[32]{};
+    uint16_t nnodes{};
+    uint16_t nexits{};
+    uint8_t nguests{};
+    uint32_t current{};
+    bool discovery{true};
+    bool failed{};
+
+    explicit tc_lightning_execution(jit_state_t *j, const tc_online_state::trace &t) : jit(j), trace(&t) {
+        for (auto &slot : guest_slot) {
+            slot = -1;
+        }
+    }
+
+    void reset_expression() {
+        nnodes = 0;
+    }
+
+    uint16_t add_node(tc_lightning_node::emit_fn emit, uint16_t lhs = 0, uint16_t rhs = 0,
+        uint64_t immediate = 0) {
+        if (nnodes == max_nodes) {
+            failed = true;
+            return 0;
+        }
+        const uint16_t result = nnodes++;
+        nodes[result] = tc_lightning_node{emit, lhs, rhs, immediate};
+        return result;
+    }
+
+    tc_lightning_value immediate(uint64_t value) {
+        return {this, add_node(emit_immediate, 0, 0, value), false, 64};
+    }
+
+    tc_lightning_value binary(tc_lightning_node::emit_fn emit, tc_lightning_value lhs, tc_lightning_value rhs) {
+        return {this, add_node(emit, lhs.node, rhs.node), lhs.signed_value, lhs.bits};
+    }
+
+    jit_gpr_t direct_register(uint16_t node) {
+        const auto &n = nodes[node];
+        if (n.emit != emit_guest) {
+            return JIT_NOREG;
+        }
+        const uint8_t slot = map_guest(static_cast<uint32_t>(n.immediate));
+        return failed ? JIT_NOREG : guest_registers[slot];
+    }
+
+    uint8_t map_guest(uint32_t guest) {
+        if (guest == 0) {
+            return UINT8_MAX;
+        }
+        if (guest_slot[guest] < 0) {
+            if (nguests == std::size(guest_registers)) {
+                failed = true;
+                return 0;
+            }
+            guest_slot[guest] = static_cast<int8_t>(nguests++);
+        }
+        return static_cast<uint8_t>(guest_slot[guest]);
+    }
+
+    tc_lightning_value read_x(uint32_t guest) {
+        if (guest == 0) {
+            return immediate(0);
+        }
+        (void) map_guest(guest);
+        return {this, add_node(emit_guest, 0, 0, guest), false, 64};
+    }
+
+    static void emit_guest(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned /*depth*/) {
+        jit_state_t *_jit = e.jit;
+        const uint8_t slot = e.map_guest(static_cast<uint32_t>(n.immediate));
+        if (!e.failed && dest != guest_registers[slot]) {
+            jit_movr(dest, guest_registers[slot]);
+        }
+    }
+
+    static void emit_immediate(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned /*depth*/) {
+        jit_state_t *_jit = e.jit;
+        jit_movi(dest, static_cast<jit_word_t>(n.immediate));
+    }
+
+    template <typename OP>
+    void emit_unary(const tc_lightning_node &n, jit_gpr_t dest, unsigned depth, const OP &operation) {
+        const jit_gpr_t source = direct_register(n.lhs);
+        if (source != JIT_NOREG) {
+            operation(dest, source);
+        } else {
+            emit_expression(n.lhs, dest, depth);
+            operation(dest, dest);
+        }
+    }
+
+    template <typename REG_OP, typename IMM_OP>
+    void emit_binary(const tc_lightning_node &n, jit_gpr_t dest, unsigned depth, const REG_OP &reg_operation,
+        const IMM_OP &immediate_operation) {
+        const auto &right = nodes[n.rhs];
+        if (right.emit == emit_immediate) {
+            const jit_gpr_t direct_lhs = direct_register(n.lhs);
+            const jit_gpr_t lhs = direct_lhs == JIT_NOREG ? dest : direct_lhs;
+            if (direct_lhs == JIT_NOREG) {
+                emit_expression(n.lhs, dest, depth);
+            }
+            immediate_operation(dest, lhs, static_cast<jit_word_t>(right.immediate));
+            return;
+        }
+        jit_gpr_t tmp = direct_register(n.rhs);
+        if (tmp == JIT_NOREG) {
+            tmp = scratch_registers[depth];
+        }
+        if (tmp == dest && direct_register(n.rhs) == JIT_NOREG) {
+            if (++depth == std::size(scratch_registers)) {
+                failed = true;
+                return;
+            }
+            tmp = scratch_registers[depth];
+        }
+        if (direct_register(n.rhs) == JIT_NOREG) {
+            emit_expression(n.rhs, tmp, depth + 1);
+        }
+        const jit_gpr_t direct_lhs = direct_register(n.lhs);
+        const jit_gpr_t lhs = direct_lhs == JIT_NOREG ? dest : direct_lhs;
+        if (direct_lhs == JIT_NOREG) {
+            emit_expression(n.lhs, dest, depth + 1);
+        }
+        reg_operation(dest, lhs, tmp);
+    }
+
+    static void emit_add(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_addr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_addi(d, l, r); });
+    }
+    static void emit_subtract(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_subr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_subi(d, l, r); });
+    }
+    static void emit_multiply(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_mulr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_muli(d, l, r); });
+    }
+    static void emit_divide_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_divr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_divi(d, l, r); });
+    }
+    static void emit_divide_unsigned(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_divr_u(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_divi_u(d, l, r); });
+    }
+    static void emit_remainder_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_remr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_remi(d, l, r); });
+    }
+    static void emit_remainder_unsigned(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_remr_u(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_remi_u(d, l, r); });
+    }
+    template <bool REMAINDER, bool SIGNED, unsigned BITS>
+    static void emit_riscv_division(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        const jit_gpr_t lhs = scratch_registers[0];
+        const jit_gpr_t rhs = scratch_registers[1];
+        e.emit_expression(n.lhs, lhs, depth + 1);
+        e.emit_expression(n.rhs, rhs, depth + 1);
+        auto *const zero = jit_beqi(rhs, 0);
+        jit_node_t *not_min = nullptr;
+        jit_node_t *not_minus_one = nullptr;
+        jit_node_t *special_done = nullptr;
+        if constexpr (SIGNED) {
+            const jit_word_t minimum = BITS == 32 ? static_cast<jit_word_t>(INT32_MIN) :
+                                                   static_cast<jit_word_t>(INT64_MIN);
+            not_min = jit_bnei(lhs, minimum);
+            not_minus_one = jit_bnei(rhs, -1);
+            if constexpr (REMAINDER) {
+                jit_movi(dest, 0);
+            } else {
+                jit_movr(dest, lhs);
+            }
+            special_done = jit_jmpi();
+        }
+        auto *const normal = jit_label();
+        if constexpr (SIGNED) {
+            jit_patch_at(not_min, normal);
+            jit_patch_at(not_minus_one, normal);
+        }
+        if constexpr (REMAINDER && SIGNED) {
+            jit_remr(dest, lhs, rhs);
+        } else if constexpr (REMAINDER) {
+            jit_remr_u(dest, lhs, rhs);
+        } else if constexpr (SIGNED) {
+            jit_divr(dest, lhs, rhs);
+        } else {
+            jit_divr_u(dest, lhs, rhs);
+        }
+        auto *const normal_done = jit_jmpi();
+        auto *const zero_result = jit_label();
+        jit_patch_at(zero, zero_result);
+        if constexpr (REMAINDER) {
+            jit_movr(dest, lhs);
+        } else {
+            jit_movi(dest, -1);
+        }
+        auto *const done = jit_label();
+        jit_patch_at(normal_done, done);
+        if constexpr (SIGNED) {
+            jit_patch_at(special_done, done);
+        }
+        if constexpr (BITS == 32) {
+            jit_extr_i(dest, dest);
+        }
+    }
+
+    template <bool REMAINDER, bool SIGNED, unsigned BITS>
+    tc_lightning_value riscv_division(tc_lightning_value lhs, tc_lightning_value rhs) {
+        return {this, add_node(emit_riscv_division<REMAINDER, SIGNED, BITS>, lhs.node, rhs.node), SIGNED,
+            static_cast<uint8_t>(BITS)};
+    }
+    template <bool LHS_SIGNED, bool RHS_SIGNED>
+    static void emit_multiply_high(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        const jit_gpr_t lhs = scratch_registers[0];
+        const jit_gpr_t rhs = scratch_registers[1];
+        e.emit_expression(n.lhs, lhs, depth + 1);
+        e.emit_expression(n.rhs, rhs, depth + 1);
+        if constexpr (LHS_SIGNED && RHS_SIGNED) {
+            jit_hmulr(dest, lhs, rhs);
+        } else if constexpr (!LHS_SIGNED && !RHS_SIGNED) {
+            jit_hmulr_u(dest, lhs, rhs);
+        } else {
+            static_assert(LHS_SIGNED && !RHS_SIGNED);
+            jit_hmulr_u(dest, lhs, rhs);
+            jit_rshi(scratch_registers[2], lhs, 63);
+            jit_andr(scratch_registers[2], scratch_registers[2], rhs);
+            jit_subr(dest, dest, scratch_registers[2]);
+        }
+    }
+
+    template <bool LHS_SIGNED, bool RHS_SIGNED>
+    tc_lightning_value multiply_high(tc_lightning_value lhs, tc_lightning_value rhs) {
+        return {this, add_node(emit_multiply_high<LHS_SIGNED, RHS_SIGNED>, lhs.node, rhs.node), false, 64};
+    }
+    static void emit_bit_and(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_andr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_andi(d, l, r); });
+    }
+    static void emit_bit_or(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_orr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_ori(d, l, r); });
+    }
+    static void emit_bit_xor(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_xorr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_xori(d, l, r); });
+    }
+    static void emit_shift_left(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_lshr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_lshi(d, l, r); });
+    }
+    static void emit_shift_right_unsigned(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_rshr_u(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_rshi_u(d, l, r); });
+    }
+    static void emit_shift_right_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_rshr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_rshi(d, l, r); });
+    }
+    static void emit_compare_equal(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_eqr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_eqi(d, l, r); });
+    }
+    static void emit_compare_not_equal(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ner(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_nei(d, l, r); });
+    }
+    static void emit_compare_less_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ltr(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_lti(d, l, r); });
+    }
+    static void emit_compare_less_unsigned(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ltr_u(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_lti_u(d, l, r); });
+    }
+    static void emit_compare_greater_equal_signed(tc_lightning_execution &e, const tc_lightning_node &n,
+        jit_gpr_t dest, unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ger(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_gei(d, l, r); });
+    }
+    static void emit_compare_greater_equal_unsigned(tc_lightning_execution &e, const tc_lightning_node &n,
+        jit_gpr_t dest, unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ger_u(d, l, r); },
+            [&](auto d, auto l, auto r) { jit_gei_u(d, l, r); });
+    }
+    static void emit_bit_not(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_unary(n, dest, depth, [&](auto d, auto s) { jit_comr(d, s); });
+    }
+    static void emit_cast_unsigned_32(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_unary(n, dest, depth, [&](auto d, auto s) { jit_extr_ui(d, s); });
+    }
+    static void emit_cast_signed_32(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_unary(n, dest, depth, [&](auto d, auto s) { jit_extr_i(d, s); });
+    }
+    static void emit_cast_unsigned_16(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_unary(n, dest, depth, [&](auto d, auto s) { jit_extr_us(d, s); });
+    }
+    static void emit_cast_signed_16(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_unary(n, dest, depth, [&](auto d, auto s) { jit_extr_s(d, s); });
+    }
+    static void emit_cast_unsigned_8(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_unary(n, dest, depth, [&](auto d, auto s) { jit_extr_uc(d, s); });
+    }
+    static void emit_cast_signed_8(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
+        jit_state_t *_jit = e.jit;
+        e.emit_unary(n, dest, depth, [&](auto d, auto s) { jit_extr_c(d, s); });
+    }
+    template <typename T>
+    static void emit_memory_load_node(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned /*depth*/) {
+        e.emit_memory_load<T>(n, dest);
+    }
+
+    void emit_expression(uint16_t node, jit_gpr_t dest, unsigned depth = 0) {
+        if (failed || depth >= std::size(scratch_registers)) {
+            failed = true;
+            return;
+        }
+        const auto &n = nodes[node];
+        n.emit(*this, n, dest, depth);
+    }
+
+    void write_x(uint32_t guest, tc_lightning_value value) {
+        if (guest == 0) {
+            failed = true;
+            return;
+        }
+        const uint8_t slot = map_guest(guest);
+        if (!discovery && !failed) {
+            emit_expression(value.node, guest_registers[slot]);
+        }
+    }
+
+    void add_exit(jit_node_t *branch) {
+        if (nexits == max_exits) {
+            failed = true;
+            return;
+        }
+        const bool loop_body = trace->cycle >= 0 && current >= static_cast<uint32_t>(trace->cycle);
+        const uint32_t first = loop_body ? static_cast<uint32_t>(trace->cycle) : 0;
+        const uint64_t base_pc = loop_body ? trace->entries[first].vaddr : trace->head;
+        exits[nexits++] = side_exit{branch, trace->entries[current].vaddr, base_pc, current - first};
+    }
+
+    template <typename EXPECTED, typename NOT_EXPECTED>
+    static jit_node_t *emit_condition_branch(tc_lightning_execution &e, const tc_lightning_condition &cond,
+        bool expected, const EXPECTED &on_expected, const NOT_EXPECTED &on_not_expected) {
+        e.emit_expression(cond.lhs, scratch_registers[0]);
+        e.emit_expression(cond.rhs, scratch_registers[1]);
+        return expected ? on_expected(scratch_registers[0], scratch_registers[1]) :
+                          on_not_expected(scratch_registers[0], scratch_registers[1]);
+    }
+
+    static jit_node_t *branch_equal(tc_lightning_execution &e, const tc_lightning_condition &cond, bool expected) {
+        jit_state_t *_jit = e.jit;
+        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bner(l, r); },
+            [&](auto l, auto r) { return jit_beqr(l, r); });
+    }
+    static jit_node_t *branch_not_equal(tc_lightning_execution &e, const tc_lightning_condition &cond,
+        bool expected) {
+        jit_state_t *_jit = e.jit;
+        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_beqr(l, r); },
+            [&](auto l, auto r) { return jit_bner(l, r); });
+    }
+    static jit_node_t *branch_less_signed(tc_lightning_execution &e, const tc_lightning_condition &cond,
+        bool expected) {
+        jit_state_t *_jit = e.jit;
+        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bger(l, r); },
+            [&](auto l, auto r) { return jit_bltr(l, r); });
+    }
+    static jit_node_t *branch_less_unsigned(tc_lightning_execution &e, const tc_lightning_condition &cond,
+        bool expected) {
+        jit_state_t *_jit = e.jit;
+        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bger_u(l, r); },
+            [&](auto l, auto r) { return jit_bltr_u(l, r); });
+    }
+    static jit_node_t *branch_greater_equal_signed(tc_lightning_execution &e, const tc_lightning_condition &cond,
+        bool expected) {
+        jit_state_t *_jit = e.jit;
+        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bltr(l, r); },
+            [&](auto l, auto r) { return jit_bger(l, r); });
+    }
+    static jit_node_t *branch_greater_equal_unsigned(tc_lightning_execution &e,
+        const tc_lightning_condition &cond, bool expected) {
+        jit_state_t *_jit = e.jit;
+        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bltr_u(l, r); },
+            [&](auto l, auto r) { return jit_bger_u(l, r); });
+    }
+
+    bool observe(tc_lightning_condition cond) {
+        const uint64_t pc = trace->entries[current].vaddr;
+        const uint32_t length = (trace->entries[current].insn & 3) == 3 ? 4 : 2;
+        const bool expected = trace->entries[current].next_pc != pc + length;
+        if (!discovery && !failed) {
+            add_exit(cond.branch(*this, cond, expected));
+        }
+        return expected;
+    }
+
+    execute_status indirect_jump(uint64_t &pc, tc_lightning_value target) {
+        const uint64_t expected = trace->entries[current].next_pc;
+        if (!discovery && !failed) {
+            jit_state_t *_jit = jit;
+            emit_expression(target.node, scratch_registers[0]);
+            add_exit(jit_bnei(scratch_registers[0], static_cast<jit_word_t>(expected)));
+        }
+        pc = expected;
+        return execute_status::success;
+    }
+
+    template <typename T>
+    tc_lightning_value memory_load(tc_lightning_value address) {
+        return {this, add_node(emit_memory_load_node<T>, address.node), std::is_signed_v<T>,
+            static_cast<uint8_t>(sizeof(T) * 8)};
+    }
+
+    template <typename T>
+    void emit_memory_load(const tc_lightning_node &load, jit_gpr_t dest) {
+        jit_state_t *_jit = jit;
+        const jit_gpr_t slot = scratch_registers[0];
+        const jit_gpr_t page = scratch_registers[1];
+        const jit_gpr_t address = scratch_registers[2];
+        emit_expression(load.lhs, address, 1);
+        jit_rshi_u(slot, address, LOG2_PAGE_SIZE);
+        jit_andi(slot, slot, TLB_SET_SIZE - 1);
+        jit_lshi(slot, slot, 4);
+        jit_addr(slot, slot, JIT_V1);
+        constexpr jit_word_t hot_tlb_offset =
+            offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_READ * sizeof(hot_tlb_set);
+        jit_addi(slot, slot, hot_tlb_offset);
+        jit_ldxi(page, slot, offsetof(hot_tlb_slot, vaddr_page));
+        jit_andi(address, address,
+            ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~(static_cast<uint64_t>(sizeof(T)) - 1)));
+        add_exit(jit_bner(page, address));
+        jit_ldxi(page, slot, offsetof(hot_tlb_slot, vh_offset));
+        emit_expression(load.lhs, address, 1);
+        jit_addr(address, address, page);
+        if constexpr (std::is_same_v<T, int8_t>) {
+            jit_ldr_c(dest, address);
+        } else if constexpr (std::is_same_v<T, uint8_t>) {
+            jit_ldr_uc(dest, address);
+        } else if constexpr (std::is_same_v<T, int16_t>) {
+            jit_ldr_s(dest, address);
+        } else if constexpr (std::is_same_v<T, uint16_t>) {
+            jit_ldr_us(dest, address);
+        } else if constexpr (std::is_same_v<T, int32_t>) {
+            jit_ldr_i(dest, address);
+        } else if constexpr (std::is_same_v<T, uint32_t>) {
+            jit_ldr_ui(dest, address);
+        } else if constexpr (sizeof(T) == 8) {
+            jit_ldr(dest, address);
+        } else {
+            failed = true;
+        }
+    }
+
+    template <typename T>
+    void emit_memory_store(tc_lightning_value address_value, tc_lightning_value stored_value) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        const jit_gpr_t slot = scratch_registers[0];
+        const jit_gpr_t page = scratch_registers[1];
+        const jit_gpr_t address = scratch_registers[2];
+        emit_expression(address_value.node, address, 1);
+        jit_rshi_u(slot, address, LOG2_PAGE_SIZE);
+        jit_andi(slot, slot, TLB_SET_SIZE - 1);
+        jit_lshi(slot, slot, 4);
+        jit_addr(slot, slot, JIT_V1);
+        constexpr jit_word_t hot_tlb_offset =
+            offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_WRITE * sizeof(hot_tlb_set);
+        jit_addi(slot, slot, hot_tlb_offset);
+        jit_ldxi(page, slot, offsetof(hot_tlb_slot, vaddr_page));
+        jit_andi(address, address, ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~(sizeof(T) - 1)));
+        add_exit(jit_bner(page, address));
+        jit_ldxi(page, slot, offsetof(hot_tlb_slot, vh_offset));
+        emit_expression(address_value.node, address, 1);
+        jit_addr(address, address, page);
+        emit_expression(stored_value.node, page, 1);
+        if constexpr (sizeof(T) == 1) {
+            jit_str_c(address, page);
+        } else if constexpr (sizeof(T) == 2) {
+            jit_str_s(address, page);
+        } else if constexpr (sizeof(T) == 4) {
+            jit_str_i(address, page);
+        } else if constexpr (sizeof(T) == 8) {
+            jit_str(address, page);
+        } else {
+            failed = true;
+        }
+    }
+};
+
+template <typename T>
+tc_lightning_value tc_lightning_value::value_cast() const {
+    tc_lightning_node::emit_fn emit;
+    if constexpr (sizeof(T) == 4 && std::is_signed_v<T>) {
+        emit = tc_lightning_execution::emit_cast_signed_32;
+    } else if constexpr (sizeof(T) == 4) {
+        emit = tc_lightning_execution::emit_cast_unsigned_32;
+    } else if constexpr (sizeof(T) == 2 && std::is_signed_v<T>) {
+        emit = tc_lightning_execution::emit_cast_signed_16;
+    } else if constexpr (sizeof(T) == 2) {
+        emit = tc_lightning_execution::emit_cast_unsigned_16;
+    } else if constexpr (sizeof(T) == 1 && std::is_signed_v<T>) {
+        emit = tc_lightning_execution::emit_cast_signed_8;
+    } else if constexpr (sizeof(T) == 1) {
+        emit = tc_lightning_execution::emit_cast_unsigned_8;
+    } else {
+        return {execution, node, std::is_signed_v<T>, static_cast<uint8_t>(sizeof(T) * 8)};
+    }
+    return {execution, execution->add_node(emit, node), std::is_signed_v<T>, static_cast<uint8_t>(sizeof(T) * 8)};
+}
+
+inline tc_lightning_value tc_lightning_value::operator+(tc_lightning_value rhs) const {
+    if (execution->nodes[rhs.node].emit == tc_lightning_execution::emit_immediate &&
+        execution->nodes[rhs.node].immediate == 0) {
+        return *this;
+    }
+    return execution->binary(tc_lightning_execution::emit_add, *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator-(tc_lightning_value rhs) const {
+    return execution->binary(tc_lightning_execution::emit_subtract, *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator*(tc_lightning_value rhs) const {
+    return execution->binary(tc_lightning_execution::emit_multiply, *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator/(tc_lightning_value rhs) const {
+    return execution->binary(signed_value ? tc_lightning_execution::emit_divide_signed :
+                                            tc_lightning_execution::emit_divide_unsigned,
+        *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator%(tc_lightning_value rhs) const {
+    return execution->binary(signed_value ? tc_lightning_execution::emit_remainder_signed :
+                                            tc_lightning_execution::emit_remainder_unsigned,
+        *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator&(tc_lightning_value rhs) const {
+    return execution->binary(tc_lightning_execution::emit_bit_and, *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator|(tc_lightning_value rhs) const {
+    return execution->binary(tc_lightning_execution::emit_bit_or, *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator^(tc_lightning_value rhs) const {
+    return execution->binary(tc_lightning_execution::emit_bit_xor, *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator<<(tc_lightning_value rhs) const {
+    return execution->binary(tc_lightning_execution::emit_shift_left, *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator>>(tc_lightning_value rhs) const {
+    return execution->binary(signed_value ? tc_lightning_execution::emit_shift_right_signed :
+                                            tc_lightning_execution::emit_shift_right_unsigned,
+        *this, rhs);
+}
+inline tc_lightning_value tc_lightning_value::operator~() const {
+    return {execution, execution->add_node(tc_lightning_execution::emit_bit_not, node), signed_value, bits};
+}
+inline tc_lightning_value tc_lightning_value::wrapping_add(tc_lightning_value rhs) const {
+    return *this + rhs;
+}
+inline tc_lightning_value tc_lightning_value::wrapping_sub(tc_lightning_value rhs) const {
+    return *this - rhs;
+}
+inline tc_lightning_value tc_lightning_value::wrapping_mul(tc_lightning_value rhs) const {
+    return *this * rhs;
+}
+
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_value tc_lightning_value::operator+(T rhs) const {
+    return *this + execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_value tc_lightning_value::operator-(T rhs) const {
+    return *this - execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_value tc_lightning_value::operator&(T rhs) const {
+    return *this & execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_value tc_lightning_value::operator|(T rhs) const {
+    return *this | execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_value tc_lightning_value::operator^(T rhs) const {
+    return *this ^ execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_value tc_lightning_value::operator<<(T rhs) const {
+    return *this << execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_value tc_lightning_value::operator>>(T rhs) const {
+    return *this >> execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_value tc_lightning_value::wrapping_add(T rhs) const {
+    return *this + rhs;
+}
+
+inline tc_lightning_condition tc_lightning_value::operator==(tc_lightning_value rhs) const {
+    return {execution, node, rhs.node, tc_lightning_execution::branch_equal,
+        tc_lightning_execution::emit_compare_equal};
+}
+inline tc_lightning_condition tc_lightning_value::operator!=(tc_lightning_value rhs) const {
+    return {execution, node, rhs.node, tc_lightning_execution::branch_not_equal,
+        tc_lightning_execution::emit_compare_not_equal};
+}
+inline tc_lightning_condition tc_lightning_value::operator<(tc_lightning_value rhs) const {
+    return signed_value ? tc_lightning_condition{execution, node, rhs.node, tc_lightning_execution::branch_less_signed,
+                              tc_lightning_execution::emit_compare_less_signed} :
+                          tc_lightning_condition{execution, node, rhs.node,
+                              tc_lightning_execution::branch_less_unsigned,
+                              tc_lightning_execution::emit_compare_less_unsigned};
+}
+inline tc_lightning_condition tc_lightning_value::operator>=(tc_lightning_value rhs) const {
+    return signed_value ? tc_lightning_condition{execution, node, rhs.node,
+                              tc_lightning_execution::branch_greater_equal_signed,
+                              tc_lightning_execution::emit_compare_greater_equal_signed} :
+                          tc_lightning_condition{execution, node, rhs.node,
+                              tc_lightning_execution::branch_greater_equal_unsigned,
+                              tc_lightning_execution::emit_compare_greater_equal_unsigned};
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_condition tc_lightning_value::operator==(T rhs) const {
+    return *this == execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_condition tc_lightning_value::operator!=(T rhs) const {
+    return *this != execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_condition tc_lightning_value::operator<(T rhs) const {
+    return *this < execution->immediate(static_cast<uint64_t>(rhs));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+tc_lightning_condition tc_lightning_value::operator>=(T rhs) const {
+    return *this >= execution->immediate(static_cast<uint64_t>(rhs));
+}
+inline tc_lightning_condition::operator bool() const {
+    return execution->observe(*this);
+}
+inline tc_lightning_condition::operator tc_lightning_value() const {
+    return {execution, execution->add_node(value_emit, lhs, rhs), false, 64};
+}
+
+/// \brief State-access adapter that carries an independent execution object.
+/// \details It contains no collection logic: state operations are forwarded
+/// to the execution policy selected for this instantiation.
+struct tc_lightning_collecting_state_access {
+    tc_lightning_execution *execution{};
+
+    tc_lightning_value read_x(uint32_t guest) const {
+        return execution->read_x(guest);
+    }
+    void write_x(uint32_t guest, tc_lightning_value value) const {
+        execution->write_x(guest, value);
+    }
+    template <typename T>
+        requires std::is_integral_v<T>
+    void write_x(uint32_t guest, T value) const {
+        execution->write_x(guest, execution->immediate(static_cast<uint64_t>(value)));
+    }
+    uint64_t read_fetch_vf_offset() const {
+        return 0;
+    }
+    int make_scoped_note(const char * /*name*/) const {
+        return 0;
+    }
+    void stage_unsupported() const {
+        execution->failed = true;
+    }
+    execute_status stage_indirect_jump(uint64_t &pc, tc_lightning_value target) const {
+        return execution->indirect_jump(pc, target);
+    }
+    template <unsigned BITS>
+    tc_lightning_value stage_divide_signed(tc_lightning_value lhs, tc_lightning_value rhs) const {
+        return execution->riscv_division<false, true, BITS>(lhs, rhs);
+    }
+    template <unsigned BITS>
+    tc_lightning_value stage_divide_unsigned(tc_lightning_value lhs, tc_lightning_value rhs) const {
+        return execution->riscv_division<false, false, BITS>(lhs, rhs);
+    }
+    template <unsigned BITS>
+    tc_lightning_value stage_remainder_signed(tc_lightning_value lhs, tc_lightning_value rhs) const {
+        return execution->riscv_division<true, true, BITS>(lhs, rhs);
+    }
+    template <unsigned BITS>
+    tc_lightning_value stage_remainder_unsigned(tc_lightning_value lhs, tc_lightning_value rhs) const {
+        return execution->riscv_division<true, false, BITS>(lhs, rhs);
+    }
+    tc_lightning_value stage_multiply_high_signed(tc_lightning_value lhs, tc_lightning_value rhs) const {
+        return execution->multiply_high<true, true>(lhs, rhs);
+    }
+    tc_lightning_value stage_multiply_high_signed_unsigned(tc_lightning_value lhs, tc_lightning_value rhs) const {
+        return execution->multiply_high<true, false>(lhs, rhs);
+    }
+    tc_lightning_value stage_multiply_high_unsigned(tc_lightning_value lhs, tc_lightning_value rhs) const {
+        return execution->multiply_high<false, false>(lhs, rhs);
+    }
+    template <typename T>
+    tc_lightning_value stage_read_virtual_memory(uint64_t & /*pc*/, uint64_t /*mcycle*/,
+        tc_lightning_value address) const {
+        return execution->memory_load<T>(address);
+    }
+    template <typename T>
+    execute_status stage_write_virtual_memory(uint64_t & /*pc*/, uint64_t /*mcycle*/, tc_lightning_value address,
+        tc_lightning_value value) const {
+        execution->emit_memory_store<T>(address, value);
+        return execute_status::success;
+    }
+};
+
+template <>
+struct i_state_access_fast_addr<tc_lightning_collecting_state_access> {
+    using type = uint64_t;
+};
+#endif // TC_LIGHTNING && TC_ONLINE
+
+/// \brief Looks up an exact compiled head, or updates the colliding hotcount
+/// at an uncompiled profiling site.
+/// \details Installed heads bypass hot counting, matching LuaJIT's patched
+/// bytecode entries. Defined unconditionally so discarded constexpr branches
+/// can name it; the body only instantiates under TC_JIT_SHELL.
 template <typename STATE_ACCESS>
 static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64_t vpc, uint16_t weight) {
-    const uint32_t h = (static_cast<uint32_t>(vpc) >> 1) & 63;
     const void *fn = nullptr;
-    if (c->hot.head_pc[h] == vpc) [[unlikely]] {
-        ++c->hot.entries;
-#if TC_AOT
-        fn = c->hot.head_fn[h];
+    bool installed = false;
+#if TC_ONLINE
+    if (const auto *const trace = tc_online_find(c->online, vpc); trace != nullptr) [[unlikely]] {
+        installed = true;
+#if TC_LIGHTNING
+        fn = trace->fn;
 #endif
     }
+#elif TC_AOT
+    uint64_t key = vpc;
+    key ^= key >> 12;
+    uint32_t s = (static_cast<uint32_t>(key) >> 1) & (tc_hot_state::head_slots - 1);
+    const uint64_t tag = vpc + 1;
+    while (c->hot.head_pc[s] != 0) {
+        if (c->hot.head_pc[s] == tag) {
+            installed = true;
+            fn = c->hot.head_fn[s];
+            break;
+        }
+        s = (s + 1) & (tc_hot_state::head_slots - 1);
+    }
+#endif
+    if (installed) [[unlikely]] {
+        ++c->hot.entries;
+        return fn;
+    }
+
+    const uint32_t h = (static_cast<uint32_t>(vpc) >> 1) & (tc_hot_state::sets - 1);
     c->hot.hotcount[h] -= weight;
     if (static_cast<int16_t>(c->hot.hotcount[h]) <= 0) [[unlikely]] {
         c->hot.hotcount[h] = TC_HOT_RESET;
 #if TC_ONLINE
         // Recorder setup contains calls and must stay out of the handler:
         // request a chain exit and let the outer loop start it.
-        c->online_trip_pc = vpc;
-        c->online_trip_weight = weight;
-        c->online_trip = true;
+        if (fn == nullptr && tc_online_find(c->online, vpc) == nullptr && !tc_online_blacklisted(c->online, vpc)) {
+            c->online_trip_pc = vpc;
+            c->online_trip_weight = weight;
+            c->online_trip = true;
+        }
 #endif
     }
     return fn;
@@ -964,7 +1993,7 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
             /* conditional branch taken backward: a loop back-edge profiling site */                                   \
             if (status == execute_status::success && pc < tc_pc_in) {                                                  \
                 [[maybe_unused]] const void *tc_tfn = tc_hook_site(tcc, pc_to_virtual(a, pc), 2);                                        \
-                if constexpr (TC_AOT != 0) {                                                                           \
+                if constexpr (TC_AOT != 0 || TC_LIGHTNING != 0) {                                                     \
                     if (tc_tfn != nullptr) {                                                                           \
                         TC_SYNC();                                                                                     \
                         TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(                             \
@@ -998,6 +2027,350 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
     }
 #include "interpret-tc-cases.inc"
 #undef TC_CASE
+
+#if TC_LIGHTNING && TC_ONLINE
+// Tags identify backend capabilities without introducing another opcode or
+// decoder alongside the interpreter's generated jump table.
+#define TC_CASE(NAME, PRELOAD, LEN, EXPR) struct tc_lightning_tag_##NAME {};
+#include "interpret-tc-cases.inc"
+#undef TC_CASE
+
+template <typename TAG>
+struct tc_lightning_can_collect : std::false_type {};
+
+// Integer backend capability declaration.  This is not a decoder: the normal
+// TC case table below remains the only instruction-to-semantics mapping.
+#define TC_LIGHTNING_CAN_COLLECT(NAME)                                                                                 \
+    template <>                                                                                                       \
+    struct tc_lightning_can_collect<tc_lightning_tag_##NAME> : std::true_type {};
+TC_LIGHTNING_CAN_COLLECT(LUI_rdN)
+TC_LIGHTNING_CAN_COLLECT(AUIPC_rdN)
+TC_LIGHTNING_CAN_COLLECT(JAL_rd0)
+TC_LIGHTNING_CAN_COLLECT(JAL_rdN)
+TC_LIGHTNING_CAN_COLLECT(JALR_rd0)
+TC_LIGHTNING_CAN_COLLECT(JALR_rdN)
+TC_LIGHTNING_CAN_COLLECT(BEQ)
+TC_LIGHTNING_CAN_COLLECT(BNE)
+TC_LIGHTNING_CAN_COLLECT(BLT)
+TC_LIGHTNING_CAN_COLLECT(BGE)
+TC_LIGHTNING_CAN_COLLECT(BLTU)
+TC_LIGHTNING_CAN_COLLECT(BGEU)
+TC_LIGHTNING_CAN_COLLECT(ADDI_rdN)
+TC_LIGHTNING_CAN_COLLECT(SLTI_rdN)
+TC_LIGHTNING_CAN_COLLECT(SLTIU_rdN)
+TC_LIGHTNING_CAN_COLLECT(XORI_rdN)
+TC_LIGHTNING_CAN_COLLECT(ORI_rdN)
+TC_LIGHTNING_CAN_COLLECT(ANDI_rdN)
+TC_LIGHTNING_CAN_COLLECT(SLLI_rdN)
+TC_LIGHTNING_CAN_COLLECT(SRLI_SRAI_rdN)
+TC_LIGHTNING_CAN_COLLECT(ADD_MUL_SUB_rdN)
+TC_LIGHTNING_CAN_COLLECT(SLL_MULH_rdN)
+TC_LIGHTNING_CAN_COLLECT(SLT_MULHSU_rdN)
+TC_LIGHTNING_CAN_COLLECT(SLTU_MULHU_rdN)
+TC_LIGHTNING_CAN_COLLECT(XOR_DIV_rdN)
+TC_LIGHTNING_CAN_COLLECT(SRL_DIVU_SRA_rdN)
+TC_LIGHTNING_CAN_COLLECT(OR_REM_rdN)
+TC_LIGHTNING_CAN_COLLECT(AND_REMU_rdN)
+TC_LIGHTNING_CAN_COLLECT(ADDIW_rdN)
+TC_LIGHTNING_CAN_COLLECT(SLLIW_rdN)
+TC_LIGHTNING_CAN_COLLECT(SRLIW_SRAIW_rdN)
+TC_LIGHTNING_CAN_COLLECT(ADDW_MULW_SUBW_rdN)
+TC_LIGHTNING_CAN_COLLECT(SLLW_rdN)
+TC_LIGHTNING_CAN_COLLECT(SRLW_DIVUW_SRAW_rdN)
+TC_LIGHTNING_CAN_COLLECT(DIVW_rdN)
+TC_LIGHTNING_CAN_COLLECT(REMW_rdN)
+TC_LIGHTNING_CAN_COLLECT(REMUW_rdN)
+TC_LIGHTNING_CAN_COLLECT(LD_rdN)
+TC_LIGHTNING_CAN_COLLECT(LW_rdN)
+TC_LIGHTNING_CAN_COLLECT(LWU_rdN)
+TC_LIGHTNING_CAN_COLLECT(LH_rdN)
+TC_LIGHTNING_CAN_COLLECT(LHU_rdN)
+TC_LIGHTNING_CAN_COLLECT(LB_rdN)
+TC_LIGHTNING_CAN_COLLECT(LBU_rdN)
+TC_LIGHTNING_CAN_COLLECT(SD)
+TC_LIGHTNING_CAN_COLLECT(SW)
+TC_LIGHTNING_CAN_COLLECT(SH)
+TC_LIGHTNING_CAN_COLLECT(SB)
+TC_LIGHTNING_CAN_COLLECT(C_HINT)
+TC_LIGHTNING_CAN_COLLECT(C_NOP)
+TC_LIGHTNING_CAN_COLLECT(C_LUI)
+TC_LIGHTNING_CAN_COLLECT(C_LI)
+TC_LIGHTNING_CAN_COLLECT(C_J)
+TC_LIGHTNING_CAN_COLLECT(C_JR)
+TC_LIGHTNING_CAN_COLLECT(C_JALR)
+TC_LIGHTNING_CAN_COLLECT(C_MV)
+TC_LIGHTNING_CAN_COLLECT(C_BEQZ)
+TC_LIGHTNING_CAN_COLLECT(C_BNEZ)
+TC_LIGHTNING_CAN_COLLECT(C_ADDI)
+TC_LIGHTNING_CAN_COLLECT(C_ADDIW)
+TC_LIGHTNING_CAN_COLLECT(C_ADDI4SPN)
+TC_LIGHTNING_CAN_COLLECT(C_ADDI16SP)
+TC_LIGHTNING_CAN_COLLECT(C_ANDI)
+TC_LIGHTNING_CAN_COLLECT(C_SLLI)
+TC_LIGHTNING_CAN_COLLECT(C_SRAI)
+TC_LIGHTNING_CAN_COLLECT(C_SRLI)
+TC_LIGHTNING_CAN_COLLECT(C_ADD)
+TC_LIGHTNING_CAN_COLLECT(C_SUB)
+TC_LIGHTNING_CAN_COLLECT(C_XOR)
+TC_LIGHTNING_CAN_COLLECT(C_OR)
+TC_LIGHTNING_CAN_COLLECT(C_AND)
+TC_LIGHTNING_CAN_COLLECT(C_ADDW)
+TC_LIGHTNING_CAN_COLLECT(C_SUBW)
+TC_LIGHTNING_CAN_COLLECT(C_LD)
+TC_LIGHTNING_CAN_COLLECT(C_LW)
+TC_LIGHTNING_CAN_COLLECT(C_LDSP)
+TC_LIGHTNING_CAN_COLLECT(C_LWSP)
+TC_LIGHTNING_CAN_COLLECT(C_SD)
+TC_LIGHTNING_CAN_COLLECT(C_SW)
+TC_LIGHTNING_CAN_COLLECT(C_SDSP)
+TC_LIGHTNING_CAN_COLLECT(C_SWSP)
+TC_LIGHTNING_CAN_COLLECT(C_LBU)
+TC_LIGHTNING_CAN_COLLECT(C_LHU)
+TC_LIGHTNING_CAN_COLLECT(C_LH)
+TC_LIGHTNING_CAN_COLLECT(C_SB)
+TC_LIGHTNING_CAN_COLLECT(C_SH)
+TC_LIGHTNING_CAN_COLLECT(C_ZEXT_B)
+TC_LIGHTNING_CAN_COLLECT(C_SEXT_B)
+TC_LIGHTNING_CAN_COLLECT(C_ZEXT_H)
+TC_LIGHTNING_CAN_COLLECT(C_SEXT_H)
+TC_LIGHTNING_CAN_COLLECT(C_ZEXT_W)
+TC_LIGHTNING_CAN_COLLECT(C_NOT)
+TC_LIGHTNING_CAN_COLLECT(C_MUL)
+TC_LIGHTNING_CAN_COLLECT(LUI_rd0)
+TC_LIGHTNING_CAN_COLLECT(AUIPC_rd0)
+TC_LIGHTNING_CAN_COLLECT(ADDI_rd0)
+TC_LIGHTNING_CAN_COLLECT(SLTI_rd0)
+TC_LIGHTNING_CAN_COLLECT(SLTIU_rd0)
+TC_LIGHTNING_CAN_COLLECT(XORI_rd0)
+TC_LIGHTNING_CAN_COLLECT(ORI_rd0)
+TC_LIGHTNING_CAN_COLLECT(ANDI_rd0)
+TC_LIGHTNING_CAN_COLLECT(SLLI_rd0)
+TC_LIGHTNING_CAN_COLLECT(SRLI_SRAI_rd0)
+TC_LIGHTNING_CAN_COLLECT(ADD_MUL_SUB_rd0)
+TC_LIGHTNING_CAN_COLLECT(SLL_MULH_rd0)
+TC_LIGHTNING_CAN_COLLECT(SLT_MULHSU_rd0)
+TC_LIGHTNING_CAN_COLLECT(SLTU_MULHU_rd0)
+TC_LIGHTNING_CAN_COLLECT(XOR_DIV_rd0)
+TC_LIGHTNING_CAN_COLLECT(SRL_DIVU_SRA_rd0)
+TC_LIGHTNING_CAN_COLLECT(OR_REM_rd0)
+TC_LIGHTNING_CAN_COLLECT(AND_REMU_rd0)
+TC_LIGHTNING_CAN_COLLECT(ADDIW_rd0)
+TC_LIGHTNING_CAN_COLLECT(SLLIW_rd0)
+TC_LIGHTNING_CAN_COLLECT(SRLIW_SRAIW_rd0)
+TC_LIGHTNING_CAN_COLLECT(ADDW_MULW_SUBW_rd0)
+TC_LIGHTNING_CAN_COLLECT(SLLW_rd0)
+TC_LIGHTNING_CAN_COLLECT(SRLW_DIVUW_SRAW_rd0)
+TC_LIGHTNING_CAN_COLLECT(DIVW_rd0)
+TC_LIGHTNING_CAN_COLLECT(REMW_rd0)
+TC_LIGHTNING_CAN_COLLECT(REMUW_rd0)
+TC_LIGHTNING_CAN_COLLECT(LD_rd0)
+TC_LIGHTNING_CAN_COLLECT(LW_rd0)
+TC_LIGHTNING_CAN_COLLECT(LWU_rd0)
+TC_LIGHTNING_CAN_COLLECT(LH_rd0)
+TC_LIGHTNING_CAN_COLLECT(LHU_rd0)
+TC_LIGHTNING_CAN_COLLECT(LB_rd0)
+TC_LIGHTNING_CAN_COLLECT(LBU_rd0)
+#undef TC_LIGHTNING_CAN_COLLECT
+
+/// \brief Fetch-tail continuation entered with the handler register contract.
+TC_CALLCONV static execute_status tc_lightning_continue(const state_access a, uint32_t insn TC_HOT_PARAMS) {
+    TC_ENTER();
+    if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {
+        uint32_t next_insn = 0;
+        a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index, &next_insn);
+        TC_SYNC();
+        TC_MUSTTAIL return tc_jumptable<state_access>[insn_get_id(next_insn)](a, next_insn TC_HOT_ARGS);
+    }
+    TC_SYNC();
+    TC_MUSTTAIL return tc_fetch_miss<state_access>(a, insn TC_HOT_ARGS);
+}
+
+using tc_lightning_collect_fn = bool (*)(tc_lightning_execution &, uint64_t &, uint32_t);
+
+// Generate the collection entry point from the same TC_CASE expression used
+// by the normal tail-call handler. The dependent ACCESS type keeps unsupported
+// expressions uninstantiated until the backend advertises their operations.
+// Hook wrappers are handler control flow rather than instruction semantics.
+#undef TC_HOOK_CALL
+#define TC_HOOK_CALL(expr) (expr)
+#define TC_CASE(NAME, PRELOAD, LEN, EXPR)                                                                              \
+    template <typename ACCESS = tc_lightning_collecting_state_access>                                                 \
+    static bool tc_lightning_collect_##NAME(tc_lightning_execution &execution, uint64_t &pc, uint32_t insn) {         \
+        if constexpr (!tc_lightning_can_collect<tc_lightning_tag_##NAME>::value) {                                    \
+            return false;                                                                                             \
+        } else {                                                                                                      \
+            const ACCESS a{&execution};                                                                               \
+            const execute_status status = (EXPR);                                                                     \
+            return status == execute_status::success && !execution.failed;                                            \
+        }                                                                                                             \
+    }
+#include "interpret-tc-cases.inc"
+#undef TC_CASE
+#undef TC_HOOK_CALL
+#if TC_JIT_SHELL
+#define TC_HOOK_CALL(expr)                                                                                             \
+    ({                                                                                                                 \
+        const execute_status tc_call_status = (expr);                                                                  \
+        if (tc_call_status == execute_status::success) {                                                               \
+            (void) tc_hook_site(tcc, pc_to_virtual(a, pc), 1);                                                         \
+            TC_ONLINE_CALL_TRIP_RETURN();                                                                              \
+        }                                                                                                              \
+        tc_call_status;                                                                                                \
+    })
+#else
+#define TC_HOOK_CALL(expr) (expr)
+#endif
+
+static constexpr tc_lightning_collect_fn tc_lightning_collectors[65536] = {
+#define TC_LABEL(NAME) &tc_lightning_collect_##NAME<>
+#include "interpret-tc-table.inc"
+#undef TC_LABEL
+};
+
+static bool tc_lightning_collect_instruction(tc_lightning_execution &execution, uint64_t &pc, uint32_t insn) {
+    return tc_lightning_collectors[insn_get_id(insn)](execution, pc, insn);
+}
+
+static bool tc_lightning_collect_range(tc_lightning_execution &execution, uint64_t &pc, uint32_t first,
+    uint32_t last) {
+    for (uint32_t i = first; i < last; ++i) {
+        execution.current = i;
+        execution.reset_expression();
+        const auto &entry = execution.trace->entries[i];
+        if (pc != entry.vaddr || !tc_lightning_collect_instruction(execution, pc, entry.insn) ||
+            pc != entry.next_pc) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool tc_lightning_discover_trace(tc_lightning_execution &execution) {
+    uint64_t pc = execution.trace->head;
+    return tc_lightning_collect_range(execution, pc, 0, execution.trace->len);
+}
+
+static const void *tc_lightning_compile_trace(const tc_online_state::trace &trace, jit_state_t **owner) {
+    if (trace.len == 0) {
+        return nullptr;
+    }
+
+    static const bool initialized = [] {
+        init_jit(nullptr);
+        return true;
+    }();
+    (void) initialized;
+
+    jit_state_t *_jit = jit_new_state();
+    if (_jit == nullptr) {
+        return nullptr;
+    }
+    tc_lightning_execution execution{_jit, trace};
+    if (!tc_lightning_discover_trace(execution) || execution.failed) {
+        jit_destroy_state();
+        return nullptr;
+    }
+
+    jit_prolog();
+    // Generator declaration only: the emitted continuation shares the
+    // interpreter frame and contains no runtime trampoline or prologue.
+    jit_tramp(0);
+    auto *const entry_bail = jit_blei(JIT_V5, static_cast<jit_word_t>(trace.len));
+
+    constexpr jit_word_t x_offset =
+        offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, x);
+    for (uint32_t guest = 1; guest < 32; ++guest) {
+        if (execution.guest_slot[guest] >= 0) {
+            const auto host = tc_lightning_execution::guest_registers[execution.guest_slot[guest]];
+            jit_ldxi(host, JIT_V1, x_offset + guest * sizeof(uint64_t));
+        }
+    }
+
+    execution.discovery = false;
+    execution.nexits = 0;
+    uint64_t collected_pc = trace.head;
+    const uint32_t loop_first = trace.cycle >= 0 ? static_cast<uint32_t>(trace.cycle) : trace.len;
+    if (!tc_lightning_collect_range(execution, collected_pc, 0, loop_first) || execution.failed) {
+        jit_destroy_state();
+        return nullptr;
+    }
+    if (loop_first != 0) {
+        jit_subi(JIT_V5, JIT_V5, static_cast<jit_word_t>(loop_first));
+        if (trace.cycle >= 0) {
+            const int64_t loop_delta = static_cast<int64_t>(collected_pc - trace.head);
+            if (loop_delta != 0) {
+                jit_addi(JIT_V4, JIT_V4, loop_delta);
+            }
+        }
+    }
+
+    auto *const loop = jit_label();
+    if (!tc_lightning_collect_range(execution, collected_pc, loop_first, trace.len) || execution.failed) {
+        jit_destroy_state();
+        return nullptr;
+    }
+
+    const uint32_t loop_len = trace.len - loop_first;
+    if (loop_len != 0) {
+        jit_subi(JIT_V5, JIT_V5, static_cast<jit_word_t>(loop_len));
+    }
+    if (trace.cycle >= 0) {
+        auto *const iterate = jit_bgti(JIT_V5, static_cast<jit_word_t>(loop_len));
+        jit_patch_at(iterate, loop);
+    } else {
+        const int64_t exit_delta = static_cast<int64_t>(collected_pc - trace.head);
+        if (exit_delta != 0) {
+            jit_addi(JIT_V4, JIT_V4, exit_delta);
+        }
+    }
+
+    const auto emit_flush = [&] {
+        for (uint32_t guest = 1; guest < 32; ++guest) {
+            if (execution.guest_slot[guest] >= 0) {
+                const auto host = tc_lightning_execution::guest_registers[execution.guest_slot[guest]];
+                jit_stxi(x_offset + guest * sizeof(uint64_t), JIT_V1, host);
+            }
+        }
+    };
+    const auto emit_continue = [&] {
+        jit_movi(JIT_R0, reinterpret_cast<jit_word_t>(&tc_lightning_continue));
+        jit_jmpr(JIT_R0);
+    };
+
+    emit_flush();
+    emit_continue();
+
+    for (uint16_t i = 0; i < execution.nexits; ++i) {
+        auto *const label = jit_label();
+        jit_patch_at(execution.exits[i].branch, label);
+        emit_flush();
+        const int64_t pc_delta = static_cast<int64_t>(execution.exits[i].pc - execution.exits[i].base_pc);
+        if (pc_delta != 0) {
+            jit_addi(JIT_V4, JIT_V4, pc_delta);
+        }
+        if (execution.exits[i].pending != 0) {
+            jit_subi(JIT_V5, JIT_V5, execution.exits[i].pending);
+        }
+        emit_continue();
+    }
+
+    auto *const entry_bail_label = jit_label();
+    jit_patch_at(entry_bail, entry_bail_label);
+    emit_continue();
+
+    auto *const emitted = jit_emit();
+    jit_protect();
+    jit_word_t code_size = 0;
+    (void) jit_get_code(&code_size);
+    if (std::getenv("TC_LIGHTNING_STATS") != nullptr) {
+        std::fprintf(stderr, "tc-lightning: compiled head %llx len %u cycle %d code %lld at %p\n",
+            static_cast<unsigned long long>(trace.head), trace.len, trace.cycle, static_cast<long long>(code_size),
+            emitted);
+    }
+    *owner = _jit;
+    return emitted;
+}
+#endif // TC_LIGHTNING && TC_ONLINE
 
 #if TC_AOT
 /// \brief One recorded instruction inside a trace body: the case expression
@@ -1048,6 +2421,201 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
 
 #include TC_AOT_TRACES
 
+#if TC_LIGHTNING
+/// \brief Common side exit for generated traces.
+/// \details Generated code enters and leaves with the handler register
+/// contract intact. This is a continuation, not an ABI or marshalling stub:
+/// it performs the interpreter fetch tail directly from the pinned state.
+template <typename STATE_ACCESS>
+TC_CALLCONV static execute_status tc_lightning_trace_exit(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS) {
+    TC_ENTER();
+    TC_TRACE_EXIT();
+}
+
+/// \brief Emits the hottest cyclic sieve trace directly in the handler ABI.
+/// \details This first vertical slice deliberately specializes the recorded
+/// trace at 0x55558b92dcdc. It keeps guest x10-x17 in host registers across
+/// the native loop, guards the two hot-TLB accesses, and jumps directly to
+/// tc_lightning_trace_exit on every side exit. There is no generated entry or
+/// exit prologue and no argument reshuffle.
+static const void *tc_lightning_build_sieve_trace_1() {
+    static const void *const code = []() -> const void * {
+        static_assert(JIT_V1 == _R20); // state_access::m_s
+        static_assert(JIT_V4 == _R23); // fast pc
+        static_assert(JIT_V5 == _R24); // countdown
+        static_assert(JIT_V6 == _R25); // fetch tag
+        static_assert(JIT_V8 == _R27); // tc_context
+
+        static const bool initialized = [] {
+            init_jit(nullptr);
+            return true;
+        }();
+        (void) initialized;
+
+        // GNU lightning's API macros intentionally find this local by name.
+        jit_state_t *_jit = jit_new_state();
+        if (_jit == nullptr) {
+            return nullptr;
+        }
+
+        // Guest a0-a7. V1/V4/V5/V6/V8 retain the interpreter contract;
+        // x21 (the incoming insn argument) is free once the trace is entered.
+        constexpr jit_gpr_t x10 = JIT_R1;
+        constexpr jit_gpr_t x11 = JIT_R2;
+        constexpr jit_gpr_t x12 = JIT_R3;
+        constexpr jit_gpr_t x13 = JIT_R4;
+        constexpr jit_gpr_t x14 = JIT_R5;
+        constexpr jit_gpr_t x15 = JIT_R6;
+        constexpr jit_gpr_t x16 = JIT_V0;
+        constexpr jit_gpr_t x17 = JIT_V2;
+        constexpr jit_gpr_t tmp0 = JIT_R0;
+        constexpr jit_gpr_t tmp1 = JIT_V3;
+        constexpr jit_gpr_t tmp2 = JIT_V7;
+
+        constexpr jit_word_t x_offset =
+            offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, x);
+        constexpr jit_word_t hot_tlb_offset = offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb);
+        constexpr jit_word_t hot_tlb_set_size = sizeof(hot_tlb_set);
+        constexpr jit_word_t hot_tlb_slot_size = sizeof(hot_tlb_slot);
+        static_assert(hot_tlb_slot_size == 16);
+
+        jit_prolog();
+        // `tramp` tells lightning that this is a continuation sharing its
+        // caller's frame. It emits no runtime trampoline or prologue.
+        jit_tramp(0);
+
+        auto entry_bail = jit_blei(JIT_V5, 10);
+
+        jit_ldxi(x10, JIT_V1, x_offset + 10 * sizeof(uint64_t));
+        jit_ldxi(x11, JIT_V1, x_offset + 11 * sizeof(uint64_t));
+        jit_ldxi(x12, JIT_V1, x_offset + 12 * sizeof(uint64_t));
+        jit_ldxi(x13, JIT_V1, x_offset + 13 * sizeof(uint64_t));
+        jit_ldxi(x14, JIT_V1, x_offset + 14 * sizeof(uint64_t));
+        jit_ldxi(x15, JIT_V1, x_offset + 15 * sizeof(uint64_t));
+        jit_ldxi(x16, JIT_V1, x_offset + 16 * sizeof(uint64_t));
+        jit_ldxi(x17, JIT_V1, x_offset + 17 * sizeof(uint64_t));
+
+        auto *const loop = jit_label();
+
+        // srliw x15,x13,5; c.slli x15,2; c.add x15,x10
+        jit_extr_ui(x15, x13);
+        jit_rshi_u(x15, x15, 5);
+        jit_extr_i(x15, x15);
+        jit_lshi(x15, x15, 2);
+        jit_addr(x15, x15, x10);
+
+        // c.lw x11,0(x15), fast TLB_READ path.
+        jit_rshi_u(tmp0, x15, LOG2_PAGE_SIZE);
+        jit_andi(tmp0, tmp0, TLB_SET_SIZE - 1);
+        jit_lshi(tmp0, tmp0, 4);
+        jit_addr(tmp0, tmp0, JIT_V1);
+        jit_addi(tmp0, tmp0, hot_tlb_offset + TLB_READ * hot_tlb_set_size);
+        jit_ldxi(tmp1, tmp0, offsetof(hot_tlb_slot, vaddr_page));
+        jit_andi(tmp2, x15, ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~UINT64_C(3)));
+        auto read_miss = jit_bner(tmp1, tmp2);
+        jit_ldxi(tmp1, tmp0, offsetof(hot_tlb_slot, vh_offset));
+        jit_addr(tmp0, x15, tmp1);
+        jit_ldr_i(x11, tmp0);
+
+        // sllw x14,x16,x13; xori x14,x14,-1; c.and x14,x11
+        jit_andi(tmp1, x13, 31);
+        jit_extr_ui(x14, x16);
+        jit_lshr(x14, x14, tmp1);
+        jit_extr_i(x14, x14);
+        jit_comr(x14, x14);
+        jit_andr(x14, x14, x11);
+
+        // c.sw x14,0(x15), fast TLB_WRITE path.
+        jit_rshi_u(tmp0, x15, LOG2_PAGE_SIZE);
+        jit_andi(tmp0, tmp0, TLB_SET_SIZE - 1);
+        jit_lshi(tmp0, tmp0, 4);
+        jit_addr(tmp0, tmp0, JIT_V1);
+        jit_addi(tmp0, tmp0, hot_tlb_offset + TLB_WRITE * hot_tlb_set_size);
+        jit_ldxi(tmp1, tmp0, offsetof(hot_tlb_slot, vaddr_page));
+        jit_andi(tmp2, x15, ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~UINT64_C(3)));
+        auto write_miss = jit_bner(tmp1, tmp2);
+        jit_ldxi(tmp1, tmp0, offsetof(hot_tlb_slot, vh_offset));
+        jit_addr(tmp0, x15, tmp1);
+        jit_str_i(tmp0, x14);
+
+        // c.addw x13,x12; bgeu x17,x13,head
+        jit_addr(x13, x13, x12);
+        jit_extr_i(x13, x13);
+        auto branch_exit = jit_bltr_u(x17, x13);
+
+        jit_subi(JIT_V5, JIT_V5, 10);
+        auto iterate = jit_bgti(JIT_V5, 10);
+        jit_patch_at(iterate, loop);
+
+        auto emit_flush = [&] {
+            jit_stxi(x_offset + 10 * sizeof(uint64_t), JIT_V1, x10);
+            jit_stxi(x_offset + 11 * sizeof(uint64_t), JIT_V1, x11);
+            jit_stxi(x_offset + 12 * sizeof(uint64_t), JIT_V1, x12);
+            jit_stxi(x_offset + 13 * sizeof(uint64_t), JIT_V1, x13);
+            jit_stxi(x_offset + 14 * sizeof(uint64_t), JIT_V1, x14);
+            jit_stxi(x_offset + 15 * sizeof(uint64_t), JIT_V1, x15);
+            jit_stxi(x_offset + 16 * sizeof(uint64_t), JIT_V1, x16);
+            jit_stxi(x_offset + 17 * sizeof(uint64_t), JIT_V1, x17);
+        };
+        auto emit_jump_to_exit = [&] {
+            jit_movi(tmp0, reinterpret_cast<jit_word_t>(&tc_lightning_trace_exit<state_access>));
+            jit_jmpr(tmp0);
+        };
+
+        // Tick boundary after one or more complete native iterations.
+        emit_flush();
+        emit_jump_to_exit();
+
+        // Recorded final branch was not taken: all ten instructions retired.
+        auto *const branch_exit_label = jit_label();
+        jit_patch_at(branch_exit, branch_exit_label);
+        emit_flush();
+        jit_addi(JIT_V4, JIT_V4, 0x1c);
+        jit_subi(JIT_V5, JIT_V5, 10);
+        emit_jump_to_exit();
+
+        // Read miss: the first three instructions retired; retry c.lw.
+        auto *const read_miss_label = jit_label();
+        jit_patch_at(read_miss, read_miss_label);
+        emit_flush();
+        jit_addi(JIT_V4, JIT_V4, 0x08);
+        jit_subi(JIT_V5, JIT_V5, 3);
+        emit_jump_to_exit();
+
+        // Write miss: the first seven instructions retired; retry c.sw.
+        auto *const write_miss_label = jit_label();
+        jit_patch_at(write_miss, write_miss_label);
+        emit_flush();
+        jit_addi(JIT_V4, JIT_V4, 0x14);
+        jit_subi(JIT_V5, JIT_V5, 7);
+        emit_jump_to_exit();
+
+        // Not enough countdown for one full iteration; execute the head in
+        // the interpreter without touching guest state.
+        auto *const entry_bail_label = jit_label();
+        jit_patch_at(entry_bail, entry_bail_label);
+        emit_jump_to_exit();
+
+        auto *const emitted = jit_emit();
+        // lightning 2.2.3 accidentally guards jit_emit's final mprotect with
+        // NDEBUG on macOS. jit_protect is idempotent and keeps the call in
+        // release builds, so explicitly seal the generated mapping here.
+        jit_protect();
+        jit_word_t code_size = 0;
+        (void) jit_get_code(&code_size);
+        if (std::getenv("TC_LIGHTNING_STATS") != nullptr) {
+            std::fprintf(stderr, "tc-lightning sieve trace 1: %lld bytes at %p\n", static_cast<long long>(code_size),
+                emitted);
+        }
+        // Keep the state alive for the process lifetime: it owns the emitted
+        // executable mapping. This is one fixed trace in the experiment.
+        (void) _jit;
+        return emitted;
+    }();
+    return code;
+}
+#endif // TC_LIGHTNING
+
 /// \brief Head table generated with the traces.
 template <typename STATE_ACCESS>
 struct tc_trace_head {
@@ -1086,28 +2654,39 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
     for (auto &c : tcc->hot.hotcount) {
         c = TC_HOT_RESET;
     }
+#if TC_AOT
     for (auto &p : tcc->hot.head_pc) {
-        p = UINT64_MAX;
+        p = 0;
     }
+#endif
     tcc->hot.entries = 0;
 #endif
 #if TC_AOT
-    // Install the generated traces, hottest first, first claim per slot
+    // Install every generated trace in the exact per-PC map.
+    static_assert(std::size(tc_trace_heads<STATE_ACCESS>) < tc_hot_state::head_slots);
     for (const auto &head : tc_trace_heads<STATE_ACCESS>) {
-        const uint32_t h = (static_cast<uint32_t>(head.pc) >> 1) & 63;
-        if (tcc->hot.head_pc[h] == UINT64_MAX) {
-            tcc->hot.head_pc[h] = head.pc;
-            tcc->hot.head_fn[h] = reinterpret_cast<const void *>(head.fn);
+        uint64_t key = head.pc;
+        key ^= key >> 12;
+        uint32_t s = (static_cast<uint32_t>(key) >> 1) & (tc_hot_state::head_slots - 1);
+        while (tcc->hot.head_pc[s] != 0) {
+            s = (s + 1) & (tc_hot_state::head_slots - 1);
         }
+        tcc->hot.head_pc[s] = head.pc + 1;
+        const void *head_fn = reinterpret_cast<const void *>(head.fn);
+#if TC_LIGHTNING
+        if constexpr (std::is_same_v<STATE_ACCESS, state_access>) {
+            if (head.pc == UINT64_C(0x55558b92dcdc)) {
+                if (const void *const generated = tc_lightning_build_sieve_trace_1(); generated != nullptr) {
+                    head_fn = generated;
+                }
+            }
+        }
+#endif
+        tcc->hot.head_fn[s] = head_fn;
     }
 #endif
 #if TC_ONLINE
     tcc->online = &tc_online_storage;
-    // Re-register heads installed by earlier interpret() calls
-    for (uint32_t i = 0; i < tc_online_storage.ntraces; ++i) {
-        const uint64_t head = tc_online_storage.pool[i].head;
-        tcc->hot.head_pc[(static_cast<uint32_t>(head) >> 1) & 63] = head;
-    }
 #endif
 
     while (mcycle < mcycle_end) {
@@ -1139,7 +2718,7 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                     tc_online_begin(tcc, tcc->online_trip_pc);
                 }
                 if (tcc->online->recording) [[unlikely]] {
-                    tc_online_record(tcc, pc, insn);
+                    tc_online_record(tcc, pc_to_virtual(a, pc), insn);
                 }
 #endif
 #if TC_PAGE_SEGMENT

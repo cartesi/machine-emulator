@@ -67,6 +67,10 @@ fn decode_journal(bytes: &[u8]) -> Result<(MachineHash, u64, MachineHash), Strin
     }
     let mut root_hash_before = [0u8; 32];
     root_hash_before.copy_from_slice(&bytes[0..32]);
+    // Solidity's abi.decode rejects a uint64 with dirty padding; match it.
+    if bytes[32..56].iter().any(|&b| b != 0) {
+        return Err("mcycle_count padding is not zero".to_string());
+    }
     let mcycle_count = u64::from_be_bytes(bytes[56..64].try_into().unwrap());
     let mut root_hash_after = [0u8; 32];
     root_hash_after.copy_from_slice(&bytes[64..96]);
@@ -275,6 +279,13 @@ mod tests {
     #[test]
     fn wrong_length_journal_is_rejected() {
         assert!(decode_journal(&[0u8; 95]).is_err());
+    }
+
+    #[test]
+    fn dirty_mcycle_padding_is_rejected() {
+        let mut j = journal(0xaa, 7, 0xbb);
+        j[40] = 1;
+        assert!(decode_journal(&j).is_err());
     }
 
     // A proof is only meaningful against the claim the caller made about it, so

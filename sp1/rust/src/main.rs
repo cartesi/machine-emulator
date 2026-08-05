@@ -22,7 +22,7 @@ use cartesi_sp1::{
     export_artifacts, hex, parse_hash, prove, try_execute, verify, verify_seal, vkey_hash,
     MachineHash, Mode,
 };
-use sp1_sdk::{Elf, Prover, ProverClient, SP1ProofWithPublicValues};
+use sp1_sdk::{Elf, HashableKey, Prover, ProverClient, ProvingKey, SP1ProofWithPublicValues};
 
 fn usage(program: &str) {
     eprintln!(
@@ -192,14 +192,16 @@ async fn main() {
                 .unwrap_or_else(|e| die(format!("mcycle_count: {e}")));
             let after = parse_hash(&args[5]).unwrap_or_else(die);
 
-            with_prover!(backend.as_str(), |client| {
+            let vkey = with_prover!(backend.as_str(), |client| {
                 let pk = client
                     .setup(elf)
                     .await
                     .unwrap_or_else(|e| die(format!("setup: {e}")));
-                verify(&client, &pk, &proof, &before, mcycle, &after).unwrap_or_else(die)
+                verify(&client, &pk, &proof, &before, mcycle, &after).unwrap_or_else(die);
+                pk.verifying_key().bytes32()
             });
             println!("Proof verified");
+            println!("vkey hash: {vkey}");
             print_public_values(proof.public_values.as_slice());
         }
 
@@ -217,6 +219,7 @@ async fn main() {
             let after = parse_hash(&args[7]).unwrap_or_else(die);
             verify_seal(&seal, &journal, &args[4], &before, mcycle, &after).unwrap_or_else(die);
             println!("Seal verified");
+            println!("vkey hash: {}", args[4]);
             print_public_values(&journal);
         }
 

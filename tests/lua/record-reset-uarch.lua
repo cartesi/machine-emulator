@@ -84,18 +84,16 @@ local function create_reset_uarch_step_log()
     return ctx
 end
 
--- htif.tohost encoding a pending manual yield rejected by the dapp: dev=YIELD(2), cmd=MANUAL(1),
--- reason=rx-rejected. The reset detects this and reverts the canonical state to the revert root hash.
-local HTIF_DEV_YIELD = 2
-local HTIF_YIELD_CMD_MANUAL = 1
-local TOHOST_RX_REJECTED = (HTIF_DEV_YIELD << 56)
-    | (HTIF_YIELD_CMD_MANUAL << 48)
+-- htif.tohost encoding a pending manual yield rejected by the dapp: the reset detects this and
+-- reverts the canonical state to the revert root hash.
+local TOHOST_RX_REJECTED = (cartesi.HTIF_DEV_YIELD << 56)
+    | (cartesi.HTIF_YIELD_CMD_MANUAL << 48)
     | (cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED << 32)
 
 -- The same manual-yield encoding but rx-accepted: the reset reads tohost yet does NOT revert (only an
 -- rx-rejected yield substitutes the revert root), so its canonical post-state is the post-reset root.
-local TOHOST_RX_ACCEPTED = (HTIF_DEV_YIELD << 56)
-    | (HTIF_YIELD_CMD_MANUAL << 48)
+local TOHOST_RX_ACCEPTED = (cartesi.HTIF_DEV_YIELD << 56)
+    | (cartesi.HTIF_YIELD_CMD_MANUAL << 48)
     | (cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED << 32)
 
 -- Records a uarch reset whose machine is paused on a rejected manual yield. The reset substitutes the

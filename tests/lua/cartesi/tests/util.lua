@@ -120,9 +120,7 @@ function tests_util.file_exists(name)
 end
 
 -- Create a fixture output directory and require it to be empty before the caller writes into it.
--- Deliberately non-destructive: it never deletes. Clearing stale fixtures is the job of a visible
--- Makefile/CI target (e.g. solidity-step's fixtures-clean), not of a recorder. The only shell call
--- is mkdir -p (creation, never deletion); the path is single-quoted and a literal quote rejected.
+-- Deliberately non-destructive: it never deletes; clearing stale fixtures is the Makefile's job.
 function tests_util.prepare_empty_output_dir(dir)
     assert(type(dir) == "string" and #dir > 0, "output dir must be a non-empty string")
     assert(not dir:match("^/+$"), "refusing to use the filesystem root as an output dir")
@@ -133,18 +131,6 @@ function tests_util.prepare_empty_output_dir(dir)
             error("output dir is not empty: " .. dir .. "\nremove it or clean the fixture root before recording")
         end
     end
-end
-
-function tests_util.tohex(str)
-    return (str:gsub(".", function(c)
-        return string.format("%02X", string.byte(c))
-    end))
-end
-
-function tests_util.fromhex(str)
-    return (str:gsub("..", function(cc)
-        return string.char(tonumber(cc, 16))
-    end))
 end
 
 local function merkle_hash(data, start, log2_size, hash_fn)

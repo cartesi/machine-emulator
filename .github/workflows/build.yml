@@ -1054,9 +1054,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.4
 
       - name: Install Foundry
-        # Pinned to the same forge version as the solidity-step job (single version across the
-        # workflow; the version that generated the committed transpiled .sol).
-        uses: foundry-rs/foundry-toolchain@v1
+        # Same forge version as the solidity-step job.
+        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
         with:
           version: v1.0.0
 
@@ -1077,7 +1076,7 @@ jobs:
 
       - name: Upload RISC0 coverage
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: risc0-coverage
           path: |
@@ -1103,7 +1102,7 @@ jobs:
     runs-on: ubuntu-latest-8-cores
     steps:
       - name: Checkout machine emulator source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
 
@@ -1115,9 +1114,9 @@ jobs:
           lua5.4 -e 'require("lpeg")'
 
       - name: Install Foundry
-        # Pinned: forge fmt output must match the version that generated the committed transpiled
-        # .sol files (the check-gen-transpiled drift check below), the same reason we pin clang-format.
-        uses: foundry-rs/foundry-toolchain@v1
+        # forge is pinned: fmt output and the check-gen-transpiled drift check below must match
+        # the version that generated the committed .sol files.
+        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
         with:
           version: v1.0.0
 
@@ -1131,23 +1130,23 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
 
       - name: Build machine-emulator "builder" docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -1165,7 +1164,7 @@ jobs:
 
       # tests/Dockerfile's runtime stage is FROM cartesi/machine-emulator:devel, so build it too.
       - name: Build machine-emulator docker image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
         with:
           file: Dockerfile
           context: .
@@ -1181,7 +1180,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
@@ -1259,11 +1258,9 @@ jobs:
 
       - name: Upload solidity-step coverage
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: solidity-step-coverage
-          # coverage-html/ is the browsable report; coverage-summary.txt is the quick text table;
-          # lcov.info is the raw tracefile for tooling.
           path: |
             solidity-step/coverage-html
             solidity-step/coverage-summary.txt

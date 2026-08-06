@@ -880,7 +880,7 @@ where options are:
 
   --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...]
     send a cmio response to the rx buffer and write a binary step log to a file.
-    runs after the machine has reached its terminal state. The machine should be
+    runs after the machine has reached its terminal state. the machine should be
     in a yielded state (iflags.Y == 1); otherwise the logged transition is a no-op.
 
     <key>:<value> is one of

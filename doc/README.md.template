@@ -4892,7 +4892,7 @@ A fork that still stands at the boundary includes the input before running (at b
 Once the bisections converge, the mcycle offset and uarch cycle they agreed on determine the form of the disputed transition, and the referee asks player 1 for the matching logs:
 ```{.lua key=rvg_commit_log include=rolling-verification-game.lua/commit_log title="rolling-verification-game.lua (excerpt)"}
 ```
-A combined transition is committed as its two access logs.
+A combined transition is committed as its two step logs.
 
 The referee verifies the logs on their own, again without ever instantiating a machine, each verification starting from the hash the previous one returned:
 ```{.lua key=rvg_verify_transition include=rolling-verification-game.lua/verify_state_transition title="rolling-verification-game.lua (excerpt)"}

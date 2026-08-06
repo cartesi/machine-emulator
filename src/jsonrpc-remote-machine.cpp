@@ -976,8 +976,6 @@ static json jsonrpc_machine_collect_mcycle_root_hashes(const json &j, const std:
     auto mcycle_phase = std::get<2>(args);
     auto log2_bundle_mcycle_count = std::get<3>(args);
     auto previous_partial_bundle = std::get<4>(args);
-    // check_int rejects values that would not survive the narrowing to int instead of letting them
-    // wrap to a small, valid-looking bundle size.
     const auto result = session->handler->machine->collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period,
         mcycle_phase, check_int(log2_bundle_mcycle_count, param_name[3]), previous_partial_bundle);
     return jsonrpc_response_ok(j, result);
@@ -997,8 +995,6 @@ static json jsonrpc_machine_collect_uarch_cycle_root_hashes(const json &j,
     auto mcycle_end = std::get<0>(args);
     auto log2_bundle_uarch_cycle_count = std::get<1>(args);
     const auto revert_uarch_tail = std::get<2>(args).value_or(cartesi::machine_hashes{});
-    // check_int rejects values that would not survive the narrowing to int instead of letting them
-    // wrap to a small, valid-looking bundle size.
     const auto result = session->handler->machine->collect_uarch_cycle_root_hashes(mcycle_end,
         check_int(log2_bundle_uarch_cycle_count, param_name[1]), revert_uarch_tail);
     return jsonrpc_response_ok(j, result);

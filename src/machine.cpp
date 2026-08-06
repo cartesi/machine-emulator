@@ -1730,9 +1730,6 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
     // Handle special case for writing to shadow memory, allowing manual snapshots
     // for machines with shared layouts via read_memory()/write_memory()
     if (paddr == AR_SHADOW_STATE_START && length == AR_SHADOW_STATE_LENGTH) {
-        // This bypasses write_verified_tlb/write_unverified_tlb, where outgoing write-TLB pages are
-        // marked dirty, so mark the resident ones before the overwrite discards their mappings.
-        mark_write_tlb_dirty_pages();
         // Overwrite the processor shadow state with the provided data
         static_assert(AR_SHADOW_STATE_LENGTH == sizeof(m_s->shadow));
         // Make sure we marked as dirty whatever pages were in the write TLB
@@ -2030,9 +2027,7 @@ void machine::log_send_cmio_response(uint16_t reason, const unsigned char *data,
     record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     record_step_state_access a(context, *this);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
-    // send_cmio_response is not a step. Even when it no-ops on a machine paused on a rejected input,
-    // its transition is the identity, so the post-operation hash is the plain machine root hash with no
-    // revert substitution.
+    // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
     auto root_hash_after = get_root_hash();
     a.finish(root_hash_before, 0, root_hash_after);
     auto obtained_root_hash =
@@ -2092,10 +2087,7 @@ void machine::log_reset_uarch(const std::string &filename) {
     uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     uarch_record_step_state_access a(context, *this);
     uarch_reset_state(a);
-    // get_root_hash() also updates the hash tree, which finish() relies on to record node hashes.
-    // When the machine has rejected an input, the canonical root hash after the reset is the recorded
-    // revert root hash (the physical machine only has its uarch reset; iflags.Y and htif.tohost are
-    // unchanged), so the computed value is replaced -- but the tree update must still happen first.
+    // get_root_hash() also updates the hash tree, which finish() relies on to record node hashes
     auto root_hash_after = get_root_hash();
     const state_access sa(*this);
     if (is_rejected_manual_yield(sa)) {
@@ -2166,17 +2158,13 @@ std::string machine::pretty_print_step_uarch(const std::string &filename) {
     auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
     uarch_replay_step_state_access<step_pretty_printer>::context context;
     uarch_replay_step_state_access<step_pretty_printer> a(context, mapped_data.get_ptr(), data_length);
-    // Loops uarch_step directly instead of going through uarch_interpret: the cycle-limit
-    // bookkeeping reads of the driver and the interpreter would open the printout with two
-    // redundant uarch.cycle reads, and the cycle count is already in the log header.
+    // uarch_interpret's cycle-limit bookkeeping would open the printout with redundant uarch.cycle reads
     for (uint64_t i = 0; i < context.log.requested_cycle_count; ++i) {
         if (uarch_step(a) != UArchStepStatus::Success) {
             break;
         }
     }
     auto printout = context.printer.str();
-    // The printout is most needed exactly when the log is inconsistent, so a failed final
-    // check appends a warning instead of discarding the text.
     try {
         a.finish();
     } catch (const std::exception &e) {
@@ -2251,9 +2239,7 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     record_step_state_access a(context, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     auto break_reason = interpret(a, mcycle_end);
-    // get_root_hash() also updates the hash tree, which finish() relies on to record node/page hashes.
-    // When the machine has rejected an input, the canonical root hash after the step is the recorded
-    // revert root hash, so the computed value is replaced -- but the tree update must still happen first.
+    // get_root_hash() also updates the hash tree, which finish() relies on to record node/page hashes
     auto root_hash_after = get_root_hash();
     const state_access sa(*this);
     if (is_rejected_manual_yield(sa)) {

@@ -244,7 +244,7 @@ commands["requested-cycle-count"] = function(args)
     io.write(tostring(read_header(path).requested_cycle_count))
 end
 
-commands.signature = function(args)
+function commands.signature(args)
     local path = assert(args[1], "usage: step-log-util.lua signature <step-log>")
     local f <close> = assert(io.open(path, "rb"))
     local sig = f:read(SIGNATURE_SIZE)

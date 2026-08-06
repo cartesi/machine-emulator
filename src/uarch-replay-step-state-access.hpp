@@ -43,9 +43,7 @@
 
 namespace cartesi {
 
-/// \brief No-op printout sink: the default replay produces no printout and pulls in no host-only
-/// machinery, so the replay state access compiles for the freestanding (uarch/risc0) builds. The
-/// real, allocating printer lives in step-pretty-printer.hpp and is selected only on the host.
+/// \brief No-op printout sink; keeps the replay free of host-only machinery for freestanding builds.
 struct no_step_printout {
     void begin_bracket(const char * /*text*/) const {}
     void end_bracket(const char * /*text*/) const {}
@@ -92,8 +90,6 @@ public:
         // pristine uarch).
         machine_hash obtained_root_hash{};
         if (m_context.reverted) {
-            // Revert substitutes the recorded root instead of recomputing it; still assert no node was
-            // left unconsumed (compute_root_hash makes this assertion on the non-reverted path).
             m_context.log.check_all_nodes_consumed();
             obtained_root_hash = m_context.reverted_root_hash;
         } else {

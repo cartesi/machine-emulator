@@ -1941,7 +1941,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_filename_test, default_mac
 class step_log_machine_fixture : public incomplete_machine_fixture {
 public:
     step_log_machine_fixture() {
-        _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
+        _machine_dir_path = unique_temp_path("661b6096c377cdc07756df488059f4407c8f4");
 
         uint32_t test_uarch_ram[] = {
             0x07b00513,                                                            //  li	a0,123
@@ -1975,15 +1975,14 @@ protected:
     // Returns a fresh path; the fixture removes the file on destruction. The path is
     // removed eagerly so cm_log_step_uarch's "file already exists" check passes.
     std::string make_log_filename() {
-        auto path =
-            (std::filesystem::temp_directory_path() / ("step-log-" + std::to_string(_next_log_id++) + ".bin")).string();
+        auto path = unique_temp_path("step-log-" + std::to_string(_next_log_id++) + ".bin");
         std::filesystem::remove(path);
         _temp_logs.push_back(path);
         return path;
     }
 
     std::string _machine_dir_path;
-    const std::string _uarch_ram_path = "/tmp/test-uarch-ram.bin";
+    const std::string _uarch_ram_path = unique_temp_path("test-uarch-ram.bin");
     std::vector<std::string> _temp_logs;
     int _next_log_id{};
 };

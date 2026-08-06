@@ -1181,8 +1181,6 @@ static int machine_obj_index_collect_mcycle_root_hashes(lua_State *L) {
     const uint64_t mcycle_end = luaL_checkinteger(L, 2);
     const uint64_t log2_mcycle_period = luaL_checkinteger(L, 3);
     const uint64_t mcycle_phase = luaL_optinteger(L, 4, 0);
-    // Reject values that would not survive the narrowing to int32 instead of letting them wrap to a
-    // small, valid-looking bundle size.
     const lua_Integer log2_bundle = luaL_optinteger(L, 5, 0);
     if (log2_bundle < 0 || log2_bundle > INT32_MAX) {
         return luaL_argerror(L, 5, "log2_bundle_mcycle_count is out of range");
@@ -1204,8 +1202,6 @@ static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t mcycle_end = luaL_checkinteger(L, 2);
-    // Reject values that would not survive the narrowing to int32 instead of letting them wrap to a
-    // small, valid-looking bundle size.
     const lua_Integer log2_bundle = luaL_optinteger(L, 3, 0);
     if (log2_bundle < 0 || log2_bundle > INT32_MAX) {
         return luaL_argerror(L, 3, "log2_bundle_uarch_cycle_count is out of range");

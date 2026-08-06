@@ -77,7 +77,7 @@ pub fn prove(
 /// Like `prove`, but returns the failure as an `Err` instead of panicking. A structurally
 /// invalid log makes the guest abort via `zk_abort_with_msg`, surfaced here with the same
 /// message the C++ host throws; a caller belief that disagrees with the journal is reported
-/// too. Used by the reject-fixture test to assert the guest rejects forged logs.
+/// too.
 pub fn try_prove(
     guest_elf: &[u8],
     root_hash_before: &MachineHash,
@@ -245,16 +245,14 @@ pub fn verify(
 mod tests {
     use super::*;
 
-    // A seal whose 4-byte selector does not match the Groth16 verifier parameters must be rejected up
-    // front, not silently stripped: on-chain the prefix routes the Verifier Router. The check runs
-    // before any receipt reconstruction, so a corrupted selector fails here without a valid proof.
+    // The seal's 4-byte selector prefix routes the on-chain Verifier Router.
     #[test]
     #[should_panic(expected = "seal selector does not match")]
     fn verify_seal_rejects_wrong_selector() {
         let selector = Groth16ReceiptVerifierParameters::default().digest();
         let mut seal = vec![0u8; 260];
         seal[..4].copy_from_slice(&selector.as_bytes()[..4]);
-        seal[0] ^= 0xff; // corrupt the selector so it no longer matches
+        seal[0] ^= 0xff; // corrupt the selector
         let zero: MachineHash = [0u8; 32];
         verify_seal(&[0u32; 8], &seal, &[0u8; 96], &zero, 0, &zero);
     }

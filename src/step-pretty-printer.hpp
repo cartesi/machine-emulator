@@ -29,9 +29,7 @@ namespace cartesi {
 
 /// \brief Sink that formats a step replay as an indented, human-readable printout.
 /// \details Each instruction is bracketed by its mnemonic, with its reads and writes nested
-/// underneath. Host-only (it allocates): attach one to a replay context, run the replay, then
-/// retrieve the text with str(); the caller decides where to write it. General-purpose, not
-/// specific to the microarchitecture.
+/// underneath. Host-only (it allocates).
 class step_pretty_printer {
     std::ostringstream m_out;
     int m_indent{0};      ///< Current bracket nesting depth

@@ -156,9 +156,6 @@ local CMIO_FIXTURE_SIZES = {
     { 65536, "65536" },
 }
 
-test_util.prepare_empty_output_dir(output_dir)
-local manifest <close> = assert(io.open(output_dir .. "/" .. manifest_mod.MANIFEST_NAME, "w"))
-manifest:write(manifest_mod.HEADER)
 -- A response larger than the rx buffer replays as a pure no-op: the verifier returns
 -- before touching any state, including the advance-state budget grant. The manifest
 -- stores only the repeat unit; dataLength tells the replayer how far to expand it.
@@ -194,6 +191,9 @@ local function create_oversized_send_cmio_response_step_log()
     return ctx
 end
 
+test_util.prepare_empty_output_dir(output_dir)
+local manifest <close> = assert(io.open(output_dir .. "/" .. manifest_mod.MANIFEST_NAME, "w"))
+manifest:write(manifest_mod.HEADER)
 for _, sz in ipairs(CMIO_FIXTURE_SIZES) do
     manifest_mod.write_row(manifest, create_send_cmio_response_step_log(sz[1], sz[2]))
 end
@@ -207,4 +207,4 @@ manifest_mod.write_row(
 )
 manifest_mod.write_row(manifest, create_send_cmio_response_noop_step_log())
 manifest_mod.write_row(manifest, create_oversized_send_cmio_response_step_log())
-stderr("\nsend_cmio_response step logs (%d sizes + no-op) written to %s\n", #CMIO_FIXTURE_SIZES, output_dir)
+stderr("\nsend_cmio_response step logs written to %s\n", output_dir)

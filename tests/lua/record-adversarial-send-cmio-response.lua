@@ -54,7 +54,7 @@ assert(output_dir, "--output-dir is required")
 local CMIO_SMALL = fixtures_dir .. "/send-cmio-response/send-cmio-response-1.log"
 local CMIO_SUPRA = fixtures_dir .. "/send-cmio-response/send-cmio-response-4097.log"
 local CMIO_REASON = 1
-local BOGUS = string.rep("\171", 32)
+local BOGUS = string.rep("\186", 32)
 -- Must match the value record-send-cmio-response.lua stored in the base logs' revert-root-hash slot,
 -- so the replay rewrites the same byte and the rejection fires on the injected fault, not a mismatch.
 local REVERT_ROOT_HASH = string.rep("\xab", 32)
@@ -110,7 +110,7 @@ local cases = {
         data_length = 1,
         mutate = function(log)
             log.requested_cycle_count = 7
-        end, -- cmio must be 0
+        end,
     },
     {
         tag = "final_root_mismatch",

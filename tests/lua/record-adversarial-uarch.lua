@@ -18,8 +18,7 @@
 -- Generates the UARCH (keccak256) reject fixtures: valid uarch base fixtures tampered (or
 -- replayed with deliberately wrong claimed values) so the keccak replayers -- the Solidity
 -- verifier and the C++/Lua host in keccak mode -- must reject identically. The big-machine
--- (sha256) reject fixtures for RISC0 are a separate generator. Pure log surgery over
--- already-recorded base fixtures; no machine is built here. The manifest's expectError
+-- (sha256) reject fixtures for RISC0 are a separate generator. The manifest's expectError
 -- column carries a normalized tag each replayer maps to its own error (C++ message pattern /
 -- Solidity selector / RISC0 reject).
 --
@@ -71,7 +70,7 @@ local INSN_EBREAK = 0x00100073
 local INSN_ECALL = 0x00000073 -- with pristine x17 (=0), an unknown ecall function
 
 -- A 32-byte value distinct from any real root, for belief/claim mismatches.
-local BOGUS = string.rep("\171", 32)
+local BOGUS = string.rep("\186", 32)
 
 -- Overwrite the 32-bit instruction fetched at PC_INIT, then re-root so the log decodes.
 local function inject_uarch_instruction(log, insn)
@@ -128,14 +127,13 @@ local cases = {
         base = UARCH_BASE,
         mutate = function(log)
             log.hash_function = 99
-        end, -- unsupported code (not keccak=0 / sha256=1)
+        end,
     },
     -- Page / node structure
     {
         tag = "page_count_zero",
         kind = "cycle",
         base = UARCH_BASE,
-        -- Empty the page array: decode rejects a zero page count before any root check.
         mutate = function(log)
             log.pages = {}
         end,
@@ -144,7 +142,6 @@ local cases = {
         tag = "page_index_not_ascending",
         kind = "cycle",
         base = UARCH_BASE,
-        -- Duplicate the previous page index so the strictly-ascending check trips.
         mutate = function(log)
             log.pages[#log.pages].index = log.pages[#log.pages - 1].index
         end,
@@ -173,7 +170,7 @@ local cases = {
         base = RESET_BASE,
         mutate = function(log)
             log.nodes[1].log2_size = 65
-        end, -- > root size (64)
+        end,
     },
     {
         tag = "nonzero_scratch_hash",
@@ -189,7 +186,7 @@ local cases = {
         base = RESET_BASE,
         mutate = function(log)
             test_util.inject_unconsumed_node(log)
-        end, -- preserves pre-root
+        end,
     },
     {
         -- Same injection on a reverted reset: the revert substitutes the recorded root instead of
@@ -238,7 +235,7 @@ local cases = {
         base = RESET_BASE,
         mutate = function(log)
             log.requested_cycle_count = 7
-        end, -- reset/cmio must be 0
+        end,
     },
     -- Content traps (instruction injected at PC, log re-rooted)
     {

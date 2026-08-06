@@ -341,12 +341,9 @@ public:
 
     /// \brief Replays a uarch step log and returns a human-readable printout.
     /// \param filename Path to a binary step log file produced by log_step_uarch.
-    /// \returns The printout text; the caller decides where to write it.
-    /// \details Decodes and replays the log purely to produce the printout; no caller belief is
-    /// checked. The printout shows each uarch instruction bracketed by its mnemonic, with the reads
-    /// and writes it performs (and the old/new value of each write) nested underneath. A log whose
-    /// replay fails the final root hash check still yields its printout, with a trailing WARNING
-    /// line -- that is exactly when the printout is most needed.
+    /// \returns The printout text.
+    /// \details A log that fails the final root hash check still yields its printout, with a
+    /// trailing WARNING line.
     static std::string pretty_print_step_uarch(const std::string &filename);
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.

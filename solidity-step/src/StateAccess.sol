@@ -1,4 +1,18 @@
+// Copyright Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
 pragma solidity ^0.8.30;
 
 import {EmulatorConstants} from "src/EmulatorConstants.sol";
@@ -132,7 +146,7 @@ library StateAccess {
         ctx.revertedRootHash = readRevertRootHash(ctx);
     }
 
-    // True when the tohost word holds a manual yield with the given reason. Mirrors isYieldedManualWith.
+    // True when the tohost word holds a manual yield with the given reason.
     function isYieldedManualWith(uint64 tohost, uint64 yieldReason) internal pure returns (bool) {
         uint64 dev = uint64ShiftRight(
             tohost & EmulatorConstants.HTIF_DEV_MASK, EmulatorConstants.HTIF_DEV_SHIFT

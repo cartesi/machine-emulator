@@ -55,7 +55,7 @@ end
 -- Each message is one line, the compact JSON of a Lua value by cartesi.tojson plus a newline.
 -- Binary values do not survive plain JSON, so each reply carries a schema, named by the
 -- referee, that tags its binary and compound fields. tojson then encodes hashes as Base64 and
--- embeds proofs and access logs as nested objects, and fromjson decodes them back. The schema
+-- embeds proofs as nested objects, and fromjson decodes them back. The schema
 -- dictionary below, referencing the built-in Proof, holds the schemas every game
 -- uses, and each game script adds the entries for its own log and result commitments.
 --------------------------------------------------------------------------------

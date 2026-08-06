@@ -47,9 +47,7 @@ constexpr std::array<char, 8> STEP_LOG_SIGNATURE = {'C', 'T', 'S', 'I', 3, 0, 0,
 struct PACKED step_log_header {
     std::array<char, 8> signature;  ///< STEP_LOG_SIGNATURE (magic + version + reserved)
     machine_hash root_hash_before;  ///< Machine root hash before the step
-    uint64_t requested_cycle_count; ///< Cycle count requested by the caller: mcycle delta for log_step,
-                                    ///< uarch_cycle delta for log_step_uarch, 0 for log_reset_uarch and
-                                    ///< log_send_cmio_response (operations without a cycle request).
+    uint64_t requested_cycle_count; ///< Cycle count requested by the caller; 0 for operations without one
     machine_hash root_hash_after;   ///< Machine root hash after the step
     uint64_t hash_function;         ///< Value of hash_function_type used to hash the log
     uint64_t page_count;            ///< Number of entries in the pages array

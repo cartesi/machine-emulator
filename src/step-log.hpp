@@ -18,8 +18,7 @@
 #define STEP_LOG_HPP
 
 /// \file
-/// \brief Parsed binary step log: the witnessed tree, the queries every replayer runs over it, and
-/// the root-hash recompute.
+/// \brief Parsed binary step log.
 ///
 /// Heap-free so it builds in the risc0 guest; the host and zkVM hash backends are selected by
 /// ZKARCHITECTURE.
@@ -86,9 +85,7 @@ inline void concat_hash(hash_function_type hash_function, const_hash_type left, 
 
 /// \brief Parsed binary step log: the witnessed tree plus the header values it was decoded from.
 /// \details Non-owning -- pages/nodes/siblings are spans into the caller's log image. \p pages is
-/// mutable so the root recompute can rehash each page into its scratch slot. The queries and the
-/// recompute are caller-invariant: every replayer finds a page, finds a node, and reconstructs the
-/// root identically.
+/// mutable so the root recompute can rehash each page into its scratch slot.
 struct step_log {
     machine_hash root_hash_before{};   ///< Root hash before the step (from log header)
     uint64_t requested_cycle_count{0}; ///< Caller-requested cycle count (from log header; see step_log_header)
@@ -214,13 +211,9 @@ struct step_log {
     /// \brief Recompute the machine root hash from the witnessed tree.
     /// \param use_after When false, use each node's hash_before (reconstructs root_hash_before). When
     /// true, use each node's hash_after (reconstructs root_hash_after).
-    /// \details Hashes each page lazily into its scratch slot, then walks the tree with three cursors
-    /// (pages, nodes, siblings) to produce the root hash. A zero scratch slot means "needs hashing":
-    /// pages arrive zero on the wire (validate_pages_ordered enforces it), and every replay accessor
-    /// re-zeros a page's slot when it writes the page. So the before-replay call hashes all pages and
-    /// the after-replay call rehashes only the pages the operation actually wrote -- clean pages keep
-    /// the hash the before pass validated against root_hash_before, which is byte-identical post-step.
-    /// Nodes pick between their two precomputed hashes based on \p use_after.
+    /// \details A zero scratch slot means "needs hashing": pages arrive zero on the wire and replay
+    /// accessors re-zero a page's slot on write, so the before pass hashes every page and the after
+    /// pass rehashes only the pages the operation wrote.
     machine_hash compute_root_hash(bool use_after) const {
         static const machine_hash all_zeros{};
         for (auto &page : pages) {
@@ -249,11 +242,9 @@ struct step_log {
     }
 
     /// \brief Assert every witnessed node was consumed by a semantic write during replay.
-    /// \details Post-state soundness: a node's hash_after is folded into root_hash_after verbatim, so
-    /// every node must be produced by a semantic write (cmio supra-page or uarch reset); an unconsumed
-    /// node would inject an arbitrary post-state subtree. compute_root_hash(true) calls this. A reverted
-    /// operation substitutes a recorded root instead of recomputing it, so it must call this explicitly
-    /// to keep the same guarantee.
+    /// \details A node's hash_after is folded into root_hash_after verbatim, so a node no semantic
+    /// write consumed would inject an arbitrary post-state subtree. compute_root_hash(true) checks
+    /// this; a reverted operation skips the recompute and must call it explicitly.
     void check_all_nodes_consumed() const {
         if (consumed_node_count != nodes.size()) {
             THROW(std::runtime_error, "unconsumed node in step log");
@@ -270,9 +261,9 @@ private:
             if (i > 0 && pages[i - 1].index >= pages[i].index) {
                 THROW(std::runtime_error, "invalid log format: page index is not in increasing order");
             }
-            // find_page binary-searches by page.data address, so data pointers must increase monotonically.
-            // Unreachable while all pages share one contiguous buffer (data order then follows the index order
-            // above), but it fail-closes should pages ever be allocated independently.
+            // find_page binary-searches by page.data address. In the current implementation all pages
+            // share one contiguous buffer, so data order follows the index order above; the check only
+            // matters if pages are ever allocated independently.
             // LCOV_EXCL_START
             if (i > 0 && +pages[i - 1].data >= +pages[i].data) {
                 THROW(std::runtime_error, "invalid log format: page data is not in increasing order");
@@ -318,30 +309,29 @@ private:
     /// 128-bit arithmetic so an entry ending at 2^64 cannot overflow.
     static void validate_entries_ordered_and_disjoint(std::span<const page_entry> pages,
         std::span<const node_entry> nodes) {
-        size_t pi = 0; // page index cursor
-        size_t ni = 0; // node index cursor
-        // end of the previous entry (page or node), for overlap checking
+        size_t next_page = 0;
+        size_t next_node = 0;
         uint128_t prev_end = 0;
-        while (pi < pages.size() || ni < nodes.size()) {
-            uint128_t entry_start{}; // page or node used in this iteration
-            uint128_t entry_end{};   // page or node used in this iteration
-            bool take_page = false;  // take next entry from pages or nodes
-            if (pi >= pages.size()) {
+        while (next_page < pages.size() || next_node < nodes.size()) {
+            uint128_t entry_start{};
+            uint128_t entry_end{};
+            bool take_page = false;
+            if (next_page >= pages.size()) {
                 take_page = false;
-            } else if (ni >= nodes.size()) {
+            } else if (next_node >= nodes.size()) {
                 take_page = true;
             } else {
-                const uint128_t page_start = static_cast<uint128_t>(pages[pi].index) << AR_LOG2_PAGE_SIZE;
-                take_page = page_start < nodes[ni].address;
+                const uint128_t page_start = static_cast<uint128_t>(pages[next_page].index) << AR_LOG2_PAGE_SIZE;
+                take_page = page_start < nodes[next_node].address;
             }
             if (take_page) {
-                entry_start = static_cast<uint128_t>(pages[pi].index) << AR_LOG2_PAGE_SIZE;
+                entry_start = static_cast<uint128_t>(pages[next_page].index) << AR_LOG2_PAGE_SIZE;
                 entry_end = entry_start + (static_cast<uint128_t>(1) << AR_LOG2_PAGE_SIZE);
-                ++pi;
+                ++next_page;
             } else {
-                entry_start = nodes[ni].address;
-                entry_end = entry_start + (static_cast<uint128_t>(1) << nodes[ni].log2_size);
-                ++ni;
+                entry_start = nodes[next_node].address;
+                entry_end = entry_start + (static_cast<uint128_t>(1) << nodes[next_node].log2_size);
+                ++next_node;
             }
             if (entry_start < prev_end) {
                 THROW(std::runtime_error, "invalid log format: page or node overlaps a previous entry");

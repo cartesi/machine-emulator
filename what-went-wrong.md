@@ -262,20 +262,17 @@ at the expected 16,528,861,707 cycles, while caps of 28 and 29 panicked. The
 first failing transaction had three fragments:
 `0xffffffff80401ef8 -> 0xffffffff80140d28 -> 0xffffffff8040a9c0`.
 
-The fragments themselves were not the failure. Publishing them while
-withholding cross-page links completed correctly. Withholding only the first
-edge also completed correctly. Its predecessor ends in `c.jr ra`, a guarded
-indirect return from `0xffffffff80401f0c` to `0xffffffff80140d28`. Replacing the
-inline code-TLB transition with the successor's generated mapping-validating
-entry still panicked, ruling out that duplicated TLB node as the cause. The
-measured safe policy is therefore narrower: retain direct cross-page links,
-but do not directly link a cross-page successor when the predecessor ends in
-an indirect return. Such an edge materializes state and resumes through the
-normal trace loop. The underlying reason that this guarded return cannot yet
-chain safely remains unresolved; the measurements identify the boundary but
-do not justify a more specific claim.
+Publishing the fragments while withholding cross-page links completed
+correctly. Withholding only the first edge also completed correctly. Its
+predecessor ends in `c.jr ra`, a guarded indirect return from
+`0xffffffff80401f0c` to `0xffffffff80140d28`. Replacing the inline code-TLB
+transition with the successor's generated mapping-validating entry still
+panicked. These experiments established a safe temporary workaround—do not
+directly link a cross-page successor after an indirect return—but did not prove
+that the return itself was invalid. Suppressing the upstream edge also made the
+rest of the transaction unreachable.
 
-The safe implementation was then measured against the saved return-bounded
+The temporary workaround was then measured against the saved return-bounded
 call-body build in three interleaved repetitions:
 
 | Workload | Call-body baseline | Loop-only clock | Change |
@@ -294,13 +291,66 @@ run took 41.77 seconds; the other double runs were 47.45--47.88 seconds and the
 other hash runs were 13.27--13.92 seconds. The table uses the three-run median,
 which is unaffected by either single outlier.
 
-The loop-only clock recovers syscall as predicted and also improves sieve, but
-the correctness policy needed for newly selected boot traces removes qsort's
-cross-page-return chaining benefit. Consequently this is not a uniform
-improvement over the call-body checkpoint: it exchanges the qsort win for the
-syscall and sieve wins. The next correctness task is to determine what state a
-guarded cross-page return edge still fails to preserve before judging the final
-performance policy.
+The loop-only clock recovered syscall as predicted and also improved sieve, but
+the temporary return restriction removed part of qsort's cross-page chaining
+benefit. This was not a reason to treat cross-page returns as semantically
+invalid; the generated successor needed to be inspected.
+
+### Actual failure: staged JALR source/destination aliasing
+
+A complete instruction dump of all three fragments located the defect after
+the return. The first fragment returns correctly to `0xffffffff80140d28`. The
+second fragment ends with:
+
+```text
+auipc ra, 714
+jalr  -890(ra)
+```
+
+The JALR has `rd == rs1 == ra`. Architecturally, its target must be computed
+from the old `ra`, then its link address is written to `ra`. The staged path
+held the target as a lazy expression, wrote the link address first, and only
+then asked the execution object to emit the indirect-target guard. The guard
+therefore read the new `ra`. On failure, its side exit resumed at the JALR with
+the old target base already overwritten, producing the invalid jump that led
+to the kernel null-PC panic.
+
+This also explains why withholding the preceding cross-page return appeared to
+fix the problem: it merely prevented the malformed successor trace from being
+entered. The return and its code-page transition were correct.
+
+An alternative hypothesis—that one-instruction recording had crossed an
+outer-loop interrupt boundary—was tested directly. Recordings are now cancelled
+without penalty on interrupt entry, exception-serving status, and instruction
+fetch exceptions. This cancellation fired on a different boot recording, but
+the same three-fragment transaction was still published and still panicked.
+Thus asynchronous-boundary cancellation is a valid independent correctness
+guard, but it was not the cause of this failure.
+
+The JALR and C.JALR staged paths now emit/materialize the indirect target before
+writing the link register. Cross-page returns and cross-page register-preserving
+links were re-enabled. The previously failing qsort boot then completed at the
+exact expected 16,528,861,707 cycles.
+
+Three fresh interleaved repetitions compared the return-blocking workaround
+with the corrected JALR ordering:
+
+| Workload | Return workaround | Correct JALR order | Change |
+| --- | ---: | ---: | ---: |
+| sieve | 5.27 s | 5.32 s | +0.9% |
+| qsort | 24.12 s | 23.03 s | **-4.5%** |
+| zlib | 26.27 s | 25.65 s | -2.4% |
+| hash | 13.31 s | 13.32 s | +0.1% |
+| double | 47.80 s | 48.18 s | +0.8% |
+| syscall | 23.07 s | 23.30 s | +1.0% |
+
+All 36 runs exited with status zero and used identical guest cycle counts for
+each workload. Final hashes differ between the two builds because changing
+`interpret.cpp` required rebuilding the embedded uarch image; hashes were
+stable within each build. The corrected ordering recovers 4.5% on qsort and
+2.4% on zlib relative to the workaround. The remaining difference from the
+19.04-second call-body qsort result is therefore trace-selection policy, not an
+inherent cross-page-return restriction.
 
 ## Why the workloads behaved differently
 

@@ -2,7 +2,7 @@
 //
 // The compiled instruction set of the copy-and-patch JIT: one row per stencil,
 // carried over from the interpreter's own case list so the two cannot drift.
-// 119 of 153 cases are compiled; the rest stay with the interpreter,
+// 135 of 153 cases are compiled; the rest stay with the interpreter,
 // which a trace reaches by side exit:
 //
 //   AMO_D            atomic: reservation and slow memory path
@@ -13,25 +13,9 @@
 //   CSRRSI           materializes an operand relative to itself
 //   CSRRW            materializes an operand relative to itself
 //   CSRRWI           materializes an operand relative to itself
-//   C_ADDI4SPN       materializes an operand relative to itself
 //   C_EBREAK         materializes an operand relative to itself
-//   C_FLD            materializes an operand relative to itself
 //   C_FLDSP          materializes an operand relative to itself
-//   C_FSD            materializes an operand relative to itself
 //   C_FSDSP          materializes an operand relative to itself
-//   C_LBU            materializes an operand relative to itself
-//   C_LD             materializes an operand relative to itself
-//   C_LDSP           materializes an operand relative to itself
-//   C_LH             materializes an operand relative to itself
-//   C_LHU            materializes an operand relative to itself
-//   C_LW             materializes an operand relative to itself
-//   C_LWSP           materializes an operand relative to itself
-//   C_SB             materializes an operand relative to itself
-//   C_SD             materializes an operand relative to itself
-//   C_SDSP           materializes an operand relative to itself
-//   C_SH             materializes an operand relative to itself
-//   C_SW             materializes an operand relative to itself
-//   C_SWSP           materializes an operand relative to itself
 //   FD               materializes an operand relative to itself
 //   FMADD            materializes an operand relative to itself
 //   FMSUB            materializes an operand relative to itself
@@ -100,6 +84,7 @@ TC_STENCIL(C_BEQZ, 1, 2, execute_C_BEQZ(a, pc, insn))
 TC_STENCIL(C_BNEZ, 1, 2, execute_C_BNEZ(a, pc, insn))
 TC_STENCIL(C_ADDI, 2, 2, execute_C_ADDI(a, pc, insn))
 TC_STENCIL(C_ADDIW, 2, 2, execute_C_ADDIW(a, pc, insn))
+TC_STENCIL(C_ADDI4SPN, 2, 2, execute_C_ADDI4SPN(a, pc, insn))
 TC_STENCIL(C_ADDI16SP, 2, 2, execute_C_ADDI16SP(a, pc, insn))
 TC_STENCIL(C_ANDI, 2, 2, execute_C_ANDI(a, pc, insn))
 TC_STENCIL(C_SLLI, 2, 2, execute_C_SLLI(a, pc, insn))
@@ -112,6 +97,21 @@ TC_STENCIL(C_OR, 2, 2, execute_C_OR(a, pc, insn))
 TC_STENCIL(C_AND, 2, 2, execute_C_AND(a, pc, insn))
 TC_STENCIL(C_ADDW, 2, 2, execute_C_ADDW(a, pc, insn))
 TC_STENCIL(C_SUBW, 2, 2, execute_C_SUBW(a, pc, insn))
+TC_STENCIL(C_LD, 2, 2, execute_C_LD(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_LW, 2, 2, execute_C_LW(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_LDSP, 2, 2, execute_C_LDSP(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_LWSP, 2, 2, execute_C_LWSP(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_SD, 0, 2, execute_C_SD(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_SW, 0, 2, execute_C_SW(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_SDSP, 0, 2, execute_C_SDSP(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_SWSP, 0, 2, execute_C_SWSP(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_FLD, 2, 2, execute_C_FLD(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_FSD, 0, 2, execute_C_FSD(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_LBU, 2, 2, execute_C_LBU(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_LHU, 2, 2, execute_C_LHU(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_LH, 2, 2, execute_C_LH(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_SB, 0, 2, execute_C_SB(a, pc, TC_STENCIL_MCYCLE(), insn))
+TC_STENCIL(C_SH, 0, 2, execute_C_SH(a, pc, TC_STENCIL_MCYCLE(), insn))
 TC_STENCIL(C_ZEXT_B, 2, 2, execute_C_ZEXT_B(a, pc, insn))
 TC_STENCIL(C_SEXT_B, 2, 2, execute_C_SEXT_B(a, pc, insn))
 TC_STENCIL(C_ZEXT_H, 2, 2, execute_C_ZEXT_H(a, pc, insn))

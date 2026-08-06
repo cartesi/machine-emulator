@@ -47,16 +47,21 @@ experiments, entered and left through the stock loop's boundary, was
 A copy-and-patch JIT now compiles what the recorder records, from
 stencils built against the same handler contract, so a trace is entered
 and left by a jump (section 5.20). It is exact over full boots and
-measures -9.1% over six workloads and -5.6% over ten, in both cases as a
-bimodal result that coverage explains completely: -45% to -59% where it
-executes most of the guest's instructions, and a few percent of loss
-where it executes almost none. On x86-64 it rides the argument shape, so
-unlike every pinned-register configuration in this document it starts
-from parity with stock rather than from a deficit. The limit is trace
-selection, not translation: a parallel branch pairing the same contract
-with a GNU lightning backend and a further-developed recorder reaches
--16.0% on the same ten workloads, and three quarters of that gap is two
-workloads where this branch's tracer never runs at all.
+measures -16.8% over ten workloads, as a bimodal result that coverage
+explains completely: -30% to -77% where it executes most of the guest's
+instructions, and a few percent of loss where it executes almost none.
+On x86-64 it rides the argument shape, so unlike every pinned-register
+configuration in this document it starts from parity with stock rather
+than from a deficit, which is why the workloads it cannot help cost so
+little. That figure was -5.6% until two selection bugs were found and
+fixed (section 5.21): the compressed load/store family had been excluded
+from the compiled set for a misattributed reason, cutting every hot loop
+short at its first `c.lw`, and the head table discarded compiled traces
+permanently and in proportion to how many were compiled. Neither was
+visible in the emitted code, which is the recurring lesson of this
+experiment's trace work. For scale, a parallel branch pairing the same
+contract with a GNU lightning backend and a further-developed recorder
+reaches -16.0% on the same ten workloads and host.
 
 ## 2. Background and motivation
 
@@ -1039,7 +1044,10 @@ partitioning, which split a body across two sections. The third is the operand
 materialized relative to its own instruction, described under the measurements
 below. With all three closed the check found the real cases: 34 of 153 do not
 belong in the compiled set (floating point, CSR, atomics, `PRIVILEGED`, and the
-compressed memory forms), leaving 119 compiled.
+compressed memory forms), leaving 119 compiled. The compressed memory forms
+turned out not to belong on that list at all, and getting them back was worth
+more than everything else in this section put together; the campaign that
+found out why is at the end of it.
 
 Three source-level mechanisms carry operands into the code:
 
@@ -1257,6 +1265,10 @@ entered. Trace formation, not translation, is where the next measurement
 belongs: which sites the hooks fire at, what the recorder does with them, and
 whether a head once installed is ever reached again.
 
+That question is answered below, twice over, and the premise in it is wrong:
+the compiled set did not fully support sieve's loop. Both answers were worth
+several points each.
+
 **A second workload set, and the head consult answers the last question.** The
 six-workload table above bounds guest work by operation count. A ten-workload
 run through `bench-harness/bench.lua` bounds it by mcycle instead -- boot to
@@ -1355,6 +1367,125 @@ cleanly: this branch's entry cost is the thing lightning cannot fix, since the
 pinned shape is what its backend emits into, and lightning's selection is the
 thing this branch has not imported. Combining them is the obvious next
 experiment and needs no new invention on either side.
+
+### 5.21 Two selection bugs, and -16.8%
+
+Section 5.20 ended by naming trace selection as the limit and asking why a hot
+loop the compiled set supports never becomes a trace that runs. The answer was
+two bugs, both in selection, neither visible in the emitted code. Fixing them
+took the aggregate from -5.5% to -16.8% over the ten workloads of 5.20, which
+is past the -16.0% the GNU lightning backend of the sibling branch reaches on
+the same harness and host. Everything below is gated as before: cycle- and
+hash-identical to the same-source stock build on all ten workloads and over a
+472M-cycle boot-to-halt.
+
+**The compressed load/store family was excluded for the wrong reason.** Sieve's
+hot loop is eleven instructions and the compiled set covered the first six, so
+its trace truncated at the seventh, could not be cyclic, and exited to the
+interpreter on every iteration: 38,522 entries of six instructions each, 0.1%
+coverage. The seventh instruction was a `c.lw`.
+
+That family was excluded because both compilers materialize its register fields
+with `lea sym(%rip)` instead of folding them into a displacement, and 5.20
+attributed that to how the bodies reach the fields -- "through a helper's
+parameters". The direction was right and the cause was one level down: it is
+not the parameter, it is the parameter's *type*. `execute_C_L` and `execute_C_S`
+declared their register selector `uint32_t`, and a relocated value that round
+trips through a narrower type has to be materialized into a register and
+re-extended. That is not a new finding, it is the one `reg_index` was
+introduced for, written down in i-state-access.hpp and quoted in 5.20's own
+operand rules; the compressed helpers simply predate it and were never
+converted. Widening four parameters admitted the whole family. Three narrow
+*immediates* reached their use the same way and did need their encoding named,
+so `TC_STENCIL_ZEXT` joins `TC_STENCIL_SEXT` as its unsigned twin: `movl $sym`
+is absolute by definition and costs the one instruction the fold would have
+saved, in the five bodies that could not fold anyway.
+
+The compiled set went from 119 cases to 135, and the stencil table got *smaller*
+than the workaround tried first, because folding beats materializing. `C_LDSP`
+and `C_LWSP` are in it: they call the same widened `execute_C_L`, and their
+`rd` write now folds to an absolute `R_X86_64_32S` displacement like every
+other case. They were briefly kept out on the theory that recovering them would
+need `insn_get_rd` -- shared with a hundred uncompressed cases -- to name its
+encoding and deoptimize all of them; that theory was formed before the widening
+and retested after it, which is the only reason it did not survive into this
+document as a false constraint. `C_FLD` and `C_FSD` came back with them and are
+aggregate-neutral. What is still out is out for reasons the extractor cannot
+see or that no widening reaches: softfloat calls, CSR and atomic slow paths,
+`PRIVILEGED` writing the mcycle block accounting derives, and `C_FLDSP`/
+`C_FSDSP`.
+
+**The head table was discarding compiled traces, permanently.** Fixing the
+compiled set alone made zlib and hash *worse*, which is the diagnostic: more
+compilable instructions meant more traces, and more traces meant more of them
+lost. The head table was 64 slots, direct-mapped, and installed by assignment,
+so a later trace made an earlier one unreachable -- and because its head stayed
+in the installed set, the recorder would never record it again either. The loss
+was permanent and it scaled with the compiled set rather than with anything
+about the workload. It also explains 5.20's finding that doubling the table
+moved sieve's coverage from 0.3% to 0.4%: doubling a structure that evicts
+still evicts.
+
+The map is now the exact, open-addressed, non-evicting one that 8b item 6
+reached independently on the lightning branch. It is the `installed_set` that
+was already there, which was already exact and already sized at four times the
+pool -- it only needed to carry what each head resolves to. A probe stops at
+the first empty slot, so a pc that is no head at all still costs one load and
+one comparison, and at that load factor a hit almost never leaves its first
+slot. The per-`interpret()` rebuild of the old table went with it: the map
+lives with the pool it describes and already outlives an interpret call.
+
+**A latent unsoundness found on the way.** A trace's key -- the host page its
+instructions were read from -- was taken from the *last* recorded instruction.
+Recording proceeds one instruction per chain, so the mapping can move under a
+recording; such a trace holds instructions from two host pages and was
+installed under the second, and entering it later would execute the first
+page's instructions. The key is now fixed at the head, where it belongs, and
+any recording that sees its page move is discarded. Aggregate-neutral, so this
+one is correctness at no cost.
+
+Measured with the harness and protocol of 5.20 -- pinned, median of five, 1 Gi
+guest cycles after a 256 Mi boot, against the same-source stock anchor:
+
+| workload | stock | tailcall | jit before | jit after | vs stock | lightning |
+|---|---:|---:|---:|---:|---:|---:|
+| nop | 0.670 | 0.669 | 0.628 | **0.157** | -76.6% | -81.4% |
+| memcpy | 1.086 | 1.114 | 0.452 | **0.431** | -60.3% | -68.7% |
+| sieve | 1.157 | 1.166 | 1.215 | **0.557** | -51.9% | -68.8% |
+| hash | 1.250 | 1.184 | 1.007 | **0.755** | -39.6% | -37.1% |
+| zlib | 1.381 | 1.352 | 1.120 | **0.969** | -29.8% | -28.2% |
+| regs | 0.875 | 0.864 | 0.865 | **0.779** | -11.0% | -21.4% |
+| branch | 1.173 | 1.193 | 1.197 | **1.185** | +1.0% | +4.7% |
+| qsort | 1.391 | 1.439 | 1.425 | **1.429** | +2.7% | +3.2% |
+| tree | 2.455 | 2.543 | 2.579 | **2.568** | +4.6% | +8.7% |
+| double | 2.976 | 2.997 | 3.124 | **3.168** | +6.5% | +14.8% |
+| **total** | **14.414** | **14.521** | **13.612** | **11.999** | **-16.8%** | **-16.0%** |
+
+Coverage moved with it, and it is the whole story: sieve 0.5% to 88%, nop 7.8%
+to 95%, zlib 44% to 65%, memcpy 85% to 92%. The bimodality of 5.20 is intact --
+it is still coverage that decides every row -- but the covered set is now most
+of the workloads instead of one of them. Against the lightning backend the two
+now trade: it keeps a wide lead where its recorder covers more (sieve, nop,
+regs), this one wins hash and zlib outright, and it loses less on all four
+workloads neither covers, which is the near-free baseline of 5.20 still paying.
+
+**What the numbers say to do next.** The `stale` counter of 5.20 is now the
+largest identified loss and it is concentrated exactly on the workloads that
+still lose: qsort refuses 32.7M head hits against 5.5M entries, tree 59.2M
+against 17.5M. Splitting the counter settles what 5.20 could not: 99.6% of
+those are `remap`, not a code-TLB miss -- the head is found, the TLB holds its
+page, and the page is a different host page than the one recorded. A head
+installed once, in a context that then almost never runs, monopolizes its pc
+forever, because identity is the pc alone while the thing identified is (pc,
+page).
+
+Widening identity to the pair was tried and reverted: it broke the hash gate
+and cost 5%. Both are explained by the key bug above -- with the key taken from
+the last instruction, widening the identity admits mis-keyed traces rather than
+separating well-keyed ones. That fix is now in, so the experiment is worth
+repeating, and it needs a policy for how many contexts one head may install
+before the pool gives up on it. That, and not the emitted code, is where the
+next several points are.
 
 The remaining soundness item is stores into a page holding a trace, which needs
 the write-TLB refusal described in 8b item 3; until then a guest that modifies
@@ -1659,19 +1790,18 @@ shell cost +66% with tracing idle).
    paying off where the traces are, and it closes the backend item; what
    the spread now points at is item 3's selection, not item 4's codegen.
 
-   A second, independently chosen set of ten workloads reproduces the
-   shape at -5.6%, and two measurements in it sharpen the diagnosis
-   (5.20). The workloads the tracer does not cover cost +3.9% in
-   aggregate, which prices item 1's shell against no return. And the head
-   consult refuses most of its hits on exactly those workloads, up to
-   98.5% of them, because the head's host code page is not the one its
-   trace was compiled from -- a second way for an installed head to go
-   unused, independent of the head-table pressure already excluded.
-   Against a parallel branch that pairs this contract with a GNU
-   lightning backend and a further-developed recorder, the gap is 10.4
-   points and three quarters of it is two workloads this branch never
-   traces. Selection is now the whole question, and both branches are
-   evidence for the same reading of it.
+   A second, independently chosen set of ten workloads reproduced the
+   shape at -5.6% and localized the limit to selection (5.20), and
+   section 5.21 then fixed it: the compiled set was missing the
+   compressed load/store family for a misattributed reason, and the head
+   table was discarding compiled traces permanently and in proportion to
+   how many were compiled. The same ten workloads now measure -16.8%,
+   against -16.0% for the parallel GNU lightning branch on the same host
+   and harness, so the boundary argument of this section is no longer the
+   thing under test. Selection is, and it still holds the largest
+   identified loss: the head consult refuses 32.7M hits on qsort against
+   5.5M entries, because trace identity is the pc alone while the thing
+   identified is the pc together with the host page it was read from.
 
 ## 8c. The register-budget series: filed ideas and the queued campaign
 
@@ -1853,7 +1983,15 @@ spec suite at 52/52, under both compilers on x86-64. Its own gaps are
 stated in 5.20 and are not covered by those gates: a guest that writes to
 a page holding a compiled trace would execute the recorded instructions,
 because the write-TLB refusal of 8b item 3 is not built yet, and the
-generated stencil table is x86-64 only.
+generated stencil table is x86-64 only. Section 5.21 removes one gap that
+was not on that list at all: a trace was keyed by the host page of its
+*last* recorded instruction, so a recording whose mapping moved under it
+-- which one-instruction-per-chain recording allows -- was installed
+under a page that did not hold most of its instructions.
+
+The changes of 5.21 were gated to the same standard, with the ten-workload
+harness and a 472M-cycle boot-to-halt, under GCC. Two things they were not
+run against: the cm-cli spec suite, and Clang.
 
 The ten-workload measurement of 5.20 uses a fixed-work variant of the
 protocol, `bench-harness/bench.lua`: each variant is built into its own

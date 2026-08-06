@@ -181,9 +181,27 @@ struct tc_online_state {
 #endif
         tc_online_entry entries[max_len];
     };
+    // The exact head map: an open-addressed table keyed on the head pc, sized
+    // well above the pool so it can hold every installed trace at a load factor
+    // where a probe almost never leaves its first slot.
+    //
+    // Exact and non-evicting are both load-bearing, and the direct-mapped table
+    // this replaces was neither. A compiled trace is only reachable while its
+    // head owns a slot, so with one slot per hash a later install silently
+    // unreachable-ed an earlier one -- and because the head stayed in the
+    // installed set, it could not be recorded again either, so the loss was
+    // permanent. It bound coverage to the table size rather than to the pool,
+    // and it bound it worst exactly when the compiled set grew: more
+    // compilable instructions meant more traces competing for the same 64
+    // slots. Probing instead of replacing costs one comparison in the rare
+    // collision and never loses a trace.
     static constexpr uint32_t set_slots = 4096; // >= 4x max_traces, power of two
     trace pool[max_traces];
     uint64_t installed_set[set_slots]; // open-addressed pc set, 0 = empty
+#if TC_JIT
+    const void *installed_fn[set_slots];  ///< what that head resolves to
+    uint64_t installed_key[set_slots];    ///< the host code page it was recorded from
+#endif
     uint16_t penalty[TC_HEAD_SLOTS];    // indexed by the head hash, so it sizes with the table
     uint64_t penalty_pc[TC_HEAD_SLOTS];
     uint32_t ntraces;

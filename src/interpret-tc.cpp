@@ -154,25 +154,55 @@ static const void *tc_jit_compile(tc_context<state_access> *c, const tc_online_s
 
 static THREAD_LOCAL tc_online_state tc_online_storage;
 
-/// \brief Membership test in the fixed installed-head set.
-static FORCE_INLINE bool tc_online_installed(const tc_online_state *o, uint64_t pc) {
+/// \brief What identifies an installed trace: the head pc and the host page its
+/// instructions were read out of.
+/// \details The pc alone is not an identity. A compiled trace holds the
+/// instructions that were at a virtual address, so two contexts that map that
+/// address to different memory want different traces, and keying the map on the
+/// pc alone gives the first one a monopoly: the second is refused at the head
+/// consult, and because the head counts as installed it is never recorded
+/// again either. Measured on qsort, that was 32.7M refusals against 5.5M
+/// entries -- a head installed once, in a context that then almost never ran.
+/// Carrying the page in the identity lets both contexts install and both hit.
+static FORCE_INLINE bool tc_online_slot_matches(const tc_online_state *o, uint32_t s, uint64_t pc, uint64_t key) {
+    (void) key;
+    return o->installed_set[s] == pc;
+}
+
+/// \brief Finds a head in the exact map, or set_slots if it is not there.
+/// \details The probe stops at the first empty slot, which is what keeps the
+/// common case -- a pc that is not a head at all -- to one load and one
+/// comparison, the same as the direct-mapped table cost. Sizing the map at four
+/// times the pool is what makes that first slot almost always the empty one.
+static FORCE_INLINE uint32_t tc_online_find(const tc_online_state *o, uint64_t pc, uint64_t key) {
     uint32_t s = (static_cast<uint32_t>(pc) >> 1) & (tc_online_state::set_slots - 1);
     while (o->installed_set[s] != 0) {
-        if (o->installed_set[s] == pc) {
-            return true;
+        if (tc_online_slot_matches(o, s, pc, key)) {
+            return s;
         }
         s = (s + 1) & (tc_online_state::set_slots - 1);
     }
-    return false;
+    return tc_online_state::set_slots;
+}
+
+/// \brief Membership test in the fixed installed-head set.
+static FORCE_INLINE bool tc_online_installed(const tc_online_state *o, uint64_t pc, uint64_t key) {
+    return tc_online_find(o, pc, key) != tc_online_state::set_slots;
 }
 
 /// \brief Inserts into the fixed installed-head set (capacity guaranteed by flush).
-static FORCE_INLINE void tc_online_insert(tc_online_state *o, uint64_t pc) {
+static FORCE_INLINE uint32_t tc_online_insert(tc_online_state *o, uint64_t pc, uint64_t key) {
     uint32_t s = (static_cast<uint32_t>(pc) >> 1) & (tc_online_state::set_slots - 1);
-    while (o->installed_set[s] != 0 && o->installed_set[s] != pc) {
+    while (o->installed_set[s] != 0 && !tc_online_slot_matches(o, s, pc, key)) {
         s = (s + 1) & (tc_online_state::set_slots - 1);
     }
     o->installed_set[s] = pc;
+#if TC_JIT
+    o->installed_key[s] = key;
+#else
+    (void) key;
+#endif
+    return s;
 }
 
 /// \brief Debug event print, first 200 events only, when TC_ONLINE_DEBUG is set.
@@ -209,6 +239,11 @@ static void tc_online_flush(tc_context<STATE_ACCESS> *c) {
     for (auto &s : o->installed_set) {
         s = 0;
     }
+#if TC_JIT
+    for (auto &k : o->installed_key) {
+        k = 0;
+    }
+#endif
     for (auto &p : c->hot.head_pc) {
         p = UINT64_MAX;
     }
@@ -263,13 +298,13 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle) {
         }
         return;
     }
-    c->hot.head_fn[h] = entry;
-    c->hot.head_key[h] = c->jit_key;
     t.entry = entry;
-    t.key = c->jit_key;
 #endif
-    c->hot.head_pc[h] = t.head;
-    tc_online_insert(o, t.head);
+    const uint32_t s = tc_online_insert(o, t.head, t.key);
+#if TC_JIT
+    o->installed_fn[s] = entry;
+#endif
+    (void) s;
     ++o->installed;
     ++o->ntraces;
     if (o->ntraces == tc_online_state::max_traces) {
@@ -279,10 +314,10 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle) {
 
 /// \brief Starts recording at a hot head unless it is installed or blacklisted.
 template <typename STATE_ACCESS>
-static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc) {
+static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc, uint64_t key) {
     tc_online_state *o = c->online;
     const uint32_t h = (static_cast<uint32_t>(pc) >> 1) & (TC_HEAD_SLOTS - 1);
-    if (o->recording || tc_online_installed(o, pc) ||
+    if (o->recording || tc_online_installed(o, pc, key) ||
         (o->penalty_pc[h] == pc && o->penalty[h] >= tc_online_state::max_penalty)) {
         return;
     }
@@ -290,6 +325,16 @@ static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc) {
     t.head = pc;
     t.len = 0;
     t.cycle = -1;
+#if TC_JIT
+    // The head's page, fixed here. Taking it from the last instruction instead
+    // is wrong in the one case it matters: a recording proceeds one instruction
+    // per chain, so the mapping can change under it, and a trace holding
+    // instructions read from two host pages would then be installed under the
+    // second -- entering it later would execute the first page's instructions.
+    // tc_online_record ends any recording that sees the page move.
+    t.key = key;
+#endif
+    (void) key;
     o->recording = true;
     tc_online_debug("begin", pc, o->ntraces);
 }
@@ -302,6 +347,14 @@ template <typename STATE_ACCESS>
 static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t insn) {
     tc_online_state *o = c->online;
     auto &t = o->pool[o->ntraces];
+#if TC_JIT
+    if (c->jit_key != t.key) [[unlikely]] {
+        // The memory under this recording moved between one instruction and
+        // the next. Whatever it has collected is not the contents of one page.
+        tc_online_finish(c, -1);
+        return;
+    }
+#endif
     if (t.len > 0) {
         t.entries[t.len - 1].next_pc = pc;
         for (uint32_t i = 0; i < t.len; ++i) {
@@ -379,13 +432,18 @@ static FORCE_INLINE const void *tc_hook_site(const STATE_ACCESS a, tc_context<ST
     uint16_t weight) {
     const uint32_t h = (static_cast<uint32_t>(vpc) >> 1) & (TC_HEAD_SLOTS - 1);
     const void *fn = nullptr;
-    if (c->hot.head_pc[h] == vpc) [[unlikely]] {
-        ++c->hot.entries;
 #if TC_JIT
+    // The key costs a TLB consult, so it is resolved lazily: only a pc that is
+    // some head's pc pays for it, and the common case -- a profiling site with
+    // no trace at all -- stops at the first empty slot as before.
+    const tc_online_state *o = c->online;
+    if (const uint32_t s = tc_online_find(o, vpc, 0); s != tc_online_state::set_slots) [[unlikely]] {
+        ++c->hot.entries;
         // Consult the TLB only here, where a head actually matched, so the
         // common path of the hook does not pay for it
-        if (c->hot.head_key[h] != 0 && c->hot.head_key[h] == tc_jit_code_page(a, vpc)) {
-            fn = c->hot.head_fn[h];
+        const uint64_t key = tc_jit_code_page(a, vpc);
+        if (key != 0 && o->installed_key[s] == key) {
+            fn = o->installed_fn[s];
 #if TC_JIT_COVERAGE
             if (fn != nullptr) {
                 ++tc_jit_storage.per_head[h];
@@ -395,11 +453,18 @@ static FORCE_INLINE const void *tc_hook_site(const STATE_ACCESS a, tc_context<ST
             tc_jit_storage.entered += (fn != nullptr) ? 1 : 0;
         } else {
             ++tc_jit_storage.stale;
+            tc_jit_storage.stale_miss += (key == 0) ? 1 : 0;
+            tc_jit_storage.stale_remap += (key != 0) ? 1 : 0;
         }
-#elif TC_AOT
+    }
+#else
+    if (c->hot.head_pc[h] == vpc) [[unlikely]] {
+        ++c->hot.entries;
+#if TC_AOT
         fn = c->hot.head_fn[h];
 #endif
     }
+#endif
     (void) a;
     c->hot.hotcount[h] -= weight;
     if (static_cast<int16_t>(c->hot.hotcount[h]) <= 0) [[unlikely]] {
@@ -1118,12 +1183,13 @@ __attribute__((destructor)) static void tc_jit_report() {
     const auto &j = tc_jit_storage;
     std::fprintf(stderr,
         "tc-jit: compiled %llu (cyclic %llu, %llu steps, %llu bytes) rejected %llu truncated %llu unreachable %llu\n"
-        "tc-jit: entered %llu stale %llu flushes %llu loops %llu insns-in-trace %llu\n",
+        "tc-jit: entered %llu stale %llu (tlb-miss %llu remap %llu) flushes %llu loops %llu insns-in-trace %llu\n",
         static_cast<unsigned long long>(j.compiled), static_cast<unsigned long long>(j.cyclic),
         static_cast<unsigned long long>(j.steps), static_cast<unsigned long long>(j.bytes),
         static_cast<unsigned long long>(j.rejected), static_cast<unsigned long long>(j.truncated),
         static_cast<unsigned long long>(j.out_of_reach), static_cast<unsigned long long>(j.entered),
-        static_cast<unsigned long long>(j.stale), static_cast<unsigned long long>(j.flushes),
+        static_cast<unsigned long long>(j.stale), static_cast<unsigned long long>(j.stale_miss),
+        static_cast<unsigned long long>(j.stale_remap), static_cast<unsigned long long>(j.flushes),
         static_cast<unsigned long long>(j.loops), static_cast<unsigned long long>(j.insns));
 #if TC_JIT_COVERAGE
     for (uint32_t k = 0; k < TC_HEAD_SLOTS; ++k) {
@@ -1179,19 +1245,16 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 #endif
 #if TC_ONLINE
     tcc->online = &tc_online_storage;
-    // Re-register heads installed by earlier interpret() calls
+#if !TC_JIT
+    // Re-register heads installed by earlier interpret() calls. Under the JIT
+    // there is nothing to re-register: the exact map lives with the pool it
+    // describes, so it already survives an interpret() call.
     for (uint32_t i = 0; i < tc_online_storage.ntraces; ++i) {
         const auto &t = tc_online_storage.pool[i];
         const uint32_t h = (static_cast<uint32_t>(t.head) >> 1) & (TC_HEAD_SLOTS - 1);
         tcc->hot.head_pc[h] = t.head;
-#if TC_JIT
-        // Restore what the head resolves to as well. Restoring only the pc
-        // leaves a head that matches and dispatches nowhere, and since the head
-        // still counts as installed it will not be recorded again either.
-        tcc->hot.head_fn[h] = t.entry;
-        tcc->hot.head_key[h] = t.key;
-#endif
     }
+#endif
 #endif
 
     while (mcycle < mcycle_end) {
@@ -1220,7 +1283,8 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 if (tcc->online_trip) [[unlikely]] {
                     tcc->online_trip = false;
                     tc_online_debug("trip", tcc->online_trip_pc, tcc->online_trip_weight);
-                    tc_online_begin(tcc, tcc->online_trip_pc);
+                    tc_online_begin(tcc, tcc->online_trip_pc,
+                        static_cast<uint64_t>(pc) & ~PAGE_OFFSET_MASK);
                 }
                 if (tcc->online->recording) [[unlikely]] {
                     // Recordings are keyed by the architectural pc: fast

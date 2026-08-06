@@ -54,34 +54,29 @@ local ineligible = {
     -- These materialize an operand relative to the instruction that reads it,
     -- which no patch can repair once the code is copied elsewhere; the
     -- extractor rejects them by name, and they are listed here so the build
-    -- does not have to. Compressed memory forms pass their register fields
-    -- through a helper's parameters, and both compilers then choose to
-    -- materialize them rather than fold them into a displacement.
-    C_ADDI4SPN = "materializes an operand relative to itself",
+    -- does not have to.
+    --
+    -- The compressed load/store family used to be here too, and it was the
+    -- most expensive entry in this table: a trace stops at the first
+    -- instruction it cannot compile, so excluding c.lw/c.sw/c.ld/c.sd cut
+    -- almost every hot loop short. The cause was not the encoding but a
+    -- narrowing: execute_C_L and execute_C_S took their register selector as
+    -- uint32_t, and a relocated value that round-trips through a narrower type
+    -- has to be materialized into a register instead of folding into a
+    -- displacement -- exactly what reg_index exists to prevent. Widening those
+    -- parameters admitted the whole family. What is left needs an operand the
+    -- compiler still commits to a register: C_LDSP and C_LWSP reach rd that
+    -- way, and rd is shared with every uncompressed case, so naming its
+    -- encoding to recover two forms would deoptimize a hundred.
     C_EBREAK = "materializes an operand relative to itself",
-    C_FLD = "materializes an operand relative to itself",
     C_FLDSP = "materializes an operand relative to itself",
-    C_FSD = "materializes an operand relative to itself",
     C_FSDSP = "materializes an operand relative to itself",
-    C_LBU = "materializes an operand relative to itself",
-    C_LD = "materializes an operand relative to itself",
-    C_LDSP = "materializes an operand relative to itself",
-    C_LH = "materializes an operand relative to itself",
-    C_LHU = "materializes an operand relative to itself",
-    C_LW = "materializes an operand relative to itself",
-    C_LWSP = "materializes an operand relative to itself",
-    C_SB = "materializes an operand relative to itself",
-    C_SD = "materializes an operand relative to itself",
-    C_SDSP = "materializes an operand relative to itself",
-    C_SH = "materializes an operand relative to itself",
     CSRRC = "materializes an operand relative to itself",
     CSRRCI = "materializes an operand relative to itself",
     CSRRS = "materializes an operand relative to itself",
     CSRRSI = "materializes an operand relative to itself",
     CSRRW = "materializes an operand relative to itself",
     CSRRWI = "materializes an operand relative to itself",
-    C_SW = "materializes an operand relative to itself",
-    C_SWSP = "materializes an operand relative to itself",
     FD = "materializes an operand relative to itself",
     FMADD = "materializes an operand relative to itself",
     FMSUB = "materializes an operand relative to itself",

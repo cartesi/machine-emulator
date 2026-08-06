@@ -951,6 +951,32 @@ extern "C" char tc_h_insn[], tc_h_rd[], tc_h_rs1[], tc_h_rs2[], tc_h_c_rd_rs2[],
         __asm__("movq $" #sym ", %0" : "=r"(tc_sv_));                                                                   \
         tc_sv_;                                                                                                         \
     }))
+// An unsigned hole whose encoding we choose, for the operands a compiler
+// materializes into a register rather than folding into a displacement.
+//
+// Which it does is not a property of the operand but of how the case reaches
+// it. Where a body reads a field and uses it in place, both compilers fold the
+// relocation into the displacement of the access, which is the whole point of
+// carrying register fields as byte offsets. Where a body reads the field into a
+// local and passes it to a shared helper -- which is how every compressed
+// memory form is written, and only those -- the value is committed to a
+// register before addressing modes are chosen, and GCC materializes it with
+// `lea sym(%rip)`. That instruction computes a different number at every
+// address, so such a stencil is not relocatable at all and the extractor
+// rejects it; the whole compressed load/store family was excluded from the
+// compiled set for exactly this reason, which cost far more than the fold it
+// was protecting.
+//
+// `movl $sym` names an absolute encoding, so no compiler gets a say, and
+// zero-extends by definition, which is what a byte offset or an unsigned
+// immediate wants. It costs the one instruction the fold would have saved, and
+// only in the bodies that could not fold anyway.
+#define TC_STENCIL_ZEXT(sym)                                                                                           \
+    (__extension__({                                                                                                   \
+        uint64_t tc_zv_;                                                                                               \
+        __asm__("movl $" #sym ", %k0" : "=r"(tc_zv_));                                                                 \
+        tc_zv_;                                                                                                        \
+    }))
 // Consume the argument so the getters keep their signatures' warning behavior
 #define TC_STENCIL_OPERAND(insn, sym) (((void) (insn)), TC_STENCIL_HOLE(sym))
 // Signed operands stay narrowed to int32_t on purpose, even though widening
@@ -983,9 +1009,9 @@ extern "C" char tc_h_insn[], tc_h_rd[], tc_h_rs1[], tc_h_rs2[], tc_h_c_rd_rs2[],
 #define insn_get_CI_CB_imm(insn) (static_cast<uint32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_cicb)))
 #define insn_get_CI_CB_imm_se(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_cicbse)))
 #define insn_get_C_LW_C_SW_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clw)))
-#define insn_get_C_LS_B_uimm(insn) (static_cast<uint32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clsb)))
-#define insn_get_C_LS_H_uimm(insn) (static_cast<uint32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clsh)))
-#define insn_get_CIW_imm(insn) (static_cast<uint32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_ciw)))
+#define insn_get_C_LS_B_uimm(insn) (((void) (insn)), static_cast<uint32_t>(TC_STENCIL_ZEXT(tc_h_imm_clsb)))
+#define insn_get_C_LS_H_uimm(insn) (((void) (insn)), static_cast<uint32_t>(TC_STENCIL_ZEXT(tc_h_imm_clsh)))
+#define insn_get_CIW_imm(insn) (((void) (insn)), static_cast<uint32_t>(TC_STENCIL_ZEXT(tc_h_imm_ciw)))
 #define insn_get_C_ADDI16SP_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_caddi16sp)))
 #define insn_get_C_LUI_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clui)))
 #define insn_get_C_FLDSP_LDSP_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_cldsp)))
@@ -5064,8 +5090,8 @@ static FORCE_INLINE execute_status execute_FD(const STATE_ACCESS a, i_state_acce
 }
 
 template <typename T, typename U, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_L(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t rd,
-    uint32_t rs1, U imm) {
+static FORCE_INLINE execute_status execute_C_L(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, reg_index rd,
+    reg_index rs1, U imm) {
     const uint64_t vaddr = a.read_x(rs1);
     T val = 0;
     if (!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val)) [[unlikely]] {
@@ -5081,8 +5107,8 @@ static FORCE_INLINE execute_status execute_C_L(const STATE_ACCESS a, i_state_acc
 }
 
 template <typename T, typename U, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t rs2,
-    uint32_t rs1, U imm) {
+static FORCE_INLINE execute_status execute_C_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, reg_index rs2,
+    reg_index rs1, U imm) {
     const uint64_t vaddr = a.read_x(rs1);
     const uint64_t val = a.read_x(rs2);
     const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
@@ -5096,8 +5122,8 @@ static FORCE_INLINE execute_status execute_C_S(const STATE_ACCESS a, i_state_acc
 }
 
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_FL(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t rd,
-    uint32_t rs1, int32_t imm) {
+static FORCE_INLINE execute_status execute_C_FL(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, reg_index rd,
+    reg_index rs1, int32_t imm) {
     // Loads the float value from virtual memory
     const uint64_t vaddr = a.read_x(rs1);
     T val = 0;
@@ -5111,8 +5137,8 @@ static FORCE_INLINE execute_status execute_C_FL(const STATE_ACCESS a, i_state_ac
 }
 
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_FS(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t rs2,
-    uint32_t rs1, int32_t imm) {
+static FORCE_INLINE execute_status execute_C_FS(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, reg_index rs2,
+    reg_index rs1, int32_t imm) {
     const uint64_t vaddr = a.read_x(rs1);
     // A narrower n-bit transfer out of the floating-point
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.

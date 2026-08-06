@@ -44,6 +44,20 @@ scale, the best offline native AOT result of the earlier tracing
 experiments, entered and left through the stock loop's boundary, was
 -2.9% aggregate.
 
+A copy-and-patch JIT now compiles what the recorder records, from
+stencils built against the same handler contract, so a trace is entered
+and left by a jump (section 5.20). It is exact over full boots and
+measures -9.1% over six workloads and -5.6% over ten, in both cases as a
+bimodal result that coverage explains completely: -45% to -59% where it
+executes most of the guest's instructions, and a few percent of loss
+where it executes almost none. On x86-64 it rides the argument shape, so
+unlike every pinned-register configuration in this document it starts
+from parity with stock rather than from a deficit. The limit is trace
+selection, not translation: a parallel branch pairing the same contract
+with a GNU lightning backend and a further-developed recorder reaches
+-16.0% on the same ten workloads, and three quarters of that gap is two
+workloads where this branch's tracer never runs at all.
+
 ## 2. Background and motivation
 
 Earlier tracing experiments on this codebase showed that Clang's lowering
@@ -1243,6 +1257,105 @@ entered. Trace formation, not translation, is where the next measurement
 belongs: which sites the hooks fire at, what the recorder does with them, and
 whether a head once installed is ever reached again.
 
+**A second workload set, and the head consult answers the last question.** The
+six-workload table above bounds guest work by operation count. A ten-workload
+run through `bench-harness/bench.lua` bounds it by mcycle instead -- boot to
+256 Mi, then measure exactly 1 Gi more -- which makes the root hash at the end
+of the window an exact gate rather than an approximate one, and makes the
+comparison below possible at all. Same host and compiler, best of three,
+against a same-source stock anchor; all forty runs were cycle- and
+hash-identical. Coverage here is window-only, whole-process trace instructions
+less the boot phase, so it is not the same quantity as the column above.
+
+| workload | stock | tailcall | +recorder | jit | vs stock | coverage |
+|---|---:|---:|---:|---:|---:|---:|
+| memcpy | 1.089 | 1.098 | 1.187 | **0.452** | -58.5% | 90.2% |
+| zlib | 1.370 | 1.342 | 1.387 | **1.159** | -15.4% | 44.0% |
+| hash | 1.264 | 1.190 | 1.233 | **1.013** | -19.9% | 33.8% |
+| nop | 0.677 | 0.669 | 0.671 | **0.634** | -6.4% | 7.8% |
+| tree | 2.503 | 2.518 | 2.558 | 2.561 | +2.3% | 8.3% |
+| qsort | 1.372 | 1.413 | 1.417 | 1.410 | +2.8% | 6.5% |
+| regs | 0.874 | 0.870 | 0.860 | 0.864 | -1.1% | 1.1% |
+| sieve | 1.160 | 1.161 | 1.183 | 1.213 | +4.6% | 0.1% |
+| branch | 1.168 | 1.187 | 1.214 | 1.196 | +2.4% | 0.0% |
+| double | 2.975 | 2.991 | 3.003 | 3.145 | +5.7% | 0.0% |
+| **total** | **14.452** | **14.439** | **14.713** | **13.647** | **-5.6%** | |
+
+The bimodality reproduces on a set chosen without reference to it, and the
+uncovered end is now quantified rather than described: the six workloads under
+10% coverage aggregate to +3.9% against stock, which is the whole cost of
+having a tracer that finds nothing. Two figures in the table are new. The
+tail-call baseline this JIT rides is free on this host -- 14.439 against
+stock's 14.452 -- because on x86-64 the JIT selects the argument shape with
+preserve_none rather than the pinned globals; nothing has to be won back before
+the backend's own gain counts. And the recorder is +1.9% over that baseline,
+consistent with the shell measurement of 8b item 1.
+
+The open question at the end of the previous paragraph -- whether a head once
+installed is ever reached again -- has an answer, and it is the head consult of
+this section, not the recorder. `TC_JIT_STATS` separates a head hit that
+entered from one refused because `head_key` did not match the current host code
+page. The refusals dominate on exactly the workloads that get no coverage:
+`double` refuses 9,063,950 against 136,752 entries, `tree` 15,851,855 against
+2,300,259, `sieve` 350,654 against 224,168. The pc comparison ahead of that
+check is exact, so these are not slot collisions; they are hits on a head whose
+page is not, at that moment, the page the trace was compiled from. Whether the
+mapping genuinely changed or the code TLB slot merely does not currently hold
+that page -- `tc_jit_code_page` returns 0 in both cases -- is what the next
+measurement has to separate, because the two want opposite fixes. Head-table
+pressure was already excluded by the doubling experiment above; this is a
+second, independent way for an installed head to go unused, and on `double` it
+accounts for 98.5% of the times the guest arrived at one.
+
+**Cross-check against a lightning backend.** A parallel branch
+(`feat/tailcall-interpreter`) reached the same goal by a different route: GNU
+lightning emitting into the same handler contract, on top of the online
+recorder carried further -- an exact PC-to-trace map, integer coverage, and
+conservative trace linking. It was measured with this harness on this host, so
+the two are comparable, with two caveats stated up front. Each is scored
+against its own stock anchor, because this branch's commit changes
+`interpret.cpp` and its stock measures 14.452s where the other's measured
+14.005s; and the lightning branch requires the pinned register shape on
+x86-64, which costs it +11.9% against stock before any trace runs.
+
+| workload | copy-and-patch | lightning | difference |
+|---|---:|---:|---:|
+| memcpy | -58.5% | -68.7% | 10.2 pts |
+| zlib | -15.4% | -28.2% | 12.8 pts |
+| hash | -19.9% | -37.1% | 17.2 pts |
+| nop | -6.4% | -81.4% | 75.1 pts |
+| regs | -1.1% | -21.4% | 20.2 pts |
+| sieve | +4.6% | -68.8% | 73.4 pts |
+| qsort | +2.8% | +3.2% | -0.5 pts |
+| branch | +2.4% | +4.7% | -2.3 pts |
+| tree | +2.3% | +8.7% | -6.4 pts |
+| double | +5.7% | +14.8% | -9.1 pts |
+| **total** | **-5.6%** | **-16.0%** | **10.4 pts** |
+
+Lightning is ahead by 10.4 points aggregate, and 148 of those points are sieve
+and nop alone, where this branch's coverage is 0.1% and 7.8%. On those two the
+backend is not running, so nothing about emitted code is being compared; what
+is being compared is trace selection, and the branch that carried item 3
+further wins it outright. The four workloads where neither backend gets work
+go the other way, by the margin the free baseline and the cheaper shell
+predict.
+
+What the comparison cannot settle is how much of the rest is code quality. On
+memcpy, the one workload where this branch reaches 90% coverage, it finishes in
+0.452s against lightning's 0.332s, or -58.8% against -74.6% measured from each
+one's own tail-call baseline. That is a real difference and it is in the
+direction the technique's ceiling predicts -- copy-and-patch cannot allocate a
+guest register into a host one across a trace, and lightning does -- but the
+lightning run's coverage on that workload was never recorded, so the two
+numbers are not known to describe the same amount of compiled execution. Taking
+them as a codegen comparison would repeat the mistake the -28% draft made.
+
+The two results are complementary rather than competing, and they decompose
+cleanly: this branch's entry cost is the thing lightning cannot fix, since the
+pinned shape is what its backend emits into, and lightning's selection is the
+thing this branch has not imported. Combining them is the obvious next
+experiment and needs no new invention on either side.
+
 The remaining soundness item is stores into a page holding a trace, which needs
 the write-TLB refusal described in 8b item 3; until then a guest that modifies
 its own code would execute the recorded instructions, and the flag stays
@@ -1546,6 +1659,20 @@ shell cost +66% with tracing idle).
    paying off where the traces are, and it closes the backend item; what
    the spread now points at is item 3's selection, not item 4's codegen.
 
+   A second, independently chosen set of ten workloads reproduces the
+   shape at -5.6%, and two measurements in it sharpen the diagnosis
+   (5.20). The workloads the tracer does not cover cost +3.9% in
+   aggregate, which prices item 1's shell against no return. And the head
+   consult refuses most of its hits on exactly those workloads, up to
+   98.5% of them, because the head's host code page is not the one its
+   trace was compiled from -- a second way for an installed head to go
+   unused, independent of the head-table pressure already excluded.
+   Against a parallel branch that pairs this contract with a GNU
+   lightning backend and a further-developed recorder, the gap is 10.4
+   points and three quarters of it is two workloads this branch never
+   traces. Selection is now the whole question, and both branches are
+   evidence for the same reading of it.
+
 ## 8c. The register-budget series: filed ideas and the queued campaign
 
 Section 5.16 established what each of the six slots is for: three
@@ -1727,6 +1854,21 @@ stated in 5.20 and are not covered by those gates: a guest that writes to
 a page holding a compiled trace would execute the recorded instructions,
 because the write-TLB refusal of 8b item 3 is not built yet, and the
 generated stencil table is x86-64 only.
+
+The ten-workload measurement of 5.20 uses a fixed-work variant of the
+protocol, `bench-harness/bench.lua`: each variant is built into its own
+directory, boots to 256 Mi mcycles, then runs exactly 1 Gi more, and the
+root hash at that exact mcycle is compared across variants. Bounding the
+window by mcycle rather than by guest operation count makes the hash gate
+exact instead of approximate, which is what lets the timing table double
+as the gate; all forty runs of that campaign agreed. Two operational
+notes belong with it. `cartesi-machine.lua` does not prepend the build
+directory to `package.cpath`, so on a host with the emulator installed a
+bare invocation silently gates and times the installed library rather
+than the build under test; every invocation must set `LUA_CPATH`. And the
+recorder's pools are per-thread statics that outlive a machine object, so
+each workload must run in its own process. The `taskset` pinning of 5.20
+applies to this harness for the same reason it applies to the other.
 
 Remaining before the experiment can be promoted: the tail-call
 translation unit still fails the project's clang-tidy policy

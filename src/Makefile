@@ -275,10 +275,11 @@ ifeq ($(lightning),yes)
 ifneq ($(tailcall),yes)
 $(error lightning=yes requires tailcall=yes)
 endif
+LIGHTNING_SOURCE_DIR=../third-party/lightning
 LIGHTNING_DIR=../third-party/downloads/lightning
 LIGHTNING_LIB=$(LIGHTNING_DIR)/lib/.libs/liblightning.a
 INTERPRET_CXXFLAGS+=-DTC_LIGHTNING=1
-INCS+=-I$(LIGHTNING_DIR)/include
+INCS+=-I$(LIGHTNING_DIR)/include -I$(LIGHTNING_SOURCE_DIR)/include
 LDFLAGS+=$(LIGHTNING_LIB)
 ifeq ($(TARGET_OS),Linux)
 LDFLAGS+=-ldl

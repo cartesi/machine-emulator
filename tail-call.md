@@ -1447,18 +1447,14 @@ shell cost +66% with tracing idle).
    exit while this stage links only normal straight-trace ends. The four qsort
    links therefore do not form its hot partition/comparator/return cycle.
 
-   SUPERSEDED IN PART. The cross-page half of this item is not exact. The
-   x86-64 campaign of item 9 gated the three linking mechanisms separately
-   and found that same-page links, side links, and the register-preserving
-   edge all reproduce stock byte for byte, while enabling cross-page links
-   makes a full Linux boot charge 22 cycles more than it retires
-   instructions (54,783,044 against the stock 54,783,022) and mismatches
-   sieve, zlib, and hash. The defect is in shared logic, not in the x86-64
-   port, so the AArch64 gates of this item did not exercise whatever it is:
-   the boot path is where cross-page successors are common. Cross-page
-   links are therefore compiled but not patched unless
-   `TC_LIGHTNING_XPAGE=1` is set, and the mechanism is isolated but not yet
-   diagnosed. Everything else in this item stands.
+   The initial x86-64 campaign attributed a 22-cycle full-boot divergence to
+   cross-page links and temporarily disabled them. That attribution did not
+   survive the completed fix set. With the cyclic call-target trim fixed
+   (item 9), cross-page links reproduce the default build byte for byte on
+   ARM64 and emulated x86-64 boots and on the three workloads originally
+   reported as failures (sieve, zlib, and hash). Reintroducing the cyclic trim
+   bug makes both linked and unlinked runs diverge. Cross-page links are
+   therefore enabled again; they were not the cause.
 
 8. NEXT, TRANSACTIONAL CHAINS AND SIDE EXITS. Record page-bounded successor
    fragments into provisional pool slots, invisible to the exact head map.
@@ -1555,9 +1551,9 @@ shell cost +66% with tracing idle).
      back-edge into an unconditional one that both skipped the closing
      branch and retired one instruction per iteration without charging
      for it. It is now refused for cyclic traces.
-   - Cross-page trace linking remains inexact; see the amendment to item
-     7. It is the one mechanism of this stage that no longer runs by
-     default.
+   - The first gated run misattributed the cyclic-trim divergence to
+     cross-page trace linking. Retesting after the complete fix set shows
+     cross-page links exact; see the amendment to item 7.
 
    The bisection switches that found these are retained as environment
    variables on cold paths (`TC_LIGHTNING_NO_SPILL`, `NO_CYCLE`,
@@ -1606,7 +1602,7 @@ shell cost +66% with tracing idle).
    few percent and receives nothing, which is the shape every uncovered
    workload will have until coverage grows.
 
-## 8c. The register-budget series: filed ideas and the queued campaign
+## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three
 irreducibles (accessor, insn, pc), the fetch-cache pair whose eviction
@@ -1676,7 +1672,7 @@ same amortization traces collect at block lengths of tens instead of
 four; if their ceilings do not clear a few percent, the trace path
 collects the same win anyway and they stay filed.
 
-### The queued Raptor campaign
+### The four-slot x86-64 campaign
 
 Two phases per compiler with the usual gates. Phase one is the landing
 gate: main stock against branch stock, which that machine has never
@@ -1702,17 +1698,33 @@ defaults, so the campaign measures the shipped shape: the tail-call
 translation unit compiles with -fno-stack-protector, and the pre-load
 default follows the pinned shape alone.
 
-The campaign is currently blocked on the branch, and the block is a
-build error rather than a scheduling one: the argument-passing shape
-does not compile. `TC_HOT_PARAMS` was not carried through the typed fast
-pc of 5.19 in its non-pinned, non-segment form, so the outer loop hands
-the handler three arguments where the signature declares four and passes
-a `host_addr` where it declares `uint64_t`. Every column of the
-two-by-two above except the pinned rows therefore fails to build, and
-`make tailcall=yes` on x86-64, the shipped default for that
-architecture, fails with it. Repairing that signature is the
-prerequisite for the whole campaign and is independent of everything
-else in this document.
+The argument-signature build error was repaired on the x86-64 fixes
+branch. A subsequent run on a different x86-64 processor measured the
+four-slot argument shape both without and with the next-instruction
+pre-load (`PL`):
+
+| workload | stock | four-slot | four-slot + PL | four-slot vs stock | PL vs four-slot |
+|---|---:|---:|---:|---:|---:|
+| sieve | 7.57 | 6.80 | 8.27 | -10.2% | +21.7% |
+| qsort | 10.13 | 10.36 | 11.45 | +2.3% | +10.5% |
+| zlib | 18.49 | 17.87 | 21.90 | -3.4% | +22.6% |
+| hash | 2.24 | 2.16 | 2.36 | -3.6% | +9.6% |
+| double | 22.41 | 22.76 | 22.71 | +1.6% | -0.2% |
+| syscall | 3.29 | 3.31 | 3.56 | +0.7% | +7.5% |
+| **total** | **64.12** | **63.26** | **70.25** | **-1.3%** | **+11.1%** |
+
+The four-slot shape is therefore the fastest portable x86-64 result in
+this run, slightly ahead of stock in aggregate. The hoped-for pre-load
+reversal did not occur: it loses 11.1% overall and loses materially on
+five of the six workloads. Four argument slots describe only the values
+crossing the handler boundary. Pre-load then keeps the predicted word and
+dispatch target live across the current execute body, consuming the
+capacity that the reduced signature freed. Earlier six-slot counters and
+disassembly identified spill traffic as the loss there, but these timings
+alone do not establish the residual four-slot mechanism. Distinguishing
+spills and moves from front-end pressure or discarded predictions requires
+disassembly and hardware counters from this measured build on the same
+processor; until then the cause remains open and PL stays disabled.
 
 One anchor from the campaign's target hardware does exist, taken as a
 by-product of the backend port (8b, item 9): on the i9-14900K under GCC

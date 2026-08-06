@@ -615,6 +615,27 @@ static void tc_online_flush(tc_context<STATE_ACCESS> *c) {
     // recordings would otherwise churn again after every flush
 }
 
+/// \brief Discards a recording interrupted by outer-loop architectural work.
+/// \details Interrupt and exception entry mutates privilege state outside the
+/// instruction body. The next fetched pc therefore is not an instruction
+/// successor and must never be incorporated into a generated trace. This is
+/// not a formation failure, so the head remains eligible for another attempt.
+template <typename STATE_ACCESS>
+static void tc_online_cancel_boundary(tc_context<STATE_ACCESS> *c) {
+    tc_online_state *o = c->online;
+    if (!o->recording) {
+        return;
+    }
+    tc_online_debug("boundary", o->pending.head, o->pending.len);
+    o->recording = false;
+#if TC_LIGHTNING
+    if (o->pending_side != nullptr) {
+        o->pending_side->hotcount = tc_online_state::side_hot_reset;
+        o->pending_side = nullptr;
+    }
+#endif
+}
+
 /// \brief Ends a conceptual recording and atomically publishes its page-local fragments.
 template <typename STATE_ACCESS>
 static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool closed) {
@@ -776,9 +797,6 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
             if (const auto *const successor = tc_online_find(o, predecessor.successor); successor != nullptr) {
                 const bool crosses_page =
                     (predecessor.head >> LOG2_PAGE_SIZE) != (successor->head >> LOG2_PAGE_SIZE);
-                if (crosses_page && predecessor.returns) {
-                    continue;
-                }
                 predecessor.link_fn = crosses_page ? successor->call_fn : successor->fn;
                 if (successor->linked_predecessor == &predecessor) {
                     predecessor.fast_link_fn = successor->linked_fn;
@@ -2601,15 +2619,6 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         return nullptr;
     }
 
-    // Cross-page register-preserving entries are not yet safe for every
-    // mapping. Keep the ordinary linked path, which flushes guest registers
-    // and performs the same hot code-TLB translation before entering the
-    // successor, but do not inherit a register allocation across the page.
-    if (preferred_mapping != nullptr &&
-        (trace.head >> LOG2_PAGE_SIZE) != (preferred_mapping->head >> LOG2_PAGE_SIZE)) {
-        preferred_mapping = nullptr;
-    }
-
     static const bool initialized = [] {
         init_jit(nullptr);
         return true;
@@ -3261,7 +3270,16 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
             }
         }
 
+#if TC_ONLINE
+        const bool tc_recording_interrupt =
+            tcc->online->recording && get_pending_irq_mask(a) != 0;
+#endif
         pc = raise_interrupt_if_any(a, pc, tcc->fetch_vaddr_page);
+#if TC_ONLINE
+        if (tc_recording_interrupt) [[unlikely]] {
+            tc_online_cancel_boundary(tcc);
+        }
+#endif
 
 #ifndef NDEBUG
         assert_no_brk(a);
@@ -3333,12 +3351,20 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                     tcc->fetch_vaddr_page);
 #endif
 #endif
+#if TC_ONLINE
+                if (tcc->online->recording && status >= execute_status::success_and_serve_interrupts) [[unlikely]] {
+                    tc_online_cancel_boundary(tcc);
+                }
+#endif
                 pc = tcc->pc;
                 mcycle = tcc->mcycle;
                 break;
             }
             // Fetch raised an exception: it consumes one cycle and execution continues
             // from the exception handler pc
+#if TC_ONLINE
+            tc_online_cancel_boundary(tcc);
+#endif
             ++mcycle;
         }
 

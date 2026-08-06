@@ -3674,10 +3674,11 @@ static FORCE_INLINE execute_status execute_JALR(const STATE_ACCESS a, i_state_ac
     if constexpr (rd_kind == rd_kind::x0 && requires { a.stage_indirect_return(pc, new_pc); }) {
         return a.stage_indirect_return(pc, new_pc);
     } else if constexpr (requires { a.stage_indirect_jump(pc, new_pc); }) {
+        const execute_status status = a.stage_indirect_jump(pc, new_pc);
         if constexpr (rd_kind != rd_kind::x0) {
             a.write_x(rd, val);
         }
-        return a.stage_indirect_jump(pc, new_pc);
+        return status;
     } else {
         if constexpr (rd_kind != rd_kind::x0) {
             a.write_x(rd, val);
@@ -5626,10 +5627,12 @@ static FORCE_INLINE execute_status execute_C_JALR(const STATE_ACCESS a, i_state_
     const uint32_t rs1 = insn_get_rd(insn);
     const auto new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
     const uint64_t val = pc_to_virtual(a, pc) + 2;
-    a.write_x(0x1, val);
     if constexpr (requires { a.stage_indirect_jump(pc, new_pc); }) {
-        return a.stage_indirect_jump(pc, new_pc);
+        const execute_status status = a.stage_indirect_jump(pc, new_pc);
+        a.write_x(0x1, val);
+        return status;
     } else {
+        a.write_x(0x1, val);
         return execute_jump(a, pc, pc_to_fast(a, new_pc));
     }
 }

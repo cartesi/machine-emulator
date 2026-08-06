@@ -10,6 +10,7 @@ This project includes several submodules and dependencies, each with its own lic
 - `tests/uarch`: Licensed under the Apache License 2.0. Licensing details are available in [tests/uarch/LICENSE](tests/uarch/LICENSE).
 - `third-party/ankerl`: Licensed under the MIT License. The license can be found at [third-party/ankerl/LICENSE](third-party/ankerl/LICENSE).
 - `third-party/llvm-flang-uint128`: Licensed under the Apache License 2.0 with LLVM exceptions. The license can be found at [third-party/llvm-flang-uint128/LICENSE](third-party/llvm-flang-uint128/LICENSE).
+- `third-party/lightning`: GNU lightning 2.2.3, licensed under the GNU Lesser General Public License 3.0 or later. The upstream license texts are retained in [third-party/lightning/COPYING](third-party/lightning/COPYING) and [third-party/lightning/COPYING.LESSER](third-party/lightning/COPYING.LESSER).
 - `third-party/riscv-arch-test`: Source code licensed under the Apache 2.0 and BSD 3-Clause licenses. Documentation under `CC-BY-4.0`. License information is provided in README.md and other COPYING.* files like [third-party/riscv-arch-test/COPYING.APACHE](third-party/riscv-arch-test/COPYING.APACHE).
 - `third-party/riscv-tests`: Licensed under the BSD 3-Clause "New" or "Revised" License. See [third-party/riscv-tests/LICENSE](third-party/riscv-tests/LICENSE) for license details.
 - `third-party/riscv-tests/env`: Licensed under the BSD 3-Clause "New" or "Revised" License. License details are in [third-party/riscv-tests/env/LICENSE](third-party/riscv-tests/env/LICENSE).

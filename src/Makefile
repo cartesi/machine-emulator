@@ -283,6 +283,19 @@ LDFLAGS+=$(LIGHTNING_LIB)
 ifeq ($(TARGET_OS),Linux)
 LDFLAGS+=-ldl
 endif
+# The backend emits into the pinned-register contract, which on x86-64 only
+# GCC provides (Clang rejects general-purpose global register variables on
+# this target) and which does not compose with preserve_none there, because
+# GCC's argument registers are the pinned set itself. r14 is additionally
+# reserved so the generated code has one more guest register and lightning's
+# own allocator cannot touch a call-saved register the interpreter owns.
+ifeq (,$(filter arm64 aarch64,$(shell uname -m)))
+ifneq (,$(findstring clang,$(CC)))
+$(error lightning=yes on x86-64 requires GCC: Clang has no global register variables on this target)
+endif
+INTERPRET_CXXFLAGS+=-DTC_USE_PRESERVE_NONE=0
+TC_FFIXED_FLAGS+=-ffixed-r14
+endif
 endif
 
 # Make testing new optimization options easier

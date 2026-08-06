@@ -44,6 +44,17 @@ scale, the best offline native AOT result of the earlier tracing
 experiments, entered and left through the stock loop's boundary, was
 -2.9% aggregate.
 
+The online GNU lightning backend now runs on x86-64 as well, and it is
+the first configuration on that architecture to beat the stock loop by a
+wide margin: -16.0% aggregate over ten workloads against stock and -24.9%
+against the pinned tail-call interpreter it rides, on a Raptor Lake i9
+under GCC 16 (section 8b, item 9). The split is the one the design
+predicts: workloads whose hot code the backend covers collapse (sieve
+-68.8%, nop -81.4%, memcpy -68.7%, hash -37.1%), while workloads it
+cannot collect pay the recorder's few percent and nothing else (double
++14.8%). The port cost the interpreter nothing and the backend four
+bugs, three of them architecture-neutral and latent on AArch64.
+
 ## 2. Background and motivation
 
 Earlier tracing experiments on this codebase showed that Clang's lowering
@@ -135,6 +146,13 @@ define. TC_PAGE_SEGMENT=1 selects the page-segment shape of 5.17
 clearing the pinned-register reservations (TC_FFIXED_FLAGS=, see 5.17).
 The historical campaigns predate the switch and were built with
 hand-passed OPTFLAGS.
+
+The trace backend is `make tailcall=yes lightning=yes
+MYINTERPRET_CXXFLAGS=-DTC_ONLINE=1`, which links the bundled GNU
+lightning (`make bundle-lightning`) and selects the pinned shape on
+every architecture, since the generated code emits into that register
+contract. On x86-64 it additionally implies GCC, TC_USE_PRESERVE_NONE=0,
+and the r14 reservation of 8b item 9; the build refuses Clang there.
 
 ## 4. Measurement protocol
 
@@ -1429,6 +1447,19 @@ shell cost +66% with tracing idle).
    exit while this stage links only normal straight-trace ends. The four qsort
    links therefore do not form its hot partition/comparator/return cycle.
 
+   SUPERSEDED IN PART. The cross-page half of this item is not exact. The
+   x86-64 campaign of item 9 gated the three linking mechanisms separately
+   and found that same-page links, side links, and the register-preserving
+   edge all reproduce stock byte for byte, while enabling cross-page links
+   makes a full Linux boot charge 22 cycles more than it retires
+   instructions (54,783,044 against the stock 54,783,022) and mismatches
+   sieve, zlib, and hash. The defect is in shared logic, not in the x86-64
+   port, so the AArch64 gates of this item did not exercise whatever it is:
+   the boot path is where cross-page successors are common. Cross-page
+   links are therefore compiled but not patched unless
+   `TC_LIGHTNING_XPAGE=1` is set, and the mechanism is isolated but not yet
+   diagnosed. Everything else in this item stands.
+
 8. NEXT, TRANSACTIONAL CHAINS AND SIDE EXITS. Record page-bounded successor
    fragments into provisional pool slots, invisible to the exact head map.
    Commit and patch the group only after it closes onto its root, an installed
@@ -1448,6 +1479,132 @@ shell cost +66% with tracing idle).
    boundary moves) so hot links no longer flush and reload every mapped guest
    register. Per-page membership and invalidation remain required before this
    execution oracle becomes a production JIT.
+
+9. DONE, THE BACKEND ON X86-64. The backend was AArch64-only by
+   construction, not merely untested there: it named lightning's
+   `JIT_R3`-`JIT_R6` and `JIT_V5`-`JIT_V8`, which do not exist in the
+   x86-64 register namespace, and the guard that said so
+   (`TC_LIGHTNING currently targets the pinned-register AArch64 shape`)
+   sat inside the `#ifndef TC_GLOBAL_REGS` block, so defining that macro
+   on the command line bypassed the diagnostic instead of tripping it.
+   The handler contract is now expressed once per architecture and the
+   emitter names no lightning register of its own:
+
+   | | AArch64 | x86-64 (SysV, GCC) |
+   |---|---|---|
+   | state pointer | JIT_V1 = x20 | `_RDI` |
+   | fast pc, countdown, fetch tag, context | x23, x24, x25, x27 | rbx, r12, r13, r15 |
+   | guest registers | 8 | 4 (r14, rsi, r8, r9) |
+   | emitter scratch | x9, x22, x26 | rax, r10, r11 |
+   | left to lightning | x8, x16-x18 | rcx, rdx |
+
+   Three properties of the host had to be established rather than
+   assumed. First, every register generated code touches must be either
+   call-clobbered or reserved for the whole translation unit, because the
+   interpreter frames below the chain expect the call-saved set intact;
+   x86-64 has no spare call-clobbered register once the contract and the
+   scratch set are paid for, so r14 is reserved with `-ffixed-r14` and
+   added to the boundary save/restore of 5.12, which buys the fourth
+   guest register and simultaneously makes it harmless for lightning to
+   pick r14 as its own temporary. Second, lightning's allocator hands out
+   any register its liveness analysis believes dead, and it cannot see
+   that an indirect jump out of generated code leaves with the handler
+   contract loaded; the contract registers are therefore declared
+   `jit_live` at every leave, which makes them live along every path back
+   to the entry. On AArch64 this was free luck: lightning's allocation
+   order there begins with x8 and x16-x18, which the backend never uses,
+   so it never reached the JIT_V registers. Third, two registers must
+   stay free for lightning's own temporaries (large immediates, and the
+   fixed operands of x86 shifts, divisions, and high multiplies), because
+   a spill under `jit_tramp` addresses through a frame pointer this build
+   does not maintain. Clang is rejected at configure time: it has no
+   general-purpose global register variables on this target (5.14), so
+   `lightning=yes` implies GCC and `TC_USE_PRESERVE_NONE=0` here.
+
+   Four guest registers is too few to compile anything interesting, so
+   guests that outgrow the budget now stay in the shadow state and are
+   read and written in place instead of failing the trace. The fallback
+   is cheap by construction (a spilled guest read is one `ldxi` where a
+   mapped one is a `movr`, and it adds no scratch pressure) and it also
+   removes an AArch64 ceiling, where traces touching more than eight
+   guests failed to compile at all. On x86-64 it is the difference
+   between 22 and 161 installed traces on a Linux boot.
+
+   The gates then found four defects, three of them architecture-neutral
+   and latent on AArch64 because the shapes that expose them need either
+   the spilled-guest fallback or the boot path to occur:
+
+   - `emit_binary` materialized a non-register left operand into the
+     destination without checking that the right operand was not already
+     living there, so `add rd, rs1, rd` with `rs1` spilled compiled as
+     `rd = rs1 + rs1`. Two ordering hazards of the same family were
+     repaired with it: the memory-access helpers reloaded the host offset
+     before recomputing the address, and the condition helpers evaluated
+     both operands at a depth that let the second clobber the first.
+   - The W-form bodies lost their 32-bit wrap. `value_cast<uint64_t>` of
+     a value the type system already knew was 32 bits wide emitted no
+     node, so `value_cast<uint64_t>(wrapping_add(value_cast<int32_t>(rs1),
+     imm))` kept the full 64-bit sum where RISC-V requires the low 32
+     bits sign-extended. Widening now materializes the narrower type's
+     wrap-around at exactly the point the C++ conversion happens. The bug
+     is invisible until a 32-bit add or multiply overflows, which is why
+     `hash` was the only workload of ten that caught it.
+   - The call-target trim that drops a trace's closing return (item 6)
+     was applied to cyclic traces too. For those the last entry is the
+     instruction that closes the loop, so removing it turned the recorded
+     back-edge into an unconditional one that both skipped the closing
+     branch and retired one instruction per iteration without charging
+     for it. It is now refused for cyclic traces.
+   - Cross-page trace linking remains inexact; see the amendment to item
+     7. It is the one mechanism of this stage that no longer runs by
+     default.
+
+   The bisection switches that found these are retained as environment
+   variables on cold paths (`TC_LIGHTNING_NO_SPILL`, `NO_CYCLE`,
+   `NO_LINK`, `NO_SIDE`, `NO_STRAIGHT`, `NO_FAST`, `TRIM`, `MAX_TRACES`,
+   `DUMP`); the one that would have sat on the trace-entry path is behind
+   `-DTC_LIGHTNING_DEBUG=1`. Isolating a mechanism, then bisecting the
+   trace pool, then bisecting the trace length was what made each of the
+   four tractable; the last one took four instructions of disassembly to
+   read once the length bisection named instruction 63 of a 64-entry
+   trace.
+
+   Measured on Raptor Lake (i9-14900K), GCC 16.1.1, ten stress-ng
+   workloads run for 1 Gi guest cycles each after a 256 Mi boot, median
+   of three repetitions. Fixed guest work makes wall time the only
+   variable, and the root hash at the same mcycle is the gate: all ten
+   workloads and a full boot-to-halt matched the stock build byte for
+   byte on every configuration in the table.
+
+   | workload | stock | pinned TC | + recorder | lightning | vs stock | vs pinned |
+   |---|---:|---:|---:|---:|---:|---:|
+   | sieve | 1.116 | 1.239 | 1.321 | 0.348 | -68.8% | -71.9% |
+   | nop | 0.635 | 0.627 | 0.660 | 0.118 | -81.4% | -81.2% |
+   | memcpy | 1.062 | 1.306 | 1.442 | 0.332 | -68.7% | -74.6% |
+   | hash | 1.146 | 1.304 | 1.369 | 0.721 | -37.1% | -44.7% |
+   | zlib | 1.317 | 1.436 | 1.494 | 0.945 | -28.2% | -34.2% |
+   | regs | 0.804 | 0.876 | 0.863 | 0.632 | -21.4% | -27.9% |
+   | qsort | 1.366 | 1.534 | 1.611 | 1.410 | +3.2% | -8.1% |
+   | branch | 1.139 | 1.209 | 1.210 | 1.192 | +4.7% | -1.4% |
+   | tree | 2.480 | 2.839 | 2.893 | 2.696 | +8.7% | -5.0% |
+   | double | 2.940 | 3.297 | 3.313 | 3.375 | +14.8% | +2.4% |
+   | **total** | **14.005** | **15.667** | **16.176** | **11.769** | **-16.0%** | **-24.9%** |
+
+   That is 767 MIPS aggregate for stock against 912 for the backend, with
+   3.1 GIPS on sieve and 9.1 on nop. Each workload installs 210-270
+   traces with no pool flush and 25-49 patched links.
+
+   Two readings of the table matter more than the aggregate. The backend
+   must ride the pinned tail-call interpreter, which costs +11.9% against
+   stock on this host (consistent with the +8.2% of 5.14 for the pinned
+   GCC shape, on a source three register-budget steps newer), so about
+   twelve of the twenty-five points it wins over its own baseline are
+   spent reaching that baseline; a backend on the argument shape, if the
+   contract could be expressed there, would start from stock instead.
+   And `double` is the honest floor of the whole approach: the backend
+   does not collect floating point, so that workload pays the recorder's
+   few percent and receives nothing, which is the shape every uncovered
+   workload will have until coverage grows.
 
 ## 8c. The register-budget series: filed ideas and the queued campaign
 
@@ -1545,6 +1702,29 @@ defaults, so the campaign measures the shipped shape: the tail-call
 translation unit compiles with -fno-stack-protector, and the pre-load
 default follows the pinned shape alone.
 
+The campaign is currently blocked on the branch, and the block is a
+build error rather than a scheduling one: the argument-passing shape
+does not compile. `TC_HOT_PARAMS` was not carried through the typed fast
+pc of 5.19 in its non-pinned, non-segment form, so the outer loop hands
+the handler three arguments where the signature declares four and passes
+a `host_addr` where it declares `uint64_t`. Every column of the
+two-by-two above except the pinned rows therefore fails to build, and
+`make tailcall=yes` on x86-64, the shipped default for that
+architecture, fails with it. Repairing that signature is the
+prerequisite for the whole campaign and is independent of everything
+else in this document.
+
+One anchor from the campaign's target hardware does exist, taken as a
+by-product of the backend port (8b, item 9): on the i9-14900K under GCC
+16.1.1, the pinned tail-call interpreter measures +11.9% against stock
+over ten workloads at 1 Gi guest cycles each. That is the same sign and
+roughly the same magnitude as 5.14's +8.2% for the pinned GCC shape,
+measured on a source that has since gained the countdown, the six-slot
+accessor, and the typed pc, which is itself the finding: none of the
+register-budget series has yet moved the pinned shape's x86-64 deficit,
+and the shape survives only because the backend needs its register
+contract.
+
 ## 8d. The register ledger
 
 A running summary of the hot-path register evolution, kept up to date as
@@ -1622,14 +1802,41 @@ the old anchors bit for bit). The routine gates for any change are the
 cm-cli spec suite and the six-workload harness; formatting and format
 checks pass.
 
+The x86-64 backend campaign of 8b item 9 used a fixed-work variant of
+the protocol, now checked in as `bench-harness/bench.lua`: each variant
+is built into its own directory, boots to 256 Mi mcycles, then runs a
+further 1 Gi, and the root hash at that exact mcycle is compared across
+variants. Fixed guest work makes wall time the only variable and makes
+the hash gate exact rather than approximate. Two operational notes cost
+time and are worth recording. `cartesi-machine.lua` does not prepend the
+build directory to `package.cpath`, so on a host with the emulator
+installed a bare invocation silently gates and times the *installed*
+library; every invocation must set `LUA_CPATH`. And the online
+recorder's trace pool is a per-thread static that outlives a machine
+object, so each workload must run in its own process or traces recorded
+against one machine's mapping are offered to the next.
+
 Remaining before the experiment can be promoted: the tail-call
 translation unit still fails the project's clang-tidy policy
 (macro-generated handlers, inline assembly, casts, and the
 pinned-register shape, with the lint target also lacking the unit's
 compile flags), the full machine and host/uarch test suites have not
-been run against the flag, and the generated .inc extraction scripts
-and the trace tooling live in a session scratchpad and would need to
-become checked-in tools (the .inc files are one-shot extractions and
-must be regenerated if the stock switch or jump table changes). The
-emutls exit-crash fix in cm.cpp (section 5.13) shipped independently of
-the flag.
+been run against the flag, the x86-64 argument shape does not compile at
+all (section 8c), and the generated .inc extraction scripts and the
+trace tooling live in a session scratchpad and would need to become
+checked-in tools (the .inc files are one-shot extractions and must be
+regenerated if the stock switch or jump table changes). The emutls
+exit-crash fix in cm.cpp (section 5.13) shipped independently of the
+flag.
+
+The backend carries its own promotion list, unchanged in substance by
+the x86-64 port and now with one more entry. It remains an execution
+oracle: recorded code bytes are re-validated only through the code-TLB
+tag at entry and at cross-page boundaries, there is no per-page trace
+membership and therefore no store invalidation, so it is valid for
+gated benchmarks and not for production. Cross-page linking is
+isolated but undiagnosed (8b item 7). Coverage stops at the integer
+instruction families, which the `double` column prices exactly. And the
+x86-64 register contract is at its floor: with four guest registers, one
+more consumer of the register file would have to come out of the
+spilled-guest fallback rather than out of the budget.

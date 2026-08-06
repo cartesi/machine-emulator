@@ -61,7 +61,11 @@ permanently and in proportion to how many were compiled. Neither was
 visible in the emitted code, which is the recurring lesson of this
 experiment's trace work. For scale, a parallel branch pairing the same
 contract with a GNU lightning backend and a further-developed recorder
-reaches -16.0% on the same ten workloads and host.
+reaches -16.0% on the same ten workloads and host. The emitted code has
+since been priced by how often each stencil runs (section 5.22) and is
+close to exhausted as a source of gains; what is left is selection, and
+specifically how little a trace entry achieves on the workloads that
+still lose.
 
 ## 2. Background and motivation
 
@@ -1469,23 +1473,147 @@ now trade: it keeps a wide lead where its recorder covers more (sieve, nop,
 regs), this one wins hash and zlib outright, and it loses less on all four
 workloads neither covers, which is the near-free baseline of 5.20 still paying.
 
-**What the numbers say to do next.** The `stale` counter of 5.20 is now the
-largest identified loss and it is concentrated exactly on the workloads that
-still lose: qsort refuses 32.7M head hits against 5.5M entries, tree 59.2M
-against 17.5M. Splitting the counter settles what 5.20 could not: 99.6% of
-those are `remap`, not a code-TLB miss -- the head is found, the TLB holds its
-page, and the page is a different host page than the one recorded. A head
-installed once, in a context that then almost never runs, monopolizes its pc
-forever, because identity is the pc alone while the thing identified is (pc,
-page).
+**The head consult, and a wrong conclusion drawn from it.** Splitting the
+`stale` counter of 5.20 by cause settled what that section could not: the
+refusals were not code-TLB misses but remaps, 99.6% of them -- the head found,
+the TLB holding its page, and the page a different host page than the one
+recorded. Measured before the key fix above, qsort refused 32.7M head hits
+against 5.5M entries and tree 59.2M against 17.5M, and the obvious reading was
+that identity should be the pair (pc, host page) rather than the pc alone.
+Widening it was tried, broke the hash gate and cost 5%.
 
-Widening identity to the pair was tried and reverted: it broke the hash gate
-and cost 5%. Both are explained by the key bug above -- with the key taken from
-the last instruction, widening the identity admits mis-keyed traces rather than
-separating well-keyed ones. That fix is now in, so the experiment is worth
-repeating, and it needs a policy for how many contexts one head may install
-before the pool gives up on it. That, and not the emitted code, is where the
-next several points are.
+The reading was wrong, and the counter says so once the key fix lands:
+
+| workload | refusals before | refusals after |
+|---|---:|---:|
+| qsort | 32,710,520 | 115,893 |
+| tree | 59,222,115 | 179,872 |
+| double | 15,287,225 | 97,639 |
+
+There was never a second context to separate. A trace keyed by the page of its
+*last* instruction is keyed to a page that mostly did not hold it, so it could
+never match again, and every subsequent arrival at that head was refused
+forever. The refusals were the key bug's shadow, the widening was a fix for a
+problem that did not exist, and it failed for the same reason -- it admitted
+mis-keyed traces instead of separating well-keyed ones. Fixing the key removed
+both. The lesson is the one this section keeps teaching: a counter names a
+symptom, and the symptom had a cause one level down.
+
+**What the numbers say to do next.** With the refusals gone, the limit is how
+much an entry achieves. Trace entries are not scarce on the workloads that
+still lose -- qsort makes six million of them in the measured window -- they
+are just short:
+
+| workload | window entries | window insns | insns per entry | coverage |
+|---|---:|---:|---:|---:|
+| sieve | 4.83M | 891M | 184.3 | 83% |
+| zlib | 23.6M | 757M | 32.0 | 70% |
+| tree | 5.93M | 111M | 18.8 | 10% |
+| qsort | 6.00M | 74.7M | 12.5 | 7% |
+| double | 9.26M | 0.10M | 0.0 | 0% |
+
+Sieve's cyclic trace runs 184 guest instructions per entry; qsort's runs 12.5
+and hands the rest back. The structural reason is that heads are only ever
+created at loop back-edges and call targets, so when a trace exits mid-stream
+execution resumes at a pc that is not a head candidate and can never be
+compiled however hot it becomes. That is 8b item 8's side-trace work, and it is
+worth more than anything remaining in the emitted code. Double is the other
+shape: 9.26M entries retiring 96k instructions, every one of them bailing, for
+which the cheap answer is to stop entering a trace that keeps making no
+progress.
+
+### 5.22 The emitted code, priced by how often it runs
+
+Section 5.20 listed four wastes in a trace body, priced from one disassembled
+trace: three sign extensions, four stray jumps, six pc advances where a block
+needs one, and a runtime re-discrimination of a field known at compile time.
+Weighing them against the whole stencil table, and then against how often each
+stencil actually appears in a compiled trace, changed all four estimates and
+ended the line of work.
+
+Across the table (138 stencils, 9062 bytes) the counts are larger than the
+sample suggested: 64 `cltq` and 7 `movslq`, 135 pc-advance sites, and -- the
+one that matters -- **only 47 of 138 stencils end with their continuation
+jump**, so the fall-through elision that gives copy-and-patch its density fails
+for the other 91. Weighted by compiled steps rather than by stencil, using a
+histogram the compiler now keeps under `TC_JIT_STENCIL_HISTOGRAM`:
+
+| | share of compiled steps |
+|---|---:|
+| stencils that cannot elide | 63-69% |
+| merged multi-encoding cases | 3-7% |
+| `ADDI_rdN`, `LD_rdN` and `SD` together | 40% |
+
+That reordered the work. Three changes were then measured.
+
+**The sign extensions were not worth removing.** They have the same cause as
+the two fixes of 5.21: `execute_arithmetic_immediate` narrows the immediate to
+`int32_t`, so every 64-bit consumer sign-extends it back. Routing the I- and
+S-form immediates through `TC_STENCIL_SEXT` and widening the nine lambdas whose
+arithmetic is genuinely 64-bit -- the W-forms keep `int32_t`, where the
+narrowing is free and their semantics require it -- removed 8 of the 64 and
+cost 0.5% aggregate, with the table growing 134 bytes. `movq $imm32` is the
+same seven bytes as `mov` plus `cltq`, so the whole prize was one instruction
+in a handful of stencils. Reverted.
+
+**The merged-case variants were not worth building.** `ADD_MUL_SUB_rdN` spends
+six instructions re-deciding `funct7` before any work, and because it then has
+three bodies its continuation jump cannot be last -- one defect, not two, and
+splitting the case into one stencil per encoding would fix both. But merged
+cases are 3-7% of compiled steps, so six instructions on 5% of them is under 1%
+of a trace body. The machinery is also not small: `insn_get_id` is
+`insn & 0xffff`, which does not include `funct7`, so these cases are merged
+precisely because the id cannot tell them apart, and `tc_stencil_of_id` cannot
+select a variant. It would need a second level, a per-case selector run on the
+recorded word at compile time. Not built, and the reason is recorded here so it
+is not re-derived.
+
+**The store guard was worth removing.** `SD` is 11.5% of compiled steps and
+carried this:
+
+    mov  $next_delta,%rsi      # a hole: a constant known at patch time
+    cmp  $0x4,%rsi
+    jne  <cold block>
+
+a successor guard comparing a patched constant against itself. Stores are class
+0 in the interpreter's classification, meaning do not pre-decode across me,
+because a store can overwrite the bytes a pre-load already read. That is a
+property of fetching, and a stencil does not fetch -- it carries the words the
+recorder saw. Whether those words are still what the guest would fetch is the
+write-TLB question of 8b item 3, which this guard never answered either way. So
+the classification is right for the interpreter and wrong for the stencil, and
+the stencil generator now overrides it for the thirteen store cases alone.
+Jumps stay class 0; they are class 0 for a second reason that does apply. The
+override list fails the build if a name in it stops naming a case.
+
+| | |
+|---|---|
+| stencil table | 9062 -> 8694 bytes |
+| sieve | 0.557 -> 0.541 (-2.9%) |
+| memcpy | 0.431 -> 0.419 (-2.8%) |
+| aggregate | -16.6% -> **-16.8%** |
+
+**And that is the shape of the whole area.** Three measured changes: +0.5%,
+not worth building, and -0.2%. Removing three instructions from 15% of steps
+buys two tenths of a percent, because on a covered workload the trace body is
+dominated by the TLB guards and the memory operations that cannot be removed,
+and because half the workload set runs almost no compiled code at all. The two
+pieces left -- outlining cold blocks to recover elision on two thirds of steps,
+and deferring the 135 pc advances into a `pc_delta` hole on the exit stub the
+way `K` already rides there -- are each worth about two percent by the same
+arithmetic, for considerably more machinery than any of the above.
+
+One negative result is worth its own sentence because it looks like a
+one-flag fix and is not: elision cannot be recovered by block layout.
+`-freorder-blocks-algorithm=stc`, `-fno-reorder-blocks` and
+`-fno-guess-branch-probability` all produce byte-identical output. The 47
+stencils that elide are exactly those with no cold block at all; any stencil
+with a guard has its cold block sunk to the end, which puts the continuation
+jump in the middle by construction. Recovering it needs the cold block
+outlined, and the useful refinement over 5.20's note is that the block is only
+un-outlinable because it contains the countdown charge -- move that into the
+exit stub, which already carries its own `K` hole, and what remains is a single
+relocated jump the emitter can recognize and relocate.
 
 The remaining soundness item is stores into a page holding a trace, which needs
 the write-TLB refusal described in 8b item 3; until then a guest that modifies
@@ -1798,10 +1926,13 @@ shell cost +66% with tracing idle).
    how many were compiled. The same ten workloads now measure -16.8%,
    against -16.0% for the parallel GNU lightning branch on the same host
    and harness, so the boundary argument of this section is no longer the
-   thing under test. Selection is, and it still holds the largest
-   identified loss: the head consult refuses 32.7M hits on qsort against
-   5.5M entries, because trace identity is the pc alone while the thing
-   identified is the pc together with the host page it was read from.
+   thing under test, and neither is the emitted code: three codegen
+   changes measured +0.5%, not-worth-building and -0.2% (5.22). Selection
+   is what is left. Its shape is now exact rather than suspected: entries
+   are plentiful and short, 12.5 guest instructions per entry on qsort
+   against 184 on sieve, because a head is only ever created at a loop
+   back-edge or a call target and a trace that exits mid-stream resumes
+   somewhere that can never become one. That is item 8.
 
 ## 8c. The register-budget series: filed ideas and the queued campaign
 
@@ -1989,9 +2120,11 @@ was not on that list at all: a trace was keyed by the host page of its
 -- which one-instruction-per-chain recording allows -- was installed
 under a page that did not hold most of its instructions.
 
-The changes of 5.21 were gated to the same standard, with the ten-workload
-harness and a 472M-cycle boot-to-halt, under GCC. Two things they were not
-run against: the cm-cli spec suite, and Clang.
+The changes of 5.21 and 5.22 were gated to the same standard, with the
+ten-workload harness and a 472M-cycle boot-to-halt, under GCC -- including the
+two that were measured and then reverted, which is why they are reported as
+costs rather than as failures. Two things none of them were run against: the
+cm-cli spec suite, and Clang.
 
 The ten-workload measurement of 5.20 uses a fixed-work variant of the
 protocol, `bench-harness/bench.lua`: each variant is built into its own

@@ -29,6 +29,8 @@
 #include <csignal>
 #include <cstring>
 #include <new>
+#include <algorithm>
+#include <vector>
 #if defined(TC_JIT) && TC_JIT
 #include <sys/mman.h>
 #endif
@@ -1117,6 +1119,7 @@ static const void *tc_jit_compile(tc_context<state_access> *c, const tc_online_s
         // it belongs to; an exit here charges exactly what has retired
         op.k = (i < loop_at ? i : i - loop_at) + 1;
         const int16_t s = tc_stencil_of_id[insn_get_id(e.insn)];
+        ++tc_jit_storage.per_stencil[s & 511];
         if (tc_jit_emit(jc, static_cast<uint16_t>(s), op, true) == 0) {
             jc->used = start;
             return nullptr;
@@ -1191,6 +1194,26 @@ __attribute__((destructor)) static void tc_jit_report() {
         static_cast<unsigned long long>(j.stale), static_cast<unsigned long long>(j.stale_miss),
         static_cast<unsigned long long>(j.stale_remap), static_cast<unsigned long long>(j.flushes),
         static_cast<unsigned long long>(j.loops), static_cast<unsigned long long>(j.insns));
+    if (std::getenv("TC_JIT_STENCIL_HISTOGRAM") != nullptr) {
+        static const char *const names[] = {
+#define X(IDX, NAME) #NAME,
+            TC_STENCIL_LIST(X)
+#undef X
+        };
+        uint64_t total = 0;
+        for (uint64_t n : j.per_stencil) {
+            total += n;
+        }
+        std::vector<std::pair<uint64_t, const char *>> v;
+        for (size_t k = 0; k < std::size(names); ++k) {
+            v.emplace_back(j.per_stencil[k], names[k]);
+        }
+        std::sort(v.rbegin(), v.rend());
+        for (size_t k = 0; k < 18 && k < v.size(); ++k) {
+            std::fprintf(stderr, "tc-jit: stencil %-24s %8llu  %5.1f%%\n", v[k].second,
+                static_cast<unsigned long long>(v[k].first), total ? 100.0 * v[k].first / total : 0.0);
+        }
+    }
 #if TC_JIT_COVERAGE
     for (uint32_t k = 0; k < TC_HEAD_SLOTS; ++k) {
         if (j.per_head[k] > (j.entered / 40)) {

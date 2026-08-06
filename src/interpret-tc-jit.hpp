@@ -72,6 +72,7 @@ struct tc_jit_cache {
     uint64_t stale = 0;     ///< Head hits refused because the context changed
     uint64_t stale_miss = 0;///< ...of those, because the code TLB did not hold the page
     uint64_t stale_remap = 0;///< ...of those, because it held a different host page
+    uint64_t per_stencil[512] = {}; ///< compiled steps per stencil, for TC_JIT_STATS
 };
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)

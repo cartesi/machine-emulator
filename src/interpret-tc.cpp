@@ -864,15 +864,6 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
             if (const auto *const successor = tc_online_find(o, predecessor.successor); successor != nullptr) {
                 const bool crosses_page =
                     (predecessor.head >> LOG2_PAGE_SIZE) != (successor->head >> LOG2_PAGE_SIZE);
-                // Cross-page straight links are off by default: with the
-                // generated code-translation node in place, a full Linux boot
-                // charges 22 cycles more than it retires instructions, so the
-                // mechanism is not yet exact. Same-page links, side links and
-                // the register-preserving edge are all gated bit-exact.
-                static const bool cross_page_links = std::getenv("TC_LIGHTNING_XPAGE") != nullptr;
-                if (crosses_page && !cross_page_links) {
-                    continue;
-                }
                 predecessor.link_fn = crosses_page ? successor->call_fn : successor->fn;
                 if (successor->linked_predecessor == &predecessor && tc_lightning_fast_links_enabled()) {
                     predecessor.fast_link_fn = successor->linked_fn;

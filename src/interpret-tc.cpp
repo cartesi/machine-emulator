@@ -429,7 +429,15 @@ static FORCE_INLINE uint64_t tc_jit_code_page(const STATE_ACCESS a, uint64_t vpc
 }
 #endif
 
-template <typename STATE_ACCESS>
+/// \brief Profiling site: update the hotcount, and resolve an installed head.
+/// \details PROBE says whether this site can act on a head if it finds one.
+/// The call sites cannot -- entering a trace from a call would need the
+/// recorded code mapping re-established first, which this backend does not
+/// build, so they discard the result. Asking anyway is not free: the probe
+/// walks the exact map, and on a match it consults the code TLB. Measured on
+/// `double`, 96% of every head match in the run came from a call site that
+/// threw the answer away; on qsort and branch, half.
+template <bool PROBE = true, typename STATE_ACCESS>
 static FORCE_INLINE const void *tc_hook_site(const STATE_ACCESS a, tc_context<STATE_ACCESS> *c, uint64_t vpc,
     uint16_t weight) {
     const uint32_t h = (static_cast<uint32_t>(vpc) >> 1) & (TC_HEAD_SLOTS - 1);
@@ -439,7 +447,8 @@ static FORCE_INLINE const void *tc_hook_site(const STATE_ACCESS a, tc_context<ST
     // some head's pc pays for it, and the common case -- a profiling site with
     // no trace at all -- stops at the first empty slot as before.
     const tc_online_state *o = c->online;
-    if (const uint32_t s = tc_online_find(o, vpc, 0); s != tc_online_state::set_slots) [[unlikely]] {
+    if (const uint32_t s = PROBE ? tc_online_find(o, vpc, 0) : tc_online_state::set_slots;
+        s != tc_online_state::set_slots) [[unlikely]] {
         ++c->hot.entries;
         // Consult the TLB only here, where a head actually matched, so the
         // common path of the hook does not pay for it
@@ -460,7 +469,7 @@ static FORCE_INLINE const void *tc_hook_site(const STATE_ACCESS a, tc_context<ST
         }
     }
 #else
-    if (c->hot.head_pc[h] == vpc) [[unlikely]] {
+    if (PROBE && c->hot.head_pc[h] == vpc) [[unlikely]] {
         ++c->hot.entries;
 #if TC_AOT
         fn = c->hot.head_fn[h];
@@ -489,7 +498,7 @@ static FORCE_INLINE const void *tc_hook_site(const STATE_ACCESS a, tc_context<ST
     ({                                                                                                                 \
         const execute_status tc_call_status = (expr);                                                                  \
         if (tc_call_status == execute_status::success) {                                                               \
-            (void) tc_hook_site(a, tcc, pc_to_virtual(a, pc), 1);                                                                           \
+            (void) tc_hook_site<false>(a, tcc, pc_to_virtual(a, pc), 1);                                                                           \
             TC_ONLINE_CALL_TRIP_RETURN();                                                                              \
         }                                                                                                              \
         tc_call_status;                                                                                                \

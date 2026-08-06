@@ -47,19 +47,20 @@ experiments, entered and left through the stock loop's boundary, was
 A copy-and-patch JIT now compiles what the recorder records, from
 stencils built against the same handler contract, so a trace is entered
 and left by a jump (section 5.20). It is exact over full boots and
-measures -16.8% over ten workloads, as a bimodal result that coverage
+measures -18.0% over ten workloads, as a bimodal result that coverage
 explains completely: -30% to -77% where it executes most of the guest's
 instructions, and a few percent of loss where it executes almost none.
 On x86-64 it rides the argument shape, so unlike every pinned-register
 configuration in this document it starts from parity with stock rather
 than from a deficit, which is why the workloads it cannot help cost so
-little. That figure was -5.6% until two selection bugs were found and
-fixed (section 5.21): the compressed load/store family had been excluded
+little. That figure was -5.6% until three selection
+bugs were found and fixed (sections 5.21 and 5.23): the compressed load/store family had been excluded
 from the compiled set for a misattributed reason, cutting every hot loop
 short at its first `c.lw`, and the head table discarded compiled traces
-permanently and in proportion to how many were compiled. Neither was
-visible in the emitted code, which is the recurring lesson of this
-experiment's trace work. For scale, a parallel branch pairing the same
+permanently and in proportion to how many were compiled, and the
+profiling hook resolved a head at every call site only to throw the
+answer away. None of the three was visible in the emitted code, which is
+the recurring lesson of this experiment's trace work. For scale, a parallel branch pairing the same
 contract with a GNU lightning backend and a further-developed recorder
 reaches -16.0% on the same ten workloads and host. The emitted code has
 since been priced by how often each stencil runs (section 5.22) and is
@@ -1500,27 +1501,37 @@ both. The lesson is the one this section keeps teaching: a counter names a
 symptom, and the symptom had a cause one level down.
 
 **What the numbers say to do next.** With the refusals gone, the limit is how
-much an entry achieves. Trace entries are not scarce on the workloads that
-still lose -- qsort makes six million of them in the measured window -- they
-are just short:
+often a trace is entered at all. Per entry, compiled code runs a long way --
+tens to thousands of guest instructions, everywhere:
 
-| workload | window entries | window insns | insns per entry | coverage |
+| workload | entries in the window | guest insns in traces | per entry | coverage |
 |---|---:|---:|---:|---:|
-| sieve | 4.83M | 891M | 184.3 | 83% |
-| zlib | 23.6M | 757M | 32.0 | 70% |
-| tree | 5.93M | 111M | 18.8 | 10% |
-| qsort | 6.00M | 74.7M | 12.5 | 7% |
-| double | 9.26M | 0.10M | 0.0 | 0% |
+| memcpy | 243,152 | 992M | 4078 | 92% |
+| hash | 3,016,131 | 816M | 271 | 76% |
+| sieve | 4,817,799 | 891M | 185 | 83% |
+| nop | 16,124,854 | 1024M | 64 | 95% |
+| regs | 2,271,932 | 144M | 63 | 13% |
+| tree | 2,890,115 | 111M | 39 | 10% |
+| zlib | 23,253,317 | 757M | 33 | 70% |
+| qsort | 2,715,074 | 74.7M | 28 | 7% |
+| branch | 6,180 | 0.13M | 20 | 0% |
+| double | 4,251 | 0.10M | 23 | 0% |
 
-Sieve's cyclic trace runs 184 guest instructions per entry; qsort's runs 12.5
-and hands the rest back. The structural reason is that heads are only ever
-created at loop back-edges and call targets, so when a trace exits mid-stream
-execution resumes at a pc that is not a head candidate and can never be
-compiled however hot it becomes. That is 8b item 8's side-trace work, and it is
-worth more than anything remaining in the emitted code. Double is the other
-shape: 9.26M entries retiring 96k instructions, every one of them bailing, for
-which the cheap answer is to stop entering a trace that keeps making no
-progress.
+The workloads that lose are not entering short traces; they are barely
+entering any. Branch and double manage four to six thousand entries in a
+thousand million cycles, and pay the profiling shell for all of it. Qsort and
+tree enter a few million times and each entry runs a respectable 28 to 39
+instructions -- there are simply not enough entries to cover the workload.
+
+The structural reason is the same either way: heads are only ever created at
+loop back-edges and call targets, so when a trace exits mid-stream execution
+resumes at a pc that is not a head candidate and can never become one however
+hot it gets. Raising coverage means creating heads where traces actually end,
+which is 8b item 8's side-trace work, and it is worth more than anything
+remaining in the emitted code.
+
+(The first version of this table divided by the wrong denominator and read the
+opposite way round -- see 5.23, which is about how that happened.)
 
 ### 5.22 The emitted code, priced by how often it runs
 
@@ -1614,6 +1625,68 @@ outlined, and the useful refinement over 5.20's note is that the block is only
 un-outlinable because it contains the countdown charge -- move that into the
 exit stub, which already carries its own `K` hole, and what remains is a single
 relocated jump the emitter can recognize and relocate.
+
+### 5.23 A counter that did not mean what it was named
+
+The measurement in 5.21 said that trace entries were plentiful and short, and
+that double made 9.26M of them retiring 96k instructions between them -- one
+useful entry in a hundred. The remedy that reading suggested is obvious: count
+entries that retire nothing, and stop resolving a head that keeps producing
+them. It was built, and it fired four times in a full run.
+
+`entered` counts head *matches*, not entries. The call sites call the profiling
+hook and discard its result -- entering a trace from a call would need the
+recorded code mapping re-established first, which this backend does not build
+-- but the hook still resolves the head before the result is thrown away. So
+double's 9.26M "entries" were 96% call-site matches that never entered
+anything, and the per-entry figures computed from them were wrong by that
+factor. Instrumenting the exit continuation separated the two:
+
+| workload | head matches | entries | matches discarded |
+|---|---:|---:|---:|
+| double | 11,757,218 | 426,856 | 96.4% |
+| qsort | 7,629,609 | 3,574,275 | 53.2% |
+| branch | 952,011 | 466,650 | 51.0% |
+| zlib | 28,789,762 | 27,889,191 | 3.1% |
+
+Which turns the diagnosis inside out twice over. There was no epidemic of
+futile entries, so the counter built to catch them had nothing to catch. And
+the real waste was not in the entries but in the matches: resolving a head
+walks the exact map and, when it matches, consults the code TLB, and on double
+that ran 11.8M times for an answer no caller could use.
+
+The fix is that the hook now takes a template parameter saying whether the site
+can act on a head, and the call sites say no and get the hotcount alone. The
+gain lands exactly where the discarded fraction is highest, which is the check
+that the attribution is right:
+
+| workload | before | after | |
+|---|---:|---:|---:|
+| double | 3.187 | 3.057 | -4.1% |
+| regs | 0.776 | 0.763 | -1.7% |
+| tree | 2.585 | 2.549 | -1.4% |
+| qsort | 1.435 | 1.419 | -1.1% |
+| **aggregate** | **-16.7%** | **-18.0%** | **-1.5%** |
+
+Double moves from +6.7% against stock to +2.3%, the largest single-row change
+of the campaign, on the row that had been the worst. The counter now also means
+what its name says: with the call sites no longer probing, a match is an entry.
+
+Two things are left behind rather than fixed. The futile-entry machinery was
+reverted -- it cost a store on the entry path and unlinked four heads -- though
+it may be worth revisiting if side traces ever make entries numerous and short,
+which is what 5.21 wrongly thought they already were. And calls not entering
+traces is now a quantified gap rather than an implementation detail: half of
+qsort's and branch's head matches are at call sites whose heads are installed
+and would be reachable if the code mapping were re-established at entry. That
+is the same machinery cross-page side traces will need, so it belongs with item
+8 rather than on its own.
+
+The lesson is the same one 5.21 recorded and did not manage to apply to itself:
+a counter names a symptom, and this time the symptom was an artifact of the
+counter. The two conclusions drawn from it -- in 5.21 and here -- were both
+wrong in the same direction, and both were caught by measuring the thing itself
+rather than the proxy.
 
 The remaining soundness item is stores into a page holding a trace, which needs
 the write-TLB refusal described in 8b item 3; until then a guest that modifies
@@ -1928,11 +2001,13 @@ shell cost +66% with tracing idle).
    and harness, so the boundary argument of this section is no longer the
    thing under test, and neither is the emitted code: three codegen
    changes measured +0.5%, not-worth-building and -0.2% (5.22). Selection
-   is what is left. Its shape is now exact rather than suspected: entries
-   are plentiful and short, 12.5 guest instructions per entry on qsort
-   against 184 on sieve, because a head is only ever created at a loop
-   back-edge or a call target and a trace that exits mid-stream resumes
-   somewhere that can never become one. That is item 8.
+   is what is left, and at -18.0% its shape is finally measured rather
+   than inferred (5.23): compiled code runs 28 to 4078 guest instructions
+   per entry on every workload, so entries are long everywhere and the
+   losing workloads simply do not get enough of them -- branch and double
+   manage a few thousand in a thousand million cycles. A head is only ever
+   created at a loop back-edge or a call target, and a trace that exits
+   mid-stream resumes somewhere that can never become one. That is item 8.
 
 ## 8c. The register-budget series: filed ideas and the queued campaign
 
@@ -2120,9 +2195,9 @@ was not on that list at all: a trace was keyed by the host page of its
 -- which one-instruction-per-chain recording allows -- was installed
 under a page that did not hold most of its instructions.
 
-The changes of 5.21 and 5.22 were gated to the same standard, with the
+The changes of 5.21, 5.22 and 5.23 were gated to the same standard, with the
 ten-workload harness and a 472M-cycle boot-to-halt, under GCC -- including the
-two that were measured and then reverted, which is why they are reported as
+three that were measured and then reverted, which is why they are reported as
 costs rather than as failures. Two things none of them were run against: the
 cm-cli spec suite, and Clang.
 

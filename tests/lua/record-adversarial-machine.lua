@@ -75,7 +75,7 @@ local cases = {
         tag = "unsupported_hash_function",
         mutate = function(log)
             log.hash_function = 99
-        end, -- not keccak=0 / sha256=1
+        end,
     },
     {
         tag = "nonzero_scratch_hash",

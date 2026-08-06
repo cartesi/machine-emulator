@@ -1,47 +1,18 @@
--- uarch-cycle-profile.lua -- attribute one mcycle's uarch cycles to ELF symbols
+#!/usr/bin/env lua5.4
+
+-- Copyright Cartesi and individual authors (see AUTHORS)
+-- SPDX-License-Identifier: Apache-2.0
 --
--- PURPOSE
---   Answers "where do the uarch cycles of machine cycle N go?" by stepping the
---   microarchitecture one cycle at a time, reading uarch_pc before each cycle, and
---   bucketing the executed instruction into the ELF symbol that contains that pc.
---   Its motivating use: sizing what an ISA change (e.g. RV64I -> RV64IM) would save,
---   by reporting how many cycles sit inside the compiler's soft-multiply/divide
---   runtime (__muldi3, __udivdi3, __multi3, ...), which the M extension collapses
---   into single instructions. Also useful for any hot-spot hunt in the uarch build.
+-- Attributes one mcycle's uarch cycles to ELF symbols, by stepping the uarch one
+-- cycle at a time and bucketing uarch_pc into the containing `nm` symbol. The
+-- summary line counts the cycles inside the soft mul/div runtime (__muldi3 and
+-- friends), an upper bound on what the M extension would save for this mcycle.
 --
--- USAGE
---   source ~/ctsi2/setup-env.env && eval "$(luarocks path)" && eval $(make env)
---   lua5.4 tools/uarch-cycle-profile.lua <program.bin> <mcycle> [top_n] [elf]
---     program.bin  a bare-metal machine RAM image (tests/build/machine/*.bin)
---     mcycle       the machine cycle to profile (the uarch then interprets exactly
---                  this one mcycle; pick candidates from a cycle-count sweep such
---                  as .claude/benches/mcycle-corpus.csv, columns program,mcycle,cycles)
---     top_n        symbols to list individually (default 25)
---     elf          uarch ELF with symbols (default ../uarch/uarch-ram.elf relative
---                  to solidity-step/, i.e. run from the solidity-step directory)
---
--- HOW IT WORKS (for reproducing variants)
---   1. Symbols come from `nm --demangle --defined-only <elf>`, keeping text-ish
---      kinds (T/t/W/w), sorted by address; a pc belongs to the nearest symbol at
---      or below it. The uarch ELF is linked at its runtime base (RAM 0x600000),
---      so uarch_pc values map straight onto nm addresses -- verify this holds by
---      checking the "unmapped pc" bucket stays ~0.
---   2. machine:run(mcycle) advances the machine NATIVELY (fast) to just before the
---      target mcycle; machine:run_uarch(k) then executes uarch cycles up to k.
---      Stepping k = 1, 2, 3, ... executes one uarch cycle per call; uarch_pc read
---      before each call is the instruction that cycle executes.
---   3. The loop ends when uarch_halt is set (the uarch signals mcycle done).
---
--- OUTPUT
---   One line per symbol (cycles, %, name), descending, then a summary line
---   "soft mul/div cycles" counting every symbol matching the libgcc/compiler-rt
---   integer helpers (__muldi3 __divdi3 __udivdi3 __moddi3 __umoddi3 and their
---   128-bit ti3 forms): that number is the theoretical maximum M-extension win
---   for this mcycle (an upper bound: with M each call site still spends a few
---   cycles on the mul/div instruction itself and argument setup).
---
--- COST: native run to the target mcycle plus ~2 FFI calls per uarch cycle;
--- an 18k-cycle mcycle profiles in seconds.
+-- Usage: lua5.4 tools/uarch-cycle-profile.lua <program.bin> <mcycle> [top_n] [elf]
+--   program.bin  a bare-metal machine RAM image (tests/build/machine/*.bin)
+--   mcycle       the machine cycle to profile
+--   top_n        symbols to list individually (default 25)
+--   elf          uarch ELF with symbols (default ../uarch/uarch-ram.elf)
 
 local cartesi = require("cartesi")
 

@@ -143,12 +143,12 @@ static inline uint64 readHtifTohost(State &a) {
 // The revert root hash is a 32-byte machine hash stored raw in its dedicated shadow slot. The page
 // model hashes the bytes as-is, so the write must produce the same page bytes across all replayers.
 static constexpr uint64 REVERT_ROOT_HASH_LENGTH = 32;
+static constexpr uint64 REVERT_ROOT_HASH_LOG2_LENGTH = 5;
 
 template <typename State>
 static inline void writeRevertRootHash(State &a, bytes32 revertRootHash) {
-    // The step recorder supports padded-memory writes, not raw write_memory. A 32-byte (2^5) write
-    // fills the shadow slot exactly with no padding, landing the hash bytes in their page verbatim.
-    a.write_memory_with_padding(AR_SHADOW_REVERT_ROOT_HASH_START, revertRootHash.data(), REVERT_ROOT_HASH_LENGTH, 5);
+    a.write_memory_with_padding(AR_SHADOW_REVERT_ROOT_HASH_START, revertRootHash.data(), REVERT_ROOT_HASH_LENGTH,
+        REVERT_ROOT_HASH_LOG2_LENGTH);
 }
 
 template <typename State>
@@ -256,10 +256,8 @@ static inline bool isYieldedManualWith(uint64 tohost, uint64 yieldReason) {
     return dev == HTIF_DEV_YIELD && cmd == HTIF_YIELD_CMD_MANUAL && reason == yieldReason;
 }
 
-// Throws (not asserts) so the replay rejects a bad log identically under every build flag.
-// The transpiled Solidity emits a native require that always reverts; an assert here would be
-// compiled out under NDEBUG, letting a release C++ replayer accept a log the on-chain verifier
-// rejects (e.g. a misaligned uarch pc). Host-only header, so throwing is always available.
+// Must reject under every build flag: the transpiled Solidity require always reverts, so this
+// cannot be an assert (compiled out under NDEBUG).
 template <typename T1, typename T2>
 void require(T1 condition, T2 message) {
     if (!condition) {

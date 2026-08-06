@@ -27,35 +27,29 @@
 -- only because the recorder controls the unit and emits no CSV-breaking byte
 -- (comma, newline, or quote).
 
+local cartesi = require("cartesi")
+
 local M = {}
 
 M.MANIFEST_NAME = "_manifest.csv"
 M.HEADER = "kind,name,expectError,hashFunction,requestedCycleCount,rootHashBefore,rootHashAfter,reason,"
     .. "dataLength,data,revertRootHash\n"
 
-local function hexhash(h)
-    return (h:gsub(".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
-end
-
--- Columns inapplicable to a kind stay blank. revert_root_hash is the value written to the
--- revert-root-hash shadow slot (cmio + reset rows). expect_error names the rejection a corrupt
--- fixture must trigger (the reject fixtures); blank means the log must replay successfully.
+-- Columns inapplicable to a kind stay blank.
 function M.format_row(ctx)
     return string.format(
-        "%s,%s,%s,%s,%d,0x%s,0x%s,%s,%s,%s,%s\n",
+        "%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s\n",
         ctx.kind,
         ctx.name,
         ctx.expect_error or "",
         ctx.hash_function,
         ctx.requested_cycle_count,
-        hexhash(ctx.initial_root_hash),
-        hexhash(ctx.final_root_hash),
+        cartesi.tohex(ctx.initial_root_hash),
+        cartesi.tohex(ctx.final_root_hash),
         ctx.reason and tostring(ctx.reason) or "",
         ctx.data_length and tostring(ctx.data_length) or "",
         ctx.data or "",
-        ctx.revert_root_hash and ("0x" .. hexhash(ctx.revert_root_hash)) or ""
+        ctx.revert_root_hash and cartesi.tohex(ctx.revert_root_hash) or ""
     )
 end
 

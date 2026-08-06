@@ -284,7 +284,6 @@ local function step_uarch(machine)
     os.remove(filename)
 end
 
--- Binary step log helpers (definitions in cartesi.tests.util).
 local read_step_log_file = tests_util.read_step_log_file
 local copy_step_log = tests_util.copy_step_log
 

@@ -184,8 +184,6 @@ public:
     machine_hash finish(bool revert_on_rejected_yield = true) {
         machine_hash obtained_root_hash{};
         if (revert_on_rejected_yield && is_rejected_manual_yield(*this)) {
-            // Revert substitutes the recorded root instead of recomputing it; still assert no node was
-            // left unconsumed (compute_root_hash makes this assertion on the non-reverted path).
             m_context.log.check_all_nodes_consumed();
             obtained_root_hash = read_revert_root_hash();
         } else {

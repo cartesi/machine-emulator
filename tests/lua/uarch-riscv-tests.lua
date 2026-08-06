@@ -122,9 +122,6 @@ and command can be:
     is one log per whole test (batched); pass --per-cycle-logs to emit one log
     per cycle instead. Writes <output-dir>/_manifest.csv with program rows
     (batched mode) or per-test subdirectories with cycle manifests (per-cycle).
-
-  (uarch reset and send_cmio_response fixtures are machine-level dispute operations,
-   not uarch instruction steps; see tests/lua/record-send-cmio-response.lua and record-reset-uarch.lua)
 ]=],
         arg[0]
     ))
@@ -361,10 +358,6 @@ local function step_log_file_name(test_name)
     return test_name .. ".log"
 end
 
--- Manifest schema + parallel-fragment helpers live in cartesi.tests.step_log_manifest
--- (shared with the machine-level generator). The cmio `data` column stays ASCII;
--- see that module for the CSV-safety contract.
-
 -- Records a step log for one uarch test. Mutates ctx with the captured
 -- root hashes; self-checks the recorded log via verify_step_uarch.
 local function record_test_step_log(machine, ctx)
@@ -430,10 +423,6 @@ local function record_per_cycle_step_logs(ram_image, ctx)
     ctx.per_cycle_dir = per_cycle_dir
     ctx.actual_cycle_count = cycle
 end
-
--- uarch reset and send_cmio_response are machine-level dispute operations, not uarch
--- instruction steps; their fixtures come from tests/lua/record-send-cmio-response.lua
--- and record-reset-uarch.lua.
 
 -- Record one binary step log per uarch test into <output_dir>. Granularity
 -- chosen by --per-cycle-logs: default writes one log per whole test (batched);
@@ -532,13 +521,11 @@ local function verify(tests)
             uarch_run_success = false,
         }
         local machine <close> = build_machine(ctx.ram_image)
-        record_test_step_log(machine, ctx) -- records the log and self-checks it via verify_step_uarch
+        record_test_step_log(machine, ctx)
         check_test_result(machine, ctx)
         os.remove(output_dir .. "/" .. ctx.log_file)
     end)
-    -- Each worker removed its own log, so the temp dir is now empty: os.remove drops it (a plain
-    -- rmdir, no recursion). A failed worker may leave its log behind; leaking the temp dir is
-    -- acceptable -- recorders never recursively delete.
+    -- plain rmdir; a failed worker may leave its log behind, leaking the temp dir
     os.remove(output_dir)
     if failures ~= nil then
         if failures > 0 then

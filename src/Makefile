@@ -268,6 +268,26 @@ ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
 TC_FFIXED_FLAGS=-ffixed-x23 -ffixed-x24 -ffixed-x25 -ffixed-x27
 endif
 endif
+# Copy-and-patch JIT (tail-call.md section 5.20), on top of the tail-call loop.
+# It compiles what the online recorder records, so it turns that on as well.
+#
+# A stencil is code compiled once and then copied into a trace, so what it may
+# assume about registers is the whole design, and preserve_none is what the
+# technique assumes: the state stays in argument registers across every tail
+# call and nothing spills at a boundary. On AArch64 that composes with the
+# pinned globals (the pinned set starts at x23 precisely to leave x20-x22 for
+# the arguments), so the default shape already carries it. On x86-64 it cannot:
+# preserve_none's argument registers are r12-r15, which is the pinned set
+# itself, and the source rejects the combination. There the argument-passing
+# shape is the one that gets the convention, so the JIT selects it.
+ifeq ($(jit),yes)
+INTERPRET_CXXFLAGS+=-DTC_JIT=1 -DTC_ONLINE=1
+ifneq (,$(filter x86_64 amd64,$(shell uname -m)))
+INTERPRET_CXXFLAGS+=-DTC_GLOBAL_REGS=0 -DTC_USE_PRESERVE_NONE=1
+else
+INTERPRET_CXXFLAGS+=-DTC_GLOBAL_REGS=1
+endif
+endif
 endif
 
 # Make testing new optimization options easier
@@ -281,6 +301,33 @@ INTERPRET_CXXFLAGS+=$(MYINTERPRET_CXXFLAGS)
 # Adding the flag to the stock loop instead costs Clang's stock build
 # measurably by perturbing its register allocation.
 TC_INTERPRET_CXXFLAGS=$(INTERPRET_CXXFLAGS) $(TC_FFIXED_FLAGS) -fno-stack-protector
+
+# The stencil translation unit is compiled to be mined by
+# ../tools/gen-tc-stencils.lua and is never linked, which is what lets it take
+# flags a shared library could not. It must see exactly the interpreter flags
+# above, because a stencil is only relocatable into a chain compiled against the
+# identical handler contract; the rest is what makes its code copyable:
+#   -fno-pic                          no operand reaches its use through a GOT,
+#                                     so every reference is a hole we can patch
+#   -ffunction-sections               a call between two functions of one
+#   -fno-reorder-blocks-and-partition section needs no relocation and would copy
+#                                     into a trace as a wild branch; separate
+#                                     sections turn those calls into relocations
+#                                     the extractor rejects, and keep each
+#                                     stencil one contiguous body
+#   -fomit-frame-pointer              a stencil is a leaf with no calls
+#   -fno-asynchronous-unwind-tables   nothing unwinds through copied code
+OBJDUMP?=objdump
+
+TC_STENCIL_CXXFLAGS=$(TC_INTERPRET_CXXFLAGS) -fno-pic -ffunction-sections \
+	-fomit-frame-pointer -fno-asynchronous-unwind-tables
+ifneq (,$(findstring gcc,$(CC)))
+# Cold-block partitioning would split a stencil across two sections, and
+# identical-code folding (LBU and LB when the destination is x0) would replace
+# one body with a jump to the other; a copied stencil has to be whole.
+# Clang does neither at -O2 and has no spelling for these.
+TC_STENCIL_CXXFLAGS+=-fno-reorder-blocks-and-partition -fno-ipa-icf
+endif
 
 # Link time optimizations
 ifeq ($(lto),yes)
@@ -326,7 +373,9 @@ PGO_WORKLOAD=\
 	dhrystone 5000000; \
 	whetstone 25000
 
-LINTER_IGNORE_SOURCES=
+# The stencil unit is mined, not linked, and clang-tidy would need its
+# whole flag set (-fno-pic, the reservations) to even parse it as built
+LINTER_IGNORE_SOURCES=interpret-tc-stencils.cpp
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
 
 CLANG_TIDY=clang-tidy
@@ -337,7 +386,7 @@ CLANG_FORMAT=clang-format
 CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp) $(wildcard ../uarch/*.h) $(wildcard ../uarch/*.hpp)
 CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UARCH_FILES)))
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
-CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.hpp
+CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.hpp interpret-tc-stencils.inc interpret-tc-stencil-cases.inc
 CLANG_FORMAT_FILES:=$(strip $(CLANG_FORMAT_FILES))
 CLANG_FORMAT_FILES:=$(filter-out $(CLANG_FORMAT_IGNORE_FILES),$(strip $(CLANG_FORMAT_FILES)))
 
@@ -644,9 +693,36 @@ interpret-jump-table.hpp: ../tools/gen-interpret-jump-table.lua
 interpret.o: interpret.cpp cm-version.h interpret-jump-table.hpp
 	$(CXX) $(CXXFLAGS) $(INTERPRET_CXXFLAGS) -c -o $@ $<
 
+ifeq ($(jit),yes)
+TC_JIT_DEPS=interpret-tc-stencils.inc
+endif
+
 interpret-tc.o: interpret-tc.cpp interpret.cpp cm-version.h interpret-jump-table.hpp \
-		interpret-tc-cases.inc interpret-tc-table.inc
+		interpret-tc-cases.inc interpret-tc-table.inc $(TC_JIT_DEPS)
 	$(CXX) $(CXXFLAGS) $(TC_INTERPRET_CXXFLAGS) -c -o $@ $<
+
+interpret-tc-stencil-cases.inc: interpret-tc-cases.inc ../tools/gen-tc-stencil-cases.lua
+	../tools/gen-tc-stencil-cases.lua $< > $@ || { $(RM) $@; false; }
+
+# Mined, not linked: interpret-tc-stencils.o exists only as input to the extractor
+interpret-tc-stencils.o: interpret-tc-stencils.cpp interpret.cpp cm-version.h \
+		interpret-jump-table.hpp interpret-tc-abi.hpp interpret-tc-stencil-cases.inc
+	$(CXX) $(CXXFLAGS) $(TC_STENCIL_CXXFLAGS) -c -o $@ $<
+
+interpret-tc-stencils.inc: interpret-tc-stencils.o interpret-tc-table.inc ../tools/gen-tc-stencils.lua
+	../tools/gen-tc-stencils.lua $< interpret-tc-table.inc > $@ || { $(RM) $@; false; }
+
+# Every prior step of this experiment was settled by reading the generated code,
+# so make that cheap: the size of each stencil in bytes and in instructions, and
+# how many patch sites it carries, worst first.
+stencil-report: interpret-tc-stencils.o interpret-tc-stencils.inc
+	@printf '%-24s %6s %6s %6s\n' STENCIL BYTES INSNS HOLES; \
+	sed -n 's/^    {[0-9]*, \([0-9]*\), [0-9]*, \([0-9]*\)}, \/\/ \(.*\)$$/\3 \1 \2/p' \
+		interpret-tc-stencils.inc | while read -r name bytes holes; do \
+		insns=$$($(OBJDUMP) -d --section=.text.tc_stencil_$$name interpret-tc-stencils.o 2>/dev/null \
+			| grep -cE '^\s+[0-9a-f]+:'); \
+		printf '%-24s %6s %6s %6s\n' "$$name" "$$bytes" "$$insns" "$$holes"; \
+	done | sort -k2 -nr
 
 keccak-256-hasher.o: keccak-256-hasher.cpp
 	$(CXX) $(CXXFLAGS) $(HASH_CFLAGS) -c -o $@ $<
@@ -677,7 +753,7 @@ endif
 clean: clean-auto-generated clean-coverage clean-profile clean-tidy clean-libcartesi clean-executables
 
 clean-auto-generated:
-	@rm -f jsonrpc-discover.cpp cm-version.h interpret-jump-table.hpp
+	@rm -f jsonrpc-discover.cpp cm-version.h interpret-jump-table.hpp interpret-tc-stencils.inc interpret-tc-stencils.o interpret-tc-stencil-cases.inc
 
 clean-tidy:
 	@rm -f *.clang-tidy

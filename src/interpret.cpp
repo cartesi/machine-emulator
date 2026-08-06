@@ -428,7 +428,7 @@ static NO_INLINE i_state_access_fast_addr_t<STATE_ACCESS> raise_exception(const 
 #endif
         if (flag) {
             [[maybe_unused]] auto dnote = a.make_scoped_note("dump_exception");
-            const auto a7 = a.read_x(17);
+            const auto a7 = a.read_x(TC_XREG(17));
             d_printf("raise_exception: cause=0x%016" PRIx64, cause);
             d_printf(" tval=0x%016" PRIx64 " (", tval);
             dump_exception_or_interrupt(cause, a7);
@@ -889,6 +889,112 @@ static FORCE_INLINE int32_t insn_get_C_SWSP_imm(uint32_t insn) {
     return static_cast<int32_t>(((insn >> (9 - 2)) & 0x3c) | ((insn >> (7 - 6)) & 0xc0));
 }
 
+/// \brief Names a general-purpose register by its index.
+/// \details The compressed stack forms and the link-value writes name a
+/// register outright rather than reading a field for it. In the stencil unit a
+/// register is selected by byte offset (see state_access::do_read_x), so those
+/// literals have to be scaled like any other operand; everywhere else this is
+/// the index itself.
+#if defined(TC_STENCIL_TU)
+#define TC_XREG(i) ((i) * static_cast<reg_index>(sizeof(uint64_t)))
+#else
+#define TC_XREG(i) (i)
+#endif
+
+#if defined(TC_STENCIL_TU)
+// Copy-and-patch operand holes (see interpret-tc-stencils.cpp and tail-call.md
+// section 5.20). In the stencil translation unit an operand field does not come
+// from the instruction word: it is an undefined symbol whose *value* the linker
+// would supply and whose relocation the stencil extractor records as a patch
+// site instead, so the compiler folds it as a link-time constant into an
+// addressing displacement or an immediate and the JIT writes the recorded
+// instruction's operand straight into the machine code. Register fields carry a
+// byte offset rather than an index, which is what lets them fold (see
+// state_access::do_read_x).
+//
+// Only the operand getters are hijacked. The structural getters (funct3,
+// funct7, rm and kin) keep reading the instruction word, which is itself the
+// tc_h_insn hole, so a case serving several encodings still discriminates
+// exactly as the interpreter does: copy-and-patch substitutes values, it does
+// not constant-fold, and correctness must not depend on folding.
+//
+// These macros shadow the getters for every execute_* body defined below. This
+// unit is compiled to be mined for machine code and is never linked; the stock
+// loop it also defines is never instantiated.
+// There is exactly one hole per getter, and that is the point: the JIT fills a
+// hole by calling the very getter it stands for on the recorded word (see
+// tc_jit_hole_value). No table maps cases to immediate formats, so no such
+// table can fall out of step with the encodings -- the correspondence is the
+// name itself. Register holes carry index * sizeof(uint64_t), the byte offset
+// their stencil folded into an addressing displacement.
+//
+// TC_STENCIL_HOLE and TC_STENCIL_OPERAND are used by interpret-tc-stencils.cpp
+// as well, for the holes that are not instruction fields at all.
+// NOLINTBEGIN(cppcoreguidelines-macro-usage)
+extern "C" char tc_h_insn[], tc_h_rd[], tc_h_rs1[], tc_h_rs2[], tc_h_c_rd_rs2[], tc_h_c_rs1[], tc_h_c_rs2[],
+    tc_h_imm_i[], tc_h_imm_iu[], tc_h_imm_u[], tc_h_imm_b[], tc_h_imm_j[], tc_h_imm_s[], tc_h_imm_cj[],
+    tc_h_imm_cbeqz[], tc_h_imm_clcs[], tc_h_imm_cicb[], tc_h_imm_cicbse[], tc_h_imm_clw[], tc_h_imm_clsb[],
+    tc_h_imm_clsh[], tc_h_imm_ciw[], tc_h_imm_caddi16sp[], tc_h_imm_clui[], tc_h_imm_cldsp[], tc_h_imm_clwsp[],
+    tc_h_imm_csdsp[], tc_h_imm_cswsp[];
+#define TC_STENCIL_HOLE(sym) (reinterpret_cast<uint64_t>(sym))
+// A signed hole, materialized in one instruction whose encoding we choose.
+// Left to the compiler this is two instructions (a 32-bit load of the symbol
+// then a sign extension), and worse, which extension it picks depends on it
+// believing the symbol is an address and therefore positive -- a Clang build
+// picked the zero-extending form and turned every backward branch offset into a
+// large positive number. Naming the instruction settles both: movq $imm32 is
+// one instruction and sign-extends by definition, so the patched value may be
+// negative and no compiler gets a say.
+#define TC_STENCIL_SEXT(sym)                                                                                           \
+    (__extension__({                                                                                                   \
+        int64_t tc_sv_;                                                                                                 \
+        __asm__("movq $" #sym ", %0" : "=r"(tc_sv_));                                                                   \
+        tc_sv_;                                                                                                         \
+    }))
+// Consume the argument so the getters keep their signatures' warning behavior
+#define TC_STENCIL_OPERAND(insn, sym) (((void) (insn)), TC_STENCIL_HOLE(sym))
+// Signed operands stay narrowed to int32_t on purpose, even though widening
+// them folds the add into a displacement and saves two instructions. The hole
+// carries the low 32 bits of a value that may be negative, and only the code
+// around it decides whether those bits are sign- or zero-extended: GCC picked a
+// sign-extending form and Clang a zero-extending one, which turned every
+// backward branch offset into a huge positive number and trapped the guest.
+// The cast puts the sign extension in the source, where it does not depend on
+// which encoding a compiler prefers. Measured, the folding was worth under 1%.
+// Register fields keep their full width: narrowing a relocated value to
+// uint32_t forces the compiler to materialize and re-extend it, which is
+// exactly the fold the byte offset exists to get (three instructions instead
+// of none). reg_index is uint64_t here, so nothing truncates on the way in.
+#define insn_get_rd(insn) (TC_STENCIL_OPERAND(insn, tc_h_rd))
+#define insn_get_rs1(insn) (TC_STENCIL_OPERAND(insn, tc_h_rs1))
+#define insn_get_rs2(insn) (TC_STENCIL_OPERAND(insn, tc_h_rs2))
+#define insn_get_CIW_CL_rd_CS_CA_rs2(insn) (TC_STENCIL_OPERAND(insn, tc_h_c_rd_rs2))
+#define insn_get_CL_CS_CA_CB_rs1(insn) (TC_STENCIL_OPERAND(insn, tc_h_c_rs1))
+#define insn_get_CR_CSS_rs2(insn) (TC_STENCIL_OPERAND(insn, tc_h_c_rs2))
+#define insn_I_get_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_i)))
+#define insn_I_get_uimm(insn) (static_cast<uint32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_iu)))
+#define insn_U_get_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_u)))
+#define insn_B_get_imm(insn) (((void) (insn)), TC_STENCIL_SEXT(tc_h_imm_b))
+#define insn_J_get_imm(insn) (((void) (insn)), TC_STENCIL_SEXT(tc_h_imm_j))
+#define insn_S_get_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_s)))
+#define insn_get_C_J_imm(insn) (((void) (insn)), TC_STENCIL_SEXT(tc_h_imm_cj))
+#define insn_get_C_BEQZ_BNEZ_imm(insn) (((void) (insn)), TC_STENCIL_SEXT(tc_h_imm_cbeqz))
+#define insn_get_CL_CS_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clcs)))
+#define insn_get_CI_CB_imm(insn) (static_cast<uint32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_cicb)))
+#define insn_get_CI_CB_imm_se(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_cicbse)))
+#define insn_get_C_LW_C_SW_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clw)))
+#define insn_get_C_LS_B_uimm(insn) (static_cast<uint32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clsb)))
+#define insn_get_C_LS_H_uimm(insn) (static_cast<uint32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clsh)))
+#define insn_get_CIW_imm(insn) (static_cast<uint32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_ciw)))
+#define insn_get_C_ADDI16SP_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_caddi16sp)))
+#define insn_get_C_LUI_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clui)))
+#define insn_get_C_FLDSP_LDSP_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_cldsp)))
+#define insn_get_C_LWSP_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_clwsp)))
+#define insn_get_C_FSDSP_SDSP_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_csdsp)))
+#define insn_get_C_SWSP_imm(insn) (static_cast<int32_t>(TC_STENCIL_OPERAND(insn, tc_h_imm_cswsp)))
+// NOLINTEND(cppcoreguidelines-macro-usage)
+#endif // TC_STENCIL_TU
+
 /// \brief Flushes out a TLB slot
 /// \tparam USE TLB set
 /// \tparam STATE_ACCESS Class of machine state accessor object.
@@ -1056,6 +1162,19 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, i_state_acces
     // Try hitting the TLB
     const auto slot_index = tlb_slot_index(vaddr);
     auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
+#if defined(TC_STENCIL_TU)
+    (void) pc;
+    (void) mcycle;
+    // A stencil consults the TLB and nothing else. Every other outcome -- an
+    // uninitialized slot, a real miss, a misalignment (which tlb_is_hit folds
+    // into the same compare), a fault -- is a call, and a stencil may contain
+    // none. It reports the miss instead, and because nothing has been written
+    // yet the trace side-exits and the interpreter re-executes this instruction
+    // from scratch, taking the page walk, the refill and the raise itself.
+    if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
+        return false;
+    }
+#else
     if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
         // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
         // slot it uses to check for hits and to perform the translation itself.
@@ -1090,6 +1209,7 @@ static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, i_state_acces
         pc = new_pc;
         return status;
     }
+#endif
     // Now we finally know we have a verified hit
     const auto pma_index = a.template read_tlb_pma_index<TLB_READ>(slot_index);
     const auto vf_offset = a.template read_tlb_vf_offset<TLB_READ>(slot_index);
@@ -1168,6 +1288,19 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, i_
     // Try hitting the TLB
     const uint64_t slot_index = tlb_slot_index(vaddr);
     uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
+#if defined(TC_STENCIL_TU)
+    (void) pc;
+    (void) mcycle;
+    // The store mirror of the read path above: consult the write TLB and report
+    // a miss for every other outcome, having written nothing. This is also
+    // where compiled traces meet code invalidation, because a page holding a
+    // trace is kept out of the write TLB on purpose, so a store into it misses
+    // here, side-exits, and reaches the interpreter's slow path, which is what
+    // discards the traces on that page.
+    if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
+        return execute_status::failure;
+    }
+#else
     if (!tlb_is_hit<T>(slot_vaddr_page, vaddr)) [[unlikely]] {
         // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
         // slot it uses to check for hits and to perform the translation itself.
@@ -1195,6 +1328,7 @@ static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, i_
         pc = new_pc;
         return status;
     }
+#endif
     const auto pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
     const auto vf_offset = a.template read_tlb_vf_offset<TLB_WRITE>(slot_index);
     const auto faddr = vaddr + vf_offset;
@@ -1237,6 +1371,19 @@ static FORCE_INLINE execute_status raise_illegal_insn_exception(const STATE_ACCE
     pc = raise_exception(a, pc, MCAUSE_ILLEGAL_INSN, insn);
     return execute_status::failure;
 }
+
+#if defined(TC_STENCIL_TU)
+// An encoding a case rejects (SLLI with a shamt the width does not allow, and
+// its kin) raises, and raising is a call, which a stencil may not contain. The
+// recorded word is a hole rather than a compile-time constant, so the check
+// cannot fold away even though a recorded instruction did execute once. It
+// becomes a side exit instead: report the failure without touching pc or
+// raising, and the stencil epilogue leaves for the interpreter, which re-fetches
+// the same instruction and raises exactly as it would have. Nothing has been
+// written at this point in any body that uses it, which is what makes leaving
+// mid-instruction safe -- the same discipline every other stencil guard follows.
+#define raise_illegal_insn_exception(a, pc, insn) (((void) (a)), ((void) (pc)), ((void) (insn)), execute_status::failure)
+#endif // TC_STENCIL_TU
 
 /// \brief Returns from execution due to raised exception, updating the pc.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
@@ -1291,7 +1438,7 @@ static FORCE_INLINE execute_status execute_LR(const STATE_ACCESS a, i_state_acce
         return advance_to_raised_exception(a, pc);
     }
     a.write_ilrsc(vaddr);
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc);
     }
@@ -1318,7 +1465,7 @@ static FORCE_INLINE execute_status execute_SC(const STATE_ACCESS a, i_state_acce
         val = 1;
     }
     a.write_ilrsc(-1); // Must clear reservation, regardless of failure
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc, status);
     }
@@ -1359,7 +1506,7 @@ static FORCE_INLINE execute_status execute_AMO(const STATE_ACCESS a, i_state_acc
     if (status == execute_status::failure) [[unlikely]] {
         return advance_to_raised_exception(a, pc);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc, status);
     }
@@ -2635,7 +2782,7 @@ static FORCE_INLINE execute_status execute_csr_RW(const STATE_ACCESS a, i_state_
     bool status = true;
     uint64_t csrval = 0;
     // If rd=r0, we do not read from the CSR to avoid side-effects
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if (rd != 0) {
         csrval = read_csr(a, mcycle, csraddr, &status);
     }
@@ -2687,7 +2834,7 @@ static FORCE_INLINE execute_status execute_csr_SC(const STATE_ACCESS a, i_state_
     }
     // Load value of rs1 before potentially overwriting it
     // with the value of the csr when rd=rs1
-    const uint32_t rs1 = insn_get_rs1(insn);
+    const auto rs1 = insn_get_rs1(insn);
     const uint64_t rs1val = a.read_x(rs1);
     execute_status wstatus = execute_status::success;
     if (rs1 != 0) {
@@ -2701,7 +2848,7 @@ static FORCE_INLINE execute_status execute_csr_SC(const STATE_ACCESS a, i_state_
         }
     }
     // Write to rd only after potential read/write exceptions
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc, wstatus);
     }
@@ -2733,7 +2880,7 @@ static FORCE_INLINE execute_status execute_csr_SCI(const STATE_ACCESS a, i_state
     if (!status) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rs1 = insn_get_rs1(insn);
+    const auto rs1 = insn_get_rs1(insn);
     execute_status wstatus = execute_status::success;
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
@@ -2746,7 +2893,7 @@ static FORCE_INLINE execute_status execute_csr_SCI(const STATE_ACCESS a, i_state
         }
     }
     // Write to rd only after potential read/write exceptions
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc, wstatus);
     }
@@ -2892,7 +3039,7 @@ static FORCE_INLINE execute_status execute_FENCE_I(const STATE_ACCESS a, i_state
 
 template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_arithmetic(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
     // the order of evaluation of arguments in a function call is undefined.
     const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
@@ -3144,7 +3291,7 @@ static FORCE_INLINE execute_status execute_REMU(const STATE_ACCESS a, i_state_ac
 template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_arithmetic_immediate(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn,
     const F &f) {
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_I_get_imm(insn);
     a.write_x(rd, f(rs1, imm));
@@ -3379,7 +3526,7 @@ static FORCE_INLINE execute_status execute_L(const STATE_ACCESS a, i_state_acces
     if (!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val)) [[unlikely]] {
         return advance_to_raised_exception(a, pc);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     // don't write x0
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
@@ -3504,7 +3651,7 @@ static FORCE_INLINE execute_status execute_LUI(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     a.write_x(rd, insn_U_get_imm(insn));
     return advance_to_next_insn(a, pc);
 }
@@ -3516,7 +3663,7 @@ static FORCE_INLINE execute_status execute_AUIPC(const STATE_ACCESS a, i_state_a
     if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     a.write_x(rd, pc_to_virtual(a, pc) + insn_U_get_imm(insn));
     return advance_to_next_insn(a, pc);
 }
@@ -3529,7 +3676,7 @@ static FORCE_INLINE execute_status execute_JAL(const STATE_ACCESS a, i_state_acc
     if constexpr (rd_kind == rd_kind::x0) {
         return execute_jump(a, pc, new_pc);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     a.write_x(rd, pc_to_virtual(a, pc) + 4);
     return execute_jump(a, pc, new_pc);
 }
@@ -3541,7 +3688,7 @@ static FORCE_INLINE execute_status execute_JALR(const STATE_ACCESS a, i_state_ac
     const uint64_t val = pc_to_virtual(a, pc) + 4;
     const uint64_t new_pc =
         static_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if constexpr (rd_kind != rd_kind::x0) {
         a.write_x(rd, val);
         return execute_jump(a, pc, pc_to_fast(a, new_pc));
@@ -3567,8 +3714,8 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(const STATE_ACCESS a, i_st
     if (prv == PRV_U || (prv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rs1 = insn_get_rs1(insn);
-    [[maybe_unused]] const uint32_t rs2 = insn_get_rs2(insn);
+    const auto rs1 = insn_get_rs1(insn);
+    [[maybe_unused]] const auto rs2 = insn_get_rs2(insn);
     if (rs1 == 0) {
         flush_all_tlb(a);
 #ifdef DUMP_STATS
@@ -3903,7 +4050,7 @@ static FORCE_INLINE execute_status execute_float_ternary_op_rm(const STATE_ACCES
     if (rm > FRM_RMM) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
@@ -3925,7 +4072,7 @@ static FORCE_INLINE execute_status execute_float_binary_op_rm(const STATE_ACCESS
     if (rm > FRM_RMM) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
@@ -3950,7 +4097,7 @@ static FORCE_INLINE execute_status execute_float_unary_op_rm(const STATE_ACCESS 
     if (rm > FRM_RMM) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
@@ -4008,7 +4155,7 @@ static FORCE_INLINE execute_status execute_FL(const STATE_ACCESS a, i_state_acce
     }
     // A narrower n-bit transfer, n < FLEN,
     // into the f registers will create a valid NaN-boxed value.
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     a.write_f(rd, float_box(val));
     return advance_to_next_insn(a, pc);
 }
@@ -4245,7 +4392,7 @@ static FORCE_INLINE execute_status execute_FDIV_D(const STATE_ACCESS a, i_state_
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCLASS(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc);
     }
@@ -4262,7 +4409,7 @@ static FORCE_INLINE execute_status execute_float_binary_op(const STATE_ACCESS a,
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK); // NOLINT(misc-const-correctness)
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(f(s1, s2, &fflags)));
@@ -4276,7 +4423,7 @@ static FORCE_INLINE execute_status execute_float_cmp_op(const STATE_ACCESS a, i_
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // Comparisons with NaNs may set NV (invalid operation) exception flag in fflags
     const uint64_t val = f(s1, s2, &fflags);
@@ -4431,7 +4578,7 @@ static FORCE_INLINE execute_status execute_FCVT_F_F(const STATE_ACCESS a, i_stat
     if (rm > FRM_RMM) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     ST s1 = float_unbox<ST>(a.read_f(insn_get_rs1(insn)));
@@ -4451,7 +4598,7 @@ static FORCE_INLINE execute_status execute_FCVT_X_F(const STATE_ACCESS a, i_stat
     if (rm > FRM_RMM) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
@@ -4473,7 +4620,7 @@ static FORCE_INLINE execute_status execute_FCVT_F_X(const STATE_ACCESS a, i_stat
     if (rm > FRM_RMM) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     const uint64_t s1 = a.read_x(insn_get_rs1(insn));
     T val = f(s1, rm, &fflags);
@@ -4738,7 +4885,7 @@ static FORCE_INLINE execute_status execute_FMV_F_X(const STATE_ACCESS a, i_state
     if (insn_get_funct3(insn) != 0) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     // A narrower n-bit transfer, n < FLEN,
     // into the f registers will create a valid NaN-boxed value.
     a.write_f(rd, float_box(static_cast<T>(a.read_x(insn_get_rs1(insn)))));
@@ -4766,7 +4913,7 @@ static FORCE_INLINE execute_status execute_FCLASS_S(const STATE_ACCESS a, i_stat
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_X_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmv.x.w");
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc);
     }
@@ -4799,7 +4946,7 @@ static FORCE_INLINE execute_status execute_FCLASS_D(const STATE_ACCESS a, i_stat
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_X_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmv.x.d");
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc);
     }
@@ -4985,10 +5132,10 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDI4SPN(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.addi4spn");
     // rd cannot be zero (guaranteed by RISC-V spec design)
-    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     // imm cannot be zero (guaranteed by the jump table)
     const uint32_t imm = insn_get_CIW_imm(insn);
-    const uint64_t rs1 = a.read_x(2);
+    const uint64_t rs1 = a.read_x(TC_XREG(2));
     int64_t val = 0;
     __builtin_add_overflow(static_cast<int64_t>(rs1), static_cast<int64_t>(imm), &val);
     a.write_x(rd, static_cast<uint64_t>(val));
@@ -5003,8 +5150,8 @@ static FORCE_INLINE execute_status execute_C_FLD(const STATE_ACCESS a, i_state_a
     if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
     return execute_C_FL<uint64_t>(a, pc, mcycle, rd, rs1, imm);
 }
@@ -5013,8 +5160,8 @@ static FORCE_INLINE execute_status execute_C_FLD(const STATE_ACCESS a, i_state_a
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LW(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lw");
-    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const int32_t imm = insn_get_C_LW_C_SW_imm(insn);
     return execute_C_L<int32_t>(a, pc, mcycle, rd, rs1, imm);
 }
@@ -5023,8 +5170,8 @@ static FORCE_INLINE execute_status execute_C_LW(const STATE_ACCESS a, i_state_ac
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LD(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.ld");
-    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
     return execute_C_L<int64_t>(a, pc, mcycle, rd, rs1, imm);
 }
@@ -5037,8 +5184,8 @@ static FORCE_INLINE execute_status execute_C_FSD(const STATE_ACCESS a, i_state_a
     if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
     return execute_C_FS<uint64_t>(a, pc, mcycle, rs2, rs1, imm);
 }
@@ -5047,8 +5194,8 @@ static FORCE_INLINE execute_status execute_C_FSD(const STATE_ACCESS a, i_state_a
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SW(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sw");
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const int32_t imm = insn_get_C_LW_C_SW_imm(insn);
     return execute_C_S<uint32_t>(a, pc, mcycle, rs2, rs1, imm);
 }
@@ -5057,8 +5204,8 @@ static FORCE_INLINE execute_status execute_C_SW(const STATE_ACCESS a, i_state_ac
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SD(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sd");
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
     return execute_C_S<uint64_t>(a, pc, mcycle, rs2, rs1, imm);
 }
@@ -5076,7 +5223,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDI(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.addi");
     // rd cannot be zero (guaranteed by jump table)
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
     // imm cannot be zero (guaranteed by jump table)
     const uint64_t rd_value = a.read_x(rd);
@@ -5091,7 +5238,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDIW(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.addiw");
     // rd cannot be zero (guaranteed by jump table)
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     const uint64_t rd_value = a.read_x(rd);
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
     int32_t val = 0;
@@ -5105,7 +5252,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LI(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.li");
     // rd cannot be zero (guaranteed by jump table)
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
     a.write_x(rd, static_cast<uint64_t>(imm));
     return advance_to_next_insn<2>(a, pc);
@@ -5117,10 +5264,10 @@ static FORCE_INLINE execute_status execute_C_ADDI16SP(const STATE_ACCESS a, i_st
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.addi16sp");
     // imm cannot be zero (guaranteed by the jump table)
     const int32_t imm = insn_get_C_ADDI16SP_imm(insn);
-    const uint64_t rs1_value = a.read_x(2);
+    const uint64_t rs1_value = a.read_x(TC_XREG(2));
     int64_t val = 0;
     __builtin_add_overflow(static_cast<int64_t>(rs1_value), static_cast<int64_t>(imm), &val);
-    a.write_x(2, static_cast<uint64_t>(val));
+    a.write_x(TC_XREG(2), static_cast<uint64_t>(val));
     return advance_to_next_insn<2>(a, pc);
 }
 
@@ -5131,7 +5278,7 @@ static FORCE_INLINE execute_status execute_C_LUI(const STATE_ACCESS a, i_state_a
     // imm cannot be zero (guaranteed by the jump table)
     const int32_t imm = insn_get_C_LUI_imm(insn);
     // rd cannot be zero (guaranteed by the jump table)
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     a.write_x(rd, static_cast<uint64_t>(imm));
     return advance_to_next_insn<2>(a, pc);
 }
@@ -5140,7 +5287,7 @@ static FORCE_INLINE execute_status execute_C_LUI(const STATE_ACCESS a, i_state_a
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SRLI(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.srli");
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     // imm cannot be zero (guaranteed by the jump table)
     const uint32_t imm = insn_get_CI_CB_imm(insn);
     const uint64_t rs1_value = a.read_x(rs1);
@@ -5152,7 +5299,7 @@ static FORCE_INLINE execute_status execute_C_SRLI(const STATE_ACCESS a, i_state_
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SRAI(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.srai");
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     // imm cannot be zero (guaranteed by the jump table)
     const uint32_t imm = insn_get_CI_CB_imm(insn);
     const auto rs1_value = static_cast<int64_t>(a.read_x(rs1));
@@ -5164,7 +5311,7 @@ static FORCE_INLINE execute_status execute_C_SRAI(const STATE_ACCESS a, i_state_
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ANDI(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.andi");
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
     const uint64_t rs1_value = a.read_x(rs1);
     a.write_x(rs1, rs1_value & static_cast<uint64_t>(imm));
@@ -5175,7 +5322,7 @@ template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_C_arithmetic(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
     // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
     // the order of evaluation of arguments in a function call is undefined.
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint64_t rs1_value = a.read_x(rs1);
     const uint64_t rs2_value = a.read_x(insn_get_CIW_CL_rd_CS_CA_rs2(insn));
     // Now we can safely invoke f()
@@ -5250,8 +5397,8 @@ static FORCE_INLINE execute_status execute_C_ADDW(const STATE_ACCESS a, i_state_
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LBU(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lbu");
-    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint32_t uimm = insn_get_C_LS_B_uimm(insn);
     return execute_C_L<uint8_t>(a, pc, mcycle, rd, rs1, uimm);
 }
@@ -5260,8 +5407,8 @@ static FORCE_INLINE execute_status execute_C_LBU(const STATE_ACCESS a, i_state_a
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LHU(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lhu");
-    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint32_t uimm = insn_get_C_LS_H_uimm(insn);
     return execute_C_L<uint16_t>(a, pc, mcycle, rd, rs1, uimm);
 }
@@ -5270,8 +5417,8 @@ static FORCE_INLINE execute_status execute_C_LHU(const STATE_ACCESS a, i_state_a
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LH(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lh");
-    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const auto imm = static_cast<int32_t>(insn_get_C_LS_H_uimm(insn));
     return execute_C_L<int16_t>(a, pc, mcycle, rd, rs1, imm);
 }
@@ -5280,8 +5427,8 @@ static FORCE_INLINE execute_status execute_C_LH(const STATE_ACCESS a, i_state_ac
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SB(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sb");
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const uint32_t uimm = insn_get_C_LS_B_uimm(insn);
     return execute_C_S<uint8_t>(a, pc, mcycle, rs2, rs1, uimm);
 }
@@ -5290,8 +5437,8 @@ static FORCE_INLINE execute_status execute_C_SB(const STATE_ACCESS a, i_state_ac
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SH(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sh");
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const uint32_t uimm = insn_get_C_LS_H_uimm(insn);
     return execute_C_S<uint16_t>(a, pc, mcycle, rs2, rs1, uimm);
 }
@@ -5300,7 +5447,7 @@ static FORCE_INLINE execute_status execute_C_SH(const STATE_ACCESS a, i_state_ac
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ZEXT_B(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.zext.b");
-    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint64_t rs1_value = a.read_x(rd);
     a.write_x(rd, static_cast<uint8_t>(rs1_value));
     return advance_to_next_insn<2>(a, pc);
@@ -5310,7 +5457,7 @@ static FORCE_INLINE execute_status execute_C_ZEXT_B(const STATE_ACCESS a, i_stat
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SEXT_B(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sext.b");
-    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint64_t rs1_value = a.read_x(rd);
     a.write_x(rd, static_cast<uint64_t>(static_cast<int8_t>(rs1_value)));
     return advance_to_next_insn<2>(a, pc);
@@ -5320,7 +5467,7 @@ static FORCE_INLINE execute_status execute_C_SEXT_B(const STATE_ACCESS a, i_stat
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ZEXT_H(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.zext.h");
-    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint64_t rs1_value = a.read_x(rd);
     a.write_x(rd, static_cast<uint16_t>(rs1_value));
     return advance_to_next_insn<2>(a, pc);
@@ -5330,7 +5477,7 @@ static FORCE_INLINE execute_status execute_C_ZEXT_H(const STATE_ACCESS a, i_stat
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SEXT_H(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sext.h");
-    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint64_t rs1_value = a.read_x(rd);
     a.write_x(rd, static_cast<uint64_t>(static_cast<int16_t>(rs1_value)));
     return advance_to_next_insn<2>(a, pc);
@@ -5340,7 +5487,7 @@ static FORCE_INLINE execute_status execute_C_SEXT_H(const STATE_ACCESS a, i_stat
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ZEXT_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.zext.w");
-    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint64_t rs1_value = a.read_x(rd);
     a.write_x(rd, static_cast<uint64_t>(static_cast<uint32_t>(rs1_value)));
     return advance_to_next_insn<2>(a, pc);
@@ -5350,7 +5497,7 @@ static FORCE_INLINE execute_status execute_C_ZEXT_W(const STATE_ACCESS a, i_stat
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_NOT(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.not");
-    const uint32_t rd = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rd = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint64_t rs1_value = a.read_x(rd);
     a.write_x(rd, ~rs1_value);
     return advance_to_next_insn<2>(a, pc);
@@ -5379,9 +5526,9 @@ static FORCE_INLINE execute_status execute_C_J(const STATE_ACCESS a, i_state_acc
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_BEQZ(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.beqz");
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     if (a.read_x(rs1) == 0) {
-        const int32_t imm = insn_get_C_BEQZ_BNEZ_imm(insn);
+        const auto imm = insn_get_C_BEQZ_BNEZ_imm(insn);
         const auto new_pc = pc + static_cast<uint64_t>(imm);
         return execute_jump(a, pc, new_pc);
     }
@@ -5392,9 +5539,9 @@ static FORCE_INLINE execute_status execute_C_BEQZ(const STATE_ACCESS a, i_state_
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_BNEZ(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.bnez");
-    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const auto rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     if (a.read_x(rs1) != 0) {
-        const int32_t imm = insn_get_C_BEQZ_BNEZ_imm(insn);
+        const auto imm = insn_get_C_BEQZ_BNEZ_imm(insn);
         const auto new_pc = pc + static_cast<uint64_t>(imm);
         return execute_jump(a, pc, new_pc);
     }
@@ -5406,7 +5553,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SLLI(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.slli");
     // rd cannot be zero (guaranteed by jump table)
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     // imm cannot be zero (guaranteed by jump table)
     const uint32_t imm = insn_get_CI_CB_imm(insn);
     const uint64_t rs1_value = a.read_x(rd);
@@ -5422,7 +5569,7 @@ static FORCE_INLINE execute_status execute_C_FLDSP(const STATE_ACCESS a, i_state
     if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     const int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
     return execute_C_FL<uint64_t>(a, pc, mcycle, rd, 0x2, imm);
 }
@@ -5432,9 +5579,9 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LWSP(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lwsp");
     // rd cannot be zero (guaranteed by jump table)
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     const int32_t imm = insn_get_C_LWSP_imm(insn);
-    return execute_C_L<int32_t>(a, pc, mcycle, rd, 0x2, imm);
+    return execute_C_L<int32_t>(a, pc, mcycle, rd, TC_XREG(0x2), imm);
 }
 
 /// \brief Implementation of the C.LDSP instruction.
@@ -5442,9 +5589,9 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LDSP(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.ldsp");
     // rd cannot be zero (guaranteed by jump table)
-    const uint32_t rd = insn_get_rd(insn);
+    const auto rd = insn_get_rd(insn);
     const int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
-    return execute_C_L<int64_t>(a, pc, mcycle, rd, 0x2, imm);
+    return execute_C_L<int64_t>(a, pc, mcycle, rd, TC_XREG(0x2), imm);
 }
 
 /// \brief Implementation of the C.JR instruction.
@@ -5452,7 +5599,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_JR(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.jr");
     // rs1 cannot be zero (guaranteed by the jump table)
-    const uint32_t rs1 = insn_get_rd(insn);
+    const auto rs1 = insn_get_rd(insn);
     const uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
     return execute_jump(a, pc, pc_to_fast(a, new_pc));
 }
@@ -5462,8 +5609,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_MV(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.mv");
     // rd cannot be zero (guaranteed by the jump table)
-    const uint32_t rd = insn_get_rd(insn);
-    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
+    const auto rd = insn_get_rd(insn);
+    const auto rs2 = insn_get_CR_CSS_rs2(insn);
     const uint64_t val = a.read_x(rs2);
     a.write_x(rd, val);
     return advance_to_next_insn<2>(a, pc);
@@ -5481,10 +5628,10 @@ static FORCE_INLINE execute_status execute_C_EBREAK(const STATE_ACCESS a, i_stat
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_JALR(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.jalr");
-    const uint32_t rs1 = insn_get_rd(insn);
+    const auto rs1 = insn_get_rd(insn);
     const uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
     const uint64_t val = pc_to_virtual(a, pc) + 2;
-    a.write_x(0x1, val);
+    a.write_x(TC_XREG(0x1), val);
     return execute_jump(a, pc, pc_to_fast(a, new_pc));
 }
 
@@ -5493,8 +5640,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADD(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.add");
     // rd cannot be zero (guaranteed by the jump table)
-    const uint32_t rd = insn_get_rd(insn);
-    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
+    const auto rd = insn_get_rd(insn);
+    const auto rs2 = insn_get_CR_CSS_rs2(insn);
     const uint64_t rd_value = a.read_x(rd);
     const uint64_t rs2_value = a.read_x(rs2);
     uint64_t val = 0;
@@ -5511,7 +5658,7 @@ static FORCE_INLINE execute_status execute_C_FSDSP(const STATE_ACCESS a, i_state
     if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
+    const auto rs2 = insn_get_CR_CSS_rs2(insn);
     const int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
     return execute_C_FS<uint64_t>(a, pc, mcycle, rs2, 0x2, imm);
 }
@@ -5520,18 +5667,18 @@ static FORCE_INLINE execute_status execute_C_FSDSP(const STATE_ACCESS a, i_state
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SWSP(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.swsp");
-    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
+    const auto rs2 = insn_get_CR_CSS_rs2(insn);
     const int32_t imm = insn_get_C_SWSP_imm(insn);
-    return execute_C_S<uint32_t>(a, pc, mcycle, rs2, 0x2, imm);
+    return execute_C_S<uint32_t>(a, pc, mcycle, rs2, TC_XREG(0x2), imm);
 }
 
 /// \brief Implementation of the C.SDSP instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SDSP(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sdsp");
-    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
+    const auto rs2 = insn_get_CR_CSS_rs2(insn);
     const int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
-    return execute_C_S<uint64_t>(a, pc, mcycle, rs2, 0x2, imm);
+    return execute_C_S<uint64_t>(a, pc, mcycle, rs2, TC_XREG(0x2), imm);
 }
 
 /// \brief Instruction fetch status code

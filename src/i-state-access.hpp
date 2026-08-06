@@ -46,6 +46,20 @@ struct i_state_access_fast_addr {};
 template <typename STATE_ACCESS>
 using i_state_access_fast_addr_t = i_state_access_fast_addr<STATE_ACCESS>::type;
 
+#if defined(TC_STENCIL_TU)
+/// \brief How a general-purpose register is selected.
+/// \details In the copy-and-patch stencil translation unit the selector is a
+/// link-time constant byte offset rather than an index (see
+/// state_access::do_read_x), and it has to stay full-width and unsigned all the
+/// way down to the addressing mode: a round trip through int makes the compiler
+/// materialize the relocated value into a register and sign-extend it, three
+/// instructions where folding it into the displacement costs none. Every other
+/// build keeps the plain index and is unaffected.
+using reg_index = uint64_t;
+#else
+using reg_index = int;
+#endif
+
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 #define DEFINE_SA_READ(REG)                                                                                            \
     uint64_t read_##REG() const {                                                                                      \
@@ -165,10 +179,10 @@ public:
     /// \brief Reads from general-purpose register.
     /// \param i Register index.
     /// \returns Register value.
-    uint64_t read_x(int i) const {
+    uint64_t read_x(reg_index i) const {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             const auto val = derived().do_read_x(i);
-            dsa_printf("%s::read_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
+            dsa_printf("%s::read_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), static_cast<int>(i), val, val);
             return val;
         } else {
             return prefer_read_shadow_register(shadow_registers_get_what(shadow_registers_what::x0, i));
@@ -180,10 +194,10 @@ public:
     /// \param val New register value.
     /// \details Writes to register zero *break* the machine.
     /// There is an assertion to catch this, but NDEBUG will let the value pass through.
-    void write_x(int i, uint64_t val) const {
+    void write_x(reg_index i, uint64_t val) const {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             derived().do_write_x(i, val);
-            dsa_printf("%s::write_x(%d, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), i, val, val);
+            dsa_printf("%s::write_x(%d, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), static_cast<int>(i), val, val);
         } else {
             prefer_write_shadow_register(shadow_registers_get_what(shadow_registers_what::x0, i), val);
         }

@@ -991,6 +991,263 @@ a hard-coded write to a now-allocatable register silently clobbers
 compiler-owned state (the crash presented as a jump to address zero out
 of a musttail chain).
 
+### 5.20 Copy-and-patch: compiling traces from stencils
+
+Section 8b item 4 asked for a backend that honors the register contract. This
+is it, built by the copy-and-patch method (Xu and Kjolstad, OOPSLA 2021; the
+transactional.blog tutorial): the per-case code that the AOT experiment emitted
+as C++ text is instead compiled once at build time with its operands left as
+relocations, and the JIT builds a trace by copying those bodies back to back and
+writing the recorded instruction's operands into the holes. There is no register
+allocation and no instruction selection, because the stencils were compiled
+against the interpreter's own handler contract; entering and leaving a trace
+moves no state and is a plain jump.
+
+`make tailcall=yes jit=yes`. It composes with the online recorder of 8b item 3,
+which now installs what it records instead of discarding it.
+
+**The stencil unit is compiled and never linked.** That is what makes the method
+work here. Not linking frees it to be built `-fno-pic`, so no operand reaches
+its use through a GOT and every body is relocatable by `memcpy`; and it makes an
+undefined symbol the mechanism rather than an error, since a hole is exactly a
+symbol the linker would have resolved. `tools/gen-tc-stencils.lua` reads the
+object file, extracts each `tc_stencil_*` body with the relocations inside it,
+and emits `interpret-tc-stencils.inc`.
+
+The contract a stencil must satisfy is that its code reaches nothing but its own
+holes and the state registers, and the extractor enforces it rather than the
+case list asserting it. Three escapes had to be closed before that check was
+worth anything. A call between two functions of one section needs no relocation, so
+`-ffunction-sections` is not tidiness but the thing that turns those calls into
+relocations the checker can see; the same applies to identical-code folding,
+which replaced one stencil body with a jump to another, and to cold-block
+partitioning, which split a body across two sections. The third is the operand
+materialized relative to its own instruction, described under the measurements
+below. With all three closed the check found the real cases: 34 of 153 do not
+belong in the compiled set (floating point, CSR, atomics, `PRIVILEGED`, and the
+compressed memory forms), leaving 119 compiled.
+
+Three source-level mechanisms carry operands into the code:
+
+- Operand getters become holes under `TC_STENCIL_TU`, one hole per getter. That
+  is not cosmetic: it means the JIT fills a hole by calling the very getter it
+  stands for, so no table maps cases to immediate formats and no such table can
+  fall out of step with the encodings.
+- Register fields carry a byte offset rather than an index, because a relocation
+  can contribute `symbol+addend` and never `symbol*8`. As an index the operand
+  costs a materializing instruction and a scaled addressing mode; as an offset
+  it folds into the displacement of the access itself. Getting there also meant
+  widening the operand path, since a round trip through `uint32_t` or `int`
+  makes the compiler materialize and re-extend the relocated value -- three
+  instructions where the fold costs none.
+- A literal register index (`a.read_x(2)` in the compressed stack forms) would
+  address the wrong register silently under that scheme, so `do_read_x` calls an
+  undefined symbol when a constant index is not a multiple of eight. The
+  extractor then rejects it by name at build time. It fired on exactly the cases
+  predicted, which is how they came to be excluded by evidence rather than by
+  inspection.
+
+The result on x86-64 is the intended shape. `ADDI` compiles to six
+instructions, five after the trailing jump is elided:
+
+    mov  $imm32,%eax           # R_X86_64_32   the immediate
+    cltq
+    add  rs1(%r12),%rax        # R_X86_64_32S  folded into the displacement
+    mov  %rax,rd(%r12)         # R_X86_64_32S
+    add  $4,%r14               # pc
+    jmp  cont                  # R_X86_64_PLT32, dropped on fall-through
+
+`preserve_none` is the convention the technique assumes, and the stencils carry
+it: the state is in r12 and pc in r14 across every tail call, and nothing spills
+at a boundary. Composing it with the JIT required lifting the recorder's
+requirement for the pinned-register shape, because on x86-64 the two cannot
+coexist -- preserve_none's argument registers are the pinned set itself. The
+argument shape is now the JIT's default there, and the recorder works in both,
+which also made the JIT build under Clang on this host for the first time. On
+AArch64 the two compose already and the pinned shape keeps the attribute.
+
+Accounting is the block scheme of the AOT bodies, realized as three more
+stencils rather than as machine code the emitter writes by hand: an entry guard
+proving the countdown covers the block, a charge at the end of one, and a loop
+back edge. Straight-line steps carry no accounting at all.
+
+Two correctness findings are worth recording because neither is visible in code
+review and both were found by differential execution:
+
+1. **The side exit owed a countdown test.** Every handler tests the countdown
+   after retiring an instruction and before dispatching the next; a trace tests
+   it once per block instead, which leaves that test owed at the exit. Without
+   it a trace whose last step exhausts the countdown dispatches one instruction
+   past the boundary. It presented as a machine stopped at `--max-mcycle=N`
+   reporting `N+1`, and a bisection on the root hash located it exactly.
+2. **W^X has to be restored on every path.** The cache is made writable to emit
+   into, which un-executes the traces already in it; a build that gave up
+   partway returned without restoring, and the next entry into any installed
+   trace faulted on its first instruction. It is a `scope_exit` now.
+
+**Trace identity is the host page, not the address space.** A compiled trace
+holds the instructions that were at a virtual pc rather than a way to fetch
+them, so what must still hold at entry is that the pc names the same memory.
+Keying on the address space (satp, privilege, an invalidation counter) was tried
+first and is what a global epoch invites: it refused 99.6% of head hits, because
+any address-space change invalidated every trace permanently. Comparing host
+pages instead, through the code TLB the interpreter already maintains, is both
+more precise and self-correcting -- the same physical page mapped into two
+processes is one page, so context switches cost nothing, and a TLB flush merely
+makes the consult miss once. That change alone took entries from 425k to 967k
+and refusals from 117M to 0.6M. Nothing counts invalidation events, because the
+structure that gets invalidated is the one being asked.
+
+Gates: cycle-, exit- and hash-identical to a same-source no-JIT build over a
+full Linux boot and workload (2.36G cycles), at three intermediate `mcycle`
+bounds as well as at the end, and the cm-cli spec suite passes 52/52. Every
+configuration measured along the way agreed bit for bit, including both
+head-table sizes and all three hotness thresholds.
+
+**Measured across six workloads: -9.1% aggregate, and bimodal.** Best of three,
+pinned, under GCC 16 on Raptor Lake, against same-build stock and tail-call
+anchors. stress-ng supplies the cpu-method workloads, bounded by operation count
+rather than by time so the guest work is identical in every run; all eighteen
+runs were cycle- and hash-identical across the three builds, which makes the
+timing table double as the correctness gate.
+
+| workload | stock | tailcall | jit | jit vs stock | trace coverage |
+|---|---:|---:|---:|---:|---:|
+| sieve | 1.78s | 1.81s | 1.87s | +5.1% | 0.3% |
+| int64 | 1.73s | 1.71s | 1.74s | +0.6% | 0.3% |
+| double | 3.18s | 3.21s | 3.34s | +5.0% | 0.4% |
+| matrix | 2.21s | 2.12s | 2.15s | -2.7% | 0.3% |
+| sha256 | 6.38s | 6.18s | 5.79s | -9.2% | 5.0% |
+| gzip | 2.79s | 2.79s | 1.53s | **-45.2%** | 86.1% |
+| **total** | **18.07s** | **17.82s** | **16.42s** | **-9.1%** | |
+
+The single number to take from this is not the aggregate but the correlation:
+coverage explains every row. Where the JIT executes 86% of guest instructions it
+is 45% faster; where it executes a third of a percent it is 0 to 5% slower,
+which is the profiling shell and the recorder charging their usual few percent
+against no return at all. Nothing in between appears, because coverage itself is
+bimodal -- gzip has one loop that accounts for 41.9M of its 42.9M trace entries,
+while sieve's hottest head sees 19k entries out of 173k and the loop that
+actually runs the workload is never entered.
+
+An earlier draft of this section reported -28% from the gzip workload alone.
+That was the one workload in the set where the backend does what it can do, and
+generalizing from it was wrong: the backend is not the limit on five of six
+workloads, trace selection is. Whatever keeps sieve's inner loop from being
+entered is worth more than any further work on the emitted code, and it is not
+head-table pressure -- doubling the table lifts sieve's entries from 173k to
+271k and its coverage from 0.3% to 0.4%, which is to say not at all.
+
+How the gzip figure moved along the way is still the more useful record of what
+this kind of backend is sensitive to.
+
+**Pinning matters on a hybrid host.** The first campaign measured parity and
+concluded that coverage was the limit. It was measuring core migration: this
+part has P-cores and E-cores, an unpinned run lands on both, and user time then
+says nothing about work done. `perf` contradicted the stopwatch -- 28% fewer
+instructions at equal time -- which is what exposed it. Every number here is
+`taskset`-pinned, and the protocol should stay that way on any hybrid part.
+
+**A stencil that materializes an operand relative to itself is not
+relocatable.** Both compilers sometimes choose `lea sym(%rip)` for an operand
+under `-fno-pic`, and for the compressed memory forms, whose register fields
+reach the access through a helper's parameters, both do it consistently. Such a
+stencil computes a different number when copied, and no patch repairs it: the
+value wanted is a small absolute constant and the encoding can only reach
+addresses near the instruction. The patcher rejected these at run time by range
+check, which was safe but silent -- it discarded whole traces. The extractor now
+rejects them by name at build time, and excluding the 32 affected cases *raised*
+coverage from 71.5% to 83.9% and trace entries from 0.9M to 42.9M, because the
+recorder truncates at them instead of forming traces that get thrown away. The
+lesson generalizes: the checker has to test that an operand is absolute, not
+merely that its symbol is a hole.
+
+**A signed operand must be narrowed in the source, not by the encoding.**
+Folding the successor guard and the branch offsets into displacements, by
+widening those holes instead of narrowing them through `int32_t`, took a
+conditional branch from 13 host instructions to 9. It also broke the Clang
+build, and only the Clang build: a hole carries the low 32 bits of a value that
+may be negative, and whether those bits are sign- or zero-extended is decided by
+the instruction the compiler chose around the site. GCC picked a sign-extending
+form and Clang a zero-extending one, which turned every backward branch offset
+into a large positive number and trapped the guest a few hundred thousand cycles
+in. The narrowing cast is back, so the sign extension is written down rather than
+inferred; the folding was worth under 1% and is not worth a correctness property
+that holds by luck of encoding selection. The general rule the patcher now
+records: what a 32-bit site does with its bits belongs to the stencil source,
+because the relocation type cannot express it.
+
+**Tracing more, by lowering the hotness threshold, makes it slower.** It looks
+like the obvious lever and it moves the wrong way: against 3.21s at the shipped
+threshold of 2048, 512 gives 3.37s and 128 gives 3.31s, and coverage falls with
+each. Recording runs in one-instruction chains, so paying for it more often
+loses more than the extra traces return. The tuning inherited from the shell was
+already right.
+
+**Reading the emitted code under a debugger.** Static disassembly of a stencil
+shows what one instruction costs; it does not show what a trace costs, because
+which paths run and which jumps survive layout are properties of the assembled
+trace. Stepping one is worth the trouble, and needs a way in: trace addresses are
+not symbols, and a breakpoint set on the code cache before the JIT writes there
+is erased by the write. `TC_JIT_BREAK=<head pc>` therefore raises `SIGTRAP` just
+after that trace is compiled, so a session lands with the address in hand and the
+code already in place.
+
+Stepped through gzip's hottest trace (seven guest instructions, 73% of all trace
+entries in that run), 48 host instructions retire per iteration, and the mix
+names its own overheads:
+
+- Three `cltq`. Every immediate arrived as `mov $imm,%eax` plus a sign
+  extension, because the compiler treats the hole as a 32-bit address. Naming
+  the encoding instead -- `movq $imm32`, one instruction, sign-extending by
+  definition -- removes them, and removes the compiler's freedom to pick the
+  zero-extending form that broke Clang. That is the fix described above, arrived
+  at from the disassembly rather than from the crash.
+- Four `jmp`. Fall-through elision only fires when the continuation jump is
+  physically last, and a stencil whose exit block the compiler sinks to the end
+  keeps its jump in the middle. Recovering these means outlining the cold block,
+  which needs the internal branch into it repatched, and that branch carries no
+  relocation to find it by.
+- `mov $0x87d693,%eax; shr $0x1a,%eax; je` -- a runtime test of a field of an
+  instruction word that is known when the trace is compiled. Copy-and-patch
+  substitutes values; it does not fold, so a case serving several encodings pays
+  to re-discriminate on every execution. The fix is a stencil variant per
+  discriminated form, which the table can hold but the generator cannot yet
+  derive.
+- Six `add $N,%r14`, one pc advance per instruction, where a block needs one.
+  Deferring them is not free: an execute body may read pc, and every exit must
+  see the true one, so the emitter would have to flush pending advances before
+  any pc-reading or exit-carrying step.
+
+Whole-workload, the JIT retires 30.4 host instructions per guest instruction
+against stock's 43.5 and the tail-call interpreter's 48.1 (71.9G, 102.6G and
+113.5G over 2.36G guest instructions). Compiled code is far leaner than either
+loop; what dilutes it to -28% is the 16% still interpreted and the guards and
+accounting a trace pays that straight-line compiled code does not.
+
+What is left is two different things, and the table separates them. On a
+workload the tracer covers, what remains is the technique's own ceiling: inside
+compiled code each instruction still reads and
+writes the guest register file in memory, because copy-and-patch substitutes
+values into fixed bodies and cannot allocate a guest register into a host one
+across a trace. Per instruction, compiled code costs about two thirds of an
+interpreted one. Closing further means either fusing guards with the operations
+they guard (a variant per recorded branch outcome, which the stencil table can
+hold) or keeping pc and the hottest guest registers live across a block, which
+is where a bespoke backend would start to differ from this one.
+
+On the five workloads it does not cover, none of that matters yet. The backend
+is idle and the shell is charging rent, and the question is why a tight integer
+loop that the compiled set fully supports never becomes a trace that gets
+entered. Trace formation, not translation, is where the next measurement
+belongs: which sites the hooks fire at, what the recorder does with them, and
+whether a head once installed is ever reached again.
+
+The remaining soundness item is stores into a page holding a trace, which needs
+the write-TLB refusal described in 8b item 3; until then a guest that modifies
+its own code would execute the recorded instructions, and the flag stays
+experimental for that reason among others.
+
 ## 6. Hardware counters explain zlib
 
 Eliminated first by construction and measurement: per-handler prologue
@@ -1125,6 +1382,11 @@ register-budget problem; the register series does (six slots in 5.16,
 four with segments and the typed pc, section 8d). The +10.9% default
 predates those changes, and composing the convention with pinning
 remains invalid because their registers overlap (now a compile error).
+
+The register contract's payoff outside the interpreter is now measured
+twice over: the AOT oracle of 8b item 2, and the copy-and-patch backend of
+5.20, whose stencils are only relocatable into a chain at all because that
+contract is fixed and identical on both sides of the splice.
 
 Standing goal: a single interpreter implementation, so there is one loop
 to audit instead of two. Currently blocked by portability (x86-64 has
@@ -1271,17 +1533,18 @@ shell cost +66% with tracing idle).
    the entry path; if flush-thrash appears, use an epoch stamp and cold
    second-chance sweep rather than an LRU list.
 
-4. OPEN, unblocked by 2's margin. Backend choice. MIR generates standard-ABI
-   code, so every trace entry and exit would re-marshal the interpreter
-   state, exactly the boundary cost the LuaJIT architecture avoids, and
-   the prior experiments recorded short traces, where boundary
-   dominates. MIR behind a marshalling shim is acceptable as a cheap
-   probe; the endgame backend must honor the register contract (traces
-   are straight-line with side exits, register allocation is nearly
-   trivial, which is why LuaJIT's backend is bespoke). The pinned shape
-   helps here: with state at fixed registers under both compilers, the
-   backend targets one contract regardless of how the host emulator was
-   built.
+4. DONE, COPY-AND-PATCH (section 5.20). The backend is stencils compiled
+   against the handler contract and patched at run time, so a trace is
+   entered and left by a jump with no state marshalled: the objection to
+   MIR was that its standard ABI would re-marshal at every boundary, and
+   copy-and-patch removes the boundary rather than paying it. 119 of the
+   153 cases compile, and the register contract makes register allocation
+   a non-question, as predicted. It is exact, cycle- and hash-identical
+   over a full boot, and measures -9.1% aggregate over six workloads,
+   ranging from -45% where it covers 86% of executed instructions to +5%
+   where it covers almost none. That is this section's boundary argument
+   paying off where the traces are, and it closes the backend item; what
+   the spread now points at is item 3's selection, not item 4's codegen.
 
 ## 8c. The register-budget series: filed ideas and the queued campaign
 
@@ -1455,6 +1718,15 @@ image (relink the new build against the old-source image and require
 the old anchors bit for bit). The routine gates for any change are the
 cm-cli spec suite and the six-workload harness; formatting and format
 checks pass.
+
+The copy-and-patch build (section 5.20) is gated the same way and to the
+same standard: cycle-, exit- and hash-identical to a same-source no-JIT
+build over a full Linux boot and a 2.36G-cycle workload, plus the cm-cli
+spec suite at 52/52, under both compilers on x86-64. Its own gaps are
+stated in 5.20 and are not covered by those gates: a guest that writes to
+a page holding a compiled trace would execute the recorded instructions,
+because the write-TLB refusal of 8b item 3 is not built yet, and the
+generated stencil table is x86-64 only.
 
 Remaining before the experiment can be promoted: the tail-call
 translation unit still fails the project's clang-tidy policy

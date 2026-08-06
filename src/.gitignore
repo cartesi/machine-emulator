@@ -9,3 +9,4 @@ coverage*
 jsonrpc-discover.cpp
 cm-version.h
 interpret-jump-table.hpp
+interpret-tc-stencils.inc

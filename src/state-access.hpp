@@ -104,14 +104,54 @@ private:
     // -----
     friend i_state_access<state_access>;
 
-    uint64_t do_read_x(int i) const {
+#if defined(TC_STENCIL_TU)
+    // In the copy-and-patch stencil translation unit (interpret-tc-stencils.cpp)
+    // a register operand arrives as a link-time constant byte offset instead of
+    // an index, because a relocation can only contribute symbol+addend and never
+    // symbol*8: as an index the operand needs its own materializing instruction
+    // and a scaled addressing mode, while as an offset it folds into the
+    // displacement of the load or store itself, which is the one instruction the
+    // access should cost. That unit is compiled to be mined for machine code and
+    // is never linked, so this variant reaches nothing else.
+
+    /// \brief Trip-wire for a register index that reached a stencil unscaled.
+    /// \details Declared and never defined. A literal index (`a.read_x(2)` in
+    /// the compressed stack-pointer bodies, `a.write_x(1, …)` in the link-value
+    /// ones) or any field getter the stencil hole layer does not cover would
+    /// otherwise address the wrong register silently. Calling an undefined
+    /// symbol instead leaves a relocation the stencil extractor rejects by
+    /// name, so the mistake is a build failure rather than a divergence found
+    /// later by a root hash.
+    static uint64_t tc_stencil_register_index_is_not_a_byte_offset();
+
+    static void tc_stencil_check_offset(reg_index i) {
+        if (__builtin_constant_p(i) && (i % sizeof(uint64_t)) != 0) {
+            (void) tc_stencil_register_index_is_not_a_byte_offset();
+        }
+    }
+
+    uint64_t do_read_x(reg_index i) const {
+        tc_stencil_check_offset(i);
+        return aliased_aligned_read<uint64_t>(
+            cast_ptr_to_host_addr(&m_s.shadow.registers.x[0]) + static_cast<uint64_t>(i));
+    }
+
+    void do_write_x(reg_index i, uint64_t val) const {
+        assert(i != 0);
+        tc_stencil_check_offset(i);
+        aliased_aligned_write<uint64_t>(cast_ptr_to_host_addr(&m_s.shadow.registers.x[0]) + static_cast<uint64_t>(i),
+            val);
+    }
+#else
+    uint64_t do_read_x(reg_index i) const {
         return m_s.shadow.registers.x[i];
     }
 
-    void do_write_x(int i, uint64_t val) const {
+    void do_write_x(reg_index i, uint64_t val) const {
         assert(i != 0);
         m_s.shadow.registers.x[i] = val;
     }
+#endif
 
     uint64_t do_read_f(int i) const {
         return m_s.shadow.registers.f[i];

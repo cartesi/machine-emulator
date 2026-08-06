@@ -3671,7 +3671,9 @@ static FORCE_INLINE execute_status execute_JALR(const STATE_ACCESS a, i_state_ac
     const auto new_pc =
         value_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
     const uint32_t rd = insn_get_rd(insn);
-    if constexpr (requires { a.stage_indirect_jump(pc, new_pc); }) {
+    if constexpr (rd_kind == rd_kind::x0 && requires { a.stage_indirect_return(pc, new_pc); }) {
+        return a.stage_indirect_return(pc, new_pc);
+    } else if constexpr (requires { a.stage_indirect_jump(pc, new_pc); }) {
         if constexpr (rd_kind != rd_kind::x0) {
             a.write_x(rd, val);
         }
@@ -5588,7 +5590,9 @@ static FORCE_INLINE execute_status execute_C_JR(const STATE_ACCESS a, i_state_ac
     // rs1 cannot be zero (guaranteed by the jump table)
     const uint32_t rs1 = insn_get_rd(insn);
     const auto new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1); // architectural target
-    if constexpr (requires { a.stage_indirect_jump(pc, new_pc); }) {
+    if constexpr (requires { a.stage_indirect_return(pc, new_pc); }) {
+        return a.stage_indirect_return(pc, new_pc);
+    } else if constexpr (requires { a.stage_indirect_jump(pc, new_pc); }) {
         return a.stage_indirect_jump(pc, new_pc);
     } else {
         return execute_jump(a, pc, pc_to_fast(a, new_pc));

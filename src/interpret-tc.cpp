@@ -188,6 +188,18 @@ struct tc_online_state {
         side_link side[max_side_exits];
         uint16_t nside;
         bool side_trace;
+        // Store invalidation: the host pages the recorded bytes live on
+        // (page-split fragments touch one page, plus one more when the last
+        // instruction's bytes cross), the emitted code range for unpatching
+        // incoming links, and the tombstone a write leaves behind. A dead
+        // trace keeps its pool slot and generated code until the next
+        // flush-all, so no pointer into it ever dangles.
+        static constexpr uint32_t max_hpages = 4;
+        uint64_t hpage[max_hpages];
+        uint8_t nhpages;
+        bool dead;
+        const void *code_start;
+        uint64_t code_size;
 #endif
         tc_online_entry entries[max_len];
     };
@@ -209,6 +221,13 @@ struct tc_online_state {
 #endif
     uint64_t penalty_pc[set_slots]; // Persistent open-addressed failure set.
     uint16_t penalty[set_slots];
+#if TC_LIGHTNING
+    // Host pages hosting recorded code bytes, open-addressed, tag hpage+1.
+    // Entries persist until flush-all: after an invalidation a stale entry
+    // costs one cold pool scan that finds nothing, never a wrong answer.
+    uint64_t traced_page[set_slots];
+    uint64_t ntraced_pages;
+#endif
     uint32_t ntraces;
     recording pending;
 #if TC_LIGHTNING
@@ -220,6 +239,8 @@ struct tc_online_state {
     uint64_t aborted;
     uint64_t short_aborted;
     uint64_t compile_aborted;
+    uint64_t verify_aborted;
+    uint64_t invalidated;
     uint64_t flushes;
     uint64_t links;
     uint64_t register_links;
@@ -522,12 +543,21 @@ static FORCE_INLINE uint32_t tc_online_pc_slot(uint64_t pc) {
 }
 
 /// \brief Finds the exact installed trace for a head.
+/// \details A store-invalidated trace stays in its map slot to keep the
+/// probe chains intact; reporting it absent both stops dispatch and makes
+/// the head hot-countable and re-recordable again.
 static FORCE_INLINE const tc_online_state::trace *tc_online_find(const tc_online_state *o, uint64_t pc) {
     const uint64_t tag = pc + 1;
     uint32_t s = tc_online_pc_slot(pc);
     while (o->installed_pc[s] != 0) {
         if (o->installed_pc[s] == tag) {
-            return &o->pool[o->installed_trace[s] - 1];
+            const auto *const trace = &o->pool[o->installed_trace[s] - 1];
+#if TC_LIGHTNING
+            if (trace->dead) {
+                return nullptr;
+            }
+#endif
+            return trace;
         }
         s = (s + 1) & (tc_online_state::set_slots - 1);
     }
@@ -558,7 +588,8 @@ static FORCE_INLINE const tc_online_state::trace *tc_online_find_side(const tc_o
     uint32_t s = tc_online_side_slot(pc, expected);
     while (o->side_pc[s] != 0) {
         if (o->side_pc[s] == tag && o->side_expected[s] == expected) {
-            return &o->pool[o->side_trace_index[s] - 1];
+            const auto *const trace = &o->pool[o->side_trace_index[s] - 1];
+            return trace->dead ? nullptr : trace;
         }
         s = (s + 1) & (tc_online_state::set_slots - 1);
     }
@@ -575,6 +606,111 @@ static FORCE_INLINE void tc_online_insert_side(tc_online_state *o, uint64_t pc, 
     o->side_pc[s] = tag;
     o->side_expected[s] = expected;
     o->side_trace_index[s] = trace_index + 1;
+}
+
+static FORCE_INLINE uint32_t tc_online_hpage_slot(uint64_t hpage) {
+    uint64_t key = hpage >> LOG2_PAGE_SIZE;
+    key ^= key >> 12;
+    return static_cast<uint32_t>(key) & (tc_online_state::set_slots - 1);
+}
+
+static FORCE_INLINE void tc_online_insert_hpage(tc_online_state *o, uint64_t hpage) {
+    const uint64_t tag = hpage + 1;
+    uint32_t s = tc_online_hpage_slot(hpage);
+    while (o->traced_page[s] != 0 && o->traced_page[s] != tag) {
+        s = (s + 1) & (tc_online_state::set_slots - 1);
+    }
+    if (o->traced_page[s] == 0) {
+        o->traced_page[s] = tag;
+        ++o->ntraced_pages;
+    }
+}
+
+static FORCE_INLINE bool tc_online_hpage_traced(const tc_online_state *o, uint64_t hpage) {
+    const uint64_t tag = hpage + 1;
+    uint32_t s = tc_online_hpage_slot(hpage);
+    while (o->traced_page[s] != 0) {
+        if (o->traced_page[s] == tag) {
+            return true;
+        }
+        s = (s + 1) & (tc_online_state::set_slots - 1);
+    }
+    return false;
+}
+
+static NO_INLINE void tc_online_debug(const char *what, uint64_t pc, uint64_t extra);
+
+/// \brief Kills one trace whose source bytes changed.
+/// \details The trace stays in its pool slot with its generated code alive
+/// until flush-all, so no pointer into it dangles; it merely becomes
+/// unreachable. Reachability has three roots, each severed here: the exact
+/// and side head maps (the dead flag makes lookups report absence), and the
+/// patchable link slots of every other trace, which generated code loads
+/// per execution, so clearing the slot is immediately effective.
+static void tc_online_kill_trace(tc_online_state *o, tc_online_state::trace &t) {
+    t.dead = true;
+    ++o->invalidated;
+    tc_online_debug("invalidate", t.head, t.len);
+    const auto *const start = static_cast<const char *>(t.code_start);
+    const auto *const end = start + t.code_size;
+    const auto in_range = [start, end](const void *fn) {
+        const auto *const p = static_cast<const char *>(fn);
+        return p >= start && p < end;
+    };
+    for (uint32_t i = 0; i < o->ntraces; ++i) {
+        auto &p = o->pool[i];
+        if (p.dead) {
+            continue;
+        }
+        if (p.link_fn != nullptr && in_range(p.link_fn)) {
+            p.link_fn = nullptr;
+        }
+        if (p.fast_link_fn != nullptr && in_range(p.fast_link_fn)) {
+            p.fast_link_fn = nullptr;
+        }
+        for (uint16_t side = 0; side < p.nside; ++side) {
+            if (p.side[side].fn != nullptr && in_range(p.side[side].fn)) {
+                p.side[side].fn = nullptr;
+            }
+            if (p.side[side].fast_fn != nullptr && in_range(p.side[side].fast_fn)) {
+                p.side[side].fast_fn = nullptr;
+            }
+        }
+    }
+}
+
+/// \brief Penumbra write hook: invalidates every live trace whose recorded
+/// bytes fall in a written range.
+/// \details Called from the machine's write choke points, always from
+/// compiled code with no generated frame live, before the write becomes
+/// observable to a fetch. Page-granular: membership is page-granular anyway,
+/// and the extents the hooks report are conservative.
+static void tc_online_write_hook(void *ctx, host_addr hstart, uint64_t length) {
+    auto *const o = static_cast<tc_online_state *>(ctx);
+    if (o->ntraced_pages == 0) [[likely]] {
+        return;
+    }
+    const uint64_t first = static_cast<uint64_t>(hstart) & ~static_cast<uint64_t>(PAGE_OFFSET_MASK);
+    const uint64_t last = (static_cast<uint64_t>(hstart) + (length - 1)) & ~static_cast<uint64_t>(PAGE_OFFSET_MASK);
+    for (uint64_t page = first;; page += PAGE_OFFSET_MASK + 1) {
+        if (tc_online_hpage_traced(o, page)) {
+            for (uint32_t i = 0; i < o->ntraces; ++i) {
+                auto &t = o->pool[i];
+                if (t.dead) {
+                    continue;
+                }
+                for (uint8_t j = 0; j < t.nhpages; ++j) {
+                    if (t.hpage[j] == page) {
+                        tc_online_kill_trace(o, t);
+                        break;
+                    }
+                }
+            }
+        }
+        if (page == last) {
+            break;
+        }
+    }
 }
 #endif
 
@@ -633,10 +769,12 @@ __attribute__((destructor)) static void tc_online_report() {
     }
     const auto &o = tc_online_storage;
     std::fprintf(stderr,
-        "tc-online: installed %llu aborted %llu (short %llu compile %llu) flushes %llu links %llu "
+        "tc-online: installed %llu aborted %llu (short %llu compile %llu verify %llu) invalidated %llu "
+        "flushes %llu links %llu "
         "register-links %llu (moves %llu loads %llu stores %llu) live %u\n",
         static_cast<unsigned long long>(o.installed), static_cast<unsigned long long>(o.aborted),
         static_cast<unsigned long long>(o.short_aborted), static_cast<unsigned long long>(o.compile_aborted),
+        static_cast<unsigned long long>(o.verify_aborted), static_cast<unsigned long long>(o.invalidated),
         static_cast<unsigned long long>(o.flushes), static_cast<unsigned long long>(o.links),
         static_cast<unsigned long long>(o.register_links), static_cast<unsigned long long>(o.register_moves),
         static_cast<unsigned long long>(o.register_loads), static_cast<unsigned long long>(o.register_stores),
@@ -696,6 +834,10 @@ static void tc_online_flush(tc_context<STATE_ACCESS> *c) {
     for (auto &s : o->side_pc) {
         s = 0;
     }
+    for (auto &s : o->traced_page) {
+        s = 0;
+    }
+    o->ntraced_pages = 0;
 #endif
     for (auto &h : c->hot.hotcount) {
         h = TC_HOT_RESET;
@@ -778,6 +920,43 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         return;
     }
 
+#if TC_LIGHTNING
+    // The recorder observed each word at execution time, but a store may
+    // have changed it since (stores during a recording run through hot
+    // write slots and are not individually observable). Re-verify every
+    // recorded word against guest memory before freezing its semantics
+    // into generated code; from installation on, the write hook takes over.
+    for (uint32_t i = 0; i < recording.len; ++i) {
+        const auto &entry = recording.entries[i];
+        const auto haddr = host_addr{entry.vaddr + entry.code_vf_offset};
+        uint32_t current = aliased_aligned_read<uint16_t>(cast_host_addr_to_ptr(haddr));
+        uint32_t recorded = entry.insn & UINT32_C(0xffff);
+        if ((entry.insn & 3) == 3) {
+            // An instruction whose bytes cross the page boundary has its
+            // second half on a page this entry's mapping offset says nothing
+            // about: rejecting it keeps the verification read in bounds and
+            // the page membership exact, at the cost of refusing the rare
+            // trace through the crossing region.
+            if ((entry.vaddr & PAGE_OFFSET_MASK) > PAGE_OFFSET_MASK - 3) {
+                ++o->aborted;
+                ++o->verify_aborted;
+                tc_online_penalize(o, recording.head, true);
+                reject_side();
+                return;
+            }
+            current |= static_cast<uint32_t>(aliased_aligned_read<uint16_t>(cast_host_addr_to_ptr(haddr + 2))) << 16;
+            recorded = entry.insn;
+        }
+        if (current != recorded) {
+            ++o->aborted;
+            ++o->verify_aborted;
+            tc_online_penalize(o, recording.head);
+            reject_side();
+            return;
+        }
+    }
+#endif
+
     const uint32_t first_trace = o->ntraces;
 #if TC_LIGHTNING
     tc_online_state::trace *side_predecessor = nullptr;
@@ -818,6 +997,46 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         t.returns = false;
         t.nside = 0;
         t.side_trace = o->pending_side != nullptr;
+        t.dead = false;
+        t.code_start = nullptr;
+        t.code_size = 0;
+        // The host pages the recorded bytes live on. Fragments are page-split
+        // by instruction start, so this is the shared page plus at most one
+        // more where the last instruction's bytes cross the boundary; the
+        // loop stays general anyway.
+        t.nhpages = 0;
+        bool pages_overflowed = false;
+        for (uint32_t i = start; i < end; ++i) {
+            const auto &entry = recording.entries[i];
+            const uint64_t first_byte = entry.vaddr + entry.code_vf_offset;
+            const uint64_t last_byte = first_byte + (((entry.insn & 3) == 3 ? 4 : 2) - 1);
+            for (const uint64_t hpage : {first_byte & ~static_cast<uint64_t>(PAGE_OFFSET_MASK),
+                     last_byte & ~static_cast<uint64_t>(PAGE_OFFSET_MASK)}) {
+                bool known = false;
+                for (uint8_t j = 0; j < t.nhpages; ++j) {
+                    known = known || t.hpage[j] == hpage;
+                }
+                if (!known) {
+                    if (t.nhpages == tc_online_state::trace::max_hpages) {
+                        pages_overflowed = true;
+                        break;
+                    }
+                    t.hpage[t.nhpages++] = hpage;
+                }
+            }
+        }
+        if (pages_overflowed) {
+            for (uint32_t i = 0; i < fragment; ++i) {
+                jit_state_t *_jit = o->pool[first_trace + i].jit;
+                jit_destroy_state();
+                o->pool[first_trace + i].jit = nullptr;
+            }
+            ++o->aborted;
+            ++o->short_aborted;
+            tc_online_penalize(o, recording.head);
+            reject_side();
+            return;
+        }
         const auto *const preferred =
             fragment == 0 ? side_predecessor : &o->pool[first_trace + fragment - 1];
         t.fn = tc_lightning_compile_trace(t, &t.jit, preferred);
@@ -877,6 +1096,34 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         }
     }
 #if TC_LIGHTNING
+    // Register the source pages and evict every one of them from the hot
+    // write-TLB set (hot side only; the shadow is architectural state). The
+    // next store to such a page re-verifies through the notifying promotion,
+    // which is what makes stores to traced pages observable at all: while a
+    // page sits in a hot write slot, stores to it are silent. The context
+    // lives at the head of the penumbra scratch area, so the penumbra is
+    // recovered from it by construction.
+    for (uint32_t i = first_trace; i < o->ntraces; ++i) {
+        for (uint8_t j = 0; j < o->pool[i].nhpages; ++j) {
+            tc_online_insert_hpage(o, o->pool[i].hpage[j]);
+        }
+    }
+    auto *const penumbra =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        reinterpret_cast<penumbra_state *>(reinterpret_cast<unsigned char *>(c) - offsetof(penumbra_state, scratch));
+    for (uint64_t slot = 0; slot < TLB_SET_SIZE; ++slot) {
+        auto &hot_slot = penumbra->tlb[TLB_WRITE][slot];
+        if (hot_slot.vaddr_page == TLB_INVALID_PAGE || hot_slot.vaddr_page == TLB_UNVERIFIED_PAGE) {
+            continue;
+        }
+        const uint64_t slot_hpage = hot_slot.vaddr_page + static_cast<uint64_t>(hot_slot.vh_offset);
+        if (tc_online_hpage_traced(o, slot_hpage)) {
+            hot_slot.vaddr_page = TLB_UNVERIFIED_PAGE;
+            hot_slot.vh_offset = host_addr{0};
+        }
+    }
+#endif
+#if TC_LIGHTNING
     if (!tc_lightning_links_enabled()) {
         o->pending_side = nullptr;
         return;
@@ -897,6 +1144,9 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
     }
     for (uint32_t i = 0; i < o->ntraces; ++i) {
         auto &predecessor = o->pool[i];
+        if (predecessor.dead) {
+            continue;
+        }
         if (predecessor.cycle < 0 && predecessor.link_fn == nullptr && tc_lightning_straight_links_enabled()) {
             if (const auto *const successor = tc_online_find(o, predecessor.successor); successor != nullptr) {
                 const bool crosses_page =
@@ -3369,7 +3619,8 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     trace.linked_predecessor = preferred_mapping;
     jit_protect();
     jit_word_t code_size = 0;
-    (void) jit_get_code(&code_size);
+    trace.code_start = jit_get_code(&code_size);
+    trace.code_size = static_cast<uint64_t>(code_size);
     if (std::getenv("TC_LIGHTNING_STATS") != nullptr) {
         std::fprintf(stderr, "tc-lightning: compiled head %llx len %u cycle %d code %lld at %p\n",
             static_cast<unsigned long long>(trace.head), trace.len, trace.cycle, static_cast<long long>(code_size),
@@ -3727,6 +3978,12 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
     tcc->online = &tc_online_storage;
 #if TC_LIGHTNING
     tcc->online_trip_side = nullptr;
+    // Arm the machine's write hook so any mutation of guest RAM bytes
+    // invalidates the traces recorded from them. The hook stays armed after
+    // the run returns: host-side writes between runs (write_memory, cmio,
+    // virtio) must invalidate too.
+    a.get_penumbra().write_hook_ctx = &tc_online_storage;
+    a.get_penumbra().write_hook = &tc_online_write_hook;
 #endif
 #endif
 

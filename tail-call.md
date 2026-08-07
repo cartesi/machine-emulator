@@ -1844,6 +1844,67 @@ shell cost +66% with tracing idle).
     establishment is compiled only into the args-shape entries, and
     this measurement closes the loop on that claim.
 
+11. DONE, GATED, PER-PAGE STORE INVALIDATION. The execution-oracle
+    caveat was the standing production blocker: recorded bytes were
+    re-validated only through the code-TLB tag, so a guest store over
+    traced code would leave installed traces executing the old program,
+    and every measured run was certified only after the fact by its
+    hash gate. The repair realizes item 3's filed policy, built on one
+    invariant: a page hosting recorded trace bytes is never mapped by a
+    hot write-TLB slot. While a page sits in a hot write slot, stores
+    to it are silent, so the write TLB is the observability boundary.
+    Installation evicts the trace's source pages from the hot write set
+    (hot side only; the shadow TLB is architectural state and stays
+    untouched, so hashing sees nothing), and the machine notifies a
+    penumbra-resident write hook wherever a page becomes store-writable
+    again (the slot fill after a walk, and the re-verifying promotion a
+    poisoned slot goes through) or is written outside the TLB entirely
+    (the dirty-marking choke point, which covers page-table A/D updates
+    and slow stores, and the host-side writers write_memory,
+    fill_memory, and write_word, which cmio and virtio funnel through).
+    The hook is null unless the backend arms it, costs two instructions
+    on cold paths and nothing on any hot path, and the generated store
+    fast path is untouched: a store hitting a poisoned slot simply
+    misses and side-exits, which is also how a trace storing over its
+    own code invalidates itself before the store retires.
+
+    Membership is an open-addressed host-page set (host pages, not
+    virtual: aliased mappings reach the same bytes), with each trace
+    recording the pages its bytes came from. Invalidating a written
+    page kills its traces: a dead flag makes the exact and side head
+    maps report absence, which both stops dispatch and makes the head
+    hot-countable and re-recordable again; incoming patchable link
+    slots are cleared by code-range comparison, effective immediately
+    because generated code loads them per execution; and the pool slot
+    with its generated code survives until flush-all, so no pointer
+    into a dead trace ever dangles. Two windows closed on the way.
+    Stores during a recording session run through hot slots and are
+    silent, so installation re-verifies every recorded word against
+    guest memory before freezing its semantics into generated code.
+    And an instruction whose bytes cross a page boundary keeps its
+    second half on a page the entry's mapping offset says nothing
+    about, so such recordings are refused outright, which also keeps
+    the verification read in bounds and the membership exact.
+
+    Gates, both architectures, on top of the item 10 campaign results.
+    Boot, sieve, hash, and qsort reproduce the recorded hashes byte for
+    byte with the mechanism armed. A new SMC gate pauses two billion
+    cycles into sieve, overwrites the executing code page with
+    compressed illegal instructions through the host API, and resumes
+    to a fixed target: stock and backend agree exactly, and the M3 and
+    the emulated x86-64 produce the same final root hash, the
+    determinism guarantee holding through a mid-run host write and the
+    invalidations it triggers (six on the M3, five on x86-64). The
+    counters also caught what the oracle era could not see: even a
+    plain sieve boot writes over pages hosting traced boot-loop code
+    (one invalidation and a few verify rejections per run), stale
+    execution the gates never observed only because those traces
+    happened not to be re-entered afterward. The backend no longer
+    depends on that luck. Remaining before production: the per-machine
+    pool and coverage growth; the timing cost of the mechanism is
+    expected to be nothing on trace-free stores and rides the queued
+    Raptor campaign for confirmation.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three
@@ -2085,12 +2146,13 @@ extractions and must be regenerated if the stock switch or jump table
 changes). The emutls exit-crash fix in cm.cpp (section 5.13) shipped
 independently of the flag.
 
-The backend carries its own promotion list, unchanged in substance by
-the x86-64 port. It remains an execution oracle: recorded code bytes
-are re-validated only through the code-TLB tag at entry and at
-cross-page boundaries, there is no per-page trace membership and
-therefore no store invalidation, so it is valid for gated benchmarks
-and not for production. The tramp-spill defect a clang-20 build
+The backend carries its own promotion list. The execution-oracle
+caveat is retired: per-page trace membership and store invalidation
+(8b item 11) make recorded bytes coherent with guest memory by
+construction, so correctness no longer leans on the per-run hash gate.
+The remaining production items are the per-machine pool (profiling,
+traces, and blacklists still live in a per-thread static that outlives
+a machine) and coverage. The tramp-spill defect a clang-20 build
 exposed -- side-trace division spilling through a frame pointer the
 build never established, a silent eight-byte scribble under GCC -- is
 fixed on the args shape by establishing a real frame in the penumbra

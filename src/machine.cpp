@@ -281,6 +281,11 @@ uint64_t machine::init_hot_tlb_slot(TLB_set_index set_index, uint64_t slot_index
     const auto vh_offset = get_host_addr(paddr_page, pma_index) - vaddr_page;
     hot_slot.vaddr_page = vaddr_page;
     hot_slot.vh_offset = vh_offset;
+    // Re-verification is how a poisoned write slot becomes store-writable
+    // again, so it must notify like the original fill does
+    if (set_index == TLB_WRITE) {
+        notify_write_hook(get_host_addr(paddr_page, pma_index), AR_PAGE_SIZE);
+    }
     return vaddr_page;
 }
 
@@ -1752,7 +1757,7 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
         throw std::invalid_argument{"attempted write to protected memory range "s.append(ar_descr)};
     }
     //??D In C++23, change this to use std::span and std::views::chunk std::views::drop/take and std::views::chain
-    foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [&ar, paddr, data](auto chunk_start, auto chunk_length) {
+    foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [this, &ar, paddr, data](auto chunk_start, auto chunk_length) {
         const auto *src = data + (chunk_start - paddr);
         const auto offset = chunk_start - ar.get_start();
         auto *dest = ar.get_host_memory() + offset;
@@ -1760,6 +1765,7 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
             // Page is different, we have to copy memory
             memcpy(dest, src, chunk_length);
             ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
+            notify_write_hook(cast_ptr_to_host_addr(dest), chunk_length);
         }
     });
 }
@@ -1784,12 +1790,13 @@ void machine::fill_memory(uint64_t paddr, uint8_t val, uint64_t length) {
     }
     // The case of filling a range with zeros is special and optimized for uarch reset
     //??D In C++23, change this to use std::span and std::views::chunk std::views::drop/take and std::views::chain
-    foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [&ar, val](auto chunk_start, auto chunk_length) {
+    foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [this, &ar, val](auto chunk_start, auto chunk_length) {
         const auto offset = chunk_start - ar.get_start();
         const auto dest = ar.get_host_memory() + offset;
         if (val != 0 || !is_pristine(std::span<const unsigned char>{dest, static_cast<size_t>(chunk_length)})) {
             memset(dest, val, chunk_length);
             ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
+            notify_write_hook(cast_ptr_to_host_addr(dest), chunk_length);
         }
     });
 }
@@ -1967,6 +1974,7 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
     const auto offset = paddr - ar.get_start();
     aliased_aligned_write<uint64_t>(ar.get_host_memory() + offset, val);
     ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
+    notify_write_hook(cast_ptr_to_host_addr(ar.get_host_memory() + offset), sizeof(uint64_t));
 }
 
 void machine::check_pending_cmio_request(uint16_t reason, uint64_t length,

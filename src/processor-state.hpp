@@ -49,7 +49,14 @@ struct penumbra_state final {
     hot_tlb_state tlb;           ///< Hot TLB state
     machine *owner{};            ///< Machine holding this state
     host_addr fetch_vf_offset{}; ///< Fetch mapping offset of the current code page
-    uint64_t scratch[510]{};     ///< Interpreter loop scratch area; also aligns penumbra state size to a page boundary
+    /// \brief Host-write notification hook, null unless a runtime consumer of
+    /// guest memory bytes (the trace backend) has derived state to invalidate.
+    /// \details Called wherever guest RAM bytes can change: at write-TLB slot
+    /// establishment (fill and re-verification), and at the host-side write
+    /// choke points. The extent is conservative (whole pages are fine).
+    void (*write_hook)(void *ctx, host_addr hstart, uint64_t length){};
+    void *write_hook_ctx{};  ///< Opaque context for write_hook
+    uint64_t scratch[508]{}; ///< Interpreter loop scratch area; also aligns penumbra state size to a page boundary
 };
 
 /// \brief Machine processor state.

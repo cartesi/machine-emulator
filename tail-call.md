@@ -1834,6 +1834,16 @@ shell cost +66% with tracing idle).
     only interleaved same-session ratios are meaningful. The campaign
     tables above are internally interleaved and unaffected.
 
+    The claimed AArch64 no-op was then confirmed natively on the M3.
+    Pre-fix and post-fix builds of the pinned backend agree byte for
+    byte on cycles, root hashes, and guest exits over full sieve,
+    hash, and qsort runs, with recorder statistics identical line for
+    line (262 traces installed, 104 links, 54 register links, equal
+    load/store counters), and interleaved medians of three repetitions
+    within noise (sieve -0.5%, hash -0.3%, qsort -0.2%). The frame
+    establishment is compiled only into the args-shape entries, and
+    this measurement closes the loop on that claim.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

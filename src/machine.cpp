@@ -737,6 +737,9 @@ void machine::dump_stats() {
 machine::~machine() {
     dump_insn_hist();
     dump_stats();
+    if (m_s->penumbra.tc_state_free != nullptr) {
+        m_s->penumbra.tc_state_free(m_s->penumbra.tc_state);
+    }
 }
 
 uint64_t machine::read_reg(reg r) const {

@@ -535,8 +535,6 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     const tc_online_state::trace *preferred_mapping = nullptr);
 #endif
 
-static THREAD_LOCAL tc_online_state tc_online_storage;
-
 static FORCE_INLINE uint32_t tc_online_pc_slot(uint64_t pc) {
     pc ^= pc >> 12;
     return (static_cast<uint32_t>(pc) >> 1) & (tc_online_state::set_slots - 1);
@@ -762,12 +760,8 @@ static NO_INLINE void tc_online_debug(const char *what, uint64_t pc, uint64_t ex
     }
 }
 
-/// \brief Prints recorder statistics at exit when TC_ONLINE_STATS is set.
-__attribute__((destructor)) static void tc_online_report() {
-    if (std::getenv("TC_ONLINE_STATS") == nullptr) {
-        return;
-    }
-    const auto &o = tc_online_storage;
+/// \brief Prints recorder statistics when TC_ONLINE_STATS is set.
+static void tc_online_report(const tc_online_state &o) {
     std::fprintf(stderr,
         "tc-online: installed %llu aborted %llu (short %llu compile %llu verify %llu) invalidated %llu "
         "flushes %llu links %llu "
@@ -779,6 +773,41 @@ __attribute__((destructor)) static void tc_online_report() {
         static_cast<unsigned long long>(o.register_links), static_cast<unsigned long long>(o.register_moves),
         static_cast<unsigned long long>(o.register_loads), static_cast<unsigned long long>(o.register_stores),
         static_cast<unsigned>(o.ntraces));
+}
+
+/// \brief Frees a machine's recorder state: reports statistics, destroys the
+/// pool's lightning states, and deletes the storage.
+/// \details Registered in the penumbra so the machine destructor can release
+/// the state without seeing its type.
+static void tc_online_free(void *p) {
+    auto *const o = static_cast<tc_online_state *>(p);
+    if (std::getenv("TC_ONLINE_STATS") != nullptr) {
+        tc_online_report(*o);
+    }
+#if TC_LIGHTNING
+    for (uint32_t i = 0; i < o->ntraces; ++i) {
+        if (o->pool[i].jit != nullptr) {
+            jit_state_t *_jit = o->pool[i].jit;
+            jit_destroy_state();
+            o->pool[i].jit = nullptr;
+        }
+    }
+#endif
+    delete o;
+}
+
+/// \brief Returns the machine's recorder state, allocating it on first use.
+/// \details The state was a per-thread static that outlived machine objects,
+/// which forced one workload per process: traces recorded against one
+/// machine's mapping were offered to the next. Owned by the machine, the
+/// traces, maps, penalties and generated code die with the machine that
+/// produced them.
+static tc_online_state *tc_online_get(penumbra_state &penumbra) {
+    if (penumbra.tc_state == nullptr) {
+        penumbra.tc_state = new tc_online_state{};
+        penumbra.tc_state_free = &tc_online_free;
+    }
+    return static_cast<tc_online_state *>(penumbra.tc_state);
 }
 
 #if TC_LIGHTNING
@@ -3975,14 +4004,14 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
     }
 #endif
 #if TC_ONLINE
-    tcc->online = &tc_online_storage;
+    tcc->online = tc_online_get(a.get_penumbra());
 #if TC_LIGHTNING
     tcc->online_trip_side = nullptr;
     // Arm the machine's write hook so any mutation of guest RAM bytes
     // invalidates the traces recorded from them. The hook stays armed after
     // the run returns: host-side writes between runs (write_memory, cmio,
     // virtio) must invalidate too.
-    a.get_penumbra().write_hook_ctx = &tc_online_storage;
+    a.get_penumbra().write_hook_ctx = tcc->online;
     a.get_penumbra().write_hook = &tc_online_write_hook;
 #endif
 #endif

@@ -295,6 +295,7 @@ struct tc_context {
     bool online_trip_call;
 #if TC_LIGHTNING
     tc_online_state::side_link *online_trip_side;
+    uint64_t fp_stage; ///< Result staging slot for inline FP guard checks
 #endif
     bool online_trip;
 #endif
@@ -2222,6 +2223,8 @@ struct tc_lightning_execution {
         offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, f);
     static constexpr jit_word_t shadow_mstatus_offset =
         offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, mstatus);
+    static constexpr jit_word_t shadow_fcsr_offset =
+        offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, fcsr);
 
     static void emit_shadow_load(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned /*depth*/) {
@@ -2293,6 +2296,207 @@ struct tc_lightning_execution {
             }
         }
         add_exit(jit_bnei(scratch_registers[0], static_cast<jit_word_t>(execute_status::success)));
+    }
+
+    // --- Inline floating point (typed staging over the hard-float guards) ---
+    // The i_hfloat proof carries to emitted code verbatim: rounding resolved
+    // to round-to-nearest-even, NX already sticky, operands zero-or-normal
+    // (and boxed for single precision), result strictly normal -- then the
+    // host result is bit-identical to soft-float and no flag beyond the
+    // already-set NX can be due, so fcsr is untouched. Every guard miss of
+    // one instruction shares one side exit; the portable handler re-executes
+    // it in full.
+
+    bool declined{};       ///< Cleanly refused: whole-instruction helper fallback allowed
+    bool fp_frm_pending{}; ///< Insn names the dynamic rounding mode; guard frm at the op
+    jit_node_t *fp_bail[16]{};
+    uint8_t fp_nbail{};
+    uint64_t fp_decline_map[4]{}; ///< Discovery-recorded declining instructions
+
+    void decline() {
+        declined = true;
+        failed = true;
+    }
+
+    // Inline FP is enabled on x86-64 only until the AArch64 question is
+    // audited: lightning's JIT_F registers may map to callee-saved v
+    // registers there, which the generated code must not clobber under the
+    // pinned chain. Elsewhere the operations decline to the helpers.
+#if defined(__x86_64__)
+    static constexpr bool fp_inline_supported = true;
+#else
+    static constexpr bool fp_inline_supported = false;
+#endif
+
+    static bool fp_host_fma() {
+#if defined(__x86_64__)
+        // Lightning falls back to a double-rounded mul-add without host FMA
+        static const bool host = __builtin_cpu_supports("fma");
+        return host;
+#else
+        return true;
+#endif
+    }
+
+    void fp_bail_on(jit_node_t *branch) {
+        if (fp_nbail == std::size(fp_bail)) {
+            failed = true;
+            return;
+        }
+        fp_bail[fp_nbail++] = branch;
+    }
+
+    /// \brief Flushes the pending guard misses into one shared side exit.
+    void fp_flush_bails() {
+        if (failed || fp_nbail == 0) {
+            fp_nbail = 0;
+            return;
+        }
+        jit_state_t *_jit = jit;
+        jit_node_t *const done = jit_jmpi();
+        jit_node_t *const island = jit_label();
+        for (unsigned i = 0; i < fp_nbail; ++i) {
+            jit_patch_at(fp_bail[i], island);
+        }
+        fp_nbail = 0;
+        add_exit(jit_jmpi());
+        jit_patch_at(done, jit_label());
+    }
+
+    /// \brief Guards mstatus FS != OFF into the instruction's shared exit.
+    void fp_guard_fs() {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        const jit_gpr_t t0 = scratch_registers[0];
+        jit_ldxi(t0, TC_JIT_STATE, shadow_mstatus_offset);
+        jit_andi(t0, t0, static_cast<jit_word_t>(MSTATUS_FS_MASK));
+        fp_bail_on(jit_beqi(t0, 0));
+    }
+
+    /// \brief Guards NX sticky, and frm == RNE when the insn said DYN.
+    void fp_guard_fcsr() {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        const jit_gpr_t t0 = scratch_registers[0];
+        const jit_gpr_t t1 = scratch_registers[1];
+        jit_ldxi(t0, TC_JIT_STATE, shadow_fcsr_offset);
+        jit_andi(t1, t0, static_cast<jit_word_t>(FFLAGS_NX_MASK));
+        fp_bail_on(jit_beqi(t1, 0));
+        if (fp_frm_pending) {
+            jit_rshi_u(t1, t0, FCSR_FRM_SHIFT);
+            jit_andi(t1, t1, 7);
+            fp_bail_on(jit_bnei(t1, static_cast<jit_word_t>(FRM_RNE)));
+        }
+        fp_frm_pending = false;
+    }
+
+    /// \brief Guards one operand zero-or-normal (boxed for singles) and
+    /// loads it into an FP register, negated when the body flipped its sign.
+    void fp_load_operand(bool dbl, uint32_t freg, bool neg, jit_gpr_t fdst) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        const jit_gpr_t t0 = scratch_registers[0];
+        const jit_gpr_t t1 = scratch_registers[1];
+        const uint64_t mant_size = dbl ? i_sfloat64::MANT_SIZE : i_sfloat32::MANT_SIZE;
+        const uint64_t exp_mask = dbl ? i_sfloat64::EXP_MASK : i_sfloat32::EXP_MASK;
+        const uint64_t min_normal = UINT64_C(1) << mant_size;
+        const uint64_t sign_off = (exp_mask << mant_size) | (min_normal - 1);
+        const jit_word_t off = shadow_f_offset + freg * sizeof(uint64_t);
+        jit_ldxi(t0, TC_JIT_STATE, off);
+        if (!dbl) {
+            // an improperly boxed operand unboxes to a NaN
+            jit_rshi_u(t1, t0, 32);
+            fp_bail_on(jit_bnei(t1, static_cast<jit_word_t>(UINT32_C(0xffffffff))));
+        }
+        jit_andi(t1, t0, static_cast<jit_word_t>(sign_off));
+        jit_node_t *const zero_ok = jit_beqi(t1, 0);
+        jit_subi(t1, t1, static_cast<jit_word_t>(min_normal));
+        fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>((exp_mask << mant_size) - min_normal)));
+        jit_patch_at(zero_ok, jit_label());
+        if (dbl) {
+            jit_ldxi_d(fdst, TC_JIT_STATE, off);
+            if (neg) {
+                jit_negr_d(fdst, fdst);
+            }
+        } else {
+            jit_ldxi_f(fdst, TC_JIT_STATE, off);
+            if (neg) {
+                jit_negr_f(fdst, fdst);
+            }
+        }
+    }
+
+    enum class fp_kind : uint8_t { add, mul, div, sqrt, fma };
+
+    /// \brief Emits the operation into JIT_F0 with all pre-guards.
+    void fp_emit_op(fp_kind kind, bool dbl, uint32_t r1, bool n1, uint32_t r2, bool n2, uint32_t r3, bool n3) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        fp_guard_fcsr();
+        fp_load_operand(dbl, r1, n1, JIT_F0);
+        if (kind != fp_kind::sqrt) {
+            fp_load_operand(dbl, r2, n2, JIT_F1);
+        }
+        if (kind == fp_kind::fma) {
+            fp_load_operand(dbl, r3, n3, JIT_F2);
+        }
+        switch (kind) {
+            case fp_kind::add:
+                dbl ? jit_addr_d(JIT_F0, JIT_F0, JIT_F1) : jit_addr_f(JIT_F0, JIT_F0, JIT_F1);
+                break;
+            case fp_kind::mul:
+                dbl ? jit_mulr_d(JIT_F0, JIT_F0, JIT_F1) : jit_mulr_f(JIT_F0, JIT_F0, JIT_F1);
+                break;
+            case fp_kind::div:
+                dbl ? jit_divr_d(JIT_F0, JIT_F0, JIT_F1) : jit_divr_f(JIT_F0, JIT_F0, JIT_F1);
+                break;
+            case fp_kind::sqrt:
+                dbl ? jit_sqrtr_d(JIT_F0, JIT_F0) : jit_sqrtr_f(JIT_F0, JIT_F0);
+                break;
+            case fp_kind::fma:
+                dbl ? jit_fmar_d(JIT_F0, JIT_F0, JIT_F1, JIT_F2) : jit_fmar_f(JIT_F0, JIT_F0, JIT_F1, JIT_F2);
+                break;
+        }
+    }
+
+    /// \brief Guards the result strictly normal, boxes singles, stores to
+    /// f[rd], and flushes the instruction's shared exit.
+    void fp_emit_result(bool dbl, uint32_t rd) {
+        if (discovery || failed) {
+            fp_nbail = 0;
+            return;
+        }
+        jit_state_t *_jit = jit;
+        const jit_gpr_t t0 = scratch_registers[0];
+        const jit_gpr_t t1 = scratch_registers[1];
+        const uint64_t mant_size = dbl ? i_sfloat64::MANT_SIZE : i_sfloat32::MANT_SIZE;
+        const uint64_t exp_mask = dbl ? i_sfloat64::EXP_MASK : i_sfloat32::EXP_MASK;
+        const uint64_t min_normal = UINT64_C(1) << mant_size;
+        const uint64_t sign_off = (exp_mask << mant_size) | (min_normal - 1);
+        const jit_word_t stage = TC_JIT_CTX_DISP(offsetof(tc_context<state_access>, fp_stage));
+        if (dbl) {
+            jit_stxi_d(stage, TC_JIT_CTX_BASE, JIT_F0);
+            jit_ldxi(t0, TC_JIT_CTX_BASE, stage);
+        } else {
+            jit_stxi_f(stage, TC_JIT_CTX_BASE, JIT_F0);
+            jit_ldxi_ui(t0, TC_JIT_CTX_BASE, stage);
+        }
+        jit_andi(t1, t0, static_cast<jit_word_t>(sign_off));
+        fp_bail_on(jit_blei_u(t1, static_cast<jit_word_t>(min_normal)));
+        fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>(exp_mask << mant_size)));
+        if (!dbl) {
+            jit_ori(t0, t0, static_cast<jit_word_t>(UINT64_C(0xffffffff00000000)));
+        }
+        jit_stxi(shadow_f_offset + rd * sizeof(uint64_t), TC_JIT_STATE, t0);
+        fp_flush_bails();
     }
 };
 
@@ -2487,8 +2691,206 @@ inline tc_lightning_condition::operator tc_lightning_value() const {
 /// \brief State-access adapter that carries an independent execution object.
 /// \details It contains no collection logic: state operations are forwarded
 /// to the execution policy selected for this instantiation.
+// Typed staging values for the floating-point bodies. Changing the types
+// underneath the unchanged execute bodies turns their execution into lazy
+// emission, the same way the integer value type does: the fcsr and mstatus
+// reads become tokens whose comparisons emit guards, float_unbox carries the
+// operand into a typed register handle, the fp_* operations emit the guarded
+// host-FPU sequence, and the write of a provably unchanged fcsr elides.
+// Anything the emitter cannot express declines, and the whole instruction
+// falls back to its helper.
+struct tc_lightning_fcsr_value {
+    tc_lightning_execution *e;
+};
+struct tc_lightning_fflags_value {
+    tc_lightning_execution *e;
+};
+struct tc_lightning_fcsr_high {
+    tc_lightning_execution *e;
+};
+struct tc_lightning_fcsr_same {
+    tc_lightning_execution *e;
+};
+struct tc_lightning_mstatus_value {
+    tc_lightning_execution *e;
+};
+struct tc_lightning_mstatus_masked {
+    tc_lightning_execution *e;
+    uint64_t mask;
+};
+struct tc_lightning_rm_value {
+    tc_lightning_execution *e;
+    uint32_t field;
+};
+struct tc_lightning_fraw {
+    tc_lightning_execution *e;
+    uint32_t freg;
+};
+template <typename T>
+struct tc_lightning_fvalue {
+    tc_lightning_execution *e;
+    uint32_t freg;
+    bool neg;
+};
+template <typename T>
+struct tc_lightning_facc {
+    tc_lightning_execution *e;
+};
+
+static FORCE_INLINE tc_lightning_fflags_value fcsr_fflags(tc_lightning_fcsr_value f) {
+    return {f.e};
+}
+static FORCE_INLINE tc_lightning_fcsr_high operator&(tc_lightning_fcsr_value f, uint64_t mask) {
+    if (mask != ~static_cast<uint64_t>(FCSR_FFLAGS_RW_MASK)) {
+        f.e->decline();
+    }
+    return {f.e};
+}
+static FORCE_INLINE tc_lightning_fcsr_same operator|(tc_lightning_fcsr_high h, tc_lightning_fflags_value /*ff*/) {
+    return {h.e};
+}
+static FORCE_INLINE tc_lightning_rm_value insn_get_rm(uint32_t insn, tc_lightning_fcsr_value f) {
+    return {f.e, (insn >> 12) & 7};
+}
+static FORCE_INLINE bool operator>(tc_lightning_rm_value rm, FRM_modes /*bound*/) {
+    // A static invalid mode cannot reach an installed trace (the recorded
+    // word executed once and its bytes are held constant); DYN resolves at
+    // run time behind the frm guard the operation will emit.
+    if (rm.field == FRM_DYN) {
+        rm.e->fp_frm_pending = true;
+    }
+    return false;
+}
+static FORCE_INLINE tc_lightning_mstatus_masked operator&(tc_lightning_mstatus_value m, uint64_t mask) {
+    return {m.e, mask};
+}
+static FORCE_INLINE bool operator==(tc_lightning_mstatus_masked mm, uint64_t rhs) {
+    // The bodies spell exactly one comparison: the FS-off check
+    if (mm.mask != static_cast<uint64_t>(MSTATUS_FS_MASK) || rhs != static_cast<uint64_t>(MSTATUS_FS_OFF)) {
+        mm.e->decline();
+        return false;
+    }
+    mm.e->fp_guard_fs();
+    return false;
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_fvalue<T> float_unbox(tc_lightning_fraw raw) {
+    // The box check for singles is emitted with the operand guards
+    return {raw.e, raw.freg, false};
+}
+template <typename T, typename M>
+    requires(std::is_integral_v<M> || std::is_enum_v<M>)
+static FORCE_INLINE tc_lightning_fvalue<T> operator^(tc_lightning_fvalue<T> v, M mask) {
+    // The bodies flip operand signs only through the sign mask, which the
+    // host FPU negate reproduces exactly
+    if (static_cast<uint64_t>(mask) !=
+        (sizeof(T) == 8 ? static_cast<uint64_t>(i_sfloat64::SIGN_MASK) : static_cast<uint64_t>(i_sfloat32::SIGN_MASK))) {
+        v.e->decline();
+    }
+    v.neg = !v.neg;
+    return v;
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> fp_add(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
+    tc_lightning_rm_value rm, tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN)) {
+        s1.e->decline();
+        return {s1.e};
+    }
+    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::add, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0,
+        false);
+    return {s1.e};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> fp_mul(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
+    tc_lightning_rm_value rm, tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN)) {
+        s1.e->decline();
+        return {s1.e};
+    }
+    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::mul, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0,
+        false);
+    return {s1.e};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> fp_div(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
+    tc_lightning_rm_value rm, tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN)) {
+        s1.e->decline();
+        return {s1.e};
+    }
+    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::div, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0,
+        false);
+    return {s1.e};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> fp_sqrt(tc_lightning_fvalue<T> s1, tc_lightning_rm_value rm,
+    tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN) || s1.neg) {
+        s1.e->decline();
+        return {s1.e};
+    }
+    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::sqrt, sizeof(T) == 8, s1.freg, false, 0, false, 0, false);
+    return {s1.e};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> fp_fma(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
+    tc_lightning_fvalue<T> s3, tc_lightning_rm_value rm, tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN) ||
+        !tc_lightning_execution::fp_host_fma()) {
+        s1.e->decline();
+        return {s1.e};
+    }
+    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::fma, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg,
+        s3.freg, s3.neg);
+    return {s1.e};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> float_box(tc_lightning_facc<T> acc) {
+    return acc;
+}
+/// \brief Boxes a staged FP load word (all ones above a narrow transfer).
+template <typename T>
+static FORCE_INLINE tc_lightning_value float_box_word(tc_lightning_value val) {
+    if constexpr (sizeof(T) < sizeof(uint64_t)) {
+        return val | (UINT64_C(-1) << (sizeof(T) * 8));
+    } else {
+        return val;
+    }
+}
+/// \brief Narrows an f register to a store width as a staged value.
+template <typename T>
+static FORCE_INLINE tc_lightning_value fp_word(tc_lightning_fraw raw) {
+    return raw.e->read_f(raw.freg).template value_cast<T>();
+}
+
 struct tc_lightning_collecting_state_access {
     tc_lightning_execution *execution{};
+
+    tc_lightning_fraw read_f(uint32_t freg) const {
+        return {execution, freg};
+    }
+    template <typename T>
+    void write_f(uint32_t freg, tc_lightning_facc<T> /*acc*/) const {
+        execution->fp_emit_result(sizeof(T) == 8, freg);
+    }
+    void write_f(uint32_t freg, tc_lightning_value value) const {
+        execution->write_f(freg, value);
+        execution->fp_flush_bails();
+    }
+    tc_lightning_fcsr_value read_fcsr() const {
+        return {execution};
+    }
+    void write_fcsr(tc_lightning_fcsr_same /*same*/) const {
+        // The guards prove fcsr unchanged; there is nothing to store
+    }
+    tc_lightning_mstatus_value read_mstatus() const {
+        return {execution};
+    }
+    execute_status stage_fp_decline() const {
+        execution->decline();
+        return execute_status::failure;
+    }
 
     tc_lightning_value read_x(uint32_t guest) const {
         return execution->read_x(guest);
@@ -3280,6 +3682,22 @@ TC_LIGHTNING_CAN_COLLECT(LH_rd0)
 TC_LIGHTNING_CAN_COLLECT(LHU_rd0)
 TC_LIGHTNING_CAN_COLLECT(LB_rd0)
 TC_LIGHTNING_CAN_COLLECT(LBU_rd0)
+// Floating point: the typed staging values carry the arithmetic bodies to
+// the guarded host-FPU emitter, memory through the staged access hooks, and
+// the remaining families decline to the whole-instruction helpers.
+TC_LIGHTNING_CAN_COLLECT(FD)
+TC_LIGHTNING_CAN_COLLECT(FMADD)
+TC_LIGHTNING_CAN_COLLECT(FMSUB)
+TC_LIGHTNING_CAN_COLLECT(FNMADD)
+TC_LIGHTNING_CAN_COLLECT(FNMSUB)
+TC_LIGHTNING_CAN_COLLECT(FLD)
+TC_LIGHTNING_CAN_COLLECT(FLW)
+TC_LIGHTNING_CAN_COLLECT(FSD)
+TC_LIGHTNING_CAN_COLLECT(FSW)
+TC_LIGHTNING_CAN_COLLECT(C_FLD)
+TC_LIGHTNING_CAN_COLLECT(C_FLDSP)
+TC_LIGHTNING_CAN_COLLECT(C_FSD)
+TC_LIGHTNING_CAN_COLLECT(C_FSDSP)
 #undef TC_LIGHTNING_CAN_COLLECT
 
 /// \brief Fetch-tail continuation entered with the handler register contract.
@@ -3512,15 +3930,27 @@ static bool tc_lightning_collect_range(tc_lightning_execution &execution, uint64
         if (pc != entry.vaddr) {
             return false;
         }
-        bool collected = tc_lightning_collect_instruction(execution, pc, entry.insn);
-        // The FP fallback only applies to a cleanly refused instruction: a
-        // body that failed mid-staging may have advanced pc or poisoned the
-        // execution, and gets no second chance.
-        if (!collected && !execution.failed && pc == entry.vaddr) {
+        bool collected = false;
+        if (((execution.fp_decline_map[i >> 6] >> (i & 63)) & 1) != 0) {
+            // Declined in discovery: at emission the body must not run again
+            // (its guards would emit ahead of the decline and dangle), so
+            // the instruction goes straight to the whole-instruction helper.
             collected = tc_lightning_collect_fp(execution, pc, entry.insn);
-            if (std::getenv("TC_FP_DEBUG") != nullptr) {
+        } else {
+            collected = tc_lightning_collect_instruction(execution, pc, entry.insn);
+            if (!collected && execution.declined && pc == entry.vaddr) {
+                // A clean decline: nothing emitted, nothing advanced. Route
+                // to the helper now and in the emission pass.
+                execution.declined = false;
+                execution.failed = false;
+                execution.fp_decline_map[i >> 6] |= UINT64_C(1) << (i & 63);
+                collected = tc_lightning_collect_fp(execution, pc, entry.insn);
+            } else if (!collected && !execution.failed && pc == entry.vaddr) {
+                collected = tc_lightning_collect_fp(execution, pc, entry.insn);
+            }
+            if (std::getenv("TC_FP_DEBUG") != nullptr && !collected) {
                 std::fprintf(stderr, "tc-fp: fallback insn %08x -> %s\n", entry.insn,
-                    collected ? (execution.failed ? "failed" : "ok") : "refused");
+                    execution.failed ? "failed" : "refused");
             }
         }
         if (!collected || pc != entry.next_pc) {

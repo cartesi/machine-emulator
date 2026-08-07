@@ -357,6 +357,17 @@ struct tc_context {
 #define TC_CALLCONV
 #endif
 
+// Stack bytes the generated code's jit_tramp declaration promises to GNU
+// lightning (see the trace prologue). The args-shape chain establishes a
+// real frame in the tail of the penumbra scratch area at every generated
+// entry, so the promise is true there; the other shapes promise nothing
+// and keep the spill-forbidding register discipline.
+#if TC_LIGHTNING && defined(__x86_64__) && !TC_GLOBAL_REGS
+#define TC_JIT_TRAMP_BYTES 256
+#else
+#define TC_JIT_TRAMP_BYTES 0
+#endif
+
 // The next-instruction pre-load pays for itself only when the register
 // budget keeps the extra predicted state (word, dispatch target) in
 // registers across the handler body. That holds for the pinned shape
@@ -393,7 +404,9 @@ struct tc_context {
 /// chain. The pinned shape keeps a register on it instead (see below).
 template <typename STATE_ACCESS>
 static FORCE_INLINE tc_context<STATE_ACCESS> *tc_ctx(const STATE_ACCESS a) {
-    static_assert(sizeof(tc_context<STATE_ACCESS>) <= sizeof(penumbra_state::scratch));
+    // The context occupies the head of the scratch area and the generated
+    // code's tramp frame the tail; they must not overlap.
+    static_assert(sizeof(tc_context<STATE_ACCESS>) + TC_JIT_TRAMP_BYTES <= sizeof(penumbra_state::scratch));
     static_assert(alignof(tc_context<STATE_ACCESS>) <= alignof(uint64_t));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return std::launder(reinterpret_cast<tc_context<STATE_ACCESS> *>(a.get_penumbra().scratch));
@@ -1083,6 +1096,21 @@ static constexpr jit_word_t tc_lightning_ctx_offset =
 #define TC_JIT_CTX_BASE TC_JIT_STATE
 #define TC_JIT_CTX_DISP(field) (tc_lightning_ctx_offset + static_cast<jit_word_t>(field))
 #endif
+
+// The frame the args-shape entries establish for lightning's tramp promise:
+// FP points at the end of the penumbra scratch area, so the declared bytes
+// grow downward through its tail while the loop context occupies its head
+// (the static_assert in tc_ctx proves they cannot meet). One lea per entry,
+// constant disp32 off the state pointer.
+static constexpr jit_word_t tc_jit_tramp_bytes = TC_JIT_TRAMP_BYTES;
+static constexpr jit_word_t tc_jit_frame_offset = offsetof(processor_state, penumbra) +
+    offsetof(penumbra_state, scratch) + sizeof(penumbra_state::scratch);
+
+static void tc_jit_establish_frame([[maybe_unused]] jit_state_t *_jit) {
+#if TC_JIT_TRAMP_BYTES > 0
+    jit_addi(JIT_FP, TC_JIT_STATE, tc_jit_frame_offset);
+#endif
+}
 
 struct tc_lightning_execution;
 
@@ -3012,23 +3040,24 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     constexpr jit_gpr_t tmp2 = tc_lightning_execution::scratch_registers[2];
 
     jit_prolog();
-    // Generator declaration only: the emitted continuation shares the
-    // interpreter frame and contains no runtime trampoline or prologue.
-    jit_tramp(0);
+    // jit_tramp(N) is not a mode switch but a promise from the caller:
+    // "assume all callee-save registers are saved and there are at least N
+    // bytes in stack" (body.texi). Lightning's spill slots are FP-relative
+    // and there is no spill-free mode, so a build that declares tramp and
+    // never establishes FP has broken the library's precondition, and the
+    // first allocator spill (the fixed operands of an x86 division forced
+    // one, 8b item 10) stores through garbage. The args chain can make the
+    // promise true: every register is clobberable at the chain's call
+    // sites, so each generated entry establishes FP with one lea into the
+    // tail of the machine's own penumbra scratch, and the declared bytes
+    // are really there. The pinned x86-64 shape cannot clobber the
+    // callee-saved rbp and keeps the spill-forbidding register discipline
+    // instead (tramp 0 and two registers left to lightning); AArch64 has
+    // never reached a spill (lightning's allocation order starts at
+    // x8/x16-x18, which the roster leaves free) and is left byte-identical.
+    jit_tramp(tc_jit_tramp_bytes);
     auto *const normal_entry = jit_label();
-#if defined(__x86_64__) && !TC_GLOBAL_REGS
-    // Under tramp lightning spills its internal temporaries through the
-    // frame pointer, and the fixed operands of x86 divisions can force such
-    // a spill when the emitter's scratch is live across the node. No frame
-    // is maintained here, so seed rbp with a per-thread spill area at every
-    // published entry: the args contract may clobber any register, compiled
-    // helpers are SysV and preserve rbp across calls, and generated-code
-    // links never pass through compiled code, so the seeding dominates every
-    // path that can reach a spill. The pinned shape cannot use this fix --
-    // rbp is call-saved and unreserved there -- and keeps the hazard.
-    static THREAD_LOCAL uint64_t tramp_spill_area[32];
-    jit_movi(JIT_FP, reinterpret_cast<jit_word_t>(&tramp_spill_area[24]));
-#endif
+    tc_jit_establish_frame(_jit);
     auto *const entry_bail = jit_blei(TC_JIT_CD, static_cast<jit_word_t>(trace.len));
 
     constexpr jit_word_t x_offset =
@@ -3180,6 +3209,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     jit_node_t *linked_entry = nullptr;
     if (preferred_mapping != nullptr) {
         linked_entry = jit_indirect();
+        tc_jit_establish_frame(_jit);
         for (uint32_t guest = 1; guest < 32; ++guest) {
             if (preferred_mapping->guest_slot[guest] >= 0) {
                 jit_live(tc_lightning_execution::guest_registers[preferred_mapping->guest_slot[guest]]);
@@ -3269,6 +3299,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     // fetch registers. A miss or remap resumes through the ordinary fetch path
     // with pc still encoded using the caller's deposit.
     auto *const call_entry = jit_indirect();
+    tc_jit_establish_frame(_jit);
     constexpr jit_word_t hot_tlb_base = offsetof(processor_state, penumbra) +
         offsetof(penumbra_state, tlb) + TLB_CODE * sizeof(hot_tlb_set);
     constexpr jit_word_t shadow_tlb_base = offsetof(processor_state, shadow) +

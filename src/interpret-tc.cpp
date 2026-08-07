@@ -405,8 +405,10 @@ struct tc_context {
 template <typename STATE_ACCESS>
 static FORCE_INLINE tc_context<STATE_ACCESS> *tc_ctx(const STATE_ACCESS a) {
     // The context occupies the head of the scratch area and the generated
-    // code's tramp frame the tail; they must not overlap.
-    static_assert(sizeof(tc_context<STATE_ACCESS>) + TC_JIT_TRAMP_BYTES <= sizeof(penumbra_state::scratch));
+    // code's tramp frame (plus its saved-rbp slot) the tail; they must not
+    // overlap.
+    static_assert(
+        sizeof(tc_context<STATE_ACCESS>) + TC_JIT_TRAMP_BYTES + sizeof(uint64_t) <= sizeof(penumbra_state::scratch));
     static_assert(alignof(tc_context<STATE_ACCESS>) <= alignof(uint64_t));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return std::launder(reinterpret_cast<tc_context<STATE_ACCESS> *>(a.get_penumbra().scratch));
@@ -1097,18 +1099,30 @@ static constexpr jit_word_t tc_lightning_ctx_offset =
 #define TC_JIT_CTX_DISP(field) (tc_lightning_ctx_offset + static_cast<jit_word_t>(field))
 #endif
 
-// The frame the args-shape entries establish for lightning's tramp promise:
-// FP points at the end of the penumbra scratch area, so the declared bytes
-// grow downward through its tail while the loop context occupies its head
-// (the static_assert in tc_ctx proves they cannot meet). One lea per entry,
-// constant disp32 off the state pointer.
+// The frame the args-shape entries establish for lightning's tramp promise.
+// rbp is callee-saved even under preserve_none -- both GCC 16 and clang-20
+// keep values live in it across preserve_none calls (probed; only rsp joins
+// it) -- so generated code must treat it like any callee-saved register it
+// uses: each entry stores the incoming rbp at the frame base and points FP
+// there, spill slots grow downward through the scratch tail (the
+// static_assert in tc_ctx proves frame and loop context cannot meet), and
+// every leave restores the incoming value from the same constant offset.
+// Two instructions per entry, one per leave, all disp32 off the state
+// pointer.
 static constexpr jit_word_t tc_jit_tramp_bytes = TC_JIT_TRAMP_BYTES;
 static constexpr jit_word_t tc_jit_frame_offset = offsetof(processor_state, penumbra) +
-    offsetof(penumbra_state, scratch) + sizeof(penumbra_state::scratch);
+    offsetof(penumbra_state, scratch) + sizeof(penumbra_state::scratch) - sizeof(uint64_t);
 
 static void tc_jit_establish_frame([[maybe_unused]] jit_state_t *_jit) {
 #if TC_JIT_TRAMP_BYTES > 0
+    jit_stxi(tc_jit_frame_offset, TC_JIT_STATE, JIT_FP);
     jit_addi(JIT_FP, TC_JIT_STATE, tc_jit_frame_offset);
+#endif
+}
+
+static void tc_jit_restore_frame([[maybe_unused]] jit_state_t *_jit) {
+#if TC_JIT_TRAMP_BYTES > 0
+    jit_ldxi(JIT_FP, TC_JIT_STATE, tc_jit_frame_offset);
 #endif
 }
 
@@ -3046,18 +3060,24 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     // and there is no spill-free mode, so a build that declares tramp and
     // never establishes FP has broken the library's precondition, and the
     // first allocator spill (the fixed operands of an x86 division forced
-    // one, 8b item 10) stores through garbage. The args chain can make the
-    // promise true: every register is clobberable at the chain's call
-    // sites, so each generated entry establishes FP with one lea into the
-    // tail of the machine's own penumbra scratch, and the declared bytes
-    // are really there. The pinned x86-64 shape cannot clobber the
-    // callee-saved rbp and keeps the spill-forbidding register discipline
-    // instead (tramp 0 and two registers left to lightning); AArch64 has
-    // never reached a spill (lightning's allocation order starts at
-    // x8/x16-x18, which the roster leaves free) and is left byte-identical.
+    // one, 8b item 10) stores through garbage. The args chain makes the
+    // promise true: each generated entry saves the incoming rbp -- which
+    // preserve_none does NOT free; both compilers keep values live in it
+    // across the chain -- and establishes FP in the tail of the machine's
+    // own penumbra scratch, every leave restores it, and the declared
+    // bytes are really there. The pinned x86-64 shape keeps the
+    // spill-forbidding register discipline instead (tramp 0 and two
+    // registers left to lightning); AArch64 has never reached a spill
+    // (lightning's allocation order starts at x8/x16-x18, which the
+    // roster leaves free) and is left byte-identical.
     jit_tramp(tc_jit_tramp_bytes);
-    auto *const normal_entry = jit_label();
+    // The normal entry is the emitted code's start address; it establishes
+    // the frame before anything else.
     tc_jit_establish_frame(_jit);
+    // Internal jumps from the call entry land here, past the establishment:
+    // they arrive with the frame already established, and saving again would
+    // overwrite the chain's rbp with the frame base.
+    auto *const normal_entry_established = jit_label();
     auto *const entry_bail = jit_blei(TC_JIT_CD, static_cast<jit_word_t>(trace.len));
 
     constexpr jit_word_t x_offset =
@@ -3131,6 +3151,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
 #endif
     };
     const auto emit_leave = [&](jit_gpr_t target) {
+        tc_jit_restore_frame(_jit);
         emit_contract_live();
         jit_jmpr(target);
     };
@@ -3332,7 +3353,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     jit_ldxi(tmp0, TC_JIT_STATE, head_shadow_slot + offsetof(shadow_tlb_slot, pma_index));
     jit_stxi(TC_JIT_CTX_DISP(context_pma_index), TC_JIT_CTX_BASE, tmp0);
     auto *const call_normal_entry = jit_jmpi();
-    jit_patch_at(call_normal_entry, normal_entry);
+    jit_patch_at(call_normal_entry, normal_entry_established);
     auto *const call_fallback = jit_label();
     jit_patch_at(call_tlb_miss, call_fallback);
     jit_patch_at(call_code_remap, call_fallback);

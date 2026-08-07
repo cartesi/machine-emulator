@@ -23,7 +23,7 @@
 #include <array>
 #include <cstddef>
 #include <span>
-// std::vector is not available in freestanding builds
+// std::vector is hosted-only; the freestanding guest builds define NO_STD_VECTOR to keep it out.
 #if !defined(NO_STD_VECTOR)
 #include <vector>
 #endif

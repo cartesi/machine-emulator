@@ -332,6 +332,10 @@ jobs:
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
 
+      - name: Record and replay rv64ui test suite on microarchitecture
+        run: |
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests verify
+
       - name: Run test suite with Microarchitecture
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --jobs=$(nproc) run_uarch
@@ -339,19 +343,6 @@ jobs:
       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --concurrency=update_hash_tree:1 --test="^rv64ui.*$" --jobs=$(nproc) run_host_and_uarch
-
-      - name: Create uarch json logs to be used to test the Solidity based microarchitecture interpreter
-        run: |
-          docker run --name uarch-logs -w /tmp -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/collect-uarch-test-logs.sh
-          docker cp uarch-logs:/tmp/uarch-riscv-tests-json-logs.tar.gz .
-          docker rm uarch-logs
-
-      - name: Upload uarch json logs to be used to test the Solidity based microarchitecture interpreter
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: uarch-logs
-          path: uarch-riscv-tests-json-logs.tar.gz
-          compression-level: 0
 
       - name: Build machine-emulator "tests" docker image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -507,6 +498,10 @@ jobs:
       - name: Run rv64ui test suite on microarchitecture
         run: |
           docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
+
+      - name: Record and replay rv64ui test suite on microarchitecture
+        run: |
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests verify
 
       - name: Run test suite with Microarchitecture
         run: |
@@ -929,7 +924,6 @@ jobs:
             artifacts/machine-emulator_*.deb
             artifacts/uarch-ram.bin
             add-generated-files.diff
-            uarch-logs/uarch-riscv-tests-json-logs.tar.gz
             tests-amd64/machine-emulator-tests-data.deb
             tests-amd64/machine-emulator-tests_*.deb
             tests-arm64/machine-emulator-tests_*.deb
@@ -1015,22 +1009,38 @@ jobs:
       - name: Simple boot inside the docker image
         run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
 
-      - name: Create step log test files
+      - name: Generate risc0 fixtures
         run: |
-          mkdir -p /tmp/cartesi-machine/tests/data/step-logs
-          chmod -R 777 /tmp/cartesi-machine/tests/data
-          docker run --rm -t -v /tmp/cartesi-machine/tests/data:/tmp/cartesi-machine/tests/data ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine-tests --hash-function=sha256 --save-step-logs=/tmp/cartesi-machine/tests/data/step-logs run_step
-          docker run --rm -t -v /tmp/cartesi-machine/tests/data:/tmp/cartesi-machine/tests/data ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/lua/create-step-logs.lua
-          ls -l /tmp/cartesi-machine/tests/data/step-logs
+          mkdir -p risc0/test/fixtures/cartesi-machine-tests risc0/test/fixtures/one-mcycle
+          chmod -R 777 risc0/test/fixtures
+          docker run --rm -t -v ${{ github.workspace }}/risc0/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
+            cartesi-machine-tests --jobs=$(nproc) --hash-function=sha256 --save-step-logs=/fixtures/cartesi-machine-tests run_step
+          docker run --rm -t -v ${{ github.workspace }}/risc0/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
+            /usr/share/cartesi-machine/tests/lua/record-one-mcycle.lua --output-dir=/fixtures/one-mcycle
+          # Adversarial logs the guest must reject (test_reject_fixtures.rs). Mirrors the third
+          # recorder in risc0/Makefile's fixtures target; tampers the positive logs above.
+          docker run --rm -t -v ${{ github.workspace }}/risc0/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
+            /usr/share/cartesi-machine/tests/lua/record-adversarial-machine.lua --fixtures-dir=/fixtures --output-dir=/fixtures/reject-machine
+          ls -lR risc0/test/fixtures
 
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
         with:
-          toolchain: stable
+          # Match risc0/rust/rust-toolchain.toml (risc0-zkvm 3.0.5 requires 1.89.0); do not use stable.
+          toolchain: 1.89.0
+          override: true
+
+      - name: Check Rust formatting
+        run: make -C risc0 check-format
 
       - name: Install rzup
         run: |
-          cargo install --locked --git https://github.com/risc0/risc0 rzup
+          # Pin rzup to the same risc0 release as the components below (v3.0.5); --locked pins its
+          # transitive deps and --tag pins rzup itself, so an upstream change/MSRV bump cannot break
+          # this step. Build it with stable (rzup's deps outrun the pinned 1.89.0); the risc0
+          # workspace stays on 1.89.0 via risc0/rust/rust-toolchain.toml regardless of the default.
+          rustup toolchain install stable --profile minimal
+          cargo +stable install --git https://github.com/risc0/risc0 --tag v3.0.5 --locked rzup
           rzup install cargo-risczero 3.0.5
           rzup install r0vm 3.0.5
           rzup install cpp 2024.1.5
@@ -1044,18 +1054,35 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.4
 
       - name: Install Foundry
+        # Same forge version as the solidity-step job.
         uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
+        with:
+          version: v1.0.0
 
       - name: Build risc0 prover/verifier
         run: make risc0
 
-      - name: Copy step log fixture for RISC0 tests
-        run: |
-          mkdir -p risc0/test/fixtures
-          cp /tmp/cartesi-machine/tests/data/step-logs/step-0.log risc0/test/fixtures/step.log
-
       - name: Run risc0 tests
-        run: CARTESI_STEP_LOGS_PATH=/tmp/cartesi-machine/tests/data/step-logs make test-risc0
+        run: CARTESI_STEP_LOGS_PATH=${{ github.workspace }}/risc0/test/fixtures/cartesi-machine-tests make test-risc0
+
+      # Coverage is informational and re-proves the pipeline instrumented, so it never
+      # gates the job (mirrors the solidity-step coverage step).
+      - name: RISC0 coverage report
+        continue-on-error: true
+        run: |
+          cargo +stable install cargo-llvm-cov --version 0.8.7 --locked
+          rustup component add llvm-tools --toolchain 1.89.0
+          CARTESI_STEP_LOGS_PATH=${{ github.workspace }}/risc0/test/fixtures/cartesi-machine-tests make -C risc0 coverage
+
+      - name: Upload RISC0 coverage
+        continue-on-error: true
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: risc0-coverage
+          path: |
+            risc0/rust/lcov.info
+            risc0/rust/coverage-summary.txt
+          if-no-files-found: warn
 
       - name: Export RISC0 artifacts
         run: make -C risc0 export-artifacts
@@ -1068,3 +1095,174 @@ jobs:
             risc0/artifacts/cartesi-risc0-guest-step-prover.bin
             risc0/artifacts/cartesi-risc0-guest-step-prover-image-id.txt
             risc0/artifacts/ImageID.sol
+
+  solidity-step:
+    name: Solidity Step
+    needs: [check-format, check-commits]
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - name: Checkout machine emulator source code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      # The transpiler drift check and its golden tests need only lua + lpeg + forge (no built
+      # emulator), so they run first and fail fast before the expensive image build below.
+      - name: Install lua5.4 and lpeg
+        run: |
+          sudo apt-get update && sudo apt-get install -y lua5.4 lua-lpeg
+          lua5.4 -e 'require("lpeg")'
+
+      - name: Install Foundry
+        # forge is pinned: fmt output and the check-gen-transpiled drift check below must match
+        # the version that generated the committed .sol files.
+        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
+        with:
+          version: v1.0.0
+
+      - name: Check transpiled Solidity is in sync with the C++ sources
+        run: make -C solidity-step check-gen-transpiled
+
+      - name: Transpiler golden tests
+        run: make -C solidity-step test-transpile
+
+      - name: Setup variables
+        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Depot CLI
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
+
+      - name: Build machine-emulator "builder" docker image
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
+        with:
+          file: Dockerfile
+          context: .
+          target: builder
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:builder
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            GIT_COMMIT=${GITHUB_SHA}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      # tests/Dockerfile's runtime stage is FROM cartesi/machine-emulator:devel, so build it too.
+      - name: Build machine-emulator docker image
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
+        with:
+          file: Dockerfile
+          context: .
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:devel
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            GIT_COMMIT=${GITHUB_SHA}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build machine-emulator "tests" docker image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          file: tests/Dockerfile
+          context: .
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:tests
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+
+      # check-gen-constants reads the live cartesi Lua module, so the generator runs INSIDE the tests
+      # image (no built emulator on the runner); forge fmt + the diff run on the runner. -t is omitted
+      # so the container's stdout redirects to the file uncorrupted, and forge fmt runs from
+      # solidity-step/ so it picks up that project's [fmt] config (matching how the file was generated).
+      - name: Check emulator constants are in sync with the C++ headers
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/work:ro -w /work ${{ github.repository_owner }}/machine-emulator:tests \
+            lua5.4 solidity-step/tools/gen-emulator-constants.lua > /tmp/EmulatorConstants.gen.sol
+          cd solidity-step
+          forge fmt /tmp/EmulatorConstants.gen.sol
+          diff -u src/EmulatorConstants.sol /tmp/EmulatorConstants.gen.sol \
+            || { echo "ERROR: src/EmulatorConstants.sol is stale. Run 'make -C solidity-step gen-constants' and commit."; exit 1; }
+
+      - name: Generate solidity-step fixtures
+        run: |
+          FIX=solidity-step/test/fixtures
+          mkdir -p $FIX/uarch-tests-per-cycle $FIX/uarch-solidity-scope $FIX/send-cmio-response $FIX/reset-uarch
+          chmod -R 777 $FIX
+          IMG=${{ github.repository_owner }}/machine-emulator:tests
+          # uarch-riscv-tests is the installed wrapper (it bakes CARTESI_TESTS_UARCH_PATH); the
+          # record-*.lua recorders are run directly (executable, with a lua5.4 shebang). Mirrors
+          # solidity-step/Makefile's fixtures target; adversarial recorders tamper the positive sets.
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
+            uarch-riscv-tests --test='rv64ui%-uarch%-.+%.bin' --per-cycle-logs --output-dir=/fixtures/uarch-tests-per-cycle record_uarch_tests
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
+            /usr/share/cartesi-machine/tests/lua/record-solidity-uarch-scope.lua --output-dir=/fixtures/uarch-solidity-scope
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
+            /usr/share/cartesi-machine/tests/lua/record-send-cmio-response.lua --output-dir=/fixtures/send-cmio-response
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
+            /usr/share/cartesi-machine/tests/lua/record-reset-uarch.lua --output-dir=/fixtures/reset-uarch
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
+            /usr/share/cartesi-machine/tests/lua/record-adversarial-uarch.lua --fixtures-dir=/fixtures --output-dir=/fixtures/reject-uarch
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
+            /usr/share/cartesi-machine/tests/lua/record-adversarial-send-cmio-response.lua --fixtures-dir=/fixtures --output-dir=/fixtures/reject-send-cmio-response
+          ls -lR $FIX
+
+      - name: Run solidity-step tests
+        run: make -C solidity-step test
+
+      # Gas report is informational: it records the whole-mcycle champion logs (worst
+      # mcycles by cycle count and by page count; see tools/record-mcycle.lua) and
+      # prints verification gas, worst case first, into the job summary so cost
+      # regressions and improvements are visible per run. Never gates the job.
+      - name: Solidity-step gas report
+        continue-on-error: true
+        run: |
+          FIX=solidity-step/test/fixtures
+          IMG=${{ github.repository_owner }}/machine-emulator:tests
+          TESTS=$(docker run --rm $IMG sh -c 'find /usr/share/cartesi-machine* -name rv64uc-v-rvc.bin | head -1 | xargs dirname')
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures -v ${{ github.workspace }}/solidity-step/tools:/gastools $IMG \
+            lua5.4 /gastools/record-mcycle.lua $TESTS/rv64uc-v-rvc.bin 6527 /fixtures/worst-mcycle-rvc.log
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures -v ${{ github.workspace }}/solidity-step/tools:/gastools $IMG \
+            lua5.4 /gastools/record-mcycle.lua $TESTS/rv64ua-v-lrsc.bin 3791 /fixtures/worst-mcycle-pages.log
+          make -C solidity-step gas-report | tee -a $GITHUB_STEP_SUMMARY
+
+      # Coverage is informational and forge's --ir-minimum pass is slow, so it never gates the job.
+      - name: Solidity-step coverage report
+        continue-on-error: true
+        run: |
+          sudo apt-get update && sudo apt-get install -y lcov
+          cd solidity-step
+          forge coverage --ir-minimum --report summary --report lcov | tee coverage-summary.txt
+          genhtml lcov.info --output-directory coverage-html --title "solidity-step coverage" --quiet || true
+
+      - name: Upload solidity-step coverage
+        continue-on-error: true
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: solidity-step-coverage
+          path: |
+            solidity-step/coverage-html
+            solidity-step/coverage-summary.txt
+            solidity-step/lcov.info
+          if-no-files-found: warn

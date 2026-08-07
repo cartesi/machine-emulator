@@ -37,7 +37,6 @@
 #include <typeinfo>
 #include <variant>
 
-#include "access-log.hpp"
 #include "address-range-constants.hpp"
 #include "address-range-defines.h"
 #include "address-range-description.hpp"
@@ -64,6 +63,7 @@
 #include "rtc-defines.h"
 #include "send-cmio-response.hpp"
 #include "sha-256-hasher.hpp"
+#include "step-log.hpp"
 #include "uarch-defines.h"
 
 static std::string &get_last_err_msg_storage() {
@@ -87,6 +87,10 @@ static_assert(AR_SHADOW_REVERT_ROOT_HASH_START_DEF == CM_AR_SHADOW_REVERT_ROOT_H
 static_assert(AR_RAM_START_DEF == CM_AR_RAM_START);
 static_assert(AR_SHADOW_STATE_START_DEF == CM_AR_SHADOW_STATE_START);
 static_assert(AR_SHADOW_STATE_LENGTH_DEF == CM_AR_SHADOW_STATE_LENGTH);
+static_assert(AR_SHADOW_UARCH_STATE_START_DEF == CM_AR_SHADOW_UARCH_STATE_START);
+static_assert(AR_SHADOW_UARCH_STATE_LENGTH_DEF == CM_AR_SHADOW_UARCH_STATE_LENGTH);
+static_assert(AR_UARCH_RAM_START_DEF == CM_AR_UARCH_RAM_START);
+static_assert(AR_UARCH_RAM_LENGTH_DEF == CM_AR_UARCH_RAM_LENGTH);
 static_assert(AR_PMAS_START_DEF == CM_AR_PMAS_START);
 static_assert(AR_PMAS_LENGTH_DEF == CM_AR_PMAS_LENGTH);
 static_assert(PMA_EMPTY_DID_DEF == CM_PMA_EMPTY_DID);
@@ -113,6 +117,11 @@ static_assert((UINT64_C(1) << AR_CMIO_RX_BUFFER_LOG2_SIZE_DEF) == CM_AR_CMIO_RX_
 static_assert((UINT64_C(1) << AR_CMIO_TX_BUFFER_LOG2_SIZE_DEF) == CM_AR_CMIO_TX_BUFFER_LENGTH);
 static_assert(AR_DTB_START_DEF == CM_AR_DTB_START);
 static_assert(AR_DTB_LENGTH_DEF == CM_AR_DTB_LENGTH);
+
+static_assert(cartesi::STEP_LOG_SIGNATURE.size() == CM_STEP_LOG_SIGNATURE_SIZE);
+static_assert(std::string_view{cartesi::STEP_LOG_SIGNATURE.data(), cartesi::STEP_LOG_SIGNATURE.size()} ==
+    std::string_view{CM_STEP_LOG_SIGNATURE, CM_STEP_LOG_SIGNATURE_SIZE});
+
 static_assert(std::string_view{DTB_BOOTARGS_CONSOLE_PART} == std::string_view{CM_DTB_BOOTARGS_CONSOLE_PART});
 static_assert(std::string_view{DTB_BOOTARGS_UIO_PART} == std::string_view{CM_DTB_BOOTARGS_UIO_PART});
 static_assert(std::string_view{DTB_BOOTARGS_ROOT_PART} == std::string_view{CM_DTB_BOOTARGS_ROOT_PART});
@@ -147,6 +156,9 @@ static_assert(HTIF_YIELD_MANUAL_REASON_RX_REJECTED_DEF == CM_HTIF_YIELD_MANUAL_R
 static_assert(HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION_DEF == CM_HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION);
 static_assert(HTIF_YIELD_REASON_ADVANCE_STATE_DEF == CM_HTIF_YIELD_REASON_ADVANCE_STATE);
 static_assert(HTIF_YIELD_REASON_INSPECT_STATE_DEF == CM_HTIF_YIELD_REASON_INSPECT_STATE);
+
+static_assert(static_cast<uint64_t>(cartesi::hash_function_type::keccak256) == CM_HASH_KECCAK256);
+static_assert(static_cast<uint64_t>(cartesi::hash_function_type::sha256) == CM_HASH_SHA256);
 
 uint64_t cm_get_version() {
     return CM_VERSION_NUM;
@@ -793,19 +805,14 @@ cm_error cm_reset_uarch(cm_machine *m) try {
     return cm_result_failure();
 }
 
-cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log) try {
-    if (log == nullptr) {
-        throw std::invalid_argument("invalid access log output");
+cm_error cm_log_reset_uarch(cm_machine *m, const char *log_filename) try {
+    if (log_filename == nullptr) {
+        throw std::invalid_argument("invalid log_filename");
     }
     auto *cpp_m = convert_from_c(m);
-    const cartesi::access_log::type cpp_log_type(log_type);
-    const cartesi::access_log cpp_log = cpp_m->log_reset_uarch(cpp_log_type);
-    *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
+    cpp_m->log_reset_uarch(log_filename);
     return cm_result_success();
 } catch (...) {
-    if (log != nullptr) {
-        *log = nullptr;
-    }
     return cm_result_failure();
 }
 
@@ -841,18 +848,20 @@ cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filen
     return cm_result_failure();
 }
 
-cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log) try {
-    if (log == nullptr) {
-        throw std::invalid_argument("invalid access log output");
+cm_error cm_log_step_uarch(cm_machine *m, uint64_t uarch_cycle_count, const char *log_filename,
+    cm_uarch_break_reason *uarch_break_reason) try {
+    if (log_filename == nullptr) {
+        throw std::invalid_argument("invalid log_filename");
     }
     auto *cpp_m = convert_from_c(m);
-    const cartesi::access_log::type cpp_log_type(log_type);
-    const cartesi::access_log cpp_log = cpp_m->log_step_uarch(cpp_log_type);
-    *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
+    const auto reason = cpp_m->log_step_uarch(uarch_cycle_count, log_filename);
+    if (uarch_break_reason != nullptr) {
+        *uarch_break_reason = static_cast<cm_uarch_break_reason>(reason);
+    }
     return cm_result_success();
 } catch (...) {
-    if (log != nullptr) {
-        *log = nullptr;
+    if (uarch_break_reason != nullptr) {
+        *uarch_break_reason = CM_UARCH_BREAK_REASON_FAILED;
     }
     return cm_result_failure();
 }
@@ -873,20 +882,19 @@ cm_error cm_verify_step(const cm_hash *root_hash_before, const char *log_filenam
     return cm_result_failure();
 }
 
-cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log,
-    cm_hash *obtained_root_hash) try {
-    if (log == nullptr) {
-        throw std::invalid_argument("invalid access log");
+cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
+    uint64_t uarch_cycle_count, cm_hash *obtained_root_hash) try {
+    if (log_filename == nullptr) {
+        throw std::invalid_argument("invalid log_filename");
     }
-    const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
     cartesi::machine_hash cpp_obtained_root_hash{};
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
-        cpp_obtained_root_hash = cpp_m->verify_step_uarch(cpp_root_hash_before, cpp_log);
+        cpp_obtained_root_hash = cpp_m->verify_step_uarch(cpp_root_hash_before, log_filename, uarch_cycle_count);
     } else {
-        cpp_obtained_root_hash = cartesi::machine::verify_step_uarch(cpp_root_hash_before, cpp_log);
+        cpp_obtained_root_hash =
+            cartesi::machine::verify_step_uarch(cpp_root_hash_before, log_filename, uarch_cycle_count);
     }
     if (obtained_root_hash != nullptr) {
         convert_to_c(cpp_obtained_root_hash, obtained_root_hash);
@@ -896,20 +904,34 @@ cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_befo
     return cm_result_failure();
 }
 
-cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log,
-    cm_hash *obtained_root_hash) try {
-    if (log == nullptr) {
-        throw std::invalid_argument("invalid access log");
+cm_error cm_pretty_print_step_uarch(const char *log_filename, const char **printout) try {
+    if (log_filename == nullptr) {
+        throw std::invalid_argument("invalid log_filename");
     }
-    const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
+    if (printout == nullptr) {
+        throw std::invalid_argument("invalid printout output");
+    }
+    *printout = cm_set_temp_string(cartesi::machine::pretty_print_step_uarch(log_filename));
+    return cm_result_success();
+} catch (...) {
+    if (printout != nullptr) {
+        *printout = nullptr;
+    }
+    return cm_result_failure();
+}
+
+cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
+    cm_hash *obtained_root_hash) try {
+    if (log_filename == nullptr) {
+        throw std::invalid_argument("invalid log_filename");
+    }
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
     cartesi::machine_hash cpp_obtained_root_hash{};
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
-        cpp_obtained_root_hash = cpp_m->verify_reset_uarch(cpp_root_hash_before, cpp_log);
+        cpp_obtained_root_hash = cpp_m->verify_reset_uarch(cpp_root_hash_before, log_filename);
     } else {
-        cpp_obtained_root_hash = cartesi::machine::verify_reset_uarch(cpp_root_hash_before, cpp_log);
+        cpp_obtained_root_hash = cartesi::machine::verify_reset_uarch(cpp_root_hash_before, log_filename);
     }
     if (obtained_root_hash != nullptr) {
         convert_to_c(cpp_obtained_root_hash, obtained_root_hash);
@@ -1301,42 +1323,34 @@ cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *da
 }
 
 cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    const cm_hash *revert_root_hash, int32_t log_type, const char **log) try {
-    if (log == nullptr) {
-        throw std::invalid_argument("invalid access log output");
+    const cm_hash *revert_root_hash, const char *log_filename) try {
+    if (log_filename == nullptr) {
+        throw std::invalid_argument("invalid log_filename");
     }
-    auto *cpp_m = convert_from_c(m);
     const cartesi::machine_hash cpp_revert_root_hash = convert_from_c(revert_root_hash);
-    const cartesi::access_log::type cpp_log_type(log_type);
-    const cartesi::access_log cpp_log =
-        cpp_m->log_send_cmio_response(reason, data, length, cpp_revert_root_hash, cpp_log_type);
-    *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
+    auto *cpp_m = convert_from_c(m);
+    cpp_m->log_send_cmio_response(reason, data, length, cpp_revert_root_hash, log_filename);
     return cm_result_success();
 } catch (...) {
-    if (log != nullptr) {
-        *log = nullptr;
-    }
     return cm_result_failure();
 }
 
 cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    const cm_hash *root_hash_before, const char *log, const cm_hash *revert_root_hash,
+    const cm_hash *root_hash_before, const char *log_filename, const cm_hash *revert_root_hash,
     cm_hash *obtained_root_hash) try {
-    if (log == nullptr) {
-        throw std::invalid_argument("invalid access log");
+    if (log_filename == nullptr) {
+        throw std::invalid_argument("invalid log_filename");
     }
-    const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine_hash cpp_revert_root_hash = convert_from_c(revert_root_hash);
     cartesi::machine_hash cpp_obtained_root_hash{};
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
-        cpp_obtained_root_hash =
-            cpp_m->verify_send_cmio_response(reason, data, length, cpp_root_hash_before, cpp_log, cpp_revert_root_hash);
+        cpp_obtained_root_hash = cpp_m->verify_send_cmio_response(reason, data, length, cpp_root_hash_before,
+            log_filename, cpp_revert_root_hash);
     } else {
         cpp_obtained_root_hash = cartesi::machine::verify_send_cmio_response(reason, data, length, cpp_root_hash_before,
-            cpp_log, cpp_revert_root_hash);
+            log_filename, cpp_revert_root_hash);
     }
     if (obtained_root_hash != nullptr) {
         convert_to_c(cpp_obtained_root_hash, obtained_root_hash);

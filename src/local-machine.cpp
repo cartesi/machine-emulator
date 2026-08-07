@@ -20,7 +20,6 @@
 #include <optional>
 #include <string>
 
-#include "access-log.hpp"
 #include "address-range-description.hpp"
 #include "back-merkle-tree.hpp"
 #include "hash-tree-proof.hpp"
@@ -108,8 +107,9 @@ interpreter_break_reason local_machine::do_log_step(uint64_t mcycle_count, const
     return m_machine->log_step(mcycle_count, filename);
 }
 
-access_log local_machine::do_log_step_uarch(const access_log::type &log_type) {
-    return get_machine()->log_step_uarch(log_type);
+uarch_interpreter_break_reason local_machine::do_log_step_uarch(uint64_t uarch_cycle_count,
+    const std::string &filename) {
+    return get_machine()->log_step_uarch(uarch_cycle_count, filename);
 }
 
 hash_tree_proof local_machine::do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const {
@@ -209,8 +209,8 @@ void local_machine::do_reset_uarch() {
     get_machine()->reset_uarch();
 }
 
-access_log local_machine::do_log_reset_uarch(const access_log::type &log_type) {
-    return get_machine()->log_reset_uarch(log_type);
+void local_machine::do_log_reset_uarch(const std::string &filename) {
+    get_machine()->log_reset_uarch(filename);
 }
 
 uarch_interpreter_break_reason local_machine::do_run_uarch(uint64_t uarch_cycle_end) {
@@ -235,9 +235,9 @@ void local_machine::do_send_cmio_response(uint16_t reason, const unsigned char *
     get_machine()->send_cmio_response(reason, data, length, revert_root_hash);
 }
 
-access_log local_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const_machine_hash_view revert_root_hash, const access_log::type &log_type) {
-    return get_machine()->log_send_cmio_response(reason, data, length, revert_root_hash, log_type);
+void local_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    const_machine_hash_view revert_root_hash, const std::string &filename) {
+    get_machine()->log_send_cmio_response(reason, data, length, revert_root_hash, filename);
 }
 
 uint64_t local_machine::do_get_reg_address(reg r) const {
@@ -257,19 +257,20 @@ machine_hash local_machine::do_verify_step(const_machine_hash_view root_hash_bef
     return machine::verify_step(root_hash_before, log_filename, mcycle_count);
 }
 
-machine_hash local_machine::do_verify_step_uarch(const_machine_hash_view root_hash_before,
-    const access_log &log) const {
-    return machine::verify_step_uarch(root_hash_before, log);
+machine_hash local_machine::do_verify_step_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
+    uint64_t uarch_cycle_count) const {
+    return machine::verify_step_uarch(root_hash_before, filename, uarch_cycle_count);
 }
 
 machine_hash local_machine::do_verify_reset_uarch(const_machine_hash_view root_hash_before,
-    const access_log &log) const {
-    return machine::verify_reset_uarch(root_hash_before, log);
+    const std::string &filename) const {
+    return machine::verify_reset_uarch(root_hash_before, filename);
 }
 
 machine_hash local_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const_machine_hash_view root_hash_before, const access_log &log, const_machine_hash_view revert_root_hash) const {
-    return machine::verify_send_cmio_response(reason, data, length, root_hash_before, log, revert_root_hash);
+    const_machine_hash_view root_hash_before, const std::string &filename,
+    const_machine_hash_view revert_root_hash) const {
+    return machine::verify_send_cmio_response(reason, data, length, root_hash_before, filename, revert_root_hash);
 }
 
 } // namespace cartesi

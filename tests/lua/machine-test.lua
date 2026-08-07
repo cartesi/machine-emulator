@@ -147,6 +147,13 @@ end
 
 local do_test = tests_util.make_do_test(build_machine, machine_type)
 
+local function step_uarch(machine)
+    local filename = os.tmpname()
+    os.remove(filename)
+    machine:log_step_uarch(1, filename)
+    os.remove(filename)
+end
+
 print("Testing machine for type " .. machine_type)
 
 print("\n\ntesting getting machine initial config and iflags")
@@ -185,7 +192,7 @@ do_test("machine root hash after step one should match", function(machine)
     assert(root_hash == calculated_root_hash, "Initial root hash does not match")
 
     -- Perform step and check if hash matches
-    machine:log_step_uarch()
+    step_uarch(machine)
     local root_hash_step1 = machine:get_root_hash()
     local calculated_root_hash_step1 = tests_util.calculate_emulator_hash(machine)
     assert(root_hash_step1 == calculated_root_hash_step1, "hash after first step does not match")
@@ -193,7 +200,7 @@ end)
 
 print("\n\ntesting proof after step one")
 do_test("proof check should pass", function(machine)
-    machine:log_step_uarch()
+    step_uarch(machine)
 
     -- Find ram memory range
     local ram
@@ -380,7 +387,7 @@ do_test("register values should match", function(machine)
     local uarch_pc_before = machine:read_reg("uarch_pc")
     local uarch_cycle_before = machine:read_reg("uarch_cycle")
 
-    machine:log_step_uarch()
+    step_uarch(machine)
 
     local uarch_pc_after = machine:read_reg("uarch_pc")
     local uarch_cycle_after = machine:read_reg("uarch_cycle")

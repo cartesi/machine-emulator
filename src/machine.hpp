@@ -641,12 +641,26 @@ public:
         return host_addr{paddr} - get_hp_offset(pma_index);
     }
 
+    /// \brief Notifies the penumbra write hook, if armed, that host bytes in a
+    /// range may change.
+    /// \details The hook lets a runtime consumer of guest memory bytes (the
+    /// trace backend) invalidate derived state. Guest stores through a hot
+    /// write-TLB slot need no per-store notification: the hook fires when the
+    /// slot is established, and the consumer keeps its pages out of hot write
+    /// slots.
+    void notify_write_hook(host_addr hstart, uint64_t length) const {
+        if (m_s->penumbra.write_hook != nullptr) [[unlikely]] {
+            m_s->penumbra.write_hook(m_s->penumbra.write_hook_ctx, hstart, length);
+        }
+    }
+
     /// \brief Marks a page as dirty
     /// \param paddr Target physical address within page
     /// \param pma_index Index of PMA where address falls
     void mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
         auto &ar = read_pma(pma_index);
         ar.get_dirty_page_tree().mark_dirty_page_and_up(paddr - ar.get_start());
+        notify_write_hook(get_host_addr(paddr, pma_index), 1);
     }
 
     /// \brief Updates a TLB slot in the shadow and populates the hot entry
@@ -671,6 +685,11 @@ public:
         }
         m_s->shadow.tlb[set_index][slot_index].pma_index = pma_index;
         m_s->shadow.tlb[set_index][slot_index].zero_padding_ = 0;
+        // The page becomes store-writable through the hot slot, and stores
+        // through it are not individually observable
+        if (set_index == TLB_WRITE && vaddr_page != TLB_INVALID_PAGE) {
+            notify_write_hook(host_addr{vaddr_page} + vh_offset, AR_PAGE_SIZE);
+        }
     }
 
     /// \brief Updates a TLB slot in the shadow and marks the hot entry as unverified

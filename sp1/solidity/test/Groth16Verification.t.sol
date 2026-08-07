@@ -33,9 +33,9 @@ contract Groth16VerificationTest is Test {
     // Spelled out rather than read from a journal.bin, because the journal is
     // just abi.encode of these three values -- storing it would be storing a
     // derivation of data already here, and it would hide what the proof asserts.
-    bytes32 constant ROOT_HASH_BEFORE = 0x5640b321bff684d65cfe3fb077276638d9cddc9646c881688b145ff44af732a7;
+    bytes32 constant ROOT_HASH_BEFORE = 0xcf4aa693f16436986201da45cd6468b7529fb49e0c9df547625391fe0c715955;
     uint64 constant MCYCLE_COUNT = 1;
-    bytes32 constant ROOT_HASH_AFTER = 0xa4b56312ccbe75348f78191ba2b96d213908d89a34a2cb2346d03613ab6843d1;
+    bytes32 constant ROOT_HASH_AFTER = 0x291373ec217b0f07ff6445a38e4bee034936f2425f5210064f5238b9bcf8baf7;
 
     CartesiSp1StepVerifier stepVerifier;
     bytes seal;

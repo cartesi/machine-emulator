@@ -2011,6 +2011,57 @@ shell cost +66% with tracing idle).
     only the dispatch around FP is saved); inlining guarded host-FPU
     sequences into generated code is the next coverage lever.
 
+    The inline emission was then built, in two increments, through the
+    same type change that stages the integer bodies: the collecting
+    access's fcsr and mstatus reads became tokens whose comparisons
+    emit guards (the FS-off check is the FS guard, a dynamic rounding
+    mode registers the frm guard), float_unbox carries operands into
+    typed register handles whose sign flips map to hardware negates,
+    fp_* dispatch points named by the bodies (concrete words still
+    route to i_float) emit lightning's portable FP ops -- fmar/fmsr
+    and friends map one-to-one onto the FMADD family, gated on host
+    FMA because lightning silently emits a double-rounded mul-add
+    without it -- and the write of the provably unchanged fcsr elides.
+    All guard misses of one instruction share one side exit. The
+    second increment added compares (whose 0/1 result stages through
+    a context slot as integer IR, so compare-and-branch pairs compile
+    end to end), sign injection and moves (pure integer IR on a
+    word-typed view of the register file), and the float-width
+    conversions. FCLASS, FMIN/FMAX and the int-float conversions
+    still decline to the helpers. Inline FP is x86-64-only until the
+    AArch64 v-register question is audited.
+
+    Two findings came out of the measurement, both worth more than
+    the feature. First, guard strength must be derived per family
+    from its own proof, not inherited: a first cut borrowed the
+    arithmetic zero-or-normal operand guard and strictly-normal
+    result guard for compares and widening, and ran double at twice
+    the helper build's time with byte-identical trace formation -- an
+    infinity in a hot compare and every zero through a widen bailed
+    per iteration, and the exit-and-re-enter churn ate the loops.
+    Compares round nothing and can raise only NV, which needs the NaN
+    a not-NaN guard excludes; widening is exact for every non-NaN
+    including infinities and subnormals and needs no result guard at
+    all. Both versions were sound -- hashes never wavered, which is
+    exactly why the correctness gates could not see the difference --
+    and only the paired timing could. Second, with the guards right,
+    inlining priced at parity with the helpers: 90 gated runs, medians
+    over three interleaved repetitions on the interim host (derated
+    about 20% by a restart mid-session, which the interleaving
+    absorbs), inline vs helper aggregate +0.2%, every workload within
+    +-5%, double -0.3%. The inlined families were not the bottleneck:
+    double's hot loop still takes its helper trips at the declined
+    int-float conversions, and elsewhere FP is too sparse for the
+    difference between a twenty-instruction helper call and an inline
+    sequence to matter. Before more emission work, the next diagnostic
+    is a per-family bail and decline counter to attribute double's
+    remaining +9% over hard-float stock -- the qsort lesson again:
+    coverage and dynamic behavior, not per-edge cost, tend to bind.
+    The int-float conversions (host truncation is RTZ, which compiled
+    code encodes statically, plus encoding-order range guards against
+    the saturation cases) are the designed next increment if the
+    counters say they matter.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

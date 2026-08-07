@@ -284,18 +284,13 @@ LDFLAGS+=$(LIGHTNING_LIB)
 ifeq ($(TARGET_OS),Linux)
 LDFLAGS+=-ldl
 endif
-# The backend emits into the pinned-register contract, which on x86-64 only
-# GCC provides (Clang rejects general-purpose global register variables on
-# this target) and which does not compose with preserve_none there, because
-# GCC's argument registers are the pinned set itself. r14 is additionally
-# reserved so the generated code has one more guest register and lightning's
-# own allocator cannot touch a call-saved register the interpreter owns.
+# On AArch64 the backend emits into the pinned-register contract. On x86-64
+# it emits into the four-slot preserve_none argument contract instead
+# (r12-r15 under GCC 16.1+ and Clang alike), which needs no pinned
+# registers, no r14 reservation, and no compiler restriction; the four-slot
+# signature requires the page-segment shape, so it is selected here.
 ifeq (,$(filter arm64 aarch64,$(shell uname -m)))
-ifneq (,$(findstring clang,$(CC)))
-$(error lightning=yes on x86-64 requires GCC: Clang has no global register variables on this target)
-endif
-INTERPRET_CXXFLAGS+=-DTC_USE_PRESERVE_NONE=0
-TC_FFIXED_FLAGS+=-ffixed-r14
+INTERPRET_CXXFLAGS+=-DTC_PAGE_SEGMENT=1
 endif
 endif
 

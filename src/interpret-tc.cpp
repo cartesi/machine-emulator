@@ -92,8 +92,8 @@ namespace cartesi {
 #define TC_PAGE_SEGMENT 0
 #endif
 
-#if TC_PAGE_SEGMENT && (TC_AOT || TC_ONLINE)
-#error "TC_PAGE_SEGMENT is not yet composed with the trace prototypes"
+#if TC_PAGE_SEGMENT && TC_AOT
+#error "TC_PAGE_SEGMENT is not yet composed with the AOT trace prototype"
 #endif
 
 #ifndef TC_JIT_SHELL
@@ -276,9 +276,11 @@ struct tc_context {
 // elsewhere. pc crosses the execute_* reference boundary, so handlers bind
 // it to a local and sync it at every exit.
 #ifndef TC_GLOBAL_REGS
-#if defined(__aarch64__) || TC_LIGHTNING
-// The backend emits directly into the pinned handler contract, so a Lightning
-// build selects the pinned shape on every supported architecture
+#if defined(__aarch64__)
+// AArch64 pins the interpreter state whether or not the backend rides it.
+// On x86-64 the pinned shape is an interpreter loss and the backend emits
+// into the four-slot preserve_none argument contract instead (r12-r15 under
+// both compilers), so nothing selects pinning there by default.
 #define TC_GLOBAL_REGS 1
 #else
 #define TC_GLOBAL_REGS 0
@@ -290,25 +292,32 @@ struct tc_context {
 #endif
 
 #if TC_LIGHTNING && !TC_GLOBAL_REGS
-#error "TC_LIGHTNING emits into the pinned-register contract; build with TC_GLOBAL_REGS=1"
+// The args-shape backend contract is the four-slot signature on x86-64:
+// (accessor, insn, pc, countdown) in r12-r15, fetch tag and context reached
+// through the state pointer. Any other args shape has no expressed contract.
+#if !defined(__x86_64__)
+#error "the args-shape Lightning contract is x86-64 only; build with TC_GLOBAL_REGS=1"
+#endif
+#if !TC_PAGE_SEGMENT
+#error "the args-shape Lightning contract is the four-slot signature; build with TC_PAGE_SEGMENT=1"
+#endif
 #endif
 
-// x86-64 has no register to spare for the backend: the four pinned fields, the
-// state pointer, three emitter scratch registers and the two registers GNU
-// lightning needs for its own temporaries already consume eleven of the
-// thirteen the generated code may touch. r14 is therefore reserved for the
-// whole translation unit (-ffixed-r14, passed by the lightning=yes build) and
-// added to the boundary save/restore, which hands the backend one more mapped
-// guest register and keeps lightning's internal allocator away from a
-// call-saved register the interpreter would otherwise own.
-#if TC_LIGHTNING && defined(__x86_64__)
+// The pinned x86-64 shape has no register to spare for the backend: the four
+// pinned fields, the state pointer, three emitter scratch registers and the
+// two registers GNU lightning needs for its own temporaries already consume
+// eleven of the thirteen the generated code may touch. r14 is therefore
+// reserved for the whole translation unit (-ffixed-r14, passed by the build
+// when this macro is in effect) and added to the boundary save/restore, which
+// hands the backend one more mapped guest register and keeps lightning's
+// internal allocator away from a call-saved register the interpreter would
+// otherwise own. The args contract needs no reservation: under the
+// preserve_none chain the entry call site already assumes every register
+// clobbered.
+#if TC_LIGHTNING && defined(__x86_64__) && TC_GLOBAL_REGS
 #define TC_JIT_RESERVE_R14 1
 #else
 #define TC_JIT_RESERVE_R14 0
-#endif
-
-#if TC_ONLINE && !TC_GLOBAL_REGS
-#error "TC_ONLINE currently requires the pinned-register interpreter shape"
 #endif
 
 // preserve_none composes with pinned registers on AArch64: the pinned state
@@ -335,6 +344,13 @@ struct tc_context {
 #error "pinned registers and preserve_none collide on x86-64; build with TC_USE_PRESERVE_NONE=0"
 #endif
 
+// The args-shape backend contract is the preserve_none argument assignment
+// itself; without the convention the slots have no fixed registers to emit
+// against.
+#if TC_LIGHTNING && !TC_GLOBAL_REGS && !TC_USE_PRESERVE_NONE
+#error "the args-shape Lightning contract needs preserve_none (GCC 16.1+ or Clang)"
+#endif
+
 #if TC_USE_PRESERVE_NONE
 #define TC_CALLCONV __attribute__((preserve_none))
 #else
@@ -358,6 +374,12 @@ struct tc_context {
 #ifndef TC_MUSTTAIL
 #if defined(__clang__)
 #define TC_MUSTTAIL [[clang::musttail]]
+#elif TC_LIGHTNING && !TC_GLOBAL_REGS && defined(__GNUC__) && __GNUC__ >= 15
+// The args-shape contract relies on every dispatch being a genuine tail
+// call. GCC's sibling-call optimization already emits them under
+// preserve_none, so the attribute costs nothing where codegen is right and
+// turns a silently-emitted real call into a compile error.
+#define TC_MUSTTAIL [[gnu::musttail]]
 #else
 #define TC_MUSTTAIL
 #endif
@@ -993,18 +1015,22 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
 
 #if TC_LIGHTNING && TC_ONLINE
 // The generated code is a continuation of the handler chain, so it names the
-// same physical registers the pinned interpreter shape uses. Lightning's
-// register namespace differs per architecture, so the contract is expressed
-// once here and the emitter never writes a JIT_Vn/JIT_Rn name of its own.
+// physical registers of the interpreter shape it rides: the pinned globals
+// (AArch64, and x86-64 with TC_GLOBAL_REGS=1), or the four-slot preserve_none
+// argument assignment (x86-64 args shape). Lightning's register namespace
+// differs per architecture, so the contract is expressed once here and the
+// emitter never writes a JIT_Vn/JIT_Rn name of its own.
 //
-// Two rules govern every register the generated code touches. It must be
-// either call-clobbered in the host convention or reserved for this whole
-// translation unit (the pinned globals, plus r14 on x86-64), because the
-// interpreter frames below the chain expect the call-saved set intact. And it
-// must be visible to lightning's own liveness analysis wherever it holds live
-// interpreter state, because lightning's internal allocator picks any register
-// it believes dead; the contract registers are therefore declared live at
-// every point where generated code leaves.
+// Two rules govern every register the generated code touches. Under a
+// standard-convention chain it must be either call-clobbered in the host
+// convention or reserved for this whole translation unit (the pinned
+// globals, plus r14 on x86-64), because the interpreter frames below the
+// chain expect the call-saved set intact; under the preserve_none chain the
+// entry call site already assumes every register clobbered and the rule is
+// vacuous. And it must be visible to lightning's own liveness analysis
+// wherever it holds live interpreter state, because lightning's internal
+// allocator picks any register it believes dead; the contract registers are
+// therefore declared live at every point where generated code leaves.
 #if defined(__aarch64__)
 #define TC_JIT_STATE JIT_V1 // x20, state_access::m_s (first preserve_none argument)
 #define TC_JIT_PC JIT_V4    // x23, fast pc
@@ -1016,7 +1042,7 @@ static_assert(JIT_V4 == _R23);
 static_assert(JIT_V5 == _R24);
 static_assert(JIT_V6 == _R25);
 static_assert(JIT_V8 == _R27);
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) && TC_GLOBAL_REGS
 // SysV passes the one-pointer accessor in rdi and the instruction word in esi;
 // insn is dead once a trace is entered, so rsi joins the guest pool.
 #define TC_JIT_STATE (static_cast<jit_gpr_t>(_RDI))
@@ -1028,8 +1054,34 @@ static_assert(JIT_V0 == _RBX);
 static_assert(JIT_V4 == _R12);
 static_assert(JIT_V1 == _R13);
 static_assert(JIT_V3 == _R15);
+#elif defined(__x86_64__)
+// The four-slot preserve_none argument contract: both compilers assign the
+// (accessor, insn, pc, countdown) slots to r12-r15. insn is dead once a
+// trace is entered. The fetch tag and the context hold no registers here;
+// the context sits at a constant offset from the state pointer, which
+// disp32 addressing reaches for free.
+#define TC_JIT_STATE JIT_V4 // r12
+#define TC_JIT_PC JIT_V2    // r14
+#define TC_JIT_CD JIT_V3    // r15
+static_assert(JIT_V4 == _R12);
+static_assert(JIT_V2 == _R14);
+static_assert(JIT_V3 == _R15);
 #else
 #error "the Lightning backend has no register contract for this architecture"
+#endif
+
+// The pinned shapes keep the fetch tag and the context pointer in contract
+// registers; the args shape reaches the context through the state pointer.
+// Context accesses go through this base and displacement so the emitter
+// stays shape-independent.
+#if TC_GLOBAL_REGS
+#define TC_JIT_CTX_BASE TC_JIT_CTX
+#define TC_JIT_CTX_DISP(field) static_cast<jit_word_t>(field)
+#else
+static constexpr jit_word_t tc_lightning_ctx_offset =
+    offsetof(processor_state, penumbra) + offsetof(penumbra_state, scratch);
+#define TC_JIT_CTX_BASE TC_JIT_STATE
+#define TC_JIT_CTX_DISP(field) (tc_lightning_ctx_offset + static_cast<jit_word_t>(field))
 #endif
 
 struct tc_lightning_execution;
@@ -1145,7 +1197,7 @@ struct tc_lightning_execution {
     // x9-x15 and x19/x21/x22/x26 are free once the pinned contract is honored
     static constexpr jit_gpr_t guest_registers[] = {JIT_R1, JIT_R2, JIT_R3, JIT_R4, JIT_R5, JIT_R6, JIT_V0, JIT_V2};
     static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_V3, JIT_V7};
-#else
+#elif TC_GLOBAL_REGS
     // rax/r10/r11 are the emitter's scratch, r14 (reserved, see
     // TC_JIT_RESERVE_R14) and the call-clobbered rsi/r8/r9 carry guests, and
     // rcx/rdx are deliberately left to lightning's internal allocator: it
@@ -1153,6 +1205,17 @@ struct tc_lightning_execution {
     // shifts, divisions and high multiplies, and a spill under jit_tramp
     // would write through a frame pointer this build does not maintain.
     static constexpr jit_gpr_t guest_registers[] = {JIT_V2, static_cast<jit_gpr_t>(_RSI),
+        static_cast<jit_gpr_t>(_R8), static_cast<jit_gpr_t>(_R9)};
+    static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_R1, JIT_R2};
+#else
+    // The args contract frees rdi (the pinned shape's state pointer) and rbx
+    // (its pc) for guests, one more mapped guest than the pinned shape's
+    // four with no reservation at all: under the preserve_none chain the
+    // entry call site already assumes every register clobbered. rax/r10/r11
+    // stay the emitter's scratch, rcx/rdx stay with lightning's internal
+    // allocator, and rbp stays the frame pointer lightning would spill
+    // through, exactly as above.
+    static constexpr jit_gpr_t guest_registers[] = {JIT_V0, static_cast<jit_gpr_t>(_RDI), static_cast<jit_gpr_t>(_RSI),
         static_cast<jit_gpr_t>(_R8), static_cast<jit_gpr_t>(_R9)};
     static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_R1, JIT_R2};
 #endif
@@ -2128,7 +2191,7 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
 }
 #if TC_JIT_SHELL
 // Calls hook unconditionally at the callee. The generated call entry validates
-// the recorded code mapping and updates the pinned fetch registers before
+// the recorded code mapping and re-establishes the fetch state before
 // entering the ordinary trace body; misses resume through the normal fetch path.
 #define TC_HOOK_CALL(expr)                                                                                             \
     ({                                                                                                                 \
@@ -2138,6 +2201,7 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
                 tc_hook_site<true>(tcc, pc_to_virtual(a, pc), 1);                                                     \
             if constexpr (TC_LIGHTNING != 0) {                                                                        \
                 if (tc_tfn != nullptr) {                                                                               \
+                    TC_SEG_LOOSEN();                                                                                   \
                     if (TC_TICK_ENDED()) [[unlikely]] {                                                                \
                         TC_COUNTDOWN_EXPIRED();                                                                         \
                     }                                                                                                  \
@@ -2372,8 +2436,23 @@ static FORCE_INLINE int64_t tc_seg_allowance(FAST_ADDR pc) {
 // retire proves the fall-through fetch is within the segment budget (the
 // budget covers one fetch past the last retirement for exactly this read).
 #define TC_PREDECODE_SAFE(LEN) (static_cast<int64_t>(tc_remaining) >= 1)
+
+/// \brief Extends the countdown to the true tick end before entering a
+/// compiled trace.
+/// \details Trace bodies validate their own code mappings and charge the
+/// countdown per block, so the segment bound would only cause spurious
+/// entry bails near page ends. The countdown and its base move together,
+/// preserving the mcycle materialization identity, and the trace's exit
+/// continuations re-establish the segment invariant before the chain
+/// resumes.
+#define TC_SEG_LOOSEN()                                                                                                \
+    do {                                                                                                               \
+        tc_remaining += tcc->mcycle_tick_end - TC_CHAIN_END;                                                           \
+        TC_CHAIN_END = tcc->mcycle_tick_end;                                                                           \
+    } while (0)
 #else
 #define TC_SEG_TIGHTEN() ((void) 0)
+#define TC_SEG_LOOSEN() ((void) 0)
 #define TC_PREDECODE_SAFE(LEN) fetch_cache_is_hit(pc + (LEN), TC_FETCH_TAG)
 #endif
 
@@ -2552,6 +2631,7 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
                 [[maybe_unused]] const void *tc_tfn = tc_hook_site(tcc, pc_to_virtual(a, pc), 2);                     \
                 if constexpr (TC_AOT != 0 || TC_LIGHTNING != 0) {                                                     \
                     if (tc_tfn != nullptr) {                                                                           \
+                        TC_SEG_LOOSEN();                                                                               \
                         TC_SYNC();                                                                                     \
                         TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(                             \
                             const_cast<void *>(tc_tfn))(a, insn TC_HOT_ARGS);                                          \
@@ -2730,20 +2810,29 @@ TC_LIGHTNING_CAN_COLLECT(LBU_rd0)
 #undef TC_LIGHTNING_CAN_COLLECT
 
 /// \brief Fetch-tail continuation entered with the handler register contract.
-TC_CALLCONV static execute_status tc_lightning_continue(const state_access a, uint32_t insn TC_HOT_PARAMS) {
+/// \details A trace leaves with the countdown extended to the true tick end,
+/// so the segment invariant must be re-established from the trace's final pc
+/// before the chain resumes (the miss path tightens inside tc_fetch_miss).
+/// Only the state_access instantiation is ever emitted against; the template
+/// exists because the argument shapes spell the handler parameters with the
+/// STATE_ACCESS type.
+template <typename STATE_ACCESS>
+TC_CALLCONV static execute_status tc_lightning_continue(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS) {
     TC_ENTER();
     if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {
         uint32_t next_insn = 0;
+        TC_SEG_TIGHTEN();
         a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index, &next_insn);
         TC_SYNC();
-        TC_MUSTTAIL return tc_jumptable<state_access>[insn_get_id(next_insn)](a, next_insn TC_HOT_ARGS);
+        TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(next_insn)](a, next_insn TC_HOT_ARGS);
     }
     TC_SYNC();
-    TC_MUSTTAIL return tc_fetch_miss<state_access>(a, insn TC_HOT_ARGS);
+    TC_MUSTTAIL return tc_fetch_miss<STATE_ACCESS>(a, insn TC_HOT_ARGS);
 }
 
 /// \brief Returns a hot generated side exit to the outer loop for recording.
-TC_CALLCONV static execute_status tc_lightning_trip(const state_access a, uint32_t /*insn*/ TC_HOT_PARAMS) {
+template <typename STATE_ACCESS>
+TC_CALLCONV static execute_status tc_lightning_trip(const STATE_ACCESS a, uint32_t /*insn*/ TC_HOT_PARAMS) {
     TC_ENTER();
     tcc->online_trip_pc = pc_to_virtual(a, pc);
     tcc->online_trip_weight = 1;
@@ -2757,6 +2846,18 @@ using tc_lightning_collect_fn = bool (*)(tc_lightning_execution &, uint64_t &, u
 // by the normal tail-call handler. The dependent ACCESS type keeps unsupported
 // expressions uninstantiated until the backend advertises their operations.
 // Hook wrappers are handler control flow rather than instruction semantics.
+// The case expressions also name the countdown state for their mcycle
+// argument. The pinned shape resolves those names to the register globals;
+// the args shape resolves them to handler locals, so the collector supplies
+// inert stand-ins (the collecting access never consults the value).
+#if TC_GLOBAL_REGS
+#define TC_COLLECT_MCYCLE_STATE() ((void) 0)
+#else
+#define TC_COLLECT_MCYCLE_STATE()                                                                                      \
+    tc_context<state_access> tc_collect_ctx{};                                                                         \
+    [[maybe_unused]] auto *const tcc = &tc_collect_ctx;                                                                \
+    [[maybe_unused]] uint64_t tc_remaining = 0
+#endif
 #undef TC_HOOK_CALL
 #define TC_HOOK_CALL(expr) (expr)
 #define TC_CASE(NAME, PRELOAD, LEN, EXPR)                                                                              \
@@ -2766,9 +2867,10 @@ using tc_lightning_collect_fn = bool (*)(tc_lightning_execution &, uint64_t &, u
             return false;                                                                                             \
         } else {                                                                                                      \
             const ACCESS a{&execution};                                                                               \
+            TC_COLLECT_MCYCLE_STATE();                                                                                 \
             const execute_status status = (EXPR);                                                                     \
             return status == execute_status::success && !execution.failed;                                            \
-        }                                                                                                             \
+        }                                                                                                              \
     }
 #include "interpret-tc-cases.inc"
 #undef TC_CASE
@@ -2981,15 +3083,17 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         jit_live(TC_JIT_STATE);
         jit_live(TC_JIT_PC);
         jit_live(TC_JIT_CD);
+#if TC_GLOBAL_REGS
         jit_live(TC_JIT_FETCH);
         jit_live(TC_JIT_CTX);
+#endif
     };
     const auto emit_leave = [&](jit_gpr_t target) {
         emit_contract_live();
         jit_jmpr(target);
     };
     const auto emit_continue = [&] {
-        jit_movi(tmp0, reinterpret_cast<jit_word_t>(&tc_lightning_continue));
+        jit_movi(tmp0, reinterpret_cast<jit_word_t>(&tc_lightning_continue<state_access>));
         emit_leave(tmp0);
     };
     const auto emit_link_or_continue = [&] {
@@ -3051,8 +3155,8 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             jit_str_s(tmp0, tmp1);
             auto *const continue_counting = jit_bgti(tmp1, 0);
             jit_movi(tmp0, reinterpret_cast<jit_word_t>(&side));
-            jit_stxi(offsetof(tc_context<state_access>, online_trip_side), TC_JIT_CTX, tmp0);
-            jit_movi(tmp0, reinterpret_cast<jit_word_t>(&tc_lightning_trip));
+            jit_stxi(TC_JIT_CTX_DISP(offsetof(tc_context<state_access>, online_trip_side)), TC_JIT_CTX_BASE, tmp0);
+            jit_movi(tmp0, reinterpret_cast<jit_word_t>(&tc_lightning_trip<state_access>));
             emit_leave(tmp0);
             auto *const fallback = jit_label();
             jit_patch_at(continue_counting, fallback);
@@ -3092,11 +3196,19 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             jit_movi(tmp1, static_cast<jit_word_t>(trace.head));
             jit_addr(TC_JIT_PC, tmp1, tmp0);
             jit_movi(tmp1, static_cast<jit_word_t>(successor_page));
+#if TC_GLOBAL_REGS
             jit_addr(TC_JIT_FETCH, tmp1, tmp0);
             jit_stxi(fetch_offset, TC_JIT_STATE, tmp0);
-            jit_stxi(context_fetch_page, TC_JIT_CTX, TC_JIT_FETCH);
+            jit_stxi(TC_JIT_CTX_DISP(context_fetch_page), TC_JIT_CTX_BASE, TC_JIT_FETCH);
+#else
+            // No fetch-tag register in the args contract: the tag lives in
+            // the context alone
+            jit_addr(tmp1, tmp1, tmp0);
+            jit_stxi(fetch_offset, TC_JIT_STATE, tmp0);
+            jit_stxi(TC_JIT_CTX_DISP(context_fetch_page), TC_JIT_CTX_BASE, tmp1);
+#endif
             jit_ldxi(tmp0, TC_JIT_STATE, shadow_slot + offsetof(shadow_tlb_slot, pma_index));
-            jit_stxi(context_pma_index, TC_JIT_CTX, tmp0);
+            jit_stxi(TC_JIT_CTX_DISP(context_pma_index), TC_JIT_CTX_BASE, tmp0);
         }
 
         for (uint32_t guest = 1; guest < 32; ++guest) {
@@ -3164,11 +3276,17 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     jit_movi(tmp1, static_cast<jit_word_t>(trace.head));
     jit_addr(TC_JIT_PC, tmp1, tmp0);
     jit_movi(tmp1, static_cast<jit_word_t>(head_page));
+#if TC_GLOBAL_REGS
     jit_addr(TC_JIT_FETCH, tmp1, tmp0);
     jit_stxi(fetch_offset, TC_JIT_STATE, tmp0);
-    jit_stxi(context_fetch_page, TC_JIT_CTX, TC_JIT_FETCH);
+    jit_stxi(TC_JIT_CTX_DISP(context_fetch_page), TC_JIT_CTX_BASE, TC_JIT_FETCH);
+#else
+    jit_addr(tmp1, tmp1, tmp0);
+    jit_stxi(fetch_offset, TC_JIT_STATE, tmp0);
+    jit_stxi(TC_JIT_CTX_DISP(context_fetch_page), TC_JIT_CTX_BASE, tmp1);
+#endif
     jit_ldxi(tmp0, TC_JIT_STATE, head_shadow_slot + offsetof(shadow_tlb_slot, pma_index));
-    jit_stxi(context_pma_index, TC_JIT_CTX, tmp0);
+    jit_stxi(TC_JIT_CTX_DISP(context_pma_index), TC_JIT_CTX_BASE, tmp0);
     auto *const call_normal_entry = jit_jmpi();
     jit_patch_at(call_normal_entry, normal_entry);
     auto *const call_fallback = jit_label();
@@ -3621,6 +3739,14 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 cartesi::tc_remaining = tc_chain_remaining;
 #if TC_PAGE_SEGMENT
                 tcc->mcycle_seg_end = tc_chain_tick_end;
+#if TC_ONLINE
+                // A recording chain must not survive its single instruction:
+                // segment expiry re-derives from the true tick end, so that
+                // end moves with the chain end while recording.
+                if (tc_is_recording) {
+                    tcc->mcycle_tick_end = tc_chain_tick_end;
+                }
+#endif
 #else
                 tcc->mcycle_tick_end = tc_chain_tick_end;
 #endif
@@ -3628,11 +3754,27 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 cartesi::tc_reg_fetch_page = static_cast<uint64_t>(tcc->fetch_vaddr_page);
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
 #else
-#if TC_PAGE_SEGMENT
-                tcc->mcycle_seg_end = mcycle + tc_avail;
-                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_avail);
+#if TC_ONLINE
+                // One-instruction chains while recording, exactly as in the
+                // pinned shape above.
+                const bool tc_is_recording = tcc->online->recording;
+                const uint64_t tc_chain_remaining = tc_is_recording ? 1 : tc_avail;
+                const uint64_t tc_chain_tick_end = tc_is_recording ? mcycle + 1 : mcycle + tc_avail;
 #else
-                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_avail,
+                const uint64_t tc_chain_remaining = tc_avail;
+                const uint64_t tc_chain_tick_end = mcycle + tc_avail;
+#endif
+#if TC_PAGE_SEGMENT
+                tcc->mcycle_seg_end = tc_chain_tick_end;
+#if TC_ONLINE
+                if (tc_is_recording) {
+                    tcc->mcycle_tick_end = tc_chain_tick_end;
+                }
+#endif
+                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining);
+#else
+                tcc->mcycle_tick_end = tc_chain_tick_end;
+                status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining,
                     tcc->fetch_vaddr_page);
 #endif
 #endif

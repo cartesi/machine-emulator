@@ -53,7 +53,14 @@ predicts: workloads whose hot code the backend covers collapse (sieve
 -68.8%, nop -81.4%, memcpy -68.7%, hash -37.1%), while workloads it
 cannot collect pay the recorder's few percent and nothing else (double
 +14.8%). The port cost the interpreter nothing and the backend four
-bugs, three of them architecture-neutral and latent on AArch64.
+bugs, three of them architecture-neutral and latent on AArch64. Those
+numbers were taken on the pinned interpreter substrate, itself +11.9%
+against stock on that host; the backend contract has since been
+re-expressed on the four-slot preserve_none argument shape (8b item
+10), which removes that substrate tax and needs no pinned registers,
+no reservations, and no compiler restriction on x86-64. It is gated
+bit-exact on both architectures; its timing campaign is queued for the
+same hardware.
 
 ## 2. Background and motivation
 
@@ -149,10 +156,13 @@ hand-passed OPTFLAGS.
 
 The trace backend is `make tailcall=yes lightning=yes
 MYINTERPRET_CXXFLAGS=-DTC_ONLINE=1`, which links the bundled GNU
-lightning (`make bundle-lightning`) and selects the pinned shape on
-every architecture, since the generated code emits into that register
-contract. On x86-64 it additionally implies GCC, TC_USE_PRESERVE_NONE=0,
-and the r14 reservation of 8b item 9; the build refuses Clang there.
+lightning (`make bundle-lightning`). The generated code emits into the
+register contract of the selected interpreter shape: pinned on AArch64,
+and on x86-64 the four-slot preserve_none argument assignment (the
+build adds TC_PAGE_SEGMENT=1 there, needs GCC 16.1+ or Clang, and
+reserves nothing; the pinned x86-64 shape of 8b item 9 remains
+reachable with TC_GLOBAL_REGS=1 and GCC, which then implies
+TC_USE_PRESERVE_NONE=0 and the r14 reservation). See 8b item 10.
 
 ## 4. Measurement protocol
 
@@ -1602,6 +1612,96 @@ shell cost +66% with tracing idle).
    few percent and receives nothing, which is the shape every uncovered
    workload will have until coverage grows.
 
+10. DONE, GATED, THE ARGS-SHAPE CONTRACT ON X86-64. Item 9's closing
+    observation became the work: the backend rode the pinned interpreter
+    only because pinning was the one expressed register contract, and the
+    substrate tax was twelve of its twenty-five points. With GCC 14/15 out
+    of scope the pin has no other x86-64 justification, so the contract
+    was re-expressed on the four-slot preserve_none argument assignment.
+    A probe settled the register question first: GCC 16.1 and Clang 22
+    assign preserve_none arguments identically on both architectures
+    (x86-64: r12, r13, r14, r15, then rdi, rsi, with GCC stopping at six
+    and Clang continuing through rdx, rcx, r8, r9, r11, rax; AArch64:
+    x20-x28 then x0-x2), so one args contract per architecture serves
+    both compilers, and the four slots land in SysV callee-saved
+    registers that survive cold helper calls for free.
+
+    The port had two layers. First, TC_PAGE_SEGMENT composed with the
+    shell, the recorder, and the backend (the fences fell; only the AOT
+    prototype stays fenced). Trace dispatch sites extend the countdown to
+    the true tick end before entering generated code (base and countdown
+    move together, preserving the materialization identity, and removing
+    the spurious entry bails a page-end segment bound would cause), the
+    fetch-tail continuation re-tightens from the trace's final pc before
+    the chain resumes, and recording chains move both countdown bases so
+    segment expiry cannot extend a one-instruction chain past its
+    instruction. Second, the contract itself: state pointer r12, fast pc
+    r14, countdown r15, insn r13 dead but untouched; the fetch tag and
+    the context hold no registers, context fields reached from the state
+    pointer at a constant disp32 offset. The guest roster grows to five
+    (rbx, rdi, rsi, r8, r9) against the pinned shape's four, scratch and
+    lightning's rcx/rdx are unchanged, and nothing is reserved: under the
+    preserve_none chain the entry call site already assumes every
+    register clobbered, so the call-clobbered-or-reserved rule of item 9
+    is vacuous and -ffixed-r14 plus its boundary save/restore slot
+    retreat to the pinned shape. `lightning=yes` on x86-64 now selects
+    this shape (TC_PAGE_SEGMENT=1, preserve_none required, GCC 16.1+ and
+    Clang both accepted, GCC's musttail applied); the pinned x86-64 shape
+    remains reachable with TC_GLOBAL_REGS=1. Two mechanical consequences:
+    the collection entry points needed inert countdown state (the case
+    expressions name it for their mcycle argument, and the args shape
+    resolves those names to handler locals), and the two lightning
+    continuations became templates because the args shapes spell the
+    STATE_ACCESS type in the handler parameter list.
+
+    Gates, no timing (emulated wall time is meaningless). On the M3,
+    stock and pinned-lightning builds of the ported source were byte
+    identical on a Linux boot and a full sieve (262 traces installed, 104
+    links, no flush), so the port is a no-op for the shipped AArch64
+    shape. On emulated x86-64 under GCC 16.1, stock, the four-slot
+    interpreter, and the four-slot backend agreed byte for byte on
+    cycles, root hash, and guest exit across boot, sieve, hash, and qsort
+    (sieve installed 246 traces and 89 links with no flush, and hash is
+    the workload that catches W-form wrap defects). The x86-64 root
+    hashes equal the M3's on every gate, the determinism guarantee doing
+    double duty as a cross-architecture check.
+
+    The queued campaign on the i9-14900K prices the port. Protocol: the
+    fixed-work harness of section 9 (bench-harness/bench.lua), the ten
+    workloads of item 9, 256 Mi boot plus 1 Gi measured cycles, median
+    of three repetitions, every run gated on the root hash at the exact
+    final mcycle against the same-day stock anchor. Five same-source
+    builds:
+
+    1. stock, the anchor;
+    2. the four-slot interpreter (`tailcall=yes` with
+       `MYINTERPRET_CXXFLAGS=-DTC_PAGE_SEGMENT=1`), re-anchoring the
+       -1.3% of 8c, which was measured on different silicon;
+    3. the four-slot interpreter with the recorder armed
+       (`-DTC_PAGE_SEGMENT=1 -DTC_ONLINE=1`, no lightning), pricing
+       shell plus formation on the args substrate;
+    4. the args-contract backend (`tailcall=yes lightning=yes
+       MYINTERPRET_CXXFLAGS=-DTC_ONLINE=1`, GCC 16.1);
+    5. the pinned backend of item 9 (`TC_GLOBAL_REGS=1` with
+       `TC_USE_PRESERVE_NONE=0`, GCC), same day, so the two contracts
+       compare on one set of anchors instead of across campaigns.
+
+    Predictions, recorded before the run. Build 2 lands near stock,
+    around -1.3%. Build 3 adds the recorder's low single digits,
+    concentrated where hook events are dense. Build 4 roughly keeps
+    build 5's absolute times on the covered workloads (the trace bodies
+    are the same code modulo register naming, with five mapped guests
+    instead of four working in its favor), while the uncovered
+    workloads (double, tree, branch, qsort) fall from their
+    pinned-substrate prices to roughly build 3's, so the aggregate
+    against stock should improve from item 9's -16.0% by most of the
+    twelve-point substrate tax. If build 4 fails to beat build 5 on the
+    uncovered workloads, the substrate-tax attribution of item 9 is
+    wrong and the difference lives in the contract itself. A secondary
+    question rides along at no protocol cost: build 4 under Clang, the
+    first backend configuration that compiler can build on this
+    architecture, priced against the same anchors.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three
@@ -1833,22 +1933,24 @@ translation unit still fails the project's clang-tidy policy
 (macro-generated handlers, inline assembly, casts, and the
 pinned-register shape, with the lint target also lacking the unit's
 compile flags), the full machine and host/uarch test suites have not
-been run against the flag, the x86-64 argument shape does not compile at
-all (section 8c), and the generated .inc extraction scripts and the
-trace tooling live in a session scratchpad and would need to become
-checked-in tools (the .inc files are one-shot extractions and must be
-regenerated if the stock switch or jump table changes). The emutls
-exit-crash fix in cm.cpp (section 5.13) shipped independently of the
-flag.
+been run against the flag, the default x86-64 argument shape (six
+slots, no segments) still does not compile because the typed-pc
+migration never reached it (the four-slot segment shape is the one that
+compiles and gates, sections 8c and 8b item 10), and the generated .inc
+extraction scripts and the trace tooling live in a session scratchpad
+and would need to become checked-in tools (the .inc files are one-shot
+extractions and must be regenerated if the stock switch or jump table
+changes). The emutls exit-crash fix in cm.cpp (section 5.13) shipped
+independently of the flag.
 
 The backend carries its own promotion list, unchanged in substance by
-the x86-64 port and now with one more entry. It remains an execution
-oracle: recorded code bytes are re-validated only through the code-TLB
-tag at entry and at cross-page boundaries, there is no per-page trace
-membership and therefore no store invalidation, so it is valid for
-gated benchmarks and not for production. Cross-page linking is
-isolated but undiagnosed (8b item 7). Coverage stops at the integer
-instruction families, which the `double` column prices exactly. And the
-x86-64 register contract is at its floor: with four guest registers, one
-more consumer of the register file would have to come out of the
-spilled-guest fallback rather than out of the budget.
+the x86-64 port. It remains an execution oracle: recorded code bytes
+are re-validated only through the code-TLB tag at entry and at
+cross-page boundaries, there is no per-page trace membership and
+therefore no store invalidation, so it is valid for gated benchmarks
+and not for production. Coverage stops at the integer instruction
+families, which the `double` column prices exactly. And the pinned
+x86-64 register contract is at its floor: with four guest registers,
+one more consumer of the register file would have to come out of the
+spilled-guest fallback rather than out of the budget (the args contract
+of 8b item 10 relaxes this to five guests with none reserved).

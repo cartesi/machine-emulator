@@ -60,7 +60,10 @@ re-expressed on the four-slot preserve_none argument shape (8b item
 10), which removes that substrate tax and needs no pinned registers,
 no reservations, and no compiler restriction on x86-64. It is gated
 bit-exact on both architectures; its timing campaign is queued for the
-same hardware.
+same hardware, and an interim run of the full five-build protocol on
+other silicon already confirms the attribution: the args backend beat
+the pinned backend on all four uncovered workloads and reached -18.7%
+aggregate against stock (8b item 10).
 
 ## 2. Background and motivation
 
@@ -1701,6 +1704,51 @@ shell cost +66% with tracing idle).
     question rides along at no protocol cost: build 4 under Clang, the
     first backend configuration that compiler can build on this
     architecture, priced against the same anchors.
+
+    An interim run of the exact five-build protocol was measured before
+    the i9-14900K campaign, on different silicon: a 4-vCPU cloud Intel
+    Xeon (2.80 GHz, generic virtualized model), Ubuntu 24.04, GCC 16.0.1
+    trunk 20260315 (r16-8100, pre-release with preserve_none). Same
+    source for all five builds, same compiler, non-interpreter objects
+    shared byte for byte; the pinned build reproduced item 9's shape
+    against the new Makefile defaults with TC_GLOBAL_REGS=1,
+    TC_USE_PRESERVE_NONE=0, TC_PAGE_SEGMENT=0 and the r14 reservation
+    passed by hand (TC_FFIXED_FLAGS=-ffixed-r14). All 150 runs gated:
+    one root hash and one final mcycle per workload across every
+    variant and repetition. Medians of three interleaved repetitions:
+
+    | workload | stock | four-slot | + recorder | args backend | pinned backend | args vs stock | args vs pinned |
+    |---|---:|---:|---:|---:|---:|---:|---:|
+    | sieve | 2.522 | 2.488 | 2.666 | 0.727 | 0.710 | -71.2% | +2.4% |
+    | nop | 1.324 | 1.146 | 1.198 | 0.247 | 0.264 | -81.3% | -6.4% |
+    | memcpy | 2.333 | 2.575 | 2.970 | 0.717 | 0.761 | -69.3% | -5.8% |
+    | hash | 2.446 | 2.585 | 2.714 | 1.478 | 1.484 | -39.6% | -0.4% |
+    | zlib | 2.762 | 2.861 | 3.080 | 2.005 | 2.075 | -27.4% | -3.4% |
+    | regs | 1.654 | 1.721 | 1.759 | 1.281 | 1.624 | -22.6% | -21.1% |
+    | qsort | 3.052 | 3.258 | 3.448 | 2.699 | 3.030 | -11.6% | -10.9% |
+    | branch | 2.512 | 2.676 | 2.739 | 2.667 | 2.688 | +6.2% | -0.8% |
+    | tree | 6.189 | 6.656 | 6.711 | 6.120 | 6.694 | -1.1% | -8.6% |
+    | double | 7.488 | 7.779 | 7.970 | 8.305 | 9.006 | +10.9% | -7.8% |
+    | **total** | **32.282** | **33.745** | **35.255** | **26.246** | **28.336** | **-18.7%** | **-7.4%** |
+
+    Against the recorded predictions. Build 2 did not land near -1.3%
+    on this host: the four-slot interpreter costs +4.5% aggregate here
+    (sieve alone matches at -1.3%; nop is -13.4%, memcpy +10.4%), so
+    that re-anchor remains open for the Raptor Lake run. Build 3 adds
+    +4.5% over build 2, the top of the predicted low single digits.
+    Build 4 kept or beat build 5's absolute times on every covered
+    workload, with regs the standout at -21.1% (the fifth mapped guest
+    working exactly as predicted), and the uncovered workloads fell
+    from their pinned prices as predicted: branch and tree land at or
+    below build 3, double lands within +4.2% of it, and qsort improves
+    outright to -11.6% against stock. The falsification test failed to
+    fire: build 4 beats build 5 on all four uncovered workloads (qsort
+    -10.9%, branch -0.8%, tree -8.6%, double -7.8%), so the
+    substrate-tax attribution of item 9 stands. Aggregate on this host:
+    pinned backend -12.2% against stock, args backend -18.7% (333 MIPS
+    stock, 409 args). The secondary Clang question was not answerable
+    in this environment (Ubuntu clang 18 has no preserve_none; the
+    probe needs Clang 22).
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

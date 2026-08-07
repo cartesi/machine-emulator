@@ -63,7 +63,11 @@ bit-exact on both architectures; its timing campaign is queued for the
 same hardware, and an interim run of the full five-build protocol on
 other silicon already confirms the attribution: the args backend beat
 the pinned backend on all four uncovered workloads and reached -18.7%
-aggregate against stock (8b item 10).
+aggregate against stock (8b item 10). A clang-20 build of the same
+contract then exposed a live emitter defect the GCC gates could not
+see -- a side-trace division spilling through the unmaintained frame
+pointer -- which must be fixed before further gating is trusted (8b
+item 10).
 
 ## 2. Background and motivation
 
@@ -1746,9 +1750,43 @@ shell cost +66% with tracing idle).
     -10.9%, branch -0.8%, tree -8.6%, double -7.8%), so the
     substrate-tax attribution of item 9 stands. Aggregate on this host:
     pinned backend -12.2% against stock, args backend -18.7% (333 MIPS
-    stock, 409 args). The secondary Clang question was not answerable
-    in this environment (Ubuntu clang 18 has no preserve_none; the
-    probe needs Clang 22).
+    stock, 409 args).
+
+    The secondary Clang question was then answered on the same host
+    with clang-20 (the environment cannot reach apt.llvm.org, so Clang
+    22 itself was not installable; clang-20.1.2 passes the contract
+    probe with the identical r12-r15 assignment). The build compiles,
+    and what runs, gates: sieve, nop and qsort match the campaign
+    hashes, with paired interleaved runs putting the clang backend
+    within noise of the GCC one (sieve +1.3%, nop -4.7%, qsort -3.7%).
+    The other seven workloads segfault during boot, and the crash
+    diagnosed to a live architecture-neutral emitter defect, not a
+    clang miscompile. TC_LIGHTNING_DUMP output is byte-identical
+    between the two builds up to the crash, and the fault lands in
+    generated code at `mov %rax,-0x8(%rbp)` ahead of `xor %rdx,%rdx;
+    div %r10`: a division's fixed operands ran lightning out of
+    temporaries inside a side trace with spilled guests, and its
+    allocator spilled under jit_tramp through the frame pointer this
+    build does not maintain -- the exact hazard item 9's
+    two-free-registers rule was meant to exclude, one register short
+    for this shape. The GCC build emits the identical bytes at the
+    identical buffer offset (verified by scanning its generated pages
+    at the end of the same boot), so every gated GCC run of that trace
+    has been silently storing eight bytes through a stale %rbp that
+    happens to be mapped and dead there; clang-20 merely reaches the
+    trace with %rbp holding an unmapped value and turns the scribble
+    into a segfault. TC_LIGHTNING_NO_SIDE=1 or TC_LIGHTNING_NO_SPILL=1
+    avoids the shape and completes with the campaign hash. The fix
+    belongs to the emitter: division and remainder need a third
+    guaranteed-free register, or operands pre-materialized through
+    backend scratch, before the two-register rule can be called
+    sufficient.
+
+    One protocol note rode along: a fresh stock pass taken with the
+    clang pairs ran 11-27% faster than the morning anchors on this
+    shared host, so absolute times drift between sessions here and
+    only interleaved same-session ratios are meaningful. The campaign
+    tables above are internally interleaved and unaffected.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
@@ -1996,7 +2034,13 @@ the x86-64 port. It remains an execution oracle: recorded code bytes
 are re-validated only through the code-TLB tag at entry and at
 cross-page boundaries, there is no per-page trace membership and
 therefore no store invalidation, so it is valid for gated benchmarks
-and not for production. Coverage stops at the integer instruction
+and not for production. One open defect is known and live: side-trace
+division with spilled guests can run lightning's allocator out of
+temporaries and spill under jit_tramp through the unmaintained frame
+pointer -- the GCC build has been executing that silent eight-byte
+store through a stale, luckily-mapped %rbp on gated runs, and the
+clang-20 build turns it into a boot segfault on seven of ten workloads
+(8b item 10). Coverage stops at the integer instruction
 families, which the `double` column prices exactly. And the pinned
 x86-64 register contract is at its floor: with four guest registers,
 one more consumer of the register file would have to come out of the

@@ -1900,10 +1900,32 @@ shell cost +66% with tracing idle).
     (one invalidation and a few verify rejections per run), stale
     execution the gates never observed only because those traces
     happened not to be re-entered afterward. The backend no longer
-    depends on that luck. Remaining before production: the per-machine
-    pool and coverage growth; the timing cost of the mechanism is
-    expected to be nothing on trace-free stores and rides the queued
-    Raptor campaign for confirmation.
+    depends on that luck.
+
+    The interim host priced the mechanism ahead of the queued Raptor
+    campaign, with the section-9 protocol interleaving pre- and
+    post-invalidation builds of the same source (150 runs, every hash
+    identical to the campaign anchors, the hook armed throughout).
+    Stock is untouched at -0.3% aggregate -- the null-hook checks on
+    the write-TLB and dirty paths price at nothing, as predicted -- and
+    the backend pays +1.3% aggregate (seven of ten workloads a point or
+    two up), the install-time re-verification and page bookkeeping
+    priced against the coherence they buy. The backend's aggregate
+    against same-tip stock is -18.6%, unchanged from the pre-mechanism
+    -18.7%.
+
+    The per-machine pool followed. tc_online_state was a per-thread
+    static that outlived machine objects; it now follows the write
+    hook's ownership pattern -- the penumbra carries an opaque tc_state
+    pointer with a tc_state_free destructor, the machine destructor
+    releases it, and the loop allocates on first use -- so traces,
+    maps, penalties and generated code die with the machine that
+    produced them, and the TC_ONLINE_STATS report moves from a process
+    atexit hook into the deleter, one report per machine. Gated on the
+    campaign hashes, plus a new gate the old lifetime could not pass:
+    two machines running sieve and qsort interleaved in one process in
+    64 Mi windows, then a third machine after both are destroyed, each
+    reproducing its canonical single-machine hash exactly.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
@@ -2126,10 +2148,11 @@ the hash gate exact rather than approximate. Two operational notes cost
 time and are worth recording. `cartesi-machine.lua` does not prepend the
 build directory to `package.cpath`, so on a host with the emulator
 installed a bare invocation silently gates and times the *installed*
-library; every invocation must set `LUA_CPATH`. And the online
-recorder's trace pool is a per-thread static that outlives a machine
-object, so each workload must run in its own process or traces recorded
-against one machine's mapping are offered to the next.
+library; every invocation must set `LUA_CPATH`. The online recorder's
+trace pool was originally a per-thread static that outlived a machine
+object, which forced each workload into its own process; the recorder
+state is per-machine now (8b item 10), and the one-process-per-workload
+protocol is kept for measurement hygiene rather than correctness.
 
 Remaining before the experiment can be promoted: the tail-call
 translation unit still fails the project's clang-tidy policy
@@ -2150,9 +2173,9 @@ The backend carries its own promotion list. The execution-oracle
 caveat is retired: per-page trace membership and store invalidation
 (8b item 11) make recorded bytes coherent with guest memory by
 construction, so correctness no longer leans on the per-run hash gate.
-The remaining production items are the per-machine pool (profiling,
-traces, and blacklists still live in a per-thread static that outlives
-a machine) and coverage. The tramp-spill defect a clang-20 build
+The pool is per-machine now -- profiling, traces, blacklists and
+generated code are owned and freed by the machine that produced them
+-- leaving coverage as the remaining production item. The tramp-spill defect a clang-20 build
 exposed -- side-trace division spilling through a frame pointer the
 build never established, a silent eight-byte scribble under GCC -- is
 fixed on the args shape by establishing a real frame in the penumbra

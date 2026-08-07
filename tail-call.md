@@ -1970,16 +1970,46 @@ shell cost +66% with tracing idle).
     truncated non-cyclic recordings back to 64 at publication kept
     nop's win, lost regs' (a straight win), and recovered neither
     qsort nor sieve, isolating their regression to recording length
-    itself rather than to the installed straights. Per-workload optima
-    conflict, so the cap stays at 64 -- protecting the measured
-    winners, with FP coverage engaging wherever recordings fit -- and
-    recording-length policy joins the loop-versus-call hotness
-    separation as the backend's open policy item. double itself is a
-    wash under the helper-call coverage (the helpers price near the
-    interpreter's own hard-float bodies, so only the dispatch around
-    FP is saved); inlining guarded host-FPU sequences into generated
-    code is the next coverage lever if the policy work ever makes
-    double's traces form.
+    itself rather than to the installed straights.
+
+    The conflict resolved as a per-head dynamic cap, because the
+    failure type at finish is already the signal: a recording that
+    ends cap-bound without closing a cycle is length-starved, not
+    malformed, so it doubles its head's cap toward 256 and abandons
+    without penalty -- bounded spend per head, since the shifts only
+    grow twice and the penalty wall still catches heads that keep
+    failing at full length -- while a closed cycle proves the length
+    its head needs and shrinks the cap to the smallest fit. The state
+    shares the penalty set's keying and survives flushes with it.
+    Measured with the section-9 protocol (90 interleaved runs, every
+    hash the campaign anchor's):
+
+    | workload | stock hard-float | backend cap 64 | backend dynamic | dyn vs 64 |
+    |---|---:|---:|---:|---:|
+    | sieve | 2.126 | 0.607 | 0.530 | -12.7% |
+    | nop | 1.268 | 0.212 | 0.103 | -51.4% |
+    | memcpy | 2.121 | 0.604 | 0.610 | +1.0% |
+    | hash | 2.232 | 1.247 | 1.239 | -0.6% |
+    | zlib | 2.546 | 1.723 | 1.735 | +0.7% |
+    | regs | 1.616 | 1.080 | 0.695 | -35.6% |
+    | qsort | 2.595 | 2.161 | 2.165 | +0.2% |
+    | branch | 2.172 | 2.330 | 2.305 | -1.1% |
+    | tree | 4.920 | 5.007 | 5.039 | +0.6% |
+    | double | 4.372 | 4.688 | 4.736 | +1.0% |
+    | **total** | **25.968** | **19.659** | **19.157** | **-2.6%** |
+
+    The dynamic cap dominates both static settings: every flat-256 win
+    survives (nop -51.4%, regs -35.6%), every flat-256 tax vanishes
+    (qsort +0.2%; sieve turns its +9.8% loss into a -12.7% win from
+    selective escalation), and no workload pays more than one percent.
+    Short aborts fall by two thirds because starved heads escalate
+    once instead of dying at 64 repeatedly. The backend stands at
+    -26.2% aggregate against hard-float stock on this host.
+    Loop-versus-call hotness separation remains the open policy item.
+    double itself is a wash under the helper-call FP coverage (the
+    helpers price near the interpreter's own hard-float bodies, so
+    only the dispatch around FP is saved); inlining guarded host-FPU
+    sequences into generated code is the next coverage lever.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

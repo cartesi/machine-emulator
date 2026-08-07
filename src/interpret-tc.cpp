@@ -151,7 +151,11 @@ struct tc_online_entry {
 /// capture experiments: 1024 trace slots of up to 64 entries.
 struct tc_online_state {
     static constexpr uint32_t max_traces = 1024;
-    static constexpr uint32_t max_len = 64;
+    // 64 was too short for FP-heavy loop bodies: the double workload's hot
+    // method iterations run past it before their backward branch closes the
+    // cycle, so their recordings never survived to compilation (measured:
+    // its user-space aborts were dominated by len == max_len).
+    static constexpr uint32_t max_len = 256;
     static constexpr uint32_t max_fragments = 16;
     static constexpr uint32_t min_len = 4;
     static constexpr uint32_t min_straight_len = 32;
@@ -749,9 +753,10 @@ static FORCE_INLINE void tc_online_penalize(tc_online_state *o, uint64_t pc, boo
 
 /// \brief Debug event print, first 200 events only, when TC_ONLINE_DEBUG is set.
 static NO_INLINE void tc_online_debug(const char *what, uint64_t pc, uint64_t extra) {
-    static THREAD_LOCAL int budget = -1;
+    static THREAD_LOCAL long budget = -1;
     if (budget < 0) {
-        budget = (std::getenv("TC_ONLINE_DEBUG") != nullptr) ? 200 : 0;
+        const char *const env = std::getenv("TC_ONLINE_DEBUG");
+        budget = env != nullptr ? std::max(200L, std::strtol(env, nullptr, 0)) : 0;
     }
     if (budget > 0) {
         --budget;
@@ -2142,6 +2147,87 @@ struct tc_lightning_execution {
             failed = true;
         }
     }
+
+    // --- Floating-point staging (FP coverage, 8b item 10) ---
+
+    static constexpr jit_word_t shadow_x_offset =
+        offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, x);
+    static constexpr jit_word_t shadow_f_offset =
+        offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, f);
+    static constexpr jit_word_t shadow_mstatus_offset =
+        offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, mstatus);
+
+    static void emit_shadow_load(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned /*depth*/) {
+        jit_state_t *_jit = e.jit;
+        jit_ldxi(dest, TC_JIT_STATE, static_cast<jit_word_t>(n.immediate));
+    }
+
+    /// \brief Value of an f register, read from the shadow. The f registers
+    /// hold no roster slots; FP density does not yet justify them.
+    tc_lightning_value read_f(uint32_t freg) {
+        return {this, add_node(emit_shadow_load, 0, 0, shadow_f_offset + freg * sizeof(uint64_t)), false, 64};
+    }
+
+    /// \brief Stores a value into an f register in the shadow.
+    void write_f(uint32_t freg, tc_lightning_value value) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        emit_expression(value.node, scratch_registers[0]);
+        jit_stxi(shadow_f_offset + freg * sizeof(uint64_t), TC_JIT_STATE, scratch_registers[0]);
+    }
+
+    /// \brief Guards mstatus FS != OFF before staged FP state access.
+    /// \details This implementation keeps FS binary -- an mstatus write that
+    /// enables the unit forces Dirty, and write_f never touches mstatus --
+    /// so enabled means Dirty and staged f-writes owe no state transition.
+    /// A disabled unit bails to the portable handler, which raises.
+    void emit_fs_guard() {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        const jit_gpr_t tmp = scratch_registers[0];
+        jit_ldxi(tmp, TC_JIT_STATE, shadow_mstatus_offset);
+        jit_andi(tmp, tmp, static_cast<jit_word_t>(MSTATUS_FS_MASK));
+        add_exit(jit_beqi(tmp, 0));
+    }
+
+    using fp_helper_fn = execute_status (*)(processor_state *, uint32_t);
+
+    /// \brief Calls a C++ helper that retires one FP instruction on the live
+    /// machine state.
+    /// \details The helper bails (returning non-success, having touched
+    /// nothing) instead of retiring any instruction that would raise, so a
+    /// non-success return exits for portable re-execution exactly like a
+    /// guard miss. The C call clobbers the caller-saved half of the guest
+    /// roster, so the roster is flushed before and reloaded after.
+    void emit_fp_helper(fp_helper_fn fn, uint32_t insn_word) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        for (uint32_t guest = 1; guest < 32; ++guest) {
+            if (guest_slot[guest] >= 0) {
+                jit_stxi(shadow_x_offset + guest * sizeof(uint64_t), TC_JIT_STATE,
+                    guest_registers[guest_slot[guest]]);
+            }
+        }
+        jit_prepare();
+        jit_pushargr(TC_JIT_STATE);
+        jit_pushargi(static_cast<jit_word_t>(insn_word));
+        jit_finishi(reinterpret_cast<jit_pointer_t>(fn));
+        jit_retval(scratch_registers[0]);
+        for (uint32_t guest = 1; guest < 32; ++guest) {
+            if (guest_slot[guest] >= 0) {
+                jit_ldxi(guest_registers[guest_slot[guest]], TC_JIT_STATE,
+                    shadow_x_offset + guest * sizeof(uint64_t));
+            }
+        }
+        add_exit(jit_bnei(scratch_registers[0], static_cast<jit_word_t>(execute_status::success)));
+    }
 };
 
 template <typename T>
@@ -3220,14 +3306,163 @@ static bool tc_lightning_collect_instruction(tc_lightning_execution &execution, 
     return tc_lightning_collectors[insn_get_id(insn)](execution, pc, insn);
 }
 
+// FP coverage (8b item 10). The FP bodies compute on concrete words, so they
+// cannot stage through the collecting access. Loads and stores stage as
+// inline IR -- the same hot-TLB fast path the integer memory ops use, the f
+// register file reached directly in the shadow, FS guarded, every slow case
+// bailing portable. The arithmetic families stage as one call into the real
+// execute body on the live machine state (hard-float accelerated inside),
+// pre-bailing on exactly the conditions that would raise, so a helper either
+// retires its instruction completely or touches nothing. This is dispatch,
+// not a second decoder: the execute bodies remain the only semantics, and a
+// recorded instruction that once executed cannot become illegal at the
+// decode level while the install-time byte verification and store
+// invalidation hold its bytes constant.
+#if defined(__x86_64__)
+// Generated code runs at the chain's incoming stack alignment (rsp == 8 mod
+// 16 under the SysV chain), so helpers realign themselves.
+#define TC_FP_HELPER_ABI __attribute__((force_align_arg_pointer))
+#else
+#define TC_FP_HELPER_ABI
+#endif
+
+#define TC_FP_ARITH_HELPER(NAME, EXPR)                                                                                 \
+    TC_FP_HELPER_ABI static execute_status tc_fp_helper_##NAME(processor_state *ps, uint32_t insn) {                   \
+        const state_access a(*ps->penumbra.owner);                                                                     \
+        if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {                                     \
+            return execute_status::failure;                                                                            \
+        }                                                                                                              \
+        if (((insn >> 12) & 7) == FRM_DYN) {                                                                           \
+            const auto frm = static_cast<uint32_t>((a.read_fcsr() >> FCSR_FRM_SHIFT) & 7);                             \
+            if (frm > FRM_RMM) [[unlikely]] {                                                                          \
+                return execute_status::failure;                                                                        \
+            }                                                                                                          \
+        }                                                                                                              \
+        i_state_access_fast_addr_t<state_access> pc{};                                                                 \
+        return (EXPR);                                                                                                 \
+    }
+TC_FP_ARITH_HELPER(FD, execute_FD(a, pc, insn))
+TC_FP_ARITH_HELPER(FMADD, execute_FMADD(a, pc, insn))
+TC_FP_ARITH_HELPER(FMSUB, execute_FMSUB(a, pc, insn))
+TC_FP_ARITH_HELPER(FNMADD, execute_FNMADD(a, pc, insn))
+TC_FP_ARITH_HELPER(FNMSUB, execute_FNMSUB(a, pc, insn))
+#undef TC_FP_ARITH_HELPER
+
+static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uint32_t insn) {
+    const auto imm_value = [&](int64_t imm) { return e.immediate(static_cast<uint64_t>(imm)); };
+    const auto address_of = [&](uint32_t rs1, int64_t imm) { return e.read_x(rs1).wrapping_add(imm_value(imm)); };
+    const auto stage_fld = [&](uint32_t rd, uint32_t rs1, int64_t imm, uint32_t len) {
+        e.emit_fs_guard();
+        e.write_f(rd, e.memory_load<uint64_t>(address_of(rs1, imm)));
+        pc += len;
+        return true;
+    };
+    const auto stage_flw = [&](uint32_t rd, uint32_t rs1, int64_t imm) {
+        e.emit_fs_guard();
+        // A narrower transfer into an f register NaN-boxes: all 1s above
+        e.write_f(rd, e.memory_load<uint32_t>(address_of(rs1, imm)) | UINT64_C(0xffffffff00000000));
+        pc += 4;
+        return true;
+    };
+    const auto stage_fsd = [&](uint32_t rs2, uint32_t rs1, int64_t imm, uint32_t len) {
+        e.emit_fs_guard();
+        e.emit_memory_store<uint64_t>(address_of(rs1, imm), e.read_f(rs2));
+        pc += len;
+        return true;
+    };
+    const auto stage_fsw = [&](uint32_t rs2, uint32_t rs1, int64_t imm) {
+        e.emit_fs_guard();
+        // A narrower transfer out of an f register takes the low bits
+        e.emit_memory_store<uint32_t>(address_of(rs1, imm), e.read_f(rs2));
+        pc += 4;
+        return true;
+    };
+    const auto stage_helper = [&](tc_lightning_execution::fp_helper_fn fn) {
+        e.emit_fp_helper(fn, insn);
+        pc += 4;
+        return true;
+    };
+    if ((insn & 3) == 3) {
+        switch (insn & 0x7f) {
+            case 0x07: { // LOAD-FP
+                const uint32_t f3 = (insn >> 12) & 7;
+                if (f3 == 2) {
+                    return stage_flw(insn_get_rd(insn), insn_get_rs1(insn), insn_I_get_imm(insn));
+                }
+                if (f3 == 3) {
+                    return stage_fld(insn_get_rd(insn), insn_get_rs1(insn), insn_I_get_imm(insn), 4);
+                }
+                return false;
+            }
+            case 0x27: { // STORE-FP
+                const uint32_t f3 = (insn >> 12) & 7;
+                if (f3 == 2) {
+                    return stage_fsw(insn_get_rs2(insn), insn_get_rs1(insn), insn_S_get_imm(insn));
+                }
+                if (f3 == 3) {
+                    return stage_fsd(insn_get_rs2(insn), insn_get_rs1(insn), insn_S_get_imm(insn), 4);
+                }
+                return false;
+            }
+            case 0x53:
+                return stage_helper(tc_fp_helper_FD);
+            case 0x43:
+                return stage_helper(tc_fp_helper_FMADD);
+            case 0x47:
+                return stage_helper(tc_fp_helper_FMSUB);
+            case 0x4b:
+                return stage_helper(tc_fp_helper_FNMADD);
+            case 0x4f:
+                return stage_helper(tc_fp_helper_FNMSUB);
+            default:
+                return false;
+        }
+    }
+    const uint32_t q = insn & 3;
+    const uint32_t f3 = (insn >> 13) & 7;
+    if (q == 0 && f3 == 1) { // c.fld
+        return stage_fld(insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn),
+            insn_get_CL_CS_imm(insn), 2);
+    }
+    if (q == 0 && f3 == 5) { // c.fsd
+        return stage_fsd(insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn),
+            insn_get_CL_CS_imm(insn), 2);
+    }
+    if (q == 2 && f3 == 1) { // c.fldsp
+        return stage_fld(insn_get_rd(insn), 0x2, insn_get_C_FLDSP_LDSP_imm(insn), 2);
+    }
+    if (q == 2 && f3 == 5) { // c.fsdsp
+        return stage_fsd(insn_get_CR_CSS_rs2(insn), 0x2, insn_get_C_FSDSP_SDSP_imm(insn), 2);
+    }
+    return false;
+}
+
 static bool tc_lightning_collect_range(tc_lightning_execution &execution, uint64_t &pc, uint32_t first,
     uint32_t last) {
     for (uint32_t i = first; i < last; ++i) {
         execution.current = i;
         execution.reset_expression();
         const auto &entry = execution.trace->entries[i];
-        if (pc != entry.vaddr || !tc_lightning_collect_instruction(execution, pc, entry.insn) ||
-            pc != entry.next_pc) {
+        if (pc != entry.vaddr) {
+            return false;
+        }
+        bool collected = tc_lightning_collect_instruction(execution, pc, entry.insn);
+        // The FP fallback only applies to a cleanly refused instruction: a
+        // body that failed mid-staging may have advanced pc or poisoned the
+        // execution, and gets no second chance.
+        if (!collected && !execution.failed && pc == entry.vaddr) {
+            collected = tc_lightning_collect_fp(execution, pc, entry.insn);
+            if (std::getenv("TC_FP_DEBUG") != nullptr) {
+                std::fprintf(stderr, "tc-fp: fallback insn %08x -> %s\n", entry.insn,
+                    collected ? (execution.failed ? "failed" : "ok") : "refused");
+            }
+        }
+        if (!collected || pc != entry.next_pc) {
+            if (std::getenv("TC_FP_DEBUG") != nullptr) {
+                std::fprintf(stderr, "tc-fp: range end at insn %08x collected %d failed %d pc %llx next %llx\n",
+                    entry.insn, static_cast<int>(collected), static_cast<int>(execution.failed),
+                    static_cast<unsigned long long>(pc), static_cast<unsigned long long>(entry.next_pc));
+            }
             return false;
         }
     }

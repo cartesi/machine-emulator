@@ -64,10 +64,13 @@ same hardware, and an interim run of the full five-build protocol on
 other silicon already confirms the attribution: the args backend beat
 the pinned backend on all four uncovered workloads and reached -18.7%
 aggregate against stock (8b item 10). A clang-20 build of the same
-contract then exposed a live emitter defect the GCC gates could not
-see -- a side-trace division spilling through the unmaintained frame
-pointer -- which must be fixed before further gating is trusted (8b
-item 10).
+contract then exposed a live defect the GCC gates could not see -- a
+side-trace division spilling through a frame pointer the build never
+established, lightning's tramp precondition having been broken from
+day one -- now fixed by establishing a real frame in penumbra scratch
+at every generated entry, at no measurable cost; the clang-20 backend
+then completes all ten workloads gated, 4.7% faster in aggregate than
+the GCC one (8b item 10).
 
 ## 2. Background and motivation
 
@@ -1776,11 +1779,54 @@ shell cost +66% with tracing idle).
     happens to be mapped and dead there; clang-20 merely reaches the
     trace with %rbp holding an unmapped value and turns the scribble
     into a segfault. TC_LIGHTNING_NO_SIDE=1 or TC_LIGHTNING_NO_SPILL=1
-    avoids the shape and completes with the campaign hash. The fix
-    belongs to the emitter: division and remainder need a third
-    guaranteed-free register, or operands pre-materialized through
-    backend scratch, before the two-register rule can be called
-    sufficient.
+    avoids the shape and completes with the campaign hash.
+
+    The repair did not stay in the register discipline. jit_tramp(N) is
+    a promise from the caller -- assume callee-saves are saved and at
+    least N stack bytes exist (body.texi) -- and lightning's spill
+    slots are FP-relative with no spill-free mode, so declaring tramp 0
+    without ever establishing FP had broken the library's precondition
+    from day one; the div spill was merely the first allocator spill to
+    land on the broken promise. The fix makes the promise true: every
+    generated entry (normal, linked, call; side traces are fragments
+    with their own entries) saves the incoming rbp at a frame base in
+    the tail of the machine's penumbra scratch, points FP there, and
+    declares jit_tramp(256) for bytes actually reserved; every leave
+    restores rbp through the same constant offset. Lightning may now
+    spill whenever its allocator wants, and the two-registers rule
+    stops being a correctness rule. One contract correction was found
+    on the way: rbp is NOT clobberable under the preserve_none chain.
+    Probed on both compilers, GCC 16 and clang-20 keep values live in
+    rbp across preserve_none calls -- only rsp joins it in the
+    preserved set -- so item 10's "every register clobbered at the
+    entry call site" holds for all registers except rbp, and generated
+    code must treat rbp as the callee-saved register it uses (a
+    clobbering variant of the fix crashed the GCC build, whose chain
+    keeps state in rbp, while clang's chain happened not to). The
+    pinned x86-64 shape keeps the spill-forbidding discipline (tramp 0,
+    rbp untouched); AArch64 has never reached a spill and its emitted
+    code is unchanged.
+
+    Post-fix, the same interleaved protocol (ten workloads, three
+    reps, every run gated on the campaign hashes -- all 90 runs
+    passed): the fix costs nothing measurable on the GCC backend
+    (-0.5% aggregate, within noise), and the clang-20 backend, now
+    completing all ten workloads, is -4.7% aggregate against the GCC
+    one, with regs the standout at -22.2%:
+
+    | workload | args pre-fix | args fixed (GCC 16) | args fixed (clang-20) |
+    |---|---:|---:|---:|
+    | sieve | 0.640 | 0.614 | 0.622 |
+    | nop | 0.205 | 0.207 | 0.221 |
+    | memcpy | 0.578 | 0.599 | 0.606 |
+    | hash | 1.225 | 1.221 | 1.241 |
+    | zlib | 1.708 | 1.727 | 1.697 |
+    | regs | 1.080 | 1.076 | 0.837 |
+    | qsort | 2.179 | 2.212 | 2.095 |
+    | branch | 2.306 | 2.342 | 2.251 |
+    | tree | 5.384 | 5.216 | 4.909 |
+    | double | 6.096 | 6.073 | 5.810 |
+    | **total** | **21.401** | **21.287** | **20.289** |
 
     One protocol note rode along: a fresh stock pass taken with the
     clang pairs ran 11-27% faster than the morning anchors on this
@@ -2034,13 +2080,14 @@ the x86-64 port. It remains an execution oracle: recorded code bytes
 are re-validated only through the code-TLB tag at entry and at
 cross-page boundaries, there is no per-page trace membership and
 therefore no store invalidation, so it is valid for gated benchmarks
-and not for production. One open defect is known and live: side-trace
-division with spilled guests can run lightning's allocator out of
-temporaries and spill under jit_tramp through the unmaintained frame
-pointer -- the GCC build has been executing that silent eight-byte
-store through a stale, luckily-mapped %rbp on gated runs, and the
-clang-20 build turns it into a boot segfault on seven of ten workloads
-(8b item 10). Coverage stops at the integer instruction
+and not for production. The tramp-spill defect a clang-20 build
+exposed -- side-trace division spilling through a frame pointer the
+build never established, a silent eight-byte scribble under GCC -- is
+fixed on the args shape by establishing a real frame in the penumbra
+scratch tail at every generated entry and restoring rbp at every
+leave, making the jit_tramp declaration true (8b item 10); the pinned
+x86-64 shape keeps the spill-forbidding discipline instead. Coverage
+stops at the integer instruction
 families, which the `double` column prices exactly. And the pinned
 x86-64 register contract is at its floor: with four guest registers,
 one more consumer of the register file would have to come out of the

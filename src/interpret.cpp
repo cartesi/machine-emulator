@@ -4087,6 +4087,32 @@ template <typename T>
 static FORCE_INLINE T fp_word(uint64_t f) {
     return static_cast<T>(f);
 }
+/// \brief Boxes an integer word written to an f register (dispatch point).
+template <typename T>
+static FORCE_INLINE uint64_t float_box_word(uint64_t val) {
+    return float_box(static_cast<T>(val));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+static FORCE_INLINE uint64_t fp_le(T s1, T s2, uint32_t *fflags) {
+    return static_cast<uint64_t>(i_float_for<T>::type::le(s1, s2, fflags));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+static FORCE_INLINE uint64_t fp_lt(T s1, T s2, uint32_t *fflags) {
+    return static_cast<uint64_t>(i_float_for<T>::type::lt(s1, s2, fflags));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+static FORCE_INLINE uint64_t fp_eq(T s1, T s2, uint32_t *fflags) {
+    return static_cast<uint64_t>(i_float_for<T>::type::eq(s1, s2, fflags));
+}
+static FORCE_INLINE uint32_t fp_cvt_f64_f32(uint64_t s1, uint32_t rm, uint32_t *fflags) {
+    return sfloat_cvt_f64_f32(s1, static_cast<FRM_modes>(rm), fflags);
+}
+static FORCE_INLINE uint64_t fp_cvt_f32_f64(uint32_t s1, uint32_t *fflags) {
+    return sfloat_cvt_f32_f64(s1, fflags);
+}
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_ternary_op_rm(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn,
@@ -4456,6 +4482,11 @@ static FORCE_INLINE execute_status execute_FDIV_D(const STATE_ACCESS a, i_state_
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCLASS(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
+    if constexpr (requires { a.stage_fp_decline(); }) {
+        // The trace backend does not stage this family yet; decline to
+        // the whole-instruction helper without instantiating the body.
+        return a.stage_fp_decline();
+    } else {
     const uint32_t rd = insn_get_rd(insn);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc);
@@ -4464,17 +4495,18 @@ static FORCE_INLINE execute_status execute_FCLASS(const STATE_ACCESS a, i_state_
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     a.write_x(rd, f(s1));
     return advance_to_next_insn(a, pc);
+    }
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_binary_op(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn,
     const F &f) {
-    const uint64_t fcsr = a.read_fcsr();
+    const auto fcsr = a.read_fcsr();
     // We must always check if input operands are properly NaN-boxed.
-    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
-    T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
+    const auto s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    const auto s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
     const uint32_t rd = insn_get_rd(insn);
-    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK); // NOLINT(misc-const-correctness)
+    auto fflags = fcsr_fflags(fcsr); // NOLINT(misc-const-correctness)
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(f(s1, s2, &fflags)));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
@@ -4483,14 +4515,14 @@ static FORCE_INLINE execute_status execute_float_binary_op(const STATE_ACCESS a,
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_cmp_op(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
-    const uint64_t fcsr = a.read_fcsr();
+    const auto fcsr = a.read_fcsr();
     // We must always check if input operands are properly NaN-boxed.
-    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
-    T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
+    const auto s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    const auto s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
     const uint32_t rd = insn_get_rd(insn);
-    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = fcsr_fflags(fcsr);
     // Comparisons with NaNs may set NV (invalid operation) exception flag in fflags
-    const uint64_t val = f(s1, s2, &fflags);
+    const auto val = f(s1, s2, &fflags);
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc);
@@ -4503,7 +4535,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJ_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsgnj.s");
     return execute_float_binary_op<uint32_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t s2, const uint32_t * /*fflags*/) -> uint32_t {
+        [](auto s1, auto s2, const auto * /*fflags*/) {
             return (s1 & ~i_sfloat32::SIGN_MASK) | (s2 & i_sfloat32::SIGN_MASK);
         });
 }
@@ -4512,7 +4544,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJN_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsgnjn.s");
     return execute_float_binary_op<uint32_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t s2, const uint32_t * /*fflags*/) -> uint32_t {
+        [](auto s1, auto s2, const auto * /*fflags*/) {
             return (s1 & ~i_sfloat32::SIGN_MASK) | ((s2 & i_sfloat32::SIGN_MASK) ^ i_sfloat32::SIGN_MASK);
         });
 }
@@ -4521,18 +4553,13 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJX_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsgnjx.s");
     return execute_float_binary_op<uint32_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t s2, const uint32_t * /*fflags*/) -> uint32_t {
+        [](auto s1, auto s2, const auto * /*fflags*/) {
             return s1 ^ (s2 & i_sfloat32::SIGN_MASK);
         });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGN_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
-    if constexpr (requires { a.stage_fp_decline(); }) {
-        // The trace backend does not stage this family yet; decline to
-        // the whole-instruction helper without instantiating the body.
-        return a.stage_fp_decline();
-    } else {
     switch (static_cast<insn_FSGN_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
         case insn_FSGN_funct3_000000000000::J:
             return execute_FSGNJ_S(a, pc, insn);
@@ -4543,14 +4570,13 @@ static FORCE_INLINE execute_status execute_FSGN_S(const STATE_ACCESS a, i_state_
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
-    }
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJ_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsgnj.d");
     return execute_float_binary_op<uint64_t>(a, pc, insn,
-        [](uint64_t s1, uint64_t s2, const uint32_t * /*fflags*/) -> uint64_t {
+        [](auto s1, auto s2, const auto * /*fflags*/) {
             return (s1 & ~i_sfloat64::SIGN_MASK) | (s2 & i_sfloat64::SIGN_MASK);
         });
 }
@@ -4559,7 +4585,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJN_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsgnjn.d");
     return execute_float_binary_op<uint64_t>(a, pc, insn,
-        [](uint64_t s1, uint64_t s2, const uint32_t * /*fflags*/) -> uint64_t {
+        [](auto s1, auto s2, const auto * /*fflags*/) {
             return (s1 & ~i_sfloat64::SIGN_MASK) | ((s2 & i_sfloat64::SIGN_MASK) ^ i_sfloat64::SIGN_MASK);
         });
 }
@@ -4568,18 +4594,13 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJX_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsgnjx.d");
     return execute_float_binary_op<uint64_t>(a, pc, insn,
-        [](uint64_t s1, uint64_t s2, const uint32_t * /*fflags*/) -> uint64_t {
+        [](auto s1, auto s2, const auto * /*fflags*/) {
             return s1 ^ (s2 & i_sfloat64::SIGN_MASK);
         });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGN_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
-    if constexpr (requires { a.stage_fp_decline(); }) {
-        // The trace backend does not stage this family yet; decline to
-        // the whole-instruction helper without instantiating the body.
-        return a.stage_fp_decline();
-    } else {
     switch (static_cast<insn_FSGN_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
         case insn_FSGN_funct3_000000000000::J:
             return execute_FSGNJ_D(a, pc, insn);
@@ -4589,7 +4610,6 @@ static FORCE_INLINE execute_status execute_FSGN_D(const STATE_ACCESS a, i_state_
             return execute_FSGNJX_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
-    }
     }
 }
 
@@ -4659,18 +4679,18 @@ static FORCE_INLINE execute_status execute_FMINMAX_D(const STATE_ACCESS a, i_sta
 
 template <typename ST, typename DT, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_F_F(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
-    const uint64_t fcsr = a.read_fcsr();
+    const auto fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
-    const uint32_t rm = insn_get_rm(insn, fcsr);
+    const auto rm = insn_get_rm(insn, fcsr);
     // If the rounding mode is invalid, the instruction is considered illegal
     if (rm > FRM_RMM) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rd = insn_get_rd(insn);
-    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = fcsr_fflags(fcsr);
     // We must always check if input operands are properly NaN-boxed.
-    ST s1 = float_unbox<ST>(a.read_f(insn_get_rs1(insn)));
-    DT val = f(s1, rm, &fflags);
+    const auto s1 = float_unbox<ST>(a.read_f(insn_get_rs1(insn)));
+    const auto val = f(s1, rm, &fflags);
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(val));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
@@ -4679,6 +4699,11 @@ static FORCE_INLINE execute_status execute_FCVT_F_F(const STATE_ACCESS a, i_stat
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_X_F(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
+    if constexpr (requires { a.stage_fp_decline(); }) {
+        // The trace backend does not stage this family yet; decline to
+        // the whole-instruction helper without instantiating the body.
+        return a.stage_fp_decline();
+    } else {
     const uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
     const uint32_t rm = insn_get_rm(insn, fcsr);
@@ -4697,10 +4722,16 @@ static FORCE_INLINE execute_status execute_FCVT_X_F(const STATE_ACCESS a, i_stat
     }
     a.write_x(rd, val);
     return advance_to_next_insn(a, pc);
+    }
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_F_X(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
+    if constexpr (requires { a.stage_fp_decline(); }) {
+        // The trace backend does not stage this family yet; decline to
+        // the whole-instruction helper without instantiating the body.
+        return a.stage_fp_decline();
+    } else {
     const uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
     const uint32_t rm = insn_get_rm(insn, fcsr);
@@ -4716,14 +4747,15 @@ static FORCE_INLINE execute_status execute_FCVT_F_X(const STATE_ACCESS a, i_stat
     a.write_f(rd, float_box(val));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
     return advance_to_next_insn(a, pc);
+    }
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_S_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.s.d");
     return execute_FCVT_F_F<uint64_t, uint32_t>(a, pc, insn,
-        [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-            return sfloat_cvt_f64_f32(s1, static_cast<FRM_modes>(rm), fflags);
+        [](auto s1, auto rm, auto *fflags) {
+            return fp_cvt_f64_f32(s1, rm, fflags);
         });
 }
 
@@ -4731,9 +4763,9 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_D_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.d.s");
     return execute_FCVT_F_F<uint32_t, uint64_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t /*rm*/, uint32_t *fflags) -> uint64_t {
+        [](auto s1, auto /*rm*/, auto *fflags) {
             // FCVT.D.S will never round, since it's a widen operation.
-            return sfloat_cvt_f32_f64(s1, fflags);
+            return fp_cvt_f32_f64(s1, fflags);
         });
 }
 
@@ -4756,34 +4788,29 @@ static FORCE_INLINE execute_status execute_FSQRT_D(const STATE_ACCESS a, i_state
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FLE_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fle.s");
-    return execute_float_cmp_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(i_sfloat32::le(s1, s2, fflags));
+    return execute_float_cmp_op<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto *fflags) {
+        return fp_le(s1, s2, fflags);
     });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FLT_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "flt.s");
-    return execute_float_cmp_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(i_sfloat32::lt(s1, s2, fflags));
+    return execute_float_cmp_op<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto *fflags) {
+        return fp_lt(s1, s2, fflags);
     });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FEQ_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "feq.s");
-    return execute_float_cmp_op<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(i_sfloat32::eq(s1, s2, fflags));
+    return execute_float_cmp_op<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto *fflags) {
+        return fp_eq(s1, s2, fflags);
     });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCMP_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
-    if constexpr (requires { a.stage_fp_decline(); }) {
-        // The trace backend does not stage this family yet; decline to
-        // the whole-instruction helper without instantiating the body.
-        return a.stage_fp_decline();
-    } else {
     switch (static_cast<insn_FCMP_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
         case insn_FCMP_funct3_000000000000::LT:
             return execute_FLT_S(a, pc, insn);
@@ -4794,40 +4821,34 @@ static FORCE_INLINE execute_status execute_FCMP_S(const STATE_ACCESS a, i_state_
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
-    }
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FLE_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fle.d");
-    return execute_float_cmp_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(i_sfloat64::le(s1, s2, fflags));
+    return execute_float_cmp_op<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto *fflags) {
+        return fp_le(s1, s2, fflags);
     });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FLT_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "flt.d");
-    return execute_float_cmp_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(i_sfloat64::lt(s1, s2, fflags));
+    return execute_float_cmp_op<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto *fflags) {
+        return fp_lt(s1, s2, fflags);
     });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FEQ_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "feq.d");
-    return execute_float_cmp_op<uint64_t>(a, pc, insn, [](uint64_t s1, uint64_t s2, uint32_t *fflags) -> uint64_t {
-        return static_cast<uint64_t>(i_sfloat64::eq(s1, s2, fflags));
+    return execute_float_cmp_op<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto *fflags) {
+        return fp_eq(s1, s2, fflags);
     });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCMP_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
-    if constexpr (requires { a.stage_fp_decline(); }) {
-        // The trace backend does not stage this family yet; decline to
-        // the whole-instruction helper without instantiating the body.
-        return a.stage_fp_decline();
-    } else {
     switch (static_cast<insn_FCMP_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
         case insn_FCMP_funct3_000000000000::LT:
             return execute_FLT_D(a, pc, insn);
@@ -4837,7 +4858,6 @@ static FORCE_INLINE execute_status execute_FCMP_D(const STATE_ACCESS a, i_state_
             return execute_FEQ_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
-    }
     }
 }
 
@@ -4988,7 +5008,7 @@ static FORCE_INLINE execute_status execute_FMV_F_X(const STATE_ACCESS a, i_state
     const uint32_t rd = insn_get_rd(insn);
     // A narrower n-bit transfer, n < FLEN,
     // into the f registers will create a valid NaN-boxed value.
-    a.write_f(rd, float_box(static_cast<T>(a.read_x(insn_get_rs1(insn)))));
+    a.write_f(rd, float_box_word<T>(a.read_x(insn_get_rs1(insn))));
     return advance_to_next_insn(a, pc);
 }
 
@@ -5017,11 +5037,11 @@ static FORCE_INLINE execute_status execute_FMV_X_W(const STATE_ACCESS a, i_state
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc);
     }
-    const auto val = static_cast<uint32_t>(a.read_f(insn_get_rs1(insn)));
+    const auto val = fp_word<uint32_t>(a.read_f(insn_get_rs1(insn)));
     // For RV64, the higher 32 bits of the destination register are
     // filled with copies of the floating-point number’s sign bit.
     // We can perform this with a sign extension.
-    a.write_x(rd, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val))));
+    a.write_x(rd, value_cast<uint64_t>(value_cast<int64_t>(value_cast<int32_t>(val))));
     return advance_to_next_insn(a, pc);
 }
 
@@ -5050,7 +5070,7 @@ static FORCE_INLINE execute_status execute_FMV_X_D(const STATE_ACCESS a, i_state
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc);
     }
-    const uint64_t val = a.read_f(insn_get_rs1(insn));
+    const auto val = fp_word<uint64_t>(a.read_f(insn_get_rs1(insn)));
     a.write_x(rd, val);
     return advance_to_next_insn(a, pc);
 }
@@ -5069,11 +5089,6 @@ static FORCE_INLINE execute_status execute_FMV_FCLASS_D(const STATE_ACCESS a, i_
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_FMV_FCLASS(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
-    if constexpr (requires { a.stage_fp_decline(); }) {
-        // The trace backend does not stage this family yet; decline to
-        // the whole-instruction helper without instantiating the body.
-        return a.stage_fp_decline();
-    } else {
     switch (static_cast<insn_FD_funct7_rs2>(insn_get_funct7_rs2(insn))) {
         case insn_FD_funct7_rs2::FCVT_W_S:
             return execute_FCVT_W_S(a, pc, insn);
@@ -5121,7 +5136,6 @@ static FORCE_INLINE execute_status execute_FCVT_FMV_FCLASS(const STATE_ACCESS a,
             return execute_FMV_FCLASS_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
-    }
     }
 }
 

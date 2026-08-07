@@ -2376,7 +2376,7 @@ struct tc_lightning_execution {
     }
 
     /// \brief Guards NX sticky, and frm == RNE when the insn said DYN.
-    void fp_guard_fcsr() {
+    void fp_guard_fcsr(bool need_nx = true) {
         if (discovery || failed) {
             return;
         }
@@ -2384,8 +2384,10 @@ struct tc_lightning_execution {
         const jit_gpr_t t0 = scratch_registers[0];
         const jit_gpr_t t1 = scratch_registers[1];
         jit_ldxi(t0, TC_JIT_STATE, shadow_fcsr_offset);
-        jit_andi(t1, t0, static_cast<jit_word_t>(FFLAGS_NX_MASK));
-        fp_bail_on(jit_beqi(t1, 0));
+        if (need_nx) {
+            jit_andi(t1, t0, static_cast<jit_word_t>(FFLAGS_NX_MASK));
+            fp_bail_on(jit_beqi(t1, 0));
+        }
         if (fp_frm_pending) {
             jit_rshi_u(t1, t0, FCSR_FRM_SHIFT);
             jit_andi(t1, t1, 7);
@@ -2396,7 +2398,7 @@ struct tc_lightning_execution {
 
     /// \brief Guards one operand zero-or-normal (boxed for singles) and
     /// loads it into an FP register, negated when the body flipped its sign.
-    void fp_load_operand(bool dbl, uint32_t freg, bool neg, jit_gpr_t fdst) {
+    void fp_load_operand(bool dbl, uint32_t freg, bool neg, jit_gpr_t fdst, bool full_guard = true) {
         if (discovery || failed) {
             return;
         }
@@ -2409,16 +2411,18 @@ struct tc_lightning_execution {
         const uint64_t sign_off = (exp_mask << mant_size) | (min_normal - 1);
         const jit_word_t off = shadow_f_offset + freg * sizeof(uint64_t);
         jit_ldxi(t0, TC_JIT_STATE, off);
-        if (!dbl) {
-            // an improperly boxed operand unboxes to a NaN
-            jit_rshi_u(t1, t0, 32);
-            fp_bail_on(jit_bnei(t1, static_cast<jit_word_t>(UINT32_C(0xffffffff))));
-        }
         jit_andi(t1, t0, static_cast<jit_word_t>(sign_off));
-        jit_node_t *const zero_ok = jit_beqi(t1, 0);
-        jit_subi(t1, t1, static_cast<jit_word_t>(min_normal));
-        fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>((exp_mask << mant_size) - min_normal)));
-        jit_patch_at(zero_ok, jit_label());
+        if (full_guard) {
+            // zero or normal: what the rounded arithmetic proof needs
+            jit_node_t *const zero_ok = jit_beqi(t1, 0);
+            jit_subi(t1, t1, static_cast<jit_word_t>(min_normal));
+            fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>((exp_mask << mant_size) - min_normal)));
+            jit_patch_at(zero_ok, jit_label());
+        } else {
+            // not NaN: compares and exact conversions are bit-identical on
+            // every other value, infinities and subnormals included
+            fp_bail_on(jit_bgti_u(t1, static_cast<jit_word_t>(exp_mask << mant_size)));
+        }
         if (dbl) {
             jit_ldxi_d(fdst, TC_JIT_STATE, off);
             if (neg) {
@@ -2429,6 +2433,73 @@ struct tc_lightning_execution {
             if (neg) {
                 jit_negr_f(fdst, fdst);
             }
+        }
+    }
+
+    /// \brief Guards a single-precision operand properly NaN-boxed
+    /// (an improperly boxed operand unboxes to a NaN).
+    void fp_guard_boxed(uint32_t freg) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        const jit_gpr_t t0 = scratch_registers[0];
+        const jit_gpr_t t1 = scratch_registers[1];
+        jit_ldxi(t0, TC_JIT_STATE, shadow_f_offset + freg * sizeof(uint64_t));
+        jit_rshi_u(t1, t0, 32);
+        fp_bail_on(jit_bnei(t1, static_cast<jit_word_t>(UINT32_C(0xffffffff))));
+    }
+
+    static void emit_ctx_stage_load(tc_lightning_execution &e, const tc_lightning_node & /*n*/, jit_gpr_t dest,
+        unsigned /*depth*/) {
+        jit_state_t *_jit = e.jit;
+        jit_ldxi(dest, TC_JIT_CTX_BASE, TC_JIT_CTX_DISP(offsetof(tc_context<state_access>, fp_stage)));
+    }
+
+    enum class fp_cmp : uint8_t { lt, le, eq };
+
+    /// \brief Emits a guarded FP compare and returns its 0/1 result as a
+    /// value staged through the context slot. Compares round nothing and can
+    /// raise only NV, which the no-NaN operand guard excludes, so neither
+    /// the NX-sticky precondition nor a result guard applies.
+    tc_lightning_value fp_emit_cmp(fp_cmp kind, bool dbl, uint32_t r1, uint32_t r2) {
+        if (!discovery && !failed) {
+            jit_state_t *_jit = jit;
+            const jit_gpr_t t0 = scratch_registers[0];
+            fp_load_operand(dbl, r1, false, JIT_F0, false);
+            fp_load_operand(dbl, r2, false, JIT_F1, false);
+            switch (kind) {
+                case fp_cmp::lt:
+                    dbl ? jit_ltr_d(t0, JIT_F0, JIT_F1) : jit_ltr_f(t0, JIT_F0, JIT_F1);
+                    break;
+                case fp_cmp::le:
+                    dbl ? jit_ler_d(t0, JIT_F0, JIT_F1) : jit_ler_f(t0, JIT_F0, JIT_F1);
+                    break;
+                case fp_cmp::eq:
+                    dbl ? jit_eqr_d(t0, JIT_F0, JIT_F1) : jit_eqr_f(t0, JIT_F0, JIT_F1);
+                    break;
+            }
+            jit_stxi(TC_JIT_CTX_DISP(offsetof(tc_context<state_access>, fp_stage)), TC_JIT_CTX_BASE, t0);
+        }
+        return {this, add_node(emit_ctx_stage_load, 0, 0, 0), false, 64};
+    }
+
+    /// \brief Emits a guarded float-width conversion into JIT_F0.
+    /// \details Widening is exact (no rounding, no flags beyond the excluded
+    /// specials), narrowing rounds and carries the full arithmetic guard set.
+    void fp_emit_cvt_f_f(bool widen, uint32_t r1) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        if (!widen) {
+            fp_guard_fcsr();
+        }
+        fp_load_operand(!widen, r1, false, JIT_F0, !widen);
+        if (widen) {
+            jit_extr_f_d(JIT_F0, JIT_F0);
+        } else {
+            jit_extr_d_f(JIT_F0, JIT_F0);
         }
     }
 
@@ -2469,7 +2540,7 @@ struct tc_lightning_execution {
 
     /// \brief Guards the result strictly normal, boxes singles, stores to
     /// f[rd], and flushes the instruction's shared exit.
-    void fp_emit_result(bool dbl, uint32_t rd) {
+    void fp_emit_result(bool dbl, uint32_t rd, bool exact = false) {
         if (discovery || failed) {
             fp_nbail = 0;
             return;
@@ -2489,9 +2560,11 @@ struct tc_lightning_execution {
             jit_stxi_f(stage, TC_JIT_CTX_BASE, JIT_F0);
             jit_ldxi_ui(t0, TC_JIT_CTX_BASE, stage);
         }
-        jit_andi(t1, t0, static_cast<jit_word_t>(sign_off));
-        fp_bail_on(jit_blei_u(t1, static_cast<jit_word_t>(min_normal)));
-        fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>(exp_mask << mant_size)));
+        if (!exact) {
+            jit_andi(t1, t0, static_cast<jit_word_t>(sign_off));
+            fp_bail_on(jit_blei_u(t1, static_cast<jit_word_t>(min_normal)));
+            fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>(exp_mask << mant_size)));
+        }
         if (!dbl) {
             jit_ori(t0, t0, static_cast<jit_word_t>(UINT64_C(0xffffffff00000000)));
         }
@@ -2735,6 +2808,7 @@ struct tc_lightning_fvalue {
 template <typename T>
 struct tc_lightning_facc {
     tc_lightning_execution *e;
+    bool exact{}; ///< The operation is exact for every guarded input; no result guard
 };
 
 static FORCE_INLINE tc_lightning_fflags_value fcsr_fflags(tc_lightning_fcsr_value f) {
@@ -2775,8 +2849,103 @@ static FORCE_INLINE bool operator==(tc_lightning_mstatus_masked mm, uint64_t rhs
 }
 template <typename T>
 static FORCE_INLINE tc_lightning_fvalue<T> float_unbox(tc_lightning_fraw raw) {
-    // The box check for singles is emitted with the operand guards
+    if constexpr (sizeof(T) == 4) {
+        raw.e->fp_guard_boxed(raw.freg);
+    }
     return {raw.e, raw.freg, false};
+}
+
+/// \brief A word-typed view of float staging: the pure bit manipulations
+/// (sign injection, moves) stage as integer IR on the register word.
+template <typename T>
+struct tc_lightning_fword {
+    tc_lightning_execution *e;
+    tc_lightning_value word;
+};
+template <typename T, typename M>
+    requires(std::is_integral_v<M> || std::is_enum_v<M>)
+static FORCE_INLINE tc_lightning_fword<T> operator&(tc_lightning_fvalue<T> v, M mask) {
+    if (v.neg) {
+        v.e->decline();
+    }
+    return {v.e, v.e->read_f(v.freg) & static_cast<uint64_t>(mask)};
+}
+template <typename T, typename M>
+    requires(std::is_integral_v<M> || std::is_enum_v<M>)
+static FORCE_INLINE tc_lightning_fword<T> operator&(tc_lightning_fword<T> w, M mask) {
+    return {w.e, w.word & static_cast<uint64_t>(mask)};
+}
+template <typename T, typename M>
+    requires(std::is_integral_v<M> || std::is_enum_v<M>)
+static FORCE_INLINE tc_lightning_fword<T> operator^(tc_lightning_fword<T> w, M mask) {
+    return {w.e, w.word ^ static_cast<uint64_t>(mask)};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_fword<T> operator|(tc_lightning_fword<T> l, tc_lightning_fword<T> r) {
+    return {l.e, l.word | r.word};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_fword<T> operator^(tc_lightning_fvalue<T> v, tc_lightning_fword<T> r) {
+    if (v.neg) {
+        v.e->decline();
+    }
+    return {v.e, v.e->read_f(v.freg) ^ r.word};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_value float_box(tc_lightning_fword<T> w) {
+    if constexpr (sizeof(T) == 4) {
+        return w.word | UINT64_C(0xffffffff00000000);
+    } else {
+        return w.word;
+    }
+}
+/// \brief Compare dispatch points: no rounding, and NV needs the NaN the
+/// operand guards exclude, so the result is plain integer IR.
+template <typename T>
+static FORCE_INLINE tc_lightning_value fp_lt(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
+    tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || s1.neg || s2.neg) {
+        s1.e->decline();
+    }
+    return s1.e->fp_emit_cmp(tc_lightning_execution::fp_cmp::lt, sizeof(T) == 8, s1.freg, s2.freg);
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_value fp_le(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
+    tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || s1.neg || s2.neg) {
+        s1.e->decline();
+    }
+    return s1.e->fp_emit_cmp(tc_lightning_execution::fp_cmp::le, sizeof(T) == 8, s1.freg, s2.freg);
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_value fp_eq(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
+    tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || s1.neg || s2.neg) {
+        s1.e->decline();
+    }
+    return s1.e->fp_emit_cmp(tc_lightning_execution::fp_cmp::eq, sizeof(T) == 8, s1.freg, s2.freg);
+}
+/// \brief Float-width conversions: widening is exact, narrowing rounds.
+static FORCE_INLINE tc_lightning_facc<uint32_t> fp_cvt_f64_f32(tc_lightning_fvalue<uint64_t> s1,
+    tc_lightning_rm_value rm, tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN) || s1.neg) {
+        s1.e->decline();
+        return {s1.e};
+    }
+    if (rm.field == FRM_DYN) {
+        s1.e->fp_frm_pending = true;
+    }
+    s1.e->fp_emit_cvt_f_f(false, s1.freg);
+    return {s1.e};
+}
+static FORCE_INLINE tc_lightning_facc<uint64_t> fp_cvt_f32_f64(tc_lightning_fvalue<uint32_t> s1,
+    tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || s1.neg) {
+        s1.e->decline();
+        return {s1.e};
+    }
+    s1.e->fp_emit_cvt_f_f(true, s1.freg);
+    return {s1.e, true};
 }
 template <typename T, typename M>
     requires(std::is_integral_v<M> || std::is_enum_v<M>)
@@ -2871,8 +3040,8 @@ struct tc_lightning_collecting_state_access {
         return {execution, freg};
     }
     template <typename T>
-    void write_f(uint32_t freg, tc_lightning_facc<T> /*acc*/) const {
-        execution->fp_emit_result(sizeof(T) == 8, freg);
+    void write_f(uint32_t freg, tc_lightning_facc<T> acc) const {
+        execution->fp_emit_result(sizeof(T) == 8, freg, acc.exact);
     }
     void write_f(uint32_t freg, tc_lightning_value value) const {
         execution->write_f(freg, value);
@@ -3953,6 +4122,7 @@ static bool tc_lightning_collect_range(tc_lightning_execution &execution, uint64
                     execution.failed ? "failed" : "refused");
             }
         }
+        execution.fp_flush_bails();
         if (!collected || pc != entry.next_pc) {
             if (std::getenv("TC_FP_DEBUG") != nullptr) {
                 std::fprintf(stderr, "tc-fp: range end at insn %08x collected %d failed %d pc %llx next %llx\n",

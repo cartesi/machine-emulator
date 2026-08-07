@@ -3016,6 +3016,19 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     // interpreter frame and contains no runtime trampoline or prologue.
     jit_tramp(0);
     auto *const normal_entry = jit_label();
+#if defined(__x86_64__) && !TC_GLOBAL_REGS
+    // Under tramp lightning spills its internal temporaries through the
+    // frame pointer, and the fixed operands of x86 divisions can force such
+    // a spill when the emitter's scratch is live across the node. No frame
+    // is maintained here, so seed rbp with a per-thread spill area at every
+    // published entry: the args contract may clobber any register, compiled
+    // helpers are SysV and preserve rbp across calls, and generated-code
+    // links never pass through compiled code, so the seeding dominates every
+    // path that can reach a spill. The pinned shape cannot use this fix --
+    // rbp is call-saved and unreserved there -- and keeps the hazard.
+    static THREAD_LOCAL uint64_t tramp_spill_area[32];
+    jit_movi(JIT_FP, reinterpret_cast<jit_word_t>(&tramp_spill_area[24]));
+#endif
     auto *const entry_bail = jit_blei(TC_JIT_CD, static_cast<jit_word_t>(trace.len));
 
     constexpr jit_word_t x_offset =

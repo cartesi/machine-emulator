@@ -151,11 +151,14 @@ struct tc_online_entry {
 /// capture experiments: 1024 trace slots of up to 64 entries.
 struct tc_online_state {
     static constexpr uint32_t max_traces = 1024;
-    // 64 was too short for FP-heavy loop bodies: the double workload's hot
-    // method iterations run past it before their backward branch closes the
-    // cycle, so their recordings never survived to compilation (measured:
-    // its user-space aborts were dominated by len == max_len).
-    static constexpr uint32_t max_len = 256;
+    // Recording-length policy is measured and open (see tail-call.md): 256
+    // lets nop's 66-instruction cycle close (-52%) and regs win through
+    // long straights (-37%), and is what double's FP loop bodies need to
+    // reach compilation at all, but recording four times longer before a
+    // reject prices qsort at +11.7% and sieve at +9.8% -- displacing
+    // measured winners, so the cap stays until length policy can
+    // distinguish them.
+    static constexpr uint32_t max_len = 64;
     static constexpr uint32_t max_fragments = 16;
     static constexpr uint32_t min_len = 4;
     static constexpr uint32_t min_straight_len = 32;

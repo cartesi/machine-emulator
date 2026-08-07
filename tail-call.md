@@ -1927,6 +1927,60 @@ shell cost +66% with tracing idle).
     64 Mi windows, then a third machine after both are destroyed, each
     reproducing its canonical single-machine hash exactly.
 
+11. DONE, GATED, FLOATING POINT: HARD FLOAT AND TRACE COVERAGE. Two
+    layers, ported and built in one pass on the interim host. First the
+    eb-hard-floats branch's fast path came aboard unchanged: add, mul,
+    fma, div and sqrt run on the host FPU when uniform guards prove the
+    result and flags bit-identical to soft-float (round-to-nearest
+    resolved, NX already sticky, operands zero-or-normal, result
+    strictly normal), everything else falls back, and the scope
+    arms only when the host FP environment is at its defaults. All
+    hashes exact; double fell 14% on stock and 22% on the backend,
+    which moved from +9% over stock on its worst workload to parity.
+
+    Then trace coverage. The FP bodies compute on concrete words and
+    cannot stage through the collecting access, so coverage takes two
+    shapes. FP loads and stores stage as inline IR -- the integer
+    memory ops' hot-TLB fast path, the f register file reached directly
+    in the shadow with no roster slots, NaN-boxing an or-mask, FS
+    guarded in three instructions because this implementation keeps FS
+    binary (enabling forces Dirty and write_f never touches mstatus).
+    The FD and FMADD families stage as one call each into the real
+    execute body on the live machine state, hard-float accelerated
+    inside; the helper pre-bails on exactly the raise conditions (FS
+    off, invalid dynamic rounding mode -- decode illegality cannot
+    reach an installed trace while byte verification and store
+    invalidation hold), so it retires completely or touches nothing,
+    and non-success exits like a guard miss. The call protocol flushes
+    and reloads the caller-saved half of the roster, and helpers
+    realign rsp themselves (the chain runs at 8 mod 16). Gated
+    bit-exact across the suite.
+
+    The payoff was not where expected, and the diagnosis produced a
+    measured policy problem. Recordings on double never reached the FP
+    instructions: its hot method bodies run past max_len = 64 before
+    closing their cycle (user-space aborts were dominated by exactly
+    that length), so the recording cap, not staging, was the coverage
+    limit. Raising it to 256 lifted double's installs from 213 to 305
+    with every gate intact, but priced the integer suite as a
+    redistribution: nop -52% (its 66-instruction cycle finally closes),
+    regs -37% (through long straights), sieve +9.8% and qsort +11.7%
+    (recording four times longer before a reject on churn-heavy
+    formation), aggregate a wash at -0.2%. A cycle-only variant that
+    truncated non-cyclic recordings back to 64 at publication kept
+    nop's win, lost regs' (a straight win), and recovered neither
+    qsort nor sieve, isolating their regression to recording length
+    itself rather than to the installed straights. Per-workload optima
+    conflict, so the cap stays at 64 -- protecting the measured
+    winners, with FP coverage engaging wherever recordings fit -- and
+    recording-length policy joins the loop-versus-call hotness
+    separation as the backend's open policy item. double itself is a
+    wash under the helper-call coverage (the helpers price near the
+    interpreter's own hard-float bodies, so only the dispatch around
+    FP is saved); inlining guarded host-FPU sequences into generated
+    code is the next coverage lever if the policy work ever makes
+    double's traces form.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

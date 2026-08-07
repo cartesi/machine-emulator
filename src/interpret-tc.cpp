@@ -151,14 +151,18 @@ struct tc_online_entry {
 /// capture experiments: 1024 trace slots of up to 64 entries.
 struct tc_online_state {
     static constexpr uint32_t max_traces = 1024;
-    // Recording-length policy is measured and open (see tail-call.md): 256
-    // lets nop's 66-instruction cycle close (-52%) and regs win through
-    // long straights (-37%), and is what double's FP loop bodies need to
-    // reach compilation at all, but recording four times longer before a
-    // reject prices qsort at +11.7% and sieve at +9.8% -- displacing
-    // measured winners, so the cap stays until length policy can
-    // distinguish them.
-    static constexpr uint32_t max_len = 64;
+    // The recording cap is dynamic per head (see cap_shift): recordings
+    // start at base_len and the cap doubles toward max_len each time a
+    // recording ends cap-bound without closing a cycle -- length
+    // starvation, not a formation failure -- while a closed cycle shrinks
+    // the head's cap to the smallest length that fits it. The measured
+    // static settings conflicted per workload (64 starves nop's
+    // 66-instruction cycle, regs' long straights and double's FP bodies;
+    // a flat 256 prices qsort +11.7% and sieve +9.8% in recording churn),
+    // and escalation bounds the extra spend per head instead of per trip.
+    static constexpr uint32_t base_len = 64;
+    static constexpr uint32_t max_len = 256;
+    static_assert((base_len << 2) == max_len);
     static constexpr uint32_t max_fragments = 16;
     static constexpr uint32_t min_len = 4;
     static constexpr uint32_t min_straight_len = 32;
@@ -213,6 +217,7 @@ struct tc_online_state {
     struct recording {
         uint64_t head;
         uint32_t len;
+        uint32_t cap; ///< This recording's dynamic length cap, latched at begin
         bool call_target;
         tc_online_entry entries[max_len];
     };
@@ -228,6 +233,10 @@ struct tc_online_state {
 #endif
     uint64_t penalty_pc[set_slots]; // Persistent open-addressed failure set.
     uint16_t penalty[set_slots];
+    // Per-head recording-cap escalation, sharing the penalty set's keying
+    // (cap = base_len << cap_shift, valid only while penalty_pc tags the
+    // head). Survives flush-all with the penalties.
+    uint8_t cap_shift[set_slots];
 #if TC_LIGHTNING
     // Host pages hosting recorded code bytes, open-addressed, tag hpage+1.
     // Entries persist until flush-all: after an invalidation a stale entry
@@ -248,6 +257,7 @@ struct tc_online_state {
     uint64_t compile_aborted;
     uint64_t verify_aborted;
     uint64_t invalidated;
+    uint64_t escalations; ///< Recordings abandoned to double a head's cap
     uint64_t flushes;
     uint64_t links;
     uint64_t register_links;
@@ -744,14 +754,34 @@ static FORCE_INLINE void tc_online_penalize(tc_online_state *o, uint64_t pc, boo
     if (o->penalty_pc[s] == 0) {
         o->penalty_pc[s] = pc;
         o->penalty[s] = permanent ? tc_online_state::max_penalty : 1;
+        o->cap_shift[s] = 0;
     } else if (o->penalty_pc[s] != pc) {
         o->penalty_pc[s] = pc;
         o->penalty[s] = permanent ? tc_online_state::max_penalty : 1;
+        o->cap_shift[s] = 0;
     } else if (permanent) {
         o->penalty[s] = tc_online_state::max_penalty;
     } else if (o->penalty[s] < tc_online_state::max_penalty) {
         ++o->penalty[s];
     }
+}
+
+/// \brief Returns a head's current recording cap.
+static FORCE_INLINE uint32_t tc_online_cap(const tc_online_state *o, uint64_t pc) {
+    const uint32_t s = tc_online_penalty_slot(o, pc);
+    const uint32_t shift = o->penalty_pc[s] == pc ? o->cap_shift[s] : 0;
+    return tc_online_state::base_len << shift;
+}
+
+/// \brief Sets a head's recording cap to base_len << shift, claiming its
+/// slot without adding a penalty when the head is not yet tracked.
+static FORCE_INLINE void tc_online_set_cap(tc_online_state *o, uint64_t pc, uint32_t shift) {
+    const uint32_t s = tc_online_penalty_slot(o, pc);
+    if (o->penalty_pc[s] != pc) {
+        o->penalty_pc[s] = pc;
+        o->penalty[s] = 0;
+    }
+    o->cap_shift[s] = static_cast<uint8_t>(shift);
 }
 
 /// \brief Debug event print, first 200 events only, when TC_ONLINE_DEBUG is set.
@@ -772,12 +802,13 @@ static NO_INLINE void tc_online_debug(const char *what, uint64_t pc, uint64_t ex
 static void tc_online_report(const tc_online_state &o) {
     std::fprintf(stderr,
         "tc-online: installed %llu aborted %llu (short %llu compile %llu verify %llu) invalidated %llu "
-        "flushes %llu links %llu "
+        "escalations %llu flushes %llu links %llu "
         "register-links %llu (moves %llu loads %llu stores %llu) live %u\n",
         static_cast<unsigned long long>(o.installed), static_cast<unsigned long long>(o.aborted),
         static_cast<unsigned long long>(o.short_aborted), static_cast<unsigned long long>(o.compile_aborted),
         static_cast<unsigned long long>(o.verify_aborted), static_cast<unsigned long long>(o.invalidated),
-        static_cast<unsigned long long>(o.flushes), static_cast<unsigned long long>(o.links),
+        static_cast<unsigned long long>(o.escalations), static_cast<unsigned long long>(o.flushes),
+        static_cast<unsigned long long>(o.links),
         static_cast<unsigned long long>(o.register_links), static_cast<unsigned long long>(o.register_moves),
         static_cast<unsigned long long>(o.register_loads), static_cast<unsigned long long>(o.register_stores),
         static_cast<unsigned>(o.ntraces));
@@ -955,6 +986,16 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         reject_side();
 #endif
         return;
+    }
+
+    if (cycle >= 0) {
+        // A closed cycle proves the length this head needs; shrink (or set)
+        // its cap to the smallest that fits, so re-records after a flush pay
+        // no more recording than necessary.
+        const uint32_t needed = recording.len <= tc_online_state::base_len ? 0
+            : recording.len <= tc_online_state::base_len * 2               ? 1
+                                                                           : 2;
+        tc_online_set_cap(o, recording.head, needed);
     }
 
 #if TC_LIGHTNING
@@ -1228,6 +1269,7 @@ static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc, bool call_
     }
     o->pending.head = pc;
     o->pending.len = 0;
+    o->pending.cap = tc_online_cap(o, pc);
     o->pending.call_target = call_target;
 #if TC_LIGHTNING
     o->pending_side = nullptr;
@@ -1259,6 +1301,7 @@ static void tc_online_begin_side(tc_context<STATE_ACCESS> *c, uint64_t pc, tc_on
     }
     o->pending.head = pc;
     o->pending.len = 0;
+    o->pending.cap = tc_online_cap(o, pc);
     o->pending.call_target = false;
     o->pending_side = link;
     o->recording = true;
@@ -1287,7 +1330,27 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
             tc_online_finish(c, -1, true);
             return;
         }
-        if (recording.len == tc_online_state::max_len) {
+        if (recording.len == recording.cap) {
+            if (recording.cap < tc_online_state::max_len) {
+                // Cap-bound with no cycle closed is length starvation, not a
+                // formation failure: double the head's cap and abandon
+                // without penalty. A genuinely hot head re-trips and records
+                // with more room; the spend is bounded per head because the
+                // shifts only grow twice.
+                tc_online_set_cap(o, recording.head, tc_online_cap(o, recording.head) == tc_online_state::base_len
+                        ? 1
+                        : 2);
+                ++o->escalations;
+                tc_online_debug("escalate", recording.head, recording.cap);
+                o->recording = false;
+#if TC_LIGHTNING
+                if (o->pending_side != nullptr) {
+                    o->pending_side->hotcount = tc_online_state::side_hot_reset;
+                    o->pending_side = nullptr;
+                }
+#endif
+                return;
+            }
             tc_online_finish(c, -1, false);
             return;
         }

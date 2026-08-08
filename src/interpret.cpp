@@ -1350,18 +1350,34 @@ static FORCE_INLINE execute_status execute_jump(STATE_ACCESS /*a*/, i_state_acce
 /// \param insn Instruction.
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LR(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
-    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
-    T val = 0;
-    if (!read_virtual_memory<T>(a, pc, mcycle, vaddr, &val)) [[unlikely]] {
-        return advance_to_raised_exception(a, pc);
-    }
-    a.write_ilrsc(vaddr);
-    const uint32_t rd = insn_get_rd(insn);
-    if (rd == 0) [[unlikely]] {
+    const auto vaddr = a.read_x(insn_get_rs1(insn));
+    if constexpr (requires { a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr); }) {
+        // The staged single-hart LR is the guarded load plus the reservation
+        // write; a probe miss exits to the portable instruction.
+        const auto val = a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr);
+        a.write_ilrsc(vaddr);
+        const uint32_t rd = insn_get_rd(insn);
+        if (rd != 0) {
+            if constexpr (std::is_signed_v<T>) {
+                a.write_x(rd, value_cast<uint64_t>(value_cast<int64_t>(val)));
+            } else {
+                a.write_x(rd, value_cast<uint64_t>(val));
+            }
+        }
+        return advance_to_next_insn(a, pc);
+    } else {
+        T val = 0;
+        if (!read_virtual_memory<T>(a, pc, mcycle, vaddr, &val)) [[unlikely]] {
+            return advance_to_raised_exception(a, pc);
+        }
+        a.write_ilrsc(vaddr);
+        const uint32_t rd = insn_get_rd(insn);
+        if (rd == 0) [[unlikely]] {
+            return advance_to_next_insn(a, pc);
+        }
+        a.write_x(rd, static_cast<uint64_t>(val));
         return advance_to_next_insn(a, pc);
     }
-    a.write_x(rd, static_cast<uint64_t>(val));
-    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Execute the SC instruction.
@@ -1371,24 +1387,43 @@ static FORCE_INLINE execute_status execute_LR(const STATE_ACCESS a, i_state_acce
 /// \param insn Instruction.
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SC(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
-    uint64_t val = 0;
-    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
-    execute_status status = execute_status::success;
-    if (a.read_ilrsc() == vaddr) {
-        status = write_virtual_memory<T>(a, pc, mcycle, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn))));
-        if (status == execute_status::failure) [[unlikely]] {
-            return advance_to_raised_exception(a, pc);
+    const auto vaddr = a.read_x(insn_get_rs1(insn));
+    if constexpr (requires { a.stage_reservation_guard(vaddr); }) {
+        // The staged SC compiles the success path: a reservation mismatch
+        // exits, and the portable re-execution takes the failure path. On a
+        // single hart nothing clears a reservation inside a trace, so the
+        // guard exit is as rare as the failure itself.
+        a.stage_reservation_guard(vaddr);
+        const execute_status status = a.template stage_write_virtual_memory<T>(pc, mcycle, vaddr,
+            value_cast<T>(a.read_x(insn_get_rs2(insn))));
+        if (status != execute_status::success) {
+            return status;
         }
+        a.write_ilrsc(UINT64_C(0xffffffffffffffff)); // Must clear reservation
+        const uint32_t rd = insn_get_rd(insn);
+        if (rd != 0) {
+            a.write_x(rd, UINT64_C(0));
+        }
+        return advance_to_next_insn(a, pc);
     } else {
-        val = 1;
-    }
-    a.write_ilrsc(-1); // Must clear reservation, regardless of failure
-    const uint32_t rd = insn_get_rd(insn);
-    if (rd == 0) [[unlikely]] {
+        uint64_t val = 0;
+        execute_status status = execute_status::success;
+        if (a.read_ilrsc() == vaddr) {
+            status = write_virtual_memory<T>(a, pc, mcycle, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn))));
+            if (status == execute_status::failure) [[unlikely]] {
+                return advance_to_raised_exception(a, pc);
+            }
+        } else {
+            val = 1;
+        }
+        a.write_ilrsc(-1); // Must clear reservation, regardless of failure
+        const uint32_t rd = insn_get_rd(insn);
+        if (rd == 0) [[unlikely]] {
+            return advance_to_next_insn(a, pc, status);
+        }
+        a.write_x(rd, val);
         return advance_to_next_insn(a, pc, status);
     }
-    a.write_x(rd, val);
-    return advance_to_next_insn(a, pc, status);
 }
 
 /// \brief Implementation of the LR.W instruction.
@@ -1411,25 +1446,54 @@ static FORCE_INLINE execute_status execute_SC_W(const STATE_ACCESS a, i_state_ac
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_AMO(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn,
     const F &f) {
-    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
-    T valm = 0;
-    // AMOs never raise load exceptions. Since any unreadable page is also unwritable,
-    // attempting to perform an AMO on an unreadable page always raises a store page-fault exception.
-    if ((!read_virtual_memory<T, STATE_ACCESS, true>(a, pc, mcycle, vaddr, &valm))) [[unlikely]] {
-        return advance_to_raised_exception(a, pc);
-    }
-    T valr = static_cast<T>(a.read_x(insn_get_rs2(insn)));
-    valr = f(valm, valr);
-    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr, valr);
-    if (status == execute_status::failure) [[unlikely]] {
-        return advance_to_raised_exception(a, pc);
-    }
-    const uint32_t rd = insn_get_rd(insn);
-    if (rd == 0) [[unlikely]] {
+    const auto vaddr = a.read_x(insn_get_rs1(insn));
+    if constexpr (requires {
+                      f(a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr),
+                          value_cast<T>(a.read_x(insn_get_rs2(insn))));
+                  }) {
+        // The staged single-hart atomic is a guarded load-op-store. The read
+        // probe and then the write probe evolve the hot TLB exactly as the
+        // interpreter's two accesses would; a miss on either, a hooked page,
+        // or a misaligned address exits to the portable instruction.
+        const auto valm = a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr);
+        const auto valr = f(valm, value_cast<T>(a.read_x(insn_get_rs2(insn))));
+        const execute_status status = a.template stage_write_virtual_memory<T>(pc, mcycle, vaddr, valr);
+        if (status != execute_status::success) {
+            return status;
+        }
+        const uint32_t rd = insn_get_rd(insn);
+        if (rd != 0) {
+            if constexpr (std::is_signed_v<T>) {
+                a.write_x(rd, value_cast<uint64_t>(value_cast<int64_t>(valm)));
+            } else {
+                a.write_x(rd, value_cast<uint64_t>(valm));
+            }
+        }
+        return advance_to_next_insn(a, pc);
+    } else if constexpr (requires { a.stage_fp_decline(); }) {
+        // The min/max bodies select on a comparison the staging cannot
+        // express; they keep their whole-instruction helper.
+        return a.stage_fp_decline();
+    } else {
+        T valm = 0;
+        // AMOs never raise load exceptions. Since any unreadable page is also unwritable,
+        // attempting to perform an AMO on an unreadable page always raises a store page-fault exception.
+        if ((!read_virtual_memory<T, STATE_ACCESS, true>(a, pc, mcycle, vaddr, &valm))) [[unlikely]] {
+            return advance_to_raised_exception(a, pc);
+        }
+        T valr = static_cast<T>(a.read_x(insn_get_rs2(insn)));
+        valr = f(valm, valr);
+        const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr, valr);
+        if (status == execute_status::failure) [[unlikely]] {
+            return advance_to_raised_exception(a, pc);
+        }
+        const uint32_t rd = insn_get_rd(insn);
+        if (rd == 0) [[unlikely]] {
+            return advance_to_next_insn(a, pc, status);
+        }
+        a.write_x(rd, static_cast<uint64_t>(valm));
         return advance_to_next_insn(a, pc, status);
     }
-    a.write_x(rd, static_cast<uint64_t>(valm));
-    return advance_to_next_insn(a, pc, status);
 }
 
 /// \brief Implementation of the AMOSWAP.W instruction.
@@ -1437,7 +1501,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOSWAP_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoswap.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t /*valm*/, int32_t valr) -> int32_t { return valr; });
+    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](auto /*valm*/, auto valr) { return valr; });
 }
 
 /// \brief Implementation of the AMOADD.W instruction.
@@ -1445,18 +1509,14 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOADD_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoadd.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
-        int32_t val = 0;
-        __builtin_add_overflow(valm, valr, &val);
-        return val;
-    });
+    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](auto valm, auto valr) { return wrapping_add(valm, valr); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOXOR_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoxor.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm ^ valr; });
+    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](auto valm, auto valr) { return valm ^ valr; });
 }
 
 /// \brief Implementation of the AMOAND.W instruction.
@@ -1464,14 +1524,14 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOAND_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoand.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm & valr; });
+    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](auto valm, auto valr) { return valm & valr; });
 }
 
 /// \brief Implementation of the AMOOR.W instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOOR_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoor.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm | valr; });
+    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](auto valm, auto valr) { return valm | valr; });
 }
 
 /// \brief Implementation of the AMOMIN.W instruction.
@@ -1548,7 +1608,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOSWAP_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoswap.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t /*valm*/, int64_t valr) -> int64_t { return valr; });
+    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](auto /*valm*/, auto valr) { return valr; });
 }
 
 /// \brief Implementation of the AMOADD.D instruction.
@@ -1556,18 +1616,14 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOADD_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoadd.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t {
-        int64_t val = 0;
-        __builtin_add_overflow(valm, valr, &val);
-        return val;
-    });
+    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](auto valm, auto valr) { return wrapping_add(valm, valr); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOXOR_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoxor.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm ^ valr; });
+    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](auto valm, auto valr) { return valm ^ valr; });
 }
 
 /// \brief Implementation of the AMOAND.D instruction.
@@ -1575,14 +1631,14 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOAND_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoand.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm & valr; });
+    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](auto valm, auto valr) { return valm & valr; });
 }
 
 /// \brief Implementation of the AMOOR.D instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOOR_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "amoor.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm | valr; });
+    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](auto valm, auto valr) { return valm | valr; });
 }
 
 /// \brief Implementation of the AMOMIN.D instruction.

@@ -2913,6 +2913,30 @@ struct tc_lightning_execution {
         offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, mstatus);
     static constexpr jit_word_t shadow_fcsr_offset =
         offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, fcsr);
+    static constexpr jit_word_t shadow_ilrsc_offset =
+        offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, ilrsc);
+
+    /// \brief Stores an expression into a shadow register slot.
+    void write_shadow(jit_word_t offset, tc_lightning_value value) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        emit_expression(value.node, scratch_registers[0]);
+        jit_stxi(offset, TC_JIT_STATE, scratch_registers[0]);
+    }
+
+    /// \brief Guards that the LR reservation covers this SC's address; a
+    /// mismatch exits, and the portable re-execution takes the failure path.
+    void guard_reservation(tc_lightning_value vaddr) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        emit_expression(vaddr.node, scratch_registers[0], 1);
+        jit_ldxi(scratch_registers[1], TC_JIT_STATE, shadow_ilrsc_offset);
+        add_exit(jit_bner(scratch_registers[0], scratch_registers[1]));
+    }
 
     static void emit_shadow_load(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned /*depth*/) {
@@ -4066,6 +4090,15 @@ struct tc_lightning_collecting_state_access {
         execution->emit_memory_store<T>(address, value);
         return execute_status::success;
     }
+    void write_ilrsc(tc_lightning_value vaddr) const {
+        execution->write_shadow(tc_lightning_execution::shadow_ilrsc_offset, vaddr);
+    }
+    void write_ilrsc(uint64_t vaddr) const {
+        execution->write_shadow(tc_lightning_execution::shadow_ilrsc_offset, execution->immediate(vaddr));
+    }
+    void stage_reservation_guard(tc_lightning_value vaddr) const {
+        execution->guard_reservation(vaddr);
+    }
 };
 
 template <>
@@ -4709,6 +4742,8 @@ TC_LIGHTNING_CAN_COLLECT(LHU_rdN)
 TC_LIGHTNING_CAN_COLLECT(LB_rdN)
 TC_LIGHTNING_CAN_COLLECT(LBU_rdN)
 TC_LIGHTNING_CAN_COLLECT(SD)
+TC_LIGHTNING_CAN_COLLECT(AMO_W)
+TC_LIGHTNING_CAN_COLLECT(AMO_D)
 TC_LIGHTNING_CAN_COLLECT(SW)
 TC_LIGHTNING_CAN_COLLECT(SH)
 TC_LIGHTNING_CAN_COLLECT(SB)

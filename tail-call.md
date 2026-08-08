@@ -2387,6 +2387,90 @@ shell cost +66% with tracing idle).
     exact hazard the AArch64 default waits on -- and hash is the
     workload to watch when demotion lands.
 
+14. DONE, SURVEY: WHAT THE PEER JITTERS KNOW THAT WE DON'T. A pass
+    over LuaJIT 2.x, rv8 (CARRV 2017), QEMU TCG and RVVM's RVJIT,
+    x86-64 focus, ranked against this backend's measured bottlenecks.
+    First the validation: most of their machinery we already carry,
+    often in stronger form. rv8 pins twelve profile-chosen guest
+    registers statically and spills nineteen to memory; our per-trace
+    dynamic mapping with register-links is strictly ahead, and QEMU
+    keeps no persistent guest-register mapping at all. RVVM's jTLB
+    (pc-to-block cache) is our exact head map; its dirty-page block
+    eviction is our write hook and hpage machinery; rv8's branch-tail
+    dynamic linking and QEMU's goto_tb patching are our link stubs;
+    LuaJIT's penalty-doubling and blacklisting are the recorder's
+    penalty set. What remains, ranked by payoff-here times simplicity:
+
+    1. Same-page TLB re-probe elision (LuaJIT's CSE/load-forwarding,
+       applied to guarded translations). Our own trace dumps show
+       three identical eleven-instruction probe sequences for the same
+       base register and offset back to back, and the design makes
+       elision a theorem: a read miss exits the trace and stores go
+       through the separate write set, so the read TLB is immutable
+       across one trace execution -- every repeat probe of a proven
+       page is redundant by construction. The slowest workloads
+       (tree, qsort, memcpy) are exactly the probe-bound ones. High
+       payoff, moderate complexity: a staging-engine memo keyed on
+       base node and offset, page-identical first, cross-iteration
+       later only for provably invariant bases.
+    2. Constant folding with symbolic auipc/lui (the one idea all
+       three translators share: rv8's fusion table turns auipc+addi
+       and auipc+ld into immediate-address moves, RVVM tracks auipc
+       symbolically, TCG folds constants per TB -- and our IR does not
+       fold imm-op-imm at all, even though the trace knows pc
+       statically at every entry). High simplicity, medium payoff:
+       kernel code is auipc-rich, constant addresses shrink probes by
+       the whole index computation, and it compounds with idea 1.
+    3. Stage the atomics. The FP-debug fallback lists on double are
+       topped not by FP at all but by AMO words: every kernel
+       spinlock and refcount breaks a trace or takes a helper. On a
+       single-hart machine an AMO is a guarded load-op-store through
+       the existing memory staging and store-invalidation path, and
+       LR/SC reservations clear on any trace exit. Medium-high
+       payoff, moderate complexity; QEMU spent 8.x making guest
+       atomics inline for the harder multi-core case.
+    4. Bail-frequency demotion (already filed as the AArch64
+       prerequisite; LuaJIT's abort-penalty escalation validates the
+       shape, at instruction rather than trace granularity).
+    5. Cyclic-trace guard hoisting, LuaJIT LOOP made cheap: LuaJIT
+       peels one iteration so invariant guards CSE against the
+       pre-roll; we do not need the peeling, because the invariants
+       are provable directly -- fcsr and FS cannot change inside a
+       trace whose staged FP proves them unchanged -- so a cycle can
+       emit those guards once in a preheader and drop them from the
+       body. Medium payoff on the FP loops, moderate complexity.
+    6. Sparse exit state (LuaJIT snapshots): consecutive guards share
+       one snapshot and unmodified slots are never stored; our
+       boundary and exit code stores every mapped guest. Dirty-guest
+       tracking would shave the measured composition boundary tax.
+       Medium-low payoff now that cycle precedence removed the worst
+       of it.
+    7. Victim TLB and dynamic TLB sizing (QEMU: 8-entry fully
+       associative victim TLB behind the direct-mapped table, +11%
+       average on SPECint plus kernel boots, up to +26%; dynamic
+       resizing by use rate, part of the VEE'19 Qelt work that took
+       softmmu to 1.76-2.18x). Parked: our hot TLB mirrors the
+       canonical shadow TLB, which is hashed state -- any geometry or
+       replacement change is a machine-spec change that breaks every
+       equivalence gate. Worth the owner's consideration precisely
+       because QEMU's numbers say the direct-mapped conflict misses
+       are expensive; not actionable from the backend alone.
+    8. Known-bits tracking (TCG's fold_masks): would drop redundant
+       sign extensions around W-form chains. Low-medium payoff,
+       needs IR plumbing.
+    9. CISC memory-operand ALU for spilled guests (rv8 embeds
+       [rbp+off] operands in ALU ops to cut icache pressure):
+       lightning exposes no memory-operand ALU, so this is backend
+       surgery for the rare spilled-trace case. Filed only.
+
+    Not applicable: LuaJIT allocation sinking (language-level), rv8
+    return inline-caching (covered by linked call targets and
+    expected-pc side links). The survey's overall message is that the
+    architecture is not missing a load-bearing mechanism; the gap is
+    optimization passes over what the staging already sees --
+    redundancy elimination first, constants second, coverage of the
+    atomics third.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

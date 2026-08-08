@@ -2211,6 +2211,116 @@ shell cost +66% with tracing idle).
     exactly as the interpreter does, where the staged version masked
     reserved bits an adversarial guest can set.
 
+12. DONE, GATED, THE X86-64 CHECK: A SIBLING LIGHTNING BUG, AND THE PRICE
+    OF COMPOSITION. Item 11 ended by doubting that the displacement bug
+    was an AArch64-only class, and testing the fixed tree on x86-64
+    confirmed the doubt the hard way: eight of the ten workloads corrupted
+    the guest kernel during boot (an Oops in get_page_from_freelist
+    dereferencing a garbage pointer, then a panic), before any timing
+    window opened. The failure bisected cleanly. TC_LIGHTNING_MAX_TRACES
+    isolated the first bad install (the 344th compile: head
+    ffffffff800d1074, 27 entries, a spilled straight trace formed during
+    boot); and a TC_LIGHTNING_DEBUG build with TC_LIGHTNING_MAX_ENTER --
+    record and install everything unchanged, refuse only to enter traces
+    at or past a pool index -- cleared the crash at exactly that trace's
+    index and at no earlier one. That pins the defect inside the trace
+    body and exonerates the new composition and installation bookkeeping
+    entirely. An AddressSanitizer build ran past the corruption point
+    without a report, which is consistent rather than exculpatory: the
+    corrupting store is emitted code, invisible to instrumentation.
+
+    The disassembly names the bug. Entry [08] of the trace is sltiu
+    a5,a5,1 -- a seqz -- staged through lightning's lti_u with a5 mapped
+    to %rdi, and the emitted tail of the idiom reads mov $0x0,%edi; setb
+    %bh. Encoding SPL, BPL, SIL or DIL as a byte register requires a bare
+    REX prefix (0x40) even when no extended register forces one; lightning
+    2.2.3's x86-64 _cc emits REX only when one does. Without it, modrm
+    values 4 through 7 name the legacy high-byte registers AH, CH, DH and
+    BH. Two corruptions flow from the one missing byte: the seqz result
+    stays at the idiom's zero forever, and the flag lands in bits 8-15 of
+    %rbx -- which held guest x9, the base register of every guarded TLB
+    access in the trace. Guard and access use the same corrupted base, so
+    the guard passes and the trace reads the wrong guest page. The same
+    missing-REX class sits in lightning's register byte stores (_str_c,
+    _sti_c, _stxr_c, _stxi_c), where a value in SIL or DIL would store
+    AH or CH instead; that instance is latent in this backend, whose
+    staged byte stores always source an emitter scratch (rax/r10/r11),
+    but the setcc instance is live because comparison destinations can be
+    the guest registers rdi and rsi. Five x86-64 campaigns never saw it
+    because the trigger is allocation luck -- a setcc destination must
+    land on rdi or rsi inside an installed trace -- and the composed
+    trace population spent that luck on a trace formed during kernel
+    boot. Every earlier campaign passed its hash gates, so the published
+    numbers stand; the bug they were exposed to simply never fired. The
+    vendored lightning now defines reg8_rex_p (register numbers 4-7 on
+    x86-64 non-Windows) and forces the bare REX in _cc and the four byte
+    stores; with the regenerated bundle the boot corruption is gone and
+    the full suite, logmap included (canonized against hard-float stock:
+    same hash, 11.58s stock to 3.45s backend), is hash-identical to
+    canon.
+
+    The verdict pattern across the two architectures is worth stating
+    once: the same vendored backend carried two severe encoding bugs, and
+    each hid behind a different mechanism. The AArch64 displacement bug
+    hid behind guard bails, which demoted a correctness fault to a silent
+    performance fault; the x86-64 REX bug hid behind register-allocation
+    luck, which made it a time bomb. Neither was visible to hash gates
+    until the trace population shifted. Generated-code paths need
+    correctness pressure that does not depend on the traces the workload
+    happens to form.
+
+    The zlib check item 11 asked for comes back clean on x86-64: with
+    TC_ONLINE_EXEC_STATS, zlib retires its window in 2.2s with zero
+    FP-guard bails, logmap with zero, and double with 35K result-small
+    bails over the 1Gi window -- genuinely small results, three orders
+    below AArch64's pre-fix 4.59M. No workload shows the persistent-miss
+    detour, so bail-frequency demotion is not a prerequisite for the
+    x86-64 default.
+
+    Composition, however, is not free here. Pricing 238cf0c5 in
+    isolation -- its parent source against the tip, both on the fixed
+    bundle, eleven workloads, three interleaved reps, medians, every run
+    hash-gated -- gives:
+
+        workload    parent     tip     delta
+        nop          0.119    0.258  +116.8%
+        memcpy       0.715    0.718    +0.4%
+        hash         1.302    1.335    +2.5%
+        zlib         1.986    2.166    +9.1%
+        regs         0.837    1.414   +68.9%
+        qsort        2.643    2.936   +11.1%
+        branch       2.611    2.606    -0.2%
+        tree         6.496    6.510    +0.2%
+        sieve        0.640    0.729   +13.9%
+        double       5.627    5.093    -9.5%
+        logmap       3.432    3.483    +1.5%
+        aggregate   26.408   27.248    +3.2%
+
+    double gets the intended win: bounded FP chains compose and stay
+    resident. But the tight integer loops pay for it, and the recorder
+    statistics on nop say exactly how. The parent installs 223 traces
+    with 328 escalations and 79 links; the tip installs 825 traces with
+    133 continuations, 580 links, and eight and a half times the
+    register-link boundary traffic (2,289 boundary loads plus stores
+    against 268). The mechanism: under the parent policy a cap-bound loop
+    head escalates, abandons, re-records longer, and closes a cycle, so
+    the loop spins inside one cyclic trace with its guests pinned in
+    registers. Under composition the bounded region is published at the
+    loop head immediately -- and an installed head can never re-record,
+    so the cap escalation it still dutifully learns can never be spent.
+    The cycle is permanently forfeited, and the loop instead crosses a
+    trace boundary every base_len instructions, paying the guest
+    store/load contract each time. For instruction mixes that do real
+    work per entry the boundary tax drowns; for nop and regs it is the
+    workload. The filed fix is to make composition yield to cycle
+    formation rather than forfeit it: when a cap-bound recording contains
+    a taken back-edge to its own chain head, prefer the old
+    escalate-and-abandon so the head can re-record and close, or allow a
+    longer cycle-closing recording to replace the installed bounded head.
+    Composition would then serve the chains it was built for -- straight
+    FP regions past max_len -- without taxing every loop whose body
+    outgrows the base cap.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

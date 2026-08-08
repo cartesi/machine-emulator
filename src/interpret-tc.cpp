@@ -2926,6 +2926,22 @@ struct tc_lightning_execution {
         jit_stxi(offset, TC_JIT_STATE, scratch_registers[0]);
     }
 
+    /// \brief Emits an expression once and returns a node that reloads the
+    /// result from the context staging slot.
+    /// \details A lazy node re-emits on every consumption, which is wrong
+    /// for a memory load consumed again after an intervening store -- the
+    /// atomics read-modify-write is exactly that shape. Materializing pins
+    /// the loaded value.
+    tc_lightning_value materialize(tc_lightning_value value) {
+        if (!discovery && !failed) {
+            jit_state_t *_jit = jit;
+            emit_expression(value.node, scratch_registers[0], 1);
+            jit_stxi(TC_JIT_CTX_DISP(offsetof(tc_context<state_access>, fp_stage)), TC_JIT_CTX_BASE,
+                scratch_registers[0]);
+        }
+        return {this, add_node(emit_ctx_stage_load, 0, 0, 0), value.signed_value, value.bits};
+    }
+
     /// \brief Guards that the LR reservation covers this SC's address; a
     /// mismatch exits, and the portable re-execution takes the failure path.
     void guard_reservation(tc_lightning_value vaddr) {
@@ -4098,6 +4114,9 @@ struct tc_lightning_collecting_state_access {
     }
     void stage_reservation_guard(tc_lightning_value vaddr) const {
         execution->guard_reservation(vaddr);
+    }
+    tc_lightning_value stage_materialize(tc_lightning_value value) const {
+        return execution->materialize(value);
     }
 };
 

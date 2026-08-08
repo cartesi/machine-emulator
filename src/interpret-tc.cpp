@@ -1707,18 +1707,33 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
             return;
         }
         if (recording.len == recording.cap) {
-            const uint32_t continuation_cap = recording.cap;
-            const uint64_t continuation_chain_head = recording.chain_head;
-            const uint32_t continuation_chain_offset = recording.chain_offset + recording.len;
             if (recording.cap < tc_online_state::max_len) {
-                // Retain the dynamic policy as learning for future recordings,
-                // but do not throw this bounded region away: publish it and
-                // compose the current path through a continuation.
+                // Cycle formation takes precedence over composition. A loop
+                // whose body outgrows the cap can only close a cycle by
+                // re-recording longer, and publishing the bounded region
+                // would install its head and foreclose that forever: an
+                // installed head never re-records, so the escalated cap
+                // could never be spent. Double the head's cap and abandon
+                // without penalty; a genuinely hot head re-trips and records
+                // with more room. Composition waits until the cap is maxed,
+                // where the straight chains it was built for still compose
+                // and a loop body longer than max_len has no cycle to lose.
                 tc_online_set_cap(o, recording.head,
                     tc_online_cap(o, recording.head) == tc_online_state::base_len ? 1 : 2);
                 ++o->escalations;
                 tc_online_debug("escalate", recording.head, recording.cap);
+                o->recording = false;
+#if TC_LIGHTNING
+                if (o->pending_side != nullptr) {
+                    o->pending_side->hotcount = tc_online_state::side_hot_reset;
+                    o->pending_side = nullptr;
+                }
+#endif
+                return;
             }
+            const uint32_t continuation_cap = recording.cap;
+            const uint64_t continuation_chain_head = recording.chain_head;
+            const uint32_t continuation_chain_offset = recording.chain_offset + recording.len;
             const uint32_t first_new_trace = o->ntraces;
             tc_online_finish(c, -1, false);
             bool predecessor_published = false;

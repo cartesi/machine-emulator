@@ -2471,6 +2471,27 @@ shell cost +66% with tracing idle).
     redundancy elimination first, constants second, coverage of the
     atomics third.
 
+15. FILED: SPEAK THE STANDARD DIALECT. The survey made the private
+    vocabulary a cost: every mechanism here has a peer with an
+    established name, and a reader fluent in LuaJIT or QEMU should not
+    need a glossary. The rename, to be applied as one mechanical pass
+    over code and doc: "bail" -> guard exit taken through a side exit
+    (the shared "bail island" -> exit stub group, LuaJIT's exit
+    stubs); "collect"/"collecting state access" -> translate /
+    translating state access (QEMU's term for exactly this phase; our
+    "record" already matches the industry's trace-recording usage and
+    stays); "composed bounded recordings"/"continuation" -> trace
+    stitching (the TraceMonkey/V8 term); page-local "fragments" ->
+    page-local blocks (QEMU's translation-block page constraint);
+    "straight" trace -> linear trace; closed "cycle" -> loop trace
+    (LuaJIT's looping trace); "decline" -> NYI fallback (LuaJIT's
+    NYI); "whole-instruction helper" -> helper call (QEMU helpers).
+    Already-standard names stay: head, root, side trace, link,
+    penalty, blacklist, trampoline, hotcount. Names with no peer
+    concept keep their local names and a comment: the countdown
+    budget, the penumbra, register-links (cross-trace register
+    mapping inheritance, which none of the surveyed engines do).
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

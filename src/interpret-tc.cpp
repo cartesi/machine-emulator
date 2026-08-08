@@ -2043,6 +2043,88 @@ struct tc_lightning_execution {
 
     void reset_expression() {
         nnodes = 0;
+        pending_load_valid = false;
+    }
+
+    // --- Cross-instruction dataflow (8b item 14, ideas 1 and 2) ---
+    // Constant propagation through guest registers and redundant load
+    // forwarding. Both are valid only along straight-line emission, so the
+    // state resets at trace entry and at the loop join -- keyed on the entry
+    // index, which makes the discovery and emission passes see identical
+    // dataflow even though emission splits the range at the join.
+
+    /// \brief One forwardable load: the guest register `holder` holds the
+    /// value that a load of `type_tag` width at [base + offset] (or at the
+    /// constant address `offset` when `base` is 32) produced, and neither
+    /// the base, the holder, nor memory has changed since.
+    struct forwarded_load {
+        uint8_t base;     ///< Guest base register, or 32 for a constant address
+        uint8_t holder;   ///< Guest register holding the loaded value
+        uint8_t type_tag; ///< Width and signedness of the load
+        bool valid;
+        uint64_t offset; ///< Immediate offset, or the constant address itself
+    };
+    forwarded_load load_memo[4]{};
+    uint8_t load_memo_next{};
+    uint32_t known_mask{};      ///< Guests whose exact value is known
+    uint64_t known_const[32]{}; ///< The known values
+    bool pending_load_valid{};
+    uint16_t pending_load_node{};
+    forwarded_load pending_load{};
+
+    void reset_dataflow() {
+        for (auto &m : load_memo) {
+            m.valid = false;
+        }
+        known_mask = 0;
+        pending_load_valid = false;
+    }
+
+    /// \brief Memory contents may have changed: loads no longer forward.
+    void invalidate_loads() {
+        for (auto &m : load_memo) {
+            m.valid = false;
+        }
+        pending_load_valid = false;
+    }
+
+    /// \brief A helper may write any guest register and any memory.
+    void invalidate_guests() {
+        reset_dataflow();
+    }
+
+    template <typename T>
+    static constexpr uint8_t load_type_tag() {
+        return static_cast<uint8_t>(sizeof(T) | (std::is_signed_v<T> ? 0x10 : 0));
+    }
+
+    /// \brief Derives a forwardable-load key from an address expression:
+    /// guest base plus immediate offset, bare guest base, or a constant.
+    bool load_key(uint16_t address_node, uint8_t type_tag, forwarded_load &key) {
+        const auto &n = nodes[address_node];
+        if (n.emit == emit_guest) {
+            key = {static_cast<uint8_t>(n.immediate), 0, type_tag, true, 0};
+            return true;
+        }
+        if (n.emit == emit_immediate) {
+            key = {32, 0, type_tag, true, n.immediate};
+            return true;
+        }
+        if (n.emit == emit_add && nodes[n.lhs].emit == emit_guest && nodes[n.rhs].emit == emit_immediate) {
+            key = {static_cast<uint8_t>(nodes[n.lhs].immediate), 0, type_tag, true, nodes[n.rhs].immediate};
+            return true;
+        }
+        return false;
+    }
+
+    int8_t find_forwarded(const forwarded_load &key) {
+        for (uint8_t i = 0; i < std::size(load_memo); ++i) {
+            const auto &m = load_memo[i];
+            if (m.valid && m.base == key.base && m.offset == key.offset && m.type_tag == key.type_tag) {
+                return static_cast<int8_t>(i);
+            }
+        }
+        return -1;
     }
 
     uint16_t add_node(tc_lightning_node::emit_fn emit, uint16_t lhs = 0, uint16_t rhs = 0, uint64_t immediate = 0) {
@@ -2060,6 +2142,40 @@ struct tc_lightning_execution {
     }
 
     tc_lightning_value binary(tc_lightning_node::emit_fn emit, tc_lightning_value lhs, tc_lightning_value rhs) {
+        // Constant folding: a chain like lui+addi whose inputs the guest
+        // wrote as constants collapses to one immediate, which in turn lets
+        // memory probes specialize on constant addresses. The host shift
+        // semantics (amount mod 64) match the emitted variable shifts.
+        const auto &l = nodes[lhs.node];
+        const auto &r = nodes[rhs.node];
+        if (l.emit == emit_immediate && r.emit == emit_immediate) {
+            uint64_t folded = 0;
+            bool foldable = true;
+            if (emit == emit_add) {
+                folded = l.immediate + r.immediate;
+            } else if (emit == emit_subtract) {
+                folded = l.immediate - r.immediate;
+            } else if (emit == emit_multiply) {
+                folded = l.immediate * r.immediate;
+            } else if (emit == emit_bit_and) {
+                folded = l.immediate & r.immediate;
+            } else if (emit == emit_bit_or) {
+                folded = l.immediate | r.immediate;
+            } else if (emit == emit_bit_xor) {
+                folded = l.immediate ^ r.immediate;
+            } else if (emit == emit_shift_left) {
+                folded = l.immediate << (r.immediate & 63);
+            } else if (emit == emit_shift_right_unsigned) {
+                folded = l.immediate >> (r.immediate & 63);
+            } else if (emit == emit_shift_right_signed) {
+                folded = static_cast<uint64_t>(static_cast<int64_t>(l.immediate) >> (r.immediate & 63));
+            } else {
+                foldable = false;
+            }
+            if (foldable) {
+                return {this, add_node(emit_immediate, 0, 0, folded), lhs.signed_value, lhs.bits};
+            }
+        }
         return {this, add_node(emit, lhs.node, rhs.node), lhs.signed_value, lhs.bits};
     }
 
@@ -2099,6 +2215,90 @@ struct tc_lightning_execution {
         }
         (void) map_guest(guest);
         return {this, add_node(emit_guest, 0, 0, guest), false, 64};
+    }
+
+    /// \brief Evaluates an expression whose leaves are immediates and
+    /// known-constant guests. Constants track alongside the register-based
+    /// emission rather than replacing it: a known guest still reads its live
+    /// register, and the constant is spent only where it beats the register
+    /// -- address formation and its probe. The operator semantics mirror the
+    /// emitted instructions exactly.
+    bool eval_node(uint16_t index, uint64_t &out, unsigned depth = 0) {
+        if (depth > 8) {
+            return false;
+        }
+        const auto &n = nodes[index];
+        if (n.emit == emit_immediate) {
+            out = n.immediate;
+            return true;
+        }
+        if (n.emit == emit_guest) {
+            const auto guest = static_cast<uint32_t>(n.immediate);
+            if ((known_mask & (UINT32_C(1) << guest)) == 0) {
+                return false;
+            }
+            out = known_const[guest];
+            return true;
+        }
+        if (n.emit == emit_bit_not) {
+            uint64_t v = 0;
+            if (!eval_node(n.lhs, v, depth + 1)) {
+                return false;
+            }
+            out = ~v;
+            return true;
+        }
+        if (n.emit == emit_cast_signed_32 || n.emit == emit_cast_unsigned_32 || n.emit == emit_cast_signed_16 ||
+            n.emit == emit_cast_unsigned_16 || n.emit == emit_cast_signed_8 || n.emit == emit_cast_unsigned_8) {
+            uint64_t v = 0;
+            if (!eval_node(n.lhs, v, depth + 1)) {
+                return false;
+            }
+            if (n.emit == emit_cast_signed_32) {
+                out = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(v)));
+            } else if (n.emit == emit_cast_unsigned_32) {
+                out = static_cast<uint32_t>(v);
+            } else if (n.emit == emit_cast_signed_16) {
+                out = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(v)));
+            } else if (n.emit == emit_cast_unsigned_16) {
+                out = static_cast<uint16_t>(v);
+            } else if (n.emit == emit_cast_signed_8) {
+                out = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int8_t>(v)));
+            } else {
+                out = static_cast<uint8_t>(v);
+            }
+            return true;
+        }
+        uint64_t l = 0;
+        uint64_t r = 0;
+        if (n.emit != emit_add && n.emit != emit_subtract && n.emit != emit_multiply && n.emit != emit_bit_and &&
+            n.emit != emit_bit_or && n.emit != emit_bit_xor && n.emit != emit_shift_left &&
+            n.emit != emit_shift_right_unsigned && n.emit != emit_shift_right_signed) {
+            return false;
+        }
+        if (!eval_node(n.lhs, l, depth + 1) || !eval_node(n.rhs, r, depth + 1)) {
+            return false;
+        }
+        if (n.emit == emit_add) {
+            out = l + r;
+        } else if (n.emit == emit_subtract) {
+            out = l - r;
+        } else if (n.emit == emit_multiply) {
+            out = l * r;
+        } else if (n.emit == emit_bit_and) {
+            out = l & r;
+        } else if (n.emit == emit_bit_or) {
+            out = l | r;
+        } else if (n.emit == emit_bit_xor) {
+            out = l ^ r;
+        } else if (n.emit == emit_shift_left) {
+            out = l << (r & 63);
+        } else if (n.emit == emit_shift_right_unsigned) {
+            out = l >> (r & 63);
+        } else {
+            out = static_cast<uint64_t>(static_cast<int64_t>(l) >> (r & 63));
+        }
+        return true;
     }
 
     static void emit_guest(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned /*depth*/) {
@@ -2436,6 +2636,29 @@ struct tc_lightning_execution {
             failed = true;
             return;
         }
+        // Dataflow bookkeeping runs in both passes so discovery and emission
+        // fold identically. The old value of this guest dies: memo entries
+        // based on it or holding through it go, and if the value written is
+        // this instruction's own bare load, the guest becomes its holder
+        // (unless the load's base was this same register, whose old value
+        // the address used).
+        for (auto &m : load_memo) {
+            if (m.valid && (m.base == guest || m.holder == guest)) {
+                m.valid = false;
+            }
+        }
+        if (pending_load_valid && value.node == pending_load_node && pending_load.base != guest) {
+            pending_load.holder = static_cast<uint8_t>(guest);
+            load_memo[load_memo_next] = pending_load;
+            load_memo_next = (load_memo_next + 1) % std::size(load_memo);
+        }
+        pending_load_valid = false;
+        if (uint64_t computed = 0; eval_node(value.node, computed)) {
+            known_mask |= UINT32_C(1) << guest;
+            known_const[guest] = computed;
+        } else {
+            known_mask &= ~(UINT32_C(1) << guest);
+        }
         const int8_t slot = map_guest(guest);
         if (discovery || failed) {
             return;
@@ -2544,8 +2767,31 @@ struct tc_lightning_execution {
 
     template <typename T>
     tc_lightning_value memory_load(tc_lightning_value address) {
-        return {this, add_node(emit_memory_load_node<T>, address.node), std::is_signed_v<T>,
-            static_cast<uint8_t>(sizeof(T) * 8)};
+        // An address computable from known-constant guests becomes an
+        // immediate node, so the probe specializes on it below and the
+        // forwarding key is exact.
+        if (uint64_t vaddr = 0; nodes[address.node].emit != emit_immediate && eval_node(address.node, vaddr)) {
+            address = immediate(vaddr);
+        }
+        // Redundant load forwarding: within one trace the read TLB is
+        // immutable (a miss exits, stores go through the write set) and
+        // hot-TLB pages are plain RAM, so a repeat load of the same address
+        // and width whose base and holder registers are unchanged and whose
+        // memory generation is intact is the held value, not a probe.
+        forwarded_load key{};
+        const bool keyed = load_key(address.node, load_type_tag<T>(), key);
+        if (keyed) {
+            if (const int8_t hit = find_forwarded(key); hit >= 0) {
+                return read_x(load_memo[hit].holder);
+            }
+        }
+        const uint16_t node = add_node(emit_memory_load_node<T>, address.node);
+        if (keyed) {
+            pending_load = key;
+            pending_load_node = node;
+            pending_load_valid = true;
+        }
+        return {this, node, std::is_signed_v<T>, static_cast<uint8_t>(sizeof(T) * 8)};
     }
 
     template <typename T>
@@ -2554,21 +2800,35 @@ struct tc_lightning_execution {
         const jit_gpr_t slot = scratch_registers[0];
         const jit_gpr_t page = scratch_registers[1];
         const jit_gpr_t address = scratch_registers[2];
-        emit_expression(load.lhs, address, 1);
-        jit_rshi_u(slot, address, LOG2_PAGE_SIZE);
-        jit_andi(slot, slot, TLB_SET_SIZE - 1);
-        jit_lshi(slot, slot, 4);
-        jit_addr(slot, slot, TC_JIT_STATE);
         constexpr jit_word_t hot_tlb_offset =
             offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_READ * sizeof(hot_tlb_set);
-        jit_addi(slot, slot, hot_tlb_offset);
-        jit_ldxi(page, slot, offsetof(hot_tlb_slot, vaddr_page));
-        jit_andi(address, address,
-            ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~(static_cast<uint64_t>(sizeof(T)) - 1)));
-        add_exit(jit_bner(page, address));
-        emit_expression(load.lhs, address, 1);
-        jit_ldxi(page, slot, offsetof(hot_tlb_slot, vh_offset));
-        jit_addr(address, address, page);
+        // A constant address knows its TLB slot and expected tag statically:
+        // the probe shrinks to load-compare-load and an immediate add.
+        if (nodes[load.lhs].emit == emit_immediate) {
+            const uint64_t vaddr = nodes[load.lhs].immediate;
+            const jit_word_t slot_off = hot_tlb_offset +
+                static_cast<jit_word_t>(((vaddr >> LOG2_PAGE_SIZE) & (TLB_SET_SIZE - 1)) * sizeof(hot_tlb_slot));
+            jit_ldxi(page, TC_JIT_STATE, slot_off + offsetof(hot_tlb_slot, vaddr_page));
+            const uint64_t expected =
+                vaddr & ~static_cast<uint64_t>(PAGE_OFFSET_MASK & ~(static_cast<uint64_t>(sizeof(T)) - 1));
+            add_exit(jit_bnei(page, static_cast<jit_word_t>(expected)));
+            jit_ldxi(page, TC_JIT_STATE, slot_off + offsetof(hot_tlb_slot, vh_offset));
+            jit_addi(address, page, static_cast<jit_word_t>(vaddr));
+        } else {
+            emit_expression(load.lhs, address, 1);
+            jit_rshi_u(slot, address, LOG2_PAGE_SIZE);
+            jit_andi(slot, slot, TLB_SET_SIZE - 1);
+            jit_lshi(slot, slot, 4);
+            jit_addr(slot, slot, TC_JIT_STATE);
+            jit_addi(slot, slot, hot_tlb_offset);
+            jit_ldxi(page, slot, offsetof(hot_tlb_slot, vaddr_page));
+            jit_andi(address, address,
+                ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~(static_cast<uint64_t>(sizeof(T)) - 1)));
+            add_exit(jit_bner(page, address));
+            emit_expression(load.lhs, address, 1);
+            jit_ldxi(page, slot, offsetof(hot_tlb_slot, vh_offset));
+            jit_addr(address, address, page);
+        }
         if constexpr (std::is_same_v<T, int8_t>) {
             jit_ldr_c(dest, address);
         } else if constexpr (std::is_same_v<T, uint8_t>) {
@@ -2590,6 +2850,13 @@ struct tc_lightning_execution {
 
     template <typename T>
     void emit_memory_store(tc_lightning_value address_value, tc_lightning_value stored_value) {
+        // A store may alias any forwarded load; run in both passes so the
+        // dataflow stays identical between discovery and emission.
+        invalidate_loads();
+        if (uint64_t vaddr = 0;
+            nodes[address_value.node].emit != emit_immediate && eval_node(address_value.node, vaddr)) {
+            address_value = immediate(vaddr);
+        }
         if (discovery || failed) {
             return;
         }
@@ -2597,20 +2864,31 @@ struct tc_lightning_execution {
         const jit_gpr_t slot = scratch_registers[0];
         const jit_gpr_t page = scratch_registers[1];
         const jit_gpr_t address = scratch_registers[2];
-        emit_expression(address_value.node, address, 1);
-        jit_rshi_u(slot, address, LOG2_PAGE_SIZE);
-        jit_andi(slot, slot, TLB_SET_SIZE - 1);
-        jit_lshi(slot, slot, 4);
-        jit_addr(slot, slot, TC_JIT_STATE);
         constexpr jit_word_t hot_tlb_offset =
             offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_WRITE * sizeof(hot_tlb_set);
-        jit_addi(slot, slot, hot_tlb_offset);
-        jit_ldxi(page, slot, offsetof(hot_tlb_slot, vaddr_page));
-        jit_andi(address, address, ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~(sizeof(T) - 1)));
-        add_exit(jit_bner(page, address));
-        emit_expression(address_value.node, address, 1);
-        jit_ldxi(page, slot, offsetof(hot_tlb_slot, vh_offset));
-        jit_addr(address, address, page);
+        if (nodes[address_value.node].emit == emit_immediate) {
+            const uint64_t vaddr = nodes[address_value.node].immediate;
+            const jit_word_t slot_off = hot_tlb_offset +
+                static_cast<jit_word_t>(((vaddr >> LOG2_PAGE_SIZE) & (TLB_SET_SIZE - 1)) * sizeof(hot_tlb_slot));
+            jit_ldxi(page, TC_JIT_STATE, slot_off + offsetof(hot_tlb_slot, vaddr_page));
+            const uint64_t expected = vaddr & ~static_cast<uint64_t>(PAGE_OFFSET_MASK & ~(sizeof(T) - 1));
+            add_exit(jit_bnei(page, static_cast<jit_word_t>(expected)));
+            jit_ldxi(page, TC_JIT_STATE, slot_off + offsetof(hot_tlb_slot, vh_offset));
+            jit_addi(address, page, static_cast<jit_word_t>(vaddr));
+        } else {
+            emit_expression(address_value.node, address, 1);
+            jit_rshi_u(slot, address, LOG2_PAGE_SIZE);
+            jit_andi(slot, slot, TLB_SET_SIZE - 1);
+            jit_lshi(slot, slot, 4);
+            jit_addr(slot, slot, TC_JIT_STATE);
+            jit_addi(slot, slot, hot_tlb_offset);
+            jit_ldxi(page, slot, offsetof(hot_tlb_slot, vaddr_page));
+            jit_andi(address, address, ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~(sizeof(T) - 1)));
+            add_exit(jit_bner(page, address));
+            emit_expression(address_value.node, address, 1);
+            jit_ldxi(page, slot, offsetof(hot_tlb_slot, vh_offset));
+            jit_addr(address, address, page);
+        }
         emit_expression(stored_value.node, page, 1);
         if constexpr (sizeof(T) == 1) {
             jit_str_c(address, page);
@@ -2689,6 +2967,9 @@ struct tc_lightning_execution {
     /// guard miss. The C call clobbers the caller-saved half of the guest
     /// roster, so the roster is flushed before and reloaded after.
     void emit_fp_helper(fp_helper_fn fn, uint32_t insn_word) {
+        // The helper may write any guest register and any memory; run in
+        // both passes so the dataflow stays identical between them.
+        invalidate_guests();
         if (discovery || failed) {
             return;
         }
@@ -3114,6 +3395,37 @@ struct tc_lightning_execution {
 
 template <typename T>
 tc_lightning_value tc_lightning_value::value_cast() const {
+    // A cast of a constant folds; the narrowing-and-extension semantics
+    // below mirror what the emitted cast instructions would compute.
+    if (execution->nodes[node].emit == tc_lightning_execution::emit_immediate) {
+        const uint64_t v = execution->nodes[node].immediate;
+        uint64_t folded = 0;
+        if constexpr (sizeof(T) < 8) {
+            using signed_t = std::make_signed_t<T>;
+            folded = std::is_signed_v<T> ? static_cast<uint64_t>(static_cast<int64_t>(static_cast<signed_t>(v))) :
+                                           static_cast<uint64_t>(static_cast<std::make_unsigned_t<T>>(v));
+        } else {
+            switch (bits) {
+                case 32:
+                    folded = signed_value ? static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(v))) :
+                                            static_cast<uint64_t>(static_cast<uint32_t>(v));
+                    break;
+                case 16:
+                    folded = signed_value ? static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(v))) :
+                                            static_cast<uint64_t>(static_cast<uint16_t>(v));
+                    break;
+                case 8:
+                    folded = signed_value ? static_cast<uint64_t>(static_cast<int64_t>(static_cast<int8_t>(v))) :
+                                            static_cast<uint64_t>(static_cast<uint8_t>(v));
+                    break;
+                default:
+                    folded = v;
+                    break;
+            }
+        }
+        return {execution, execution->add_node(tc_lightning_execution::emit_immediate, 0, 0, folded),
+            std::is_signed_v<T>, static_cast<uint8_t>(sizeof(T) == 8 ? 64 : sizeof(T) * 8)};
+    }
     tc_lightning_node::emit_fn emit = nullptr;
     if constexpr (sizeof(T) == 4 && std::is_signed_v<T>) {
         emit = tc_lightning_execution::emit_cast_signed_32;
@@ -3197,6 +3509,11 @@ inline tc_lightning_value tc_lightning_value::operator>>(tc_lightning_value rhs)
         *this, rhs);
 }
 inline tc_lightning_value tc_lightning_value::operator~() const {
+    if (execution->nodes[node].emit == tc_lightning_execution::emit_immediate) {
+        return {execution,
+            execution->add_node(tc_lightning_execution::emit_immediate, 0, 0, ~execution->nodes[node].immediate),
+            signed_value, bits};
+    }
     return {execution, execution->add_node(tc_lightning_execution::emit_bit_not, node), signed_value, bits};
 }
 inline tc_lightning_value tc_lightning_value::wrapping_add(tc_lightning_value rhs) const {
@@ -4737,6 +5054,13 @@ static bool tc_lightning_collect_range(tc_lightning_execution &execution, uint64
     for (uint32_t i = first; i < last; ++i) {
         execution.current = i;
         execution.reset_expression();
+        // Cross-instruction dataflow is straight-line only: it resets at the
+        // trace entry and at the loop join. Keying the reset on the entry
+        // index makes discovery (one range) and emission (split at the join)
+        // see identical dataflow.
+        if (i == 0 || static_cast<int32_t>(i) == execution.trace->cycle) {
+            execution.reset_dataflow();
+        }
         const auto &entry = execution.trace->entries[i];
         if (pc != entry.vaddr) {
             return false;

@@ -2471,6 +2471,26 @@ shell cost +66% with tracing idle).
     redundancy elimination first, constants second, coverage of the
     atomics third.
 
+    Ideas 1 and 2 are in, and the measurement carries a lesson of its
+    own. Load forwarding and constant-address probes shrink the
+    diagnostic trace 20.5% (2497 to 1985 bytes), and a first cut that
+    let known constants replace register reads outright priced the
+    mistake: re-materializing 64-bit immediates where a live register
+    already held the value cost nop +4.1% and double +1.7% against
+    the forwarding wins, netting +0.4%. Constants must track
+    alongside the registers and be spent only where they beat one --
+    address formation and its probe. With that split, three-rep
+    interleaved medians, all 84 runs of both cuts hash-identical to
+    canon: hash -1.6%, nop -1.4%, memcpy -1.2%, double -1.1%, qsort
+    -0.5%, tree +0.4%, sieve +2.3%, aggregate -0.4%. The counted
+    savings are real but the host's out-of-order core was already
+    hiding most of the redundant probe cost behind predicted branches
+    and L1 hits -- the qsort lesson in a new coat: instruction count
+    is not time. The elision theorem and the constant machinery stay
+    (they are what a weaker in-order host, and idea 3's atomics,
+    build on), but the next point of attack for memory-bound
+    workloads is coverage, not code density.
+
 15. FILED: SPEAK THE STANDARD DIALECT. The survey made the private
     vocabulary a cost: every mechanism here has a peer with an
     established name, and a reader fluent in LuaJIT or QEMU should not

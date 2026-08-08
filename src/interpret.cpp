@@ -1454,8 +1454,10 @@ static FORCE_INLINE execute_status execute_AMO(const STATE_ACCESS a, i_state_acc
         // The staged single-hart atomic is a guarded load-op-store. The read
         // probe and then the write probe evolve the hot TLB exactly as the
         // interpreter's two accesses would; a miss on either, a hooked page,
-        // or a misaligned address exits to the portable instruction.
-        const auto valm = a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr);
+        // or a misaligned address exits to the portable instruction. The
+        // loaded value is materialized: it is consumed again for rd after
+        // the store, and a lazy load node would re-read the updated memory.
+        const auto valm = a.stage_materialize(a.template stage_read_virtual_memory<T>(pc, mcycle, vaddr));
         const auto valr = f(valm, value_cast<T>(a.read_x(insn_get_rs2(insn))));
         const execute_status status = a.template stage_write_virtual_memory<T>(pc, mcycle, vaddr, valr);
         if (status != execute_status::success) {

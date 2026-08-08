@@ -2512,6 +2512,42 @@ shell cost +66% with tracing idle).
     budget, the penumbra, register-links (cross-trace register
     mapping inheritance, which none of the surveyed engines do).
 
+16. DONE, GATED, THE ATOMICS STAGE. Survey idea 3, the coverage
+    attack, and the first solid timing win of the optimization-pass
+    series: aggregate -2.2% (three interleaved reps, every canon
+    workload hash-identical, syscall agreeing across builds), landing
+    exactly where the fallback lists said it would -- tree -5.4%,
+    qsort -4.3%, nop -3.7%, syscall -2.9%, memcpy -1.2%, against
+    sieve +5.9% and hash +2.3%. On a single-hart machine an AMO needs
+    no atomicity against anything: AMOSWAP/ADD/XOR/AND/OR stage as
+    the read probe, the operation, and the write probe, evolving the
+    hot TLB exactly as the interpreter's two accesses would, with any
+    miss, hooked page, or misaligned address exiting to the portable
+    instruction. LR is the guarded load plus the reservation write;
+    SC compiles its success path behind a reservation guard whose
+    mismatch exit hands the failure path to portable re-execution --
+    nothing clears a reservation inside a trace, so the exit is as
+    rare as the failure. The min/max bodies select on a comparison
+    the staging cannot express and keep their helper.
+
+    The first cut shipped a bug worth its own paragraph. A lazy IR
+    node re-emits on every consumption, and the AMO consumes its
+    loaded value twice: once feeding the store, and again for rd
+    after the store. The re-emitted load read the just-updated
+    memory, so an AMOADD returned old-plus-addend and an AMOSWAP
+    returned its own rs2. The value now materializes once through the
+    context staging slot. Two diagnosis lessons came with the fix.
+    Boot passed and every workload's gate failed, and the standard
+    mcycle bisection then pointed at an innocent c.addi: the
+    countdown seed shifts trace-entry decisions near the end of a
+    run, so the first divergent cycle moves with the probe target,
+    and target-parameterized bisection is confounded on this backend.
+    What actually cornered the bug was run-restart invariance --
+    run(a);run(b) must equal run(b), and the staged build broke it --
+    plus a Merkle subtree descent that localized the divergence to
+    the shadow page in logarithmic probes. Both belong in the
+    permanent toolbox.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

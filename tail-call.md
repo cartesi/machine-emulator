@@ -164,9 +164,9 @@ clearing the pinned-register reservations (TC_FFIXED_FLAGS=, see 5.17).
 The historical campaigns predate the switch and were built with
 hand-passed OPTFLAGS.
 
-The trace backend is `make tailcall=yes lightning=yes
-MYINTERPRET_CXXFLAGS=-DTC_ONLINE=1`, which links the bundled GNU
-lightning (`make bundle-lightning`). The generated code emits into the
+The trace backend is `make tailcall=yes lightning=yes`; `lightning=yes`
+enables the online recorder and links the bundled GNU lightning (`make
+bundle-lightning`). The generated code emits into the
 register contract of the selected interpreter shape: pinned on AArch64,
 and on x86-64 the four-slot preserve_none argument assignment (the
 build adds TC_PAGE_SEGMENT=1 there, needs GCC 16.1+ or Clang, and
@@ -1496,6 +1496,17 @@ shell cost +66% with tracing idle).
    register. Per-page membership and invalidation remain required before this
    execution oracle becomes a production JIT.
 
+   A useful comparison point is Ayush Shukla's RISC-V block recompiler
+   (https://shuklaayu.sh/blog/riscv-recompiler): every generated block uses
+   the same selected hot guest-register set, and `preserve_none` plus
+   `musttail` carries unchanged values across block edges without spills or
+   moves. Try that fixed common mapping as the simplest linked-fragment shape,
+   selected from whole-workload guest-register frequency, against both the
+   current independent allocations and predecessor-compatible allocations
+   with explicit boundary moves. Keep it experimental: the same measurements
+   show that a wide fixed argument set can lose when its extra register
+   pressure outweighs the saved boundary traffic.
+
 9. DONE, THE BACKEND ON X86-64. The backend was AArch64-only by
    construction, not merely untested there: it named lightning's
    `JIT_R3`-`JIT_R6` and `JIT_V5`-`JIT_V8`, which do not exist in the
@@ -2061,6 +2072,144 @@ shell cost +66% with tracing idle).
     code encodes statically, plus encoding-order range guards against
     the saturation cases) are the designed next increment if the
     counters say they matter.
+
+    The AArch64 follow-up separated formation from execution policy.
+    Publishing independently compilable page-local regions from a bounded
+    recording does reach the FP bodies that the old atomic transaction
+    discarded. Lightning's `JIT_F0`-`JIT_F2` mapping to v8-v10 is usable
+    under the JIT's `preserve_none` tail-call contract, and the resulting
+    traces remain hash-exact. It is not safe to enable blindly, however: a
+    seven-instruction hash loop (integer-to-double helper followed by inline
+    add and multiply) repeatedly misses the inline guards and becomes more
+    than ten times slower. Dense helper-only FP regions similarly make
+    double pathological. Keep AArch64 inline FP opt-in until exits can
+    demote a bad instruction or trace based on observed bail frequency.
+
+    The bounded-continuation experiment does not test whether the dynamic
+    64 -> 128 -> 256 policy should be removed. Its narrower question is
+    whether a recording that reaches its current cap can publish that bounded
+    prefix, immediately record another bounded region at the exact successor,
+    and let ordinary successor links compose a path longer than the existing
+    maximum of 256. The original head still learns its larger dynamic cap for
+    future recordings, and the continuation inherits the cap that ended the
+    current region; no individual recording or generated trace becomes
+    unbounded.
+
+    The first measurement mixed Linux boot and workload formation and therefore
+    answered the wrong question. Its 259-instruction chain was boot code, while
+    its claim that continuation code contained no FP also described the combined
+    live pool rather than a clean `double` phase. The benchmark already supplies
+    an architectural boundary: it boots to exactly 268435456 mcycles, then makes
+    a second run call for the fixed 2^30-mcycle workload. Setting
+    `TC_ONLINE_RESET_MCYCLE=268435456` now destroys the boot-generated code and
+    clears boot hotness, penalties, learned caps, and statistics at that boundary.
+
+    Clearing counters was still insufficient experimental isolation: a bad boot
+    trace could dominate before the boundary at which it would be destroyed.
+    The same setting therefore also defers online recording until the requested
+    architectural mcycle. This changes neither workload length nor the machine
+    state; it only prevents Linux formation from affecting whether the workload
+    phase is reached.
+
+    The corrected result preserves the earlier research conclusion: `double`
+    needs a much longer dynamically traversable FP trace. The first implementation
+    merely installed later fragments. The hot root at `0x7fffa370f19e` reached an
+    FP fragment at logical offset 13, but a three-instruction page connector at
+    offsets 17--20 was discarded by the global four-instruction minimum. Every
+    later FP fragment was consequently detached. Retaining the short fragments
+    of cap-bound recordings, which may be needed as internal connectors,
+    produces one
+    structurally continuous chain through offset 102: the continuation beginning
+    at offset 64 contains 38 instructions, 19 of them FP. Arbitrary short roots
+    remain rejected, and the dynamic 64 -> 128 -> 256 cap remains unchanged.
+
+    Structural connectivity is not dynamic traversal. Generated-entry counters
+    show the root and its first FP fragment executing about 1.5 million times,
+    while the connector and every later fragment, including the offset-64
+    continuation, execute zero times. A side-exit counter localizes the break:
+    the last guard in the four-instruction FP fragment fires on every entry. It
+    is the second `FD` instruction in the `FLD, FD, FD, JAL` fragment. The inline
+    arithmetic proof requires sticky NX; exact arithmetic can leave NX clear, so
+    this specialization can miss indefinitely and portable re-execution resumes
+    outside the generated chain.
+
+    The next call is cross-page. Its early call hook still carries the caller's
+    fetch mapping and therefore cannot enter the already-installed callee trace.
+    Bypassing that mapping check made the later fragments execute millions of
+    times but changed the computation hash, so it was rejected. A short helper
+    side bridge was also rejected: once hot it failed to make useful mcycle
+    progress. The remaining implementation problem is therefore precise: after
+    a guarded FP instruction retires portably, re-enter the compiled successor
+    only through the ordinary fetch-miss transition, preserving its pc,
+    countdown, mapping, and register contracts. Success means nonzero generated
+    entry counts in the offset-20, offset-51, and offset-64 FP regions with the
+    exact computation hash.
+
+    Do not infer a 144-instruction ceiling from the installed graph, and do not
+    remove the dynamic cap. The experiment has established the necessary
+    length-capped chain formation and exposed the recovery edge that prevents
+    `double` from traversing it; only after that edge works can this workload say
+    whether bounded linking makes dynamic cap growth unnecessary.
+
+    The guard-miss attribution above was wrong, and the instrumentation that
+    proved it wrong found the real cause. Per-guard-class bail counters
+    (TC_ONLINE_EXEC_STATS) show the sticky-NX guard never fired in the double
+    window; every persistent miss was the strictly-normal result guard, and
+    the raw bits it tested were always zero. Dumping the generated code
+    (TC_ONLINE_DUMP_CODE) exposed the reason: lightning 2.2.3's AArch64 FPU
+    backend emits FP loads and stores whose byte displacement lies in
+    [256, 4095] unscaled into the scaled imm12 field, so every such access
+    lands at eight times the intended offset (four for singles). Operands
+    loaded garbage, the result store missed the staging slot, and the
+    readback tested a never-written zero. The correctness gates could not see
+    it: every affected instruction bailed and retired portably, so the bug
+    silently converted the whole AArch64 inline FP fast path into a
+    constant-miss detour. The bundled lightning is fixed (the u12 branches of
+    the FPU loads and stores now require alignment and shift by the access
+    size, mirroring the integer backend), and every earlier AArch64
+    inline-FP measurement in this section -- the ten-times-slower hash loop,
+    the pathological dense helper regions, and the double chain that never
+    traversed -- was measuring this bug, not FP policy.
+
+    With the fix, the same protocol reverses the structural conclusions at
+    bit-identical hashes. A logmap window (stress-ng cpu-method logmap,
+    hardware double, no libm; added to the workload suite as the clean
+    rounding-heavy probe, while matrixprod, trig, and hyperbolic turn out to
+    be long double and therefore soft binary128 with no guest FP at all)
+    drops from 82.0M guard bails to zero, and its 26-instruction cyclic FP
+    trace stays resident instead of bailing on entry. The double window
+    drops from 4.59M bails to 58K, the survivors being genuinely small
+    results, and the chain now executes deep: fragments at logical offsets
+    18 through 64, including a 36-instruction continuation with 20 FP
+    entries, run 1.1M-3.0M times each where every count was previously zero.
+    That is the success criterion stated above, met with the exact
+    computation hash.
+
+    The default nevertheless stays opt-in on AArch64. zlib forms a hot loop
+    around FD instructions whose guards miss persistently for real (an fcvt
+    with a non-RNE static rounding mode declines to the helper, and a
+    neighboring result genuinely leaves the strictly-normal proof), and each
+    miss pays trace entry, guard bail, and portable re-execution, taking the
+    workload from 17.6s to an aborted run past twenty minutes. The residual
+    double misses are the same class at smaller scale. Bail-frequency
+    demotion -- dropping a persistently missing instruction to its helper,
+    or refusing to re-enter the trace at that pc -- is the prerequisite for
+    an AArch64 default, and the x86-64 default deserves a zlib check for the
+    same hazard.
+
+    Two build hazards surfaced on the way. The lightning bundle must be
+    regenerated from a clean tree after the displacement fix, because a
+    partially cleaned tree relinks stale objects. And a from-scratch
+    configure that picked a different host compiler emitted compare-branch
+    sequences with the flag-setting comparison missing entirely -- an entry
+    countdown check reduced to a bare conditional branch acting on stale
+    flags, which livelocks the chain once the countdown goes negative. The
+    bundle recipe now pins CC and compiles with -fno-strict-aliasing, and a
+    regenerated bundle restores the correct cmp-plus-branch entry sequence,
+    gated by the logmap window hash. A review pass in the same round also
+    fixed the staged read-only fcsr CSR read to return the raw register
+    exactly as the interpreter does, where the staged version masked
+    reserved bits an adversarial guest can set.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

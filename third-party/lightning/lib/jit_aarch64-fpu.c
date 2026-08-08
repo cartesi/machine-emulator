@@ -730,8 +730,8 @@ _ldxi_f(jit_state_t *_jit, jit_int32_t r0, jit_int32_t r1, jit_word_t i0)
 #if 1
     if (s9_p(i0))
 	FLDRSI(r0, r1, i0);
-    else if (u12_p(i0))
-	FLDRSU(r0, r1, i0);
+    else if (!(i0 & 3) && u12_p(i0 >> 2))
+	FLDRSU(r0, r1, i0 >> 2);
     else {
 	reg = jit_get_reg(jit_class_gpr);
 	movi(rn(reg), i0);
@@ -838,8 +838,8 @@ _stxi_f(jit_state_t *_jit, jit_word_t i0, jit_int32_t r0, jit_int32_t r1)
 #if 1
     if (s9_p(i0))
 	FSTRSI(r1, r0, i0);
-    else if (u12_p(i0))
-	FSTRSU(r1, r0, i0);
+    else if (!(i0 & 3) && u12_p(i0 >> 2))
+	FSTRSU(r1, r0, i0 >> 2);
     else {
 	reg = jit_get_reg(jit_class_gpr);
 	movi(rn(reg), i0);
@@ -1093,8 +1093,8 @@ _ldxi_d(jit_state_t *_jit, jit_int32_t r0, jit_int32_t r1, jit_word_t i0)
 #if 1
     if (s9_p(i0))
 	FLDRDI(r0, r1, i0);
-    else if (u12_p(i0))
-	FLDRDU(r0, r1, i0);
+    else if (!(i0 & 7) && u12_p(i0 >> 3))
+	FLDRDU(r0, r1, i0 >> 3);
     else {
 	reg = jit_get_reg(jit_class_gpr);
 	movi(rn(reg), i0);
@@ -1201,8 +1201,8 @@ _stxi_d(jit_state_t *_jit, jit_word_t i0, jit_int32_t r0, jit_int32_t r1)
 #if 1
     if (s9_p(i0))
 	FSTRDI(r1, r0, i0);
-    else if (u12_p(i0))
-	FSTRDU(r1, r0, i0);
+    else if (!(i0 & 7) && u12_p(i0 >> 3))
+	FSTRDU(r1, r0, i0 >> 3);
     else {
 	reg = jit_get_reg(jit_class_gpr);
 	movi(rn(reg), i0);

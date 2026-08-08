@@ -23,6 +23,7 @@
 // SP1 runtime primitives from libzkevm.a
 extern "C" void syscall_write(uint32_t fd, const uint8_t *buf, size_t nbytes);
 extern "C" NO_RETURN void syscall_halt(uint8_t exit_code);
+extern "C" void write_output(const uint8_t *output, size_t size);
 // On the RV64 target the sha256 precompiles address w and state with an 8-byte
 // stride: 64 and 8 u64 slots each holding a u32 value (see sp1-core-executor
 // minimal/precompiles/sha256). A u32-packed buffer overruns.
@@ -58,8 +59,13 @@ extern "C" void zk_putchar(char character) {
 
 // abort() itself comes from libzkevm.a; assert() in zk-runtime.hpp calls it.
 
+// The reason goes to the public-values stream as well as stderr: the stream
+// travels back to the host on every executor backend, while stderr forwarding
+// does not (the x86-64 native executor drops it). A nonzero halt is never
+// proven, so the stream carries no committed meaning on this path.
 extern "C" NO_RETURN void zk_abort_with_msg(const char *msg) {
     syscall_write(2, reinterpret_cast<const uint8_t *>(msg), strlen(msg));
+    write_output(reinterpret_cast<const uint8_t *>(msg), strlen(msg));
     syscall_halt(1);
 }
 

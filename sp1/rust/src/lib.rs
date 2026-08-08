@@ -120,8 +120,10 @@ pub fn stdin_for_log(log_file_path: &str) -> Result<SP1Stdin, String> {
 ///
 /// The exit code check is not optional. A structurally invalid log makes the
 /// guest abort via `zk_abort_with_msg`, which halts with code 1, but SP1's
-/// executor returns `Ok` for a nonzero halt: only the abort message reaches the
-/// process stderr. Without this check a forged log reads as accepted.
+/// executor returns `Ok` for a nonzero halt. The abort reason is read from the
+/// public-values stream, where the guest writes it alongside stderr: the
+/// stream comes back on every executor backend, while stderr forwarding does
+/// not (the x86-64 native executor drops it).
 pub async fn try_execute<P: Prover>(
     client: &P,
     elf: Elf,
@@ -133,7 +135,11 @@ pub async fn try_execute<P: Prover>(
         .await
         .map_err(|e| format!("{e}"))?;
     if report.exit_code != 0 {
-        return Err(format!("guest aborted with exit code {}", report.exit_code));
+        let reason = String::from_utf8_lossy(public_values.as_slice());
+        return Err(format!(
+            "guest aborted with exit code {}: {reason}",
+            report.exit_code
+        ));
     }
     Ok((public_values, report))
 }

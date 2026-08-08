@@ -103,9 +103,10 @@ Sepolia gateway; nothing in this repo commits to either choice.
     make -C sp1 seal           # prove the one-mcycle fixture to a Groth16 seal
     make -C sp1 test-solidity  # on-chain tests against a Sepolia fork (needs seal)
 
-The reject-fixture tests run the CLI as a subprocess and assert the abort
-reason each forged log dies with. They execute without proving, so no GPU
-and no artifact download is needed.
+The reject-fixture tests assert the abort reason each forged log dies with;
+the guest writes it to the public-values stream, the one channel every
+executor backend carries back to the host. They execute without proving, so
+no GPU and no artifact download is needed.
 
 ## The sha256 precompile ABI
 

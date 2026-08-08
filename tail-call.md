@@ -2361,17 +2361,20 @@ shell cost +66% with tracing idle).
     the next staged instruction's guard set; the collect wrapper now
     clears it per instruction.
 
-    Measurement came cheap once the protocol dropped the redundant
-    boots: booting each workload once to 256 Mi, storing the machine,
-    and loading the snapshot per timed rep turns an 18-run interleaved
-    comparison into a ten-minute job (the stored RAM image faults in
-    lazily during the window, inflating absolute times about 30%, so
-    snapshot-protocol numbers compare only within a table). Three-rep
-    medians, every run hash-identical to canon: hash -3.1% (faster in
-    all three reps -- its seven-instruction loop paid one conversion
-    helper per iteration, the densest conversion site in the suite),
-    double -1.0% (all three reps), logmap -0.5% (noise). zlib and nop
-    single reps at parity. Attribution says the
+    Measurement is cheaper than the campaign habits suggested: a
+    jitted bench run costs 10-15 seconds wall (create 0.1s, boot 2.7s,
+    window 2-7s, root hash 5.5s -- the hash is the largest fixed cost
+    after the window), so an 18-run interleaved comparison is a
+    five-minute job with no protocol tricks; boot-once-store-load
+    shaves the boot besides. One drift observation while switching
+    protocols: the same build's double window measured 5.2s in one
+    session hour and 6.6-6.9s a few hours later under either protocol
+    -- the host moved 30%, reaffirming that only same-table interleaved
+    ratios mean anything. Three-rep medians, every run hash-identical
+    to canon: hash -3.1% (faster in all three reps -- its
+    seven-instruction loop paid one conversion helper per iteration,
+    the densest conversion site in the suite), double -1.0% (all three
+    reps), logmap -0.5% (noise). zlib and nop single reps at parity. Attribution says the
     coverage is real: double's FP fallback list no longer contains any
     FCVT word -- what remains is atomics and fences, which are not FP
     staging's business -- and its residual 35K result-small bails drop

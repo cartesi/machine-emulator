@@ -2341,6 +2341,40 @@ shell cost +66% with tracing idle).
     max_len only is strictly better than both predecessors on every
     cell measured.
 
+13. DONE, GATED, THE INT-FLOAT CONVERSIONS STAGE. Item 11's designed
+    increment, built to its design. Float to integer stages only the
+    static-RTZ encodings compiled code uses -- exactly the host
+    truncation -- behind the NX-sticky fcsr guard and a pair of range
+    compares whose bounds are exact in both float widths; NaN fails both
+    compares, so the saturating NV cases are excluded wholesale, and the
+    W forms sign-extend through the context staging slot as integer IR,
+    the same route the compare results take. DYN and the other static
+    modes decline. Integer to float splits on exactness: 32-bit sources
+    into double convert exactly under every rounding mode and carry no
+    guards at all, while the rounding cases (anything into single, and
+    64-bit sources into double) stage like the rounded arithmetic --
+    RNE resolved, NX sticky -- and no case carries a result guard,
+    because an integer never converts to a subnormal, infinite or NaN.
+    The unsigned 64-bit source rides the signed host convert and bails
+    on a set sign bit. One hygiene fix rode along: a body that requests
+    the dynamic-frm guard and then declines could leak the request into
+    the next staged instruction's guard set; the collect wrapper now
+    clears it per instruction.
+
+    Prototype-scale verdict (single gated reps, matching the session's
+    reduced-ceremony protocol): double, logmap, zlib, nop and hash all
+    hash-identical to canon at parity timings. Attribution says the
+    coverage is real: double's FP fallback list no longer contains any
+    FCVT word -- what remains is atomics and fences, which are not FP
+    staging's business -- and its residual 35K result-small bails drop
+    to zero. The interesting surprise is hash: its int-to-double now
+    stages, feeding the inline add/mul chain, and the chain's small
+    products surface 3.1M result-small bails over the window at no
+    visible timing cost on x86-64. That is the bail-frequency-demotion
+    scenario in miniature -- benign here where a bail is cheap, the
+    exact hazard the AArch64 default waits on -- and hash is the
+    workload to watch when demotion lands.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

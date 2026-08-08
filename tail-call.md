@@ -2361,16 +2361,25 @@ shell cost +66% with tracing idle).
     the next staged instruction's guard set; the collect wrapper now
     clears it per instruction.
 
-    Prototype-scale verdict (single gated reps, matching the session's
-    reduced-ceremony protocol): double, logmap, zlib, nop and hash all
-    hash-identical to canon at parity timings. Attribution says the
+    Measurement came cheap once the protocol dropped the redundant
+    boots: booting each workload once to 256 Mi, storing the machine,
+    and loading the snapshot per timed rep turns an 18-run interleaved
+    comparison into a ten-minute job (the stored RAM image faults in
+    lazily during the window, inflating absolute times about 30%, so
+    snapshot-protocol numbers compare only within a table). Three-rep
+    medians, every run hash-identical to canon: hash -3.1% (faster in
+    all three reps -- its seven-instruction loop paid one conversion
+    helper per iteration, the densest conversion site in the suite),
+    double -1.0% (all three reps), logmap -0.5% (noise). zlib and nop
+    single reps at parity. Attribution says the
     coverage is real: double's FP fallback list no longer contains any
     FCVT word -- what remains is atomics and fences, which are not FP
     staging's business -- and its residual 35K result-small bails drop
     to zero. The interesting surprise is hash: its int-to-double now
     stages, feeding the inline add/mul chain, and the chain's small
-    products surface 3.1M result-small bails over the window at no
-    visible timing cost on x86-64. That is the bail-frequency-demotion
+    products surface 3.1M result-small bails over the window -- yet the
+    workload still nets its -3.1%, the bail cost drowned by the saved
+    helper trips on x86-64. That is the bail-frequency-demotion
     scenario in miniature -- benign here where a bail is cheap, the
     exact hazard the AArch64 default waits on -- and hash is the
     workload to watch when demotion lands.

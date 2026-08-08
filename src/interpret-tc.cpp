@@ -173,6 +173,7 @@ struct tc_online_state {
     struct side_link {
         uint64_t successor;
         uint64_t expected;
+        uint64_t executions;
         const void *fn;
         const void *fast_fn;
         uint16_t hotcount;
@@ -180,15 +181,18 @@ struct tc_online_state {
 #endif
     struct trace {
         uint64_t head;
+        uint64_t chain_head;     ///< Hot root that began this bounded recording chain
+        uint32_t chain_offset;   ///< Logical instruction offset from chain_head
+        bool chain_connected;    ///< Every region from chain_head through this one compiled
         uint64_t code_vf_offset; // recorded host mapping for the head's code page
-        uint64_t successor; // normal successor of a bounded straight trace
+        uint64_t successor;      // normal successor of a bounded straight trace
         uint32_t len;
         int32_t cycle; // entry index the tail loops back to, or -1
 #if TC_LIGHTNING
         const void *fn;
-        const void *call_fn; // code-mapping-validating entry for arbitrary calls
-        const void *link_fn; // patched when successor becomes compiled
-        const void *linked_fn; // entry that preserves the incoming guest-register cache
+        const void *call_fn;      // code-mapping-validating entry for arbitrary calls
+        const void *link_fn;      // patched when successor becomes compiled
+        const void *linked_fn;    // entry that preserves the incoming guest-register cache
         const void *fast_link_fn; // edge adapter, before architectural materialization
         jit_state_t *jit;
         const trace *linked_predecessor;
@@ -199,6 +203,8 @@ struct tc_online_state {
         side_link side[max_side_exits];
         uint16_t nside;
         bool side_trace;
+        bool continuation;
+        uint64_t executions; ///< Generated body entries when TC_ONLINE_EXEC_STATS is enabled
         // Store invalidation: the host pages the recorded bytes live on
         // (page-split fragments touch one page, plus one more when the last
         // instruction's bytes cross), the emitted code range for unpatching
@@ -216,9 +222,13 @@ struct tc_online_state {
     };
     struct recording {
         uint64_t head;
+        uint64_t chain_head;
+        uint32_t chain_offset;
+        bool chain_connected;
         uint32_t len;
         uint32_t cap; ///< This recording's dynamic length cap, latched at begin
         bool call_target;
+        bool continuation;
         tc_online_entry entries[max_len];
     };
     static constexpr uint32_t set_slots = 4096; // >= 4x max_traces, power of two
@@ -257,7 +267,8 @@ struct tc_online_state {
     uint64_t compile_aborted;
     uint64_t verify_aborted;
     uint64_t invalidated;
-    uint64_t escalations; ///< Recordings abandoned to double a head's cap
+    uint64_t escalations;   ///< Heads whose cap grew after a cap-bound recording
+    uint64_t continuations; ///< Cap-bound regions continued at their successor
     uint64_t flushes;
     uint64_t links;
     uint64_t register_links;
@@ -390,6 +401,13 @@ struct tc_context {
 #error "the args-shape Lightning contract needs preserve_none (GCC 16.1+ or Clang)"
 #endif
 
+// The AArch64 Lightning contract names x20-x22 as the preserve_none argument
+// registers and hands v8-v10 to generated code, both of which a
+// standard-convention chain cannot honor.
+#if TC_LIGHTNING && defined(__aarch64__) && !TC_USE_PRESERVE_NONE
+#error "the AArch64 Lightning contract needs preserve_none (GCC 16.1+ or Clang)"
+#endif
+
 #if TC_USE_PRESERVE_NONE
 #define TC_CALLCONV __attribute__((preserve_none))
 #else
@@ -434,7 +452,6 @@ struct tc_context {
 #define TC_MUSTTAIL
 #endif
 #endif
-
 
 /// \brief Returns the loop context, which lives in the penumbra scratch area.
 /// \details The context sits at a constant offset from the processor state,
@@ -493,7 +510,10 @@ register tc_context<state_access> *tcc asm("r15");
 #endif
 #define TC_HOT_PARAMS
 #define TC_HOT_ARGS
-#define TC_ENTER() auto pc = host_addr{tc_reg_pc}
+#define TC_ENTER()                                                                                                     \
+    auto pc = host_addr {                                                                                              \
+        tc_reg_pc                                                                                                      \
+    }
 #define TC_SYNC() (tc_reg_pc = static_cast<uint64_t>(pc))
 #define TC_FETCH_TAG (host_addr{tc_reg_fetch_page})
 #define TC_FETCH_TAG_INVALIDATE()                                                                                      \
@@ -799,20 +819,275 @@ static NO_INLINE void tc_online_debug(const char *what, uint64_t pc, uint64_t ex
     }
 }
 
+#if TC_LIGHTNING
+/// \brief Classifies a recorded instruction word as floating-point,
+/// including the compressed FP loads and stores the backend stages
+/// (c.fld, c.fsd, c.fldsp, c.fsdsp).
+static bool tc_online_insn_is_fp(uint32_t insn) {
+    if ((insn & 3) != 3) {
+        const uint32_t q = insn & 3;
+        const uint32_t f3 = (insn >> 13) & 7;
+        return (q == 0 || q == 2) && (f3 == 1 || f3 == 5);
+    }
+    const uint32_t opcode = insn & UINT32_C(0x7f);
+    return opcode == 0x07 || opcode == 0x27 || opcode == 0x43 || opcode == 0x47 || opcode == 0x4b || opcode == 0x4f ||
+        opcode == 0x53;
+}
+
+/// \brief Guard classes of the staged FP fast path. A staged instruction
+/// funnels every guard miss into one shared side exit, so attributing a hot
+/// exit to a specific guard needs a counter at the guard branch itself; the
+/// branches increment these when TC_ONLINE_EXEC_STATS is enabled.
+enum tc_fp_guard : uint8_t {
+    tc_fp_guard_fs,           ///< mstatus FS is OFF
+    tc_fp_guard_nx,           ///< NX not sticky in fcsr
+    tc_fp_guard_frm,          ///< dynamic rounding mode is not RNE
+    tc_fp_guard_operand,      ///< operand not zero-or-normal
+    tc_fp_guard_nan_operand,  ///< operand is NaN (compares, exact conversions)
+    tc_fp_guard_boxed,        ///< single operand not properly NaN-boxed
+    tc_fp_guard_result_small, ///< result zero, subnormal, or min-normal
+    tc_fp_guard_result_big,   ///< result infinite, NaN, or max-exponent
+    tc_fp_guard_count,
+};
+static const char *const tc_fp_guard_names[tc_fp_guard_count] = {"fs", "nx", "frm", "operand", "nan-operand", "boxed",
+    "result-small", "result-big"};
+static uint64_t tc_fp_guard_bails[tc_fp_guard_count];
+/// \brief Raw bits scratch register 0 held at the last miss of each class:
+/// the value the guard actually tested (result or operand bits, fcsr, or
+/// masked mstatus depending on the class).
+static uint64_t tc_fp_guard_seen[tc_fp_guard_count];
+#endif
+
 /// \brief Prints recorder statistics when TC_ONLINE_STATS is set.
 static void tc_online_report(const tc_online_state &o) {
+#if TC_LIGHTNING
+    uint64_t longest_chain = 0;
+    uint64_t longest_fp_chain = 0;
+    uint64_t longest_fp_entries = 0;
+    uint64_t longest_graph_chain = 0;
+    uint64_t longest_fp_graph_chain = 0;
+    uint64_t longest_fp_graph_entries = 0;
+    uint64_t continuation_traces = 0;
+    uint64_t continuation_entries = 0;
+    uint64_t continuation_fp_entries = 0;
+    uint64_t connected_continuation_traces = 0;
+    uint64_t connected_continuation_entries = 0;
+    uint64_t connected_continuation_fp_entries = 0;
+    uint64_t longest_connected_recording = 0;
+    uint64_t longest_connected_fp_recording = 0;
+    for (uint32_t first = 0; first < o.ntraces; ++first) {
+        if (o.pool[first].continuation && !o.pool[first].dead) {
+            ++continuation_traces;
+            continuation_entries += o.pool[first].len;
+            for (uint32_t i = 0; i < o.pool[first].len; ++i) {
+                continuation_fp_entries += tc_online_insn_is_fp(o.pool[first].entries[i].insn);
+            }
+            if (o.pool[first].chain_connected) {
+                ++connected_continuation_traces;
+                connected_continuation_entries += o.pool[first].len;
+                uint64_t connected_fp = 0;
+                for (uint32_t i = 0; i < o.pool[first].len; ++i) {
+                    connected_fp += tc_online_insn_is_fp(o.pool[first].entries[i].insn);
+                }
+                connected_continuation_fp_entries += connected_fp;
+                const uint64_t logical_end = o.pool[first].chain_offset + o.pool[first].len;
+                longest_connected_recording = std::max(longest_connected_recording, logical_end);
+                if (connected_fp != 0) {
+                    longest_connected_fp_recording = std::max(longest_connected_fp_recording, logical_end);
+                }
+            }
+        }
+        bool visited[tc_online_state::max_traces]{};
+        const auto *trace = &o.pool[first];
+        uint64_t length = 0;
+        uint64_t fp_entries = 0;
+        while (trace != nullptr && !trace->dead) {
+            const uint32_t index = static_cast<uint32_t>(trace - o.pool);
+            if (visited[index]) {
+                break;
+            }
+            visited[index] = true;
+            length += trace->len;
+            for (uint32_t i = 0; i < trace->len; ++i) {
+                fp_entries += tc_online_insn_is_fp(trace->entries[i].insn);
+            }
+            if (trace->cycle >= 0 || trace->link_fn == nullptr) {
+                break;
+            }
+            trace = tc_online_find(&o, trace->successor);
+        }
+        longest_chain = std::max(longest_chain, length);
+        if (fp_entries != 0 && length > longest_fp_chain) {
+            longest_fp_chain = length;
+            longest_fp_entries = fp_entries;
+        }
+    }
+    if (std::getenv("TC_ONLINE_DUMP_CODE") != nullptr) {
+        for (uint32_t i = 0; i < o.ntraces; ++i) {
+            const auto &trace = o.pool[i];
+            if (trace.dead || trace.code_start == nullptr || trace.code_size == 0) {
+                continue;
+            }
+            char path[64];
+            std::snprintf(path, sizeof(path), "tc-code-%llx.bin", static_cast<unsigned long long>(trace.head));
+            if (std::FILE *f = std::fopen(path, "wb")) {
+                std::fwrite(trace.code_start, 1, trace.code_size, f);
+                std::fclose(f);
+            }
+        }
+    }
+    if (std::getenv("TC_ONLINE_STATS_DETAILS") != nullptr) {
+        for (uint32_t i = 0; i < o.ntraces; ++i) {
+            const auto &trace = o.pool[i];
+            if (trace.dead) {
+                continue;
+            }
+            uint64_t fp_entries = 0;
+            for (uint32_t entry = 0; entry < trace.len; ++entry) {
+                fp_entries += tc_online_insn_is_fp(trace.entries[entry].insn);
+            }
+            std::fprintf(stderr,
+                "tc-online-detail: chain %llx offset %u head %llx len %u continuation %u connected %u fp %llu "
+                "executions %llu sides %u successor %llx\n",
+                static_cast<unsigned long long>(trace.chain_head), trace.chain_offset,
+                static_cast<unsigned long long>(trace.head), trace.len, static_cast<unsigned>(trace.continuation),
+                static_cast<unsigned>(trace.chain_connected), static_cast<unsigned long long>(fp_entries),
+                static_cast<unsigned long long>(trace.executions), static_cast<unsigned>(trace.nside),
+                static_cast<unsigned long long>(trace.successor));
+            for (uint16_t side = 0; side < trace.nside; ++side) {
+                const auto &link = trace.side[side];
+                std::fprintf(stderr,
+                    "tc-online-detail:   side %u successor %llx expected %llx executions %llu hotcount %u linked %u\n",
+                    static_cast<unsigned>(side), static_cast<unsigned long long>(link.successor),
+                    static_cast<unsigned long long>(link.expected), static_cast<unsigned long long>(link.executions),
+                    static_cast<unsigned>(link.hotcount), static_cast<unsigned>(link.fn != nullptr));
+            }
+        }
+    }
+
+    struct graph_length {
+        uint64_t any{};
+        uint64_t any_fp_entries{};
+        uint64_t with_fp{};
+        uint64_t fp_entries{};
+    };
+    graph_length graph_cache[tc_online_state::max_traces]{};
+    uint8_t graph_state[tc_online_state::max_traces]{};
+    const auto graph_visit = [&](auto &self, uint32_t index) -> graph_length {
+        if (graph_state[index] == 2) {
+            return graph_cache[index];
+        }
+        if (graph_state[index] == 1 || o.pool[index].dead) {
+            return {};
+        }
+        graph_state[index] = 1;
+        const auto &trace = o.pool[index];
+        uint64_t local_fp = 0;
+        for (uint32_t i = 0; i < trace.len; ++i) {
+            local_fp += tc_online_insn_is_fp(trace.entries[i].insn);
+        }
+        graph_length result{trace.len, local_fp, local_fp == 0 ? 0 : trace.len, local_fp};
+        const auto include = [&](const tc_online_state::trace *successor) {
+            if (successor == nullptr || successor == &trace || successor->dead) {
+                return;
+            }
+            const auto child = self(self, static_cast<uint32_t>(successor - o.pool));
+            if (trace.len + child.any > result.any) {
+                result.any = trace.len + child.any;
+                result.any_fp_entries = local_fp + child.any_fp_entries;
+            }
+            if (local_fp != 0) {
+                if (trace.len + child.any > result.with_fp) {
+                    result.with_fp = trace.len + child.any;
+                    result.fp_entries = local_fp + child.any_fp_entries;
+                }
+            } else if (child.with_fp != 0 && trace.len + child.with_fp > result.with_fp) {
+                result.with_fp = trace.len + child.with_fp;
+                result.fp_entries = child.fp_entries;
+            }
+        };
+        if (trace.cycle < 0 && trace.link_fn != nullptr) {
+            include(tc_online_find(&o, trace.successor));
+        }
+        for (uint16_t side = 0; side < trace.nside; ++side) {
+            const auto &link = trace.side[side];
+            if (link.fn == nullptr) {
+                continue;
+            }
+            const auto *successor = tc_online_find_side(&o, link.successor, link.expected);
+            if (successor == nullptr) {
+                successor = tc_online_find(&o, link.successor);
+            }
+            include(successor);
+        }
+        graph_state[index] = 2;
+        graph_cache[index] = result;
+        return result;
+    };
+    for (uint32_t first = 0; first < o.ntraces; ++first) {
+        const auto length = graph_visit(graph_visit, first);
+        longest_graph_chain = std::max(longest_graph_chain, length.any);
+        if (length.with_fp > longest_fp_graph_chain) {
+            longest_fp_graph_chain = length.with_fp;
+            longest_fp_graph_entries = length.fp_entries;
+        }
+    }
+#else
+    constexpr uint64_t longest_chain = 0;
+    constexpr uint64_t longest_fp_chain = 0;
+    constexpr uint64_t longest_fp_entries = 0;
+    constexpr uint64_t longest_graph_chain = 0;
+    constexpr uint64_t longest_fp_graph_chain = 0;
+    constexpr uint64_t longest_fp_graph_entries = 0;
+    constexpr uint64_t continuation_traces = 0;
+    constexpr uint64_t continuation_entries = 0;
+    constexpr uint64_t continuation_fp_entries = 0;
+    constexpr uint64_t connected_continuation_traces = 0;
+    constexpr uint64_t connected_continuation_entries = 0;
+    constexpr uint64_t connected_continuation_fp_entries = 0;
+    constexpr uint64_t longest_connected_recording = 0;
+    constexpr uint64_t longest_connected_fp_recording = 0;
+#endif
     std::fprintf(stderr,
         "tc-online: installed %llu aborted %llu (short %llu compile %llu verify %llu) invalidated %llu "
-        "escalations %llu flushes %llu links %llu "
-        "register-links %llu (moves %llu loads %llu stores %llu) live %u\n",
+        "escalations %llu continuations %llu flushes %llu links %llu "
+        "register-links %llu (moves %llu loads %llu stores %llu) longest-chain %llu "
+        "longest-fp-chain %llu (%llu fp) longest-graph-chain %llu longest-fp-graph-chain %llu (%llu fp) "
+        "continuation-code %llu/%llu (%llu fp) connected-continuation-code %llu/%llu (%llu fp) "
+        "connected-recording %llu connected-fp-recording %llu live %u\n",
         static_cast<unsigned long long>(o.installed), static_cast<unsigned long long>(o.aborted),
         static_cast<unsigned long long>(o.short_aborted), static_cast<unsigned long long>(o.compile_aborted),
         static_cast<unsigned long long>(o.verify_aborted), static_cast<unsigned long long>(o.invalidated),
-        static_cast<unsigned long long>(o.escalations), static_cast<unsigned long long>(o.flushes),
-        static_cast<unsigned long long>(o.links),
+        static_cast<unsigned long long>(o.escalations), static_cast<unsigned long long>(o.continuations),
+        static_cast<unsigned long long>(o.flushes), static_cast<unsigned long long>(o.links),
         static_cast<unsigned long long>(o.register_links), static_cast<unsigned long long>(o.register_moves),
         static_cast<unsigned long long>(o.register_loads), static_cast<unsigned long long>(o.register_stores),
-        static_cast<unsigned>(o.ntraces));
+        static_cast<unsigned long long>(longest_chain), static_cast<unsigned long long>(longest_fp_chain),
+        static_cast<unsigned long long>(longest_fp_entries), static_cast<unsigned long long>(longest_graph_chain),
+        static_cast<unsigned long long>(longest_fp_graph_chain),
+        static_cast<unsigned long long>(longest_fp_graph_entries), static_cast<unsigned long long>(continuation_traces),
+        static_cast<unsigned long long>(continuation_entries), static_cast<unsigned long long>(continuation_fp_entries),
+        static_cast<unsigned long long>(connected_continuation_traces),
+        static_cast<unsigned long long>(connected_continuation_entries),
+        static_cast<unsigned long long>(connected_continuation_fp_entries),
+        static_cast<unsigned long long>(longest_connected_recording),
+        static_cast<unsigned long long>(longest_connected_fp_recording), static_cast<unsigned>(o.ntraces));
+#if TC_LIGHTNING
+    if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
+        std::fprintf(stderr, "tc-online: fp-guard-bails");
+        for (uint8_t i = 0; i < tc_fp_guard_count; ++i) {
+            std::fprintf(stderr, " %s %llu", tc_fp_guard_names[i],
+                static_cast<unsigned long long>(tc_fp_guard_bails[i]));
+        }
+        std::fprintf(stderr, "\n");
+        std::fprintf(stderr, "tc-online: fp-guard-seen");
+        for (uint8_t i = 0; i < tc_fp_guard_count; ++i) {
+            std::fprintf(stderr, " %s %llx", tc_fp_guard_names[i],
+                static_cast<unsigned long long>(tc_fp_guard_seen[i]));
+        }
+        std::fprintf(stderr, "\n");
+    }
+#endif
 }
 
 /// \brief Frees a machine's recorder state: reports statistics, destroys the
@@ -956,8 +1231,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
     uint32_t fragment_start[tc_online_state::max_fragments]{};
     uint32_t nfragments = 1;
     for (uint32_t i = 1; i < recording.len; ++i) {
-        if ((recording.entries[i].vaddr >> LOG2_PAGE_SIZE) !=
-            (recording.entries[i - 1].vaddr >> LOG2_PAGE_SIZE)) {
+        if ((recording.entries[i].vaddr >> LOG2_PAGE_SIZE) != (recording.entries[i - 1].vaddr >> LOG2_PAGE_SIZE)) {
             if (nfragments == tc_online_state::max_fragments) {
                 ++o->aborted;
                 ++o->short_aborted;
@@ -971,15 +1245,37 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         }
     }
 
-    const bool complete_chain = cycle >= 0 || (closed && nfragments > 1);
-    bool rejected = recording.len < tc_online_state::min_len ||
-        (!complete_chain && (nfragments != 1 || recording.len < tc_online_state::min_straight_len));
-    for (uint32_t i = 0; i < nfragments; ++i) {
-        const uint32_t end = i + 1 < nfragments ? fragment_start[i + 1] : recording.len;
-        rejected = rejected || end - fragment_start[i] < tc_online_state::min_len;
+    uint32_t selected_start[tc_online_state::max_fragments]{};
+    uint32_t selected_end[tc_online_state::max_fragments]{};
+    uint32_t nselected = 0;
+    [[maybe_unused]] bool dropped_fragment = false;
+    const bool cap_bound = cycle < 0 && !closed && recording.len == recording.cap;
+    for (uint32_t fragment = 0; fragment < nfragments; ++fragment) {
+        const uint32_t start = fragment_start[fragment];
+        const uint32_t end = fragment + 1 < nfragments ? fragment_start[fragment + 1] : recording.len;
+        // A short page fragment is normally not profitable as an independent
+        // trace. At a length cap it may be the only connector between two
+        // bounded regions, so retain it as part of this continuation chain.
+        if (end - start < tc_online_state::min_len && !cap_bound) {
+            dropped_fragment = true;
+            continue;
+        }
+        selected_start[nselected] = start;
+        selected_end[nselected] = end;
+        ++nselected;
     }
+
+    const bool complete_chain = cycle >= 0 || (closed && nfragments > 1);
+    bool rejected = nselected == 0 || (!complete_chain && recording.len < tc_online_state::min_straight_len);
+#if TC_LIGHTNING
+    // A side recording is entered from one particular generated exit, so its
+    // path remains all-or-nothing; a partial publication could not satisfy
+    // that exit contract.
+    const bool attach_side = o->pending_side != nullptr && nselected != 0 && selected_start[0] == 0;
+    rejected = rejected || (o->pending_side != nullptr && dropped_fragment);
+#endif
     tc_online_debug(rejected ? "abort" : "install", recording.head, recording.len);
-    if (rejected || o->ntraces + nfragments > tc_online_state::max_traces) {
+    if (rejected || o->ntraces + nselected > tc_online_state::max_traces) {
         ++o->aborted;
         ++o->short_aborted;
         tc_online_penalize(o, recording.head);
@@ -993,9 +1289,9 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         // A closed cycle proves the length this head needs; shrink (or set)
         // its cap to the smallest that fits, so re-records after a flush pay
         // no more recording than necessary.
-        const uint32_t needed = recording.len <= tc_online_state::base_len ? 0
-            : recording.len <= tc_online_state::base_len * 2               ? 1
-                                                                           : 2;
+        const uint32_t needed = recording.len <= tc_online_state::base_len ? 0 :
+            recording.len <= tc_online_state::base_len * 2                 ? 1 :
+                                                                             2;
         tc_online_set_cap(o, recording.head, needed);
     }
 
@@ -1003,35 +1299,38 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
     // The recorder observed each word at execution time, but a store may
     // have changed it since (stores during a recording run through hot
     // write slots and are not individually observable). Re-verify every
-    // recorded word against guest memory before freezing its semantics
-    // into generated code; from installation on, the write hook takes over.
-    for (uint32_t i = 0; i < recording.len; ++i) {
-        const auto &entry = recording.entries[i];
-        const auto haddr = host_addr{entry.vaddr + entry.code_vf_offset};
-        uint32_t current = aliased_aligned_read<uint16_t>(cast_host_addr_to_ptr(haddr));
-        uint32_t recorded = entry.insn & UINT32_C(0xffff);
-        if ((entry.insn & 3) == 3) {
-            // An instruction whose bytes cross the page boundary has its
-            // second half on a page this entry's mapping offset says nothing
-            // about: rejecting it keeps the verification read in bounds and
-            // the page membership exact, at the cost of refusing the rare
-            // trace through the crossing region.
-            if ((entry.vaddr & PAGE_OFFSET_MASK) > PAGE_OFFSET_MASK - 3) {
+    // word that will be published before freezing its semantics into
+    // generated code; from installation on, the write hook takes over.
+    for (uint32_t fragment = 0; fragment < nselected; ++fragment) {
+        for (uint32_t i = selected_start[fragment]; i < selected_end[fragment]; ++i) {
+            const auto &entry = recording.entries[i];
+            const auto haddr = host_addr{entry.vaddr + entry.code_vf_offset};
+            uint32_t current = aliased_aligned_read<uint16_t>(cast_host_addr_to_ptr(haddr));
+            uint32_t recorded = entry.insn & UINT32_C(0xffff);
+            if ((entry.insn & 3) == 3) {
+                // An instruction whose bytes cross the page boundary has its
+                // second half on a page this entry's mapping offset says nothing
+                // about: rejecting it keeps the verification read in bounds and
+                // the page membership exact, at the cost of refusing the rare
+                // trace through the crossing region.
+                if ((entry.vaddr & PAGE_OFFSET_MASK) > PAGE_OFFSET_MASK - 3) {
+                    ++o->aborted;
+                    ++o->verify_aborted;
+                    tc_online_penalize(o, recording.head, true);
+                    reject_side();
+                    return;
+                }
+                current |= static_cast<uint32_t>(aliased_aligned_read<uint16_t>(cast_host_addr_to_ptr(haddr + 2)))
+                    << 16;
+                recorded = entry.insn;
+            }
+            if (current != recorded) {
                 ++o->aborted;
                 ++o->verify_aborted;
-                tc_online_penalize(o, recording.head, true);
+                tc_online_penalize(o, recording.head);
                 reject_side();
                 return;
             }
-            current |= static_cast<uint32_t>(aliased_aligned_read<uint16_t>(cast_host_addr_to_ptr(haddr + 2))) << 16;
-            recorded = entry.insn;
-        }
-        if (current != recorded) {
-            ++o->aborted;
-            ++o->verify_aborted;
-            tc_online_penalize(o, recording.head);
-            reject_side();
-            return;
         }
     }
 #endif
@@ -1050,16 +1349,22 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         }
     }
 #endif
-    for (uint32_t fragment = 0; fragment < nfragments; ++fragment) {
-        const uint32_t start = fragment_start[fragment];
-        const uint32_t end = fragment + 1 < nfragments ? fragment_start[fragment + 1] : recording.len;
-        auto &t = o->pool[first_trace + fragment];
+    uint32_t npublished = 0;
+    uint32_t previous_selected = UINT32_MAX;
+    uint32_t connected_end = 0;
+    bool chain_connected = recording.chain_connected;
+    for (uint32_t fragment = 0; fragment < nselected; ++fragment) {
+        const uint32_t start = selected_start[fragment];
+        const uint32_t end = selected_end[fragment];
+        auto &t = o->pool[first_trace + npublished];
         t.head = recording.entries[start].vaddr;
+        t.chain_head = recording.chain_head;
+        t.chain_offset = recording.chain_offset + start;
+        t.chain_connected = chain_connected && start == connected_end;
         t.code_vf_offset = recording.entries[start].code_vf_offset;
         t.len = end - start;
-        t.cycle = fragment + 1 == nfragments && cycle >= static_cast<int32_t>(start) ?
-            cycle - static_cast<int32_t>(start) :
-            -1;
+        t.cycle =
+            end == recording.len && cycle >= static_cast<int32_t>(start) ? cycle - static_cast<int32_t>(start) : -1;
         t.successor = t.cycle < 0 ? recording.entries[end - 1].next_pc : 0;
         for (uint32_t i = start; i < end; ++i) {
             t.entries[i - start] = recording.entries[i];
@@ -1075,7 +1380,9 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         t.linked_stores = 0;
         t.returns = false;
         t.nside = 0;
-        t.side_trace = o->pending_side != nullptr;
+        t.side_trace = attach_side;
+        t.continuation = recording.continuation;
+        t.executions = 0;
         t.dead = false;
         t.code_start = nullptr;
         t.code_size = 0;
@@ -1105,32 +1412,45 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
             }
         }
         if (pages_overflowed) {
-            for (uint32_t i = 0; i < fragment; ++i) {
-                jit_state_t *_jit = o->pool[first_trace + i].jit;
-                jit_destroy_state();
-                o->pool[first_trace + i].jit = nullptr;
-            }
             ++o->aborted;
             ++o->short_aborted;
-            tc_online_penalize(o, recording.head);
-            reject_side();
-            return;
+            if (attach_side) {
+                for (uint32_t i = 0; i < npublished; ++i) {
+                    jit_state_t *_jit = o->pool[first_trace + i].jit;
+                    jit_destroy_state();
+                    o->pool[first_trace + i].jit = nullptr;
+                }
+                tc_online_penalize(o, recording.head);
+                reject_side();
+                return;
+            }
+            tc_online_penalize(o, recording.head, true);
+            chain_connected = false;
+            continue;
         }
-        const auto *const preferred =
-            fragment == 0 ? side_predecessor : &o->pool[first_trace + fragment - 1];
+        const bool contiguous = previous_selected != UINT32_MAX && selected_end[previous_selected] == start;
+        const auto *const preferred = npublished == 0 ? (attach_side ? side_predecessor : nullptr) :
+                                                        (contiguous ? &o->pool[first_trace + npublished - 1] : nullptr);
         t.fn = tc_lightning_compile_trace(t, &t.jit, preferred);
         if (t.fn == nullptr) {
-            for (uint32_t i = 0; i < fragment; ++i) {
-                jit_state_t *_jit = o->pool[first_trace + i].jit;
-                jit_destroy_state();
-                o->pool[first_trace + i].jit = nullptr;
-            }
             ++o->aborted;
             ++o->compile_aborted;
-            // An NYI fragment rejects the transaction and blacklists its root.
+            // Side traces have a specific generated entry contract and stay
+            // transactional. Root recordings may still publish independent
+            // page-local regions around an NYI fragment.
+            if (attach_side) {
+                for (uint32_t i = 0; i < npublished; ++i) {
+                    jit_state_t *_jit = o->pool[first_trace + i].jit;
+                    jit_destroy_state();
+                    o->pool[first_trace + i].jit = nullptr;
+                }
+                tc_online_penalize(o, recording.head, true);
+                reject_side();
+                return;
+            }
             tc_online_penalize(o, recording.head, true);
-            reject_side();
-            return;
+            chain_connected = false;
+            continue;
         }
         // A trace recorded from a call target that ends by returning drops its
         // return, so the body can be re-entered and linked at the call site.
@@ -1139,7 +1459,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         // recorded back-edge into an unconditional one that both skips the
         // closing branch and retires one instruction per iteration without
         // charging for it.
-        if (recording.call_target && t.returns && t.cycle < 0) {
+        if (recording.call_target && start == 0 && t.returns && t.cycle < 0) {
             jit_state_t *_jit = t.jit;
             jit_destroy_state();
             t.jit = nullptr;
@@ -1148,7 +1468,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
             t.returns = false;
             t.fn = tc_lightning_compile_trace(t, &t.jit, preferred);
             if (t.fn == nullptr) {
-                for (uint32_t i = 0; i < fragment; ++i) {
+                for (uint32_t i = 0; i < npublished; ++i) {
                     _jit = o->pool[first_trace + i].jit;
                     jit_destroy_state();
                     o->pool[first_trace + i].jit = nullptr;
@@ -1159,16 +1479,31 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
                 reject_side();
                 return;
             }
-            nfragments = fragment + 1;
+            ++npublished;
             break;
         }
 #endif
+        if (t.chain_connected) {
+            connected_end = end;
+        } else {
+            chain_connected = false;
+        }
+        previous_selected = fragment;
+        ++npublished;
     }
 
-    // Publish only after every fragment compiled. No partial chain can be
-    // observed through the exact map.
-    o->ntraces += nfragments;
-    o->installed += nfragments;
+    if (npublished == 0) {
+#if TC_LIGHTNING
+        reject_side();
+#endif
+        return;
+    }
+
+    // Publish the successfully compiled root regions together. Side
+    // recordings reached this point only if their complete transaction
+    // compiled, so their generated exit contract remains all-or-nothing.
+    o->ntraces += npublished;
+    o->installed += npublished;
     for (uint32_t i = first_trace; i < o->ntraces; ++i) {
         if (tc_online_find(o, o->pool[i].head) == nullptr) {
             tc_online_insert(o, o->pool[i].head, i);
@@ -1207,7 +1542,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         o->pending_side = nullptr;
         return;
     }
-    if (o->pending_side != nullptr && tc_lightning_side_links_enabled()) {
+    if (attach_side && tc_lightning_side_links_enabled()) {
         if (tc_online_find_side(o, o->pool[first_trace].head, o->pending_side->expected) == nullptr) {
             tc_online_insert_side(o, o->pool[first_trace].head, o->pending_side->expected, first_trace);
         }
@@ -1228,8 +1563,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         }
         if (predecessor.cycle < 0 && predecessor.link_fn == nullptr && tc_lightning_straight_links_enabled()) {
             if (const auto *const successor = tc_online_find(o, predecessor.successor); successor != nullptr) {
-                const bool crosses_page =
-                    (predecessor.head >> LOG2_PAGE_SIZE) != (successor->head >> LOG2_PAGE_SIZE);
+                const bool crosses_page = (predecessor.head >> LOG2_PAGE_SIZE) != (successor->head >> LOG2_PAGE_SIZE);
                 predecessor.link_fn = crosses_page ? successor->call_fn : successor->fn;
                 if (successor->linked_predecessor == &predecessor && tc_lightning_fast_links_enabled()) {
                     predecessor.fast_link_fn = successor->linked_fn;
@@ -1269,14 +1603,50 @@ static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc, bool call_
         tc_online_flush(c);
     }
     o->pending.head = pc;
+    o->pending.chain_head = pc;
+    o->pending.chain_offset = 0;
+    o->pending.chain_connected = true;
     o->pending.len = 0;
     o->pending.cap = tc_online_cap(o, pc);
     o->pending.call_target = call_target;
+    o->pending.continuation = false;
 #if TC_LIGHTNING
     o->pending_side = nullptr;
 #endif
     o->recording = true;
     tc_online_debug("begin", pc, o->ntraces);
+}
+
+/// \brief Continues a cap-bound recording at its exact successor.
+/// \details The predecessor has just been published as a bounded straight
+/// region. Starting its successor immediately lets the ordinary exact-map
+/// linker compose paths longer than max_len without making any individual
+/// recording or generated trace unbounded. The continuation inherits the
+/// current bounded region size. Root and side heads still update their dynamic
+/// 64 -> 128 -> 256 cap for future recordings.
+template <typename STATE_ACCESS>
+static bool tc_online_begin_continuation(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t cap, uint64_t chain_head,
+    uint32_t chain_offset, bool chain_connected) {
+    tc_online_state *o = c->online;
+    if (o->recording || tc_online_find(o, pc) != nullptr || tc_online_blacklisted(o, pc) ||
+        o->ntraces + tc_online_state::max_fragments > tc_online_state::max_traces) {
+        return false;
+    }
+    o->pending.head = pc;
+    o->pending.chain_head = chain_head;
+    o->pending.chain_offset = chain_offset;
+    o->pending.chain_connected = chain_connected;
+    o->pending.len = 0;
+    o->pending.cap = cap;
+    o->pending.call_target = false;
+    o->pending.continuation = true;
+#if TC_LIGHTNING
+    o->pending_side = nullptr;
+#endif
+    o->recording = true;
+    ++o->continuations;
+    tc_online_debug("continue", pc, o->ntraces);
+    return true;
 }
 
 #if TC_LIGHTNING
@@ -1301,9 +1671,13 @@ static void tc_online_begin_side(tc_context<STATE_ACCESS> *c, uint64_t pc, tc_on
         return;
     }
     o->pending.head = pc;
+    o->pending.chain_head = pc;
+    o->pending.chain_offset = 0;
+    o->pending.chain_connected = true;
     o->pending.len = 0;
     o->pending.cap = tc_online_cap(o, pc);
     o->pending.call_target = false;
+    o->pending.continuation = false;
     o->pending_side = link;
     o->recording = true;
     tc_online_debug("side", pc, o->ntraces);
@@ -1313,7 +1687,8 @@ static void tc_online_begin_side(tc_context<STATE_ACCESS> *c, uint64_t pc, tc_on
 /// \brief Appends the instruction about to execute to the conceptual recording.
 /// \details Collection crosses code pages in one-instruction interpreter
 /// chains. Publication later splits the path into independently translated,
-/// page-local fragments and commits them atomically.
+/// page-local fragments. Side recordings commit atomically; root recordings
+/// may publish the independently compilable regions around an unsupported one.
 template <typename STATE_ACCESS>
 static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t insn) {
     tc_online_state *o = c->online;
@@ -1332,28 +1707,33 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
             return;
         }
         if (recording.len == recording.cap) {
+            const uint32_t continuation_cap = recording.cap;
+            const uint64_t continuation_chain_head = recording.chain_head;
+            const uint32_t continuation_chain_offset = recording.chain_offset + recording.len;
             if (recording.cap < tc_online_state::max_len) {
-                // Cap-bound with no cycle closed is length starvation, not a
-                // formation failure: double the head's cap and abandon
-                // without penalty. A genuinely hot head re-trips and records
-                // with more room; the spend is bounded per head because the
-                // shifts only grow twice.
-                tc_online_set_cap(o, recording.head, tc_online_cap(o, recording.head) == tc_online_state::base_len
-                        ? 1
-                        : 2);
+                // Retain the dynamic policy as learning for future recordings,
+                // but do not throw this bounded region away: publish it and
+                // compose the current path through a continuation.
+                tc_online_set_cap(o, recording.head,
+                    tc_online_cap(o, recording.head) == tc_online_state::base_len ? 1 : 2);
                 ++o->escalations;
                 tc_online_debug("escalate", recording.head, recording.cap);
-                o->recording = false;
-#if TC_LIGHTNING
-                if (o->pending_side != nullptr) {
-                    o->pending_side->hotcount = tc_online_state::side_hot_reset;
-                    o->pending_side = nullptr;
+            }
+            const uint32_t first_new_trace = o->ntraces;
+            tc_online_finish(c, -1, false);
+            bool predecessor_published = false;
+            bool predecessor_connected = false;
+            for (uint32_t i = first_new_trace; i < o->ntraces; ++i) {
+                if (o->pool[i].cycle < 0 && o->pool[i].successor == pc) {
+                    predecessor_published = true;
+                    predecessor_connected = predecessor_connected || o->pool[i].chain_connected;
                 }
-#endif
+            }
+            if (!predecessor_published ||
+                !tc_online_begin_continuation(c, pc, continuation_cap, continuation_chain_head,
+                    continuation_chain_offset, predecessor_connected)) {
                 return;
             }
-            tc_online_finish(c, -1, false);
-            return;
         }
     }
     recording.entries[recording.len] = tc_online_entry{pc, 0, insn, code_vf_offset};
@@ -1498,7 +1878,7 @@ struct tc_lightning_node {
 struct tc_lightning_value;
 
 struct tc_lightning_condition {
-    using branch_fn = jit_node_t *(*)(tc_lightning_execution &, const tc_lightning_condition &, bool);
+    using branch_fn = jit_node_t *(*) (tc_lightning_execution &, const tc_lightning_condition &, bool);
     tc_lightning_execution *execution{};
     uint16_t lhs{};
     uint16_t rhs{};
@@ -1597,8 +1977,8 @@ struct tc_lightning_execution {
     // needs them for large immediates and for the fixed operands of x86
     // shifts, divisions and high multiplies, and a spill under jit_tramp
     // would write through a frame pointer this build does not maintain.
-    static constexpr jit_gpr_t guest_registers[] = {JIT_V2, static_cast<jit_gpr_t>(_RSI),
-        static_cast<jit_gpr_t>(_R8), static_cast<jit_gpr_t>(_R9)};
+    static constexpr jit_gpr_t guest_registers[] = {JIT_V2, static_cast<jit_gpr_t>(_RSI), static_cast<jit_gpr_t>(_R8),
+        static_cast<jit_gpr_t>(_R9)};
     static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_R1, JIT_R2};
 #else
     // The args contract frees rdi (the pinned shape's state pointer) and rbx
@@ -1650,8 +2030,7 @@ struct tc_lightning_execution {
         nnodes = 0;
     }
 
-    uint16_t add_node(tc_lightning_node::emit_fn emit, uint16_t lhs = 0, uint16_t rhs = 0,
-        uint64_t immediate = 0) {
+    uint16_t add_node(tc_lightning_node::emit_fn emit, uint16_t lhs = 0, uint16_t rhs = 0, uint64_t immediate = 0) {
         if (nnodes == max_nodes) {
             failed = true;
             return 0;
@@ -1707,8 +2086,7 @@ struct tc_lightning_execution {
         return {this, add_node(emit_guest, 0, 0, guest), false, 64};
     }
 
-    static void emit_guest(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
-        unsigned /*depth*/) {
+    static void emit_guest(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned /*depth*/) {
         jit_state_t *_jit = e.jit;
         const uint32_t guest = static_cast<uint32_t>(n.immediate);
         const int8_t slot = e.map_guest(guest);
@@ -1779,43 +2157,48 @@ struct tc_lightning_execution {
 
     static void emit_add(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_addr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_addr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_addi(d, l, r); });
     }
-    static void emit_subtract(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
-        unsigned depth) {
+    static void emit_subtract(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_subr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_subr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_subi(d, l, r); });
     }
-    static void emit_multiply(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
-        unsigned depth) {
+    static void emit_multiply(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_mulr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_mulr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_muli(d, l, r); });
     }
     static void emit_divide_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_divr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_divr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_divi(d, l, r); });
     }
     static void emit_divide_unsigned(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_divr_u(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_divr_u(d, l, r); },
             [&](auto d, auto l, auto r) { jit_divi_u(d, l, r); });
     }
     static void emit_remainder_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_remr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_remr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_remi(d, l, r); });
     }
     static void emit_remainder_unsigned(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_remr_u(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_remr_u(d, l, r); },
             [&](auto d, auto l, auto r) { jit_remi_u(d, l, r); });
     }
     template <bool REMAINDER, bool SIGNED, unsigned BITS>
@@ -1831,8 +2214,8 @@ struct tc_lightning_execution {
         jit_node_t *not_minus_one = nullptr;
         jit_node_t *special_done = nullptr;
         if constexpr (SIGNED) {
-            const jit_word_t minimum = BITS == 32 ? static_cast<jit_word_t>(INT32_MIN) :
-                                                   static_cast<jit_word_t>(INT64_MIN);
+            const jit_word_t minimum =
+                BITS == 32 ? static_cast<jit_word_t>(INT32_MIN) : static_cast<jit_word_t>(INT64_MIN);
             not_min = jit_bnei(lhs, minimum);
             not_minus_one = jit_bnei(rhs, -1);
             if constexpr (REMAINDER) {
@@ -1904,80 +2287,87 @@ struct tc_lightning_execution {
     tc_lightning_value multiply_high(tc_lightning_value lhs, tc_lightning_value rhs) {
         return {this, add_node(emit_multiply_high<LHS_SIGNED, RHS_SIGNED>, lhs.node, rhs.node), false, 64};
     }
-    static void emit_bit_and(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
-        unsigned depth) {
+    static void emit_bit_and(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_andr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_andr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_andi(d, l, r); });
     }
-    static void emit_bit_or(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
-        unsigned depth) {
+    static void emit_bit_or(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_orr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_orr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_ori(d, l, r); });
     }
-    static void emit_bit_xor(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
-        unsigned depth) {
+    static void emit_bit_xor(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_xorr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_xorr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_xori(d, l, r); });
     }
-    static void emit_shift_left(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
-        unsigned depth) {
+    static void emit_shift_left(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_lshr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_lshr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_lshi(d, l, r); });
     }
     static void emit_shift_right_unsigned(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_rshr_u(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_rshr_u(d, l, r); },
             [&](auto d, auto l, auto r) { jit_rshi_u(d, l, r); });
     }
     static void emit_shift_right_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_rshr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_rshr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_rshi(d, l, r); });
     }
     static void emit_compare_equal(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_eqr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_eqr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_eqi(d, l, r); });
     }
     static void emit_compare_not_equal(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ner(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_ner(d, l, r); },
             [&](auto d, auto l, auto r) { jit_nei(d, l, r); });
     }
     static void emit_compare_less_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ltr(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_ltr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_lti(d, l, r); });
     }
     static void emit_compare_less_unsigned(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ltr_u(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_ltr_u(d, l, r); },
             [&](auto d, auto l, auto r) { jit_lti_u(d, l, r); });
     }
-    static void emit_compare_greater_equal_signed(tc_lightning_execution &e, const tc_lightning_node &n,
-        jit_gpr_t dest, unsigned depth) {
+    static void emit_compare_greater_equal_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ger(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_ger(d, l, r); },
             [&](auto d, auto l, auto r) { jit_gei(d, l, r); });
     }
     static void emit_compare_greater_equal_unsigned(tc_lightning_execution &e, const tc_lightning_node &n,
         jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
-        e.emit_binary(n, dest, depth, [&](auto d, auto l, auto r) { jit_ger_u(d, l, r); },
+        e.emit_binary(
+            n, dest, depth, [&](auto d, auto l, auto r) { jit_ger_u(d, l, r); },
             [&](auto d, auto l, auto r) { jit_gei_u(d, l, r); });
     }
-    static void emit_bit_not(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
-        unsigned depth) {
+    static void emit_bit_not(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
         e.emit_unary(n, dest, depth, [&](auto d, auto s) { jit_comr(d, s); });
     }
@@ -2072,37 +2462,42 @@ struct tc_lightning_execution {
 
     static jit_node_t *branch_equal(tc_lightning_execution &e, const tc_lightning_condition &cond, bool expected) {
         jit_state_t *_jit = e.jit;
-        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bner(l, r); },
+        return emit_condition_branch(
+            e, cond, expected, [&](auto l, auto r) { return jit_bner(l, r); },
             [&](auto l, auto r) { return jit_beqr(l, r); });
     }
-    static jit_node_t *branch_not_equal(tc_lightning_execution &e, const tc_lightning_condition &cond,
-        bool expected) {
+    static jit_node_t *branch_not_equal(tc_lightning_execution &e, const tc_lightning_condition &cond, bool expected) {
         jit_state_t *_jit = e.jit;
-        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_beqr(l, r); },
+        return emit_condition_branch(
+            e, cond, expected, [&](auto l, auto r) { return jit_beqr(l, r); },
             [&](auto l, auto r) { return jit_bner(l, r); });
     }
     static jit_node_t *branch_less_signed(tc_lightning_execution &e, const tc_lightning_condition &cond,
         bool expected) {
         jit_state_t *_jit = e.jit;
-        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bger(l, r); },
+        return emit_condition_branch(
+            e, cond, expected, [&](auto l, auto r) { return jit_bger(l, r); },
             [&](auto l, auto r) { return jit_bltr(l, r); });
     }
     static jit_node_t *branch_less_unsigned(tc_lightning_execution &e, const tc_lightning_condition &cond,
         bool expected) {
         jit_state_t *_jit = e.jit;
-        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bger_u(l, r); },
+        return emit_condition_branch(
+            e, cond, expected, [&](auto l, auto r) { return jit_bger_u(l, r); },
             [&](auto l, auto r) { return jit_bltr_u(l, r); });
     }
     static jit_node_t *branch_greater_equal_signed(tc_lightning_execution &e, const tc_lightning_condition &cond,
         bool expected) {
         jit_state_t *_jit = e.jit;
-        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bltr(l, r); },
+        return emit_condition_branch(
+            e, cond, expected, [&](auto l, auto r) { return jit_bltr(l, r); },
             [&](auto l, auto r) { return jit_bger(l, r); });
     }
-    static jit_node_t *branch_greater_equal_unsigned(tc_lightning_execution &e,
-        const tc_lightning_condition &cond, bool expected) {
+    static jit_node_t *branch_greater_equal_unsigned(tc_lightning_execution &e, const tc_lightning_condition &cond,
+        bool expected) {
         jit_state_t *_jit = e.jit;
-        return emit_condition_branch(e, cond, expected, [&](auto l, auto r) { return jit_bltr_u(l, r); },
+        return emit_condition_branch(
+            e, cond, expected, [&](auto l, auto r) { return jit_bltr_u(l, r); },
             [&](auto l, auto r) { return jit_bger_u(l, r); });
     }
 
@@ -2238,6 +2633,11 @@ struct tc_lightning_execution {
         return {this, add_node(emit_shadow_load, 0, 0, shadow_f_offset + freg * sizeof(uint64_t)), false, 64};
     }
 
+    /// \brief Reads fcsr as an integer value for read-only FP CSR instructions.
+    tc_lightning_value read_fcsr_word() {
+        return {this, add_node(emit_shadow_load, 0, 0, shadow_fcsr_offset), false, 64};
+    }
+
     /// \brief Stores a value into an f register in the shadow.
     void write_f(uint32_t freg, tc_lightning_value value) {
         if (discovery || failed) {
@@ -2280,8 +2680,7 @@ struct tc_lightning_execution {
         jit_state_t *_jit = jit;
         for (uint32_t guest = 1; guest < 32; ++guest) {
             if (guest_slot[guest] >= 0) {
-                jit_stxi(shadow_x_offset + guest * sizeof(uint64_t), TC_JIT_STATE,
-                    guest_registers[guest_slot[guest]]);
+                jit_stxi(shadow_x_offset + guest * sizeof(uint64_t), TC_JIT_STATE, guest_registers[guest_slot[guest]]);
             }
         }
         jit_prepare();
@@ -2291,8 +2690,7 @@ struct tc_lightning_execution {
         jit_retval(scratch_registers[0]);
         for (uint32_t guest = 1; guest < 32; ++guest) {
             if (guest_slot[guest] >= 0) {
-                jit_ldxi(guest_registers[guest_slot[guest]], TC_JIT_STATE,
-                    shadow_x_offset + guest * sizeof(uint64_t));
+                jit_ldxi(guest_registers[guest_slot[guest]], TC_JIT_STATE, shadow_x_offset + guest * sizeof(uint64_t));
             }
         }
         add_exit(jit_bnei(scratch_registers[0], static_cast<jit_word_t>(execute_status::success)));
@@ -2310,6 +2708,7 @@ struct tc_lightning_execution {
     bool declined{};       ///< Cleanly refused: whole-instruction helper fallback allowed
     bool fp_frm_pending{}; ///< Insn names the dynamic rounding mode; guard frm at the op
     jit_node_t *fp_bail[16]{};
+    tc_fp_guard fp_bail_class[16]{};
     uint8_t fp_nbail{};
     uint64_t fp_decline_map[4]{}; ///< Discovery-recorded declining instructions
 
@@ -2318,12 +2717,21 @@ struct tc_lightning_execution {
         failed = true;
     }
 
-    // Inline FP is enabled on x86-64 only until the AArch64 question is
-    // audited: lightning's JIT_F registers may map to callee-saved v
-    // registers there, which the generated code must not clobber under the
-    // pinned chain. Elsewhere the operations decline to the helpers.
+    // The tail-call JIT uses preserve_none and owns its pinned register set.
+    // On AArch64 lightning maps JIT_F0..JIT_F2 to v8..v10, so these registers
+    // are available to the generated chain just as lightning's x86 FP
+    // registers are; no ordinary call-preservation contract applies here.
+    // AArch64 stays opt-in: a persistently missing guard in a hot loop pays
+    // trace entry, bail, and portable re-execution per iteration (observed on
+    // zlib), so the default waits for bail-frequency demotion.
 #if defined(__x86_64__)
     static constexpr bool fp_inline_supported = true;
+#elif defined(__aarch64__)
+    static bool fp_inline_supported_aarch64() {
+        static const bool enabled = std::getenv("TC_AARCH64_INLINE_FP") != nullptr;
+        return enabled;
+    }
+    static const inline bool fp_inline_supported = fp_inline_supported_aarch64();
 #else
     static constexpr bool fp_inline_supported = false;
 #endif
@@ -2338,15 +2746,19 @@ struct tc_lightning_execution {
 #endif
     }
 
-    void fp_bail_on(jit_node_t *branch) {
+    void fp_bail_on(jit_node_t *branch, tc_fp_guard guard) {
         if (fp_nbail == std::size(fp_bail)) {
             failed = true;
             return;
         }
+        fp_bail_class[fp_nbail] = guard;
         fp_bail[fp_nbail++] = branch;
     }
 
     /// \brief Flushes the pending guard misses into one shared side exit.
+    /// \details Under TC_ONLINE_EXEC_STATS each miss first passes through a
+    /// stub that counts its guard class, since the shared exit alone cannot
+    /// say which guard fired.
     void fp_flush_bails() {
         if (failed || fp_nbail == 0) {
             fp_nbail = 0;
@@ -2354,9 +2766,27 @@ struct tc_lightning_execution {
         }
         jit_state_t *_jit = jit;
         jit_node_t *const done = jit_jmpi();
-        jit_node_t *const island = jit_label();
-        for (unsigned i = 0; i < fp_nbail; ++i) {
-            jit_patch_at(fp_bail[i], island);
+        if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
+            jit_node_t *stub_exit[std::size(fp_bail)];
+            for (unsigned i = 0; i < fp_nbail; ++i) {
+                jit_patch_at(fp_bail[i], jit_label());
+                jit_movi(scratch_registers[1], reinterpret_cast<jit_word_t>(&tc_fp_guard_seen[fp_bail_class[i]]));
+                jit_str(scratch_registers[1], scratch_registers[0]);
+                jit_movi(scratch_registers[0], reinterpret_cast<jit_word_t>(&tc_fp_guard_bails[fp_bail_class[i]]));
+                jit_ldr(scratch_registers[1], scratch_registers[0]);
+                jit_addi(scratch_registers[1], scratch_registers[1], 1);
+                jit_str(scratch_registers[0], scratch_registers[1]);
+                stub_exit[i] = jit_jmpi();
+            }
+            jit_node_t *const island = jit_label();
+            for (unsigned i = 0; i < fp_nbail; ++i) {
+                jit_patch_at(stub_exit[i], island);
+            }
+        } else {
+            jit_node_t *const island = jit_label();
+            for (unsigned i = 0; i < fp_nbail; ++i) {
+                jit_patch_at(fp_bail[i], island);
+            }
         }
         fp_nbail = 0;
         add_exit(jit_jmpi());
@@ -2372,7 +2802,7 @@ struct tc_lightning_execution {
         const jit_gpr_t t0 = scratch_registers[0];
         jit_ldxi(t0, TC_JIT_STATE, shadow_mstatus_offset);
         jit_andi(t0, t0, static_cast<jit_word_t>(MSTATUS_FS_MASK));
-        fp_bail_on(jit_beqi(t0, 0));
+        fp_bail_on(jit_beqi(t0, 0), tc_fp_guard_fs);
     }
 
     /// \brief Guards NX sticky, and frm == RNE when the insn said DYN.
@@ -2386,12 +2816,12 @@ struct tc_lightning_execution {
         jit_ldxi(t0, TC_JIT_STATE, shadow_fcsr_offset);
         if (need_nx) {
             jit_andi(t1, t0, static_cast<jit_word_t>(FFLAGS_NX_MASK));
-            fp_bail_on(jit_beqi(t1, 0));
+            fp_bail_on(jit_beqi(t1, 0), tc_fp_guard_nx);
         }
         if (fp_frm_pending) {
             jit_rshi_u(t1, t0, FCSR_FRM_SHIFT);
             jit_andi(t1, t1, 7);
-            fp_bail_on(jit_bnei(t1, static_cast<jit_word_t>(FRM_RNE)));
+            fp_bail_on(jit_bnei(t1, static_cast<jit_word_t>(FRM_RNE)), tc_fp_guard_frm);
         }
         fp_frm_pending = false;
     }
@@ -2416,12 +2846,13 @@ struct tc_lightning_execution {
             // zero or normal: what the rounded arithmetic proof needs
             jit_node_t *const zero_ok = jit_beqi(t1, 0);
             jit_subi(t1, t1, static_cast<jit_word_t>(min_normal));
-            fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>((exp_mask << mant_size) - min_normal)));
+            fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>((exp_mask << mant_size) - min_normal)),
+                tc_fp_guard_operand);
             jit_patch_at(zero_ok, jit_label());
         } else {
             // not NaN: compares and exact conversions are bit-identical on
             // every other value, infinities and subnormals included
-            fp_bail_on(jit_bgti_u(t1, static_cast<jit_word_t>(exp_mask << mant_size)));
+            fp_bail_on(jit_bgti_u(t1, static_cast<jit_word_t>(exp_mask << mant_size)), tc_fp_guard_nan_operand);
         }
         if (dbl) {
             jit_ldxi_d(fdst, TC_JIT_STATE, off);
@@ -2447,7 +2878,7 @@ struct tc_lightning_execution {
         const jit_gpr_t t1 = scratch_registers[1];
         jit_ldxi(t0, TC_JIT_STATE, shadow_f_offset + freg * sizeof(uint64_t));
         jit_rshi_u(t1, t0, 32);
-        fp_bail_on(jit_bnei(t1, static_cast<jit_word_t>(UINT32_C(0xffffffff))));
+        fp_bail_on(jit_bnei(t1, static_cast<jit_word_t>(UINT32_C(0xffffffff))), tc_fp_guard_boxed);
     }
 
     static void emit_ctx_stage_load(tc_lightning_execution &e, const tc_lightning_node & /*n*/, jit_gpr_t dest,
@@ -2562,8 +2993,8 @@ struct tc_lightning_execution {
         }
         if (!exact) {
             jit_andi(t1, t0, static_cast<jit_word_t>(sign_off));
-            fp_bail_on(jit_blei_u(t1, static_cast<jit_word_t>(min_normal)));
-            fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>(exp_mask << mant_size)));
+            fp_bail_on(jit_blei_u(t1, static_cast<jit_word_t>(min_normal)), tc_fp_guard_result_small);
+            fp_bail_on(jit_bgei_u(t1, static_cast<jit_word_t>(exp_mask << mant_size)), tc_fp_guard_result_big);
         }
         if (!dbl) {
             jit_ori(t0, t0, static_cast<jit_word_t>(UINT64_C(0xffffffff00000000)));
@@ -2720,19 +3151,18 @@ inline tc_lightning_condition tc_lightning_value::operator!=(tc_lightning_value 
         tc_lightning_execution::emit_compare_not_equal};
 }
 inline tc_lightning_condition tc_lightning_value::operator<(tc_lightning_value rhs) const {
-    return signed_value ? tc_lightning_condition{execution, node, rhs.node, tc_lightning_execution::branch_less_signed,
-                              tc_lightning_execution::emit_compare_less_signed} :
-                          tc_lightning_condition{execution, node, rhs.node,
-                              tc_lightning_execution::branch_less_unsigned,
-                              tc_lightning_execution::emit_compare_less_unsigned};
+    return signed_value ?
+        tc_lightning_condition{execution, node, rhs.node, tc_lightning_execution::branch_less_signed,
+            tc_lightning_execution::emit_compare_less_signed} :
+        tc_lightning_condition{execution, node, rhs.node, tc_lightning_execution::branch_less_unsigned,
+            tc_lightning_execution::emit_compare_less_unsigned};
 }
 inline tc_lightning_condition tc_lightning_value::operator>=(tc_lightning_value rhs) const {
-    return signed_value ? tc_lightning_condition{execution, node, rhs.node,
-                              tc_lightning_execution::branch_greater_equal_signed,
-                              tc_lightning_execution::emit_compare_greater_equal_signed} :
-                          tc_lightning_condition{execution, node, rhs.node,
-                              tc_lightning_execution::branch_greater_equal_unsigned,
-                              tc_lightning_execution::emit_compare_greater_equal_unsigned};
+    return signed_value ?
+        tc_lightning_condition{execution, node, rhs.node, tc_lightning_execution::branch_greater_equal_signed,
+            tc_lightning_execution::emit_compare_greater_equal_signed} :
+        tc_lightning_condition{execution, node, rhs.node, tc_lightning_execution::branch_greater_equal_unsigned,
+            tc_lightning_execution::emit_compare_greater_equal_unsigned};
 }
 template <typename T>
     requires std::is_integral_v<T>
@@ -2953,7 +3383,8 @@ static FORCE_INLINE tc_lightning_fvalue<T> operator^(tc_lightning_fvalue<T> v, M
     // The bodies flip operand signs only through the sign mask, which the
     // host FPU negate reproduces exactly
     if (static_cast<uint64_t>(mask) !=
-        (sizeof(T) == 8 ? static_cast<uint64_t>(i_sfloat64::SIGN_MASK) : static_cast<uint64_t>(i_sfloat32::SIGN_MASK))) {
+        (sizeof(T) == 8 ? static_cast<uint64_t>(i_sfloat64::SIGN_MASK) :
+                          static_cast<uint64_t>(i_sfloat32::SIGN_MASK))) {
         v.e->decline();
     }
     v.neg = !v.neg;
@@ -2966,8 +3397,7 @@ static FORCE_INLINE tc_lightning_facc<T> fp_add(tc_lightning_fvalue<T> s1, tc_li
         s1.e->decline();
         return {s1.e};
     }
-    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::add, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0,
-        false);
+    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::add, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0, false);
     return {s1.e};
 }
 template <typename T>
@@ -2977,8 +3407,7 @@ static FORCE_INLINE tc_lightning_facc<T> fp_mul(tc_lightning_fvalue<T> s1, tc_li
         s1.e->decline();
         return {s1.e};
     }
-    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::mul, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0,
-        false);
+    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::mul, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0, false);
     return {s1.e};
 }
 template <typename T>
@@ -2988,8 +3417,7 @@ static FORCE_INLINE tc_lightning_facc<T> fp_div(tc_lightning_fvalue<T> s1, tc_li
         s1.e->decline();
         return {s1.e};
     }
-    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::div, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0,
-        false);
+    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::div, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0, false);
     return {s1.e};
 }
 template <typename T>
@@ -3010,8 +3438,8 @@ static FORCE_INLINE tc_lightning_facc<T> fp_fma(tc_lightning_fvalue<T> s1, tc_li
         s1.e->decline();
         return {s1.e};
     }
-    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::fma, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg,
-        s3.freg, s3.neg);
+    s1.e->fp_emit_op(tc_lightning_execution::fp_kind::fma, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, s3.freg,
+        s3.neg);
     return {s1.e};
 }
 template <typename T>
@@ -3150,8 +3578,7 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
     const void *fn = nullptr;
     bool installed = false;
 #if TC_ONLINE
-    if (const auto *const trace = tc_online_find(c->online, vpc);
-        trace != nullptr &&
+    if (const auto *const trace = tc_online_find(c->online, vpc); trace != nullptr &&
         trace->code_vf_offset == static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(vpc)) [[unlikely]] {
         installed = true;
 #if TC_LIGHTNING
@@ -3241,17 +3668,16 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
     ({                                                                                                                 \
         const execute_status tc_call_status = (expr);                                                                  \
         if (tc_call_status == execute_status::success) {                                                               \
-            [[maybe_unused]] const void *const tc_tfn =                                                               \
-                tc_hook_site<true>(tcc, pc_to_virtual(a, pc), 1);                                                     \
-            if constexpr (TC_LIGHTNING != 0) {                                                                        \
+            [[maybe_unused]] const void *const tc_tfn = tc_hook_site<true>(tcc, pc_to_virtual(a, pc), 1);              \
+            if constexpr (TC_LIGHTNING != 0) {                                                                         \
                 if (tc_tfn != nullptr) {                                                                               \
                     TC_SEG_LOOSEN();                                                                                   \
                     if (TC_TICK_ENDED()) [[unlikely]] {                                                                \
-                        TC_COUNTDOWN_EXPIRED();                                                                         \
+                        TC_COUNTDOWN_EXPIRED();                                                                        \
                     }                                                                                                  \
                     TC_SYNC();                                                                                         \
                     TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(                                 \
-                        const_cast<void *>(tc_tfn))(a, insn TC_HOT_ARGS);                                               \
+                        const_cast<void *>(tc_tfn))(a, insn TC_HOT_ARGS);                                              \
                 }                                                                                                      \
             }                                                                                                          \
             TC_ONLINE_CALL_TRIP_RETURN();                                                                              \
@@ -3316,8 +3742,8 @@ template <typename STATE_ACCESS>
 /// but keeps only the TLB-hit path inline, outlining the walk.
 template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status tc_fetch_translate_pc(const STATE_ACCESS a,
-    i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t vaddr,
-    i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index, tc_context<STATE_ACCESS> *tcc) {
+    i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t vaddr, i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset,
+    uint64_t &pma_index, tc_context<STATE_ACCESS> *tcc) {
     const uint64_t slot_index = tlb_slot_index(vaddr);
     uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
     bool walk = false;
@@ -3640,9 +4066,9 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
     TC_CALLCONV static execute_status tc_handler_##NAME(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS) {           \
         TC_ENTER();                                                                                                    \
         [[maybe_unused]] tc_predecode<STATE_ACCESS> tc_next{};                                                         \
-        [[maybe_unused]] const auto tc_pc_in = pc;                                                                 \
+        [[maybe_unused]] const auto tc_pc_in = pc;                                                                     \
         if constexpr (TC_PRELOAD_ENABLED != 0 && (PRELOAD) != 0) {                                                     \
-            tc_next = tc_predecode_next(a, pc, (LEN), TC_PREDECODE_SAFE(LEN), tcc);                   \
+            tc_next = tc_predecode_next(a, pc, (LEN), TC_PREDECODE_SAFE(LEN), tcc);                                    \
         }                                                                                                              \
         const execute_status status = (EXPR);                                                                          \
         if (status > execute_status::success) [[unlikely]] {                                                           \
@@ -3672,8 +4098,8 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
         if constexpr (TC_JIT_SHELL != 0 && (PRELOAD) == 1) {                                                           \
             /* conditional branch taken backward: a loop back-edge profiling site */                                   \
             if (status == execute_status::success && pc < tc_pc_in) {                                                  \
-                [[maybe_unused]] const void *tc_tfn = tc_hook_site(tcc, pc_to_virtual(a, pc), 2);                     \
-                if constexpr (TC_AOT != 0 || TC_LIGHTNING != 0) {                                                     \
+                [[maybe_unused]] const void *tc_tfn = tc_hook_site(tcc, pc_to_virtual(a, pc), 2);                      \
+                if constexpr (TC_AOT != 0 || TC_LIGHTNING != 0) {                                                      \
                     if (tc_tfn != nullptr) {                                                                           \
                         TC_SEG_LOOSEN();                                                                               \
                         TC_SYNC();                                                                                     \
@@ -3689,17 +4115,15 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
         if constexpr (TC_PAGE_SEGMENT != 0 && TC_PRELOAD_ENABLED == 0 && (PRELOAD) != 0) {                             \
             if (status == execute_status::success && ((PRELOAD) == 2 || pc == tc_pc_in + (LEN))) [[likely]] {          \
                 uint32_t tc_next_insn = 0;                                                                             \
-                a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index,            \
-                    &tc_next_insn);                                                                                    \
+                a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index, &tc_next_insn);              \
                 TC_SYNC();                                                                                             \
                 TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS); \
             }                                                                                                          \
         }                                                                                                              \
-        if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {                                                     \
+        if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {                                                         \
             uint32_t tc_next_insn = 0;                                                                                 \
             TC_SEG_TIGHTEN();                                                                                          \
-            a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index,                \
-                &tc_next_insn);                                                                                        \
+            a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index, &tc_next_insn);                  \
             TC_SYNC();                                                                                                 \
             TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS);     \
         }                                                                                                              \
@@ -3712,7 +4136,8 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
 #if TC_LIGHTNING && TC_ONLINE
 // Tags identify backend capabilities without introducing another opcode or
 // decoder alongside the interpreter's generated jump table.
-#define TC_CASE(NAME, PRELOAD, LEN, EXPR) struct tc_lightning_tag_##NAME {};
+#define TC_CASE(NAME, PRELOAD, LEN, EXPR)                                                                              \
+    struct tc_lightning_tag_##NAME {};
 #include "interpret-tc-cases.inc"
 #undef TC_CASE
 
@@ -3722,7 +4147,7 @@ struct tc_lightning_can_collect : std::false_type {};
 // Integer backend capability declaration.  This is not a decoder: the normal
 // TC case table below remains the only instruction-to-semantics mapping.
 #define TC_LIGHTNING_CAN_COLLECT(NAME)                                                                                 \
-    template <>                                                                                                       \
+    template <>                                                                                                        \
     struct tc_lightning_can_collect<tc_lightning_tag_##NAME> : std::true_type {};
 TC_LIGHTNING_CAN_COLLECT(LUI_rdN)
 TC_LIGHTNING_CAN_COLLECT(AUIPC_rdN)
@@ -3921,15 +4346,15 @@ using tc_lightning_collect_fn = bool (*)(tc_lightning_execution &, uint64_t &, u
 #undef TC_HOOK_CALL
 #define TC_HOOK_CALL(expr) (expr)
 #define TC_CASE(NAME, PRELOAD, LEN, EXPR)                                                                              \
-    template <typename ACCESS = tc_lightning_collecting_state_access>                                                 \
-    static bool tc_lightning_collect_##NAME(tc_lightning_execution &execution, uint64_t &pc, uint32_t insn) {         \
-        if constexpr (!tc_lightning_can_collect<tc_lightning_tag_##NAME>::value) {                                    \
-            return false;                                                                                             \
-        } else {                                                                                                      \
-            const ACCESS a{&execution};                                                                               \
+    template <typename ACCESS = tc_lightning_collecting_state_access>                                                  \
+    static bool tc_lightning_collect_##NAME(tc_lightning_execution &execution, uint64_t &pc, uint32_t insn) {          \
+        if constexpr (!tc_lightning_can_collect<tc_lightning_tag_##NAME>::value) {                                     \
+            return false;                                                                                              \
+        } else {                                                                                                       \
+            const ACCESS a{&execution};                                                                                \
             TC_COLLECT_MCYCLE_STATE();                                                                                 \
-            const execute_status status = (EXPR);                                                                     \
-            return status == execute_status::success && !execution.failed;                                            \
+            const execute_status status = (EXPR);                                                                      \
+            return status == execute_status::success && !execution.failed;                                             \
         }                                                                                                              \
     }
 #include "interpret-tc-cases.inc"
@@ -4067,6 +4492,23 @@ static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uin
                 return stage_helper(tc_fp_helper_FNMADD);
             case 0x4f:
                 return stage_helper(tc_fp_helper_FNMSUB);
+            case 0x73: { // SYSTEM: read-only floating-point CSR access
+                const uint32_t funct3 = (insn >> 12) & 7;
+                const uint32_t csr = insn >> 20;
+                if (funct3 != 2 || insn_get_rs1(insn) != 0 || (csr != 0x001 && csr != 0x002 && csr != 0x003)) {
+                    return false;
+                }
+                e.emit_fs_guard();
+                auto value = e.read_fcsr_word();
+                if (csr == 0x001) { // fflags
+                    value = value & static_cast<uint64_t>(FCSR_FFLAGS_RW_MASK);
+                } else if (csr == 0x002) { // frm
+                    value = (value & static_cast<uint64_t>(FCSR_FRM_RW_MASK)) >> static_cast<uint64_t>(FCSR_FRM_SHIFT);
+                } // fcsr reads back unmasked, exactly as read_csr_fcsr()
+                e.write_x(insn_get_rd(insn), value);
+                pc += 4;
+                return true;
+            }
             default:
                 return false;
         }
@@ -4074,12 +4516,12 @@ static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uin
     const uint32_t q = insn & 3;
     const uint32_t f3 = (insn >> 13) & 7;
     if (q == 0 && f3 == 1) { // c.fld
-        return stage_fld(insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn),
-            insn_get_CL_CS_imm(insn), 2);
+        return stage_fld(insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CL_CS_imm(insn),
+            2);
     }
     if (q == 0 && f3 == 5) { // c.fsd
-        return stage_fsd(insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn),
-            insn_get_CL_CS_imm(insn), 2);
+        return stage_fsd(insn_get_CIW_CL_rd_CS_CA_rs2(insn), insn_get_CL_CS_CA_CB_rs1(insn), insn_get_CL_CS_imm(insn),
+            2);
     }
     if (q == 2 && f3 == 1) { // c.fldsp
         return stage_fld(insn_get_rd(insn), 0x2, insn_get_C_FLDSP_LDSP_imm(insn), 2);
@@ -4090,8 +4532,7 @@ static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uin
     return false;
 }
 
-static bool tc_lightning_collect_range(tc_lightning_execution &execution, uint64_t &pc, uint32_t first,
-    uint32_t last) {
+static bool tc_lightning_collect_range(tc_lightning_execution &execution, uint64_t &pc, uint32_t first, uint32_t last) {
     for (uint32_t i = first; i < last; ++i) {
         execution.current = i;
         execution.reset_expression();
@@ -4269,6 +4710,12 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         }
     }
     auto *const body = jit_label();
+    if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
+        jit_movi(tmp0, reinterpret_cast<jit_word_t>(&trace.executions));
+        jit_ldr(tmp1, tmp0);
+        jit_addi(tmp1, tmp1, 1);
+        jit_str(tmp0, tmp1);
+    }
 
     execution.discovery = false;
     execution.nexits = 0;
@@ -4370,6 +4817,13 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     for (uint16_t i = 0; i < execution.nexits; ++i) {
         auto *const label = jit_label();
         jit_patch_at(execution.exits[i].branch, label);
+        auto &side = trace.side[i];
+        if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
+            jit_movi(tmp0, reinterpret_cast<jit_word_t>(&side.executions));
+            jit_ldr(tmp1, tmp0);
+            jit_addi(tmp1, tmp1, 1);
+            jit_str(tmp0, tmp1);
+        }
         const int64_t pc_delta = static_cast<int64_t>(execution.exits[i].pc - execution.exits[i].base_pc);
         if (pc_delta != 0) {
             jit_addi(TC_JIT_PC, TC_JIT_PC, pc_delta);
@@ -4377,7 +4831,6 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         if (execution.exits[i].pending != 0) {
             jit_subi(TC_JIT_CD, TC_JIT_CD, execution.exits[i].pending);
         }
-        auto &side = trace.side[i];
         jit_movi(tmp2, reinterpret_cast<jit_word_t>(&side.fast_fn));
         jit_ldr(tmp2, tmp2);
         auto *const slow_side = jit_beqi(tmp2, 0);
@@ -4420,10 +4873,10 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         jit_node_t *linked_tlb_miss = nullptr;
         jit_node_t *linked_code_remap = nullptr;
         if ((trace.head >> LOG2_PAGE_SIZE) != (preferred_mapping->head >> LOG2_PAGE_SIZE)) {
-            constexpr jit_word_t hot_tlb_base = offsetof(processor_state, penumbra) +
-                offsetof(penumbra_state, tlb) + TLB_CODE * sizeof(hot_tlb_set);
-            constexpr jit_word_t shadow_tlb_base = offsetof(processor_state, shadow) +
-                offsetof(shadow_state, tlb) + TLB_CODE * sizeof(shadow_tlb_set);
+            constexpr jit_word_t hot_tlb_base =
+                offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_CODE * sizeof(hot_tlb_set);
+            constexpr jit_word_t shadow_tlb_base =
+                offsetof(processor_state, shadow) + offsetof(shadow_state, tlb) + TLB_CODE * sizeof(shadow_tlb_set);
             constexpr jit_word_t fetch_offset =
                 offsetof(processor_state, penumbra) + offsetof(penumbra_state, fetch_vf_offset);
             constexpr jit_word_t context_fetch_page = offsetof(tc_context<state_access>, fetch_vaddr_page);
@@ -4482,8 +4935,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             jit_patch_at(linked_code_remap, linked_tlb_miss_label);
             for (uint32_t guest = 1; guest < 32; ++guest) {
                 if (preferred_mapping->guest_slot[guest] >= 0) {
-                    const auto source =
-                        tc_lightning_execution::guest_registers[preferred_mapping->guest_slot[guest]];
+                    const auto source = tc_lightning_execution::guest_registers[preferred_mapping->guest_slot[guest]];
                     jit_stxi(x_offset + guest * sizeof(uint64_t), TC_JIT_STATE, source);
                 }
             }
@@ -4501,12 +4953,11 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     // with pc still encoded using the caller's deposit.
     auto *const call_entry = jit_indirect();
     tc_jit_establish_frame(_jit);
-    constexpr jit_word_t hot_tlb_base = offsetof(processor_state, penumbra) +
-        offsetof(penumbra_state, tlb) + TLB_CODE * sizeof(hot_tlb_set);
-    constexpr jit_word_t shadow_tlb_base = offsetof(processor_state, shadow) +
-        offsetof(shadow_state, tlb) + TLB_CODE * sizeof(shadow_tlb_set);
-    constexpr jit_word_t fetch_offset =
-        offsetof(processor_state, penumbra) + offsetof(penumbra_state, fetch_vf_offset);
+    constexpr jit_word_t hot_tlb_base =
+        offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_CODE * sizeof(hot_tlb_set);
+    constexpr jit_word_t shadow_tlb_base =
+        offsetof(processor_state, shadow) + offsetof(shadow_state, tlb) + TLB_CODE * sizeof(shadow_tlb_set);
+    constexpr jit_word_t fetch_offset = offsetof(processor_state, penumbra) + offsetof(penumbra_state, fetch_vf_offset);
     constexpr jit_word_t context_fetch_page = offsetof(tc_context<state_access>, fetch_vaddr_page);
     constexpr jit_word_t context_pma_index = offsetof(tc_context<state_access>, fetch_pma_index);
     const uint64_t head_page = tlb_addr_page(trace.head);
@@ -4621,10 +5072,9 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
 /// \brief Leaves a trace at the current pc through the interpreter's fetch tail.
 #define TC_TRACE_EXIT()                                                                                                \
     do {                                                                                                               \
-        if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {                                                     \
+        if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {                                                         \
             uint32_t tc_next_insn = 0;                                                                                 \
-            a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index,                \
-                &tc_next_insn);                                                                                        \
+            a.template read_memory_word<uint32_t, uint16_t>(pc, tcc->fetch_pma_index, &tc_next_insn);                  \
             TC_SYNC();                                                                                                 \
             TC_MUSTTAIL return tc_jumptable<STATE_ACCESS>[insn_get_id(tc_next_insn)](a, tc_next_insn TC_HOT_ARGS);     \
         }                                                                                                              \
@@ -4906,6 +5356,34 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 #endif
 #if TC_ONLINE
     tcc->online = tc_online_get(a.get_penumbra());
+    const char *const reset_mcycle_env = std::getenv("TC_ONLINE_RESET_MCYCLE");
+    const uint64_t tc_online_reset_mcycle =
+        reset_mcycle_env != nullptr ? std::strtoull(reset_mcycle_env, nullptr, 0) : 0;
+    if (reset_mcycle_env != nullptr && mcycle == tc_online_reset_mcycle) {
+        // Experimental phase boundary: discard boot traces, profiling state,
+        // penalties and learned caps before measuring a fixed-mcycle workload.
+        // tc_online_flush destroys every generated-code owner first; the
+        // remaining online state is scalar/fixed storage and may be cleared.
+        tc_online_flush(tcc);
+        std::memset(tcc->online, 0, sizeof(*tcc->online));
+#if TC_LIGHTNING
+        std::memset(tc_fp_guard_bails, 0, sizeof(tc_fp_guard_bails));
+        std::memset(tc_fp_guard_seen, 0, sizeof(tc_fp_guard_seen));
+#endif
+        tc_online_debug("reset", mcycle, 0);
+    }
+    // Periodic experimental progress report: locates a phase change in a long
+    // run that the destruction-time report can only summarize.
+    const char *const stats_every_env = std::getenv("TC_ONLINE_STATS_EVERY");
+    if (stats_every_env != nullptr) [[unlikely]] {
+        const uint64_t every = std::strtoull(stats_every_env, nullptr, 0);
+        static THREAD_LOCAL uint64_t next_report = 0;
+        if (every != 0 && mcycle >= next_report) {
+            next_report = mcycle + every;
+            std::fprintf(stderr, "tc-online: at mcycle %llu\n", static_cast<unsigned long long>(mcycle));
+            tc_online_report(*tcc->online);
+        }
+    }
 #if TC_LIGHTNING
     tcc->online_trip_side = nullptr;
     // Arm the machine's write hook so any mutation of guest RAM bytes
@@ -4926,8 +5404,7 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
         }
 
 #if TC_ONLINE
-        const bool tc_recording_interrupt =
-            tcc->online->recording && get_pending_irq_mask(a) != 0;
+        const bool tc_recording_interrupt = tcc->online->recording && get_pending_irq_mask(a) != 0;
 #endif
         pc = raise_interrupt_if_any(a, pc, tcc->fetch_vaddr_page);
 #if TC_ONLINE
@@ -4952,14 +5429,23 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 if (tcc->online_trip) [[unlikely]] {
                     tcc->online_trip = false;
                     tc_online_debug("trip", tcc->online_trip_pc, tcc->online_trip_weight);
+                    // A requested workload boundary also defers compilation:
+                    // clearing boot traces at the boundary is too late when
+                    // an experimental trace can dominate or stall the boot.
+                    if (mcycle < tc_online_reset_mcycle) {
 #if TC_LIGHTNING
-                    auto *const side = tcc->online_trip_side;
-                    tcc->online_trip_side = nullptr;
-                    if (side != nullptr) {
-                        tc_online_begin_side(tcc, tcc->online_trip_pc, side);
-                    } else
+                        tcc->online_trip_side = nullptr;
 #endif
-                    tc_online_begin(tcc, tcc->online_trip_pc, tcc->online_trip_call);
+                    } else {
+#if TC_LIGHTNING
+                        auto *const side = tcc->online_trip_side;
+                        tcc->online_trip_side = nullptr;
+                        if (side != nullptr) {
+                            tc_online_begin_side(tcc, tcc->online_trip_pc, side);
+                        } else
+#endif
+                            tc_online_begin(tcc, tcc->online_trip_pc, tcc->online_trip_call);
+                    }
                 }
                 if (tcc->online->recording) [[unlikely]] {
                     tc_online_record(tcc, pc_to_virtual(a, pc), insn);

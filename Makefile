@@ -252,7 +252,8 @@ bundle-lightning: $(LIGHTNING_LIB)
 $(LIGHTNING_LIB): $(LIGHTNING_SOURCE_DIR)/configure
 	mkdir -p $(LIGHTNING_DIR)
 	cd $(LIGHTNING_DIR) && $(abspath $(LIGHTNING_SOURCE_DIR))/configure \
-		--disable-shared --enable-static --disable-disassembler CFLAGS="-O2 -fPIC"
+		--disable-shared --enable-static --disable-disassembler \
+		CC=$(CC) CFLAGS="-O2 -fPIC -fno-strict-aliasing"
 	$(MAKE) -C $(LIGHTNING_DIR)
 
 submodules:

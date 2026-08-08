@@ -2321,6 +2321,26 @@ shell cost +66% with tracing idle).
     FP regions past max_len -- without taxing every loop whose body
     outgrows the base cap.
 
+    The filed fix is in, in its simplest form: a cap-bound recording
+    below max_len escalates and abandons exactly as before composition,
+    and composition engages only at max_len, where a loop has no cycle
+    left to lose and the recorder has already spent two cheap extra
+    recordings proving the head straight. No back-edge detection is
+    needed -- the cap policy already encodes the distinction. At
+    prototype scale (one interleaved rep per cell, every run hash-gated)
+    the verdict is clean: nop returns to parent speed (+0.8%), zlib
+    -1.9%, qsort +2.6%, sieve -2.2%, and the composition wins survive
+    delayed engagement -- double keeps -7.2% -- while regs flips from
+    the tip's +69% regression to a -55% win over the parent: its hot
+    loop body genuinely outgrows max_len, so it is exactly the customer
+    composition was built for, and 256-entry regions with continuation
+    chaining beat both the parent's lone straight trace and the tip's
+    64-entry fragments. The nop recorder statistics confirm the
+    mechanism: continuations drop from 133 to 0, links from 580 to 136,
+    and boundary traffic returns to parent levels. Composition at
+    max_len only is strictly better than both predecessors on every
+    cell measured.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

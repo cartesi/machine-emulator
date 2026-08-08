@@ -2949,6 +2949,99 @@ struct tc_lightning_execution {
         }
     }
 
+    enum class fp_cvt_int : uint8_t { w, wu, l, lu };
+
+    /// \brief Emits a guarded float-to-integer truncation and stages the
+    /// result through the context slot as integer IR.
+    /// \details Compiled code encodes these conversions with static RTZ,
+    /// which is exactly the host truncation. The range guards exclude every
+    /// saturating input (NaN fails both range compares), so NV cannot rise,
+    /// and the NX-sticky precondition absorbs the inexact fractions. The
+    /// bounds are exact in both float widths; the unsigned upper bounds
+    /// stop at 2^63 where the signed host truncation ends, so the rare
+    /// larger value bails to the portable helper.
+    tc_lightning_value fp_emit_cvt_x_f(fp_cvt_int kind, bool dbl, uint32_t r1) {
+        if (!discovery && !failed) {
+            jit_state_t *_jit = jit;
+            const jit_gpr_t t0 = scratch_registers[0];
+            fp_guard_fcsr();
+            fp_load_operand(dbl, r1, false, JIT_F0, false);
+            double lo = 0;
+            double hi = 0;
+            switch (kind) {
+                case fp_cvt_int::w:
+                    lo = -2147483648.0;
+                    hi = 2147483648.0;
+                    break;
+                case fp_cvt_int::wu:
+                    hi = 4294967296.0;
+                    break;
+                case fp_cvt_int::l:
+                    lo = -9223372036854775808.0;
+                    hi = 9223372036854775808.0;
+                    break;
+                case fp_cvt_int::lu:
+                    hi = 9223372036854775808.0;
+                    break;
+            }
+            if (dbl) {
+                jit_movi_d(JIT_F1, lo);
+                fp_bail_on(jit_bunltr_d(JIT_F0, JIT_F1), tc_fp_guard_operand);
+                jit_movi_d(JIT_F1, hi);
+                fp_bail_on(jit_bunger_d(JIT_F0, JIT_F1), tc_fp_guard_operand);
+                jit_truncr_d_l(t0, JIT_F0);
+            } else {
+                jit_movi_f(JIT_F1, static_cast<float>(lo));
+                fp_bail_on(jit_bunltr_f(JIT_F0, JIT_F1), tc_fp_guard_operand);
+                jit_movi_f(JIT_F1, static_cast<float>(hi));
+                fp_bail_on(jit_bunger_f(JIT_F0, JIT_F1), tc_fp_guard_operand);
+                jit_truncr_f_l(t0, JIT_F0);
+            }
+            if (kind == fp_cvt_int::w || kind == fp_cvt_int::wu) {
+                jit_extr_i(t0, t0);
+            }
+            jit_stxi(TC_JIT_CTX_DISP(offsetof(tc_context<state_access>, fp_stage)), TC_JIT_CTX_BASE, t0);
+        }
+        return {this, add_node(emit_ctx_stage_load, 0, 0, 0), false, 64};
+    }
+
+    /// \brief Emits an integer-to-float conversion into JIT_F0.
+    /// \details The 32-bit sources into double convert exactly for every
+    /// input: no rounding, no flags, no guards. The rounding cases carry
+    /// the fcsr guard (NX sticky, frm RNE when dynamic); either way the
+    /// result is never subnormal, infinite or NaN, so no result guard
+    /// applies. The unsigned 64-bit source rides the signed host convert;
+    /// a set sign bit bails.
+    void fp_emit_cvt_f_x(fp_cvt_int kind, bool dbl, tc_lightning_value s1) {
+        if (discovery || failed) {
+            return;
+        }
+        jit_state_t *_jit = jit;
+        const jit_gpr_t t0 = scratch_registers[0];
+        if (!(dbl && (kind == fp_cvt_int::w || kind == fp_cvt_int::wu))) {
+            fp_guard_fcsr();
+        }
+        emit_expression(s1.node, t0, 1);
+        switch (kind) {
+            case fp_cvt_int::w:
+                jit_extr_i(t0, t0);
+                break;
+            case fp_cvt_int::wu:
+                jit_extr_ui(t0, t0);
+                break;
+            case fp_cvt_int::l:
+                break;
+            case fp_cvt_int::lu:
+                fp_bail_on(jit_blti(t0, 0), tc_fp_guard_operand);
+                break;
+        }
+        if (dbl) {
+            jit_extr_d(JIT_F0, t0);
+        } else {
+            jit_extr_f(JIT_F0, t0);
+        }
+    }
+
     enum class fp_kind : uint8_t { add, mul, div, sqrt, fma };
 
     /// \brief Emits the operation into JIT_F0 with all pre-guards.
@@ -3391,6 +3484,96 @@ static FORCE_INLINE tc_lightning_facc<uint64_t> fp_cvt_f32_f64(tc_lightning_fval
     }
     s1.e->fp_emit_cvt_f_f(true, s1.freg);
     return {s1.e, true};
+}
+/// \brief Float-to-integer conversion dispatch points: staged only for the
+/// static RTZ encodings compiled code uses, where host truncation is exact.
+/// DYN and the other static modes decline to the portable helper.
+template <typename T>
+static FORCE_INLINE tc_lightning_value fp_cvt_w(tc_lightning_fvalue<T> s1, tc_lightning_rm_value rm,
+    tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || s1.neg || rm.field != FRM_RTZ) {
+        s1.e->decline();
+    }
+    return s1.e->fp_emit_cvt_x_f(tc_lightning_execution::fp_cvt_int::w, sizeof(T) == 8, s1.freg);
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_value fp_cvt_wu(tc_lightning_fvalue<T> s1, tc_lightning_rm_value rm,
+    tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || s1.neg || rm.field != FRM_RTZ) {
+        s1.e->decline();
+    }
+    return s1.e->fp_emit_cvt_x_f(tc_lightning_execution::fp_cvt_int::wu, sizeof(T) == 8, s1.freg);
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_value fp_cvt_l(tc_lightning_fvalue<T> s1, tc_lightning_rm_value rm,
+    tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || s1.neg || rm.field != FRM_RTZ) {
+        s1.e->decline();
+    }
+    return s1.e->fp_emit_cvt_x_f(tc_lightning_execution::fp_cvt_int::l, sizeof(T) == 8, s1.freg);
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_value fp_cvt_lu(tc_lightning_fvalue<T> s1, tc_lightning_rm_value rm,
+    tc_lightning_fflags_value * /*ff*/) {
+    if (!tc_lightning_execution::fp_inline_supported || s1.neg || rm.field != FRM_RTZ) {
+        s1.e->decline();
+    }
+    return s1.e->fp_emit_cvt_x_f(tc_lightning_execution::fp_cvt_int::lu, sizeof(T) == 8, s1.freg);
+}
+/// \brief Integer-to-float conversion dispatch points. The 32-bit sources
+/// into double are exact under every rounding mode, so the mode is
+/// irrelevant and any dynamic-frm guard request is withdrawn. The rounding
+/// cases stage like the rounded arithmetic (RNE resolved, NX sticky). The
+/// facc is marked exact in every case because the result is never a
+/// special encoding, so the strictly-normal result guard has nothing to
+/// prove.
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> fp_cvt_from_w(tc_lightning_value s1, tc_lightning_rm_value rm,
+    tc_lightning_fflags_value * /*ff*/) {
+    tc_lightning_execution *const e = s1.execution;
+    if (!tc_lightning_execution::fp_inline_supported ||
+        (sizeof(T) != 8 && rm.field != FRM_RNE && rm.field != FRM_DYN)) {
+        e->decline();
+    }
+    if (sizeof(T) == 8) {
+        e->fp_frm_pending = false;
+    }
+    e->fp_emit_cvt_f_x(tc_lightning_execution::fp_cvt_int::w, sizeof(T) == 8, s1);
+    return {e, true};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> fp_cvt_from_wu(tc_lightning_value s1, tc_lightning_rm_value rm,
+    tc_lightning_fflags_value * /*ff*/) {
+    tc_lightning_execution *const e = s1.execution;
+    if (!tc_lightning_execution::fp_inline_supported ||
+        (sizeof(T) != 8 && rm.field != FRM_RNE && rm.field != FRM_DYN)) {
+        e->decline();
+    }
+    if (sizeof(T) == 8) {
+        e->fp_frm_pending = false;
+    }
+    e->fp_emit_cvt_f_x(tc_lightning_execution::fp_cvt_int::wu, sizeof(T) == 8, s1);
+    return {e, true};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> fp_cvt_from_l(tc_lightning_value s1, tc_lightning_rm_value rm,
+    tc_lightning_fflags_value * /*ff*/) {
+    tc_lightning_execution *const e = s1.execution;
+    if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN)) {
+        e->decline();
+    }
+    e->fp_emit_cvt_f_x(tc_lightning_execution::fp_cvt_int::l, sizeof(T) == 8, s1);
+    return {e, true};
+}
+template <typename T>
+static FORCE_INLINE tc_lightning_facc<T> fp_cvt_from_lu(tc_lightning_value s1, tc_lightning_rm_value rm,
+    tc_lightning_fflags_value * /*ff*/) {
+    tc_lightning_execution *const e = s1.execution;
+    if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN)) {
+        e->decline();
+    }
+    e->fp_emit_cvt_f_x(tc_lightning_execution::fp_cvt_int::lu, sizeof(T) == 8, s1);
+    return {e, true};
 }
 template <typename T, typename M>
     requires(std::is_integral_v<M> || std::is_enum_v<M>)
@@ -4442,6 +4625,9 @@ TC_FP_ARITH_HELPER(FNMSUB, execute_FNMSUB(a, pc, insn))
 #undef TC_FP_ARITH_HELPER
 
 static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uint32_t insn) {
+    // A declined body may have requested the dynamic-frm guard before
+    // declining; the request must not leak into the next staged instruction.
+    e.fp_frm_pending = false;
     const auto imm_value = [&](int64_t imm) { return e.immediate(static_cast<uint64_t>(imm)); };
     const auto address_of = [&](uint32_t rs1, int64_t imm) { return e.read_x(rs1).wrapping_add(imm_value(imm)); };
     const auto stage_fld = [&](uint32_t rd, uint32_t rs1, int64_t imm, uint32_t len) {

@@ -4113,6 +4113,48 @@ static FORCE_INLINE uint32_t fp_cvt_f64_f32(uint64_t s1, uint32_t rm, uint32_t *
 static FORCE_INLINE uint64_t fp_cvt_f32_f64(uint32_t s1, uint32_t *fflags) {
     return sfloat_cvt_f32_f64(s1, fflags);
 }
+/// \brief Float-to-integer conversion dispatch points, returning the
+/// x-register word (the W forms sign-extend their 32-bit result).
+template <typename T>
+    requires std::is_integral_v<T>
+static FORCE_INLINE uint64_t fp_cvt_w(T s1, uint32_t rm, uint32_t *fflags) {
+    const auto val = i_float_for<T>::type::template cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+    return static_cast<uint64_t>(static_cast<int64_t>(val));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+static FORCE_INLINE uint64_t fp_cvt_wu(T s1, uint32_t rm, uint32_t *fflags) {
+    const auto val = i_float_for<T>::type::template cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+    return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+static FORCE_INLINE uint64_t fp_cvt_l(T s1, uint32_t rm, uint32_t *fflags) {
+    return static_cast<uint64_t>(i_float_for<T>::type::template cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags));
+}
+template <typename T>
+    requires std::is_integral_v<T>
+static FORCE_INLINE uint64_t fp_cvt_lu(T s1, uint32_t rm, uint32_t *fflags) {
+    return i_float_for<T>::type::template cvt_f_i<uint64_t>(s1, static_cast<FRM_modes>(rm), fflags);
+}
+/// \brief Integer-to-float conversion dispatch points; T is the
+/// destination float storage type.
+template <typename T>
+static FORCE_INLINE T fp_cvt_from_w(uint64_t s1, uint32_t rm, uint32_t *fflags) {
+    return i_float_for<T>::type::cvt_i_f(static_cast<int32_t>(s1), static_cast<FRM_modes>(rm), fflags);
+}
+template <typename T>
+static FORCE_INLINE T fp_cvt_from_wu(uint64_t s1, uint32_t rm, uint32_t *fflags) {
+    return i_float_for<T>::type::cvt_i_f(static_cast<uint32_t>(s1), static_cast<FRM_modes>(rm), fflags);
+}
+template <typename T>
+static FORCE_INLINE T fp_cvt_from_l(uint64_t s1, uint32_t rm, uint32_t *fflags) {
+    return i_float_for<T>::type::cvt_i_f(static_cast<int64_t>(s1), static_cast<FRM_modes>(rm), fflags);
+}
+template <typename T>
+static FORCE_INLINE T fp_cvt_from_lu(uint64_t s1, uint32_t rm, uint32_t *fflags) {
+    return i_float_for<T>::type::cvt_i_f(s1, static_cast<FRM_modes>(rm), fflags);
+}
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_ternary_op_rm(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn,
@@ -4699,55 +4741,43 @@ static FORCE_INLINE execute_status execute_FCVT_F_F(const STATE_ACCESS a, i_stat
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_X_F(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
-    if constexpr (requires { a.stage_fp_decline(); }) {
-        // The trace backend does not stage this family yet; decline to
-        // the whole-instruction helper without instantiating the body.
-        return a.stage_fp_decline();
-    } else {
-    const uint64_t fcsr = a.read_fcsr();
+    const auto fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
-    const uint32_t rm = insn_get_rm(insn, fcsr);
+    const auto rm = insn_get_rm(insn, fcsr);
     // If the rounding mode is invalid, the instruction is considered illegal
     if (rm > FRM_RMM) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rd = insn_get_rd(insn);
-    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = fcsr_fflags(fcsr);
     // We must always check if input operands are properly NaN-boxed.
-    T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
-    const uint64_t val = f(s1, rm, &fflags);
+    const auto s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
+    const auto val = f(s1, rm, &fflags);
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
     if (rd == 0) [[unlikely]] {
         return advance_to_next_insn(a, pc);
     }
     a.write_x(rd, val);
     return advance_to_next_insn(a, pc);
-    }
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_F_X(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn, const F &f) {
-    if constexpr (requires { a.stage_fp_decline(); }) {
-        // The trace backend does not stage this family yet; decline to
-        // the whole-instruction helper without instantiating the body.
-        return a.stage_fp_decline();
-    } else {
-    const uint64_t fcsr = a.read_fcsr();
+    const auto fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
-    const uint32_t rm = insn_get_rm(insn, fcsr);
+    const auto rm = insn_get_rm(insn, fcsr);
     // If the rounding mode is invalid, the instruction is considered illegal
     if (rm > FRM_RMM) [[unlikely]] {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rd = insn_get_rd(insn);
-    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
-    const uint64_t s1 = a.read_x(insn_get_rs1(insn));
-    T val = f(s1, rm, &fflags);
+    auto fflags = fcsr_fflags(fcsr);
+    const auto s1 = a.read_x(insn_get_rs1(insn));
+    const auto val = f(s1, rm, &fflags);
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(val));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
     return advance_to_next_insn(a, pc);
-    }
 }
 
 template <typename STATE_ACCESS>
@@ -4864,139 +4894,113 @@ static FORCE_INLINE execute_status execute_FCMP_D(const STATE_ACCESS a, i_state_
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_W_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.w.s");
-    return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        const auto val = i_sfloat32::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
-        // For XLEN > 32, FCVT.W.S sign-extends the 32-bit result.
-        return static_cast<uint64_t>(static_cast<int64_t>(val));
-    });
+    return execute_FCVT_X_F<uint32_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_w(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_WU_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.wu.s");
-    return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        const auto val = i_sfloat32::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
-        // For XLEN > 32, FCVT.WU.S sign-extends the 32-bit result.
-        return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
-    });
+    return execute_FCVT_X_F<uint32_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_wu(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_L_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.l.s");
-    return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        const auto val = i_sfloat32::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
-        return static_cast<uint64_t>(val);
-    });
+    return execute_FCVT_X_F<uint32_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_l(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_LU_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.lu.s");
-    return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        return i_sfloat32::cvt_f_i<uint64_t>(s1, static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_X_F<uint32_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_lu(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_W_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.w.d");
-    return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](auto s1, auto rm, auto *fflags) {
-        const auto val = i_sfloat64::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
-        // For RV64, FCVT.W.D sign-extends the 32-bit result.
-        return static_cast<uint64_t>(static_cast<int64_t>(val));
-    });
+    return execute_FCVT_X_F<uint64_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_w(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_WU_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.wu.d");
-    return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](auto s1, auto rm, auto *fflags) {
-        const auto val = i_sfloat64::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
-        // For RV64, FCVT.WU.D sign-extends the 32-bit result.
-        return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
-    });
+    return execute_FCVT_X_F<uint64_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_wu(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_L_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.l.d");
-    return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](auto s1, auto rm, auto *fflags) {
-        const auto val = i_sfloat64::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
-        return static_cast<uint64_t>(val);
-    });
+    return execute_FCVT_X_F<uint64_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_l(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_LU_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.lu.d");
-    return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](auto s1, auto rm, auto *fflags) {
-        return i_sfloat64::cvt_f_i<uint64_t>(s1, static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_X_F<uint64_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_lu(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_S_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.s.w");
-    return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-        return i_sfloat32::cvt_i_f(static_cast<int32_t>(s1), static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_F_X<uint32_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_from_w<uint32_t>(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_S_WU(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.s.wu");
-    return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-        return i_sfloat32::cvt_i_f(static_cast<uint32_t>(s1), static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_F_X<uint32_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_from_wu<uint32_t>(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_S_L(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.s.l");
-    return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-        return i_sfloat32::cvt_i_f(static_cast<int64_t>(s1), static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_F_X<uint32_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_from_l<uint32_t>(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_S_LU(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.s.lu");
-    return execute_FCVT_F_X<uint32_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint32_t {
-        return i_sfloat32::cvt_i_f(s1, static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_F_X<uint32_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_from_lu<uint32_t>(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_D_W(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.d.w");
-    return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](auto s1, auto rm, auto *fflags) {
-        return i_sfloat64::cvt_i_f(static_cast<int32_t>(s1), static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_F_X<uint64_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_from_w<uint64_t>(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_D_WU(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.d.wu");
-    return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](auto s1, auto rm, auto *fflags) {
-        return i_sfloat64::cvt_i_f(static_cast<uint32_t>(s1), static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_F_X<uint64_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_from_wu<uint64_t>(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_D_L(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.d.l");
-    return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](auto s1, auto rm, auto *fflags) {
-        return i_sfloat64::cvt_i_f(static_cast<int64_t>(s1), static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_F_X<uint64_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_from_l<uint64_t>(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_D_LU(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fcvt.d.lu");
-    return execute_FCVT_F_X<uint64_t>(a, pc, insn, [](auto s1, auto rm, auto *fflags) {
-        return i_sfloat64::cvt_i_f(s1, static_cast<FRM_modes>(rm), fflags);
-    });
+    return execute_FCVT_F_X<uint64_t>(a, pc, insn,
+        [](auto s1, auto rm, auto *fflags) { return fp_cvt_from_lu<uint64_t>(s1, rm, fflags); });
 }
 
 template <typename T, typename STATE_ACCESS>

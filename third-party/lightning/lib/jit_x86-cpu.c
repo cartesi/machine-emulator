@@ -59,8 +59,14 @@
 #  if __X32 || __CYGWIN__ || __X64_32 || _WIN32
 #      define reg8_p(rn)						\
       ((rn) >= _RAX_REGNO && (rn) <= _RBX_REGNO)
+#      define reg8_rex_p(rn)		0
 #  else
 #      define reg8_p(rn)		1
+/* Encoding SPL, BPL, SIL or DIL as a byte register requires a REX
+ * prefix even when no extended register forces one; the same modrm
+ * values without REX name AH, CH, DH and BH instead. */
+#      define reg8_rex_p(rn)						\
+      ((rn) >= _RSP_REGNO && (rn) <= _RDI_REGNO)
 #  endif
 #  define _RAX_REGNO			0
 #  define _RCX_REGNO			1
@@ -1113,7 +1119,7 @@ _testi(jit_state_t *_jit, jit_int32_t r0, jit_word_t i0)
 static void
 _cc(jit_state_t *_jit, jit_int32_t code, jit_int32_t r0)
 {
-    rex(0, 0, _NOREG, _NOREG, r0);
+    rex(reg8_rex_p(r0), 0, _NOREG, _NOREG, r0);
     ic(0x0f);
     ic(0x90 | code);
     mrm(0x03, 0x00, r7(r0));
@@ -3897,14 +3903,14 @@ _str_c(jit_state_t *_jit, jit_int32_t r0, jit_int32_t r1)
 {
     jit_int32_t		reg;
     if (reg8_p(r1)) {
-	rex(0, 0, r1, _NOREG, r0);
+	rex(reg8_rex_p(r1), 0, r1, _NOREG, r0);
 	ic(0x88);
 	rx(r1, 0, r0, _NOREG, _SCL1);
     }
     else {
 	reg = jit_get_reg(jit_class_gpr|jit_class_rg8);
 	movr(rn(reg), r1);
-	rex(0, 0, rn(reg), _NOREG, r0);
+	rex(reg8_rex_p(rn(reg)), 0, rn(reg), _NOREG, r0);
 	ic(0x88);
 	rx(rn(reg), 0, r0, _NOREG, _SCL1);
 	jit_unget_reg(reg);
@@ -3920,14 +3926,14 @@ _sti_c(jit_state_t *_jit, jit_word_t i0, jit_int32_t r0)
     rel = rel < 0 ? rel - 16 : rel + 16;
     if (can_sign_extend_int_p(rel)) {
 	if (reg8_p(r0)) {
-	    rex(0, 0, r0, _NOREG, _NOREG);
+	    rex(reg8_rex_p(r0), 0, r0, _NOREG, _NOREG);
 	    ic(0x88);
 	    rx(r0, i0 - (_jit->pc.w + 5), _NOREG, _NOREG, _SCL8);
 	}
 	else {
 	    reg = jit_get_reg(jit_class_gpr|jit_class_rg8);
 	    movr(rn(reg), r0);
-	    rex(0, 0, rn(reg), _NOREG, _NOREG);
+	    rex(reg8_rex_p(rn(reg)), 0, rn(reg), _NOREG, _NOREG);
 	    ic(0x88);
 	    rx(rn(reg), i0 - (_jit->pc.w + 5), _NOREG, _NOREG, _SCL8);
 	    jit_unget_reg(reg);
@@ -3937,14 +3943,14 @@ _sti_c(jit_state_t *_jit, jit_word_t i0, jit_int32_t r0)
 #endif
     if (address_p(i0)) {
 	if (reg8_p(r0)) {
-	    rex(0, 0, r0, _NOREG, _NOREG);
+	    rex(reg8_rex_p(r0), 0, r0, _NOREG, _NOREG);
 	    ic(0x88);
 	    rx(r0, i0, _NOREG, _NOREG, _SCL1);
 	}
 	else {
 	    reg = jit_get_reg(jit_class_gpr|jit_class_rg8);
 	    movr(rn(reg), r0);
-	    rex(0, 0, rn(reg), _NOREG, _NOREG);
+	    rex(reg8_rex_p(rn(reg)), 0, rn(reg), _NOREG, _NOREG);
 	    ic(0x88);
 	    rx(rn(reg), i0, _NOREG, _NOREG, _SCL1);
 	    jit_unget_reg(reg);
@@ -4079,14 +4085,14 @@ _stxr_c(jit_state_t *_jit, jit_int32_t r0, jit_int32_t r1, jit_int32_t r2)
     jit_unget_reg(reg);
 #else
     if (reg8_p(r2)) {
-	rex(0, 0, r2, r1, r0);
+	rex(reg8_rex_p(r2), 0, r2, r1, r0);
 	ic(0x88);
 	rx(r2, 0, r0, r1, _SCL1);
     }
     else {
 	reg = jit_get_reg(jit_class_gpr|jit_class_rg8);
 	movr(rn(reg), r2);
-	rex(0, 0, rn(reg), r1, r0);
+	rex(reg8_rex_p(rn(reg)), 0, rn(reg), r1, r0);
 	ic(0x88);
 	rx(rn(reg), 0, r0, r1, _SCL1);
 	jit_unget_reg(reg);
@@ -4100,14 +4106,14 @@ _stxi_c(jit_state_t *_jit, jit_word_t i0, jit_int32_t r0, jit_int32_t r1)
     jit_int32_t		reg;
     if (can_sign_extend_int_p(i0)) {
 	if (reg8_p(r1)) {
-	    rex(0, 0, r1, _NOREG, r0);
+	    rex(reg8_rex_p(r1), 0, r1, _NOREG, r0);
 	    ic(0x88);
 	    rx(r1, i0, r0, _NOREG, _SCL1);
 	}
 	else {
 	    reg = jit_get_reg(jit_class_gpr|jit_class_rg8);
 	    movr(rn(reg), r1);
-	    rex(0, 0, rn(reg), _NOREG, r0);
+	    rex(reg8_rex_p(rn(reg)), 0, rn(reg), _NOREG, r0);
 	    ic(0x88);
 	    rx(rn(reg), i0, r0, _NOREG, _SCL1);
 	    jit_unget_reg(reg);

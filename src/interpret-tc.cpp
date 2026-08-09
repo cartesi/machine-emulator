@@ -205,6 +205,8 @@ struct tc_online_state {
         bool side_trace;
         bool continuation;
         uint64_t executions; ///< Generated body entries when TC_ONLINE_EXEC_STATS is enabled
+        uint64_t bails;      ///< Guard exits taken; the entry hook demotes past the limit
+        uint32_t bail_entry; ///< Entry index of the last guard exit
         // Store invalidation: the host pages the recorded bytes live on
         // (page-split fragments touch one page, plus one more when the last
         // instruction's bytes cross), the emitted code range for unpatching
@@ -252,6 +254,11 @@ struct tc_online_state {
     // Entries persist until flush-all: after an invalidation a stale entry
     // costs one cold pool scan that finds nothing, never a wrong answer.
     uint64_t traced_page[set_slots];
+    // Demoted instruction addresses (pc+1 tags): the trap history every
+    // compilation consults to route a persistently bailing instruction to
+    // its whole-instruction helper. The set only grows, so demotion loops
+    // are structurally impossible.
+    uint64_t demoted_pc[set_slots];
     uint64_t ntraced_pages;
 #endif
     uint32_t ntraces;
@@ -267,6 +274,7 @@ struct tc_online_state {
     uint64_t compile_aborted;
     uint64_t verify_aborted;
     uint64_t invalidated;
+    uint64_t demotions;     ///< Instructions routed to their helpers by bail frequency
     uint64_t escalations;   ///< Heads whose cap grew after a cap-bound recording
     uint64_t continuations; ///< Cap-bound regions continued at their successor
     uint64_t flushes;
@@ -570,7 +578,7 @@ register tc_context<state_access> *tcc asm("r15");
 
 #if TC_LIGHTNING
 static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit_state_t **owner,
-    const tc_online_state::trace *preferred_mapping = nullptr);
+    const tc_online_state::trace *preferred_mapping = nullptr, const tc_online_state *online = nullptr);
 #endif
 
 static FORCE_INLINE uint32_t tc_online_pc_slot(uint64_t pc) {
@@ -674,6 +682,46 @@ static FORCE_INLINE bool tc_online_hpage_traced(const tc_online_state *o, uint64
     return false;
 }
 
+#if TC_LIGHTNING
+/// \brief Marks one instruction address as demoted.
+static FORCE_INLINE void tc_online_insert_demoted(tc_online_state *o, uint64_t pc) {
+    const uint64_t tag = pc + 1;
+    uint32_t s = tc_online_hpage_slot(pc);
+    for (uint32_t probe = 0; probe < tc_online_state::set_slots; ++probe) {
+        if (o->demoted_pc[s] == 0 || o->demoted_pc[s] == tag) {
+            o->demoted_pc[s] = tag;
+            return;
+        }
+        s = (s + 1) & (tc_online_state::set_slots - 1);
+    }
+    // A full set is a cold failure mode; dropping the entry only keeps the
+    // instruction on its guarded fast path.
+}
+
+static FORCE_INLINE bool tc_online_demoted(const tc_online_state *o, uint64_t pc) {
+    const uint64_t tag = pc + 1;
+    uint32_t s = tc_online_hpage_slot(pc);
+    while (o->demoted_pc[s] != 0) {
+        if (o->demoted_pc[s] == tag) {
+            return true;
+        }
+        s = (s + 1) & (tc_online_state::set_slots - 1);
+    }
+    return false;
+}
+
+/// \brief Guard exits per trace before its last bailing instruction is
+/// demoted to the whole-instruction helper. TC_BAIL_LIMIT overrides;
+/// zero disables demotion.
+static FORCE_INLINE uint64_t tc_online_bail_limit() {
+    static const uint64_t limit = [] {
+        const char *const env = std::getenv("TC_BAIL_LIMIT");
+        return env == nullptr ? UINT64_C(8) : std::strtoull(env, nullptr, 0);
+    }();
+    return limit;
+}
+#endif
+
 static NO_INLINE void tc_online_debug(const char *what, uint64_t pc, uint64_t extra);
 
 /// \brief Kills one trace whose source bytes changed.
@@ -714,6 +762,18 @@ static void tc_online_kill_trace(tc_online_state *o, tc_online_state::trace &t) 
         }
     }
 }
+
+#if TC_LIGHTNING
+/// \brief Demotes a trace's persistently bailing instruction: the address
+/// joins the demoted set every future compilation consults, and the trace
+/// dies so its head re-records with the instruction routed to its helper.
+static NO_INLINE void tc_online_demote(tc_online_state *o, tc_online_state::trace &t) {
+    tc_online_insert_demoted(o, t.entries[t.bail_entry].vaddr);
+    ++o->demotions;
+    tc_online_debug("demote", t.entries[t.bail_entry].vaddr, t.bail_entry);
+    tc_online_kill_trace(o, t);
+}
+#endif
 
 /// \brief Penumbra write hook: invalidates every live trace whose recorded
 /// bytes fall in a written range.
@@ -1050,7 +1110,7 @@ static void tc_online_report(const tc_online_state &o) {
 #endif
     std::fprintf(stderr,
         "tc-online: installed %llu aborted %llu (short %llu compile %llu verify %llu) invalidated %llu "
-        "escalations %llu continuations %llu flushes %llu links %llu "
+        "demotions %llu escalations %llu continuations %llu flushes %llu links %llu "
         "register-links %llu (moves %llu loads %llu stores %llu) longest-chain %llu "
         "longest-fp-chain %llu (%llu fp) longest-graph-chain %llu longest-fp-graph-chain %llu (%llu fp) "
         "continuation-code %llu/%llu (%llu fp) connected-continuation-code %llu/%llu (%llu fp) "
@@ -1058,7 +1118,7 @@ static void tc_online_report(const tc_online_state &o) {
         static_cast<unsigned long long>(o.installed), static_cast<unsigned long long>(o.aborted),
         static_cast<unsigned long long>(o.short_aborted), static_cast<unsigned long long>(o.compile_aborted),
         static_cast<unsigned long long>(o.verify_aborted), static_cast<unsigned long long>(o.invalidated),
-        static_cast<unsigned long long>(o.escalations), static_cast<unsigned long long>(o.continuations),
+        static_cast<unsigned long long>(o.demotions), static_cast<unsigned long long>(o.escalations), static_cast<unsigned long long>(o.continuations),
         static_cast<unsigned long long>(o.flushes), static_cast<unsigned long long>(o.links),
         static_cast<unsigned long long>(o.register_links), static_cast<unsigned long long>(o.register_moves),
         static_cast<unsigned long long>(o.register_loads), static_cast<unsigned long long>(o.register_stores),
@@ -1383,6 +1443,8 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         t.side_trace = attach_side;
         t.continuation = recording.continuation;
         t.executions = 0;
+        t.bails = 0;
+        t.bail_entry = 0;
         t.dead = false;
         t.code_start = nullptr;
         t.code_size = 0;
@@ -1431,7 +1493,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         const bool contiguous = previous_selected != UINT32_MAX && selected_end[previous_selected] == start;
         const auto *const preferred = npublished == 0 ? (attach_side ? side_predecessor : nullptr) :
                                                         (contiguous ? &o->pool[first_trace + npublished - 1] : nullptr);
-        t.fn = tc_lightning_compile_trace(t, &t.jit, preferred);
+        t.fn = tc_lightning_compile_trace(t, &t.jit, preferred, o);
         if (t.fn == nullptr) {
             ++o->aborted;
             ++o->compile_aborted;
@@ -1466,7 +1528,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
             --t.len;
             t.successor = t.entries[t.len].vaddr;
             t.returns = false;
-            t.fn = tc_lightning_compile_trace(t, &t.jit, preferred);
+            t.fn = tc_lightning_compile_trace(t, &t.jit, preferred, o);
             if (t.fn == nullptr) {
                 for (uint32_t i = 0; i < npublished; ++i) {
                     _jit = o->pool[first_trace + i].jit;
@@ -3124,6 +3186,16 @@ struct tc_lightning_execution {
                 jit_patch_at(fp_bail[i], island);
             }
         }
+        // Bail-frequency accounting on the shared exit: record which entry
+        // bailed and bump the trace's counter; the entry hook demotes the
+        // instruction once the counter passes the limit.
+        jit_movi(scratch_registers[0], reinterpret_cast<jit_word_t>(&trace->bails));
+        jit_ldr(scratch_registers[1], scratch_registers[0]);
+        jit_addi(scratch_registers[1], scratch_registers[1], 1);
+        jit_str(scratch_registers[0], scratch_registers[1]);
+        jit_movi(scratch_registers[0], reinterpret_cast<jit_word_t>(&trace->bail_entry));
+        jit_movi(scratch_registers[1], static_cast<jit_word_t>(current));
+        jit_str_i(scratch_registers[0], scratch_registers[1]);
         fp_nbail = 0;
         add_exit(jit_jmpi());
         jit_patch_at(done, jit_label());
@@ -4154,6 +4226,16 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
         } else {
             fn = trace->fn;
         }
+        // Bail-frequency demotion (LuaJIT's per-exit counters, HotSpot's
+        // per-site limit): a trace whose guard exits pass the limit dies
+        // here, its bailing instruction joins the demoted set, and the head
+        // falls back to hot counting so the re-record compiles the
+        // instruction as its helper.
+        if (const uint64_t limit = tc_online_bail_limit(); limit != 0 && trace->bails >= limit) [[unlikely]] {
+            tc_online_demote(c->online, c->online->pool[trace - c->online->pool]);
+            installed = false;
+            fn = nullptr;
+        }
 #if TC_LIGHTNING_DEBUG
         // Debug switch: refuse to enter traces past a pool index, so a
         // divergence can be bisected without changing what gets recorded.
@@ -5161,7 +5243,7 @@ static bool tc_lightning_discover_trace(tc_lightning_execution &execution) {
 }
 
 static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit_state_t **owner,
-    const tc_online_state::trace *preferred_mapping) {
+    const tc_online_state::trace *preferred_mapping, const tc_online_state *online) {
     if (trace.len == 0) {
         return nullptr;
     }
@@ -5208,6 +5290,15 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         return nullptr;
     }
     tc_lightning_execution execution{_jit, trace};
+    // Demoted instructions route to their whole-instruction helpers: the
+    // per-machine demoted set is the trap history this compilation consults.
+    if (online != nullptr) {
+        for (uint32_t i = 0; i < trace.len; ++i) {
+            if (tc_online_demoted(online, trace.entries[i].vaddr)) {
+                execution.fp_decline_map[i >> 6] |= UINT64_C(1) << (i & 63);
+            }
+        }
+    }
     if (!tc_lightning_discover_trace(execution) || execution.failed) {
         jit_destroy_state();
         return nullptr;

@@ -2548,6 +2548,37 @@ shell cost +66% with tracing idle).
     the shadow page in logarithmic probes. Both belong in the
     permanent toolbox.
 
+17. FILED: BAIL-FREQUENCY DEMOTION, WITH THE WHEEL ALREADY INVENTED.
+    Every mature speculative compiler has shipped the mechanism this
+    backend still needs, and they converge. HotSpot's uncommon traps
+    are the closest shape: per-bytecode-site trap state, a recompile
+    after PerBytecodeTrapLimit=4 failures at one site, and a next
+    compilation that consults the trap history and emits the generic
+    path wherever any trap is recorded, with reprofiling hysteresis
+    between recompiles and a give-up cutoff. SpiderMonkey counts
+    fixable bailouts per compiled script against
+    frequentBailoutThreshold=10, maps each bailout kind to an action,
+    and sets per-cause script flags the next compile consults. V8
+    needs almost no counters because its feedback is monotonic: a
+    deopt resumes before the failed operation, re-execution widens
+    the feedback, and the next compile is generic at that site by
+    construction -- monotonicity is what makes deopt loops
+    structurally impossible. LuaJIT alone never demotes (trace mcode
+    is immutable): hot exits get side traces at hotexit=10, and an
+    exit that also fails side-tracing gets a stub trace linking
+    straight to the interpreter, making the exit permanently cheap
+    instead of the instruction slower. The design that follows for
+    this backend reinvents nothing: a saturating per-exit counter in
+    the side-exit records (LuaJIT's snapshot counter), a single-digit
+    limit (HotSpot's per-site 4), demotion by recompiling the trace
+    with the offending instruction's fp_decline_map bit set (the
+    trap-history-consulted recompile; the map is already the
+    mechanism discovery declines use), and monotonic growth of that
+    map as the loop-prevention (V8's lesson), with the existing
+    penalty and blacklist as the backstop. LuaJIT's stub-trace trick
+    is the filed refinement for a trace that bails at its first
+    staged instruction, where a recompile buys nothing.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

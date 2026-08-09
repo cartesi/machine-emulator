@@ -2548,7 +2548,8 @@ shell cost +66% with tracing idle).
     the shadow page in logarithmic probes. Both belong in the
     permanent toolbox.
 
-17. FILED: BAIL-FREQUENCY DEMOTION, WITH THE WHEEL ALREADY INVENTED.
+17. DONE, GATED: BAIL-FREQUENCY DEMOTION, WITH THE WHEEL ALREADY
+    INVENTED.
     Every mature speculative compiler has shipped the mechanism this
     backend still needs, and they converge. HotSpot's uncommon traps
     are the closest shape: per-bytecode-site trap state, a recompile
@@ -2578,6 +2579,27 @@ shell cost +66% with tracing idle).
     penalty and blacklist as the backstop. LuaJIT's stub-trace trick
     is the filed refinement for a trace that bails at its first
     staged instruction, where a recompile buys nothing.
+
+    Built to that design, with one placement lesson the prior art
+    does not spell out because their exits already run compiler
+    runtime code: the first cut checked the limit at trace entry, and
+    the check -- inlined into every handler site of the chain --
+    priced at +3.1% aggregate, +4.9% on a workload that never bails.
+    Everything now lives on the cold bail path: the shared exit
+    island bumps the trace's counter, records the bailing entry,
+    compares against the baked-in limit (TC_BAIL_LIMIT, default 8,
+    zero disables), and posts a pending demotion that the RTC tick
+    boundary consumes; the demoted address joins the per-machine set,
+    the trace dies through the store-invalidation machinery, and the
+    head's re-record compiles the instruction as its helper. Gated at
+    parity: aggregate +0.2%, every canon workload hash-identical,
+    hash taking two demotions and dropping from 3.1M guard exits per
+    window to 45 (the tick-boundary latency) at -0.7% -- so on this
+    host the bail and the helper cost about the same, and the
+    mechanism's value is the insurance it was built for. The AArch64
+    question it exists to answer -- whether demotion rescues zlib and
+    flips the inline-FP default -- now ships as a tested mechanism
+    with one knob.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

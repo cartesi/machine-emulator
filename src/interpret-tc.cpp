@@ -259,6 +259,11 @@ struct tc_online_state {
     // its whole-instruction helper. The set only grows, so demotion loops
     // are structurally impossible.
     uint64_t demoted_pc[set_slots];
+    // Pool index + 1 of a trace whose guard exits passed the limit, posted
+    // by its cold exit island and consumed at a chunk boundary; zero when
+    // none. Keeping the check off the trace-entry path keeps demotion free
+    // when no guard is missing.
+    uint32_t demote_pending;
     uint64_t ntraced_pages;
 #endif
     uint32_t ntraces;
@@ -2086,6 +2091,7 @@ struct tc_lightning_execution {
 
     jit_state_t *jit{};
     tc_online_state::trace *trace{};
+    const tc_online_state *online{}; ///< For the bail island's demotion posting
     tc_lightning_node nodes[max_nodes]{};
     side_exit exits[max_exits]{};
     int8_t guest_slot[32]{};
@@ -3186,16 +3192,24 @@ struct tc_lightning_execution {
                 jit_patch_at(fp_bail[i], island);
             }
         }
-        // Bail-frequency accounting on the shared exit: record which entry
-        // bailed and bump the trace's counter; the entry hook demotes the
-        // instruction once the counter passes the limit.
-        jit_movi(scratch_registers[0], reinterpret_cast<jit_word_t>(&trace->bails));
-        jit_ldr(scratch_registers[1], scratch_registers[0]);
-        jit_addi(scratch_registers[1], scratch_registers[1], 1);
-        jit_str(scratch_registers[0], scratch_registers[1]);
-        jit_movi(scratch_registers[0], reinterpret_cast<jit_word_t>(&trace->bail_entry));
-        jit_movi(scratch_registers[1], static_cast<jit_word_t>(current));
-        jit_str_i(scratch_registers[0], scratch_registers[1]);
+        // Bail-frequency accounting, entirely on the cold bail path: bump
+        // the trace's counter, record which entry bailed, and past the
+        // limit post the trace for demotion at the next tick boundary. The
+        // trace-entry path pays nothing for the mechanism.
+        if (const uint64_t limit = tc_online_bail_limit(); limit != 0 && online != nullptr) {
+            jit_movi(scratch_registers[0], reinterpret_cast<jit_word_t>(&trace->bails));
+            jit_ldr(scratch_registers[1], scratch_registers[0]);
+            jit_addi(scratch_registers[1], scratch_registers[1], 1);
+            jit_str(scratch_registers[0], scratch_registers[1]);
+            jit_movi(scratch_registers[0], reinterpret_cast<jit_word_t>(&trace->bail_entry));
+            jit_movi(scratch_registers[2], static_cast<jit_word_t>(current));
+            jit_str_i(scratch_registers[0], scratch_registers[2]);
+            jit_node_t *const below = jit_blti_u(scratch_registers[1], static_cast<jit_word_t>(limit));
+            jit_movi(scratch_registers[0], reinterpret_cast<jit_word_t>(&online->demote_pending));
+            jit_movi(scratch_registers[2], static_cast<jit_word_t>(trace - online->pool) + 1);
+            jit_str_i(scratch_registers[0], scratch_registers[2]);
+            jit_patch_at(below, jit_label());
+        }
         fp_nbail = 0;
         add_exit(jit_jmpi());
         jit_patch_at(done, jit_label());
@@ -4225,16 +4239,6 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
             fn = trace->call_fn;
         } else {
             fn = trace->fn;
-        }
-        // Bail-frequency demotion (LuaJIT's per-exit counters, HotSpot's
-        // per-site limit): a trace whose guard exits pass the limit dies
-        // here, its bailing instruction joins the demoted set, and the head
-        // falls back to hot counting so the re-record compiles the
-        // instruction as its helper.
-        if (const uint64_t limit = tc_online_bail_limit(); limit != 0 && trace->bails >= limit) [[unlikely]] {
-            tc_online_demote(c->online, c->online->pool[trace - c->online->pool]);
-            installed = false;
-            fn = nullptr;
         }
 #if TC_LIGHTNING_DEBUG
         // Debug switch: refuse to enter traces past a pool index, so a
@@ -5290,6 +5294,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         return nullptr;
     }
     tc_lightning_execution execution{_jit, trace};
+    execution.online = online;
     // Demoted instructions route to their whole-instruction helpers: the
     // per-machine demoted set is the trap history this compilation consults.
     if (online != nullptr) {
@@ -6089,6 +6094,17 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 
         const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
         tcc->mcycle_tick_end = mcycle_tick_end;
+
+#if TC_LIGHTNING && TC_ONLINE
+        // A cold bail island posted a trace whose guard exits passed the
+        // limit; demote it here at the tick boundary, off every hot path.
+        if (const uint32_t pending = tcc->online->demote_pending; pending != 0) [[unlikely]] {
+            tcc->online->demote_pending = 0;
+            if (pending - 1 < tcc->online->ntraces && !tcc->online->pool[pending - 1].dead) {
+                tc_online_demote(tcc->online, tcc->online->pool[pending - 1]);
+            }
+        }
+#endif
 
         execute_status status = execute_status::success;
         while (mcycle < mcycle_tick_end) {

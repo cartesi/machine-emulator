@@ -1,8 +1,9 @@
 
 ETH_RPC_URL ?= https://ethereum-sepolia-rpc.publicnode.com
-# Pinned so runs are deterministic and forge can cache RPC responses; bump
-# deliberately when the gateway or its routes change.
-FORK_BLOCK ?= 11426600
+# Set to pin the fork block (deterministic runs, cacheable RPC responses).
+# Needs an archive endpoint: public nodes prune historical state within days.
+FORK_BLOCK ?=
+FORK_BLOCK_ARG = $(if $(FORK_BLOCK),--fork-block-number $(FORK_BLOCK))
 CARTESI_SP1_CLI := $(abspath ../rust/target/release/cartesi-sp1-cli)
 GUEST_ELF := $(abspath ../cpp/guest.elf)
 FIXTURES_DIR := $(abspath test/fixtures)
@@ -60,11 +61,11 @@ build: dep
 # so fail with the reason rather than a missing-file error from forge.
 test: dep src/VKeyHash.sol
 	@test -f "$(FIXTURES_DIR)/seal.bin" || { echo "Error: seal fixture not found. It is a real Groth16 proof; regenerate with 'cartesi-sp1-cli prove ... groth16' then 'seal' on a GPU host."; exit 1; }
-	forge test --fork-url $(ETH_RPC_URL) --fork-block-number $(FORK_BLOCK) -vvv
+	forge test --fork-url $(ETH_RPC_URL) $(FORK_BLOCK_ARG) -vvv
 
 coverage: dep src/VKeyHash.sol
 	@test -f "$(FIXTURES_DIR)/seal.bin" || { echo "Error: seal fixture not found."; exit 1; }
-	forge coverage --fork-url $(ETH_RPC_URL) --fork-block-number $(FORK_BLOCK) --no-match-coverage '(test|lib)/'
+	forge coverage --fork-url $(ETH_RPC_URL) $(FORK_BLOCK_ARG) --no-match-coverage '(test|lib)/'
 
 clean:
 	-@forge clean 2>/dev/null || true

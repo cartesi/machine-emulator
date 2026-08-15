@@ -2666,6 +2666,67 @@ shell cost +66% with tracing idle).
     the recoverable floor, which the frontier table now prices
     exactly.
 
+    A first execution-time campaign has since run and sharpened that
+    filing with five more verified failure mechanisms, each caught by
+    counters or event logs rather than timing alone. The design under
+    trial was publish-and-compose by default, a persistent loop mark
+    earned when a connected continuation wraps to its chain head, an
+    escalating cycle chase for marked heads, and a demotion to a
+    permanent web mark when a cyclic trace heats one side exit. The
+    ledger: killing the chain at mark time loses a race, since the
+    web re-forms around the marked head before its chase completes
+    and the chase aborts into the fresh neighbors four entries in,
+    collecting penalties until the blacklist ends it; killing only
+    the head leaves the old chain to price the rest of the loop body,
+    and the chase's continuation declines at the surviving nodes;
+    letting the chase record through installed territory installs its
+    max_len region but still strands the tail; letting its chain
+    conquer installed nodes churns the regions of other workloads;
+    and the single-exit hotcount verdict is wrong in both directions
+    at once -- five of zlib's six trialed cycles never concentrate
+    2048 divergences in one exit and keep losing quietly, while nop's
+    good cycle accumulates them over a 1 Gi window and gets demoted,
+    after which the re-closure ban leaves the head cycle-less for
+    good. A demoted head also re-closes micro-cycles over inner
+    mini-loops (16 and 25 entries, three million entries each) unless
+    re-closure is banned outright. The refined requirements are
+    therefore aggregate divergence accounting per trace across all
+    its exits against a windowed entry count, verdicts that can be
+    revisited rather than terminal marks, and coverage replacement
+    that is atomic against re-formation instead of kill-then-chase.
+    Every experimental patch and its measured verdict is kept under
+    scratch/tracing-experiment.
+
+19. SURVEY: HOW THE PEERS PRICE COVERAGE, SHAPE, AND VERDICTS. The
+    campaign's three refined requirements are not novel; the mature
+    systems each solved them structurally. Layered coverage:
+    DynamoRIO and Pin keep a basic-block cache that always covers hot
+    code and build traces above it, so an early trace exit falls into
+    blocks, not the interpreter, and HotSpot, V8 and JavaScriptCore
+    are the same shape vertically, with deoptimization landing in a
+    tier that never went away. No one kills the base tier to build
+    the optimized artifact, which is exactly the race our
+    kill-then-chase variants kept losing. Profile-selected shape:
+    HHVM runs profiling tracelets first and a separate region
+    selector merges them into compilation regions from observed edge
+    weights, and HotSpot compiles against branch profiles gathered in
+    the cheap tier; the shape decision our record-time predicates
+    could not make is made there from accumulated counts, with the
+    small-unit web itself serving as the profiler. Revisitable
+    verdicts: HotSpot reprofiles between recompiles and cuts off per
+    method, V8 recompiles routinely on widened feedback, and LuaJIT's
+    permanent blacklist is its most criticized weakness; Dynamo adds
+    the coarse phase trigger, flushing the whole fragment cache when
+    trace-formation rate spikes. For branchy loop bodies the field
+    split three ways: LuaJIT grows side-trace trees entered from
+    compiled code, TraceMonkey's trace explosion on such bodies is
+    why Mozilla moved to method compilation, and QEMU and rv8
+    dissolve the choice by making block boundaries nearly free. The
+    synthesis for this backend: the web is the permanent base tier
+    and the profiler, promotions are atomic overlays on the exact
+    head map over a still-living web, and demotion is the reverse
+    map swap, with windowed link and side counters as the evidence.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

@@ -2601,6 +2601,71 @@ shell cost +66% with tracing idle).
     flips the inline-FP default -- now ships as a tested mechanism
     with one knob.
 
+18. DONE IN PART: THE AARCH64 ZLIB REGRESSION, TRACED TO ITS MECHANISM.
+    The suite bisection put the 16.4s -> 21s AArch64 zlib regression on
+    item 12's cycle precedence, and this entry prices what that policy
+    actually traded. Reverting it at the tip does not recover the loss,
+    it deepens it (24.2s): the atomics stage of item 16 had meanwhile
+    made zlib's hot loops recordable end to end (they contain an AMO
+    that used to stop every recording early), and cap-bound publication
+    retained every sub-min_len page fragment as a chain connector. The
+    hot loop bodies weave across a page boundary, so composition
+    published their weave points as two-to-six-entry traces that
+    execute tens of millions of times, each execution paying the trace
+    entry and exit contract for a handful of instructions. Cycle
+    precedence had been masking that pathology by suppressing
+    composition, not fixing it.
+
+    What ships is the unconditional half of the repair: publication now
+    drops sub-min_len page fragments even at a cap bound. On the tip
+    policy it is parity everywhere (six-workload bench and zlib
+    hash-identical, timing within noise), and it removes the landmine
+    under any future composition work. With the precedence policy also
+    reverted it recovers zlib completely -- 15.7s against the tip's
+    21.2s, better than the pre-atomics 16.4s baseline, the atomics
+    stage finally contributing its intended win -- but the revert
+    re-opens exactly the integer-loop regressions precedence fixed, on
+    this host too. The frontier, interleaved and hash-gated:
+
+    | config | zlib | regs | nop | double | qsort |
+    |---|---:|---:|---:|---:|---:|
+    | tip (cycle precedence) | 21.2 | 0.180 | 0.054 | 2.11 | 1.35 |
+    | fragment fix + revert | 15.7 | 0.77 | 0.127 | 2.15 | 1.45 |
+    | pure interpreter, no traces | 25.4 | -- | -- | -- | -- |
+
+    zlib's 15.7 is genuine trace value (9.7s under the no-trace
+    interpreter), carried by continuation-chain webs of base-cap
+    regions: the fast build holds 202 continuation traces with 3911
+    entries where the tip holds 8 with 126. Six mechanisms tried to
+    hold both ends of the frontier and every one failed a measured
+    gate. Chain promotion in both forms (item 12's filed fix) re-lost
+    zlib whole: assembling the observed cycle and killing the chain
+    trades a working web for a cyclic trace that bails mid-iteration.
+    Three record-time shape predicates priced worse than either pure
+    policy -- page-weave detection is too narrow (the decisive
+    recordings are straight prefixes of branchy regions), backward-step
+    detection too broad (calls and returns step backward), and both
+    create granularity mixtures that cost more than uniform anything.
+    A persistent per-head loop mark earned by an observed back edge
+    (LuaJIT's discriminator, applied retroactively) marked only seven
+    heads on zlib and still cost 4.5s: those seven are the hot deflate
+    loops, bodies of 76-162 instructions, and their closed cycles lose
+    to the web they replaced even though nop's equally short loop wins
+    as a cycle. Identical record-time evidence, opposite optima: the
+    choice between a cycle, a max_len chain, and a base-cap web is
+    decided by the body's side-exit behavior at execution time, which
+    no recording-moment signal predicts.
+
+    The filed follow-up is therefore execution-time trace
+    profitability, on item 17's counters: a trace whose executions
+    mostly exit early is a bad commitment whatever its shape, and the
+    bail accounting that already demotes instructions is the natural
+    place to demote a trace back to the interpreter or a head from
+    cycle to web. Until that lands, cycle precedence stays: it wins
+    four of the five sensitive workloads and holds zlib at +28% over
+    the recoverable floor, which the frontier table now prices
+    exactly.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

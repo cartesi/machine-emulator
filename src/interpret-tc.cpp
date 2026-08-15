@@ -1314,14 +1314,16 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
     uint32_t selected_end[tc_online_state::max_fragments]{};
     uint32_t nselected = 0;
     [[maybe_unused]] bool dropped_fragment = false;
-    const bool cap_bound = cycle < 0 && !closed && recording.len == recording.cap;
     for (uint32_t fragment = 0; fragment < nfragments; ++fragment) {
         const uint32_t start = fragment_start[fragment];
         const uint32_t end = fragment + 1 < nfragments ? fragment_start[fragment + 1] : recording.len;
-        // A short page fragment is normally not profitable as an independent
-        // trace. At a length cap it may be the only connector between two
-        // bounded regions, so retain it as part of this continuation chain.
-        if (end - start < tc_online_state::min_len && !cap_bound) {
+        // A short page fragment never pays for its own entry and exit
+        // contract, not even as the connector between two cap-bound regions
+        // of a continuation chain. A loop body that weaves across a page
+        // boundary otherwise publishes its weave points as two-to-six-entry
+        // traces whose boundary traffic dwarfs the work they carry; the
+        // chain breaks here instead and execution bridges the gap.
+        if (end - start < tc_online_state::min_len) {
             dropped_fragment = true;
             continue;
         }

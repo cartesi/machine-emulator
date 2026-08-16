@@ -2842,7 +2842,10 @@ shell cost +66% with tracing idle).
     TC_HOT_PARAMS branch kept the untyped uint64_t pc while the outer
     loop and the case bodies moved to the typed fast pc -- so the
     middle column is tailcall with TC_PAGE_SEGMENT=1, the exact
-    interpreter shape the x86-64 jit sits on. Medians:
+    interpreter shape the x86-64 jit sits on. The raw per-run lines
+    are committed as bench-harness/results-amd64-balanced-3way.txt,
+    since the interim host's scratch area does not outlive its
+    session. Medians:
 
     | workload | stock | tail-call | jit | jit vs stock |
     |---|---:|---:|---:|---:|

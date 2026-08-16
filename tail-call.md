@@ -3042,10 +3042,34 @@ shell cost +66% with tracing idle).
     rcx/rdx used 39 and 38 times as guests in the body. int64's
     roster takes x2 and x10-x16 and its body traffic stays flat;
     its -3.0% arrived with ranking alone and held. Both changes
-    shipped; the register-pressure ladder's remaining rung is r14
-    parked through bodies, and the refinement above plain counts,
-    if it is ever needed, is LuaJIT's weighting -- loop-body uses
-    priced above prelude uses, PHI-carried values above both.
+    shipped.
+
+    The two follow-ups were then built and measured, and both came
+    back flat, which closes the ladder on this host. LuaJIT-style
+    weighting (loop-body uses priced 8x over prelude uses) was a
+    wash at -0.3% aggregate with large split swings -- tree -4.4%
+    and branch -2.3% against int64 +5.8% and qsort +3.9%, the
+    prelude-hot guests of exactly the workloads rcx/rdx serve being
+    pushed off their slots -- so plain counts stand. And r14 parked
+    through bodies (TC_PARK_PC, env-gated): pc is boundary-only in
+    traces, so entries park it in a context staging slot, r14
+    joins the pool as ranked slot 9, boundaries restore the
+    contract with one load plus a compile-time delta from the
+    head, and register-linked seams stay parked, bumping the
+    staging slot in memory for the successor's parked entry to
+    inherit. Correct on the first build -- all thirteen gates
+    green -- and +0.1% aggregate on the same-build A/B, split just
+    as wide: tree -3.8% and memcpy -2.1% against sieve +4.3%, zlib
+    +4.0%, int64 +3.4%. Not an idle mechanism either way: 154 of
+    zlib's 380 traces and 177 of tree's 400 occupy the ninth slot.
+    The fixed accounting -- one park store per entry, one restore
+    per slow leave, three memory ops per parked seam -- simply
+    cancels the marginal value of a register that by construction
+    carries the ninth-hottest guest. The ladder's yield curve is
+    now measured end to end: -2.5% for ranking the six slots it
+    started with, -0.8% for slots 7-8, +0.1% for slot 9. The
+    machinery stays env-gated and off by default; the register
+    budget on this host is spent.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

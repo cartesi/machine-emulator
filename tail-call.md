@@ -2797,9 +2797,12 @@ shell cost +66% with tracing idle).
     arrays, integer ALU, blocked FP arrays), the guest image's
     trimmed stress-ng permitting no more. Fixed-work protocol,
     1 Gi window after a 256 Mi boot, three interleaved reps, every
-    workload root-hash-identical across all three builds
-    (bench-balanced.lua and bench-balanced-3way.txt in the scratch
-    area). Medians:
+    workload root-hash-identical across all three builds. The
+    balanced set is bench-harness/bench.lua's default table, and
+    bench-harness/compare.sh runs the whole comparison -- variants
+    interleaved innermost, per-workload root-hash gate across every
+    run -- from installed prefixes; the raw table of this run is
+    bench-balanced-3way.txt in the scratch area. Medians:
 
     | workload | stock | tail-call | jit | jit vs stock |
     |---|---:|---:|---:|---:|

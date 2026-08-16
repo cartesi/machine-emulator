@@ -2803,15 +2803,32 @@ shell cost +66% with tracing idle).
     interleaved reps, all hash-gated: aggregate +1.3% against the
     dynamic mapping, with regs +6.1%, sieve +5.1%, memcpy +4.6%,
     qsort +3.5%, tree itself +2.2%, and only int64 (-4.7%) winning.
-    The diagnosis is the register budget, not the idea: rv8 pins
-    twelve guest registers and spills nineteen; this backend's
-    four-slot args contract and emitter scratch leave five, and at
-    five the dynamic per-trace pick -- each trace's own hottest five
-    -- beats any global five by more than the freed boundaries
-    return. The experiment stays in the tree as the opt-in knob; the
-    successor to the successor is a bigger pinned budget (the 8d
-    ledger question: reclaiming rcx/rdx from lightning), at which
-    point the global mapping deserves its re-run.
+    The diagnosis is measured, not inferred (no PMU in this
+    container, so the instrument is disassembly of the hottest trace
+    under both regimes, over identical trace populations -- same
+    heads, lengths and execution counts both ways). regs's hottest
+    trace (256 entries, 2.6M entries executed) grows from 1627 to
+    1710 instructions (+5.1%) and from 319 to 370 shadow x-file
+    accesses (+16%) under the static mapping, and the offset
+    histogram names the cause: the added accesses sit at x18 and x19
+    -- the s-registers the regs stressor lives in, which the dynamic
+    pick had kept in host registers and the ABI-frequency five (a5,
+    a0, a4, a1, ra) does not cover. That single trace touches eleven
+    distinct guest registers heavily; no global five covers it.
+    int64's hottest trace moves the other way, 590 to 576
+    instructions and 88 to 75 shadow accesses: its loop works in
+    exactly the a-registers the global set holds, so its body
+    shrank and its boundaries freed -- the -4.7% win is the shape
+    rv8 promises, delivered only where the working set fits the
+    pinned set. So the register budget is the binding constraint
+    with names attached: rv8 pins twelve and spills nineteen; this
+    backend's four-slot args contract and emitter scratch leave
+    five, and at five the dynamic per-trace pick beats any global
+    five by more than the freed boundaries return. The experiment
+    stays in the tree as the opt-in knob; the successor to the
+    successor is a bigger pinned budget (the 8d ledger question:
+    reclaiming rcx/rdx from lightning), at which point the global
+    mapping deserves its re-run.
 
     The campaign closed with a balanced validation against the real
     baselines rather than the intra-JIT control: a 13-workload set

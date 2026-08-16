@@ -2960,15 +2960,19 @@ shell cost +66% with tracing idle).
     slot assignment hands the new registers to whichever guests
     appear first -- not the hottest -- while every trace pays two
     more roster stores at every exit site. The parking machinery
-    (guests in lightning's fixed-operand registers saved to their
-    shadow homes around variable shifts, divisions and high
-    multiplies, with shift destinations routed off rcx to dodge
-    lightning's ledger-blind temp grab) is correct, gated, and kept
-    dormant in the tree. The refinement that re-arms the slots is
-    slot assignment ranked by discovery-time use count, so extra
-    registers go to hot guests and lukewarm ones spill -- at which
-    point slots 7-8, and the r14 parking rung above them, deserve
-    the re-measure.
+    written for the first cut turned out to re-implement what
+    lightning already does: its fixed-operand emitters consult
+    per-node liveness (jit_reg_free_p over the reglive set its
+    optimizer computes) and preserve an occupied rcx or rdx into a
+    temp themselves, with jit_live at indirect-jump seams -- which
+    the backend already emits -- as the client's whole obligation.
+    Gates with the slots enabled and no hand parking confirm it,
+    int64's shift-division-multiply mix included, so the parking is
+    removed rather than dormant. The refinement that re-arms the
+    slots is therefore allocation policy alone: slot assignment
+    ranked by discovery-time use count, so extra registers go to hot
+    guests and lukewarm ones spill -- at which point slots 7-8, and
+    the r14 parking rung above them, deserve the re-measure.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

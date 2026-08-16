@@ -2788,6 +2788,50 @@ shell cost +66% with tracing idle).
     at the price of regs, and the tip policy remains the shipping
     compromise.
 
+    The campaign closed with a balanced validation against the real
+    baselines rather than the intra-JIT control: a 13-workload set
+    chosen from the stress-ng sources to span dispatch floor,
+    register pressure, branch misprediction, pointer chasing,
+    callback sorting, memory streaming, compression, hash batteries,
+    the kernel boundary, and four cpu methods (scalar FP, bit
+    arrays, integer ALU, blocked FP arrays), the guest image's
+    trimmed stress-ng permitting no more. Fixed-work protocol,
+    1 Gi window after a 256 Mi boot, three interleaved reps, every
+    workload root-hash-identical across all three builds
+    (bench-balanced.lua and bench-balanced-3way.txt in the scratch
+    area). Medians:
+
+    | workload | stock | tail-call | jit | jit vs stock |
+    |---|---:|---:|---:|---:|
+    | nop | 0.730 | 0.532 | 0.055 | -92% |
+    | memcpy | 1.532 | 1.160 | 0.336 | -78% |
+    | hash | 1.731 | 1.460 | 0.755 | -56% |
+    | sieve | 1.672 | 1.468 | 0.846 | -49% |
+    | int64 | 1.957 | 1.217 | 0.992 | -49% |
+    | qsort | 1.825 | 1.599 | 1.085 | -41% |
+    | zlib | 1.898 | 2.030 | 1.146 | -40% |
+    | syscall | 1.969 | 1.648 | 1.462 | -26% |
+    | branch | 1.633 | 1.270 | 1.297 | -21% |
+    | regs | 0.865 | 0.878 | 0.700 | -19% |
+    | double | 2.131 | 2.160 | 2.188 | +2.6% |
+    | matrixprod | 1.631 | 1.601 | 1.647 | +1% |
+    | tree | 2.730 | 2.618 | 2.922 | +7% |
+    | aggregate | 22.31 | 19.64 | 15.43 | -31% |
+
+    The baselines reframe the campaign. The jit wins ten of the
+    thirteen workloads and takes 31% off the stock aggregate; the
+    losses are pointer chasing (tree, +7%), where traces add
+    overhead without value, and dense FP at one to three percent.
+    zlib, the subject of the whole investigation, is a 40% win over
+    stock under fixed work, and the tail-call loop alone loses zlib
+    to stock before the jit recovers it, the section 6 predictor
+    story measured once more. The regs regression that drove a dozen
+    increments was always relative to the cycle-precedence jit
+    policy; against non-jit execution the same build wins regs by
+    19%. The intra-jit frontier stands as documented, and the
+    coverage-economy successor remains the path to holding both of
+    its ends.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

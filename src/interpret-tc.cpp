@@ -319,7 +319,8 @@ struct tc_context {
     bool online_trip_call;
 #if TC_LIGHTNING
     tc_online_state::side_link *online_trip_side;
-    uint64_t fp_stage; ///< Result staging slot for inline FP guard checks
+    uint64_t fp_stage;  ///< Result staging slot for inline FP guard checks
+    uint64_t parked_pc; ///< Fast pc parked at trace entry while r14 carries guest slot 9 (TC_PARK_PC)
 #endif
     bool online_trip;
 #endif
@@ -2124,11 +2125,30 @@ struct tc_lightning_execution {
     // and preserve occupied fixed-operand registers around its shifts,
     // divisions and high multiplies themselves, verified by gates with
     // the slots enabled and no hand parking.
+    // r14 (pc) is guest slot 9, behind TC_PARK_PC: pc is boundary-only in
+    // traces -- bodies fold it to compile-time constants -- so entries park
+    // it in the context (parked_pc) and boundaries restore it with a
+    // compile-time delta, while register-linked seams keep it parked and
+    // bump the staging slot in memory instead.
     static constexpr jit_gpr_t guest_registers[] = {JIT_V0, static_cast<jit_gpr_t>(_RDI), static_cast<jit_gpr_t>(_RSI),
         static_cast<jit_gpr_t>(_R8), static_cast<jit_gpr_t>(_R9), static_cast<jit_gpr_t>(_R13),
-        static_cast<jit_gpr_t>(_RCX), static_cast<jit_gpr_t>(_RDX)};
+        static_cast<jit_gpr_t>(_RCX), static_cast<jit_gpr_t>(_RDX), TC_JIT_PC};
     static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_R1, JIT_R2};
+    static constexpr bool park_pc_supported = true;
 #endif
+#if defined(__aarch64__) || TC_GLOBAL_REGS
+    static constexpr bool park_pc_supported = false;
+#endif
+    /// \brief Whether pc parks in the context so r14 can carry guest slot 9.
+    static bool park_pc() {
+        static const bool enabled = park_pc_supported && std::getenv("TC_PARK_PC") != nullptr;
+        return enabled;
+    }
+    /// \brief Register slots the current configuration may assign to guests.
+    static uint8_t usable_slots() {
+        const auto all = static_cast<uint8_t>(std::size(guest_registers));
+        return park_pc_supported && !park_pc() ? all - 1 : all;
+    }
     /// \brief Guest slot value for a register the mapping could not fit.
     /// \details Such guests stay in the shadow state and are read and written
     /// in place, so a trace touching more live registers than the host has to
@@ -2167,10 +2187,11 @@ struct tc_lightning_execution {
         // set, so entries, exits, flushes and linked boundaries all agree
         // where each guest lives without negotiation.
         if (const auto &sr = tc_static_regs(); sr.enabled) {
-            for (uint8_t i = 0; i < sr.count; ++i) {
+            const uint8_t count = sr.count < usable_slots() ? sr.count : usable_slots();
+            for (uint8_t i = 0; i < count; ++i) {
                 guest_slot[sr.guest[i]] = static_cast<int8_t>(i);
             }
-            nguests = sr.count;
+            nguests = count;
         }
     }
 
@@ -2324,6 +2345,10 @@ struct tc_lightning_execution {
     int8_t map_guest(uint32_t guest) {
         // Every discovery-pass call is one staged read or write of the
         // guest: the counts rank the slot assignment before emission.
+        // Plain counts, deliberately: weighting loop-body uses 8x over
+        // prelude uses (LuaJIT's pricing) measured a wash (-0.3%
+        // aggregate) with large split swings -- int64 +5.8% and qsort
+        // +3.9% against tree -4.4% -- so the simpler policy stands.
         if (discovery) {
             ++guest_uses[guest];
         }
@@ -2335,7 +2360,7 @@ struct tc_lightning_execution {
                     return 0;
                 }
                 guest_slot[guest] = memory_slot;
-            } else if (nguests < std::size(guest_registers)) {
+            } else if (nguests < usable_slots()) {
                 guest_slot[guest] = static_cast<int8_t>(nguests++);
             } else if (memory_guests_enabled()) {
                 guest_slot[guest] = memory_slot;
@@ -5412,7 +5437,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             }
             order[j] = g;
         }
-        constexpr auto nregs = static_cast<uint8_t>(std::size(tc_lightning_execution::guest_registers));
+        const uint8_t nregs = tc_lightning_execution::usable_slots();
         for (uint8_t i = 0; i < norder; ++i) {
             execution.guest_slot[order[i]] =
                 i < nregs ? static_cast<int8_t>(i) : tc_lightning_execution::memory_slot;
@@ -5421,6 +5446,9 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     }
     if (preferred_mapping != nullptr) {
         bool used[std::size(tc_lightning_execution::guest_registers)]{};
+        for (uint8_t i = tc_lightning_execution::usable_slots(); i < std::size(used); ++i) {
+            used[i] = true; // slots beyond the configured budget are never handed out
+        }
         int8_t inherited[32];
         for (auto &slot : inherited) {
             slot = -1;
@@ -5486,6 +5514,17 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     auto *const normal_entry_established = jit_label();
     auto *const entry_bail = jit_blei(TC_JIT_CD, static_cast<jit_word_t>(trace.len));
 
+    // Parked pc (TC_PARK_PC): bodies fold pc to compile-time constants, so
+    // it lives in the context between boundaries and r14 carries guest slot
+    // 9. Boundaries restore it with a compile-time delta from the trace
+    // head; register-linked seams keep it parked and bump the staging slot
+    // in memory, which the successor's parked entry inherits.
+    const bool park = tc_lightning_execution::park_pc();
+    const jit_word_t parked_pc_offset = TC_JIT_CTX_DISP(offsetof(tc_context<state_access>, parked_pc));
+    if (park) {
+        jit_stxi(parked_pc_offset, TC_JIT_CTX_BASE, TC_JIT_PC);
+    }
+
     constexpr jit_word_t x_offset =
         offsetof(processor_state, shadow) + offsetof(shadow_state, registers) + offsetof(registers_state, x);
     for (uint32_t guest = 1; guest < 32; ++guest) {
@@ -5510,12 +5549,16 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         jit_destroy_state();
         return nullptr;
     }
+    int64_t prelude_delta = 0;
     if (loop_first != 0) {
         jit_subi(TC_JIT_CD, TC_JIT_CD, static_cast<jit_word_t>(loop_first));
         if (trace.cycle >= 0) {
-            const int64_t loop_delta = static_cast<int64_t>(collected_pc - trace.head);
-            if (loop_delta != 0) {
-                jit_addi(TC_JIT_PC, TC_JIT_PC, loop_delta);
+            prelude_delta = static_cast<int64_t>(collected_pc - trace.head);
+            // Parked, the join leaves pc alone: the staging slot keeps the
+            // entry value and every boundary folds its whole delta from the
+            // trace head instead.
+            if (!park && prelude_delta != 0) {
+                jit_addi(TC_JIT_PC, TC_JIT_PC, prelude_delta);
             }
         }
     }
@@ -5535,7 +5578,15 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         jit_patch_at(iterate, loop);
     } else {
         const int64_t exit_delta = static_cast<int64_t>(collected_pc - trace.head);
-        if (exit_delta != 0) {
+        if (park) {
+            // The fast link below crosses the seam parked: bump the staging
+            // slot so the successor's parked entry inherits the right pc.
+            if (exit_delta != 0) {
+                jit_ldxi(tmp0, TC_JIT_CTX_BASE, parked_pc_offset);
+                jit_addi(tmp0, tmp0, exit_delta);
+                jit_stxi(parked_pc_offset, TC_JIT_CTX_BASE, tmp0);
+            }
+        } else if (exit_delta != 0) {
             jit_addi(TC_JIT_PC, TC_JIT_PC, exit_delta);
         }
     }
@@ -5596,6 +5647,16 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         jit_patch_at(slow_link, slow_link_label);
     }
     emit_flush();
+    if (park) {
+        // Slow leaves need the pc contract in r14: for a straight trace the
+        // staging slot was already bumped to the successor, for a cyclic
+        // one it still holds the entry value and the loop base is a
+        // compile-time delta away.
+        jit_ldxi(TC_JIT_PC, TC_JIT_CTX_BASE, parked_pc_offset);
+        if (trace.cycle >= 0 && prelude_delta != 0) {
+            jit_addi(TC_JIT_PC, TC_JIT_PC, prelude_delta);
+        }
+    }
     emit_link_or_continue();
 
     trace.nside = execution.nexits;
@@ -5609,9 +5670,21 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             jit_addi(tmp1, tmp1, 1);
             jit_str(tmp0, tmp1);
         }
-        const int64_t pc_delta = static_cast<int64_t>(execution.exits[i].pc - execution.exits[i].base_pc);
-        if (pc_delta != 0) {
-            jit_addi(TC_JIT_PC, TC_JIT_PC, pc_delta);
+        if (park) {
+            // Parked, the staging slot holds the entry value, so the exit's
+            // whole delta folds from the trace head; the fast link below
+            // crosses the seam parked.
+            const int64_t full_delta = static_cast<int64_t>(execution.exits[i].pc - trace.head);
+            if (full_delta != 0) {
+                jit_ldxi(tmp0, TC_JIT_CTX_BASE, parked_pc_offset);
+                jit_addi(tmp0, tmp0, full_delta);
+                jit_stxi(parked_pc_offset, TC_JIT_CTX_BASE, tmp0);
+            }
+        } else {
+            const int64_t pc_delta = static_cast<int64_t>(execution.exits[i].pc - execution.exits[i].base_pc);
+            if (pc_delta != 0) {
+                jit_addi(TC_JIT_PC, TC_JIT_PC, pc_delta);
+            }
         }
         if (execution.exits[i].pending != 0) {
             jit_subi(TC_JIT_CD, TC_JIT_CD, execution.exits[i].pending);
@@ -5623,6 +5696,9 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         auto *const slow_side_label = jit_label();
         jit_patch_at(slow_side, slow_side_label);
         emit_flush();
+        if (park) {
+            jit_ldxi(TC_JIT_PC, TC_JIT_CTX_BASE, parked_pc_offset); // slow leaves need the pc contract
+        }
         jit_movi(tmp2, reinterpret_cast<jit_word_t>(&side.fn));
         jit_ldr(tmp2, tmp2);
         auto *const unlinked = jit_beqi(tmp2, 0);
@@ -5683,7 +5759,14 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             jit_ldxi(tmp0, TC_JIT_STATE, hot_slot + offsetof(hot_tlb_slot, vh_offset));
             linked_code_remap = jit_bnei(tmp0, static_cast<jit_word_t>(trace.code_vf_offset));
             jit_movi(tmp1, static_cast<jit_word_t>(trace.head));
-            jit_addr(TC_JIT_PC, tmp1, tmp0);
+            if (park) {
+                // Parked entry: the fresh deposit lands in the staging slot,
+                // r14 keeps carrying the predecessor's guest.
+                jit_addr(tmp1, tmp1, tmp0);
+                jit_stxi(parked_pc_offset, TC_JIT_CTX_BASE, tmp1);
+            } else {
+                jit_addr(TC_JIT_PC, tmp1, tmp0);
+            }
             jit_movi(tmp1, static_cast<jit_word_t>(successor_page));
 #if TC_GLOBAL_REGS
             jit_addr(TC_JIT_FETCH, tmp1, tmp0);
@@ -5731,11 +5814,20 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
                     jit_stxi(x_offset + guest * sizeof(uint64_t), TC_JIT_STATE, source);
                 }
             }
+            if (park) {
+                // The predecessor's bump left the staging slot holding this
+                // head encoded with the caller's deposit, exactly the value
+                // the unparked contract would have carried in r14.
+                jit_ldxi(TC_JIT_PC, TC_JIT_CTX_BASE, parked_pc_offset);
+            }
             emit_continue();
         }
         auto *const linked_bail_label = jit_label();
         jit_patch_at(linked_bail, linked_bail_label);
         emit_flush();
+        if (park) {
+            jit_ldxi(TC_JIT_PC, TC_JIT_CTX_BASE, parked_pc_offset); // slow leaves need the pc contract
+        }
         emit_continue();
     }
     // Calls may arrive from another code page. Validate that the hot code-TLB

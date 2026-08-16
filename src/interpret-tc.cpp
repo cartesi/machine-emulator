@@ -2093,6 +2093,9 @@ struct tc_lightning_execution {
     // x9-x15 and x19/x21/x22/x26 are free once the pinned contract is honored
     static constexpr jit_gpr_t guest_registers[] = {JIT_R1, JIT_R2, JIT_R3, JIT_R4, JIT_R5, JIT_R6, JIT_V0, JIT_V2};
     static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_V3, JIT_V7};
+    static constexpr bool fixed_operand_slots = false;
+    static constexpr int8_t rcx_slot = -3;
+    static constexpr int8_t rdx_slot = -3;
 #elif TC_GLOBAL_REGS
     // rax/r10/r11 are the emitter's scratch, r14 (reserved, see
     // TC_JIT_RESERVE_R14) and the call-clobbered rsi/r8/r9 carry guests, and
@@ -2103,6 +2106,9 @@ struct tc_lightning_execution {
     static constexpr jit_gpr_t guest_registers[] = {JIT_V2, static_cast<jit_gpr_t>(_RSI), static_cast<jit_gpr_t>(_R8),
         static_cast<jit_gpr_t>(_R9)};
     static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_R1, JIT_R2};
+    static constexpr bool fixed_operand_slots = false;
+    static constexpr int8_t rcx_slot = -3;
+    static constexpr int8_t rdx_slot = -3;
 #else
     // The args contract frees rdi (the pinned shape's state pointer) and rbx
     // (its pc) for guests, one more mapped guest than the pinned shape's
@@ -2115,9 +2121,19 @@ struct tc_lightning_execution {
     // rax/r10/r11 stay the emitter's scratch, rcx/rdx stay with lightning's
     // internal allocator, and rbp stays the frame pointer lightning would
     // spill through, exactly as above.
+    // rcx and rdx were measured as guest slots 7-8 (the parking machinery
+    // below keeps them coherent around x86's fixed-operand shifts,
+    // divisions and high multiplies) and lost 2.1% aggregate: first-use
+    // slot assignment hands the extra registers to lukewarm guests while
+    // every trace pays two more roster stores at every exit. The slots
+    // re-arm by appending _RCX/_RDX here and setting the indices below,
+    // once slot assignment ranks guests by discovery-time use count.
     static constexpr jit_gpr_t guest_registers[] = {JIT_V0, static_cast<jit_gpr_t>(_RDI), static_cast<jit_gpr_t>(_RSI),
         static_cast<jit_gpr_t>(_R8), static_cast<jit_gpr_t>(_R9), static_cast<jit_gpr_t>(_R13)};
     static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_R1, JIT_R2};
+    static constexpr bool fixed_operand_slots = false;
+    static constexpr int8_t rcx_slot = -3;
+    static constexpr int8_t rdx_slot = -3;
 #endif
     /// \brief Guest slot value for a register the mapping could not fit.
     /// \details Such guests stay in the shadow state and are read and written
@@ -2329,6 +2345,52 @@ struct tc_lightning_execution {
             }
         }
         return guest_slot[guest];
+    }
+
+    /// \brief The guest mapped to a slot, or zero.
+    uint32_t slot_guest(int8_t slot) const {
+        for (uint32_t g = 1; g < 32; ++g) {
+            if (guest_slot[g] == slot) {
+                return g;
+            }
+        }
+        return 0;
+    }
+
+    /// \brief Saves the guest occupying a fixed-operand slot to its shadow
+    /// home before an operation that clobbers the register.
+    void park_slot(int8_t slot) {
+        if (slot < 0 || static_cast<size_t>(slot) >= std::size(guest_registers)) {
+            return;
+        }
+        if (const uint32_t g = slot_guest(slot); g != 0) {
+            jit_state_t *_jit = jit;
+            jit_stxi(shadow_x_offset + g * sizeof(uint64_t), TC_JIT_STATE, guest_registers[slot]);
+        }
+    }
+
+    /// \brief Restores the parked guest, unless the operation's destination
+    /// overwrote the register with the new architectural value.
+    void unpark_slot(int8_t slot, jit_gpr_t dest) {
+        if (slot < 0 || static_cast<size_t>(slot) >= std::size(guest_registers) ||
+            guest_registers[slot] == dest) {
+            return;
+        }
+        if (const uint32_t g = slot_guest(slot); g != 0) {
+            jit_state_t *_jit = jit;
+            jit_ldxi(guest_registers[slot], TC_JIT_STATE, shadow_x_offset + g * sizeof(uint64_t));
+        }
+    }
+
+    /// \brief A scratch register distinct from both operands, for routing a
+    /// shift destination away from lightning's fixed rcx operand.
+    static jit_gpr_t free_scratch(jit_gpr_t l, jit_gpr_t r) {
+        for (const auto s : scratch_registers) {
+            if (s != l && s != r) {
+                return s;
+            }
+        }
+        return scratch_registers[0];
     }
 
     /// \brief Debug switch: reject traces that outgrow the register budget
@@ -2574,6 +2636,7 @@ struct tc_lightning_execution {
             jit_patch_at(not_min, normal);
             jit_patch_at(not_minus_one, normal);
         }
+        e.park_slot(rdx_slot);
         if constexpr (REMAINDER && SIGNED) {
             jit_remr(dest, lhs, rhs);
         } else if constexpr (REMAINDER) {
@@ -2583,6 +2646,7 @@ struct tc_lightning_execution {
         } else {
             jit_divr_u(dest, lhs, rhs);
         }
+        e.unpark_slot(rdx_slot, dest);
         auto *const normal_done = jit_jmpi();
         auto *const zero_result = jit_label();
         jit_patch_at(zero, zero_result);
@@ -2614,13 +2678,17 @@ struct tc_lightning_execution {
         const jit_gpr_t rhs = scratch_registers[1];
         e.emit_expression(n.lhs, lhs, depth + 1);
         e.emit_expression(n.rhs, rhs, depth + 1);
+        e.park_slot(rdx_slot);
         if constexpr (LHS_SIGNED && RHS_SIGNED) {
             jit_hmulr(dest, lhs, rhs);
+            e.unpark_slot(rdx_slot, dest);
         } else if constexpr (!LHS_SIGNED && !RHS_SIGNED) {
             jit_hmulr_u(dest, lhs, rhs);
+            e.unpark_slot(rdx_slot, dest);
         } else {
             static_assert(LHS_SIGNED && !RHS_SIGNED);
             jit_hmulr_u(dest, lhs, rhs);
+            e.unpark_slot(rdx_slot, dest);
             jit_rshi(scratch_registers[2], lhs, 63);
             jit_andr(scratch_registers[2], scratch_registers[2], rhs);
             jit_subr(dest, dest, scratch_registers[2]);
@@ -2649,24 +2717,58 @@ struct tc_lightning_execution {
             n, dest, depth, [&](auto d, auto l, auto r) { jit_xorr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_xori(d, l, r); });
     }
-    static void emit_shift_left(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
+    static void emit_shift_left(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
+        unsigned depth) {
         jit_state_t *_jit = e.jit;
         e.emit_binary(
-            n, dest, depth, [&](auto d, auto l, auto r) { jit_lshr(d, l, r); },
+            n, dest, depth,
+            [&](auto d, auto l, auto r) {
+                e.park_slot(rcx_slot);
+                if (fixed_operand_slots && d == guest_registers[rcx_slot > 0 ? rcx_slot : 0] && rcx_slot > 0) {
+                    const jit_gpr_t t = free_scratch(l, r);
+                    jit_lshr(t, l, r);
+                    jit_movr(d, t);
+                } else {
+                    jit_lshr(d, l, r);
+                }
+                e.unpark_slot(rcx_slot, d);
+            },
             [&](auto d, auto l, auto r) { jit_lshi(d, l, r); });
     }
     static void emit_shift_right_unsigned(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
         e.emit_binary(
-            n, dest, depth, [&](auto d, auto l, auto r) { jit_rshr_u(d, l, r); },
+            n, dest, depth,
+            [&](auto d, auto l, auto r) {
+                e.park_slot(rcx_slot);
+                if (fixed_operand_slots && d == guest_registers[rcx_slot > 0 ? rcx_slot : 0] && rcx_slot > 0) {
+                    const jit_gpr_t t = free_scratch(l, r);
+                    jit_rshr_u(t, l, r);
+                    jit_movr(d, t);
+                } else {
+                    jit_rshr_u(d, l, r);
+                }
+                e.unpark_slot(rcx_slot, d);
+            },
             [&](auto d, auto l, auto r) { jit_rshi_u(d, l, r); });
     }
     static void emit_shift_right_signed(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
         unsigned depth) {
         jit_state_t *_jit = e.jit;
         e.emit_binary(
-            n, dest, depth, [&](auto d, auto l, auto r) { jit_rshr(d, l, r); },
+            n, dest, depth,
+            [&](auto d, auto l, auto r) {
+                e.park_slot(rcx_slot);
+                if (fixed_operand_slots && d == guest_registers[rcx_slot > 0 ? rcx_slot : 0] && rcx_slot > 0) {
+                    const jit_gpr_t t = free_scratch(l, r);
+                    jit_rshr(t, l, r);
+                    jit_movr(d, t);
+                } else {
+                    jit_rshr(d, l, r);
+                }
+                e.unpark_slot(rcx_slot, d);
+            },
             [&](auto d, auto l, auto r) { jit_rshi(d, l, r); });
     }
     static void emit_compare_equal(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,

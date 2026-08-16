@@ -2974,6 +2974,46 @@ shell cost +66% with tracing idle).
     guests and lukewarm ones spill -- at which point slots 7-8, and
     the r14 parking rung above them, deserve the re-measure.
 
+    The peer check, read from source rather than lore, says the
+    filed policy is the consensus and first-use is the outlier.
+    QEMU TCG keeps no persistent guest-to-host mapping at all on
+    x86-64: tcg_reg_alloc_start marks every guest global
+    memory-resident at translation-block entry and
+    save_globals/tcg_reg_alloc_bb_end force them back to the env
+    struct at every block end; within the block a backward liveness
+    pass (liveness_pass_1) stamps per-op dead/sync bits and register
+    preference sets, and eviction under pressure takes the first
+    occupied register in the static tcg_target_reg_alloc_order --
+    positional, not LRU, not counted. Dynarmic is the same shape,
+    blunter: guest registers live in a state struct off r15, the
+    allocator frees a register by exact use counting
+    (total_uses/accumulated_uses per value) and picks victims by
+    preferring empty registers, with a source-comment TODO admitting
+    it never got around to LRU. LuaJIT, the nearest relative to this
+    backend, allocates per trace by reverse linear scan where the
+    eviction victim is the minimum of a blended cost -- IR reference
+    order as a live-interval proxy, a +64 weight for PHIs so
+    loop-carried values hold their registers, weak references
+    evicted first, constants rematerialized rather than spilled --
+    and its side traces inherit the parent trace's exit register
+    assignments as allocation hints (lj_snap_regspmap feeding
+    REGSP_HINT, coalesced in asm_head_side), which is structurally
+    our register-links/preferred_mapping negotiation. With rv8
+    (offline profile ranks guests by frequency, hottest 12 pinned
+    globally) and RVVM (lazy bind, LRU reclaim) from the earlier
+    survey, the field divides cleanly: whoever hands out scarce
+    registers ranks candidates by liveness, weight, frequency, or
+    recency -- never by order of appearance -- and nobody but rv8
+    keeps a global static map on a 16-register file, and rv8 only
+    with profiles deciding who deserves it. Both halves agree with
+    what our gates already priced: the static-mapping falsification
+    and the first-use failure at slots 7-8 are the same lesson the
+    peers learned, and use-count-ranked slot assignment is rv8's
+    ranking applied at our discovery time, with LuaJIT's cost model
+    as the dynamic refinement above it. (Dynarmic was read from an
+    identical-content fork mirror; upstream was unreachable through
+    this session's proxy.)
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

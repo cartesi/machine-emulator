@@ -2107,12 +2107,16 @@ struct tc_lightning_execution {
     // The args contract frees rdi (the pinned shape's state pointer) and rbx
     // (its pc) for guests, one more mapped guest than the pinned shape's
     // four with no reservation at all: under the preserve_none chain the
-    // entry call site already assumes every register clobbered. rax/r10/r11
-    // stay the emitter's scratch, rcx/rdx stay with lightning's internal
-    // allocator, and rbp stays the frame pointer lightning would spill
-    // through, exactly as above.
+    // entry call site already assumes every register clobbered. r13 carries
+    // the insn argument, which is dead on entry (every staged word is a
+    // compile-time constant) and dead on every leave (tc_fetch_miss,
+    // tc_lightning_trip and the continue path all ignore it, and helper
+    // calls preserve it under SysV), so it carries a sixth guest.
+    // rax/r10/r11 stay the emitter's scratch, rcx/rdx stay with lightning's
+    // internal allocator, and rbp stays the frame pointer lightning would
+    // spill through, exactly as above.
     static constexpr jit_gpr_t guest_registers[] = {JIT_V0, static_cast<jit_gpr_t>(_RDI), static_cast<jit_gpr_t>(_RSI),
-        static_cast<jit_gpr_t>(_R8), static_cast<jit_gpr_t>(_R9)};
+        static_cast<jit_gpr_t>(_R8), static_cast<jit_gpr_t>(_R9), static_cast<jit_gpr_t>(_R13)};
     static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_R1, JIT_R2};
 #endif
     /// \brief Guest slot value for a register the mapping could not fit.

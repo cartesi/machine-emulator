@@ -3117,31 +3117,67 @@ shell cost +66% with tracing idle).
     has block granularity. That is the same per-block amortization
     our traces use for the countdown; the difference we still pay
     for is instruction-exact tick semantics at every exit and the
-    hashable state. Against the icount column we win branch (2.9x)
-    and memcpy, and tie tree. We win branch
-    outright at 3x -- the trace shape against TCG's chained TBs and
-    softmmu -- and tie tree. The big deficits name their mechanisms:
-    syscall 3.6x is kernel-heavy execution where TCG's block cache
-    shines and our traces churn; hash/int64 are long-block ALU
-    where TCG's per-TB register allocation over a plain host file
-    beats our eight slots; and nop (starred) is not speed at all:
-    a bogo-op is ~70k real guest instructions (measured by mcycle
-    delta, 69-76k across op counts, no SIGILL involved), and TCG
-    and rv8 delete architectural nops as dead x0-writes -- rv8's
-    0.17s would be 49 Ginsn/s -- while this machine may not skip
-    an instruction: mcycle exactness, deterministic interrupts and
-    the hashable state ARE the product. The same asymmetry runs
-    through every row: qemu-system runs no instruction accounting
-    (icount off), no root-hash obligations, and unbounded
-    dead-code freedom. rv8's two real embarrassments are also
-    instructive: double at 14.4s (2.3x slower than us -- FP
-    softness) and memcpy 5.5s (slower than us), against its int64
-    at 12x us -- profile-pinned static registers on tight ALU
-    loops, the exact trade item 8b's static-mapping falsification
-    measured from the other side. Filed from the deficit rows:
-    trace-cache behavior under kernel-heavy churn (syscall), and
-    whether use-count slots close more of the hash/int64 gap on
-    hardware with the campaign's other defaults on.
+    hashable state. nop (starred) is not speed at all: a bogo-op
+    is ~70k real guest instructions (measured by mcycle delta,
+    69-76k across op counts, no SIGILL involved), and TCG and rv8
+    delete architectural nops as dead x0-writes -- rv8's 0.17s
+    would be 49 Ginsn/s -- while this machine may not skip an
+    instruction: mcycle exactness, deterministic interrupts and
+    the hashable state ARE the product. rv8's two real
+    embarrassments are instructive: double at 14.4s (2.3x slower
+    than us -- FP softness) and memcpy 5.5s (slower than us),
+    against its int64 at 12x us on tight user-mode ALU loops.
+
+    The residual, then, measured rather than attributed. Episode
+    accounting (TC_ONLINE_EXEC_STATS: countdown deltas at the two
+    generated-code entry sites and the two leave handlers count
+    guest instructions retired inside generated code, linked
+    transits included, plus compile wall time) decomposes every
+    deficit, and most of the mechanisms first written here were
+    wrong. Coverage (share of retired instructions inside traces),
+    mean episode length, and retire rates, boot subtracted:
+      workload    insns    cover  ep-len  Minsn/s  icount-Minsn/s
+      syscall     603M     15.1%    157      95       345
+      hash        3.6G     74.5%     74     413       845
+      int64       2.3G      0.1%     28     280       706
+      double      816M      0.1%     25     132       281
+      zlib        4.5G     63.3%     20     434       744
+      branch      609M      0.3%     22     336       122
+      tree        925M     64.8%     18     156       156
+      memcpy      6.7G     99.2%   3901    1406      1195
+      qsort       2.3G     12.8%     12     279       390
+      regs       16.9G     95.8%   3712    2522      3994
+      sieve       8.6G     96.9%    313    1211      1768
+      matrixprod  2.4G     38.4%    147     381       579
+      nop         8.2G     97.4%   5617    1310      5876
+    Compile time is 16-78 ms everywhere -- never the story. The
+    law in the table: wherever coverage exceeds 95% the backend
+    retires 1.2-2.5 Ginsn/s and is competitive (memcpy beats the
+    icount column outright); the losses live where coverage
+    collapses, and each collapse has a measured cause. int64 and
+    double are not register-allocation losses: coverage is 0.1%
+    because this musl build keeps stress_mwc32 out of line -- two
+    jal per loop iteration to a distant page -- and the recording
+    dies at instruction 15 of the loop, exactly the first call,
+    three times, then the head blacklists (TC_ONLINE_DEBUG shows
+    begin/abort extra=15 at head 44cf0; the glibc image inlined
+    the generator, which is why the earlier campaigns saw a clean
+    31-instruction cycle at 15M entries on the same workload).
+    syscall is 15% covered with 157-insn episodes and 48 ms of
+    compile: flat kernel paths that never get hot, not churn. And
+    branch, our 3x win, is not won by the traces at all --
+    coverage 0.3% -- it is the tail-call interpreter at 336
+    Minsn/s against a TCG that collapses to 122 on dense
+    taken-branch torture, our 5.14s measurement of its TB-exit
+    pathology. The one row where the register story is real is
+    regs: 95.8% covered, in-trace 2.5 Ginsn/s against TCG's 4.0,
+    where per-block allocation over a free host file genuinely
+    outruns our eight slots. Filed, in payoff order: record
+    through short out-of-line calls (int64 and double sit at 0.1%
+    coverage and 1/2.5 of the icount column's speed; trace-rate
+    execution likely flips both rows), kernel-path coverage for
+    syscall-shaped loads, and regs-style block code quality last,
+    per its measured 1.6x ceiling.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

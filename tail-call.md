@@ -2727,6 +2727,35 @@ shell cost +66% with tracing idle).
     head map over a still-living web, and demotion is the reverse
     map swap, with windowed link and side counters as the evidence.
 
+    The synthesis was then built and measured in seven increments
+    (the shadow-promotion campaign, patches shadow-promote through
+    shadow-promote7 in scratch/tracing-experiment), each step forced
+    by an event or counter rather than a prediction. The lifecycle
+    that emerged: publish bounded coverage first, always; earn a
+    loop mark from a connected wrap or from any cap-bound root the
+    backward-branch probe tripped; shadow the marked head's node so
+    lookups miss while cached links keep serving it; chase the cycle
+    through installed territory, immune to the scheduling race that
+    otherwise blacklists whichever head records second; and on
+    publication repoint the head map before killing the shadowed
+    predecessor, whose cleared inbound links release the flow
+    trapped in the old coverage -- without that kill a structurally
+    perfect overlay executes 39K times while the stale web executes
+    2.6M. Each end of the frontier fell to this machinery
+    separately: one increment held zlib at 16.3s with loops broken,
+    and two increments later regs sat at 0.19 and qsort beat its
+    tip anchor while zlib slid to 22.6. The execution-time verdict
+    that was meant to hold both -- demote a cyclic overlay on its
+    third distinct hot side exit, the tree-explosion signal, with
+    re-closure banned after demotion -- kept the loop side intact
+    but could not rescue zlib: with every chase succeeding, its
+    hundred-plus marked heads install six thousand traces across
+    five pool flushes, and the marks' surviving each flush turns
+    promotion into a permanent re-formation economy. The mechanisms
+    are now all present and severally proven; what remains is churn
+    budgeting -- per-generation chase quotas, flush-aware cooldowns,
+    hysteresis -- which is its own measured campaign.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

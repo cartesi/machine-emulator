@@ -717,6 +717,41 @@ static FORCE_INLINE bool tc_online_demoted(const tc_online_state *o, uint64_t pc
     return false;
 }
 
+/// \brief rv8-style global static register mapping. TC_STATIC_REGS names up
+/// to five guest registers (comma-separated indices) pinned to the five
+/// guest host registers identically in every trace: one shared assignment
+/// makes every link boundary free of register traffic, and everything
+/// outside the set spills to the shadow. Unset keeps the per-trace dynamic
+/// mapping and negotiated register links.
+struct tc_static_regs_config {
+    bool enabled;
+    uint8_t count;
+    uint8_t guest[5];
+};
+static const tc_static_regs_config &tc_static_regs() {
+    static const tc_static_regs_config config = [] {
+        tc_static_regs_config c{};
+        const char *env = std::getenv("TC_STATIC_REGS");
+        if (env == nullptr) {
+            return c;
+        }
+        c.enabled = true;
+        while (c.count < std::size(c.guest) && *env != '\0') {
+            char *end = nullptr;
+            const unsigned long g = std::strtoul(env, &end, 0);
+            if (end == env) {
+                break;
+            }
+            if (g >= 1 && g < 32) {
+                c.guest[c.count++] = static_cast<uint8_t>(g);
+            }
+            env = *end == ',' ? end + 1 : end;
+        }
+        return c;
+    }();
+    return config;
+}
+
 /// \brief Guard exits per trace before its last bailing instruction is
 /// demoted to the whole-instruction helper. TC_BAIL_LIMIT overrides;
 /// zero disables demotion.
@@ -1618,8 +1653,9 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
             tc_online_insert_side(o, o->pool[first_trace].head, o->pending_side->expected, first_trace);
         }
         o->pending_side->fn = o->pool[first_trace].fn;
-        if (side_predecessor != nullptr && o->pool[first_trace].linked_predecessor == side_predecessor &&
-            tc_lightning_fast_links_enabled()) {
+        if (side_predecessor != nullptr &&
+            (tc_static_regs().enabled || o->pool[first_trace].linked_predecessor == side_predecessor) &&
+            o->pool[first_trace].linked_fn != nullptr && tc_lightning_fast_links_enabled()) {
             o->pending_side->fast_fn = o->pool[first_trace].linked_fn;
             ++o->register_links;
             o->register_loads += o->pool[first_trace].linked_loads;
@@ -1636,7 +1672,8 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
             if (const auto *const successor = tc_online_find(o, predecessor.successor); successor != nullptr) {
                 const bool crosses_page = (predecessor.head >> LOG2_PAGE_SIZE) != (successor->head >> LOG2_PAGE_SIZE);
                 predecessor.link_fn = crosses_page ? successor->call_fn : successor->fn;
-                if (successor->linked_predecessor == &predecessor && tc_lightning_fast_links_enabled()) {
+                if ((tc_static_regs().enabled || successor->linked_predecessor == &predecessor) &&
+                    successor->linked_fn != nullptr && tc_lightning_fast_links_enabled()) {
                     predecessor.fast_link_fn = successor->linked_fn;
                     ++o->register_links;
                     o->register_loads += successor->linked_loads;
@@ -2111,6 +2148,15 @@ struct tc_lightning_execution {
         for (auto &slot : guest_slot) {
             slot = -1;
         }
+        // Under the global static mapping every trace pre-maps the same
+        // set, so entries, exits, flushes and linked boundaries all agree
+        // where each guest lives without negotiation.
+        if (const auto &sr = tc_static_regs(); sr.enabled) {
+            for (uint8_t i = 0; i < sr.count; ++i) {
+                guest_slot[sr.guest[i]] = static_cast<int8_t>(i);
+            }
+            nguests = sr.count;
+        }
     }
 
     void reset_expression() {
@@ -2262,7 +2308,14 @@ struct tc_lightning_execution {
 
     int8_t map_guest(uint32_t guest) {
         if (guest_slot[guest] < 0) {
-            if (nguests < std::size(guest_registers)) {
+            if (tc_static_regs().enabled) {
+                // The static assignment is fixed: everything else spills
+                if (!memory_guests_enabled()) {
+                    failed = true;
+                    return 0;
+                }
+                guest_slot[guest] = memory_slot;
+            } else if (nguests < std::size(guest_registers)) {
                 guest_slot[guest] = static_cast<int8_t>(nguests++);
             } else if (memory_guests_enabled()) {
                 guest_slot[guest] = memory_slot;
@@ -5540,18 +5593,25 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     }
 
     jit_node_t *linked_entry = nullptr;
-    if (preferred_mapping != nullptr) {
+    if (preferred_mapping != nullptr || tc_static_regs().enabled) {
+        // Under the global static mapping the linked entry is universal:
+        // every predecessor carries the identical register set, so the
+        // guest loops below emit nothing and the entry always validates
+        // the code mapping, making it valid from any page.
+        const int8_t *const pred_slots =
+            preferred_mapping != nullptr ? preferred_mapping->guest_slot : execution.guest_slot;
         linked_entry = jit_indirect();
         tc_jit_establish_frame(_jit);
         for (uint32_t guest = 1; guest < 32; ++guest) {
-            if (preferred_mapping->guest_slot[guest] >= 0) {
-                jit_live(tc_lightning_execution::guest_registers[preferred_mapping->guest_slot[guest]]);
+            if (pred_slots[guest] >= 0) {
+                jit_live(tc_lightning_execution::guest_registers[pred_slots[guest]]);
             }
         }
 
         jit_node_t *linked_tlb_miss = nullptr;
         jit_node_t *linked_code_remap = nullptr;
-        if ((trace.head >> LOG2_PAGE_SIZE) != (preferred_mapping->head >> LOG2_PAGE_SIZE)) {
+        if (preferred_mapping == nullptr ||
+            (trace.head >> LOG2_PAGE_SIZE) != (preferred_mapping->head >> LOG2_PAGE_SIZE)) {
             constexpr jit_word_t hot_tlb_base =
                 offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_CODE * sizeof(hot_tlb_set);
             constexpr jit_word_t shadow_tlb_base =
@@ -5588,14 +5648,14 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         }
 
         for (uint32_t guest = 1; guest < 32; ++guest) {
-            if (preferred_mapping->guest_slot[guest] >= 0 && execution.guest_slot[guest] < 0) {
-                const auto source = tc_lightning_execution::guest_registers[preferred_mapping->guest_slot[guest]];
+            if (pred_slots[guest] >= 0 && execution.guest_slot[guest] < 0) {
+                const auto source = tc_lightning_execution::guest_registers[pred_slots[guest]];
                 jit_stxi(x_offset + guest * sizeof(uint64_t), TC_JIT_STATE, source);
                 ++trace.linked_stores;
             }
         }
         for (uint32_t guest = 1; guest < 32; ++guest) {
-            if (execution.guest_slot[guest] >= 0 && preferred_mapping->guest_slot[guest] < 0) {
+            if (execution.guest_slot[guest] >= 0 && pred_slots[guest] < 0) {
                 const auto target = tc_lightning_execution::guest_registers[execution.guest_slot[guest]];
                 jit_ldxi(target, TC_JIT_STATE, x_offset + guest * sizeof(uint64_t));
                 ++trace.linked_loads;
@@ -5613,8 +5673,8 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             jit_patch_at(linked_tlb_miss, linked_tlb_miss_label);
             jit_patch_at(linked_code_remap, linked_tlb_miss_label);
             for (uint32_t guest = 1; guest < 32; ++guest) {
-                if (preferred_mapping->guest_slot[guest] >= 0) {
-                    const auto source = tc_lightning_execution::guest_registers[preferred_mapping->guest_slot[guest]];
+                if (pred_slots[guest] >= 0) {
+                    const auto source = tc_lightning_execution::guest_registers[pred_slots[guest]];
                     jit_stxi(x_offset + guest * sizeof(uint64_t), TC_JIT_STATE, source);
                 }
             }

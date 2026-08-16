@@ -2881,6 +2881,15 @@ shell cost +66% with tracing idle).
     the jit beats both interpreters comfortably -- holds at half
     the margin.
 
+    The build rot that forced the page-segment middle column is
+    since repaired: the six-slot shape's TC_HOT_PARAMS branch has
+    been migrated to the typed fast pc, dissolving the fetch offset
+    argument into pc and settling the signature at five slots. Every
+    shape compiles again under Clang and GCC on both architectures;
+    the five-slot runtime still owes its gate run on x86-64
+    hardware, where the amd64 column of this table is the anchor to
+    beat.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

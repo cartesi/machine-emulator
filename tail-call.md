@@ -2788,6 +2788,31 @@ shell cost +66% with tracing idle).
     at the price of regs, and the tip policy remains the shipping
     compromise.
 
+    The filed successor got its first measurement on the interim
+    amd64 host, and at this register budget it is falsified. The
+    implementation is the full shape (TC_STATIC_REGS, opt-in): one
+    fixed guest-to-host assignment pre-mapped identically in every
+    trace, chosen by trace-dump frequency across tree, qsort, zlib
+    and regs (a5, a0, a4, a1, ra); everything else spills to the
+    shadow; the linked entry becomes universal -- valid from any
+    predecessor and any page, with the code-mapping validation built
+    in -- and the fast-link gates accept any pair, so link
+    boundaries verifiably carry zero register traffic (tree: 212 of
+    232 links register-linked, no loads, stores or moves). The
+    boundaries were not the binding cost. Balanced 13, three
+    interleaved reps, all hash-gated: aggregate +1.3% against the
+    dynamic mapping, with regs +6.1%, sieve +5.1%, memcpy +4.6%,
+    qsort +3.5%, tree itself +2.2%, and only int64 (-4.7%) winning.
+    The diagnosis is the register budget, not the idea: rv8 pins
+    twelve guest registers and spills nineteen; this backend's
+    four-slot args contract and emitter scratch leave five, and at
+    five the dynamic per-trace pick -- each trace's own hottest five
+    -- beats any global five by more than the freed boundaries
+    return. The experiment stays in the tree as the opt-in knob; the
+    successor to the successor is a bigger pinned budget (the 8d
+    ledger question: reclaiming rcx/rdx from lightning), at which
+    point the global mapping deserves its re-run.
+
     The campaign closed with a balanced validation against the real
     baselines rather than the intra-JIT control: a 13-workload set
     chosen from the stress-ng sources to span dispatch floor,

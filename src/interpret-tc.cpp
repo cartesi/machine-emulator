@@ -2115,18 +2115,18 @@ struct tc_lightning_execution {
     // rax/r10/r11 stay the emitter's scratch, rcx/rdx stay with lightning's
     // internal allocator, and rbp stays the frame pointer lightning would
     // spill through, exactly as above.
-    // rcx and rdx were measured as guest slots 7-8 and lost 2.1%
-    // aggregate: first-use slot assignment hands the extra registers to
-    // lukewarm guests while every trace pays two more roster stores at
-    // every exit. No coherence machinery is needed to re-arm them --
-    // lightning's emitters consult per-node liveness (jit_reg_free_p over
-    // reglive) and preserve occupied fixed-operand registers around its
-    // shifts, divisions and high multiplies themselves, verified by gates
-    // with the slots enabled and no hand parking. Re-arm by appending
-    // _RCX/_RDX here once slot assignment ranks guests by discovery-time
-    // use count.
+    // rcx and rdx are guest slots 7-8. Their first cut lost 2.1% under
+    // first-use slot assignment, which handed the extra registers to
+    // lukewarm guests; the use-count ranking assigns hottest-first, so
+    // the pair carries the guests that earn their two extra roster
+    // stores per exit. No coherence machinery is needed -- lightning's
+    // emitters consult per-node liveness (jit_reg_free_p over reglive)
+    // and preserve occupied fixed-operand registers around its shifts,
+    // divisions and high multiplies themselves, verified by gates with
+    // the slots enabled and no hand parking.
     static constexpr jit_gpr_t guest_registers[] = {JIT_V0, static_cast<jit_gpr_t>(_RDI), static_cast<jit_gpr_t>(_RSI),
-        static_cast<jit_gpr_t>(_R8), static_cast<jit_gpr_t>(_R9), static_cast<jit_gpr_t>(_R13)};
+        static_cast<jit_gpr_t>(_R8), static_cast<jit_gpr_t>(_R9), static_cast<jit_gpr_t>(_R13),
+        static_cast<jit_gpr_t>(_RCX), static_cast<jit_gpr_t>(_RDX)};
     static constexpr jit_gpr_t scratch_registers[] = {JIT_R0, JIT_R1, JIT_R2};
 #endif
     /// \brief Guest slot value for a register the mapping could not fit.

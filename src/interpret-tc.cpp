@@ -288,6 +288,15 @@ struct tc_online_state {
     uint64_t register_moves;
     uint64_t register_loads;
     uint64_t register_stores;
+    // Episode accounting (TC_ONLINE_EXEC_STATS): one episode spans from the
+    // interpreter entering generated code to control returning through
+    // tc_lightning_continue or tc_lightning_trip; the countdown delta counts
+    // the guest instructions retired inside, linked transits included.
+    // Mutable because the compiler receives a const state pointer.
+    mutable uint64_t episodes;
+    mutable uint64_t trace_insns;
+    mutable uint64_t episode_cd;
+    mutable uint64_t compile_ns;
 };
 #endif
 
@@ -926,6 +935,12 @@ static NO_INLINE void tc_online_debug(const char *what, uint64_t pc, uint64_t ex
 /// \brief Classifies a recorded instruction word as floating-point,
 /// including the compressed FP loads and stores the backend stages
 /// (c.fld, c.fsd, c.fldsp, c.fsdsp).
+/// \brief Whether episode accounting is enabled (TC_ONLINE_EXEC_STATS).
+static bool tc_online_episode_stats() {
+    static const bool enabled = std::getenv("TC_ONLINE_EXEC_STATS") != nullptr;
+    return enabled;
+}
+
 static bool tc_online_insn_is_fp(uint32_t insn) {
     if ((insn & 3) != 3) {
         const uint32_t q = insn & 3;
@@ -1177,6 +1192,9 @@ static void tc_online_report(const tc_online_state &o) {
         static_cast<unsigned long long>(longest_connected_fp_recording), static_cast<unsigned>(o.ntraces));
 #if TC_LIGHTNING
     if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
+        std::fprintf(stderr, "tc-online: episodes %llu trace-insns %llu compile-ms %llu\n",
+            static_cast<unsigned long long>(o.episodes), static_cast<unsigned long long>(o.trace_insns),
+            static_cast<unsigned long long>(o.compile_ns / 1000000));
         std::fprintf(stderr, "tc-online: fp-guard-bails");
         for (uint8_t i = 0; i < tc_fp_guard_count; ++i) {
             std::fprintf(stderr, " %s %llu", tc_fp_guard_names[i],
@@ -4431,6 +4449,10 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
                     if (TC_TICK_ENDED()) [[unlikely]] {                                                                \
                         TC_COUNTDOWN_EXPIRED();                                                                        \
                     }                                                                                                  \
+                    if (tc_online_episode_stats()) [[unlikely]] {                                                      \
+                        tcc->online->episode_cd = tc_remaining;                                                        \
+                        ++tcc->online->episodes;                                                                       \
+                    }                                                                                                  \
                     TC_SYNC();                                                                                         \
                     TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(                                 \
                         const_cast<void *>(tc_tfn))(a, insn TC_HOT_ARGS);                                              \
@@ -4858,6 +4880,12 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
                 if constexpr (TC_AOT != 0 || TC_LIGHTNING != 0) {                                                      \
                     if (tc_tfn != nullptr) {                                                                           \
                         TC_SEG_LOOSEN();                                                                               \
+                        if constexpr (TC_ONLINE != 0 && TC_LIGHTNING != 0) {                                           \
+                            if (tc_online_episode_stats()) [[unlikely]] {                                              \
+                                tcc->online->episode_cd = tc_remaining;                                                \
+                                ++tcc->online->episodes;                                                               \
+                            }                                                                                          \
+                        }                                                                                              \
                         TC_SYNC();                                                                                     \
                         TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(                             \
                             const_cast<void *>(tc_tfn))(a, insn TC_HOT_ARGS);                                          \
@@ -5062,6 +5090,9 @@ TC_LIGHTNING_CAN_COLLECT(C_FSDSP)
 template <typename STATE_ACCESS>
 TC_CALLCONV static execute_status tc_lightning_continue(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS) {
     TC_ENTER();
+    if (tc_online_episode_stats()) [[unlikely]] {
+        tcc->online->trace_insns += tcc->online->episode_cd - tc_remaining;
+    }
     if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {
         uint32_t next_insn = 0;
         TC_SEG_TIGHTEN();
@@ -5077,6 +5108,9 @@ TC_CALLCONV static execute_status tc_lightning_continue(const STATE_ACCESS a, ui
 template <typename STATE_ACCESS>
 TC_CALLCONV static execute_status tc_lightning_trip(const STATE_ACCESS a, uint32_t /*insn*/ TC_HOT_PARAMS) {
     TC_ENTER();
+    if (tc_online_episode_stats()) [[unlikely]] {
+        tcc->online->trace_insns += tcc->online->episode_cd - tc_remaining;
+    }
     tcc->online_trip_pc = pc_to_virtual(a, pc);
     tcc->online_trip_weight = 1;
     tcc->online_trip = true;
@@ -5391,6 +5425,27 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         return nullptr;
     }
     ++compiled;
+
+    // Episode diagnostics: attribute wall time spent compiling to the
+    // machine, so coverage numbers can separate translation cost from
+    // execution cost.
+    struct compile_timer {
+        const tc_online_state *online;
+        timespec t0{};
+        explicit compile_timer(const tc_online_state *o) : online(o) {
+            if (online != nullptr && tc_online_episode_stats()) {
+                clock_gettime(CLOCK_MONOTONIC, &t0);
+            }
+        }
+        ~compile_timer() {
+            if (online != nullptr && tc_online_episode_stats()) {
+                timespec t1{};
+                clock_gettime(CLOCK_MONOTONIC, &t1);
+                online->compile_ns +=
+                    static_cast<uint64_t>(t1.tv_sec - t0.tv_sec) * 1000000000ULL + (t1.tv_nsec - t0.tv_nsec);
+            }
+        }
+    } timer{online};
 
     jit_state_t *_jit = jit_new_state();
     if (_jit == nullptr) {

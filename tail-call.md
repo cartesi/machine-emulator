@@ -3071,6 +3071,65 @@ shell cost +66% with tracing idle).
     machinery stays env-gated and off by default; the register
     budget on this host is spent.
 
+19. DONE: THE COMPETITION, MEASURED, NOT QUOTED. The same static
+    musl stress-ng 0.17.06 (musl 1.2.5, zlib 1.3.1, gcc-14), the
+    same fixed bogo-ops per workload, wall-clock, medians of three,
+    on the AMD host. Two comparisons with different standing. The
+    fair one is qemu-system-riscv64 8.2 (virt board, OpenSBI): OUR
+    kernel -- the inner Image extracted at 0x200000 of linux.bin,
+    whose first 2 MiB are the cartesi M-mode shim OpenSBI replaces
+    -- our rootfs on virtio-blk, and an identical four-line
+    bench-init on both sides (mount proc/sys/dev, source
+    /cartesi-machine/entrypoint from the DTB, poweroff), boot
+    baselines subtracted. The context one is rv8's rv-jit, kept for
+    the register-mapping lineage but user-mode only: no supervisor
+    mode, syscalls proxied to the host, and it took three fixes to
+    run modern binaries at all (its loader file-maps p_memsz and
+    SIGBUSes on any large bss; unknown syscalls panicked instead of
+    returning ENOSYS; sigaltstack/prctl/setitimer must lie
+    success). It cannot run syscall or zlib at all.
+
+    Seconds, medians (jit = this backend, sys = qemu-system):
+      workload    jit    stock   sys    rv8     jit/sys
+      nop         6.47   20.24   0.96   0.17    6.7x*
+      regs        6.62   36.85   4.23   2.60    1.6x
+      branch      1.74    1.77   5.14   1.29    0.34x
+      tree        6.01    7.46   6.19   1.47    0.97x
+      qsort       8.24    8.15   5.52   2.82    1.5x
+      memcpy      5.11   19.01   4.10   5.51    1.2x
+      zlib        9.68   14.27   4.57   --      2.1x
+      hash        8.52   14.15   3.65   2.69    2.3x
+      syscall     6.19    6.40   1.70   --      3.6x
+      double      6.31    7.65   2.96  14.39    2.1x
+      sieve       6.19   26.46   3.90   1.84    1.6x
+      int64       7.80    8.09   3.28   0.65    2.4x
+      matrixprod  6.21    8.03   4.03   2.86    1.5x
+
+    Geomean excluding nop: 1.6x behind qemu-system. We win branch
+    outright at 3x -- the trace shape against TCG's chained TBs and
+    softmmu -- and tie tree. The big deficits name their mechanisms:
+    syscall 3.6x is kernel-heavy execution where TCG's block cache
+    shines and our traces churn; hash/int64 are long-block ALU
+    where TCG's per-TB register allocation over a plain host file
+    beats our eight slots; and nop (starred) is not speed at all:
+    a bogo-op is ~70k real guest instructions (measured by mcycle
+    delta, 69-76k across op counts, no SIGILL involved), and TCG
+    and rv8 delete architectural nops as dead x0-writes -- rv8's
+    0.17s would be 49 Ginsn/s -- while this machine may not skip
+    an instruction: mcycle exactness, deterministic interrupts and
+    the hashable state ARE the product. The same asymmetry runs
+    through every row: qemu-system runs no instruction accounting
+    (icount off), no root-hash obligations, and unbounded
+    dead-code freedom. rv8's two real embarrassments are also
+    instructive: double at 14.4s (2.3x slower than us -- FP
+    softness) and memcpy 5.5s (slower than us), against its int64
+    at 12x us -- profile-pinned static registers on tight ALU
+    loops, the exact trade item 8b's static-mapping falsification
+    measured from the other side. Filed from the deficit rows:
+    trace-cache behavior under kernel-heavy churn (syscall), and
+    whether use-count slots close more of the hash/int64 gap on
+    hardware with the campaign's other defaults on.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

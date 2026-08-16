@@ -2835,6 +2835,49 @@ shell cost +66% with tracing idle).
     coverage-economy successor remains the path to holding both of
     its ends.
 
+    The same balanced three-way re-ran on the interim amd64 host
+    (compare.sh, 117 runs, every workload root-hash-identical across
+    all three builds), with one build caveat: the tailcall-only
+    six-slot configuration no longer compiles at the tip -- its
+    TC_HOT_PARAMS branch kept the untyped uint64_t pc while the outer
+    loop and the case bodies moved to the typed fast pc -- so the
+    middle column is tailcall with TC_PAGE_SEGMENT=1, the exact
+    interpreter shape the x86-64 jit sits on. Medians:
+
+    | workload | stock | tail-call | jit | jit vs stock |
+    |---|---:|---:|---:|---:|
+    | nop | 1.288 | 1.121 | 0.120 | -91% |
+    | regs | 1.697 | 1.682 | 0.373 | -78% |
+    | sieve | 2.417 | 2.447 | 0.643 | -73% |
+    | memcpy | 2.377 | 2.536 | 0.703 | -70% |
+    | hash | 2.436 | 2.499 | 1.299 | -47% |
+    | int64 | 2.697 | 2.340 | 1.598 | -41% |
+    | zlib | 2.744 | 2.841 | 1.969 | -28% |
+    | qsort | 3.048 | 3.106 | 2.669 | -12% |
+    | double | 5.087 | 5.322 | 5.055 | -0.6% |
+    | syscall | 3.215 | 3.372 | 3.240 | +0.8% |
+    | matrixprod | 2.536 | 2.739 | 2.699 | +6.4% |
+    | branch | 2.463 | 2.611 | 2.632 | +6.9% |
+    | tree | 5.544 | 6.001 | 6.186 | +12% |
+    | aggregate | 37.55 | 38.62 | 29.19 | -22% |
+
+    The jit takes 22% off stock, winning nine of thirteen, and the
+    hosts disagree instructively. This machine is about half the
+    speed of the primary host and inverts the tail-call middle
+    column: the page-segment interpreter loses 2.8% to stock here
+    where the primary host's tail-call loop won 12%, consistent with
+    a weaker branch predictor collecting less from the chain and the
+    page-segment fetch trade. The jit's mix shifts the same way:
+    regs quadruples its win (-78% against the primary's -19%) while
+    qsort (-12% vs -41%), zlib (-28% vs -40%), syscall (+0.8% vs
+    -26%) and branch (+6.9% vs -21%) all give back predictor-bound
+    ground, and tree's pointer-chasing loss deepens to +12%. The
+    stable conclusions survive the host change: dispatch-floor and
+    register-pressure workloads are transformed, dense FP is flat,
+    tree is the one structural loss, and the aggregate verdict --
+    the jit beats both interpreters comfortably -- holds at half
+    the margin.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

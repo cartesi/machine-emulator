@@ -2756,6 +2756,38 @@ shell cost +66% with tracing idle).
     budgeting -- per-generation chase quotas, flush-aware cooldowns,
     hysteresis -- which is its own measured campaign.
 
+    Three more increments (shadow-promote8 through 10) ran that
+    campaign and ended it with a sharper conclusion. The bet-once bit
+    (LuaJIT's permanent per-PC penalty, HotSpot's recompilation
+    cutoff) moved nothing: counters showed the six thousand installs
+    were never re-chases but duplicate coverage from the universal
+    record-through, six times the 956 traces the plain web needs.
+    Restricting record-through to marked chases and sourcing marks
+    from the collision itself restored the lean economy: zlib 16.7,
+    qsort 1.14 against the tip's 1.36, the best zlib and qsort of
+    the whole experiment in one build. The chase budget then priced
+    the mega-chains (a 3928-entry chain had duplicated the hot code)
+    at 1.3s of zlib without touching regs, which is the
+    falsification that matters: regs's 0.19 under the broad economy
+    never came from its own head's overlay -- its 472-entry body has
+    no closable cycle at all -- but from the duplicated big-region
+    coverage that the universal record-through laid everywhere, the
+    same coverage that costs zlib six pool flushes. The frontier is
+    therefore not per-head but per-workload coverage economy: regs
+    wants broad big regions and tolerates duplication, zlib wants
+    lean small ones. The mechanisms of items 18-19 price either
+    economy correctly and cannot hold both, exactly the trade rv8
+    dissolves structurally with a global static register mapping
+    that makes region boundaries nearly free. That mapping -- a
+    profile-chosen fixed guest-to-host assignment shared by every
+    trace, replacing the per-trace negotiated register links whose
+    boundary contract is the entire web tax on tight loops -- is the
+    filed successor, and it is backend surgery, not recorder policy.
+    Best shippable candidates from the campaign, pending that work:
+    shadow-promote10 recovers 62% of the zlib gap and 19% of qsort
+    at the price of regs, and the tip policy remains the shipping
+    compromise.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

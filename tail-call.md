@@ -2932,6 +2932,44 @@ shell cost +66% with tracing idle).
     hardware, where the amd64 column of this table is the anchor to
     beat.
 
+18. DONE, GATED: THE REGISTER-PRESSURE LADDER, ONE RUNG REAL. The
+    static-mapping falsification asked where more registers could
+    come from on amd64. Four venues surveyed: r13 (the insn argument,
+    dead in every trace and on every leave -- tc_fetch_miss,
+    tc_lightning_trip and the continue path all ignore it, and SysV
+    preserves it across helpers), rcx/rdx (lightning's fixed
+    operands), r14 parked through bodies (pc is touched only at
+    boundaries, but its entry value carries the mapping deposit and
+    must be stored), and the XMM file as spill space -- rejected by
+    the owner on hardware grounds: the gpr-xmm round trip is ~10+
+    cycles on Zen and competes for FP ports, worse than the L1 hit
+    it replaces.
+
+    r13 as the sixth guest: -1.4% aggregate, balanced 13, all
+    gated. tree, the structural loss, moves for the first time
+    (-5.9%, every rep), memcpy -3.0%, syscall -2.1%; regs shows
+    +7.1% inside its known layout band while its own hot trace got
+    leaner (1627 to 1577 instructions -- 50 hot body instructions
+    saved against 16 cold flush stores added). Shipped.
+
+    rcx/rdx as slots 7-8: correct but falsified at +2.1% aggregate
+    (qsort +5.6%, tree +5.2%, memcpy +3.8% against nop -4.8%, regs
+    -1.6%), and the disassembly names the mechanism before the
+    timing does: regs's hot trace uses rcx 46 times and rdx 22 times
+    as guests yet nets zero fewer instructions, because first-use
+    slot assignment hands the new registers to whichever guests
+    appear first -- not the hottest -- while every trace pays two
+    more roster stores at every exit site. The parking machinery
+    (guests in lightning's fixed-operand registers saved to their
+    shadow homes around variable shifts, divisions and high
+    multiplies, with shift destinations routed off rcx to dodge
+    lightning's ledger-blind temp grab) is correct, gated, and kept
+    dormant in the tree. The refinement that re-arms the slots is
+    slot assignment ranked by discovery-time use count, so extra
+    registers go to hot guests and lukewarm ones spill -- at which
+    point slots 7-8, and the r14 parking rung above them, deserve
+    the re-measure.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

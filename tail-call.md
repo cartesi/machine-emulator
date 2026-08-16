@@ -2932,7 +2932,8 @@ shell cost +66% with tracing idle).
     hardware, where the amd64 column of this table is the anchor to
     beat.
 
-18. DONE, GATED: THE REGISTER-PRESSURE LADDER, ONE RUNG REAL. The
+18. DONE, GATED: THE REGISTER-PRESSURE LADDER -- r13, RANKED SLOT
+    ASSIGNMENT, AND rcx/rdx ALL SHIPPED. The
     static-mapping falsification asked where more registers could
     come from on amd64. Four venues surveyed: r13 (the insn argument,
     dead in every trace and on every leave -- tc_fetch_miss,
@@ -3013,6 +3014,38 @@ shell cost +66% with tracing idle).
     as the dynamic refinement above it. (Dynarmic was read from an
     identical-content fork mirror; upstream was unreachable through
     this session's proxy.)
+
+    Built, and both falsified rungs flipped. The implementation is
+    small because the two-pass structure already carried it: the
+    discovery pass counts every staged read and write per guest
+    (map_guest is called once per access), and before emission the
+    slot assignment re-ranks hottest-first, ties broken on guest
+    number for determinism. Slot values never shape the node graph
+    -- only emission consults them -- so re-ranking between the
+    passes cannot diverge the two, and the preferred-mapping
+    permutation for links composes on top unchanged. Ranked at the
+    same six registers, against the tip it replaced: -2.5%
+    aggregate, balanced 13, all gates green (tree -6.7%, int64
+    -3.0%, double -2.6%, syscall -1.9%, regs -1.4%, zlib -1.0%; nop
+    +2.5% is 3 ms of noise on the shortest run). The one-line
+    re-arm of rcx/rdx as slots 7-8 -- the pair that lost 2.1% under
+    first-use -- then adds another -0.8% on top (regs -2.9%, branch
+    -2.3%, double -2.2%, matrixprod -1.6%; syscall +2.1% and nop's 9
+    ms inside their noise bands), about -3.3% combined. The
+    disassembly names the mechanism the timing implies: regs's hot
+    trace (same head, 2.6M executions) pays 319 x-file memory
+    accesses under five first-use slots, 338 under eight first-use
+    slots -- extra registers, more traffic, the falsified cut --
+    and 267 under eight ranked slots, with the entry roster now
+    carrying x9, x15, x18-x22 and x27, including the x18/x19 pair
+    whose memory residence diagnosed the static-mapping loss, and
+    rcx/rdx used 39 and 38 times as guests in the body. int64's
+    roster takes x2 and x10-x16 and its body traffic stays flat;
+    its -3.0% arrived with ranking alone and held. Both changes
+    shipped; the register-pressure ladder's remaining rung is r14
+    parked through bodies, and the refinement above plain counts,
+    if it is ever needed, is LuaJIT's weighting -- loop-body uses
+    priced above prelude uses, PHI-carried values above both.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

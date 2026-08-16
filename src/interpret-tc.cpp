@@ -546,15 +546,17 @@ register tc_context<state_access> *tcc asm("r15");
 #define TC_FETCH_TAG_INVALIDATE() (tcc->fetch_vaddr_page = ensure_fetch_cache_miss(pc))
 #define TC_FETCH_TAG_SYNC() ((void) 0)
 #else
-// The fetch cache's two hot fields travel as handler arguments: the pre-load
-// consumes them at the head of its dependency chain, where keeping them in
-// registers is worth several percent. The tc_context copies are kept coherent
-// at every outlined-helper call and chain exit, and remain the storage the
-// outer loop and the helpers use.
+// The fetch cache's hot page tag travels as a handler argument: the pre-load
+// consumes it at the head of its dependency chain, where keeping it in a
+// register is worth several percent. With pc as a fast address the fetch
+// offset is dissolved into pc itself, so the signature is five slots:
+// accessor, insn, pc, countdown, fetch tag. The tc_context copies are kept
+// coherent at every outlined-helper call and chain exit, and remain the
+// storage the outer loop and the helpers use.
 #define TC_HOT_PARAMS                                                                                                  \
-    , uint64_t pc, uint64_t tc_remaining, uint64_t fetch_vaddr_page,                                                   \
-        i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset
-#define TC_HOT_ARGS , pc, tc_remaining, fetch_vaddr_page, fetch_vf_offset
+    , i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t tc_remaining,                                              \
+        i_state_access_fast_addr_t<STATE_ACCESS> fetch_vaddr_page
+#define TC_HOT_ARGS , pc, tc_remaining, fetch_vaddr_page
 #define TC_ENTER() auto *const tcc = tc_ctx(a)
 #define TC_SYNC() ((void) 0)
 #define TC_FETCH_TAG fetch_vaddr_page

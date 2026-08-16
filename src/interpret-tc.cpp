@@ -2150,6 +2150,7 @@ struct tc_lightning_execution {
     tc_lightning_node nodes[max_nodes]{};
     side_exit exits[max_exits]{};
     int8_t guest_slot[32]{};
+    uint32_t guest_uses[32]{}; ///< Discovery-time read+write counts, ranks the slot assignment
     uint16_t nnodes{};
     uint16_t nexits{};
     uint8_t nguests{};
@@ -2321,6 +2322,11 @@ struct tc_lightning_execution {
     }
 
     int8_t map_guest(uint32_t guest) {
+        // Every discovery-pass call is one staged read or write of the
+        // guest: the counts rank the slot assignment before emission.
+        if (discovery) {
+            ++guest_uses[guest];
+        }
         if (guest_slot[guest] < 0) {
             if (tc_static_regs().enabled) {
                 // The static assignment is fixed: everything else spills
@@ -5381,6 +5387,38 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         return nullptr;
     }
     trace.returns = execution.returned;
+    // Use-count-ranked slot assignment (8b item 18): discovery counted every
+    // staged read and write per guest, so the register budget goes to the
+    // hottest guests instead of the first-seen, and the lukewarm tail stays
+    // in the shadow state. Slot values never shape the node graph -- only
+    // emission consults them -- so re-ranking between the passes is sound.
+    // Ties break on guest number, keeping the assignment deterministic per
+    // trace content. The static mapping keeps its fixed pre-map, and a
+    // preferred mapping still permutes whatever this ranking registers.
+    if (!tc_static_regs().enabled) {
+        uint8_t order[32];
+        uint8_t norder = 0;
+        for (uint32_t guest = 1; guest < 32; ++guest) {
+            if (execution.guest_slot[guest] != -1) {
+                order[norder++] = static_cast<uint8_t>(guest);
+            }
+        }
+        for (uint8_t i = 1; i < norder; ++i) { // stable insertion sort, descending by uses
+            const uint8_t g = order[i];
+            uint8_t j = i;
+            while (j > 0 && execution.guest_uses[order[j - 1]] < execution.guest_uses[g]) {
+                order[j] = order[j - 1];
+                --j;
+            }
+            order[j] = g;
+        }
+        constexpr auto nregs = static_cast<uint8_t>(std::size(tc_lightning_execution::guest_registers));
+        for (uint8_t i = 0; i < norder; ++i) {
+            execution.guest_slot[order[i]] =
+                i < nregs ? static_cast<int8_t>(i) : tc_lightning_execution::memory_slot;
+        }
+        execution.nguests = norder < nregs ? norder : nregs;
+    }
     if (preferred_mapping != nullptr) {
         bool used[std::size(tc_lightning_execution::guest_registers)]{};
         int8_t inherited[32];

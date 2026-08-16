@@ -3089,23 +3089,36 @@ shell cost +66% with tracing idle).
     returning ENOSYS; sigaltstack/prctl/setitimer must lie
     success). It cannot run syscall or zlib at all.
 
-    Seconds, medians (jit = this backend, sys = qemu-system):
-      workload    jit    stock   sys    rv8     jit/sys
-      nop         6.47   20.24   0.96   0.17    6.7x*
-      regs        6.62   36.85   4.23   2.60    1.6x
-      branch      1.74    1.77   5.14   1.29    0.34x
-      tree        6.01    7.46   6.19   1.47    0.97x
-      qsort       8.24    8.15   5.52   2.82    1.5x
-      memcpy      5.11   19.01   4.10   5.51    1.2x
-      zlib        9.68   14.27   4.57   --      2.1x
-      hash        8.52   14.15   3.65   2.69    2.3x
-      syscall     6.19    6.40   1.70   --      3.6x
-      double      6.31    7.65   2.96  14.39    2.1x
-      sieve       6.19   26.46   3.90   1.84    1.6x
-      int64       7.80    8.09   3.28   0.65    2.4x
-      matrixprod  6.21    8.03   4.03   2.86    1.5x
+    Seconds, medians (jit = this backend, sys = qemu-system, icnt =
+    qemu-system with -icount shift=0,sleep=off):
+      workload    jit    stock   sys    icnt   rv8     jit/icnt
+      nop         6.47   20.24   0.96   1.39   0.17    4.7x*
+      regs        6.62   36.85   4.23   4.24   2.60    1.6x
+      branch      1.74    1.77   5.14   4.98   1.29    0.35x
+      tree        6.01    7.46   6.19   5.93   1.47    1.0x
+      qsort       8.24    8.15   5.52   5.93   2.82    1.4x
+      memcpy      5.11   19.01   4.10   5.59   5.51    0.91x
+      zlib        9.68   14.27   4.57   6.02   --      1.6x
+      hash        8.52   14.15   3.65   4.29   2.69    2.0x
+      syscall     6.19    6.40   1.70   1.75   --      3.5x
+      double      6.31    7.65   2.96   2.91  14.39    2.2x
+      sieve       6.19   26.46   3.90   4.85   1.84    1.3x
+      int64       7.80    8.09   3.28   3.25   0.65    2.4x
+      matrixprod  6.21    8.03   4.03   4.20   2.86    1.5x
 
-    Geomean excluding nop: 1.6x behind qemu-system. We win branch
+    Geomean excluding nop: 1.6x behind plain qemu-system, 1.44x
+    behind it with icount on. The icount reference measures what
+    instruction accounting costs TCG: +8% geomean (memory-heavy
+    rows pay 25-36%, ALU rows nothing), far below the folklore
+    2-3x, because icount counts without committing -- each block's
+    statically-known instruction total is decremented once at
+    block entry and timer deadlines land at block boundaries, so
+    nops stay deleted (1.39s against our 6.47s) and virtual time
+    has block granularity. That is the same per-block amortization
+    our traces use for the countdown; the difference we still pay
+    for is instruction-exact tick semantics at every exit and the
+    hashable state. Against the icount column we win branch (2.9x)
+    and memcpy, and tie tree. We win branch
     outright at 3x -- the trace shape against TCG's chained TBs and
     softmmu -- and tie tree. The big deficits name their mechanisms:
     syscall 3.6x is kernel-heavy execution where TCG's block cache

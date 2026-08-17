@@ -3248,6 +3248,28 @@ shell cost +66% with tracing idle).
     across the interrupt (or a cheaper verified refill); by this
     profile it is worth more than every remaining item combined.
 
+    The cadence, then measured with the guest kernel's own
+    accounting (/proc/stat intr, boot baseline subtracted, same
+    kernel and binary and fixed ops on both sides): the nop
+    workload takes 9563 timer interrupts under this machine and
+    ~134 under qemu-system -- one per 853k retired instructions
+    against one per ~60M, a ~70x cadence difference. The cause is
+    the clock model, not a bug: guest time here is a function of
+    mcycle (128 MHz nominal), so 8.2G cycles are 64 guest-seconds
+    and the tickless kernel schedules ~9.6k timer ticks for them;
+    qemu's virt clock runs on host wall time, the same work passes
+    in about one wall second, and the same kernel schedules ~134.
+    Determinism requires a cycle-driven clock, so the cadence
+    itself is not negotiable -- but its price is: 45% of nop's
+    wall time in flush/verified-refill around 9.6k interrupts is
+    ~340 us per interrupt, which indicts the per-flush writeback
+    sweep through the verified path more than the interrupt count.
+    Both ends are now measured for the next arc: raise the
+    effective guest clock ratio (fewer guest-seconds per
+    instruction means proportionally fewer ticks), or make the
+    flush/refill cheap (retain hot slots across the kernel's
+    sfence, or batch the verified writeback).
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

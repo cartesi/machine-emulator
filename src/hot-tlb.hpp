@@ -38,13 +38,13 @@ struct hot_tlb_slot final {
     host_addr vh_offset{0};                ///< Offset from target virtual address in the same page to host address
 };
 
-using hot_tlb_set = std::array<hot_tlb_slot, TLB_SET_SIZE>;
+using hot_tlb_set = std::array<hot_tlb_slot, TLB_SET_SLOTS>;
 using hot_tlb_state = std::array<hot_tlb_set, TLB_NUM_SETS_>;
 
 static_assert(sizeof(uint64_t) >= sizeof(uintptr_t), "TLB expects host pointer fit in 64 bits");
 
 // We need to ensure TLB state sizes are fixed across different platforms
-static_assert(sizeof(hot_tlb_state) == 3 * TLB_SET_SIZE * 2 * sizeof(uint64_t), "unexpected hot TLB state size");
+static_assert(sizeof(hot_tlb_state) == 3 * TLB_SET_SLOTS * 2 * sizeof(uint64_t), "unexpected hot TLB state size");
 static_assert(alignof(hot_tlb_state) == sizeof(uint64_t), "unexpected hot TLB state alignment");
 
 } // namespace cartesi

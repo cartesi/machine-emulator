@@ -264,7 +264,7 @@ public:
         }
         // initialize hot TLB entries as unverified
         for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
-            for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+            for (uint64_t slot_index = 0; slot_index < TLB_SET_SLOTS; ++slot_index) {
                 m_context.tlb[set_index][slot_index].vaddr_page = TLB_UNVERIFIED_PAGE;
                 m_context.tlb[set_index][slot_index].vh_offset = host_addr{0};
             }

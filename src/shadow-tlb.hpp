@@ -34,18 +34,35 @@ namespace cartesi {
 enum TLB_set_index : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE, TLB_LAST_ = TLB_WRITE, TLB_NUM_SETS_ = TLB_WRITE + 1 };
 
 /// \brief TLB constants.
+/// \details Each set is partitioned into TLB_NUM_CTX translation contexts of
+/// TLB_SET_SIZE slots each: an ASID-style tagged TLB whose context is
+/// (privilege mode, mstatus.SUM). A slot index is ctx * TLB_SET_SIZE plus the
+/// vaddr hash, so context changes select a different partition instead of
+/// flushing -- the flush storms on every trap, sret and kernel uaccess SUM
+/// toggle measured 30-45% of kernel-heavy runs in verified TLB writeback.
 enum TLB_constants : uint64_t {
-    TLB_SET_SIZE = 256,
+    TLB_SET_SIZE = 128, ///< Slots per translation context within a set
+    TLB_NUM_CTX = 4,    ///< Translation contexts: U, S, S+SUM, M
+    TLB_SET_SLOTS = TLB_SET_SIZE * TLB_NUM_CTX, ///< Total slots in one set
     TLB_INVALID_PAGE = UINT64_C(-1),
     TLB_UNVERIFIED_PAGE = UINT64_C(-2),
     TLB_INVALID_PMA_INDEX = UINT64_C(-1),
 };
 
-/// \brief Gets a TLB slot index for a page.
+/// \brief Translation context index: U=0, S=1, S+SUM=2, M=3.
+/// \details A pure function of hashed state (iprv and mstatus), so the
+/// stateless record/replay/uarch accesses compute identical slot indices to
+/// the stateful machine, which merely caches ctx * TLB_SET_SIZE.
+constexpr uint64_t tlb_ctx(uint64_t prv, uint64_t mstatus_sum_set) {
+    return prv == 1 ? (mstatus_sum_set != 0 ? 2 : 1) : (prv == 0 ? 0 : 3);
+}
+
+/// \brief Gets a TLB slot index for a page within one translation context.
 /// \param vaddr Target virtual address.
-/// \returns TLB slot index.
-constexpr uint64_t tlb_slot_index(uint64_t vaddr) {
-    return (vaddr >> LOG2_PAGE_SIZE) & (TLB_SET_SIZE - 1);
+/// \param ctx_slot_base Context partition base (ctx * TLB_SET_SIZE).
+/// \returns TLB slot index into the full set.
+constexpr uint64_t tlb_slot_index(uint64_t vaddr, uint64_t ctx_slot_base) {
+    return ctx_slot_base + ((vaddr >> LOG2_PAGE_SIZE) & (TLB_SET_SIZE - 1));
 }
 
 /// \brief Checks for a TLB hit.
@@ -86,8 +103,8 @@ static_assert((SHADOW_TLB_SLOT_SIZE & (SHADOW_TLB_SLOT_SIZE - 1)) == 0, "shadow 
 constexpr uint64_t SHADOW_TLB_SLOT_LOG2_SIZE = 5;
 static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE, "shadow TLB slot log2 size is wrong");
 
-/// \brief Shadow TLB set
-using shadow_tlb_set = std::array<shadow_tlb_slot, TLB_SET_SIZE>;
+/// \brief Shadow TLB set (all translation-context partitions)
+using shadow_tlb_set = std::array<shadow_tlb_slot, TLB_SET_SLOTS>;
 
 /// \brief Shadow TLB memory layout
 using shadow_tlb_state = std::array<shadow_tlb_set, TLB_LAST_ + 1>; // one set for code, one for read and one for write

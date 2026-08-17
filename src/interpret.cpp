@@ -376,11 +376,12 @@ static inline uint32_t csr_prv(CSR_address csr) {
 template <typename STATE_ACCESS>
 static FORCE_INLINE void set_prv(STATE_ACCESS &a, uint64_t new_prv) {
     DUMP_STATS_INCR(a, prv_get_name(new_prv));
+    // No TLB flush: each translation context (privilege mode, mstatus.SUM)
+    // owns its own TLB partition, selected by the slot base the iprv write
+    // recomputes, so a mode change switches partitions instead of sweeping
+    // them (the sweep on every trap and sret measured 30-45% of
+    // kernel-heavy runs in verified TLB writeback).
     a.write_iprv(new_prv);
-    // Invalidate all TLB entries
-    flush_all_tlb(a);
-    DUMP_STATS_INCR(a, "tlb.flush_all");
-    DUMP_STATS_INCR(a, "tlb.flush_set_prv");
     //??D new privileged 1.11 draft says invalidation should
     // happen within a trap handler, although it could
     // also happen in xRET insn.
@@ -974,7 +975,7 @@ static void flush_tlb_slot(const STATE_ACCESS a, uint64_t slot_index) {
 /// \param a Machine state accessor object.
 template <TLB_set_index SET, typename STATE_ACCESS>
 static void flush_tlb_set(const STATE_ACCESS a) {
-    for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+    for (uint64_t slot_index = 0; slot_index < TLB_SET_SLOTS; ++slot_index) {
         flush_tlb_slot<SET>(a, slot_index);
     }
 }
@@ -1016,7 +1017,7 @@ template <TLB_set_index SET, typename STATE_ACCESS>
 static i_state_access_fast_addr_t<STATE_ACCESS> replace_tlb_entry(const STATE_ACCESS a, uint64_t vaddr, uint64_t paddr,
     uint64_t pma_index, i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset) {
     [[maybe_unused]] auto note = a.make_scoped_note("replace_tlb_entry");
-    const auto slot_index = tlb_slot_index(vaddr);
+    const auto slot_index = tlb_slot_index(vaddr, a.read_tlb_ctx_slot_base());
     flush_tlb_slot<SET>(a, slot_index);
     const auto vaddr_page = tlb_addr_page(vaddr);
     const auto faddr = a.get_faddr(paddr, pma_index);
@@ -1114,8 +1115,8 @@ template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false
 static FORCE_INLINE bool read_virtual_memory(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle, uint64_t vaddr,
     T *pval) {
     [[maybe_unused]] auto note = a.make_scoped_note("read_virtual_memory");
-    // Try hitting the TLB
-    const auto slot_index = tlb_slot_index(vaddr);
+    // Try hitting the TLB partition of the current translation context
+    const auto slot_index = tlb_slot_index(vaddr, a.read_tlb_ctx_slot_base());
     auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
     if (observe(a, !tlb_is_hit<T>(slot_vaddr_page, vaddr))) [[unlikely]] {
         // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
@@ -1226,8 +1227,8 @@ template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status write_virtual_memory(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t mcycle,
     uint64_t vaddr, uint64_t val64) {
     [[maybe_unused]] auto note = a.make_scoped_note("write_virtual_memory");
-    // Try hitting the TLB
-    const uint64_t slot_index = tlb_slot_index(vaddr);
+    // Try hitting the TLB partition of the current translation context
+    const uint64_t slot_index = tlb_slot_index(vaddr, a.read_tlb_ctx_slot_base());
     uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
     if (observe(a, !tlb_is_hit<T>(slot_vaddr_page, vaddr))) [[unlikely]] {
         // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
@@ -2451,12 +2452,11 @@ static NO_INLINE execute_status write_csr_mstatus(const STATE_ACCESS a, uint64_t
         // therefore it only affects read translations
         flush_tlb_read = true;
     }
-    if ((mod & MSTATUS_SUM_MASK) != 0) {
-        // SUM allows S-mode for accessing U-mode memory, except to code,
-        // therefore it only affects read/write translations
-        flush_tlb_read = true;
-        flush_tlb_write = true;
-    }
+    // No flush on SUM changes: (privilege, SUM) is the TLB's translation
+    // context and each context owns its own partition, so the kernel's SUM
+    // toggle around every user-memory access switches partitions instead of
+    // sweeping them. The mstatus write above already recomputed the cached
+    // slot base.
     if ((mod & MSTATUS_MPRV_MASK) != 0 || ((mstatus & MSTATUS_MPRV_MASK) && (mod & MSTATUS_MPP_MASK) != 0)) {
         // When MPRV is set, data loads and stores use privilege in MPP
         // instead of the current privilege level, but code access is unaffected,
@@ -2481,6 +2481,15 @@ static NO_INLINE execute_status write_csr_mstatus(const STATE_ACCESS a, uint64_t
     // When changing an interrupt enabled bit, we may have to service any pending interrupt
     if ((mod & (MSTATUS_SIE_MASK | MSTATUS_MIE_MASK)) != 0) {
         return execute_status::success_and_serve_interrupts;
+    }
+
+    // A SUM change switches the translation-context TLB partition. Nothing
+    // needs flushing, but generated traces bake their recording context into
+    // emitted TLB probes, so the status must force them to exit and re-enter
+    // through a context-checked entry (the chain restart this causes in the
+    // interpreter is negligible next to the flush it replaced).
+    if ((mod & MSTATUS_SUM_MASK) != 0) {
+        return execute_status::success_and_flush_fetch;
     }
 
     return execute_status::success;
@@ -5969,7 +5978,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc(const STATE_ACCESS a, i_stat
     i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset, uint64_t &pma_index,
     i_state_access_fast_addr_t<STATE_ACCESS> &last_fetch_page) {
     // Try to perform the address translation via TLB first
-    const uint64_t slot_index = tlb_slot_index(vaddr);
+    const uint64_t slot_index = tlb_slot_index(vaddr, a.read_tlb_ctx_slot_base());
     uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
     if (!tlb_is_hit<uint16_t>(slot_vaddr_page, vaddr)) [[unlikely]] {
         // A STATE_ACCESS that does lazy initialization / fast address translation maintains an out-of-state hot
@@ -6790,6 +6799,13 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
     static_assert(is_an_i_state_access_v<STATE_ACCESS>, "not an i_state_access");
     static_assert(is_an_i_accept_scoped_note_v<STATE_ACCESS>, "not an i_accept_scoped_notes");
+
+    // The stateful machine caches the translation-context slot base in its
+    // penumbra; refresh it on entry so host-side register writes between
+    // runs cannot leave it stale. Stateless accesses compute it on demand.
+    if constexpr (requires { a.do_refresh_tlb_ctx_slot_base(); }) {
+        a.do_refresh_tlb_ctx_slot_base();
+    }
 
     const uint64_t mcycle = a.read_mcycle();
     const uint64_t imcyclemax = a.read_imcyclemax();

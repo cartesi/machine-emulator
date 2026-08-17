@@ -200,6 +200,12 @@ struct tc_online_state {
         uint16_t linked_stores;
         bool returns;
         int8_t guest_slot[32];
+        /// \brief Translation-context slot base captured at recording begin.
+        /// \details Emitted TLB probes bake this context's partition into
+        /// their slot constants; entry guards reject entry from any other
+        /// context, and a context change inside generated code exits (the
+        /// mstatus helper returns a non-plain status).
+        uint64_t ctx_slot_base;
         side_link side[max_side_exits];
         uint16_t nside;
         bool side_trace;
@@ -232,6 +238,7 @@ struct tc_online_state {
         bool call_target;
         bool continuation;
         bool pass_through; ///< Starved-head retry: record through installed heads while short
+        uint64_t ctx_slot_base; ///< Translation context of the recording, latched at begin
         tc_online_entry entries[max_len];
     };
     static constexpr uint32_t set_slots = 4096; // >= 4x max_traces, power of two
@@ -1369,6 +1376,13 @@ static void tc_online_flush(tc_context<STATE_ACCESS> *c) {
     // recordings would otherwise churn again after every flush
 }
 
+/// \brief Reaches the penumbra that holds a chain context.
+template <typename STATE_ACCESS>
+static FORCE_INLINE penumbra_state *tc_penumbra(tc_context<STATE_ACCESS> *c) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<penumbra_state *>(reinterpret_cast<unsigned char *>(c) - offsetof(penumbra_state, scratch));
+}
+
 /// \brief Discards a recording interrupted by outer-loop architectural work.
 /// \details Interrupt and exception entry mutates privilege state outside the
 /// instruction body. The next fetched pc therefore is not an instruction
@@ -1540,6 +1554,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         t.chain_offset = recording.chain_offset + start;
         t.chain_connected = chain_connected && start == connected_end;
         t.code_vf_offset = recording.entries[start].code_vf_offset;
+        t.ctx_slot_base = recording.ctx_slot_base;
         t.len = end - start;
         t.cycle =
             end == recording.len && cycle >= static_cast<int32_t>(start) ? cycle - static_cast<int32_t>(start) : -1;
@@ -1705,7 +1720,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
     auto *const penumbra =
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<penumbra_state *>(reinterpret_cast<unsigned char *>(c) - offsetof(penumbra_state, scratch));
-    for (uint64_t slot = 0; slot < TLB_SET_SIZE; ++slot) {
+    for (uint64_t slot = 0; slot < TLB_SET_SLOTS; ++slot) {
         auto &hot_slot = penumbra->tlb[TLB_WRITE][slot];
         if (hot_slot.vaddr_page == TLB_INVALID_PAGE || hot_slot.vaddr_page == TLB_UNVERIFIED_PAGE) {
             continue;
@@ -1729,6 +1744,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         o->pending_side->fn = o->pool[first_trace].fn;
         if (side_predecessor != nullptr &&
             (tc_static_regs().enabled || o->pool[first_trace].linked_predecessor == side_predecessor) &&
+            side_predecessor->ctx_slot_base == o->pool[first_trace].ctx_slot_base &&
             o->pool[first_trace].linked_fn != nullptr && tc_lightning_fast_links_enabled()) {
             o->pending_side->fast_fn = o->pool[first_trace].linked_fn;
             ++o->register_links;
@@ -1747,7 +1763,8 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
                 const bool crosses_page = (predecessor.head >> LOG2_PAGE_SIZE) != (successor->head >> LOG2_PAGE_SIZE);
                 predecessor.link_fn = crosses_page ? successor->call_fn : successor->fn;
                 if ((tc_static_regs().enabled || successor->linked_predecessor == &predecessor) &&
-                    successor->linked_fn != nullptr && tc_lightning_fast_links_enabled()) {
+                    predecessor.ctx_slot_base == successor->ctx_slot_base && successor->linked_fn != nullptr &&
+                    tc_lightning_fast_links_enabled()) {
                     predecessor.fast_link_fn = successor->linked_fn;
                     ++o->register_links;
                     o->register_loads += successor->linked_loads;
@@ -1795,6 +1812,7 @@ static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc, bool call_
     // A head whose previous recording starved gets its one pass-through
     // retry; the flag never applies to call, continuation or side begins.
     o->pending.pass_through = !call_target && tc_online_inline_retry_enabled() && tc_online_starved(o, pc);
+    o->pending.ctx_slot_base = tc_penumbra(c)->tlb_ctx_slot_base;
 #if TC_LIGHTNING
     o->pending_side = nullptr;
 #endif
@@ -1826,6 +1844,7 @@ static bool tc_online_begin_continuation(tc_context<STATE_ACCESS> *c, uint64_t p
     o->pending.call_target = false;
     o->pending.continuation = true;
     o->pending.pass_through = false;
+    o->pending.ctx_slot_base = tc_penumbra(c)->tlb_ctx_slot_base;
 #if TC_LIGHTNING
     o->pending_side = nullptr;
 #endif
@@ -1865,6 +1884,7 @@ static void tc_online_begin_side(tc_context<STATE_ACCESS> *c, uint64_t pc, tc_on
     o->pending.call_target = false;
     o->pending.continuation = false;
     o->pending.pass_through = false;
+    o->pending.ctx_slot_base = tc_penumbra(c)->tlb_ctx_slot_base;
     o->pending_side = link;
     o->recording = true;
     tc_online_debug("side", pc, o->ntraces);
@@ -1881,6 +1901,12 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
     tc_online_state *o = c->online;
     auto &recording = o->pending;
     const uint64_t code_vf_offset = static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(pc);
+    // A recording never crosses a translation-context change: the published
+    // trace bakes one context into its emitted TLB probes.
+    if (tc_penumbra(c)->tlb_ctx_slot_base != recording.ctx_slot_base) [[unlikely]] {
+        tc_online_finish(c, -1, false);
+        return;
+    }
     if (recording.len > 0) {
         recording.entries[recording.len - 1].next_pc = pc;
         for (uint32_t i = 0; i < recording.len; ++i) {
@@ -3076,11 +3102,14 @@ struct tc_lightning_execution {
         const jit_gpr_t address = scratch_registers[2];
         constexpr jit_word_t hot_tlb_offset =
             offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_READ * sizeof(hot_tlb_set);
+        // The trace's translation-context partition, baked into the probe
+        // constants: context changes exit traces, so this is loop-invariant.
+        const jit_word_t ctx_off = static_cast<jit_word_t>(trace->ctx_slot_base * sizeof(hot_tlb_slot));
         // A constant address knows its TLB slot and expected tag statically:
         // the probe shrinks to load-compare-load and an immediate add.
         if (nodes[load.lhs].emit == emit_immediate) {
             const uint64_t vaddr = nodes[load.lhs].immediate;
-            const jit_word_t slot_off = hot_tlb_offset +
+            const jit_word_t slot_off = hot_tlb_offset + ctx_off +
                 static_cast<jit_word_t>(((vaddr >> LOG2_PAGE_SIZE) & (TLB_SET_SIZE - 1)) * sizeof(hot_tlb_slot));
             jit_ldxi(page, TC_JIT_STATE, slot_off + offsetof(hot_tlb_slot, vaddr_page));
             const uint64_t expected =
@@ -3094,7 +3123,7 @@ struct tc_lightning_execution {
             jit_andi(slot, slot, TLB_SET_SIZE - 1);
             jit_lshi(slot, slot, 4);
             jit_addr(slot, slot, TC_JIT_STATE);
-            jit_addi(slot, slot, hot_tlb_offset);
+            jit_addi(slot, slot, hot_tlb_offset + ctx_off);
             jit_ldxi(page, slot, offsetof(hot_tlb_slot, vaddr_page));
             jit_andi(address, address,
                 ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~(static_cast<uint64_t>(sizeof(T)) - 1)));
@@ -3140,9 +3169,12 @@ struct tc_lightning_execution {
         const jit_gpr_t address = scratch_registers[2];
         constexpr jit_word_t hot_tlb_offset =
             offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_WRITE * sizeof(hot_tlb_set);
+        // The trace's translation-context partition, baked into the probe
+        // constants: context changes exit traces, so this is loop-invariant.
+        const jit_word_t ctx_off = static_cast<jit_word_t>(trace->ctx_slot_base * sizeof(hot_tlb_slot));
         if (nodes[address_value.node].emit == emit_immediate) {
             const uint64_t vaddr = nodes[address_value.node].immediate;
-            const jit_word_t slot_off = hot_tlb_offset +
+            const jit_word_t slot_off = hot_tlb_offset + ctx_off +
                 static_cast<jit_word_t>(((vaddr >> LOG2_PAGE_SIZE) & (TLB_SET_SIZE - 1)) * sizeof(hot_tlb_slot));
             jit_ldxi(page, TC_JIT_STATE, slot_off + offsetof(hot_tlb_slot, vaddr_page));
             const uint64_t expected = vaddr & ~static_cast<uint64_t>(PAGE_OFFSET_MASK & ~(sizeof(T) - 1));
@@ -3155,7 +3187,7 @@ struct tc_lightning_execution {
             jit_andi(slot, slot, TLB_SET_SIZE - 1);
             jit_lshi(slot, slot, 4);
             jit_addr(slot, slot, TC_JIT_STATE);
-            jit_addi(slot, slot, hot_tlb_offset);
+            jit_addi(slot, slot, hot_tlb_offset + ctx_off);
             jit_ldxi(page, slot, offsetof(hot_tlb_slot, vaddr_page));
             jit_andi(address, address, ~static_cast<jit_word_t>(PAGE_OFFSET_MASK & ~(sizeof(T) - 1)));
             add_exit(jit_bner(page, address));
@@ -4608,7 +4640,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status tc_fetch_translate_pc(const STATE_ACCESS a,
     i_state_access_fast_addr_t<STATE_ACCESS> &pc, uint64_t vaddr, i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset,
     uint64_t &pma_index, tc_context<STATE_ACCESS> *tcc) {
-    const uint64_t slot_index = tlb_slot_index(vaddr);
+    const uint64_t slot_index = tlb_slot_index(vaddr, a.read_tlb_ctx_slot_base());
     uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
     bool walk = false;
     if (!tlb_is_hit<uint16_t>(slot_vaddr_page, vaddr)) [[unlikely]] {
@@ -5658,6 +5690,14 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     auto *const normal_entry_established = jit_label();
     auto *const entry_bail = jit_blei(TC_JIT_CD, static_cast<jit_word_t>(trace.len));
 
+    // Translation-context guard: the trace's TLB probes bake the recording
+    // context's partition, so entry from any other context (the trace map is
+    // keyed by pc and code mapping alone) must fall back to the interpreter.
+    constexpr jit_word_t tlb_ctx_off =
+        offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb_ctx_slot_base);
+    jit_ldxi(tmp0, TC_JIT_STATE, tlb_ctx_off);
+    auto *const entry_ctx_bail = jit_bnei(tmp0, static_cast<jit_word_t>(trace.ctx_slot_base));
+
     // Parked pc (TC_PARK_PC): bodies fold pc to compile-time constants, so
     // it lives in the context between boundaries and r14 carries guest slot
     // 9. Boundaries restore it with a compile-time delta from the trace
@@ -5894,7 +5934,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             constexpr jit_word_t context_fetch_page = offsetof(tc_context<state_access>, fetch_vaddr_page);
             constexpr jit_word_t context_pma_index = offsetof(tc_context<state_access>, fetch_pma_index);
             const uint64_t successor_page = tlb_addr_page(trace.head);
-            const uint64_t slot_index = tlb_slot_index(trace.head);
+            const uint64_t slot_index = tlb_slot_index(trace.head, trace.ctx_slot_base);
             const jit_word_t hot_slot = hot_tlb_base + slot_index * sizeof(hot_tlb_slot);
             const jit_word_t shadow_slot = shadow_tlb_base + slot_index * sizeof(shadow_tlb_slot);
 
@@ -5989,7 +6029,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     constexpr jit_word_t context_fetch_page = offsetof(tc_context<state_access>, fetch_vaddr_page);
     constexpr jit_word_t context_pma_index = offsetof(tc_context<state_access>, fetch_pma_index);
     const uint64_t head_page = tlb_addr_page(trace.head);
-    const uint64_t head_slot_index = tlb_slot_index(trace.head);
+    const uint64_t head_slot_index = tlb_slot_index(trace.head, trace.ctx_slot_base);
     const jit_word_t head_hot_slot = hot_tlb_base + head_slot_index * sizeof(hot_tlb_slot);
     const jit_word_t head_shadow_slot = shadow_tlb_base + head_slot_index * sizeof(shadow_tlb_slot);
 
@@ -6020,6 +6060,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
 
     auto *const entry_bail_label = jit_label();
     jit_patch_at(entry_bail, entry_bail_label);
+    jit_patch_at(entry_ctx_bail, entry_bail_label);
     emit_continue();
 
     auto *const emitted = jit_emit();

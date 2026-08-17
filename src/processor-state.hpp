@@ -38,7 +38,7 @@ struct shadow_state final {
     uint64_t registers_padding_[401]{}; ///< Padding to align next field to a page boundary
     machine_hash revert_root_hash{};    ///< Revert root hash
     shadow_tlb_state tlb;               ///< Shadow TLB state
-    uint64_t tlb_padding_[512]{};       ///< Padding to align next field to a page boundary
+    uint64_t tlb_padding_[1536]{};      ///< Padding to align next field to a page boundary
 };
 
 class machine;
@@ -49,6 +49,10 @@ struct penumbra_state final {
     hot_tlb_state tlb;           ///< Hot TLB state
     machine *owner{};            ///< Machine holding this state
     host_addr fetch_vf_offset{}; ///< Fetch mapping offset of the current code page
+    /// \brief Cached translation-context slot base (tlb_ctx * TLB_SET_SIZE).
+    /// \details Maintained by the stateful machine's iprv/mstatus writes and
+    /// recomputed at interpret entry; boots in M-mode.
+    uint64_t tlb_ctx_slot_base{3 * TLB_SET_SIZE};
     /// \brief Host-write notification hook, null unless a runtime consumer of
     /// guest memory bytes (the trace backend) has derived state to invalidate.
     /// \details Called wherever guest RAM bytes can change: at write-TLB slot
@@ -63,7 +67,7 @@ struct penumbra_state final {
     /// outliving it in thread storage.
     void *tc_state{};
     void (*tc_state_free)(void *){};
-    uint64_t scratch[506]{}; ///< Interpreter loop scratch area; also aligns penumbra state size to a page boundary
+    uint64_t scratch[505]{}; ///< Interpreter loop scratch area; also aligns penumbra state size to a page boundary
 };
 
 /// \brief Machine processor state.

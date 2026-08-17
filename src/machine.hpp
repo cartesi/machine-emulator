@@ -700,7 +700,7 @@ public:
     /// \param pma_index Index of PMA where address falls
     void write_unverified_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index) {
-        if (slot_index >= TLB_SET_SIZE) {
+        if (slot_index >= TLB_SET_SLOTS) {
             throw std::out_of_range{"TLB slot index out of bounds"};
         }
         // Mark the page currently mapped here dirty before we overwrite the slot

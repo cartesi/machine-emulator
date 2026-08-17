@@ -3539,6 +3539,65 @@ shell cost +66% with tracing idle).
     against item 19's falsified broad-retry variants (this one is
     narrow: trace-exit successors only, only when hot).
 
+22. DONE, GATED, PARTLY FALSIFIED: THE SUCCESSOR SEAM, FP-CSR
+    STAGING, AND THE CYCLIC-TRUNCATION TENSION. Item 21 filed the
+    starved successor seam; chasing it produced three pieces of
+    machinery, two of which ship and one of which joins item 19's
+    falsified formation experiments -- and it exposed a real
+    tension the current recorder cannot express.
+
+    First, the seam's true anatomy: the starved successor pc
+    (1306c2) is the csrrs on fflags in __multf3's fenv handling.
+    Uncollectable instructions end recordings, so a trace's
+    fallthrough successor IS, systematically, an uncollectable pc
+    -- tripping a recording there (the filed fix) begins a trace
+    that dies at entry 0. The root fix is staging: writes of
+    fflags, frm and fcsr (csrrw/csrrs/csrrc and immediates) now
+    stage as a whole-instruction helper, pre-bailing on FS off;
+    reads keep their inline staging. Soft-float fenv churn no
+    longer ends recordings at all. Second, the successor-trip
+    machinery itself (a per-trace transit countdown on the
+    unlinked fallthrough, mirroring the unlinked-side-exit
+    pattern, re-armed at each trip): built, verified working --
+    traces do form at previously starved successors -- and
+    measured a net loss, the same equilibrium churn as item 19's
+    broad-retry falsifications; it stays env-gated
+    (TC_SUCCESSOR_TRIPS) and off. Third, the discovery-side exit
+    budget: add_exit only runs at emission, so budget overflows
+    surfaced after discovery passed -- past item 21's truncation
+    net -- as hard aborts that blacklisted heads. Discovery now
+    counts prospective exits conservatively and overflow surfaces
+    where truncation can act.
+
+    Then the tension, measured to exhaustion. Truncating an
+    over-budget CYCLIC recording forecloses its loop (the straight
+    prefix installs at the head), and int64's bench equilibrium
+    pays ~52%, qsort ~20% -- in every variant tried: immediate
+    truncation, a loop-fit estimate, a three-strike ladder.
+    Aborting it instead lets smaller loops form at their own heads
+    and restores those rows exactly -- but starves heads whose
+    loop body never fits any budget: matrixprod's musl soft-float
+    inner loop ran 5.5s truncated against 8.1s aborted (compete),
+    a 35% swing on that row and briefly a 1.30x board geomean.
+    Five configurations measured end to end; the shipped policy is
+    the Pareto-safe one -- straight recordings truncate, cyclic
+    budget failures abort -- keeping every bench row at its best
+    (int64 2.44, qsort 3.30, sieve 0.77, matrixprod 3.24) except
+    memcpy (+13%: its ~30-probe traces sit at the exit budget and
+    the conservative count tips some into truncation), and leaving
+    matrixprod's compete win on the table, filed: the right form
+    is per-head, letting a head that repeatedly fails to close its
+    cycle fall back to straight coverage only after its
+    alternatives have provably had their chance -- which needs
+    warmup-aware state the penalty table does not carry.
+
+    Gates: 13-workload jit hash equality against the ctx canon on
+    the final configuration. Board (compete medians): nop 1.27
+    (0.92x icount), syscall 2.33, hash 6.59, tree 7.28, double
+    5.91; geomean vs icount excluding nop 1.37x, with the
+    matrixprod-truncation configuration demonstrating 1.30x is
+    reachable once the per-head policy exists.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

@@ -619,7 +619,8 @@ register tc_context<state_access> *tcc asm("r15");
 
 #if TC_LIGHTNING
 static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit_state_t **owner,
-    const tc_online_state::trace *preferred_mapping = nullptr, const tc_online_state *online = nullptr);
+    const tc_online_state::trace *preferred_mapping = nullptr, const tc_online_state *online = nullptr,
+    bool *budget_abort = nullptr);
 #endif
 
 static FORCE_INLINE uint32_t tc_online_pc_slot(uint64_t pc) {
@@ -1655,7 +1656,8 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         const bool contiguous = previous_selected != UINT32_MAX && selected_end[previous_selected] == start;
         const auto *const preferred = npublished == 0 ? (attach_side ? side_predecessor : nullptr) :
                                                         (contiguous ? &o->pool[first_trace + npublished - 1] : nullptr);
-        t.fn = tc_lightning_compile_trace(t, &t.jit, preferred, o);
+        bool budget_abort = false;
+        t.fn = tc_lightning_compile_trace(t, &t.jit, preferred, o, &budget_abort);
         if (t.fn == nullptr) {
             ++o->aborted;
             ++o->compile_aborted;
@@ -1668,11 +1670,16 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
                     jit_destroy_state();
                     o->pool[first_trace + i].jit = nullptr;
                 }
-                tc_online_penalize(o, recording.head, true);
+                tc_online_penalize(o, recording.head, !budget_abort);
                 reject_side();
                 return;
             }
-            tc_online_penalize(o, recording.head, true);
+            // A budget abort strikes instead of blacklisting: the head may
+            // record something smaller next time, and after its last strike
+            // the backend truncates instead of aborting (see the ladder in
+            // tc_lightning_compile_trace). Genuinely uncompilable content
+            // still blacklists permanently.
+            tc_online_penalize(o, recording.head, !budget_abort);
             chain_connected = false;
             continue;
         }
@@ -2366,6 +2373,7 @@ struct tc_lightning_execution {
     uint16_t nnodes{};
     uint16_t nexits{};
     uint16_t discovery_exits{}; ///< Conservative prospective-exit count (see count_exit)
+    bool budget_failed{};       ///< Failure was a node/exit budget overflow, not an uncollectable insn
     uint8_t nguests{};
     uint32_t current{};
     bool discovery{true};
@@ -2477,6 +2485,7 @@ struct tc_lightning_execution {
     uint16_t add_node(tc_lightning_node::emit_fn emit, uint16_t lhs = 0, uint16_t rhs = 0, uint64_t immediate = 0) {
         if (nnodes == max_nodes) {
             failed = true;
+            budget_failed = true;
             return 0;
         }
         const uint16_t result = nnodes++;
@@ -3047,6 +3056,7 @@ struct tc_lightning_execution {
     void count_exit() {
         if (discovery && ++discovery_exits > max_exits) {
             failed = true;
+            budget_failed = true;
         }
     }
 
@@ -5642,7 +5652,7 @@ static bool tc_lightning_discover_trace(tc_lightning_execution &execution) {
 }
 
 static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit_state_t **owner,
-    const tc_online_state::trace *preferred_mapping, const tc_online_state *online) {
+    const tc_online_state::trace *preferred_mapping, const tc_online_state *online, bool *budget_abort) {
     if (trace.len == 0) {
         return nullptr;
     }
@@ -5738,6 +5748,21 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     while (!tc_lightning_discover_trace(execution) || execution.failed) {
         constexpr uint32_t min_truncated_len = 8;
         const uint32_t cut = execution.current;
+        // A cyclic recording that overflows the budget aborts instead of
+        // truncating. Cutting it would publish a straight prefix that
+        // installs at the head and forecloses the loop forever -- int64's
+        // equilibrium measured 52% worse that way, in every variant tried
+        // (immediate truncation, loop-fit estimation, a strike ladder):
+        // killing the over-long recording outright is what lets its smaller
+        // loops form at their own heads. The measured cost of this choice is
+        // matrixprod's soft-float inner loop, whose body never fits the
+        // budget and which truncation covered 35% faster; that tension is
+        // filed with all five measured configurations rather than split by
+        // a heuristic that gets one of the two wrong.
+        if (execution.budget_failed && trace.cycle >= 0) {
+            jit_destroy_state();
+            return nullptr;
+        }
         if (cut < min_truncated_len || cut >= trace.len) {
 #ifdef TLB_FILL_LOG
             {
@@ -6020,15 +6045,21 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             emit_leave(tmp2);
             auto *const fallback = jit_label();
             jit_patch_at(unlinked, fallback);
-            if (!trace.side_trace) {
+            static const bool successor_trips = std::getenv("TC_SUCCESSOR_TRIPS") != nullptr;
+            if (!trace.side_trace && successor_trips) {
                 // Unlinked fallthrough: count transits and trip a recording
                 // at the successor when hot, exactly like an unlinked side
                 // exit below. TC_JIT_PC already carries the successor here.
+                // The counter re-arms at the trip: a successor that can never
+                // host a trace (blacklisted) must cost one trip per reset
+                // period, not one per transit.
                 jit_movi(tmp0, reinterpret_cast<jit_word_t>(&trace.successor_hotcount));
                 jit_ldr_us(tmp1, tmp0);
                 jit_subi(tmp1, tmp1, 1);
                 jit_str_s(tmp0, tmp1);
                 auto *const continue_counting = jit_bgti(tmp1, 0);
+                jit_movi(tmp1, static_cast<jit_word_t>(tc_online_state::side_hot_reset));
+                jit_str_s(tmp0, tmp1);
                 jit_movi(tmp0, reinterpret_cast<jit_word_t>(&tc_lightning_trip<state_access>));
                 emit_leave(tmp0);
                 auto *const cold = jit_label();

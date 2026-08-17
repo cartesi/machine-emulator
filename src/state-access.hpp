@@ -171,6 +171,8 @@ private:
 
     void do_write_mstatus(uint64_t val) const {
         m_s.shadow.registers.mstatus = val;
+        m_s.penumbra.tlb_ctx_slot_base =
+            tlb_ctx(m_s.shadow.registers.iprv, val & MSTATUS_SUM_MASK) * TLB_SET_SIZE;
     }
 
     uint64_t do_read_menvcfg() const {
@@ -347,6 +349,17 @@ private:
 
     void do_write_iprv(uint64_t val) const {
         m_s.shadow.registers.iprv = val;
+        m_s.penumbra.tlb_ctx_slot_base =
+            tlb_ctx(val, m_s.shadow.registers.mstatus & MSTATUS_SUM_MASK) * TLB_SET_SIZE;
+    }
+
+    uint64_t do_read_tlb_ctx_slot_base() const {
+        return m_s.penumbra.tlb_ctx_slot_base;
+    }
+
+    void do_refresh_tlb_ctx_slot_base() const {
+        m_s.penumbra.tlb_ctx_slot_base =
+            tlb_ctx(m_s.shadow.registers.iprv, m_s.shadow.registers.mstatus & MSTATUS_SUM_MASK) * TLB_SET_SIZE;
     }
 
     uint64_t do_read_iflags_X() const {

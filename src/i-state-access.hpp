@@ -404,6 +404,21 @@ public:
             pma_index, static_cast<uint64_t>(val), static_cast<uint64_t>(val));
     }
 
+    /// \brief Reads the current translation-context slot base
+    /// (tlb_ctx(iprv, mstatus.SUM) * TLB_SET_SIZE).
+    /// \details A pure function of architectural state; the default computes
+    /// it on demand, and the stateful machine overrides with a penumbra cache
+    /// maintained by its iprv/mstatus writes, keeping the TLB hit path at one
+    /// cached load. Context changes select a different TLB partition instead
+    /// of flushing.
+    uint64_t read_tlb_ctx_slot_base() const {
+        if constexpr (requires(const DERIVED &d) { d.do_read_tlb_ctx_slot_base(); }) {
+            return derived().do_read_tlb_ctx_slot_base();
+        } else {
+            return tlb_ctx(read_iprv(), read_mstatus() & MSTATUS_SUM_MASK) * TLB_SET_SIZE;
+        }
+    }
+
     /// \brief Reads TLB's vaddr_page
     /// \tparam SET TLB set
     /// \param slot_index Slot index

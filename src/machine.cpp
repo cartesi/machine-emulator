@@ -251,12 +251,18 @@ void machine::init_pmas_contents(const pmas_config &config) {
 
 void machine::init_hot_tlb_contents() {
     for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
-        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+        for (uint64_t slot_index = 0; slot_index < TLB_SET_SLOTS; ++slot_index) {
             auto &hot_slot = m_s->penumbra.tlb[set_index][slot_index];
             hot_slot.vaddr_page = TLB_UNVERIFIED_PAGE;
             hot_slot.vh_offset = host_addr{0};
         }
     }
+    // The cached translation-context slot base follows the architectural
+    // registers; recompute it wherever the hot TLB is (re)initialized, which
+    // covers machine construction, state load, and host-side register writes
+    // between runs.
+    m_s->penumbra.tlb_ctx_slot_base =
+        tlb_ctx(m_s->shadow.registers.iprv, m_s->shadow.registers.mstatus & MSTATUS_SUM_MASK) * TLB_SET_SIZE;
 }
 
 uint64_t machine::init_hot_tlb_slot(TLB_set_index set_index, uint64_t slot_index) const {
@@ -1539,7 +1545,7 @@ void machine::mark_write_tlb_dirty_page(uint64_t slot_index) const {
 }
 
 void machine::mark_write_tlb_dirty_pages() const {
-    for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+    for (uint64_t slot_index = 0; slot_index < TLB_SET_SLOTS; ++slot_index) {
         mark_write_tlb_dirty_page(slot_index);
     }
 }

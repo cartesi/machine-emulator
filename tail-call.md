@@ -3468,6 +3468,77 @@ shell cost +66% with tracing idle).
     trace-insns did not move, pinning the skew to a different seam
     than either hardening covers.
 
+21. DONE, GATED: THE LOTTERY DISSOLVED -- BUDGET-GRACEFUL
+    COMPILATION, AND THE BUDGET RAISE FALSIFIED. Item 20's filed
+    defect, chased to ground truth and closed. The "instruction/pc
+    skew" was a misread of a debug print that pairs an entry's insn
+    with the post-advance pc: disassembling the musl binary at the
+    failing window shows the recording was PERFECT. The hot body is
+    __multf3 -- long-double soft-float multiplication, which is what
+    stress-ng's matrixprod actually spends its time in -- and it is
+    branch-dense: the 210-entry fragment carries more conditional
+    branches than the backend's side-exit budget (max_exits = 32),
+    so add_exit sets failed at exit 33 and the WHOLE fragment
+    aborts. Old's lucky 185-entry window sat at 26 exits and
+    compiled. No unsupported instruction, no corruption: a budget
+    overflow with cliff semantics, and the cliff is what made trace
+    formation a lottery.
+
+    The fix removes the cliff rather than the budget: discovery that
+    fails at entry i -- node budget, exit budget, or an instruction
+    that will not collect -- truncates the trace to the compilable
+    prefix [0, i) and retries (the same trace-mutation contract
+    TC_LIGHTNING_TRIM already exercises; each retry strictly shrinks
+    len, floor at 8). An over-budget recording degrades into its
+    largest compilable prefix; the tail re-records from its own head
+    and links back; heads no longer die. On the failing row the body
+    compiles and coverage returns: trace-insns 51.6M -> 312M at
+    equal episodes, in-trace time 542ms -> 354ms.
+
+    The obvious companion -- raise the budgets so the whole body
+    fits (exits 32 -> 128, nodes 256 -> 1024) -- was built and
+    measured, and it is a net LOSS: it buys hash (compete 6.35 ->
+    5.72) and zlib (10.40 -> 9.76) but big branchy traces that used
+    to abort, and re-form as better-composed shorter traces, now
+    compile whole and underperform -- bench int64 +46%, qsort +20%,
+    compete sieve +20%. The A/B on the six moved rows settles it,
+    truncation-only vs truncation+budgets (bench best-of-2 /
+    compete median):
+      workload    ctx     trunc   t+budgets
+      int64       2.56    2.45    3.73   bench
+      qsort       3.30    3.42    3.96
+      matrixprod  3.86    3.41    3.69
+      int64       8.59    7.69    8.47   compete
+      qsort      10.08    9.72   10.15
+      sieve       6.43    6.54    7.70
+      matrixprod  8.63    8.06    7.93
+      hash        6.35    6.71    5.72
+      zlib       10.40   10.38    9.76
+    Truncation-only ships (int64, qsort, matrixprod better or equal
+    everywhere; hash's +6% compete within same-day drift bounds);
+    the budget raise reverts. The lesson mirrors item 19's
+    pass-through falsification: the recorder's composition of many
+    short traces beats single big traces often enough that widening
+    any single-trace resource is guilty until measured innocent.
+
+    Gates: 13-workload jit hash equality against the ctx canon
+    (recorder and backend changes must not alter architectural
+    execution, and do not). Remaining, measured and filed rather
+    than hidden: matrixprod compete 8.06 against old's lucky 6.21 --
+    the residual is a formation-policy seam, not compilation. The
+    dominant trace (head 1302a0, len 42, 5.9M executions) exits to
+    a fallthrough successor (1306c2) that is neither a back-edge
+    target nor a call target, so no hotcount hook ever sees it, no
+    recording ever starts there, and 5.9M transits per run fall
+    back to the interpreter through an uncovered seam (zero
+    recorder events for that pc across a full run; continuations
+    only fire at cap-bound ends). Filed: a successor-transit
+    counter at trace exit -- the side_link hotcount machinery
+    already exists for side exits, the main successor simply lacks
+    one -- beginning a recording at a hot successor, measured
+    against item 19's falsified broad-retry variants (this one is
+    narrow: trace-exit successors only, only when hot).
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

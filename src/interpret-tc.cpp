@@ -733,6 +733,17 @@ static FORCE_INLINE bool tc_online_demoted(const tc_online_state *o, uint64_t pc
     return false;
 }
 
+/// \brief Whether starved loop heads get a pass-through retry
+/// (TC_ONLINE_INLINE_RETRY). Default off: retries rescue loops that call
+/// out-of-line callees (musl int64 0.1% -> 26% coverage, -41% wall) but
+/// kernel-dense code has thousands of individually lukewarm starved
+/// heads, and their retries measured syscall at +138%: 18002 installed
+/// traces against 532, 17 pool flush-alls, 4.4 s compiling against 0.14.
+static bool tc_online_inline_retry_enabled() {
+    static const bool enabled = std::getenv("TC_ONLINE_INLINE_RETRY") != nullptr;
+    return enabled;
+}
+
 /// \brief Marks a loop head whose recording starved: it ended at an
 /// installed trace while still too short to publish. Its next recording
 /// gets one pass-through retry that inlines through installed heads.
@@ -1773,7 +1784,7 @@ static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc, bool call_
     o->pending.continuation = false;
     // A head whose previous recording starved gets its one pass-through
     // retry; the flag never applies to call, continuation or side begins.
-    o->pending.pass_through = !call_target && tc_online_starved(o, pc);
+    o->pending.pass_through = !call_target && tc_online_inline_retry_enabled() && tc_online_starved(o, pc);
 #if TC_LIGHTNING
     o->pending_side = nullptr;
 #endif
@@ -1890,7 +1901,7 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
 #if TC_LIGHTNING
             loop_head_recording = loop_head_recording && o->pending_side == nullptr;
 #endif
-            if (loop_head_recording && !recording.pass_through &&
+            if (loop_head_recording && !recording.pass_through && tc_online_inline_retry_enabled() &&
                 recording.len < tc_online_state::min_straight_len) {
                 tc_online_insert_starved(o, recording.head);
             }

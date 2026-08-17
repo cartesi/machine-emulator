@@ -3296,6 +3296,118 @@ shell cost +66% with tracing idle).
     matrixprod's +34% under it is an open anomaly to measure
     before any clock default changes.
 
+20. DONE, GATED: THE CONTEXT-INDEXED TLB. Item 19 ended with the
+    fire named: write_csr_mstatus reached from CSRRS, because the
+    guest kernel toggles SUM around every user-memory access and
+    every toggle bought a read+write hot-TLB flush sweep with
+    verified writeback, plus set_prv flushing all three sets on
+    every trap entry and sret. The filed fix was structural and is
+    now built: make the translation context part of the TLB index
+    instead of a flush trigger. This is a generalization of the
+    existing TLB_set_index axis: the enumeration goes from 3 sets
+    (CODE, READ, WRITE) to 3 axes x 4 contexts, where the context
+    in {U, S, S+SUM, M} is a pure function of hashed state (iprv
+    and mstatus.SUM), the slot index becomes ctx*128 + hash(vaddr),
+    and a privilege or SUM change switches partitions instead of
+    flushing. Fully symmetric by design decision: code banks follow
+    SUM exactly like data banks (redundant capacity, one
+    enumeration, one flush shape). set_prv no longer flushes at
+    all; SUM changes no longer flush; MXR, MPRV, satp and
+    sfence.vma keep today's flush semantics (flushes sweep all
+    partitions). Because PMAS at 0x10000 is public ABI the shadow
+    TLB cannot move or grow past it, so per-context slots halve to
+    128 and the shadow grows 0x4000 -> 0xC000 within the freed
+    shadow-state budget (AR_SHADOW_STATE_LENGTH 0x8000 -> 0x10000).
+    The hash and state format change by design; the old canon is
+    dead. The stateful machine caches ctx*128 in the penumbra,
+    maintained as a side effect of write_iprv/write_mstatus and
+    refreshed at interpret entry; stateless accessors (log, verify,
+    uarch) compute it from iprv+mstatus.SUM on demand, so replay
+    inherits the semantics by construction. The trace JIT treats
+    traces as single-context: the recorder captures the context at
+    begin and ends recording on any change; published traces bake
+    ctx*slot_size into the existing probe constants (zero added
+    cost on the hit path, per the budget); normal entries guard the
+    cached context against the baked one (two instructions per
+    episode); call entries inherit the guard; fast links install
+    only between same-context traces; and write_csr_mstatus returns
+    success_and_flush_fetch on a SUM change so a toggle inside
+    traced kernel code exits generated code before its baked
+    offsets go stale.
+
+    Gates. Thirteen-workload jit-vs-interpreter hash equality
+    minted the new canon; run-restart invariance held (a 17-way
+    split run of memcpy equals the single run bit for bit); the
+    log_step record->replay root-hash oracle passed on live
+    SUM-toggling syscall windows. One incident is worth the
+    notebook space: the first gate run flagged memcpy as
+    jit-vs-canon MISMATCH while internally deterministic. Bisection
+    landed the first divergent state inside a 16-mcycle window at
+    69,064,720, and the state diff was exactly one 32-byte shadow
+    row: the CODE bank of context S+SUM, the slot of the kernel's
+    uaccess page. The cause was not the jit: the canon had been
+    minted from a build predating the success_and_flush_fetch
+    edit, whose interpreter kept fetching through the stale fetch
+    cache across a SUM toggle and so never filled that context's
+    slot. The current tree's interpreter and jit produce
+    byte-identical state; re-minting the canon from it made all
+    thirteen match, with only memcpy's canonical hash changed --
+    the difference had been confined to that one slot and washed
+    out by later flushes everywhere else. Lesson re-learned: mint
+    gate baselines from the tree being gated. A fill-stream
+    instrument stays behind TLB_FILL_LOG (build define + env var):
+    it logs every shadow fill's set, slot, page and mcycle, which
+    is what located this in minutes once the builds were honest.
+
+    Measured, fixed-work bench (1G mcycles after a 256M boot, min
+    of two reps, seconds):
+      workload    stock-old  stock-ctx     jit-old  jit-ctx
+      nop             2.03       1.94       0.148    0.094
+      regs            2.40       2.70       0.407    0.375
+      branch          3.07       3.08       3.13     3.06
+      tree            7.79       8.31       8.09     9.78
+      qsort           3.86       4.26       3.68     3.30
+      memcpy          3.14       3.22       1.00     0.874
+      zlib            3.62       3.62       2.47     2.39
+      hash            3.55       3.53       1.63     1.62
+      syscall         4.57       3.83       4.26     3.46
+      double         10.40       7.72       6.76     7.10
+      sieve           3.34       3.23       0.758    0.787
+      int64           3.83       3.78       2.50     2.47
+      matrixprod      3.74       3.71       3.84     3.77
+    Geomean: interpreter -2.0%, jit -6.0%. The kernel-heavy rows
+    deliver what the profiles promised: jit syscall -18.7%, nop
+    -36.5%, memcpy -12.3%, qsort -10.5%; interpreter syscall
+    -16.2%, double -25.8%. The hit-budget gate passes where it
+    matters: jit regs -7.9%, memcpy -12.3%, sieve within rep noise.
+    perf confirms the mechanism is dead: write_verified_tlb falls
+    from 29-34% to ~2% on nop and syscall, translate_virtual_address
+    below 1%; nop's remaining time is the final root hash, and
+    syscall's residual is interpreter handlers outside traces --
+    item 19's coverage law, now the top of the board again.
+
+    Two regressions, both measured to mechanism rather than
+    attributed. tree jit +20.9%: the fill instrument counts 25.4M
+    shadow fills under the old geometry against 33.3M under the
+    new (+31%, matching translate_virtual_address's +33% absolute
+    growth in the profile), dominated by user-context data banks
+    (21.4M READ-U + 10.9M WRITE-U): tree's pointer-chasing heap
+    thrashes 128 slots per context where it had 512 shared. The
+    win side of the same counter: syscall fills drop 4.2M -> 1.4M
+    (-66%) with the flush-refill storms gone. regs interpreter
+    +12.4%: the profile puts all the growth inside interpret_loop
+    itself (42.1% -> 49.4%, +32% absolute) while the TLB machinery
+    shrank, so it is the probe's cached-context load plus codegen
+    churn in the big loop, not walks; the jit build, which bakes
+    the context and pays nothing, improves regs by 7.9%. Filed,
+    with evidence to collect first: asymmetric bank sizing within
+    the 0xF000 shadow budget (code fills are tiny -- tree's code
+    banks take 320k of 33M fills -- so data banks could take
+    slots from code), or a U-favoring split, to buy tree's user
+    heap capacity back.
+
+COMPETE-TABLE-PLACEHOLDER
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

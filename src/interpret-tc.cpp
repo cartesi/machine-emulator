@@ -169,7 +169,7 @@ struct tc_online_state {
     static constexpr uint16_t max_penalty = 3;
 #if TC_LIGHTNING
     static constexpr uint16_t side_hot_reset = TC_HOT_RESET;
-    static constexpr uint16_t max_side_exits = 128;
+    static constexpr uint16_t max_side_exits = 32;
     struct side_link {
         uint64_t successor;
         uint64_t expected;
@@ -2337,8 +2337,8 @@ struct tc_lightning_execution {
     /// in place, so a trace touching more live registers than the host has to
     /// offer degrades instead of failing to compile.
     static constexpr int8_t memory_slot = -2;
-    static constexpr size_t max_nodes = 1024;
-    static constexpr size_t max_exits = 128;
+    static constexpr size_t max_nodes = 256;
+    static constexpr size_t max_exits = 32;
 
     struct side_exit {
         jit_node_t *branch{};

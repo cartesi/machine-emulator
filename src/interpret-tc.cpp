@@ -208,6 +208,15 @@ struct tc_online_state {
         uint64_t ctx_slot_base;
         side_link side[max_side_exits];
         uint16_t nside;
+        /// \brief Transit countdown for the unlinked fallthrough successor.
+        /// \details A straight trace's successor that is neither a back-edge
+        /// target nor a call target is invisible to every hotcount hook: no
+        /// recording ever starts there and each transit falls back to the
+        /// interpreter through an uncovered seam. The unlinked fallthrough
+        /// counts down exactly like an unlinked side exit and trips a
+        /// recording at the successor when hot; once the successor compiles,
+        /// the link installs and the counting path is unreachable.
+        uint16_t successor_hotcount;
         bool side_trace;
         bool continuation;
         uint64_t executions; ///< Generated body entries when TC_ONLINE_EXEC_STATS is enabled
@@ -2356,6 +2365,7 @@ struct tc_lightning_execution {
     uint32_t guest_uses[32]{}; ///< Discovery-time read+write counts, ranks the slot assignment
     uint16_t nnodes{};
     uint16_t nexits{};
+    uint16_t discovery_exits{}; ///< Conservative prospective-exit count (see count_exit)
     uint8_t nguests{};
     uint32_t current{};
     bool discovery{true};
@@ -3026,6 +3036,20 @@ struct tc_lightning_execution {
         emit_expression(value.node, guest_registers[slot]);
     }
 
+    /// \brief Conservative discovery-side exit budget.
+    /// \details add_exit runs only at emission, so an exit-budget overflow
+    /// would otherwise surface after discovery passed -- past the
+    /// truncate-and-retry net, as a hard compile abort. Discovery counts a
+    /// prospective exit at every site that can emit one (branch observation,
+    /// indirect jump, memory probe, whole-instruction helper); forwarding
+    /// and load-elimination can only make emission emit FEWER, so a
+    /// discovery overflow truncates at worst a little early, never late.
+    void count_exit() {
+        if (discovery && ++discovery_exits > max_exits) {
+            failed = true;
+        }
+    }
+
     void add_exit(jit_node_t *branch) {
         if (nexits == max_exits) {
             failed = true;
@@ -3097,6 +3121,7 @@ struct tc_lightning_execution {
         const uint64_t pc = trace->entries[current].vaddr;
         const uint32_t length = (trace->entries[current].insn & 3) == 3 ? 4 : 2;
         const bool expected = trace->entries[current].next_pc != pc + length;
+        count_exit();
         if (!discovery && !failed) {
             add_exit(cond.branch(*this, cond, expected));
         }
@@ -3105,6 +3130,7 @@ struct tc_lightning_execution {
 
     execute_status indirect_jump(uint64_t &pc, tc_lightning_value target) {
         const uint64_t expected = trace->entries[current].next_pc;
+        count_exit();
         if (!discovery && !failed) {
             jit_state_t *_jit = jit;
             emit_expression(target.node, scratch_registers[0]);
@@ -3139,6 +3165,8 @@ struct tc_lightning_execution {
                 return read_x(load_memo[hit].holder);
             }
         }
+        // Not forwarded: this load emits a probe with one exit.
+        count_exit();
         const uint16_t node = add_node(emit_memory_load_node<T>, address.node);
         if (keyed) {
             pending_load = key;
@@ -3210,6 +3238,7 @@ struct tc_lightning_execution {
         // A store may alias any forwarded load; run in both passes so the
         // dataflow stays identical between discovery and emission.
         invalidate_loads();
+        count_exit();
         if (uint64_t vaddr = 0;
             nodes[address_value.node].emit != emit_immediate && eval_node(address_value.node, vaddr)) {
             address_value = immediate(vaddr);
@@ -3370,6 +3399,7 @@ struct tc_lightning_execution {
         // The helper may write any guest register and any memory; run in
         // both passes so the dataflow stays identical between them.
         invalidate_guests();
+        count_exit();
         if (discovery || failed) {
             return;
         }
@@ -5288,6 +5318,10 @@ TC_CALLCONV static execute_status tc_lightning_trip(const STATE_ACCESS a, uint32
     }
     tcc->online_trip_pc = pc_to_virtual(a, pc);
     tcc->online_trip_weight = 1;
+    // A successor trip begins a root recording; a stale call flag from an
+    // earlier call-site trip must not survive into it. The side path posts
+    // online_trip_side alongside and never consults the flag.
+    tcc->online_trip_call = false;
     tcc->online_trip = true;
     TC_RETURN(execute_status::success);
 }
@@ -5393,6 +5427,40 @@ TC_FP_ARITH_HELPER(FNMADD, execute_FNMADD(a, pc, insn))
 TC_FP_ARITH_HELPER(FNMSUB, execute_FNMSUB(a, pc, insn))
 #undef TC_FP_ARITH_HELPER
 
+/// \brief Whole-instruction helper for CSR ops on the fcsr family.
+/// \details Staged ONLY when the immediate csr field names fflags, frm or
+/// fcsr (the collector checks before staging), so the generic execute bodies
+/// below can never touch a CSR with flush or trap semantics inside a trace:
+/// these three just update fcsr (dirtying mstatus.FS, which changes no
+/// translation context and flushes nothing) and read the old value into rd.
+/// Pre-bails on FS off exactly like the arithmetic helpers, so the portable
+/// re-execution raises the illegal-instruction exception. The mcycle
+/// argument is consulted only by counter CSRs, never by this family; the
+/// possibly-lagging shadow value satisfies the signature.
+TC_FP_HELPER_ABI static execute_status tc_fp_helper_CSR_FP(processor_state *ps, uint32_t insn) {
+    const state_access a(*ps->penumbra.owner);
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
+        return execute_status::failure;
+    }
+    i_state_access_fast_addr_t<state_access> pc{};
+    switch ((insn >> 12) & 7) {
+        case 1:
+            return execute_CSRRW(a, pc, a.read_mcycle(), insn);
+        case 2:
+            return execute_CSRRS(a, pc, a.read_mcycle(), insn);
+        case 3:
+            return execute_CSRRC(a, pc, a.read_mcycle(), insn);
+        case 5:
+            return execute_CSRRWI(a, pc, a.read_mcycle(), insn);
+        case 6:
+            return execute_CSRRSI(a, pc, a.read_mcycle(), insn);
+        case 7:
+            return execute_CSRRCI(a, pc, a.read_mcycle(), insn);
+        default:
+            return execute_status::failure;
+    }
+}
+
 static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uint32_t insn) {
     // A declined body may have requested the dynamic-frm guard before
     // declining; the request must not leak into the next staged instruction.
@@ -5462,22 +5530,37 @@ static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uin
                 return stage_helper(tc_fp_helper_FNMADD);
             case 0x4f:
                 return stage_helper(tc_fp_helper_FNMSUB);
-            case 0x73: { // SYSTEM: read-only floating-point CSR access
+            case 0x73: { // SYSTEM: floating-point CSR access only
                 const uint32_t funct3 = (insn >> 12) & 7;
                 const uint32_t csr = insn >> 20;
-                if (funct3 != 2 || insn_get_rs1(insn) != 0 || (csr != 0x001 && csr != 0x002 && csr != 0x003)) {
+                if (csr != 0x001 && csr != 0x002 && csr != 0x003) {
                     return false;
                 }
-                e.emit_fs_guard();
-                auto value = e.read_fcsr_word();
-                if (csr == 0x001) { // fflags
-                    value = value & static_cast<uint64_t>(FCSR_FFLAGS_RW_MASK);
-                } else if (csr == 0x002) { // frm
-                    value = (value & static_cast<uint64_t>(FCSR_FRM_RW_MASK)) >> static_cast<uint64_t>(FCSR_FRM_SHIFT);
-                } // fcsr reads back unmasked, exactly as read_csr_fcsr()
-                e.write_x(insn_get_rd(insn), value);
-                pc += 4;
-                return true;
+                if (funct3 == 2 && insn_get_rs1(insn) == 0) {
+                    // Pure read: stages inline, no helper call.
+                    e.emit_fs_guard();
+                    auto value = e.read_fcsr_word();
+                    if (csr == 0x001) { // fflags
+                        value = value & static_cast<uint64_t>(FCSR_FFLAGS_RW_MASK);
+                    } else if (csr == 0x002) { // frm
+                        value =
+                            (value & static_cast<uint64_t>(FCSR_FRM_RW_MASK)) >> static_cast<uint64_t>(FCSR_FRM_SHIFT);
+                    } // fcsr reads back unmasked, exactly as read_csr_fcsr()
+                    e.write_x(insn_get_rd(insn), value);
+                    pc += 4;
+                    return true;
+                }
+                if (funct3 == 1 || funct3 == 2 || funct3 == 3 || funct3 == 5 || funct3 == 6 || funct3 == 7) {
+                    // Writes (and read-writes) of the fcsr family route to the
+                    // whole-instruction helper. This is what makes soft-float
+                    // libraries traceable: their fenv handling (csrs/csrc on
+                    // fflags around every operation in __multf3 and friends)
+                    // otherwise ends every recording and starves the seam at
+                    // the successor, because the uncollectable pc itself
+                    // becomes the next head.
+                    return stage_helper(tc_fp_helper_CSR_FP);
+                }
+                return false;
             }
             default:
                 return false;
@@ -5937,6 +6020,20 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             emit_leave(tmp2);
             auto *const fallback = jit_label();
             jit_patch_at(unlinked, fallback);
+            if (!trace.side_trace) {
+                // Unlinked fallthrough: count transits and trip a recording
+                // at the successor when hot, exactly like an unlinked side
+                // exit below. TC_JIT_PC already carries the successor here.
+                jit_movi(tmp0, reinterpret_cast<jit_word_t>(&trace.successor_hotcount));
+                jit_ldr_us(tmp1, tmp0);
+                jit_subi(tmp1, tmp1, 1);
+                jit_str_s(tmp0, tmp1);
+                auto *const continue_counting = jit_bgti(tmp1, 0);
+                jit_movi(tmp0, reinterpret_cast<jit_word_t>(&tc_lightning_trip<state_access>));
+                emit_leave(tmp0);
+                auto *const cold = jit_label();
+                jit_patch_at(continue_counting, cold);
+            }
         }
         emit_continue();
     };
@@ -5963,6 +6060,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     emit_link_or_continue();
 
     trace.nside = execution.nexits;
+    trace.successor_hotcount = tc_online_state::side_hot_reset;
     for (uint16_t i = 0; i < execution.nexits; ++i) {
         auto *const label = jit_label();
         jit_patch_at(execution.exits[i].branch, label);

@@ -3219,6 +3219,35 @@ shell cost +66% with tracing idle).
     publication rules for long straight runs. Unmeasured beyond
     this point; the knob-by-knob campaign is the next arc.
 
+    And the nop row's 4.7x, chased with instruments to its end,
+    dissolved three wrong stories in a row and found a fourth
+    nobody had told. The owner's observation started it: nothing
+    forbids deleting nops inside a trace as long as mcycle
+    advances correctly -- and the disassembly shows the backend
+    already does exactly that. The 66-instruction nop loop (64
+    nops, counter, branch) compiles to ten host instructions with
+    one bulk countdown subtraction: 6.6 guest instructions per
+    host instruction, ~26 Ginsn/s inside the loop, more aggressive
+    than TCG's counted block. Episode wall-time accounting then
+    showed the run spends 187 ms of its 7.3 s inside generated
+    code (42 Ginsn/s over 7.95G instructions) and ~7 s outside it,
+    crossing 1.5M episode boundaries at ~4.7 us each. strace ruled
+    out syscalls. perf (cpu-clock sampling) named the residue:
+    28.8% of the entire run in machine::write_verified_tlb, 4.1%
+    in mark_write_tlb_dirty_page, 7.3% across the flush_tlb_slot
+    instantiations, 3.6% in translate_virtual_address -- roughly
+    45% of wall time flushing and refilling the hot TLB through
+    the Merkle-verified path, with raise_exception and
+    write_csr_mstatus in the profile identifying the trigger as
+    the guest timer interrupt at the RTC tick. The per-instruction
+    story of item 19 was never about instructions: the tax is
+    interrupt cadence times verified-TLB rebuild, which every
+    workload row pays in proportion to its tick count. Filed from
+    the evidence, next arc: count timer traps per giga-instruction
+    against qemu-system's cadence, then price hot-TLB retention
+    across the interrupt (or a cheaper verified refill); by this
+    profile it is worth more than every remaining item combined.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

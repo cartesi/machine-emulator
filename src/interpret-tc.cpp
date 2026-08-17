@@ -303,6 +303,8 @@ struct tc_online_state {
     mutable uint64_t trace_insns;
     mutable uint64_t episode_cd;
     mutable uint64_t compile_ns;
+    mutable uint64_t episode_t0_ns; ///< Wall clock at generated-code entry
+    mutable uint64_t trace_ns;      ///< Wall time spent inside generated code
 };
 #endif
 
@@ -986,6 +988,13 @@ static bool tc_online_episode_stats() {
     return enabled;
 }
 
+/// \brief Monotonic nanoseconds for episode wall-time accounting.
+static FORCE_INLINE uint64_t tc_online_now_ns() {
+    timespec t{};
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return static_cast<uint64_t>(t.tv_sec) * 1000000000ULL + static_cast<uint64_t>(t.tv_nsec);
+}
+
 static bool tc_online_insn_is_fp(uint32_t insn) {
     if ((insn & 3) != 3) {
         const uint32_t q = insn & 3;
@@ -1237,9 +1246,10 @@ static void tc_online_report(const tc_online_state &o) {
         static_cast<unsigned long long>(longest_connected_fp_recording), static_cast<unsigned>(o.ntraces));
 #if TC_LIGHTNING
     if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
-        std::fprintf(stderr, "tc-online: episodes %llu trace-insns %llu compile-ms %llu\n",
+        std::fprintf(stderr, "tc-online: episodes %llu trace-insns %llu compile-ms %llu trace-ms %llu\n",
             static_cast<unsigned long long>(o.episodes), static_cast<unsigned long long>(o.trace_insns),
-            static_cast<unsigned long long>(o.compile_ns / 1000000));
+            static_cast<unsigned long long>(o.compile_ns / 1000000),
+            static_cast<unsigned long long>(o.trace_ns / 1000000));
         std::fprintf(stderr, "tc-online: fp-guard-bails");
         for (uint8_t i = 0; i < tc_fp_guard_count; ++i) {
             std::fprintf(stderr, " %s %llu", tc_fp_guard_names[i],
@@ -4526,6 +4536,7 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
                     }                                                                                                  \
                     if (tc_online_episode_stats()) [[unlikely]] {                                                      \
                         tcc->online->episode_cd = tc_remaining;                                                        \
+                        tcc->online->episode_t0_ns = tc_online_now_ns();                                               \
                         ++tcc->online->episodes;                                                                       \
                     }                                                                                                  \
                     TC_SYNC();                                                                                         \
@@ -4958,6 +4969,7 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
                         if constexpr (TC_ONLINE != 0 && TC_LIGHTNING != 0) {                                           \
                             if (tc_online_episode_stats()) [[unlikely]] {                                              \
                                 tcc->online->episode_cd = tc_remaining;                                                \
+                                tcc->online->episode_t0_ns = tc_online_now_ns();                                       \
                                 ++tcc->online->episodes;                                                               \
                             }                                                                                          \
                         }                                                                                              \
@@ -5167,6 +5179,7 @@ TC_CALLCONV static execute_status tc_lightning_continue(const STATE_ACCESS a, ui
     TC_ENTER();
     if (tc_online_episode_stats()) [[unlikely]] {
         tcc->online->trace_insns += tcc->online->episode_cd - tc_remaining;
+        tcc->online->trace_ns += tc_online_now_ns() - tcc->online->episode_t0_ns;
     }
     if (fetch_cache_is_hit(pc, TC_FETCH_TAG)) [[likely]] {
         uint32_t next_insn = 0;
@@ -5185,6 +5198,7 @@ TC_CALLCONV static execute_status tc_lightning_trip(const STATE_ACCESS a, uint32
     TC_ENTER();
     if (tc_online_episode_stats()) [[unlikely]] {
         tcc->online->trace_insns += tcc->online->episode_cd - tc_remaining;
+        tcc->online->trace_ns += tc_online_now_ns() - tcc->online->episode_t0_ns;
     }
     tcc->online_trip_pc = pc_to_virtual(a, pc);
     tcc->online_trip_weight = 1;

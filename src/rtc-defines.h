@@ -22,10 +22,18 @@
 /// Changing this value affects the machine state hash
 /// Higher values decrease the performance of the interactive machine emulator
 /// Using base 2 values optimizes division and multiplications in the interpreter loop
+#ifndef RTC_FREQ_DIV_DEF
 #define RTC_FREQ_DIV_DEF 8192
+#endif
 
 /// \brief Arbitrary CPU clock frequency.
 /// We have to make sure the clock frequency is divisible by RTC_FREQ_DIV_DEF and 10^6
+/// Overridable for clock-ratio experiments (tail-call.md item 19): the guest
+/// clock is a function of mcycle, so the advertised frequency sets how many
+/// guest-seconds -- and therefore kernel timer ticks, each paying a hot-TLB
+/// flush and verified refill -- a given instruction count spans.
+#ifndef RTC_CLOCK_FREQ_DEF
 #define RTC_CLOCK_FREQ_DEF 128000000 ///< 128 MHz frequency
+#endif
 // NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 #endif /* end of include guard: RTC_DEFINES_H */

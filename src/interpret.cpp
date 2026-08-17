@@ -1023,6 +1023,16 @@ static i_state_access_fast_addr_t<STATE_ACCESS> replace_tlb_entry(const STATE_AC
     const auto faddr = a.get_faddr(paddr, pma_index);
     vf_offset = faddr - vaddr;
     a.template write_tlb<SET>(slot_index, vaddr_page, vf_offset, pma_index);
+#ifdef TLB_FILL_LOG
+    if constexpr (requires { a.do_read_tlb_ctx_slot_base(); }) {
+        static const bool log_fills = getenv("TLB_FILL_LOG") != nullptr;
+        if (log_fills) {
+            std::fprintf(stderr, "FILL set=%d slot=%u vp=%llx mcycle=%llu\n", static_cast<int>(SET),
+                static_cast<unsigned>(slot_index), static_cast<unsigned long long>(vaddr_page),
+                static_cast<unsigned long long>(a.read_mcycle()));
+        }
+    }
+#endif
     return faddr;
 }
 

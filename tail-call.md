@@ -3406,7 +3406,67 @@ shell cost +66% with tracing idle).
     slots from code), or a U-favoring split, to buy tree's user
     heap capacity back.
 
-COMPETE-TABLE-PLACEHOLDER
+    The board, re-measured under item 19's compete protocol (fixed
+    bogo-ops, boot baseline subtracted, medians; qemu columns are
+    item 19's -- the same-day recheck below bounds host drift):
+      workload    jit-old jit-ctx  stk-old stk-ctx   sys   icnt  jit/icnt
+      nop            6.47    1.36   20.24   15.32   0.96   1.39    0.98x
+      regs           6.62    6.30   36.85   42.78   4.23   4.24    1.49x
+      branch         1.74    1.84    1.77    2.08   5.14   4.98    0.37x
+      tree           6.01    7.65    7.46    8.14   6.19   5.93    1.29x
+      qsort          8.24   10.08    8.15    9.41   5.52   5.93    1.70x
+      memcpy         5.11    4.63   19.01   21.86   4.10   5.59    0.83x
+      zlib           9.68   10.40   14.27   15.14   4.57   6.02    1.73x
+      hash           8.52    6.35   14.15   12.94   3.65   4.29    1.48x
+      syscall        6.19    2.39    6.40    2.61   1.70   1.75    1.37x
+      double         6.31    6.03    7.65    6.25   2.96   2.91    2.07x
+      sieve          6.19    6.43   26.46   27.17   3.90   4.85    1.32x
+      int64          7.80    8.59    8.09    8.20   3.28   3.25    2.64x
+      matrixprod     6.21    8.63    8.03    8.66   4.03   4.20    2.05x
+    Geomean vs icount excluding nop: 1.44x -> 1.39x. nop reaches
+    parity with icount-qemu (0.98x) -- the flush storm was its whole
+    deficit -- and syscall goes from 3.5x to 1.4x behind. A same-day
+    re-run of the old jit on the suspicious rows bounds host drift
+    at 5-8% (today's host is slower than item 19's): zlib's and
+    tree's apparent compete regressions dissolve into it (old-jit
+    today: zlib 10.45, tree 7.53), qsort's shrinks to +13%, and
+    matrixprod's stands at +30%.
+
+    The matrixprod compete regression was then chased to its
+    mechanism, and it is not the TLB at all. Same final mcycle
+    (2,470,948,766 -- fixed ops, deterministic), wall 7.2s -> 9.2s,
+    the slowdown uniform across 256M-cycle segments; fills are
+    FEWER under ctx (813k vs 1.10M), so not capacity; zero entry
+    context-guard bails (counter added to generated code), so not
+    the guard; publications byte-equivalent (same heads, same
+    lengths, correct contexts), so not recording scope. The
+    difference is one compilation: episode stats show trace-insns
+    939.7M -> 51.6M at the same 6.45M episodes -- the 6.2M-execution
+    len-7 connector runs, but the len-185/210 loop body behind it
+    never compiles under ctx. The abort dump names the defect: the
+    published fragment carries a branch's encoding in the entry at
+    the branch TARGET's vaddr (the 131ed4 branch's 0x12-offset hop
+    matches the recorded next_pc chain exactly, and the target's
+    entry duplicates the branch's insn where a 2-byte instruction
+    belongs) -- an instruction/pc skew at a taken-branch seam inside
+    the recording, which the emission pass deterministically
+    rejects. The class PREDATES this item: the old build rejects
+    the same fragments (its chain-131bd2 publications abort
+    identically) and only escaped because a second recording,
+    started from the callee at a luckier moment, captured a
+    skew-free window that compiled. The ctx change shifted episode
+    boundaries (SUM toggles now exit traces), the windows moved,
+    and matrixprod lost the lottery it had been winning; qsort's
+    +13% is the same class. Filed as its own item with the
+    diagnostic trail (TC_PUB_LOG / TC_ABORT_LOG / TC_REC_LOG, all
+    behind TLB_FILL_LOG): fix the seam skew and the lottery
+    becomes a guarantee for every workload, not a risk. Two
+    recorder hardenings found on the way are already in (a
+    context-change abort drops its never-back-filled tail entry; a
+    chain that breaks before executing re-records its pc by
+    rewinding the stale entry), correct but not sufficient --
+    trace-insns did not move, pinning the skew to a different seam
+    than either hardening covers.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

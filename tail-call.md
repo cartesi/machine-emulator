@@ -3270,6 +3270,32 @@ shell cost +66% with tracing idle).
     flush/refill cheap (retain hot slots across the kernel's
     sfence, or batch the verified writeback).
 
+    The clock end was then built (RTC_CLOCK_FREQ_DEF overridable,
+    a 1024 MHz variant) and the tick arithmetic held -- nop's
+    interrupts fell 9588 to 800 -- but the time mostly did not
+    follow: nop -7.9%, regs -20.8%, memcpy -12.4%, double -9.0%,
+    aggregate roughly -4%, with matrixprod +34% unexplained and
+    syscall/tree slightly worse. Hashes change by design (guest
+    time differs), so this comparison is timing-only. perf on the
+    1024 MHz build explains the shortfall and corrects the
+    attribution again: write_verified_tlb still costs 34% with
+    twelve times fewer ticks, and the call graph names the real
+    driver -- write_csr_mstatus, reached from CSRRS. The flush
+    condition in write_csr_mstatus is already minimal (MXR, SUM,
+    MPRV changes only); the volume comes from the guest kernel
+    itself, which toggles SUM around every user-memory access
+    (csrs/csrc sstatus in copy_from_user and put_user), and every
+    toggle buys a full read+write hot-TLB flush sweep with
+    verified writeback and a refill cascade. Interrupts were the
+    match, not the fire. The filed fix is structural and QEMU
+    already embodies it: make SUM part of the TLB context instead
+    of a flush trigger -- banked slots or SUM-tagged entries --
+    so the toggle costs nothing. By both profiles this is worth
+    ~30-45% on kernel-touching workloads, the largest single item
+    on the board; the 1024 MHz clock stays a build knob, and
+    matrixprod's +34% under it is an open anomaly to measure
+    before any clock default changes.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

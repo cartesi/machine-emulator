@@ -3179,6 +3179,31 @@ shell cost +66% with tracing idle).
     syscall-shaped loads, and regs-style block code quality last,
     per its measured 1.6x ceiling.
 
+    The first filed item was then built three times, measured three
+    times, and lives behind TC_ONLINE_INLINE_RETRY, off by default.
+    All three forms rescue the starved loops identically -- musl
+    int64 goes 0.1% -> 26% coverage and 8.6 -> 5.1 s, double 0.1%
+    -> 12% -- and all three were judged on the canonical suite.
+    Unconditional pass-through: +50% aggregate (syscall +300%,
+    tree +90%); scoped to first-attempt loop-head recordings: +25%
+    (syscall +171%); scoped to a one-shot retry for heads that
+    demonstrably starved: still +18% (syscall +138%, tree +20%),
+    and the syscall stats name the mechanism exactly -- 18002
+    installed traces against the baseline's 532, seventeen
+    pool-wide flushes, 4.4 s of compilation against 0.14 s. Kernel
+    code holds thousands of individually lukewarm loop heads that
+    starve at installed traces; granting each a single inlining
+    retry floods the pool, and the flush-alls evict the good
+    traces with the noise. The persistent other side: qsort
+    improves under every form (-14% to -20%), with hash, sieve and
+    zlib around -3%, so selective inlining has real value when the
+    retry population is small. The refinement this evidence funds
+    -- filed, not built -- is to grant the retry only to hot
+    heads: int64's one blazing loop qualifies, syscall's thousand
+    lukewarm ones do not. Disposition: env-gated off; the gated-on
+    musl rows fall from 2.4x to 1.6x (int64) and 2.2x to 1.7x
+    (double) behind the icount column.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

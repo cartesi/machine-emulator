@@ -3204,6 +3204,21 @@ shell cost +66% with tracing idle).
     musl rows fall from 2.4x to 1.6x (int64) and 2.2x to 1.7x
     (double) behind the icount column.
 
+    The second filed item's first measurement pins its mechanism
+    before any design: syscall's 85% interpreted share is
+    under-tripping, not churn. The whole 600M-instruction run
+    produces 1579 trips, 1511 begins, 401 installs and 222 aborts
+    across 140 distinct heads -- the recorder is nearly idle, so
+    no blacklist or abort loop is eating the workload. The
+    per-syscall service path is ~18k instructions of flat,
+    once-through kernel code entered ~27 times per syscall for
+    ~200-instruction episodes; nothing between repeats tightly
+    enough to trip the back-edge or call profiler. The levers this
+    names are profiling policy, not recording policy: trip
+    thresholds and call-target weights for kernel-shaped code, and
+    publication rules for long straight runs. Unmeasured beyond
+    this point; the knob-by-knob campaign is the next arc.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

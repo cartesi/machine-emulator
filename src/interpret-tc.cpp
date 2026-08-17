@@ -231,6 +231,7 @@ struct tc_online_state {
         uint32_t cap; ///< This recording's dynamic length cap, latched at begin
         bool call_target;
         bool continuation;
+        bool pass_through; ///< Starved-head retry: record through installed heads while short
         tc_online_entry entries[max_len];
     };
     static constexpr uint32_t set_slots = 4096; // >= 4x max_traces, power of two
@@ -249,6 +250,11 @@ struct tc_online_state {
     // (cap = base_len << cap_shift, valid only while penalty_pc tags the
     // head). Survives flush-all with the penalties.
     uint8_t cap_shift[set_slots];
+    // Loop heads whose recording starved -- ended at an installed trace
+    // while still too short to publish (pc+1 tags). Grants exactly one
+    // pass-through retry that records through installed heads, inlining
+    // short out-of-line callees so the loop can close its own cycle.
+    uint64_t starved_pc[set_slots];
 #if TC_LIGHTNING
     // Host pages hosting recorded code bytes, open-addressed, tag hpage+1.
     // Entries persist until flush-all: after an invalidation a stale entry
@@ -720,6 +726,34 @@ static FORCE_INLINE bool tc_online_demoted(const tc_online_state *o, uint64_t pc
     uint32_t s = tc_online_hpage_slot(pc);
     while (o->demoted_pc[s] != 0) {
         if (o->demoted_pc[s] == tag) {
+            return true;
+        }
+        s = (s + 1) & (tc_online_state::set_slots - 1);
+    }
+    return false;
+}
+
+/// \brief Marks a loop head whose recording starved: it ended at an
+/// installed trace while still too short to publish. Its next recording
+/// gets one pass-through retry that inlines through installed heads.
+static FORCE_INLINE void tc_online_insert_starved(tc_online_state *o, uint64_t pc) {
+    const uint64_t tag = pc + 1;
+    uint32_t s = tc_online_hpage_slot(pc);
+    for (uint32_t probe = 0; probe < tc_online_state::set_slots; ++probe) {
+        if (o->starved_pc[s] == 0 || o->starved_pc[s] == tag) {
+            o->starved_pc[s] = tag;
+            return;
+        }
+        s = (s + 1) & (tc_online_state::set_slots - 1);
+    }
+    // A full set is a cold failure mode; the head just never gets its retry.
+}
+
+static FORCE_INLINE bool tc_online_starved(const tc_online_state *o, uint64_t pc) {
+    const uint64_t tag = pc + 1;
+    uint32_t s = tc_online_hpage_slot(pc);
+    while (o->starved_pc[s] != 0) {
+        if (o->starved_pc[s] == tag) {
             return true;
         }
         s = (s + 1) & (tc_online_state::set_slots - 1);
@@ -1737,6 +1771,9 @@ static void tc_online_begin(tc_context<STATE_ACCESS> *c, uint64_t pc, bool call_
     o->pending.cap = tc_online_cap(o, pc);
     o->pending.call_target = call_target;
     o->pending.continuation = false;
+    // A head whose previous recording starved gets its one pass-through
+    // retry; the flag never applies to call, continuation or side begins.
+    o->pending.pass_through = !call_target && tc_online_starved(o, pc);
 #if TC_LIGHTNING
     o->pending_side = nullptr;
 #endif
@@ -1767,6 +1804,7 @@ static bool tc_online_begin_continuation(tc_context<STATE_ACCESS> *c, uint64_t p
     o->pending.cap = cap;
     o->pending.call_target = false;
     o->pending.continuation = true;
+    o->pending.pass_through = false;
 #if TC_LIGHTNING
     o->pending_side = nullptr;
 #endif
@@ -1805,6 +1843,7 @@ static void tc_online_begin_side(tc_context<STATE_ACCESS> *c, uint64_t pc, tc_on
     o->pending.cap = tc_online_cap(o, pc);
     o->pending.call_target = false;
     o->pending.continuation = false;
+    o->pending.pass_through = false;
     o->pending_side = link;
     o->recording = true;
     tc_online_debug("side", pc, o->ntraces);
@@ -1829,25 +1868,32 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
                 return;
             }
         }
-        // A back-edge (loop-head) recording still too short to publish
-        // records through an installed trace instead of stopping at it.
-        // Item 19's residual measurement found int64 and double at 0.1%
-        // coverage: their loops call an out-of-line RNG whose head
-        // installs first, so each loop recording died at the call (len
-        // 15), was rejected against min_straight_len, and the head
-        // blacklisted; passing through inlines the callee -- LuaJIT's
-        // trace-tree behavior -- and the loop closes its own cycle.
-        // Only loop-head recordings get this: the unconditional version
-        // measured +50% on the canonical suite (syscall +300%, tree +90%)
-        // because call, continuation and side recordings barreling
-        // through their successors destroy the composition chains that
-        // depend on stopping and linking at installed heads.
-        bool loop_head_recording = !recording.call_target && !recording.continuation;
-#if TC_LIGHTNING
-        loop_head_recording = loop_head_recording && o->pending_side == nullptr;
-#endif
-        if ((!loop_head_recording || recording.len >= tc_online_state::min_straight_len) &&
+        // Starved-head retry (item 19's residual measurement): a loop that
+        // calls an out-of-line callee whose head installed first starves
+        // -- its recording dies at the call, too short to publish against
+        // min_straight_len, and the head blacklists (int64 and double
+        // measured 0.1% coverage this way). Ending starved marks the head;
+        // its next recording passes through installed heads while still
+        // short, inlining the callee -- LuaJIT's trace-tree behavior -- so
+        // the loop closes its own cycle. The retry is surgical because the
+        // broad versions were measured and falsified on the canonical
+        // suite: pass-through on every recording cost +50% (syscall +300%,
+        // tree +90%) and on every first-attempt loop-head recording +25%
+        // (syscall +171%) -- recordings barreling through their successors
+        // destroy the composition chains that depend on stopping and
+        // linking at installed heads, and recording time itself is paid in
+        // one-instruction chains. Only demonstrably starved heads differ
+        // from baseline, on their second attempt alone.
+        if ((!recording.pass_through || recording.len >= tc_online_state::min_straight_len) &&
             tc_online_find(o, pc) != nullptr) {
+            bool loop_head_recording = !recording.call_target && !recording.continuation;
+#if TC_LIGHTNING
+            loop_head_recording = loop_head_recording && o->pending_side == nullptr;
+#endif
+            if (loop_head_recording && !recording.pass_through &&
+                recording.len < tc_online_state::min_straight_len) {
+                tc_online_insert_starved(o, recording.head);
+            }
             tc_online_finish(c, -1, true);
             return;
         }

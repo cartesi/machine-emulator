@@ -1031,6 +1031,9 @@ enum tc_fp_guard : uint8_t {
 static const char *const tc_fp_guard_names[tc_fp_guard_count] = {"fs", "nx", "frm", "operand", "nan-operand", "boxed",
     "result-small", "result-big"};
 static uint64_t tc_fp_guard_bails[tc_fp_guard_count];
+
+/// \brief Entry translation-context guard bail count (TC_ONLINE_EXEC_STATS).
+static uint64_t tc_ctx_entry_bails;
 /// \brief Raw bits scratch register 0 held at the last miss of each class:
 /// the value the guard actually tested (result or operand bits, fcsr, or
 /// masked mstatus depending on the class).
@@ -1253,10 +1256,11 @@ static void tc_online_report(const tc_online_state &o) {
         static_cast<unsigned long long>(longest_connected_fp_recording), static_cast<unsigned>(o.ntraces));
 #if TC_LIGHTNING
     if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
-        std::fprintf(stderr, "tc-online: episodes %llu trace-insns %llu compile-ms %llu trace-ms %llu\n",
+        std::fprintf(stderr, "tc-online: episodes %llu trace-insns %llu compile-ms %llu trace-ms %llu ctx-entry-bails %llu\n",
             static_cast<unsigned long long>(o.episodes), static_cast<unsigned long long>(o.trace_insns),
             static_cast<unsigned long long>(o.compile_ns / 1000000),
-            static_cast<unsigned long long>(o.trace_ns / 1000000));
+            static_cast<unsigned long long>(o.trace_ns / 1000000),
+            static_cast<unsigned long long>(tc_ctx_entry_bails));
         std::fprintf(stderr, "tc-online: fp-guard-bails");
         for (uint8_t i = 0; i < tc_fp_guard_count; ++i) {
             std::fprintf(stderr, " %s %llu", tc_fp_guard_names[i],
@@ -1410,6 +1414,12 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
     tc_online_state *o = c->online;
     o->recording = false;
     auto &recording = o->pending;
+#ifdef TLB_FILL_LOG
+    if (getenv("TC_REC_LOG") != nullptr) {
+        std::fprintf(stderr, "FINISH head=%llx len=%u cycle=%d closed=%d\n",
+            static_cast<unsigned long long>(recording.head), recording.len, cycle, static_cast<int>(closed));
+    }
+#endif
 #if TC_LIGHTNING
     const auto reject_side = [&] {
         if (o->pending_side != nullptr) {
@@ -1555,6 +1565,16 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         t.chain_connected = chain_connected && start == connected_end;
         t.code_vf_offset = recording.entries[start].code_vf_offset;
         t.ctx_slot_base = recording.ctx_slot_base;
+#ifdef TLB_FILL_LOG
+        {
+            static const bool log_pub = getenv("TC_PUB_LOG") != nullptr;
+            if (log_pub) {
+                std::fprintf(stderr, "PUB head=%llx ctx_slot_base=%llu len=%u\n",
+                    static_cast<unsigned long long>(t.head), static_cast<unsigned long long>(t.ctx_slot_base),
+                    static_cast<unsigned>(end - start));
+            }
+        }
+#endif
         t.len = end - start;
         t.cycle =
             end == recording.len && cycle >= static_cast<int32_t>(start) ? cycle - static_cast<int32_t>(start) : -1;
@@ -1901,9 +1921,36 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
     tc_online_state *o = c->online;
     auto &recording = o->pending;
     const uint64_t code_vf_offset = static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(pc);
+    // A collection chain that breaks before its instruction executes -- a
+    // tick boundary or an interrupt lands at pc -- re-records the same pc on
+    // resume (record precedes execution). Rewind the never-executed entry
+    // and let this call re-append it fresh: keeping it would back-fill the
+    // predecessor's next_pc with the entry's own vaddr and, when the resumed
+    // fetch remaps, dodge the cycle scan, publishing a fragment the emission
+    // pass deterministically rejects. (A genuine one-instruction self-loop
+    // also rewinds forever and ends at the cap: a degenerate trace not worth
+    // closing.)
+    if (recording.len > 0 && recording.entries[recording.len - 1].vaddr == pc) [[unlikely]] {
+        --recording.len;
+    }
     // A recording never crosses a translation-context change: the published
-    // trace bakes one context into its emitted TLB probes.
+    // trace bakes one context into its emitted TLB probes. The last recorded
+    // entry's next_pc was never back-filled (this call carries the FIRST pc
+    // of the new context -- a trap vector, not the entry's natural
+    // successor), so drop it and publish the clean prefix; keeping it would
+    // publish a tail entry whose next_pc is stale, which the emission pass
+    // rejects, deterministically aborting the fragment's compilation.
     if (tc_penumbra(c)->tlb_ctx_slot_base != recording.ctx_slot_base) [[unlikely]] {
+#ifdef TLB_FILL_LOG
+        if (getenv("TC_REC_LOG") != nullptr) {
+            std::fprintf(stderr, "REC-END ctx head=%llx len=%u at=%llx\n",
+                static_cast<unsigned long long>(recording.head), recording.len,
+                static_cast<unsigned long long>(pc));
+        }
+#endif
+        if (recording.len > 0) {
+            --recording.len;
+        }
         tc_online_finish(c, -1, false);
         return;
     }
@@ -1911,6 +1958,13 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
         recording.entries[recording.len - 1].next_pc = pc;
         for (uint32_t i = 0; i < recording.len; ++i) {
             if (recording.entries[i].vaddr == pc && recording.entries[i].code_vf_offset == code_vf_offset) {
+#ifdef TLB_FILL_LOG
+                if (getenv("TC_REC_LOG") != nullptr) {
+                    std::fprintf(stderr, "REC-END cycle head=%llx len=%u at=%llx i=%u\n",
+                        static_cast<unsigned long long>(recording.head), recording.len,
+                        static_cast<unsigned long long>(pc), i);
+                }
+#endif
                 tc_online_finish(c, static_cast<int32_t>(i), true);
                 return;
             }
@@ -5584,6 +5638,19 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         }
     }
     if (!tc_lightning_discover_trace(execution) || execution.failed) {
+#ifdef TLB_FILL_LOG
+        {
+            static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
+            if (log_abort) {
+                std::fprintf(stderr, "ABORT head=%llx len=%u insns:", static_cast<unsigned long long>(trace.head),
+                    trace.len);
+                for (uint32_t i = 0; i < trace.len; ++i) {
+                    std::fprintf(stderr, " %llx", static_cast<unsigned long long>(trace.entries[i].insn));
+                }
+                std::fprintf(stderr, "\n");
+            }
+        }
+#endif
         jit_destroy_state();
         return nullptr;
     }
@@ -5730,6 +5797,20 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     uint64_t collected_pc = trace.head;
     const uint32_t loop_first = trace.cycle >= 0 ? static_cast<uint32_t>(trace.cycle) : trace.len;
     if (!tc_lightning_collect_range(execution, collected_pc, 0, loop_first) || execution.failed) {
+#ifdef TLB_FILL_LOG
+        {
+            static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
+            if (log_abort) {
+                std::fprintf(stderr, "ABORT-collect head=%llx len=%u entries:",
+                    static_cast<unsigned long long>(trace.head), trace.len);
+                for (uint32_t i = 0; i < trace.len; ++i) {
+                    std::fprintf(stderr, " %u:%llx>%llx", i, static_cast<unsigned long long>(trace.entries[i].vaddr),
+                        static_cast<unsigned long long>(trace.entries[i].next_pc));
+                }
+                std::fprintf(stderr, "\n");
+            }
+        }
+#endif
         jit_destroy_state();
         return nullptr;
     }
@@ -5749,6 +5830,19 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
 
     auto *const loop = jit_label();
     if (!tc_lightning_collect_range(execution, collected_pc, loop_first, trace.len) || execution.failed) {
+#ifdef TLB_FILL_LOG
+        {
+            static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
+            if (log_abort) {
+                std::fprintf(stderr, "ABORT-collect-loop head=%llx len=%u insns:",
+                    static_cast<unsigned long long>(trace.head), trace.len);
+                for (uint32_t i = 0; i < trace.len; ++i) {
+                    std::fprintf(stderr, " %llx", static_cast<unsigned long long>(trace.entries[i].insn));
+                }
+                std::fprintf(stderr, "\n");
+            }
+        }
+#endif
         jit_destroy_state();
         return nullptr;
     }
@@ -6058,9 +6152,19 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     jit_patch_at(call_code_remap, call_fallback);
     emit_continue();
 
+    jit_node_t *entry_ctx_bail_label = nullptr;
+    if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
+        // Counted stub for the translation-context guard: bump the counter,
+        // then fall through into the ordinary bail path.
+        entry_ctx_bail_label = jit_label();
+        jit_movi(tmp0, reinterpret_cast<jit_word_t>(&tc_ctx_entry_bails));
+        jit_ldxi(tmp1, tmp0, 0);
+        jit_addi(tmp1, tmp1, 1);
+        jit_stxi(0, tmp0, tmp1);
+    }
     auto *const entry_bail_label = jit_label();
     jit_patch_at(entry_bail, entry_bail_label);
-    jit_patch_at(entry_ctx_bail, entry_bail_label);
+    jit_patch_at(entry_ctx_bail, entry_ctx_bail_label != nullptr ? entry_ctx_bail_label : entry_bail_label);
     emit_continue();
 
     auto *const emitted = jit_emit();

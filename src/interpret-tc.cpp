@@ -1829,7 +1829,16 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
                 return;
             }
         }
-        if (tc_online_find(o, pc) != nullptr) {
+        // Stop at an installed trace only when this recording is already
+        // long enough to publish and link; while shorter, record through
+        // it. Item 19's residual measurement found int64 and double at
+        // 0.1% coverage because their loops call an out-of-line RNG whose
+        // head installs first: each loop recording died at instruction 15
+        // (the call), was rejected against min_straight_len, and the head
+        // blacklisted. Passing through inlines the callee into the loop's
+        // recording -- the trace-tree behavior LuaJIT uses -- and the loop
+        // closes its own cycle instead.
+        if (recording.len >= tc_online_state::min_straight_len && tc_online_find(o, pc) != nullptr) {
             tc_online_finish(c, -1, true);
             return;
         }

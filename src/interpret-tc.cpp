@@ -169,7 +169,7 @@ struct tc_online_state {
     static constexpr uint16_t max_penalty = 3;
 #if TC_LIGHTNING
     static constexpr uint16_t side_hot_reset = TC_HOT_RESET;
-    static constexpr uint16_t max_side_exits = 32;
+    static constexpr uint16_t max_side_exits = 128;
     struct side_link {
         uint64_t successor;
         uint64_t expected;
@@ -2337,8 +2337,8 @@ struct tc_lightning_execution {
     /// in place, so a trace touching more live registers than the host has to
     /// offer degrades instead of failing to compile.
     static constexpr int8_t memory_slot = -2;
-    static constexpr size_t max_nodes = 256;
-    static constexpr size_t max_exits = 32;
+    static constexpr size_t max_nodes = 1024;
+    static constexpr size_t max_exits = 128;
 
     struct side_exit {
         jit_node_t *branch{};
@@ -5630,29 +5630,54 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     execution.online = online;
     // Demoted instructions route to their whole-instruction helpers: the
     // per-machine demoted set is the trap history this compilation consults.
-    if (online != nullptr) {
-        for (uint32_t i = 0; i < trace.len; ++i) {
-            if (tc_online_demoted(online, trace.entries[i].vaddr)) {
-                execution.fp_decline_map[i >> 6] |= UINT64_C(1) << (i & 63);
-            }
-        }
-    }
-    if (!tc_lightning_discover_trace(execution) || execution.failed) {
-#ifdef TLB_FILL_LOG
-        {
-            static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
-            if (log_abort) {
-                std::fprintf(stderr, "ABORT head=%llx len=%u insns:", static_cast<unsigned long long>(trace.head),
-                    trace.len);
-                for (uint32_t i = 0; i < trace.len; ++i) {
-                    std::fprintf(stderr, " %llx", static_cast<unsigned long long>(trace.entries[i].insn));
+    const auto mark_demoted = [&] {
+        if (online != nullptr) {
+            for (uint32_t i = 0; i < trace.len; ++i) {
+                if (tc_online_demoted(online, trace.entries[i].vaddr)) {
+                    execution.fp_decline_map[i >> 6] |= UINT64_C(1) << (i & 63);
                 }
-                std::fprintf(stderr, "\n");
             }
         }
+    };
+    mark_demoted();
+    // Budget-graceful discovery. A trace that fails discovery at entry i --
+    // node budget, side-exit budget, or an uncollectable instruction -- still
+    // owns the compilable prefix [0, i). Truncating and retrying instead of
+    // aborting turns every over-budget or partially-collectable recording
+    // into its largest compilable prefix: the tail re-records from its own
+    // head and links back, so the head composes instead of dying. Without
+    // this, whether a hot loop compiled at all depended on where its
+    // recording window happened to start (the matrixprod compete regression:
+    // a branch-dense soft-float body whose 210-entry fragment overflows the
+    // 32-exit budget aborts whole, while a luckier 185-entry window stays at
+    // 26 exits and compiles). Same trace mutation contract as
+    // TC_LIGHTNING_TRIM above; termination: every retry strictly shrinks len.
+    while (!tc_lightning_discover_trace(execution) || execution.failed) {
+        constexpr uint32_t min_truncated_len = 8;
+        const uint32_t cut = execution.current;
+        if (cut < min_truncated_len || cut >= trace.len) {
+#ifdef TLB_FILL_LOG
+            {
+                static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
+                if (log_abort) {
+                    std::fprintf(stderr, "ABORT head=%llx len=%u cut=%u insns:",
+                        static_cast<unsigned long long>(trace.head), trace.len, cut);
+                    for (uint32_t i = 0; i < trace.len; ++i) {
+                        std::fprintf(stderr, " %llx", static_cast<unsigned long long>(trace.entries[i].insn));
+                    }
+                    std::fprintf(stderr, "\n");
+                }
+            }
 #endif
-        jit_destroy_state();
-        return nullptr;
+            jit_destroy_state();
+            return nullptr;
+        }
+        trace.len = cut;
+        trace.cycle = -1;
+        trace.successor = trace.entries[cut - 1].next_pc;
+        execution = tc_lightning_execution{_jit, trace};
+        execution.online = online;
+        mark_demoted();
     }
     trace.returns = execution.returned;
     // Use-count-ranked slot assignment (8b item 18): discovery counted every

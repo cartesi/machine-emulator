@@ -1829,16 +1829,25 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
                 return;
             }
         }
-        // Stop at an installed trace only when this recording is already
-        // long enough to publish and link; while shorter, record through
-        // it. Item 19's residual measurement found int64 and double at
-        // 0.1% coverage because their loops call an out-of-line RNG whose
-        // head installs first: each loop recording died at instruction 15
-        // (the call), was rejected against min_straight_len, and the head
-        // blacklisted. Passing through inlines the callee into the loop's
-        // recording -- the trace-tree behavior LuaJIT uses -- and the loop
-        // closes its own cycle instead.
-        if (recording.len >= tc_online_state::min_straight_len && tc_online_find(o, pc) != nullptr) {
+        // A back-edge (loop-head) recording still too short to publish
+        // records through an installed trace instead of stopping at it.
+        // Item 19's residual measurement found int64 and double at 0.1%
+        // coverage: their loops call an out-of-line RNG whose head
+        // installs first, so each loop recording died at the call (len
+        // 15), was rejected against min_straight_len, and the head
+        // blacklisted; passing through inlines the callee -- LuaJIT's
+        // trace-tree behavior -- and the loop closes its own cycle.
+        // Only loop-head recordings get this: the unconditional version
+        // measured +50% on the canonical suite (syscall +300%, tree +90%)
+        // because call, continuation and side recordings barreling
+        // through their successors destroy the composition chains that
+        // depend on stopping and linking at installed heads.
+        bool loop_head_recording = !recording.call_target && !recording.continuation;
+#if TC_LIGHTNING
+        loop_head_recording = loop_head_recording && o->pending_side == nullptr;
+#endif
+        if ((!loop_head_recording || recording.len >= tc_online_state::min_straight_len) &&
+            tc_online_find(o, pc) != nullptr) {
             tc_online_finish(c, -1, true);
             return;
         }

@@ -1,0 +1,57 @@
+=== HOST
+Linux vm 6.18.5-fc-v20 #1 SMP PREEMPT_DYNAMIC @0 x86_64 x86_64 x86_64 GNU/Linux
+
+=== CPU
+CPU(s):                                  4
+Model name:                              Intel(R) Xeon(R) Processor @ 2.10GHz
+Thread(s) per core:                      1
+Core(s) per socket:                      4
+Socket(s):                               1
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx_vnni avx512_bf16 wbnoinvd arat avx512vbmi umip avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid cldemote movdiri movdir64b fsrm md_clear serialize tsxldtrk amx_bf16 avx512_fp16 amx_tile amx_int8 arch_capabilities
+
+=== SMT
+0
+siblings of cpu0:
+0
+
+=== governor / boost
+boost: knob unavailable (container)
+intel_pstate: n/a
+
+=== TOOLS
+gcc-16 (Ubuntu 16-20260315-1ubuntu1~24~ppa1) 16.0.1 20260315 (experimental) [trunk r16-8100-g3aca3bae8ee]
+perf version 6.8.12
+
+=== LOAD (host idle?)
+ 21:22:27 up 2 min,  0 user,  load average: 1.12, 0.25, 0.08
+procs running: 6
+
+=== OPS
+fe9b0b79bf9c86b3a4b01d14555c3794fa0681190da847615d7f2cd55149f244  /home/user/machine-emulator/bench-harness/compete/ops.json
+
+=== COMMITS
+current:     1de75b65630f6101751e83be02cf74fa2743a9de  dirty=0
+no-crossmap: 1de75b65630f6101751e83be02cf74fa2743a9de  dirty=1
+
+=== no-crossmap diff vs 1de75b65 (src only)
+diff --git a/src/interpret-tc.cpp b/src/interpret-tc.cpp
+index e8e4bfda..d47f0b7b 100644
+--- a/src/interpret-tc.cpp
++++ b/src/interpret-tc.cpp
+@@ -4567,13 +4567,10 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
+     bool installed = false;
+ #if TC_ONLINE
+     if (const auto *const trace = tc_online_find(c->online, vpc); trace != nullptr &&
+-        (CALL_ENTRY || trace->code_vf_offset == static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(vpc)))
+-        [[unlikely]] {
++        trace->code_vf_offset == static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(vpc)) [[unlikely]] {
+         installed = true;
+ #if TC_LIGHTNING
+         if constexpr (CALL_ENTRY) {
+-            // Cross-mapping dynamic entries use call_fn, which validates the
+-            // target's recorded hot-TLB mapping before entering its body.
+             fn = trace->call_fn;
+         } else {
+             fn = trace->fn;
+d589dee48c3e3a75a459a711cebeee5a6429327e4cf165c95b2e7fd3c3fc4653  /tmp/claude-0/-home-user-machine-emulator/df7f391d-37d7-5139-b76a-fda20c029be9/scratchpad/campaign/builds/xmap-abl-no-crossmap/cartesi.so
+5cbc492b5453efd23490dcc882689dc3496bde5801c353a0363b0a4e19d93967  /tmp/claude-0/-home-user-machine-emulator/df7f391d-37d7-5139-b76a-fda20c029be9/scratchpad/campaign/builds/xmap-new-jit/cartesi.so

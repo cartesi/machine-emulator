@@ -1,0 +1,8 @@
+#!/bin/busybox sh
+busybox mkdir -p /proc /dev /sys
+busybox mount -t proc proc /proc
+busybox mount -t sysfs sys /sys
+busybox mount -t devtmpfs devtmpfs /dev 2> /dev/null
+ENTRY=/proc/device-tree/cartesi-machine/entrypoint
+[ -f "$ENTRY" ] && . "$ENTRY"
+busybox poweroff -f

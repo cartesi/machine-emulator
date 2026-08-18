@@ -1,0 +1,96 @@
+diff --git a/src/abi/unknown-abi.h b/src/abi/unknown-abi.h
+index 3684f42..64a0756 100644
+--- a/src/abi/unknown-abi.h
++++ b/src/abi/unknown-abi.h
+@@ -1227,7 +1227,17 @@ namespace riscv {
+ 			case abi_syscall_unlink:          abi_sys_unlink(proc); break;
+ 			case abi_syscall_stat:            abi_sys_stat(proc); break;
+ 			case abi_syscall_chown:           abi_sys_chown(proc); break;
+-			default: panic("unknown syscall: %d", proc.ireg[rv_ireg_a7].r.xu.val);
++			/* harmless to accept under a proxy ABI: alternate signal
++			   stacks, process naming and interval timers change nothing
++			   the proxy delivers anyway */
++			case 103: /* setitimer */
++			case 132: /* sigaltstack */
++			case 167: /* prctl */
++				proc.ireg[rv_ireg_a0].r.xu.val = 0; break;
++			/* modern libcs probe newer syscalls (set_robust_list, rseq,
++			   statx, clone3, getrandom, ...) and fall back gracefully on
++			   ENOSYS; dying here made every glibc-static binary unrunnable */
++			default: proc.ireg[rv_ireg_a0].r.xu.val = u64(-38) /* -ENOSYS */; break;
+ 		}
+ 	}
+ 
+diff --git a/src/emu/processor-proxy.h b/src/emu/processor-proxy.h
+index 8349c9e..2043a85 100644
+--- a/src/emu/processor-proxy.h
++++ b/src/emu/processor-proxy.h
+@@ -320,18 +320,33 @@ namespace riscv {
+ 			addr_t brk = addr_t(phdr.p_vaddr + voffset + phdr.p_memsz);
+ 			if (!imagebase) imagebase = map_vaddr;
+ 
+-			/* map the segment */
+-			void *addr = guest_mmap((void*)map_vaddr, map_len,
++			/* map the file-backed part of the segment; pages wholly past
++			   p_filesz must be anonymous, or touching a large bss whose
++			   pages lie beyond the end of the file raises SIGBUS */
++			addr_t file_len = round_up(phdr.p_filesz + map_delta, page_size);
++			if (file_len > map_len) file_len = map_len;
++			void *addr = guest_mmap((void*)map_vaddr, file_len,
+ 				elf_p_flags_mmap(phdr.p_flags), MAP_FIXED | MAP_PRIVATE, fd, map_offset);
+ 			close(fd);
+ 			if (addr == MAP_FAILED) {
+ 				panic("map_executable: error: mmap: %s: %s", filename, strerror(errno));
+ 			}
++			if (map_len > file_len) {
++				void *anon = guest_mmap((void*)(map_vaddr + file_len), map_len - file_len,
++					elf_p_flags_mmap(phdr.p_flags), MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++				if (anon == MAP_FAILED) {
++					panic("map_executable: error: mmap (bss): %s: %s", filename, strerror(errno));
++				}
++			}
+ 
+-			/* erase trailing bytes past the end of the mapping */
++			/* erase trailing file bytes between p_filesz and the end of the
++			   file-backed pages (the anonymous part is already zero) */
+ 			if ((phdr.p_flags & PF_W) && phdr.p_memsz > phdr.p_filesz) {
+-				addr_t start = addr_t(phdr.p_vaddr + voffset + phdr.p_filesz), len = map_end - start;
+-				memset((void*)start, 0, len);
++				addr_t start = addr_t(phdr.p_vaddr + voffset + phdr.p_filesz);
++				addr_t file_end = map_vaddr + file_len;
++				if (file_end > start) {
++					memset((void*)start, 0, file_end - start);
++				}
+ 			}
+ 
+ 			/* log load segment virtual address range */
+diff --git a/src/gen/gen-cc.cc b/src/gen/gen-cc.cc
+index fd9f948..ec3e4be 100644
+--- a/src/gen/gen-cc.cc
++++ b/src/gen/gen-cc.cc
+@@ -1,4 +1,5 @@
+ //
++#include <limits>
+ //  gen-cc.cc
+ //
+ 
+diff --git a/src/gen/gen-fpu-test.cc b/src/gen/gen-fpu-test.cc
+index f1b8f84..a22417e 100644
+--- a/src/gen/gen-fpu-test.cc
++++ b/src/gen/gen-fpu-test.cc
+@@ -1,4 +1,5 @@
+ //
++#include <limits>
+ //  gen-fpu-test.cc
+ //
+ 
+diff --git a/src/gen/gen-interp.cc b/src/gen/gen-interp.cc
+index 2e7798c..497c026 100644
+--- a/src/gen/gen-interp.cc
++++ b/src/gen/gen-interp.cc
+@@ -1,4 +1,5 @@
+ //
++#include <limits>
+ //  gen-interp.cc
+ //
+ 

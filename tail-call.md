@@ -3089,6 +3089,16 @@ shell cost +66% with tracing idle).
     returning ENOSYS; sigaltstack/prctl/setitimer must lie
     success). It cannot run syscall or zlib at all.
 
+    The method is reproducible rather than described: the runner
+    (drive.py), the cartesi harness (compete.lua), the four-line
+    bench-init, the calibrated per-workload bogo-op counts
+    (ops.json), the rv8 patch, and the recipes for building the
+    benchmark filesystem and extracting the QEMU-bootable kernel
+    are all in bench-harness/compete/, with README.md there
+    carrying the exact QEMU command lines, the DTB entrypoint
+    injection, and how boot baselines and completion are detected.
+    Everything below can be re-derived from that directory.
+
     Seconds, medians (jit = this backend, sys = qemu-system, icnt =
     qemu-system with -icount shift=0,sleep=off):
       workload    jit    stock   sys    icnt   rv8     jit/icnt

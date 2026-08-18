@@ -3781,6 +3781,46 @@ shell cost +66% with tracing idle).
     fix with measured coverage and runtime gains on call-heavy workloads,
     while indirect return continuation linking remains open work.
 
+    Current AArch64 full-system board. The cross-emulator board was rerun on
+    the same macOS/AArch64 host after cross-mapping call admission, using the
+    same static stress-ng, fixed `ops.json` work, kernel, rootfs and guest init.
+    Each emulator received a fresh median-of-three no-work boot baseline; the
+    13 workloads then ran three times with all five emulators interleaved in
+    every workload/repetition cell. All 195 runs completed. Cartesi JIT and
+    stock reached the same mcycle and halted normally in all 39 paired cells.
+    The tested source was 888e9ea7 and the installed JIT `cartesi.so` SHA-256
+    was 9fd58f178e3b478b7931538e2781eed60af21733ac4c1f53c1a1162daf730afb.
+    Raw samples and full artifact identities are committed as
+    `bench-harness/results-aarch64-board-current.json` and
+    `bench-harness/results-aarch64-board-current-metadata.json`.
+
+      workload    cartesi-jit cartesi-stock qemu-system qemu-icount   rvvm
+      nop               0.461         5.691       0.476        0.650  0.533
+      regs              2.020        13.554       1.814        1.932  1.268
+      branch            0.771         0.963       3.067        3.062  1.462
+      tree              2.062         2.615       2.919        2.977  1.328
+      qsort             2.553         3.991       3.528        3.635  1.233
+      memcpy            2.505         9.629       4.828        5.579  1.427
+      zlib              4.886         8.227       4.081        4.218  2.229
+      hash              2.620         5.961       1.872        1.967  1.925
+      syscall           0.481         1.099       0.836        0.867  0.582
+      double            1.592         1.697       1.723        1.730  3.325
+      sieve             3.097        13.416       1.782        2.095  1.794
+      int64             1.515         4.008       2.246        2.289  0.349
+      matrixprod        2.293         3.713       2.344        2.403  0.850
+      geomean           1.701         4.224       2.079        2.228  1.196
+      time / jit        1.000         2.483       1.222        1.310  0.703
+
+    The current JIT is 17.2% faster in geomean than the preceding AArch64
+    board's 2.054 s column. The largest changes are int64 -48.5%, syscall
+    -43.8%, matrixprod -37.8% and qsort -33.5%; branch is +1.7% and sieve
+    +0.7%. The four unchanged columns reproduce their preceding geomeans
+    within 0.5% (stock 4.239 -> 4.224, QEMU-system 2.078 -> 2.079,
+    QEMU-icount 2.220 -> 2.228, RVVM 1.190 -> 1.196), bounding session drift
+    well below the JIT movement. Cartesi JIT now uses 18.2% less time than
+    QEMU-system and 23.7% less than QEMU-icount; RVVM remains fastest at
+    0.703x the JIT time.
+
 23. UNDER CORRECTION -- DO NOT CITE THE QEMU COLUMNS OR THE
     PER-CHANGE ATTRIBUTIONS BELOW. Review found three defects in
     this item, all mine: the matrix runner computed QEMU boot

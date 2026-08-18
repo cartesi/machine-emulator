@@ -1,0 +1,77 @@
+{
+  "started": "2026-08-18T21:29:06+0100",
+  "repetitions": 3,
+  "machine_emulator_commit": "888e9ea77400670ffcf767f3b1af2719a92ded3b",
+  "cartesi_jit_sha256": "9fd58f178e3b478b7931538e2781eed60af21733ac4c1f53c1a1162daf730afb",
+  "cartesi_stock_sha256": "a940bd370fc94875fee6610d9fa873c3935ff73976cfbbd90a6da8b14369203b",
+  "rootfs_sha256": "3f6ad0dba2a74d62792794b411dd0791fae194fdf639512b7c9feddb1829eee9",
+  "rvvm_binary_sha256": "08a8e42949caa7e904ee78af8dcc2131f666b9de439e7411f774cec8d8744bcb",
+  "ops": {
+    "nop": 118367,
+    "regs": 35970,
+    "branch": 45180,
+    "tree": 2,
+    "qsort": 1,
+    "memcpy": 108,
+    "zlib": 41,
+    "hash": 56298,
+    "syscall": 34718,
+    "double": 200,
+    "sieve": 1276,
+    "int64": 393,
+    "matrixprod": 16
+  },
+  "emulators": [
+    "cartesi-jit",
+    "cartesi-stock",
+    "qemu-system",
+    "qemu-icount",
+    "rvvm"
+  ],
+  "kernel_sha256": "c570a15a4cd484088e72f8f28bf74e404888904ed00768433a68b33f10c8c4c0",
+  "stress_ng_sha256": "26caa5259058a82388e537d18d6ac8afee8e0bbb56ddcfd2a13e79e05e508608",
+  "qemu_version": "QEMU emulator version 11.1.0",
+  "rvvm_version": "RVVM v0.7-git-g33ea63a",
+  "baselines": {
+    "cartesi-jit": {
+      "samples": [
+        0.138,
+        0.136,
+        0.138
+      ],
+      "median": 0.138
+    },
+    "cartesi-stock": {
+      "samples": [
+        0.141,
+        0.141,
+        0.141
+      ],
+      "median": 0.141
+    },
+    "qemu-system": {
+      "samples": [
+        0.332103375,
+        0.32760449999999985,
+        0.3293862910000003
+      ],
+      "median": 0.3293862910000003
+    },
+    "qemu-icount": {
+      "samples": [
+        0.33939612499999994,
+        0.34120595899999984,
+        0.36444741700000005
+      ],
+      "median": 0.34120595899999984
+    },
+    "rvvm": {
+      "samples": [
+        0.11671524999999994,
+        0.10768954200000014,
+        0.11097045900000024
+      ],
+      "median": 0.11097045900000024
+    }
+  }
+}

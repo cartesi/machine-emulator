@@ -1,8 +1,8 @@
 # Cross-emulator benchmark harness (tail-call.md items 19-22)
 
-Everything needed to reproduce the cartesi / qemu-system / qemu-icount / rv8
-comparison. The measurements themselves live in `tail-call.md` items 19-22;
-this file is the method.
+Everything needed to reproduce the cartesi / qemu-system / qemu-icount / RVVM
+comparison on AArch64 and the earlier rv8 comparison on AMD64. The measurements
+themselves live in `tail-call.md` items 19-22; this file is the method.
 
 The guiding constraint: **one binary, one work definition, one guest software
 path**. Both full-system columns run the same static `stress-ng`, the same
@@ -20,6 +20,8 @@ differ only in the emulator and the root device name.
 | `bisect.lua` | Checkpoint-hash harness: bisects the first divergent mcycle between two builds. |
 | `logstep.lua` | `log_step` record→replay oracle over SUM-toggling syscall windows. |
 | `rv8-modern-binaries.patch` | The three rv8 fixes needed to run modern binaries at all. |
+| `linux.bin` | Directly bootable RVVM OpenSBI + Linux image used by the AArch64 board. |
+| `linux.config` | Exact Linux configuration used to build the kernel in `linux.bin`. |
 
 `drive.py` resolves paths relative to its own location: it expects the working
 tree described under *Layout* below, with the campaign build directory as a
@@ -205,6 +207,108 @@ debugfs -R "stat /usr/bin/stress-ng-musl" rootfs-bench.ext2   # verify
 The identical `/usr/bin/stress-ng-musl` is what qemu-user and rv8 execute
 directly from the host filesystem, which is what makes "same binary" literally
 true across all five columns.
+
+## RVVM full-system benchmark on AArch64
+
+The AArch64 board in item 22 used full-system RVVM, not the user-mode rv8
+runner below. The measured RVVM revision was LekKit/RVVM commit
+`33ea63aa959cad202573cb5e0f7248db85f84683` (`v0.7-git-g33ea63a`). Build the
+unmodified revision with its documented Makefile:
+
+```sh
+git clone https://github.com/LekKit/RVVM.git
+cd RVVM
+git checkout 33ea63aa959cad202573cb5e0f7248db85f84683
+make
+```
+
+On the measured macOS/AArch64 host the executable was
+`release.darwin.arm64/rvvm_arm64`. Do not use an instrumented RVVM build for
+timings.
+
+### Boot image provenance
+
+The committed `linux.bin` is an RVVM firmware image and boots directly as the
+first RVVM argument; it is not the normal Cartesi `linux.bin`. Its layout is:
+
+```text
+0x000000-0x041c6f  upstream OpenSBI generic fw_jump.bin
+0x041c70-0x1fffff  zero padding
+0x200000-0x10bb81f Linux Image
+```
+
+The components and resulting artifact are fixed by these identities:
+
+```text
+OpenSBI v1.3.1
+  commit 057eb10b6d523540012e6947d5c9f63e95244e94
+  fw_jump.bin sha256 920fa1bcd5d4b623496abe70a62b6f473f55d7c05cb538062ee507208d138e8f
+Linux cartesi/linux v6.5.13-ctsi-2-uio-test1
+  source tar sha256 ca2142b0fd3fce1cb80b661080a09f288d62bdc61a0b5e3ece44246bc8d6b16c
+  Image sha256 c570a15a4cd484088e72f8f28bf74e404888904ed00768433a68b33f10c8c4c0
+  config sha256 26b71073edfa022c727f05d6557e14aaaa8bacba9d305d638cec466af82cb919
+linux.bin
+  size 17545248 bytes
+  sha256 c2370b05b683d511851279c5c3f637873a334898597db283c11a2da413bffa13
+```
+
+The image was packed without changing either component:
+
+```sh
+cp fw_jump.bin linux.bin
+truncate -s 2097152 linux.bin
+dd if=Image of=linux.bin bs=1048576 seek=2 conv=notrunc
+```
+
+The kernel configuration adds the generic PCI host, NVMe block device and
+8250 UART support needed by RVVM. The exact configuration is committed as
+`linux.config`; rebuilding the kernel is unnecessary for the benchmark.
+Upstream OpenSBI is required because the Cartesi OpenSBI port uses the
+emulator's custom single-hart HTIF conventions and is not an RVVM firmware.
+
+### RVVM machine and guest setup
+
+Use the same `rootfs-bench.ext2`, `/usr/sbin/bench-init`, static stress-ng
+binary and `ops.json` described above. RVVM exposes its image as NVMe and does
+not have QEMU's `-snapshot`, so make an APFS clone before every boot (`cp -c`
+on macOS; use a reflink or ordinary copy elsewhere). Never benchmark against
+the shared source image directly.
+
+Generate RVVM's base DTB once. This first boot also proves that the committed
+image reaches Linux; without `/cartesi-machine/entrypoint`, `bench-init` simply
+powers off:
+
+```sh
+RVVM=RVVM/release.darwin.arm64/rvvm_arm64
+BOOTARGS='quiet earlycon=uart8250,mmio,0x10000000 console=ttyS0 root=/dev/nvme0n1 rw init=/usr/sbin/bench-init'
+cp -c rootfs-bench.ext2 rvvm-rootfs.ext2
+$RVVM linux.bin -i rvvm-rootfs.ext2 -m 512M -smp 1 -nogui -nonet -nosound \
+  -cmdline "$BOOTARGS" -dumpdtb rvvm-base.dtb
+```
+
+For each timed boot, inject the command through the same DTB node read by the
+Cartesi and QEMU guests, clone a fresh drive, then invoke RVVM without `-k`:
+
+```sh
+ENTRY='/usr/bin/stress-ng-musl --no-rand-seed --cpu 1 --cpu-method int64 --cpu-ops 393'
+cp rvvm-base.dtb rvvm-run.dtb
+fdtput -c rvvm-run.dtb /cartesi-machine
+fdtput -t s rvvm-run.dtb /chosen bootargs "$BOOTARGS"
+fdtput -t s rvvm-run.dtb /cartesi-machine entrypoint "$ENTRY"
+cp -c rootfs-bench.ext2 rvvm-rootfs.ext2
+$RVVM linux.bin -i rvvm-rootfs.ext2 -m 512M -smp 1 -nogui -nonet -nosound \
+  -dtb rvvm-run.dtb
+```
+
+Measure monotonic wall time around the whole RVVM process. Accept a workload
+sample only when RVVM exits with status zero and its combined output contains
+`successful run completed`. For each host session, first measure three boots
+with `ENTRY=true` and take their median. Run every workload in `ops.json` three
+times, interleaving emulators in each workload/repetition cell as the AArch64
+runner did. Report each sample as total wall time minus that emulator's median
+boot baseline, then report the median of the three adjusted samples. The item
+22 RVVM baseline samples were 0.115197209, 0.114415208 and 0.114806709 seconds;
+their median was 0.114806709 seconds. Recompute rather than reuse that number.
 
 ## rv8
 

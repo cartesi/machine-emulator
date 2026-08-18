@@ -80,9 +80,9 @@ public:
             hash_function(hash_function) {
             ;
         }
-        std::string filename;             ///<  where to save the log
-        hash_function_type hash_function; ///<  hash function type to use for the log
-        mutable pages_type touched_pages; ///<  copy of all pages touched during execution
+        std::string filename;                ///<  where to save the log
+        hash_function_type hash_function;    ///<  hash function type to use for the log
+        mutable pages_type touched_pages;    ///<  copy of all pages touched during execution
         mutable host_addr fetch_vf_offset{}; ///< fetch mapping offset of the current code page
     };
 

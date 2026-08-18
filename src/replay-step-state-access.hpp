@@ -141,7 +141,7 @@ public:
         machine_hash *sibling_hashes{nullptr};                           ///< Array of sibling hashes
         mock_address_ranges ars{};                                       ///< Array of address ranges
         hot_tlb_state tlb{};                                             ///< Hot TLB cache for validated entries
-        host_addr fetch_vf_offset{};                                     ///< Fetch mapping offset of the current code page
+        host_addr fetch_vf_offset{}; ///< Fetch mapping offset of the current code page
     };
 
 private:

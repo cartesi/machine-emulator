@@ -3732,6 +3732,55 @@ shell cost +66% with tracing idle).
     now completes all three repetitions and is again parity with stock; it
     remains slower than both QEMU modes and RVVM at this operation count.
 
+    Cross-mapping call entries. Source inspection and instrumentation of
+    RVVM showed that its generated block tail performs a tagged JIT lookup
+    instead of returning to the main dispatch loop. Cartesi already had the
+    corresponding safety mechanism in `call_fn`: it validates the target
+    trace's recorded code-page mapping against the hot code TLB before
+    entering the trace body, installing the mapping or falling back when it
+    does not match. However, `tc_hook_site<true>` first required the target
+    trace to share the caller's current fetch mapping, so cross-page calls
+    could never reach that validator. The hook now bypasses that preliminary
+    equality test only for call entries. Loop and root entries retain the
+    original test, and `call_fn` remains the authority for cross-mapping
+    admission.
+
+    The narrower rule follows three rejected measurements. A fixed return
+    target missed all 7,587,936 probes on the shared int64 callee. A generated
+    dynamic return tail produced a deterministic wrong root hash and was
+    discarded. Sending every `jalr x0` and `c.jr` through the dynamic lookup
+    raised branch from 1.293 s to 4.450 s; restricting that experiment to
+    returns still measured about 4.64 s and did not improve int64 or
+    matrixprod. No return hook remains in the implementation.
+
+    The final change was rerun with the same fixed-work AArch64 protocol as
+    the preceding ctx256 JIT matrix. Each row below is the median of three
+    runs; all 39 runs reached 1,342,177,280 mcycles and reproduced the
+    established root hash. The raw runs are committed as
+    `bench-harness/results-aarch64-cross-call.txt`.
+
+      workload     before   cross-call   delta
+      nop            0.041        0.040    -2.4%
+      regs           0.132        0.131    -0.8%
+      branch         1.293        1.323    +2.3%
+      tree           2.682        2.692    +0.4%
+      qsort          1.555        1.212   -22.1%
+      memcpy         0.326        0.263   -19.3%
+      zlib           1.140        1.141    +0.1%
+      hash           0.767        0.715    -6.8%
+      syscall        1.387        0.439   -68.3%
+      double         2.201        1.934   -12.1%
+      sieve          0.401        0.385    -4.0%
+      int64          0.761        0.419   -44.9%
+      matrixprod     1.656        1.210   -26.9%
+
+    Instrumented int64 runs explain the principal win directly: JIT-covered
+    instructions rose from 359,922,720 (26.8%) to 1,117,481,194 (83.3%) of
+    the fixed instruction budget. Final matrixprod coverage was 433,349,686
+    instructions (32.3%). Thus the implemented result is a small admission
+    fix with measured coverage and runtime gains on call-heavy workloads,
+    while indirect return continuation linking remains open work.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

@@ -246,7 +246,7 @@ struct tc_online_state {
         uint32_t cap; ///< This recording's dynamic length cap, latched at begin
         bool call_target;
         bool continuation;
-        bool pass_through; ///< Starved-head retry: record through installed heads while short
+        bool pass_through;      ///< Starved-head retry: record through installed heads while short
         uint64_t ctx_slot_base; ///< Translation context of the recording, latched at begin
         tc_online_entry entries[max_len];
     };
@@ -1250,13 +1250,13 @@ static void tc_online_report(const tc_online_state &o) {
         static_cast<unsigned long long>(o.installed), static_cast<unsigned long long>(o.aborted),
         static_cast<unsigned long long>(o.short_aborted), static_cast<unsigned long long>(o.compile_aborted),
         static_cast<unsigned long long>(o.verify_aborted), static_cast<unsigned long long>(o.invalidated),
-        static_cast<unsigned long long>(o.demotions), static_cast<unsigned long long>(o.escalations), static_cast<unsigned long long>(o.continuations),
-        static_cast<unsigned long long>(o.flushes), static_cast<unsigned long long>(o.links),
-        static_cast<unsigned long long>(o.register_links), static_cast<unsigned long long>(o.register_moves),
-        static_cast<unsigned long long>(o.register_loads), static_cast<unsigned long long>(o.register_stores),
-        static_cast<unsigned long long>(longest_chain), static_cast<unsigned long long>(longest_fp_chain),
-        static_cast<unsigned long long>(longest_fp_entries), static_cast<unsigned long long>(longest_graph_chain),
-        static_cast<unsigned long long>(longest_fp_graph_chain),
+        static_cast<unsigned long long>(o.demotions), static_cast<unsigned long long>(o.escalations),
+        static_cast<unsigned long long>(o.continuations), static_cast<unsigned long long>(o.flushes),
+        static_cast<unsigned long long>(o.links), static_cast<unsigned long long>(o.register_links),
+        static_cast<unsigned long long>(o.register_moves), static_cast<unsigned long long>(o.register_loads),
+        static_cast<unsigned long long>(o.register_stores), static_cast<unsigned long long>(longest_chain),
+        static_cast<unsigned long long>(longest_fp_chain), static_cast<unsigned long long>(longest_fp_entries),
+        static_cast<unsigned long long>(longest_graph_chain), static_cast<unsigned long long>(longest_fp_graph_chain),
         static_cast<unsigned long long>(longest_fp_graph_entries), static_cast<unsigned long long>(continuation_traces),
         static_cast<unsigned long long>(continuation_entries), static_cast<unsigned long long>(continuation_fp_entries),
         static_cast<unsigned long long>(connected_continuation_traces),
@@ -1266,11 +1266,11 @@ static void tc_online_report(const tc_online_state &o) {
         static_cast<unsigned long long>(longest_connected_fp_recording), static_cast<unsigned>(o.ntraces));
 #if TC_LIGHTNING
     if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
-        std::fprintf(stderr, "tc-online: episodes %llu trace-insns %llu compile-ms %llu trace-ms %llu ctx-entry-bails %llu\n",
+        std::fprintf(stderr,
+            "tc-online: episodes %llu trace-insns %llu compile-ms %llu trace-ms %llu ctx-entry-bails %llu\n",
             static_cast<unsigned long long>(o.episodes), static_cast<unsigned long long>(o.trace_insns),
             static_cast<unsigned long long>(o.compile_ns / 1000000),
-            static_cast<unsigned long long>(o.trace_ns / 1000000),
-            static_cast<unsigned long long>(tc_ctx_entry_bails));
+            static_cast<unsigned long long>(o.trace_ns / 1000000), static_cast<unsigned long long>(tc_ctx_entry_bails));
         std::fprintf(stderr, "tc-online: fp-guard-bails");
         for (uint8_t i = 0; i < tc_fp_guard_count; ++i) {
             std::fprintf(stderr, " %s %llu", tc_fp_guard_names[i],
@@ -1960,8 +1960,7 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
 #ifdef TLB_FILL_LOG
         if (getenv("TC_REC_LOG") != nullptr) {
             std::fprintf(stderr, "REC-END ctx head=%llx len=%u at=%llx\n",
-                static_cast<unsigned long long>(recording.head), recording.len,
-                static_cast<unsigned long long>(pc));
+                static_cast<unsigned long long>(recording.head), recording.len, static_cast<unsigned long long>(pc));
         }
 #endif
         if (recording.len > 0) {
@@ -2892,8 +2891,7 @@ struct tc_lightning_execution {
             n, dest, depth, [&](auto d, auto l, auto r) { jit_xorr(d, l, r); },
             [&](auto d, auto l, auto r) { jit_xori(d, l, r); });
     }
-    static void emit_shift_left(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest,
-        unsigned depth) {
+    static void emit_shift_left(tc_lightning_execution &e, const tc_lightning_node &n, jit_gpr_t dest, unsigned depth) {
         jit_state_t *_jit = e.jit;
         e.emit_binary(
             n, dest, depth, [&](auto d, auto l, auto r) { jit_lshr(d, l, r); },
@@ -5770,8 +5768,9 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             {
                 static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
                 if (log_abort) {
-                    std::fprintf(stderr, "ABORT head=%llx len=%u cut=%u insns:",
-                        static_cast<unsigned long long>(trace.head), trace.len, cut);
+                    std::fprintf(stderr,
+                        "ABORT head=%llx len=%u cut=%u insns:", static_cast<unsigned long long>(trace.head), trace.len,
+                        cut);
                     for (uint32_t i = 0; i < trace.len; ++i) {
                         std::fprintf(stderr, " %llx", static_cast<unsigned long long>(trace.entries[i].insn));
                     }
@@ -5817,8 +5816,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         }
         const uint8_t nregs = tc_lightning_execution::usable_slots();
         for (uint8_t i = 0; i < norder; ++i) {
-            execution.guest_slot[order[i]] =
-                i < nregs ? static_cast<int8_t>(i) : tc_lightning_execution::memory_slot;
+            execution.guest_slot[order[i]] = i < nregs ? static_cast<int8_t>(i) : tc_lightning_execution::memory_slot;
         }
         execution.nguests = norder < nregs ? norder : nregs;
     }
@@ -5936,8 +5934,8 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         {
             static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
             if (log_abort) {
-                std::fprintf(stderr, "ABORT-collect head=%llx len=%u entries:",
-                    static_cast<unsigned long long>(trace.head), trace.len);
+                std::fprintf(stderr,
+                    "ABORT-collect head=%llx len=%u entries:", static_cast<unsigned long long>(trace.head), trace.len);
                 for (uint32_t i = 0; i < trace.len; ++i) {
                     std::fprintf(stderr, " %u:%llx>%llx", i, static_cast<unsigned long long>(trace.entries[i].vaddr),
                         static_cast<unsigned long long>(trace.entries[i].next_pc));
@@ -5969,8 +5967,9 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         {
             static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
             if (log_abort) {
-                std::fprintf(stderr, "ABORT-collect-loop head=%llx len=%u insns:",
-                    static_cast<unsigned long long>(trace.head), trace.len);
+                std::fprintf(stderr,
+                    "ABORT-collect-loop head=%llx len=%u insns:", static_cast<unsigned long long>(trace.head),
+                    trace.len);
                 for (uint32_t i = 0; i < trace.len; ++i) {
                     std::fprintf(stderr, " %llx", static_cast<unsigned long long>(trace.entries[i].insn));
                 }

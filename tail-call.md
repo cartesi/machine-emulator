@@ -3699,6 +3699,39 @@ shell cost +66% with tracing idle).
     aggregate 2.297x stock/JIT ratio comes from the integer and memory rows,
     not from claiming an FP-heavy win.
 
+    Cross-emulator AArch64 board. The fixed-operation full-system comparison
+    was repaired without rerunning unaffected emulators: the final ctx256
+    stock and fixed JIT columns were rerun back-to-back for all workloads,
+    while the QEMU-system, QEMU-icount and RVVM columns retain their original
+    measurements with the same kernel, rootfs, static stress-ng binary and
+    calibrated operation counts. Each entry is the median of three runs after
+    subtracting that emulator's median no-work boot baseline, in seconds:
+
+      workload    cartesi-jit cartesi-stock qemu-system qemu-icount   rvvm
+      nop               0.512         5.698       0.470        0.629  0.534
+      regs              2.051        13.592       1.797        1.922  1.262
+      branch            0.758         0.970       3.059        3.079  1.466
+      tree              2.123         2.627       2.963        3.014  1.334
+      qsort             3.840         4.000       3.541        3.597  1.242
+      memcpy            2.530         9.655       4.951        5.533  1.438
+      zlib              4.948         8.259       4.035        4.224  2.119
+      hash              2.693         5.977       1.859        1.975  1.929
+      syscall           0.856         1.102       0.827        0.865  0.571
+      double            1.855         1.703       1.722        1.727  3.301
+      sieve             3.076        13.442       1.793        2.097  1.761
+      int64             2.942         4.024       2.242        2.283  0.347
+      matrixprod        3.685         3.734       2.340        2.391  0.863
+      geomean           2.054         4.239       2.078        2.220  1.190
+      time / jit        1.000         2.064       1.012        1.081  0.579
+
+    The completed board changes the earlier incomplete verdict cleanly.
+    Cartesi JIT is effectively tied with QEMU-system in aggregate (1.2% less
+    time) and uses 7.5% less time than QEMU-icount, despite very different
+    per-workload shapes. RVVM remains the fastest aggregate at 0.579x the
+    Cartesi JIT time. Cartesi JIT halves stock's aggregate time. Matrixprod
+    now completes all three repetitions and is again parity with stock; it
+    remains slower than both QEMU modes and RVVM at this operation count.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

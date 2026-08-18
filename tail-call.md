@@ -3781,6 +3781,20 @@ shell cost +66% with tracing idle).
     fix with measured coverage and runtime gains on call-heavy workloads,
     while indirect return continuation linking remains open work.
 
+23. UNDER CORRECTION -- DO NOT CITE THE QEMU COLUMNS OR THE
+    PER-CHANGE ATTRIBUTIONS BELOW. Review found three defects in
+    this item, all mine: the matrix runner computed QEMU boot
+    baselines and never subtracted them, so both QEMU columns and
+    every geomean and QEMU-relative claim below are wrong; the
+    per-row causal assignments (tree to the ctx256 restore,
+    matrixprod to the FP-CSR rework) were never isolated, since
+    the A/B bundles all three upstream changes; and one post-sync
+    RVVM stall was called RVVM behaviour when it is an
+    unexplained stall. The corrected board and isolated ablations
+    replace this item. The cartesi pre/post A/B is unaffected by
+    the baseline defect (it subtracts correctly) but its per-change
+    attributions still are not measured.
+
 23. DONE, MEASURED: THE AMD64 BOARD WITH RVVM, AND WHAT THE
     UPSTREAM FIXES ARE ACTUALLY WORTH. Item 22's board was
     completed on AArch64/macOS; this is its AMD64/Linux

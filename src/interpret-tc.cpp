@@ -4569,10 +4569,13 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
     bool installed = false;
 #if TC_ONLINE
     if (const auto *const trace = tc_online_find(c->online, vpc); trace != nullptr &&
-        trace->code_vf_offset == static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(vpc)) [[unlikely]] {
+        (CALL_ENTRY || trace->code_vf_offset == static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(vpc)))
+        [[unlikely]] {
         installed = true;
 #if TC_LIGHTNING
         if constexpr (CALL_ENTRY) {
+            // Cross-mapping dynamic entries use call_fn, which validates the
+            // target's recorded hot-TLB mapping before entering its body.
             fn = trace->call_fn;
         } else {
             fn = trace->fn;

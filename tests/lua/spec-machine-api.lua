@@ -110,7 +110,7 @@ for _, variant in ipairs(variants) do
             it("should return correct names for TLB slot fields", function()
                 -- shadow_tlb_slot layout (32 bytes): vaddr_page@0, vp_offset@8, pma_index@16, zero_padding_@24
                 local tlb_slot_size = 32 -- sizeof(shadow_tlb_slot)
-                local tlb_set_bytes = 256 * tlb_slot_size -- TLB_SET_SIZE * sizeof(shadow_tlb_slot)
+                local tlb_set_bytes = 1024 * tlb_slot_size -- TLB_SET_SLOTS * sizeof(shadow_tlb_slot)
                 local tlb_fields = {
                     [0] = "tlb.slot.vaddr_page",
                     [8] = "tlb.slot.vp_offset",

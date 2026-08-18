@@ -422,7 +422,7 @@ local function register_verify_step_tests(machine)
             local hash_function = string.unpack("<I8", log_data, OFFSET_HASH_FUNCTION + 1)
             local hash_fn = hash_function == 0 and "keccak256" or "sha256"
 
-            -- Find the PMA page (address 0x10000 = page index 16)
+            -- Find the PMA page.
             local pma_page_index = cartesi.AR_PMAS_START >> LOG2_PAGE_SIZE
             local pma_page_pos = nil
             for i, p in ipairs(pages) do

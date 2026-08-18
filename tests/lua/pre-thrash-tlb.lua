@@ -17,10 +17,10 @@
 --[[
 Pre-run script for the thrash-tlb test.
 
-Runs thrash-tlb.bin once to fill all TLB entries, then corrupts every shadow
-TLB slot with six different corruption types (one per slot % 6) that cover
-all rejection paths in shadow_tlb_verify_slot().  Resets PC and mcycle so
-the test infrastructure can run the binary again from scratch.
+Runs thrash-tlb.bin once to fill the active M-mode partition of every TLB set,
+then corrupts those slots with six different corruption types (one per slot % 6)
+that cover all rejection paths in shadow_tlb_verify_slot(). Resets PC and mcycle
+so the test infrastructure can run the binary again from scratch.
 
 Returns the raw TLB string captured before corruption, so the post script
 can verify the TLB was restored to the same state.
@@ -34,6 +34,8 @@ local TLB_WRITE = 2
 local TLB_SETS = { TLB_CODE, TLB_READ, TLB_WRITE }
 
 local TLB_SET_SIZE = 256
+local TLB_M_CTX = 3
+local TLB_SET_SLOTS = 1024
 local TLB_SLOT_BYTES = 32
 
 local PMA_ENTRY_BYTES = 16
@@ -55,12 +57,14 @@ end
 local function build_corrupted_tlb(tlb_data, num_pmas)
     local parts = {}
     for _, _ in ipairs(TLB_SETS) do
-        for slot = 0, TLB_SET_SIZE - 1 do
+        for slot = 0, TLB_SET_SLOTS - 1 do
             local offset = 1 + #parts * TLB_SLOT_BYTES
             local vaddr_page, vp_offset, pma_index = string.unpack("<I8I8I8", tlb_data, offset)
             local new_data
             local ct = slot % 6
-            if ct == 0 then
+            if slot < TLB_M_CTX * TLB_SET_SIZE then
+                new_data = tlb_data:sub(offset, offset + TLB_SLOT_BYTES - 1)
+            elseif ct == 0 then
                 -- zero_padding != 0
                 new_data = string.pack("<I8I8I8I8", vaddr_page, vp_offset, pma_index, 1)
             elseif ct == 1 then

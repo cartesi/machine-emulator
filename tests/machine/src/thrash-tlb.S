@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-// Thrashes all three TLB sets (code, read, write) by touching more pages
-// than TLB_SET_SIZE (256), filling every slot and exercising do_write_tlb.
+// Thrashes the active context partition of all three TLB sets (code, read,
+// write) by touching more pages than TLB_SET_SIZE (256), filling every slot
+// in the partition and exercising do_write_tlb.
 //
 // Pages accessed: RAM_START + i*PAGE_SIZE for i in [1 .. TLB_SET_SIZE+1]
 // (257 pages starting from page 1 to avoid overwriting code at page 0).
 //
-// Slot index for page i = ((RAM_START >> 12) + i) & 0xFF.
+// Index within the active context for page i = ((RAM_START >> 12) + i) & 0xFF.
 // Pages 1..255 fill slots 1..255; page 256 fills slot 0; page 257 evicts
 // slot 1, giving one more access than the TLB capacity.
 //

@@ -3370,6 +3370,11 @@ struct tc_lightning_execution {
         return {this, add_node(emit_shadow_load, 0, 0, shadow_fcsr_offset), false, 64};
     }
 
+    /// \brief Stores an integer value into fcsr.
+    void write_fcsr_word(tc_lightning_value value) {
+        write_shadow(shadow_fcsr_offset, value);
+    }
+
     /// \brief Stores a value into an f register in the shadow.
     void write_f(uint32_t freg, tc_lightning_value value) {
         if (discovery || failed) {
@@ -5437,40 +5442,6 @@ TC_FP_ARITH_HELPER(FNMADD, execute_FNMADD(a, pc, insn))
 TC_FP_ARITH_HELPER(FNMSUB, execute_FNMSUB(a, pc, insn))
 #undef TC_FP_ARITH_HELPER
 
-/// \brief Whole-instruction helper for CSR ops on the fcsr family.
-/// \details Staged ONLY when the immediate csr field names fflags, frm or
-/// fcsr (the collector checks before staging), so the generic execute bodies
-/// below can never touch a CSR with flush or trap semantics inside a trace:
-/// these three just update fcsr (dirtying mstatus.FS, which changes no
-/// translation context and flushes nothing) and read the old value into rd.
-/// Pre-bails on FS off exactly like the arithmetic helpers, so the portable
-/// re-execution raises the illegal-instruction exception. The mcycle
-/// argument is consulted only by counter CSRs, never by this family; the
-/// possibly-lagging shadow value satisfies the signature.
-TC_FP_HELPER_ABI static execute_status tc_fp_helper_CSR_FP(processor_state *ps, uint32_t insn) {
-    const state_access a(*ps->penumbra.owner);
-    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
-        return execute_status::failure;
-    }
-    i_state_access_fast_addr_t<state_access> pc{};
-    switch ((insn >> 12) & 7) {
-        case 1:
-            return execute_CSRRW(a, pc, a.read_mcycle(), insn);
-        case 2:
-            return execute_CSRRS(a, pc, a.read_mcycle(), insn);
-        case 3:
-            return execute_CSRRC(a, pc, a.read_mcycle(), insn);
-        case 5:
-            return execute_CSRRWI(a, pc, a.read_mcycle(), insn);
-        case 6:
-            return execute_CSRRSI(a, pc, a.read_mcycle(), insn);
-        case 7:
-            return execute_CSRRCI(a, pc, a.read_mcycle(), insn);
-        default:
-            return execute_status::failure;
-    }
-}
-
 static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uint32_t insn) {
     // A declined body may have requested the dynamic-frm guard before
     // declining; the request must not leak into the next staged instruction.
@@ -5561,14 +5532,42 @@ static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uin
                     return true;
                 }
                 if (funct3 == 1 || funct3 == 2 || funct3 == 3 || funct3 == 5 || funct3 == 6 || funct3 == 7) {
-                    // Writes (and read-writes) of the fcsr family route to the
-                    // whole-instruction helper. This is what makes soft-float
-                    // libraries traceable: their fenv handling (csrs/csrc on
-                    // fflags around every operation in __multf3 and friends)
-                    // otherwise ends every recording and starves the seam at
-                    // the successor, because the uncollectable pc itself
-                    // becomes the next head.
-                    return stage_helper(tc_fp_helper_CSR_FP);
+                    e.emit_fs_guard();
+                    const auto fcsr = e.materialize(e.read_fcsr_word());
+                    auto old = fcsr;
+                    if (csr == 0x001) {
+                        old = fcsr & static_cast<uint64_t>(FCSR_FFLAGS_RW_MASK);
+                    } else if (csr == 0x002) {
+                        old = (fcsr & static_cast<uint64_t>(FCSR_FRM_RW_MASK)) >> static_cast<uint64_t>(FCSR_FRM_SHIFT);
+                    }
+
+                    const uint32_t rs1 = insn_get_rs1(insn);
+                    const bool immediate = (funct3 & 4) != 0;
+                    const auto operand = immediate ? imm_value(rs1) : e.read_x(rs1);
+                    const bool writes = funct3 == 1 || funct3 == 5 || rs1 != 0;
+                    if (writes) {
+                        auto value = operand;
+                        if (funct3 == 2 || funct3 == 6) {
+                            value = old | operand;
+                        } else if (funct3 == 3 || funct3 == 7) {
+                            value = old & (operand ^ UINT64_MAX);
+                        }
+                        if (csr == 0x001) {
+                            value = (fcsr & ~static_cast<uint64_t>(FCSR_FFLAGS_RW_MASK)) |
+                                ((value << static_cast<uint64_t>(FCSR_FFLAGS_SHIFT)) &
+                                    static_cast<uint64_t>(FCSR_FFLAGS_RW_MASK));
+                        } else if (csr == 0x002) {
+                            value = (fcsr & ~static_cast<uint64_t>(FCSR_FRM_RW_MASK)) |
+                                ((value << static_cast<uint64_t>(FCSR_FRM_SHIFT)) &
+                                    static_cast<uint64_t>(FCSR_FRM_RW_MASK));
+                        }
+                        e.write_fcsr_word(value);
+                    }
+                    if (const uint32_t rd = insn_get_rd(insn); rd != 0) {
+                        e.write_x(rd, old);
+                    }
+                    pc += 4;
+                    return true;
                 }
                 return false;
             }

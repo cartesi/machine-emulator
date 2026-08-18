@@ -1,0 +1,15 @@
+{
+ "nop": 118367,
+ "regs": 35970,
+ "branch": 45180,
+ "tree": 2,
+ "qsort": 1,
+ "memcpy": 108,
+ "zlib": 41,
+ "hash": 56298,
+ "syscall": 34718,
+ "double": 200,
+ "sieve": 1276,
+ "int64": 393,
+ "matrixprod": 16
+}

@@ -14,11 +14,11 @@ ICOUNT = " -icount shift=0,sleep=off"
 OUT = os.path.join(COMP, "results-matrix.json")
 
 
-def qemu_run(wl, ops, icount):
+def qemu_run(wl, ops, icount, baseline):
     entry = "/usr/bin/stress-ng-musl " + sng_args(wl, ops)
     t, _ = wall(qemu_sys_cmd(sys_dtb(entry)) + (ICOUNT if icount else ""))
     ok = b"successful run" in open(os.path.join(COMP, "serial.log"), "rb").read()
-    return t if ok else None
+    return t - baseline if ok else None
 
 
 def qemu_base(icount):
@@ -51,8 +51,8 @@ def main(reps=3):
             cell = {
                 "cartesi-jit":   lambda: run_cartesi(JIT, wl, o, base["cartesi-jit"]),
                 "cartesi-stock": lambda: run_cartesi(STOCK, wl, o, base["cartesi-stock"]),
-                "qemu-system":   lambda: qemu_run(wl, o, False),
-                "qemu-icount":   lambda: qemu_run(wl, o, True),
+                "qemu-system":   lambda: qemu_run(wl, o, False, base["qemu-system"]),
+                "qemu-icount":   lambda: qemu_run(wl, o, True, base["qemu-icount"]),
                 "rvvm":          lambda: rvvm.run_workload(wl, o, base["rvvm"], sng_args),
             }
             for emu, fn in cell.items():          # interleaved within the cell

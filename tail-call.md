@@ -3781,6 +3781,102 @@ shell cost +66% with tracing idle).
     fix with measured coverage and runtime gains on call-heavy workloads,
     while indirect return continuation linking remains open work.
 
+23. DONE, MEASURED: THE AMD64 BOARD WITH RVVM, AND WHAT THE
+    UPSTREAM FIXES ARE ACTUALLY WORTH. Item 22's board was
+    completed on AArch64/macOS; this is its AMD64/Linux
+    counterpart, run after merging the branch that carries the
+    ctx256 TLB capacity restore, the generated-code FP-CSR
+    writes and the cross-mapping call-entry admission. Same
+    protocol throughout: one static musl stress-ng, the fixed
+    ops.json bogo-ops, each emulator's own median-of-3 no-work
+    boot baseline subtracted, three repetitions interleaved
+    within every workload/emulator cell, medians reported. RVVM
+    is the LekKit build at 33ea63aa (v0.7-git-g33ea63a) driven
+    by the committed OpenSBI+Linux image, running the same
+    rootfs, the same bench-init and the same entrypoint DTB node
+    as the other full-system columns. Every cell completed; no
+    workload failed on any emulator.
+
+      workload    cartesi-jit cartesi-stock qemu-system qemu-icount   rvvm
+      nop               0.964        12.713       1.524       2.139  0.937
+      regs              4.250        28.338       3.500       3.435  2.720
+      branch            1.618         1.473       5.887       5.575  2.823
+      tree              4.442         5.255       5.006       5.213  2.892
+      qsort             5.207         6.470       4.313       5.012  2.340
+      memcpy            3.402        14.887       3.714       7.307  3.017
+      zlib              8.670        11.786       4.770       7.672  3.999
+      hash              4.872         8.921       3.754       4.767  3.738
+      syscall           0.966         1.828       1.980       3.570  1.131
+      double            3.631         4.814       2.997       2.805  5.495
+      sieve             5.251        19.189       3.797       7.001  3.332
+      int64             2.827         5.212       2.968       2.748  0.793
+      matrixprod        3.908         5.922       3.439       3.981  3.228
+      geomean           3.248         7.229       3.465       4.382  2.453
+      time / jit        1.000         2.225       1.067       1.349  0.755
+
+    The JIT is 2.23x the stock interpreter, 6.7% ahead of
+    QEMU-system and 34.9% ahead of QEMU-icount; RVVM leads at
+    0.755x our time. The shape matches the AArch64 board rather
+    than contradicting it: branch is the standout (3.6x
+    QEMU-system, 1.7x RVVM), syscall and nop follow, and zlib
+    and hash remain the rows both QEMUs win. Double is the one
+    row where RVVM loses to everything including our stock
+    interpreter -- 5.50 against our 3.63 -- consistent with the
+    FP softness rv8 also showed.
+
+    The cross-session trap, avoided deliberately. Against the
+    AMD64 board of item 22 this looks like a reversal: we were
+    1.37x BEHIND QEMU-icount and now lead it by 1.35x. Most of
+    that is not ours. The QEMU columns themselves moved
+    substantially between sessions (icount syscall 1.75 -> 3.57,
+    sieve 4.85 -> 7.00), so the honest attribution needs a
+    same-host A/B rather than a comparison across boards. Running
+    the pre-merge JIT (item 22's shipped configuration) against
+    the post-merge JIT back-to-back, interleaved, three
+    repetitions:
+
+      workload    pre-merge post-merge   delta
+      nop             1.057      0.939  -11.2%
+      regs            4.423      4.310   -2.6%
+      branch          1.609      1.661   +3.2%
+      tree            4.860      4.423   -9.0%
+      qsort           7.308      5.091  -30.3%
+      memcpy          3.447      3.370   -2.2%
+      zlib            8.551      8.525   -0.3%
+      hash            5.024      5.046   +0.4%
+      syscall         1.694      0.919  -45.7%
+      double          4.611      3.625  -21.4%
+      sieve           4.776      5.283  +10.6%
+      int64           5.406      2.813  -48.0%
+      matrixprod      5.398      4.055  -24.9%
+      geomean         3.866      3.244  -16.1%
+
+    So the upstream fixes are worth 16.1% on this host, not the
+    2x a naive board-to-board reading would have claimed. Two of
+    the three rows this notebook filed as open regressions are
+    closed by them: tree, whose 128-slot-per-context capacity
+    loss item 20 measured at +31% fills, gains 9.0% back from the
+    ctx256 restore; and matrixprod, whose soft-float loop item 22
+    left starved, gains 24.9% from the generated-code FP-CSR
+    writes -- the same defect this notebook had tried to fix with
+    a C++ whole-instruction helper, which upstream found made the
+    uncapped JIT fail to complete at all. int64 (-48.0%) and
+    syscall (-45.7%) are the largest single wins. sieve regresses
+    10.6% and is the one row this arc leaves worse; it is small,
+    reproducible across the interleaved repetitions, and filed.
+
+    RVVM measurement note. RVVM has no -snapshot, so every boot
+    gets a fresh copy of the 366 MB drive image; leaving that
+    copy dirty in the page cache let writeback stall the
+    following run by up to 40x (int64 30.7s against a 0.75s
+    median, memcpy 39.3s against 2.92s). Syncing before the timer
+    starts removes most of it, but one sample in 65 still stalled
+    (double 35.9s against 5.50s), so the residue is RVVM
+    behaviour and not only harness noise. Medians are unaffected:
+    the column reproduced within 2% between the three- and
+    five-repetition runs (geomean 2.400 against 2.453), and the
+    five-repetition medians are the ones tabulated above.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

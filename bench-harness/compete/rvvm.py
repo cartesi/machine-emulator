@@ -7,8 +7,10 @@ import os, shutil, statistics, subprocess, time
 
 COMP = os.path.dirname(os.path.abspath(__file__))
 RVVM = os.path.join(COMP, "RVVM/release.linux.x86_64/rvvm_x86_64")
-# The RVVM firmware image (upstream OpenSBI + Linux), committed in the repo.
-LINBIN = "/home/user/machine-emulator/bench-harness/compete/linux.bin"
+# The RVVM firmware image (upstream OpenSBI + Linux), committed next to this
+# script in the repo; resolved relative to the harness so the column runs
+# wherever the harness is checked out.
+LINBIN = os.path.join(COMP, "linux.bin")
 ROOTFS_SRC = os.path.join(COMP, "rootfs-bench.ext2")
 BOOTARGS = ("quiet earlycon=uart8250,mmio,0x10000000 console=ttyS0 "
             "root=/dev/nvme0n1 rw init=/usr/sbin/bench-init")

@@ -1044,6 +1044,38 @@ static uint64_t tc_fp_guard_bails[tc_fp_guard_count];
 
 /// \brief Entry translation-context guard bail count (TC_ONLINE_EXEC_STATS).
 static uint64_t tc_ctx_entry_bails;
+
+// --- Cross-mapping admission diagnostics (TC_CROSSMAP_STATS) -----------------
+// Behind an environment variable and off by default. The hook-site counters
+// are plain increments on an already-cold path; the generated-code counters
+// are only emitted when the variable is set, so production code is unchanged.
+struct tc_crossmap_stats {
+    // tc_hook_site<CALL_ENTRY=true> classification
+    uint64_t call_probes;        ///< dynamic call hook probes
+    uint64_t no_trace;           ///< no installed trace at the pc
+    uint64_t trace_found;        ///< an installed trace exists
+    uint64_t same_mapping;       ///< ... recorded under the caller's current mapping
+    uint64_t cross_mapping;      ///< ... recorded under a different mapping
+    uint64_t entry_returned;     ///< hook returned an entry to the caller
+    uint64_t entry_rejected;     ///< hook declined to return an entry
+    uint64_t suppressed_trip;    ///< admission short-circuited before the trip logic
+    // generated call_fn outcomes
+    uint64_t callfn_entries;     ///< call_fn preambles executed
+    uint64_t callfn_accepted;    ///< reached the trace body
+    uint64_t callfn_tlb_miss;    ///< hot code-TLB tag mismatch
+    uint64_t callfn_remap;       ///< code mapping/remap mismatch
+};
+static tc_crossmap_stats tc_xmap;
+
+/// \brief Per-trace cross-mapping probe accounting, indexed by pool slot.
+static uint64_t tc_xmap_probe[tc_online_state::max_traces];
+static uint64_t tc_xmap_cross[tc_online_state::max_traces];
+static uint64_t tc_xmap_accept[tc_online_state::max_traces];
+
+static bool tc_crossmap_stats_enabled() {
+    static const bool enabled = std::getenv("TC_CROSSMAP_STATS") != nullptr;
+    return enabled;
+}
 /// \brief Raw bits scratch register 0 held at the last miss of each class:
 /// the value the guard actually tested (result or operand bits, fcsr, or
 /// masked mstatus depending on the class).
@@ -1293,6 +1325,48 @@ static void tc_online_report(const tc_online_state &o) {
 /// the state without seeing its type.
 static void tc_online_free(void *p) {
     auto *const o = static_cast<tc_online_state *>(p);
+    if (tc_crossmap_stats_enabled()) {
+        const auto &x = tc_xmap;
+        std::fprintf(stderr,
+            "tc-crossmap: call-probes %llu no-trace %llu trace-found %llu (same %llu cross %llu) "
+            "entry-returned %llu entry-rejected %llu suppressed-trip %llu\n",
+            (unsigned long long) x.call_probes, (unsigned long long) x.no_trace,
+            (unsigned long long) x.trace_found, (unsigned long long) x.same_mapping,
+            (unsigned long long) x.cross_mapping, (unsigned long long) x.entry_returned,
+            (unsigned long long) x.entry_rejected, (unsigned long long) x.suppressed_trip);
+        std::fprintf(stderr,
+            "tc-crossmap: callfn-entries %llu accepted %llu tlb-miss %llu remap %llu ctx-bails %llu\n",
+            (unsigned long long) x.callfn_entries, (unsigned long long) x.callfn_accepted,
+            (unsigned long long) x.callfn_tlb_miss, (unsigned long long) x.callfn_remap,
+            (unsigned long long) tc_ctx_entry_bails);
+        // Invariants, printed rather than asserted so a violation is visible
+        // in the data instead of aborting a measurement run.
+        std::fprintf(stderr,
+            "tc-crossmap: invariant probes-vs-classes %lld callfn-vs-outcomes %lld\n",
+            (long long) (x.call_probes - (x.no_trace + x.trace_found)),
+            (long long) (x.callfn_entries -
+                (x.callfn_accepted + x.callfn_tlb_miss + x.callfn_remap + tc_ctx_entry_bails)));
+        uint32_t order[tc_online_state::max_traces];
+        uint32_t n = 0;
+        for (uint32_t i = 0; i < o->ntraces && i < tc_online_state::max_traces; ++i) {
+            if (tc_xmap_probe[i] != 0) {
+                order[n++] = i;
+            }
+        }
+        std::sort(order, order + n,
+            [](uint32_t a, uint32_t b) { return tc_xmap_probe[a] > tc_xmap_probe[b]; });
+        for (uint32_t k = 0; k < n && k < 20; ++k) {
+            const uint32_t i = order[k];
+            const auto &t = o->pool[i];
+            std::fprintf(stderr,
+                "tc-crossmap-top: head %llx probes %llu cross %llu accepted %llu executions %llu "
+                "len %u cyclic %d continuation %d dead %d\n",
+                (unsigned long long) t.head, (unsigned long long) tc_xmap_probe[i],
+                (unsigned long long) tc_xmap_cross[i], (unsigned long long) tc_xmap_accept[i],
+                (unsigned long long) t.executions, t.len, t.cycle >= 0 ? 1 : 0,
+                (int) t.continuation, (int) t.dead);
+        }
+    }
     if (std::getenv("TC_ONLINE_STATS") != nullptr) {
         tc_online_report(*o);
     }
@@ -4566,6 +4640,31 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
     const void *fn = nullptr;
     bool installed = false;
 #if TC_ONLINE
+    if constexpr (CALL_ENTRY) {
+        if (tc_crossmap_stats_enabled()) [[unlikely]] {
+            ++tc_xmap.call_probes;
+            const auto *const probe = tc_online_find(c->online, vpc);
+            if (probe == nullptr) {
+                ++tc_xmap.no_trace;
+            } else {
+                ++tc_xmap.trace_found;
+                const bool same = probe->code_vf_offset ==
+                    static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(vpc);
+                if (same) {
+                    ++tc_xmap.same_mapping;
+                } else {
+                    ++tc_xmap.cross_mapping;
+                }
+                const auto idx = static_cast<size_t>(probe - c->online->pool);
+                if (idx < tc_online_state::max_traces) {
+                    ++tc_xmap_probe[idx];
+                    if (!same) {
+                        ++tc_xmap_cross[idx];
+                    }
+                }
+            }
+        }
+    }
     if (const auto *const trace = tc_online_find(c->online, vpc); trace != nullptr &&
         (CALL_ENTRY || trace->code_vf_offset == static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(vpc)))
         [[unlikely]] {
@@ -4614,7 +4713,21 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
 #endif
     if (installed) [[unlikely]] {
         ++c->hot.entries;
+        if constexpr (CALL_ENTRY) {
+            if (tc_crossmap_stats_enabled()) [[unlikely]] {
+                ++tc_xmap.entry_returned;
+                // Admission returns here, so the hotcount/trip logic below is
+                // never reached for this pc: recording is suppressed by the
+                // fact of an installed trace being entered.
+                ++tc_xmap.suppressed_trip;
+            }
+        }
         return fn;
+    }
+    if constexpr (CALL_ENTRY) {
+        if (tc_crossmap_stats_enabled()) [[unlikely]] {
+            ++tc_xmap.entry_rejected;
+        }
     }
 
     const uint32_t h = (static_cast<uint32_t>(vpc) >> 1) & (tc_hot_state::sets - 1);
@@ -6268,8 +6381,22 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     // instructions were recorded, then establish that mapping in the pinned
     // fetch registers. A miss or remap resumes through the ordinary fetch path
     // with pc still encoded using the caller's deposit.
+
+    // Cross-mapping diagnostics: bump a host counter from generated code. Only
+    // emitted when TC_CROSSMAP_STATS is set, so the shipped call entry is
+    // byte-identical without it.
+    const auto emit_xmap_bump = [&](uint64_t *counter) {
+        if (!tc_crossmap_stats_enabled()) {
+            return;
+        }
+        jit_movi(tmp0, reinterpret_cast<jit_word_t>(counter));
+        jit_ldr(tmp1, tmp0);
+        jit_addi(tmp1, tmp1, 1);
+        jit_str(tmp0, tmp1);
+    };
     auto *const call_entry = jit_indirect();
     tc_jit_establish_frame(_jit);
+    emit_xmap_bump(&tc_xmap.callfn_entries);
     constexpr jit_word_t hot_tlb_base =
         offsetof(processor_state, penumbra) + offsetof(penumbra_state, tlb) + TLB_CODE * sizeof(hot_tlb_set);
     constexpr jit_word_t shadow_tlb_base =
@@ -6300,11 +6427,18 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
 #endif
     jit_ldxi(tmp0, TC_JIT_STATE, head_shadow_slot + offsetof(shadow_tlb_slot, pma_index));
     jit_stxi(TC_JIT_CTX_DISP(context_pma_index), TC_JIT_CTX_BASE, tmp0);
+    emit_xmap_bump(&tc_xmap.callfn_accepted);
     auto *const call_normal_entry = jit_jmpi();
     jit_patch_at(call_normal_entry, normal_entry_established);
+    auto *const call_miss_label = jit_label();
+    jit_patch_at(call_tlb_miss, call_miss_label);
+    emit_xmap_bump(&tc_xmap.callfn_tlb_miss);
+    auto *const call_miss_join = jit_jmpi();
+    auto *const call_remap_label = jit_label();
+    jit_patch_at(call_code_remap, call_remap_label);
+    emit_xmap_bump(&tc_xmap.callfn_remap);
     auto *const call_fallback = jit_label();
-    jit_patch_at(call_tlb_miss, call_fallback);
-    jit_patch_at(call_code_remap, call_fallback);
+    jit_patch_at(call_miss_join, call_fallback);
     emit_continue();
 
     jit_node_t *entry_ctx_bail_label = nullptr;

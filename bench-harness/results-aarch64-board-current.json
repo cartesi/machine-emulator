@@ -1,0 +1,1640 @@
+[
+  {
+    "emulator": "cartesi-jit",
+    "workload": "nop",
+    "repetition": 1,
+    "total_seconds": 0.599,
+    "seconds": 0.46099999999999997,
+    "mcycle": 8201229467,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "nop",
+    "repetition": 1,
+    "total_seconds": 5.528,
+    "seconds": 5.387,
+    "mcycle": 8201229467,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "nop",
+    "repetition": 1,
+    "total_seconds": 0.7801634169999989,
+    "seconds": 0.45077712599999864,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "nop",
+    "repetition": 1,
+    "total_seconds": 0.9524072500000003,
+    "seconds": 0.6112012910000004,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "nop",
+    "repetition": 1,
+    "total_seconds": 0.6261070829999991,
+    "seconds": 0.5151366239999988,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "regs",
+    "repetition": 1,
+    "total_seconds": 2.158,
+    "seconds": 2.02,
+    "mcycle": 16966668854,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "regs",
+    "repetition": 1,
+    "total_seconds": 13.705,
+    "seconds": 13.564,
+    "mcycle": 16966668854,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "regs",
+    "repetition": 1,
+    "total_seconds": 2.963991749999998,
+    "seconds": 2.6346054589999977,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "regs",
+    "repetition": 1,
+    "total_seconds": 2.2310386660000034,
+    "seconds": 1.8898327070000036,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "regs",
+    "repetition": 1,
+    "total_seconds": 1.386936042000002,
+    "seconds": 1.2759655830000018,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "branch",
+    "repetition": 1,
+    "total_seconds": 0.91,
+    "seconds": 0.772,
+    "mcycle": 649248193,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "branch",
+    "repetition": 1,
+    "total_seconds": 1.11,
+    "seconds": 0.9690000000000001,
+    "mcycle": 649248193,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "branch",
+    "repetition": 1,
+    "total_seconds": 3.366498958000001,
+    "seconds": 3.0371126670000006,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "branch",
+    "repetition": 1,
+    "total_seconds": 3.404026375000001,
+    "seconds": 3.062820416000001,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "branch",
+    "repetition": 1,
+    "total_seconds": 1.568180875000003,
+    "seconds": 1.4572104160000028,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "tree",
+    "repetition": 1,
+    "total_seconds": 2.195,
+    "seconds": 2.057,
+    "mcycle": 965867293,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "tree",
+    "repetition": 1,
+    "total_seconds": 2.756,
+    "seconds": 2.6149999999999998,
+    "mcycle": 965867293,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "tree",
+    "repetition": 1,
+    "total_seconds": 3.2458239579999955,
+    "seconds": 2.916437666999995,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "tree",
+    "repetition": 1,
+    "total_seconds": 3.3171169579999997,
+    "seconds": 2.975910999,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "tree",
+    "repetition": 1,
+    "total_seconds": 1.4390616660000006,
+    "seconds": 1.3280912070000004,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "qsort",
+    "repetition": 1,
+    "total_seconds": 2.706,
+    "seconds": 2.568,
+    "mcycle": 2351624703,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "qsort",
+    "repetition": 1,
+    "total_seconds": 4.134,
+    "seconds": 3.9930000000000003,
+    "mcycle": 2351624703,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "qsort",
+    "repetition": 1,
+    "total_seconds": 3.8948976670000093,
+    "seconds": 3.565511376000009,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "qsort",
+    "repetition": 1,
+    "total_seconds": 3.9766855830000054,
+    "seconds": 3.6354796240000056,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "qsort",
+    "repetition": 1,
+    "total_seconds": 1.3560271669999935,
+    "seconds": 1.2450567079999932,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "memcpy",
+    "repetition": 1,
+    "total_seconds": 2.643,
+    "seconds": 2.505,
+    "mcycle": 6721548792,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "memcpy",
+    "repetition": 1,
+    "total_seconds": 9.778,
+    "seconds": 9.637,
+    "mcycle": 6721548792,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "memcpy",
+    "repetition": 1,
+    "total_seconds": 5.157480833000008,
+    "seconds": 4.828094542000008,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "memcpy",
+    "repetition": 1,
+    "total_seconds": 5.921406000000005,
+    "seconds": 5.580200041000005,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "memcpy",
+    "repetition": 1,
+    "total_seconds": 1.523331583000001,
+    "seconds": 1.4123611240000007,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "zlib",
+    "repetition": 1,
+    "total_seconds": 5.02,
+    "seconds": 4.882,
+    "mcycle": 4516579339,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "zlib",
+    "repetition": 1,
+    "total_seconds": 8.377,
+    "seconds": 8.236,
+    "mcycle": 4516579339,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "zlib",
+    "repetition": 1,
+    "total_seconds": 4.658147624999998,
+    "seconds": 4.3287613339999975,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "zlib",
+    "repetition": 1,
+    "total_seconds": 4.55896641599999,
+    "seconds": 4.21776045699999,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "zlib",
+    "repetition": 1,
+    "total_seconds": 2.3397676249999932,
+    "seconds": 2.228797165999993,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "hash",
+    "repetition": 1,
+    "total_seconds": 2.758,
+    "seconds": 2.62,
+    "mcycle": 3663163397,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "hash",
+    "repetition": 1,
+    "total_seconds": 6.106,
+    "seconds": 5.965,
+    "mcycle": 3663163397,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "hash",
+    "repetition": 1,
+    "total_seconds": 2.2015806670000018,
+    "seconds": 1.8721943760000015,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "hash",
+    "repetition": 1,
+    "total_seconds": 2.3083647920000203,
+    "seconds": 1.9671588330000205,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "hash",
+    "repetition": 1,
+    "total_seconds": 2.029931457999993,
+    "seconds": 1.9189609989999927,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "syscall",
+    "repetition": 1,
+    "total_seconds": 0.619,
+    "seconds": 0.481,
+    "mcycle": 643487512,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "syscall",
+    "repetition": 1,
+    "total_seconds": 1.243,
+    "seconds": 1.102,
+    "mcycle": 643487512,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "syscall",
+    "repetition": 1,
+    "total_seconds": 1.1652879159999827,
+    "seconds": 0.8359016249999824,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "syscall",
+    "repetition": 1,
+    "total_seconds": 1.2046151250000037,
+    "seconds": 0.8634091660000038,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "syscall",
+    "repetition": 1,
+    "total_seconds": 0.685271374999985,
+    "seconds": 0.5743009159999848,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "double",
+    "repetition": 1,
+    "total_seconds": 1.73,
+    "seconds": 1.592,
+    "mcycle": 856584210,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "double",
+    "repetition": 1,
+    "total_seconds": 1.839,
+    "seconds": 1.698,
+    "mcycle": 856584210,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "double",
+    "repetition": 1,
+    "total_seconds": 2.0525556249999966,
+    "seconds": 1.7231693339999963,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "double",
+    "repetition": 1,
+    "total_seconds": 2.081034332999991,
+    "seconds": 1.7398283739999911,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "double",
+    "repetition": 1,
+    "total_seconds": 3.4359123330000045,
+    "seconds": 3.3249418740000043,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "sieve",
+    "repetition": 1,
+    "total_seconds": 3.185,
+    "seconds": 3.047,
+    "mcycle": 8624443953,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "sieve",
+    "repetition": 1,
+    "total_seconds": 13.564,
+    "seconds": 13.423,
+    "mcycle": 8624443953,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "sieve",
+    "repetition": 1,
+    "total_seconds": 2.104987875000006,
+    "seconds": 1.775601584000006,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "sieve",
+    "repetition": 1,
+    "total_seconds": 2.4365466669999876,
+    "seconds": 2.0953407079999877,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "sieve",
+    "repetition": 1,
+    "total_seconds": 1.904937834000009,
+    "seconds": 1.7939673750000087,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "int64",
+    "repetition": 1,
+    "total_seconds": 1.653,
+    "seconds": 1.5150000000000001,
+    "mcycle": 2337083903,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "int64",
+    "repetition": 1,
+    "total_seconds": 4.156,
+    "seconds": 4.015,
+    "mcycle": 2337083903,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "int64",
+    "repetition": 1,
+    "total_seconds": 2.582076333999993,
+    "seconds": 2.2526900429999923,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "int64",
+    "repetition": 1,
+    "total_seconds": 2.6340536670000176,
+    "seconds": 2.292847708000018,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "int64",
+    "repetition": 1,
+    "total_seconds": 0.4596578750000049,
+    "seconds": 0.34868741600000464,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "matrixprod",
+    "repetition": 1,
+    "total_seconds": 2.436,
+    "seconds": 2.298,
+    "mcycle": 2420748847,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "matrixprod",
+    "repetition": 1,
+    "total_seconds": 3.856,
+    "seconds": 3.715,
+    "mcycle": 2420748847,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "matrixprod",
+    "repetition": 1,
+    "total_seconds": 2.670288124999985,
+    "seconds": 2.3409018339999843,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "matrixprod",
+    "repetition": 1,
+    "total_seconds": 2.740480500000018,
+    "seconds": 2.3992745410000182,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "matrixprod",
+    "repetition": 1,
+    "total_seconds": 0.9716551249999839,
+    "seconds": 0.8606846659999836,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "nop",
+    "repetition": 2,
+    "total_seconds": 0.607,
+    "seconds": 0.469,
+    "mcycle": 8201229467,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "nop",
+    "repetition": 2,
+    "total_seconds": 5.835,
+    "seconds": 5.694,
+    "mcycle": 8201229467,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "nop",
+    "repetition": 2,
+    "total_seconds": 0.8134694169999932,
+    "seconds": 0.4840831259999929,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "nop",
+    "repetition": 2,
+    "total_seconds": 1.001902541000021,
+    "seconds": 0.6606965820000212,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "nop",
+    "repetition": 2,
+    "total_seconds": 0.6441003749999936,
+    "seconds": 0.5331299159999934,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "regs",
+    "repetition": 2,
+    "total_seconds": 2.157,
+    "seconds": 2.019,
+    "mcycle": 16966668854,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "regs",
+    "repetition": 2,
+    "total_seconds": 13.695,
+    "seconds": 13.554,
+    "mcycle": 16966668854,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "regs",
+    "repetition": 2,
+    "total_seconds": 2.1430224169999974,
+    "seconds": 1.8136361259999971,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "regs",
+    "repetition": 2,
+    "total_seconds": 2.272865541999977,
+    "seconds": 1.931659582999977,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "regs",
+    "repetition": 2,
+    "total_seconds": 1.3747120419999987,
+    "seconds": 1.2637415829999985,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "branch",
+    "repetition": 2,
+    "total_seconds": 0.879,
+    "seconds": 0.741,
+    "mcycle": 649248193,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "branch",
+    "repetition": 2,
+    "total_seconds": 1.104,
+    "seconds": 0.9630000000000001,
+    "mcycle": 649248193,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "branch",
+    "repetition": 2,
+    "total_seconds": 3.412204750000001,
+    "seconds": 3.0828184590000003,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "branch",
+    "repetition": 2,
+    "total_seconds": 3.4024912920000077,
+    "seconds": 3.061285333000008,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "branch",
+    "repetition": 2,
+    "total_seconds": 1.5794548339999892,
+    "seconds": 1.468484374999989,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "tree",
+    "repetition": 2,
+    "total_seconds": 2.2,
+    "seconds": 2.0620000000000003,
+    "mcycle": 965867293,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "tree",
+    "repetition": 2,
+    "total_seconds": 2.777,
+    "seconds": 2.636,
+    "mcycle": 965867293,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "tree",
+    "repetition": 2,
+    "total_seconds": 3.2479177920000097,
+    "seconds": 2.9185315010000092,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "tree",
+    "repetition": 2,
+    "total_seconds": 3.3379441249999786,
+    "seconds": 2.9967381659999788,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "tree",
+    "repetition": 2,
+    "total_seconds": 1.4454017090000093,
+    "seconds": 1.334431250000009,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "qsort",
+    "repetition": 2,
+    "total_seconds": 2.691,
+    "seconds": 2.553,
+    "mcycle": 2351624703,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "qsort",
+    "repetition": 2,
+    "total_seconds": 4.132,
+    "seconds": 3.9909999999999997,
+    "mcycle": 2351624703,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "qsort",
+    "repetition": 2,
+    "total_seconds": 3.853367583000022,
+    "seconds": 3.5239812920000215,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "qsort",
+    "repetition": 2,
+    "total_seconds": 3.9688567080000325,
+    "seconds": 3.6276507490000327,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "qsort",
+    "repetition": 2,
+    "total_seconds": 1.1800792500000057,
+    "seconds": 1.0691087910000054,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "memcpy",
+    "repetition": 2,
+    "total_seconds": 2.646,
+    "seconds": 2.508,
+    "mcycle": 6721548792,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "memcpy",
+    "repetition": 2,
+    "total_seconds": 9.77,
+    "seconds": 9.629,
+    "mcycle": 6721548792,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "memcpy",
+    "repetition": 2,
+    "total_seconds": 5.286884874999998,
+    "seconds": 4.957498583999998,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "memcpy",
+    "repetition": 2,
+    "total_seconds": 5.920663417000014,
+    "seconds": 5.5794574580000145,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "memcpy",
+    "repetition": 2,
+    "total_seconds": 1.5544417500000236,
+    "seconds": 1.4434712910000234,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "zlib",
+    "repetition": 2,
+    "total_seconds": 5.078,
+    "seconds": 4.94,
+    "mcycle": 4516579339,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "zlib",
+    "repetition": 2,
+    "total_seconds": 8.368,
+    "seconds": 8.227,
+    "mcycle": 4516579339,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "zlib",
+    "repetition": 2,
+    "total_seconds": 4.410484166999993,
+    "seconds": 4.081097875999992,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "zlib",
+    "repetition": 2,
+    "total_seconds": 4.510292375000006,
+    "seconds": 4.169086416000006,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "zlib",
+    "repetition": 2,
+    "total_seconds": 2.2725450830000113,
+    "seconds": 2.161574624000011,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "hash",
+    "repetition": 2,
+    "total_seconds": 2.758,
+    "seconds": 2.62,
+    "mcycle": 3663163397,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "hash",
+    "repetition": 2,
+    "total_seconds": 6.102,
+    "seconds": 5.961,
+    "mcycle": 3663163397,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "hash",
+    "repetition": 2,
+    "total_seconds": 2.201169249999964,
+    "seconds": 1.8717829589999637,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "hash",
+    "repetition": 2,
+    "total_seconds": 2.3187203329999875,
+    "seconds": 1.9775143739999876,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "hash",
+    "repetition": 2,
+    "total_seconds": 2.046551208999972,
+    "seconds": 1.9355807499999718,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "syscall",
+    "repetition": 2,
+    "total_seconds": 0.621,
+    "seconds": 0.483,
+    "mcycle": 643487512,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "syscall",
+    "repetition": 2,
+    "total_seconds": 1.239,
+    "seconds": 1.098,
+    "mcycle": 643487512,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "syscall",
+    "repetition": 2,
+    "total_seconds": 1.1631524580000132,
+    "seconds": 0.8337661670000129,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "syscall",
+    "repetition": 2,
+    "total_seconds": 1.2132322079999653,
+    "seconds": 0.8720262489999655,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "syscall",
+    "repetition": 2,
+    "total_seconds": 0.6930859999999939,
+    "seconds": 0.5821155409999936,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "double",
+    "repetition": 2,
+    "total_seconds": 1.73,
+    "seconds": 1.592,
+    "mcycle": 856584210,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "double",
+    "repetition": 2,
+    "total_seconds": 1.835,
+    "seconds": 1.694,
+    "mcycle": 856584210,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "double",
+    "repetition": 2,
+    "total_seconds": 2.059229500000015,
+    "seconds": 1.7298432090000146,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "double",
+    "repetition": 2,
+    "total_seconds": 2.071682624999994,
+    "seconds": 1.7304766659999942,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "double",
+    "repetition": 2,
+    "total_seconds": 3.6973279580000167,
+    "seconds": 3.5863574990000164,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "sieve",
+    "repetition": 2,
+    "total_seconds": 3.239,
+    "seconds": 3.101,
+    "mcycle": 8624443953,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "sieve",
+    "repetition": 2,
+    "total_seconds": 13.557,
+    "seconds": 13.416,
+    "mcycle": 8624443953,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "sieve",
+    "repetition": 2,
+    "total_seconds": 2.111603500000001,
+    "seconds": 1.7822172090000008,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "sieve",
+    "repetition": 2,
+    "total_seconds": 2.4366109999999708,
+    "seconds": 2.095405040999971,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "sieve",
+    "repetition": 2,
+    "total_seconds": 2.2020722079999473,
+    "seconds": 2.091101748999947,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "int64",
+    "repetition": 2,
+    "total_seconds": 1.653,
+    "seconds": 1.5150000000000001,
+    "mcycle": 2337083903,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "int64",
+    "repetition": 2,
+    "total_seconds": 4.149,
+    "seconds": 4.008,
+    "mcycle": 2337083903,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "int64",
+    "repetition": 2,
+    "total_seconds": 2.5756189170000425,
+    "seconds": 2.246232626000042,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "int64",
+    "repetition": 2,
+    "total_seconds": 2.6306185830000004,
+    "seconds": 2.2894126240000006,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "int64",
+    "repetition": 2,
+    "total_seconds": 0.4600489580000158,
+    "seconds": 0.34907849900001553,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "matrixprod",
+    "repetition": 2,
+    "total_seconds": 2.431,
+    "seconds": 2.293,
+    "mcycle": 2420748847,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "matrixprod",
+    "repetition": 2,
+    "total_seconds": 3.852,
+    "seconds": 3.711,
+    "mcycle": 2420748847,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "matrixprod",
+    "repetition": 2,
+    "total_seconds": 2.680023917000028,
+    "seconds": 2.3506376260000277,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "matrixprod",
+    "repetition": 2,
+    "total_seconds": 2.753699917000006,
+    "seconds": 2.412493958000006,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "matrixprod",
+    "repetition": 2,
+    "total_seconds": 0.9608930420000092,
+    "seconds": 0.849922583000009,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "nop",
+    "repetition": 3,
+    "total_seconds": 0.595,
+    "seconds": 0.45699999999999996,
+    "mcycle": 8201229467,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "nop",
+    "repetition": 3,
+    "total_seconds": 5.832,
+    "seconds": 5.691,
+    "mcycle": 8201229467,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "nop",
+    "repetition": 3,
+    "total_seconds": 0.8055507089999878,
+    "seconds": 0.47616441799998754,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "nop",
+    "repetition": 3,
+    "total_seconds": 0.9907467920000386,
+    "seconds": 0.6495408330000387,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "nop",
+    "repetition": 3,
+    "total_seconds": 0.6456151250000062,
+    "seconds": 0.5346446660000059,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "regs",
+    "repetition": 3,
+    "total_seconds": 2.167,
+    "seconds": 2.029,
+    "mcycle": 16966668854,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "regs",
+    "repetition": 3,
+    "total_seconds": 13.693,
+    "seconds": 13.552,
+    "mcycle": 16966668854,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "regs",
+    "repetition": 3,
+    "total_seconds": 2.12996212500002,
+    "seconds": 1.8005758340000197,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "regs",
+    "repetition": 3,
+    "total_seconds": 3.862335332999976,
+    "seconds": 3.521129373999976,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "regs",
+    "repetition": 3,
+    "total_seconds": 1.378759500000001,
+    "seconds": 1.2677890410000008,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "branch",
+    "repetition": 3,
+    "total_seconds": 0.909,
+    "seconds": 0.771,
+    "mcycle": 649248193,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "branch",
+    "repetition": 3,
+    "total_seconds": 1.103,
+    "seconds": 0.962,
+    "mcycle": 649248193,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "branch",
+    "repetition": 3,
+    "total_seconds": 3.3967702090000103,
+    "seconds": 3.0673839180000098,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "branch",
+    "repetition": 3,
+    "total_seconds": 3.4035804999999755,
+    "seconds": 3.0623745409999756,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "branch",
+    "repetition": 3,
+    "total_seconds": 1.572625500000015,
+    "seconds": 1.4616550410000149,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "tree",
+    "repetition": 3,
+    "total_seconds": 2.215,
+    "seconds": 2.077,
+    "mcycle": 965867293,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "tree",
+    "repetition": 3,
+    "total_seconds": 2.741,
+    "seconds": 2.6,
+    "mcycle": 965867293,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "tree",
+    "repetition": 3,
+    "total_seconds": 3.2671944159999953,
+    "seconds": 2.9378081249999948,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "tree",
+    "repetition": 3,
+    "total_seconds": 3.3183785410000155,
+    "seconds": 2.9771725820000157,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "tree",
+    "repetition": 3,
+    "total_seconds": 1.4306129580000402,
+    "seconds": 1.31964249900004,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "qsort",
+    "repetition": 3,
+    "total_seconds": 2.647,
+    "seconds": 2.509,
+    "mcycle": 2351624703,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "qsort",
+    "repetition": 3,
+    "total_seconds": 4.115,
+    "seconds": 3.974,
+    "mcycle": 2351624703,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "qsort",
+    "repetition": 3,
+    "total_seconds": 3.857826375000002,
+    "seconds": 3.5284400840000014,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "qsort",
+    "repetition": 3,
+    "total_seconds": 4.0015462920000004,
+    "seconds": 3.6603403330000006,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "qsort",
+    "repetition": 3,
+    "total_seconds": 1.344417999999962,
+    "seconds": 1.2334475409999617,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "memcpy",
+    "repetition": 3,
+    "total_seconds": 2.642,
+    "seconds": 2.504,
+    "mcycle": 6721548792,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "memcpy",
+    "repetition": 3,
+    "total_seconds": 9.75,
+    "seconds": 9.609,
+    "mcycle": 6721548792,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "memcpy",
+    "repetition": 3,
+    "total_seconds": 5.149141708999991,
+    "seconds": 4.819755417999991,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "memcpy",
+    "repetition": 3,
+    "total_seconds": 5.896203417000038,
+    "seconds": 5.554997458000038,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "memcpy",
+    "repetition": 3,
+    "total_seconds": 1.5374935419999929,
+    "seconds": 1.4265230829999926,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "zlib",
+    "repetition": 3,
+    "total_seconds": 5.024,
+    "seconds": 4.886,
+    "mcycle": 4516579339,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "zlib",
+    "repetition": 3,
+    "total_seconds": 8.362,
+    "seconds": 8.221,
+    "mcycle": 4516579339,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "zlib",
+    "repetition": 3,
+    "total_seconds": 4.343540125000004,
+    "seconds": 4.014153834000004,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "zlib",
+    "repetition": 3,
+    "total_seconds": 4.561570583000048,
+    "seconds": 4.220364624000048,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "zlib",
+    "repetition": 3,
+    "total_seconds": 2.3621579169999904,
+    "seconds": 2.25118745799999,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "hash",
+    "repetition": 3,
+    "total_seconds": 2.756,
+    "seconds": 2.618,
+    "mcycle": 3663163397,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "hash",
+    "repetition": 3,
+    "total_seconds": 6.098,
+    "seconds": 5.957,
+    "mcycle": 3663163397,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "hash",
+    "repetition": 3,
+    "total_seconds": 2.1839208750000125,
+    "seconds": 1.8545345840000123,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "hash",
+    "repetition": 3,
+    "total_seconds": 2.308409291999965,
+    "seconds": 1.967203332999965,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "hash",
+    "repetition": 3,
+    "total_seconds": 2.0362277499999664,
+    "seconds": 1.9252572909999661,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "syscall",
+    "repetition": 3,
+    "total_seconds": 0.617,
+    "seconds": 0.479,
+    "mcycle": 643487512,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "syscall",
+    "repetition": 3,
+    "total_seconds": 1.24,
+    "seconds": 1.099,
+    "mcycle": 643487512,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "syscall",
+    "repetition": 3,
+    "total_seconds": 1.172028583000042,
+    "seconds": 0.8426422920000418,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "syscall",
+    "repetition": 3,
+    "total_seconds": 1.2082955420000872,
+    "seconds": 0.8670895830000873,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "syscall",
+    "repetition": 3,
+    "total_seconds": 0.6988367499999413,
+    "seconds": 0.587866290999941,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "double",
+    "repetition": 3,
+    "total_seconds": 1.735,
+    "seconds": 1.597,
+    "mcycle": 856584210,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "double",
+    "repetition": 3,
+    "total_seconds": 1.838,
+    "seconds": 1.697,
+    "mcycle": 856584210,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "double",
+    "repetition": 3,
+    "total_seconds": 2.048972249999906,
+    "seconds": 1.7195859589999059,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "double",
+    "repetition": 3,
+    "total_seconds": 2.063588582999955,
+    "seconds": 1.7223826239999553,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "double",
+    "repetition": 3,
+    "total_seconds": 3.412540917000001,
+    "seconds": 3.301570458000001,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "sieve",
+    "repetition": 3,
+    "total_seconds": 3.235,
+    "seconds": 3.097,
+    "mcycle": 8624443953,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "sieve",
+    "repetition": 3,
+    "total_seconds": 13.557,
+    "seconds": 13.416,
+    "mcycle": 8624443953,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "sieve",
+    "repetition": 3,
+    "total_seconds": 2.1112981669999726,
+    "seconds": 1.7819118759999724,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "sieve",
+    "repetition": 3,
+    "total_seconds": 2.430391499999928,
+    "seconds": 2.089185540999928,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "sieve",
+    "repetition": 3,
+    "total_seconds": 1.8584349169999541,
+    "seconds": 1.7474644579999539,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "int64",
+    "repetition": 3,
+    "total_seconds": 1.649,
+    "seconds": 1.5110000000000001,
+    "mcycle": 2337083903,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "int64",
+    "repetition": 3,
+    "total_seconds": 4.149,
+    "seconds": 4.008,
+    "mcycle": 2337083903,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "int64",
+    "repetition": 3,
+    "total_seconds": 2.5665919169999825,
+    "seconds": 2.237205625999982,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "int64",
+    "repetition": 3,
+    "total_seconds": 2.6221770419999757,
+    "seconds": 2.280971082999976,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "int64",
+    "repetition": 3,
+    "total_seconds": 0.4592799170000035,
+    "seconds": 0.34830945800000324,
+    "returncode": 0
+  },
+  {
+    "emulator": "cartesi-jit",
+    "workload": "matrixprod",
+    "repetition": 3,
+    "total_seconds": 2.425,
+    "seconds": 2.287,
+    "mcycle": 2420748847,
+    "reason": 1
+  },
+  {
+    "emulator": "cartesi-stock",
+    "workload": "matrixprod",
+    "repetition": 3,
+    "total_seconds": 3.854,
+    "seconds": 3.713,
+    "mcycle": 2420748847,
+    "reason": 1
+  },
+  {
+    "emulator": "qemu-system",
+    "workload": "matrixprod",
+    "repetition": 3,
+    "total_seconds": 2.67348037499994,
+    "seconds": 2.3440940839999396,
+    "returncode": 0
+  },
+  {
+    "emulator": "qemu-icount",
+    "workload": "matrixprod",
+    "repetition": 3,
+    "total_seconds": 2.7443810830000075,
+    "seconds": 2.4031751240000077,
+    "returncode": 0
+  },
+  {
+    "emulator": "rvvm",
+    "workload": "matrixprod",
+    "repetition": 3,
+    "total_seconds": 0.9543279170000005,
+    "seconds": 0.8433574580000003,
+    "returncode": 0
+  }
+]

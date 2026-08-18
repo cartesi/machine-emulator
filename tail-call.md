@@ -3328,6 +3328,9 @@ shell cost +66% with tracing idle).
     TLB cannot move or grow past it, so per-context slots halve to
     128 and the shadow grows 0x4000 -> 0xC000 within the freed
     shadow-state budget (AR_SHADOW_STATE_LENGTH 0x8000 -> 0x10000).
+    This paragraph records the initial 128-slot geometry measured below;
+    the final 256-slot geometry and its AArch64 remeasurement are recorded
+    in the amendment at the end of this item.
     The hash and state format change by design; the old canon is
     dead. The stateful machine caches ctx*128 in the penumbra,
     maintained as a side effect of write_iprv/write_mstatus and
@@ -3402,7 +3405,7 @@ shell cost +66% with tracing idle).
     new (+31%, matching translate_virtual_address's +33% absolute
     growth in the profile), dominated by user-context data banks
     (21.4M READ-U + 10.9M WRITE-U): tree's pointer-chasing heap
-    thrashes 128 slots per context where it had 512 shared. The
+    thrashes 128 slots per context where it had 256 shared. The
     win side of the same counter: syscall fills drop 4.2M -> 1.4M
     (-66%) with the flush-refill storms gone. regs interpreter
     +12.4%: the profile puts all the growth inside interpret_loop
@@ -3477,6 +3480,51 @@ shell cost +66% with tracing idle).
     rewinding the stale entry), correct but not sufficient --
     trace-insns did not move, pinning the skew to a different seam
     than either hardening covers.
+
+    AArch64 geometry amendment (2026-08-17). The address-range
+    requirement was clarified: each registered range starts aligned to its length,
+    and no other range overlaps the smallest power-of-two-sized and
+    aligned span containing it. Nothing requires PMAS to remain at
+    0x10000. The shadow-state range therefore grows to 0x20000, the
+    shadow TLB to 0x18000, and PMAS moves to 0x20000. This preserves 256
+    slots in every one of the four contexts rather than halving each
+    context to 128. Compile-time checks now enforce the public/internal
+    constants, TLB containment, shadow-state alignment, PMA alignment,
+    and separation from the shadow state's containing power-of-two span.
+
+    The amd64 result was remeasured on the AArch64 host as a controlled
+    four-way matrix at the original feature boundary: a1d73a48 (old
+    shared 256-slot TLB) against feefa36f with only the final 256-slot
+    geometry applied, stock and tailcall+lightning builds, fixed 256 Mi
+    mcycle boot plus 1 Gi measured, three interleaved repetitions.
+    Medians and context-vs-old deltas:
+
+      workload    stock-old stock-ctx    delta    jit-old  jit-ctx    delta
+      nop              0.740     0.726    -1.9%      0.054    0.040   -25.9%
+      regs             0.872     0.866    -0.7%      0.145    0.132    -9.0%
+      branch           1.651     1.640    -0.7%      1.312    1.339    +2.1%
+      tree             2.786     2.832    +1.7%      2.534    2.617    +3.3%
+      qsort            1.846     1.893    +2.5%      1.374    1.535   +11.7%
+      memcpy           1.545     1.544    -0.1%      0.335    0.325    -3.0%
+      zlib             1.918     1.916    -0.1%      1.129    1.153    +2.1%
+      hash             1.756     1.742    -0.8%      0.765    0.767    +0.3%
+      syscall          2.000     1.793   -10.3%      1.459    1.255   -14.0%
+      double           2.160     2.174    +0.6%      2.164    2.201    +1.7%
+      sieve            1.689     1.707    +1.1%      0.400    0.395    -1.2%
+      int64            1.979     2.038    +3.0%      0.760    0.772    +1.6%
+      matrixprod       1.649     1.660    +0.7%      1.644    1.650    +0.4%
+      geomean                              -0.44%                       -2.76%
+
+    Stock/JIT root hashes agree within each geometry for all thirteen
+    workloads. Old and context hashes differ by design because the
+    shadow-state format changed. The intended flush-storm wins transfer
+    to AArch64 (jit nop -25.9%, syscall -14.0%, regs -9.0%), although the
+    aggregate win is smaller than amd64's -2.0% stock / -6.0% jit. Most
+    importantly, restoring the old per-set capacity removes the capacity
+    explanation for amd64's tree +20.9% regression: tree is now only
+    +3.3% jit / +1.7% stock. Qsort's remaining +11.7% jit regression is
+    consistent with the separately diagnosed trace-formation lottery,
+    not TLB capacity.
 
 21. DONE, GATED: THE LOTTERY DISSOLVED -- BUDGET-GRACEFUL
     COMPILATION, AND THE BUDGET RAISE FALSIFIED. Item 20's filed
@@ -3562,8 +3610,8 @@ shell cost +66% with tracing idle).
     fallthrough successor IS, systematically, an uncollectable pc
     -- tripping a recording there (the filed fix) begins a trace
     that dies at entry 0. The root fix is staging: writes of
-    fflags, frm and fcsr (csrrw/csrrs/csrrc and immediates) now
-    stage as a whole-instruction helper, pre-bailing on FS off;
+    fflags, frm and fcsr (csrrw/csrrs/csrrc and immediates) are
+    collectable, with an FS guard and direct generated semantics;
     reads keep their inline staging. Soft-float fenv churn no
     longer ends recordings at all. Second, the successor-trip
     machinery itself (a per-trace transit countdown on the
@@ -3607,6 +3655,49 @@ shell cost +66% with tracing idle).
     5.91; geomean vs icount excluding nop 1.37x, with the
     matrixprod-truncation configuration demonstrating 1.30x is
     reachable once the per-head policy exists.
+
+    FP-CSR correction and AArch64 remeasurement (2026-08-18). The
+    first staging implementation routed FP-CSR writes through a C++
+    whole-instruction helper. Matrixprod then failed to complete in the
+    uncapped JIT used by the cross-emulator harness. Selectively disabling
+    only that helper restored both capped and uncapped completion; mapping
+    counters ruled out the suspected cross-page link-validation path. The
+    helper was therefore replaced rather than papered over with a trace
+    policy exception. Generated code now guards FS, materializes one fcsr
+    snapshot, derives the architectural old fflags/frm/fcsr value from that
+    snapshot, applies all six register and immediate CSRRW/CSRRS/CSRRC
+    forms, masks and merges the writable subfield, writes fcsr through the
+    trace shadow, and finally writes rd from the snapshot. Materialization
+    preserves read-before-write when rd aliases rs1. The general FP
+    arithmetic helpers are unchanged.
+
+    The final ctx256 stock and uncapped JIT builds were then rerun through
+    the full fixed-work AArch64 matrix: 256 Mi mcycles of untimed boot, 1 Gi
+    measured mcycles, three interleaved repetitions, medians below. Every
+    repetition reached the target mcycle and the stock/JIT root hashes were
+    identical for all thirteen workloads. The raw runs are committed as
+    bench-harness/results-aarch64-ctx256-fpfix.txt.
+
+      workload    stock     jit    stock/jit   jit delta
+      nop          0.730   0.041      17.805x      -94.4%
+      regs         0.862   0.132       6.530x      -84.7%
+      branch       1.641   1.293       1.269x      -21.2%
+      tree         2.915   2.682       1.087x       -8.0%
+      qsort        1.854   1.555       1.192x      -16.1%
+      memcpy       1.542   0.326       4.730x      -78.9%
+      zlib         1.916   1.140       1.681x      -40.5%
+      hash         1.742   0.767       2.271x      -56.0%
+      syscall      1.789   1.387       1.290x      -22.5%
+      double       2.176   2.201       0.989x       +1.1%
+      sieve        1.682   0.401       4.195x      -76.2%
+      int64        2.022   0.761       2.657x      -62.4%
+      matrixprod   1.672   1.656       1.010x       -1.0%
+      geomean                          2.297x      -56.5%
+
+    Matrixprod is therefore repaired but not accelerated: its 1.0% median
+    difference is effectively parity. Double is likewise neutral. The
+    aggregate 2.297x stock/JIT ratio comes from the integer and memory rows,
+    not from claiming an FP-heavy win.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

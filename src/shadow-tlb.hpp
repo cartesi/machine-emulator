@@ -41,8 +41,8 @@ enum TLB_set_index : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE, TLB_LAST_ = TLB_W
 /// flushing -- the flush storms on every trap, sret and kernel uaccess SUM
 /// toggle measured 30-45% of kernel-heavy runs in verified TLB writeback.
 enum TLB_constants : uint64_t {
-    TLB_SET_SIZE = 128, ///< Slots per translation context within a set
-    TLB_NUM_CTX = 4,    ///< Translation contexts: U, S, S+SUM, M
+    TLB_SET_SIZE = 256,                         ///< Slots per translation context within a set
+    TLB_NUM_CTX = 4,                            ///< Translation contexts: U, S, S+SUM, M
     TLB_SET_SLOTS = TLB_SET_SIZE * TLB_NUM_CTX, ///< Total slots in one set
     TLB_INVALID_PAGE = UINT64_C(-1),
     TLB_UNVERIFIED_PAGE = UINT64_C(-2),

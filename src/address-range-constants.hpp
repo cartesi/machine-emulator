@@ -17,6 +17,7 @@
 #ifndef ADDRESS_RANGE_CONSTANTS_HPP
 #define ADDRESS_RANGE_CONSTANTS_HPP
 
+#include <bit>
 #include <cstdint>
 
 #include "address-range-defines.h"
@@ -63,9 +64,12 @@ enum AR_ranges : uint64_t {
     AR_RAM_START = EXPAND_UINT64_C(AR_RAM_START_DEF), ///< Start of RAM range
 };
 
-static_assert(AR_SHADOW_STATE_LENGTH >= AR_SHADOW_REGISTERS_LENGTH + AR_SHADOW_TLB_LENGTH);
 static_assert(AR_SHADOW_TLB_START == AR_SHADOW_REGISTERS_START + AR_SHADOW_REGISTERS_LENGTH);
 static_assert(AR_SHADOW_STATE_START == AR_SHADOW_REGISTERS_START);
+static_assert(AR_SHADOW_TLB_START + AR_SHADOW_TLB_LENGTH <= AR_SHADOW_STATE_START + AR_SHADOW_STATE_LENGTH);
+static_assert((AR_SHADOW_STATE_START & (std::bit_ceil(static_cast<uint64_t>(AR_SHADOW_STATE_LENGTH)) - 1)) == 0);
+static_assert(AR_PMAS_START >= AR_SHADOW_STATE_START + std::bit_ceil(static_cast<uint64_t>(AR_SHADOW_STATE_LENGTH)));
+static_assert((AR_PMAS_START & (std::bit_ceil(static_cast<uint64_t>(AR_PMAS_LENGTH)) - 1)) == 0);
 
 /// \brief PMA constants.
 enum AR_constants : uint64_t {

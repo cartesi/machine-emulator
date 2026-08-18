@@ -3821,115 +3821,119 @@ shell cost +66% with tracing idle).
     QEMU-system and 23.7% less than QEMU-icount; RVVM remains fastest at
     0.703x the JIT time.
 
-23. UNDER CORRECTION -- DO NOT CITE THE QEMU COLUMNS OR THE
-    PER-CHANGE ATTRIBUTIONS BELOW. Review found three defects in
-    this item, all mine: the matrix runner computed QEMU boot
-    baselines and never subtracted them, so both QEMU columns and
-    every geomean and QEMU-relative claim below are wrong; the
-    per-row causal assignments (tree to the ctx256 restore,
-    matrixprod to the FP-CSR rework) were never isolated, since
-    the A/B bundles all three upstream changes; and one post-sync
-    RVVM stall was called RVVM behaviour when it is an
-    unexplained stall. The corrected board and isolated ablations
-    replace this item. The cartesi pre/post A/B is unaffected by
-    the baseline defect (it subtracts correctly) but its per-change
-    attributions still are not measured.
+23. DONE, CORRECTED: THE AMD64 BOARD, AND THE THREE UPSTREAM
+    CHANGES MEASURED ONE AT A TIME. This item was first published
+    with three defects, all of them mine, and all found in review
+    rather than by me. They are recorded here because the
+    corrections change the conclusions.
 
-23. DONE, MEASURED: THE AMD64 BOARD WITH RVVM, AND WHAT THE
-    UPSTREAM FIXES ARE ACTUALLY WORTH. Item 22's board was
-    completed on AArch64/macOS; this is its AMD64/Linux
-    counterpart, run after merging the branch that carries the
-    ctx256 TLB capacity restore, the generated-code FP-CSR
-    writes and the cross-mapping call-entry admission. Same
-    protocol throughout: one static musl stress-ng, the fixed
-    ops.json bogo-ops, each emulator's own median-of-3 no-work
-    boot baseline subtracted, three repetitions interleaved
-    within every workload/emulator cell, medians reported. RVVM
-    is the LekKit build at 33ea63aa (v0.7-git-g33ea63a) driven
-    by the committed OpenSBI+Linux image, running the same
-    rootfs, the same bench-init and the same entrypoint DTB node
-    as the other full-system columns. Every cell completed; no
-    workload failed on any emulator.
+    Defect 1, the QEMU baseline. The matrix runner computed each
+    QEMU boot baseline, printed it, and never subtracted it, while
+    the cartesi and RVVM columns subtracted theirs correctly. Both
+    QEMU columns therefore carried ~0.6-0.8s of boot on every
+    sample. The inherited drive.py does this correctly; the
+    reimplementation did not. The error inflated the two
+    competitors and flattered this project, which is the direction
+    an error must never be trusted in. Corrected board, full rerun
+    with all five columns interleaved as before:
 
       workload    cartesi-jit cartesi-stock qemu-system qemu-icount   rvvm
-      nop               0.964        12.713       1.524       2.139  0.937
-      regs              4.250        28.338       3.500       3.435  2.720
-      branch            1.618         1.473       5.887       5.575  2.823
-      tree              4.442         5.255       5.006       5.213  2.892
-      qsort             5.207         6.470       4.313       5.012  2.340
-      memcpy            3.402        14.887       3.714       7.307  3.017
-      zlib              8.670        11.786       4.770       7.672  3.999
-      hash              4.872         8.921       3.754       4.767  3.738
-      syscall           0.966         1.828       1.980       3.570  1.131
-      double            3.631         4.814       2.997       2.805  5.495
-      sieve             5.251        19.189       3.797       7.001  3.332
-      int64             2.827         5.212       2.968       2.748  0.793
-      matrixprod        3.908         5.922       3.439       3.981  3.228
-      geomean           3.248         7.229       3.465       4.382  2.453
-      time / jit        1.000         2.225       1.067       1.349  0.755
+      nop               0.808        12.826       0.717       1.454  0.824
+      regs              4.287        28.444       2.779       2.718  2.466
+      branch            1.441         1.522       5.223       4.913  2.667
+      tree              4.380         5.303       4.309       4.603  2.777
+      qsort             5.000         6.519       3.597       4.493  2.381
+      memcpy            3.174        15.154       3.106       6.625  2.813
+      zlib              8.456        11.850       4.159       7.027  3.825
+      hash              4.918         9.042       3.103       4.200  3.529
+      syscall           0.788         1.900       1.343       1.269  1.175
+      double            3.504         4.927       2.318       2.040  5.257
+      sieve             5.136        19.538       3.069       6.409  3.273
+      int64             2.675         5.328       2.283       2.014  0.650
+      matrixprod        3.695         5.870       2.633       3.166  2.943
+      geomean           3.055         7.336       2.682       3.406  2.308
+      time / jit        1.000         2.401       0.878       1.115  0.755
 
-    The JIT is 2.23x the stock interpreter, 6.7% ahead of
-    QEMU-system and 34.9% ahead of QEMU-icount; RVVM leads at
-    0.755x our time. The shape matches the AArch64 board rather
-    than contradicting it: branch is the standout (3.6x
-    QEMU-system, 1.7x RVVM), syscall and nop follow, and zlib
-    and hash remain the rows both QEMUs win. Double is the one
-    row where RVVM loses to everything including our stock
-    interpreter -- 5.50 against our 3.63 -- consistent with the
-    FP softness rv8 also showed.
+    What the defect did to each claim: "6.7% ahead of QEMU-system"
+    becomes 12.2% BEHIND it -- a reversal; "34.9% ahead of
+    QEMU-icount" becomes 11.5% ahead -- overstated threefold; the
+    2.2x over our own stock interpreter becomes 2.4x, and RVVM's
+    lead (0.739x -> 0.755x) is unchanged. The two columns that
+    subtracted correctly barely moved between the two runs, which
+    is the consistency check that the rerun itself is sound. The
+    honest AMD64 verdict: 2.4x our stock interpreter, 11.5% ahead
+    of QEMU-icount, 12.2% behind plain QEMU-system, and RVVM ahead
+    of everything at 0.755x our time.
 
-    The cross-session trap, avoided deliberately. Against the
-    AMD64 board of item 22 this looks like a reversal: we were
-    1.37x BEHIND QEMU-icount and now lead it by 1.35x. Most of
-    that is not ours. The QEMU columns themselves moved
-    substantially between sessions (icount syscall 1.75 -> 3.57,
-    sieve 4.85 -> 7.00), so the honest attribution needs a
-    same-host A/B rather than a comparison across boards. Running
-    the pre-merge JIT (item 22's shipped configuration) against
-    the post-merge JIT back-to-back, interleaved, three
-    repetitions:
+    Defect 2, unmeasured attribution. The first write-up assigned
+    tree's gain to the ctx256 TLB restore and matrixprod's to the
+    generated-code FP-CSR writes, from an A/B that bundled all
+    three upstream changes. That is the exact error this notebook
+    keeps falsifying elsewhere. Three ablation builds now revert
+    exactly one change each from the post-merge tree; all four
+    builds retire identical mcycles per workload (verified on
+    matrixprod, sieve and int64), so the work is the same and only
+    the time differs. Delta is (reverted - reference)/reference, so
+    POSITIVE means reverting is worse, i.e. the change helps:
 
-      workload    pre-merge post-merge   delta
-      nop             1.057      0.939  -11.2%
-      regs            4.423      4.310   -2.6%
-      branch          1.609      1.661   +3.2%
-      tree            4.860      4.423   -9.0%
-      qsort           7.308      5.091  -30.3%
-      memcpy          3.447      3.370   -2.2%
-      zlib            8.551      8.525   -0.3%
-      hash            5.024      5.046   +0.4%
-      syscall         1.694      0.919  -45.7%
-      double          4.611      3.625  -21.4%
-      sieve           4.776      5.283  +10.6%
-      int64           5.406      2.813  -48.0%
-      matrixprod      5.398      4.055  -24.9%
-      geomean         3.866      3.244  -16.1%
+      workload      ref    -ctx256      -fp-csr    -crossmap
+      nop         1.005   +0.7%         -8.9%       +8.8%
+      regs        4.182   +3.8%         +2.8%       +1.7%
+      branch      1.594   +0.8%         +1.5%       +3.8%
+      tree        4.566   +6.8%         -3.0%       -1.6%
+      qsort       5.011  +14.2%         +2.9%      +32.6%
+      memcpy      3.343   +3.2%         +2.0%       +2.3%
+      zlib        8.389   -1.5%         +0.0%       +1.9%
+      hash        4.961   -1.4%         -0.6%       +3.2%
+      syscall     0.937  +17.3%         -3.4%      +82.9%
+      double      3.643   +1.2%         -0.5%      +27.7%
+      sieve       5.355   -1.0%         -1.5%      -10.8%
+      int64       2.810   +0.1%         -1.1%      +89.8%
+      matrixprod  3.868   +6.2%        -30.3%      +11.7%
+      geomean     3.234   +3.7%         -3.5%      +16.3%
 
-    So the upstream fixes are worth 16.1% on this host, not the
-    2x a naive board-to-board reading would have claimed. Two of
-    the three rows this notebook filed as open regressions are
-    closed by them: tree, whose 128-slot-per-context capacity
-    loss item 20 measured at +31% fills, gains 9.0% back from the
-    ctx256 restore; and matrixprod, whose soft-float loop item 22
-    left starved, gains 24.9% from the generated-code FP-CSR
-    writes -- the same defect this notebook had tried to fix with
-    a C++ whole-instruction helper, which upstream found made the
-    uncapped JIT fail to complete at all. int64 (-48.0%) and
-    syscall (-45.7%) are the largest single wins. sieve regresses
-    10.6% and is the one row this arc leaves worse; it is small,
-    reproducible across the interleaved repetitions, and filed.
+    Three findings, none of which the bundled A/B could have
+    produced. First, the dominant win is the cross-mapping call
+    admission: +16.3% geomean, carried by int64 (+89.8%), syscall
+    (+82.9%), qsort (+32.6%) and double (+27.7%). Second, the
+    ctx256 restore is a real but modest +3.7%, and it does own
+    tree (+6.8%) -- the one attribution from the first write-up
+    that survives, though at 6.8% rather than the 9.0% claimed.
+    Third, and contradicting the first write-up outright:
+    matrixprod's improvement did NOT come from the FP-CSR change.
+    The FP-CSR generated writes COST matrixprod 30.3% and cost
+    3.5% geomean; matrixprod improved across the merge because of
+    crossmap (+11.7%) and ctx256 (+6.2%) despite the FP-CSR path,
+    not because of it.
 
-    RVVM measurement note. RVVM has no -snapshot, so every boot
-    gets a fresh copy of the 366 MB drive image; leaving that
-    copy dirty in the page cache let writeback stall the
-    following run by up to 40x (int64 30.7s against a 0.75s
-    median, memcpy 39.3s against 2.92s). Syncing before the timer
-    starts removes most of it, but one sample in 65 still stalled
-    (double 35.9s against 5.50s), so the residue is RVVM
-    behaviour and not only harness noise. Medians are unaffected:
-    the column reproduced within 2% between the three- and
-    five-repetition runs (geomean 2.400 against 2.453), and the
-    five-repetition medians are the ones tabulated above.
+    That last result is a finding, not a ship recommendation. The
+    reverted build restores the C++ whole-instruction helper this
+    notebook wrote in item 22, which upstream replaced precisely
+    because it made the UNCAPPED jit fail to complete matrixprod
+    at all; these ablations run the ordinary capped configuration,
+    where it completes. So the correct reading is that the
+    correctness fix carries a measured ~30% cost on matrixprod and
+    3.5% aggregate, and that cost is now quantified work to
+    optimise rather than a reason to revert.
+
+    Sieve, filed as a regression by the first write-up, is
+    resolved: it is not a ctx256 or FP-CSR effect (-1.0% and -1.5%,
+    both inside the noise this harness shows) but a cross-mapping
+    cost, -10.8%, the one row where the change that wins everything
+    else loses. That is the tradeoff to examine next, and it is a
+    per-row property of the admission rule rather than anything
+    about the TLB.
+
+    Defect 3, an overclaim about RVVM. One post-sync stall was
+    described as RVVM behaviour. One stall is an unexplained
+    stall; separating emulator from filesystem writeback or host
+    scheduling needs I/O measurement or a tmpfs A/B, which this
+    item does not have. The measurement note that stands: RVVM has
+    no -snapshot, each boot copies the 366 MB drive image, and
+    syncing before the timer starts removed the two 40x stalls
+    seen without it. The medians are stable regardless -- the
+    column reproduced within 2% across three- and five-repetition
+    runs.
 
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 

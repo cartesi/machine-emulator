@@ -11,10 +11,11 @@ workload, wall-clock timing. cartesi columns are full-system (boot baseline
 subtracted); qemu/rv8 are user-mode. syscall excluded under rv8.
 """
 import json, os, re, statistics, subprocess, sys, time
+from verify_images import verify_images
 
 COMP = os.path.dirname(os.path.abspath(__file__))
 CAMP = os.path.join(os.path.dirname(COMP), "campaign")
-IMAGES = "/home/user/machine-emulator/tests/build/images"
+CARTESI_LINUX = os.path.join(COMP, "images/cartesi/linux.bin")
 SNG = os.path.join(COMP, "stress-ng/stress-ng")
 RVJIT = os.path.join(COMP, "rv8/build/linux_x86_64/bin/rv-jit")
 ROOTFS = os.path.join(COMP, "rootfs-bench.ext2")
@@ -58,7 +59,7 @@ def run_cartesi(build, wl, ops, boot_baseline):
     lua = os.path.join(COMP, "compete.lua")
     guest = cmd if wl else "true"
     env = dict(os.environ, LUA_CPATH=f"{so}/?.so;;")
-    _, r = wall(f"lua5.4 {lua} {IMAGES} {ROOTFS} '{guest}'", env=env)
+    _, r = wall(f"lua5.4 {lua} {CARTESI_LINUX} {ROOTFS} '{guest}'", env=env)
     out = r.stdout.strip().splitlines()[-1].split()
     assert len(out) == 3 and int(out[2]) == 1, f"cartesi {build} {wl}: {r.stdout} {r.stderr}"  # 1 = halted
     return float(out[0]) - boot_baseline
@@ -67,7 +68,7 @@ def boot_baseline(build):
     so = os.path.join(CAMP, "builds", build)
     lua = os.path.join(COMP, "compete.lua")
     env = dict(os.environ, LUA_CPATH=f"{so}/?.so;;")
-    _, r = wall(f"lua5.4 {lua} {IMAGES} {ROOTFS} true", env=env)
+    _, r = wall(f"lua5.4 {lua} {CARTESI_LINUX} {ROOTFS} true", env=env)
     return float(r.stdout.strip().splitlines()[-1].split()[0])
 
 def run(reps=3):
@@ -111,7 +112,7 @@ def report():
 
 
 # ---- qemu-system: our kernel + rootfs behind OpenSBI on the virt board ----
-IMAGE_CTSI = os.path.join(COMP, "Image-ctsi")
+IMAGE_CTSI = os.path.join(COMP, "images/qemu/Image")
 VIRT_DTB = os.path.join(COMP, "virt.dtb")
 
 def qemu_sys_cmd(dtb):
@@ -161,4 +162,5 @@ def run_sys(reps=3):
     report()
 
 if __name__ == "__main__":
+    verify_images()
     {"calibrate": calibrate, "run": run, "run_sys": run_sys, "run_icount": run_icount, "report": report}[sys.argv[1]]()

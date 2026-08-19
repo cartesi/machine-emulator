@@ -7,7 +7,7 @@ import json, os, re, statistics, subprocess
 
 COMP = "/tmp/claude-0/-home-user-machine-emulator/df7f391d-37d7-5139-b76a-fda20c029be9/scratchpad/compete"
 CAMP = "/tmp/claude-0/-home-user-machine-emulator/df7f391d-37d7-5139-b76a-fda20c029be9/scratchpad/campaign"
-IMAGES = "/home/user/machine-emulator/tests/build/images"
+CARTESI_LINUX = os.path.join(COMP, "images/cartesi/linux.bin")
 ROOTFS = os.path.join(COMP, "rootfs-bench.ext2")
 RAW = "/tmp/claude-0/xmap/results/raw_stats"; os.makedirs(RAW, exist_ok=True)
 CPU = "2"
@@ -31,7 +31,7 @@ def run(build, wl, rep):
     env = dict(os.environ, LUA_CPATH=f"{CAMP}/builds/{BUILDS[build]}/?.so;;",
                TC_ONLINE_STATS="1", TC_ONLINE_EXEC_STATS="1")
     r = subprocess.run(["taskset", "-c", CPU, "lua5.4", os.path.join(COMP, "compete.lua"),
-                        IMAGES, ROOTFS, entry], capture_output=True, text=True, env=env)
+                        CARTESI_LINUX, ROOTFS, entry], capture_output=True, text=True, env=env)
     blob = r.stdout + r.stderr
     open(f"{RAW}/{build}.{wl}.r{rep}.log", "w").write(blob)
     rec = {"build": build, "workload": wl, "rep": rep}

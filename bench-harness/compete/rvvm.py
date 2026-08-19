@@ -3,14 +3,23 @@
 Same rootfs, same bench-init, same ops.json as every other full-system column.
 RVVM has no -snapshot, so each boot gets a fresh copy of the drive image.
 """
-import os, shutil, statistics, subprocess, time
+import os, platform, shutil, statistics, subprocess, sys, time
 
 COMP = os.path.dirname(os.path.abspath(__file__))
-RVVM = os.path.join(COMP, "RVVM/release.linux.x86_64/rvvm_x86_64")
+
+
+def default_rvvm():
+    os_name = {"darwin": "darwin", "linux": "linux"}.get(sys.platform)
+    arch = {"arm64": "arm64", "aarch64": "arm64", "x86_64": "x86_64"}.get(platform.machine().lower())
+    assert os_name and arch, "set RVVM to the RVVM executable for this host"
+    return os.path.join(COMP, f"RVVM/release.{os_name}.{arch}/rvvm_{arch}")
+
+
+RVVM = os.environ.get("RVVM") or default_rvvm()
 # The RVVM firmware image (upstream OpenSBI + Linux), committed next to this
 # script in the repo; resolved relative to the harness so the column runs
 # wherever the harness is checked out.
-LINBIN = os.path.join(COMP, "linux.bin")
+LINBIN = os.path.join(COMP, "images/rvvm/linux.bin")
 ROOTFS_SRC = os.path.join(COMP, "rootfs-bench.ext2")
 BOOTARGS = ("quiet earlycon=uart8250,mmio,0x10000000 console=ttyS0 "
             "root=/dev/nvme0n1 rw init=/usr/sbin/bench-init")

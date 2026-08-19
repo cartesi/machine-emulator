@@ -27,6 +27,7 @@ def qemu_base(icount):
 
 
 def main(reps=3):
+    drive.verify_images()
     ops = json.load(open(os.path.join(COMP, "ops.json")))
     # Warm caches first: a cold first boot is a large outlier, and a skewed
     # baseline would corrupt every sample for that emulator.

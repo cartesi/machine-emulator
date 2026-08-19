@@ -166,6 +166,8 @@ struct tc_online_state {
     static constexpr uint32_t max_fragments = 16;
     static constexpr uint32_t min_len = 4;
     static constexpr uint32_t min_straight_len = 32;
+    static constexpr uint32_t min_side_straight_len = 8;
+    static_assert(min_len <= min_side_straight_len && min_side_straight_len <= min_straight_len);
     static constexpr uint16_t max_penalty = 3;
 #if TC_LIGHTNING
     static constexpr uint16_t side_hot_reset = TC_HOT_RESET;
@@ -310,6 +312,18 @@ struct tc_online_state {
     uint64_t register_moves;
     uint64_t register_loads;
     uint64_t register_stores;
+    uint64_t side_begin_requests;    ///< Hot generated side exits presented for recording
+    uint64_t side_begin_busy;        ///< Requests dropped because another recording was active
+    uint64_t side_begin_linked;      ///< Requests satisfied by an already installed side trace
+    uint64_t side_begin_blacklisted; ///< Requests rejected by the persistent failure policy
+    uint64_t side_begin_pool_full;   ///< Requests rejected for lack of trace-pool headroom
+    uint64_t side_begin_started;     ///< Requests that actually began a side recording
+    uint64_t side_finish_short;      ///< Side recordings rejected by fragment/length policy
+    uint64_t side_finish_verify;     ///< Side recordings rejected by code-byte verification
+    uint64_t side_finish_pages;      ///< Side recordings rejected by host-page accounting
+    uint64_t side_finish_compile;    ///< Side recordings rejected by generated-code compilation
+    uint64_t side_finish_success;    ///< Side recordings attached to their originating exit
+    uint64_t side_finish_len[33];    ///< Recording lengths, with element 32 collecting all >=32
     // Episode accounting (TC_ONLINE_EXEC_STATS): one episode spans from the
     // interpreter entering generated code to control returning through
     // tc_lightning_continue or tc_lightning_trip; the countdown delta counts
@@ -1085,6 +1099,22 @@ static uint64_t tc_fp_guard_seen[tc_fp_guard_count];
 /// \brief Prints recorder statistics when TC_ONLINE_STATS is set.
 static void tc_online_report(const tc_online_state &o) {
 #if TC_LIGHTNING
+    std::fprintf(stderr,
+        "tc-online-links: side-requests %llu busy %llu linked %llu blacklisted %llu pool-full %llu started %llu\n",
+        static_cast<unsigned long long>(o.side_begin_requests), static_cast<unsigned long long>(o.side_begin_busy),
+        static_cast<unsigned long long>(o.side_begin_linked), static_cast<unsigned long long>(o.side_begin_blacklisted),
+        static_cast<unsigned long long>(o.side_begin_pool_full), static_cast<unsigned long long>(o.side_begin_started));
+    std::fprintf(stderr,
+        "tc-online-links: side-finish short %llu verify %llu pages %llu compile %llu success %llu lengths",
+        static_cast<unsigned long long>(o.side_finish_short), static_cast<unsigned long long>(o.side_finish_verify),
+        static_cast<unsigned long long>(o.side_finish_pages), static_cast<unsigned long long>(o.side_finish_compile),
+        static_cast<unsigned long long>(o.side_finish_success));
+    for (uint32_t len = 0; len < std::size(o.side_finish_len); ++len) {
+        if (o.side_finish_len[len] != 0) {
+            std::fprintf(stderr, " %u:%llu", len, static_cast<unsigned long long>(o.side_finish_len[len]));
+        }
+    }
+    std::fprintf(stderr, "\n");
     uint64_t longest_chain = 0;
     uint64_t longest_fp_chain = 0;
     uint64_t longest_fp_entries = 0;
@@ -1172,12 +1202,12 @@ static void tc_online_report(const tc_online_state &o) {
             }
             std::fprintf(stderr,
                 "tc-online-detail: chain %llx offset %u head %llx len %u continuation %u connected %u fp %llu "
-                "executions %llu sides %u successor %llx\n",
+                "executions %llu sides %u successor %llx side-trace %u\n",
                 static_cast<unsigned long long>(trace.chain_head), trace.chain_offset,
                 static_cast<unsigned long long>(trace.head), trace.len, static_cast<unsigned>(trace.continuation),
                 static_cast<unsigned>(trace.chain_connected), static_cast<unsigned long long>(fp_entries),
                 static_cast<unsigned long long>(trace.executions), static_cast<unsigned>(trace.nside),
-                static_cast<unsigned long long>(trace.successor));
+                static_cast<unsigned long long>(trace.successor), static_cast<unsigned>(trace.side_trace));
             for (uint16_t side = 0; side < trace.nside; ++side) {
                 const auto &link = trace.side[side];
                 std::fprintf(stderr,
@@ -1498,6 +1528,12 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
     tc_online_state *o = c->online;
     o->recording = false;
     auto &recording = o->pending;
+#if TC_LIGHTNING
+    const bool was_side = o->pending_side != nullptr;
+    if (was_side) {
+        ++o->side_finish_len[std::min<uint32_t>(recording.len, 32)];
+    }
+#endif
 #ifdef TLB_FILL_LOG
     if (getenv("TC_REC_LOG") != nullptr) {
         std::fprintf(stderr, "FINISH head=%llx len=%u cycle=%d closed=%d\n",
@@ -1521,6 +1557,9 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
                 ++o->short_aborted;
                 tc_online_penalize(o, recording.head);
 #if TC_LIGHTNING
+                if (was_side) {
+                    ++o->side_finish_short;
+                }
                 reject_side();
 #endif
                 return;
@@ -1552,7 +1591,13 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
     }
 
     const bool complete_chain = cycle >= 0 || (closed && nfragments > 1);
-    bool rejected = nselected == 0 || (!complete_chain && recording.len < tc_online_state::min_straight_len);
+#if TC_LIGHTNING
+    const uint32_t min_straight_len =
+        o->pending_side != nullptr ? tc_online_state::min_side_straight_len : tc_online_state::min_straight_len;
+#else
+    constexpr uint32_t min_straight_len = tc_online_state::min_straight_len;
+#endif
+    bool rejected = nselected == 0 || (!complete_chain && recording.len < min_straight_len);
 #if TC_LIGHTNING
     // A side recording is entered from one particular generated exit, so its
     // path remains all-or-nothing; a partial publication could not satisfy
@@ -1566,6 +1611,9 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         ++o->short_aborted;
         tc_online_penalize(o, recording.head);
 #if TC_LIGHTNING
+        if (was_side) {
+            ++o->side_finish_short;
+        }
         reject_side();
 #endif
         return;
@@ -1603,6 +1651,9 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
                     ++o->aborted;
                     ++o->verify_aborted;
                     tc_online_penalize(o, recording.head, true);
+                    if (was_side) {
+                        ++o->side_finish_verify;
+                    }
                     reject_side();
                     return;
                 }
@@ -1614,6 +1665,9 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
                 ++o->aborted;
                 ++o->verify_aborted;
                 tc_online_penalize(o, recording.head);
+                if (was_side) {
+                    ++o->side_finish_verify;
+                }
                 reject_side();
                 return;
             }
@@ -1720,6 +1774,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
                     o->pool[first_trace + i].jit = nullptr;
                 }
                 tc_online_penalize(o, recording.head);
+                ++o->side_finish_pages;
                 reject_side();
                 return;
             }
@@ -1745,6 +1800,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
                     o->pool[first_trace + i].jit = nullptr;
                 }
                 tc_online_penalize(o, recording.head, !budget_abort);
+                ++o->side_finish_compile;
                 reject_side();
                 return;
             }
@@ -1781,6 +1837,9 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
                 ++o->aborted;
                 ++o->compile_aborted;
                 tc_online_penalize(o, recording.head, true);
+                if (was_side) {
+                    ++o->side_finish_compile;
+                }
                 reject_side();
                 return;
             }
@@ -1862,6 +1921,7 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
             o->register_stores += o->pool[first_trace].linked_stores;
         }
         ++o->links;
+        ++o->side_finish_success;
     }
     for (uint32_t i = 0; i < o->ntraces; ++i) {
         auto &predecessor = o->pool[i];
@@ -1969,19 +2029,27 @@ static bool tc_online_begin_continuation(tc_context<STATE_ACCESS> *c, uint64_t p
 template <typename STATE_ACCESS>
 static void tc_online_begin_side(tc_context<STATE_ACCESS> *c, uint64_t pc, tc_online_state::side_link *link) {
     tc_online_state *o = c->online;
-    if (o->recording || link == nullptr || link->fn != nullptr || !tc_lightning_side_links_enabled()) {
+    if (link == nullptr || link->fn != nullptr || !tc_lightning_side_links_enabled()) {
+        return;
+    }
+    ++o->side_begin_requests;
+    if (o->recording) {
+        ++o->side_begin_busy;
         return;
     }
     if (tc_online_blacklisted(o, pc)) {
+        ++o->side_begin_blacklisted;
         link->hotcount = UINT16_MAX;
         return;
     }
     if (const auto *const installed = tc_online_find_side(o, pc, link->expected); installed != nullptr) {
+        ++o->side_begin_linked;
         link->fn = installed->fn;
         ++o->links;
         return;
     }
     if (o->ntraces + tc_online_state::max_fragments > tc_online_state::max_traces) {
+        ++o->side_begin_pool_full;
         link->hotcount = UINT16_MAX;
         return;
     }
@@ -1997,6 +2065,7 @@ static void tc_online_begin_side(tc_context<STATE_ACCESS> *c, uint64_t pc, tc_on
     o->pending.ctx_slot_base = tc_penumbra(c)->tlb_ctx_slot_base;
     o->pending_side = link;
     o->recording = true;
+    ++o->side_begin_started;
     tc_online_debug("side", pc, o->ntraces);
 }
 #endif
@@ -6254,6 +6323,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         if (!trace.side_trace) {
             jit_movi(tmp0, reinterpret_cast<jit_word_t>(&side.hotcount));
             jit_ldr_us(tmp1, tmp0);
+            auto *const disabled = jit_beqi(tmp1, static_cast<jit_word_t>(UINT16_MAX));
             jit_subi(tmp1, tmp1, 1);
             jit_str_s(tmp0, tmp1);
             auto *const continue_counting = jit_bgti(tmp1, 0);
@@ -6262,6 +6332,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             jit_movi(tmp0, reinterpret_cast<jit_word_t>(&tc_lightning_trip<state_access>));
             emit_leave(tmp0);
             auto *const fallback = jit_label();
+            jit_patch_at(disabled, fallback);
             jit_patch_at(continue_counting, fallback);
         }
         emit_continue();

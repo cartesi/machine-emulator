@@ -3935,6 +3935,108 @@ shell cost +66% with tracing idle).
     column reproduced within 2% across three- and five-repetition
     runs.
 
+24. DONE, MEASURED: HOT SIDE-TRACE FORMATION. Exit accounting on the
+    AArch64 board identified two distinct shapes that the aggregate JIT
+    coverage number had hidden. Zlib made 140.5M generated-code escapes,
+    99.6% through unlinked guard exits, while int64 made 65.8M escapes,
+    99.6% at trace end. The initial interpretation -- side-trace formation
+    for zlib and missing straight-successor formation for int64 -- was tested
+    rather than assumed.
+
+    Side lifecycle counters isolated zlib's formation failure. At the old
+    32-instruction publication floor, 103 side recordings started: 77 were
+    rejected by the fragment/length policy, one by compilation, none by
+    code-page accounting, and only 17 attached successfully. Dynamic traffic
+    was concentrated rather than diffuse: the two largest unlinked root
+    exits executed 112.4M and 22.4M times. Floors 16, 8 and 4 were then timed
+    in three-run A/Bs. Eight was best (-4.3% on zlib); lowering it to four
+    gave back roughly two percentage points. Root straight recordings retain
+    their 32-instruction floor. Only side recordings, which have already paid
+    the hot-exit threshold, now publish at eight instructions.
+
+    The same inspection found a counter-state bug. `UINT16_MAX` means that a
+    side exit is permanently disabled, but generated code decremented it like
+    an ordinary counter, wrapping it and presenting the blacklisted exit to
+    the recorder every 65,536 executions. Testing the sentinel before the
+    decrement reduced zlib recorder requests from 2,470 to 78 and repeated
+    blacklist checks from 2,367 to zero. Installed traces and links remained
+    exactly 381 and 198, all runs retired 4,516,579,339 mcycles, and three
+    uninstrumented pairs had a median timing effect of approximately zero.
+
+    Full fixed-operation A/B on the macOS/AArch64 board used five no-work boot
+    samples per build and three interleaved workload repetitions. The table
+    gives median time after subtracting each build's median boot baseline;
+    negative is faster. Raw samples and artifact identities are in
+    `bench-harness/results-aarch64-side-links.txt`.
+
+      workload       floor32   floor8    delta
+      nop               0.461    0.451    -2.2%
+      regs              2.001    2.013    +0.6%
+      branch            0.752    0.757    +0.7%
+      tree              2.088    2.045    -2.1%
+      qsort             2.528    2.465    -2.5%
+      memcpy            2.499    2.503    +0.2%
+      zlib              5.063    4.850    -4.2%
+      hash              2.625    2.602    -0.9%
+      syscall           0.488    0.482    -1.2%
+      double            1.591    1.593    +0.1%
+      sieve             3.074    2.115   -31.2%
+      int64             1.555    1.547    -0.5%
+      matrixprod        2.275    2.283    +0.4%
+      paired geomean                        -3.8%
+
+    Sieve supplies the strongest mechanism check. The lower floor publishes
+    only six additional side traces (10 -> 16 successful side recordings),
+    but traced instructions rise from 8.001B to 8.473B and generated-code
+    episodes fall from 20.27M to 9.73M. Average episode length therefore rises
+    from 395 to 871 instructions. The 31.2% result is explained by measured
+    linked residency, not attributed to code generation by inference.
+
+    The int64 half of the original diagnosis was falsified. Its dominant trace
+    begins at 0x1376a, has length 22, and stops at 0x137ac, whose disassembly is
+    an indirect `ret`; it has no fixed straight successor to link. Setting the
+    existing successor threshold to one made int64 1.1% slower and added only
+    38,402 traced instructions out of 2.34B. Earlier return experiments also
+    remain decisive: a fixed return target missed all 7,587,936 probes, a
+    generated dynamic return tail failed the root-hash gate, and routing all
+    returns through lookup made branch roughly 4.64 seconds without improving
+    int64 or matrixprod. No unsupported int64 successor change was made;
+    indirect-return continuation remains separate work.
+
+    Updating only the Cartesi column of item 22's current AArch64 board gives
+    the following comparison. QEMU-system and RVVM were not rerun in this A/B;
+    they are the committed same-host measurements using the same kernel,
+    rootfs, stress-ng and operation counts. This composition is bounded by the
+    same-session floor-32 Cartesi anchor: 1.705 seconds geomean here versus
+    1.701 in item 22, a 0.2% difference. A publication-quality board should
+    still rerun the three emulators interleaved.
+
+      workload    cartesi-jit qemu-system   rvvm   jit/qemu  jit/rvvm
+      nop               0.451       0.476  0.533      0.947     0.846
+      regs              2.013       1.814  1.268      1.110     1.588
+      branch            0.757       3.067  1.462      0.247     0.518
+      tree              2.045       2.919  1.328      0.701     1.540
+      qsort             2.465       3.528  1.233      0.699     1.998
+      memcpy            2.503       4.828  1.427      0.518     1.755
+      zlib              4.850       4.081  2.229      1.188     2.176
+      hash              2.602       1.872  1.925      1.390     1.352
+      syscall           0.482       0.836  0.582      0.577     0.828
+      double            1.593       1.723  3.325      0.924     0.479
+      sieve             2.115       1.782  1.794      1.187     1.179
+      int64             1.547       2.246  0.349      0.689     4.437
+      matrixprod        2.283       2.344  0.850      0.974     2.686
+      geomean           1.641       2.079  1.196      0.789     1.373
+
+    Cartesi now uses 21.1% less geomean time than QEMU-system and wins nine of
+    thirteen rows. RVVM uses 72.8% of Cartesi's geomean time; Cartesi remains
+    37.3% slower, with the largest remaining ratios at int64 (4.44x),
+    matrixprod (2.69x), zlib (2.18x) and qsort (2.00x).
+
+    All thirteen fixed-cycle validation workloads reproduced their prior root
+    hash at 1,342,177,280 mcycles, and all 267 machine tests pass. The change
+    affects only host trace selection: architectural transitions, hashed
+    state, the interpreter, proof logging and verification are unchanged.
+
 ## 8c. The register-budget series: filed ideas and the four-slot campaign
 
 Section 5.16 established what each of the six slots is for: three

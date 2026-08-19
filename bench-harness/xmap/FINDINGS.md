@@ -71,6 +71,64 @@ entered**; without cross-mapping it runs 31 M times. Summing every head's
 difference overshoots the 327 M net gap (coverage partly redistributes to other
 traces), so 327 M — the stage-3 figure — remains the net measure.
 
+## Rerun on the canonical images: the regression largely does not reproduce
+
+Upstream then pinned the per-emulator boot artifacts and made the benchmark
+rootfs byte-reproducible. Rebuilt here from `prepare-rootfs.sh` and verified by
+`verify_images.py`, all five guest inputs now match the AArch64 board exactly
+(`cartesi/linux.bin` 551ed4da, `qemu/Image` c570a15a, `rvvm/linux.bin`
+c2370b05, `rootfs-bench.ext2` 3f6ad0db, `stress-ng-musl` 26caa525). The
+`mcycle` check that was named but unrunnable now passes outright:
+
+| workload | AArch64 board | AMD64 canonical | AMD64 earlier |
+| --- | --- | --- | --- |
+| sieve | 8,624,443,953 | 8,624,443,953 | 8,622,871,657 |
+| int64 | 2,337,083,903 | 2,337,083,903 | 2,335,806,476 |
+| branch | 649,248,193 | 649,248,193 | 647,493,675 |
+
+The boards now execute bit-identical guest work; earlier they did not. Stage 2
+repeated on the canonical inputs, same protocol (10 reps, alternating order,
+pinned, >=7 baselines, every pair mcycle- and reason-matched):
+
+| workload | current | no-crossmap | paired ratio | bootstrap 95% CI | effect |
+| --- | --- | --- | --- | --- | --- |
+| sieve | 4.844 | 4.777 | 1.0201 | [1.0012, 1.0258] | **+2.0%** |
+| int64 | 2.812 | 5.413 | 0.5211 | [0.5015, 0.5366] | −47.9% |
+| branch | 1.600 | 1.642 | 0.9752 | [0.9655, 1.0020] | −2.5% |
+
+**The `sieve` regression falls from +11.6% to +2.0%** once the guest work is
+canonical. The interval still excludes 1.0, so a small effect survives at this
+sample size, but it is roughly one sixth of the magnitude this investigation was
+commissioned to explain. The `int64` win is unchanged at −47.9%, so the
+cross-mapping mechanism itself is intact; it is specifically the `sieve` cost
+that was mostly an artefact of the non-canonical images.
+
+### What this does to the earlier stages
+
+Stages 2-4 above were all measured on the non-canonical rootfs and
+`dependencies.lock` kernel. They remain internally valid — every comparison was
+within-board with per-sample `mcycle` equality — and the mechanism they
+establish is real: on that workload, cross-mapping admission cost 3.8 points of
+JIT coverage, moved 327 M instructions to the interpreter, and the loss was
+localised to one len-52 trace (`1470a`) that went from 31 M executions to none.
+That is a genuine failure mode of the admission rule.
+
+What no longer follows is its importance. The +10.8% figure that motivated this
+investigation, and the +11.6% confirmation in stage 2, both describe a workload
+that is not the canonical benchmark. On the benchmark everyone else measures,
+the cost is +2.0%.
+
+### The premise, revisited
+
+The investigation was handed "on AArch64, `sieve` does not show this
+regression", with an implied architecture explanation. That premise compared an
+AArch64 board on canonical images against an AMD64 board on non-canonical ones.
+With the workload equalised, AMD64 shows +2.0%, not +10.8%, so most of the
+apparent cross-architecture divergence was a workload difference rather than an
+architectural one. Whether the residual +2.0% is architectural cannot be settled
+from here: the committed AArch64 board has no `no-crossmap` column, so no paired
+AArch64 ratio exists to compare against.
+
 ## What is established, and what is not
 
 Established: the sieve regression is an execution-topology change, not a

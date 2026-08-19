@@ -4,10 +4,10 @@
 -- emulators run, mounts it, runs the given command, and reports the
 -- wall/cpu time from process start to machine halt plus final mcycle.
 -- A "true" command gives the boot baseline to subtract.
--- Usage: LUA_CPATH=<build>/?.so lua5.4 compete.lua <images> <bench.ext2> "<cmd>"
+-- Usage: LUA_CPATH=<build>/?.so lua5.4 compete.lua <linux.bin> <bench.ext2> "<cmd>"
 
 local cartesi = require("cartesi")
-local images_dir = assert(arg[1])
+local linux_image = assert(arg[1])
 local rootfs = assert(arg[2]) -- rootfs copy carrying /usr/bin/stress-ng-musl
 local cmd = assert(arg[3])
 
@@ -19,7 +19,7 @@ local entry = cmd == "true" and "true" or (cmd .. " >> /dev/null 2>&1")
 local machine <close> = cartesi.machine({
     ram = {
         length = 512 * 1024 * 1024,
-        backing_store = { data_filename = images_dir .. "/linux.bin" },
+        backing_store = { data_filename = linux_image },
     },
     dtb = {
         entrypoint = entry,

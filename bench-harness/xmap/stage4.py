@@ -2,7 +2,7 @@
 import json, os, re, subprocess
 COMP="/tmp/claude-0/-home-user-machine-emulator/df7f391d-37d7-5139-b76a-fda20c029be9/scratchpad/compete"
 CAMP="/tmp/claude-0/-home-user-machine-emulator/df7f391d-37d7-5139-b76a-fda20c029be9/scratchpad/campaign"
-IMAGES="/home/user/machine-emulator/tests/build/images"; ROOTFS=os.path.join(COMP,"rootfs-bench.ext2")
+CARTESI_LINUX=os.path.join(COMP,"images/cartesi/linux.bin"); ROOTFS=os.path.join(COMP,"rootfs-bench.ext2")
 RAW="/tmp/claude-0/xmap/results/raw_crossmap"; os.makedirs(RAW, exist_ok=True)
 ARGS={"sieve":"--cpu 1 --cpu-method sieve","int64":"--cpu 1 --cpu-method int64","branch":"--branch 1"}
 OPSF={"sieve":"--cpu-ops","int64":"--cpu-ops","branch":"--branch-ops"}
@@ -14,7 +14,7 @@ for wl in ("sieve","int64","branch"):
         env=dict(os.environ, LUA_CPATH=f"{CAMP}/builds/xmap-instr/?.so;;",
                  TC_CROSSMAP_STATS="1", TC_ONLINE_STATS="1", TC_ONLINE_EXEC_STATS="1")
         r=subprocess.run(["taskset","-c","2","lua5.4",os.path.join(COMP,"compete.lua"),
-                          IMAGES,ROOTFS,entry],capture_output=True,text=True,env=env)
+                          CARTESI_LINUX,ROOTFS,entry],capture_output=True,text=True,env=env)
         blob=r.stdout+r.stderr
         open(f"{RAW}/sieve_instr.{wl}.r{rep}.log","w").write(blob)
         rec={"workload":wl,"rep":rep}

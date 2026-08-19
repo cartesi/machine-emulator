@@ -8,7 +8,7 @@ import json, os, statistics, subprocess, sys, time
 
 COMP = "/tmp/claude-0/-home-user-machine-emulator/df7f391d-37d7-5139-b76a-fda20c029be9/scratchpad/compete"
 CAMP = "/tmp/claude-0/-home-user-machine-emulator/df7f391d-37d7-5139-b76a-fda20c029be9/scratchpad/campaign"
-IMAGES = "/home/user/machine-emulator/tests/build/images"
+CARTESI_LINUX = os.path.join(COMP, "images/cartesi/linux.bin")
 ROOTFS = os.path.join(COMP, "rootfs-bench.ext2")
 CPU = "2"                                   # SMT off; cpu0 avoided (interrupts)
 BUILDS = {"current": "xmap-new-jit", "no-crossmap": "xmap-abl-no-crossmap"}
@@ -21,7 +21,7 @@ def run(build, entry):
     """One pinned boot. Returns (elapsed_cpu_s, mcycle, reason)."""
     env = dict(os.environ, LUA_CPATH=f"{CAMP}/builds/{BUILDS[build]}/?.so;;")
     r = subprocess.run(["taskset", "-c", CPU, "lua5.4", os.path.join(COMP, "compete.lua"),
-                        IMAGES, ROOTFS, entry], capture_output=True, text=True, env=env)
+                        CARTESI_LINUX, ROOTFS, entry], capture_output=True, text=True, env=env)
     out = r.stdout.strip().splitlines()[-1].split()
     return float(out[0]), int(out[1]), int(out[2])
 

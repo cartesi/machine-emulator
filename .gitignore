@@ -33,5 +33,6 @@ doc/recipes/cache
 *.exe
 *.dylib
 *.dtb
+bench-harness/compete/rootfs-bench.ext2
 .DS_Store
 .claude/

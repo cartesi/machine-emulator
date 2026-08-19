@@ -16,7 +16,7 @@ from verify_images import verify_images
 COMP = os.path.dirname(os.path.abspath(__file__))
 CAMP = os.path.join(os.path.dirname(COMP), "campaign")
 CARTESI_LINUX = os.path.join(COMP, "images/cartesi/linux.bin")
-SNG = os.path.join(COMP, "stress-ng/stress-ng")
+SNG = os.path.join(COMP, "guest/stress-ng-musl")
 RVJIT = os.path.join(COMP, "rv8/build/linux_x86_64/bin/rv-jit")
 ROOTFS = os.path.join(COMP, "rootfs-bench.ext2")
 ENV_RV8 = dict(os.environ, LD_LIBRARY_PATH=os.path.join(COMP, "rv8/build/linux_x86_64/lib"))
@@ -162,5 +162,5 @@ def run_sys(reps=3):
     report()
 
 if __name__ == "__main__":
-    verify_images()
+    verify_images(require_rootfs=True)
     {"calibrate": calibrate, "run": run, "run_sys": run_sys, "run_icount": run_icount, "report": report}[sys.argv[1]]()

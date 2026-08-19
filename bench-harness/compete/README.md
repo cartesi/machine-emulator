@@ -25,6 +25,8 @@ differ only in the emulator and the root device name.
 | `images/rvvm/linux.bin` | Upstream OpenSBI + Linux image consumed by RVVM. |
 | `images/SHA256SUMS` | Fixed identities of all three committed platform artifacts. |
 | `verify_images.py` | Verifies hashes and that every image contains the same kernel. |
+| `guest/stress-ng-musl` | Exact static RISC-V benchmark executable used by every emulator. |
+| `prepare-rootfs.sh` | Reproducibly assembles `rootfs-bench.ext2` from the test rootfs. |
 | `linux.config` | Exact Linux configuration used to build the shared kernel. |
 
 `drive.py` resolves all kernel paths relative to its own location. In
@@ -169,47 +171,38 @@ comparison.
 
 ## Building the benchmark filesystem
 
-`rootfs-bench.ext2` is the stock guest rootfs plus two files. It is a copy so
-that the tracked image stays pristine.
-
-**1. musl cross-toolchain.** The distro `riscv64-linux-gnu-gcc` produces
-glibc-static binaries that fault under rv8's proxy syscall layer, so the shared
-binary is musl-static:
+`rootfs-bench.ext2` is generated, not committed. Run:
 
 ```sh
-git clone https://github.com/kraj/musl && cd musl && git checkout v1.2.5
-./configure --target=riscv64 --prefix=$COMP/musl-rv \
-  CC=riscv64-linux-gnu-gcc CROSS_COMPILE=riscv64-linux-gnu-
-make -j && make install          # yields $COMP/musl-rv/bin/musl-gcc
+./prepare-rootfs.sh
 ```
 
-**2. zlib into the musl sysroot** (the `zlib` stressor will not build without it):
+The script uses the repository's `make -C tests images` target. That target
+downloads `machine-guest-tools` `v0.18.0-test8` and verifies the base image
+against the SHA-256 in `dependencies.lock`:
 
-```sh
-git clone https://github.com/madler/zlib && cd zlib && git checkout v1.3.1
-CC=$COMP/musl-rv/bin/musl-gcc ./configure --static --prefix=$COMP/musl-rv
-make -j && make install
+```text
+base rootfs.ext2       a240082c3b5988f40e6ab0677bf362a057a13431ac6f2c409568bcc87510b243
+guest/stress-ng-musl   26caa5259058a82388e537d18d6ac8afee8e0bbb56ddcfd2a13e79e05e508608
+bench-init             694eaef1b15466e29328405c75fb72f6408d75c1df6e58e8c85e15c7135a40be
+rootfs-bench.ext2      3f6ad0dba2a74d62792794b411dd0791fae194fdf639512b7c9feddb1829eee9
 ```
 
-**3. stress-ng, static:**
+The assembly restores the injected files' exact measured ownership, mode and
+ext2 timestamps, plus the measured superblock write time. The result is
+byte-identical to the filesystem used for the recorded benchmark, not merely
+content-equivalent. Its final hash is checked before it replaces the output.
+`drive.py` and `matrix.py` refuse to run if that generated image is absent or
+has a different hash.
 
-```sh
-git clone https://github.com/ColinIanKing/stress-ng && cd stress-ng   # 0.17.06
-make CC=$COMP/musl-rv/bin/musl-gcc STATIC=1 -j
-```
-
-**4. Inject into a copy of the rootfs:**
-
-```sh
-cp $IMAGES/rootfs.ext2 rootfs-bench.ext2
-e2cp stress-ng/stress-ng rootfs-bench.ext2:/usr/bin/stress-ng-musl
-e2cp -P 755 bench-init    rootfs-bench.ext2:/usr/sbin/bench-init
-debugfs -R "stat /usr/bin/stress-ng-musl" rootfs-bench.ext2   # verify
-```
-
-The identical `/usr/bin/stress-ng-musl` is what qemu-user and rv8 execute
-directly from the host filesystem, which is what makes "same binary" literally
-true across all five columns.
+The committed stress-ng binary is the exact payload extracted from the image
+used for the recorded measurements. Its build provenance is stress-ng
+`V0.17.06` commit `e6bda983cb48a201b6af173204372c7b37d6411f`, musl
+`v1.2.5` commit `0784374d561435f7c787a555aeab8ede699ed298`, and zlib
+`v1.3.1` commit `51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf`. It is static,
+so rebuilding those inputs is not required to reproduce the benchmark. The
+same committed executable is injected into every full-system guest and run
+directly by qemu-user and rv8.
 
 ## RVVM full-system benchmark on AArch64
 
@@ -377,7 +370,7 @@ re-run at any time.
 <scratchpad>/compete/{drive.py,compete.lua,ops.json,bench-init,...}
 <scratchpad>/compete/{virt.dtb,rootfs-bench.ext2}
 <scratchpad>/compete/images/{cartesi/linux.bin,qemu/Image,rvvm/linux.bin}
-<scratchpad>/compete/{stress-ng/,rv8/,musl-rv/}
+<scratchpad>/compete/{guest/stress-ng-musl,rv8/}
 ```
 
 Builds are selected by directory name (`LUA_CPATH=<dir>/?.so`), which is how

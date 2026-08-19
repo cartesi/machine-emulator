@@ -1,0 +1,117 @@
+# AArch64 side-trace publication-floor experiment, 2026-08-19
+# Host: arm64 macOS 15.7.7; MacPorts Clang 22.1.8
+# Parent source: bcd0fbef
+# Candidate binary SHA-256: 3aa0a284863189c78e2053b903f3eccdee787fc6d294e4d5967b77a833afd07f
+# Candidate invocation adds TC_SIDE_MIN_STRAIGHT_LEN=8. The committed source
+# makes that measured value the side-only default; root straights remain 32.
+# Cartesi linux.bin: 551ed4dae2b82ed59b4055f18d525a77f5ee35605acbf1238ff83e0cf9bfc3f1
+# rootfs-bench.ext2: 3f6ad0dba2a74d62792794b411dd0791fae194fdf639512b7c9feddb1829eee9
+# stress-ng-musl: 26caa5259058a82388e537d18d6ac8afee8e0bbb56ddcfd2a13e79e05e508608
+# Format: variant workload repetition total-seconds mcycle reason
+
+default boot 1 0.145 39633495 1
+floor8 boot 1 0.143 39633495 1
+default boot 2 0.146 39633495 1
+floor8 boot 2 0.148 39633495 1
+default boot 3 0.147 39633495 1
+floor8 boot 3 0.143 39633495 1
+default boot 4 0.143 39633495 1
+floor8 boot 4 0.142 39633495 1
+default boot 5 0.145 39633495 1
+floor8 boot 5 0.144 39633495 1
+
+default nop 1 0.611 8201229467 1
+floor8 nop 1 0.594 8201229467 1
+default regs 1 2.162 16966668854 1
+floor8 regs 1 2.156 16966668854 1
+default branch 1 0.897 649248193 1
+floor8 branch 1 0.900 649248193 1
+default tree 1 2.233 965867293 1
+floor8 tree 1 2.188 965867293 1
+default qsort 1 2.673 2351624703 1
+floor8 qsort 1 2.600 2351624703 1
+default memcpy 1 2.644 6721548792 1
+floor8 memcpy 1 2.646 6721548792 1
+default zlib 1 5.208 4516579339 1
+floor8 zlib 1 4.980 4516579339 1
+default hash 1 2.770 3663163397 1
+floor8 hash 1 2.742 3663163397 1
+default syscall 1 0.636 643487512 1
+floor8 syscall 1 0.635 643487512 1
+default double 1 1.764 856584210 1
+floor8 double 1 1.734 856584210 1
+default sieve 1 3.219 8624443953 1
+floor8 sieve 1 2.258 8624443953 1
+default int64 1 1.700 2337083903 1
+floor8 int64 1 1.690 2337083903 1
+default matrixprod 1 2.418 2420748847 1
+floor8 matrixprod 1 2.437 2420748847 1
+
+default nop 2 0.598 8201229467 1
+floor8 nop 2 0.609 8201229467 1
+default regs 2 2.146 16966668854 1
+floor8 regs 2 2.160 16966668854 1
+default branch 2 0.910 649248193 1
+floor8 branch 2 0.914 649248193 1
+default tree 2 2.257 965867293 1
+floor8 tree 2 2.201 965867293 1
+default qsort 2 2.669 2351624703 1
+floor8 qsort 2 2.608 2351624703 1
+default memcpy 2 2.647 6721548792 1
+floor8 memcpy 2 2.644 6721548792 1
+default zlib 2 5.263 4516579339 1
+floor8 zlib 2 5.014 4516579339 1
+default hash 2 2.777 3663163397 1
+floor8 hash 2 2.745 3663163397 1
+default syscall 2 0.633 643487512 1
+floor8 syscall 2 0.625 643487512 1
+default double 2 1.733 856584210 1
+floor8 double 2 1.736 856584210 1
+default sieve 2 3.250 8624443953 1
+floor8 sieve 2 2.245 8624443953 1
+default int64 2 1.703 2337083903 1
+floor8 int64 2 1.690 2337083903 1
+default matrixprod 2 2.421 2420748847 1
+floor8 matrixprod 2 2.426 2420748847 1
+
+default nop 3 0.606 8201229467 1
+floor8 nop 3 0.592 8201229467 1
+default regs 3 2.136 16966668854 1
+floor8 regs 3 2.136 16966668854 1
+default branch 3 0.896 649248193 1
+floor8 branch 3 0.883 649248193 1
+default tree 3 2.233 965867293 1
+floor8 tree 3 2.184 965867293 1
+default qsort 3 2.697 2351624703 1
+floor8 qsort 3 2.614 2351624703 1
+default memcpy 3 2.642 6721548792 1
+floor8 memcpy 3 2.647 6721548792 1
+default zlib 3 5.019 4516579339 1
+floor8 zlib 3 4.993 4516579339 1
+default hash 3 2.764 3663163397 1
+floor8 hash 3 2.745 3663163397 1
+default syscall 3 0.628 643487512 1
+floor8 syscall 3 0.624 643487512 1
+default double 3 1.736 856584210 1
+floor8 double 3 1.760 856584210 1
+default sieve 3 3.195 8624443953 1
+floor8 sieve 3 2.267 8624443953 1
+default int64 3 1.699 2337083903 1
+floor8 int64 3 1.703 2337083903 1
+default matrixprod 3 2.420 2420748847 1
+floor8 matrixprod 3 2.418 2420748847 1
+
+# Separate instrumented sieve runs. Counter instrumentation perturbs time.
+# Format: variant total-seconds mcycle reason
+default-stats 3.640 8624443953 1
+# side requests=46 started=46; finish short=24 compile=1 success=10
+# installed=306 links=165 episodes=20266949 trace-insns=8001457594
+floor8-stats 2.573 8624443953 1
+# side requests=46 started=46; finish short=18 compile=1 success=16
+# installed=312 links=179 episodes=9730779 trace-insns=8473351651
+
+# Disabled-hotcount sentinel A/B, zlib, instrumented.
+# Pre:  requests=2470 blacklisted=2367 started=103 installed=381 links=198
+# Post: requests=78   blacklisted=0    started=78  installed=381 links=198
+# Both retired 4516579339 mcycles. Three uninstrumented paired runs had a
+# median paired timing effect of approximately zero.

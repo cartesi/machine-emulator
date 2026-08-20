@@ -110,11 +110,40 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
-## Open decisions
+## Done: backend-contract stencil library (2026-08-20)
 
-- Final backend signature: which arg positions carry state_access and the
-  insn slot alongside the pinned x23/x24/x25/x27 roles, and how many guest
-  cache slots remain (x20-x22, x26, x28, x0-x7 are the free positions).
+The generator now emits every stencil on the decided positional signature
+(guest slots plus pc/countdown/fetch/tcc at the pinned positions), with
+two backend families added: cp_tick_guard (signed countdown-vs-pending
+compare, bail on continuation 1, elidable fallthrough body) and
+cp_exit_stub (patched architectural pc, patched pending charge against
+the countdown, branch to the fetch-tail continuation). The execution test
+threads fixed pinned-role values through every chain and verifies
+pass-through, both tick-guard outcomes, and the exit stub's pc/cd
+updates. 715 stencils validate and pass on native AArch64 and on
+amd64 (GCC both sides) under qemu.
+
+## Decided: backend stencil signature (2026-08-20)
+
+Purely positional, no register globals in stencil code. Clang preserve_none
+argument order does not skip -ffixed-reserved registers (interpret-tc.cpp
+pins starting at x23 for exactly this reason), so the stencil signature
+places parameters so the pinned roster falls at its own registers:
+
+  AArch64: (g0 x20, g1 x21, g2 x22, pc x23, countdown x24, fetch x25,
+            g3 x26, tcc x27, g4 x28, g5 x0, g6 x1, ...)
+
+pc/countdown/fetch/tcc are pass-through parameters updated where a stencil
+semantically writes them (countdown by the exit stub's pending constant,
+pc by exits and control transfers). Entry from a TC handler and exit into
+the fetch tail are plain branches: the interpreter's pinned registers and
+the stencil's parameter registers coincide. x86-64 caps at six register
+slots (r12-r15, rdi, rsi shared by GCC and clang), so its signature is a
+narrower arrangement of the same roles; decide it when the amd64 backend
+lands. Guest cache slot count on AArch64: six to eight from the free
+positions, final count set by what the emitter scratch needs.
+
+## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front
   cache like RVVM's jtlb.

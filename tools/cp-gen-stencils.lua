@@ -17,9 +17,17 @@
 -- code model, movabs under the x86-64 small model with per-symbol large
 -- model (clang) or medium model with sized arrays (GCC).
 --
--- Usage: lua5.4 cp-gen-stencils.lua <output.c>
+-- Usage: lua5.4 cp-gen-stencils.lua <structural.c> <semantic.cpp>
+--
+-- The structural TU is C, compiled bare-metal (value holes need ELF's
+-- movz/movk relocations). The semantic TU is C++, compiled natively with
+-- the host toolchain: it includes interpret.cpp so every instruction
+-- stencil instantiates the interpreter's own execute body (single
+-- semantic source), and its only relocations are continuation branches,
+-- which every object format patches.
 
-local out = assert(arg[1], "usage: cp-gen-stencils.lua <output.c>")
+local out = assert(arg[1], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp>")
+local sem_out = assert(arg[2], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp>")
 local f = assert(io.open(out, "w"))
 
 local NSLOTS = 8
@@ -112,122 +120,6 @@ for d = 0, NSLOTS - 1 do
     fn(("cp_li_%d"):format(d), ("    r%d = (u64)cp_imm64_0;"):format(d))
 end
 
--- RV64IM register-register ops, exact RISC-V semantics over u64 slots.
--- %a and %b substitute the source slots, the result is assigned to the
--- destination slot. Division and remainder carry the RISC-V zero and
--- overflow rules inside the stencil (branchy but call-free).
-local REG_OPS = {
-    add = "%a + %b",
-    sub = "%a - %b",
-    ["and"] = "%a & %b",
-    ["or"] = "%a | %b",
-    ["xor"] = "%a ^ %b",
-    sll = "%a << (%b & 63)",
-    srl = "%a >> (%b & 63)",
-    sra = "(u64)((i64)%a >> (%b & 63))",
-    slt = "((i64)%a < (i64)%b) ? 1 : 0",
-    sltu = "(%a < %b) ? 1 : 0",
-    addw = "(u64)(i64)(i32)((u32)%a + (u32)%b)",
-    subw = "(u64)(i64)(i32)((u32)%a - (u32)%b)",
-    sllw = "(u64)(i64)(i32)((u32)%a << (%b & 31))",
-    srlw = "(u64)(i64)(i32)((u32)%a >> (%b & 31))",
-    sraw = "(u64)(i64)((i32)%a >> (%b & 31))",
-    mul = "%a * %b",
-    mulw = "(u64)(i64)(i32)((u32)%a * (u32)%b)",
-    mulh = "(u64)(i64)(((i128)(i64)%a * (i128)(i64)%b) >> 64)",
-    mulhu = "(u64)(((u128)%a * (u128)%b) >> 64)",
-    mulhsu = "(u64)(i64)(((i128)(i64)%a * (i128)%b) >> 64)",
-    ["div"] = "(%b == 0) ? (u64)-1 : ((%a == 0x8000000000000000ULL && %b == (u64)-1) ? %a : (u64)((i64)%a / (i64)%b))",
-    divu = "(%b == 0) ? (u64)-1 : (%a / %b)",
-    ["rem"] = "(%b == 0) ? %a : ((%a == 0x8000000000000000ULL && %b == (u64)-1) ? 0 : (u64)((i64)%a % (i64)%b))",
-    remu = "(%b == 0) ? %a : (%a % %b)",
-    divw = "((u32)%b == 0) ? (u64)-1 : (((u32)%a == 0x80000000U && (i32)%b == -1) ? (u64)(i64)(i32)%a : (u64)(i64)((i32)%a / (i32)%b))",
-    divuw = "((u32)%b == 0) ? (u64)-1 : (u64)(i64)(i32)((u32)%a / (u32)%b)",
-    remw = "((u32)%b == 0) ? (u64)(i64)(i32)%a : (((u32)%a == 0x80000000U && (i32)%b == -1) ? 0 : (u64)(i64)((i32)%a % (i32)%b))",
-    remuw = "((u32)%b == 0) ? (u64)(i64)(i32)%a : (u64)(i64)(i32)((u32)%a % (u32)%b)",
-}
-local reg_names = {}
-for name in pairs(REG_OPS) do
-    reg_names[#reg_names + 1] = name
-end
-table.sort(reg_names)
-for _, name in ipairs(reg_names) do
-    local expr = REG_OPS[name]
-    for d = 0, NSLOTS - 1 do
-        for s1 = 0, NSLOTS - 1 do
-            for s2 = 0, NSLOTS - 1 do
-                local e = expr:gsub("%%a", "r" .. s1):gsub("%%b", "r" .. s2)
-                fn(("cp_%s_%d_%d_%d"):format(name, d, s1, s2), ("    r%d = %s;"):format(d, e))
-            end
-        end
-    end
-end
-
--- Immediate forms: the constant is a 64-bit hole materialized by the
--- stencil; encodable-immediate shapes are a later measured optimization.
-local IMM_OPS = {
-    addi = "%a + imm",
-    andi = "%a & imm",
-    ori = "%a | imm",
-    xori = "%a ^ imm",
-    slti = "((i64)%a < (i64)imm) ? 1 : 0",
-    sltiu = "(%a < imm) ? 1 : 0",
-    slli = "%a << (imm & 63)",
-    srli = "%a >> (imm & 63)",
-    srai = "(u64)((i64)%a >> (imm & 63))",
-    addiw = "(u64)(i64)(i32)((u32)%a + (u32)imm)",
-    slliw = "(u64)(i64)(i32)((u32)%a << (imm & 31))",
-    srliw = "(u64)(i64)(i32)((u32)%a >> (imm & 31))",
-    sraiw = "(u64)(i64)((i32)%a >> (imm & 31))",
-}
-local imm_names = {}
-for name in pairs(IMM_OPS) do
-    imm_names[#imm_names + 1] = name
-end
-table.sort(imm_names)
-for _, name in ipairs(imm_names) do
-    local expr = IMM_OPS[name]
-    for d = 0, NSLOTS - 1 do
-        for s = 0, NSLOTS - 1 do
-            local e = expr:gsub("%%a", "r" .. s)
-            fn(("cp_%s_%d_%d"):format(name, d, s),
-                ("    u64 imm = (u64)cp_imm64_0;\n    r%d = %s;"):format(d, e))
-        end
-    end
-end
-
--- Branch guards, all six conditions: taken continuation 0 (the recorded
--- direction), fallthrough continuation 1.
-local BR_OPS = {
-    beq = "%a == %b",
-    bne = "%a != %b",
-    blt = "(i64)%a < (i64)%b",
-    bge = "(i64)%a >= (i64)%b",
-    bltu = "%a < %b",
-    bgeu = "%a >= %b",
-}
-local br_names = {}
-for name in pairs(BR_OPS) do
-    br_names[#br_names + 1] = name
-end
-table.sort(br_names)
-for _, name in ipairs(br_names) do
-    local cond = BR_OPS[name]
-    for s1 = 0, NSLOTS - 1 do
-        for s2 = 0, NSLOTS - 1 do
-            local c = cond:gsub("%%a", "r" .. s1):gsub("%%b", "r" .. s2)
-            emit(("CONT void cp_%s_%d_%d(%s)"):format(name, s1, s2, params))
-            emit("{")
-            emit(("    if (%s) {"):format(c))
-            emit("        TAIL return cp_cont_0(" .. args .. ");")
-            emit("    }")
-            emit("    TAIL return cp_cont_1(" .. args .. ");")
-            emit("}")
-            emit("")
-        end
-    end
-end
-
 -- ld: slot d = *(u64 *)(slot s + constant). Memory-shape probe; the real
 -- hot TLB family replaces this in the backend integration.
 for d = 0, NSLOTS - 1 do
@@ -237,3 +129,167 @@ for d = 0, NSLOTS - 1 do
 end
 
 f:close()
+
+-- Semantic TU: wrappers instantiating the interpreter's execute bodies.
+local g = assert(io.open(sem_out, "w"))
+local function gem(line) g:write(line, "\n") end
+
+gem("/* Generated by tools/cp-gen-stencils.lua. Do not edit. */")
+gem("// NOLINTBEGIN")
+gem("#define TC_TRANSLATION_UNIT")
+gem('#include "interpret.cpp"')
+gem("")
+gem("namespace cartesi {")
+gem("struct cp_slot_access;")
+gem("template <>")
+gem("struct i_state_access_fast_addr<cp_slot_access> {")
+gem("    using type = uint64_t;")
+gem("};")
+gem("// Binds the synthetic instruction's rs1=1, rs2=2, rd=3 to wrapper")
+gem("// locals, so each execute body folds onto the placement's registers.")
+gem("struct cp_slot_access : i_state_access<cp_slot_access>, i_accept_scoped_notes<cp_slot_access> {")
+gem("    uint64_t *v1;")
+gem("    uint64_t *v2;")
+gem("    uint64_t *vd;")
+gem("    cp_slot_access(uint64_t *a1, uint64_t *a2, uint64_t *ad) : v1(a1), v2(a2), vd(ad) {}")
+gem("    static const char *do_get_name() {")
+gem('        return "cp_slot_access";')
+gem("    }")
+gem("    uint64_t do_read_x(int i) const {")
+gem("        return i == 1 ? *v1 : *v2;")
+gem("    }")
+gem("    void do_write_x(int /*i*/, uint64_t val) const {")
+gem("        *vd = val;")
+gem("    }")
+gem("    // Exception-path surface instantiated by the branch bodies; dead")
+gem("    // under the aligned synthetic offset and folded away, never run.")
+gem("    static uint64_t do_read_iprv() { return 0; }")
+gem("    static void do_write_iprv(uint64_t) {}")
+gem("    static uint64_t do_read_medeleg() { return 0; }")
+gem("    static uint64_t do_read_mideleg() { return 0; }")
+gem("    static uint64_t do_read_mstatus() { return 0; }")
+gem("    static void do_write_mstatus(uint64_t) {}")
+gem("    static uint64_t do_read_mtvec() { return 0; }")
+gem("    static uint64_t do_read_stvec() { return 0; }")
+gem("    static uint64_t do_read_icycleinstret() { return 0; }")
+gem("    static void do_write_icycleinstret(uint64_t) {}")
+gem("    static void do_write_ilrsc(uint64_t) {}")
+gem("    static void do_write_mcause(uint64_t) {}")
+gem("    static void do_write_mepc(uint64_t) {}")
+gem("    static void do_write_mtval(uint64_t) {}")
+gem("    static void do_write_scause(uint64_t) {}")
+gem("    static void do_write_sepc(uint64_t) {}")
+gem("    static void do_write_stval(uint64_t) {}")
+gem("    static uint64_t do_read_fetch_vf_offset() { return 0; }")
+gem("};")
+gem("} // namespace cartesi")
+gem("")
+gem("typedef unsigned long long u64;")
+gem("#define CONT __attribute__((preserve_none))")
+gem("#define TAIL __attribute__((musttail))")
+gem(("extern \"C\" CONT void cp_cont_0(%s);"):format(params))
+gem(("extern \"C\" CONT void cp_cont_1(%s);"):format(params))
+gem("")
+
+-- Synthetic instruction words: rd=3, rs1=1, rs2=2 everywhere.
+local function r_insn(opc, f3, f7)
+    return (f7 << 25) | (2 << 20) | (1 << 15) | (f3 << 12) | (3 << 7) | opc
+end
+-- R-type and W/M groups: name -> { execute fn, insn }.
+local SEM_REG_OPS = {
+    add = { "execute_ADD<cartesi::rd_kind::xN>", r_insn(0x33, 0, 0) },
+    sub = { "execute_SUB<cartesi::rd_kind::xN>", r_insn(0x33, 0, 0x20) },
+    sll = { "execute_SLL<cartesi::rd_kind::xN>", r_insn(0x33, 1, 0) },
+    slt = { "execute_SLT<cartesi::rd_kind::xN>", r_insn(0x33, 2, 0) },
+    sltu = { "execute_SLTU<cartesi::rd_kind::xN>", r_insn(0x33, 3, 0) },
+    ["xor"] = { "execute_XOR<cartesi::rd_kind::xN>", r_insn(0x33, 4, 0) },
+    srl = { "execute_SRL<cartesi::rd_kind::xN>", r_insn(0x33, 5, 0) },
+    sra = { "execute_SRA<cartesi::rd_kind::xN>", r_insn(0x33, 5, 0x20) },
+    ["or"] = { "execute_OR<cartesi::rd_kind::xN>", r_insn(0x33, 6, 0) },
+    ["and"] = { "execute_AND<cartesi::rd_kind::xN>", r_insn(0x33, 7, 0) },
+    mul = { "execute_MUL<cartesi::rd_kind::xN>", r_insn(0x33, 0, 1) },
+    mulh = { "execute_MULH<cartesi::rd_kind::xN>", r_insn(0x33, 1, 1) },
+    mulhsu = { "execute_MULHSU<cartesi::rd_kind::xN>", r_insn(0x33, 2, 1) },
+    mulhu = { "execute_MULHU<cartesi::rd_kind::xN>", r_insn(0x33, 3, 1) },
+    ["div"] = { "execute_DIV<cartesi::rd_kind::xN>", r_insn(0x33, 4, 1) },
+    divu = { "execute_DIVU<cartesi::rd_kind::xN>", r_insn(0x33, 5, 1) },
+    rem = { "execute_REM<cartesi::rd_kind::xN>", r_insn(0x33, 6, 1) },
+    remu = { "execute_REMU<cartesi::rd_kind::xN>", r_insn(0x33, 7, 1) },
+    addw = { "execute_ADDW<cartesi::rd_kind::xN>", r_insn(0x3b, 0, 0) },
+    subw = { "execute_SUBW<cartesi::rd_kind::xN>", r_insn(0x3b, 0, 0x20) },
+    sllw = { "execute_SLLW<cartesi::rd_kind::xN>", r_insn(0x3b, 1, 0) },
+    srlw = { "execute_SRLW<cartesi::rd_kind::xN>", r_insn(0x3b, 5, 0) },
+    sraw = { "execute_SRAW<cartesi::rd_kind::xN>", r_insn(0x3b, 5, 0x20) },
+    mulw = { "execute_MULW<cartesi::rd_kind::xN>", r_insn(0x3b, 0, 1) },
+    divw = { "execute_DIVW<cartesi::rd_kind::xN>", r_insn(0x3b, 4, 1) },
+    divuw = { "execute_DIVUW<cartesi::rd_kind::xN>", r_insn(0x3b, 5, 1) },
+    remw = { "execute_REMW<cartesi::rd_kind::xN>", r_insn(0x3b, 6, 1) },
+    remuw = { "execute_REMUW<cartesi::rd_kind::xN>", r_insn(0x3b, 7, 1) },
+}
+-- Branches: synthetic forward offset +8 (imm[4:1]=4 lands at insn bits 8-11).
+local function b_insn(f3)
+    return (2 << 20) | (1 << 15) | (f3 << 12) | (4 << 8) | 0x63
+end
+local SEM_BR_OPS = {
+    beq = { "execute_BEQ", b_insn(0) },
+    bne = { "execute_BNE", b_insn(1) },
+    blt = { "execute_BLT", b_insn(4) },
+    bge = { "execute_BGE", b_insn(5) },
+    bltu = { "execute_BLTU", b_insn(6) },
+    bgeu = { "execute_BGEU", b_insn(7) },
+}
+
+local function sem_sorted(t)
+    local names = {}
+    for name in pairs(t) do
+        names[#names + 1] = name
+    end
+    table.sort(names)
+    return names
+end
+
+for _, name in ipairs(sem_sorted(SEM_REG_OPS)) do
+    local fn_name, insn = SEM_REG_OPS[name][1], SEM_REG_OPS[name][2]
+    for d = 0, NSLOTS - 1 do
+        for s1 = 0, NSLOTS - 1 do
+            for s2 = 0, NSLOTS - 1 do
+                gem(("extern \"C\" CONT void cp_%s_%d_%d_%d(%s)"):format(name, d, s1, s2, params))
+                gem("{")
+                gem(("    uint64_t v1 = r%d;"):format(s1))
+                gem(("    uint64_t v2 = r%d;"):format(s2))
+                gem("    uint64_t vd = 0;")
+                gem("    const cartesi::cp_slot_access sa(&v1, &v2, &vd);")
+                gem("    uint64_t spc = 0;")
+                gem(("    (void) cartesi::%s(sa, spc, 0x%08xu);"):format(fn_name, insn))
+                gem(("    r%d = vd;"):format(d))
+                gem("    TAIL return cp_cont_0(" .. args .. ");")
+                gem("}")
+                gem("")
+            end
+        end
+    end
+end
+
+for _, name in ipairs(sem_sorted(SEM_BR_OPS)) do
+    local fn_name, insn = SEM_BR_OPS[name][1], SEM_BR_OPS[name][2]
+    for s1 = 0, NSLOTS - 1 do
+        for s2 = 0, NSLOTS - 1 do
+            gem(("extern \"C\" CONT void cp_%s_%d_%d(%s)"):format(name, s1, s2, params))
+            gem("{")
+            gem(("    uint64_t v1 = r%d;"):format(s1))
+            gem(("    uint64_t v2 = r%d;"):format(s2))
+            gem("    uint64_t vd = 0;")
+            gem("    const cartesi::cp_slot_access sa(&v1, &v2, &vd);")
+            gem("    uint64_t spc = 0x1000;")
+            gem(("    (void) cartesi::%s(sa, spc, 0x%08xu);"):format(fn_name, insn))
+            gem("    if (spc == 0x1000 + 8) {")
+            gem("        TAIL return cp_cont_0(" .. args .. ");")
+            gem("    }")
+            gem("    TAIL return cp_cont_1(" .. args .. ");")
+            gem("}")
+            gem("")
+        end
+    end
+end
+gem("// NOLINTEND")
+g:close()

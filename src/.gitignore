@@ -14,3 +14,5 @@ cp-stencils.elf.o
 cp-stencils-tables.h
 cp-stencils-manifest.txt
 cp-stencils-test
+cp-stencils-semantic.cpp
+cp-stencils-semantic.stencil.o

@@ -596,6 +596,23 @@ dropped 115 to 77 (JALR-headed trips now compile), emitted bytes rose to
 
 Gates: boot bit-identical to stock, all 267 machine tests, stencil tests.
 
+## Done: correctness gate on the balanced 13-workload board (2026-08-20)
+
+Protocol: bench-balanced.lua (boot 256 Mi mcycles untimed, run exactly
+1 Gi further, root hash at that exact mcycle), images from
+scratch/tracing-experiment/images. The copy_patch build (increment 4,
+8397c97e) matches a fresh stock build on all 13 workloads: identical
+mcycle 1342177280, identical root hash, identical exit reason. The
+recorded bench-balanced-3way.txt canon no longer applies to the current
+image pair (a stock control reproduced none of its hashes), so the gate
+ran against freshly produced stock references.
+
+With boot, the 267 machine tests, and the stencil tests, the correctness
+leg of the differential gates is complete. Next: the performance
+protocol (repetitions with warmup against the lightning build and the
+committed RVVM column, with trace counts, emitted bytes, compile time,
+flushes, and coverage reported).
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

@@ -91,6 +91,31 @@ static void cp_insert_hpage(cp_state *c, uint64_t hpage) {
     ++c->ntraced_pages;
 }
 
+// Front cache (RVVM jtlb): direct-mapped {vpc, call_fn}, probed by the
+// generated lookup tail with the same index. Entries hold self-validating
+// call entries, so staleness degrades to a cold exit, never wrong
+// execution; dead traces are purged eagerly all the same.
+static_assert(sizeof(cp_front_entry) == 16, "lookup stencil indexes 16-byte entries");
+static_assert(cp_state::front_size == 256, "lookup stencil bakes a 255 mask");
+
+static FORCE_INLINE void cp_front_put(cp_state *c, uint64_t pc, const void *fn) {
+    c->front[(pc >> 1) & (cp_state::front_size - 1)] = cp_front_entry{pc, fn};
+}
+
+static FORCE_INLINE void cp_front_purge(cp_state *c, uint64_t pc) {
+    auto &e = c->front[(pc >> 1) & (cp_state::front_size - 1)];
+    if (e.pc == pc) {
+        e.pc = 1; // odd: architectural targets have bit 0 clear
+    }
+}
+
+static void cp_front_reset(cp_state *c) {
+    for (auto &e : c->front) {
+        e.pc = 1;
+        e.fn = nullptr;
+    }
+}
+
 static FORCE_INLINE bool cp_hpage_traced(const cp_state *c, uint64_t hpage) {
     uint32_t s = cp_hpage_slot(hpage);
     const uint64_t tag = hpage + 1;
@@ -124,6 +149,7 @@ static void cp_write_hook(void *ctx, host_addr hstart, uint64_t length) {
                     if (t.hpage[j] == hpage) {
                         t.dead = true;
                         killed = true;
+                        cp_front_purge(c, t.head);
                         ++c->invalidated;
                         break;
                     }
@@ -168,6 +194,7 @@ static void cp_flush(cp_state *c) {
     std::memset(c->installed_pc, 0, sizeof(c->installed_pc));
     std::memset(c->traced_page, 0, sizeof(c->traced_page));
     std::memset(c->pending_link_pc, 0, sizeof(c->pending_link_pc));
+    cp_front_reset(c);
     c->ntraced_pages = 0;
     c->recording = false;
     ++c->flushes;
@@ -207,6 +234,7 @@ static cp_state *cp_get(penumbra_state &penumbra, const void *continue_fn) {
         c->continue_island = cp_emit(&c->heap, &cp_s_cp_far_jump, imm, island_cont);
         cp_heap_protect_flush(&c->heap);
         c->heap_reset_curr = c->heap.curr;
+        cp_front_reset(c);
         penumbra.tc_state = c;
         penumbra.tc_state_free = &cp_free;
     }
@@ -452,6 +480,31 @@ struct cp_former {
         c->rec_end_vaddr = target;
     }
 
+    // Indirect jump (JALR class): the interpreter's exact semantics, target
+    // computed before the link write (rd may alias rs1) into a scratch slot
+    // that the dynamic terminal deposits and looks up. Ends the trace.
+    int dynamic_slot = -1;
+    void jalr(uint8_t rd, uint8_t rs1, uint64_t imm, uint8_t size) {
+        const int s1 = alloc_src(rs1);
+        const int t = alloc_scratch();
+        if (c->rec_failed) {
+            return;
+        }
+        emit1(cp_li_table[t], imm);
+        emit1(cp_add_table[t][t][s1]);
+        const int m = alloc_scratch();
+        if (c->rec_failed) {
+            return;
+        }
+        emit1(cp_li_table[m], ~static_cast<uint64_t>(1));
+        emit1(cp_and_table[t][t][m]);
+        free_scratch(m);
+        if (rd != 0) {
+            li(rd, pc + size);
+        }
+        dynamic_slot = t;
+    }
+
     void end() {
         c->rec_failed = true; // uncompilable: caller finishes before this insn
     }
@@ -542,7 +595,7 @@ static void cp_repatch_imm(uint8_t *dst, const cp_stencil_t *st, uint8_t ordinal
 }
 
 template <typename STATE_ACCESS>
-static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic) {
+static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_slot = -1) {
     cp_state *c = tcc->cp;
     c->recording = false;
     if (c->rec_failed || c->rec_len == 0) {
@@ -568,10 +621,28 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic) {
     t.link_target = cp_state::none_link;
     t.successor = c->rec_end_vaddr;
 
-    // Terminal: cyclic traces store and loop to their own entry; straight
-    // traces store and leave for the successor.
+    // Terminal: cyclic traces store and loop to their own entry; dynamic
+    // (JALR-class) traces charge the countdown, deposit the target as the
+    // interpreter would, and probe the front cache, chaining into a hit's
+    // self-validating entry or leaving for the island; straight traces
+    // store and leave for the successor.
+    auto *const penumbra_fin =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        reinterpret_cast<penumbra_state *>(reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
     if (cyclic) {
         cp_emit_exit(c, c->reg_dirty, 0, c->rec_len, c->rec_start);
+    } else if (dynamic_slot >= 0) {
+        cp_emit_stores(c, c->reg_dirty);
+        uint8_t *fall[2] = {nullptr, nullptr};
+        uint8_t *isl[2] = {const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island)), nullptr};
+        const uint64_t imm_stub[2] = {0, c->rec_len};
+        const uint64_t imm_dep[2] = {reinterpret_cast<uint64_t>(&penumbra_fin->fetch_vf_offset), 0};
+        const uint64_t imm_lu[2] = {reinterpret_cast<uint64_t>(&c->front[0]), 0};
+        if (cp_emit(&c->heap, &cp_s_cp_exit_stub, imm_stub, fall) == nullptr ||
+            cp_emit(&c->heap, cp_deposit_pc_table[dynamic_slot], imm_dep, fall) == nullptr ||
+            cp_emit(&c->heap, cp_lookup_table[dynamic_slot], imm_lu, isl) == nullptr) {
+            c->rec_failed = true;
+        }
     } else {
         cp_emit_exit(c, c->reg_dirty, static_cast<int64_t>(c->rec_end_vaddr - c->rec_head), c->rec_len, nullptr, &t);
     }
@@ -606,6 +677,7 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic) {
     t.dead = false;
     t.fn = c->rec_start;
     t.call_fn = c->rec_call_start;
+    cp_front_put(c, t.head, t.call_fn);
     ++c->ntraces;
     cp_insert(c, t.head, static_cast<uint16_t>(c->ntraces));
     ++c->installed;
@@ -728,22 +800,43 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     c->nslots_used = 0;
     c->have_pending_branch = false;
     c->nbails = 0;
-    // Call-entry prologue (ported call_fn semantics): the hook enters here
-    // only after validating the hot code-TLB slot against the recorded
-    // mapping and context, so every established value is an install-time
-    // constant. Mapping fields first, register re-encode last, with no C
-    // boundary in between (the pc encoding and fetch_vf_offset must never
-    // disagree at one); falls through into the tick guard, so call entries
-    // sit behind the same tick check as lightning's established entry.
+    // Self-validating call-entry prologue (ported call_fn semantics, all in
+    // generated code so the lookup tail can chain into it without a C round
+    // trip): translation-context guard, hot code-TLB slot probe of the head
+    // page under the recorded context, entry-time pma publish from the
+    // shadow slot, then establishment. Every compare bails to the island
+    // with the caller's deposit pc untouched, so misses resume the ordinary
+    // fetch path, whose fill is the hashed behavior. Establishment values
+    // are install-time constants because entry requires the slot's
+    // vh_offset to equal the recorded code_vf_offset. Falls through into
+    // the tick guard, like lightning's normal_entry_established.
     uint8_t *fall[2] = {nullptr, nullptr};
+    uint8_t *guard[2] = {nullptr,
+        const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island))};
     penumbra_state &penumbra = a.get_penumbra();
+    auto *const pstate =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        reinterpret_cast<processor_state *>(reinterpret_cast<unsigned char *>(&penumbra) - offsetof(processor_state, penumbra));
     const uint64_t vf = c->rec_code_vf_offset;
-    const uint64_t fetch_val = tlb_addr_page(vpc) + vf;
+    const uint64_t head_page = tlb_addr_page(vpc);
+    const uint64_t fetch_val = head_page + vf;
+    const uint64_t slot = tlb_slot_index(vpc, c->rec_ctx_slot_base);
+    auto &hot = penumbra.tlb[TLB_CODE][slot];
+    auto &shadow_slot = pstate->shadow.tlb[TLB_CODE][slot];
     c->rec_call_start = c->heap.base + c->heap.curr;
+    const uint64_t imm_ctx[2] = {reinterpret_cast<uint64_t>(&penumbra.tlb_ctx_slot_base), c->rec_ctx_slot_base};
+    const uint64_t imm_hotpage[2] = {reinterpret_cast<uint64_t>(&hot.vaddr_page), head_page};
+    const uint64_t imm_hotvh[2] = {reinterpret_cast<uint64_t>(&hot.vh_offset), vf};
+    const uint64_t imm_pma[2] = {reinterpret_cast<uint64_t>(&shadow_slot.pma_index),
+        reinterpret_cast<uint64_t>(&tcc->fetch_pma_index)};
     const uint64_t imm_vf[2] = {reinterpret_cast<uint64_t>(&penumbra.fetch_vf_offset), vf};
     const uint64_t imm_page[2] = {reinterpret_cast<uint64_t>(&tcc->fetch_vaddr_page), fetch_val};
     const uint64_t imm_est[2] = {vpc + vf, fetch_val};
-    if (cp_emit(&c->heap, &cp_s_cp_store_imm, imm_vf, fall) == nullptr ||
+    if (cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_ctx, guard) == nullptr ||
+        cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_hotpage, guard) == nullptr ||
+        cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_hotvh, guard) == nullptr ||
+        cp_emit(&c->heap, &cp_s_cp_copy_mem, imm_pma, fall) == nullptr ||
+        cp_emit(&c->heap, &cp_s_cp_store_imm, imm_vf, fall) == nullptr ||
         cp_emit(&c->heap, &cp_s_cp_store_imm, imm_page, fall) == nullptr ||
         cp_emit(&c->heap, &cp_s_cp_call_establish, imm_est, fall) == nullptr) {
         c->rec_failed = true;
@@ -858,6 +951,11 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
 
 #include "cp-select.inc"
 
+    if (!c->rec_failed && f.dynamic_slot >= 0) {
+        ++c->rec_len;
+        cp_finish(tcc, false, f.dynamic_slot);
+        return;
+    }
     if (c->rec_failed) {
         // Roll back this instruction and finish with what preceded it.
         c->heap.curr = static_cast<size_t>(c->rec_insn_start - c->heap.base);
@@ -888,34 +986,19 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
             if constexpr (CALL_ENTRY) {
-                // Ported call_fn semantics, validation hoisted into C and the
-                // context check first: enter only when the hot code-TLB slot
-                // of the head page, under the recorded context, still maps
-                // the recorded host page. Any miss falls back to the
-                // interpreter fetch, whose fill is the hashed behavior.
-                if (penumbra->tlb_ctx_slot_base == t->ctx_slot_base) {
-                    const uint64_t head_page = tlb_addr_page(t->head);
-                    const uint64_t slot = tlb_slot_index(t->head, t->ctx_slot_base);
-                    const auto &hot = penumbra->tlb[TLB_CODE][slot];
-                    if (hot.vaddr_page == head_page && static_cast<uint64_t>(hot.vh_offset) == t->code_vf_offset) {
-                        auto *const state = reinterpret_cast<processor_state *>(
-                            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                            reinterpret_cast<unsigned char *>(penumbra) - offsetof(processor_state, penumbra));
-                        // Entry-time state, like lightning's call_fn reads it;
-                        // publishing before the prologue re-encodes the pc is
-                        // safe because the stale fetch tag still misses, and
-                        // every miss path recomputes the pma index.
-                        tcc->fetch_pma_index = state->shadow.tlb[TLB_CODE][slot].pma_index;
-                        ++c->entries;
-                        ++c->call_entries;
-                        if (cp_log_enabled()) [[unlikely]] {
-                            std::fprintf(stderr, "cp-callenter vpc=%llx len=%u\n",
-                                static_cast<unsigned long long>(vpc), t->len);
-                        }
-                        return t->call_fn;
-                    }
+                // The call-entry prologue validates itself in generated code
+                // (context guard, hot code-TLB probe), so the hook only hands
+                // it over, like lightning's call_fn. A validation miss bails
+                // to the island with the deposit pc and resumes the ordinary
+                // fetch path.
+                ++c->entries;
+                ++c->call_entries;
+                cp_front_put(c, vpc, t->call_fn);
+                if (cp_log_enabled()) [[unlikely]] {
+                    std::fprintf(stderr, "cp-callenter vpc=%llx len=%u\n", static_cast<unsigned long long>(vpc),
+                        t->len);
                 }
-                return nullptr;
+                return t->call_fn;
             } else {
                 // Mapping AND translation-context must match the formation
                 // state: under another context the interpreter would fill

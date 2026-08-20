@@ -118,6 +118,28 @@ emit("    TAIL return cp_cont_0(" .. args .. ");")
 emit("}")
 emit("")
 
+-- Compare a 64-bit field at a patched address against a patched constant,
+-- bailing on mismatch. The call-entry prologue validates the translation
+-- context and the hot code-TLB slot with these; the bail leaves with the
+-- caller's deposit pc untouched, so misses resume the ordinary fetch path.
+emit(("CONT void cp_cmp_mem_imm(%s)"):format(params))
+emit("{")
+emit("    if (*(u64 *)cp_imm64_0 != (u64)cp_imm64_1) {")
+emit("        TAIL return cp_cont_1(" .. args .. ");")
+emit("    }")
+emit("    TAIL return cp_cont_0(" .. args .. ");")
+emit("}")
+emit("")
+
+-- Copy a 64-bit field between two patched addresses (the entry-time
+-- pma_index publish, read from the shadow slot).
+emit(("CONT void cp_copy_mem(%s)"):format(params))
+emit("{")
+emit("    *(u64 *)cp_imm64_1 = *(u64 *)cp_imm64_0;")
+emit("    TAIL return cp_cont_0(" .. args .. ");")
+emit("}")
+emit("")
+
 -- Store a patched constant through a patched address. The call-entry
 -- prologue publishes the established fetch-mapping fields with these,
 -- before the register re-encode, with no C boundary in between.
@@ -157,6 +179,33 @@ emit("     * branches through a register. Patched as target plus zero. */")
 emit("    TAIL return ((cp_cont_t)((u64)cp_imm64_0 + (u64)cp_imm64_1))(" .. args .. ");")
 emit("}")
 emit("")
+
+-- Dynamic-exit deposit: re-encode the pinned pc as the interpreter's own
+-- convention for an indirect target, vaddr plus the current segment's
+-- fetch_vf_offset (loaded through the patched address). Runs after the
+-- countdown charge, before the lookup: both the chain hit and every miss
+-- or bail leave with this exact deposit, as execute_jump would.
+for d = 0, NSLOTS - 1 do
+    fn(("cp_deposit_pc_%d"):format(d), ("    pc = r%d + *(u64 *)cp_imm64_0;"):format(d))
+end
+
+-- Lookup tail (RVVM jtlb probe): direct-mapped front cache of
+-- {guest vpc, self-validating call entry} pairs, indexed (v >> 1) & mask.
+-- A hit chains straight into the entry (which validates and, on any
+-- mismatch, bails to the island with the deposit pc); a miss leaves for
+-- the island. The cold paths all stay behind exits.
+for d = 0, NSLOTS - 1 do
+    emit(("CONT void cp_lookup_%d(%s)"):format(d, params))
+    emit("{")
+    emit(("    u64 v = r%d;"):format(d))
+    emit("    u64 *e = (u64 *)((u64)cp_imm64_0 + (((v >> 1) & 255) << 4));")
+    emit("    if (e[0] == v) {")
+    emit("        TAIL return ((cp_cont_t)e[1])(" .. args .. ");")
+    emit("    }")
+    emit("    TAIL return cp_cont_0(" .. args .. ");")
+    emit("}")
+    emit("")
+end
 
 f:close()
 

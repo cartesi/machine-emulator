@@ -559,6 +559,43 @@ transitions skip the hook). Modest by design: most straight traces end
 at uncompilable instructions or page crossings, and the coverage machine
 for those is the increment 4 lookup tail.
 
+## Done: increment 4, self-validating entries and the lookup tail (2026-08-20)
+
+Two steps, per the cold-paths-stay-behind-exits rule: hot work lives in
+generated code, every miss and validation failure exits to the
+interpreter, and nothing in a trace touches pc encoding, fetch state, or
+the countdown in a way the tail-call interpreter would not.
+
+4a: call-entry validation moved from the C hook into the generated
+prologue, making call_fn self-contained like lightning's: a chain of
+two-hole structural stencils (cp_cmp_mem_imm for the context guard and
+the hot-slot vaddr_page and vh_offset probes, cp_copy_mem for the
+entry-time pma publish, then the existing establishment). Every compare
+bails to the island with the caller's deposit pc untouched. The hook now
+just hands call_fn over.
+
+4b: the RVVM jtlb tail. JALR, C.JR and C.JALR compile as dynamic
+terminals with the interpreter's exact semantics ((x[rs1] + imm) & ~1,
+link written after the target read, so rd aliasing rs1 is safe): stores,
+countdown charge (elided-fallthrough exit stub), cp_deposit_pc re-encodes
+the pinned pc as vaddr plus the current fetch_vf_offset (the deposit
+execute_jump would produce), then cp_lookup probes the direct-mapped
+front cache, (v >> 1) & 255, chaining a hit straight into the target's
+self-validating call entry and leaving for the island on miss. The front
+cache holds {vpc, call_fn}, filled at install and hook call entries,
+purged on kill, reset on flush, with pc = 1 (odd, never an architectural
+target) as the empty sentinel. A stale entry degrades to a cold exit,
+never wrong execution, because the callee entry revalidates and bails
+with the deposit intact.
+
+Chained transitions bypass the hook, so entry statistics no longer see
+them; the effect lands in the increment 5 wall-clock protocol instead of
+a hot-path counter. Boot evidence the tail is live: empty-marked heads
+dropped 115 to 77 (JALR-headed trips now compile), emitted bytes rose to
+5.2MB, hook entries dipped.
+
+Gates: boot bit-identical to stock, all 267 machine tests, stencil tests.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

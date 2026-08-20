@@ -23,7 +23,8 @@
 #define CP_R2I(tab) f.reg2i(tab, insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)))
 #define CP_LOAD(tab) f.load(tab, insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)))
 #define CP_STORE(tab) f.store(tab, insn_get_rs1(insn), insn_get_rs2(insn), static_cast<uint64_t>(insn_S_get_imm(insn)))
-#define CP_BR(tab) f.branch(tab, insn_get_rs1(insn), insn_get_rs2(insn), pc + static_cast<uint64_t>(insn_B_get_imm(insn)))
+#define CP_BR(tab, comp)                                                                                               \
+    f.branch(tab, comp, insn_get_rs1(insn), insn_get_rs2(insn), pc + static_cast<uint64_t>(insn_B_get_imm(insn)), 4)
 
 // Compressed operand shorthands.
 #define CP_C_RD (insn_get_rd(insn))                    // CR/CI position
@@ -49,22 +50,22 @@ switch (static_cast<tc_label>(id)) {
 
     // Branches: recorded direction becomes the fallthrough of the guard.
     case tc_label::BEQ:
-        CP_BR(cp_beq_table);
+        CP_BR(cp_beq_table, cp_bne_table);
         break;
     case tc_label::BNE:
-        CP_BR(cp_bne_table);
+        CP_BR(cp_bne_table, cp_beq_table);
         break;
     case tc_label::BLT:
-        CP_BR(cp_blt_table);
+        CP_BR(cp_blt_table, cp_bge_table);
         break;
     case tc_label::BGE:
-        CP_BR(cp_bge_table);
+        CP_BR(cp_bge_table, cp_blt_table);
         break;
     case tc_label::BLTU:
-        CP_BR(cp_bltu_table);
+        CP_BR(cp_bltu_table, cp_bgeu_table);
         break;
     case tc_label::BGEU:
-        CP_BR(cp_bgeu_table);
+        CP_BR(cp_bgeu_table, cp_bltu_table);
         break;
 
     // Integer immediates.
@@ -203,10 +204,12 @@ switch (static_cast<tc_label>(id)) {
         f.reg3(cp_add_table, CP_C_RD, 0, CP_C_RS2);
         break;
     case tc_label::C_BEQZ:
-        f.branch(cp_beq_table, CP_C_RS1P, 0, pc + static_cast<uint64_t>(insn_get_C_BEQZ_BNEZ_imm(insn)));
+        f.branch(cp_beq_table, cp_bne_table, CP_C_RS1P, 0, pc + static_cast<uint64_t>(insn_get_C_BEQZ_BNEZ_imm(insn)),
+            2);
         break;
     case tc_label::C_BNEZ:
-        f.branch(cp_bne_table, CP_C_RS1P, 0, pc + static_cast<uint64_t>(insn_get_C_BEQZ_BNEZ_imm(insn)));
+        f.branch(cp_bne_table, cp_beq_table, CP_C_RS1P, 0, pc + static_cast<uint64_t>(insn_get_C_BEQZ_BNEZ_imm(insn)),
+            2);
         break;
     case tc_label::C_ADDI:
         f.reg2i(cp_add_table, CP_C_RD, CP_C_RD, static_cast<uint64_t>(insn_get_CI_CB_imm_se(insn)));

@@ -313,6 +313,8 @@ ifeq (,$(findstring clang,$(CC)))
 $(error copy_patch=yes on AArch64 requires a clang toolchain (CC=$(CC)))
 endif
 endif
+INTERPRET_CXXFLAGS+=-DTC_COPY_PATCH=1
+interpret-tc.o: cp-context.hpp cp-emit.h interpret-cp.inc cp-select.inc cp-stencils-tables.h
 endif
 # Offline stencil compile, same compiler family as the emulator build.
 # AArch64 (clang): large code model for movz/movk value holes. x86-64:

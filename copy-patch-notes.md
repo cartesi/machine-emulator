@@ -110,7 +110,42 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
-## Engine increment 1 in progress (plan approved, streamed-floating-ember)
+## Engine increment 1: built, first gates green (2026-08-20 evening)
+
+The engine runs. interpret-cp.inc (formation, install, invalidation,
+flush, hook, continuation) + cp-context.hpp + cp-select.inc +
+TC_COPY_PATCH seams in interpret-tc.cpp, built via tailcall=yes
+copy_patch=yes. Verified against a SAME-HEAD stock build: root hashes
+match at every checkpoint through 2 Gi mcycles of boot, wall time
+identical, 63 traces installed, 139k generated-code entries.
+
+Findings and fixes on the way:
+- The first "divergence at mcycle 1" was reference skew: the old
+  compete-stock prefix has different uarch pristine RAM than HEAD. Gate
+  only against same-HEAD builds.
+- cp_heap_protect_flush now flushes from a watermark, not the whole
+  heap (the per-finish whole-heap sys_icache_invalidate was quadratic).
+  Increment 3 must lower the watermark when links patch older traces.
+- Ported the hot write-TLB eviction from tc_online_finish after
+  installing a trace; without it, stores to traced pages through
+  pre-established write slots are invisible to invalidation (soundness).
+- Exit stubs take signed fast-pc displacements, not absolute values
+  (the typed fast pc is position-encoded); cross-page exit deltas are
+  legal because the fetch tail decodes vaddr = fastpc - vf_offset
+  algebraically.
+- Trace entry is suppressed while recording (Apple per-thread W^X: the
+  heap is writable during an emission episode, so JIT pages are not
+  executable on this thread).
+- Open oddity, not ours: compete.lua's single run(1<<62) hangs on the
+  CURRENT HEAD tree even under the stock build (the old prefix builds
+  halt in ~6 s). The stepped-run differential is unaffected. Machine
+  tests and the full canon still owed once the tree question clears.
+- Formation volume is far below RVVM's (63 traces per boot vs 39k):
+  hooks only exist at backward branches and call sites, entries only at
+  matching-mapping loop heads in increment 1, and there are no counters
+  for begins/aborts yet. Add counters, then increments 2-4 grow reach.
+
+## Superseded in-progress note
 
 Done so far: cp_far_jump island (two-hole sum defeats the direct-branch
 fold), cp_gxl/cp_gxs guest-register transfer families (one baked-offset

@@ -122,14 +122,6 @@ for d = 0, NSLOTS - 1 do
     fn(("cp_li_%d"):format(d), ("    r%d = (u64)cp_imm64_0;"):format(d))
 end
 
--- ld: slot d = *(u64 *)(slot s + constant). Memory-shape probe; the real
--- hot TLB family replaces this in the backend integration.
-for d = 0, NSLOTS - 1 do
-    for s = 0, NSLOTS - 1 do
-        fn(("cp_ld_%d_%d"):format(d, s), ("    r%d = *(const u64 *)(r%d + (u64)cp_imm64_0);"):format(d, s))
-    end
-end
-
 f:close()
 
 -- Semantic TU: wrappers instantiating the interpreter's execute bodies.
@@ -184,6 +176,106 @@ gem("    static void do_write_sepc(uint64_t) {}")
 gem("    static void do_write_stval(uint64_t) {}")
 gem("    static uint64_t do_read_fetch_vf_offset() { return 0; }")
 gem("};")
+gem("")
+gem("// Memory-op accessor: slots for the register file, everything else")
+gem("// forwarded to the real state access reconstructed from the sa")
+gem("// parameter, so the emitted probe is the committed hot TLB path")
+gem("// against the emulator's own layout. The slow path is intercepted")
+gem("// below and turned into a bail.")
+gem("struct cp_mem_access;")
+gem("template <>")
+gem("struct i_state_access_fast_addr<cp_mem_access> {")
+gem("    using type = uint64_t;")
+gem("};")
+gem("struct cp_mem_access : i_state_access<cp_mem_access>, i_accept_scoped_notes<cp_mem_access> {")
+gem("    state_access s;")
+gem("    uint64_t *v1;")
+gem("    uint64_t *v2;")
+gem("    uint64_t *vd;")
+gem("    static_assert(sizeof(state_access) == sizeof(uint64_t));")
+gem("    cp_mem_access(uint64_t sa_bits, uint64_t *a1, uint64_t *a2, uint64_t *ad)")
+gem("        : s(std::bit_cast<state_access>(sa_bits)), v1(a1), v2(a2), vd(ad) {}")
+gem("    static const char *do_get_name() {")
+gem('        return "cp_mem_access";')
+gem("    }")
+gem("    uint64_t do_read_x(int i) const {")
+gem("        return i == 1 ? *v1 : *v2;")
+gem("    }")
+gem("    void do_write_x(int /*i*/, uint64_t val) const {")
+gem("        *vd = val;")
+gem("    }")
+gem("    uint64_t do_read_tlb_ctx_slot_base() const {")
+gem("        return s.read_tlb_ctx_slot_base();")
+gem("    }")
+gem("    template <TLB_set_index E>")
+gem("    uint64_t do_read_tlb_vaddr_page(uint64_t i) const {")
+gem("        return static_cast<uint64_t>(s.template read_tlb_vaddr_page<E>(i));")
+gem("    }")
+gem("    // Lazy hot-slot init is an out-of-line cold member; in the")
+gem("    // hit-or-bail shape an uninitialized slot stays a miss and the")
+gem("    // interpreter initializes it portably after the bail.")
+gem("    template <TLB_set_index E>")
+gem("    uint64_t do_init_hot_tlb_slot(uint64_t i) const {")
+gem("        return static_cast<uint64_t>(s.template read_tlb_vaddr_page<E>(i));")
+gem("    }")
+gem("    template <TLB_set_index E>")
+gem("    bool do_verify_cold_tlb_slot(uint64_t i) const {")
+gem("        return s.template verify_cold_tlb_slot<E>(i);")
+gem("    }")
+gem("    template <TLB_set_index E>")
+gem("    uint64_t do_read_tlb_pma_index(uint64_t i) const {")
+gem("        return s.template read_tlb_pma_index<E>(i);")
+gem("    }")
+gem("    template <TLB_set_index E>")
+gem("    uint64_t do_read_tlb_vf_offset(uint64_t i) const {")
+gem("        return static_cast<uint64_t>(s.template read_tlb_vf_offset<E>(i));")
+gem("    }")
+gem("    template <typename T, typename A>")
+gem("    void do_read_memory_word(uint64_t faddr, uint64_t pma_index, T *pval) const {")
+gem("        s.template read_memory_word<T, A>(host_addr{faddr}, pma_index, pval);")
+gem("    }")
+gem("    template <typename T, typename A>")
+gem("    void do_write_memory_word(uint64_t faddr, uint64_t pma_index, T val) const {")
+gem("        s.template write_memory_word<T, A>(host_addr{faddr}, pma_index, val);")
+gem("    }")
+gem("    // Exception-path surface, forwarded to the real accessor: correct")
+gem("    // if reachable, dead under the intercepted slow path otherwise.")
+for _, csr in ipairs({ "icycleinstret", "mstatus", "iprv", "mcause", "mepc", "mtval", "scause", "sepc",
+    "stval" }) do
+    gem(("    uint64_t do_read_%s() const {"):format(csr))
+    gem(("        return s.read_%s();"):format(csr))
+    gem("    }")
+    gem(("    void do_write_%s(uint64_t val) const {"):format(csr))
+    gem(("        s.write_%s(val);"):format(csr))
+    gem("    }")
+end
+for _, csr in ipairs({ "medeleg", "mideleg", "mtvec", "stvec" }) do
+    gem(("    uint64_t do_read_%s() const {"):format(csr))
+    gem(("        return s.read_%s();"):format(csr))
+    gem("    }")
+end
+gem("    void do_write_ilrsc(uint64_t val) const {")
+gem("        s.write_ilrsc(val);")
+gem("    }")
+gem("};")
+gem("")
+gem("// Slow-path interception: found by argument-dependent lookup at the")
+gem("// instantiation of read/write_virtual_memory for cp_mem_access and")
+gem("// preferred by partial ordering. Mutates nothing and reports failure,")
+gem("// so the wrapper bails and the interpreter re-executes the")
+gem("// instruction portably, running the true slow path there.")
+gem("template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>")
+gem("    requires(std::is_same_v<STATE_ACCESS, cp_mem_access>)")
+gem("static FORCE_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(const STATE_ACCESS /*a*/, uint64_t pc,")
+gem("    uint64_t /*mcycle*/, uint64_t /*vaddr*/, T * /*pval*/) {")
+gem("    return {false, pc};")
+gem("}")
+gem("template <typename T, typename STATE_ACCESS>")
+gem("    requires(std::is_same_v<STATE_ACCESS, cp_mem_access>)")
+gem("static FORCE_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(const STATE_ACCESS /*a*/,")
+gem("    uint64_t pc, uint64_t /*mcycle*/, uint64_t /*vaddr*/, uint64_t /*val64*/) {")
+gem("    return {execute_status::failure, pc};")
+gem("}")
 gem("} // namespace cartesi")
 gem("")
 gem("typedef unsigned long long u64;")
@@ -288,6 +380,72 @@ for _, name in ipairs(sem_sorted(SEM_BR_OPS)) do
             gem("        TAIL return cp_cont_0(" .. args .. ");")
             gem("    }")
             gem("    TAIL return cp_cont_1(" .. args .. ");")
+            gem("}")
+            gem("")
+        end
+    end
+end
+-- Memory families: loads I-type imm=0 (formation pre-adds immediates),
+-- stores S-type imm=0. Base slot binds rs1=1, store value binds rs2=2.
+local function l_insn(f3)
+    return (1 << 15) | (f3 << 12) | (3 << 7) | 0x03
+end
+local function s_insn(f3)
+    return (2 << 20) | (1 << 15) | (f3 << 12) | 0x23
+end
+local SEM_LOAD_OPS = {
+    lb = { "execute_LB<cartesi::rd_kind::xN>", l_insn(0) },
+    lh = { "execute_LH<cartesi::rd_kind::xN>", l_insn(1) },
+    lw = { "execute_LW<cartesi::rd_kind::xN>", l_insn(2) },
+    ld = { "execute_LD<cartesi::rd_kind::xN>", l_insn(3) },
+    lbu = { "execute_LBU<cartesi::rd_kind::xN>", l_insn(4) },
+    lhu = { "execute_LHU<cartesi::rd_kind::xN>", l_insn(5) },
+    lwu = { "execute_LWU<cartesi::rd_kind::xN>", l_insn(6) },
+}
+local SEM_STORE_OPS = {
+    sb = { "execute_SB", s_insn(0) },
+    sh = { "execute_SH", s_insn(1) },
+    sw = { "execute_SW", s_insn(2) },
+    sd = { "execute_SD", s_insn(3) },
+}
+for _, name in ipairs(sem_sorted(SEM_LOAD_OPS)) do
+    local fn_name, insn = SEM_LOAD_OPS[name][1], SEM_LOAD_OPS[name][2]
+    for d = 0, NSLOTS - 1 do
+        for src = 0, NSLOTS - 1 do
+            gem(("extern \"C\" CONT void cp_%s_%d_%d(%s)"):format(name, d, src, params))
+            gem("{")
+            gem(("    uint64_t v1 = r%d;"):format(src))
+            gem("    uint64_t v2 = 0;")
+            gem("    uint64_t vd = 0;")
+            gem("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd);")
+            gem("    uint64_t spc = 0;")
+            gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
+            gem("    if (st != cartesi::execute_status::success) {")
+            gem("        TAIL return cp_cont_1(" .. args .. ");")
+            gem("    }")
+            gem(("    r%d = vd;"):format(d))
+            gem("    TAIL return cp_cont_0(" .. args .. ");")
+            gem("}")
+            gem("")
+        end
+    end
+end
+for _, name in ipairs(sem_sorted(SEM_STORE_OPS)) do
+    local fn_name, insn = SEM_STORE_OPS[name][1], SEM_STORE_OPS[name][2]
+    for base = 0, NSLOTS - 1 do
+        for val = 0, NSLOTS - 1 do
+            gem(("extern \"C\" CONT void cp_%s_%d_%d(%s)"):format(name, base, val, params))
+            gem("{")
+            gem(("    uint64_t v1 = r%d;"):format(base))
+            gem(("    uint64_t v2 = r%d;"):format(val))
+            gem("    uint64_t vd = 0;")
+            gem("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd);")
+            gem("    uint64_t spc = 0;")
+            gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
+            gem("    if (st != cartesi::execute_status::success) {")
+            gem("        TAIL return cp_cont_1(" .. args .. ");")
+            gem("    }")
+            gem("    TAIL return cp_cont_0(" .. args .. ");")
             gem("}")
             gem("")
         end

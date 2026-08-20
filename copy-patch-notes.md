@@ -110,6 +110,28 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
+## Done: memory stencil families, single-source, hit-or-bail
+
+The generator emits cp_mem_access (slot-bound register file, all TLB
+and memory methods plus the exception surface forwarded to the real
+state_access bit-cast from the sa parameter) and load/store wrappers
+instantiating execute_LB..LD/execute_SB..SD with synthetic imm=0 words.
+The slow path is intercepted by requires-constrained twins of
+read/write_virtual_memory_slow (the unconstrained ADL overload lost
+partial ordering; constrained same-signature templates win
+deterministically), and the lazy hot-slot init, an out-of-line cold
+member the extractor rejected as a stray call, is treated as a plain
+miss: uninitialized slots bail and the interpreter initializes them
+portably. Result verified by disassembly: cp_ld_2_3 is the committed
+14-instruction context-indexed probe with baked emulator-layout offsets,
+host load straight into the slot register, and hit/bail continuations,
+60 bytes, two branch patches. 10,447 stencils validate on both
+architectures (extraction green on amd64 gcc too); the ALU/branch/
+structural execution tests stay green on both. Runtime testing of the
+memory stencils needs a real machine underneath the probe and belongs
+to the next increment (a C++ test constructing a machine, or directly
+the differential gates).
+
 ## Done: contract carries the state access at parameter 1
 
 The stencil signature is now (sa, r0, r1, pc, cd, fetch, r2, tcc, r3,

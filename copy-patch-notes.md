@@ -449,6 +449,49 @@ narrower arrangement of the same roles; decide it when the amd64 backend
 lands. Guest cache slot count on AArch64: six to eight from the free
 positions, final count set by what the emitter scratch needs.
 
+## Done: increment 1 correctness gates green (2026-08-20)
+
+The engine now boots Linux bit-identically to stock (halt at mcycle
+55293806, identical root hash and exit) and passes all 267 machine tests
+and both stencil test binaries. Two replay-divergence bugs were found by
+bisecting checkpoint hashes to a window, then diffing instrumented event
+streams (shadow-TLB fill log, trace entry/record/finish log, trap log)
+between the stock and copy_patch builds under identical history.
+
+Bug 1: traces were not page-local. Recording follows execution across a
+contiguous guest-page crossing (the fetch segment keeps the mapping
+offset constant), so a trace could span pages. Replaying it skips the
+fetch at the crossing, and with it the code-TLB replacement the
+interpreter performs, and the shadow TLB is hashed state. The symptom was
+a single stale shadow code-TLB word. Fix: recording ends before any
+instruction not wholly inside the head page. In-trace crossings return in
+increment 2 through the validated-entry translation node, which probes
+the hot code TLB and bails to the interpreter fetch on miss, preserving
+the fill sequence. Entry validation also latches and checks the
+translation context (ctx_slot_base) alongside code_vf_offset.
+
+Bug 2: a trap during recording corrupted the exit target. cp_record runs
+before its instruction executes, and the stop conditions assigned
+rec_end_vaddr = vpc, so when a recorded store page-faulted (demand
+paging), the next record call arrived at the trap vector and the trace
+was installed with the handler as its straight-exit target. On replay the
+page is mapped, nothing faults, and the trace exits into the kernel
+vector from user mode (observed as a bogus fetch page fault at stvec,
+which shifted execution 469 cycles against stock). Fix: rec_end_vaddr is
+maintained as the architectural successor only (fallthrough at
+classification, jump target, resolved branch direction), the stop paths
+never overwrite it, and a record call arriving anywhere else finishes the
+trace with the successor it already holds. The recorded body stays valid
+because memory ops are guarded and branch directions validated.
+
+Debug tooling that stays: TLB_FILL_LOG builds also expose TRAP_LOG (env)
+printing cause/pc/mcycle at raise_exception; CP_LOG (env, one-time getenv)
+prints trace entries, begins, records, and finishes.
+
+Boot statistics after both fixes: 6721 traces installed, 115 heads marked
+interpreted, 727 invalidated by the write hook, 0 flushes, 3.1MB emitted,
+672k trace entries.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

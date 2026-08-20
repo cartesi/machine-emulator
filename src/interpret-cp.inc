@@ -430,6 +430,12 @@ struct cp_former {
     }
 };
 
+// One-time env probe for the formation/entry debug log.
+static bool cp_log_enabled() {
+    static const bool enabled = std::getenv("CP_LOG") != nullptr;
+    return enabled;
+}
+
 // ---------------------------------------------------------------------------
 // Recording driver.
 
@@ -540,6 +546,7 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic) {
     cp_trace &t = c->pool[c->ntraces];
     t.head = c->rec_head;
     t.code_vf_offset = c->rec_code_vf_offset;
+    t.ctx_slot_base = c->rec_ctx_slot_base;
     t.code_start = c->heap.base + c->rec_alloc_start;
     t.code_size = static_cast<uint32_t>(c->heap.curr - static_cast<size_t>(c->rec_alloc_start));
     t.len = c->rec_len;
@@ -572,6 +579,11 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic) {
             hot_slot.vaddr_page = TLB_UNVERIFIED_PAGE;
             hot_slot.vh_offset = host_addr{0};
         }
+    }
+    if (cp_log_enabled()) [[unlikely]] {
+        std::fprintf(stderr, "cp-fin head=%llx end=%llx len=%u %s\n",
+            static_cast<unsigned long long>(t.head), static_cast<unsigned long long>(c->rec_end_vaddr), t.len,
+            cyclic ? "cyclic" : "straight");
     }
     if (std::getenv("CP_DUMP_CODE") != nullptr) [[unlikely]] {
         char path[64];
@@ -618,6 +630,9 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
         const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island))};
     c->rec_tick_site = cp_emit(&c->heap, &cp_s_cp_tick_guard, imm, cont);
     c->rec_start = c->rec_tick_site;
+    if (cp_log_enabled()) [[unlikely]] {
+        std::fprintf(stderr, "cp-begin head=%llx\n", static_cast<unsigned long long>(vpc));
+    }
     if (c->rec_tick_site == nullptr) {
         c->rec_failed = true;
     }
@@ -652,9 +667,19 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
         }
         if (!c->rec_failed) {
             ++c->rec_len;
+            c->rec_end_vaddr = vpc; // the resolved direction is the successor
         }
     }
     if (c->rec_failed) {
+        cp_finish(tcc, false);
+        return;
+    }
+
+    // A trap between two recorded instructions lands this record call at the
+    // handler instead of the architectural successor: the recorded body is
+    // still valid (memory ops are guarded, branch directions validated), and
+    // rec_end_vaddr already holds its correct exit target.
+    if (vpc != c->rec_end_vaddr) {
         cp_finish(tcc, false);
         return;
     }
@@ -667,8 +692,14 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
         cp_finish(tcc, true);
         return;
     }
-    if (vf != c->rec_code_vf_offset || cp_find(c, vpc) != nullptr || c->rec_len >= cp_state::max_len) {
-        c->rec_end_vaddr = vpc;
+    // Traces are guest-page-local (the whole instruction inside the head
+    // page): the interpreter's code-TLB fills at page crossings are shadow
+    // (hashed) state, so replay must reach every crossing in the
+    // interpreter. In-trace crossings return with the validated-entry
+    // translation node in increment 2.
+    const uint64_t head_page = tlb_addr_page(c->rec_head);
+    if (tlb_addr_page(vpc) != head_page || tlb_addr_page(vpc + 3) != head_page || vf != c->rec_code_vf_offset ||
+        cp_find(c, vpc) != nullptr || c->rec_len >= cp_state::max_len) {
         cp_finish(tcc, false);
         return;
     }
@@ -682,7 +713,6 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
     }
     if (!seen) {
         if (c->rec_nhpages >= cp_trace::max_hpages) {
-            c->rec_end_vaddr = vpc;
             cp_finish(tcc, false);
             return;
         }
@@ -692,13 +722,9 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
     const uint16_t id = static_cast<uint16_t>(insn_get_id(insn));
     const tc_label label = cp_label_table[id];
     const uint8_t size = cp_label_size[static_cast<uint16_t>(label)];
-    if (std::getenv("CP_DEBUG") != nullptr) [[unlikely]] {
-        static int cp_dbg_count = 0;
-        if (cp_dbg_count < 60) {
-            ++cp_dbg_count;
-            std::fprintf(stderr, "cp-rec: vpc %llx insn %08x id %u label %u size %u len %u\n",
-                static_cast<unsigned long long>(vpc), insn, id, static_cast<unsigned>(label), size, c->rec_len);
-        }
+    if (cp_log_enabled()) [[unlikely]] {
+        std::fprintf(stderr, "cp-rec head=%llx vpc=%llx len=%u\n", static_cast<unsigned long long>(c->rec_head),
+            static_cast<unsigned long long>(vpc), c->rec_len);
     }
     c->rec_insn_start = c->heap.base + c->heap.curr;
     c->rec_vaddr = vpc;
@@ -734,8 +760,20 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
         const cp_trace *t = cp_find(c, vpc, &interpreted);
         if (t != nullptr) {
             if constexpr (!CALL_ENTRY) {
-                if (t->code_vf_offset == static_cast<uint64_t>(tcc->fetch_vaddr_page) - tlb_addr_page(vpc)) {
+                // Mapping AND translation-context must match the formation
+                // state: under another context the interpreter would fill
+                // the other code-TLB partition, and those fills are hashed.
+                auto *const penumbra = reinterpret_cast<penumbra_state *>(
+                    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                    reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
+                if (t->code_vf_offset == static_cast<uint64_t>(tcc->fetch_vaddr_page) - tlb_addr_page(vpc) &&
+                    t->ctx_slot_base == penumbra->tlb_ctx_slot_base) {
                     ++c->entries;
+                    if (cp_log_enabled()) [[unlikely]] {
+                        std::fprintf(stderr, "cp-enter mcycle=%llu vpc=%llx len=%u\n",
+                            static_cast<unsigned long long>(tcc->mcycle), static_cast<unsigned long long>(vpc),
+                            t->len);
+                    }
                     return t->fn;
                 }
             }

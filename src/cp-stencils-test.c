@@ -28,10 +28,19 @@
 #include "cp-stencils-tables.h"
 
 #define NSLOTS 8
+#define NPARAMS 12 /* r0 r1 r2 pc cd fetch r3 tcc r4 r5 r6 r7 */
 #define HEAP_SIZE (16u << 20)
 
+/* Parameter order of the stencil contract; guest slot k sits at param
+ * SLOT_POS[k], the pinned roles at positions 3, 4, 5, 7. */
+static const int SLOT_POS[NSLOTS] = {0, 1, 2, 6, 8, 9, 10, 11};
+#define POS_PC 3
+#define POS_CD 4
+#define POS_FETCH 5
+#define POS_TCC 7
+
 typedef __attribute__((preserve_none)) void (*cp_entry_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t);
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 static uint8_t *heap;
 static size_t heap_curr;
@@ -189,7 +198,29 @@ static void reference(const struct op *ops, int n, uint64_t slot[NSLOTS])
     }
 }
 
-static uint64_t out[NSLOTS];
+static uint64_t out[NPARAMS];
+
+/* Fixed pinned-role values threaded through every run; programs must pass
+ * them through untouched (the exit-stub test overrides pc and cd). */
+#define PCV 0x1111000011110000ull
+#define CDV 0x0000000000123456ull
+#define FETCHV 0x2222000022220000ull
+#define TCCV 0x3333000033330000ull
+
+static void call_chain(cp_entry_t entry, const uint64_t g[NSLOTS])
+{
+    entry(g[0], g[1], g[2], PCV, CDV, FETCHV, g[3], TCCV, g[4], g[5], g[6], g[7]);
+}
+
+static int check_passthrough(uint64_t pc_want, uint64_t cd_want)
+{
+    if (out[POS_PC] != pc_want || out[POS_CD] != cd_want || out[POS_FETCH] != FETCHV || out[POS_TCC] != TCCV) {
+        fprintf(stderr, "pinned roles: pc %016" PRIx64 " cd %016" PRIx64 " fetch %016" PRIx64 " tcc %016" PRIx64 "\n",
+            out[POS_PC], out[POS_CD], out[POS_FETCH], out[POS_TCC]);
+        return 1;
+    }
+    return 0;
+}
 
 static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
 {
@@ -243,23 +274,23 @@ static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
     }
 
     memset(out, 0xaa, sizeof(out));
-    ((cp_entry_t) entry)(init[0], init[1], init[2], init[3], init[4], init[5], init[6], init[7]);
+    call_chain((cp_entry_t) entry, init);
 
     uint64_t ref[NSLOTS];
     memcpy(ref, init, sizeof(ref));
     reference(ops, n, ref);
     for (int i = 0; i < NSLOTS; ++i) {
-        if (out[i] != ref[i]) {
-            fprintf(stderr, "slot %d: got %016" PRIx64 " want %016" PRIx64 "\n", i, out[i], ref[i]);
+        if (out[SLOT_POS[i]] != ref[i]) {
+            fprintf(stderr, "slot %d: got %016" PRIx64 " want %016" PRIx64 "\n", i, out[SLOT_POS[i]], ref[i]);
             return 1;
         }
     }
-    return 0;
+    return check_passthrough(PCV, CDV);
 }
 
 /* Guard test: emit beq with the taken side landing in one exit stub and the
  * fallthrough side in another, run both outcomes, check the side taken. */
-static uint64_t out_b[NSLOTS];
+static uint64_t out_b[NPARAMS];
 static int run_guard(int s1, int s2, const uint64_t init[NSLOTS])
 {
     heap_curr = 0;
@@ -277,14 +308,14 @@ static int run_guard(int s1, int s2, const uint64_t init[NSLOTS])
 
     memset(out, 0xaa, sizeof(out));
     memset(out_b, 0x55, sizeof(out_b));
-    ((cp_entry_t) guard)(init[0], init[1], init[2], init[3], init[4], init[5], init[6], init[7]);
+    call_chain((cp_entry_t) guard, init);
 
     int taken = init[s1] == init[s2];
     const uint64_t *hit = taken ? out : out_b;
     for (int i = 0; i < NSLOTS; ++i) {
-        if (hit[i] != init[i]) {
+        if (hit[SLOT_POS[i]] != init[i]) {
             fprintf(stderr, "guard s1=%d s2=%d taken=%d slot %d: got %016" PRIx64 " want %016" PRIx64 "\n", s1, s2,
-                taken, i, hit[i], init[i]);
+                taken, i, hit[SLOT_POS[i]], init[i]);
             return 1;
         }
     }

@@ -14,18 +14,7 @@
 #include <string.h>
 #include <sys/mman.h>
 
-#if defined(__linux__)
-#include <linux/membarrier.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-#endif
-
-#if defined(__APPLE__)
-#include <libkern/OSCacheControl.h>
-#include <pthread.h>
-#endif
-
-#include "cp-stencils-tables.h"
+#include "cp-emit.h"
 
 #define NSLOTS 8
 #define NPARAMS 12 /* r0 r1 r2 pc cd fetch r3 tcc r4 r5 r6 r7 */
@@ -42,110 +31,7 @@ static const int SLOT_POS[NSLOTS] = {0, 1, 2, 6, 8, 9, 10, 11};
 typedef __attribute__((preserve_none)) void (*cp_entry_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
-static uint8_t *heap;
-static size_t heap_curr;
-
-/* Apple Silicon toggles the thread's MAP_JIT write protection. Elsewhere the
- * heap flips between RW and RX with mprotect: plain RWX with no barrier is
- * not enough under binary translation (Rosetta caches translations of
- * executed pages and needs the protection change to invalidate them). */
-static void jit_unprotect(void)
-{
-#if defined(__APPLE__)
-    pthread_jit_write_protect_np(0);
-#else
-    if (mprotect(heap, HEAP_SIZE, PROT_READ | PROT_WRITE) != 0) {
-        perror("mprotect rw");
-        exit(1);
-    }
-#endif
-}
-
-static void jit_protect_flush(const void *p, size_t n)
-{
-#if defined(__APPLE__)
-    pthread_jit_write_protect_np(1);
-    sys_icache_invalidate((void *) (uintptr_t) p, n);
-#else
-    (void) p;
-    (void) n;
-    if (mprotect(heap, HEAP_SIZE, PROT_READ | PROT_EXEC) != 0) {
-        perror("mprotect rx");
-        exit(1);
-    }
-    __builtin___clear_cache((char *) heap, (char *) heap + HEAP_SIZE);
-#if defined(__linux__)
-    /* The Linux JIT contract for cross-modifying code. Native x86 forgives
-     * skipping it, binary translation (Rosetta) and AArch64 do not. */
-    syscall(__NR_membarrier, MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0);
-#endif
-#endif
-}
-
-/* One emission: copy a stencil at heap_curr, apply patches, elide a trailing
- * fallthrough branch to `next` when possible. imm[2] fill the value holes,
- * cont[2] the continuations; cont[0]==NULL means "falls through to the next
- * emission" and is resolved after the copy. Returns the stencil address. */
-static uint8_t *emit(const cp_stencil_t *st, const uint64_t imm[2], uint8_t *cont[2])
-{
-    uint8_t *dst = heap + heap_curr;
-    uint32_t size = st->size;
-
-    /* Fallthrough elision: a trailing branch to continuation 0 aimed at the
-     * next address is dropped (4 bytes for AArch64 B, 5 for x86-64 e9+rel32
-     * whose patch field sits at size-4 with the opcode byte before it). */
-    int elide = 0;
-    if (st->npatches > 0 && cont[0] == NULL) {
-        const cp_patch_t *last = &st->patches[st->npatches - 1];
-        if (last->kind == CP_P_JUMP26 && last->offset == size - 4 && last->ordinal == 0) {
-            elide = 1;
-            size -= 4;
-        } else if (last->kind == CP_P_JMPREL32 && last->offset == size - 4 && last->ordinal == 0 &&
-            st->code[size - 5] == 0xe9) {
-            elide = 1;
-            size -= 5;
-        }
-    }
-    memcpy(dst, st->code, size);
-
-    for (uint16_t i = 0; i < st->npatches - (uint16_t) elide; ++i) {
-        const cp_patch_t *p = &st->patches[i];
-        uint8_t *site = dst + p->offset;
-        uint8_t *target = cont[p->ordinal];
-        if (target == NULL) { /* non-trailing fallthrough: explicit branch */
-            target = dst + size;
-        }
-        switch (p->kind) {
-            case CP_P_JUMP26: {
-                int64_t delta = (int64_t) (target - site);
-                uint32_t insn = 0x14000000u | (((uint64_t) delta >> 2) & 0x03ffffffu);
-                memcpy(site, &insn, 4);
-                break;
-            }
-            case CP_P_JMPREL32: {
-                int32_t rel = (int32_t) (target + p->addend - site);
-                memcpy(site, &rel, 4);
-                break;
-            }
-            case CP_P_ABS64: {
-                uint64_t value = imm[p->ordinal] + (uint64_t) p->addend;
-                memcpy(site, &value, 8);
-                break;
-            }
-            default: { /* CP_P_G0..G3: 16-bit field at bits 5-20 */
-                unsigned shift = 16u * (p->kind - CP_P_G0);
-                uint32_t field = (uint32_t) ((imm[p->ordinal] >> shift) & 0xffffu);
-                uint32_t insn;
-                memcpy(&insn, site, 4);
-                insn = (insn & ~(0xffffu << 5)) | (field << 5);
-                memcpy(site, &insn, 4);
-                break;
-            }
-        }
-    }
-    heap_curr += size;
-    return dst;
-}
+static cp_heap_t heap;
 
 static uint64_t rng_state = 0x243f6a8885a308d3ull;
 static uint64_t rng(void)
@@ -224,8 +110,8 @@ static int check_passthrough(uint64_t pc_want, uint64_t cd_want)
 
 static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
 {
-    heap_curr = 0;
-    jit_unprotect();
+    heap.curr = 0;
+    cp_heap_unprotect(&heap);
     uint8_t *entry = NULL;
     for (int i = 0; i < n; ++i) {
         const struct op *o = &ops[i];
@@ -248,18 +134,18 @@ static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
             default:
                 abort();
         }
-        uint8_t *at = emit(st, imm, cont);
+        uint8_t *at = cp_emit(&heap, st, imm, cont);
         if (entry == NULL) {
             entry = at;
         }
     }
     uint64_t imm[2] = {(uint64_t) out, 0};
     uint8_t *cont[2] = {NULL, NULL};
-    uint8_t *at = emit(&cp_s_cp_store_exit, imm, cont);
+    uint8_t *at = cp_emit(&heap, &cp_s_cp_store_exit, imm, cont);
     if (entry == NULL) {
         entry = at;
     }
-    jit_protect_flush(heap, heap_curr);
+    cp_heap_protect_flush(&heap);
 
     if (getenv("CP_DUMP") != NULL) {
         FILE *df = fopen(getenv("CP_DUMP"), "wb");
@@ -267,9 +153,9 @@ static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
             perror("fopen CP_DUMP");
             exit(1);
         }
-        fwrite(heap, 1, heap_curr, df);
+        fwrite(heap.base, 1, heap.curr, df);
         fclose(df);
-        fprintf(stderr, "dumped %zu bytes, entry at +%zu, exiting\n", heap_curr, (size_t) (entry - heap));
+        fprintf(stderr, "dumped %zu bytes, entry at +%zu, exiting\n", heap.curr, (size_t) (entry - heap.base));
         exit(0);
     }
 
@@ -293,18 +179,18 @@ static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
 static uint64_t out_b[NPARAMS];
 static int run_guard(int s1, int s2, const uint64_t init[NSLOTS])
 {
-    heap_curr = 0;
-    jit_unprotect();
+    heap.curr = 0;
+    cp_heap_unprotect(&heap);
     /* Exit stubs first so the guard can point at them. */
     uint64_t imm_a[2] = {(uint64_t) out, 0};
     uint64_t imm_b[2] = {(uint64_t) out_b, 0};
     uint8_t *none[2] = {NULL, NULL};
-    uint8_t *stub_a = emit(&cp_s_cp_store_exit, imm_a, none);
-    uint8_t *stub_b = emit(&cp_s_cp_store_exit, imm_b, none);
+    uint8_t *stub_a = cp_emit(&heap, &cp_s_cp_store_exit, imm_a, none);
+    uint8_t *stub_b = cp_emit(&heap, &cp_s_cp_store_exit, imm_b, none);
     uint64_t imm[2] = {0, 0};
     uint8_t *cont[2] = {stub_a, stub_b};
-    uint8_t *guard = emit(cp_beq_table[s1][s2], imm, cont);
-    jit_protect_flush(heap, heap_curr);
+    uint8_t *guard = cp_emit(&heap, cp_beq_table[s1][s2], imm, cont);
+    cp_heap_protect_flush(&heap);
 
     memset(out, 0xaa, sizeof(out));
     memset(out_b, 0x55, sizeof(out_b));
@@ -324,18 +210,10 @@ static int run_guard(int s1, int s2, const uint64_t init[NSLOTS])
 
 int main(void)
 {
-#if defined(__APPLE__)
-    heap = mmap(NULL, HEAP_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
-#else
-    heap = mmap(NULL, HEAP_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-#endif
-    if (heap == MAP_FAILED) {
-        perror("mmap");
+    if (cp_heap_init(&heap, HEAP_SIZE) != 0) {
+        perror("cp_heap_init");
         return 1;
     }
-#if defined(__linux__)
-    syscall(__NR_membarrier, MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0);
-#endif
 
     int failures = 0;
 

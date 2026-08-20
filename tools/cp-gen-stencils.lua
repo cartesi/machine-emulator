@@ -30,14 +30,16 @@ local out = assert(arg[1], "usage: cp-gen-stencils.lua <structural.c> <semantic.
 local sem_out = assert(arg[2], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp>")
 local f = assert(io.open(out, "w"))
 
-local NSLOTS = 8
+local NSLOTS = 7
 
 local function emit(s) f:write(s, "\n") end
 
--- Parameter list: positions 4, 5, 6, 8 are the pinned roster.
+-- Parameter list: position 1 is the state access (the interpreter contract
+-- keeps it in x20, and memory stencils consume it directly), positions 4,
+-- 5, 6, 8 are the pinned roster, the rest are the seven guest cache slots.
 local params_t = {}
 local args_t = {}
-local slot_param = {"r0", "r1", "r2", "pc", "cd", "fetch", "r3", "tcc", "r4", "r5", "r6", "r7"}
+local slot_param = {"sa", "r0", "r1", "pc", "cd", "fetch", "r2", "tcc", "r3", "r4", "r5", "r6"}
 for _, name in ipairs(slot_param) do
     params_t[#params_t + 1] = "u64 " .. name
     args_t[#args_t + 1] = name
@@ -258,9 +260,9 @@ for _, name in ipairs(sem_sorted(SEM_REG_OPS)) do
                 gem(("    uint64_t v1 = r%d;"):format(s1))
                 gem(("    uint64_t v2 = r%d;"):format(s2))
                 gem("    uint64_t vd = 0;")
-                gem("    const cartesi::cp_slot_access sa(&v1, &v2, &vd);")
+                gem("    const cartesi::cp_slot_access acc(&v1, &v2, &vd);")
                 gem("    uint64_t spc = 0;")
-                gem(("    (void) cartesi::%s(sa, spc, 0x%08xu);"):format(fn_name, insn))
+                gem(("    (void) cartesi::%s(acc, spc, 0x%08xu);"):format(fn_name, insn))
                 gem(("    r%d = vd;"):format(d))
                 gem("    TAIL return cp_cont_0(" .. args .. ");")
                 gem("}")
@@ -279,9 +281,9 @@ for _, name in ipairs(sem_sorted(SEM_BR_OPS)) do
             gem(("    uint64_t v1 = r%d;"):format(s1))
             gem(("    uint64_t v2 = r%d;"):format(s2))
             gem("    uint64_t vd = 0;")
-            gem("    const cartesi::cp_slot_access sa(&v1, &v2, &vd);")
+            gem("    const cartesi::cp_slot_access acc(&v1, &v2, &vd);")
             gem("    uint64_t spc = 0x1000;")
-            gem(("    (void) cartesi::%s(sa, spc, 0x%08xu);"):format(fn_name, insn))
+            gem(("    (void) cartesi::%s(acc, spc, 0x%08xu);"):format(fn_name, insn))
             gem("    if (spc == 0x1000 + 8) {")
             gem("        TAIL return cp_cont_0(" .. args .. ");")
             gem("    }")

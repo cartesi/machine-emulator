@@ -110,6 +110,16 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
+## Done: contract carries the state access at parameter 1
+
+The stencil signature is now (sa, r0, r1, pc, cd, fetch, r2, tcc, r3,
+r4, r5, r6): parameter 1 is the state access pointer, matching the
+interpreter handler contract's x20 so trace entry stays zero-move, and
+giving memory stencils the accessor directly instead of re-deriving it
+from tcc through penumbra.owner. Seven guest cache slots remain
+(placement tables are [7]-dimensioned, extractor digit patterns 0-6).
+9,957 stencils, green natively on AArch64 and 3/3 under qemu on amd64.
+
 ## Memory-family design (next, single-source like the ALU set)
 
 Diego's check "don't we have these snippets in interpret.cpp too"

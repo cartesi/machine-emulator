@@ -481,9 +481,9 @@ end
 -- Completeness of every discovered family is enforced.
 local fams = { [3] = {}, [2] = {}, [1] = {} }
 for name in pairs(by_name) do
-    local f3 = name:match("^cp_(.-)_([0-7])_([0-7])_([0-7])$")
-    local f2 = not f3 and name:match("^cp_(.-)_([0-7])_([0-7])$")
-    local f1 = not f3 and not f2 and name:match("^cp_(.-)_([0-7])$")
+    local f3 = name:match("^cp_(.-)_([0-6])_([0-6])_([0-6])$")
+    local f2 = not f3 and name:match("^cp_(.-)_([0-6])_([0-6])$")
+    local f1 = not f3 and not f2 and name:match("^cp_(.-)_([0-6])$")
     if f3 then
         fams[3][f3] = true
     elseif f2 then
@@ -507,13 +507,13 @@ local function need(n)
     return "&cp_s_" .. n
 end
 for _, fam in ipairs(sorted_keys(fams[3])) do
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[8][8][8] = {\n"):format(fam))
-    for d = 0, 7 do
+    hdr:write(("static const cp_stencil_t *const cp_%s_table[7][7][7] = {\n"):format(fam))
+    for d = 0, 6 do
         hdr:write("{")
-        for s1 = 0, 7 do
+        for s1 = 0, 6 do
             hdr:write("{")
             local row = {}
-            for s2 = 0, 7 do
+            for s2 = 0, 6 do
                 row[#row + 1] = need(("cp_%s_%d_%d_%d"):format(fam, d, s1, s2))
             end
             hdr:write(table.concat(row, ","), "},")
@@ -523,10 +523,10 @@ for _, fam in ipairs(sorted_keys(fams[3])) do
     hdr:write("};\n")
 end
 for _, fam in ipairs(sorted_keys(fams[2])) do
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[8][8] = {\n"):format(fam))
-    for a = 0, 7 do
+    hdr:write(("static const cp_stencil_t *const cp_%s_table[7][7] = {\n"):format(fam))
+    for a = 0, 6 do
         local row = {}
-        for b = 0, 7 do
+        for b = 0, 6 do
             row[#row + 1] = need(("cp_%s_%d_%d"):format(fam, a, b))
         end
         hdr:write("{", table.concat(row, ","), "},\n")
@@ -535,10 +535,10 @@ for _, fam in ipairs(sorted_keys(fams[2])) do
 end
 for _, fam in ipairs(sorted_keys(fams[1])) do
     local row = {}
-    for a = 0, 7 do
+    for a = 0, 6 do
         row[#row + 1] = need(("cp_%s_%d"):format(fam, a))
     end
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[8] = {%s};\n"):format(fam, table.concat(row, ",")))
+    hdr:write(("static const cp_stencil_t *const cp_%s_table[7] = {%s};\n"):format(fam, table.concat(row, ",")))
 end
 
 hdr:write("\n#endif\n")

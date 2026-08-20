@@ -16,13 +16,14 @@
 
 #include "cp-emit.h"
 
-#define NSLOTS 8
-#define NPARAMS 12 /* r0 r1 r2 pc cd fetch r3 tcc r4 r5 r6 r7 */
+#define NSLOTS 7
+#define NPARAMS 12 /* sa r0 r1 pc cd fetch r2 tcc r3 r4 r5 r6 */
 #define HEAP_SIZE (16u << 20)
 
 /* Parameter order of the stencil contract; guest slot k sits at param
  * SLOT_POS[k], the pinned roles at positions 3, 4, 5, 7. */
-static const int SLOT_POS[NSLOTS] = {0, 1, 2, 6, 8, 9, 10, 11};
+static const int SLOT_POS[NSLOTS] = {1, 2, 6, 8, 9, 10, 11};
+#define POS_SA 0
 #define POS_PC 3
 #define POS_CD 4
 #define POS_FETCH 5
@@ -113,14 +114,14 @@ CP_REG_OPS(DEF_REG_REF)
 CP_BR_OPS(DEF_BR_REF)
 
 static const struct {
-    const cp_stencil_t *const (*tab)[8][8];
+    const cp_stencil_t *const (*tab)[7][7];
     uint64_t (*ref)(uint64_t, uint64_t);
 } reg_ops[] = {
 #define REG_ENT(n, e) {cp_##n##_table, ref_##n},
     CP_REG_OPS(REG_ENT)
 };
 static const struct {
-    const cp_stencil_t *const (*tab)[8];
+    const cp_stencil_t *const (*tab)[7];
     int (*ref)(uint64_t, uint64_t);
 } br_ops[] = {
 #define BR_ENT(n, e) {cp_##n##_table, bref_##n},
@@ -163,6 +164,7 @@ static uint64_t out[NPARAMS];
 
 /* Fixed pinned-role values threaded through every run; programs must pass
  * them through untouched (the exit-stub test overrides pc and cd). */
+#define SAV 0x4444000044440000ull
 #define PCV 0x1111000011110000ull
 #define CDV 0x0000000000123456ull
 #define FETCHV 0x2222000022220000ull
@@ -170,12 +172,13 @@ static uint64_t out[NPARAMS];
 
 static void call_chain(cp_entry_t entry, const uint64_t g[NSLOTS])
 {
-    entry(g[0], g[1], g[2], PCV, CDV, FETCHV, g[3], TCCV, g[4], g[5], g[6], g[7]);
+    entry(SAV, g[0], g[1], PCV, CDV, FETCHV, g[2], TCCV, g[3], g[4], g[5], g[6]);
 }
 
 static int check_passthrough(uint64_t pc_want, uint64_t cd_want)
 {
-    if (out[POS_PC] != pc_want || out[POS_CD] != cd_want || out[POS_FETCH] != FETCHV || out[POS_TCC] != TCCV) {
+    if (out[POS_SA] != SAV || out[POS_PC] != pc_want || out[POS_CD] != cd_want || out[POS_FETCH] != FETCHV ||
+        out[POS_TCC] != TCCV) {
         fprintf(stderr, "pinned roles: pc %016" PRIx64 " cd %016" PRIx64 " fetch %016" PRIx64 " tcc %016" PRIx64 "\n",
             out[POS_PC], out[POS_CD], out[POS_FETCH], out[POS_TCC]);
         return 1;
@@ -299,12 +302,12 @@ int main(void)
             {1, 0, 0, 2, 3, 0},
             {0, 0, 4, 0, 0, (uint64_t) mem_pool},
             {3, 0, 5, 4, 0, 8},
-            {1, 0, 7, 5, 0, 0},
+            {1, 0, 1, 5, 0, 0},
         };
         for (unsigned i = 0; i < 64; ++i) {
             mem_pool[i] = 0x1111111111111111ull * (i + 1);
         }
-        uint64_t init[NSLOTS] = {1, 2, 3, 4, 5, 6, 7, 8};
+        uint64_t init[NSLOTS] = {1, 2, 3, 4, 5, 6, 7};
         failures += run_program(prog, sizeof(prog) / sizeof(prog[0]), init);
         fprintf(stderr, "fixed program done, failures %d\n", failures);
     }
@@ -374,13 +377,13 @@ int main(void)
     /* Guard outcomes: equal, unequal, and same-slot (always taken). */
     {
         fprintf(stderr, "random trials done, failures %d\n", failures);
-        uint64_t init[NSLOTS] = {5, 5, 6, 7, 8, 9, 10, 11};
+        uint64_t init[NSLOTS] = {5, 5, 6, 7, 8, 9, 10};
         for (int b = 0; b < NBR_OPS; ++b) {
             failures += run_guard_op(b, 0, 1, init); /* equal slots */
             failures += run_guard_op(b, 1, 2, init); /* unequal slots */
             failures += run_guard_op(b, 3, 3, init); /* same slot */
         }
-        uint64_t signs[NSLOTS] = {0x8000000000000000ull, 1, (uint64_t) -1, 0, 5, 0x7fffffffffffffffull, 2, 3};
+        uint64_t signs[NSLOTS] = {0x8000000000000000ull, 1, (uint64_t) -1, 0, 5, 0x7fffffffffffffffull, 2};
         for (int b = 0; b < NBR_OPS; ++b) {
             for (int k = 0; k < NSLOTS; ++k) {
                 failures += run_guard_op(b, k, (k + 1) % NSLOTS, signs);

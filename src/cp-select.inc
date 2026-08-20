@@ -281,7 +281,23 @@ switch (label) {
         f.store(cp_sw_table, 2, CP_C_RS2, static_cast<uint64_t>(insn_get_C_SWSP_imm(insn)));
         break;
 
-    // Everything else (JALR, system, CSR, atomics, FP, rd0 forms of the
+    // Indirect jumps end the trace through the dynamic terminal (deposit
+    // plus front-cache lookup); target semantics are the interpreter's:
+    // (x[rs1] + imm) & ~1, link written after the target read.
+    case tc_label::JALR_rd0:
+        f.jalr(0, insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)), 4);
+        break;
+    case tc_label::JALR_rdN:
+        f.jalr(insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)), 4);
+        break;
+    case tc_label::C_JR:
+        f.jalr(0, CP_C_RD, 0, 2);
+        break;
+    case tc_label::C_JALR:
+        f.jalr(1, CP_C_RD, 0, 2);
+        break;
+
+    // Everything else (system, CSR, atomics, FP, rd0 forms of the
     // arithmetic labels) ends the trace.
     default:
         f.end();

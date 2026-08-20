@@ -110,6 +110,24 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
+## Engine increment 1 in progress (plan approved, streamed-floating-ember)
+
+Done so far: cp_far_jump island (two-hole sum defeats the direct-branch
+fold), cp_gxl/cp_gxs guest-register transfer families (one baked-offset
+x-file access each), widened extractor two-index tables, all validating
+(10,882 stencils); and src/cp-select.inc, the formation selection switch
+over TC case labels covering the integer, branch, load/store, and
+compressed sets, decoding through the interpreter's insn helpers with
+fused labels discriminated by funct7. The label enum and the runtime
+classification come from re-expanding interpret-tc-cases.inc
+(enum class tc_label) and interpret-tc-table.inc (a 65536-entry
+cp_label_table indexed by insn_get_id) with different macro definitions,
+so classification is single-source with the dispatch. Still to build:
+cp-context.hpp, interpret-cp.cpp (formation primitives f.reg3/reg2i/li/
+load/store/branch/jump/end, install, flush, write hook), the
+TC_COPY_PATCH seams, the copy_patch=yes emulator build, and the
+increment-1 gates.
+
 ## Done: memory stencil families, single-source, hit-or-bail
 
 The generator emits cp_mem_access (slot-bound register file, all TLB

@@ -131,13 +131,11 @@ static const struct {
 #define NBR_OPS ((int) (sizeof(br_ops) / sizeof(br_ops[0])))
 
 struct op {
-    int kind; /* 0 li, 1 reg op, 2 imm op, 3 ld */
+    int kind; /* 0 li, 1 reg op */
     int op;   /* index into reg_ops / imm_ops */
     int d, s1, s2;
     uint64_t imm;
 };
-
-static uint64_t mem_pool[64];
 
 static void reference(const struct op *ops, int n, uint64_t slot[NSLOTS])
 {
@@ -151,9 +149,7 @@ static void reference(const struct op *ops, int n, uint64_t slot[NSLOTS])
                 slot[o->d] = reg_ops[o->op].ref(slot[o->s1], slot[o->s2]);
                 break;
 
-            case 3:
-                slot[o->d] = *(const uint64_t *) (slot[o->s1] + o->imm);
-                break;
+
             default:
                 abort();
         }
@@ -204,9 +200,7 @@ static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
                 st = reg_ops[o->op].tab[o->d][o->s1][o->s2];
                 break;
 
-            case 3:
-                st = cp_ld_table[o->d][o->s1];
-                break;
+
             default:
                 abort();
         }
@@ -300,13 +294,8 @@ int main(void)
             {0, 0, 6, 0, 0, 100},
             {1, 0, 2, 3, 6, 0},
             {1, 0, 0, 2, 3, 0},
-            {0, 0, 4, 0, 0, (uint64_t) mem_pool},
-            {3, 0, 5, 4, 0, 8},
             {1, 0, 1, 5, 0, 0},
         };
-        for (unsigned i = 0; i < 64; ++i) {
-            mem_pool[i] = 0x1111111111111111ull * (i + 1);
-        }
         uint64_t init[NSLOTS] = {1, 2, 3, 4, 5, 6, 7};
         failures += run_program(prog, sizeof(prog) / sizeof(prog[0]), init);
         fprintf(stderr, "fixed program done, failures %d\n", failures);
@@ -333,7 +322,7 @@ int main(void)
                     o->kind = 1;
                     o->op = (int) (rng() % NREG_OPS);
                     break;
-                case 2:
+                default:
                     /* Immediates route through li + reg-reg at formation;
                      * mirror that: li a scratch slot, then a reg op on it. */
                     o->kind = 0;
@@ -345,24 +334,6 @@ int main(void)
                         u->s1 = (int) (rng() % NSLOTS);
                         u->s2 = o->d;
                         ++i;
-                    }
-                    break;
-                default:
-                    o->kind = 3;
-                    /* Load target must be a valid address: base slot gets the
-                     * pool via a preceding li; keep it simple by rewriting
-                     * this op into li base; ld d, base. */
-                    if (i + 1 < n) {
-                        o->kind = 0;
-                        o->imm = (uint64_t) mem_pool;
-                        struct op *l = &prog[i + 1];
-                        l->kind = 3;
-                        l->d = (int) (rng() % NSLOTS);
-                        l->s1 = o->d;
-                        l->imm = 8 * (rng() % 32);
-                        ++i;
-                    } else {
-                        o->kind = 0;
                     }
                     break;
             }

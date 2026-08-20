@@ -442,6 +442,15 @@ static NO_INLINE i_state_access_fast_addr_t<STATE_ACCESS> raise_exception(const 
     }
 #endif
 
+#ifdef TLB_FILL_LOG
+    {
+        static const bool log_traps = getenv("TRAP_LOG") != nullptr;
+        if (log_traps) {
+            std::fprintf(stderr, "TRAP cause=%llx pc=%llx mcycle=%llu\n", static_cast<unsigned long long>(cause),
+                static_cast<unsigned long long>(pc), static_cast<unsigned long long>(a.read_mcycle()));
+        }
+    }
+#endif
     // Check if exception should be delegated to supervisor privilege
     // For each interrupt or exception number, there is a bit at mideleg
     // or medeleg saying if it should be delegated

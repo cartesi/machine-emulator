@@ -20,6 +20,10 @@ struct cp_trace {
     static constexpr uint32_t max_hpages = 4;
     uint64_t head;           ///< Guest virtual pc of the entry
     uint64_t code_vf_offset; ///< Mapping-validation value latched at formation
+    uint64_t ctx_slot_base;  ///< Translation-context partition at formation:
+                             ///< entering under another context would skip
+                             ///< the code-TLB fills the interpreter performs,
+                             ///< and the shadow TLB is hashed state
     uint8_t *code_start;
     uint32_t code_size;
     uint32_t len; ///< Guest instructions, the worst-case pending charge

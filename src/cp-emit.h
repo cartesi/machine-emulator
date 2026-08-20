@@ -36,6 +36,7 @@ typedef struct {
     uint8_t *base;
     size_t size;
     size_t curr;
+    size_t flushed; /* icache watermark: bytes below are already published */
 } cp_heap_t;
 
 /* Returns 0 on success. The heap starts protected (RX). */
@@ -52,6 +53,7 @@ static inline int cp_heap_init(cp_heap_t *h, size_t size)
     }
     h->size = size;
     h->curr = 0;
+    h->flushed = 0;
 #if defined(__linux__)
     /* Register for the cross-modifying-code barrier used at publish. */
     syscall(__NR_membarrier, MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0);
@@ -69,8 +71,10 @@ static inline void cp_heap_free(cp_heap_t *h)
 
 static inline void cp_heap_unprotect(cp_heap_t *h)
 {
+    if (h->curr < h->flushed) {
+        h->flushed = h->curr; /* flush-all rewound the cursor */
+    }
 #if defined(__APPLE__)
-    (void) h;
     pthread_jit_write_protect_np(0);
 #else
     mprotect(h->base, h->size, PROT_READ | PROT_WRITE);
@@ -81,14 +85,15 @@ static inline void cp_heap_protect_flush(cp_heap_t *h)
 {
 #if defined(__APPLE__)
     pthread_jit_write_protect_np(1);
-    sys_icache_invalidate(h->base, h->curr);
+    sys_icache_invalidate(h->base + h->flushed, h->curr - h->flushed);
 #else
     mprotect(h->base, h->size, PROT_READ | PROT_EXEC);
-    __builtin___clear_cache((char *) h->base, (char *) h->base + h->size);
+    __builtin___clear_cache((char *) h->base + h->flushed, (char *) h->base + h->curr);
 #if defined(__linux__)
     syscall(__NR_membarrier, MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0);
 #endif
 #endif
+    h->flushed = h->curr;
 }
 
 static inline size_t cp_heap_remaining(const cp_heap_t *h)

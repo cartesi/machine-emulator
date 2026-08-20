@@ -31,6 +31,17 @@
 #ifndef TC_LIGHTNING
 #define TC_LIGHTNING 0
 #endif
+#ifndef TC_COPY_PATCH
+#define TC_COPY_PATCH 0
+#endif
+#if TC_COPY_PATCH && (TC_LIGHTNING || TC_ONLINE || TC_AOT)
+#error "TC_COPY_PATCH is mutually exclusive with the lightning backend"
+#endif
+#if TC_COPY_PATCH
+#include <ctime>
+
+#include "cp-context.hpp"
+#endif
 
 #if TC_LIGHTNING
 extern "C" {
@@ -97,7 +108,7 @@ namespace cartesi {
 #endif
 
 #ifndef TC_JIT_SHELL
-#if TC_AOT || TC_ONLINE
+#if TC_AOT || TC_ONLINE || TC_COPY_PATCH
 #define TC_JIT_SHELL 1 // trace dispatch and recording ride the shell's hook sites
 #else
 #define TC_JIT_SHELL 0
@@ -369,6 +380,11 @@ struct tc_context {
     uint64_t fp_stage;  ///< Result staging slot for inline FP guard checks
     uint64_t parked_pc; ///< Fast pc parked at trace entry while r14 carries guest slot 9 (TC_PARK_PC)
 #endif
+    bool online_trip;
+#endif
+#if TC_COPY_PATCH
+    cp_state *cp;
+    uint64_t online_trip_pc;
     bool online_trip;
 #endif
 };
@@ -2219,10 +2235,28 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
             TC_RETURN(execute_status::success);                                                                        \
         }                                                                                                              \
     } while (0)
+#elif TC_COPY_PATCH
+#define TC_ONLINE_TRIP_RETURN()                                                                                        \
+    do {                                                                                                               \
+        if (tcc->online_trip) [[unlikely]] {                                                                           \
+            TC_RETURN(execute_status::success);                                                                        \
+        }                                                                                                              \
+    } while (0)
+#define TC_ONLINE_CALL_TRIP_RETURN()                                                                                   \
+    do {                                                                                                               \
+        if (tcc->online_trip) [[unlikely]] {                                                                           \
+            --tc_remaining;                                                                                            \
+            TC_RETURN(execute_status::success);                                                                        \
+        }                                                                                                              \
+    } while (0)
 #else
 #define TC_ONLINE_TRIP_RETURN() ((void) 0)
 #define TC_ONLINE_CALL_TRIP_RETURN() ((void) 0)
 #endif // TC_ONLINE
+
+#if TC_COPY_PATCH
+#include "interpret-cp.inc"
+#endif
 
 #if TC_LIGHTNING && TC_ONLINE
 // The generated code is a continuation of the handler chain, so it names the
@@ -4705,6 +4739,9 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
     (void) vpc;
     (void) weight;
     return nullptr;
+#elif TC_COPY_PATCH
+    (void) weight;
+    return cp_hook_site<CALL_ENTRY>(c, vpc);
 #else
     const void *fn = nullptr;
     bool installed = false;
@@ -4833,6 +4870,20 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
     return fn;
 #endif // TC_JIT_SHELL
 }
+#if TC_ONLINE && TC_LIGHTNING
+// Marks a generated-code episode boundary for TC_ONLINE_EXEC_STATS.
+#define TC_EPISODE_MARK()                                                                                              \
+    do {                                                                                                               \
+        if (tc_online_episode_stats()) [[unlikely]] {                                                                  \
+            tcc->online->episode_cd = tc_remaining;                                                                    \
+            tcc->online->episode_t0_ns = tc_online_now_ns();                                                           \
+            ++tcc->online->episodes;                                                                                   \
+        }                                                                                                              \
+    } while (0)
+#else
+#define TC_EPISODE_MARK() ((void) 0)
+#endif
+
 #if TC_JIT_SHELL
 // Calls hook unconditionally at the callee. The generated call entry validates
 // the recorded code mapping and re-establishes the fetch state before
@@ -4842,17 +4893,13 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
         const execute_status tc_call_status = (expr);                                                                  \
         if (tc_call_status == execute_status::success) {                                                               \
             [[maybe_unused]] const void *const tc_tfn = tc_hook_site<true>(tcc, pc_to_virtual(a, pc), 1);              \
-            if constexpr (TC_LIGHTNING != 0) {                                                                         \
+            if constexpr (TC_LIGHTNING != 0 || TC_COPY_PATCH != 0) {                                                   \
                 if (tc_tfn != nullptr) {                                                                               \
                     TC_SEG_LOOSEN();                                                                                   \
                     if (TC_TICK_ENDED()) [[unlikely]] {                                                                \
                         TC_COUNTDOWN_EXPIRED();                                                                        \
                     }                                                                                                  \
-                    if (tc_online_episode_stats()) [[unlikely]] {                                                      \
-                        tcc->online->episode_cd = tc_remaining;                                                        \
-                        tcc->online->episode_t0_ns = tc_online_now_ns();                                               \
-                        ++tcc->online->episodes;                                                                       \
-                    }                                                                                                  \
+                    TC_EPISODE_MARK();                                                                                 \
                     TC_SYNC();                                                                                         \
                     TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(                                 \
                         const_cast<void *>(tc_tfn))(a, insn TC_HOT_ARGS);                                              \
@@ -5277,16 +5324,10 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
             /* conditional branch taken backward: a loop back-edge profiling site */                                   \
             if (status == execute_status::success && pc < tc_pc_in) {                                                  \
                 [[maybe_unused]] const void *tc_tfn = tc_hook_site(tcc, pc_to_virtual(a, pc), 2);                      \
-                if constexpr (TC_AOT != 0 || TC_LIGHTNING != 0) {                                                      \
+                if constexpr (TC_AOT != 0 || TC_LIGHTNING != 0 || TC_COPY_PATCH != 0) {                                \
                     if (tc_tfn != nullptr) {                                                                           \
                         TC_SEG_LOOSEN();                                                                               \
-                        if constexpr (TC_ONLINE != 0 && TC_LIGHTNING != 0) {                                           \
-                            if (tc_online_episode_stats()) [[unlikely]] {                                              \
-                                tcc->online->episode_cd = tc_remaining;                                                \
-                                tcc->online->episode_t0_ns = tc_online_now_ns();                                       \
-                                ++tcc->online->episodes;                                                               \
-                            }                                                                                          \
-                        }                                                                                              \
+                        TC_EPISODE_MARK();                                                                             \
                         TC_SYNC();                                                                                     \
                         TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(                             \
                             const_cast<void *>(tc_tfn))(a, insn TC_HOT_ARGS);                                          \
@@ -5317,6 +5358,10 @@ TC_CALLCONV static execute_status tc_seg_next(const STATE_ACCESS a, uint32_t ins
     }
 #include "interpret-tc-cases.inc"
 #undef TC_CASE
+
+#if TC_COPY_PATCH
+#include "interpret-cp-continue.inc"
+#endif
 
 #if TC_LIGHTNING && TC_ONLINE
 // Tags identify backend capabilities without introducing another opcode or
@@ -6927,6 +6972,14 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
     a.get_penumbra().write_hook = &tc_online_write_hook;
 #endif
 #endif
+#if TC_COPY_PATCH
+    tcc->cp = cp_get(a.get_penumbra(), reinterpret_cast<const void *>(&cp_continue<STATE_ACCESS>));
+    tcc->online_trip = false;
+    // Armed once and left armed: host-side writes between runs must
+    // invalidate traces too.
+    a.get_penumbra().write_hook_ctx = tcc->cp;
+    a.get_penumbra().write_hook = &cp_write_hook;
+#endif
 
     while (mcycle < mcycle_end) {
         if (rtc_is_tick(mcycle)) {
@@ -6939,10 +6992,18 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 #if TC_ONLINE
         const bool tc_recording_interrupt = tcc->online->recording && get_pending_irq_mask(a) != 0;
 #endif
+#if TC_COPY_PATCH
+        const bool cp_recording_interrupt = tcc->cp->recording && get_pending_irq_mask(a) != 0;
+#endif
         pc = raise_interrupt_if_any(a, pc, tcc->fetch_vaddr_page);
 #if TC_ONLINE
         if (tc_recording_interrupt) [[unlikely]] {
             tc_online_cancel_boundary(tcc);
+        }
+#endif
+#if TC_COPY_PATCH
+        if (cp_recording_interrupt) [[unlikely]] {
+            cp_abort(tcc);
         }
 #endif
 
@@ -6995,6 +7056,17 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                     tc_online_record(tcc, pc_to_virtual(a, pc), insn);
                 }
 #endif
+#if TC_COPY_PATCH
+                if (tcc->online_trip) [[unlikely]] {
+                    tcc->online_trip = false;
+                    if (!tcc->cp->recording) {
+                        cp_begin(a, tcc, tcc->online_trip_pc);
+                    }
+                }
+                if (tcc->cp->recording) [[unlikely]] {
+                    cp_record(a, tcc, static_cast<uint64_t>(pc), pc_to_virtual(a, pc), insn);
+                }
+#endif
 #if TC_PAGE_SEGMENT
                 // Bound the chain by the fall-through fetches that provably
                 // stay within pc's page, in addition to the tick
@@ -7005,8 +7077,12 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 #endif
 #if TC_GLOBAL_REGS
                 cartesi::tc_reg_pc = static_cast<uint64_t>(pc);
+#if TC_ONLINE || TC_COPY_PATCH
 #if TC_ONLINE
                 const bool tc_is_recording = tcc->online->recording;
+#else
+                const bool tc_is_recording = tcc->cp->recording;
+#endif
                 // One-instruction chains while recording; the adjusted tick
                 // base keeps the mcycle materialization identity exact.
                 const uint64_t tc_chain_remaining = tc_is_recording ? 1 : tc_avail;
@@ -7021,7 +7097,7 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 cartesi::tc_remaining = tc_chain_remaining;
 #if TC_PAGE_SEGMENT
                 tcc->mcycle_seg_end = tc_chain_tick_end;
-#if TC_ONLINE
+#if TC_ONLINE || TC_COPY_PATCH
                 // A recording chain must not survive its single instruction:
                 // segment expiry re-derives from the true tick end, so that
                 // end moves with the chain end while recording.
@@ -7036,10 +7112,14 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 cartesi::tc_reg_fetch_page = static_cast<uint64_t>(tcc->fetch_vaddr_page);
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
 #else
-#if TC_ONLINE
+#if TC_ONLINE || TC_COPY_PATCH
                 // One-instruction chains while recording, exactly as in the
                 // pinned shape above.
+#if TC_ONLINE
                 const bool tc_is_recording = tcc->online->recording;
+#else
+                const bool tc_is_recording = tcc->cp->recording;
+#endif
                 const uint64_t tc_chain_remaining = tc_is_recording ? 1 : tc_avail;
                 const uint64_t tc_chain_tick_end = tc_is_recording ? mcycle + 1 : mcycle + tc_avail;
 #else
@@ -7065,6 +7145,11 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                     tc_online_cancel_boundary(tcc);
                 }
 #endif
+#if TC_COPY_PATCH
+                if (tcc->cp->recording && status >= execute_status::success_and_serve_interrupts) [[unlikely]] {
+                    cp_abort(tcc);
+                }
+#endif
                 pc = tcc->pc;
                 mcycle = tcc->mcycle;
                 break;
@@ -7073,6 +7158,9 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
             // from the exception handler pc
 #if TC_ONLINE
             tc_online_cancel_boundary(tcc);
+#endif
+#if TC_COPY_PATCH
+            cp_abort(tcc);
 #endif
             ++mcycle;
         }

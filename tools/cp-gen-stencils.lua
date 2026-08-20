@@ -106,12 +106,13 @@ emit("    TAIL return cp_cont_0(" .. args .. ");")
 emit("}")
 emit("")
 
--- Side exit: materialize the architectural pc (patched constant), charge the
--- pending instruction count against the countdown (patched constant), and
--- leave for the fetch-tail continuation.
+-- Side exit: move the fast pc by a signed delta from the trace head
+-- (the typed fast pc is position-encoded, so exits add displacements,
+-- never absolute values), charge the pending instruction count against
+-- the countdown, and leave for the fetch-tail continuation.
 emit(("CONT void cp_exit_stub(%s)"):format(params))
 emit("{")
-emit("    pc = (u64)cp_imm64_0;")
+emit("    pc += (u64)cp_imm64_0;")
 emit("    cd -= (u64)cp_imm64_1;")
 emit("    TAIL return cp_cont_0(" .. args .. ");")
 emit("}")

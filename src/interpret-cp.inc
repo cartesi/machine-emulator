@@ -692,14 +692,20 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
     const uint16_t id = static_cast<uint16_t>(insn_get_id(insn));
     const tc_label label = cp_label_table[id];
     const uint8_t size = cp_label_size[static_cast<uint16_t>(label)];
+    if (std::getenv("CP_DEBUG") != nullptr) [[unlikely]] {
+        static int cp_dbg_count = 0;
+        if (cp_dbg_count < 60) {
+            ++cp_dbg_count;
+            std::fprintf(stderr, "cp-rec: vpc %llx insn %08x id %u label %u size %u len %u\n",
+                static_cast<unsigned long long>(vpc), insn, id, static_cast<unsigned>(label), size, c->rec_len);
+        }
+    }
     c->rec_insn_start = c->heap.base + c->heap.curr;
     c->rec_vaddr = vpc;
     c->rec_end_vaddr = vpc + size;
     const uint64_t pc = vpc;
 
-    switch (label) {
 #include "cp-select.inc"
-    }
 
     if (c->rec_failed) {
         // Roll back this instruction and finish with what preceded it.

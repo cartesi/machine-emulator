@@ -32,7 +32,7 @@
 #define CP_C_RDP (insn_get_CIW_CL_rd_CS_CA_rs2(insn))  // rd', rs2' (x8-x15)
 #define CP_C_RS1P (insn_get_CL_CS_CA_CB_rs1(insn))     // rs1' (x8-x15)
 
-switch (static_cast<tc_label>(id)) {
+switch (label) {
     // Upper immediates and direct jumps: constants known at formation.
     case tc_label::LUI_rdN:
         f.li(insn_get_rd(insn), static_cast<uint64_t>(insn_U_get_imm(insn)));

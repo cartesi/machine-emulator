@@ -322,24 +322,49 @@ for _, st in ipairs(stencils) do
     man:write(("%s size %d patches [%s]\n"):format(st.name, #st.code, table.concat(pdesc, " ")))
 end
 
--- Placement lookup tables for enumerated families.
+-- Placement lookup tables, discovered from stencil names: cp_<f>_d_s1_s2
+-- families get [8][8][8] tables, cp_<f>_d_s [8][8], cp_<f>_d [8].
+-- Completeness of every discovered family is enforced.
 local by_name = {}
 for _, st in ipairs(stencils) do
     by_name[st.name] = true
 end
-local function table3(family)
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[8][8][8] = {\n"):format(family))
+local fams = { [3] = {}, [2] = {}, [1] = {} }
+for name in pairs(by_name) do
+    local f3 = name:match("^cp_(.-)_([0-7])_([0-7])_([0-7])$")
+    local f2 = not f3 and name:match("^cp_(.-)_([0-7])_([0-7])$")
+    local f1 = not f3 and not f2 and name:match("^cp_(.-)_([0-7])$")
+    if f3 then
+        fams[3][f3] = true
+    elseif f2 then
+        fams[2][f2] = true
+    elseif f1 then
+        fams[1][f1] = true
+    end
+end
+local function sorted_keys(t)
+    local keys = {}
+    for k in pairs(t) do
+        keys[#keys + 1] = k
+    end
+    table.sort(keys)
+    return keys
+end
+local function need(n)
+    if not by_name[n] then
+        die("incomplete enumerated family: missing %s", n)
+    end
+    return "&cp_s_" .. n
+end
+for _, fam in ipairs(sorted_keys(fams[3])) do
+    hdr:write(("static const cp_stencil_t *const cp_%s_table[8][8][8] = {\n"):format(fam))
     for d = 0, 7 do
         hdr:write("{")
         for s1 = 0, 7 do
             hdr:write("{")
             local row = {}
             for s2 = 0, 7 do
-                local n = ("cp_%s_%d_%d_%d"):format(family, d, s1, s2)
-                if not by_name[n] then
-                    die("missing enumerated stencil %s", n)
-                end
-                row[#row + 1] = "&cp_s_" .. n
+                row[#row + 1] = need(("cp_%s_%d_%d_%d"):format(fam, d, s1, s2))
             end
             hdr:write(table.concat(row, ","), "},")
         end
@@ -347,38 +372,24 @@ local function table3(family)
     end
     hdr:write("};\n")
 end
-local function table2(family)
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[8][8] = {\n"):format(family))
+for _, fam in ipairs(sorted_keys(fams[2])) do
+    hdr:write(("static const cp_stencil_t *const cp_%s_table[8][8] = {\n"):format(fam))
     for a = 0, 7 do
         local row = {}
         for b = 0, 7 do
-            local n = ("cp_%s_%d_%d"):format(family, a, b)
-            if not by_name[n] then
-                die("missing enumerated stencil %s", n)
-            end
-            row[#row + 1] = "&cp_s_" .. n
+            row[#row + 1] = need(("cp_%s_%d_%d"):format(fam, a, b))
         end
         hdr:write("{", table.concat(row, ","), "},\n")
     end
     hdr:write("};\n")
 end
-local function table1(family)
+for _, fam in ipairs(sorted_keys(fams[1])) do
     local row = {}
     for a = 0, 7 do
-        local n = ("cp_%s_%d"):format(family, a)
-        if not by_name[n] then
-            die("missing enumerated stencil %s", n)
-        end
-        row[#row + 1] = "&cp_s_" .. n
+        row[#row + 1] = need(("cp_%s_%d"):format(fam, a))
     end
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[8] = {%s};\n"):format(family, table.concat(row, ",")))
+    hdr:write(("static const cp_stencil_t *const cp_%s_table[8] = {%s};\n"):format(fam, table.concat(row, ",")))
 end
-
-table3("add")
-table2("addi")
-table2("beq")
-table2("ld")
-table1("li")
 
 hdr:write("\n#endif\n")
 hdr:close()

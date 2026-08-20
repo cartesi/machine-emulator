@@ -110,6 +110,23 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
+## Done: RV64IM integer stencil families (2026-08-20)
+
+The generator now emits the full RV64IM integer set on the backend
+contract: 28 register-register ops (base ALU, shifts with RISC-V amount
+masking, W forms with sign extension, comparisons, the M extension with
+high multiplies and the division zero/overflow rules branch-free of
+calls inside the stencil), 13 immediate forms with 64-bit hole
+materialization (encodable-immediate shapes deferred to a measured
+optimization), and all six branch conditions. 15,627 stencils, 12.6 s
+full pipeline on the M3 Max, extractor placement tables discovered
+generically from names. The test differentially checks every family over
+random programs with adversarial operands (division corner cases
+included) and all branch conditions over sign boundaries; green natively
+and on the all-GCC amd64 binary under qemu. Not yet emitted: hot TLB
+load/store families (need the interpreter probe shape and context
+offsets), the lookup tail, and helper bridges.
+
 ## Done: backend-contract stencil library (2026-08-20)
 
 The generator now emits every stencil on the decided positional signature

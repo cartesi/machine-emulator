@@ -110,7 +110,41 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
-## Engine increment 1: built, first gates green (2026-08-20 evening)
+## Engine increment 1: CORRECTED status (2026-08-20 night)
+
+The earlier "first gates green" entry below was wrong: make does not
+rebuild objects on flag changes, so every "stock" control binary in
+those runs still contained the copy-patch backend, and the
+"hashes match through 2 Gi" result was the engine compared against
+itself. The compete hang WAS a backend bug. With forced rebuilds and a
+true stock reference:
+
+- Bug 1 (the hang): cp_record wrapped the selection include in
+  switch (label) { ... } while cp-select.inc opens its own switch, so
+  the inner switch was an unreachable statement inside a caseless outer
+  switch: nothing was ever emitted and no end condition ever fired
+  (76-byte empty traces recording to the 256 cap, guest state corrupted
+  into a store-fault trap loop). One-line fix. With it, boot HALTS in
+  0.11 s with 4,513 traces, 2.1 MB emitted, 393k entries: real
+  RVVM-scale formation.
+- Bug 2 (open): cp halts at mcycle 31,249,856 vs stock 55,293,806.
+  Bisected to a single shadow-TLB word (page 0x3000, offset +640):
+  stock ffffffff80132000 vs cp ffffffff80232000, same direct-mapped
+  slot, registers identical at the checkpoint, kernel mode, window-size
+  dependent (needs in-trace execution; per-cycle stepping suppresses
+  it). Leading theory: the ported hot write-TLB eviction induces
+  re-verification traffic whose shadow-TLB replacements differ from
+  stock's, and the shadow TLB is hashed state. Lightning runs the same
+  eviction and gates bit-exact, so its promotion path must avoid the
+  shadow write difference in a way the cp path does not yet; find that
+  difference next. Debug tooling in place: CP_DEBUG per-record
+  classification prints, CP_DUMP_CODE trace dumps, hash-tree bisection
+  via get_node_hash, and the win*.lua exact-history harnesses in the
+  job tmp dir.
+- Build hygiene: flag changes MUST touch/remove interpret-tc.o; the
+  gates protocol needs per-config build trees or a config stamp file.
+
+## Superseded (wrong controls): engine increment 1 first status
 
 The engine runs. interpret-cp.inc (formation, install, invalidation,
 flush, hook, continuation) + cp-context.hpp + cp-select.inc +

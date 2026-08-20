@@ -32,6 +32,14 @@ struct cp_trace {
     bool dead;
     const void *fn;      ///< Entry pointer (the tick guard)
     const void *call_fn; ///< Call-entry prologue: mapping establishment, then fn
+    // Straight-exit link (RVVM block_links analog, one trailing site per
+    // trace): the terminal exit's branch, retargeted from the island to the
+    // successor's entry when both ends are installed in the same guest page.
+    uint64_t successor;   ///< Guest vaddr the straight exit leaves for
+    uint32_t link_site;   ///< Heap offset of the trailing branch, 0 if none
+    int32_t link_addend;  ///< Patch addend of that site
+    uint8_t link_kind;    ///< CP_P_JUMP26 or CP_P_JMPREL32
+    uint16_t link_target; ///< Pool index of the linked successor, none_link if unlinked
 };
 
 /// \brief RVVM jtlb port: direct-mapped pc-to-entry cache probed by the
@@ -60,6 +68,7 @@ struct cp_state {
     static constexpr uint16_t interpreted_marker = 0xffff;
     static constexpr uint32_t nslots = 7; ///< Guest cache slots in the contract
     static constexpr uint32_t max_bails = 64;
+    static constexpr uint16_t none_link = 0xffff;
 
     cp_heap_t heap;
     const void *continue_island; ///< far-jump to the interpreter continuation
@@ -77,6 +86,13 @@ struct cp_state {
     // Traced host pages feeding the write-hook kill scan.
     uint64_t traced_page[set_slots];
     uint32_t ntraced_pages;
+
+    // Pending-link table (RVVM heap.block_links analog, allocation-free):
+    // open-addressed by successor pc, chaining waiting predecessors through
+    // link_next. Consumed when the successor installs; cleared by flush.
+    uint64_t pending_link_pc[set_slots];
+    uint16_t pending_link_trace[set_slots];
+    uint16_t link_next[max_traces];
 
     static constexpr uint32_t max_len = 256; ///< Guest instructions per trace
     uint64_t heap_reset_curr; ///< Heap cursor after the island, flush target
@@ -128,6 +144,8 @@ struct cp_state {
     uint64_t compile_ns;
     uint64_t entries;
     uint64_t call_entries;
+    uint64_t links;
+    uint64_t links_severed;
 };
 
 } // namespace cartesi

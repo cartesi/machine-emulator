@@ -110,6 +110,7 @@ static void cp_write_hook(void *ctx, host_addr hstart, uint64_t length) {
     if (c->ntraced_pages == 0 || length == 0) {
         return;
     }
+    bool killed = false;
     const uint64_t first = static_cast<uint64_t>(hstart) & ~PAGE_OFFSET_MASK;
     const uint64_t last = (static_cast<uint64_t>(hstart) + length - 1) & ~PAGE_OFFSET_MASK;
     for (uint64_t hpage = first;; hpage += AR_PAGE_SIZE) {
@@ -122,6 +123,7 @@ static void cp_write_hook(void *ctx, host_addr hstart, uint64_t length) {
                 for (uint8_t j = 0; j < t.nhpages; ++j) {
                     if (t.hpage[j] == hpage) {
                         t.dead = true;
+                        killed = true;
                         ++c->invalidated;
                         break;
                     }
@@ -130,6 +132,29 @@ static void cp_write_hook(void *ctx, host_addr hstart, uint64_t length) {
         }
         if (hpage == last) {
             break;
+        }
+    }
+    if (killed) {
+        // Sever links into dead traces: the head map already reports them
+        // absent, but a patched predecessor branch reaches the body without
+        // the map. Retarget those exits back to the island. During a
+        // recording the heap is already writable and the finish or abort
+        // flush covers the lowered watermark; otherwise publish here.
+        if (!c->recording) {
+            cp_heap_unprotect(&c->heap);
+        }
+        for (uint32_t i = 0; i < c->ntraces; ++i) {
+            cp_trace &pred = c->pool[i];
+            if (pred.link_target != cp_state::none_link && c->pool[pred.link_target].dead) {
+                cp_patch_branch(c->heap.base + pred.link_site, pred.link_kind, pred.link_addend,
+                    const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island)));
+                cp_heap_lower(&c->heap, pred.link_site);
+                pred.link_target = cp_state::none_link;
+                ++c->links_severed;
+            }
+        }
+        if (!c->recording) {
+            cp_heap_protect_flush(&c->heap);
         }
     }
 }
@@ -142,6 +167,7 @@ static void cp_flush(cp_state *c) {
     c->ntraces = 0;
     std::memset(c->installed_pc, 0, sizeof(c->installed_pc));
     std::memset(c->traced_page, 0, sizeof(c->traced_page));
+    std::memset(c->pending_link_pc, 0, sizeof(c->pending_link_pc));
     c->ntraced_pages = 0;
     c->recording = false;
     ++c->flushes;
@@ -152,11 +178,12 @@ static void cp_free(void *p) {
     if (std::getenv("CP_STATS") != nullptr) {
         std::fprintf(stderr,
             "cp: installed %llu empty-marked %llu invalidated %llu flushes %llu emitted %llu bytes "
-            "compile-ms %llu entries %llu call-entries %llu\n",
+            "compile-ms %llu entries %llu call-entries %llu links %llu severed %llu\n",
             static_cast<unsigned long long>(c->installed), static_cast<unsigned long long>(c->empty_marked),
             static_cast<unsigned long long>(c->invalidated), static_cast<unsigned long long>(c->flushes),
             static_cast<unsigned long long>(c->emitted_bytes), static_cast<unsigned long long>(c->compile_ns / 1000000),
-            static_cast<unsigned long long>(c->entries), static_cast<unsigned long long>(c->call_entries));
+            static_cast<unsigned long long>(c->entries), static_cast<unsigned long long>(c->call_entries),
+            static_cast<unsigned long long>(c->links), static_cast<unsigned long long>(c->links_severed));
     }
     cp_heap_free(&c->heap);
     delete c;
@@ -464,15 +491,31 @@ static void cp_emit_stores(cp_state *c, uint32_t dirty) {
 }
 
 // Emits one exit: stores, relative exit stub, far jump to the island (or a
-// direct branch to `target` when given, for the cyclic back edge).
-static uint8_t *cp_emit_exit(cp_state *c, uint32_t dirty, int64_t delta, uint32_t pending, uint8_t *target = nullptr) {
+// direct branch to `target` when given, for the cyclic back edge). For the
+// straight terminal, link_site receives the stub's trailing branch, the one
+// site the pending-link pass may later retarget to a successor's entry.
+static uint8_t *cp_emit_exit(cp_state *c, uint32_t dirty, int64_t delta, uint32_t pending, uint8_t *target = nullptr,
+    cp_trace *link_out = nullptr) {
     uint8_t *at = c->heap.base + c->heap.curr;
     cp_emit_stores(c, dirty);
+    uint8_t *stub = c->heap.base + c->heap.curr;
     const uint64_t imm[2] = {static_cast<uint64_t>(delta), pending};
     uint8_t *cont[2] = {target != nullptr ? target : const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island)),
         nullptr};
     if (cp_emit(&c->heap, &cp_s_cp_exit_stub, imm, cont) == nullptr) {
         c->rec_failed = true;
+        return at;
+    }
+    if (link_out != nullptr) {
+        const cp_stencil_t *st = &cp_s_cp_exit_stub;
+        for (uint16_t i = 0; i < st->npatches; ++i) {
+            const cp_patch_t *p = &st->patches[i];
+            if ((p->kind == CP_P_JUMP26 || p->kind == CP_P_JMPREL32) && p->ordinal == 0) {
+                link_out->link_site = static_cast<uint32_t>((stub + p->offset) - c->heap.base);
+                link_out->link_kind = p->kind;
+                link_out->link_addend = p->addend;
+            }
+        }
     }
     return at;
 }
@@ -518,12 +561,19 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic) {
         return;
     }
 
+    cp_trace &t = c->pool[c->ntraces];
+    t.link_site = 0;
+    t.link_kind = 0;
+    t.link_addend = 0;
+    t.link_target = cp_state::none_link;
+    t.successor = c->rec_end_vaddr;
+
     // Terminal: cyclic traces store and loop to their own entry; straight
     // traces store and leave for the successor.
     if (cyclic) {
         cp_emit_exit(c, c->reg_dirty, 0, c->rec_len, c->rec_start);
     } else {
-        cp_emit_exit(c, c->reg_dirty, static_cast<int64_t>(c->rec_end_vaddr - c->rec_head), c->rec_len);
+        cp_emit_exit(c, c->reg_dirty, static_cast<int64_t>(c->rec_end_vaddr - c->rec_head), c->rec_len, nullptr, &t);
     }
 
     // Grouped bail blocks, then patch each guard's bail branch.
@@ -541,9 +591,7 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic) {
         cp_heap_protect_flush(&c->heap);
         return;
     }
-    cp_heap_protect_flush(&c->heap);
 
-    cp_trace &t = c->pool[c->ntraces];
     t.head = c->rec_head;
     t.code_vf_offset = c->rec_code_vf_offset;
     t.ctx_slot_base = c->rec_ctx_slot_base;
@@ -581,6 +629,62 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic) {
             hot_slot.vh_offset = host_addr{0};
         }
     }
+    // Same-page pending links (RVVM policy: link when either end installs).
+    // Exits are pc-relative and the trace bodies probe the TLB with the
+    // runtime context, so a same-page retarget needs no vf or ctx equality,
+    // and the successor's tick guard still runs. Cross-page successors keep
+    // the island: their fetch fills belong to the interpreter.
+    const uint16_t idx = static_cast<uint16_t>(c->ntraces - 1);
+    c->link_next[idx] = cp_state::none_link;
+    {
+        // Predecessors already waiting on this head.
+        uint32_t slot = cp_pc_slot(t.head);
+        const uint64_t tag = t.head + 1;
+        while (c->pending_link_pc[slot] != 0 && c->pending_link_pc[slot] != tag) {
+            slot = (slot + 1) & (cp_state::set_slots - 1);
+        }
+        if (c->pending_link_pc[slot] == tag) {
+            uint16_t p = c->pending_link_trace[slot];
+            c->pending_link_trace[slot] = cp_state::none_link;
+            while (p != cp_state::none_link) {
+                cp_trace &pred = c->pool[p];
+                const uint16_t next = c->link_next[p];
+                if (!pred.dead && pred.link_site != 0 && pred.link_target == cp_state::none_link) {
+                    cp_patch_branch(c->heap.base + pred.link_site, pred.link_kind, pred.link_addend,
+                        const_cast<uint8_t *>(static_cast<const uint8_t *>(t.fn)));
+                    cp_heap_lower(&c->heap, pred.link_site);
+                    pred.link_target = idx;
+                    ++c->links;
+                }
+                p = next;
+            }
+        }
+    }
+    if (!cyclic && t.link_site != 0 && tlb_addr_page(t.successor) == tlb_addr_page(t.head)) {
+        // This trace's own straight exit: link now or register as pending.
+        bool interpreted = false;
+        if (const cp_trace *succ = cp_find(c, t.successor, &interpreted); succ != nullptr) {
+            cp_patch_branch(c->heap.base + t.link_site, t.link_kind, t.link_addend,
+                const_cast<uint8_t *>(static_cast<const uint8_t *>(succ->fn)));
+            cp_heap_lower(&c->heap, t.link_site);
+            t.link_target = static_cast<uint16_t>(succ - c->pool);
+            ++c->links;
+        } else if (!interpreted) {
+            uint32_t slot = cp_pc_slot(t.successor);
+            const uint64_t tag = t.successor + 1;
+            while (c->pending_link_pc[slot] != 0 && c->pending_link_pc[slot] != tag) {
+                slot = (slot + 1) & (cp_state::set_slots - 1);
+            }
+            if (c->pending_link_pc[slot] == 0) {
+                c->pending_link_pc[slot] = tag;
+                c->pending_link_trace[slot] = cp_state::none_link;
+            }
+            c->link_next[idx] = c->pending_link_trace[slot];
+            c->pending_link_trace[slot] = idx;
+        }
+    }
+    cp_heap_protect_flush(&c->heap);
+
     if (cp_log_enabled()) [[unlikely]] {
         std::fprintf(stderr, "cp-fin head=%llx end=%llx len=%u %s\n",
             static_cast<unsigned long long>(t.head), static_cast<unsigned long long>(c->rec_end_vaddr), t.len,

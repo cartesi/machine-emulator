@@ -530,6 +530,35 @@ Gates: boot bit-identical to stock, all 267 machine tests, stencil tests.
 Coverage effect on boot: entries 672k to 1408k, 738k of them call
 entries; installed 6697, emitted 3.8MB, 0 flushes.
 
+## Done: increment 3, same-page pending links (2026-08-20)
+
+The RVVM block_links analog on the planned allocation-free shape: each
+straight trace has one trailing link site (the terminal exit stub's
+branch to the island), a pending table open-addressed by successor pc
+chains waiting predecessors through link_next, and linking happens when
+either end installs. Only same-page successors link, and they retarget
+directly to the successor's tick guard. This is sound without vf or ctx
+equality checks, unlike lightning's links, because exits are pc-relative
+(vf-independent) and cp trace bodies probe the TLB with the runtime
+context (lightning bakes the recorded partition into its probes, so its
+linked entries need the generated ctx guard). Cross-page successors keep
+the island: their fetch fills belong to the interpreter or the validated
+call entry.
+
+Mechanics worth remembering: cp_heap_lower drops the icache watermark to
+any patched site in already-published code, and cp_finish now protects
+and flushes once at the end so link patches ride the same flush. The
+write hook severs links into killed traces (retarget to the island); it
+pairs unprotect/protect_flush only when no recording is open, because a
+mid-recording flush would move the watermark past the open trace's tick
+site and later repatches would miss the icache flush.
+
+Gates: boot bit-identical to stock, all 267 machine tests, stencil
+tests. Boot: 148 links, 4 severed; entries 1408k to 1405k (linked
+transitions skip the hook). Modest by design: most straight traces end
+at uncompilable instructions or page crossings, and the coverage machine
+for those is the increment 4 lookup tail.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

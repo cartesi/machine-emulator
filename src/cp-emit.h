@@ -171,6 +171,15 @@ static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint6
     return dst;
 }
 
+/* Lowers the icache watermark to cover a patch to already-published code:
+ * the next cp_heap_protect_flush then flushes from the patched site. */
+static inline void cp_heap_lower(cp_heap_t *h, size_t off)
+{
+    if (off < h->flushed) {
+        h->flushed = off;
+    }
+}
+
 /* Rewrites a previously emitted trailing branch site to a new target: the
  * link patch applied when a pending successor compiles. The heap must be
  * writable. */

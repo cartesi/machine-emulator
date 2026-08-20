@@ -110,6 +110,37 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
+## Memory-family design (next, single-source like the ALU set)
+
+Diego's check "don't we have these snippets in interpret.cpp too"
+holds for memory: execute_L/execute_S bodies plus read_virtual_memory /
+write_virtual_memory contain the committed hot TLB probe entirely as
+accessor calls (read_tlb_ctx_slot_base, read_tlb_vaddr_page,
+init_hot_tlb_slot, verify_cold_tlb_slot, read_tlb_pma_index,
+read_tlb_vf_offset, read_memory_word), with the slow path already an
+outlined call (read_virtual_memory_slow) and an existing staging hook
+(stage_read_virtual_memory) that the lightning collector uses. The
+memory stencil wrappers therefore instantiate execute_L/execute_S with
+an accessor that binds x reads/writes to slots and forwards the TLB and
+memory surface to the real state_access, constructed in the wrapper
+from the tcc parameter (processor state at a constant offset; layout
+correct because the TU compiles with the emulator's own compiler).
+Consequences to solve at implementation:
+
+- The outlined slow-path call appears in the stencil as a call
+  relocation to a mangled emulator symbol. Patch model gains a helper
+  ordinal class: CALL26/JMPREL32 patched at emission to the helper's
+  runtime address. AArch64 range is +-128 MB, so the emitter needs
+  branch islands (movz/movk + br through x16/x17, the linker-veneer
+  scratch) when the JIT heap lands far from emulator text, or the heap
+  must be mapped near it.
+- mcycle is a value parameter of execute_L/S: the wrapper derives it
+  from tcc->mcycle_tick_end minus the countdown parameter, the same
+  materialization the trace machinery already defines.
+- A failed access (slow path returns failure / raises) must leave for
+  the bail continuation with exact state, which is the helper-bridge
+  contract from the doc.
+
 ## Done: single-source semantic stencils on both architectures
 
 The correction is complete. The generator emits two TUs: structural C

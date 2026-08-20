@@ -122,6 +122,19 @@ for d = 0, NSLOTS - 1 do
     fn(("cp_li_%d"):format(d), ("    r%d = (u64)cp_imm64_0;"):format(d))
 end
 
+-- Far jump: tail call through a 64-bit hole, the per-heap island through
+-- which exits reach the interpreter continuation beyond direct branch
+-- range. No runtime assembler: the indirect branch is compiler-emitted.
+emit(("typedef CONT void (*cp_cont_t)(%s);"):format(params))
+emit(("CONT void cp_far_jump(%s)"):format(params))
+emit("{")
+emit("    /* Two-hole sum defeats the direct-branch fold: the compiler")
+emit("     * cannot resolve sym+sym to one target, so it materializes and")
+emit("     * branches through a register. Patched as target plus zero. */")
+emit("    TAIL return ((cp_cont_t)((u64)cp_imm64_0 + (u64)cp_imm64_1))(" .. args .. ");")
+emit("}")
+emit("")
+
 f:close()
 
 -- Semantic TU: wrappers instantiating the interpreter's execute bodies.
@@ -449,6 +462,28 @@ for _, name in ipairs(sem_sorted(SEM_STORE_OPS)) do
             gem("}")
             gem("")
         end
+    end
+end
+-- Guest register file transfer: cp_gxl_<slot>_<reg> loads x[reg] into a
+-- slot, cp_gxs_<slot>_<reg> stores a slot to x[reg], through the real
+-- state access so the x-file offsets are the emulator's own. reg 0 is
+-- excluded (x0 reads become li 0, writes are dropped at formation).
+for slot = 0, NSLOTS - 1 do
+    for reg = 1, 31 do
+        gem(("extern \"C\" CONT void cp_gxl_%d_%d(%s)"):format(slot, reg, params))
+        gem("{")
+        gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+        gem(("    r%d = acc.read_x(%d);"):format(slot, reg))
+        gem("    TAIL return cp_cont_0(" .. args .. ");")
+        gem("}")
+        gem("")
+        gem(("extern \"C\" CONT void cp_gxs_%d_%d(%s)"):format(slot, reg, params))
+        gem("{")
+        gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+        gem(("    acc.write_x(%d, r%d);"):format(reg, slot))
+        gem("    TAIL return cp_cont_0(" .. args .. ");")
+        gem("}")
+        gem("")
     end
 end
 gem("// NOLINTEND")

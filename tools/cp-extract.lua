@@ -482,12 +482,18 @@ end
 local fams = { [3] = {}, [2] = {}, [1] = {} }
 for name in pairs(by_name) do
     local f3 = name:match("^cp_(.-)_([0-6])_([0-6])_([0-6])$")
-    local f2 = not f3 and name:match("^cp_(.-)_([0-6])_([0-6])$")
+    local f2, a2, b2
+    if not f3 then
+        f2, a2, b2 = name:match("^cp_(.-)_([0-9]+)_([0-9]+)$")
+    end
     local f1 = not f3 and not f2 and name:match("^cp_(.-)_([0-6])$")
     if f3 then
         fams[3][f3] = true
     elseif f2 then
-        fams[2][f2] = true
+        local fam = fams[2][f2] or { amax = 0, bmax = 0 }
+        fam.amax = math.max(fam.amax, tonumber(a2))
+        fam.bmax = math.max(fam.bmax, tonumber(b2))
+        fams[2][f2] = fam
     elseif f1 then
         fams[1][f1] = true
     end
@@ -523,10 +529,13 @@ for _, fam in ipairs(sorted_keys(fams[3])) do
     hdr:write("};\n")
 end
 for _, fam in ipairs(sorted_keys(fams[2])) do
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[7][7] = {\n"):format(fam))
-    for a = 0, 6 do
+    local amax, bmax = fams[2][fam].amax, fams[2][fam].bmax
+    local bmin = fam == "gxl" or fam == "gxs"
+    hdr:write(("static const cp_stencil_t *const cp_%s_table[%d][%d] = {\n"):format(fam, amax + 1,
+        bmax + 1 - (bmin and 1 or 0)))
+    for a = 0, amax do
         local row = {}
-        for b = 0, 6 do
+        for b = (bmin and 1 or 0), bmax do
             row[#row + 1] = need(("cp_%s_%d_%d"):format(fam, a, b))
         end
         hdr:write("{", table.concat(row, ","), "},\n")

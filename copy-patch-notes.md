@@ -135,7 +135,34 @@ an accessor that binds x reads/writes to slots and forwards the TLB and
 memory surface to the real state_access, constructed in the wrapper
 from the tcc parameter (processor state at a constant offset; layout
 correct because the TU compiles with the emulator's own compiler).
-Consequences to solve at implementation:
+Design resolved for increment one (hit-or-bail, no helper calls):
+
+- Slow path: the miss call is intercepted by an ADL overload. The
+  semantic TU defines read_virtual_memory_slow / write_virtual_memory_slow
+  overloads taking cp_mem_access (found by argument-dependent lookup at
+  instantiation, preferred by partial ordering over the generic
+  template) that mutate nothing and return failure. The wrapper maps a
+  non-success execute status to the bail continuation, and the
+  interpreter re-executes the instruction portably, running the true
+  slow path there. No helper-call relocations exist in increment one;
+  the helper-bridge patch class is deferred until profiling says a
+  trace-resident slow path pays.
+- mcycle: the hot path never reads it (only the intercepted slow path
+  takes it), so the wrapper passes zero and no cp-context header is
+  needed yet.
+- The 12-bit load/store immediate cannot be a value hole in the
+  Mach-O semantic TU, so increment one bakes imm=0 into the synthetic
+  word and formation pre-adds the immediate into a scratch slot
+  (li + add + memop). Encodable-immediate memory shapes are a later
+  measured optimization like the ALU immediates.
+- Accessor: cp_mem_access holds the real state_access (bit-cast from
+  the sa parameter) plus the slot bindings; do_read_x/do_write_x go to
+  slots, and the TLB and memory surface (ctx slot base, vaddr page,
+  init/verify slot, pma index, vf offset, read/write_memory_word)
+  forwards to the real accessor, so the emitted probe is the committed
+  one against the emulator's own layout.
+
+Original consequences list (now partly superseded):
 
 - The outlined slow-path call appears in the stencil as a call
   relocation to a mangled emulator symbol. Patch model gains a helper

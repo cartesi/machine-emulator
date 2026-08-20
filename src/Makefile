@@ -324,9 +324,9 @@ endif
 CP_CC?=$(CC)
 CP_TARGET_ARCH?=$(if $(filter arm64 aarch64,$(shell uname -m)),aarch64,x86_64)
 ifeq ($(CP_TARGET_ARCH),aarch64)
-CP_STENCIL_FLAGS=--target=aarch64-unknown-linux-gnu -mcmodel=large
+CP_STENCIL_FLAGS=--target=aarch64-unknown-none-elf -mcmodel=large
 else ifneq (,$(findstring clang,$(CP_CC)))
-CP_STENCIL_FLAGS=--target=x86_64-unknown-linux-gnu
+CP_STENCIL_FLAGS=--target=x86_64-unknown-none-elf
 else
 CP_STENCIL_FLAGS=-mcmodel=medium -mlarge-data-threshold=1
 endif

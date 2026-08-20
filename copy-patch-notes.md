@@ -492,6 +492,44 @@ Boot statistics after both fixes: 6721 traces installed, 115 heads marked
 interpreted, 727 invalidated by the write hook, 0 flushes, 3.1MB emitted,
 672k trace entries.
 
+## Done: increment 2, validated call entries (2026-08-20)
+
+Ported from lightning's call_fn (the translation node), read line by line
+before writing: probe the hot code-TLB slot of the head page under the
+recorded context, require vaddr_page to match the head page and vh_offset
+to match the recorded code_vf_offset, establish the fetch mapping (pc and
+fetch re-encode, penumbra.fetch_vf_offset, tcc fetch page, pma_index read
+from the shadow slot at entry time), and fall into the ordinary entry.
+Any miss falls back to the interpreter fetch, whose fill is the hashed
+behavior.
+
+The port splits the work differently than lightning because of a C
+boundary constraint found in TC_HOOK_CALL: TC_SYNC rewrites the pinned pc
+from the handler local after the hook returns, and a countdown expiry
+between hook and entry returns to the outer loop, so the pc encoding and
+penumbra.fetch_vf_offset must never disagree across any C boundary.
+Validation therefore runs in the C hook (context check first, then the
+probe), and establishment runs atomically in a generated prologue emitted
+before each trace's tick guard. Because the hook only enters when
+vh_offset equals the recorded code_vf_offset, every established value is
+an install-time constant, so the prologue is three two-hole structural
+stencils (two cp_store_imm, one cp_call_establish) with no entry-time
+loads. The pma_index publish stays in the hook: safe early, since the
+stale fetch tag keeps missing until the prologue re-encodes, and every
+miss path recomputes it.
+
+Ordering note flagged while reading the original: lightning's call_fn
+establishes the mapping and then reaches the translation-context guard,
+whose bail leaves through the fetch tail with the recorded partition's
+mapping established even though the current context differs. The cp port
+checks the context before establishing anything. Whether the lightning
+ordering can skip a current-partition fill on that path was not measured,
+only noted.
+
+Gates: boot bit-identical to stock, all 267 machine tests, stencil tests.
+Coverage effect on boot: entries 672k to 1408k, 738k of them call
+entries; installed 6697, emitted 3.8MB, 0 flushes.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

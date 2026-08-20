@@ -118,6 +118,28 @@ emit("    TAIL return cp_cont_0(" .. args .. ");")
 emit("}")
 emit("")
 
+-- Store a patched constant through a patched address. The call-entry
+-- prologue publishes the established fetch-mapping fields with these,
+-- before the register re-encode, with no C boundary in between.
+emit(("CONT void cp_store_imm(%s)"):format(params))
+emit("{")
+emit("    *(u64 *)cp_imm64_0 = (u64)cp_imm64_1;")
+emit("    TAIL return cp_cont_0(" .. args .. ");")
+emit("}")
+emit("")
+
+-- Call-entry establishment: re-encode the pinned pc and fetch registers to
+-- the trace's recorded mapping. Both are install-time constants because the
+-- hook only enters when the hot slot's vh_offset equals the recorded
+-- code_vf_offset. Falls through into the tick guard.
+emit(("CONT void cp_call_establish(%s)"):format(params))
+emit("{")
+emit("    pc = (u64)cp_imm64_0;")
+emit("    fetch = (u64)cp_imm64_1;")
+emit("    TAIL return cp_cont_0(" .. args .. ");")
+emit("}")
+emit("")
+
 -- li: slot d = constant.
 for d = 0, NSLOTS - 1 do
     fn(("cp_li_%d"):format(d), ("    r%d = (u64)cp_imm64_0;"):format(d))

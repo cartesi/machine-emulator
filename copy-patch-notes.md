@@ -127,10 +127,15 @@ portably. Result verified by disassembly: cp_ld_2_3 is the committed
 host load straight into the slot register, and hit/bail continuations,
 60 bytes, two branch patches. 10,447 stencils validate on both
 architectures (extraction green on amd64 gcc too); the ALU/branch/
-structural execution tests stay green on both. Runtime testing of the
-memory stencils needs a real machine underneath the probe and belongs
-to the next increment (a C++ test constructing a machine, or directly
-the differential gates).
+structural execution tests stay green on both. Runtime-tested by
+src/cp-machine-test.cpp (make test-cp-stencils runs it): builds a real
+machine, warms read and write hot TLB slots through the interpreter's
+own read/write_virtual_memory (the test TU includes interpret.cpp with
+TC_TRANSLATION_UNIT and links the libcartesi object set, so the flags
+must match the tree's build config), then verifies LD hit value, LB
+sign extension, the bail continuation on a cold slot with slots intact,
+SD visibility through the machine API, and an SW+LWU round trip. Green
+on AArch64.
 
 ## Done: contract carries the state access at parameter 1
 

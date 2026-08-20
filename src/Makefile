@@ -743,8 +743,15 @@ cp-stencils-tables.h: cp-stencils.elf.o cp-stencils-semantic.stencil.o ../tools/
 cp-stencils-test: cp-stencils-test.c cp-stencils-tables.h
 	$(CP_CC) -O2 -I. -o $@ $<
 
-test-cp-stencils: cp-stencils-test
+# Runtime memory-stencil test against a live machine; includes interpret.cpp
+# for the warm-up paths, links the shared library for the machine itself.
+cp-machine-test: cp-machine-test.cpp cp-stencils-tables.h cp-emit.h $(LIBCARTESI_OBJS) interpret.cpp cm-version.h \
+		interpret-jump-table.hpp
+	$(CXX) $(CXXFLAGS) $(CP_SEMANTIC_CXXFLAGS) -o $@ $< $(LIBCARTESI_OBJS) $(LIBCARTESI_LIBS) $(LDFLAGS)
+
+test-cp-stencils: cp-stencils-test cp-machine-test
 	./cp-stencils-test
+	./cp-machine-test
 
 keccak-256-hasher.o: keccak-256-hasher.cpp
 	$(CXX) $(CXXFLAGS) $(HASH_CFLAGS) -c -o $@ $<

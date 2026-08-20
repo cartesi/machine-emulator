@@ -719,16 +719,26 @@ interpret-tc.o: interpret-tc.cpp interpret.cpp cm-version.h interpret-jump-table
 $(LIGHTNING_LIB):
 	$(MAKE) -C .. bundle-lightning
 
+# One generator run emits both TUs; the .cpp rule only orders after it.
 cp-stencils.c: ../tools/cp-gen-stencils.lua
-	$(LUA_BIN) $< $@
+	$(LUA_BIN) $< $@ cp-stencils-semantic.cpp
+
+cp-stencils-semantic.cpp: cp-stencils.c ;
 
 cp-stencils.elf.o: cp-stencils.c
 	$(CP_CC) $(CP_STENCIL_FLAGS) -c -o $@ $<
 
+# The semantic TU instantiates the interpreter's own execute bodies, so it
+# compiles natively with the emulator's compiler and include set: same
+# compiler, same SDK, same structure layout as the running emulator.
+CP_SEMANTIC_CXXFLAGS=-ffunction-sections -fomit-frame-pointer -fno-stack-protector 	-fno-unwind-tables -fno-asynchronous-unwind-tables
+cp-stencils-semantic.stencil.o: cp-stencils-semantic.cpp interpret.cpp cm-version.h interpret-jump-table.hpp
+	$(CXX) $(CXXFLAGS) $(CP_SEMANTIC_CXXFLAGS) -c -o $@ $<
+
 # The manifest is written by the same extractor run; depending on the header
 # alone keeps the rule single-target for old GNU make.
-cp-stencils-tables.h: cp-stencils.elf.o ../tools/cp-extract.lua
-	$(LUA_BIN) ../tools/cp-extract.lua $< $@ cp-stencils-manifest.txt
+cp-stencils-tables.h: cp-stencils.elf.o cp-stencils-semantic.stencil.o ../tools/cp-extract.lua
+	$(LUA_BIN) ../tools/cp-extract.lua $@ cp-stencils-manifest.txt cp-stencils.elf.o cp-stencils-semantic.stencil.o
 
 cp-stencils-test: cp-stencils-test.c cp-stencils-tables.h
 	$(CP_CC) -O2 -I. -o $@ $<

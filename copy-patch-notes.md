@@ -110,7 +110,71 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
-## Correction in progress: stencil semantics must come from interpret.cpp
+## Done: single-source semantic stencils on both architectures
+
+The correction is complete. The generator emits two TUs: structural C
+(value holes, bare-metal ELF) and cp-stencils-semantic.cpp, whose
+wrappers instantiate the interpreter's own execute bodies. The extractor
+was rewritten with two container formats (ELF64 full patch-kind set,
+Mach-O arm64 restricted to BRANCH26 with symbol-boundary extents, true
+size at last relocation plus four, validated trailing padding) and
+multi-object merge with duplicate rejection. The test dropped the
+immediate families (immediates route through li plus reg-reg, mirrored
+in the random programs) and passes with 14,795 merged stencils natively
+on macOS (Mach-O semantic TU plus ELF structural TU, 13 s pipeline) and
+3/3 under qemu on amd64 with both TUs compiled by gcc-16 (native ELF).
+The hand-written semantics table is gone.
+
+Portability trap fixed on the way: g++ silently ignores
+__attribute__((preserve_none)) when it precedes the extern "C" linkage
+specifier (clang accepts either position), producing plain-SysV
+stencils that misplace every slot. The generator emits
+extern "C" CONT and the attribute survives both compilers; the failed
+run also confirmed the differential test catches convention drift.
+
+## Superseded status note (2026-08-20, evening)
+
+tools/cp-gen-stencils.lua now emits two files: the structural C TU
+(store/tick-guard/exit-stub/li/ld scaffold, value holes, none-elf) and
+cp-stencils-semantic.cpp, whose 14,720 wrappers instantiate the
+interpreter's own execute bodies (28 reg-reg ops x 512 placements via
+execute_ADD<cartesi::rd_kind::xN> and kin with synthetic words rd=3
+rs1=1 rs2=2; 6 branches x 64 via execute_Bxx against a dummy pc with a
++8 synthetic offset, taken read off the folded pc). The accessor stubs
+the branch bodies' statically-instantiated exception surface (mtvec,
+medeleg, mepc writes and kin), dead under the aligned offset. Native
+compile: 8 s, zero errors, __text carries ONLY BRANCH26 relocations
+(19,088) and only _cp_* symbols; the 14k ARM64_RELOC_UNSIGNED all sit
+in __compact_unwind, which extraction ignores. cp_beq from execute_BEQ
+folds to the identical cmp/b.ne shape the hand-written stencil had.
+
+Next, in order: (1) extractor Mach-O mode plus multi-object merge.
+Parse spec: magic 0xfeedfacf, header 32 B (magic cputype cpusubtype
+filetype ncmds sizeofcmds flags reserved), iterate load commands
+(cmd u32, cmdsize u32); LC_SEGMENT_64=0x19 carries section_64 records
+(80 B: sectname[16] segname[16] addr u64 size u64 offset u32 align u32
+reloff u32 nreloc u32 flags u32 + 3 u32), find (__TEXT,__text) and
+count its 1-based ordinal across all segments for nlist n_sect;
+LC_SYMTAB=0x2 gives symoff nsyms stroff strsize; nlist_64 is 16 B
+(n_strx u32, n_type u8, n_sect u8, n_desc u16, n_value u64). Extents:
+_cp_* symbols in the text ordinal sorted by n_value, end at next start
+or section size; true stencil size = last BRANCH26 offset + 4, trailing
+bytes to the next symbol must be padding, at least one reloc required
+(every semantic stencil ends in b). Relocation entries at reloff, 8 B
+(r_address i32, then u32 = symbolnum:24 | pcrel bit24 | length bits
+25-26 | extern bit27 | type bits 28-31); accept only type 2
+ARM64_RELOC_BRANCH26 with extern=1 length=2 pcrel=1, symbol _cp_cont_0
+or _cp_cont_1, emit as CP_P_JUMP26. Fail closed on anything else.
+(2) Makefile: cp-stencils-semantic.o native $(CXX) rule (flags as the
+verified compile: -O2 -ffunction-sections -fomit-frame-pointer
+-fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables
+plus the interpreter include set), extractor consuming both objects.
+(3) Test: drop imm_ops (immediates now route through li + reg-reg at
+formation), reg/branch tables come from the semantic TU. (4) Delete
+the superseded hand-written semantics from the C TU emission. Then
+amd64: both TUs native ELF under gcc-16, existing extractor mode.
+
+## Superseded correction note: stencil semantics must come from interpret.cpp
 
 Diego flagged that the RV64IM families below violate the plan: their
 semantics are a hand-written expression table in the generator, a second

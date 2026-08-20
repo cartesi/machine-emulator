@@ -91,21 +91,6 @@ static uint64_t pick_imm(void)
     X(remw, (U32 b == 0) ? SX32(a) : ((U32 a == 0x80000000u && I32 b == -1) ? 0 : (uint64_t) (int64_t) (I32 a % I32 b))) \
     X(remuw, (U32 b == 0) ? SX32(a) : SX32(U32 a % U32 b))
 
-#define CP_IMM_OPS(X) \
-    X(addi, a + imm) \
-    X(andi, a & imm) \
-    X(ori, a | imm) \
-    X(xori, a ^ imm) \
-    X(slti, (I64 a < I64 imm) ? 1 : 0) \
-    X(sltiu, (a < imm) ? 1 : 0) \
-    X(slli, a << (imm & 63)) \
-    X(srli, a >> (imm & 63)) \
-    X(srai, (uint64_t) (I64 a >> (imm & 63))) \
-    X(addiw, SX32(U32 a + U32 imm)) \
-    X(slliw, SX32(U32 a << (imm & 31))) \
-    X(srliw, SX32(U32 a >> (imm & 31))) \
-    X(sraiw, (uint64_t) (int64_t) (I32 a >> (imm & 31)))
-
 #define CP_BR_OPS(X) \
     X(beq, a == b) \
     X(bne, a != b) \
@@ -120,12 +105,6 @@ static uint64_t pick_imm(void)
         return (uint64_t) (e); \
     }
 CP_REG_OPS(DEF_REG_REF)
-#define DEF_IMM_REF(n, e) \
-    static uint64_t iref_##n(uint64_t a, uint64_t imm) \
-    { \
-        return (uint64_t) (e); \
-    }
-CP_IMM_OPS(DEF_IMM_REF)
 #define DEF_BR_REF(n, e) \
     static int bref_##n(uint64_t a, uint64_t b) \
     { \
@@ -142,20 +121,12 @@ static const struct {
 };
 static const struct {
     const cp_stencil_t *const (*tab)[8];
-    uint64_t (*ref)(uint64_t, uint64_t);
-} imm_ops[] = {
-#define IMM_ENT(n, e) {cp_##n##_table, iref_##n},
-    CP_IMM_OPS(IMM_ENT)
-};
-static const struct {
-    const cp_stencil_t *const (*tab)[8];
     int (*ref)(uint64_t, uint64_t);
 } br_ops[] = {
 #define BR_ENT(n, e) {cp_##n##_table, bref_##n},
     CP_BR_OPS(BR_ENT)
 };
 #define NREG_OPS ((int) (sizeof(reg_ops) / sizeof(reg_ops[0])))
-#define NIMM_OPS ((int) (sizeof(imm_ops) / sizeof(imm_ops[0])))
 #define NBR_OPS ((int) (sizeof(br_ops) / sizeof(br_ops[0])))
 
 struct op {
@@ -178,9 +149,7 @@ static void reference(const struct op *ops, int n, uint64_t slot[NSLOTS])
             case 1:
                 slot[o->d] = reg_ops[o->op].ref(slot[o->s1], slot[o->s2]);
                 break;
-            case 2:
-                slot[o->d] = imm_ops[o->op].ref(slot[o->s1], o->imm);
-                break;
+
             case 3:
                 slot[o->d] = *(const uint64_t *) (slot[o->s1] + o->imm);
                 break;
@@ -231,9 +200,7 @@ static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
             case 1:
                 st = reg_ops[o->op].tab[o->d][o->s1][o->s2];
                 break;
-            case 2:
-                st = imm_ops[o->op].tab[o->d][o->s1];
-                break;
+
             case 3:
                 st = cp_ld_table[o->d][o->s1];
                 break;
@@ -327,7 +294,8 @@ int main(void)
     {
         struct op prog[] = {
             {0, 0, 3, 0, 0, 42},
-            {2, 0, 2, 3, 0, 100},
+            {0, 0, 6, 0, 0, 100},
+            {1, 0, 2, 3, 6, 0},
             {1, 0, 0, 2, 3, 0},
             {0, 0, 4, 0, 0, (uint64_t) mem_pool},
             {3, 0, 5, 4, 0, 8},
@@ -363,8 +331,18 @@ int main(void)
                     o->op = (int) (rng() % NREG_OPS);
                     break;
                 case 2:
-                    o->kind = 2;
-                    o->op = (int) (rng() % NIMM_OPS);
+                    /* Immediates route through li + reg-reg at formation;
+                     * mirror that: li a scratch slot, then a reg op on it. */
+                    o->kind = 0;
+                    if (i + 1 < n) {
+                        struct op *u = &prog[i + 1];
+                        u->kind = 1;
+                        u->op = (int) (rng() % NREG_OPS);
+                        u->d = (int) (rng() % NSLOTS);
+                        u->s1 = (int) (rng() % NSLOTS);
+                        u->s2 = o->d;
+                        ++i;
+                    }
                     break;
                 default:
                     o->kind = 3;

@@ -294,6 +294,45 @@ INTERPRET_CXXFLAGS+=-DTC_PAGE_SEGMENT=1
 endif
 endif
 
+# Copy-and-patch stencil backend (see copy-patch-rvvm.md). Stencils are
+# compiled offline by clang into an ELF object that is parsed, never linked,
+# so the rule works on any host; the emulator build compiler is unaffected.
+ifeq ($(copy_patch),yes)
+ifeq ($(lightning),yes)
+$(error copy_patch=yes and lightning=yes are mutually exclusive)
+endif
+ifneq ($(tailcall),yes)
+$(error copy_patch=yes requires tailcall=yes)
+endif
+# Stencils and the code entering them must come from the same compiler:
+# GCC and clang preserve_none conventions differ past six x86-64 argument
+# registers. Policy: the platform compiler builds both (clang on AArch64,
+# GCC on Linux/x86-64).
+ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
+ifeq (,$(findstring clang,$(CC)))
+$(error copy_patch=yes on AArch64 requires a clang toolchain (CC=$(CC)))
+endif
+endif
+endif
+# Offline stencil compile, same compiler family as the emulator build.
+# AArch64 (clang): large code model for movz/movk value holes. x86-64:
+# small/medium model keeps continuations direct rel32; clang puts only the
+# hole symbols in the large model (per-symbol attribute in the generated
+# source), GCC reaches the sized holes through the medium model large-data
+# path. The object is ELF and only parsed, so cross-compiling from macOS
+# uses clang with an explicit target.
+CP_CC?=$(CC)
+CP_TARGET_ARCH?=$(if $(filter arm64 aarch64,$(shell uname -m)),aarch64,x86_64)
+ifeq ($(CP_TARGET_ARCH),aarch64)
+CP_STENCIL_FLAGS=--target=aarch64-unknown-linux-gnu -mcmodel=large
+else ifneq (,$(findstring clang,$(CP_CC)))
+CP_STENCIL_FLAGS=--target=x86_64-unknown-linux-gnu
+else
+CP_STENCIL_FLAGS=-mcmodel=medium -mlarge-data-threshold=1
+endif
+CP_STENCIL_FLAGS+=-O2 -fno-pic -ffunction-sections -fomit-frame-pointer -fno-stack-protector \
+	-Wno-tautological-compare
+
 # The hard-float fast path requires host floating-point operations exactly as written:
 # no contraction of separate operations into fused ones, and bare sqrt instructions
 # without errno bookkeeping
@@ -679,6 +718,23 @@ interpret-tc.o: interpret-tc.cpp interpret.cpp cm-version.h interpret-jump-table
 
 $(LIGHTNING_LIB):
 	$(MAKE) -C .. bundle-lightning
+
+cp-stencils.c: ../tools/cp-gen-stencils.lua
+	$(LUA_BIN) $< $@
+
+cp-stencils.elf.o: cp-stencils.c
+	$(CP_CC) $(CP_STENCIL_FLAGS) -c -o $@ $<
+
+# The manifest is written by the same extractor run; depending on the header
+# alone keeps the rule single-target for old GNU make.
+cp-stencils-tables.h: cp-stencils.elf.o ../tools/cp-extract.lua
+	$(LUA_BIN) ../tools/cp-extract.lua $< $@ cp-stencils-manifest.txt
+
+cp-stencils-test: cp-stencils-test.c cp-stencils-tables.h
+	$(CP_CC) -O2 -I. -o $@ $<
+
+test-cp-stencils: cp-stencils-test
+	./cp-stencils-test
 
 keccak-256-hasher.o: keccak-256-hasher.cpp
 	$(CXX) $(CXXFLAGS) $(HASH_CFLAGS) -c -o $@ $<

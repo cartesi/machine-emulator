@@ -9,3 +9,8 @@ coverage*
 jsonrpc-discover.cpp
 cm-version.h
 interpret-jump-table.hpp
+cp-stencils.c
+cp-stencils.elf.o
+cp-stencils-tables.h
+cp-stencils-manifest.txt
+cp-stencils-test

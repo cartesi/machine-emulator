@@ -127,28 +127,31 @@ instruction word (rd=3, rs1=1, rs2=2) so the decode folds. Verified: the
 result compiles to the identical two instructions the hand-written
 stencil produced, semantics from interpret.cpp's text. Consequences:
 
-- Triples: the C stencil TU compiles under the bare-metal
-  aarch64/x86_64-unknown-none-elf triples (no OS claimed, includes
-  nothing, clang builtin headers suffice) and the Makefile uses those.
-  The C++ semantic TU is hosted through interpret.cpp's include chain,
-  and libc++ headers require a real libc underneath (measured: wchar
-  symbol errors under -ffreestanding with host libc++), so it compiles
-  where a sysroot exists: natively on Linux hosts, inside an arm64
-  Linux container on macOS (gcc16-boost:arm64 with clang; boost headers
-  were not needed by this include path). The container produces ELF
-  whose bytes execute fine in the macOS process.
-- Immediate-form stencils are deleted rather than ported: the backend
-  materializes the immediate with cp_li into a scratch slot and uses the
-  reg-reg stencil, computing the sign-extended immediate at formation
-  time with the interpreter's own insn_*_imm helpers (decode also single
-  source). Encodable-immediate shapes stay a later measured optimization.
-- Branch guards instantiate the interpreter's execute_Bxx with a dummy
-  pc and a synthetic branch offset, deciding taken/fallthrough from the
-  folded pc comparison, so the comparison semantics are also the
-  interpreter's.
-- The generator keeps emitting per-placement wrappers and the encoding
-  table for synthetic words (encodings are validated by the extractor
-  and the differential gates; semantics are not duplicated).
+- Triples and object formats, settled after three rounds of Diego pushing
+  back (linux triple -> extracted sysroot -> native): the C structural TU
+  (value holes: li, exit stub, store exit) compiles under the bare-metal
+  aarch64/x86_64-unknown-none-elf triples, no headers needed, because
+  only ELF has the movz/movk 64-bit-hole relocations. The C++ semantic
+  TU compiles NATIVELY with the host compiler and SDK, like every other
+  object in the build: its only relocations are continuation branches,
+  and Mach-O's ARM64_RELOC_BRANCH26 patches the same B field as ELF's
+  JUMP26 (verified: identical bytes, one BRANCH26 to _cp_cont_0).
+  Native is also the CORRECT choice, not just convenient: semantic
+  stencils bake structure offsets that must match the running emulator's
+  layout, and same-compiler-same-SDK removes the mixed-toolchain layout
+  hazard tail-call.md documented. The extractor gains a Mach-O mode
+  restricted to BRANCH26, fail-closed on anything else; Mach-O has no
+  function sections, so extents come from nlist symbol boundaries
+  (underscore-prefixed names, ignore __compact_unwind, consider
+  -fno-unwind-tables). On Linux hosts both TUs are native ELF and the
+  question disappears. The extracted-sysroot and container approaches
+  are dead ends recorded only in session history, not fallbacks.
+- Remaining semantic-TU details from the earlier bullets that stay
+  true: immediate ops route through cp_li plus reg-reg stencils with
+  formation-time decode via the interpreter's insn_*_imm helpers,
+  branch guards read taken/fallthrough off a folded dummy-pc update,
+  and the generator keeps only placement wrappers plus the synthetic
+  encoding table.
 
 ## Done, superseded by the correction above: RV64IM integer stencil families (2026-08-20)
 

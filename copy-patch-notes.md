@@ -110,7 +110,47 @@ insns, 17 MB per boot+workload) costs ~1.7 s via the current pipeline,
   branch to fetch tail), lookup tail (pc-to-trace probe), hot TLB
   load/store families, helper bridge.
 
-## Done: RV64IM integer stencil families (2026-08-20)
+## Correction in progress: stencil semantics must come from interpret.cpp
+
+Diego flagged that the RV64IM families below violate the plan: their
+semantics are a hand-written expression table in the generator, a second
+RISC-V implementation the doc forbids, and the test references mirror the
+same table (circular on the axis that matters). The replacement
+architecture is spiked and validated (cp-spike.cpp): a C++ stencil TU
+does `#define TC_TRANSLATION_UNIT` and includes interpret.cpp (the same
+single-semantic-source pattern as interpret-tc.cpp; the define already
+suppresses the instantiation tail), defines a minimal cp_slot_access
+(CRTP i_state_access + i_accept_scoped_notes, do_read_x/do_write_x bound
+to wrapper locals, do_get_name, fast_addr = uint64_t), and each wrapper
+instantiates the interpreter's own execute_FOO with a synthetic constant
+instruction word (rd=3, rs1=1, rs2=2) so the decode folds. Verified: the
+result compiles to the identical two instructions the hand-written
+stencil produced, semantics from interpret.cpp's text. Consequences:
+
+- Triples: the C stencil TU compiles under the bare-metal
+  aarch64/x86_64-unknown-none-elf triples (no OS claimed, includes
+  nothing, clang builtin headers suffice) and the Makefile uses those.
+  The C++ semantic TU is hosted through interpret.cpp's include chain,
+  and libc++ headers require a real libc underneath (measured: wchar
+  symbol errors under -ffreestanding with host libc++), so it compiles
+  where a sysroot exists: natively on Linux hosts, inside an arm64
+  Linux container on macOS (gcc16-boost:arm64 with clang; boost headers
+  were not needed by this include path). The container produces ELF
+  whose bytes execute fine in the macOS process.
+- Immediate-form stencils are deleted rather than ported: the backend
+  materializes the immediate with cp_li into a scratch slot and uses the
+  reg-reg stencil, computing the sign-extended immediate at formation
+  time with the interpreter's own insn_*_imm helpers (decode also single
+  source). Encodable-immediate shapes stay a later measured optimization.
+- Branch guards instantiate the interpreter's execute_Bxx with a dummy
+  pc and a synthetic branch offset, deciding taken/fallthrough from the
+  folded pc comparison, so the comparison semantics are also the
+  interpreter's.
+- The generator keeps emitting per-placement wrappers and the encoding
+  table for synthetic words (encodings are validated by the extractor
+  and the differential gates; semantics are not duplicated).
+
+## Done, superseded by the correction above: RV64IM integer stencil families (2026-08-20)
 
 The generator now emits the full RV64IM integer set on the backend
 contract: 28 register-register ops (base ALU, shifts with RISC-V amount

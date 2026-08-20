@@ -30,7 +30,8 @@ struct cp_trace {
     uint64_t hpage[max_hpages];
     uint8_t nhpages;
     bool dead;
-    const void *fn; ///< Entry pointer (the tick guard)
+    const void *fn;      ///< Entry pointer (the tick guard)
+    const void *call_fn; ///< Call-entry prologue: mapping establishment, then fn
 };
 
 /// \brief RVVM jtlb port: direct-mapped pc-to-entry cache probed by the
@@ -90,6 +91,7 @@ struct cp_state {
     uint64_t rec_ctx_slot_base;
     uint64_t rec_alloc_start; ///< Heap cursor at begin, the rollback target
     uint8_t *rec_start;      ///< Entry (tick guard) address
+    uint8_t *rec_call_start; ///< Call-entry prologue address
     uint8_t *rec_insn_start; ///< Rollback cursor for the current instruction
     uint32_t rec_len;
     uint8_t *rec_tick_site;  ///< Tick guard address, pending hole re-patched
@@ -125,6 +127,7 @@ struct cp_state {
     uint64_t emitted_bytes;
     uint64_t compile_ns;
     uint64_t entries;
+    uint64_t call_entries;
 };
 
 } // namespace cartesi

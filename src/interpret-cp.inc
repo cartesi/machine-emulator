@@ -152,11 +152,11 @@ static void cp_free(void *p) {
     if (std::getenv("CP_STATS") != nullptr) {
         std::fprintf(stderr,
             "cp: installed %llu empty-marked %llu invalidated %llu flushes %llu emitted %llu bytes "
-            "compile-ms %llu entries %llu\n",
+            "compile-ms %llu entries %llu call-entries %llu\n",
             static_cast<unsigned long long>(c->installed), static_cast<unsigned long long>(c->empty_marked),
             static_cast<unsigned long long>(c->invalidated), static_cast<unsigned long long>(c->flushes),
             static_cast<unsigned long long>(c->emitted_bytes), static_cast<unsigned long long>(c->compile_ns / 1000000),
-            static_cast<unsigned long long>(c->entries));
+            static_cast<unsigned long long>(c->entries), static_cast<unsigned long long>(c->call_entries));
     }
     cp_heap_free(&c->heap);
     delete c;
@@ -557,6 +557,7 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic) {
     }
     t.dead = false;
     t.fn = c->rec_start;
+    t.call_fn = c->rec_call_start;
     ++c->ntraces;
     cp_insert(c, t.head, static_cast<uint16_t>(c->ntraces));
     ++c->installed;
@@ -623,6 +624,26 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     c->nslots_used = 0;
     c->have_pending_branch = false;
     c->nbails = 0;
+    // Call-entry prologue (ported call_fn semantics): the hook enters here
+    // only after validating the hot code-TLB slot against the recorded
+    // mapping and context, so every established value is an install-time
+    // constant. Mapping fields first, register re-encode last, with no C
+    // boundary in between (the pc encoding and fetch_vf_offset must never
+    // disagree at one); falls through into the tick guard, so call entries
+    // sit behind the same tick check as lightning's established entry.
+    uint8_t *fall[2] = {nullptr, nullptr};
+    penumbra_state &penumbra = a.get_penumbra();
+    const uint64_t vf = c->rec_code_vf_offset;
+    const uint64_t fetch_val = tlb_addr_page(vpc) + vf;
+    c->rec_call_start = c->heap.base + c->heap.curr;
+    const uint64_t imm_vf[2] = {reinterpret_cast<uint64_t>(&penumbra.fetch_vf_offset), vf};
+    const uint64_t imm_page[2] = {reinterpret_cast<uint64_t>(&tcc->fetch_vaddr_page), fetch_val};
+    const uint64_t imm_est[2] = {vpc + vf, fetch_val};
+    if (cp_emit(&c->heap, &cp_s_cp_store_imm, imm_vf, fall) == nullptr ||
+        cp_emit(&c->heap, &cp_s_cp_store_imm, imm_page, fall) == nullptr ||
+        cp_emit(&c->heap, &cp_s_cp_call_establish, imm_est, fall) == nullptr) {
+        c->rec_failed = true;
+    }
     // Entry: tick guard whose pending hole is re-patched at finish, bailing
     // to the island (countdown too low to run any of the body).
     const uint64_t imm[2] = {0, 0};
@@ -759,13 +780,42 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
         bool interpreted = false;
         const cp_trace *t = cp_find(c, vpc, &interpreted);
         if (t != nullptr) {
-            if constexpr (!CALL_ENTRY) {
+            auto *const penumbra = reinterpret_cast<penumbra_state *>(
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
+            if constexpr (CALL_ENTRY) {
+                // Ported call_fn semantics, validation hoisted into C and the
+                // context check first: enter only when the hot code-TLB slot
+                // of the head page, under the recorded context, still maps
+                // the recorded host page. Any miss falls back to the
+                // interpreter fetch, whose fill is the hashed behavior.
+                if (penumbra->tlb_ctx_slot_base == t->ctx_slot_base) {
+                    const uint64_t head_page = tlb_addr_page(t->head);
+                    const uint64_t slot = tlb_slot_index(t->head, t->ctx_slot_base);
+                    const auto &hot = penumbra->tlb[TLB_CODE][slot];
+                    if (hot.vaddr_page == head_page && static_cast<uint64_t>(hot.vh_offset) == t->code_vf_offset) {
+                        auto *const state = reinterpret_cast<processor_state *>(
+                            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                            reinterpret_cast<unsigned char *>(penumbra) - offsetof(processor_state, penumbra));
+                        // Entry-time state, like lightning's call_fn reads it;
+                        // publishing before the prologue re-encodes the pc is
+                        // safe because the stale fetch tag still misses, and
+                        // every miss path recomputes the pma index.
+                        tcc->fetch_pma_index = state->shadow.tlb[TLB_CODE][slot].pma_index;
+                        ++c->entries;
+                        ++c->call_entries;
+                        if (cp_log_enabled()) [[unlikely]] {
+                            std::fprintf(stderr, "cp-callenter vpc=%llx len=%u\n",
+                                static_cast<unsigned long long>(vpc), t->len);
+                        }
+                        return t->call_fn;
+                    }
+                }
+                return nullptr;
+            } else {
                 // Mapping AND translation-context must match the formation
                 // state: under another context the interpreter would fill
                 // the other code-TLB partition, and those fills are hashed.
-                auto *const penumbra = reinterpret_cast<penumbra_state *>(
-                    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                    reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
                 if (t->code_vf_offset == static_cast<uint64_t>(tcc->fetch_vaddr_page) - tlb_addr_page(vpc) &&
                     t->ctx_slot_base == penumbra->tlb_ctx_slot_base) {
                     ++c->entries;
@@ -776,8 +826,8 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
                     }
                     return t->fn;
                 }
+                return nullptr;
             }
-            return nullptr; // call entries enter in increment 2
         }
         if (!interpreted) {
             tcc->online_trip_pc = vpc;

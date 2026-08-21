@@ -911,6 +911,36 @@ gated behind copy_patch and CP_NSLOTS is defined unconditionally.
 Build-log checks must grep make-level Error, not only compiler
 error lines; the miss briefly mislabeled a binary in this experiment.
 
+## Done: the matrix at the 1024 MHz default (2026-08-21)
+
+Full five-emulator board rerun at the new default clock, all three
+cartesi columns rebuilt and mutually hash-verified on the new canon
+(78/78 cells, 3 reps, medians, wall seconds):
+
+    workload    stock  light   cp    qemu-sys qemu-icnt rvvm
+    boot         0.14   0.14  0.17    0.36     0.37     0.11
+    nop          4.06   0.40  0.38    0.44     0.63     0.52
+    regs        13.70   1.89  3.32    1.77     1.90     1.26
+    branch       0.74   0.72  0.87    3.03     3.14     1.47
+    tree         2.58   2.16  1.80    2.89     3.16     1.35
+    qsort        3.90   2.49  1.43    3.52     3.61     1.36
+    memcpy       7.80   2.54  3.66    5.05     5.52     1.42
+    zlib         8.87   4.84  3.97    4.01     4.20     2.10
+    hash         4.90   2.44  1.99    1.96     2.22     1.94
+    syscall      1.04   0.47  0.48    0.81     0.84     0.56
+    double       1.79   1.63  1.82    1.71     1.69     3.28
+    sieve       11.64   2.18  2.14    1.75     2.07     1.85
+    int64        2.85   1.55  0.75    2.23     2.26     0.34
+    matrixprod   3.58   2.39  1.19    2.30     2.35     0.83
+    geomean      3.77   1.62  1.46    2.06     2.23     1.19
+
+Copy-patch: geomean 1.46 (was 1.57 at 128 MHz), ahead of lightning on
+nine of thirteen (sieve flipped), fastest emulator in the matrix on
+nop, three-way parity with qemu-system and RVVM on hash, within 5
+percent of RVVM on qsort. RVVM's remaining lead concentrates in regs
+and memcpy (the pass-through fragmentation case) and the int64 and
+matrixprod tails (in-block density).
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

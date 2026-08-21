@@ -257,6 +257,10 @@ INTERPRET_CXXFLAGS+=-fno-stack-protector
 endif
 endif
 
+# The compiler's own target, so cross builds (CC="clang -arch x86_64" on
+# an arm64 macOS host) select per-target flags correctly.
+CC_TARGET_ARCH:=$(firstword $(subst -, ,$(shell $(CC) -dumpmachine 2>/dev/null)))
+
 # Experimental tail-call threaded interpreter (see tail-call.md). The loop
 # lives in interpret-tc.cpp, whose pinned-register discipline is TU-wide;
 # interpret.o only gets the define, which routes direct execution there.
@@ -265,7 +269,7 @@ INTERPRET_CXXFLAGS+=-DTAILCALL_INTERPRET
 # Clang only honors the pinned register globals when the registers are
 # reserved on the command line; GCC reserves them from the declarations alone
 ifneq (,$(findstring clang,$(CC)))
-ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
+ifneq (,$(filter arm64 aarch64,$(CC_TARGET_ARCH)))
 TC_FFIXED_FLAGS=-ffixed-x23 -ffixed-x24 -ffixed-x25 -ffixed-x27
 endif
 endif
@@ -302,8 +306,10 @@ endif
 # has free argument positions through x7. amd64's narrower register
 # contract keeps the default. Defined unconditionally so any pipeline
 # invocation (tests included) agrees with the generated sources.
-ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
+ifneq (,$(filter arm64 aarch64,$(CC_TARGET_ARCH)))
 CP_NSLOTS?=10
+else ifneq (,$(findstring clang,$(CC)))
+CP_NSLOTS?=6
 else
 CP_NSLOTS?=7
 endif
@@ -338,8 +344,8 @@ endif
 # source), GCC reaches the sized holes through the medium model large-data
 # path. The object is ELF and only parsed, so cross-compiling from macOS
 # uses clang with an explicit target.
-CP_CC?=$(CC)
-CP_TARGET_ARCH?=$(if $(filter arm64 aarch64,$(shell uname -m)),aarch64,x86_64)
+CP_CC?=$(firstword $(CC))
+CP_TARGET_ARCH?=$(if $(filter arm64 aarch64,$(CC_TARGET_ARCH)),aarch64,x86_64)
 ifeq ($(CP_TARGET_ARCH),aarch64)
 CP_STENCIL_FLAGS=--target=aarch64-unknown-none-elf -mcmodel=large
 else ifneq (,$(findstring clang,$(CP_CC)))
@@ -759,7 +765,7 @@ cp-stencils-tables.h: cp-stencils.elf.o cp-stencils-semantic.stencil.o ../tools/
 		cp-stencils-semantic.stencil.o
 
 cp-stencils-test: cp-stencils-test.c cp-stencils-tables.h
-	$(CP_CC) -O2 -I. -DCP_NSLOTS=$(CP_NSLOTS) -o $@ $<
+	$(CC) -O2 -I. -DCP_NSLOTS=$(CP_NSLOTS) -o $@ $<
 
 # Runtime memory-stencil test against a live machine; includes interpret.cpp
 # for the warm-up paths, links the shared library for the machine itself.

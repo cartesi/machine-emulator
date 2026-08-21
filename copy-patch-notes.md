@@ -1105,3 +1105,64 @@ Filed, not done: a depth-restart spill in emit_expression would let the
 atomics' trees compile whole (no seam at all -- the syscall/memcpy tension
 dissolves instead of being balanced); the prototype emitted wrong addresses
 and was reverted, so it needs the full gate battery and a disassembly pass.
+
+## Done: clang x86-64 bring-up on macOS, gated under Rosetta (2026-08-21)
+
+The x86-64 backend fixes were developed and gated on Linux with GCC. This
+entry ports the pipeline to clang targeting x86-64, cross-built on the
+arm64 macOS host and executed under Rosetta, which is also the first time
+the full gate battery ran for x86-64 on this machine.
+
+One invocation now works end to end (the Makefile derives the target from
+the compiler, not the host uname, for the pin flags, the slot count, and
+the stencil cross target):
+
+    make CC="clang -arch x86_64" CXX="clang++ -arch x86_64" slirp=no \
+        PTHREAD_CFLAGS= PTHREAD_LDFLAGS= tailcall=yes copy_patch=yes \
+        cartesi.so test-cp-stencils
+
+What the port surfaced, each caught fail-closed by the extractor or the
+compiler, none reachable by the aarch64 or the Linux GCC builds.
+
+- clang folds value-position hole reads into sign-extended imm32 operands
+  (a store immediate in cp_call_probe surfaced first) even with the
+  large-model attribute on the hole symbols. GCC's medium-model large-data
+  path never folds. Every value-position hole read in the generated source
+  now goes through CP_VAL, an empty-asm register pin on x86 and identity
+  elsewhere. The aarch64 stencil bytes are unchanged.
+- clang's register allocator cannot compile the far-jump and lookup
+  stencils at seven guest slots (twelve positional register arguments plus
+  the probe temporaries exceed the fifteen usable GPRs, and musttail
+  forbids the spills GCC places in the red zone). The clang x86-64 default
+  is now six slots. GCC keeps seven.
+- The semantic TU on macOS is Mach-O x86_64, which the extractor did not
+  speak. It now parses the branch relocations (rel32 jmp/jcc with a zero
+  stored field, recorded with the ELF minus-four addend the runtime
+  patcher applies), accepts prefix-stacked long-NOP subsection fill, and
+  sizes stencils whose cold blocks sit past the terminal branch (the idiv
+  zero path) to the symbol limit instead of the last relocation.
+- The exit bridges' musttail from the twelve-parameter roster into the
+  five-parameter handler signature is a GCC-only liberty. They now tail
+  through a copy of their own signature with the handler's five arguments
+  moved into the leading positions, which both compilers accept.
+- cp_enter_call inlined into preserve_none handlers starves clang's
+  allocator the same way. It is now out of line, one plain-convention
+  frame per entry.
+- The chain-start dispatch postdates the Linux fix, so its entry into the
+  self-validating call entry now routes through cp_enter_call under the
+  same CP_CALL_ENTRY gate.
+- Both stencil tests hardcoded a seven-slot roster. Guest-value arrays are
+  now padded to at least seven entries (inert beyond the slot count) and
+  the fixed program clamps its slot indices.
+
+Gates, all under Rosetta on the arm64 host. cp-stencils-test (500 random
+programs) and cp-machine-test pass. Boot halts at mcycle 55407040,
+bit-identical to the aarch64 canon, and all 13 balanced boards retire
+identical mcycles and root hashes against the same stockcmp canon the
+aarch64 build gates on, which exercises the guaranteed cross-host
+determinism directly. All 267 machine tests pass. The native aarch64
+battery was rerun after every shared-source change and stays green
+(boot 55407040, 13 boards, both stencil tests).
+
+Rosetta timing is meaningless (translated JIT output), so no board is
+recorded. Native x86-64 numbers stay owned by the Linux campaign.

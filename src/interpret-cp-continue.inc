@@ -20,12 +20,27 @@ TC_CALLCONV static execute_status cp_continue(const STATE_ACCESS a, uint32_t ins
 template <typename STATE_ACCESS>
 TC_CALLCONV static execute_status cp_continue_cold(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
 
+// A musttail from the twelve-parameter roster into the five-parameter
+// handler signature is rejected by clang (GCC folds it), so the bridges
+// tail through a copy of their own signature and move the handler's five
+// arguments into the leading positions by value; the continuation reads
+// only those registers, the rest are dead. The value moves cross the
+// host_addr/uint64_t split, hence the explicit casts.
+template <typename STATE_ACCESS>
+using cp_bridge_call_fn = TC_CALLCONV execute_status(const STATE_ACCESS, uint32_t, uint64_t,
+    i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t, i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t,
+    tc_context<STATE_ACCESS> *, uint64_t, uint64_t, uint64_t, uint64_t);
+
 template <typename STATE_ACCESS>
 TC_CALLCONV static execute_status cp_continue_bridge(const STATE_ACCESS a, uint32_t insn, uint64_t /*r1*/,
     i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t tc_remaining,
     [[maybe_unused]] i_state_access_fast_addr_t<STATE_ACCESS> fetch_vaddr_page, uint64_t /*r2*/,
     tc_context<STATE_ACCESS> * /*tcc*/, uint64_t /*r3*/, uint64_t /*r4*/, uint64_t /*r5*/, uint64_t /*r6*/) {
-    TC_MUSTTAIL return cp_continue<STATE_ACCESS>(a, insn TC_HOT_ARGS);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    using fa_t = i_state_access_fast_addr_t<STATE_ACCESS>;
+    TC_MUSTTAIL return reinterpret_cast<cp_bridge_call_fn<STATE_ACCESS> *>(&cp_continue<STATE_ACCESS>)(a, insn,
+        static_cast<uint64_t>(pc), static_cast<fa_t>(tc_remaining), static_cast<uint64_t>(fetch_vaddr_page), fa_t{},
+        0, nullptr, 0, 0, 0, 0);
 }
 
 template <typename STATE_ACCESS>
@@ -33,7 +48,11 @@ TC_CALLCONV static execute_status cp_continue_cold_bridge(const STATE_ACCESS a, 
     i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t tc_remaining,
     [[maybe_unused]] i_state_access_fast_addr_t<STATE_ACCESS> fetch_vaddr_page, uint64_t /*r2*/,
     tc_context<STATE_ACCESS> * /*tcc*/, uint64_t /*r3*/, uint64_t /*r4*/, uint64_t /*r5*/, uint64_t /*r6*/) {
-    TC_MUSTTAIL return cp_continue_cold<STATE_ACCESS>(a, insn TC_HOT_ARGS);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    using fa_t = i_state_access_fast_addr_t<STATE_ACCESS>;
+    TC_MUSTTAIL return reinterpret_cast<cp_bridge_call_fn<STATE_ACCESS> *>(&cp_continue_cold<STATE_ACCESS>)(a, insn,
+        static_cast<uint64_t>(pc), static_cast<fa_t>(tc_remaining), static_cast<uint64_t>(fetch_vaddr_page), fa_t{},
+        0, nullptr, 0, 0, 0, 0);
 }
 #endif
 

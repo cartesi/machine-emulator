@@ -1244,3 +1244,49 @@ Final board on this commit (16 slots, no memoization, medians):
 regs 0.132, int64 0.323, memcpy 0.365, tree 1.912, syscall 0.414,
 qsort 0.679, nop 0.027, with syscall and qsort also improved against
 their records and branch carrying the pre-existing regression above.
+
+## Done: matrix rerun at the 16-slot tip -- cp geomean 1.57 -> 1.46 (2026-08-21)
+
+Full five-emulator rerun (compete protocol, fixed musl stress-ng
+bogo-ops, boot-subtracted, medians of 3, all columns fresh on the same
+host state):
+
+    workload     cp-new  cp-old   light    rvvm    qemu  icount
+    nop            0.38    0.43    0.40    0.52    0.44    0.63
+    regs           3.32    3.51    1.89    1.26    1.77    1.90
+    branch         0.87    0.92    0.72    1.47    3.03    3.14
+    tree           1.80    1.85    2.16    1.35    2.89    3.16
+    qsort          1.43    1.69    2.49    1.36    3.52    3.61
+    memcpy         3.66    3.57    2.54    1.42    5.05    5.52
+    zlib           3.97    4.21    4.84    2.10    4.01    4.20
+    hash           1.99    2.13    2.44    1.94    1.96    2.22
+    syscall        0.48    0.50    0.47    0.56    0.81    0.84
+    double         1.82    1.85    1.63    3.28    1.71    1.69
+    sieve          2.14    2.45    2.18    1.85    1.75    2.07
+    int64          0.75    0.89    1.55    0.34    2.23    2.26
+    matrixprod     1.19    1.31    2.39    0.83    2.30    2.35
+
+    geomeans: cp 1.46 (recorded prechain 1.57), light 1.62, rvvm 1.19,
+    qemu-system 2.06, qemu-icount 2.23. cp beats lightning on 8/13.
+
+Two reconciliations against the balanced-board findings, both traced to
+the fact that the two protocols run different stress-ng builds (the
+compete matrix runs a static musl binary, the balanced boards run the
+rootfs build), whose stressor kernels differ:
+
+- The chain-start branch regression is confined to the rootfs branch
+  stressor. The compete branch actually improved (0.92 -> 0.87) and
+  keeps its standing: ahead of rvvm (1.47) and qemu (3.03), behind
+  lightning (0.72), exactly as before. The balanced-board +69% remains
+  real and pending, but it is not a competitive-row loss.
+- The slot raise barely moves the compete regs (3.51 -> 3.32): the musl
+  regs stressor does not have the rootfs build's ~30-register working
+  set, so its 1.75x gap against lightning (3.32 vs 1.89) is NOT
+  eviction churn and still lacks a profile-backed diagnosis. The
+  balanced regs win (0.199 -> 0.128) stands for the rootfs build.
+
+The broad wins (qsort 1.69 -> 1.43, sieve 2.45 -> 2.14, int64
+0.89 -> 0.75, matrixprod 1.31 -> 1.19, zlib, hash, tree, nop) come from
+the chain-start entries plus the slot raise combined; memcpy gave back
+a little (3.57 -> 3.66). Remaining lightning losses: regs, memcpy,
+double, branch, syscall (by a hair). rvvm still leads the geomean.

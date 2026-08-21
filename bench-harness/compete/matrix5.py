@@ -7,19 +7,23 @@ subtracted, 3 reps interleaved, medians. Also reports the boot row itself
 not normally measure."""
 import json, os, statistics, subprocess, sys, time
 
-COMP = "/Users/diego/shared/cartesi/repos/machine-emulator/bench-harness/compete"
+COMP = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, COMP)
-os.environ.setdefault("RVVM", "/tmp/rvvm-source/release.darwin.arm64/rvvm_arm64")
 import drive, rvvm
 from drive import WORKLOADS, sng_args, wall, qemu_sys_cmd, sys_dtb
 
-BUILDS = {"cartesi-stock": "/tmp/matrix-builds/stock",
-          "cartesi-light": "/tmp/matrix-builds/light",
-          "cartesi-cp": "/tmp/matrix-builds/cp"}
+# Each cartesi column is a directory holding that build's cartesi.so,
+# resolved from MATRIX_BUILDS (default: builds/ next to this script, with
+# stock/, light/ and cp/ subdirectories). The RVVM binary resolves through
+# rvvm.py's RVVM environment variable as for every other column.
+BUILDS_ROOT = os.environ.get("MATRIX_BUILDS") or os.path.join(COMP, "builds")
+BUILDS = {"cartesi-stock": os.path.join(BUILDS_ROOT, "stock"),
+          "cartesi-light": os.path.join(BUILDS_ROOT, "light"),
+          "cartesi-cp": os.path.join(BUILDS_ROOT, "cp")}
 CARTESI_LINUX = os.path.join(COMP, "images/cartesi/linux.bin")
 ROOTFS = os.path.join(COMP, "rootfs-bench.ext2")
 ICOUNT = " -icount shift=0,sleep=off"
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results-matrix5.json")
+OUT = os.path.join(COMP, "results-matrix5.json")
 
 def cartesi_run(so_dir, guest):
     lua = os.path.join(COMP, "compete.lua")

@@ -220,6 +220,7 @@ static void cp_free(void *p) {
             static_cast<unsigned long long>(c->fin_trap), static_cast<unsigned long long>(c->evictions));
         std::fprintf(stderr, "cp: continue-enters %llu continue-trips %llu\n",
             static_cast<unsigned long long>(c->continue_enters), static_cast<unsigned long long>(c->continue_trips));
+        std::fprintf(stderr, "cp: carried %llu\n", static_cast<unsigned long long>(c->carried));
         for (int rank = 0; rank < 10; ++rank) {
             uint32_t best = 0;
             const cp_trace *bt = nullptr;
@@ -232,9 +233,10 @@ static void cp_free(void *p) {
             if (bt == nullptr) {
                 break;
             }
-            std::fprintf(stderr, "cp: hot trace head=%llx len=%u entries=%u succ=%llx%s\n",
+            std::fprintf(stderr, "cp: hot trace head=%llx len=%u entries=%u succ=%llx%s%s\n",
                 static_cast<unsigned long long>(bt->head), bt->len, bt->exec_count,
-                static_cast<unsigned long long>(bt->successor), bt->link_site == 0 ? " (no-link-site)" : "");
+                static_cast<unsigned long long>(bt->successor), bt->link_site == 0 ? " (no-link-site)" : "",
+                bt->carried ? " (carried)" : "");
             const_cast<cp_trace *>(bt)->exec_count = 0;
         }
         std::fprintf(stderr,
@@ -298,14 +300,38 @@ static cp_state *cp_get(penumbra_state &penumbra, const void *continue_fn, const
     return static_cast<cp_state *>(penumbra.tc_state);
 }
 
+// One-time env probe for the formation/entry debug log.
+static bool cp_log_enabled() {
+    static const bool enabled = std::getenv("CP_LOG") != nullptr;
+    return enabled;
+}
+
 // ---------------------------------------------------------------------------
 // Formation: the emitter-facing former the selection include drives.
+
+/// \brief Finds a stencil's bail branch (the continuation-1 patch), the one
+/// site guards re-point at their bail blocks.
+static const cp_patch_t *cp_bail_patch(const cp_stencil_t *st) {
+    for (uint16_t i = 0; i < st->npatches; ++i) {
+        const cp_patch_t *p = &st->patches[i];
+        if ((p->kind == CP_P_JUMP26 || p->kind == CP_P_JMPREL32) && p->ordinal == 1) {
+            return p;
+        }
+    }
+    return nullptr;
+}
 
 struct cp_former {
     cp_state *c;
     uint64_t pc; // guest vaddr of the instruction being recorded
 
-    // Slot-level emission. cont[0] null means fallthrough (elided).
+    // Slot-level emission. cont[0] null means fallthrough (elided). Every
+    // body emission is also logged so an eligible cyclic close can replay
+    // the body with first-use loads hoisted to a preheader (loop carry);
+    // the markers tag the pending record as a hoistable load or as the
+    // guard owning a bails[] entry whose site the replay re-records.
+    int8_t log_next_load = -1;
+    int16_t log_next_bail = -1;
     uint8_t *emit1(const cp_stencil_t *st, uint64_t imm0 = 0, uint64_t imm1 = 0, uint8_t *bail = nullptr) {
         const uint64_t imm[2] = {imm0, imm1};
         uint8_t *cont[2] = {nullptr, bail};
@@ -313,6 +339,18 @@ struct cp_former {
         if (at == nullptr) {
             c->rec_failed = true;
         }
+        if (c->rec_log_len < cp_state::max_log) {
+            auto &r = c->rec_log[c->rec_log_len++];
+            r.st = st;
+            r.imm0 = imm0;
+            r.imm1 = imm1;
+            r.bail_index = log_next_bail;
+            r.load_slot = log_next_load;
+        } else {
+            c->rec_carry_ok = false;
+        }
+        log_next_bail = -1;
+        log_next_load = -1;
         return at;
     }
 
@@ -360,6 +398,22 @@ struct cp_former {
         return best;
     }
 
+    void carry_blocked(const char *why, int slot) {
+        if (c->rec_carry_ok && cp_log_enabled()) [[unlikely]] {
+            std::fprintf(stderr, "cp-nocarry head=%llx vpc=%llx %s slot=%d\n",
+                static_cast<unsigned long long>(c->rec_head), static_cast<unsigned long long>(pc), why, slot);
+        }
+        c->rec_carry_ok = false;
+    }
+
+    void bind_guest(int slot) {
+        if ((c->rec_scratch_slots & (1u << static_cast<uint32_t>(slot))) != 0 ||
+            (c->rec_guest_slots & (1u << static_cast<uint32_t>(slot))) != 0) {
+            carry_blocked("guest-rebind", slot); // a carried value would not survive
+        }
+        c->rec_guest_slots |= 1u << static_cast<uint32_t>(slot);
+    }
+
     int alloc_src(uint8_t reg) {
         if (c->reg_slot[reg] >= 0) {
             const int slot = c->reg_slot[reg];
@@ -370,9 +424,11 @@ struct cp_former {
         if (slot < 0) {
             return -1;
         }
+        bind_guest(slot);
         c->slot_guest[slot] = reg;
         c->reg_slot[reg] = static_cast<int8_t>(slot);
         touch(slot);
+        log_next_load = static_cast<int8_t>(slot);
         if (reg == 0) {
             emit1(cp_li_table[slot], 0);
         } else {
@@ -393,6 +449,7 @@ struct cp_former {
         if (slot < 0) {
             return -1;
         }
+        bind_guest(slot);
         c->slot_guest[slot] = reg;
         c->reg_slot[reg] = static_cast<int8_t>(slot);
         c->reg_dirty |= 1u << static_cast<uint32_t>(slot);
@@ -402,10 +459,25 @@ struct cp_former {
 
     // A transient slot for materialized immediates and address arithmetic.
     int alloc_scratch() {
+        // Prefer reusing a freed scratch slot over consuming a fresh one:
+        // scratch churn stays confined to the same slots, fresh slots stay
+        // available for guest bindings, and the guest/scratch sets stay
+        // disjoint, which is what keeps loops loop-carry eligible.
+        for (int slot = 0; slot < static_cast<int>(c->nslots_used); ++slot) {
+            if (c->slot_guest[slot] == 0xff && c->rec_last_used[slot] == 0 &&
+                (locked & (1u << static_cast<uint32_t>(slot))) == 0) {
+                touch(slot);
+                return slot;
+            }
+        }
         const int slot = take_slot();
         if (slot < 0) {
             return -1;
         }
+        if ((c->rec_guest_slots & (1u << static_cast<uint32_t>(slot))) != 0) {
+            carry_blocked("scratch-on-guest", slot); // would clobber a carried value
+        }
+        c->rec_scratch_slots |= 1u << static_cast<uint32_t>(slot);
         c->slot_guest[slot] = 0xff;
         touch(slot);
         return slot;
@@ -524,26 +596,24 @@ struct cp_former {
             c->rec_failed = true;
             return;
         }
+        log_next_bail = static_cast<int16_t>(c->nbails);
         uint8_t *at = emit1(st, 0, 0, reinterpret_cast<uint8_t *>(this)); // placeholder target
         if (at == nullptr) {
             return;
         }
         // Locate the bail patch (ordinal 1) of this stencil to re-patch at
         // finish, once the grouped bail blocks exist.
-        for (uint16_t i = 0; i < st->npatches; ++i) {
-            const cp_patch_t *p = &st->patches[i];
-            if ((p->kind == CP_P_JUMP26 || p->kind == CP_P_JMPREL32) && p->ordinal == 1) {
-                cp_bail &b = c->bails[c->nbails++];
-                b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
-                b.guard_kind = p->kind;
-                b.guard_addend = p->addend;
-                b.delta = static_cast<int64_t>(pc - c->rec_head);
-                b.pending = c->rec_len; // instructions fully retired before this one
-                b.dirty = bail_dirty;
-                std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
-                b.is_branch = false;
-                return;
-            }
+        if (const cp_patch_t *p = cp_bail_patch(st); p != nullptr) {
+            cp_bail &b = c->bails[c->nbails++];
+            b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
+            b.guard_kind = p->kind;
+            b.guard_addend = p->addend;
+            b.delta = static_cast<int64_t>(pc - c->rec_head);
+            b.pending = c->rec_len; // instructions fully retired before this one
+            b.dirty = bail_dirty;
+            std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
+            b.is_branch = false;
+            return;
         }
         c->rec_failed = true; // stencil without a bail continuation
     }
@@ -584,24 +654,22 @@ struct cp_former {
             c->rec_failed = true;
             return;
         }
+        log_next_bail = static_cast<int16_t>(c->nbails);
         uint8_t *at = emit1(st, 0, 0, reinterpret_cast<uint8_t *>(this));
         if (at == nullptr) {
             return;
         }
-        for (uint16_t i = 0; i < st->npatches; ++i) {
-            const cp_patch_t *p = &st->patches[i];
-            if ((p->kind == CP_P_JUMP26 || p->kind == CP_P_JMPREL32) && p->ordinal == 1) {
-                cp_bail &b = c->bails[c->nbails++];
-                b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
-                b.guard_kind = p->kind;
-                b.guard_addend = p->addend;
-                b.delta = off_delta;
-                b.pending = c->rec_len + 1; // the branch itself retires on exit
-                b.dirty = c->reg_dirty;
-                std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
-                b.is_branch = true;
-                return;
-            }
+        if (const cp_patch_t *p = cp_bail_patch(st); p != nullptr) {
+            cp_bail &b = c->bails[c->nbails++];
+            b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
+            b.guard_kind = p->kind;
+            b.guard_addend = p->addend;
+            b.delta = off_delta;
+            b.pending = c->rec_len + 1; // the branch itself retires on exit
+            b.dirty = c->reg_dirty;
+            std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
+            b.is_branch = true;
+            return;
         }
         c->rec_failed = true;
     }
@@ -653,12 +721,6 @@ struct cp_former {
         c->rec_failed = true; // uncompilable: caller finishes before this insn
     }
 };
-
-// One-time env probe for the formation/entry debug log.
-static bool cp_log_enabled() {
-    static const bool enabled = std::getenv("CP_LOG") != nullptr;
-    return enabled;
-}
 
 // Debug switch: refuse trace entries past a budget, so a divergence can be
 // bisected to the exact entry without changing what gets recorded (the
@@ -854,7 +916,84 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
     auto *const penumbra_fin =
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<penumbra_state *>(reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
-    if (cyclic) {
+    if (cyclic && c->rec_carry_ok) {
+        // Loop-carried replay: discard the first-pass tick and body, re-emit
+        // with every first-use load hoisted into a preheader (plus fresh
+        // loads for write-only registers, so every guest-bound slot holds
+        // its architectural value at the tick), the tick guard after the
+        // preheader, and a back edge that only charges the countdown and
+        // re-checks the tick. The slot registers carry across iterations in
+        // the pinned contract; publishing to the register file moves to the
+        // exit paths, which store the body's cumulative dirty set under the
+        // (stable, by eligibility) final slot mapping.
+        c->heap.curr = static_cast<size_t>(c->rec_body_start - c->heap.base);
+        uint8_t *fall[2] = {nullptr, nullptr};
+        c->rec_start = c->heap.base + c->heap.curr;
+        bool had_load[cp_state::nslots] = {};
+        for (uint32_t i = 0; i < c->rec_log_len; ++i) {
+            const auto &r = c->rec_log[i];
+            if (r.load_slot >= 0) {
+                had_load[r.load_slot] = true;
+                const uint64_t imm_l[2] = {r.imm0, r.imm1};
+                if (cp_emit(&c->heap, r.st, imm_l, fall) == nullptr) {
+                    c->rec_failed = true;
+                }
+            }
+        }
+        for (uint32_t slot = 0; slot < cp_state::nslots; ++slot) {
+            if (!had_load[slot] && c->slot_guest[slot] != 0xff && c->slot_guest[slot] != 0) {
+                const uint64_t imm_l[2] = {0, 0};
+                if (cp_emit(&c->heap, cp_gxl_table[slot][c->slot_guest[slot] - 1], imm_l, fall) == nullptr) {
+                    c->rec_failed = true;
+                }
+            }
+        }
+        const uint64_t imm_t[2] = {0, 0};
+        uint8_t *tick_cont[2] = {nullptr, c->heap.base}; // placeholder, re-pointed below
+        c->rec_tick_site = cp_emit(&c->heap, &cp_s_cp_tick_guard, imm_t, tick_cont);
+        if (c->rec_tick_site == nullptr) {
+            c->rec_failed = true;
+        }
+        for (uint32_t i = 0; i < c->rec_log_len && !c->rec_failed; ++i) {
+            const auto &r = c->rec_log[i];
+            if (r.load_slot >= 0) {
+                continue;
+            }
+            const uint64_t imm_b[2] = {r.imm0, r.imm1};
+            uint8_t *cont_b[2] = {nullptr, r.bail_index >= 0 ? c->heap.base : nullptr};
+            uint8_t *at = cp_emit(&c->heap, r.st, imm_b, cont_b);
+            if (at == nullptr) {
+                c->rec_failed = true;
+                break;
+            }
+            if (r.bail_index >= 0) {
+                const cp_patch_t *p = cp_bail_patch(r.st);
+                cp_bail &b = c->bails[r.bail_index];
+                b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
+                b.guard_kind = p->kind;
+                b.guard_addend = p->addend;
+            }
+        }
+        // Back edge: charge the iteration, re-check the tick.
+        const uint64_t imm_be[2] = {0, c->rec_len};
+        uint8_t *cont_be[2] = {c->rec_tick_site, nullptr};
+        if (cp_emit(&c->heap, &cp_s_cp_exit_stub, imm_be, cont_be) == nullptr) {
+            c->rec_failed = true;
+        }
+        // The tick's bail publishes the cumulative dirty set before leaving.
+        if (!c->rec_failed) {
+            uint8_t *tick_bail = cp_emit_exit(c, c->reg_dirty, c->slot_guest, 0, 0, nullptr, nullptr, c->tick_island);
+            const cp_patch_t *tp = cp_bail_patch(&cp_s_cp_tick_guard);
+            cp_patch_branch(c->rec_tick_site + tp->offset, tp->kind, tp->addend, tick_bail);
+        }
+        // Every body bail publishes the cumulative set too: on iteration N a
+        // bail must cover registers written after its position in pass N-1.
+        for (uint32_t i = 0; i < c->nbails; ++i) {
+            c->bails[i].dirty = c->reg_dirty;
+            std::memcpy(c->bails[i].slot_guest, c->slot_guest, sizeof(c->bails[i].slot_guest));
+        }
+        ++c->carried;
+    } else if (cyclic) {
         cp_emit_exit(c, c->reg_dirty, c->slot_guest, 0, c->rec_len, c->rec_start);
     } else if (dynamic_slot >= 0) {
         cp_emit_stores(c, c->reg_dirty, c->slot_guest);
@@ -915,6 +1054,7 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
         cp_insert_hpage(c, t.hpage[j]);
     }
     t.dead = false;
+    t.carried = cyclic && c->rec_carry_ok;
     t.exec_count = 0;
     t.fn = c->rec_start;
     t.call_fn = c->rec_call_start;
@@ -1009,9 +1149,9 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
     cp_heap_protect_flush(&c->heap);
 
     if (cp_log_enabled()) [[unlikely]] {
-        std::fprintf(stderr, "cp-fin head=%llx end=%llx len=%u %s\n",
+        std::fprintf(stderr, "cp-fin head=%llx end=%llx len=%u %s%s\n",
             static_cast<unsigned long long>(t.head), static_cast<unsigned long long>(c->rec_end_vaddr), t.len,
-            cyclic ? "cyclic" : "straight");
+            cyclic ? "cyclic" : "straight", t.carried ? " carried" : "");
     }
     if (std::getenv("CP_DUMP_CODE") != nullptr) [[unlikely]] {
         char path[64];
@@ -1055,6 +1195,10 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     c->rec_use_clock = 0;
     c->have_pending_branch = false;
     c->nbails = 0;
+    c->rec_log_len = 0;
+    c->rec_carry_ok = true;
+    c->rec_guest_slots = 0;
+    c->rec_scratch_slots = 0;
     // Self-validating call-entry prologue (ported call_fn semantics, all in
     // generated code so the lookup tail can chain into it without a C round
     // trip): translation-context guard, hot code-TLB slot probe of the head
@@ -1099,6 +1243,7 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
         cp_emit(&c->heap, &cp_s_cp_call_establish, imm_est, fall) == nullptr) {
         c->rec_failed = true;
     }
+    c->rec_body_start = c->heap.base + c->heap.curr; // replay rollback point
     // Entry: tick guard whose pending hole is re-patched at finish, bailing
     // to the island (countdown too low to run any of the body).
     const uint64_t imm[2] = {0, 0};
@@ -1218,6 +1363,10 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
     c->snap_reg_dirty = c->reg_dirty;
     c->snap_nslots_used = c->nslots_used;
     c->snap_use_clock = c->rec_use_clock;
+    c->snap_log_len = c->rec_log_len;
+    c->snap_guest_slots = c->rec_guest_slots;
+    c->snap_scratch_slots = c->rec_scratch_slots;
+    c->snap_carry_ok = c->rec_carry_ok;
     c->rec_vaddr = vpc;
     c->rec_end_vaddr = vpc + size;
     const uint64_t pc = vpc;
@@ -1241,6 +1390,10 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
         c->reg_dirty = c->snap_reg_dirty;
         c->nslots_used = c->snap_nslots_used;
         c->rec_use_clock = c->snap_use_clock;
+        c->rec_log_len = c->snap_log_len;
+        c->rec_guest_slots = c->snap_guest_slots;
+        c->rec_scratch_slots = c->snap_scratch_slots;
+        c->rec_carry_ok = c->snap_carry_ok;
         c->rec_end_vaddr = vpc;
         c->rec_failed = false;
         ++c->fin_uncompilable;

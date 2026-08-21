@@ -30,6 +30,7 @@ struct cp_trace {
     uint64_t hpage[max_hpages];
     uint8_t nhpages;
     bool dead;
+    bool carried; ///< Loop-carried cyclic form (diagnostics)
     uint32_t exec_count; ///< Hook entries into this trace (C-side, diagnostics)
     const void *fn;      ///< Entry pointer (the tick guard)
     const void *call_fn; ///< Call-entry prologue: mapping establishment, then fn
@@ -115,7 +116,32 @@ struct cp_state {
     uint16_t link_next[max_traces];
 
     static constexpr uint32_t max_len = 256; ///< Guest instructions per trace
+    static constexpr uint32_t max_log = 4096; ///< Emission-log records
     uint64_t heap_reset_curr; ///< Heap cursor after the island, flush target
+
+    /// rief One logged body emission, enough to replay it: the loop-carry
+    /// transform re-emits an eligible cyclic body with first-use loads
+    /// hoisted to a preheader, so nothing positional survives a reorder.
+    struct cp_emit_rec {
+        const cp_stencil_t *st;
+        uint64_t imm0;
+        uint64_t imm1;
+        int16_t bail_index; ///< bails[] entry to re-site at replay, -1 none
+        int8_t load_slot;   ///< Hoistable first-use load target, -1 none
+    };
+    cp_emit_rec rec_log[max_log]; ///< Formation scratch, one open recording
+    uint32_t rec_log_len;
+    uint32_t snap_log_len;    ///< Rolled back with the per-insn snapshot
+    bool rec_carry_ok;        ///< Loop-carry eligibility: guest and scratch
+                              ///< slot sets stay disjoint (a preheader-loaded
+                              ///< value must survive the whole body, and an
+                              ///< eviction spill would republish stale slots
+                              ///< on later iterations), and the log fit
+    uint32_t rec_guest_slots;   ///< Slots ever bound to a guest register
+    uint32_t rec_scratch_slots; ///< Slots ever taken as scratch
+    uint32_t snap_guest_slots;
+    uint32_t snap_scratch_slots;
+    bool snap_carry_ok;
 
     // Formation: the one open trace.
     bool recording;
@@ -126,7 +152,9 @@ struct cp_state {
     uint64_t rec_code_vf_offset;
     uint64_t rec_ctx_slot_base;
     uint64_t rec_alloc_start; ///< Heap cursor at begin, the rollback target
-    uint8_t *rec_start;      ///< Entry (tick guard) address
+    uint8_t *rec_start;      ///< Entry address (tick guard, or the carried preheader)
+    uint8_t *rec_body_start; ///< First byte after the call prologue, the
+                             ///< replay rollback point
     uint8_t *rec_call_start; ///< Call-entry prologue address
     uint8_t *rec_insn_start; ///< Rollback cursor for the current instruction
     uint32_t rec_len;
@@ -199,6 +227,7 @@ struct cp_state {
     uint64_t evictions;       ///< Register-cache spills during formation
     uint64_t continue_enters; ///< Exits that entered an installed trace from C
     uint64_t continue_trips;  ///< Exits that tripped compilation (dispatcher miss)
+    uint64_t carried;         ///< Cyclic traces installed in loop-carried form
 };
 
 } // namespace cartesi

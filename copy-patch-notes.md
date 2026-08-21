@@ -768,6 +768,42 @@ across the cyclic back edge, FP arithmetic stencil families (the
 mechanism the CSR families just proved), immediate-folded ALU, boot
 formation volume.
 
+## Done: loop-carried slots, mechanism landed, reach measured (2026-08-21)
+
+The emission-log replay: every body emission is logged (stencil, two
+immediates, guard ownership, hoistable-load marker; 128KB formation
+scratch, rolled back with the per-instruction snapshot), and an eligible
+cyclic close discards the first-pass tick and body and re-emits with
+first-use loads hoisted to a preheader, fresh loads synthesized for
+write-only registers (every guest-bound slot holds its architectural
+value at the tick), the tick guard after the preheader with a bail block
+that publishes the cumulative dirty set, all body bails switched to the
+cumulative set under the (stable, by eligibility) final mapping, and a
+back edge that only charges the countdown and re-checks the tick. The
+slot registers carry across iterations in the pinned contract;
+per-iteration memory traffic drops to zero.
+
+Eligibility is guest/scratch slot-set disjointness: a preheader-loaded
+value must survive the whole body, and an eviction spill would republish
+stale slots on later iterations. alloc_scratch now prefers reusing a
+freed scratch slot over consuming a fresh one, keeping scratch churn
+confined and fresh slots available for guest bindings. cp-nocarry log
+lines name the disqualifier.
+
+Gates: boot bit-identical, all 13 balanced workloads identical, 267
+machine tests, stencil tests. Board times neutral to slightly better;
+about 215 traces carry per workload.
+
+Measured reach, the fork for the next step: the flagship loops do not
+qualify. memcpy's and sieve's hot loops bind an eighth distinct guest
+register (guest-rebind), beyond any 7-slot contract; the lever is slot
+capacity (aarch64 preserve_none has five unused argument positions, so
+NSLOTS could go 7 to 12 at about 5x stencil-table growth; amd64 stays
+narrow). regs' and int64's hot loops fragmented across installed heads
+into linked two-trace cycles the carry cannot see; the lever is
+pass-through recording (lightning's starved-head lesson) or carrying
+across same-page links.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

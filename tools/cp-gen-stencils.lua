@@ -76,6 +76,8 @@ emit("/* Sized so GCC's medium model (-mlarge-data-threshold) makes them")
 emit(" * large data, reached by movabs with R_X86_64_64. */")
 emit("CP_HOLE extern char cp_imm64_0[65536];")
 emit("CP_HOLE extern char cp_imm64_1[65536];")
+emit("CP_HOLE extern char cp_imm64_2[65536];")
+emit("CP_HOLE extern char cp_imm64_3[65536];")
 emit("")
 
 local function fn(name, body)
@@ -151,6 +153,46 @@ emit("")
 emit(("CONT void cp_count(%s)"):format(params))
 emit("{")
 emit("    ++*(u64 *)cp_imm64_0;")
+emit("    TAIL return cp_cont_0(" .. args .. ");")
+emit("}")
+emit("")
+
+-- Fused call prologue, stencil one: probe the hot code-TLB slot of the
+-- CURRENT translation context (exactly the interpreter's own per-transit
+-- fetch probe, so hits and misses reproduce its hashed fill sequence;
+-- content identity comes from the vh compare), then establish: pc derives
+-- from the incoming deposit (vpc + caller vf, the universal entry
+-- convention) without a hole, the fetch register and penumbra vf publish
+-- the recorded mapping, and the computed slot index rides to stencil two
+-- in slot r0 (dead at entry). Holes: 0 hot-set base, 1 head page, 2
+-- recorded vf, 3 the tlb_ctx_slot_base address. Layout facts baked as
+-- literals (slot sizes, the vf-next-to-ctx adjacency, the tcc field
+-- offsets) are pinned by static_asserts in interpret-cp.inc.
+local TCC_FETCH_PAGE_OFF = 32
+local TCC_PMA_OFF = 40
+emit(("CONT void cp_call_probe(%s)"):format(params))
+emit("{")
+emit("    u64 idx = (((u64)cp_imm64_1) >> 12) & 255;")
+emit("    u64 ctxb = *(u64 *)cp_imm64_3;")
+emit("    u64 *slot = (u64 *)((u64)cp_imm64_0 + (ctxb + idx) * 16);")
+emit("    if (slot[0] != (u64)cp_imm64_1 || slot[1] != (u64)cp_imm64_2) {")
+emit("        TAIL return cp_cont_1(" .. args .. ");")
+emit("    }")
+emit("    u64 caller_vf = *(u64 *)((u64)cp_imm64_3 - 8);")
+emit("    pc = pc - caller_vf + (u64)cp_imm64_2;")
+emit("    *(u64 *)((u64)cp_imm64_3 - 8) = (u64)cp_imm64_2;")
+emit("    fetch = (u64)cp_imm64_1 + (u64)cp_imm64_2;")
+emit(("    *(u64 *)(tcc + %d) = fetch;"):format(TCC_FETCH_PAGE_OFF))
+emit("    r0 = ctxb + idx;")
+emit("    TAIL return cp_cont_0(" .. args .. ");")
+emit("}")
+emit("")
+-- Stencil two: the entry-time pma publish from the shadow slot of the
+-- same (current-context) index, delivered in r0. Hole: 0 shadow-set base.
+emit(("CONT void cp_call_pma(%s)"):format(params))
+emit("{")
+emit("    u64 pma = *(u64 *)((u64)cp_imm64_0 + r0 * 32 + 16);")
+emit(("    *(u64 *)(tcc + %d) = pma;"):format(TCC_PMA_OFF))
 emit("    TAIL return cp_cont_0(" .. args .. ");")
 emit("}")
 emit("")

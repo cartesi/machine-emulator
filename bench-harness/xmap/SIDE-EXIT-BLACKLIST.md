@@ -121,3 +121,41 @@ TC_EXIT_STATS=1 TC_ONLINE_STATS=1 taskset -c 2 lua5.4 compete.lua \
   realisable.
 - **Nothing about RVVM's internals.** This documents where our time goes, not
   that RVVM's margin is reachable.
+
+---
+
+## Follow-up 2026-08-21: root cause found, fix landed, headline corrected
+
+Two corrections and one answer, all measured on the merged tip.
+
+**The headline starvation is largely gone at tip.** The taxonomy above was
+measured before upstream `4ee642c1` ("publish hot side traces sooner",
+side-trace publication floor lowered to 8 with an AArch64 A/B) landed.
+Re-measured at `ed955187`: zlib bench shows 74 side-trip requests with 1
+blacklisted refusal, against the 2202/2104 above. The proposed solution's
+part A (strike instead of blacklist) is superseded by that change plus the
+fix below; part B (stage the missing opcodes) was aimed at the wrong
+mechanism, see next.
+
+**Why AMOADD.w "fails despite being collectable" -- answered.** A per-site
+failure-reason tag on the compile path (commit `10d2226e`) shows the 44
+zlib+qsort+int64 compile aborts split: 36 die at *emission* with the
+expression scratch stack exhausted -- the staged atomics'
+read-modify-write trees are deeper than the emitter's scratch recursion,
+and discovery cannot see it because discovery does not emit -- and 8 die
+at emission-side exit overflow on OP-FP instructions, whose guard-bail
+exits the discovery-side budget does not count. The remainder are
+truncation-floor aborts: collectable prefixes shorter than 8 ahead of a
+CSRRS time, FENCE, or CSR read. So the offending instructions named above
+were correctly identified but wrongly blamed: they are staged; their
+*emission* fails, or their prefix was too short to keep.
+
+**Fix.** The emission pass now truncates at the failing entry and
+recompiles the prefix, exactly as the discovery loop already did (straight
+traces only; cyclic keeps the measured abort policy), and the truncation
+floor drops from 8 to 2. Measured on zlib: compile aborts 37 -> 23,
+blacklisted heads 1 -> 0, installed traces 411 -> 432, longest FP chain
+25 -> 47. All movers retire identical mcycles and root hashes against
+stock. Wall-time effect is small on one rep; the four-build board
+(baseline lightning, fixed lightning, copy-and-patch, stock) is recorded
+in copy-patch-notes.md alongside this entry's date.

@@ -732,6 +732,42 @@ arithmetic, the separate FP-family lever). Gates: boot bit-identical,
 all 13 balanced workloads identical, 267 machine tests, compete guest
 mcycle-identical, stencil tests.
 
+## Done: the five-emulator matrix, copy-patch ahead of lightning (2026-08-21)
+
+Full cross-emulator board (bench-harness/compete/matrix5.py, fixed
+bogo-ops, one shared musl stress-ng, per-emulator boot baseline
+subtracted, 3-rep medians, 78/78 cells, no failures), wall seconds:
+
+    workload    stock  light   cp    qemu-sys qemu-icnt rvvm
+    boot         0.14   0.15  0.17    0.37     0.37     0.11
+    nop          4.10   0.45  0.43    0.43     0.61     0.52
+    regs        13.84   1.98  3.51    1.74     1.87     1.24
+    branch       0.75   0.75  0.92    2.99     3.04     1.43
+    tree         2.57   2.00  1.85    2.85     2.87     1.29
+    qsort        3.94   2.45  1.69    3.45     3.57     1.32
+    memcpy       7.85   2.47  3.57    4.95     5.46     1.42
+    zlib         9.06   4.80  4.21    3.93     4.15     2.10
+    hash         4.95   2.58  2.13    1.79     1.92     1.90
+    syscall      1.03   0.48  0.50    0.78     0.82     0.55
+    double       1.79   1.58  1.85    1.66     1.67     3.26
+    sieve       11.88   2.09  2.45    1.70     2.05     1.75
+    int64        2.86   1.56  0.89    2.18     2.26     0.34
+    matrixprod   3.60   2.25  1.31    2.27     2.37     0.83
+    geomean      3.80   1.63  1.57    2.00     2.17     1.17
+
+Copy-patch leads lightning for the first time (geomean 1.57 vs 1.63),
+wins seven workloads against it outright (nop, tree, qsort, zlib, hash,
+int64, matrixprod), and beats qemu-system across the board. RVVM's
+remaining lead (1.17) concentrates where lightning also leads cp: the
+register-carry band (regs, sieve, partly memcpy) and FP arithmetic
+(double). Boot: cp 0.17 vs stock 0.14, the compile-on-first-miss volume
+finding, still open.
+
+Remaining measured levers, unchanged in ranking: loop-carried slots
+across the cyclic back edge, FP arithmetic stencil families (the
+mechanism the CSR families just proved), immediate-folded ALU, boot
+formation volume.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

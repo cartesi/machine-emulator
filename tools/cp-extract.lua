@@ -9,9 +9,10 @@
 -- Two container formats:
 -- - ELF64 (the structural C TU, compiled bare-metal; and every TU on Linux
 --   hosts): full patch-kind set, one .text.cp_* section per stencil.
--- - Mach-O arm64 (the semantic C++ TU compiled natively on macOS): branch
---   relocations only (ARM64_RELOC_BRANCH26 patches the same B field as
---   ELF's JUMP26); function extents come from symbol boundaries and the
+-- - Mach-O arm64/x86_64 (the semantic C++ TU compiled natively on macOS):
+--   branch relocations only (ARM64_RELOC_BRANCH26 patches the same B field
+--   as ELF's JUMP26; X86_64_RELOC_BRANCH the same rel32 field as ELF's
+--   PC32/PLT32); function extents come from symbol boundaries and the
 --   true stencil size is the last relocation plus four, with trailing
 --   alignment padding validated and dropped.
 --
@@ -252,13 +253,28 @@ end
 
 local MACHO_MAGIC_64 = 0xfeedfacf
 local CPU_TYPE_ARM64 = 0x0100000c
+local CPU_TYPE_X86_64 = 0x01000007
 local LC_SEGMENT_64, LC_SYMTAB = 0x19, 0x2
 local ARM64_RELOC_BRANCH26 = 2
+local X86_64_RELOC_BRANCH = 2
+
+-- Canonical x86 alignment fill: 0x00, int3, and NOPs -- 0x90 or the 0f 1f
+-- multi-byte forms, under any run of 66/2e prefixes (the assembler pads
+-- between subsections with prefix-stacked long NOPs).
+local X86_NOP_BASES = {
+    "\x90", "\x0f\x1f\x00", "\x0f\x1f\x40\x00", "\x0f\x1f\x44\x00\x00",
+    "\x0f\x1f\x80\x00\x00\x00\x00", "\x0f\x1f\x84\x00\x00\x00\x00\x00",
+}
 
 local function parse_macho(data, path)
     local cputype = string.unpack("<I4", data, 5)
-    if cputype ~= CPU_TYPE_ARM64 then
-        die("%s: expected Mach-O arm64, got cputype 0x%x", path, cputype)
+    local arch
+    if cputype == CPU_TYPE_ARM64 then
+        arch = "aarch64"
+    elseif cputype == CPU_TYPE_X86_64 then
+        arch = "x86_64"
+    else
+        die("%s: expected Mach-O arm64 or x86_64, got cputype 0x%x", path, cputype)
     end
     local ncmds = string.unpack("<I4", data, 17)
     local pos = 33 -- after the 32-byte mach_header_64
@@ -338,25 +354,44 @@ local function parse_macho(data, path)
         local length = (info >> 25) & 3
         local extern = (info >> 27) & 1
         local rtype = (info >> 28) & 0xf
-        if rtype ~= ARM64_RELOC_BRANCH26 or pcrel ~= 1 or length ~= 2 or extern ~= 1 then
+        local expected = arch == "aarch64" and ARM64_RELOC_BRANCH26 or X86_64_RELOC_BRANCH
+        if rtype ~= expected or pcrel ~= 1 or length ~= 2 or extern ~= 1 then
             die("%s: unsupported Mach-O relocation (type %d pcrel %d length %d extern %d) at +%d", path, rtype,
                 pcrel, length, extern, r_address)
         end
         local target = syms[symnum] and syms[symnum].name or "?"
         local ordinal_ = CONT_ORDINAL[target:sub(2)]
         if not ordinal_ then
-            die("%s: BRANCH26 to unexpected symbol %s at +%d", path, target, r_address)
+            die("%s: branch to unexpected symbol %s at +%d", path, target, r_address)
         end
         local fn = func_at(r_address)
-        if r_address < fn.start or r_address + 4 > fn.limit or r_address % 4 ~= 0 then
+        if r_address < fn.start or r_address + 4 > fn.limit or (arch == "aarch64" and r_address % 4 ~= 0) then
             die("%s: relocation at +%d outside or misaligned in %s", path, r_address, fn.name)
         end
         local off = r_address - fn.start
-        local insn = string.unpack("<I4", data, text.offset + r_address + 1)
-        if insn & A64_B_MASK ~= A64_B_OPCODE then
-            die("%s: BRANCH26 patch site +%d is not a B instruction (%08x)", fn.name, off, insn)
+        if arch == "aarch64" then
+            local insn = string.unpack("<I4", data, text.offset + r_address + 1)
+            if insn & A64_B_MASK ~= A64_B_OPCODE then
+                die("%s: BRANCH26 patch site +%d is not a B instruction (%08x)", fn.name, off, insn)
+            end
+            fn.patches[#fn.patches + 1] = { offset = off, kind = "JUMP26", ordinal = ordinal_, addend = 0 }
+        else
+            -- rel32 field of jmp/jcc; Mach-O pcrel is measured from the
+            -- field end, so a zero stored field means the same thing as
+            -- ELF's -4 addend, which is what the runtime patcher applies.
+            local jmp = off >= 1 and data:byte(text.offset + r_address) == X86_JMP_REL32
+            local jcc = off >= 2 and data:byte(text.offset + r_address - 1) == X86_TWOBYTE and
+                data:byte(text.offset + r_address) >= X86_JCC_LO and
+                data:byte(text.offset + r_address) <= X86_JCC_HI
+            if not jmp and not jcc then
+                die("%s: BRANCH patch site +%d is not jmp/jcc rel32", fn.name, off)
+            end
+            local stored = string.unpack("<i4", data, text.offset + r_address + 1)
+            if stored ~= 0 then
+                die("%s: BRANCH with stored addend %d at +%d", fn.name, stored, off)
+            end
+            fn.patches[#fn.patches + 1] = { offset = off, kind = "JMPREL32", ordinal = ordinal_, addend = -4 }
         end
-        fn.patches[#fn.patches + 1] = { offset = off, kind = "JUMP26", ordinal = ordinal_, addend = 0 }
     end
 
     -- True size is the last relocation plus four; trailing bytes up to the
@@ -377,10 +412,44 @@ local function parse_macho(data, path)
             seen[p.offset] = true
         end
         local size = fn.patches[#fn.patches].offset + 4
-        for pad = fn.start + size, fn.limit - 4, 4 do
-            local word = string.unpack("<I4", data, text.offset + pad + 1)
-            if word ~= 0 and word ~= A64_NOP then
-                die("%s: unexpected trailing bytes at +%d (%08x)", fn.name, pad - fn.start, word)
+        if arch == "aarch64" then
+            for pad = fn.start + size, fn.limit - 4, 4 do
+                local word = string.unpack("<I4", data, text.offset + pad + 1)
+                if word ~= 0 and word ~= A64_NOP then
+                    die("%s: unexpected trailing bytes at +%d (%08x)", fn.name, pad - fn.start, word)
+                end
+            end
+        else
+            -- If everything after the last relocated branch is alignment
+            -- fill, the stencil ends at that branch (and the emitter's
+            -- fallthrough elision applies). Otherwise the compiler placed a
+            -- cold block past it (reached by internal branches, e.g. the
+            -- idiv zero path); the stencil then spans to the symbol limit
+            -- and any fill at the very end is copied inert.
+            local pad = fn.start + size
+            while pad < fn.limit do
+                local b = data:byte(text.offset + pad + 1)
+                if b == 0 or b == 0xcc then
+                    pad = pad + 1
+                else
+                    local p = pad
+                    while p < fn.limit and (data:byte(text.offset + p + 1) == 0x66 or
+                        data:byte(text.offset + p + 1) == 0x2e) do
+                        p = p + 1
+                    end
+                    local matched
+                    for _, nop in ipairs(X86_NOP_BASES) do
+                        if data:sub(text.offset + p + 1, text.offset + p + #nop) == nop then
+                            matched = p + #nop - pad
+                            break
+                        end
+                    end
+                    if not matched then
+                        size = fn.limit - fn.start
+                        break
+                    end
+                    pad = pad + matched
+                end
             end
         end
         local code = data:sub(text.offset + fn.start + 1, text.offset + fn.start + size)

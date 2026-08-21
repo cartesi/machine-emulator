@@ -68,8 +68,11 @@ using cp_stencil_fn = TC_CALLCONV execute_status(const STATE_ACCESS a, uint32_t 
     i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t cd, i_state_access_fast_addr_t<STATE_ACCESS> fetch,
     uint64_t r2, tc_context<STATE_ACCESS> *tcc, uint64_t r3, uint64_t r4, uint64_t r5, uint64_t r6);
 
+// Out of line: inlining the twelve-register argument setup into the
+// preserve_none handlers leaves clang's allocator no scratch and it fails;
+// as a plain-convention function the call gets its own frame.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status cp_enter_call(const STATE_ACCESS a, uint32_t insn,
+static NO_INLINE execute_status cp_enter_call(const STATE_ACCESS a, uint32_t insn,
     i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t cd, i_state_access_fast_addr_t<STATE_ACCESS> fetch,
     tc_context<STATE_ACCESS> *tcc, const void *fn) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)

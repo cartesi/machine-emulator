@@ -21,11 +21,15 @@
 #endif
 #define NSLOTS CP_NSLOTS
 #define NPARAMS (5 + NSLOTS) /* sa pc cd fetch tcc + the guest slots */
+/* Guest-value arrays are padded to at least seven entries so the literal
+ * initializers and the fixed twelve-argument call stay well-formed at
+ * smaller slot counts; entries at NSLOTS and beyond are inert. */
+#define NSLOTS_PAD (NSLOTS < 7 ? 7 : NSLOTS)
 #define HEAP_SIZE (16u << 20)
 
 /* Parameter order of the stencil contract; guest slot k sits at param
  * SLOT_POS[k], the pinned roles at positions 3, 4, 5, 7. */
-static const int SLOT_POS[NSLOTS] = {1, 2, 6, 8, 9, 10, 11
+static const int SLOT_POS[NSLOTS_PAD] = {1, 2, 6, 8, 9, 10, 11
 #if NSLOTS > 7
     ,
     12, 13, 14
@@ -150,7 +154,7 @@ struct op {
     uint64_t imm;
 };
 
-static void reference(const struct op *ops, int n, uint64_t slot[NSLOTS])
+static void reference(const struct op *ops, int n, uint64_t slot[NSLOTS_PAD])
 {
     for (int i = 0; i < n; ++i) {
         const struct op *o = &ops[i];
@@ -179,7 +183,7 @@ static uint64_t out[NPARAMS];
 #define FETCHV 0x2222000022220000ull
 #define TCCV 0x3333000033330000ull
 
-static void call_chain(cp_entry_t entry, const uint64_t g[NSLOTS])
+static void call_chain(cp_entry_t entry, const uint64_t g[NSLOTS_PAD])
 {
     entry(SAV, g[0], g[1], PCV, CDV, FETCHV, g[2], TCCV, g[3], g[4], g[5], g[6]
 #if NSLOTS > 7
@@ -200,7 +204,7 @@ static int check_passthrough(uint64_t pc_want, uint64_t cd_want)
     return 0;
 }
 
-static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
+static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS_PAD])
 {
     heap.curr = 0;
     cp_heap_unprotect(&heap);
@@ -250,7 +254,7 @@ static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
     memset(out, 0xaa, sizeof(out));
     call_chain((cp_entry_t) entry, init);
 
-    uint64_t ref[NSLOTS];
+    uint64_t ref[NSLOTS_PAD];
     memcpy(ref, init, sizeof(ref));
     reference(ops, n, ref);
     for (int i = 0; i < NSLOTS; ++i) {
@@ -265,7 +269,7 @@ static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS])
 /* Guard test: emit beq with the taken side landing in one exit stub and the
  * fallthrough side in another, run both outcomes, check the side taken. */
 static uint64_t out_b[NPARAMS];
-static int run_guard_op(int b, int s1, int s2, const uint64_t init[NSLOTS])
+static int run_guard_op(int b, int s1, int s2, const uint64_t init[NSLOTS_PAD])
 {
     heap.curr = 0;
     cp_heap_unprotect(&heap);
@@ -309,12 +313,12 @@ int main(void)
     {
         struct op prog[] = {
             {0, 0, 3, 0, 0, 42},
-            {0, 0, 6, 0, 0, 100},
-            {1, 0, 2, 3, 6, 0},
+            {0, 0, NSLOTS - 1, 0, 0, 100},
+            {1, 0, 2, 3, NSLOTS - 1, 0},
             {1, 0, 0, 2, 3, 0},
-            {1, 0, 1, 5, 0, 0},
+            {1, 0, 1, NSLOTS > 6 ? 5 : 4, 0, 0},
         };
-        uint64_t init[NSLOTS] = {1, 2, 3, 4, 5, 6, 7};
+        uint64_t init[NSLOTS_PAD] = {1, 2, 3, 4, 5, 6, 7};
         failures += run_program(prog, sizeof(prog) / sizeof(prog[0]), init);
         fprintf(stderr, "fixed program done, failures %d\n", failures);
     }
@@ -356,7 +360,7 @@ int main(void)
                     break;
             }
         }
-        uint64_t init[NSLOTS];
+        uint64_t init[NSLOTS_PAD];
         for (int i = 0; i < NSLOTS; ++i) {
             init[i] = pick_imm();
         }
@@ -366,13 +370,13 @@ int main(void)
     /* Guard outcomes: equal, unequal, and same-slot (always taken). */
     {
         fprintf(stderr, "random trials done, failures %d\n", failures);
-        uint64_t init[NSLOTS] = {5, 5, 6, 7, 8, 9, 10};
+        uint64_t init[NSLOTS_PAD] = {5, 5, 6, 7, 8, 9, 10};
         for (int b = 0; b < NBR_OPS; ++b) {
             failures += run_guard_op(b, 0, 1, init); /* equal slots */
             failures += run_guard_op(b, 1, 2, init); /* unequal slots */
             failures += run_guard_op(b, 3, 3, init); /* same slot */
         }
-        uint64_t signs[NSLOTS] = {0x8000000000000000ull, 1, (uint64_t) -1, 0, 5, 0x7fffffffffffffffull, 2};
+        uint64_t signs[NSLOTS_PAD] = {0x8000000000000000ull, 1, (uint64_t) -1, 0, 5, 0x7fffffffffffffffull, 2};
         for (int b = 0; b < NBR_OPS; ++b) {
             for (int k = 0; k < NSLOTS; ++k) {
                 failures += run_guard_op(b, k, (k + 1) % NSLOTS, signs);

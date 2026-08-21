@@ -21,7 +21,11 @@ using namespace cartesi;
 #define CP_NSLOTS 7
 #endif
 #define NPARAMS (5 + CP_NSLOTS) /* sa pc cd fetch tcc + the guest slots */
-static const int SLOT_POS[CP_NSLOTS] = {1, 2, 6, 8, 9, 10, 11
+/* Guest-value arrays are padded to at least seven entries so the literal
+ * initializers and the fixed twelve-argument call stay well-formed at
+ * smaller slot counts; entries at CP_NSLOTS and beyond are inert. */
+#define CP_NSLOTS_PAD (CP_NSLOTS < 7 ? 7 : CP_NSLOTS)
+static const int SLOT_POS[CP_NSLOTS_PAD] = {1, 2, 6, 8, 9, 10, 11
 #if CP_NSLOTS > 7
     ,
     12, 13, 14
@@ -100,13 +104,13 @@ int main()
         check(st == execute_status::success, "warm write");
     }
 
-    const uint64_t g_init[CP_NSLOTS] = {warm_vaddr, 0xaaaaaaaaaaaaaaaaull, 3, 4, 5, 6, 7
+    const uint64_t g_init[CP_NSLOTS_PAD] = {warm_vaddr, 0xaaaaaaaaaaaaaaaaull, 3, 4, 5, 6, 7
 #if CP_NSLOTS > 7
         ,
         8, 9, 10
 #endif
     };
-    const auto run = [&](uint8_t *entry, const uint64_t g[CP_NSLOTS]) {
+    const auto run = [&](uint8_t *entry, const uint64_t g[CP_NSLOTS_PAD]) {
         std::memset(out_hit, 0xee, sizeof(out_hit));
         std::memset(out_bail, 0xdd, sizeof(out_bail));
         reinterpret_cast<cp_entry_t>(entry)(sa_bits, g[0], g[1], 0x111100ull, 0x2222ull, 0x3333ull, g[2], 0x4444ull,
@@ -129,7 +133,7 @@ int main()
 
     // 2. LB sign extension from the interpreter's own semantics.
     {
-        uint64_t g[CP_NSLOTS];
+        uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
         g[0] = warm_vaddr + 8;
         uint8_t *entry = emit_chain(cp_lb_table[1][0]);
@@ -140,7 +144,7 @@ int main()
     // 3. Cold slot: uninitialized hot TLB entry must take the bail
     // continuation and leave every slot unchanged.
     {
-        uint64_t g[CP_NSLOTS];
+        uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
         g[0] = cold_vaddr;
         uint8_t *entry = emit_chain(cp_ld_table[1][0]);
@@ -151,7 +155,7 @@ int main()
 
     // 4. SD hit: [slot0] = slot1, then verify through the machine.
     {
-        uint64_t g[CP_NSLOTS];
+        uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
         g[1] = 0xcafef00dcafef00dull;
         uint8_t *entry = emit_chain(cp_sd_table[0][1]);
@@ -164,7 +168,7 @@ int main()
 
     // 5. SW then LWU: word store and zero-extending reload compose.
     {
-        uint64_t g[CP_NSLOTS];
+        uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
         g[1] = 0xffffffff80000001ull;
         uint8_t *entry = emit_chain(cp_sw_table[0][1]);

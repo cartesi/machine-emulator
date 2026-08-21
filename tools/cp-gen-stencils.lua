@@ -26,11 +26,13 @@
 -- semantic source), and its only relocations are continuation branches,
 -- which every object format patches.
 
-local out = assert(arg[1], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp>")
-local sem_out = assert(arg[2], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp>")
+local out = assert(arg[1], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp> [nslots]")
+local sem_out = assert(arg[2], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp> [nslots]")
 local f = assert(io.open(out, "w"))
 
-local NSLOTS = 7
+-- Guest cache slot count, per-arch (aarch64 preserve_none has free
+-- argument positions through x7, so up to 12; measured demand says 10).
+local NSLOTS = tonumber(arg[3]) or 7
 
 local function emit(s) f:write(s, "\n") end
 
@@ -39,7 +41,10 @@ local function emit(s) f:write(s, "\n") end
 -- 5, 6, 8 are the pinned roster, the rest are the seven guest cache slots.
 local params_t = {}
 local args_t = {}
-local slot_param = {"sa", "r0", "r1", "pc", "cd", "fetch", "r2", "tcc", "r3", "r4", "r5", "r6"}
+local slot_param = {"sa", "r0", "r1", "pc", "cd", "fetch", "r2", "tcc"}
+for d = 3, NSLOTS - 1 do
+    slot_param[#slot_param + 1] = ("r%d"):format(d)
+end
 for _, name in ipairs(slot_param) do
     params_t[#params_t + 1] = "u64 " .. name
     args_t[#args_t + 1] = name

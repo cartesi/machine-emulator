@@ -489,7 +489,7 @@ struct cp_former {
     }
 
     // Guest-level primitives, called from cp-select.inc.
-    void reg3(const cp_stencil_t *const (&tab)[7][7][7], uint8_t rd, uint8_t rs1, uint8_t rs2) {
+    void reg3(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1, uint8_t rs2) {
         const int s1 = alloc_src(rs1);
         const int s2 = alloc_src(rs2);
         if (rd == 0 || c->rec_failed) {
@@ -502,7 +502,7 @@ struct cp_former {
         emit1(tab[d][s1][s2]);
     }
 
-    void reg2i(const cp_stencil_t *const (&tab)[7][7][7], uint8_t rd, uint8_t rs1, uint64_t imm) {
+    void reg2i(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1, uint64_t imm) {
         const int s1 = alloc_src(rs1);
         const int t = alloc_scratch();
         if (c->rec_failed) {
@@ -546,7 +546,7 @@ struct cp_former {
         return scratch;
     }
 
-    void load(const cp_stencil_t *const (&tab)[7][7], uint8_t rd, uint8_t rs1, uint64_t imm) {
+    void load(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1, uint64_t imm) {
         int scratch = -1;
         const int base = address(rs1, imm, scratch);
         if (c->rec_failed) {
@@ -577,7 +577,7 @@ struct cp_former {
         free_scratch(scratch);
     }
 
-    void store(const cp_stencil_t *const (&tab)[7][7], uint8_t rs1, uint8_t rs2, uint64_t imm) {
+    void store(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS], uint8_t rs1, uint8_t rs2, uint64_t imm) {
         int scratch = -1;
         const int base = address(rs1, imm, scratch);
         const int val = alloc_src(rs2);
@@ -624,7 +624,7 @@ struct cp_former {
     // write is architecturally invisible); the read-only table serves
     // csrrs/csrrc with rs1=x0, which must not write the CSR; csrrw with
     // rs1=x0 writes zero, so it takes the full table with a zero slot.
-    void csr(const cp_stencil_t *const (*tab)[7], const cp_stencil_t *const *rtab, uint8_t rd, uint8_t rs1) {
+    void csr(const cp_stencil_t *const (*tab)[CP_NSLOTS], const cp_stencil_t *const *rtab, uint8_t rd, uint8_t rs1) {
         int s1 = -1;
         if (rtab == nullptr || rs1 != 0) {
             s1 = alloc_src(rs1);
@@ -675,7 +675,7 @@ struct cp_former {
     }
 
     // Branches lag one record call: the direction is the next pc.
-    void branch(const cp_stencil_t *const (&tab)[7][7], const cp_stencil_t *const (&comp)[7][7], uint8_t rs1,
+    void branch(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS], const cp_stencil_t *const (&comp)[CP_NSLOTS][CP_NSLOTS], uint8_t rs1,
         uint8_t rs2, uint64_t taken_target, uint8_t size) {
         c->have_pending_branch = true;
         c->pb_vaddr = pc;
@@ -1157,9 +1157,13 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
     cp_heap_protect_flush(&c->heap);
 
     if (cp_log_enabled()) [[unlikely]] {
-        std::fprintf(stderr, "cp-fin head=%llx end=%llx len=%u %s%s\n",
+        int fin_guests = 0;
+        for (int g = 1; g < 32; ++g) {
+            fin_guests += c->reg_slot[g] >= 0 ? 1 : 0;
+        }
+        std::fprintf(stderr, "cp-fin head=%llx end=%llx len=%u %s%s guests=%d slots=%u\n",
             static_cast<unsigned long long>(t.head), static_cast<unsigned long long>(c->rec_end_vaddr), t.len,
-            cyclic ? "cyclic" : "straight", t.carried ? " carried" : "");
+            cyclic ? "cyclic" : "straight", t.carried ? " carried" : "", fin_guests, c->nslots_used);
     }
     if (std::getenv("CP_DUMP_CODE") != nullptr) [[unlikely]] {
         char path[64];

@@ -16,13 +16,21 @@
 
 #include "cp-emit.h"
 
-#define NSLOTS 7
-#define NPARAMS 12 /* sa r0 r1 pc cd fetch r2 tcc r3 r4 r5 r6 */
+#ifndef CP_NSLOTS
+#define CP_NSLOTS 7
+#endif
+#define NSLOTS CP_NSLOTS
+#define NPARAMS (5 + NSLOTS) /* sa pc cd fetch tcc + the guest slots */
 #define HEAP_SIZE (16u << 20)
 
 /* Parameter order of the stencil contract; guest slot k sits at param
  * SLOT_POS[k], the pinned roles at positions 3, 4, 5, 7. */
-static const int SLOT_POS[NSLOTS] = {1, 2, 6, 8, 9, 10, 11};
+static const int SLOT_POS[NSLOTS] = {1, 2, 6, 8, 9, 10, 11
+#if NSLOTS > 7
+    ,
+    12, 13, 14
+#endif
+};
 #define POS_SA 0
 #define POS_PC 3
 #define POS_CD 4
@@ -30,7 +38,12 @@ static const int SLOT_POS[NSLOTS] = {1, 2, 6, 8, 9, 10, 11};
 #define POS_TCC 7
 
 typedef __attribute__((preserve_none)) void (*cp_entry_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t
+#if NSLOTS > 7
+    ,
+    uint64_t, uint64_t, uint64_t
+#endif
+);
 
 static cp_heap_t heap;
 
@@ -114,14 +127,14 @@ CP_REG_OPS(DEF_REG_REF)
 CP_BR_OPS(DEF_BR_REF)
 
 static const struct {
-    const cp_stencil_t *const (*tab)[7][7];
+    const cp_stencil_t *const (*tab)[NSLOTS][NSLOTS];
     uint64_t (*ref)(uint64_t, uint64_t);
 } reg_ops[] = {
 #define REG_ENT(n, e) {cp_##n##_table, ref_##n},
     CP_REG_OPS(REG_ENT)
 };
 static const struct {
-    const cp_stencil_t *const (*tab)[7];
+    const cp_stencil_t *const (*tab)[NSLOTS];
     int (*ref)(uint64_t, uint64_t);
 } br_ops[] = {
 #define BR_ENT(n, e) {cp_##n##_table, bref_##n},
@@ -168,7 +181,12 @@ static uint64_t out[NPARAMS];
 
 static void call_chain(cp_entry_t entry, const uint64_t g[NSLOTS])
 {
-    entry(SAV, g[0], g[1], PCV, CDV, FETCHV, g[2], TCCV, g[3], g[4], g[5], g[6]);
+    entry(SAV, g[0], g[1], PCV, CDV, FETCHV, g[2], TCCV, g[3], g[4], g[5], g[6]
+#if NSLOTS > 7
+        ,
+        g[7], g[8], g[9]
+#endif
+    );
 }
 
 static int check_passthrough(uint64_t pc_want, uint64_t cd_want)

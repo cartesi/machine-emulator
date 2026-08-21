@@ -161,6 +161,18 @@ static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint6
                 uint32_t field = (uint32_t) ((imm[p->ordinal] >> shift) & 0xffffu);
                 uint32_t insn;
                 memcpy(&insn, site, 4);
+                /* Constant compaction: a movk whose field is zero only
+                 * re-clears bits the chain's movz already zeroed, so it
+                 * becomes a NOP. Values like pending counts and small
+                 * deltas shrink their 4-instruction chains to one, which
+                 * matters because every seam pays these chains. The movz
+                 * (and any repatched hole, see cp_repatch's constraint)
+                 * stays. */
+                if (p->kind != CP_P_G0 && field == 0 && (insn & 0xff800000u) == 0xf2800000u) {
+                    insn = 0xd503201fu; /* nop */
+                    memcpy(site, &insn, 4);
+                    break;
+                }
                 insn = (insn & ~(0xffffu << 5)) | (field << 5);
                 memcpy(site, &insn, 4);
                 break;

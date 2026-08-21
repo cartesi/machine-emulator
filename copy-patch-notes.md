@@ -804,6 +804,31 @@ into linked two-trace cycles the carry cannot see; the lever is
 pass-through recording (lightning's starved-head lesson) or carrying
 across same-page links.
 
+## Done: constant compaction in the emitter (2026-08-21)
+
+The seam-glue diagnosis against RVVM: our linking reproduces theirs (a
+loop that does not single-trace-cycle degrades to RVVM's own
+linked-block shape), but every patched constant costs a 4-instruction
+movz/movk chain where RVVM's emitter pays one instruction, and on tight
+linked loops the seams are the workload. cp_emit now compacts: a movk
+whose 16-bit field is zero only re-clears bits the chain's movz already
+zeroed, so it becomes a NOP (sizes and offsets unchanged, so no patch
+bookkeeping moves). cp_repatch_imm skips compacted sites, sound because
+repatched holes only carry values below 2^16 (the tick pending).
+
+Board effect: 3 to 7 percent across the seam-bound band (regs 0.230 to
+0.214, hash 0.571 to 0.550, sieve 0.314 to 0.301), about 30 lines.
+
+A/B against the loop-carry mechanism (CP_NO_CARRY switch, both sides
+with compaction): carry contributes memcpy ~5, hash ~4, sieve ~2.5,
+int64 ~1 percent, regs nothing (its loop never qualified). Honest
+verdict: compaction alone captured a comparable share of the day's win
+at a fraction of the machinery; the carry is the substrate the capacity
+or pass-through fork would make pay, and stays pending that call.
+
+Gates: boot bit-identical, all 13 balanced workloads identical, 267
+machine tests.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

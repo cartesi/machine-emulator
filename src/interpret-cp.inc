@@ -873,9 +873,16 @@ static void cp_repatch_imm(uint8_t *dst, const cp_stencil_t *st, uint8_t ordinal
             std::memcpy(site, &v, 8);
         } else {
             const unsigned shift = 16u * static_cast<unsigned>(p->kind - CP_P_G0);
+            const uint32_t field = static_cast<uint32_t>(value >> shift) & 0xffffu;
             uint32_t insn = 0;
             std::memcpy(&insn, site, 4);
-            insn = (insn & ~(0xffffu << 5)) | ((static_cast<uint32_t>(value >> shift) & 0xffffu) << 5);
+            if (insn == 0xd503201fu) {
+                // Compacted movk. Repatched holes carry only values below
+                // 2^16 (the tick guard's pending count), so a compacted
+                // upper field never needs to become nonzero again.
+                continue;
+            }
+            insn = (insn & ~(0xffffu << 5)) | (field << 5);
             std::memcpy(site, &insn, 4);
         }
     }
@@ -916,7 +923,8 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
     auto *const penumbra_fin =
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<penumbra_state *>(reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
-    if (cyclic && c->rec_carry_ok) {
+    static const bool no_carry = std::getenv("CP_NO_CARRY") != nullptr; // A/B measurement switch
+    if (cyclic && c->rec_carry_ok && !no_carry) {
         // Loop-carried replay: discard the first-pass tick and body, re-emit
         // with every first-use load hoisted into a preheader (plus fresh
         // loads for write-only registers, so every guest-bound slot holds

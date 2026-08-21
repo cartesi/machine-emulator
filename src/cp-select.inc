@@ -281,6 +281,39 @@ switch (label) {
         f.store(cp_sw_table, 2, CP_C_RS2, static_cast<uint64_t>(insn_get_C_SWSP_imm(insn)));
         break;
 
+    // CSR accesses to the FP CSRs, the measured fragment breakers in
+    // soft-float and libm code. Other CSRs end the trace.
+    case tc_label::CSRRW:
+    case tc_label::CSRRS:
+    case tc_label::CSRRC: {
+        const cp_stencil_t *const(*tab)[7] = nullptr;
+        const cp_stencil_t *const *rtab = nullptr;
+        const bool is_s = label == tc_label::CSRRS;
+        const bool is_c = label == tc_label::CSRRC;
+        switch (insn >> 20) {
+            case 0x001:
+                tab = is_s ? cp_csrrs_fflags_table : (is_c ? cp_csrrc_fflags_table : cp_csrrw_fflags_table);
+                rtab = is_s || is_c ? cp_csrr_fflags_table : nullptr;
+                break;
+            case 0x002:
+                tab = is_s ? cp_csrrs_frm_table : (is_c ? cp_csrrc_frm_table : cp_csrrw_frm_table);
+                rtab = is_s || is_c ? cp_csrr_frm_table : nullptr;
+                break;
+            case 0x003:
+                tab = is_s ? cp_csrrs_fcsr_table : (is_c ? cp_csrrc_fcsr_table : cp_csrrw_fcsr_table);
+                rtab = is_s || is_c ? cp_csrr_fcsr_table : nullptr;
+                break;
+            default:
+                break;
+        }
+        if (tab == nullptr) {
+            f.end();
+            break;
+        }
+        f.csr(tab, rtab, insn_get_rd(insn), insn_get_rs1(insn));
+        break;
+    }
+
     // Indirect jumps end the trace through the dynamic terminal (deposit
     // plus front-cache lookup); target semantics are the interpreter's:
     // (x[rs1] + imm) & ~1, link written after the target read.

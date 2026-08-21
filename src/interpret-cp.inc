@@ -487,15 +487,21 @@ struct cp_former {
             if (c->rec_failed) {
                 return;
             }
-            emit_guarded(tab[t][base]);
+            emit_guarded(tab[t][base], c->reg_dirty);
             free_scratch(t);
             return;
         }
+        // The bail runs when the load did NOT execute, so a freshly bound
+        // destination must not be in the bail's dirty set: its slot register
+        // is uninitialized there, and a faulting load leaves rd unchanged.
+        // An aliased destination keeps its bit: the slot still holds the
+        // architecturally current value at the bail.
+        const bool fresh = c->reg_slot[rd] < 0;
         const int d = alloc_dst(rd);
         if (c->rec_failed) {
             return;
         }
-        emit_guarded(tab[d][base]);
+        emit_guarded(tab[d][base], fresh ? (c->reg_dirty & ~(1u << static_cast<uint32_t>(d))) : c->reg_dirty);
         free_scratch(scratch);
     }
 
@@ -506,12 +512,14 @@ struct cp_former {
         if (c->rec_failed) {
             return;
         }
-        emit_guarded(tab[base][val]);
+        emit_guarded(tab[base][val], c->reg_dirty);
         free_scratch(scratch);
     }
 
     // Emits a hit-or-bail stencil, deferring the bail block to finish.
-    void emit_guarded(const cp_stencil_t *st) {
+    // bail_dirty is the dirty set the bail block may store: the caller
+    // excludes destinations the guarded instruction has not yet written.
+    void emit_guarded(const cp_stencil_t *st, uint32_t bail_dirty) {
         if (c->nbails >= cp_state::max_bails) {
             c->rec_failed = true;
             return;
@@ -531,7 +539,7 @@ struct cp_former {
                 b.guard_addend = p->addend;
                 b.delta = static_cast<int64_t>(pc - c->rec_head);
                 b.pending = c->rec_len; // instructions fully retired before this one
-                b.dirty = c->reg_dirty;
+                b.dirty = bail_dirty;
                 std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
                 b.is_branch = false;
                 return;
@@ -620,6 +628,62 @@ struct cp_former {
 static bool cp_log_enabled() {
     static const bool enabled = std::getenv("CP_LOG") != nullptr;
     return enabled;
+}
+
+// Debug switch: refuse trace entries past a budget, so a divergence can be
+// bisected to the exact entry without changing what gets recorded (the
+// lightning TC_LIGHTNING_MAX_ENTER device). Compiled cheaply: one load and
+// compare per entry attempt, off by default (budget < 0 means unlimited).
+static int64_t cp_enter_budget() {
+    static const int64_t budget = [] {
+        const char *s = std::getenv("CP_MAX_ENTER");
+        return s == nullptr ? INT64_C(-1) : std::strtoll(s, nullptr, 0);
+    }();
+    return budget;
+}
+
+static FORCE_INLINE bool cp_enter_allowed(cp_state *c) {
+    const int64_t budget = cp_enter_budget();
+    if (budget < 0) {
+        return true;
+    }
+    if (static_cast<int64_t>(c->entries + c->continue_enters) >= budget) {
+        return false;
+    }
+    return true;
+}
+
+// CP_PROBE=N: dump the guest register file at entry attempts N and N+1
+// (attempts count both allowed and refused entries), so a bisected entry's
+// architectural effect can be compared against its interpretation.
+static int64_t cp_probe_at() {
+    static const int64_t at = [] {
+        const char *s = std::getenv("CP_PROBE");
+        return s == nullptr ? INT64_C(-1) : std::strtoll(s, nullptr, 0);
+    }();
+    return at;
+}
+
+static void cp_probe(cp_state *c, const penumbra_state *penumbra, uint64_t vpc) {
+    static int64_t attempts = 0;
+    const int64_t at = cp_probe_at();
+    if (at < 0) {
+        return;
+    }
+    ++attempts;
+    const int64_t done = static_cast<int64_t>(c->entries + c->continue_enters);
+    if (done >= at - 2 && done <= at + 1) {
+        const auto *state =
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            reinterpret_cast<const processor_state *>(
+                reinterpret_cast<const unsigned char *>(penumbra) - offsetof(processor_state, penumbra));
+        std::fprintf(stderr, "cp-probe attempt=%lld entries=%lld vpc=%llx", static_cast<long long>(attempts),
+            static_cast<long long>(done), static_cast<unsigned long long>(vpc));
+        for (int i = 1; i < 32; ++i) {
+            std::fprintf(stderr, " %llx", static_cast<unsigned long long>(state->shadow.registers.x[i]));
+        }
+        std::fprintf(stderr, "\n");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -868,7 +932,14 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
             while (p != cp_state::none_link) {
                 cp_trace &pred = c->pool[p];
                 const uint16_t next = c->link_next[p];
-                if (!pred.dead && pred.link_site != 0 && pred.link_target == cp_state::none_link) {
+                // Same page AND same vf: only vf equality proves the
+                // successor's body was recorded from the same host bytes the
+                // predecessor validated at entry (the same virtual page can
+                // hold different content across mapping epochs, and the old
+                // trace stays alive because its own host page was never
+                // written).
+                if (!pred.dead && pred.link_site != 0 && pred.link_target == cp_state::none_link &&
+                    pred.code_vf_offset == t.code_vf_offset) {
                     cp_patch_branch(c->heap.base + pred.link_site, pred.link_kind, pred.link_addend,
                         const_cast<uint8_t *>(static_cast<const uint8_t *>(t.fn)));
                     cp_heap_lower(&c->heap, pred.link_site);
@@ -881,13 +952,16 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
     }
     if (!cyclic && t.link_site != 0 && tlb_addr_page(t.successor) == tlb_addr_page(t.head)) {
         // This trace's own straight exit: link now or register as pending.
+        // The vf equality requirement is the content check described above.
         bool interpreted = false;
         if (const cp_trace *succ = cp_find(c, t.successor, &interpreted); succ != nullptr) {
-            cp_patch_branch(c->heap.base + t.link_site, t.link_kind, t.link_addend,
-                const_cast<uint8_t *>(static_cast<const uint8_t *>(succ->fn)));
-            cp_heap_lower(&c->heap, t.link_site);
-            t.link_target = static_cast<uint16_t>(succ - c->pool);
-            ++c->links;
+            if (succ->code_vf_offset == t.code_vf_offset) {
+                cp_patch_branch(c->heap.base + t.link_site, t.link_kind, t.link_addend,
+                    const_cast<uint8_t *>(static_cast<const uint8_t *>(succ->fn)));
+                cp_heap_lower(&c->heap, t.link_site);
+                t.link_target = static_cast<uint16_t>(succ - c->pool);
+                ++c->links;
+            }
         } else if (!interpreted) {
             uint32_t slot = cp_pc_slot(t.successor);
             const uint64_t tag = t.successor + 1;
@@ -1164,6 +1238,15 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
     if (!c->recording) {
         bool interpreted = false;
         const cp_trace *t = cp_find(c, vpc, &interpreted);
+        if (t != nullptr) {
+            auto *const probe_penumbra = reinterpret_cast<penumbra_state *>(
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
+            cp_probe(c, probe_penumbra, vpc);
+        }
+        if (t != nullptr && !cp_enter_allowed(c)) {
+            return nullptr;
+        }
         if (t != nullptr) {
             auto *const penumbra = reinterpret_cast<penumbra_state *>(
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)

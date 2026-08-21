@@ -31,11 +31,21 @@ TC_CALLCONV static execute_status cp_continue(const STATE_ACCESS a, uint32_t ins
     if (!c->recording) [[likely]] {
         const uint64_t vpc = pc_to_virtual(a, pc);
         bool interpreted = false;
-        if (const cp_trace *t = cp_find(c, vpc, &interpreted); t != nullptr) {
+        const cp_trace *probe_t = cp_find(c, vpc, &interpreted);
+        if (probe_t != nullptr) {
+            auto *const probe_penumbra = reinterpret_cast<penumbra_state *>(
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
+            cp_probe(c, probe_penumbra, vpc);
+        }
+        if (const cp_trace *t = probe_t; t != nullptr && cp_enter_allowed(c)) {
             // Installed: enter through the self-validating call entry (its
             // validation bails reach cp_continue_cold, never back here).
             ++c->continue_enters;
             cp_front_put(c, vpc, t->call_fn);
+            if (cp_log_enabled()) [[unlikely]] {
+                std::fprintf(stderr, "cp-contenter vpc=%llx len=%u\n", static_cast<unsigned long long>(vpc), t->len);
+            }
             TC_SYNC();
             TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(const_cast<void *>(t->call_fn))(a,
                 insn TC_HOT_ARGS);
@@ -45,6 +55,11 @@ TC_CALLCONV static execute_status cp_continue(const STATE_ACCESS a, uint32_t ins
             // so return continuations and off-path resumption points form
             // traces instead of staying interpreted forever.
             ++c->continue_trips;
+            if (cp_log_enabled()) [[unlikely]] {
+                std::fprintf(stderr, "cp-trip vpc=%llx pc=%llx vf=%llx\n", static_cast<unsigned long long>(vpc),
+                    static_cast<unsigned long long>(static_cast<uint64_t>(pc)),
+                    static_cast<unsigned long long>(static_cast<uint64_t>(a.read_fetch_vf_offset())));
+            }
             tcc->online_trip_pc = vpc;
             tcc->online_trip = true;
             TC_SYNC();

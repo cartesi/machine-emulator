@@ -666,6 +666,42 @@ per-block code quality. Stale traces pinned by first-wins heads are
 bounded-cost now (one failed entry hop per exit) but flush-only
 reclamation remains the policy.
 
+## Done: two soundness bugs flushed out by the cross-emulator matrix (2026-08-21)
+
+The five-emulator matrix (compete harness, a different kernel and a musl
+stress-ng) crashed the copy_patch guest 42M cycles into boot: a workload
+class the canon never reaches. Both bugs were found by the entry-budget
+bisect (CP_MAX_ENTER refuses entries past N, so a hash bisect over N
+isolates the exact corrupting trace execution, and CP_PROBE dumps the
+register file at the bisected attempt in the with/without pair).
+
+1. Guarded-load destinations leaked into bail stores. load() marked the
+   destination dirty at alloc_dst before emit_guarded snapshotted the
+   dirty set, so a first-execution TLB-miss bail stored the uninitialized
+   slot register into the guest register file. Invisible on hit-and-refill
+   paths (the re-executed load overwrites the clobber), architectural when
+   the load page-faults, where rd must stay unchanged: musl strlen
+   scanning into a demand-paged page. Fix: a freshly bound destination is
+   excluded from the bail's dirty set; an aliased destination keeps its
+   bit, since its slot still holds the architecturally current value.
+
+2. Same-page links did not prove content equality. A trace recorded at
+   the same virtual address in an earlier mapping epoch (another process,
+   another host page) stays alive, correctly, because its own host page
+   was never written. The link pass patched a new trace's terminal
+   straight into that stale body, replaying the old mapping's code. Fix:
+   links require successor and predecessor code_vf_offset equality in
+   both directions: same page plus same vf proves the same host bytes.
+   This corrects the increment-3 note that claimed links need no vf
+   check. Lightning's same-page link_fn patching appears to carry the
+   same latent assumption and deserves an audit.
+
+Gates after both fixes: compete guests retire identical mcycles to stock
+(nop, hash, syscall checked end to end), Linux boot bit-identical, all
+13 balanced workloads identical, 267 machine tests, stencil tests.
+Debug switches kept: CP_MAX_ENTER (entry budget), CP_PROBE (register
+dump at attempt N and N+1), cp-trip/cp-contenter log lines.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

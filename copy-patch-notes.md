@@ -1166,3 +1166,81 @@ battery was rerun after every shared-source change and stays green
 
 Rosetta timing is meaningless (translated JIT output), so no board is
 recorded. Native x86-64 numbers stay owned by the Linux campaign.
+
+## Done: probe memoization falsified; slot count is the real regs lever (2026-08-21)
+
+Two results, one measurement campaign.
+
+### Probe memoization: built, gated, measured net-negative, parked
+
+The memory-carried form went in whole: capture stencils store the
+{vaddr, vh_offset} pair to a per-set penumbra slot after a proven hot
+hit, cached accesses reach the pair from the state access at a fixed
+offset (no patched address, so the semantic TU stays hole-free, which
+Mach-O extraction requires) and guard with tlb_is_hit's exact folded
+compare, per-set streams starting on the second consecutive same-base
+access. One mechanism on both architectures. Fully gated: 13 boards
+hash-identical, 267 machine tests, stencil tests, boot canon.
+
+Attribution with an env kill-switch on the same 16-slot binary
+(balanced boards, medians of 3):
+
+    workload   memo on   memo off
+    int64      0.337     0.323     (+4% cost)
+    regs       0.129     0.131     (1.5% gain)
+    memcpy     0.365     0.364     (flat)
+
+The cost is not guard-failure bails (mem-bails 199376 -> 199907 of 890k
+entries); it tracks the +3.7% emitted code and the captures executing
+per iteration in hot cyclic bodies. The premise -- the 13-instruction
+probe at 62% of the regs store bursts -- was measured before the
+chain-start entries and did not survive them: the profiled hot regs
+trace today has no probes at its hot offsets at all. Net loss, so the
+work is parked on branch cp/probe-memo-parked (commit message carries
+the numbers). If revisited, hoist captures into the loop-carry
+preheader so cyclic bodies stop paying them per iteration.
+
+### The regs bottleneck is slot-eviction churn; AArch64 default now 16
+
+The same profile shows the hot regs trace (37% of samples, len 256) is
+a repeating str/ldr pair against the guest x-file around every ALU op:
+stress-ng regs keeps ~30 guest registers live against the 10-slot
+cache, so every instruction pays a spill and a fill. The slot count is
+a build parameter, so the sweep was direct (balanced regs, medians):
+
+    slots   regs    notes
+    10      0.199   old default
+    12      0.209   dead zone: the working set still misses and the
+                    allocation shifts
+    14      0.130
+    16      0.128   new default; tree and memcpy a hair better, the
+                    rest flat, formation evictions 78845 -> 17843
+
+All hashes identical at every count. amd64 cannot follow: its
+preserve_none argument registers bound the roster at 6 slots under
+clang (register allocation fails above) and 7 under GCC, so its
+default stays put and the churn ceiling remains there; the first
+amd64 lever if it matters is restructuring the far-jump and lookup
+stencils to branch through memory so clang reaches 7.
+
+Both test harnesses previously hardcoded rosters (first seven, then
+ten slots); they now derive slot positions from the count and name all
+sixteen entry arguments, inert beyond the built count, with a loud
+error above sixteen.
+
+### Found in passing: the chain-start entries regressed branch by 67%
+
+Retiming the full board surfaced branch at 2.07 against its 1.27
+record. Bisection by rebuild: the commit before the chain-start
+entries (matrix record) runs branch at 1.24 on today's host; every
+build after them runs ~2.07 regardless of slot count or memoization.
+The chain-start change was gated on hashes and a regs smoke only, and
+the recorded matrix predates it, so the regression shipped unmeasured.
+Not caused and not touched by this commit; investigation pending (the
+suspect is the per-chain-start probe cost on a workload that breaks
+chains constantly).
+
+Final board on this commit (16 slots, no memoization, medians):
+regs 0.132, int64 0.323, memcpy 0.365, tree 1.912, syscall 0.414,
+qsort 0.679, nop 0.027, with syscall and qsort also improved against
+their records and branch carrying the pre-existing regression above.

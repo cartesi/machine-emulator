@@ -21,24 +21,21 @@ using namespace cartesi;
 #define CP_NSLOTS 7
 #endif
 #define NPARAMS (5 + CP_NSLOTS) /* sa pc cd fetch tcc + the guest slots */
-/* Guest-value arrays are padded to at least seven entries so the literal
- * initializers and the fixed twelve-argument call stay well-formed at
- * smaller slot counts; entries at CP_NSLOTS and beyond are inert. */
-#define CP_NSLOTS_PAD (CP_NSLOTS < 7 ? 7 : CP_NSLOTS)
-static const int SLOT_POS[CP_NSLOTS_PAD] = {1, 2, 6, 8, 9, 10, 11
-#if CP_NSLOTS > 7
-    ,
-    12, 13, 14
+/* Guest-value arrays are padded to the sixteen slots the entry call
+ * names so the literal initializers and the fixed call stay well-formed
+ * at smaller slot counts; entries at CP_NSLOTS and beyond are inert. */
+#define CP_NSLOTS_PAD (CP_NSLOTS < 16 ? 16 : CP_NSLOTS)
+#if CP_NSLOTS > 16
+#error "harness names sixteen slot arguments; extend the roster here"
 #endif
-};
+#define SLOT_POS_K(k) ((k) == 0 ? 1 : (k) == 1 ? 2 : (k) == 2 ? 6 : (k) + 5)
+static const int SLOT_POS[CP_NSLOTS_PAD] = {SLOT_POS_K(0), SLOT_POS_K(1), SLOT_POS_K(2), SLOT_POS_K(3), SLOT_POS_K(4),
+    SLOT_POS_K(5), SLOT_POS_K(6), SLOT_POS_K(7), SLOT_POS_K(8), SLOT_POS_K(9), SLOT_POS_K(10), SLOT_POS_K(11),
+    SLOT_POS_K(12), SLOT_POS_K(13), SLOT_POS_K(14), SLOT_POS_K(15)};
 
 using cp_entry_t = __attribute__((preserve_none)) void (*)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t
-#if CP_NSLOTS > 7
-    ,
-    uint64_t, uint64_t, uint64_t
-#endif
-);
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t);
 
 static cp_heap_t heap;
 static uint64_t out_hit[NPARAMS];
@@ -104,22 +101,13 @@ int main()
         check(st == execute_status::success, "warm write");
     }
 
-    const uint64_t g_init[CP_NSLOTS_PAD] = {warm_vaddr, 0xaaaaaaaaaaaaaaaaull, 3, 4, 5, 6, 7
-#if CP_NSLOTS > 7
-        ,
-        8, 9, 10
-#endif
-    };
+    const uint64_t g_init[CP_NSLOTS_PAD] = {warm_vaddr, 0xaaaaaaaaaaaaaaaaull, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+        14, 15, 16};
     const auto run = [&](uint8_t *entry, const uint64_t g[CP_NSLOTS_PAD]) {
         std::memset(out_hit, 0xee, sizeof(out_hit));
         std::memset(out_bail, 0xdd, sizeof(out_bail));
         reinterpret_cast<cp_entry_t>(entry)(sa_bits, g[0], g[1], 0x111100ull, 0x2222ull, 0x3333ull, g[2], 0x4444ull,
-            g[3], g[4], g[5], g[6]
-#if CP_NSLOTS > 7
-            ,
-            g[7], g[8], g[9]
-#endif
-        );
+            g[3], g[4], g[5], g[6], g[7], g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
     };
 
     // 1. LD hit: slot1 = [slot0], hit continuation taken, value exact.

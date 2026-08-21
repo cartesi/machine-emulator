@@ -1211,48 +1211,37 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     c->rec_carry_ok = true;
     c->rec_guest_slots = 0;
     c->rec_scratch_slots = 0;
-    // Self-validating call-entry prologue (ported call_fn semantics, all in
-    // generated code so the lookup tail can chain into it without a C round
-    // trip): translation-context guard, hot code-TLB slot probe of the head
-    // page under the recorded context, entry-time pma publish from the
-    // shadow slot, then establishment. Every compare bails to the island
-    // with the caller's deposit pc untouched, so misses resume the ordinary
-    // fetch path, whose fill is the hashed behavior. Establishment values
-    // are install-time constants because entry requires the slot's
-    // vh_offset to equal the recorded code_vf_offset. Falls through into
-    // the tick guard, like lightning's normal_entry_established.
+    // Fused call prologue: one stencil probes the hot code-TLB slot of the
+    // CURRENT translation context (the interpreter's own per-transit fetch
+    // probe, so hits and misses reproduce its hashed fill sequence, and a
+    // same-content entry from another context now legally hits), compares
+    // the recorded vh for content identity, re-encodes the pc from the
+    // incoming deposit, and publishes the mapping; the second publishes
+    // the entry-time pma from the shadow slot of the same index. A miss
+    // bails with the deposit untouched and resumes the fetch path.
+    static_assert(offsetof(penumbra_state, tlb_ctx_slot_base) - offsetof(penumbra_state, fetch_vf_offset) == 8,
+        "cp_call_probe derives the vf address from the ctx address");
+    static_assert(sizeof(hot_tlb_slot) == 16, "cp_call_probe bakes the hot slot size");
+    static_assert(sizeof(shadow_tlb_slot) == 32 && offsetof(shadow_tlb_slot, pma_index) == 16,
+        "cp_call_pma bakes the shadow slot layout");
+    constexpr size_t cp_tcc_fetch_page_off = 32; // matches the generator's literal
+    constexpr size_t cp_tcc_pma_off = 40;        // matches the generator's literal
+    static_assert(offsetof(tc_context<STATE_ACCESS>, fetch_vaddr_page) == cp_tcc_fetch_page_off,
+        "cp_call_probe bakes the tcc offset");
+    static_assert(offsetof(tc_context<STATE_ACCESS>, fetch_pma_index) == cp_tcc_pma_off,
+        "cp_call_pma bakes the tcc offset");
     uint8_t *fall[2] = {nullptr, nullptr};
-    uint8_t *guard[2] = {nullptr,
-        const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island))};
     penumbra_state &penumbra = a.get_penumbra();
     auto *const pstate =
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<processor_state *>(reinterpret_cast<unsigned char *>(&penumbra) - offsetof(processor_state, penumbra));
-    const uint64_t vf = c->rec_code_vf_offset;
-    const uint64_t head_page = tlb_addr_page(vpc);
-    const uint64_t fetch_val = head_page + vf;
-    const uint64_t slot = tlb_slot_index(vpc, c->rec_ctx_slot_base);
-    auto &hot = penumbra.tlb[TLB_CODE][slot];
-    auto &shadow_slot = pstate->shadow.tlb[TLB_CODE][slot];
     c->rec_call_start = c->heap.base + c->heap.curr;
-    const uint64_t imm_ctx[2] = {reinterpret_cast<uint64_t>(&penumbra.tlb_ctx_slot_base), c->rec_ctx_slot_base};
-    const uint64_t imm_hotpage[2] = {reinterpret_cast<uint64_t>(&hot.vaddr_page), head_page};
-    const uint64_t imm_hotvh[2] = {reinterpret_cast<uint64_t>(&hot.vh_offset), vf};
-    const uint64_t imm_pma[2] = {reinterpret_cast<uint64_t>(&shadow_slot.pma_index),
-        reinterpret_cast<uint64_t>(&tcc->fetch_pma_index)};
-    const uint64_t imm_vf[2] = {reinterpret_cast<uint64_t>(&penumbra.fetch_vf_offset), vf};
-    const uint64_t imm_page[2] = {reinterpret_cast<uint64_t>(&tcc->fetch_vaddr_page), fetch_val};
-    const uint64_t imm_est[2] = {vpc + vf, fetch_val};
-    uint8_t *ctx_bail[2] = {nullptr, const_cast<uint8_t *>(static_cast<const uint8_t *>(c->ctx_island))};
-    uint8_t *page_bail[2] = {nullptr, const_cast<uint8_t *>(static_cast<const uint8_t *>(c->page_island))};
-    uint8_t *vh_bail[2] = {nullptr, const_cast<uint8_t *>(static_cast<const uint8_t *>(c->vh_island))};
-    if (cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_ctx, ctx_bail) == nullptr ||
-        cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_hotpage, page_bail) == nullptr ||
-        cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_hotvh, vh_bail) == nullptr ||
-        cp_emit(&c->heap, &cp_s_cp_copy_mem, imm_pma, fall) == nullptr ||
-        cp_emit(&c->heap, &cp_s_cp_store_imm, imm_vf, fall) == nullptr ||
-        cp_emit(&c->heap, &cp_s_cp_store_imm, imm_page, fall) == nullptr ||
-        cp_emit(&c->heap, &cp_s_cp_call_establish, imm_est, fall) == nullptr) {
+    const uint64_t imm_probe[4] = {reinterpret_cast<uint64_t>(&penumbra.tlb[TLB_CODE][0]), tlb_addr_page(vpc),
+        c->rec_code_vf_offset, reinterpret_cast<uint64_t>(&penumbra.tlb_ctx_slot_base)};
+    const uint64_t imm_pma[4] = {reinterpret_cast<uint64_t>(&pstate->shadow.tlb[TLB_CODE][0]), 0, 0, 0};
+    uint8_t *probe_bail[2] = {nullptr, const_cast<uint8_t *>(static_cast<const uint8_t *>(c->page_island))};
+    if (cp_emit(&c->heap, &cp_s_cp_call_probe, imm_probe, probe_bail) == nullptr ||
+        cp_emit(&c->heap, &cp_s_cp_call_pma, imm_pma, fall) == nullptr) {
         c->rec_failed = true;
     }
     c->rec_body_start = c->heap.base + c->heap.curr; // replay rollback point

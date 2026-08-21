@@ -853,6 +853,34 @@ fork, not capacity.
 Gates: boot bit-identical, all 13 balanced workloads identical, 267
 machine tests, stencil tests at the widened contract.
 
+## Done: fused call prologue, current-context probe (2026-08-21)
+
+The seam analysis against RVVM split the ~45-instruction call prologue
+into a per-transit irreducible core and compile-time data materialized
+badly. Both fixed at once: the emitter's immediate-hole budget went
+from two to four (cp_imm64_2/3, format-agnostic ordinals), and the
+seven-stencil validate-and-establish chain collapsed into two fused
+stencils. cp_call_probe probes the hot code-TLB slot of the CURRENT
+translation context (the interpreter's own per-transit fetch probe,
+reproducing its hashed fill sequence; the vh compare supplies content
+identity), re-encodes the pc from the incoming deposit (vpc plus caller
+vf, the universal entry convention, so no pc hole), publishes the
+mapping base-relative, and hands the computed slot index to cp_call_pma
+in slot r0 (dead at entry) for the shadow pma publish. Probing the
+current partition also removed the recorded-context equality
+restriction: a same-content entry from another context now legally
+hits, exactly as stock would.
+
+Layout facts baked as generator literals (slot sizes, the
+vf-next-to-ctx adjacency, two tc_context offsets) are pinned by
+static_asserts next to the emission, so drift fails the build; the
+first build did exactly that and the asserts caught the wrong guess.
+
+The call-heavy band moved 10-15 percent: int64 0.377 to 0.333, qsort
+0.786 to 0.693, matrixprod 0.413 to 0.352, syscall 0.514 to 0.461,
+hash 0.550 to 0.532. Gates: boot bit-identical, all 13 balanced
+workloads identical, 267 machine tests, stencil tests.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

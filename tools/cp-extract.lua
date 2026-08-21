@@ -37,7 +37,7 @@ local function die(fmt, ...)
 end
 
 local CONT_ORDINAL = { cp_cont_0 = 0, cp_cont_1 = 1 }
-local IMM_ORDINAL = { cp_imm64_0 = 0, cp_imm64_1 = 1 }
+local IMM_ORDINAL = { cp_imm64_0 = 0, cp_imm64_1 = 1, cp_imm64_2 = 2, cp_imm64_3 = 3 }
 
 -- Instruction encodings verified at patch sites before a field rewrite is
 -- declared legal.

@@ -101,12 +101,13 @@ static inline size_t cp_heap_remaining(const cp_heap_t *h)
     return h->size - h->curr;
 }
 
-/* Copies one stencil at the heap cursor and applies its patches. imm[2] fill
- * the value holes, cont[2] the continuations (NULL continuation 0 means
+/* Copies one stencil at the heap cursor and applies its patches. imm fills
+ * the value holes (as many as the stencil's highest immediate ordinal, up
+ * to four), cont[2] the continuations (NULL continuation 0 means
  * fallthrough, elided when the branch is trailing). Returns the stencil
  * address, or NULL when the heap is full (caller flushes all and retries).
  */
-static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint64_t imm[2], uint8_t *const cont[2])
+static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint64_t *imm, uint8_t *const cont[2])
 {
     uint8_t *dst = h->base + h->curr;
     uint32_t size = st->size;

@@ -140,6 +140,16 @@ emit("    TAIL return cp_cont_0(" .. args .. ");")
 emit("}")
 emit("")
 
+-- Bail-path counter: bump a 64-bit counter through a patched address.
+-- Emitted only on cold paths (the per-cause counting islands), so the
+-- statistics cost nothing on hot paths.
+emit(("CONT void cp_count(%s)"):format(params))
+emit("{")
+emit("    ++*(u64 *)cp_imm64_0;")
+emit("    TAIL return cp_cont_0(" .. args .. ");")
+emit("}")
+emit("")
+
 -- Store a patched constant through a patched address. The call-entry
 -- prologue publishes the established fetch-mapping fields with these,
 -- before the register re-encode, with no C boundary in between.

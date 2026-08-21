@@ -30,6 +30,7 @@ struct cp_trace {
     uint64_t hpage[max_hpages];
     uint8_t nhpages;
     bool dead;
+    uint32_t exec_count; ///< Hook entries into this trace (C-side, diagnostics)
     const void *fn;      ///< Entry pointer (the tick guard)
     const void *call_fn; ///< Call-entry prologue: mapping establishment, then fn
     // Straight-exit link (RVVM block_links analog, one trailing site per
@@ -59,6 +60,10 @@ struct cp_bail {
     int64_t delta;        ///< Signed fast-pc displacement head -> off path
     uint32_t pending;     ///< Instructions retired when the bail is taken
     uint32_t dirty;       ///< Dirty-slot snapshot at the guard
+    uint8_t slot_guest[7]; ///< Slot-to-guest mapping at the guard: eviction
+                           ///< remaps slots mid-trace, so the bail stores
+                           ///< must use the mapping the guard saw
+    bool is_branch;       ///< Branch-direction guard (else memory guard)
 };
 
 struct cp_state {
@@ -71,7 +76,22 @@ struct cp_state {
     static constexpr uint16_t none_link = 0xffff;
 
     cp_heap_t heap;
-    const void *continue_island; ///< far-jump to the interpreter continuation
+    const void *continue_island;      ///< far-jump to cp_continue (enter or trip on exit)
+    const void *continue_cold_island; ///< far-jump to cp_continue_cold (resume only)
+    // Per-cause counting islands: each cold bail path routes through a
+    // counter bump before the far jump, so the statistics attribute every
+    // unproductive entry to its guard.
+    const void *tick_island;
+    const void *ctx_island;
+    const void *page_island;
+    const void *vh_island;
+    const void *miss_island;
+    const void *branch_bail_island;
+    const void *mem_bail_island;
+    const void *mem_bail_cold_island; ///< Zero-retirement bails: re-entering
+                                      ///< would loop without progress, only
+                                      ///< the interpreter slow path advances
+    const void *terminal_island;
 
     cp_front_entry front[front_size];
 
@@ -121,6 +141,20 @@ struct cp_state {
     uint32_t reg_dirty;  ///< Bit per slot
     uint8_t slot_guest[nslots];
     uint8_t nslots_used;
+    // Eviction state (RVVM regs[].last_used): once all slots fill, the
+    // least-recently-used unlocked slot spills (store if dirty) and remaps.
+    uint32_t rec_last_used[nslots];
+    uint32_t rec_use_clock;
+    // Register-cache snapshot taken with rec_insn_start: the uncompilable
+    // rollback discards the failed instruction's emitted bytes, including
+    // any eviction spills, so the bookkeeping those allocations mutated
+    // must be restored with the heap cursor or spilled registers are lost.
+    int8_t snap_reg_slot[32];
+    uint8_t snap_slot_guest[nslots];
+    uint32_t snap_reg_dirty;
+    uint8_t snap_nslots_used;
+    uint32_t snap_last_used[nslots];
+    uint32_t snap_use_clock;
     // Pending branch: direction known only when the next instruction's pc
     // arrives, so branches lag one record call.
     bool have_pending_branch;
@@ -146,6 +180,25 @@ struct cp_state {
     uint64_t call_entries;
     uint64_t links;
     uint64_t links_severed;
+    uint64_t tick_bails;    ///< Entries rejected by the tick guard
+    uint64_t ctx_bails;     ///< Call entries rejected by the context guard
+    uint64_t page_bails;    ///< Call entries rejected by the hot-slot page probe
+    uint64_t vh_bails;      ///< Call entries rejected by the hot-slot vh probe
+    uint64_t lookup_misses; ///< Dynamic terminals whose front probe missed
+    uint64_t branch_bails;  ///< Exits through a branch-direction guard
+    uint64_t mem_bails;     ///< Exits through a memory (hot-TLB) guard
+    uint64_t terminal_exits; ///< Straight-terminal exits (cyclic tick bails count as tick)
+    // Formation-cause counters: what ended each recording.
+    uint64_t fin_cyclic;
+    uint64_t fin_dynamic;     ///< JALR-class terminal
+    uint64_t fin_page;        ///< Guest-page crossing or mapping change
+    uint64_t fin_installed;   ///< Stopped at an installed head
+    uint64_t fin_maxlen;
+    uint64_t fin_uncompilable; ///< Unclassifiable instruction rollback
+    uint64_t fin_trap;        ///< Successor mismatch (trap between records)
+    uint64_t evictions;       ///< Register-cache spills during formation
+    uint64_t continue_enters; ///< Exits that entered an installed trace from C
+    uint64_t continue_trips;  ///< Exits that tripped compilation (dispatcher miss)
 };
 
 } // namespace cartesi

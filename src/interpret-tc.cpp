@@ -6973,7 +6973,8 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 #endif
 #endif
 #if TC_COPY_PATCH
-    tcc->cp = cp_get(a.get_penumbra(), reinterpret_cast<const void *>(&cp_continue<STATE_ACCESS>));
+    tcc->cp = cp_get(a.get_penumbra(), reinterpret_cast<const void *>(&cp_continue<STATE_ACCESS>),
+        reinterpret_cast<const void *>(&cp_continue_cold<STATE_ACCESS>));
     tcc->online_trip = false;
     // Armed once and left armed: host-side writes between runs must
     // invalidate traces too.

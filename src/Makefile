@@ -297,6 +297,17 @@ endif
 # Copy-and-patch stencil backend (see copy-patch-rvvm.md). Stencils are
 # compiled offline by clang into an ELF object that is parsed, never linked,
 # so the rule works on any host; the emulator build compiler is unaffected.
+# Guest cache slot count for the copy-patch stencil pipeline: measured
+# demand of the hot loops is 8-10, and the aarch64 preserve_none layout
+# has free argument positions through x7. amd64's narrower register
+# contract keeps the default. Defined unconditionally so any pipeline
+# invocation (tests included) agrees with the generated sources.
+ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
+CP_NSLOTS?=10
+else
+CP_NSLOTS?=7
+endif
+
 ifeq ($(copy_patch),yes)
 ifeq ($(lightning),yes)
 $(error copy_patch=yes and lightning=yes are mutually exclusive)
@@ -313,16 +324,12 @@ ifeq (,$(findstring clang,$(CC)))
 $(error copy_patch=yes on AArch64 requires a clang toolchain (CC=$(CC)))
 endif
 endif
-# Guest cache slot count: measured demand of the hot loops is 8-10, and
-# the aarch64 preserve_none layout has free argument positions through
-# x7. amd64's narrower register contract keeps the default.
-ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
-CP_NSLOTS?=10
-else
-CP_NSLOTS?=7
-endif
 INTERPRET_CXXFLAGS+=-DTC_COPY_PATCH=1 -DCP_NSLOTS=$(CP_NSLOTS)
+# The stencil pipeline is a dependency only when the backend is built:
+# a stock build must not run the generator or extractor at all.
+ifeq ($(copy_patch),yes)
 interpret-tc.o: cp-context.hpp cp-emit.h interpret-cp.inc cp-select.inc cp-stencils-tables.h
+endif
 endif
 # Offline stencil compile, same compiler family as the emulator build.
 # AArch64 (clang): large code model for movz/movk value holes. x86-64:

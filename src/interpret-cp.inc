@@ -211,6 +211,39 @@ static void cp_free(void *p) {
             static_cast<unsigned long long>(c->emitted_bytes), static_cast<unsigned long long>(c->compile_ns / 1000000),
             static_cast<unsigned long long>(c->entries), static_cast<unsigned long long>(c->call_entries),
             static_cast<unsigned long long>(c->links), static_cast<unsigned long long>(c->links_severed));
+        std::fprintf(stderr,
+            "cp: fin cyclic %llu dynamic %llu page %llu installed %llu maxlen %llu uncompilable %llu trap %llu "
+            "evictions %llu\n",
+            static_cast<unsigned long long>(c->fin_cyclic), static_cast<unsigned long long>(c->fin_dynamic),
+            static_cast<unsigned long long>(c->fin_page), static_cast<unsigned long long>(c->fin_installed),
+            static_cast<unsigned long long>(c->fin_maxlen), static_cast<unsigned long long>(c->fin_uncompilable),
+            static_cast<unsigned long long>(c->fin_trap), static_cast<unsigned long long>(c->evictions));
+        std::fprintf(stderr, "cp: continue-enters %llu continue-trips %llu\n",
+            static_cast<unsigned long long>(c->continue_enters), static_cast<unsigned long long>(c->continue_trips));
+        for (int rank = 0; rank < 10; ++rank) {
+            uint32_t best = 0;
+            const cp_trace *bt = nullptr;
+            for (uint32_t i = 0; i < c->ntraces; ++i) {
+                if (c->pool[i].exec_count > best) {
+                    best = c->pool[i].exec_count;
+                    bt = &c->pool[i];
+                }
+            }
+            if (bt == nullptr) {
+                break;
+            }
+            std::fprintf(stderr, "cp: hot trace head=%llx len=%u entries=%u succ=%llx%s\n",
+                static_cast<unsigned long long>(bt->head), bt->len, bt->exec_count,
+                static_cast<unsigned long long>(bt->successor), bt->link_site == 0 ? " (no-link-site)" : "");
+            const_cast<cp_trace *>(bt)->exec_count = 0;
+        }
+        std::fprintf(stderr,
+            "cp: tick-bails %llu ctx-bails %llu page-bails %llu vh-bails %llu lookup-misses %llu "
+            "branch-bails %llu mem-bails %llu terminal-exits %llu\n",
+            static_cast<unsigned long long>(c->tick_bails), static_cast<unsigned long long>(c->ctx_bails),
+            static_cast<unsigned long long>(c->page_bails), static_cast<unsigned long long>(c->vh_bails),
+            static_cast<unsigned long long>(c->lookup_misses), static_cast<unsigned long long>(c->branch_bails),
+            static_cast<unsigned long long>(c->mem_bails), static_cast<unsigned long long>(c->terminal_exits));
     }
     cp_heap_free(&c->heap);
     delete c;
@@ -218,8 +251,10 @@ static void cp_free(void *p) {
 
 template <typename STATE_ACCESS>
 TC_CALLCONV static execute_status cp_continue(STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
+template <typename STATE_ACCESS>
+TC_CALLCONV static execute_status cp_continue_cold(STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
 
-static cp_state *cp_get(penumbra_state &penumbra, const void *continue_fn) {
+static cp_state *cp_get(penumbra_state &penumbra, const void *continue_fn, const void *continue_cold_fn) {
     if (penumbra.tc_state == nullptr) {
         auto *c = new cp_state{};
         if (cp_heap_init(&c->heap, 64u << 20) != 0) {
@@ -227,11 +262,33 @@ static cp_state *cp_get(penumbra_state &penumbra, const void *continue_fn) {
             return nullptr;
         }
         // The far-jump island through which every exit reaches the
-        // interpreter continuation, emitted once per heap.
+        // interpreter continuation, emitted once per heap, plus one counting
+        // island per bail cause (cold paths only).
         cp_heap_unprotect(&c->heap);
         const uint64_t imm[2] = {reinterpret_cast<uint64_t>(continue_fn), 0};
+        const uint64_t imm_cold[2] = {reinterpret_cast<uint64_t>(continue_cold_fn), 0};
         uint8_t *island_cont[2] = {nullptr, nullptr};
         c->continue_island = cp_emit(&c->heap, &cp_s_cp_far_jump, imm, island_cont);
+        c->continue_cold_island = cp_emit(&c->heap, &cp_s_cp_far_jump, imm_cold, island_cont);
+        // Bail causes that must not re-enter (a failed entry or short
+        // countdown would fail again immediately) resume cold; exits and
+        // lookup misses go through the entering continuation.
+        const auto counting_island = [&](uint64_t *counter, const uint64_t (&target)[2]) -> const void * {
+            const uint64_t imm_count[2] = {reinterpret_cast<uint64_t>(counter), 0};
+            uint8_t *fall[2] = {nullptr, nullptr};
+            const void *at = cp_emit(&c->heap, &cp_s_cp_count, imm_count, fall);
+            cp_emit(&c->heap, &cp_s_cp_far_jump, target, island_cont);
+            return at;
+        };
+        c->tick_island = counting_island(&c->tick_bails, imm_cold);
+        c->ctx_island = counting_island(&c->ctx_bails, imm_cold);
+        c->page_island = counting_island(&c->page_bails, imm_cold);
+        c->vh_island = counting_island(&c->vh_bails, imm_cold);
+        c->miss_island = counting_island(&c->lookup_misses, imm);
+        c->branch_bail_island = counting_island(&c->branch_bails, imm);
+        c->mem_bail_island = counting_island(&c->mem_bails, imm);
+        c->mem_bail_cold_island = counting_island(&c->mem_bails, imm_cold);
+        c->terminal_island = counting_island(&c->terminal_exits, imm);
         cp_heap_protect_flush(&c->heap);
         c->heap_reset_curr = c->heap.curr;
         cp_front_reset(c);
@@ -259,20 +316,63 @@ struct cp_former {
         return at;
     }
 
-    // Guest-register slot allocation, RVVM's guest-indexed cache.
-    // Returns the slot holding the register's value, loading lazily
-    // (x0 loads a zero constant); -1 when slots are exhausted.
-    int alloc_src(uint8_t reg) {
-        if (c->reg_slot[reg] >= 0) {
-            return c->reg_slot[reg];
+    // Guest-register slot allocation, RVVM's guest-indexed cache with its
+    // last_used eviction: once every slot fills, the least-recently-used
+    // slot not locked by the current instruction spills (a gxs store when
+    // dirty) and remaps. Slots this instruction touched are locked so an
+    // operand is never evicted mid-instruction.
+    uint32_t locked = 0;
+
+    void touch(int slot) {
+        locked |= 1u << static_cast<uint32_t>(slot);
+        c->rec_last_used[slot] = ++c->rec_use_clock;
+    }
+
+    int take_slot() {
+        if (c->nslots_used < cp_state::nslots) {
+            return c->nslots_used++;
         }
-        if (c->nslots_used >= cp_state::nslots) {
-            c->rec_failed = true;
+        int best = -1;
+        uint32_t best_used = UINT32_MAX;
+        for (int s = 0; s < static_cast<int>(cp_state::nslots); ++s) {
+            if ((locked & (1u << static_cast<uint32_t>(s))) != 0) {
+                continue;
+            }
+            const uint32_t used = c->slot_guest[s] == 0xff ? 0 : c->rec_last_used[s];
+            if (used < best_used) {
+                best_used = used;
+                best = s;
+            }
+        }
+        if (best < 0) {
+            c->rec_failed = true; // every slot locked by this instruction
             return -1;
         }
-        const int slot = c->nslots_used++;
+        const uint8_t old = c->slot_guest[best];
+        if (old != 0xff) {
+            if ((c->reg_dirty & (1u << static_cast<uint32_t>(best))) != 0 && old != 0) {
+                emit1(cp_gxs_table[best][old - 1]);
+                c->reg_dirty &= ~(1u << static_cast<uint32_t>(best));
+            }
+            c->reg_slot[old] = -1;
+            ++c->evictions;
+        }
+        return best;
+    }
+
+    int alloc_src(uint8_t reg) {
+        if (c->reg_slot[reg] >= 0) {
+            const int slot = c->reg_slot[reg];
+            touch(slot);
+            return slot;
+        }
+        const int slot = take_slot();
+        if (slot < 0) {
+            return -1;
+        }
         c->slot_guest[slot] = reg;
         c->reg_slot[reg] = static_cast<int8_t>(slot);
+        touch(slot);
         if (reg == 0) {
             emit1(cp_li_table[slot], 0);
         } else {
@@ -284,33 +384,35 @@ struct cp_former {
     // Destination slot: same mapping, no load needed when first written.
     int alloc_dst(uint8_t reg) {
         if (c->reg_slot[reg] >= 0) {
-            c->reg_dirty |= 1u << static_cast<uint32_t>(c->reg_slot[reg]);
-            return c->reg_slot[reg];
+            const int slot = c->reg_slot[reg];
+            c->reg_dirty |= 1u << static_cast<uint32_t>(slot);
+            touch(slot);
+            return slot;
         }
-        if (c->nslots_used >= cp_state::nslots) {
-            c->rec_failed = true;
+        const int slot = take_slot();
+        if (slot < 0) {
             return -1;
         }
-        const int slot = c->nslots_used++;
         c->slot_guest[slot] = reg;
         c->reg_slot[reg] = static_cast<int8_t>(slot);
         c->reg_dirty |= 1u << static_cast<uint32_t>(slot);
+        touch(slot);
         return slot;
     }
 
     // A transient slot for materialized immediates and address arithmetic.
     int alloc_scratch() {
-        if (c->nslots_used >= cp_state::nslots) {
-            c->rec_failed = true;
+        const int slot = take_slot();
+        if (slot < 0) {
             return -1;
         }
-        const int slot = c->nslots_used++;
         c->slot_guest[slot] = 0xff;
+        touch(slot);
         return slot;
     }
     void free_scratch(int slot) {
-        if (slot == c->nslots_used - 1 && c->slot_guest[slot] == 0xff) {
-            --c->nslots_used;
+        if (slot >= 0 && c->slot_guest[slot] == 0xff) {
+            c->rec_last_used[slot] = 0; // preferred victim
         }
     }
 
@@ -430,6 +532,8 @@ struct cp_former {
                 b.delta = static_cast<int64_t>(pc - c->rec_head);
                 b.pending = c->rec_len; // instructions fully retired before this one
                 b.dirty = c->reg_dirty;
+                std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
+                b.is_branch = false;
                 return;
             }
         }
@@ -456,6 +560,8 @@ struct cp_former {
                 b.delta = off_delta;
                 b.pending = c->rec_len + 1; // the branch itself retires on exit
                 b.dirty = c->reg_dirty;
+                std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
+                b.is_branch = true;
                 return;
             }
         }
@@ -530,13 +636,15 @@ static void cp_abort(tc_context<STATE_ACCESS> *tcc) {
     cp_heap_protect_flush(&c->heap);
 }
 
-// Emits the stores for a dirty-slot snapshot.
-static void cp_emit_stores(cp_state *c, uint32_t dirty) {
+// Emits the stores for a dirty-slot snapshot under the slot-to-guest
+// mapping that was current when the snapshot was taken (eviction remaps
+// slots mid-trace).
+static void cp_emit_stores(cp_state *c, uint32_t dirty, const uint8_t (&slot_guest)[cp_state::nslots]) {
     for (uint32_t slot = 0; slot < cp_state::nslots; ++slot) {
-        if ((dirty & (1u << slot)) != 0 && c->slot_guest[slot] != 0xff && c->slot_guest[slot] != 0) {
+        if ((dirty & (1u << slot)) != 0 && slot_guest[slot] != 0xff && slot_guest[slot] != 0) {
             const uint64_t imm[2] = {0, 0};
             uint8_t *cont[2] = {nullptr, nullptr};
-            if (cp_emit(&c->heap, cp_gxs_table[slot][c->slot_guest[slot] - 1], imm, cont) == nullptr) {
+            if (cp_emit(&c->heap, cp_gxs_table[slot][slot_guest[slot] - 1], imm, cont) == nullptr) {
                 c->rec_failed = true;
             }
         }
@@ -547,13 +655,16 @@ static void cp_emit_stores(cp_state *c, uint32_t dirty) {
 // direct branch to `target` when given, for the cyclic back edge). For the
 // straight terminal, link_site receives the stub's trailing branch, the one
 // site the pending-link pass may later retarget to a successor's entry.
-static uint8_t *cp_emit_exit(cp_state *c, uint32_t dirty, int64_t delta, uint32_t pending, uint8_t *target = nullptr,
-    cp_trace *link_out = nullptr) {
+static uint8_t *cp_emit_exit(cp_state *c, uint32_t dirty, const uint8_t (&slot_guest)[cp_state::nslots], int64_t delta,
+    uint32_t pending, uint8_t *target = nullptr, cp_trace *link_out = nullptr, const void *island = nullptr) {
     uint8_t *at = c->heap.base + c->heap.curr;
-    cp_emit_stores(c, dirty);
+    cp_emit_stores(c, dirty, slot_guest);
     uint8_t *stub = c->heap.base + c->heap.curr;
     const uint64_t imm[2] = {static_cast<uint64_t>(delta), pending};
-    uint8_t *cont[2] = {target != nullptr ? target : const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island)),
+    if (island == nullptr) {
+        island = c->continue_island;
+    }
+    uint8_t *cont[2] = {target != nullptr ? target : const_cast<uint8_t *>(static_cast<const uint8_t *>(island)),
         nullptr};
     if (cp_emit(&c->heap, &cp_s_cp_exit_stub, imm, cont) == nullptr) {
         c->rec_failed = true;
@@ -571,6 +682,26 @@ static uint8_t *cp_emit_exit(cp_state *c, uint32_t dirty, int64_t delta, uint32_
         }
     }
     return at;
+}
+
+// Emits a probing exit: stores, countdown charge, the static successor vpc
+// into slot 0, and the front-cache probe, chaining a hit into the target's
+// self-validating entry and leaving for the (counting) island on miss. The
+// slots are dead after the stores, so slot 0 is free to clobber. This is
+// RVVM's block-end lookup: exits reach the interpreter only on real misses.
+static void cp_emit_probe_exit(cp_state *c, uint32_t dirty, const uint8_t (&slot_guest)[cp_state::nslots],
+    int64_t delta, uint32_t pending, uint64_t target_vpc, const void *miss_island) {
+    cp_emit_stores(c, dirty, slot_guest);
+    uint8_t *fall[2] = {nullptr, nullptr};
+    const uint64_t imm_stub[2] = {static_cast<uint64_t>(delta), pending};
+    const uint64_t imm_li[2] = {target_vpc, 0};
+    const uint64_t imm_lu[2] = {reinterpret_cast<uint64_t>(&c->front[0]), 0};
+    uint8_t *miss[2] = {const_cast<uint8_t *>(static_cast<const uint8_t *>(miss_island)), nullptr};
+    if (cp_emit(&c->heap, &cp_s_cp_exit_stub, imm_stub, fall) == nullptr ||
+        cp_emit(&c->heap, cp_li_table[0], imm_li, fall) == nullptr ||
+        cp_emit(&c->heap, cp_lookup_table[0], imm_lu, miss) == nullptr) {
+        c->rec_failed = true;
+    }
 }
 
 // Re-patches the value holes of an already-emitted stencil instance.
@@ -630,11 +761,11 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<penumbra_state *>(reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
     if (cyclic) {
-        cp_emit_exit(c, c->reg_dirty, 0, c->rec_len, c->rec_start);
+        cp_emit_exit(c, c->reg_dirty, c->slot_guest, 0, c->rec_len, c->rec_start);
     } else if (dynamic_slot >= 0) {
-        cp_emit_stores(c, c->reg_dirty);
+        cp_emit_stores(c, c->reg_dirty, c->slot_guest);
         uint8_t *fall[2] = {nullptr, nullptr};
-        uint8_t *isl[2] = {const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island)), nullptr};
+        uint8_t *isl[2] = {const_cast<uint8_t *>(static_cast<const uint8_t *>(c->miss_island)), nullptr};
         const uint64_t imm_stub[2] = {0, c->rec_len};
         const uint64_t imm_dep[2] = {reinterpret_cast<uint64_t>(&penumbra_fin->fetch_vf_offset), 0};
         const uint64_t imm_lu[2] = {reinterpret_cast<uint64_t>(&c->front[0]), 0};
@@ -643,14 +774,29 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
             cp_emit(&c->heap, cp_lookup_table[dynamic_slot], imm_lu, isl) == nullptr) {
             c->rec_failed = true;
         }
+    } else if (tlb_addr_page(c->rec_end_vaddr) != tlb_addr_page(c->rec_head)) {
+        // Cross-page successor: no pending-link site, probe the front cache
+        // instead (the same-page case keeps the patchable direct link).
+        cp_emit_probe_exit(c, c->reg_dirty, c->slot_guest, static_cast<int64_t>(c->rec_end_vaddr - c->rec_head),
+            c->rec_len, c->rec_end_vaddr, c->terminal_island);
     } else {
-        cp_emit_exit(c, c->reg_dirty, static_cast<int64_t>(c->rec_end_vaddr - c->rec_head), c->rec_len, nullptr, &t);
+        cp_emit_exit(c, c->reg_dirty, c->slot_guest, static_cast<int64_t>(c->rec_end_vaddr - c->rec_head), c->rec_len,
+            nullptr, &t, c->terminal_island);
     }
 
     // Grouped bail blocks, then patch each guard's bail branch.
     for (uint32_t i = 0; i < c->nbails && !c->rec_failed; ++i) {
         const cp_bail &b = c->bails[i];
-        uint8_t *block = cp_emit_exit(c, b.dirty, b.delta, b.pending);
+        uint8_t *block = c->heap.base + c->heap.curr;
+        if (b.pending == 0) {
+            // A bail that retired nothing must not chain or re-enter: only
+            // the interpreter's slow path (the fill) makes progress.
+            cp_emit_exit(c, b.dirty, b.slot_guest, b.delta, b.pending, nullptr, nullptr, c->mem_bail_cold_island);
+        } else {
+            cp_emit_probe_exit(c, b.dirty, b.slot_guest, b.delta, b.pending,
+                c->rec_head + static_cast<uint64_t>(b.delta),
+                b.is_branch ? c->branch_bail_island : c->mem_bail_island);
+        }
         cp_patch_branch(c->heap.base + b.guard_site, b.guard_kind, b.guard_addend, block);
     }
 
@@ -675,6 +821,7 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
         cp_insert_hpage(c, t.hpage[j]);
     }
     t.dead = false;
+    t.exec_count = 0;
     t.fn = c->rec_start;
     t.call_fn = c->rec_call_start;
     cp_front_put(c, t.head, t.call_fn);
@@ -798,6 +945,10 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     }
     c->reg_dirty = 0;
     c->nslots_used = 0;
+    for (auto &u : c->rec_last_used) {
+        u = 0;
+    }
+    c->rec_use_clock = 0;
     c->have_pending_branch = false;
     c->nbails = 0;
     // Self-validating call-entry prologue (ported call_fn semantics, all in
@@ -832,9 +983,12 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     const uint64_t imm_vf[2] = {reinterpret_cast<uint64_t>(&penumbra.fetch_vf_offset), vf};
     const uint64_t imm_page[2] = {reinterpret_cast<uint64_t>(&tcc->fetch_vaddr_page), fetch_val};
     const uint64_t imm_est[2] = {vpc + vf, fetch_val};
-    if (cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_ctx, guard) == nullptr ||
-        cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_hotpage, guard) == nullptr ||
-        cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_hotvh, guard) == nullptr ||
+    uint8_t *ctx_bail[2] = {nullptr, const_cast<uint8_t *>(static_cast<const uint8_t *>(c->ctx_island))};
+    uint8_t *page_bail[2] = {nullptr, const_cast<uint8_t *>(static_cast<const uint8_t *>(c->page_island))};
+    uint8_t *vh_bail[2] = {nullptr, const_cast<uint8_t *>(static_cast<const uint8_t *>(c->vh_island))};
+    if (cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_ctx, ctx_bail) == nullptr ||
+        cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_hotpage, page_bail) == nullptr ||
+        cp_emit(&c->heap, &cp_s_cp_cmp_mem_imm, imm_hotvh, vh_bail) == nullptr ||
         cp_emit(&c->heap, &cp_s_cp_copy_mem, imm_pma, fall) == nullptr ||
         cp_emit(&c->heap, &cp_s_cp_store_imm, imm_vf, fall) == nullptr ||
         cp_emit(&c->heap, &cp_s_cp_store_imm, imm_page, fall) == nullptr ||
@@ -845,7 +999,7 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     // to the island (countdown too low to run any of the body).
     const uint64_t imm[2] = {0, 0};
     uint8_t *cont[2] = {nullptr,
-        const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island))};
+        const_cast<uint8_t *>(static_cast<const uint8_t *>(c->tick_island))};
     c->rec_tick_site = cp_emit(&c->heap, &cp_s_cp_tick_guard, imm, cont);
     c->rec_start = c->rec_tick_site;
     if (cp_log_enabled()) [[unlikely]] {
@@ -898,6 +1052,7 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
     // still valid (memory ops are guarded, branch directions validated), and
     // rec_end_vaddr already holds its correct exit target.
     if (vpc != c->rec_end_vaddr) {
+        ++c->fin_trap;
         cp_finish(tcc, false);
         return;
     }
@@ -907,6 +1062,7 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
     // mapping closes a cycle.
     const uint64_t vf = static_cast<uint64_t>(tcc->fetch_vaddr_page) - tlb_addr_page(vpc);
     if (vpc == c->rec_head && vf == c->rec_code_vf_offset && c->rec_len > 0) {
+        ++c->fin_cyclic;
         cp_finish(tcc, true);
         return;
     }
@@ -918,6 +1074,13 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
     const uint64_t head_page = tlb_addr_page(c->rec_head);
     if (tlb_addr_page(vpc) != head_page || tlb_addr_page(vpc + 3) != head_page || vf != c->rec_code_vf_offset ||
         cp_find(c, vpc) != nullptr || c->rec_len >= cp_state::max_len) {
+        if (tlb_addr_page(vpc) != head_page || tlb_addr_page(vpc + 3) != head_page || vf != c->rec_code_vf_offset) {
+            ++c->fin_page;
+        } else if (c->rec_len >= cp_state::max_len) {
+            ++c->fin_maxlen;
+        } else {
+            ++c->fin_installed;
+        }
         cp_finish(tcc, false);
         return;
     }
@@ -945,6 +1108,12 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
             static_cast<unsigned long long>(vpc), c->rec_len);
     }
     c->rec_insn_start = c->heap.base + c->heap.curr;
+    std::memcpy(c->snap_reg_slot, c->reg_slot, sizeof(c->snap_reg_slot));
+    std::memcpy(c->snap_slot_guest, c->slot_guest, sizeof(c->snap_slot_guest));
+    std::memcpy(c->snap_last_used, c->rec_last_used, sizeof(c->snap_last_used));
+    c->snap_reg_dirty = c->reg_dirty;
+    c->snap_nslots_used = c->nslots_used;
+    c->snap_use_clock = c->rec_use_clock;
     c->rec_vaddr = vpc;
     c->rec_end_vaddr = vpc + size;
     const uint64_t pc = vpc;
@@ -953,14 +1122,28 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
 
     if (!c->rec_failed && f.dynamic_slot >= 0) {
         ++c->rec_len;
+        ++c->fin_dynamic;
         cp_finish(tcc, false, f.dynamic_slot);
         return;
     }
     if (c->rec_failed) {
-        // Roll back this instruction and finish with what preceded it.
+        // Roll back this instruction and finish with what preceded it,
+        // restoring the register-cache bookkeeping the failed allocations
+        // mutated (their emitted spills are being discarded too).
         c->heap.curr = static_cast<size_t>(c->rec_insn_start - c->heap.base);
+        std::memcpy(c->reg_slot, c->snap_reg_slot, sizeof(c->snap_reg_slot));
+        std::memcpy(c->slot_guest, c->snap_slot_guest, sizeof(c->snap_slot_guest));
+        std::memcpy(c->rec_last_used, c->snap_last_used, sizeof(c->snap_last_used));
+        c->reg_dirty = c->snap_reg_dirty;
+        c->nslots_used = c->snap_nslots_used;
+        c->rec_use_clock = c->snap_use_clock;
         c->rec_end_vaddr = vpc;
         c->rec_failed = false;
+        ++c->fin_uncompilable;
+        if (cp_log_enabled()) [[unlikely]] {
+            std::fprintf(stderr, "cp-uncomp vpc=%llx insn=%08x label=%u\n", static_cast<unsigned long long>(vpc),
+                insn, static_cast<unsigned>(label));
+        }
         cp_finish(tcc, false);
         return;
     }
@@ -993,6 +1176,7 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
                 // fetch path.
                 ++c->entries;
                 ++c->call_entries;
+                ++const_cast<cp_trace *>(t)->exec_count;
                 cp_front_put(c, vpc, t->call_fn);
                 if (cp_log_enabled()) [[unlikely]] {
                     std::fprintf(stderr, "cp-callenter vpc=%llx len=%u\n", static_cast<unsigned long long>(vpc),
@@ -1006,6 +1190,7 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
                 if (t->code_vf_offset == static_cast<uint64_t>(tcc->fetch_vaddr_page) - tlb_addr_page(vpc) &&
                     t->ctx_slot_base == penumbra->tlb_ctx_slot_base) {
                     ++c->entries;
+                    ++const_cast<cp_trace *>(t)->exec_count;
                     if (cp_log_enabled()) [[unlikely]] {
                         std::fprintf(stderr, "cp-enter mcycle=%llu vpc=%llx len=%u\n",
                             static_cast<unsigned long long>(tcc->mcycle), static_cast<unsigned long long>(vpc),

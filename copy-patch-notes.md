@@ -613,6 +613,59 @@ protocol (repetitions with warmup against the lightning build and the
 committed RVVM column, with trace counts, emitted bytes, compile time,
 flushes, and coverage reported).
 
+## Done: measured optimization round, RVVM parity mechanisms (2026-08-21)
+
+Counter-driven, each step selected by the previous measurement.
+
+1. Register eviction (the refinement the plan deferred until measured).
+   Hash regressed +136 percent; entry counters cleared both storm
+   hypotheses (1 percent front-door rejects), exit counters attributed 97
+   percent of entries to productive short straight terminals, and the
+   formation counters plus the failing-instruction log showed recordings
+   dying every 2-10 instructions on ordinary covered opcodes: the
+   eighth-distinct-register rule. LRU eviction of unlocked slots (spill
+   if dirty) with per-bail slot_guest snapshots fixed it; the first
+   attempt lost spilled registers by restoring only the heap cursor in
+   the uncompilable rollback, so the allocator bookkeeping is now
+   snapshotted and restored with it. Hash went to -52 percent vs stock
+   and every workload improved (geomean -44 percent).
+
+2. Probing exits (RVVM parity A). Guard bails with pending > 0 and
+   cross-page straight terminals now charge the countdown, load the
+   static successor vpc into slot 0, and probe the front cache, chaining
+   into the target's self-validating entry; only real misses reach the
+   interpreter. Zero-retirement bails must stay cold: only the
+   interpreter slow path fills the TLB, so re-entering loops without
+   progress (found as a livelock, fixed by routing pending == 0 bails to
+   the cold continuation).
+
+3. Dispatcher continuations (RVVM parity B). cp_continue now implements
+   RVVM's dispatcher: an installed trace at the exit pc is entered
+   through call_fn, a genuine miss trips compilation (return
+   continuations and off-path resumption points now form traces), and
+   only interpreted-marked heads resume the fetch tail. Validation and
+   tick bails route to cp_continue_cold, which never re-enters, so a
+   failing entry is attempted at most once per exit.
+
+Gates after each step: boot bit-identical, all 13 workloads identical
+mcycle/hash/exit vs fresh stock, 267 machine tests, stencil tests.
+
+Board after A+B (single repetition): geomean -61 percent vs stock,
+lightning -62 percent: parity with the full lightning backend. cp wins
+qsort (-38 percent vs lightning), zlib (-30), hash (-14), sieve, int64,
+tree; parity on nop and branch; behind on regs (+83, 0.229 vs 0.125,
+improved from 0.779 by chaining alone), memcpy (+56), syscall (+24),
+matrixprod (+15), double (+13). Hash steady state: 20.7k traces, 6.4M
+hook entries (from 41.5M), 771k dispatcher enters, 14k dispatcher
+trips, one pool flush.
+
+Remaining measured levers, in observed order: loop-carried slots across
+the cyclic back edge (regs band, first beyond-RVVM step), immediate-
+folded ALU stencils (memcpy band, body length and eviction pressure),
+per-block code quality. Stale traces pinned by first-wins heads are
+bounded-cost now (one failed entry hop per exit) but flush-only
+reclamation remains the policy.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

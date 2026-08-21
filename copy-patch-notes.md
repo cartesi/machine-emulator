@@ -881,6 +881,36 @@ The call-heavy band moved 10-15 percent: int64 0.377 to 0.333, qsort
 hash 0.550 to 0.532. Gates: boot bit-identical, all 13 balanced
 workloads identical, 267 machine tests, stencil tests.
 
+## Done: 1024 MHz guest clock as default (2026-08-21)
+
+The old 1024 MHz experiment (tail-call.md item 19) was remeasured on
+the current tree because its conclusion was stale: the ~4 percent it
+found was measured while SUM-toggle flush storms dominated, and those
+have since been fixed by the context-partitioned TLB. The remeasured
+tick cost stands on its own: cp at 1024 MHz gains a consistent ~4
+percent geomean over cp at 128 MHz (nop -15, regs -7.9, tree -6.7,
+matrixprod -4.2, hash -3.7), stock gains similarly, and the
+correctness story is complete on the forked canon: stock and
+copy-patch are bit-identical to each other at 1024 MHz through boot
+(halt 55407040) and all 13 balanced workloads, and both pass the 267
+machine tests. RTC_CLOCK_FREQ_DEF is now 1024000000 by default.
+
+Consequences, stated plainly: machine state hashes change (the DTB
+advertises timebase-frequency = clock/divisor, now 125000), so every
+fixed-cycle hash recorded earlier in this campaign describes the
+128 MHz machine. uarch.bin, the solidity step and risc0 verify_step
+stay consistent as long as they build from the same tree, since the
+constant has a single source. Downstream artifacts that pin machine
+template hashes see this as a breaking canon change.
+
+Found along the way and committed separately: stock builds were
+running the stencil pipeline through an unconditional interpret-tc.o
+dependency, and a failed extractor run there could leave a stale
+cartesi.so to be mistaken for the fresh build. The pipeline is now
+gated behind copy_patch and CP_NSLOTS is defined unconditionally.
+Build-log checks must grep make-level Error, not only compiler
+error lines; the miss briefly mislabeled a binary in this experiment.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

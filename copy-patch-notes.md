@@ -1024,3 +1024,42 @@ Gates: boot halts at mcycle 39633495 bit-identical to stock and lightning;
 all 13 balanced workloads retire identical mcycles and root hashes against
 stock, run twice (before and after the heap change); both self-tests pass.
 Native x86-64 cp-vs-lightning numbers follow in the next entry.
+
+## Done: first native x86-64 board -- cp trails lightning at 1.26x, wins the lightning pathology rows (2026-08-21)
+
+Same tree, gcc-16, repo bench.lua fixed-work protocol (boot untimed, 1<<30
+mcycles timed), 3 reps interleaved, medians; 117/117 cells, all builds and
+reps retiring one mcycle+hash per workload.
+
+    workload    stock  light   cp    cp/light
+    nop          1.61   0.09  0.11    1.24
+    regs         3.00   0.39  1.00    2.58
+    branch       3.30   3.08  3.28    1.06
+    tree         8.38   6.90  8.41    1.22
+    qsort        4.17   2.93  2.92    1.00
+    memcpy       3.35   0.74  1.56    2.11
+    zlib         3.86   2.71  2.61    0.96
+    hash         3.59   1.49  2.07    1.39
+    syscall      3.85   1.47  2.19    1.49
+    double       7.76   6.58  7.94    1.21
+    sieve        3.28   0.79  1.30    1.64
+    int64        4.19   1.78  1.71    0.96
+    matrixprod   4.36   3.17  1.87    0.59
+    geomean      3.89   1.54  1.94    1.26
+
+Unlike the AArch64 board (cp 1.57 vs light 1.63, cp ahead), lightning
+leads by 26% here: the x86-64 lightning carries the whole register-ranking
+campaign and its register-carry band (regs 2.58x, memcpy 2.11x, sieve
+1.64x) is where cp loses. Where cp wins or ties is exactly where lightning
+is known to leave time on the table: matrixprod 0.59x (the cyclic-
+truncation foreclosure; the AArch64 board shows the identical ratio,
+1.31/2.25 = 0.58, a strong functional-equivalence check on the port), and
+zlib 0.96x / qsort 1.00x / int64 0.96x -- the three side-exit-blacklist
+workloads of bench-harness/xmap/SIDE-EXIT-BLACKLIST.md, where lightning
+escapes generated code through never-linked hot side exits. cp has no
+blacklist machinery to hit; its RVVM-style compile-on-miss covers those
+paths.
+
+Not established: whether the 1.26x gap is the call-based entry's cost or
+the missing register-carry optimizations -- separating those needs a
+per-entry counter A/B, not run here.

@@ -1063,3 +1063,45 @@ paths.
 Not established: whether the 1.26x gap is the call-based entry's cost or
 the missing register-carry optimizations -- separating those needs a
 per-entry counter A/B, not run here.
+
+## Done: lightning emission-graceful truncation -- the four-build board (2026-08-21)
+
+The residual layer under the (already upstream-fixed) side-exit starvation:
+compile aborts that permanently blacklisted heads were measured with a
+per-site failure-reason tag as emission-only failures -- 36/44 scratch-stack
+exhaustion on the staged atomics' RMW trees, 8/44 OP-FP guard-bail exits the
+discovery budget does not count -- plus sub-floor truncations ahead of
+CSRRS time / FENCE. Fix (`10d2226e` + `44a1068d`): the emission pass
+truncates at the failing entry and recompiles the prefix, straight traces
+only; floor 2 by measurement (floor 8 concentrates a +26% cost on syscall's
+kernel-AMO seam; a reason-3-only gate loses matrixprod's win).
+
+Final board, bench.lua fixed work, 3-rep medians, 156+39 cells, every
+build and rep retiring one mcycle+hash per workload:
+
+    workload    stock  light  light-fix   cp    fix/base
+    nop          1.59   0.09   0.09      0.12    1.011
+    regs         2.99   0.38   0.38      1.00    1.008
+    branch       3.36   3.03   3.03      3.26    0.999
+    tree         8.68   7.01   7.37      8.56    1.051 (reps overlap)
+    qsort        4.16   2.92   2.97      3.04    1.018
+    memcpy       3.40   0.75   0.77      1.54    1.032
+    zlib         3.72   2.55   2.52      2.75    0.987
+    hash         3.59   1.51   1.48      2.01    0.980
+    syscall      3.95   1.42   1.46      2.21    1.027
+    double       7.53   6.56   5.50      7.82    0.839
+    sieve        3.26   0.79   0.81      1.32    1.032
+    int64        4.05   1.76   1.76      1.69    1.001
+    matrixprod   4.11   3.25   1.54      1.92    0.474
+    geomean      3.86   1.53   1.44      1.96    0.942
+
+matrixprod 2.1x: its FP fragments used to abort whole; the truncated
+prefixes now publish (this closes most of the tail-call.md item 22 gap from
+the truncation side, without touching the cyclic policy). double -19% is
+the reason-3 recovery. Fixed lightning now leads every backend on this
+host, including cp on all four rows cp had taken from it.
+
+Filed, not done: a depth-restart spill in emit_expression would let the
+atomics' trees compile whole (no seam at all -- the syscall/memcpy tension
+dissolves instead of being balanced); the prototype emitted wrong addresses
+and was reverted, so it needs the full gate battery and a disassembly pass.

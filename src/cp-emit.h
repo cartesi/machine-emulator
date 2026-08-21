@@ -45,6 +45,15 @@ static inline int cp_heap_init(cp_heap_t *h, size_t size)
 #if defined(__APPLE__)
     h->base = (uint8_t *) mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC,
         MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
+#elif defined(__x86_64__)
+    /* Permanently RWX: the write-protect toggle is a cheap per-thread flip
+     * only under Apple's MAP_JIT; the generic fallback below is a
+     * whole-heap mprotect per formation, measured at 26k calls and 3.7 of
+     * a 4.0 second boot on Linux. x86 needs no icache maintenance, stores
+     * from the executing thread are seen by its own fetch after the
+     * branch to the published code, and a thread migration is serialized
+     * by the context switch, so no protection flip or barrier is needed. */
+    h->base = (uint8_t *) mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #else
     h->base = (uint8_t *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #endif
@@ -76,6 +85,8 @@ static inline void cp_heap_unprotect(cp_heap_t *h)
     }
 #if defined(__APPLE__)
     pthread_jit_write_protect_np(0);
+#elif defined(__x86_64__)
+    /* Heap is permanently RWX (see cp_heap_init). */
 #else
     mprotect(h->base, h->size, PROT_READ | PROT_WRITE);
 #endif
@@ -86,6 +97,9 @@ static inline void cp_heap_protect_flush(cp_heap_t *h)
 #if defined(__APPLE__)
     pthread_jit_write_protect_np(1);
     sys_icache_invalidate(h->base + h->flushed, h->curr - h->flushed);
+#elif defined(__x86_64__)
+    /* Heap is permanently RWX and x86 needs no icache maintenance or
+     * publish barrier for its own thread (see cp_heap_init). */
 #else
     mprotect(h->base, h->size, PROT_READ | PROT_EXEC);
     __builtin___clear_cache((char *) h->base + h->flushed, (char *) h->base + h->curr);

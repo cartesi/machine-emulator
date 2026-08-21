@@ -37,6 +37,47 @@ static uint64_t cp_now_ns() {
 // ---------------------------------------------------------------------------
 // Head map and traced-page set (kept interpret-tc shapes).
 
+// The stencil contract is purely positional over the preserve_none argument
+// order (tools/cp-gen-stencils.lua). On AArch64 all twelve positions are
+// registers and positions 4, 5, 6, 8 coincide with the pinned interpreter
+// roster (x23 pc, x24 countdown, x25 fetch tag, x27 context), so trace
+// entry from a handler and exit into the fetch tail are plain branches with
+// no state movement. On x86-64 nothing is pinned: positions 1-6 are
+// r12-r15, rdi, rsi and positions 7-12 are stack slots, which a musttail
+// branch cannot provide -- the interpreter signature places pc at position
+// 3 where the stencils read guest cache slot r1, and the memory at the
+// stack positions belongs to the suspended interpreter frames, which the
+// guest cache slots r2-r6 and every stencil's pass-through stores would
+// corrupt (measured: slot scratch surfacing as the guest pc, guest values
+// landing in interpreter locals). Entry on x86-64 is therefore a normal
+// call through the full stencil signature, which allocates a private
+// argument area at the stack positions; exits land on bridge functions of
+// the same signature (interpret-cp-continue.inc) that fold the roster back
+// into the interpreter chain, whose eventual return unwinds to this call
+// site. Stack depth is bounded by the trace entries in one tick, all
+// unwound at the episode boundary.
+#if defined(__x86_64__)
+#define CP_CALL_ENTRY 1
+#else
+#define CP_CALL_ENTRY 0
+#endif
+
+#if CP_CALL_ENTRY
+template <typename STATE_ACCESS>
+using cp_stencil_fn = TC_CALLCONV execute_status(const STATE_ACCESS a, uint32_t insn, uint64_t r1,
+    i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t cd, i_state_access_fast_addr_t<STATE_ACCESS> fetch,
+    uint64_t r2, tc_context<STATE_ACCESS> *tcc, uint64_t r3, uint64_t r4, uint64_t r5, uint64_t r6);
+
+template <typename STATE_ACCESS>
+static FORCE_INLINE execute_status cp_enter_call(const STATE_ACCESS a, uint32_t insn,
+    i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t cd, i_state_access_fast_addr_t<STATE_ACCESS> fetch,
+    tc_context<STATE_ACCESS> *tcc, const void *fn) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<cp_stencil_fn<STATE_ACCESS> *>(const_cast<void *>(fn))(a, insn, 0, pc, cd, fetch, 0, tcc,
+        0, 0, 0, 0);
+}
+#endif
+
 static FORCE_INLINE uint32_t cp_pc_slot(uint64_t pc) {
     uint64_t key = pc ^ (pc >> 12);
     return (static_cast<uint32_t>(key) >> 1) & (cp_state::set_slots - 1);

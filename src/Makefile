@@ -306,8 +306,16 @@ endif
 # has free argument positions through x7. amd64's narrower register
 # contract keeps the default. Defined unconditionally so any pipeline
 # invocation (tests included) agrees with the generated sources.
+# 16 on AArch64 by measurement: the balanced regs board is bounded by
+# slot-eviction churn (str/ldr against the guest x-file around every ALU
+# op, ~30 live guest registers), and 10 -> 16 takes it from 0.199s to
+# 0.128s with the other boards flat or slightly better and formation
+# evictions down 78845 -> 17843. 12 is a dead zone (0.209, the working
+# set still misses and allocation shifts); 14 is within noise of 16.
+# amd64 cannot follow: preserve_none argument registers bound it at 6
+# under clang (register allocation fails above) and 7 under GCC.
 ifneq (,$(filter arm64 aarch64,$(CC_TARGET_ARCH)))
-CP_NSLOTS?=10
+CP_NSLOTS?=16
 else ifneq (,$(findstring clang,$(CC)))
 CP_NSLOTS?=6
 else

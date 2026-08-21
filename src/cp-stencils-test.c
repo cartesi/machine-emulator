@@ -21,20 +21,21 @@
 #endif
 #define NSLOTS CP_NSLOTS
 #define NPARAMS (5 + NSLOTS) /* sa pc cd fetch tcc + the guest slots */
-/* Guest-value arrays are padded to at least seven entries so the literal
- * initializers and the fixed twelve-argument call stay well-formed at
- * smaller slot counts; entries at NSLOTS and beyond are inert. */
-#define NSLOTS_PAD (NSLOTS < 7 ? 7 : NSLOTS)
+/* Guest-value arrays are padded to the sixteen slots the entry call
+ * names so the literal initializers and the fixed call stay well-formed
+ * at smaller slot counts; entries at NSLOTS and beyond are inert. */
+#define NSLOTS_PAD (NSLOTS < 16 ? 16 : NSLOTS)
+#if NSLOTS > 16
+#error "harness names sixteen slot arguments; extend the roster here"
+#endif
 #define HEAP_SIZE (16u << 20)
 
 /* Parameter order of the stencil contract; guest slot k sits at param
  * SLOT_POS[k], the pinned roles at positions 3, 4, 5, 7. */
-static const int SLOT_POS[NSLOTS_PAD] = {1, 2, 6, 8, 9, 10, 11
-#if NSLOTS > 7
-    ,
-    12, 13, 14
-#endif
-};
+#define SLOT_POS_K(k) ((k) == 0 ? 1 : (k) == 1 ? 2 : (k) == 2 ? 6 : (k) + 5)
+static const int SLOT_POS[NSLOTS_PAD] = {SLOT_POS_K(0), SLOT_POS_K(1), SLOT_POS_K(2), SLOT_POS_K(3), SLOT_POS_K(4),
+    SLOT_POS_K(5), SLOT_POS_K(6), SLOT_POS_K(7), SLOT_POS_K(8), SLOT_POS_K(9), SLOT_POS_K(10), SLOT_POS_K(11),
+    SLOT_POS_K(12), SLOT_POS_K(13), SLOT_POS_K(14), SLOT_POS_K(15)};
 #define POS_SA 0
 #define POS_PC 3
 #define POS_CD 4
@@ -42,12 +43,8 @@ static const int SLOT_POS[NSLOTS_PAD] = {1, 2, 6, 8, 9, 10, 11
 #define POS_TCC 7
 
 typedef __attribute__((preserve_none)) void (*cp_entry_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t
-#if NSLOTS > 7
-    ,
-    uint64_t, uint64_t, uint64_t
-#endif
-);
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t);
 
 static cp_heap_t heap;
 
@@ -185,12 +182,8 @@ static uint64_t out[NPARAMS];
 
 static void call_chain(cp_entry_t entry, const uint64_t g[NSLOTS_PAD])
 {
-    entry(SAV, g[0], g[1], PCV, CDV, FETCHV, g[2], TCCV, g[3], g[4], g[5], g[6]
-#if NSLOTS > 7
-        ,
-        g[7], g[8], g[9]
-#endif
-    );
+    entry(SAV, g[0], g[1], PCV, CDV, FETCHV, g[2], TCCV, g[3], g[4], g[5], g[6], g[7], g[8], g[9], g[10], g[11],
+        g[12], g[13], g[14], g[15]);
 }
 
 static int check_passthrough(uint64_t pc_want, uint64_t cd_want)

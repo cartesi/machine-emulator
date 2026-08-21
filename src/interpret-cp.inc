@@ -548,6 +548,36 @@ struct cp_former {
         c->rec_failed = true; // stencil without a bail continuation
     }
 
+    // CSR (the hot FP CSRs): guarded like loads, a bail meaning the
+    // instruction did not execute (FS off), so a fresh destination stays
+    // out of the bail's dirty set. rd=x0 lands in a scratch slot (the slot
+    // write is architecturally invisible); the read-only table serves
+    // csrrs/csrrc with rs1=x0, which must not write the CSR; csrrw with
+    // rs1=x0 writes zero, so it takes the full table with a zero slot.
+    void csr(const cp_stencil_t *const (*tab)[7], const cp_stencil_t *const *rtab, uint8_t rd, uint8_t rs1) {
+        int s1 = -1;
+        if (rtab == nullptr || rs1 != 0) {
+            s1 = alloc_src(rs1);
+        }
+        if (c->rec_failed) {
+            return;
+        }
+        const bool fresh = rd == 0 || c->reg_slot[rd] < 0;
+        const int d = rd == 0 ? alloc_scratch() : alloc_dst(rd);
+        if (c->rec_failed) {
+            return;
+        }
+        const uint32_t bail_dirty = fresh ? (c->reg_dirty & ~(1u << static_cast<uint32_t>(d))) : c->reg_dirty;
+        if (s1 < 0) {
+            emit_guarded(rtab[d], bail_dirty);
+        } else {
+            emit_guarded(tab[d][s1], bail_dirty);
+        }
+        if (rd == 0) {
+            free_scratch(d);
+        }
+    }
+
     // Branch guard with the recorded direction as fallthrough.
     void guard_branch(const cp_stencil_t *st, int64_t off_delta) {
         if (c->nbails >= cp_state::max_bails) {

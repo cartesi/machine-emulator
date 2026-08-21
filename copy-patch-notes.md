@@ -702,6 +702,36 @@ Gates after both fixes: compete guests retire identical mcycles to stock
 Debug switches kept: CP_MAX_ENTER (entry budget), CP_PROBE (register
 dump at attempt N and N+1), cp-trip/cp-contenter log lines.
 
+## Done: FP-CSR stencil families, the matrixprod lever (2026-08-21)
+
+The measured matrixprod diagnosis (soft-float long-double routines
+shattering at their fflags syncs, 15.3M island round trips) is fixed by
+extending compilation coverage to the three FP CSRs. Three baked-CSR
+wrapper families (csrrw/csrrs/csrrc for fflags/frm/fcsr, plus a shared
+read-only family for the rs1=x0 forms, which must not write the CSR),
+each instantiating the interpreter's own execute bodies with the CSR
+index in the synthetic word. rd=x0 needs no special form: a scratch
+destination slot is architecturally invisible.
+
+Two interception pieces in the semantic TU, both the established
+pattern: a requires-constrained raise_illegal_insn_exception override
+that mutates nothing and reports failure (the FS-off trap becomes the
+bail continuation, and the interpreter re-executes and raises
+architecturally), and requires-constrained read_csr/write_csr overrides
+that dispatch only the three baked CSRs to the interpreter's per-CSR
+helpers, failing closed otherwise. The narrowed dispatch exists because
+clang would not inline the full CSR switches even under flatten, and
+the fail-closed extractor rejected the out-of-line call, exactly as
+designed. The selection sends every other CSR to f.end() as before;
+satp/mstatus-class CSRs must never compile this way (TLB flushes and
+context changes mid-trace).
+
+matrixprod 1.330 to 0.413 (stock 1.628, lightning 1.166): from -17 to
+-75 percent vs stock. hash improves slightly, double unchanged (real FP
+arithmetic, the separate FP-family lever). Gates: boot bit-identical,
+all 13 balanced workloads identical, 267 machine tests, compete guest
+mcycle-identical, stencil tests.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

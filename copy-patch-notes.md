@@ -941,6 +941,38 @@ percent of RVVM on qsort. RVVM's remaining lead concentrates in regs
 and memcpy (the pass-through fragmentation case) and the int64 and
 matrixprod tails (in-block density).
 
+## Done: nop compilation and chain-start entries (2026-08-21)
+
+The regs diagnosis, driven entirely by measurement and corrected once
+by it. Sampling attributed 21 percent of compete-regs time to the
+interpreted C_MV handler; the first theory (241 canonical-nop
+uncompilable ends shattering traces and marker-poisoning heads) was
+implemented and smoke-tested: correct, hash-clean, kept (rd0
+arithmetic now records as an architectural no-op, nothing emitted,
+retirement accounted), but regs did not move and C_MV stayed at 194
+samples, so the theory died.
+
+The counters then closed the real chain: compete regs shows
+tick-bails 2,065,180 against 16.9G / 8192 = 2.06M chains, exactly one
+tick bail per chain (the divisor still bounds device polls at the new
+clock). The pathology is after the bail: the outer loop started every
+fresh chain with no entry check, so straight-line code re-interpreted
+through its own installed traces once per chain, and stress-regs is
+one huge straight-line body.
+
+Fix: the outer loop's chain start probes cp_hook_site<call> at the
+resume pc and dispatches into the returned self-validating call entry
+instead of the jump table, tripping compilation on a genuine miss
+with the pc unchanged. One seam, the handler entry pattern verbatim,
+one hash probe per chain.
+
+Measured: interpreted C_MV samples 194 to 67, compete regs 3.42 to
+3.22s (mcycle identical), installed traces 14.6k to 24.2k as the
+formerly invisible stretches compile. That overflowed the 16384-trace
+pool once mid-run (one flush): max_traces is now a measured dial for
+the list. Gates: boot bit-identical, all 13 balanced workloads
+identical, 267 machine tests, stencil tests.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

@@ -7058,6 +7058,16 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 }
 #endif
 #if TC_COPY_PATCH
+                // Chain-start entry: a fresh chain beginning mid-straight-line
+                // code has no hook site until the next call or backward
+                // branch, so without this probe every chain re-interprets
+                // through installed traces (measured: one tick bail per 8192
+                // cycles and a 20 percent interpreted C_MV share on regs).
+                // The probe returns the self-validating call entry when a
+                // trace is installed at the resume pc, trips compilation on a
+                // genuine miss (consumed just below with the pc unchanged),
+                // and no-ops while recording.
+                const void *cp_chain_fn = tc_hook_site<true>(tcc, pc_to_virtual(a, pc), 1);
                 if (tcc->online_trip) [[unlikely]] {
                     tcc->online_trip = false;
                     if (!tcc->cp->recording) {
@@ -7111,7 +7121,13 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 #endif
                 cartesi::tcc = tcc;
                 cartesi::tc_reg_fetch_page = static_cast<uint64_t>(tcc->fetch_vaddr_page);
+#if TC_COPY_PATCH
+                status = cp_chain_fn != nullptr
+                    ? reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(const_cast<void *>(cp_chain_fn))(a, insn)
+                    : tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
+#else
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
+#endif
 #else
 #if TC_ONLINE || TC_COPY_PATCH
                 // One-instruction chains while recording, exactly as in the

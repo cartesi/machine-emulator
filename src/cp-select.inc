@@ -330,8 +330,36 @@ switch (label) {
         f.jalr(1, CP_C_RD, 0, 2);
         break;
 
-    // Everything else (system, CSR, atomics, FP, rd0 forms of the
-    // arithmetic labels) ends the trace.
+    // Architectural no-ops: rd=x0 arithmetic (including the canonical nop,
+    // addi x0,x0,0, used as alignment padding inside hot code). No side
+    // effects and no traps, so nothing is emitted; the instruction only
+    // retires, which the recording accounts for. Ending the trace here
+    // instead was measured shattering the regs shuffle stretches and
+    // poisoning their heads with interpreted markers.
+    case tc_label::LUI_rd0:
+    case tc_label::AUIPC_rd0:
+    case tc_label::ADDI_rd0:
+    case tc_label::SLTI_rd0:
+    case tc_label::SLTIU_rd0:
+    case tc_label::XORI_rd0:
+    case tc_label::ORI_rd0:
+    case tc_label::ANDI_rd0:
+    case tc_label::SLLI_rd0:
+    case tc_label::SRLI_SRAI_rd0:
+    case tc_label::ADD_MUL_SUB_rd0:
+    case tc_label::XOR_DIV_rd0:
+    case tc_label::SRL_DIVU_SRA_rd0:
+    case tc_label::OR_REM_rd0:
+    case tc_label::AND_REMU_rd0:
+    case tc_label::ADDIW_rd0:
+    case tc_label::SLLIW_rd0:
+    case tc_label::SRLIW_SRAIW_rd0:
+    case tc_label::DIVW_rd0:
+    case tc_label::REMW_rd0:
+    case tc_label::REMUW_rd0:
+        break;
+
+    // Everything else (system, CSR, atomics, FP) ends the trace.
     default:
         f.end();
         break;

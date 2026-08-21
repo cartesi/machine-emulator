@@ -829,6 +829,30 @@ or pass-through fork would make pay, and stays pending that call.
 Gates: boot bit-identical, all 13 balanced workloads identical, 267
 machine tests.
 
+## Done: CP_NSLOTS build parameter, 10 slots on aarch64 (2026-08-21)
+
+Slot demand was measured before choosing the number: the hot loops that
+disqualified from loop carry need 8-10 slots (memcpy ~8, sieve 8-9, the
+regs/int64 fragment unions 8-10), and nothing measured wants 12. The
+guest cache slot count is now a per-arch build parameter threaded
+through the generator (slot names generated past the pinned roster into
+the free aarch64 preserve_none positions), the extractor (family
+patterns and table dimensions, fail-closed against out-of-range
+indices), one header define with a 7 default, and the two stencil test
+binaries. Callers are unaffected: extra slot registers arrive as
+garbage at entry and are defined before use, exactly like the old tail
+slots. aarch64 builds at 10 (2.9x tables, full pipeline rebuild 36s);
+amd64 keeps 7 until its contract lands.
+
+Effect: memcpy's and sieve's hot loops flip carry-eligible, including
+sieve's 75-instruction body (memcpy 0.388 to 0.375, sieve 0.301 to
+0.286, hashes identical). regs and int64 unchanged, confirming their
+blocker is fragmentation across installed heads, the pass-through
+fork, not capacity.
+
+Gates: boot bit-identical, all 13 balanced workloads identical, 267
+machine tests, stencil tests at the widened contract.
+
 ## Open decisions
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front

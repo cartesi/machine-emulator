@@ -9,6 +9,13 @@
 #ifndef CP_CONTEXT_HPP
 #define CP_CONTEXT_HPP
 
+/// \brief Guest cache slot count, a per-arch build parameter (the aarch64
+/// preserve_none layout carries up to 12 slot positions; measured hot-loop
+/// demand is 8-10).
+#ifndef CP_NSLOTS
+#define CP_NSLOTS 7
+#endif
+
 #include <cstdint>
 
 #include "cp-emit.h"
@@ -61,7 +68,7 @@ struct cp_bail {
     int64_t delta;        ///< Signed fast-pc displacement head -> off path
     uint32_t pending;     ///< Instructions retired when the bail is taken
     uint32_t dirty;       ///< Dirty-slot snapshot at the guard
-    uint8_t slot_guest[7]; ///< Slot-to-guest mapping at the guard: eviction
+    uint8_t slot_guest[CP_NSLOTS]; ///< Slot-to-guest mapping at the guard: eviction
                            ///< remaps slots mid-trace, so the bail stores
                            ///< must use the mapping the guard saw
     bool is_branch;       ///< Branch-direction guard (else memory guard)
@@ -72,7 +79,7 @@ struct cp_state {
     static constexpr uint32_t set_slots = 65536; ///< 4x traces, power of two
     static constexpr uint32_t front_size = 256;  ///< RVVM_TLB_SIZE
     static constexpr uint16_t interpreted_marker = 0xffff;
-    static constexpr uint32_t nslots = 7; ///< Guest cache slots in the contract
+    static constexpr uint32_t nslots = CP_NSLOTS; ///< Guest cache slots in the contract
     static constexpr uint32_t max_bails = 64;
     static constexpr uint16_t none_link = 0xffff;
 
@@ -188,8 +195,8 @@ struct cp_state {
     bool have_pending_branch;
     uint64_t pb_vaddr;
     uint64_t pb_taken_target;
-    const cp_stencil_t *const (*pb_tab)[7];  ///< Guard when recorded taken
-    const cp_stencil_t *const (*pb_comp)[7]; ///< Guard when recorded not taken
+    const cp_stencil_t *const (*pb_tab)[CP_NSLOTS];  ///< Guard when recorded taken
+    const cp_stencil_t *const (*pb_comp)[CP_NSLOTS]; ///< Guard when recorded not taken
     uint8_t pb_rs1;
     uint8_t pb_rs2;
     uint8_t pb_size;

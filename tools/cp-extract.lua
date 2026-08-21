@@ -23,6 +23,9 @@
 
 local hdr_path = assert(arg[1], "usage: cp-extract.lua <header> <manifest> <obj>...")
 local man_path = assert(arg[2])
+-- Guest cache slot count, from the build (must match the generator's).
+local NSLOTS = tonumber(os.getenv("CP_NSLOTS")) or 7
+local SLOT_MAX = tostring(NSLOTS - 1)
 if arg[3] == nil then
     io.stderr:write("cp-extract: no input objects\n")
     os.exit(1)
@@ -481,12 +484,19 @@ end
 -- Completeness of every discovered family is enforced.
 local fams = { [3] = {}, [2] = {}, [1] = {} }
 for name in pairs(by_name) do
-    local f3 = name:match("^cp_(.-)_([0-6])_([0-6])_([0-6])$")
+    local slotpat = "([0-9]+)"
+    local f3, a3, b3, c3 = name:match("^cp_(.-)_" .. slotpat .. "_" .. slotpat .. "_" .. slotpat .. "$")
+    if f3 and (tonumber(a3) >= NSLOTS or tonumber(b3) >= NSLOTS or tonumber(c3) >= NSLOTS) then
+        die("family %s index beyond NSLOTS=%d", name, NSLOTS)
+    end
     local f2, a2, b2
     if not f3 then
         f2, a2, b2 = name:match("^cp_(.-)_([0-9]+)_([0-9]+)$")
     end
-    local f1 = not f3 and not f2 and name:match("^cp_(.-)_([0-6])$")
+    local f1 = not f3 and not f2 and name:match("^cp_(.-)_([0-9]+)$")
+    if f1 and tonumber(name:match("_([0-9]+)$")) >= NSLOTS then
+        die("family %s index beyond NSLOTS=%d", name, NSLOTS)
+    end
     if f3 then
         fams[3][f3] = true
     elseif f2 then
@@ -513,13 +523,13 @@ local function need(n)
     return "&cp_s_" .. n
 end
 for _, fam in ipairs(sorted_keys(fams[3])) do
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[7][7][7] = {\n"):format(fam))
-    for d = 0, 6 do
+    hdr:write(("static const cp_stencil_t *const cp_%s_table[%d][%d][%d] = {\n"):format(fam, NSLOTS, NSLOTS, NSLOTS))
+    for d = 0, NSLOTS - 1 do
         hdr:write("{")
-        for s1 = 0, 6 do
+        for s1 = 0, NSLOTS - 1 do
             hdr:write("{")
             local row = {}
-            for s2 = 0, 6 do
+            for s2 = 0, NSLOTS - 1 do
                 row[#row + 1] = need(("cp_%s_%d_%d_%d"):format(fam, d, s1, s2))
             end
             hdr:write(table.concat(row, ","), "},")
@@ -544,10 +554,11 @@ for _, fam in ipairs(sorted_keys(fams[2])) do
 end
 for _, fam in ipairs(sorted_keys(fams[1])) do
     local row = {}
-    for a = 0, 6 do
+    for a = 0, NSLOTS - 1 do
         row[#row + 1] = need(("cp_%s_%d"):format(fam, a))
     end
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[7] = {%s};\n"):format(fam, table.concat(row, ",")))
+    hdr:write(("static const cp_stencil_t *const cp_%s_table[%d] = {%s};\n"):format(fam, NSLOTS,
+        table.concat(row, ",")))
 end
 
 hdr:write("\n#endif\n")

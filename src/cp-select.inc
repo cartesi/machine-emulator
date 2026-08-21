@@ -9,7 +9,7 @@
 // installs what it has, and the uncovered pc runs interpreted.
 //
 // Primitives (defined in interpret-cp.cpp):
-//   f.reg3(tab, rd, rs1, rs2)       rd = rs1 op rs2 through a [7][7][7] table
+//   f.reg3(tab, rd, rs1, rs2)       rd = rs1 op rs2 through a slot-cubed table
 //   f.reg2i(tab, rd, rs1, imm)      immediate form: li scratch + reg3
 //   f.li(rd, value)                 rd = constant
 //   f.load(tab, rd, rs1, imm)       hit-or-bail load, imm pre-added
@@ -286,7 +286,7 @@ switch (label) {
     case tc_label::CSRRW:
     case tc_label::CSRRS:
     case tc_label::CSRRC: {
-        const cp_stencil_t *const(*tab)[7] = nullptr;
+        const cp_stencil_t *const(*tab)[CP_NSLOTS] = nullptr;
         const cp_stencil_t *const *rtab = nullptr;
         const bool is_s = label == tc_label::CSRRS;
         const bool is_c = label == tc_label::CSRRC;

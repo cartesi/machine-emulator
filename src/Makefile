@@ -313,7 +313,15 @@ ifeq (,$(findstring clang,$(CC)))
 $(error copy_patch=yes on AArch64 requires a clang toolchain (CC=$(CC)))
 endif
 endif
-INTERPRET_CXXFLAGS+=-DTC_COPY_PATCH=1
+# Guest cache slot count: measured demand of the hot loops is 8-10, and
+# the aarch64 preserve_none layout has free argument positions through
+# x7. amd64's narrower register contract keeps the default.
+ifneq (,$(filter arm64 aarch64,$(shell uname -m)))
+CP_NSLOTS?=10
+else
+CP_NSLOTS?=7
+endif
+INTERPRET_CXXFLAGS+=-DTC_COPY_PATCH=1 -DCP_NSLOTS=$(CP_NSLOTS)
 interpret-tc.o: cp-context.hpp cp-emit.h interpret-cp.inc cp-select.inc cp-stencils-tables.h
 endif
 # Offline stencil compile, same compiler family as the emulator build.
@@ -723,7 +731,7 @@ $(LIGHTNING_LIB):
 
 # One generator run emits both TUs; the .cpp rule only orders after it.
 cp-stencils.c: ../tools/cp-gen-stencils.lua
-	$(LUA_BIN) $< $@ cp-stencils-semantic.cpp
+	$(LUA_BIN) $< $@ cp-stencils-semantic.cpp $(CP_NSLOTS)
 
 cp-stencils-semantic.cpp: cp-stencils.c ;
 
@@ -740,16 +748,18 @@ cp-stencils-semantic.stencil.o: cp-stencils-semantic.cpp interpret.cpp cm-versio
 # The manifest is written by the same extractor run; depending on the header
 # alone keeps the rule single-target for old GNU make.
 cp-stencils-tables.h: cp-stencils.elf.o cp-stencils-semantic.stencil.o ../tools/cp-extract.lua
-	$(LUA_BIN) ../tools/cp-extract.lua $@ cp-stencils-manifest.txt cp-stencils.elf.o cp-stencils-semantic.stencil.o
+	CP_NSLOTS=$(CP_NSLOTS) $(LUA_BIN) ../tools/cp-extract.lua $@ cp-stencils-manifest.txt cp-stencils.elf.o \
+		cp-stencils-semantic.stencil.o
 
 cp-stencils-test: cp-stencils-test.c cp-stencils-tables.h
-	$(CP_CC) -O2 -I. -o $@ $<
+	$(CP_CC) -O2 -I. -DCP_NSLOTS=$(CP_NSLOTS) -o $@ $<
 
 # Runtime memory-stencil test against a live machine; includes interpret.cpp
 # for the warm-up paths, links the shared library for the machine itself.
 cp-machine-test: cp-machine-test.cpp cp-stencils-tables.h cp-emit.h $(LIBCARTESI_OBJS) interpret.cpp cm-version.h \
 		interpret-jump-table.hpp
-	$(CXX) $(CXXFLAGS) $(CP_SEMANTIC_CXXFLAGS) -o $@ $< $(LIBCARTESI_OBJS) $(LIBCARTESI_LIBS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) $(CP_SEMANTIC_CXXFLAGS) -DCP_NSLOTS=$(CP_NSLOTS) -o $@ $< $(LIBCARTESI_OBJS) \
+		$(LIBCARTESI_LIBS) $(LDFLAGS)
 
 test-cp-stencils: cp-stencils-test cp-machine-test
 	./cp-stencils-test

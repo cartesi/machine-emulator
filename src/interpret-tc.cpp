@@ -1809,6 +1809,16 @@ static void tc_online_finish(tc_context<STATE_ACCESS> *c, int32_t cycle, bool cl
         if (t.fn == nullptr) {
             ++o->aborted;
             ++o->compile_aborted;
+#ifdef TLB_FILL_LOG
+            {
+                static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
+                if (log_abort) {
+                    std::fprintf(stderr, "CABORT head=%llx side=%d budget=%d len=%u\n",
+                        static_cast<unsigned long long>(recording.head), attach_side ? 1 : 0, budget_abort ? 1 : 0,
+                        t.len);
+                }
+            }
+#endif
             // Side traces have a specific generated entry contract and stay
             // transactional. Root recordings may still publish independent
             // page-local regions around an NYI fragment.
@@ -2557,6 +2567,14 @@ struct tc_lightning_execution {
     uint32_t current{};
     bool discovery{true};
     bool failed{};
+    uint8_t fail_reason{}; ///< Diagnostic: which failure site set `failed` first (0 none)
+
+    void fail(uint8_t reason) {
+        if (!failed) {
+            fail_reason = reason;
+        }
+        failed = true;
+    }
     bool returned{};
 
     explicit tc_lightning_execution(jit_state_t *j, tc_online_state::trace &t) : jit(j), trace(&t) {
@@ -2908,7 +2926,7 @@ struct tc_lightning_execution {
                 ++depth;
             }
             if (depth == std::size(scratch_registers)) {
-                failed = true;
+                fail(1); // scratch exhaustion materializing a binary operand
                 return;
             }
             tmp = scratch_registers[depth];
@@ -3175,6 +3193,9 @@ struct tc_lightning_execution {
 
     void emit_expression(uint16_t node, jit_gpr_t dest, unsigned depth = 0) {
         if (failed || depth >= std::size(scratch_registers)) {
+            if (!failed) {
+                fail(2); // expression deeper than the scratch stack
+            }
             failed = true;
             return;
         }
@@ -3240,7 +3261,7 @@ struct tc_lightning_execution {
 
     void add_exit(jit_node_t *branch) {
         if (nexits == max_exits) {
-            failed = true;
+            fail(3); // emission-side exit overflow
             return;
         }
         const bool loop_body = trace->cycle >= 0 && current >= static_cast<uint32_t>(trace->cycle);
@@ -3633,7 +3654,7 @@ struct tc_lightning_execution {
 
     void decline() {
         declined = true;
-        failed = true;
+        fail(5); // clean per-instruction decline
     }
 
     // The tail-call JIT uses preserve_none and owns its pinned register set.
@@ -3667,7 +3688,7 @@ struct tc_lightning_execution {
 
     void fp_bail_on(jit_node_t *branch, tc_fp_guard guard) {
         if (fp_nbail == std::size(fp_bail)) {
-            failed = true;
+            fail(4); // FP guard-bail slots exhausted
             return;
         }
         fp_bail_class[fp_nbail] = guard;
@@ -5864,6 +5885,7 @@ static bool tc_lightning_collect_range(tc_lightning_execution &execution, uint64
                 // to the helper now and in the emission pass.
                 execution.declined = false;
                 execution.failed = false;
+                execution.fail_reason = 0;
                 execution.fp_decline_map[i >> 6] |= UINT64_C(1) << (i & 63);
                 collected = tc_lightning_collect_fp(execution, pc, entry.insn);
             } else if (!collected && !execution.failed && pc == entry.vaddr) {
@@ -5974,6 +5996,38 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         }
     };
     mark_demoted();
+    // Emission-graceful truncation: discovery cannot see emission-only
+    // limits (expression scratch depth on the staged atomics'
+    // read-modify-write trees -- 36 of 44 measured zlib/qsort/int64 compile
+    // aborts -- and the FP guard-bail exits the discovery budget does not
+    // count, the other 8), so the emission pass owns the same recovery the
+    // discovery loop has: cut the trace at the failing entry and recompile
+    // the prefix. Cyclic traces keep the abort policy (truncating one
+    // forecloses its loop, the measured int64 regression); every retry
+    // strictly shrinks len, so the recursion terminates. Without this, one
+    // over-deep AMO expression permanently blacklisted the head, every side
+    // link into it was refused forever, and the hottest zlib side exit
+    // escaped to the interpreter 112 million times without a trace.
+    const auto emission_truncate = [&](uint32_t cut) -> bool {
+        if (trace.cycle >= 0 || cut < 2 || cut >= trace.len) {
+            return false;
+        }
+        trace.len = cut;
+        trace.cycle = -1;
+        trace.successor = trace.entries[cut - 1].next_pc;
+        // The failed pass emitted into the state, so it cannot be reused
+        // the way the discovery loop reuses it; recreate it, keeping the
+        // function-scope handle current for every later destroy.
+        jit_destroy_state();
+        _jit = jit_new_state();
+        if (_jit == nullptr) {
+            return false;
+        }
+        execution = tc_lightning_execution{_jit, trace};
+        execution.online = online;
+        mark_demoted();
+        return true;
+    };
     // Budget-graceful discovery. A trace that fails discovery at entry i --
     // node budget, side-exit budget, or an uncollectable instruction -- still
     // owns the compilable prefix [0, i). Truncating and retrying instead of
@@ -5986,8 +6040,13 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     // 32-exit budget aborts whole, while a luckier 185-entry window stays at
     // 26 exits and compiles). Same trace mutation contract as
     // TC_LIGHTNING_TRIM above; termination: every retry strictly shrinks len.
+    // Truncation floor: a one-instruction straight prefix still links and
+    // keeps execution in generated code (the copy-and-patch backend installs
+    // len-1 traces routinely), but the head instruction itself must be
+    // compilable, so two is the smallest honest publication.
+    constexpr uint32_t min_truncated_len = 2;
+emission_retry:
     while (!tc_lightning_discover_trace(execution) || execution.failed) {
-        constexpr uint32_t min_truncated_len = 8;
         const uint32_t cut = execution.current;
         // A cyclic recording that overflows the budget aborts instead of
         // truncating. Cutting it would publish a straight prefix that
@@ -6175,8 +6234,11 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         {
             static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
             if (log_abort) {
-                std::fprintf(stderr,
-                    "ABORT-collect head=%llx len=%u entries:", static_cast<unsigned long long>(trace.head), trace.len);
+                std::fprintf(stderr, "ABORT-collect head=%llx len=%u reason=%u at=%u insn=%llx entries:",
+                    static_cast<unsigned long long>(trace.head), trace.len,
+                    static_cast<unsigned>(execution.fail_reason), execution.current,
+                    static_cast<unsigned long long>(
+                        execution.current < trace.len ? trace.entries[execution.current].insn : 0));
                 for (uint32_t i = 0; i < trace.len; ++i) {
                     std::fprintf(stderr, " %u:%llx>%llx", i, static_cast<unsigned long long>(trace.entries[i].vaddr),
                         static_cast<unsigned long long>(trace.entries[i].next_pc));
@@ -6185,6 +6247,9 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             }
         }
 #endif
+        if (emission_truncate(execution.current)) {
+            goto emission_retry;
+        }
         jit_destroy_state();
         return nullptr;
     }
@@ -6208,9 +6273,11 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         {
             static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
             if (log_abort) {
-                std::fprintf(stderr,
-                    "ABORT-collect-loop head=%llx len=%u insns:", static_cast<unsigned long long>(trace.head),
-                    trace.len);
+                std::fprintf(stderr, "ABORT-collect-loop head=%llx len=%u reason=%u at=%u insn=%llx insns:",
+                    static_cast<unsigned long long>(trace.head), trace.len,
+                    static_cast<unsigned>(execution.fail_reason), execution.current,
+                    static_cast<unsigned long long>(
+                        execution.current < trace.len ? trace.entries[execution.current].insn : 0));
                 for (uint32_t i = 0; i < trace.len; ++i) {
                     std::fprintf(stderr, " %llx", static_cast<unsigned long long>(trace.entries[i].insn));
                 }
@@ -6218,6 +6285,9 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
             }
         }
 #endif
+        if (emission_truncate(execution.current)) {
+            goto emission_retry;
+        }
         jit_destroy_state();
         return nullptr;
     }

@@ -977,3 +977,50 @@ identical, 267 machine tests, stencil tests.
 - Whether the pc-to-trace cache keys on virtual pc + mapping validation
   (current exact-map shape, notes say keep) with a direct-mapped front
   cache like RVVM's jtlb.
+
+## Done: x86-64 native execution -- the positional contract never crossed architectures (2026-08-21)
+
+First native x86-64 run of the backend (Linux, gcc-16, the same tip as the
+five-emulator board). It had never worked: the first entry into generated
+code corrupted the guest pc and mcycle, measured down to a c.addi immediate
+surfacing as the guest pc (trip fast-pc 1 and -16, host-shaped vpc after
+the vf conversion). The self-tests missed it because they call stencils
+directly with the full twelve-parameter signature; the board missed it
+because it ran on AArch64.
+
+Two independent defects, both against the positional stencil contract:
+
+- Register positions. The contract places pc at position 4, countdown at
+  5, fetch tag at 6 so that on AArch64 they coincide with the pinned
+  roster (x23, x24, x25) and every transfer is a plain branch. On x86-64
+  nothing is pinned and the state travels as arguments: every interpreter
+  signature places pc at position 3, where the stencils read guest cache
+  slot r1. Verified against cp_store_exit's disassembly: positions 1-6 are
+  r12-r15, rdi, rsi under GCC preserve_none, positions 7-12 are stack.
+- Stack positions. A musttail branch from the interpreter provides no
+  argument area, so stencil positions 7-12 aliased the suspended
+  interpreter frames: guest cache slots r2-r6 and every stencil's
+  pass-through stores read and wrote live interpreter locals. TC_PAGE_
+  SEGMENT experiments only moved the first failure (cycle 68 to 45222)
+  because they permuted which garbage landed where.
+
+Fix (x86-64 only, AArch64 untouched): trace entry is a normal call through
+the full stencil signature (cp_enter_call), which allocates a private
+argument area at the stack positions, so all seven guest cache slots stay
+legal; the exit islands land on bridges of the stencil signature
+(cp_continue_bridge, cp_continue_cold_bridge) that fold the roster back
+into the interpreter chain, whose eventual return unwinds to the call
+site. Trace-to-trace links and the front-cache lookup tail remain
+stencil-level branches; stack depth is bounded by the entries in one tick.
+
+Second blocker, the W^X fallback: without MAP_JIT's per-thread toggle the
+generic path flips the whole heap RW/RX per formation and issues a
+SYNC_CORE membarrier. strace: 26652 mprotects, 3.7 of a 4.0 second boot.
+The x86-64 heap is now permanently RWX (no icache on x86; own-thread
+stores are seen after the branch to published code; migration serializes
+at the context switch). Boot 0.56s against stock's 0.47s.
+
+Gates: boot halts at mcycle 39633495 bit-identical to stock and lightning;
+all 13 balanced workloads retire identical mcycles and root hashes against
+stock, run twice (before and after the heap change); both self-tests pass.
+Native x86-64 cp-vs-lightning numbers follow in the next entry.

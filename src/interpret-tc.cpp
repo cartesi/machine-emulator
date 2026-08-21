@@ -6008,13 +6008,27 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     // over-deep AMO expression permanently blacklisted the head, every side
     // link into it was refused forever, and the hottest zlib side exit
     // escaped to the interpreter 112 million times without a trace.
+#ifndef TC_TRUNC_FLOOR
+#define TC_TRUNC_FLOOR 2
+#endif
     const auto emission_truncate = [&](uint32_t cut) -> bool {
-        if (trace.cycle >= 0 || cut < 2 || cut >= trace.len) {
+        if (trace.cycle >= 0 || cut < TC_TRUNC_FLOOR || cut >= trace.len) {
             return false;
         }
+
         trace.len = cut;
         trace.cycle = -1;
         trace.successor = trace.entries[cut - 1].next_pc;
+#ifdef TLB_FILL_LOG
+        {
+            static const bool log_abort = getenv("TC_ABORT_LOG") != nullptr;
+            if (log_abort) {
+                std::fprintf(stderr, "ETRUNC head=%llx cut=%u reason=%u insn=%llx\n",
+                    static_cast<unsigned long long>(trace.head), cut, static_cast<unsigned>(execution.fail_reason),
+                    static_cast<unsigned long long>(trace.entries[cut].insn));
+            }
+        }
+#endif
         // The failed pass emitted into the state, so it cannot be reused
         // the way the discovery loop reuses it; recreate it, keeping the
         // function-scope handle current for every later destroy.
@@ -6040,11 +6054,15 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     // 32-exit budget aborts whole, while a luckier 185-entry window stays at
     // 26 exits and compiles). Same trace mutation contract as
     // TC_LIGHTNING_TRIM above; termination: every retry strictly shrinks len.
-    // Truncation floor: a one-instruction straight prefix still links and
-    // keeps execution in generated code (the copy-and-patch backend installs
-    // len-1 traces routinely), but the head instruction itself must be
-    // compilable, so two is the smallest honest publication.
-    constexpr uint32_t min_truncated_len = 2;
+    // Truncation floor, shared by the discovery loop and the emission
+    // retry, default 2 (-DTC_TRUNC_FLOOR overrides for experiments). Floor 8
+    // was measured against it on the full board with the emission retry held
+    // fixed: both give matrixprod and double the same win, but floor 8
+    // concentrates its cost on syscall (+26%, a kernel AMO trace whose
+    // longer truncated prefix seams at the atomic every iteration) while
+    // floor 2 spreads ~3% over memcpy and tree; floor 2 wins the geomean
+    // (0.942 vs 0.948 of the pre-fix baseline) and the worst case.
+    constexpr uint32_t min_truncated_len = TC_TRUNC_FLOOR;
 emission_retry:
     while (!tc_lightning_discover_trace(execution) || execution.failed) {
         const uint32_t cut = execution.current;

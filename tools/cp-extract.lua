@@ -506,10 +506,49 @@ local function add_semantic_immediate_patch(st)
         end
         -- Accept only ADD r/m,imm32 or LEA disp32, the two shapes GCC/clang
         -- use for these execute bodies. The sentinel bytes are the field.
-        local add_modrm = found >= 2 and st.code:byte(found) or 0
-        local add_mod = add_modrm >> 6
-        local valid = found >= 2 and st.code:byte(found - 1) == 0x81 and add_modrm & 0x38 == 0 and
-            (add_mod == 2 or add_mod == 3)
+        --
+        -- The ADD form is located by decoding, not by assuming the ModRM byte
+        -- sits immediately before the immediate: that holds only for a
+        -- register-direct operand. On x86-64 the guest cache slots past the
+        -- argument registers live on the stack, so GCC emits
+        -- `add QWORD PTR [rsp+0x8], imm32` (48 81 44 24 08 imm32) whose SIB
+        -- and displacement sit between the ModRM and the immediate. Walking
+        -- the encoding accepts every addressing mode with the same rigour.
+        local function add_imm32_ends_at(code, imm_start)
+            -- ADD eAX/rAX, imm32: the accumulator short form (opcode 0x05,
+            -- optional REX.W), which GCC picks when the destination lands in
+            -- rax -- e.g. `mov rax,[rsp+0x18]; add rax,imm32; mov [rsp+0x8],rax`
+            -- for a stack-to-stack slot pair.
+            if imm_start >= 2 and code:byte(imm_start - 1) == 0x05 then
+                local rex = imm_start >= 3 and code:byte(imm_start - 2) or 0
+                if imm_start == 2 or rex & 0xf0 == 0x40 or rex ~= 0x0f then
+                    return true
+                end
+            end
+            for p = 1, imm_start - 2 do
+                if code:byte(p) == 0x81 then
+                    local modrm = code:byte(p + 1)
+                    if modrm ~= nil and modrm & 0x38 == 0 then -- /0 is ADD
+                        local mod = modrm >> 6
+                        local rm = modrm & 7
+                        local len = 2 -- opcode + ModRM
+                        if mod ~= 3 and rm == 4 then
+                            len = len + 1 -- SIB
+                        end
+                        if mod == 1 then
+                            len = len + 1 -- disp8
+                        elseif mod == 2 or (mod == 0 and rm == 5) then
+                            len = len + 4 -- disp32 / RIP-relative
+                        end
+                        if p + len == imm_start then
+                            return true
+                        end
+                    end
+                end
+            end
+            return false
+        end
+        local valid = add_imm32_ends_at(st.code, found + 1)
         for back = 2, 3 do
             local opcode = found >= back and st.code:byte(found - back + 1) or 0
             local modrm = found >= back and st.code:byte(found - back + 2) or 0

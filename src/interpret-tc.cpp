@@ -4982,6 +4982,10 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
     })
 #else
 #define TC_HOOK_CALL(expr) (expr)
+// No backend is configured, so no transfer exists -- but the use sites sit
+// in `if constexpr` branches that are discarded, not deleted, and their
+// tokens must still parse. Define the transfer as an unreachable no-op.
+#define TC_BACKEND_ENTER(fnptr) ((void) (fnptr))
 #endif
 
 template <typename STATE_ACCESS>

@@ -53,7 +53,7 @@ struct no_step_printout {
 
 /// \brief Provides machine state from a uarch step binary log
 /// \tparam Printer Printout sink for the replay. Defaults to no_step_printout, which compiles to
-/// nothing; the host selects step_pretty_printer to obtain a human-readable dump of the replay.
+/// nothing; the host selects step_dumper to obtain a human-readable dump of the replay.
 template <typename Printer = no_step_printout>
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class uarch_replay_step_state_access :

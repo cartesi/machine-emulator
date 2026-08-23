@@ -841,11 +841,11 @@ do_test("multi-cycle uarch step log should pass verification", function(machine)
     os.remove(filename)
 end)
 
-do_test("pretty_print_step_uarch writes a readable printout", function(machine)
+do_test("dump_step_uarch writes a readable printout", function(machine)
     local log = tmpname_for_log()
     -- Two micro cycles to exercise the multi-cycle replay (default program: "li a0,123", "li a7,halt").
     machine:log_step_uarch(2, log)
-    local text = cartesi.machine:pretty_print_step_uarch(log)
+    local text = cartesi.machine:dump_step_uarch(log)
     os.remove(log)
     -- Match the whole printout line by line; addresses and values are wildcarded so the expectation
     -- survives shadow-layout/cycle drift while order, numbering, names, and brackets stay pinned.
@@ -886,7 +886,7 @@ do_test("pretty_print_step_uarch writes a readable printout", function(machine)
     end
 end)
 
-do_test("pretty_print_step_uarch flags a log that fails the final root check", function(machine)
+do_test("dump_step_uarch flags a log that fails the final root check", function(machine)
     local log = tmpname_for_log()
     machine:log_step_uarch(2, log)
     -- Corrupt one byte of the header's root_hash_after (offset 48: signature +
@@ -897,11 +897,17 @@ do_test("pretty_print_step_uarch flags a log that fails the final root check", f
     assert(f:seek("set", 48))
     assert(f:write(string.char((byte:byte() + 1) % 256)))
     f:close()
-    local text = cartesi.machine:pretty_print_step_uarch(log)
+    local text = cartesi.machine:dump_step_uarch(log)
     os.remove(log)
     -- The printout must survive intact, with the failure reported as a trailing warning.
     assert(text:match("^1: read uarch%.cycle@0x%x+"), "printout body missing")
     assert(text:match("WARNING: replay does not verify: final root hash mismatch"), text)
+end)
+
+do_test("dump_step_uarch raises on an unreadable log file", function()
+    local ok, err = pcall(cartesi.machine.dump_step_uarch, cartesi.machine, "/no/such/uarch.log")
+    assert(not ok, "expected error")
+    check_error_find(err, "no/such/uarch.log")
 end)
 
 -- Generic step-log format-corruption rejection is tested against the replay parser in

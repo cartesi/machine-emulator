@@ -75,7 +75,6 @@
 #include "shadow-tlb.hpp"
 #include "shadow-uarch-state.hpp"
 #include "state-access.hpp"
-#include "step-pretty-printer.hpp"
 #include "strict-aliasing.hpp"
 #include "translate-virtual-address.hpp"
 #include "uarch-constants.hpp"
@@ -2152,28 +2151,6 @@ machine_hash machine::get_uarch_pristine_hash() {
     machine_hash hash;
     std::memcpy(hash.data(), uarch_pristine_hash, hash.size());
     return hash;
-}
-
-std::string machine::pretty_print_step_uarch(const std::string &filename) {
-    auto data_length = os::file_size(filename);
-    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
-    uarch_replay_step_state_access<step_pretty_printer>::context context;
-    uarch_replay_step_state_access<step_pretty_printer> a(context, mapped_data.get_ptr(), data_length);
-    // uarch_interpret's cycle-limit bookkeeping would open the printout with redundant uarch.cycle reads
-    for (uint64_t i = 0; i < context.log.requested_cycle_count; ++i) {
-        if (uarch_step(a) != UArchStepStatus::Success) {
-            break;
-        }
-    }
-    auto printout = context.printer.str();
-    try {
-        a.finish();
-    } catch (const std::exception &e) {
-        printout += "WARNING: replay does not verify: ";
-        printout += e.what();
-        printout += '\n';
-    }
-    return printout;
 }
 
 machine_config machine::get_default_config() {

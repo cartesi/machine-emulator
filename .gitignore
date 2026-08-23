@@ -34,5 +34,14 @@ doc/recipes/cache
 *.dylib
 *.dtb
 bench-harness/compete/rootfs-bench.ext2
+bench-harness/compete/rvvm-rootfs.ext2
+bench-harness/compete/results.json
+bench-harness/compete/results-matrix.json
+bench-harness/compete/results-ablate.json
+bench-harness/compete/results-rvvm5.json
+bench-harness/compete/serial.log
+bench-harness/compete/__pycache__/
+bench-harness/compete/RVVM/
+bench-harness/campaign/
 .DS_Store
 .claude/

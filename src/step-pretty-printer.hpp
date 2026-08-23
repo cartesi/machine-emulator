@@ -56,15 +56,17 @@ public:
     }
 
     /// \brief Emit a read. \p name is the register/field name, or nullptr for plain memory.
+    /// \details Values print as hex(decimal), e.g. 0x7b(123).
     void read(const char *name, uint64_t paddr, uint64_t val) {
         line() << std::dec << ++m_access << ": read " << (name != nullptr ? name : "") << "@0x" << std::hex << paddr
-               << ": 0x" << val << '\n';
+               << ": 0x" << val << std::dec << '(' << val << ")\n";
     }
 
-    /// \brief Emit a write, showing the value before and after. \p name as in read().
+    /// \brief Emit a write, showing the value before and after. \p name and values as in read().
     void write(const char *name, uint64_t paddr, uint64_t old_val, uint64_t new_val) {
         line() << std::dec << ++m_access << ": write " << (name != nullptr ? name : "") << "@0x" << std::hex << paddr
-               << ": 0x" << old_val << " -> 0x" << new_val << '\n';
+               << ": 0x" << old_val << std::dec << '(' << old_val << ") -> 0x" << std::hex << new_val << std::dec << '('
+               << new_val << ")\n";
     }
 };
 

@@ -869,11 +869,11 @@ where options are:
   --log-step=<filename>,count:<mcycle-count>
     log and save a step of <mcycle-count> mcycles to <filename>.
 
-  --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,pretty]
+  --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump]
     log <uarch-cycle-count> microarchitecture cycles (default 1) to <filename>
     as a binary step log. logging stops early at the uarch halt, so a count at
     or above the per-mcycle uarch budget records one whole mcycle.
-    append ",pretty" to also write a human-readable printout to stderr.
+    append ",dump" to also write a human-readable printout to stderr.
 
   --log-reset-uarch=<filename>
     reset the microarchitecture state and write a binary step log to <filename>.
@@ -2154,14 +2154,14 @@ options = {
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
             assertf(o.filename, "need filename in %s", all)
-            cmdline.log_step_uarch = { filename = o.filename, count = o.count or 1, pretty = o.pretty }
+            cmdline.log_step_uarch = { filename = o.filename, count = o.count or 1, dump = o.dump }
             return true
         end,
         {
             "filename",
             filename = "file",
             count = "number",
-            pretty = "boolean",
+            dump = "boolean",
         },
     },
     {
@@ -4121,8 +4121,8 @@ if cmdline.log_step_uarch then
     stderr("Gathering micro step log: please wait\n")
     os.remove(cmdline.log_step_uarch.filename)
     machine:log_step_uarch(cmdline.log_step_uarch.count, cmdline.log_step_uarch.filename)
-    if cmdline.log_step_uarch.pretty then
-        io.stderr:write(cartesi.machine:pretty_print_step_uarch(cmdline.log_step_uarch.filename))
+    if cmdline.log_step_uarch.dump then
+        io.stderr:write(cartesi.machine:dump_step_uarch(cmdline.log_step_uarch.filename))
     end
 end
 if cmdline.log_reset_uarch then

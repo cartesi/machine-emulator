@@ -39,6 +39,7 @@ extern "C" {
 #include "cm.h"
 #include "hash-tree-constants.hpp"
 #include "hex.hpp"
+#include "step-dumper.hpp"
 
 namespace cartesi {
 
@@ -1299,15 +1300,17 @@ static int machine_obj_index_verify_step_uarch(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine:pretty_print_step_uarch() method implementation.
+/// \brief This is the machine:dump_step_uarch() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_pretty_print_step_uarch(lua_State *L) {
-    const char *printout = nullptr;
-    if (cm_pretty_print_step_uarch(luaL_checkstring(L, 2), &printout) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushstring(L, printout);
+/// \details Not part of the C API: an inspection helper, so the binding calls the C++
+/// implementation directly.
+static int machine_obj_index_dump_step_uarch(lua_State *L) try {
+    lua_pushstring(L, cartesi::dump_step_uarch(luaL_checkstring(L, 2)).c_str());
     return 1;
+} catch (const std::exception &e) {
+    return luaL_error(L, "%s", e.what());
+} catch (...) {
+    return luaL_error(L, "unknown error in dump_step_uarch");
 }
 
 /// \brief This is the machine:verify_reset_uarch() method implementation.
@@ -1404,7 +1407,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {.name = "verify_send_cmio_response", .func = machine_obj_index_verify_send_cmio_response},
     {.name = "verify_step", .func = machine_obj_index_verify_step},
     {.name = "verify_step_uarch", .func = machine_obj_index_verify_step_uarch},
-    {.name = "pretty_print_step_uarch", .func = machine_obj_index_pretty_print_step_uarch},
+    {.name = "dump_step_uarch", .func = machine_obj_index_dump_step_uarch},
     {.name = "write_console_input", .func = machine_obj_index_write_console_input},
     {.name = "write_memory", .func = machine_obj_index_write_memory},
     {.name = "write_reg", .func = machine_obj_index_write_reg},

@@ -1792,16 +1792,18 @@ describe("cartesi-machine CLI", function()
         })
         expect.truthy(#filesystem.read_file(log_file) > 0)
 
-        -- --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,pretty]
+        -- --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump]
         local _ <close>, su_log = scope_temp_pathname()
         os.remove(su_log)
-        run_ok({
-            "--log-step-uarch=" .. su_log .. ",count:1",
+        local _, su_stderr = run_ok({
+            "--log-step-uarch=" .. su_log .. ",count:1,dump",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
         expect.truthy(#filesystem.read_file(su_log) > 0)
+        -- the dump key replays the log to stderr
+        expect.truthy(su_stderr:match("read uarch%.cycle@0x%x+: 0x%x+%(%d+%)"))
 
         -- --log-reset-uarch=<filename>
         local _ <close>, ru_log = scope_temp_pathname()

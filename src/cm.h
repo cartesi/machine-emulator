@@ -1071,14 +1071,6 @@ CM_API cm_error cm_verify_step(const cm_hash *root_hash_before, const char *log_
 CM_API cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
     uint64_t uarch_cycle_count, cm_hash *obtained_root_hash);
 
-/// \brief Replays a uarch step log and returns a human-readable printout.
-/// \param log_filename Path to a binary step log file produced by cm_log_step_uarch.
-/// \param printout Receives the printout text, guaranteed to remain valid only until the next
-/// CM_API function is called from the same thread. Set to NULL on failure.
-/// \returns 0 for success, non zero code for error.
-/// \details Replays the log purely to produce the printout; no caller belief is checked.
-CM_API cm_error cm_pretty_print_step_uarch(const char *log_filename, const char **printout);
-
 /// \brief Checks the validity of a state transition produced by cm_log_reset_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before reset.

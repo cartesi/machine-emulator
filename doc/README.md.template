@@ -1834,12 +1834,12 @@ The one that actually triggers the host to emit a character is an `ecall` with `
 This happens when `uarch_cycle` is []{replace=cycles_uarch_putchar_ecall/stderr}.
 
 In the following command, the `--max-mcycle` and `--max-uarch-cycle` options tell `cartesi-machine` to stop just before the putchar `ecall`.
-The `--log-step-uarch` command-line option instructs `cartesi-machine` to then record a single uarch step into a binary step log file, and its `pretty` flag to also dump a user-friendly printout of the logged step to screen:
+The `--log-step-uarch` command-line option instructs `cartesi-machine` to then record a single uarch step into a binary step log file, and its `dump` flag to also dump a user-friendly printout of the logged step to screen:
 ```{.bash key=rarely_log_uarch_putchar replace=source vars=cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr}
 cartesi-machine \
     --max-mcycle=$cycles \
     --max-uarch-cycle=$ucycles \
-    --log-step-uarch=uarch-step.log,pretty
+    --log-step-uarch=uarch-step.log,dump
 ```
 producing the log
 ```{replace=rarely_log_uarch_putchar/stderr}
@@ -3022,7 +3022,7 @@ A step log is therefore self-contained, and anyone can check one against a pair 
 
 #### Inspecting step logs
 
-The static method `cartesi.machine:pretty_print_step_uarch(<filename>)` returns a user-friendly printout of the uarch step recorded in a binary log file.
+The static method `cartesi.machine:dump_step_uarch(<filename>)` returns a user-friendly printout of the uarch step recorded in a binary log file.
 It replays the step against the state carried in the log and describes every access the step performed, identifying what each address refers to (a register, a CSR, memory).
 Addresses and values are printed in hexadecimal and decimal.
 

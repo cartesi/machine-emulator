@@ -904,22 +904,6 @@ cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_befo
     return cm_result_failure();
 }
 
-cm_error cm_pretty_print_step_uarch(const char *log_filename, const char **printout) try {
-    if (log_filename == nullptr) {
-        throw std::invalid_argument("invalid log_filename");
-    }
-    if (printout == nullptr) {
-        throw std::invalid_argument("invalid printout output");
-    }
-    *printout = cm_set_temp_string(cartesi::machine::pretty_print_step_uarch(log_filename));
-    return cm_result_success();
-} catch (...) {
-    if (printout != nullptr) {
-        *printout = nullptr;
-    }
-    return cm_result_failure();
-}
-
 cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
     cm_hash *obtained_root_hash) try {
     if (log_filename == nullptr) {

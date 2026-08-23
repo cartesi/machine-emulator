@@ -394,6 +394,7 @@ LIBCARTESI_OBJS:= \
 	plic-address-range.o \
 	back-merkle-tree.o \
 	send-cmio-response.o \
+	step-dumper.o \
 	keccak-256-hasher.o \
 	sha-256-hasher.o \
 	is-pristine.o \

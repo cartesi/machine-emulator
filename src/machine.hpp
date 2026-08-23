@@ -339,13 +339,6 @@ public:
     static machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
         uint64_t uarch_cycle_count);
 
-    /// \brief Replays a uarch step log and returns a human-readable printout.
-    /// \param filename Path to a binary step log file produced by log_step_uarch.
-    /// \returns The printout text.
-    /// \details A log that fails the final root hash check still yields its printout, with a
-    /// trailing WARNING line.
-    static std::string pretty_print_step_uarch(const std::string &filename);
-
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset.
     /// \param filename Path to the binary step log file produced by log_reset_uarch.

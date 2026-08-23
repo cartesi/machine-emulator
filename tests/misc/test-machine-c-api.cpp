@@ -2577,12 +2577,4 @@ BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {
     BOOST_CHECK_EQUAL(int8ToUint64(int8(-128)), 0xffffffffffffff80ULL);
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(pretty_print_step_uarch_failure_clears_output_test) {
-    // On failure the documented contract is *printout == nullptr; a stale pointer would let the caller
-    // consume previous text as if it came from the failed log.
-    const char *printout = "stale";
-    const cm_error error_code = cm_pretty_print_step_uarch("/no/such/uarch.log", &printout);
-    BOOST_CHECK_NE(error_code, CM_ERROR_OK);
-    BOOST_CHECK(printout == nullptr);
-}
 // NOLINTEND(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)

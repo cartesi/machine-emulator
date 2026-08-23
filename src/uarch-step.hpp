@@ -38,7 +38,7 @@ class uarch_state_access;
 class collect_uarch_cycle_hashes_state_access;
 class uarch_record_step_state_access;
 struct no_step_printout;
-class step_pretty_printer;
+class step_dumper;
 template <typename Printer>
 class uarch_replay_step_state_access;
 
@@ -47,7 +47,7 @@ extern template UArchStepStatus uarch_step(uarch_state_access a);
 extern template UArchStepStatus uarch_step(collect_uarch_cycle_hashes_state_access a);
 extern template UArchStepStatus uarch_step(uarch_record_step_state_access a);
 extern template UArchStepStatus uarch_step(uarch_replay_step_state_access<no_step_printout> a);
-extern template UArchStepStatus uarch_step(uarch_replay_step_state_access<step_pretty_printer> a);
+extern template UArchStepStatus uarch_step(uarch_replay_step_state_access<step_dumper> a);
 
 } // namespace cartesi
 

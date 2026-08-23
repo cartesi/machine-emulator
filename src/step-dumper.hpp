@@ -14,11 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef STEP_PRETTY_PRINTER_HPP
-#define STEP_PRETTY_PRINTER_HPP
+#ifndef STEP_DUMPER_HPP
+#define STEP_DUMPER_HPP
 
 /// \file
-/// \brief Human-readable printout of a replayed step.
+/// \brief Human-readable dump of a replayed uarch step log.
 
 #include <cstdint>
 #include <ostream>
@@ -30,7 +30,7 @@ namespace cartesi {
 /// \brief Sink that formats a step replay as an indented, human-readable printout.
 /// \details Each instruction is bracketed by its mnemonic, with its reads and writes nested
 /// underneath. Host-only (it allocates).
-class step_pretty_printer {
+class step_dumper {
     std::ostringstream m_out;
     int m_indent{0};      ///< Current bracket nesting depth
     uint64_t m_access{0}; ///< 1-based access counter across the whole printout
@@ -69,6 +69,12 @@ public:
                << new_val << ")\n";
     }
 };
+
+/// \brief Replays a uarch step log and returns a human-readable printout.
+/// \param filename Path to a binary step log file produced by machine::log_step_uarch.
+/// \details Replays the log purely to produce the printout; no caller belief is checked. A log
+/// that fails the final root hash check keeps its printout, with the failure appended as a warning.
+std::string dump_step_uarch(const std::string &filename);
 
 } // namespace cartesi
 

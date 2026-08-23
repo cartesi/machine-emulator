@@ -57,9 +57,6 @@ if cartesi then
         { name = "shadow_pmas", start = cartesi.AR_PMAS_START, length = cartesi.AR_PMAS_LENGTH },
         { name = "shadow_uarch", start = cartesi.UARCH_SHADOW_START_ADDRESS, length = cartesi.UARCH_SHADOW_LENGTH },
         { name = "uarch_ram", start = cartesi.UARCH_RAM_START_ADDRESS, length = cartesi.UARCH_RAM_LENGTH },
-        { name = "clint", start = cartesi.AR_CLINT_START, length = cartesi.AR_CLINT_LENGTH },
-        { name = "htif", start = cartesi.AR_HTIF_START, length = cartesi.AR_HTIF_LENGTH },
-        { name = "plic", start = cartesi.AR_PLIC_START, length = cartesi.AR_PLIC_LENGTH },
         {
             name = "cmio_rx",
             start = cartesi.AR_CMIO_RX_BUFFER_START,

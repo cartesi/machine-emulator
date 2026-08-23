@@ -2048,9 +2048,7 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
     replay_step_state_access::context context;
     // Keccak-256 only, mirroring recording: these logs exist for the on-chain verifier
     replay_step_state_access a(context, mapped_data.get_ptr(), data_length, hash_function_type::keccak256);
-    if (!std::ranges::equal(context.log.root_hash_before, root_hash_before)) {
-        throw std::runtime_error("root hash before does not match step log header");
-    }
+    context.log.check_root_hash_before(root_hash_before);
     if (context.log.requested_cycle_count != 0) {
         throw std::runtime_error("requested_cycle_count must be zero in send_cmio_response log");
     }
@@ -2105,9 +2103,7 @@ machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_befor
     auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
     uarch_replay_step_state_access<>::context context;
     uarch_replay_step_state_access<> a(context, mapped_data.get_ptr(), data_length);
-    if (!std::ranges::equal(context.log.root_hash_before, root_hash_before)) {
-        throw std::runtime_error("root hash before does not match step log header");
-    }
+    context.log.check_root_hash_before(root_hash_before);
     if (context.log.requested_cycle_count != 0) {
         throw std::runtime_error("requested_cycle_count must be zero in reset_uarch log");
     }
@@ -2142,9 +2138,7 @@ machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before
     auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
     uarch_replay_step_state_access<>::context context;
     uarch_replay_step_state_access<> a(context, mapped_data.get_ptr(), data_length);
-    if (!std::ranges::equal(context.log.root_hash_before, root_hash_before)) {
-        throw std::runtime_error("root hash before does not match step log header");
-    }
+    context.log.check_root_hash_before(root_hash_before);
     if (context.log.requested_cycle_count != uarch_cycle_count) {
         throw std::runtime_error("uarch cycle count does not match step log header");
     }
@@ -2260,9 +2254,7 @@ machine_hash machine::verify_step(const_machine_hash_view root_hash_before, cons
     // Constructor reads log header, validates computed initial hash == logged initial hash
     replay_step_state_access a(context, mapped_data.get_ptr(), data_length);
     // logged initial hash matches computed initial hash
-    if (!std::ranges::equal(context.log.root_hash_before, root_hash_before)) {
-        throw std::runtime_error("root hash before does not match step log header");
-    }
+    context.log.check_root_hash_before(root_hash_before);
     if (context.log.requested_cycle_count != mcycle_count) {
         throw std::runtime_error("mcycle count does not match step log header");
     }

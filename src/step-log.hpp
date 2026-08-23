@@ -306,6 +306,24 @@ struct step_log {
         }
     }
 
+    /// \brief Assert a caller-claimed pre-operation root hash matches the log header.
+    /// \param claimed Root hash the caller expects the operation to start from.
+    /// \details decode() already checked the header value against the witnessed tree, so this
+    /// transitively checks the claim against the tree as well.
+    void check_root_hash_before(const_machine_hash_view claimed) const {
+        if (!std::ranges::equal(claimed, root_hash_before)) {
+            THROW(std::runtime_error, "root hash before does not match step log header");
+        }
+    }
+
+    /// \brief Assert the root hash obtained by replaying matches the log header claim.
+    /// \param obtained Post-operation root hash the replay produced.
+    void check_root_hash_after(const machine_hash &obtained) const {
+        if (obtained != root_hash_after) {
+            THROW(std::runtime_error, "final root hash mismatch");
+        }
+    }
+
 private:
     /// \brief Validate that witnessed pages are strictly ascending by index, with a zero scratch slot.
     /// \param pages Witnessed pages, in wire order.

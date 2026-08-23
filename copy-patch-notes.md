@@ -1859,3 +1859,41 @@ build therefore stopped compiling as of `a0f32c05`, and nothing caught it
 because the stock column always came from that older worktree. Fixed with a
 no-op definition on the no-backend path; the stock column must be built from
 the tree under test from here on.
+
+### The uarch is stale here, and what that does and does not invalidate
+
+`interpret.cpp` is compiled into the microarchitecture, so any change to it
+produces a different `uarch-pristine-ram.c` and therefore different root
+hashes. On this host the generated artifacts date from Aug 7 and have never
+been regenerated, while `interpret.cpp` changed in `bcca04f1`. So the uarch
+in every build recorded on this host is stale with respect to the
+interpreter it ships beside.
+
+It cannot be regenerated here. `riscv64-unknown-elf-gcc` is installed, but
+the uarch build wants a RISC-V C++ standard library
+(`../src/interpret.hpp:20:10: fatal error: cstdint: No such file or
+directory`); the supported path is the `cartesi/machine-emulator:toolchain`
+Docker image, which this environment does not have. The attempt left the
+artifacts byte-identical (`ed058a66d2cd`), so nothing was disturbed.
+
+What this invalidates: the absolute root hashes recorded on this host are
+not canonical, and every one of them changes the moment the uarch is
+regenerated. They should not be compared against hashes produced anywhere
+else.
+
+What it does not invalidate: the A/B gates. Every build compared here embeds
+the byte-identical uarch (verified by md5 across worktrees), so its
+contribution to the tree is constant and hash equality still proves the
+backends agree with the interpreter on architectural state. It is a relative
+gate, and was only ever used as one.
+
+Measured, not assumed: `bcca04f1` -- the commit that changed
+`interpret.cpp` -- is behaviour-preserving. Stock builds at `bcca04f1~1`
+and `bcca04f1`, same uarch, same images, retire identical mcycles and root
+hashes on nop, double and matrixprod, the two FP-heavy rows included. So
+the stale uarch is not masking an FP behaviour change, and the
+`ed955187`-to-tip hash difference is not this commit. The remaining
+documented candidate in that range is `44f5af12`, which raises the guest
+clock to 1024 MHz by design -- Diego re-recorded the board in `04d81ae5`
+immediately after it for exactly that reason. I have not bisected that
+range to prove it.

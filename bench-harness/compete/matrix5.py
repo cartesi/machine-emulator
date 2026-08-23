@@ -26,7 +26,10 @@ ICOUNT = " -icount shift=0,sleep=off"
 # The interpreter is resolved from PATH (override with LUA); the MacPorts
 # path this used to hardcode does not exist on Linux hosts.
 LUA = os.environ.get("LUA") or shutil.which("lua5.4") or "lua5.4"
-OUT = os.path.join(COMP, "results-matrix5.json")
+# Default keeps the AArch64 board's filename; MATRIX_OUT redirects a run on
+# another host, so it cannot overwrite a board it is not comparable to --
+# these differ by host, not merely by build.
+OUT = os.environ.get("MATRIX_OUT") or os.path.join(COMP, "results-matrix5.json")
 
 def cartesi_run(so_dir, guest):
     lua = os.path.join(COMP, "compete.lua")

@@ -762,7 +762,12 @@ cp-stencils.elf.o: cp-stencils.c
 # The semantic TU instantiates the interpreter's own execute bodies, so it
 # compiles natively with the emulator's compiler and include set: same
 # compiler, same SDK, same structure layout as the running emulator.
-CP_SEMANTIC_CXXFLAGS=-ffunction-sections -fomit-frame-pointer -fno-stack-protector 	-fno-unwind-tables -fno-asynchronous-unwind-tables
+# The FP flags are part of that structure, not an optimization choice: without
+# -fno-math-errno GCC compiles the hard-float sqrt body as a libm call, and the
+# extractor rejects the stencil ("JMPREL32 to unexpected symbol sqrtf") because
+# the call is neither a continuation nor an immediate hole. -ffp-contract=off
+# keeps the stencil's arithmetic identical to the interpreter's.
+CP_SEMANTIC_CXXFLAGS=-ffunction-sections -fomit-frame-pointer -fno-stack-protector 	-fno-unwind-tables -fno-asynchronous-unwind-tables -ffp-contract=off -fno-math-errno
 cp-stencils-semantic.stencil.o: cp-stencils-semantic.cpp interpret.cpp cm-version.h interpret-jump-table.hpp
 	$(CXX) $(CXXFLAGS) $(CP_SEMANTIC_CXXFLAGS) -c -o $@ $<
 

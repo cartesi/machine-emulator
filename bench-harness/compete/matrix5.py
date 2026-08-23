@@ -29,18 +29,23 @@ LUA = os.environ.get("LUA") or shutil.which("lua5.4") or "lua5.4"
 # Default keeps the AArch64 board's filename; MATRIX_OUT redirects a run on
 # another host, so it cannot overwrite a board it is not comparable to --
 # these differ by host, not merely by build.
+# No emulator cell legitimately runs for minutes here; the longest measured
+# is under 20s. Anything past this is wedged, not slow.
+CELL_TIMEOUT = float(os.environ.get("CELL_TIMEOUT", "300"))
 OUT = os.environ.get("MATRIX_OUT") or os.path.join(COMP, "results-matrix5.json")
 
 def cartesi_run(so_dir, guest):
     lua = os.path.join(COMP, "compete.lua")
     env = dict(os.environ, LUA_CPATH=f"{so_dir}/?.so;;")
-    t, r = wall(f"{LUA} {lua} {CARTESI_LINUX} {ROOTFS} '{guest}'", env=env)
-    out = r.stdout.strip().splitlines()[-1].split()
+    t, r = wall(f"{LUA} {lua} {CARTESI_LINUX} {ROOTFS} '{guest}'", env=env, timeout=CELL_TIMEOUT)
+    lines = r.stdout.strip().splitlines()
+    assert lines, f"cartesi {so_dir}: no output (rc={r.returncode}, timed out?) {r.stderr}"
+    out = lines[-1].split()
     assert len(out) == 3 and int(out[2]) == 1, f"cartesi {so_dir}: {r.stdout} {r.stderr}"
     return float(out[0])
 
 def qemu_run(entry, icount):
-    t, _ = wall(qemu_sys_cmd(sys_dtb(entry)) + (ICOUNT if icount else ""))
+    t, _ = wall(qemu_sys_cmd(sys_dtb(entry)) + (ICOUNT if icount else ""), timeout=CELL_TIMEOUT)
     ok = b"successful run" in open(os.path.join(COMP, "serial.log"), "rb").read() \
         if entry != "true" else True
     return t if ok else None

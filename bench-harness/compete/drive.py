@@ -36,9 +36,18 @@ WORKLOADS = ["nop", "regs", "branch", "tree", "qsort", "memcpy", "zlib", "hash",
 def sng_args(wl, ops):
     return f"--no-rand-seed {ARGS[wl]} {OPSFLAG[wl]} {ops}"
 
-def wall(cmd, env=None):
+def wall(cmd, env=None, timeout=None):
+    """Times a command. With a timeout, a wedged emulator is killed and
+    reported instead of blocking the board forever: qemu-system was measured
+    sitting 24 minutes in poll_schedule_timeout on the syscall stressor with a
+    frozen guest console, and subprocess.run without a timeout has no way out
+    of that. The caller sees returncode -9 and no success marker, so the cell
+    is recorded as a failure, which is the honest result."""
     t0 = time.monotonic()
-    r = subprocess.run(cmd, shell=True, capture_output=True, text=True, env=env)
+    try:
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, env=env, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        r = subprocess.CompletedProcess(cmd, -9, e.stdout or "", e.stderr or "")
     return time.monotonic() - t0, r
 
 def calibrate():

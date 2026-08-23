@@ -1631,3 +1631,107 @@ the signed-immediate boundaries -2048, -1, 0, 1, and 2047: 2560 direct cases on
 AArch64 and 360 on amd64, followed by the existing randomized stencil and
 machine differential tests. Extraction validated 136366 AArch64 and 10202 amd64
 stencils.
+## Done: the semantic stencil TU needed the interpreter's FP flags (2026-08-23)
+
+Guarded floating-point execution added the FP sqrt stencil families, and on
+Linux/x86-64 with GCC the copy-patch build stopped working entirely:
+
+    cp-extract: cp_fp_sqrt_s_rne_0: JMPREL32 to unexpected symbol sqrtf
+
+CP_SEMANTIC_CXXFLAGS never inherited `-fno-math-errno`, so GCC compiled the
+hard-float sqrt body as a call into libm. The call is neither a continuation
+nor an immediate hole, so the extractor has nowhere to put it. The
+requirement was already written down one block up in src/Makefile, on
+INTERPRET_CXXFLAGS: "bare sqrt instructions without errno bookkeeping". The
+semantic TU simply never got the flags. AArch64/clang emits the instruction
+inline and never produced the relocation, which is why this survived to here.
+
+Fixed by giving CP_SEMANTIC_CXXFLAGS both `-ffp-contract=off` and
+`-fno-math-errno`. All 14994 stencils validate again.
+
+### Falsified: contraction was not costing the FP rows
+
+The x86-64 compete board recorded matrixprod as a 1.51x loss to lightning,
+where it is cp's signature win elsewhere (0.50 on the AArch64 compete board,
+0.59 on the earlier x86-64 bench.lua board). The obvious suspect was the
+`-ffp-contract=off` just added: it forbids FMA fusion in the semantic
+stencils, and matrixprod and double are exactly the two FP-heavy rows that
+regressed. A/B against a cp build carrying `-fno-math-errno` alone, same
+host, same guest work:
+
+    workload      -ffp-contract=off   errno-only   mcycle
+    double              5.314            5.453     854657094  (both)
+    matrixprod          4.230            4.237     2415138991 (both)
+
+matrixprod is flat to 0.007s and double is marginally *slower* without the
+flag. Identical mcycles confirm the work is the same. Contraction is not the
+mechanism and the correctness flag is free; keep it.
+
+Note for the AArch64 side: those stencils are presumably still built without
+`-ffp-contract=off`, so their arithmetic may contract where the interpreter's
+does not. That is a correctness question there, not a performance one, and it
+is unmeasured.
+
+What still explains matrixprod's inversion is open. It is confounded: the
+0.59 board predates the 16-slot raise, so it ran at CP_NSLOTS=7 as this one
+does, which rules slot count out as the separator and leaves architecture and
+protocol. The two protocols run different stress-ng builds whose stressor
+kernels differ -- the same argument already used to reconcile the chain-start
+branch discrepancy -- so a bench.lua matrixprod run at this tip is the cheap
+next measurement, not another x86-64 compete rerun.
+
+### The cross-architecture comparison: a uniform tax, not a mechanism
+
+Against the AArch64 16-slot board where cp led (cp 1.46, light 1.62), every
+comparison is a within-board ratio; the hosts differ so absolute seconds are
+not comparable.
+
+    cp/light        aarch64   x86-64   swing
+    nop                0.95     1.33    1.40   flipped to loss
+    regs               1.76     2.48    1.41
+    branch             1.21     1.48    1.23
+    tree               0.83     1.09    1.31   flipped to loss
+    qsort              0.57     0.97    1.68
+    memcpy             1.44     1.38    0.96
+    zlib               0.82     1.11    1.35   flipped to loss
+    hash               0.82     1.10    1.34   flipped to loss
+    syscall            1.02     1.32    1.30
+    double             1.12     1.62    1.45
+    sieve              0.98     1.67    1.70   flipped to loss
+    int64              0.48     0.80    1.65
+    matrixprod         0.50     1.51    3.03   flipped to loss
+    geomean            0.90     1.32    1.47
+
+    cp wins 8/13 on aarch64, 2/13 here.
+
+Twelve of thirteen rows move against cp, none moves toward it, and the median
+swing is 1.40x. memcpy alone is flat (0.96), plausibly because it is already
+cp's worst register-carry loss on AArch64 and saturated on that bottleneck.
+
+That uniformity is the finding. A mechanism-specific cause -- a stencil
+family, the chain-start entries, FP contraction -- would hit a subset of rows.
+A flat tax across nop, hash, zlib, sieve and matrixprod alike is what a global
+per-operation cost looks like, which is what the two structural x86-64
+differences predict: CP_NSLOTS=7 against 16, and cp_enter_call against
+AArch64's plain-branch transfer. This is evidence on the question left open by
+the first native x86-64 board, and it favours "both, uniformly" over either
+single cause.
+
+The competitive loss is larger against the other emulators than against
+lightning:
+
+    geomean cp/rvvm   1.22 -> 1.45
+    geomean cp/qemu   0.71 -> 1.39
+
+cp led qemu-system by 29% on AArch64 and trails it by 39% here, a 1.96x swing.
+That, not the lightning ratio, is the headline.
+
+Two rows sit outside the uniform tax and should not be read with it:
+
+- matrixprod's 3.03x swing is more than double the median, so something
+  specific is on top of the global cost. The FP-contraction hypothesis is
+  falsified above; this is unexplained.
+- tree's cp/rvvm goes 1.33 -> 0.14, cp now 7x faster than RVVM. That is
+  entirely RVVM's x86-64 tree pathology, not a cp gain, and reading it as a
+  win would be an error.
+

@@ -1882,6 +1882,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, std::vector<uint8_t> &data, const std::string &path) {
+    data.clear();
     if (!contains(j, key, path)) {
         return;
     }

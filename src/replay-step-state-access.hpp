@@ -246,16 +246,6 @@ private:
         return cast_ptr_to_host_addr(m_shadow_regs_page->data) + offset;
     }
 
-    uint64_t read_shadow_reg(shadow_registers_what what) const {
-        return aliased_aligned_read<uint64_t>(get_shadow_reg_host_addr(what));
-    }
-
-    void write_shadow_reg(shadow_registers_what what, uint64_t val) const {
-        const auto haddr = get_shadow_reg_host_addr(what);
-        m_shadow_regs_page->hash = machine_hash{}; // written page: rehash on the after-root pass
-        aliased_aligned_write<uint64_t>(haddr, val);
-    }
-
     uint64_t read_pmas_istart(uint64_t index) const {
         const auto haddr = do_get_faddr(pmas_get_abs_addr(index, pmas_what::istart));
         return aliased_aligned_read<uint64_t>(haddr);
@@ -272,11 +262,13 @@ private:
     friend i_prefer_shadow_state<replay_step_state_access>;
 
     uint64_t do_read_shadow_register(shadow_registers_what what) const {
-        return read_shadow_reg(what);
+        return aliased_aligned_read<uint64_t>(get_shadow_reg_host_addr(what));
     }
 
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
-        write_shadow_reg(what, val);
+        const auto haddr = get_shadow_reg_host_addr(what);
+        m_shadow_regs_page->hash = machine_hash{}; // written page: rehash on the after-root pass
+        aliased_aligned_write<uint64_t>(haddr, val);
     }
 
     machine_hash do_read_revert_root_hash() const {

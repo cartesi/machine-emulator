@@ -95,9 +95,7 @@ public:
         } else {
             obtained_root_hash = m_context.log.compute_root_hash(true);
         }
-        if (obtained_root_hash != m_context.log.root_hash_after) {
-            THROW(std::runtime_error, "final root hash mismatch");
-        }
+        m_context.log.check_root_hash_after(obtained_root_hash);
         return obtained_root_hash;
     }
 

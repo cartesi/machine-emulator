@@ -45,7 +45,6 @@
 #include "riscv-constants.hpp"
 #include "shadow-registers.hpp"
 #include "shadow-tlb.hpp"
-#include "step-log-layout.hpp"
 #include "step-log.hpp"
 #include "strict-aliasing.hpp"
 #include "throw.hpp"

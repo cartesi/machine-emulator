@@ -224,6 +224,14 @@ timings. `rvvm.py` selects RVVM's documented host-specific build directory for
 macOS/AArch64 and Linux/x86-64. Set the `RVVM` environment variable to an exact
 executable path for a different layout or host.
 
+On Diego's macOS host, the preserved baseline binary is currently
+`/private/tmp/rvvm-source/release.darwin.arm64/rvvm_arm64`; note that searching
+`/tmp` does not necessarily traverse macOS's `/private/tmp` target. Its SHA-256
+is `08a8e42949caa7e904ee78af8dcc2131f666b9de439e7411f774cec8d8744bcb`.
+Use the hash, not a checkout directory name, to select it: the similarly named
+`/private/tmp/rvvm-clean` tree contains instrumented source and is not the
+matrix baseline.
+
 ### Boot image provenance
 
 The three committed artifacts use one byte-identical Linux kernel. The Cartesi

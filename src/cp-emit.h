@@ -72,11 +72,10 @@ static inline void cp_profile_record(cp_heap_t *h, uint32_t start, uint32_t end,
 }
 
 /* Returns 0 on success. The heap starts protected (RX). */
-static inline int cp_heap_init(cp_heap_t *h, size_t size)
-{
+static inline int cp_heap_init(cp_heap_t *h, size_t size) {
 #if defined(__APPLE__)
-    h->base = (uint8_t *) mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC,
-        MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
+    h->base =
+        (uint8_t *) mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
 #elif defined(__x86_64__)
     /* Permanently RWX: the write-protect toggle is a cheap per-thread flip
      * only under Apple's MAP_JIT; the generic fallback below is a
@@ -109,8 +108,7 @@ static inline int cp_heap_init(cp_heap_t *h, size_t size)
     return 0;
 }
 
-static inline void cp_heap_free(cp_heap_t *h)
-{
+static inline void cp_heap_free(cp_heap_t *h) {
     if (h->profile_path != NULL) {
         FILE *profile = fopen(h->profile_path, "w");
         if (profile != NULL) {
@@ -131,8 +129,7 @@ static inline void cp_heap_free(cp_heap_t *h)
     }
 }
 
-static inline void cp_heap_unprotect(cp_heap_t *h)
-{
+static inline void cp_heap_unprotect(cp_heap_t *h) {
     if (h->curr < h->flushed) {
         h->flushed = h->curr; /* flush-all rewound the cursor */
     }
@@ -145,8 +142,7 @@ static inline void cp_heap_unprotect(cp_heap_t *h)
 #endif
 }
 
-static inline void cp_heap_protect_flush(cp_heap_t *h)
-{
+static inline void cp_heap_protect_flush(cp_heap_t *h) {
 #if defined(__APPLE__)
     pthread_jit_write_protect_np(1);
     sys_icache_invalidate(h->base + h->flushed, h->curr - h->flushed);
@@ -163,8 +159,7 @@ static inline void cp_heap_protect_flush(cp_heap_t *h)
     h->flushed = h->curr;
 }
 
-static inline size_t cp_heap_remaining(const cp_heap_t *h)
-{
+static inline size_t cp_heap_remaining(const cp_heap_t *h) {
     return h->size - h->curr;
 }
 
@@ -174,8 +169,7 @@ static inline size_t cp_heap_remaining(const cp_heap_t *h)
  * fallthrough, elided when the branch is trailing). Returns the stencil
  * address, or NULL when the heap is full (caller flushes all and retries).
  */
-static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint64_t *imm, uint8_t *const cont[2])
-{
+static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint64_t *imm, uint8_t *const cont[2]) {
     uint8_t *dst = h->base + h->curr;
     uint32_t size = st->size;
 
@@ -224,6 +218,21 @@ static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint6
                 memcpy(site, &value, 8);
                 break;
             }
+            case CP_P_ABS32: {
+                uint32_t value = (uint32_t) (imm[p->ordinal] + (uint64_t) p->addend);
+                memcpy(site, &value, 4);
+                break;
+            }
+            case CP_P_U12: {
+                uint64_t raw = imm[p->ordinal];
+                uint32_t negative = (uint32_t) (raw >> 63);
+                uint32_t magnitude = (uint32_t) (negative ? (~raw + 1u) : raw);
+                uint32_t insn;
+                memcpy(&insn, site, 4);
+                insn = (insn & ~((1u << 30) | (0xfffu << 10))) | (negative << 30) | ((magnitude & 0xfffu) << 10);
+                memcpy(site, &insn, 4);
+                break;
+            }
             default: { /* CP_P_G0..G3: 16-bit field at bits 5-20 */
                 unsigned shift = 16u * (unsigned) (p->kind - CP_P_G0);
                 uint32_t field = (uint32_t) ((imm[p->ordinal] >> shift) & 0xffffu);
@@ -255,8 +264,7 @@ static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint6
 
 /* Lowers the icache watermark to cover a patch to already-published code:
  * the next cp_heap_protect_flush then flushes from the patched site. */
-static inline void cp_heap_lower(cp_heap_t *h, size_t off)
-{
+static inline void cp_heap_lower(cp_heap_t *h, size_t off) {
     if (off < h->flushed) {
         h->flushed = off;
     }
@@ -265,8 +273,7 @@ static inline void cp_heap_lower(cp_heap_t *h, size_t off)
 /* Rewrites a previously emitted trailing branch site to a new target: the
  * link patch applied when a pending successor compiles. The heap must be
  * writable. */
-static inline void cp_patch_branch(uint8_t *site, uint8_t kind, int32_t addend, uint8_t *target)
-{
+static inline void cp_patch_branch(uint8_t *site, uint8_t kind, int32_t addend, uint8_t *target) {
     if (kind == CP_P_JUMP26) {
         int64_t delta = (int64_t) (target - site);
         uint32_t insn = 0x14000000u | (((uint64_t) delta >> 2) & 0x03ffffffu);

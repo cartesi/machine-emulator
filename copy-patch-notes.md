@@ -1538,3 +1538,96 @@ register reads/writes and amd64 normally needs MXCSR memory transfers, so a
 per-operation exact-flag probe may cost more than bit classification. Keep
 this out of the default guard until the benchmark establishes the profitable
 shape and threshold on both hosts.
+
+## Done: full AArch64 matrix after guarded FP coverage (2026-08-23)
+
+Commit `bcca04f1`, compete protocol, fixed musl stress-ng bogo-ops,
+boot-subtracted, three interleaved repetitions. All 234 workload samples
+completed; there were no failed cells. The three freshly built Cartesi
+columns also smoke-booted to the same mcycle (39580227). Median seconds:
+
+    workload      stock  light     cp  qemu-sys  qemu-icount  rvvm
+    nop            5.585  0.394  0.370    0.467        0.635  0.516
+    regs          13.417  1.891  2.002    1.784        1.913  1.263
+    branch         0.950  0.738  1.165    3.041        3.050  1.468
+    tree           2.616  2.099  1.796    2.938        2.964  1.318
+    qsort          3.969  2.485  1.478    3.542        3.617  1.270
+    memcpy         9.544  2.440  3.303    5.036        5.537  1.423
+    zlib           8.171  4.771  3.893    3.940        4.196  2.108
+    hash           5.938  2.505  1.810    1.826        1.932  1.913
+    syscall        1.097  0.471  0.476    0.827        0.838  0.553
+    double         1.667  1.598  1.794    1.675        1.718  3.272
+    sieve         13.509  2.178  2.142    1.725        2.046  1.776
+    int64          3.976  1.545  0.777    2.207        2.245  0.335
+    matrixprod     3.684  1.569  1.125    2.275        2.398  0.838
+    geomean        4.193  1.563  1.408    2.052        2.200  1.177
+
+CP beats Lightning on 8/13 workloads. The rerun resolves the old CP process-
+population anomaly in favor of the separately reproduced values: regs is
+2.002 rather than 3.322 and branch is 1.165 rather than 0.874. Against the old
+matrix CP also improves memcpy 9.6 percent, hash 9.2 percent, and matrixprod
+5.6 percent. Compete double moves only 1.3 percent (1.818 to 1.794), so the
+6.3 percent fixed-cycle rootfs A/B does not transfer to this musl stressor.
+
+Build SHA-256 identities: stock
+`f6098625a4b3762ab7ca0198cfdadfc594729214a4e0d4e1e5a716d04c6b55c4`,
+Lightning `3fe1454589c0824e0b77ca5900a8dd7734bd32ab4d6f0d0d37ec1c6ef3b09220`,
+CP `3ba9b1ba6eb519693474cd064d94ef4809eb4e0ed865871409dd66109ec646f4`,
+and RVVM
+`08a8e42949caa7e904ee78af8dcc2131f666b9de439e7411f774cec8d8744bcb`.
+The refreshed raw result file SHA-256 is
+`1129939d6f5e74c7c327cfe6afe34dd3a18e92288b38fc83f5e00d178d654acf`.
+
+## Rejected: chain-start front-cache pre-check (2026-08-23)
+
+Tested a direct lookup in the existing 256-entry `{vpc, call_fn}` cache before
+the exact head map, with a same-binary `CP_CHAIN_FRONT_DISABLE=1` control.
+Compete boot-subtracted medians of three interleaved repetitions were branch
+1.130 vs 1.165 seconds (3.0 percent better), while regs, qsort, and sieve moved
+less than 0.3 percent. On the rootfs fixed-cycle board, however, branch was
+2.062 vs 2.053 seconds: no recovery on the stressor where chain-start entry
+caused the large regression. All mcycles and root hashes matched.
+
+Temporary counters measured only 37.8 percent positive-cache hits on rootfs
+branch and 51.6 percent on compete branch. Misses pay both the new probe and
+the unchanged map lookup. Negative entries for interpreted heads added only
+23 hits on rootfs and none on compete. They also require a callable miss-island
+sentinel because generated lookup stencils consume the same cache and jump to
+every matching entry.
+
+No code was retained. The simple pre-check is falsified; another chain-start
+optimization must remove or throttle the full-map miss path rather than put a
+mostly-missing lookup in front of it.
+
+## Rejected: direct cross-page successor links (2026-08-23)
+
+Linked a trace ending at a guest-page boundary directly to an already compiled
+successor through its `call_fn`. The same-binary control showed no useful win:
+memcpy was 3.339 seconds with linking disabled and 3.328 enabled, while boot
+regressed by about 0.10 seconds. Counters confirmed that the links worked
+(terminal exits 506385 -> 426533 and lookup misses 358206 -> 345769), but the
+saved dispatch traffic did not repay the added formation and boot cost. All 13
+fixed-cycle workloads retained identical mcycles and root hashes. No code was
+retained.
+
+## Done: semantic direct ADDI/ADDIW stencils (2026-08-23)
+
+ADDI, ADDIW, and their compressed forms now patch the guest immediate directly
+into a semantic stencil instead of emitting `li scratch` followed by a
+register-register add. The generator instantiates the existing interpreter
+`execute_ADDI` and `execute_ADDIW` bodies with a sentinel immediate. Extraction
+accepts only the exact AArch64 ADD/SUB-immediate or amd64 ADD/LEA-imm32 compiler
+shape and otherwise fails the build. There is no handwritten host implementation
+of the guest operation. `CP_IMM_DISABLE=1` retains the old two-stencil path as a
+same-binary benchmark control.
+
+Rootfs fixed-cycle same-binary medians, boot-subtracted, were memcpy 3.302 ->
+3.102 seconds (-6.1 percent), int64 0.768 -> 0.742 (-3.4 percent), and matrixprod
+1.143 -> 1.128 (-1.3 percent). On the balanced 13-workload gate, every candidate
+run reached mcycle 1342177280 with the baseline root hash and stop reason.
+
+Coverage includes every source/destination slot combination at both widths and
+the signed-immediate boundaries -2048, -1, 0, 1, and 2047: 2560 direct cases on
+AArch64 and 360 on amd64, followed by the existing randomized stencil and
+machine differential tests. Extraction validated 136366 AArch64 and 10202 amd64
+stencils.

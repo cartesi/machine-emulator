@@ -366,6 +366,11 @@ static bool cp_fp_enabled() {
     return enabled;
 }
 
+static bool cp_imm_enabled() {
+    static const bool enabled = std::getenv("CP_IMM_DISABLE") == nullptr;
+    return enabled;
+}
+
 // ---------------------------------------------------------------------------
 // Formation: the emitter-facing former the selection include drives.
 
@@ -604,6 +609,23 @@ struct cp_former {
             emit1(tab[d][s1][t]);
         }
         free_scratch(t);
+    }
+
+    void reg2directi(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS],
+        const cp_stencil_t *const (&fallback)[CP_NSLOTS][CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1, uint64_t imm) {
+        if (!cp_imm_enabled()) {
+            reg2i(fallback, rd, rs1, imm);
+            return;
+        }
+        const int s = alloc_src(rs1);
+        if (rd == 0 || c->rec_failed) {
+            return;
+        }
+        const int d = alloc_dst(rd);
+        if (c->rec_failed) {
+            return;
+        }
+        emit1(tab[d][s], imm);
     }
 
     void li(uint8_t rd, uint64_t value) {
@@ -1176,6 +1198,16 @@ static void cp_repatch_imm(uint8_t *dst, const cp_stencil_t *st, uint8_t ordinal
         if (p->kind == CP_P_ABS64) {
             const uint64_t v = value + static_cast<uint64_t>(p->addend);
             std::memcpy(site, &v, 8);
+        } else if (p->kind == CP_P_ABS32) {
+            const uint32_t v = static_cast<uint32_t>(value + static_cast<uint64_t>(p->addend));
+            std::memcpy(site, &v, 4);
+        } else if (p->kind == CP_P_U12) {
+            const uint32_t negative = static_cast<uint32_t>(value >> 63);
+            const uint32_t magnitude = static_cast<uint32_t>(negative != 0 ? (~value + 1u) : value);
+            uint32_t insn = 0;
+            std::memcpy(&insn, site, 4);
+            insn = (insn & ~((1u << 30) | (0xfffu << 10))) | (negative << 30) | ((magnitude & 0xfffu) << 10);
+            std::memcpy(site, &insn, 4);
         } else {
             const unsigned shift = 16u * static_cast<unsigned>(p->kind - CP_P_G0);
             const uint32_t field = static_cast<uint32_t>(value >> shift) & 0xffffu;

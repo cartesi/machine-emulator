@@ -999,6 +999,38 @@ for _, name in ipairs(sem_sorted(SEM_REG_OPS)) do
     end
 end
 
+
+-- Immediate stencils remain semantic stencils: the interpreter execute body
+-- sees a fixed sentinel immediate, which the extractor validates and turns
+-- into a patchable host-instruction field. No host operation is handwritten.
+local IMM_SENTINEL = 0x5a5
+local function i_insn(opc, f3)
+    return (IMM_SENTINEL << 20) | (1 << 15) | (f3 << 12) | (3 << 7) | opc
+end
+local SEM_IMM_OPS = {
+    addi = { "execute_ADDI<cartesi::rd_kind::xN>", i_insn(0x13, 0) },
+    addiw = { "execute_ADDIW<cartesi::rd_kind::xN>", i_insn(0x1b, 0) },
+}
+for _, name in ipairs(sem_sorted(SEM_IMM_OPS)) do
+    local fn_name, insn = SEM_IMM_OPS[name][1], SEM_IMM_OPS[name][2]
+    for d = 0, NSLOTS - 1 do
+        for s = 0, NSLOTS - 1 do
+            gem(("extern \"C\" CONT void cp_%s_%d_%d(%s)"):format(name, d, s, params))
+            gem("{")
+            gem(("    uint64_t v1 = r%d;"):format(s))
+            gem("    uint64_t v2 = 0;")
+            gem("    uint64_t vd = 0;")
+            gem("    const cartesi::cp_slot_access acc(&v1, &v2, &vd);")
+            gem("    uint64_t spc = 0;")
+            gem(("    (void) cartesi::%s(acc, spc, 0x%08xu);"):format(fn_name, insn))
+            gem(("    r%d = vd;"):format(d))
+            gem("    TAIL return cp_cont_0(" .. args .. ");")
+            gem("}")
+            gem("")
+        end
+    end
+end
+
 for _, name in ipairs(sem_sorted(SEM_BR_OPS)) do
     local fn_name, insn = SEM_BR_OPS[name][1], SEM_BR_OPS[name][2]
     for s1 = 0, NSLOTS - 1 do

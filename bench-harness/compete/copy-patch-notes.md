@@ -1,4 +1,49 @@
 
+## Rejected: chain-start front-cache pre-check (2026-08-23)
+
+The proposed pre-check was implemented against `bcca04f1` and measured with
+the same binary, using `CP_CHAIN_FRONT_DISABLE=1` for the control. Compete
+boot-subtracted medians of three interleaved repetitions:
+
+    workload   pre-check   control
+    branch         1.130     1.165
+    regs           1.980     1.983
+    qsort          1.450     1.455
+    sieve          2.150     2.152
+
+The 3.0 percent compete branch gain did not transfer to the rootfs stressor,
+where branch was 2.062 seconds with the pre-check and 2.053 without it. The
+other rootfs gates were flat, and every mcycle and fixed-cycle root hash
+matched.
+
+Temporary counters explain the limited result. Positive-cache hit rates were
+147199/389534 (37.8 percent) for rootfs branch and 141540/274402 (51.6
+percent) for compete branch. Every miss adds the front probe before paying the
+same exact head-map lookup. Caching interpreted markers as negative entries
+added only 23 rootfs hits and no compete hits; it therefore cannot repair the
+miss side. The shared cache is also consumed by generated lookup stencils, so
+any negative value must remain a callable island rather than null.
+
+The patch was discarded: it does not recover the approximately 40 percent
+chain-start regression and is neutral on its most affected stressor. Do not
+retry the same positive front-cache pre-check. A different chain-start policy
+would need to avoid or throttle full-map misses rather than merely precede
+them.
+
+## Done: direct semantic add-immediate stencils (2026-08-23)
+
+CP now emits ADDI/ADDIW and compressed equivalents as one semantic stencil,
+patching the immediate into a compiler-validated AArch64 ADD/SUB-immediate or
+amd64 ADD/LEA-imm32 field. The stencils still come from the interpreter execute
+bodies; extraction fails closed if the compiler changes shape. The old
+`li scratch` plus register-add path remains available under
+`CP_IMM_DISABLE=1` for same-binary measurement.
+
+Boot-subtracted rootfs medians improved by 6.1 percent on memcpy, 3.4 percent
+on int64, and 1.3 percent on matrixprod. The complete 13-workload fixed-cycle
+gate matched baseline mcycles, hashes, and stop reasons. Exhaustive direct
+stencil coverage and randomized differential tests pass on AArch64 and amd64.
+
 ## Correction: the branch regression is in both stressor builds; the matrix cp rows do not reproduce (2026-08-21)
 
 The previous entry's claim that the chain-start branch regression is

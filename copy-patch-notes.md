@@ -1735,3 +1735,74 @@ Two rows sit outside the uniform tax and should not be read with it:
   entirely RVVM's x86-64 tree pathology, not a cp gain, and reading it as a
   win would be an error.
 
+
+## Corrected: what the emission-truncation fix actually did to matrixprod (2026-08-23)
+
+The `19b94bc0` commit message attributed matrixprod's 2.1x gain to FP
+fragments hitting the exit budget, and a later correction of mine
+reattributed it to scratch-depth exhaustion at `CSRRS fflags`. Both were
+inferred from abort logs. Profiled properly, neither description was right,
+and two further claims of mine were wrong.
+
+Method: perf 6.8.12 at `/usr/lib/linux-tools-6.8.0-137/perf` (the
+`/usr/bin/perf` wrapper refuses only because the running kernel is 6.18;
+`perf_event_paranoid=2` permits user-space sampling). Generated code is
+symbolised by writing `/tmp/perf-<pid>.map` from the `TC_LIGHTNING_STATS`
+publication lines, which already carry head, size and address -- no emitter
+needed. Driver is bench.lua with a 4Gi-mcycle window and no root hash, so
+the untimed boot and the 512MB Merkle hash do not swamp the profile. Both
+builds retire mcycle 4,563,402,752.
+
+    build                     wall    interpreter  generated  compiled traces
+    pre-fix  (ed955187)       9.89s      96.12%      2.85%         432
+    post-fix (HEAD)           5.09s      78.65%     19.73%         352
+
+matrixprod was running essentially interpreted. The fix moved 7x more time
+into generated code, and did it with *fewer* traces.
+
+Per-trace attribution, post-fix (map resolves ~100% of the JIT bucket):
+
+    trace_7fffa33034ec   8.03%   <- half of all generated-code time
+    trace_7fffa3301afc   2.30%
+    trace_7fffa3303702   1.41%
+    trace_7fffa3301bc2   1.18%
+    trace_55557b791524   1.01%
+
+The end-to-end chain for the dominant trace, each step measured:
+
+- Pre-fix, head `7fffa33034ec` never compiles: 0 occurrences among the 432
+  published traces.
+- Pre-fix it aborts three times at emission (`ABORT-collect`, recorded
+  lengths 211, 209, 219) -- it is tried and thrown away, not merely unseen.
+- Post-fix it truncates once (`ETRUNC cut=207 reason=3`) and publishes.
+- Post-fix it is the hottest generated trace at 8.03%.
+
+`trace_7fffa3301afc` compiles in both (1.50% -> 2.30%) and is the control:
+the win is the traces that did not exist before.
+
+### Three of my claims this refutes
+
+- **Not FP.** Both builds report `longest-fp-chain 0 (0 fp)`: no matrixprod
+  trace contains staged floating point either side. The hot interpreter
+  symbols pre-fix are integer -- `C_LDSP` 7.4%, `ADD_MUL_SUB_rdN` 6.8%,
+  `SRLI_SRAI_rdN` 6.3% -- i.e. soft-float emulation. "FP fragments" was
+  wrong.
+- **Not reason 2.** My correction claimed scratch-depth exhaustion at the
+  `fflags` CSR write dominated. Those heads do appear (`bc2` 1.18%, `379e`
+  0.52%) but are minor; the dominant trace is a **reason-3** exit-overflow
+  truncation, so the original commit message was closer than my correction.
+  The instruction at its cut is a conditional branch, not an FP op.
+- **Not more coverage.** Published traces fall 432 -> 352. The fix converts
+  aborts into truncated publications and those happen to be the hot ones:
+  7x the time from 19% fewer traces. Another instance of instruction
+  coverage not being time coverage.
+
+### Still open
+
+matrixprod remains 78.65% interpreted after the fix, so most of its time is
+still outside generated code -- the headroom that cp's 1.87s (against
+lightning's pre-fix 3.17s on the bench.lua board) was presumably reaching.
+Also unexplained: the pre-fix head aborts three times rather than once,
+though an emission abort is supposed to blacklist permanently on the first
+failure; the penalty table is hash-indexed and a colliding head can evict
+the entry, which is a candidate but is not measured.

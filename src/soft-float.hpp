@@ -664,7 +664,7 @@ struct i_sfloat {
     }
 
     /// \brief Min operation.
-    static NO_INLINE F_UINT min(F_UINT a, F_UINT b, uint32_t *pfflags) {
+    static FORCE_INLINE F_UINT min_exact(F_UINT a, F_UINT b, uint32_t *pfflags) {
         if (isnan(a) || isnan(b)) {
             return min_max_nan(a, b, pfflags);
         }
@@ -676,8 +676,12 @@ struct i_sfloat {
         return ((a < b) ^ a_sign) ? a : b;
     }
 
+    static NO_INLINE F_UINT min(F_UINT a, F_UINT b, uint32_t *pfflags) {
+        return min_exact(a, b, pfflags);
+    }
+
     /// \brief Max operation.
-    static NO_INLINE F_UINT max(F_UINT a, F_UINT b, uint32_t *pfflags) {
+    static FORCE_INLINE F_UINT max_exact(F_UINT a, F_UINT b, uint32_t *pfflags) {
         if (isnan(a) || isnan(b)) {
             return min_max_nan(a, b, pfflags);
         }
@@ -689,9 +693,13 @@ struct i_sfloat {
         return ((a < b) ^ a_sign) ? b : a;
     }
 
+    static NO_INLINE F_UINT max(F_UINT a, F_UINT b, uint32_t *pfflags) {
+        return max_exact(a, b, pfflags);
+    }
+
     /// \brief Equal operation.
-    static NO_INLINE bool eq(F_UINT a, F_UINT b, uint32_t *pfflags) {
-        if (isnan(a) || isnan(b)) [[unlikely]] {
+    static FORCE_INLINE bool eq_exact(F_UINT a, F_UINT b, uint32_t *pfflags) {
+        if (isnan(a) || isnan(b)) {
             if (issignan(a) || issignan(b)) {
                 *pfflags |= FFLAGS_NV_MASK;
             }
@@ -703,9 +711,13 @@ struct i_sfloat {
         return a == b;
     }
 
+    static NO_INLINE bool eq(F_UINT a, F_UINT b, uint32_t *pfflags) {
+        return eq_exact(a, b, pfflags);
+    }
+
     /// \brief Less or equal than operation.
-    static NO_INLINE bool le(F_UINT a, F_UINT b, uint32_t *pfflags) {
-        if (isnan(a) || isnan(b)) [[unlikely]] {
+    static FORCE_INLINE bool le_exact(F_UINT a, F_UINT b, uint32_t *pfflags) {
+        if (isnan(a) || isnan(b)) {
             *pfflags |= FFLAGS_NV_MASK;
             return false;
         }
@@ -717,9 +729,13 @@ struct i_sfloat {
         return (a_sign != 0) ? (a >= b) : (a <= b);
     }
 
+    static NO_INLINE bool le(F_UINT a, F_UINT b, uint32_t *pfflags) {
+        return le_exact(a, b, pfflags);
+    }
+
     /// \brief Less than operation.
-    static NO_INLINE bool lt(F_UINT a, F_UINT b, uint32_t *pfflags) { // NOLINT(misc-confusable-identifiers)
-        if (isnan(a) || isnan(b)) [[unlikely]] {
+    static FORCE_INLINE bool lt_exact(F_UINT a, F_UINT b, uint32_t *pfflags) { // NOLINT(misc-confusable-identifiers)
+        if (isnan(a) || isnan(b)) {
             *pfflags |= FFLAGS_NV_MASK;
             return false;
         }
@@ -731,12 +747,16 @@ struct i_sfloat {
         return (a_sign != 0) ? (a > b) : (a < b);
     }
 
+    static NO_INLINE bool lt(F_UINT a, F_UINT b, uint32_t *pfflags) {
+        return lt_exact(a, b, pfflags);
+    }
+
     /// \brief Retrieves float class.
-    static NO_INLINE uint32_t fclass(F_UINT a) {
+    static FORCE_INLINE uint32_t fclass_exact(F_UINT a) {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         const F_UINT a_mant = a & MANT_MASK;
-        if (a_exp == EXP_MASK) [[unlikely]] {
+        if (a_exp == EXP_MASK) {
             if (a_mant != 0) {
                 return (a_mant & QNAN_MASK) ? FCLASS_QNAN : FCLASS_SNAN;
             }
@@ -749,6 +769,10 @@ struct i_sfloat {
             return (a_sign != 0) ? FCLASS_NSUBNORMAL : FCLASS_PSUBNORMAL;
         }
         return (a_sign != 0) ? FCLASS_NNORMAL : FCLASS_PNORMAL;
+    }
+
+    static NO_INLINE uint32_t fclass(F_UINT a) {
+        return fclass_exact(a);
     }
 
     /// \brief Conversion from float to integer.

@@ -37,7 +37,7 @@ struct cp_trace {
     uint64_t hpage[max_hpages];
     uint8_t nhpages;
     bool dead;
-    bool carried; ///< Loop-carried cyclic form (diagnostics)
+    bool carried;        ///< Loop-carried cyclic form (diagnostics)
     uint32_t exec_count; ///< Hook entries into this trace (C-side, diagnostics)
     const void *fn;      ///< Entry pointer (the tick guard)
     const void *call_fn; ///< Call-entry prologue: mapping establishment, then fn
@@ -62,16 +62,20 @@ struct cp_front_entry {
 /// blocks are emitted grouped after the terminal (the side-exit island
 /// shape) and each guard's bail branch is patched to its block.
 struct cp_bail {
-    uint32_t guard_site;  ///< Offset of the guard's bail branch in the trace
-    uint8_t guard_kind;   ///< CP_P_JUMP26 or CP_P_JMPREL32
-    int32_t guard_addend; ///< Patch addend of that site
-    int64_t delta;        ///< Signed fast-pc displacement head -> off path
-    uint32_t pending;     ///< Instructions retired when the bail is taken
-    uint32_t dirty;       ///< Dirty-slot snapshot at the guard
+    uint32_t guard_site;           ///< Offset of the guard's bail branch in the trace
+    uint8_t guard_kind;            ///< CP_P_JUMP26 or CP_P_JMPREL32
+    int32_t guard_addend;          ///< Patch addend of that site
+    int64_t delta;                 ///< Signed fast-pc displacement head -> off path
+    uint32_t pending;              ///< Instructions retired when the bail is taken
+    uint32_t dirty;                ///< Dirty-slot snapshot at the guard
     uint8_t slot_guest[CP_NSLOTS]; ///< Slot-to-guest mapping at the guard: eviction
-                           ///< remaps slots mid-trace, so the bail stores
-                           ///< must use the mapping the guard saw
-    bool is_branch;       ///< Branch-direction guard (else memory guard)
+                                   ///< remaps slots mid-trace, so the bail stores
+                                   ///< must use the mapping the guard saw
+    bool is_branch;                ///< Branch-direction guard (else memory guard)
+    bool is_fp;                    ///< FP hard-guard miss: run soft_only and rejoin
+    bool is_cold;                  ///< Guard failure must leave for portable execution
+    uint32_t fp_insn;              ///< Constant instruction word for the soft body
+    uint32_t fp_resume;            ///< Heap offset after the hard-result store
 };
 
 struct cp_state {
@@ -122,9 +126,9 @@ struct cp_state {
     uint16_t pending_link_trace[set_slots];
     uint16_t link_next[max_traces];
 
-    static constexpr uint32_t max_len = 256; ///< Guest instructions per trace
+    static constexpr uint32_t max_len = 256;  ///< Guest instructions per trace
     static constexpr uint32_t max_log = 4096; ///< Emission-log records
-    uint64_t heap_reset_curr; ///< Heap cursor after the island, flush target
+    uint64_t heap_reset_curr;                 ///< Heap cursor after the island, flush target
 
     /// rief One logged body emission, enough to replay it: the loop-carry
     /// transform re-emits an eligible cyclic body with first-use loads
@@ -133,17 +137,18 @@ struct cp_state {
         const cp_stencil_t *st;
         uint64_t imm0;
         uint64_t imm1;
-        int16_t bail_index; ///< bails[] entry to re-site at replay, -1 none
-        int8_t load_slot;   ///< Hoistable first-use load target, -1 none
+        int16_t bail_index;        ///< bails[] entry to re-site at replay, -1 none
+        int16_t resume_bail_index; ///< FP bail whose success resumes after this emission
+        int8_t load_slot;          ///< Hoistable first-use load target, -1 none
     };
     cp_emit_rec rec_log[max_log]; ///< Formation scratch, one open recording
     uint32_t rec_log_len;
-    uint32_t snap_log_len;    ///< Rolled back with the per-insn snapshot
-    bool rec_carry_ok;        ///< Loop-carry eligibility: guest and scratch
-                              ///< slot sets stay disjoint (a preheader-loaded
-                              ///< value must survive the whole body, and an
-                              ///< eviction spill would republish stale slots
-                              ///< on later iterations), and the log fit
+    uint32_t snap_log_len;      ///< Rolled back with the per-insn snapshot
+    bool rec_carry_ok;          ///< Loop-carry eligibility: guest and scratch
+                                ///< slot sets stay disjoint (a preheader-loaded
+                                ///< value must survive the whole body, and an
+                                ///< eviction spill would republish stale slots
+                                ///< on later iterations), and the log fit
     uint32_t rec_guest_slots;   ///< Slots ever bound to a guest register
     uint32_t rec_scratch_slots; ///< Slots ever taken as scratch
     uint32_t snap_guest_slots;
@@ -152,28 +157,28 @@ struct cp_state {
 
     // Formation: the one open trace.
     bool recording;
-    bool rec_failed;         ///< Emission overflow or slot exhaustion mid-insn
-    uint64_t rec_head;       ///< Guest vaddr of the head
-    uint64_t rec_vaddr;      ///< Guest vaddr of the instruction being recorded
-    uint64_t rec_end_vaddr;  ///< Guest vaddr execution continues at
+    bool rec_failed;        ///< Emission overflow or slot exhaustion mid-insn
+    uint64_t rec_head;      ///< Guest vaddr of the head
+    uint64_t rec_vaddr;     ///< Guest vaddr of the instruction being recorded
+    uint64_t rec_end_vaddr; ///< Guest vaddr execution continues at
     uint64_t rec_code_vf_offset;
     uint64_t rec_ctx_slot_base;
     uint64_t rec_alloc_start; ///< Heap cursor at begin, the rollback target
-    uint8_t *rec_start;      ///< Entry address (tick guard, or the carried preheader)
-    uint8_t *rec_body_start; ///< First byte after the call prologue, the
-                             ///< replay rollback point
-    uint8_t *rec_call_start; ///< Call-entry prologue address
-    uint8_t *rec_insn_start; ///< Rollback cursor for the current instruction
+    uint8_t *rec_start;       ///< Entry address (tick guard, or the carried preheader)
+    uint8_t *rec_body_start;  ///< First byte after the call prologue, the
+                              ///< replay rollback point
+    uint8_t *rec_call_start;  ///< Call-entry prologue address
+    uint8_t *rec_insn_start;  ///< Rollback cursor for the current instruction
     uint32_t rec_len;
-    uint8_t *rec_tick_site;  ///< Tick guard address, pending hole re-patched
-                             ///< at finish
+    uint8_t *rec_tick_site; ///< Tick guard address, pending hole re-patched
+                            ///< at finish
     uint64_t rec_hpage[cp_trace::max_hpages];
     uint8_t rec_nhpages;
     uint64_t begin_ns;
     // Register cache, guest-indexed (RVVM regs[32] shape): slot or -1,
     // dirty and loaded bits; slot_guest is the reverse map for stores.
     int8_t reg_slot[32];
-    uint32_t reg_dirty;  ///< Bit per slot
+    uint32_t reg_dirty; ///< Bit per slot
     uint8_t slot_guest[nslots];
     uint8_t nslots_used;
     // Eviction state (RVVM regs[].last_used): once all slots fill, the
@@ -215,26 +220,27 @@ struct cp_state {
     uint64_t call_entries;
     uint64_t links;
     uint64_t links_severed;
-    uint64_t tick_bails;    ///< Entries rejected by the tick guard
-    uint64_t ctx_bails;     ///< Call entries rejected by the context guard
-    uint64_t page_bails;    ///< Call entries rejected by the hot-slot page probe
-    uint64_t vh_bails;      ///< Call entries rejected by the hot-slot vh probe
-    uint64_t lookup_misses; ///< Dynamic terminals whose front probe missed
-    uint64_t branch_bails;  ///< Exits through a branch-direction guard
-    uint64_t mem_bails;     ///< Exits through a memory (hot-TLB) guard
+    uint64_t tick_bails;     ///< Entries rejected by the tick guard
+    uint64_t ctx_bails;      ///< Call entries rejected by the context guard
+    uint64_t page_bails;     ///< Call entries rejected by the hot-slot page probe
+    uint64_t vh_bails;       ///< Call entries rejected by the hot-slot vh probe
+    uint64_t lookup_misses;  ///< Dynamic terminals whose front probe missed
+    uint64_t branch_bails;   ///< Exits through a branch-direction guard
+    uint64_t mem_bails;      ///< Exits through a memory (hot-TLB) guard
+    uint64_t fp_soft_calls;  ///< Hard FP guard misses completed by soft_only
     uint64_t terminal_exits; ///< Straight-terminal exits (cyclic tick bails count as tick)
     // Formation-cause counters: what ended each recording.
     uint64_t fin_cyclic;
-    uint64_t fin_dynamic;     ///< JALR-class terminal
-    uint64_t fin_page;        ///< Guest-page crossing or mapping change
-    uint64_t fin_installed;   ///< Stopped at an installed head
+    uint64_t fin_dynamic;   ///< JALR-class terminal
+    uint64_t fin_page;      ///< Guest-page crossing or mapping change
+    uint64_t fin_installed; ///< Stopped at an installed head
     uint64_t fin_maxlen;
     uint64_t fin_uncompilable; ///< Unclassifiable instruction rollback
-    uint64_t fin_trap;        ///< Successor mismatch (trap between records)
-    uint64_t evictions;       ///< Register-cache spills during formation
-    uint64_t continue_enters; ///< Exits that entered an installed trace from C
-    uint64_t continue_trips;  ///< Exits that tripped compilation (dispatcher miss)
-    uint64_t carried;         ///< Cyclic traces installed in loop-carried form
+    uint64_t fin_trap;         ///< Successor mismatch (trap between records)
+    uint64_t evictions;        ///< Register-cache spills during formation
+    uint64_t continue_enters;  ///< Exits that entered an installed trace from C
+    uint64_t continue_trips;   ///< Exits that tripped compilation (dispatcher miss)
+    uint64_t carried;          ///< Cyclic traces installed in loop-carried form
 };
 
 } // namespace cartesi

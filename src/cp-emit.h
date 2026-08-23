@@ -13,6 +13,8 @@
 #define CP_EMIT_H
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 
@@ -33,11 +35,41 @@ extern "C" {
 #endif
 
 typedef struct {
+    uint32_t start;
+    uint32_t end;
+    uint32_t stencil_id;
+} cp_profile_record_t;
+
+typedef struct {
     uint8_t *base;
     size_t size;
     size_t curr;
     size_t flushed; /* icache watermark: bytes below are already published */
+    const char *profile_path;
+    cp_profile_record_t *profile_records;
+    size_t profile_count;
+    size_t profile_capacity;
 } cp_heap_t;
+
+/* Records emission spans in memory for statistical profiler attribution.
+ * The ledger is written only when the heap is freed, after sampling can be
+ * stopped, so profiling adds no I/O to trace formation and nothing at all to
+ * generated-code execution. */
+static inline void cp_profile_record(cp_heap_t *h, uint32_t start, uint32_t end, uint32_t stencil_id) {
+    if (h->profile_path == NULL) {
+        return;
+    }
+    if (h->profile_count == h->profile_capacity) {
+        size_t capacity = h->profile_capacity == 0 ? 65536 : 2 * h->profile_capacity;
+        void *records = realloc(h->profile_records, capacity * sizeof(*h->profile_records));
+        if (records == NULL) {
+            abort();
+        }
+        h->profile_records = (cp_profile_record_t *) records;
+        h->profile_capacity = capacity;
+    }
+    h->profile_records[h->profile_count++] = (cp_profile_record_t) {start, end, stencil_id};
+}
 
 /* Returns 0 on success. The heap starts protected (RX). */
 static inline int cp_heap_init(cp_heap_t *h, size_t size)
@@ -63,6 +95,13 @@ static inline int cp_heap_init(cp_heap_t *h, size_t size)
     h->size = size;
     h->curr = 0;
     h->flushed = 0;
+    h->profile_path = getenv("CP_PROFILE_MAP");
+    if (h->profile_path != NULL && h->profile_path[0] == '\0') {
+        h->profile_path = NULL;
+    }
+    h->profile_records = NULL;
+    h->profile_count = 0;
+    h->profile_capacity = 0;
 #if defined(__linux__)
     /* Register for the cross-modifying-code barrier used at publish. */
     syscall(__NR_membarrier, MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0);
@@ -72,6 +111,20 @@ static inline int cp_heap_init(cp_heap_t *h, size_t size)
 
 static inline void cp_heap_free(cp_heap_t *h)
 {
+    if (h->profile_path != NULL) {
+        FILE *profile = fopen(h->profile_path, "w");
+        if (profile != NULL) {
+            fprintf(profile, "base %p\n", (void *) h->base);
+            for (size_t i = 0; i < h->profile_count; ++i) {
+                const cp_profile_record_t *record = &h->profile_records[i];
+                fprintf(profile, "%x %x %s\n", record->start, record->end,
+                    cp_stencil_profile_names[record->stencil_id]);
+            }
+            fclose(profile);
+        }
+    }
+    free(h->profile_records);
+    h->profile_records = NULL;
     if (h->base != NULL) {
         munmap(h->base, h->size);
         h->base = NULL;
@@ -194,7 +247,9 @@ static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint6
             }
         }
     }
+    const uint32_t start = (uint32_t) h->curr;
     h->curr += size;
+    cp_profile_record(h, start, (uint32_t) h->curr, st->profile_id);
     return dst;
 }
 

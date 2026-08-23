@@ -425,7 +425,7 @@ PGO_WORKLOAD=\
 	dhrystone 5000000; \
 	whetstone 25000
 
-LINTER_IGNORE_SOURCES=
+LINTER_IGNORE_SOURCES=cp-stencils.c cp-stencils-semantic.cpp
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
 
 CLANG_TIDY=clang-tidy
@@ -436,7 +436,7 @@ CLANG_FORMAT=clang-format
 CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp) $(wildcard ../uarch/*.h) $(wildcard ../uarch/*.hpp)
 CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UARCH_FILES)))
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
-CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.hpp
+CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.hpp cp-stencils.c cp-stencils-semantic.cpp cp-stencils-tables.h
 CLANG_FORMAT_FILES:=$(strip $(CLANG_FORMAT_FILES))
 CLANG_FORMAT_FILES:=$(filter-out $(CLANG_FORMAT_IGNORE_FILES),$(strip $(CLANG_FORMAT_FILES)))
 

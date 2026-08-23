@@ -915,7 +915,7 @@ static void tc_online_kill_trace(tc_online_state *o, tc_online_state::trace &t) 
 #if TC_LIGHTNING
 /// \brief Demotes a trace's persistently bailing instruction: the address
 /// joins the demoted set every future compilation consults, and the trace
-/// dies so its head re-records with the instruction routed to its helper.
+/// dies so its head re-records with the trace ending before the instruction.
 static NO_INLINE void tc_online_demote(tc_online_state *o, tc_online_state::trace &t) {
     tc_online_insert_demoted(o, t.entries[t.bail_entry].vaddr);
     ++o->demotions;
@@ -1084,19 +1084,19 @@ static uint64_t tc_ctx_entry_bails;
 // are only emitted when the variable is set, so production code is unchanged.
 struct tc_crossmap_stats {
     // tc_hook_site<CALL_ENTRY=true> classification
-    uint64_t call_probes;        ///< dynamic call hook probes
-    uint64_t no_trace;           ///< no installed trace at the pc
-    uint64_t trace_found;        ///< an installed trace exists
-    uint64_t same_mapping;       ///< ... recorded under the caller's current mapping
-    uint64_t cross_mapping;      ///< ... recorded under a different mapping
-    uint64_t entry_returned;     ///< hook returned an entry to the caller
-    uint64_t entry_rejected;     ///< hook declined to return an entry
-    uint64_t suppressed_trip;    ///< admission short-circuited before the trip logic
+    uint64_t call_probes;     ///< dynamic call hook probes
+    uint64_t no_trace;        ///< no installed trace at the pc
+    uint64_t trace_found;     ///< an installed trace exists
+    uint64_t same_mapping;    ///< ... recorded under the caller's current mapping
+    uint64_t cross_mapping;   ///< ... recorded under a different mapping
+    uint64_t entry_returned;  ///< hook returned an entry to the caller
+    uint64_t entry_rejected;  ///< hook declined to return an entry
+    uint64_t suppressed_trip; ///< admission short-circuited before the trip logic
     // generated call_fn outcomes
-    uint64_t callfn_entries;     ///< call_fn preambles executed
-    uint64_t callfn_accepted;    ///< reached the trace body
-    uint64_t callfn_tlb_miss;    ///< hot code-TLB tag mismatch
-    uint64_t callfn_remap;       ///< code mapping/remap mismatch
+    uint64_t callfn_entries;  ///< call_fn preambles executed
+    uint64_t callfn_accepted; ///< reached the trace body
+    uint64_t callfn_tlb_miss; ///< hot code-TLB tag mismatch
+    uint64_t callfn_remap;    ///< code mapping/remap mismatch
 };
 static tc_crossmap_stats tc_xmap;
 
@@ -1379,19 +1379,17 @@ static void tc_online_free(void *p) {
         std::fprintf(stderr,
             "tc-crossmap: call-probes %llu no-trace %llu trace-found %llu (same %llu cross %llu) "
             "entry-returned %llu entry-rejected %llu suppressed-trip %llu\n",
-            (unsigned long long) x.call_probes, (unsigned long long) x.no_trace,
-            (unsigned long long) x.trace_found, (unsigned long long) x.same_mapping,
-            (unsigned long long) x.cross_mapping, (unsigned long long) x.entry_returned,
-            (unsigned long long) x.entry_rejected, (unsigned long long) x.suppressed_trip);
-        std::fprintf(stderr,
-            "tc-crossmap: callfn-entries %llu accepted %llu tlb-miss %llu remap %llu ctx-bails %llu\n",
+            (unsigned long long) x.call_probes, (unsigned long long) x.no_trace, (unsigned long long) x.trace_found,
+            (unsigned long long) x.same_mapping, (unsigned long long) x.cross_mapping,
+            (unsigned long long) x.entry_returned, (unsigned long long) x.entry_rejected,
+            (unsigned long long) x.suppressed_trip);
+        std::fprintf(stderr, "tc-crossmap: callfn-entries %llu accepted %llu tlb-miss %llu remap %llu ctx-bails %llu\n",
             (unsigned long long) x.callfn_entries, (unsigned long long) x.callfn_accepted,
             (unsigned long long) x.callfn_tlb_miss, (unsigned long long) x.callfn_remap,
             (unsigned long long) tc_ctx_entry_bails);
         // Invariants, printed rather than asserted so a violation is visible
         // in the data instead of aborting a measurement run.
-        std::fprintf(stderr,
-            "tc-crossmap: invariant probes-vs-classes %lld callfn-vs-outcomes %lld\n",
+        std::fprintf(stderr, "tc-crossmap: invariant probes-vs-classes %lld callfn-vs-outcomes %lld\n",
             (long long) (x.call_probes - (x.no_trace + x.trace_found)),
             (long long) (x.callfn_entries -
                 (x.callfn_accepted + x.callfn_tlb_miss + x.callfn_remap + tc_ctx_entry_bails)));
@@ -1402,8 +1400,7 @@ static void tc_online_free(void *p) {
                 order[n++] = i;
             }
         }
-        std::sort(order, order + n,
-            [](uint32_t a, uint32_t b) { return tc_xmap_probe[a] > tc_xmap_probe[b]; });
+        std::sort(order, order + n, [](uint32_t a, uint32_t b) { return tc_xmap_probe[a] > tc_xmap_probe[b]; });
         for (uint32_t k = 0; k < n && k < 20; ++k) {
             const uint32_t i = order[k];
             const auto &t = o->pool[i];
@@ -1412,8 +1409,7 @@ static void tc_online_free(void *p) {
                 "len %u cyclic %d continuation %d dead %d\n",
                 (unsigned long long) t.head, (unsigned long long) tc_xmap_probe[i],
                 (unsigned long long) tc_xmap_cross[i], (unsigned long long) tc_xmap_accept[i],
-                (unsigned long long) t.executions, t.len, t.cycle >= 0 ? 1 : 0,
-                (int) t.continuation, (int) t.dead);
+                (unsigned long long) t.executions, t.len, t.cycle >= 0 ? 1 : 0, (int) t.continuation, (int) t.dead);
         }
     }
     if (std::getenv("TC_ONLINE_STATS") != nullptr) {
@@ -2268,6 +2264,7 @@ static void tc_online_record(tc_context<STATE_ACCESS> *c, uint64_t pc, uint32_t 
 #endif // TC_ONLINE
 
 #if TC_COPY_PATCH
+static execute_status cp_fp_helper_soft(uint64_t state_access_bits, uint32_t insn);
 #include "interpret-cp.inc"
 #endif
 
@@ -2388,6 +2385,8 @@ struct tc_lightning_node {
 };
 
 struct tc_lightning_value;
+
+static execute_status tc_fp_helper_soft(processor_state *ps, uint32_t insn);
 
 struct tc_lightning_condition {
     using branch_fn = jit_node_t *(*) (tc_lightning_execution &, const tc_lightning_condition &, bool);
@@ -3602,21 +3601,10 @@ struct tc_lightning_execution {
 
     using fp_helper_fn = execute_status (*)(processor_state *, uint32_t);
 
-    /// \brief Calls a C++ helper that retires one FP instruction on the live
-    /// machine state.
-    /// \details The helper bails (returning non-success, having touched
-    /// nothing) instead of retiring any instruction that would raise, so a
-    /// non-success return exits for portable re-execution exactly like a
-    /// guard miss. The C call clobbers the caller-saved half of the guest
-    /// roster, so the roster is flushed before and reloaded after.
-    void emit_fp_helper(fp_helper_fn fn, uint32_t insn_word) {
-        // The helper may write any guest register and any memory; run in
-        // both passes so the dataflow stays identical between them.
-        invalidate_guests();
-        count_exit();
-        if (discovery || failed) {
-            return;
-        }
+    /// \brief Emits the call portion of an FP helper and returns its failure branch.
+    /// \details The C call clobbers the caller-saved half of the guest roster,
+    /// so the roster is published before and reloaded after.
+    jit_node_t *emit_fp_helper_call(fp_helper_fn fn, uint32_t insn_word) {
         jit_state_t *_jit = jit;
         for (uint32_t guest = 1; guest < 32; ++guest) {
             if (guest_slot[guest] >= 0) {
@@ -3633,7 +3621,23 @@ struct tc_lightning_execution {
                 jit_ldxi(guest_registers[guest_slot[guest]], TC_JIT_STATE, shadow_x_offset + guest * sizeof(uint64_t));
             }
         }
-        add_exit(jit_bnei(scratch_registers[0], static_cast<jit_word_t>(execute_status::success)));
+        return jit_bnei(scratch_registers[0], static_cast<jit_word_t>(execute_status::success));
+    }
+
+    /// \brief Calls a C++ helper that retires one FP instruction on the live
+    /// machine state.
+    /// \details The helper bails (returning non-success, having touched
+    /// nothing) instead of retiring any instruction that would raise, so a
+    /// non-success return exits for portable re-execution. The helper may
+    /// write any guest register, so both collection passes invalidate their
+    /// cross-instruction dataflow.
+    void emit_fp_helper(fp_helper_fn fn, uint32_t insn_word) {
+        invalidate_guests();
+        count_exit();
+        if (discovery || failed) {
+            return;
+        }
+        add_exit(emit_fp_helper_call(fn, insn_word));
     }
 
     // --- Inline floating point (typed staging over the hard-float guards) ---
@@ -3642,11 +3646,13 @@ struct tc_lightning_execution {
     // (and boxed for single precision), result strictly normal -- then the
     // host result is bit-identical to soft-float and no flag beyond the
     // already-set NX can be due, so fcsr is untouched. Every guard miss of
-    // one instruction shares one side exit; the portable handler re-executes
-    // it in full.
+    // one instruction shares a cold soft-only helper. Successful soft
+    // execution rejoins the trace; architectural failures leave for portable
+    // execution without having touched the machine.
 
     bool declined{};       ///< Cleanly refused: whole-instruction helper fallback allowed
     bool fp_frm_pending{}; ///< Insn names the dynamic rounding mode; guard frm at the op
+    bool fp_guarded{};     ///< Current instruction emitted guards that need a soft continuation
     jit_node_t *fp_bail[16]{};
     tc_fp_guard fp_bail_class[16]{};
     uint8_t fp_nbail{};
@@ -3654,6 +3660,8 @@ struct tc_lightning_execution {
 
     void decline() {
         declined = true;
+        fp_guarded = false;
+        fp_nbail = 0;
         fail(5); // clean per-instruction decline
     }
 
@@ -3695,15 +3703,28 @@ struct tc_lightning_execution {
         fp_bail[fp_nbail++] = branch;
     }
 
-    /// \brief Flushes the pending guard misses into one shared side exit.
+    /// \brief Flushes the pending guard misses into one shared soft-only continuation.
     /// \details Under TC_ONLINE_EXEC_STATS each miss first passes through a
-    /// stub that counts its guard class, since the shared exit alone cannot
-    /// say which guard fired.
+    /// stub that counts its guard class, since the shared continuation alone
+    /// cannot say which guard fired. The soft helper retires valid fallback
+    /// cases and rejoins the trace. If the instruction would raise, it returns
+    /// failure without touching the machine and leaves for portable execution.
     void fp_flush_bails() {
-        if (failed || fp_nbail == 0) {
+        if (discovery) {
+            if (fp_guarded) {
+                invalidate_guests();
+                count_exit();
+            }
+            fp_guarded = false;
             fp_nbail = 0;
             return;
         }
+        if (failed || fp_nbail == 0) {
+            fp_guarded = false;
+            fp_nbail = 0;
+            return;
+        }
+        invalidate_guests();
         jit_state_t *_jit = jit;
         jit_node_t *const done = jit_jmpi();
         if (std::getenv("TC_ONLINE_EXEC_STATS") != nullptr) {
@@ -3746,13 +3767,27 @@ struct tc_lightning_execution {
             jit_str_i(scratch_registers[0], scratch_registers[2]);
             jit_patch_at(below, jit_label());
         }
+        // Rejoining after the soft helper is still experimental.  A guard miss
+        // in a linked libm trace can otherwise keep the chain running without
+        // returning to the tick boundary that applies its pending demotion.
+        // The ordinary side exit has the established progress behavior.
+        if (std::getenv("TC_FP_SOFT_CONTINUE") == nullptr) {
+            fp_guarded = false;
+            fp_nbail = 0;
+            add_exit(jit_jmpi());
+            jit_patch_at(done, jit_label());
+            return;
+        }
+        const uint32_t insn = trace->entries[current].insn;
+        add_exit(emit_fp_helper_call(&tc_fp_helper_soft, insn));
+        fp_guarded = false;
         fp_nbail = 0;
-        add_exit(jit_jmpi());
         jit_patch_at(done, jit_label());
     }
 
     /// \brief Guards mstatus FS != OFF into the instruction's shared exit.
     void fp_guard_fs() {
+        fp_guarded = true;
         if (discovery || failed) {
             return;
         }
@@ -4567,7 +4602,7 @@ static FORCE_INLINE tc_lightning_fvalue<T> operator^(tc_lightning_fvalue<T> v, M
     v.neg = !v.neg;
     return v;
 }
-template <typename T>
+template <typename FLOAT, typename T>
 static FORCE_INLINE tc_lightning_facc<T> fp_add(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
     tc_lightning_rm_value rm, tc_lightning_fflags_value * /*ff*/) {
     if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN)) {
@@ -4577,7 +4612,7 @@ static FORCE_INLINE tc_lightning_facc<T> fp_add(tc_lightning_fvalue<T> s1, tc_li
     s1.e->fp_emit_op(tc_lightning_execution::fp_kind::add, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0, false);
     return {s1.e};
 }
-template <typename T>
+template <typename FLOAT, typename T>
 static FORCE_INLINE tc_lightning_facc<T> fp_mul(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
     tc_lightning_rm_value rm, tc_lightning_fflags_value * /*ff*/) {
     if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN)) {
@@ -4587,7 +4622,7 @@ static FORCE_INLINE tc_lightning_facc<T> fp_mul(tc_lightning_fvalue<T> s1, tc_li
     s1.e->fp_emit_op(tc_lightning_execution::fp_kind::mul, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0, false);
     return {s1.e};
 }
-template <typename T>
+template <typename FLOAT, typename T>
 static FORCE_INLINE tc_lightning_facc<T> fp_div(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
     tc_lightning_rm_value rm, tc_lightning_fflags_value * /*ff*/) {
     if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN)) {
@@ -4597,7 +4632,7 @@ static FORCE_INLINE tc_lightning_facc<T> fp_div(tc_lightning_fvalue<T> s1, tc_li
     s1.e->fp_emit_op(tc_lightning_execution::fp_kind::div, sizeof(T) == 8, s1.freg, s1.neg, s2.freg, s2.neg, 0, false);
     return {s1.e};
 }
-template <typename T>
+template <typename FLOAT, typename T>
 static FORCE_INLINE tc_lightning_facc<T> fp_sqrt(tc_lightning_fvalue<T> s1, tc_lightning_rm_value rm,
     tc_lightning_fflags_value * /*ff*/) {
     if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN) || s1.neg) {
@@ -4607,7 +4642,7 @@ static FORCE_INLINE tc_lightning_facc<T> fp_sqrt(tc_lightning_fvalue<T> s1, tc_l
     s1.e->fp_emit_op(tc_lightning_execution::fp_kind::sqrt, sizeof(T) == 8, s1.freg, false, 0, false, 0, false);
     return {s1.e};
 }
-template <typename T>
+template <typename FLOAT, typename T>
 static FORCE_INLINE tc_lightning_facc<T> fp_fma(tc_lightning_fvalue<T> s1, tc_lightning_fvalue<T> s2,
     tc_lightning_fvalue<T> s3, tc_lightning_rm_value rm, tc_lightning_fflags_value * /*ff*/) {
     if (!tc_lightning_execution::fp_inline_supported || (rm.field != FRM_RNE && rm.field != FRM_DYN) ||
@@ -4778,8 +4813,8 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
                 ++tc_xmap.no_trace;
             } else {
                 ++tc_xmap.trace_found;
-                const bool same = probe->code_vf_offset ==
-                    static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(vpc);
+                const bool same =
+                    probe->code_vf_offset == static_cast<uint64_t>(c->fetch_vaddr_page) - tlb_addr_page(vpc);
                 if (same) {
                     ++tc_xmap.same_mapping;
                 } else {
@@ -5705,6 +5740,37 @@ TC_FP_ARITH_HELPER(FNMADD, execute_FNMADD(a, pc, insn))
 TC_FP_ARITH_HELPER(FNMSUB, execute_FNMSUB(a, pc, insn))
 #undef TC_FP_ARITH_HELPER
 
+/// \brief Completes an inline hard-float guard miss without retrying the hard path.
+/// \details Architectural failures return without touching the machine so the
+/// generated failure branch can leave for portable execution with the real pc.
+TC_FP_HELPER_ABI static execute_status tc_fp_helper_soft(processor_state *ps, uint32_t insn) {
+    const state_access a(*ps->penumbra.owner);
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
+        return execute_status::failure;
+    }
+    if (((insn >> 12) & 7) == FRM_DYN) {
+        const auto frm = static_cast<uint32_t>((a.read_fcsr() >> FCSR_FRM_SHIFT) & 7);
+        if (frm > FRM_RMM) [[unlikely]] {
+            return execute_status::failure;
+        }
+    }
+    i_state_access_fast_addr_t<state_access> pc{};
+    switch (insn & UINT32_C(0x7f)) {
+        case 0x53:
+            return execute_FD<soft_only>(a, pc, insn);
+        case 0x43:
+            return execute_FMADD<soft_only>(a, pc, insn);
+        case 0x47:
+            return execute_FMSUB<soft_only>(a, pc, insn);
+        case 0x4b:
+            return execute_FNMSUB<soft_only>(a, pc, insn);
+        case 0x4f:
+            return execute_FNMADD<soft_only>(a, pc, insn);
+        default:
+            return execute_status::failure;
+    }
+}
+
 static bool tc_lightning_collect_fp(tc_lightning_execution &e, uint64_t &pc, uint32_t insn) {
     // A declined body may have requested the dynamic-frm guard before
     // declining; the request must not leak into the next staged instruction.
@@ -5984,18 +6050,42 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     }
     tc_lightning_execution execution{_jit, trace};
     execution.online = online;
-    // Demoted instructions route to their whole-instruction helpers: the
-    // per-machine demoted set is the trap history this compilation consults.
-    const auto mark_demoted = [&] {
-        if (online != nullptr) {
-            for (uint32_t i = 0; i < trace.len; ++i) {
-                if (tc_online_demoted(online, trace.entries[i].vaddr)) {
-                    execution.fp_decline_map[i >> 6] |= UINT64_C(1) << (i & 63);
-                }
+#ifndef TC_TRUNC_FLOOR
+#define TC_TRUNC_FLOOR 2
+#endif
+    // A demoted instruction stays out of generated code entirely: the trace
+    // ends on the entry before it and the instruction always retires
+    // portably. The per-machine demoted set is the trap history this
+    // compilation consults. Returns false when no compilable prefix remains
+    // (the demoted entry leads the trace, or a cyclic trace that the
+    // truncation contract refuses to cut), failing the compile so the
+    // ordinary penalty ladder owns the head.
+    const auto mark_demoted = [&]() -> bool {
+        if (online == nullptr) {
+            return true;
+        }
+        uint32_t cut = trace.len;
+        for (uint32_t i = 0; i < trace.len; ++i) {
+            if (tc_online_demoted(online, trace.entries[i].vaddr)) {
+                cut = i;
+                break;
             }
         }
+        if (cut == trace.len) {
+            return true;
+        }
+        if (trace.cycle >= 0 || cut < TC_TRUNC_FLOOR) {
+            return false;
+        }
+        trace.len = cut;
+        trace.cycle = -1;
+        trace.successor = trace.entries[cut - 1].next_pc;
+        return true;
     };
-    mark_demoted();
+    if (!mark_demoted()) {
+        jit_destroy_state();
+        return nullptr;
+    }
     // Emission-graceful truncation: discovery cannot see emission-only
     // limits (expression scratch depth on the staged atomics'
     // read-modify-write trees -- 36 of 44 measured zlib/qsort/int64 compile
@@ -6008,9 +6098,6 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
     // over-deep AMO expression permanently blacklisted the head, every side
     // link into it was refused forever, and the hottest zlib side exit
     // escaped to the interpreter 112 million times without a trace.
-#ifndef TC_TRUNC_FLOOR
-#define TC_TRUNC_FLOOR 2
-#endif
     const auto emission_truncate = [&](uint32_t cut) -> bool {
         if (trace.cycle >= 0 || cut < TC_TRUNC_FLOOR || cut >= trace.len) {
             return false;
@@ -6039,8 +6126,7 @@ static const void *tc_lightning_compile_trace(tc_online_state::trace &trace, jit
         }
         execution = tc_lightning_execution{_jit, trace};
         execution.online = online;
-        mark_demoted();
-        return true;
+        return mark_demoted();
     };
     // Budget-graceful discovery. A trace that fails discovery at entry i --
     // node budget, side-exit budget, or an uncollectable instruction -- still
@@ -6104,7 +6190,10 @@ emission_retry:
         trace.successor = trace.entries[cut - 1].next_pc;
         execution = tc_lightning_execution{_jit, trace};
         execution.online = online;
-        mark_demoted();
+        if (!mark_demoted()) {
+            jit_destroy_state();
+            return nullptr;
+        }
     }
     trace.returns = execution.returned;
     // Use-count-ranked slot assignment (8b item 18): discovery counted every
@@ -6719,6 +6808,42 @@ emission_retry:
 
 #endif // TC_LIGHTNING && TC_ONLINE
 
+#if TC_COPY_PATCH
+/// \brief Retires one CP hard-guard miss through the soft-only FP policy.
+/// \details The generated caller passes the live state-access bits. Invalid
+/// architectural preconditions fail before mutation so CP can leave for
+/// portable re-execution; success retires exactly this instruction and
+/// rejoins the generated trace.
+static execute_status cp_fp_helper_soft(uint64_t state_access_bits, uint32_t insn) {
+    const state_access a = std::bit_cast<state_access>(state_access_bits);
+    static_cast<cp_state *>(a.get_penumbra().tc_state)->fp_soft_calls++;
+    if ((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF) [[unlikely]] {
+        return execute_status::failure;
+    }
+    if (((insn >> 12) & 7) == FRM_DYN) {
+        const auto frm = static_cast<uint32_t>((a.read_fcsr() >> FCSR_FRM_SHIFT) & 7);
+        if (frm > FRM_RMM) [[unlikely]] {
+            return execute_status::failure;
+        }
+    }
+    i_state_access_fast_addr_t<state_access> pc{};
+    switch (insn & UINT32_C(0x7f)) {
+        case 0x53:
+            return execute_FD<soft_only>(a, pc, insn);
+        case 0x43:
+            return execute_FMADD<soft_only>(a, pc, insn);
+        case 0x47:
+            return execute_FMSUB<soft_only>(a, pc, insn);
+        case 0x4b:
+            return execute_FNMSUB<soft_only>(a, pc, insn);
+        case 0x4f:
+            return execute_FNMADD<soft_only>(a, pc, insn);
+        default:
+            return execute_status::failure;
+    }
+}
+#endif
+
 #if TC_AOT
 /// \brief One recorded instruction inside a trace body: the case expression
 /// with the recorded word, the handler macro's status handling, and a guard
@@ -7232,9 +7357,9 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 cartesi::tcc = tcc;
                 cartesi::tc_reg_fetch_page = static_cast<uint64_t>(tcc->fetch_vaddr_page);
 #if TC_COPY_PATCH
-                status = cp_chain_fn != nullptr
-                    ? reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(const_cast<void *>(cp_chain_fn))(a, insn)
-                    : tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
+                status = cp_chain_fn != nullptr ?
+                    reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(const_cast<void *>(cp_chain_fn))(a, insn) :
+                    tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
 #else
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn);
 #endif
@@ -7261,19 +7386,19 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 }
 #endif
 #if TC_COPY_PATCH && CP_CALL_ENTRY
-                status = cp_chain_fn != nullptr
-                    ? cp_enter_call(a, insn, pc, tc_chain_remaining, tcc->fetch_vaddr_page, tcc, cp_chain_fn)
-                    : tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining);
+                status = cp_chain_fn != nullptr ?
+                    cp_enter_call(a, insn, pc, tc_chain_remaining, tcc->fetch_vaddr_page, tcc, cp_chain_fn) :
+                    tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining);
 #else
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining);
 #endif
 #else
                 tcc->mcycle_tick_end = tc_chain_tick_end;
 #if TC_COPY_PATCH && CP_CALL_ENTRY
-                status = cp_chain_fn != nullptr
-                    ? cp_enter_call(a, insn, pc, tc_chain_remaining, tcc->fetch_vaddr_page, tcc, cp_chain_fn)
-                    : tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining,
-                          tcc->fetch_vaddr_page);
+                status = cp_chain_fn != nullptr ?
+                    cp_enter_call(a, insn, pc, tc_chain_remaining, tcc->fetch_vaddr_page, tcc, cp_chain_fn) :
+                    tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining,
+                        tcc->fetch_vaddr_page);
 #else
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining,
                     tcc->fetch_vaddr_page);

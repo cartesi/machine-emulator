@@ -752,7 +752,7 @@ $(LIGHTNING_LIB):
 
 # One generator run emits both TUs; the .cpp rule only orders after it.
 cp-stencils.c: ../tools/cp-gen-stencils.lua
-	$(LUA_BIN) $< $@ cp-stencils-semantic.cpp $(CP_NSLOTS)
+	$(LUA_BIN) $< $@ cp-stencils-semantic.cpp $(CP_NSLOTS) $(CP_TARGET_ARCH)
 
 cp-stencils-semantic.cpp: cp-stencils.c ;
 

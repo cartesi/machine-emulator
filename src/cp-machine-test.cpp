@@ -27,7 +27,11 @@ using namespace cartesi;
 #if CP_NSLOTS > 16
 #error "harness names sixteen slot arguments; extend the roster here"
 #endif
+#if defined(__x86_64__)
+#define SLOT_POS_K(k) ((k) == 0 ? 1 : (k) + 4)
+#else
 #define SLOT_POS_K(k) ((k) == 0 ? 1 : (k) == 1 ? 2 : (k) == 2 ? 6 : (k) + 5)
+#endif
 static const int SLOT_POS[CP_NSLOTS_PAD] = {SLOT_POS_K(0), SLOT_POS_K(1), SLOT_POS_K(2), SLOT_POS_K(3), SLOT_POS_K(4),
     SLOT_POS_K(5), SLOT_POS_K(6), SLOT_POS_K(7), SLOT_POS_K(8), SLOT_POS_K(9), SLOT_POS_K(10), SLOT_POS_K(11),
     SLOT_POS_K(12), SLOT_POS_K(13), SLOT_POS_K(14), SLOT_POS_K(15)};
@@ -102,8 +106,18 @@ int main() {
     const auto run = [&](uint8_t *entry, const uint64_t g[CP_NSLOTS_PAD]) {
         std::memset(out_hit, 0xee, sizeof(out_hit));
         std::memset(out_bail, 0xdd, sizeof(out_bail));
+#if defined(__x86_64__) && CP_NSLOTS == 6
+        reinterpret_cast<cp_entry_t>(entry)(sa_bits, g[0], 0x111100ull, 0x2222ull, 0x3333ull, g[1], g[2], g[3], g[4],
+            g[5], 0x4444ull, g[6], g[7], g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
+#elif defined(__x86_64__) && CP_NSLOTS == 7
+        reinterpret_cast<cp_entry_t>(entry)(sa_bits, g[0], 0x111100ull, 0x2222ull, 0x3333ull, g[1], g[2], g[3], g[4],
+            g[5], g[6], 0x4444ull, g[7], g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
+#elif defined(__x86_64__)
+#error "extend the machine test entry for this x86-64 CP_NSLOTS"
+#else
         reinterpret_cast<cp_entry_t>(entry)(sa_bits, g[0], g[1], 0x111100ull, 0x2222ull, 0x3333ull, g[2], 0x4444ull,
             g[3], g[4], g[5], g[6], g[7], g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
+#endif
     };
 
     // 1. LD hit: slot1 = [slot0], hit continuation taken, value exact.

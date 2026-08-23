@@ -4,12 +4,11 @@
 --
 -- The contract is purely positional over the preserve_none argument order
 -- (AArch64: x20-x28 then x0-x7, x86-64: r12-r15, rdi, rsi, then more or
--- stack). Parameters are placed so the interpreter's pinned AArch64 roster
--- falls at its own registers: pc at position 4 (x23), countdown at 5 (x24),
--- fetch tag at 6 (x25), context at 8 (x27). Guest-value cache slots fill the
--- remaining positions and every stencil passes all parameters through, so
--- trace entry from a TC handler and exit into the fetch tail are plain
--- branches with no state movement.
+-- stack). AArch64 parameters keep the pinned interpreter roster at pc
+-- position 4 (x23), countdown 5 (x24), fetch 6 (x25), context 8 (x27).
+-- On x86-64 the interpreter's five live arguments occupy positions 1-5;
+-- cache slots and context follow in a frame established once per chain.
+-- Every stencil passes the complete target-specific roster through.
 --
 -- Continuations are musttail calls to extern preserve_none symbols (direct
 -- branch relocations, patchable, elidable on fallthrough). 64-bit values are
@@ -17,7 +16,7 @@
 -- code model, movabs under the x86-64 small model with per-symbol large
 -- model (clang) or medium model with sized arrays (GCC).
 --
--- Usage: lua5.4 cp-gen-stencils.lua <structural.c> <semantic.cpp>
+-- Usage: lua5.4 cp-gen-stencils.lua <structural.c> <semantic.cpp> [nslots] [arch]
 --
 -- The structural TU is C, compiled bare-metal (value holes need ELF's
 -- movz/movk relocations). The semantic TU is C++, compiled natively with
@@ -26,24 +25,34 @@
 -- semantic source), and its only relocations are continuation branches,
 -- which every object format patches.
 
-local out = assert(arg[1], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp> [nslots]")
-local sem_out = assert(arg[2], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp> [nslots]")
+local out = assert(arg[1], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp> [nslots] [arch]")
+local sem_out = assert(arg[2], "usage: cp-gen-stencils.lua <structural.c> <semantic.cpp> [nslots] [arch]")
 local f = assert(io.open(out, "w"))
 
--- Guest cache slot count, per-arch (aarch64 preserve_none has free
--- argument positions through x7, so up to 12; measured demand says 10).
+-- Guest cache slot count; per-host defaults and measurements live in the
+-- source Makefile.
 local NSLOTS = tonumber(arg[3]) or 7
+local arch = arg[4] or "aarch64"
 
 local function emit(s) f:write(s, "\n") end
 
--- Parameter list: position 1 is the state access (the interpreter contract
--- keeps it in x20, and memory stencils consume it directly), positions 4,
--- 5, 6, 8 are the pinned roster, the rest are the seven guest cache slots.
+-- Parameter list. AArch64 retains the pinned roster positions. On x86-64
+-- the five live interpreter arguments lead the roster, followed by cache
+-- slots and context in the stack half established at chain entry.
 local params_t = {}
 local args_t = {}
-local slot_param = {"sa", "r0", "r1", "pc", "cd", "fetch", "r2", "tcc"}
-for d = 3, NSLOTS - 1 do
-    slot_param[#slot_param + 1] = ("r%d"):format(d)
+local slot_param
+if arch == "x86_64" then
+    slot_param = {"sa", "r0", "pc", "cd", "fetch"}
+    for d = 1, NSLOTS - 1 do
+        slot_param[#slot_param + 1] = ("r%d"):format(d)
+    end
+    slot_param[#slot_param + 1] = "tcc"
+else
+    slot_param = {"sa", "r0", "r1", "pc", "cd", "fetch", "r2", "tcc"}
+    for d = 3, NSLOTS - 1 do
+        slot_param[#slot_param + 1] = ("r%d"):format(d)
+    end
 end
 for _, name in ipairs(slot_param) do
     params_t[#params_t + 1] = "u64 " .. name

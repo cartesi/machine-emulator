@@ -4944,18 +4944,11 @@ static FORCE_INLINE const void *tc_hook_site(tc_context<STATE_ACCESS> *c, uint64
 #endif
 
 #if TC_JIT_SHELL
-// Transfer into backend-generated code. Lightning code rides the handler
-// signature, so the transfer is a musttail branch. Copy-and-patch code on
-// x86-64 rides the positional stencil contract instead, whose stack
-// positions a branch cannot provide, so the transfer is a normal call
-// through the full stencil signature (cp_enter_call, interpret-cp.inc)
-// whose eventual return carries the episode's status back.
-#if TC_COPY_PATCH && CP_CALL_ENTRY
-#define TC_BACKEND_ENTER(fnptr) return cp_enter_call(a, insn, pc, tc_remaining, TC_FETCH_TAG, tcc, (fnptr))
-#else
+// Backend-generated code rides the handler chain's physical contract, so
+// transfer is always a tail branch. On x86-64 copy-and-patch the complete
+// stencil roster, including its stack positions, is already present.
 #define TC_BACKEND_ENTER(fnptr)                                                                                        \
     TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(const_cast<void *>(fnptr))(a, insn TC_HOT_ARGS)
-#endif
 
 // Calls hook unconditionally at the callee. The generated call entry validates
 // the recorded code mapping and re-establishes the fetch state before
@@ -7204,16 +7197,8 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
 #endif
 #endif
 #if TC_COPY_PATCH
-#if CP_CALL_ENTRY
-    // The islands must present the stencil's positional roster, which the
-    // interpreter-shaped continuations do not on this architecture; the
-    // bridges fold it back into the interpreter chain.
-    tcc->cp = cp_get(a.get_penumbra(), reinterpret_cast<const void *>(&cp_continue_bridge<STATE_ACCESS>),
-        reinterpret_cast<const void *>(&cp_continue_cold_bridge<STATE_ACCESS>));
-#else
     tcc->cp = cp_get(a.get_penumbra(), reinterpret_cast<const void *>(&cp_continue<STATE_ACCESS>),
         reinterpret_cast<const void *>(&cp_continue_cold<STATE_ACCESS>));
-#endif
     tcc->online_trip = false;
     // Armed once and left armed: host-side writes between runs must
     // invalidate traces too.
@@ -7382,31 +7367,24 @@ static NO_INLINE execute_status interpret_loop_tc_body(const STATE_ACCESS a, uin
                 const uint64_t tc_chain_remaining = tc_avail;
                 const uint64_t tc_chain_tick_end = mcycle + tc_avail;
 #endif
-#if TC_PAGE_SEGMENT
+#if TC_COPY_PATCH && defined(__x86_64__)
+                tcc->mcycle_tick_end = tc_chain_tick_end;
+                const void *const cp_start = cp_chain_fn != nullptr ?
+                    cp_chain_fn :
+                    reinterpret_cast<const void *>(tc_jumptable<STATE_ACCESS>[insn_get_id(insn)]);
+                status = cp_enter_chain(a, insn, pc, tc_chain_remaining, tcc->fetch_vaddr_page, tcc, cp_start);
+#elif TC_PAGE_SEGMENT
                 tcc->mcycle_seg_end = tc_chain_tick_end;
 #if TC_ONLINE
                 if (tc_is_recording) {
                     tcc->mcycle_tick_end = tc_chain_tick_end;
                 }
 #endif
-#if TC_COPY_PATCH && CP_CALL_ENTRY
-                status = cp_chain_fn != nullptr ?
-                    cp_enter_call(a, insn, pc, tc_chain_remaining, tcc->fetch_vaddr_page, tcc, cp_chain_fn) :
-                    tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining);
-#else
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining);
-#endif
 #else
                 tcc->mcycle_tick_end = tc_chain_tick_end;
-#if TC_COPY_PATCH && CP_CALL_ENTRY
-                status = cp_chain_fn != nullptr ?
-                    cp_enter_call(a, insn, pc, tc_chain_remaining, tcc->fetch_vaddr_page, tcc, cp_chain_fn) :
-                    tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining,
-                        tcc->fetch_vaddr_page);
-#else
                 status = tc_jumptable<STATE_ACCESS>[insn_get_id(insn)](a, insn, pc, tc_chain_remaining,
                     tcc->fetch_vaddr_page);
-#endif
 #endif
 #endif
 #if TC_ONLINE

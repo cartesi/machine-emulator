@@ -30,21 +30,39 @@
 #endif
 #define HEAP_SIZE (16u << 20)
 
-/* Parameter order of the stencil contract; guest slot k sits at param
- * SLOT_POS[k], the pinned roles at positions 3, 4, 5, 7. */
+/* Parameter order of the target-specific stencil contract. */
+#if defined(__x86_64__)
+#define SLOT_POS_K(k) ((k) == 0 ? 1 : (k) + 4)
+#define POS_SA 0
+#define POS_PC 2
+#define POS_CD 3
+#define POS_FETCH 4
+#define POS_TCC (4 + NSLOTS)
+#else
 #define SLOT_POS_K(k) ((k) == 0 ? 1 : (k) == 1 ? 2 : (k) == 2 ? 6 : (k) + 5)
-static const int SLOT_POS[NSLOTS_PAD] = {SLOT_POS_K(0), SLOT_POS_K(1), SLOT_POS_K(2), SLOT_POS_K(3), SLOT_POS_K(4),
-    SLOT_POS_K(5), SLOT_POS_K(6), SLOT_POS_K(7), SLOT_POS_K(8), SLOT_POS_K(9), SLOT_POS_K(10), SLOT_POS_K(11),
-    SLOT_POS_K(12), SLOT_POS_K(13), SLOT_POS_K(14), SLOT_POS_K(15)};
 #define POS_SA 0
 #define POS_PC 3
 #define POS_CD 4
 #define POS_FETCH 5
 #define POS_TCC 7
+#endif
+static const int SLOT_POS[NSLOTS_PAD] = {SLOT_POS_K(0), SLOT_POS_K(1), SLOT_POS_K(2), SLOT_POS_K(3), SLOT_POS_K(4),
+    SLOT_POS_K(5), SLOT_POS_K(6), SLOT_POS_K(7), SLOT_POS_K(8), SLOT_POS_K(9), SLOT_POS_K(10), SLOT_POS_K(11),
+    SLOT_POS_K(12), SLOT_POS_K(13), SLOT_POS_K(14), SLOT_POS_K(15)};
 
 typedef __attribute__((preserve_none)) void (*cp_entry_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t);
+
+#if defined(__x86_64__)
+typedef __attribute__((preserve_none)) void (*cp_short_entry_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+static uint8_t *x86_short_entry_target;
+
+__attribute__((preserve_none, noinline)) static void x86_short_entry(uint64_t sa, uint64_t r0, uint64_t pc, uint64_t cd,
+    uint64_t fetch) {
+    __attribute__((musttail)) return ((cp_short_entry_t) x86_short_entry_target)(sa, r0, pc, cd, fetch);
+}
+#endif
 
 static cp_heap_t heap;
 
@@ -192,9 +210,19 @@ static uint64_t out[NPARAMS];
 #define FETCHV 0x2222000022220000ull
 #define TCCV 0x3333000033330000ull
 
-static void call_chain(cp_entry_t entry, const uint64_t g[NSLOTS_PAD]) {
+__attribute__((noinline)) static void call_chain(cp_entry_t entry, const uint64_t g[NSLOTS_PAD]) {
+#if defined(__x86_64__) && NSLOTS == 6
+    entry(SAV, g[0], PCV, CDV, FETCHV, g[1], g[2], g[3], g[4], g[5], TCCV, g[6], g[7], g[8], g[9], g[10], g[11], g[12],
+        g[13], g[14], g[15]);
+#elif defined(__x86_64__) && NSLOTS == 7
+    entry(SAV, g[0], PCV, CDV, FETCHV, g[1], g[2], g[3], g[4], g[5], g[6], TCCV, g[7], g[8], g[9], g[10], g[11], g[12],
+        g[13], g[14], g[15]);
+#elif defined(__x86_64__)
+#error "extend call_chain for this x86-64 CP_NSLOTS"
+#else
     entry(SAV, g[0], g[1], PCV, CDV, FETCHV, g[2], TCCV, g[3], g[4], g[5], g[6], g[7], g[8], g[9], g[10], g[11], g[12],
         g[13], g[14], g[15]);
+#endif
 }
 
 static int check_passthrough(uint64_t pc_want, uint64_t cd_want) {
@@ -206,6 +234,33 @@ static int check_passthrough(uint64_t pc_want, uint64_t cd_want) {
     }
     return 0;
 }
+
+#if defined(__x86_64__)
+/* A full outer-chain call establishes the stack roster, then a real
+ * five-argument interpreter-shaped function tail-branches into copied code.
+ * Writing the last cache slot proves that the stack half survives the branch. */
+static int test_x86_short_entry(void) {
+    heap.curr = 0;
+    cp_heap_unprotect(&heap);
+    const uint64_t value = 0xfedcba9876543210ull;
+    const uint64_t li_imm[2] = {value, 0};
+    uint8_t *none[2] = {NULL, NULL};
+    x86_short_entry_target = cp_emit(&heap, cp_li_table[NSLOTS - 1], li_imm, none);
+    const uint64_t exit_imm[2] = {(uint64_t) out, 0};
+    cp_emit(&heap, &cp_s_cp_store_exit, exit_imm, none);
+    cp_heap_protect_flush(&heap);
+
+    uint64_t init[NSLOTS_PAD] = {0};
+    memset(out, 0xaa, sizeof(out));
+    call_chain((cp_entry_t) x86_short_entry, init);
+    if (out[SLOT_POS[NSLOTS - 1]] != value) {
+        fprintf(stderr, "x86 short entry lost stack cache slot: got %016" PRIx64 " want %016" PRIx64 "\n",
+            out[SLOT_POS[NSLOTS - 1]], value);
+        return 1;
+    }
+    return check_passthrough(PCV, CDV);
+}
+#endif
 
 static int run_program(const struct op *ops, int n, const uint64_t init[NSLOTS_PAD]) {
     heap.curr = 0;
@@ -338,6 +393,7 @@ int main(void) {
 
 #if defined(__x86_64__)
     failures += test_x86_fma_stencil_selection();
+    failures += test_x86_short_entry();
 #endif
 
     /* Fixed program covering every op kind and the elision path. */

@@ -10,52 +10,6 @@
 // cp_continue_cold, which only resumes the fetch tail, so a failing entry
 // is attempted at most once per exit.
 
-#if CP_CALL_ENTRY
-// Exit bridges: the far-jump islands land here with the stencil's
-// positional roster (pc at position 4, countdown at 5, fetch tag at 6),
-// and the bridge folds it back into the interpreter chain. The chain's
-// eventual return unwinds through cp_enter_call's call site.
-template <typename STATE_ACCESS>
-TC_CALLCONV static execute_status cp_continue(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
-template <typename STATE_ACCESS>
-TC_CALLCONV static execute_status cp_continue_cold(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
-
-// A musttail from the twelve-parameter roster into the five-parameter
-// handler signature is rejected by clang (GCC folds it), so the bridges
-// tail through a copy of their own signature and move the handler's five
-// arguments into the leading positions by value; the continuation reads
-// only those registers, the rest are dead. The value moves cross the
-// host_addr/uint64_t split, hence the explicit casts.
-template <typename STATE_ACCESS>
-using cp_bridge_call_fn = TC_CALLCONV execute_status(const STATE_ACCESS, uint32_t, uint64_t,
-    i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t, i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t,
-    tc_context<STATE_ACCESS> *, uint64_t, uint64_t, uint64_t, uint64_t);
-
-template <typename STATE_ACCESS>
-TC_CALLCONV static execute_status cp_continue_bridge(const STATE_ACCESS a, uint32_t insn, uint64_t /*r1*/,
-    i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t tc_remaining,
-    [[maybe_unused]] i_state_access_fast_addr_t<STATE_ACCESS> fetch_vaddr_page, uint64_t /*r2*/,
-    tc_context<STATE_ACCESS> * /*tcc*/, uint64_t /*r3*/, uint64_t /*r4*/, uint64_t /*r5*/, uint64_t /*r6*/) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    using fa_t = i_state_access_fast_addr_t<STATE_ACCESS>;
-    TC_MUSTTAIL return reinterpret_cast<cp_bridge_call_fn<STATE_ACCESS> *>(&cp_continue<STATE_ACCESS>)(a, insn,
-        static_cast<uint64_t>(pc), static_cast<fa_t>(tc_remaining), static_cast<uint64_t>(fetch_vaddr_page), fa_t{},
-        0, nullptr, 0, 0, 0, 0);
-}
-
-template <typename STATE_ACCESS>
-TC_CALLCONV static execute_status cp_continue_cold_bridge(const STATE_ACCESS a, uint32_t insn, uint64_t /*r1*/,
-    i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t tc_remaining,
-    [[maybe_unused]] i_state_access_fast_addr_t<STATE_ACCESS> fetch_vaddr_page, uint64_t /*r2*/,
-    tc_context<STATE_ACCESS> * /*tcc*/, uint64_t /*r3*/, uint64_t /*r4*/, uint64_t /*r5*/, uint64_t /*r6*/) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    using fa_t = i_state_access_fast_addr_t<STATE_ACCESS>;
-    TC_MUSTTAIL return reinterpret_cast<cp_bridge_call_fn<STATE_ACCESS> *>(&cp_continue_cold<STATE_ACCESS>)(a, insn,
-        static_cast<uint64_t>(pc), static_cast<fa_t>(tc_remaining), static_cast<uint64_t>(fetch_vaddr_page), fa_t{},
-        0, nullptr, 0, 0, 0, 0);
-}
-#endif
-
 template <typename STATE_ACCESS>
 TC_CALLCONV static execute_status cp_continue_cold(const STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS) {
     TC_ENTER();
@@ -93,12 +47,8 @@ TC_CALLCONV static execute_status cp_continue(const STATE_ACCESS a, uint32_t ins
                 std::fprintf(stderr, "cp-contenter vpc=%llx len=%u\n", static_cast<unsigned long long>(vpc), t->len);
             }
             TC_SYNC();
-#if CP_CALL_ENTRY
-            return cp_enter_call(a, insn, pc, tc_remaining, TC_FETCH_TAG, tcc, t->call_fn);
-#else
             TC_MUSTTAIL return reinterpret_cast<tc_handler_ptr<STATE_ACCESS>>(const_cast<void *>(t->call_fn))(a,
                 insn TC_HOT_ARGS);
-#endif
         }
         if (!interpreted) {
             // Genuine miss: compile on first miss, RVVM's dispatcher policy,

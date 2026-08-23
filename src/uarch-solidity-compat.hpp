@@ -147,6 +147,8 @@ static constexpr uint64 REVERT_ROOT_HASH_LOG2_LENGTH = 5;
 
 template <typename State>
 static inline void writeRevertRootHash(State &a, bytes32 revertRootHash) {
+    // The padded write is already implemented in every replayer; a raw write_memory would
+    // be a second bulk-write primitive to implement, test, and keep in lockstep.
     a.write_memory_with_padding(AR_SHADOW_REVERT_ROOT_HASH_START, revertRootHash.data(), REVERT_ROOT_HASH_LENGTH,
         REVERT_ROOT_HASH_LOG2_LENGTH);
 }

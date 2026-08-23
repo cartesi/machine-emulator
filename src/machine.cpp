@@ -2023,12 +2023,12 @@ void machine::log_send_cmio_response(uint16_t reason, const unsigned char *data,
     if (length > UINT32_MAX) {
         throw std::invalid_argument{"CMIO response data length does not fit in 32 bits"};
     }
-    auto root_hash_before = get_root_hash();
+    const auto root_hash_before = get_root_hash();
     record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     record_step_state_access a(context, *this);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
-    auto root_hash_after = get_root_hash();
+    const auto root_hash_after = get_root_hash();
     a.finish(root_hash_before, 0, root_hash_after);
     auto obtained_root_hash =
         verify_send_cmio_response(reason, data, length, root_hash_before, filename, revert_root_hash);
@@ -2083,7 +2083,7 @@ void machine::log_reset_uarch(const std::string &filename) {
         throw std::runtime_error{
             "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
     }
-    auto root_hash_before = get_root_hash();
+    const auto root_hash_before = get_root_hash();
     uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     uarch_record_step_state_access a(context, *this);
     uarch_reset_state(a);
@@ -2123,12 +2123,12 @@ uarch_interpreter_break_reason machine::log_step_uarch(uint64_t uarch_cycle_coun
         throw std::runtime_error{
             "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
     }
-    auto root_hash_before = get_root_hash();
+    const auto root_hash_before = get_root_hash();
     uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     uarch_record_step_state_access a(context, *this);
     const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), uarch_cycle_count);
     const auto break_reason = uarch_interpret(a, uarch_cycle_end);
-    auto root_hash_after = get_root_hash();
+    const auto root_hash_after = get_root_hash();
     a.finish(root_hash_before, uarch_cycle_count, root_hash_after);
     if (!std::ranges::equal(verify_step_uarch(root_hash_before, filename, uarch_cycle_count), root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
@@ -2233,12 +2233,12 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     if (read_reg(reg::uarch_cycle) != 0) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
-    auto root_hash_before = get_root_hash();
+    const auto root_hash_before = get_root_hash();
     init_hot_tlb_contents();
     record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     record_step_state_access a(context, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
-    auto break_reason = interpret(a, mcycle_end);
+    const auto break_reason = interpret(a, mcycle_end);
     // get_root_hash() also updates the hash tree, which finish() relies on to record node/page hashes
     auto root_hash_after = get_root_hash();
     const state_access sa(*this);

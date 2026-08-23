@@ -59,7 +59,8 @@ struct penumbra_state final {
     /// establishment (fill and re-verification), and at the host-side write
     /// choke points. The extent is conservative (whole pages are fine).
     void (*write_hook)(void *ctx, host_addr hstart, uint64_t length){};
-    void *write_hook_ctx{}; ///< Opaque context for write_hook
+    void *write_hook_ctx{};        ///< Opaque context for write_hook
+    uint64_t hard_float_enabled{}; ///< Current interpret call proved the host FP environment safe
     /// \brief Opaque per-machine state owned by a runtime consumer of the
     /// interpreter (the trace backend), allocated on first use.
     /// \details The machine destructor releases it through tc_state_free, so
@@ -67,7 +68,7 @@ struct penumbra_state final {
     /// outliving it in thread storage.
     void *tc_state{};
     void (*tc_state_free)(void *){};
-    uint64_t scratch[505]{}; ///< Interpreter loop scratch area; also aligns penumbra state size to a page boundary
+    uint64_t scratch[504]{}; ///< Interpreter loop scratch area; also aligns penumbra state size to a page boundary
 };
 
 /// \brief Machine processor state.

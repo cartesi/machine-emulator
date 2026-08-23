@@ -3,6 +3,235 @@
 Working notes for the copy-patch-rvvm.md implementation. Status and verified
 facts, updated as the work proceeds.
 
+## Statistical profiles (2026-08-21)
+
+macOS `sample(1)` profiles at 1 ms, attributed to exact generated-code
+stencils and byte offsets with an emission ledger, split the remaining losses
+into two different mechanisms:
+
+- `branch`, after a 1 Gi-mcycle warmup and over the next 4 Gi mcycles: 6,140
+  samples under `cm_run`, of which 3,325 (54.2%) were in generated code.
+  `cp_call_probe` and `cp_tick_guard` accounted for 2,049 samples, 61.6% of
+  generated-code samples and 33.4% of all `cm_run` samples. Another 45.8% of
+  `cm_run` samples were outside generated code. Most samples in both entry
+  stencils landed at offset zero. That associates the cost with entry,
+  validation, and fragmented execution, but does not prove that the patched
+  immediate instruction at offset zero is itself expensive. This supports an
+  entry/continuity A/B and provides no evidence for the JIT-heap placement
+  hypothesis.
+- `regs`, after a 1 Gi-mcycle warmup and over the next 64 Gi mcycles: 6,129
+  samples under `cm_run`, of which 5,521 (90.1%) were in generated code. LD
+  and SD offset `+0x18` accounted for 2,130 samples, 38.6% of generated-code
+  samples and 34.8% of all `cm_run` samples. Disassembly identifies that exact
+  instruction as `ldr x9, [x9]`, the hot-TLB virtual-address tag load, before
+  the tag comparison. The memory probe is therefore a measured in-trace
+  hotspot for `regs`, unlike `branch`.
+
+There were no unmapped generated-code samples. `CP_STATS` showed that the heap
+flush counts did not change during either sampled interval (`branch` remained
+at two, `regs` at one), so the final emission map is valid for the steady-state
+PCs despite addresses having older mappings before warmup. The profiling path
+is opt-in through `CP_PROFILE_MAP`; recording is an emission-time in-memory
+append, the map is written at machine teardown after sampling, and generated
+code does no profiling work. `bench-harness/profile.lua` supplies fixed-work
+warmup and sampling windows, and `tools/cp-profile-report.lua` parses the
+profiler call graph and attributes JIT PCs using Lua patterns.
+
+### Exact compete-matrix profiles
+
+The matrix was then re-profiled with its exact static musl stress-ng, fixed
+`ops.json` workloads, Linux image, rootfs, and boot arguments. The harness is
+`bench-harness/compete/profile.lua`; each macOS `sample(1)` run used a 1 ms
+interval and the same generated-PC ledger. Twelve usable rows had one heap
+epoch and zero unmapped JIT samples. The exact `branch` run crossed three heap
+epochs, so its reused PCs cannot be attributed to a unique final stencil and
+are deliberately excluded below. Branch is not a qemu/rvvm loss in this
+matrix.
+
+    workload    cm_run   JIT   JIT share   leading measured costs
+    nop           3284  1536     46.8%     tick 41.0%, bne 21.0%
+    regs          2120  1674     79.0%     LD/SD tag loads 35.8%, li 5.2%
+    tree          3596  1717     47.7%     entry/lookup, loads, branches
+    qsort         4315  3901     90.4%     lookup 18.8%, call entry 27.1%
+    memcpy        3321  2035     61.3%     memory tag loads >=59.2%, tick 19.6%
+    zlib          3839  2105     54.8%     byte/half tag loads 21.5%, entry
+    hash          3647  2102     57.6%     memory tag loads >=34.5%, li 10.3%
+    syscall       2961  1847     62.4%     entry/lookup, memory probes, li 10.4%
+    double        3617    62      1.7%     interpreted FP execution
+    sieve         3843  3584     93.3%     LW/SW tag loads 48.1%, tick 14.4%
+    int64         3298  3070     93.1%     entry/lookup, li 15.3%, memory probes
+    matrixprod    3044  1425     46.8%     memory tag loads 22.9%, li 14.9%
+
+The exact musl `regs` rerun therefore resolves the earlier caveat: it is not
+the rootfs stressor's old slot-eviction problem, but it is again a data-memory
+probe problem. LD/SD `+0x18`, the hot-TLB virtual-page tag loads, received 599
+samples: 35.8% of JIT samples and 28.3% of all `cm_run` samples.
+
+The broadest remaining cost is the per-memory-operation TLB probe, but the
+previous memoization experiment already showed that adding captures inside
+the loop is not a low-risk win. The smallest profile-backed next experiment
+is immediate-folded integer ALU stencils. Formation currently implements
+every `reg2i` as `cp_li` into a scratch slot followed by a register-register
+stencil. `cp_li` is 15.3% of JIT samples in int64, 14.9% in matrixprod, and
+about 10% in hash and syscall (7.0% across the twelve usable profiles). This
+is a ceiling because `cp_li` also serves true constant loads and address
+formation. Classifying each sampled `cp_li` by its immediately following
+stencil leaves immediate-capable ALU ceilings of 11.2% of JIT samples in
+int64, 8.6% in matrixprod, 8.5% in hash, and 6.0% in syscall. A direct
+register-immediate family removes both the materialization and its scratch-slot
+pressure without introducing new runtime state. FP arithmetic
+coverage is separately well-supported for double -- only 1.7% of its samples
+are in generated code -- but is a larger semantic and validation project, not
+the low-hanging experiment.
+
+### Outside-JIT attribution for the competitive losses
+
+The worst RVVM losses and the material qemu losses were sampled again at 1 ms
+without `CP_PROFILE_MAP`. This removes the emission-ledger append from trace
+formation. Generated code is still identified exactly for this purpose: it is
+the `<unknown binary>` direct child of `cm_run`, while every outside-JIT sample
+has a host symbol. Percentages in the final column use non-JIT time as their
+denominator; the sample count and JIT coverage use all `cm_run` time.
+
+    workload    cp/rvvm cp/qemu samples   JIT   non-JIT   non-JIT breakdown
+    regs           2.63    1.88    1866   78.9%   21.1%   dispatch 50.9%, form 17.3%,
+                                                           slow memory 15.3%, handlers 13.5%
+    memcpy         2.58    0.72    2973   60.5%   39.5%   handlers 37.3%, dispatch 26.5%,
+                                                           code fetch 24.2%, form 7.1%
+    int64          2.21    0.34    3304   93.1%    6.9%   form 32.8%, dispatch 24.5%,
+                                                           slow memory 21.8%, handlers 14.9%
+    zlib           1.89    0.99    3438   55.6%   44.4%   handlers 58.8%, dispatch 20.8%,
+                                                           slow memory 8.1%, code fetch 6.0%
+    matrixprod     1.43    0.52    2990   47.1%   52.9%   handlers 48.8%, dispatch 41.7%,
+                                                           form 4.9%, slow memory 3.2%
+    tree           1.33    0.62    3101   48.2%   51.8%   slow memory 46.9%, handlers 30.6%,
+                                                           dispatch 15.4%, form 5.7%
+    sieve          1.16    1.22    3811   93.5%    6.5%   form 28.1%, dispatch 25.2%,
+                                                           slow memory 22.8%, handlers 19.9%
+    double         0.55    1.06    3252    1.3%   98.7%   handlers 71.0%, dispatch 23.0%,
+                                                           form 2.3%, code fetch 2.2%
+
+Here `dispatch` includes `interpret_loop_tc_body`, `cp_probe`, and
+`cp_continue`; `form` includes `cp_emit`, `cp_finish`, and `cp_write_hook`;
+slow memory includes translation, refill, verified-TLB publication, TLB
+flushes, and the slow RAM accessors. These are sampled current-PC buckets, not
+inclusive call-tree costs.
+
+The named symbols sharpen the diagnoses:
+
+- `regs`: `interpret_loop_tc_body` alone is 10.4% of total time. Outside JIT,
+  the largest interpreted handler is `C_SDSP` at 2.1% of total, while slow
+  memory/TLB machinery is 3.2%. The larger measured problem remains inside
+  JIT: LD/SD tag probes were 28.3% of total time in the unambiguous stencil
+  profile.
+- `memcpy`: interpreted `BNE` is 8.1% of total, `LBU` 3.2%, and `SB` 2.7%.
+  Code-fetch miss and crossing paths are another 9.6%. Thus its RVVM loss is
+  both the in-JIT generic data probe and failure to keep the byte-copy loop in
+  generated code, not stack traffic.
+- `int64`: only 6.9% is outside JIT, so outside-JIT work cannot explain a 2.21x
+  RVVM loss. Its diagnosis stays inside the trace: `cp_li` is 15.3% of JIT
+  samples, of which immediate-capable ALU successors account for 11.2%.
+- `zlib`: interpreted `BNE` alone is 10.2% of total and `LBU` is 4.5%. Combined
+  with only 55.6% JIT coverage, trace coverage/continuity is a larger problem
+  than its 21.5%-of-JIT byte/halfword tag probes.
+- `matrixprod`: the dispatcher alone is 21.1% of total. The largest interpreted
+  buckets are `C_SDSP` 4.1%, `BGE` 3.5%, shifts 2.6%, and integer remainder
+  2.1%. Its primary remaining issue is coverage and unsupported/fragmenting
+  integer control/soft-float support code, not its already-generated memory.
+- `tree`: 24.3% of total time is in slow memory/TLB work. `read_ram_uint64` is
+  9.4%, translation 4.1%, and TLB replacement/publication/flush paths make up
+  most of the balance. This is real pointer-chasing miss/refill cost, unlike
+  the in-trace tag-hit cost in `regs` and `sieve`.
+- `sieve`: 93.5% is JIT, leaving no consequential outside-JIT culprit. The
+  earlier exact stencil attribution remains decisive: LW/SW tag loads are
+  48.1% and tick guards 14.4% of JIT time.
+- `double`: the generic double-precision handler `FD` is 50.3% of total time,
+  `FLD` another 6.4%, and the dispatcher 22.5%. This is overwhelmingly missing
+  FP compilation coverage.
+
+### Stack-page reach measurement
+
+A temporary measurement build counted successful generated-code memory
+operations whose effective virtual address was on the same 4 KiB page as the
+live guest `x2`. Before every generated memory stencil, a dirty cached `x2`
+was synchronized to the architectural register file; the semantic wrapper
+incremented its counters only after the hit-or-bail operation succeeded. Thus
+the totals exclude repeated miss attempts and compare against an exact stack
+page even while `x2` is register-cached. Counts below subtract an identically
+instrumented `true` boot. Workload multipliers match the statistical-profile
+runs; they change total counts, not the classification.
+
+    workload     loads caught   stores caught   all memory ops caught
+    nop               63.31%          70.13%              66.64%
+    regs              82.29%          87.05%              84.57%
+    branch             5.90%          44.99%              10.37%
+    tree              21.31%          52.92%              30.10%
+    qsort             31.67%          43.26%              35.42%
+    memcpy            24.40%           0.22%              13.99%
+    zlib               0.68%          28.57%               3.04%
+    hash              12.15%          64.19%              22.70%
+    syscall           12.47%          15.86%              13.92%
+    double            47.97%          84.85%              74.86%
+    sieve              0.06%           0.10%               0.08%
+    int64              0.32%           0.17%               0.25%
+    matrixprod        81.37%          98.86%              87.51%
+
+The exact raw counts repeated bit-for-bit for `regs` and `int64`. The result
+supports stack-page specialization as a strong `regs` and `matrixprod` lever,
+but not as the broad explanation for the competitive memory band: it catches
+only 14.0% of memcpy, 0.08% of sieve, and 0.25% of int64 memory operations.
+
+Putting reach beside the current compete matrix makes that boundary clearer.
+Ratios below are copy-patch time divided by the competing emulator time, so a
+ratio above one is a copy-patch loss. The host column is the median native
+ARM64/Darwin time normalized to the matrix's exact bogo-op count.
+
+    workload     stack caught   cp/rvvm   cp/qemu   host seconds   cp/host
+    nop                66.64%      0.73      0.86        0.2231       1.7
+    regs               84.57%      2.63      1.88             -         -
+    branch             10.37%      0.59      0.29        0.1984       4.4
+    tree               30.10%      1.33      0.62        0.2526       7.1
+    qsort              35.42%      1.05      0.41        0.0319      44.8
+    memcpy             13.99%      2.58      0.72        0.1964      18.6
+    zlib                3.04%      1.89      0.99        0.6409       6.2
+    hash               22.70%      1.03      1.02        0.2869       6.9
+    syscall            13.92%      0.86      0.59             -         -
+    double             74.86%      0.55      1.06        0.1015      17.9
+    sieve               0.08%      1.16      1.22        0.8687       2.5
+    int64               0.25%      2.21      0.34        0.2010       3.7
+    matrixprod         87.51%      1.43      0.52        0.0023     522.0
+
+The association is strong only for `regs`: high reach coincides with a large
+loss to both RVVM and qemu. It does not explain the broad RVVM gap. `memcpy`,
+`zlib`, and `int64` are respectively 2.58x, 1.89x, and 2.21x slower than RVVM,
+but a stack page catches only 14.0%, 3.0%, and 0.25% of their memory operations.
+`sieve` loses to both RVVM and qemu with 0.08% reach. Conversely, `nop` and
+`double` have high reach without a corresponding RVVM loss; `double` spends
+only 1.7% of its sampled time in generated code. `matrixprod` is the other real
+stack-page candidate, but copy-patch already beats qemu there and its RVVM gap
+is much smaller than `regs`.
+
+A deliberately optimistic Amdahl estimate also limits the prize. In `regs`,
+tag probes are 28.3% of all `cm_run` samples; weighting that by 84.57% reach
+puts about 23.9% of total time in scope. Making every caught probe free would
+therefore yield at most about 1.31x, moving 3.32 seconds to roughly 2.53 --
+still behind qemu at 1.77 and RVVM at 1.26. The same estimate is about 1.10x
+for `matrixprod` and 1.05x for `memcpy`. These are rough ceilings: sampled cost
+need not be distributed exactly like dynamic memory-operation counts.
+
+The host experiment used stress-ng 0.17.06 at the benchmark's recorded commit
+`e6bda983cb48a201b6af173204372c7b37d6411f`, built natively with MacPorts GCC
+15. Each row used a calibration run followed by three runs scaled to about 1.5
+seconds, then divided by the scale factor to suppress process-startup noise.
+This is a useful native-throughput reference, not a strict mathematical bound:
+the host executes ARM64/Darwin code with a different ABI, libc, kernel, and
+architecture-specific stress-ng conditionals rather than the guest's static
+RISC-V/Linux instruction stream. Native `regs` has no trustworthy result: the
+Clang build disables it, while both GCC 14 and GCC 15 fail stress-ng's own
+register self-check. Native `syscall` also has no comparable row because the Darwin
+stressor does not terminate at the requested bogo-op count and exercises a
+different syscall set.
+
 ## Done
 
 - Stencil pipeline (2026-08-20): tools/cp-gen-stencils.lua emits
@@ -1290,3 +1519,22 @@ The broad wins (qsort 1.69 -> 1.43, sieve 2.45 -> 2.14, int64
 the chain-start entries plus the slot raise combined; memcpy gave back
 a little (3.57 -> 3.66). Remaining lightning losses: regs, memcpy,
 double, branch, syscall (by a hair). rvvm still leads the geomean.
+
+## Future FP avenue: integer-valued JavaScript numbers
+
+Add a V8-like benchmark whose hot arithmetic operands are boxed FP values
+but remain exact integers. The current zero-or-normal/result guard is safe,
+but it does not exploit this common narrower domain. Compare two candidate
+specializations against the existing guarded hard-FP path:
+
+- classify both input bit patterns as exactly representable integers and
+  validate the result the same way;
+- clear and test the host inexact status around the candidate operation.
+  AArch64 exposes cumulative inexact as FPSR.IXC; SSE/AVX exposes it as
+  MXCSR.PE. Preserve the caller's complete status on both paths.
+
+Measure the status-register traffic explicitly. AArch64 needs FPSR system
+register reads/writes and amd64 normally needs MXCSR memory transfers, so a
+per-operation exact-flag probe may cost more than bit classification. Keep
+this out of the default guard until the benchmark establishes the profitable
+shape and threshold on both hosts.

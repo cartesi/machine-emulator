@@ -4224,10 +4224,23 @@ static FORCE_INLINE uint32_t fcsr_fflags(uint64_t fcsr) {
     return static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
 }
 
+// Float execution policies. The ordinary interpreter tries the guarded host
+// implementation first; a JIT that has already failed those guards can call
+// the same instruction body with soft_only instead of trying them again.
+struct hard_or_soft {
+    using float32 = i_float32;
+    using float64 = i_float64;
+};
+
+struct soft_only {
+    using float32 = i_sfloat32;
+    using float64 = i_sfloat64;
+};
+
 // Float operation dispatch points: the bodies name these instead of the
-// i_float interfaces directly so that a staging access's float value type
-// can carry the operations to an IR backend, the same way the integer
-// bodies' value types do. On concrete words they are the i_float ops.
+// float interfaces directly so that a staging access's float value type can
+// carry the operations to an IR backend, the same way the integer bodies'
+// value types do. On concrete words FLOAT selects the execution policy.
 template <typename T>
 struct i_float_for;
 template <>
@@ -4239,30 +4252,30 @@ struct i_float_for<uint64_t> {
     using type = i_float64;
 };
 
-template <typename T>
-    requires std::is_integral_v<T>
+template <typename FLOAT, typename T>
+    requires(std::is_integral_v<T> && std::is_same_v<T, typename FLOAT::F_UINT>)
 static FORCE_INLINE T fp_add(T s1, T s2, uint32_t rm, uint32_t *fflags) {
-    return i_float_for<T>::type::add(s1, s2, static_cast<FRM_modes>(rm), fflags);
+    return FLOAT::add(s1, s2, static_cast<FRM_modes>(rm), fflags);
 }
-template <typename T>
-    requires std::is_integral_v<T>
+template <typename FLOAT, typename T>
+    requires(std::is_integral_v<T> && std::is_same_v<T, typename FLOAT::F_UINT>)
 static FORCE_INLINE T fp_mul(T s1, T s2, uint32_t rm, uint32_t *fflags) {
-    return i_float_for<T>::type::mul(s1, s2, static_cast<FRM_modes>(rm), fflags);
+    return FLOAT::mul(s1, s2, static_cast<FRM_modes>(rm), fflags);
 }
-template <typename T>
-    requires std::is_integral_v<T>
+template <typename FLOAT, typename T>
+    requires(std::is_integral_v<T> && std::is_same_v<T, typename FLOAT::F_UINT>)
 static FORCE_INLINE T fp_div(T s1, T s2, uint32_t rm, uint32_t *fflags) {
-    return i_float_for<T>::type::div(s1, s2, static_cast<FRM_modes>(rm), fflags);
+    return FLOAT::div(s1, s2, static_cast<FRM_modes>(rm), fflags);
 }
-template <typename T>
-    requires std::is_integral_v<T>
+template <typename FLOAT, typename T>
+    requires(std::is_integral_v<T> && std::is_same_v<T, typename FLOAT::F_UINT>)
 static FORCE_INLINE T fp_sqrt(T s1, uint32_t rm, uint32_t *fflags) {
-    return i_float_for<T>::type::sqrt(s1, static_cast<FRM_modes>(rm), fflags);
+    return FLOAT::sqrt(s1, static_cast<FRM_modes>(rm), fflags);
 }
-template <typename T>
-    requires std::is_integral_v<T>
+template <typename FLOAT, typename T>
+    requires(std::is_integral_v<T> && std::is_same_v<T, typename FLOAT::F_UINT>)
 static FORCE_INLINE T fp_fma(T s1, T s2, T s3, uint32_t rm, uint32_t *fflags) {
-    return i_float_for<T>::type::fma(s1, s2, s3, static_cast<FRM_modes>(rm), fflags);
+    return FLOAT::fma(s1, s2, s3, static_cast<FRM_modes>(rm), fflags);
 }
 /// \brief Narrows an f-register word to a store width (dispatch point: a
 /// staging access's float value narrows through its own value type).
@@ -4502,23 +4515,25 @@ static FORCE_INLINE execute_status execute_FLD(const STATE_ACCESS a, i_state_acc
     return execute_FL<uint64_t>(a, pc, mcycle, insn);
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMADD_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmadd.s");
-    return execute_float_ternary_op_rm<uint32_t>(a, pc, insn,
-        [](auto s1, auto s2, auto s3, auto rm, auto *fflags) { return fp_fma(s1, s2, s3, rm, fflags); });
+    return execute_float_ternary_op_rm<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto s3, auto rm, auto *fflags) {
+        return fp_fma<typename FLOAT_MODE::float32>(s1, s2, s3, rm, fflags);
+    });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMADD_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmadd.d");
-    return execute_float_ternary_op_rm<uint64_t>(a, pc, insn,
-        [](auto s1, auto s2, auto s3, auto rm, auto *fflags) { return fp_fma(s1, s2, s3, rm, fflags); });
+    return execute_float_ternary_op_rm<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto s3, auto rm, auto *fflags) {
+        return fp_fma<typename FLOAT_MODE::float64>(s1, s2, s3, rm, fflags);
+    });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMADD(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
@@ -4527,33 +4542,33 @@ static FORCE_INLINE execute_status execute_FMADD(const STATE_ACCESS a, i_state_a
     }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
         case insn_FM_funct2_0000000000000000000000000::S:
-            return execute_FMADD_S(a, pc, insn);
+            return execute_FMADD_S<FLOAT_MODE>(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
-            return execute_FMADD_D(a, pc, insn);
+            return execute_FMADD_D<FLOAT_MODE>(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMSUB_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmsub.s");
     return execute_float_ternary_op_rm<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto s3, auto rm, auto *fflags) {
-        return fp_fma(s1, s2, s3 ^ i_sfloat32::SIGN_MASK, rm, fflags);
+        return fp_fma<typename FLOAT_MODE::float32>(s1, s2, s3 ^ i_sfloat32::SIGN_MASK, rm, fflags);
     });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMSUB_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmsub.d");
     return execute_float_ternary_op_rm<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto s3, auto rm, auto *fflags) {
-        return fp_fma(s1, s2, s3 ^ i_sfloat64::SIGN_MASK, rm, fflags);
+        return fp_fma<typename FLOAT_MODE::float64>(s1, s2, s3 ^ i_sfloat64::SIGN_MASK, rm, fflags);
     });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMSUB(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
@@ -4562,33 +4577,35 @@ static FORCE_INLINE execute_status execute_FMSUB(const STATE_ACCESS a, i_state_a
     }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
         case insn_FM_funct2_0000000000000000000000000::S:
-            return execute_FMSUB_S(a, pc, insn);
+            return execute_FMSUB_S<FLOAT_MODE>(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
-            return execute_FMSUB_D(a, pc, insn);
+            return execute_FMSUB_D<FLOAT_MODE>(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMADD_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fnmadd.s");
     return execute_float_ternary_op_rm<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto s3, auto rm, auto *fflags) {
-        return fp_fma(s1 ^ i_sfloat32::SIGN_MASK, s2, s3 ^ i_sfloat32::SIGN_MASK, rm, fflags);
+        return fp_fma<typename FLOAT_MODE::float32>(s1 ^ i_sfloat32::SIGN_MASK, s2, s3 ^ i_sfloat32::SIGN_MASK, rm,
+            fflags);
     });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMADD_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fnmadd.d");
     return execute_float_ternary_op_rm<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto s3, auto rm, auto *fflags) {
-        return fp_fma(s1 ^ i_sfloat64::SIGN_MASK, s2, s3 ^ i_sfloat64::SIGN_MASK, rm, fflags);
+        return fp_fma<typename FLOAT_MODE::float64>(s1 ^ i_sfloat64::SIGN_MASK, s2, s3 ^ i_sfloat64::SIGN_MASK, rm,
+            fflags);
     });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMADD(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
@@ -4597,33 +4614,33 @@ static FORCE_INLINE execute_status execute_FNMADD(const STATE_ACCESS a, i_state_
     }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
         case insn_FM_funct2_0000000000000000000000000::S:
-            return execute_FNMADD_S(a, pc, insn);
+            return execute_FNMADD_S<FLOAT_MODE>(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
-            return execute_FNMADD_D(a, pc, insn);
+            return execute_FNMADD_D<FLOAT_MODE>(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMSUB_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fnmsub.s");
     return execute_float_ternary_op_rm<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto s3, auto rm, auto *fflags) {
-        return fp_fma(s1 ^ i_sfloat32::SIGN_MASK, s2, s3, rm, fflags);
+        return fp_fma<typename FLOAT_MODE::float32>(s1 ^ i_sfloat32::SIGN_MASK, s2, s3, rm, fflags);
     });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMSUB_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fnmsub.d");
     return execute_float_ternary_op_rm<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto s3, auto rm, auto *fflags) {
-        return fp_fma(s1 ^ i_sfloat64::SIGN_MASK, s2, s3, rm, fflags);
+        return fp_fma<typename FLOAT_MODE::float64>(s1 ^ i_sfloat64::SIGN_MASK, s2, s3, rm, fflags);
     });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMSUB(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
@@ -4632,76 +4649,84 @@ static FORCE_INLINE execute_status execute_FNMSUB(const STATE_ACCESS a, i_state_
     }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
         case insn_FM_funct2_0000000000000000000000000::S:
-            return execute_FNMSUB_S(a, pc, insn);
+            return execute_FNMSUB_S<FLOAT_MODE>(a, pc, insn);
         case insn_FM_funct2_0000000000000000000000000::D:
-            return execute_FNMSUB_D(a, pc, insn);
+            return execute_FNMSUB_D<FLOAT_MODE>(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FADD_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fadd.s");
-    return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
-        [](auto s1, auto s2, auto rm, auto *fflags) { return fp_add(s1, s2, rm, fflags); });
+    return execute_float_binary_op_rm<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto rm, auto *fflags) {
+        return fp_add<typename FLOAT_MODE::float32>(s1, s2, rm, fflags);
+    });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FADD_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fadd.d");
-    return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
-        [](auto s1, auto s2, auto rm, auto *fflags) { return fp_add(s1, s2, rm, fflags); });
+    return execute_float_binary_op_rm<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto rm, auto *fflags) {
+        return fp_add<typename FLOAT_MODE::float64>(s1, s2, rm, fflags);
+    });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSUB_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsub.s");
-    return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
-        [](auto s1, auto s2, auto rm, auto *fflags) { return fp_add(s1, s2 ^ i_sfloat32::SIGN_MASK, rm, fflags); });
+    return execute_float_binary_op_rm<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto rm, auto *fflags) {
+        return fp_add<typename FLOAT_MODE::float32>(s1, s2 ^ i_sfloat32::SIGN_MASK, rm, fflags);
+    });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSUB_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsub.d");
-    return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
-        [](auto s1, auto s2, auto rm, auto *fflags) { return fp_add(s1, s2 ^ i_sfloat64::SIGN_MASK, rm, fflags); });
+    return execute_float_binary_op_rm<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto rm, auto *fflags) {
+        return fp_add<typename FLOAT_MODE::float64>(s1, s2 ^ i_sfloat64::SIGN_MASK, rm, fflags);
+    });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMUL_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmul.s");
-    return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
-        [](auto s1, auto s2, auto rm, auto *fflags) { return fp_mul(s1, s2, rm, fflags); });
+    return execute_float_binary_op_rm<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto rm, auto *fflags) {
+        return fp_mul<typename FLOAT_MODE::float32>(s1, s2, rm, fflags);
+    });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMUL_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fmul.d");
-    return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
-        [](auto s1, auto s2, auto rm, auto *fflags) { return fp_mul(s1, s2, rm, fflags); });
+    return execute_float_binary_op_rm<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto rm, auto *fflags) {
+        return fp_mul<typename FLOAT_MODE::float64>(s1, s2, rm, fflags);
+    });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FDIV_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fdiv.s");
-    return execute_float_binary_op_rm<uint32_t>(a, pc, insn,
-        [](auto s1, auto s2, auto rm, auto *fflags) { return fp_div(s1, s2, rm, fflags); });
+    return execute_float_binary_op_rm<uint32_t>(a, pc, insn, [](auto s1, auto s2, auto rm, auto *fflags) {
+        return fp_div<typename FLOAT_MODE::float32>(s1, s2, rm, fflags);
+    });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FDIV_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fdiv.d");
-    return execute_float_binary_op_rm<uint64_t>(a, pc, insn,
-        [](auto s1, auto s2, auto rm, auto *fflags) { return fp_div(s1, s2, rm, fflags); });
+    return execute_float_binary_op_rm<uint64_t>(a, pc, insn, [](auto s1, auto s2, auto rm, auto *fflags) {
+        return fp_div<typename FLOAT_MODE::float64>(s1, s2, rm, fflags);
+    });
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
@@ -4991,20 +5016,20 @@ static FORCE_INLINE execute_status execute_FCVT_D_S(const STATE_ACCESS a, i_stat
     });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSQRT_S(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsqrt.s");
     return execute_float_unary_op_rm<uint32_t>(a, pc, insn,
-        [](auto s1, auto rm, auto *fflags) { return fp_sqrt(s1, rm, fflags); });
+        [](auto s1, auto rm, auto *fflags) { return fp_sqrt<typename FLOAT_MODE::float32>(s1, rm, fflags); });
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSQRT_D(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     [[maybe_unused]] auto note = dump_insn(a, pc, insn, "fsqrt.d");
     return execute_float_unary_op_rm<uint64_t>(a, pc, insn,
-        [](auto s1, auto rm, auto *fflags) { return fp_sqrt(s1, rm, fflags); });
+        [](auto s1, auto rm, auto *fflags) { return fp_sqrt<typename FLOAT_MODE::float64>(s1, rm, fflags); });
 }
 
 template <typename STATE_ACCESS>
@@ -5363,7 +5388,7 @@ static FORCE_INLINE execute_status execute_FCVT_FMV_FCLASS(const STATE_ACCESS a,
     }
 }
 
-template <typename STATE_ACCESS>
+template <typename FLOAT_MODE = hard_or_soft, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FD(const STATE_ACCESS a, i_state_access_fast_addr_t<STATE_ACCESS> &pc,
     uint32_t insn) {
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
@@ -5372,21 +5397,21 @@ static FORCE_INLINE execute_status execute_FD(const STATE_ACCESS a, i_state_acce
     }
     switch (static_cast<insn_FD_funct7>(insn_get_funct7(insn))) {
         case insn_FD_funct7::FADD_S:
-            return execute_FADD_S(a, pc, insn);
+            return execute_FADD_S<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FADD_D:
-            return execute_FADD_D(a, pc, insn);
+            return execute_FADD_D<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FSUB_S:
-            return execute_FSUB_S(a, pc, insn);
+            return execute_FSUB_S<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FSUB_D:
-            return execute_FSUB_D(a, pc, insn);
+            return execute_FSUB_D<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FMUL_S:
-            return execute_FMUL_S(a, pc, insn);
+            return execute_FMUL_S<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FMUL_D:
-            return execute_FMUL_D(a, pc, insn);
+            return execute_FMUL_D<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FDIV_S:
-            return execute_FDIV_S(a, pc, insn);
+            return execute_FDIV_S<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FDIV_D:
-            return execute_FDIV_D(a, pc, insn);
+            return execute_FDIV_D<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FSGN_S:
             return execute_FSGN_S(a, pc, insn);
         case insn_FD_funct7::FSGN_D:
@@ -5396,9 +5421,9 @@ static FORCE_INLINE execute_status execute_FD(const STATE_ACCESS a, i_state_acce
         case insn_FD_funct7::FMINMAX_D:
             return execute_FMINMAX_D(a, pc, insn);
         case insn_FD_funct7::FSQRT_S:
-            return execute_FSQRT_S(a, pc, insn);
+            return execute_FSQRT_S<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FSQRT_D:
-            return execute_FSQRT_D(a, pc, insn);
+            return execute_FSQRT_D<FLOAT_MODE>(a, pc, insn);
         case insn_FD_funct7::FCMP_S:
             return execute_FCMP_S(a, pc, insn);
         case insn_FD_funct7::FCMP_D:
@@ -7040,6 +7065,15 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
 
     // Enable the hard-float fast path while the loop runs, if the host environment allows it
     [[maybe_unused]] const hard_float_scope hf_scope;
+#ifdef HARD_FLOAT
+    if constexpr (requires { a.get_penumbra(); }) {
+        a.get_penumbra().hard_float_enabled = hard_float_ctx().enabled;
+    }
+#else
+    if constexpr (requires { a.get_penumbra(); }) {
+        a.get_penumbra().hard_float_enabled = 0;
+    }
+#endif
 #if defined(DUMP_STATS) && defined(HARD_FLOAT)
     const uint64_t hf_hits = hard_float_ctx().hits;
     const uint64_t hf_fallbacks = hard_float_ctx().fallbacks;

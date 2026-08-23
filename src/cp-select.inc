@@ -27,10 +27,10 @@
     f.branch(tab, comp, insn_get_rs1(insn), insn_get_rs2(insn), pc + static_cast<uint64_t>(insn_B_get_imm(insn)), 4)
 
 // Compressed operand shorthands.
-#define CP_C_RD (insn_get_rd(insn))                    // CR/CI position
+#define CP_C_RD (insn_get_rd(insn)) // CR/CI position
 #define CP_C_RS2 (insn_get_CR_CSS_rs2(insn))
-#define CP_C_RDP (insn_get_CIW_CL_rd_CS_CA_rs2(insn))  // rd', rs2' (x8-x15)
-#define CP_C_RS1P (insn_get_CL_CS_CA_CB_rs1(insn))     // rs1' (x8-x15)
+#define CP_C_RDP (insn_get_CIW_CL_rd_CS_CA_rs2(insn)) // rd', rs2' (x8-x15)
+#define CP_C_RS1P (insn_get_CL_CS_CA_CB_rs1(insn))    // rs1' (x8-x15)
 
 switch (label) {
     // Upper immediates and direct jumps: constants known at formation.
@@ -106,8 +106,8 @@ switch (label) {
     // Register-register, fused labels discriminated by funct7 as the
     // execute bodies do (0 base, 1 M extension, 0x20 alternate).
     case tc_label::ADD_MUL_SUB_rdN:
-        CP_R3(insn_get_funct7(insn) == 1 ? cp_mul_table :
-                (insn_get_funct7(insn) == 0x20 ? cp_sub_table : cp_add_table));
+        CP_R3(
+            insn_get_funct7(insn) == 1 ? cp_mul_table : (insn_get_funct7(insn) == 0x20 ? cp_sub_table : cp_add_table));
         break;
     case tc_label::SLL_MULH_rdN:
         CP_R3(insn_get_funct7(insn) == 1 ? cp_mulh_table : cp_sll_table);
@@ -122,8 +122,8 @@ switch (label) {
         CP_R3(insn_get_funct7(insn) == 1 ? cp_div_table : cp_xor_table);
         break;
     case tc_label::SRL_DIVU_SRA_rdN:
-        CP_R3(insn_get_funct7(insn) == 1 ? cp_divu_table :
-                (insn_get_funct7(insn) == 0x20 ? cp_sra_table : cp_srl_table));
+        CP_R3(
+            insn_get_funct7(insn) == 1 ? cp_divu_table : (insn_get_funct7(insn) == 0x20 ? cp_sra_table : cp_srl_table));
         break;
     case tc_label::OR_REM_rdN:
         CP_R3(insn_get_funct7(insn) == 1 ? cp_rem_table : cp_or_table);
@@ -133,14 +133,14 @@ switch (label) {
         break;
     case tc_label::ADDW_MULW_SUBW_rdN:
         CP_R3(insn_get_funct7(insn) == 1 ? cp_mulw_table :
-                (insn_get_funct7(insn) == 0x20 ? cp_subw_table : cp_addw_table));
+                                           (insn_get_funct7(insn) == 0x20 ? cp_subw_table : cp_addw_table));
         break;
     case tc_label::SLLW_rdN:
         CP_R3(cp_sllw_table);
         break;
     case tc_label::SRLW_DIVUW_SRAW_rdN:
         CP_R3(insn_get_funct7(insn) == 1 ? cp_divuw_table :
-                (insn_get_funct7(insn) == 0x20 ? cp_sraw_table : cp_srlw_table));
+                                           (insn_get_funct7(insn) == 0x20 ? cp_sraw_table : cp_srlw_table));
         break;
     case tc_label::DIVW_rdN:
         CP_R3(cp_divw_table);
@@ -314,6 +314,194 @@ switch (label) {
         break;
     }
 
+    // Binary FP arithmetic: the RNE/DYN hard attempt stays in generated
+    // code; every hard guard miss runs the same instruction body in
+    // soft_only mode and rejoins after the result store. Other rounding
+    // modes remain trace boundaries until their always-soft call shape is
+    // measured.
+    case tc_label::FD: {
+        if (!cp_fp_enabled()) {
+            f.end();
+            break;
+        }
+        const uint32_t rm = (insn >> 12) & 7;
+        const bool dynamic_rm = rm == FRM_DYN;
+        const auto funct7 = static_cast<insn_FD_funct7>(insn_get_funct7(insn));
+        const bool guarded_arithmetic = funct7 == insn_FD_funct7::FADD_S || funct7 == insn_FD_funct7::FADD_D ||
+            funct7 == insn_FD_funct7::FSUB_S || funct7 == insn_FD_funct7::FSUB_D || funct7 == insn_FD_funct7::FMUL_S ||
+            funct7 == insn_FD_funct7::FMUL_D || funct7 == insn_FD_funct7::FDIV_S || funct7 == insn_FD_funct7::FDIV_D;
+        if (guarded_arithmetic && rm != FRM_RNE && !dynamic_rm) {
+            f.fp_soft(insn);
+            break;
+        }
+        switch (funct7) {
+            case insn_FD_funct7::FADD_S:
+                f.fp_binary(dynamic_rm ? cp_fp_add_s_dyn_table : cp_fp_add_s_rne_table, insn);
+                break;
+            case insn_FD_funct7::FADD_D:
+                f.fp_binary(dynamic_rm ? cp_fp_add_d_dyn_table : cp_fp_add_d_rne_table, insn);
+                break;
+            case insn_FD_funct7::FSUB_S:
+                f.fp_binary(dynamic_rm ? cp_fp_sub_s_dyn_table : cp_fp_sub_s_rne_table, insn);
+                break;
+            case insn_FD_funct7::FSUB_D:
+                f.fp_binary(dynamic_rm ? cp_fp_sub_d_dyn_table : cp_fp_sub_d_rne_table, insn);
+                break;
+            case insn_FD_funct7::FMUL_S:
+                f.fp_binary(dynamic_rm ? cp_fp_mul_s_dyn_table : cp_fp_mul_s_rne_table, insn);
+                break;
+            case insn_FD_funct7::FMUL_D:
+                f.fp_binary(dynamic_rm ? cp_fp_mul_d_dyn_table : cp_fp_mul_d_rne_table, insn);
+                break;
+            case insn_FD_funct7::FDIV_S:
+                f.fp_binary(dynamic_rm ? cp_fp_div_s_dyn_table : cp_fp_div_s_rne_table, insn);
+                break;
+            case insn_FD_funct7::FDIV_D:
+                f.fp_binary(dynamic_rm ? cp_fp_div_d_dyn_table : cp_fp_div_d_rne_table, insn);
+                break;
+            case insn_FD_funct7::FSQRT_S:
+                if (rm == FRM_RNE || dynamic_rm) {
+                    f.fp_unary(dynamic_rm ? cp_fp_sqrt_s_dyn_table : cp_fp_sqrt_s_rne_table, insn);
+                } else {
+                    f.fp_soft(insn);
+                }
+                break;
+            case insn_FD_funct7::FSQRT_D:
+                if (rm == FRM_RNE || dynamic_rm) {
+                    f.fp_unary(dynamic_rm ? cp_fp_sqrt_d_dyn_table : cp_fp_sqrt_d_rne_table, insn);
+                } else {
+                    f.fp_soft(insn);
+                }
+                break;
+            case insn_FD_funct7::FSGN_S:
+                switch (static_cast<insn_FSGN_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+                    case insn_FSGN_funct3_000000000000::J:
+                        f.fp_exact_binary(cp_fp_fsgnj_s_table, insn);
+                        break;
+                    case insn_FSGN_funct3_000000000000::JN:
+                        f.fp_exact_binary(cp_fp_fsgnjn_s_table, insn);
+                        break;
+                    case insn_FSGN_funct3_000000000000::JX:
+                        f.fp_exact_binary(cp_fp_fsgnjx_s_table, insn);
+                        break;
+                    default:
+                        f.end();
+                        break;
+                }
+                break;
+            case insn_FD_funct7::FSGN_D:
+                switch (static_cast<insn_FSGN_funct3_000000000000>(insn_get_funct3_000000000000(insn))) {
+                    case insn_FSGN_funct3_000000000000::J:
+                        f.fp_exact_binary(cp_fp_fsgnj_d_table, insn);
+                        break;
+                    case insn_FSGN_funct3_000000000000::JN:
+                        f.fp_exact_binary(cp_fp_fsgnjn_d_table, insn);
+                        break;
+                    case insn_FSGN_funct3_000000000000::JX:
+                        f.fp_exact_binary(cp_fp_fsgnjx_d_table, insn);
+                        break;
+                    default:
+                        f.end();
+                        break;
+                }
+                break;
+            case insn_FD_funct7::FMINMAX_S:
+                if (insn_get_funct3_000000000000(insn) == insn_FMIN_FMAX_funct3_000000000000::MIN) {
+                    f.fp_exact_binary(cp_fp_min_s_table, insn);
+                } else if (insn_get_funct3_000000000000(insn) == insn_FMIN_FMAX_funct3_000000000000::MAX) {
+                    f.fp_exact_binary(cp_fp_max_s_table, insn);
+                } else {
+                    f.end();
+                }
+                break;
+            case insn_FD_funct7::FMINMAX_D:
+                if (insn_get_funct3_000000000000(insn) == insn_FMIN_FMAX_funct3_000000000000::MIN) {
+                    f.fp_exact_binary(cp_fp_min_d_table, insn);
+                } else if (insn_get_funct3_000000000000(insn) == insn_FMIN_FMAX_funct3_000000000000::MAX) {
+                    f.fp_exact_binary(cp_fp_max_d_table, insn);
+                } else {
+                    f.end();
+                }
+                break;
+            case insn_FD_funct7::FCMP_S:
+                if (insn_get_funct3_000000000000(insn) == insn_FCMP_funct3_000000000000::EQ) {
+                    f.fp_exact_cmp(cp_fp_eq_s_table, insn);
+                } else if (insn_get_funct3_000000000000(insn) == insn_FCMP_funct3_000000000000::LE) {
+                    f.fp_exact_cmp(cp_fp_le_s_table, insn);
+                } else if (insn_get_funct3_000000000000(insn) == insn_FCMP_funct3_000000000000::LT) {
+                    f.fp_exact_cmp(cp_fp_lt_s_table, insn);
+                } else {
+                    f.end();
+                }
+                break;
+            case insn_FD_funct7::FCMP_D:
+                if (insn_get_funct3_000000000000(insn) == insn_FCMP_funct3_000000000000::EQ) {
+                    f.fp_exact_cmp(cp_fp_eq_d_table, insn);
+                } else if (insn_get_funct3_000000000000(insn) == insn_FCMP_funct3_000000000000::LE) {
+                    f.fp_exact_cmp(cp_fp_le_d_table, insn);
+                } else if (insn_get_funct3_000000000000(insn) == insn_FCMP_funct3_000000000000::LT) {
+                    f.fp_exact_cmp(cp_fp_lt_d_table, insn);
+                } else {
+                    f.end();
+                }
+                break;
+            default:
+                const auto funct7_rs2 = static_cast<insn_FD_funct7_rs2>(insn_get_funct7_rs2(insn));
+                const auto funct3 =
+                    static_cast<insn_FMV_FCLASS_funct3_000000000000>(insn_get_funct3_000000000000(insn));
+                if (funct3 == insn_FMV_FCLASS_funct3_000000000000::FCLASS &&
+                    funct7_rs2 == insn_FD_funct7_rs2::FMV_FCLASS_S) {
+                    f.fp_exact_unary_x(cp_fp_class_s_table, insn);
+                } else if (funct3 == insn_FMV_FCLASS_funct3_000000000000::FCLASS &&
+                    funct7_rs2 == insn_FD_funct7_rs2::FMV_FCLASS_D) {
+                    f.fp_exact_unary_x(cp_fp_class_d_table, insn);
+                } else {
+                    f.end();
+                }
+                break;
+        }
+        break;
+    }
+
+    case tc_label::FMADD:
+    case tc_label::FMSUB:
+    case tc_label::FNMADD:
+    case tc_label::FNMSUB: {
+        if (!cp_fp_enabled()) {
+            f.end();
+            break;
+        }
+        const uint32_t rm = (insn >> 12) & 7;
+        const bool dynamic_rm = rm == FRM_DYN;
+        if (rm != FRM_RNE && !dynamic_rm) {
+            f.fp_soft(insn);
+            break;
+        }
+        const bool is_double =
+            insn_get_funct2_0000000000000000000000000(insn) == insn_FM_funct2_0000000000000000000000000::D;
+#define CP_FP_FMA_TABLE(name)                                                                                          \
+    (is_double ? (dynamic_rm ? cp_fp_##name##_d_dyn_table : cp_fp_##name##_d_rne_table) :                              \
+                 (dynamic_rm ? cp_fp_##name##_s_dyn_table : cp_fp_##name##_s_rne_table))
+        switch (label) {
+            case tc_label::FMADD:
+                f.fp_ternary(CP_FP_FMA_TABLE(fmadd), insn);
+                break;
+            case tc_label::FMSUB:
+                f.fp_ternary(CP_FP_FMA_TABLE(fmsub), insn);
+                break;
+            case tc_label::FNMADD:
+                f.fp_ternary(CP_FP_FMA_TABLE(fnmadd), insn);
+                break;
+            case tc_label::FNMSUB:
+                f.fp_ternary(CP_FP_FMA_TABLE(fnmsub), insn);
+                break;
+            default:
+                __builtin_unreachable();
+        }
+#undef CP_FP_FMA_TABLE
+        break;
+    }
+
     // Indirect jumps end the trace through the dynamic terminal (deposit
     // plus front-cache lookup); target semantics are the interpreter's:
     // (x[rs1] + imm) & ~1, link written after the target read.
@@ -359,7 +547,7 @@ switch (label) {
     case tc_label::REMUW_rd0:
         break;
 
-    // Everything else (system, CSR, atomics, FP) ends the trace.
+    // Everything else (system, other CSR, atomics, remaining FP) ends the trace.
     default:
         f.end();
         break;

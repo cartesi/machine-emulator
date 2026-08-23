@@ -1,9 +1,8 @@
-// Runtime test for the memory stencil families (copy-patch-rvvm.md): builds
+// Runtime test for stateful stencil families (copy-patch-rvvm.md): builds
 // a real machine, warms its hot TLB through the interpreter's own
 // read/write_virtual_memory paths, then executes copied and patched
-// load/store stencil chains against the live machine state, checking hit
-// values, store effects, sign extension, and the bail continuation on cold
-// slots.
+// load/store and exact-FP stencil chains against the live machine state,
+// checking results, architectural flags, and guard continuations.
 
 #define TC_TRANSLATION_UNIT
 #include "interpret.cpp"
@@ -43,8 +42,7 @@ static uint64_t out_bail[NPARAMS];
 
 // Emits stencil -> store_exit(out_hit) with the bail continuation aimed at a
 // separate store_exit(out_bail); returns the chain entry.
-static uint8_t *emit_chain(const cp_stencil_t *st)
-{
+static uint8_t *emit_chain(const cp_stencil_t *st) {
     heap.curr = 0;
     cp_heap_unprotect(&heap);
     uint64_t imm_bail[2] = {reinterpret_cast<uint64_t>(out_bail), 0};
@@ -61,16 +59,14 @@ static uint8_t *emit_chain(const cp_stencil_t *st)
 
 static int failures = 0;
 
-static void check(bool ok, const char *what)
-{
+static void check(bool ok, const char *what) {
     if (!ok) {
         std::fprintf(stderr, "FAIL: %s\n", what);
         ++failures;
     }
 }
 
-int main()
-{
+int main() {
     machine_config cfg;
     cfg.ram.length = 1 << 20;
     machine m(cfg);
@@ -101,8 +97,8 @@ int main()
         check(st == execute_status::success, "warm write");
     }
 
-    const uint64_t g_init[CP_NSLOTS_PAD] = {warm_vaddr, 0xaaaaaaaaaaaaaaaaull, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
-        14, 15, 16};
+    const uint64_t g_init[CP_NSLOTS_PAD] = {warm_vaddr, 0xaaaaaaaaaaaaaaaaull, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+        15, 16};
     const auto run = [&](uint8_t *entry, const uint64_t g[CP_NSLOTS_PAD]) {
         std::memset(out_hit, 0xee, sizeof(out_hit));
         std::memset(out_bail, 0xdd, sizeof(out_bail));
@@ -164,6 +160,70 @@ int main()
         uint8_t *entry2 = emit_chain(cp_lwu_table[2][0]);
         run(entry2, g);
         check(out_hit[SLOT_POS[2]] == 0x80000001ull, "sw + lwu round trip");
+    }
+
+    // Exact FP stencils are guarded only by mstatus.FS. They use integer
+    // and soft-float bit semantics and never take the arithmetic fallback.
+    a.write_mstatus((a.read_mstatus() & ~MSTATUS_FS_MASK) | MSTATUS_FS_DIRTY);
+
+    // 6. Sign injection preserves payload bits and replaces only the sign.
+    {
+        uint64_t g[CP_NSLOTS_PAD];
+        std::memcpy(g, g_init, sizeof(g));
+        g[0] = float_box(UINT32_C(0x3f800001));
+        g[1] = float_box(UINT32_C(0xc0000002));
+        uint8_t *entry = emit_chain(cp_fp_fsgnj_s_table[0][1]);
+        run(entry, g);
+        check(out_hit[SLOT_POS[0]] == float_box(UINT32_C(0xbf800001)), "fsgnj.s exact bits");
+        check(out_bail[0] == 0xddddddddddddddddull, "fsgnj.s has no fallback");
+    }
+
+    // 7. Min handles signaling NaN and accumulates NV exactly.
+    {
+        uint64_t g[CP_NSLOTS_PAD];
+        std::memcpy(g, g_init, sizeof(g));
+        g[0] = float_box(UINT32_C(0x7f800001));
+        g[1] = float_box(UINT32_C(0x3f800000));
+        a.write_fcsr(0);
+        uint8_t *entry = emit_chain(cp_fp_min_s_table[0][1]);
+        run(entry, g);
+        check(out_hit[SLOT_POS[0]] == float_box(UINT32_C(0x3f800000)), "fmin.s signaling NaN result");
+        check((a.read_fcsr() & FFLAGS_NV_MASK) != 0, "fmin.s signaling NaN flag");
+    }
+
+    // 8. Comparisons write the integer roster destination and preserve the
+    // same NaN exception behavior as the portable implementation.
+    {
+        uint64_t g[CP_NSLOTS_PAD];
+        std::memcpy(g, g_init, sizeof(g));
+        g[0] = float_box(UINT64_C(0x3ff0000000000000));
+        g[1] = float_box(UINT64_C(0x4000000000000000));
+        a.write_fcsr(0);
+        uint8_t *entry = emit_chain(cp_fp_lt_d_table[0][1]);
+        run(entry, g);
+        check(out_hit[SLOT_POS[0]] == 1, "flt.d exact result");
+        check(a.read_fcsr() == 0, "flt.d exact flags");
+    }
+
+    // 9. Classification performs mandatory NaN unboxing: malformed single
+    // precision input is classified as the canonical quiet NaN.
+    {
+        uint64_t g[CP_NSLOTS_PAD];
+        std::memcpy(g, g_init, sizeof(g));
+        g[0] = UINT64_C(0x000000003f800000);
+        uint8_t *entry = emit_chain(cp_fp_class_s_table[0]);
+        run(entry, g);
+        check(out_hit[SLOT_POS[0]] == i_sfloat32::fclass(i_sfloat32::F_QNAN), "fclass.s malformed box");
+    }
+
+    // 10. FS-off fails before any exact operation and leaves every roster
+    // value untouched for portable exception handling.
+    {
+        a.write_mstatus(a.read_mstatus() & ~MSTATUS_FS_MASK);
+        uint8_t *entry = emit_chain(&cp_s_cp_fp_fs_guard);
+        run(entry, g_init);
+        check(out_bail[SLOT_POS[0]] == g_init[0], "FP FS-off guard preserves slots");
+        check(out_hit[0] == 0xeeeeeeeeeeeeeeeeull, "FP FS-off guard takes bail");
     }
 
     cp_heap_free(&heap);

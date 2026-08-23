@@ -48,6 +48,22 @@ typedef __attribute__((preserve_none)) void (*cp_entry_t)(uint64_t, uint64_t, ui
 
 static cp_heap_t heap;
 
+#if defined(__x86_64__)
+static int test_x86_fma_stencil_selection(void)
+{
+    if (cp_fp_fmadd_s_rne_table[0][0] != &cp_s_cp_fp_fmadd_s_rne_0_0) {
+        fprintf(stderr, "x86 FMA table does not start on the soft-only stencil\n");
+        return 1;
+    }
+    cp_enable_x86_fma_stencils();
+    if (cp_fp_fmadd_s_rne_table[0][0] != &cp_s_cp_fp_fmadd_s_rne_0_0_x86_fma) {
+        fprintf(stderr, "x86 FMA table entry was not substituted\n");
+        return 1;
+    }
+    return 0;
+}
+#endif
+
 static uint64_t rng_state = 0x243f6a8885a308d3ull;
 static uint64_t rng(void)
 {
@@ -301,6 +317,10 @@ int main(void)
     }
 
     int failures = 0;
+
+#if defined(__x86_64__)
+    failures += test_x86_fma_stencil_selection();
+#endif
 
     /* Fixed program covering every op kind and the elision path. */
     {

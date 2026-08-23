@@ -26,7 +26,6 @@ local hdr_path = assert(arg[1], "usage: cp-extract.lua <header> <manifest> <obj>
 local man_path = assert(arg[2])
 -- Guest cache slot count, from the build (must match the generator's).
 local NSLOTS = tonumber(os.getenv("CP_NSLOTS")) or 7
-local SLOT_MAX = tostring(NSLOTS - 1)
 if arg[3] == nil then
     io.stderr:write("cp-extract: no input objects\n")
     os.exit(1)
@@ -507,6 +506,7 @@ typedef struct {
     int32_t addend;
 } cp_patch_t;
 typedef struct {
+    uint32_t profile_id;
     const uint8_t *code;
     uint16_t size;
     uint16_t npatches;
@@ -525,7 +525,7 @@ local KIND_ENUM = {
     JMPREL32 = "CP_P_JMPREL32",
 }
 
-for _, st in ipairs(stencils) do
+for profile_id, st in ipairs(stencils) do
     local bytes = {}
     for k = 1, #st.code do
         bytes[k] = string.format("%d", st.code:byte(k))
@@ -538,8 +538,16 @@ for _, st in ipairs(stencils) do
         end
         hdr:write(("static const cp_patch_t cp_patches_%s[] = {%s};\n"):format(st.name, table.concat(recs, ",")))
     end
-    hdr:write(("static const cp_stencil_t cp_s_%s = {cp_code_%s, %d, %d, %s};\n"):format(st.name, st.name, #st.code,
-        #st.patches, #st.patches > 0 and ("cp_patches_" .. st.name) or "0"))
+    hdr:write(
+        ("static const cp_stencil_t cp_s_%s = {%d, cp_code_%s, %d, %d, %s};\n"):format(
+            st.name,
+            profile_id,
+            st.name,
+            #st.code,
+            #st.patches,
+            #st.patches > 0 and ("cp_patches_" .. st.name) or "0"
+        )
+    )
     local pdesc = {}
     for _, p in ipairs(st.patches) do
         pdesc[#pdesc + 1] = ("%s@%d#%d%s"):format(p.kind, p.offset, p.ordinal,
@@ -547,6 +555,12 @@ for _, st in ipairs(stencils) do
     end
     man:write(("%s size %d patches [%s]\n"):format(st.name, #st.code, table.concat(pdesc, " ")))
 end
+
+hdr:write("static const char *const cp_stencil_profile_names[] = {0")
+for _, st in ipairs(stencils) do
+    hdr:write((',"%s"'):format(st.name))
+end
+hdr:write("};\n")
 
 -- Placement lookup tables, discovered from stencil names: cp_<f>_d_s1_s2
 -- families get [8][8][8] tables, cp_<f>_d_s [8][8], cp_<f>_d [8].
@@ -591,6 +605,22 @@ local function need(n)
     end
     return "&cp_s_" .. n
 end
+-- x86 FMA alternatives deliberately do not form another placement table.
+-- The generated enable function substitutes only the affected entries in
+-- the ordinary soft-only tables after the runtime CPU test succeeds.
+local x86_fma_overrides = {}
+local mutable_fams = {}
+for _, st in ipairs(stencils) do
+    local base, d, s = st.name:match("^(cp_.+_([0-9]+)_([0-9]+))_x86_fma$")
+    if base then
+        if not by_name[base] then
+            die("x86 FMA override has no baseline stencil: %s", st.name)
+        end
+        local fam = base:match("^cp_(.-)_[0-9]+_[0-9]+$")
+        mutable_fams[fam] = true
+        x86_fma_overrides[#x86_fma_overrides + 1] = { alt = st.name, fam = fam, d = d, s = s }
+    end
+end
 for _, fam in ipairs(sorted_keys(fams[3])) do
     hdr:write(("static const cp_stencil_t *const cp_%s_table[%d][%d][%d] = {\n"):format(fam, NSLOTS, NSLOTS, NSLOTS))
     for d = 0, NSLOTS - 1 do
@@ -610,7 +640,8 @@ end
 for _, fam in ipairs(sorted_keys(fams[2])) do
     local amax, bmax = fams[2][fam].amax, fams[2][fam].bmax
     local bmin = fam == "gxl" or fam == "gxs"
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[%d][%d] = {\n"):format(fam, amax + 1,
+    local pointer_const = mutable_fams[fam] and "" or "const "
+    hdr:write(("static const cp_stencil_t *%scp_%s_table[%d][%d] = {\n"):format(pointer_const, fam, amax + 1,
         bmax + 1 - (bmin and 1 or 0)))
     for a = 0, amax do
         local row = {}
@@ -629,6 +660,13 @@ for _, fam in ipairs(sorted_keys(fams[1])) do
     hdr:write(("static const cp_stencil_t *const cp_%s_table[%d] = {%s};\n"):format(fam, NSLOTS,
         table.concat(row, ",")))
 end
+
+hdr:write("static inline void cp_enable_x86_fma_stencils(void) {\n")
+for _, override in ipairs(x86_fma_overrides) do
+    hdr:write(("cp_%s_table[%s][%s] = &cp_s_%s;\n"):format(
+        override.fam, override.d, override.s, override.alt))
+end
+hdr:write("}\n")
 
 hdr:write("\n#endif\n")
 hdr:close()

@@ -76,8 +76,8 @@ static NO_INLINE execute_status cp_enter_call(const STATE_ACCESS a, uint32_t ins
     i_state_access_fast_addr_t<STATE_ACCESS> pc, uint64_t cd, i_state_access_fast_addr_t<STATE_ACCESS> fetch,
     tc_context<STATE_ACCESS> *tcc, const void *fn) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return reinterpret_cast<cp_stencil_fn<STATE_ACCESS> *>(const_cast<void *>(fn))(a, insn, 0, pc, cd, fetch, 0, tcc,
-        0, 0, 0, 0);
+    return reinterpret_cast<cp_stencil_fn<STATE_ACCESS> *>(
+        const_cast<void *>(fn))(a, insn, 0, pc, cd, fetch, 0, tcc, 0, 0, 0, 0);
 }
 #endif
 
@@ -285,11 +285,12 @@ static void cp_free(void *p) {
         }
         std::fprintf(stderr,
             "cp: tick-bails %llu ctx-bails %llu page-bails %llu vh-bails %llu lookup-misses %llu "
-            "branch-bails %llu mem-bails %llu terminal-exits %llu\n",
+            "branch-bails %llu mem-bails %llu fp-soft %llu terminal-exits %llu\n",
             static_cast<unsigned long long>(c->tick_bails), static_cast<unsigned long long>(c->ctx_bails),
             static_cast<unsigned long long>(c->page_bails), static_cast<unsigned long long>(c->vh_bails),
             static_cast<unsigned long long>(c->lookup_misses), static_cast<unsigned long long>(c->branch_bails),
-            static_cast<unsigned long long>(c->mem_bails), static_cast<unsigned long long>(c->terminal_exits));
+            static_cast<unsigned long long>(c->mem_bails), static_cast<unsigned long long>(c->fp_soft_calls),
+            static_cast<unsigned long long>(c->terminal_exits));
     }
     cp_heap_free(&c->heap);
     delete c;
@@ -301,6 +302,16 @@ template <typename STATE_ACCESS>
 TC_CALLCONV static execute_status cp_continue_cold(STATE_ACCESS a, uint32_t insn TC_HOT_PARAMS);
 
 static cp_state *cp_get(penumbra_state &penumbra, const void *continue_fn, const void *continue_cold_fn) {
+#if defined(__x86_64__)
+    static const bool fma_stencils_initialized = [] {
+        __builtin_cpu_init();
+        if (__builtin_cpu_supports("fma")) {
+            cp_enable_x86_fma_stencils();
+        }
+        return true;
+    }();
+    (void) fma_stencils_initialized;
+#endif
     if (penumbra.tc_state == nullptr) {
         auto *c = new cp_state{};
         if (cp_heap_init(&c->heap, 64u << 20) != 0) {
@@ -350,6 +361,11 @@ static bool cp_log_enabled() {
     return enabled;
 }
 
+static bool cp_fp_enabled() {
+    static const bool enabled = std::getenv("CP_FP_DISABLE") == nullptr;
+    return enabled;
+}
+
 // ---------------------------------------------------------------------------
 // Formation: the emitter-facing former the selection include drives.
 
@@ -376,6 +392,7 @@ struct cp_former {
     // guard owning a bails[] entry whose site the replay re-records.
     int8_t log_next_load = -1;
     int16_t log_next_bail = -1;
+    int16_t log_next_resume_bail = -1;
     uint8_t *emit1(const cp_stencil_t *st, uint64_t imm0 = 0, uint64_t imm1 = 0, uint8_t *bail = nullptr) {
         const uint64_t imm[2] = {imm0, imm1};
         uint8_t *cont[2] = {nullptr, bail};
@@ -389,11 +406,13 @@ struct cp_former {
             r.imm0 = imm0;
             r.imm1 = imm1;
             r.bail_index = log_next_bail;
+            r.resume_bail_index = log_next_resume_bail;
             r.load_slot = log_next_load;
         } else {
             c->rec_carry_ok = false;
         }
         log_next_bail = -1;
+        log_next_resume_bail = -1;
         log_next_load = -1;
         return at;
     }
@@ -526,6 +545,29 @@ struct cp_former {
         touch(slot);
         return slot;
     }
+    int alloc_fixed_scratch(int slot) {
+        if ((locked & (1u << static_cast<uint32_t>(slot))) != 0) {
+            c->rec_failed = true;
+            return -1;
+        }
+        if (slot >= static_cast<int>(c->nslots_used)) {
+            c->nslots_used = static_cast<uint8_t>(slot + 1);
+        }
+        const uint8_t old = c->slot_guest[slot];
+        if (old != 0xff) {
+            if ((c->reg_dirty & (1u << static_cast<uint32_t>(slot))) != 0 && old != 0) {
+                emit1(cp_gxs_table[slot][old - 1]);
+                c->reg_dirty &= ~(1u << static_cast<uint32_t>(slot));
+            }
+            c->reg_slot[old] = -1;
+            ++c->evictions;
+            carry_blocked("fixed-scratch-on-guest", slot);
+        }
+        c->rec_scratch_slots |= 1u << static_cast<uint32_t>(slot);
+        c->slot_guest[slot] = 0xff;
+        touch(slot);
+        return slot;
+    }
     void free_scratch(int slot) {
         if (slot >= 0 && c->slot_guest[slot] == 0xff) {
             c->rec_last_used[slot] = 0; // preferred victim
@@ -546,7 +588,8 @@ struct cp_former {
         emit1(tab[d][s1][s2]);
     }
 
-    void reg2i(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1, uint64_t imm) {
+    void reg2i(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1,
+        uint64_t imm) {
         const int s1 = alloc_src(rs1);
         const int t = alloc_scratch();
         if (c->rec_failed) {
@@ -657,9 +700,224 @@ struct cp_former {
             b.dirty = bail_dirty;
             std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
             b.is_branch = false;
+            b.is_fp = false;
+            b.is_cold = false;
             return;
         }
         c->rec_failed = true; // stencil without a bail continuation
+    }
+
+    // Guarded binary FP arithmetic. Operands and the result use transient
+    // roster slots, so the integer register cache remains independent. A
+    // hard-guard miss is deferred to a soft_only helper block that rejoins
+    // after the hard-result store; architectural failures leave from there
+    // for portable re-execution with this instruction still pending.
+    void fp_binary(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS], uint32_t insn) {
+        if (c->nbails >= cp_state::max_bails) {
+            c->rec_failed = true;
+            return;
+        }
+        const int d = alloc_scratch();
+        const int s = alloc_scratch();
+        if (c->rec_failed) {
+            return;
+        }
+        const uint32_t rd = insn_get_rd(insn);
+        const uint32_t rs1 = insn_get_rs1(insn);
+        const uint32_t rs2 = insn_get_rs2(insn);
+        emit1(cp_fxl_table[d][rs1]);
+        emit1(cp_fxl_table[s][rs2]);
+
+        const uint32_t bail_index = c->nbails;
+        log_next_bail = static_cast<int16_t>(bail_index);
+        uint8_t *at = emit1(tab[d][s], 0, 0, reinterpret_cast<uint8_t *>(this));
+        if (at == nullptr) {
+            return;
+        }
+        const cp_patch_t *const p = cp_bail_patch(tab[d][s]);
+        if (p == nullptr) {
+            c->rec_failed = true;
+            return;
+        }
+        cp_bail &b = c->bails[c->nbails++];
+        b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
+        b.guard_kind = p->kind;
+        b.guard_addend = p->addend;
+        b.delta = static_cast<int64_t>(pc - c->rec_head);
+        b.pending = c->rec_len;
+        b.dirty = c->reg_dirty;
+        std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
+        b.is_branch = false;
+        b.is_fp = true;
+        b.is_cold = false;
+        b.fp_insn = insn;
+
+        log_next_resume_bail = static_cast<int16_t>(bail_index);
+        emit1(cp_fxs_table[d][rd]);
+        b.fp_resume = static_cast<uint32_t>(c->heap.curr);
+        free_scratch(s);
+        free_scratch(d);
+    }
+
+    void fp_unary(const cp_stencil_t *const (&tab)[CP_NSLOTS], uint32_t insn) {
+        if (c->nbails >= cp_state::max_bails) {
+            c->rec_failed = true;
+            return;
+        }
+        const int d = alloc_scratch();
+        if (c->rec_failed) {
+            return;
+        }
+        const uint32_t rd = insn_get_rd(insn);
+        emit1(cp_fxl_table[d][insn_get_rs1(insn)]);
+
+        const uint32_t bail_index = c->nbails;
+        log_next_bail = static_cast<int16_t>(bail_index);
+        uint8_t *at = emit1(tab[d], 0, 0, reinterpret_cast<uint8_t *>(this));
+        if (at == nullptr) {
+            return;
+        }
+        const cp_patch_t *const p = cp_bail_patch(tab[d]);
+        if (p == nullptr) {
+            c->rec_failed = true;
+            return;
+        }
+        cp_bail &b = c->bails[c->nbails++];
+        b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
+        b.guard_kind = p->kind;
+        b.guard_addend = p->addend;
+        b.delta = static_cast<int64_t>(pc - c->rec_head);
+        b.pending = c->rec_len;
+        b.dirty = c->reg_dirty;
+        std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
+        b.is_branch = false;
+        b.is_fp = true;
+        b.is_cold = false;
+        b.fp_insn = insn;
+
+        log_next_resume_bail = static_cast<int16_t>(bail_index);
+        emit1(cp_fxs_table[d][rd]);
+        b.fp_resume = static_cast<uint32_t>(c->heap.curr);
+        free_scratch(d);
+    }
+
+    void fp_soft(uint32_t insn) {
+        emit_guarded(&cp_s_cp_fp_always_soft, c->reg_dirty);
+        if (c->rec_failed) {
+            return;
+        }
+        cp_bail &b = c->bails[c->nbails - 1];
+        b.is_fp = true;
+        b.fp_insn = insn;
+        b.fp_resume = static_cast<uint32_t>(c->heap.curr);
+    }
+
+    template <typename TABLE>
+    void fp_ternary(const TABLE &tab, uint32_t insn) {
+        if (c->nbails >= cp_state::max_bails) {
+            c->rec_failed = true;
+            return;
+        }
+        // Pin the third operand to the last roster slot. This reduces each
+        // fused family from a cubic placement matrix to a quadratic one.
+        const int s3 = alloc_fixed_scratch(CP_NSLOTS - 1);
+        const int d = alloc_scratch();
+        const int s2 = alloc_scratch();
+        if (c->rec_failed) {
+            return;
+        }
+        const uint32_t rd = insn_get_rd(insn);
+        emit1(cp_fxl_table[d][insn_get_rs1(insn)]);
+        emit1(cp_fxl_table[s2][insn_get_rs2(insn)]);
+        emit1(cp_fxl_table[s3][insn_get_rs3(insn)]);
+
+        const uint32_t bail_index = c->nbails;
+        log_next_bail = static_cast<int16_t>(bail_index);
+        uint8_t *at = emit1(tab[d][s2], 0, 0, reinterpret_cast<uint8_t *>(this));
+        if (at == nullptr) {
+            return;
+        }
+        const cp_patch_t *const p = cp_bail_patch(tab[d][s2]);
+        if (p == nullptr) {
+            c->rec_failed = true;
+            return;
+        }
+        cp_bail &b = c->bails[c->nbails++];
+        b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
+        b.guard_kind = p->kind;
+        b.guard_addend = p->addend;
+        b.delta = static_cast<int64_t>(pc - c->rec_head);
+        b.pending = c->rec_len;
+        b.dirty = c->reg_dirty;
+        std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
+        b.is_branch = false;
+        b.is_fp = true;
+        b.is_cold = false;
+        b.fp_insn = insn;
+
+        log_next_resume_bail = static_cast<int16_t>(bail_index);
+        emit1(cp_fxs_table[d][rd]);
+        b.fp_resume = static_cast<uint32_t>(c->heap.curr);
+        free_scratch(s3);
+        free_scratch(s2);
+        free_scratch(d);
+    }
+
+    // Exact FP families need only the architectural FS check. Once it
+    // succeeds their integer/soft-float stencil has no hard-FPU guard and
+    // therefore no soft-only fallback. FS-off leaves cold so the portable
+    // interpreter raises the architectural exception.
+    void fp_exact_guard() {
+        emit_guarded(&cp_s_cp_fp_fs_guard, c->reg_dirty);
+        if (!c->rec_failed) {
+            c->bails[c->nbails - 1].is_cold = true;
+        }
+    }
+
+    void fp_exact_binary(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS], uint32_t insn) {
+        const int d = alloc_scratch();
+        const int s = alloc_scratch();
+        if (c->rec_failed) {
+            return;
+        }
+        fp_exact_guard();
+        emit1(cp_fxl_table[d][insn_get_rs1(insn)]);
+        emit1(cp_fxl_table[s][insn_get_rs2(insn)]);
+        emit1(tab[d][s]);
+        emit1(cp_fxs_table[d][insn_get_rd(insn)]);
+        free_scratch(s);
+        free_scratch(d);
+    }
+
+    void fp_exact_cmp(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS], uint32_t insn) {
+        const uint8_t rd = insn_get_rd(insn);
+        const int d = rd == 0 ? alloc_scratch() : alloc_dst(rd);
+        const int s = alloc_scratch();
+        if (c->rec_failed) {
+            return;
+        }
+        fp_exact_guard();
+        emit1(cp_fxl_table[d][insn_get_rs1(insn)]);
+        emit1(cp_fxl_table[s][insn_get_rs2(insn)]);
+        emit1(tab[d][s]);
+        free_scratch(s);
+        if (rd == 0) {
+            free_scratch(d);
+        }
+    }
+
+    void fp_exact_unary_x(const cp_stencil_t *const (&tab)[CP_NSLOTS], uint32_t insn) {
+        const uint8_t rd = insn_get_rd(insn);
+        const int d = rd == 0 ? alloc_scratch() : alloc_dst(rd);
+        if (c->rec_failed) {
+            return;
+        }
+        fp_exact_guard();
+        emit1(cp_fxl_table[d][insn_get_rs1(insn)]);
+        emit1(tab[d]);
+        if (rd == 0) {
+            free_scratch(d);
+        }
     }
 
     // CSR (the hot FP CSRs): guarded like loads, a bail meaning the
@@ -713,14 +971,17 @@ struct cp_former {
             b.dirty = c->reg_dirty;
             std::memcpy(b.slot_guest, c->slot_guest, sizeof(b.slot_guest));
             b.is_branch = true;
+            b.is_fp = false;
+            b.is_cold = false;
             return;
         }
         c->rec_failed = true;
     }
 
     // Branches lag one record call: the direction is the next pc.
-    void branch(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS], const cp_stencil_t *const (&comp)[CP_NSLOTS][CP_NSLOTS], uint8_t rs1,
-        uint8_t rs2, uint64_t taken_target, uint8_t size) {
+    void branch(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS],
+        const cp_stencil_t *const (&comp)[CP_NSLOTS][CP_NSLOTS], uint8_t rs1, uint8_t rs2, uint64_t taken_target,
+        uint8_t size) {
         c->have_pending_branch = true;
         c->pb_vaddr = pc;
         c->pb_taken_target = taken_target;
@@ -1025,6 +1286,9 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
                 b.guard_kind = p->kind;
                 b.guard_addend = p->addend;
             }
+            if (r.resume_bail_index >= 0) {
+                c->bails[r.resume_bail_index].fp_resume = static_cast<uint32_t>(c->heap.curr);
+            }
         }
         // Back edge: charge the iteration, re-check the tick.
         const uint64_t imm_be[2] = {0, c->rec_len};
@@ -1073,14 +1337,27 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
     for (uint32_t i = 0; i < c->nbails && !c->rec_failed; ++i) {
         const cp_bail &b = c->bails[i];
         uint8_t *block = c->heap.base + c->heap.curr;
-        if (b.pending == 0) {
+        if (b.is_fp) {
+            const uint64_t imm[4] = {reinterpret_cast<uint64_t>(&cp_fp_helper_soft), b.fp_insn, 0, 0};
+            uint8_t *cont[2] = {c->heap.base + b.fp_resume, c->heap.base}; // failure target patched below
+            uint8_t *call = cp_emit(&c->heap, &cp_s_cp_fp_soft, imm, cont);
+            if (call == nullptr) {
+                c->rec_failed = true;
+                break;
+            }
+            uint8_t *failure =
+                cp_emit_exit(c, b.dirty, b.slot_guest, b.delta, b.pending, nullptr, nullptr, c->continue_cold_island);
+            const cp_patch_t *failure_patch = cp_bail_patch(&cp_s_cp_fp_soft);
+            cp_patch_branch(call + failure_patch->offset, failure_patch->kind, failure_patch->addend, failure);
+        } else if (b.is_cold) {
+            cp_emit_exit(c, b.dirty, b.slot_guest, b.delta, b.pending, nullptr, nullptr, c->continue_cold_island);
+        } else if (b.pending == 0) {
             // A bail that retired nothing must not chain or re-enter: only
             // the interpreter's slow path (the fill) makes progress.
             cp_emit_exit(c, b.dirty, b.slot_guest, b.delta, b.pending, nullptr, nullptr, c->mem_bail_cold_island);
         } else {
             cp_emit_probe_exit(c, b.dirty, b.slot_guest, b.delta, b.pending,
-                c->rec_head + static_cast<uint64_t>(b.delta),
-                b.is_branch ? c->branch_bail_island : c->mem_bail_island);
+                c->rec_head + static_cast<uint64_t>(b.delta), b.is_branch ? c->branch_bail_island : c->mem_bail_island);
         }
         cp_patch_branch(c->heap.base + b.guard_site, b.guard_kind, b.guard_addend, block);
     }
@@ -1278,7 +1555,8 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     penumbra_state &penumbra = a.get_penumbra();
     auto *const pstate =
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        reinterpret_cast<processor_state *>(reinterpret_cast<unsigned char *>(&penumbra) - offsetof(processor_state, penumbra));
+        reinterpret_cast<processor_state *>(
+            reinterpret_cast<unsigned char *>(&penumbra) - offsetof(processor_state, penumbra));
     c->rec_call_start = c->heap.base + c->heap.curr;
     const uint64_t imm_probe[4] = {reinterpret_cast<uint64_t>(&penumbra.tlb[TLB_CODE][0]), tlb_addr_page(vpc),
         c->rec_code_vf_offset, reinterpret_cast<uint64_t>(&penumbra.tlb_ctx_slot_base)};
@@ -1292,8 +1570,7 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     // Entry: tick guard whose pending hole is re-patched at finish, bailing
     // to the island (countdown too low to run any of the body).
     const uint64_t imm[2] = {0, 0};
-    uint8_t *cont[2] = {nullptr,
-        const_cast<uint8_t *>(static_cast<const uint8_t *>(c->tick_island))};
+    uint8_t *cont[2] = {nullptr, const_cast<uint8_t *>(static_cast<const uint8_t *>(c->tick_island))};
     c->rec_tick_site = cp_emit(&c->heap, &cp_s_cp_tick_guard, imm, cont);
     c->rec_start = c->rec_tick_site;
     if (cp_log_enabled()) [[unlikely]] {
@@ -1443,8 +1720,8 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
         c->rec_failed = false;
         ++c->fin_uncompilable;
         if (cp_log_enabled()) [[unlikely]] {
-            std::fprintf(stderr, "cp-uncomp vpc=%llx insn=%08x label=%u\n", static_cast<unsigned long long>(vpc),
-                insn, static_cast<unsigned>(label));
+            std::fprintf(stderr, "cp-uncomp vpc=%llx insn=%08x label=%u\n", static_cast<unsigned long long>(vpc), insn,
+                static_cast<unsigned>(label));
         }
         cp_finish(tcc, false);
         return;
@@ -1504,8 +1781,7 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
                     ++const_cast<cp_trace *>(t)->exec_count;
                     if (cp_log_enabled()) [[unlikely]] {
                         std::fprintf(stderr, "cp-enter mcycle=%llu vpc=%llx len=%u\n",
-                            static_cast<unsigned long long>(tcc->mcycle), static_cast<unsigned long long>(vpc),
-                            t->len);
+                            static_cast<unsigned long long>(tcc->mcycle), static_cast<unsigned long long>(vpc), t->len);
                     }
                     return t->fn;
                 }
@@ -1519,4 +1795,3 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
     }
     return nullptr;
 }
-

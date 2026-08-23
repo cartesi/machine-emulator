@@ -90,6 +90,21 @@ emit("CP_HOLE extern char cp_imm64_2[65536];")
 emit("CP_HOLE extern char cp_imm64_3[65536];")
 emit("")
 
+-- Calls one FP fallback helper without losing the positional roster. The
+-- helper address and instruction word are patched per site; success rejoins
+-- the generated trace and failure leaves for portable re-execution.
+emit("typedef u64 (*cp_fp_helper_t)(u64, u32);")
+emit(("CONT void cp_fp_soft(%s)"):format(params))
+emit("{")
+emit("    cp_fp_helper_t helper = (cp_fp_helper_t)(CP_VAL(cp_imm64_0) + CP_VAL(cp_imm64_2));")
+emit("    u64 status = helper(sa, (u32)CP_VAL(cp_imm64_1));")
+emit("    if (status != 0) {")
+emit("        TAIL return cp_cont_1(" .. args .. ");")
+emit("    }")
+emit("    TAIL return cp_cont_0(" .. args .. ");")
+emit("}")
+emit("")
+
 local function fn(name, body)
     emit(("CONT void %s(%s)"):format(name, params))
     emit("{")
@@ -576,6 +591,344 @@ gem(("extern \"C\" CONT void cp_cont_0(%s);"):format(params))
 gem(("extern \"C\" CONT void cp_cont_1(%s);"):format(params))
 gem("")
 
+local function sem_sorted(t)
+    local names = {}
+    for name in pairs(t) do
+        names[#names + 1] = name
+    end
+    table.sort(names)
+    return names
+end
+
+-- Raw floating-register transfers. FP values use transient roster slots;
+-- unlike the integer cache they are written back within the instruction.
+for slot = 0, NSLOTS - 1 do
+    for reg = 0, 31 do
+        gem(("extern \"C\" CONT void cp_fxl_%d_%d(%s)"):format(slot, reg, params))
+        gem("{")
+        gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+        gem(("    r%d = acc.read_f(%d);"):format(slot, reg))
+        gem("    TAIL return cp_cont_0(" .. args .. ");")
+        gem("}")
+        gem("")
+        gem(("extern \"C\" CONT void cp_fxs_%d_%d(%s)"):format(slot, reg, params))
+        gem("{")
+        gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+        gem(("    acc.write_f(%d, r%d);"):format(reg, slot))
+        gem("    TAIL return cp_cont_0(" .. args .. ");")
+        gem("}")
+        gem("")
+    end
+end
+
+-- Exact FP operations share one architectural guard. Their operation
+-- stencils use only integer/soft-float bit semantics: there is no host-FPU
+-- attempt and no soft-only fallback continuation.
+gem(("extern \"C\" CONT void cp_fp_fs_guard(%s)"):format(params))
+gem("{")
+gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+gem("    if ((acc.read_mstatus() & cartesi::MSTATUS_FS_MASK) == cartesi::MSTATUS_FS_OFF) {")
+gem("        TAIL return cp_cont_1(" .. args .. ");")
+gem("    }")
+gem("    TAIL return cp_cont_0(" .. args .. ");")
+gem("}")
+gem("")
+
+gem(("extern \"C\" CONT void cp_fp_always_soft(%s)"):format(params))
+gem("{")
+gem("    TAIL return cp_cont_1(" .. args .. ");")
+gem("}")
+gem("")
+
+local FP_EXACT_BINARY = {
+    fsgnj = "(a & ~SIGN) | (b & SIGN)",
+    fsgnjn = "(a & ~SIGN) | ((b & SIGN) ^ SIGN)",
+    fsgnjx = "a ^ (b & SIGN)",
+}
+for _, width in ipairs({ "s", "d" }) do
+    local uint = width == "s" and "uint32_t" or "uint64_t"
+    local iface = width == "s" and "i_sfloat32" or "i_sfloat64"
+    local boxed = width == "s" and "cartesi::float_box(result)" or "result"
+    for _, opname in ipairs(sem_sorted(FP_EXACT_BINARY)) do
+        for d = 0, NSLOTS - 1 do
+            for s = 0, NSLOTS - 1 do
+                gem(("extern \"C\" CONT void cp_fp_%s_%s_%d_%d(%s)"):format(opname, width, d, s, params))
+                gem("{")
+                gem(("    constexpr %s SIGN = cartesi::%s::SIGN_MASK;"):format(uint, iface))
+                gem(("    const %s a = cartesi::float_unbox<%s>(r%d);"):format(uint, uint, d))
+                gem(("    const %s b = cartesi::float_unbox<%s>(r%d);"):format(uint, uint, s))
+                gem(("    const %s result = %s;"):format(uint, FP_EXACT_BINARY[opname]))
+                gem(("    r%d = %s;"):format(d, boxed))
+                gem("    TAIL return cp_cont_0(" .. args .. ");")
+                gem("}")
+                gem("")
+            end
+        end
+    end
+    for _, opname in ipairs({ "min", "max" }) do
+        for d = 0, NSLOTS - 1 do
+            for s = 0, NSLOTS - 1 do
+                gem(("extern \"C\" CONT void cp_fp_%s_%s_%d_%d(%s)"):format(opname, width, d, s, params))
+                gem("{")
+                gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+                gem("    const uint64_t fcsr = acc.read_fcsr();")
+                gem("    uint32_t fflags = cartesi::fcsr_fflags(fcsr);")
+                gem(("    const %s a = cartesi::float_unbox<%s>(r%d);"):format(uint, uint, d))
+                gem(("    const %s b = cartesi::float_unbox<%s>(r%d);"):format(uint, uint, s))
+                gem(("    const %s result = cartesi::%s::%s_exact(a, b, &fflags);"):format(uint, iface, opname))
+                gem(("    r%d = %s;"):format(d, boxed))
+                gem("    acc.write_fcsr((fcsr & ~cartesi::FCSR_FFLAGS_RW_MASK) | fflags);")
+                gem("    TAIL return cp_cont_0(" .. args .. ");")
+                gem("}")
+                gem("")
+            end
+        end
+    end
+    for _, opname in ipairs({ "eq", "le", "lt" }) do
+        for d = 0, NSLOTS - 1 do
+            for s = 0, NSLOTS - 1 do
+                gem(("extern \"C\" CONT void cp_fp_%s_%s_%d_%d(%s)"):format(opname, width, d, s, params))
+                gem("{")
+                gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+                gem("    const uint64_t fcsr = acc.read_fcsr();")
+                gem("    uint32_t fflags = cartesi::fcsr_fflags(fcsr);")
+                gem(("    const %s a = cartesi::float_unbox<%s>(r%d);"):format(uint, uint, d))
+                gem(("    const %s b = cartesi::float_unbox<%s>(r%d);"):format(uint, uint, s))
+                gem(("    r%d = cartesi::%s::%s_exact(a, b, &fflags);"):format(d, iface, opname))
+                gem("    acc.write_fcsr((fcsr & ~cartesi::FCSR_FFLAGS_RW_MASK) | fflags);")
+                gem("    TAIL return cp_cont_0(" .. args .. ");")
+                gem("}")
+                gem("")
+            end
+        end
+    end
+    for d = 0, NSLOTS - 1 do
+        gem(("extern \"C\" CONT void cp_fp_class_%s_%d(%s)"):format(width, d, params))
+        gem("{")
+        gem(("    r%d = cartesi::%s::fclass_exact(cartesi::float_unbox<%s>(r%d));"):format(d, iface, uint, d))
+        gem("    TAIL return cp_cont_0(" .. args .. ");")
+        gem("}")
+        gem("")
+    end
+end
+
+-- Guarded host-FPU binary arithmetic. The hard-float proof is reused
+-- directly: RNE (static or dynamically resolved), sticky NX, boxed singles,
+-- zero-or-normal operands, and a strictly-normal result. A miss touches no
+-- guest state and takes continuation 1 to the soft-only instruction body.
+local FP_BIN_OPS = {
+    add = "+",
+    sub = "-",
+    mul = "*",
+    div = "/",
+}
+for _, width in ipairs({ "s", "d" }) do
+    local uint = width == "s" and "uint32_t" or "uint64_t"
+    local host = width == "s" and "float" or "double"
+    local iface = width == "s" and "i_float32" or "i_float64"
+    local boxed_mask = width == "s" and "UINT64_C(0xffffffff00000000)" or "UINT64_C(0)"
+    for _, dynamic in ipairs({ false, true }) do
+        local mode = dynamic and "dyn" or "rne"
+        for _, opname in ipairs(sem_sorted(FP_BIN_OPS)) do
+            local op = FP_BIN_OPS[opname]
+            for d = 0, NSLOTS - 1 do
+                for s = 0, NSLOTS - 1 do
+                    gem(("extern \"C\" CONT void cp_fp_%s_%s_%s_%d_%d(%s)"):format(opname, width, mode, d, s, params))
+                    gem("{")
+                    gem("#ifdef HARD_FLOAT")
+                    gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+                    gem("    const uint64_t fcsr = acc.read_fcsr();")
+                    gem("    if ((acc.read_mstatus() & cartesi::MSTATUS_FS_MASK) == cartesi::MSTATUS_FS_OFF) {")
+                    gem("        TAIL return cp_cont_1(" .. args .. ");")
+                    gem("    }")
+                    if dynamic then
+                        gem("    if (((fcsr >> cartesi::FCSR_FRM_SHIFT) & 7) != cartesi::FRM_RNE) {")
+                        gem("        TAIL return cp_cont_1(" .. args .. ");")
+                        gem("    }")
+                    end
+                    if width == "s" then
+                        gem(("    if ((r%d & %s) != %s || (r%d & %s) != %s) {"):format(d, boxed_mask, boxed_mask,
+                            s, boxed_mask, boxed_mask))
+                        gem("        TAIL return cp_cont_1(" .. args .. ");")
+                        gem("    }")
+                    end
+                    gem(("    const %s a = static_cast<%s>(r%d);"):format(uint, uint, d))
+                    gem(("    const %s b = static_cast<%s>(r%d);"):format(uint, uint, s))
+                    gem(("    if (acc.get_penumbra().hard_float_enabled == 0 ||"):format())
+                    gem("        (cartesi::fcsr_fflags(fcsr) & cartesi::FFLAGS_NX_MASK) == 0 ||")
+                    gem(("        !cartesi::%s::is_zero_or_normal(a) || !cartesi::%s::is_zero_or_normal(b)) {"):format(
+                        iface, iface))
+                    gem("        TAIL return cp_cont_1(" .. args .. ");")
+                    gem("    }")
+                    gem(
+                        ("    const %s result = std::bit_cast<%s>(" ..
+                            "std::bit_cast<%s>(a) %s std::bit_cast<%s>(b));"):format(uint, uint, host, op, host))
+                    gem(("    if (!cartesi::%s::is_safe_result(result)) {"):format(iface))
+                    gem("        TAIL return cp_cont_1(" .. args .. ");")
+                    gem("    }")
+                    if width == "s" then
+                        gem(("    r%d = static_cast<uint64_t>(result) | %s;"):format(d, boxed_mask))
+                    else
+                        gem(("    r%d = result;"):format(d))
+                    end
+                    gem("    TAIL return cp_cont_0(" .. args .. ");")
+                    gem("#else")
+                    gem("    TAIL return cp_cont_1(" .. args .. ");")
+                    gem("#endif")
+                    gem("}")
+                    gem("")
+                end
+            end
+        end
+    end
+end
+
+-- Guarded host-FPU square root, with the same proof and continuation
+-- contract as binary arithmetic.
+for _, width in ipairs({ "s", "d" }) do
+    local uint = width == "s" and "uint32_t" or "uint64_t"
+    local host = width == "s" and "float" or "double"
+    local iface = width == "s" and "i_float32" or "i_float64"
+    local builtin = width == "s" and "__builtin_sqrtf" or "__builtin_sqrt"
+    local boxed_mask = width == "s" and "UINT64_C(0xffffffff00000000)" or "UINT64_C(0)"
+    for _, dynamic in ipairs({ false, true }) do
+        local mode = dynamic and "dyn" or "rne"
+        for d = 0, NSLOTS - 1 do
+            gem(("extern \"C\" CONT void cp_fp_sqrt_%s_%s_%d(%s)"):format(width, mode, d, params))
+            gem("{")
+            gem("#ifdef HARD_FLOAT")
+            gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+            gem("    const uint64_t fcsr = acc.read_fcsr();")
+            gem("    if ((acc.read_mstatus() & cartesi::MSTATUS_FS_MASK) == cartesi::MSTATUS_FS_OFF) {")
+            gem("        TAIL return cp_cont_1(" .. args .. ");")
+            gem("    }")
+            if dynamic then
+                gem("    if (((fcsr >> cartesi::FCSR_FRM_SHIFT) & 7) != cartesi::FRM_RNE) {")
+                gem("        TAIL return cp_cont_1(" .. args .. ");")
+                gem("    }")
+            end
+            if width == "s" then
+                gem(("    if ((r%d & %s) != %s) {"):format(d, boxed_mask, boxed_mask))
+                gem("        TAIL return cp_cont_1(" .. args .. ");")
+                gem("    }")
+            end
+            gem(("    const %s a = static_cast<%s>(r%d);"):format(uint, uint, d))
+            gem("    if (acc.get_penumbra().hard_float_enabled == 0 ||")
+            gem("        (cartesi::fcsr_fflags(fcsr) & cartesi::FFLAGS_NX_MASK) == 0 ||")
+            gem(("        !cartesi::%s::is_zero_or_normal(a)) {"):format(iface))
+            gem("        TAIL return cp_cont_1(" .. args .. ");")
+            gem("    }")
+            gem(("    const %s result = std::bit_cast<%s>(%s(std::bit_cast<%s>(a)));"):format(
+                uint, uint, builtin, host))
+            gem(("    if (!cartesi::%s::is_safe_result(result)) {"):format(iface))
+            gem("        TAIL return cp_cont_1(" .. args .. ");")
+            gem("    }")
+            if width == "s" then
+                gem(("    r%d = static_cast<uint64_t>(result) | %s;"):format(d, boxed_mask))
+            else
+                gem(("    r%d = result;"):format(d))
+            end
+            gem("    TAIL return cp_cont_0(" .. args .. ");")
+            gem("#else")
+            gem("    TAIL return cp_cont_1(" .. args .. ");")
+            gem("#endif")
+            gem("}")
+            gem("")
+        end
+    end
+end
+
+-- Fused ternary arithmetic. AArch64 has architectural fused multiply-add.
+-- On x86-64 the ordinary placement entries remain soft-only; alternate
+-- target("fma") descriptors are emitted with a non-family suffix so startup
+-- can substitute only those entries when the host supports FMA.
+local FP_FMA_OPS = {
+    fmadd = { false, false },
+    fmsub = { false, true },
+    fnmadd = { true, true },
+    fnmsub = { true, false },
+}
+for _, width in ipairs({ "s", "d" }) do
+    local uint = width == "s" and "uint32_t" or "uint64_t"
+    local host = width == "s" and "float" or "double"
+    local iface = width == "s" and "i_float32" or "i_float64"
+    local builtin = width == "s" and "__builtin_fmaf" or "__builtin_fma"
+    local sign = width == "s" and "cartesi::i_sfloat32::SIGN_MASK" or "cartesi::i_sfloat64::SIGN_MASK"
+    local boxed_mask = width == "s" and "UINT64_C(0xffffffff00000000)" or "UINT64_C(0)"
+    for _, dynamic in ipairs({ false, true }) do
+        local mode = dynamic and "dyn" or "rne"
+        for _, opname in ipairs(sem_sorted(FP_FMA_OPS)) do
+            local negate_product, negate_addend = table.unpack(FP_FMA_OPS[opname])
+            for d = 0, NSLOTS - 1 do
+                for s2 = 0, NSLOTS - 1 do
+                    local s3 = NSLOTS - 1
+                    local function emit_fma(name, attribute, hard_condition)
+                        gem(("extern \"C\" %sCONT void %s(%s)"):format(attribute, name, params))
+                        gem("{")
+                        gem("#if defined(HARD_FLOAT) && " .. hard_condition)
+                        gem("    const auto acc = std::bit_cast<cartesi::state_access>(sa);")
+                        gem("    const uint64_t fcsr = acc.read_fcsr();")
+                        gem("    if ((acc.read_mstatus() & cartesi::MSTATUS_FS_MASK) == cartesi::MSTATUS_FS_OFF) {")
+                        gem("        TAIL return cp_cont_1(" .. args .. ");")
+                        gem("    }")
+                        if dynamic then
+                            gem("    if (((fcsr >> cartesi::FCSR_FRM_SHIFT) & 7) != cartesi::FRM_RNE) {")
+                            gem("        TAIL return cp_cont_1(" .. args .. ");")
+                            gem("    }")
+                        end
+                        if width == "s" then
+                            gem(("    if ((r%d & %s) != %s || (r%d & %s) != %s || (r%d & %s) != %s) {"):format(
+                                d, boxed_mask, boxed_mask, s2, boxed_mask, boxed_mask, s3, boxed_mask, boxed_mask))
+                            gem("        TAIL return cp_cont_1(" .. args .. ");")
+                            gem("    }")
+                        end
+                        gem(("    %s a = static_cast<%s>(r%d);"):format(uint, uint, d))
+                        gem(("    const %s b = static_cast<%s>(r%d);"):format(uint, uint, s2))
+                        gem(("    %s c = static_cast<%s>(r%d);"):format(uint, uint, s3))
+                        if negate_product then
+                            gem(("    a ^= %s;"):format(sign))
+                        end
+                        if negate_addend then
+                            gem(("    c ^= %s;"):format(sign))
+                        end
+                        gem("    if (acc.get_penumbra().hard_float_enabled == 0 ||")
+                        gem("        (cartesi::fcsr_fflags(fcsr) & cartesi::FFLAGS_NX_MASK) == 0 ||")
+                        gem(
+                            ("        !cartesi::%s::is_zero_or_normal(a) || " ..
+                                "!cartesi::%s::is_zero_or_normal(b) ||"):format(iface, iface))
+                        gem(("        !cartesi::%s::is_zero_or_normal(c)) {"):format(iface))
+                        gem("        TAIL return cp_cont_1(" .. args .. ");")
+                        gem("    }")
+                        gem(("    const %s result = std::bit_cast<%s>(%s(std::bit_cast<%s>(a),"):format(
+                            uint, uint, builtin, host))
+                        gem(("        std::bit_cast<%s>(b), std::bit_cast<%s>(c)));"):format(host, host))
+                        gem(("    if (!cartesi::%s::is_safe_result(result)) {"):format(iface))
+                        gem("        TAIL return cp_cont_1(" .. args .. ");")
+                        gem("    }")
+                        if width == "s" then
+                            gem(("    r%d = static_cast<uint64_t>(result) | %s;"):format(d, boxed_mask))
+                        else
+                            gem(("    r%d = result;"):format(d))
+                        end
+                        gem("    TAIL return cp_cont_0(" .. args .. ");")
+                        gem("#else")
+                        gem("    TAIL return cp_cont_1(" .. args .. ");")
+                        gem("#endif")
+                        gem("}")
+                        gem("")
+                    end
+                    local base = ("cp_fp_%s_%s_%s_%d_%d"):format(opname, width, mode, d, s2)
+                    emit_fma(base, "", "defined(__aarch64__)")
+                    gem("#if defined(__x86_64__)")
+                    emit_fma(base .. "_x86_fma", "__attribute__((target(\"fma\"))) ",
+                        "defined(__x86_64__)")
+                    gem("#endif")
+                end
+            end
+        end
+    end
+end
+
 -- Synthetic instruction words: rd=3, rs1=1, rs2=2 everywhere.
 local function r_insn(opc, f3, f7)
     return (f7 << 25) | (2 << 20) | (1 << 15) | (f3 << 12) | (3 << 7) | opc
@@ -623,15 +976,6 @@ local SEM_BR_OPS = {
     bltu = { "execute_BLTU", b_insn(6) },
     bgeu = { "execute_BGEU", b_insn(7) },
 }
-
-local function sem_sorted(t)
-    local names = {}
-    for name in pairs(t) do
-        names[#names + 1] = name
-    end
-    table.sort(names)
-    return names
-end
 
 for _, name in ipairs(sem_sorted(SEM_REG_OPS)) do
     local fn_name, insn = SEM_REG_OPS[name][1], SEM_REG_OPS[name][2]
@@ -740,7 +1084,8 @@ for _, opname in ipairs(sem_sorted(SEM_CSR_OPS)) do
         local insn = csr_insn(f3, SEM_CSRS[csrname], 1)
         for d = 0, NSLOTS - 1 do
             for s1 = 0, NSLOTS - 1 do
-                gem(("extern \"C\" CONT __attribute__((flatten)) void cp_%s_%s_%d_%d(%s)"):format(opname, csrname, d, s1, params))
+                gem(("extern \"C\" CONT __attribute__((flatten)) void cp_%s_%s_%d_%d(%s)"):format(
+                    opname, csrname, d, s1, params))
                 gem("{")
                 gem(("    uint64_t v1 = r%d;"):format(s1))
                 gem("    uint64_t v2 = 0;")

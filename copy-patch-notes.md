@@ -1806,3 +1806,56 @@ Also unexplained: the pre-fix head aborts three times rather than once,
 though an emission abort is supposed to blacklist permanently on the first
 failure; the penalty table is hash-indexed and a colliding head can evict
 the entry, which is a candidate but is not measured.
+## Done: the direct ADDI stencils needed two more amd64 encodings (2026-08-23)
+
+`a540901a` does not extract under GCC on Linux/x86-64 -- the same
+architecture split as the FP-flags defect one entry above, and again caught
+only by building it natively:
+
+    cp-extract: cp_addi_2_2: semantic imm32 is not in ADD or LEA
+
+Disassembling the semantic object rather than re-reading the rule shows two
+encodings the accept check does not admit:
+
+    cp_addi_2_2: 48 81 44 24 08 a5 05 00 00   add QWORD PTR [rsp+0x8],0x5a5
+    cp_addi_2_3: 48 8b 44 24 18               mov rax,QWORD PTR [rsp+0x18]
+                 48 05 a5 05 00 00            add rax,0x5a5
+                 48 89 44 24 08               mov QWORD PTR [rsp+0x8],rax
+
+The first is a memory destination: the guest cache slots past the six
+preserve_none argument registers live on the stack here, so `add` targets
+`[rsp+disp8]`. The rule assumed the ModRM byte sits immediately before the
+immediate, true only for a register-direct operand; with a SIB and a disp8
+in between it reads the disp8 as the ModRM. Now decoded properly -- opcode,
+ModRM, optional SIB, optional disp -- which admits every addressing mode
+and still fails closed on anything else.
+
+The second is the accumulator short form `05 id`, which GCC selects when the
+destination lands in rax, as it does for a stack-to-stack slot pair.
+Accepted explicitly.
+
+15092 stencils extract. `cp-stencils-test` and `cp-machine-test` pass,
+including the new direct add-immediate coverage, and all 13 balanced
+workloads match a same-tip stock build on mcycle and root hash.
+
+Not measured: whether the -6.1% memcpy / -3.4% int64 / -1.3% matrixprod the
+AArch64 entry reports transfers to this architecture. The board rerun is the
+next step, and it needs a same-tip stock column -- comparing against the
+old `ed955187` worktree is invalid, because `44f5af12` raised the guest
+clock to 1024 MHz and legitimately changes every root hash.
+
+### A stale baseline, and a build I broke
+
+Two process failures worth recording. The first gate of this merge read as
+13/13 cp hash mismatches; the cause was that the stock column came from the
+`ed955187` worktree, which predates the 1024 MHz clock change. Backends
+built from the *same* revision agreed with each other throughout -- the
+divergence was between revisions, not between backends.
+
+Second, `TC_BACKEND_ENTER` (added with the x86-64 cp entry contract) was
+defined only under `TC_JIT_SHELL`, while its use sites sit in `if constexpr`
+branches that are discarded rather than deleted. A plain `tailcall=yes`
+build therefore stopped compiling as of `a0f32c05`, and nothing caught it
+because the stock column always came from that older worktree. Fixed with a
+no-op definition on the no-backend path; the stock column must be built from
+the tree under test from here on.

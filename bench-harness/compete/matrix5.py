@@ -5,7 +5,7 @@ stress-ng, fixed bogo-ops from ops.json, per-emulator boot baseline
 subtracted, 3 reps interleaved, medians. Also reports the boot row itself
 (median boot-to-halt of the trivial entrypoint), the test the board does
 not normally measure."""
-import json, os, statistics, subprocess, sys, time
+import json, os, shutil, statistics, subprocess, sys, time
 
 COMP = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, COMP)
@@ -23,12 +23,15 @@ BUILDS = {"cartesi-stock": os.path.join(BUILDS_ROOT, "stock"),
 CARTESI_LINUX = os.path.join(COMP, "images/cartesi/linux.bin")
 ROOTFS = os.path.join(COMP, "rootfs-bench.ext2")
 ICOUNT = " -icount shift=0,sleep=off"
+# The interpreter is resolved from PATH (override with LUA); the MacPorts
+# path this used to hardcode does not exist on Linux hosts.
+LUA = os.environ.get("LUA") or shutil.which("lua5.4") or "lua5.4"
 OUT = os.path.join(COMP, "results-matrix5.json")
 
 def cartesi_run(so_dir, guest):
     lua = os.path.join(COMP, "compete.lua")
     env = dict(os.environ, LUA_CPATH=f"{so_dir}/?.so;;")
-    t, r = wall(f"/opt/local/bin/lua5.4 {lua} {CARTESI_LINUX} {ROOTFS} '{guest}'", env=env)
+    t, r = wall(f"{LUA} {lua} {CARTESI_LINUX} {ROOTFS} '{guest}'", env=env)
     out = r.stdout.strip().splitlines()[-1].split()
     assert len(out) == 3 and int(out[2]) == 1, f"cartesi {so_dir}: {r.stdout} {r.stderr}"
     return float(out[0])

@@ -1897,3 +1897,63 @@ documented candidate in that range is `44f5af12`, which raises the guest
 clock to 1024 MHz by design -- Diego re-recorded the board in `04d81ae5`
 immediately after it for exactly that reason. I have not bisected that
 range to prove it.
+
+## Done: five-emulator matrix on linux/x86-64 at the merged tip (2026-08-23)
+
+Compete protocol, fixed musl stress-ng bogo-ops, per-emulator boot baseline
+subtracted, three interleaved repetitions, 234/234 cells. All three Cartesi
+columns built from this same tip -- stock `dc5ba755`, lightning `38b08fa9`,
+cp `8c4028cc`, three distinct binaries -- which matters because mixing a
+stock column from an older worktree is what produced a phantom 13/13 hash
+failure earlier today. RVVM at the pinned `33ea63aa`, built here from source.
+Median seconds:
+
+    workload    stock  light     cp  qemu-sys  qemu-icnt   rvvm   cp/light
+    nop         12.27   0.90   1.30     1.28       1.37    1.05     1.45
+    regs        44.81   5.21  13.71     4.06       3.72    3.18     2.63
+    branch       1.90   1.80   2.91     5.57       5.12    2.58     1.61
+    tree         7.17   6.46   6.98     6.91       6.51    3.41     1.08
+    qsort        8.85   5.94   6.21     6.12       6.19    3.10     1.05
+    memcpy      21.74   7.28  10.56     7.69       8.81    3.66     1.45
+    zlib        15.47  10.42  12.09     6.89       7.79    4.06     1.16
+    hash        12.19   5.76   6.94     4.11       4.19    4.27     1.20
+    syscall      2.63   1.50   1.86     FAIL       2.20    1.37     1.24
+    double       6.08   4.07   6.47     3.66       3.20    7.65     1.59
+    sieve       25.81   6.32  10.49     4.58       5.17    4.03     1.66
+    int64        8.74   3.91   3.19     3.77       3.45    0.83     0.82
+    matrixprod   8.77   3.46   4.63     4.24       4.11    2.27     1.34
+    geomean     11.04   4.37   5.95     4.51       4.51    2.89     1.36
+
+Geomeans are over the twelve rows every column has; syscall is excluded from
+all of them so the columns stay comparable. Boot baselines: stock 0.411,
+light 0.440, cp 0.565, qemu-sys 0.785, qemu-icount 0.809, rvvm 0.506.
+
+Lightning leads cp by 1.36x here, the reverse of the AArch64 board (cp 1.408
+against light 1.563). cp wins one row, int64 at 0.82. Every cp/light ratio
+moved against cp relative to AArch64, which is the uniform-tax reading
+already recorded: CP_NSLOTS=7 against 16, plus the call-based trace entry
+this architecture requires. Lightning also now edges qemu-system on the
+geomean (4.37 against 4.51), which it did not before the emission-truncation
+fix. RVVM still leads everything at 2.89.
+
+### The qemu-system syscall cell fails, and it is a real hang
+
+All three repetitions failed, and the cell is reported as failed rather than
+interpolated. qemu-system-riscv64 boots, starts the stressor, then sits in
+`poll_schedule_timeout` at 2.7% CPU with a frozen guest console --  measured
+at 24 minutes before being killed, and reproducing at exactly the same cell
+across three independent runs. It is not slowness: the Cartesi columns run
+the same workload in 1.86s, and qemu-icount runs it in 2.20s. That
+qemu-icount succeeds while plain qemu-system wedges points at guest sleeps
+advancing in real time without `-icount shift=0,sleep=off`, but the mechanism
+is not established and is recorded here as a hypothesis only.
+
+Three harness defects had to be fixed before this board could be produced at
+all, all of them latent because the harness had only ever run on the AArch64
+Mac: a hardcoded `/opt/local/bin/lua5.4`, an output filename shared with the
+AArch64 board, and `wall()` calling `subprocess.run` with no timeout, which
+let the single wedged cell block the remaining 183.
+
+Not measured: whether the -6.1% memcpy and -3.4% int64 the AArch64 ADDI
+entry reports transfer to this architecture. That needs the same-binary
+`CP_IMM_DISABLE=1` control, which is the next step.

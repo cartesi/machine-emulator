@@ -41,8 +41,10 @@ extern "C" void risc0_replay_steps(
         mcycle_end = UINT64_MAX;
     }
     interpret<replay_step_state_access&>(a, mcycle_end);
-    a.finish();
+    // The journal carries the hash the replay obtained, not the header claim. finish() throws
+    // on a mismatch between the two, so the values agree whenever this line is reached.
+    const auto obtained_root_hash_after = a.finish();
     std::memcpy(out_root_hash_before, context.log.root_hash_before.data(), 32);
     *out_mcycle_count = context.log.requested_cycle_count;
-    std::memcpy(out_root_hash_after, context.log.root_hash_after.data(), 32);
+    std::memcpy(out_root_hash_after, obtained_root_hash_after.data(), 32);
 }

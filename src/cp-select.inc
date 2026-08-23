@@ -21,6 +21,8 @@
 
 #define CP_R3(tab) f.reg3(tab, insn_get_rd(insn), insn_get_rs1(insn), insn_get_rs2(insn))
 #define CP_R2I(tab) f.reg2i(tab, insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)))
+#define CP_DIRECTI(tab, fallback)                                                                                      \
+    f.reg2directi(tab, fallback, insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)))
 #define CP_LOAD(tab) f.load(tab, insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)))
 #define CP_STORE(tab) f.store(tab, insn_get_rs1(insn), insn_get_rs2(insn), static_cast<uint64_t>(insn_S_get_imm(insn)))
 #define CP_BR(tab, comp)                                                                                               \
@@ -70,7 +72,7 @@ switch (label) {
 
     // Integer immediates.
     case tc_label::ADDI_rdN:
-        CP_R2I(cp_add_table);
+        CP_DIRECTI(cp_addi_table, cp_add_table);
         break;
     case tc_label::SLTI_rdN:
         CP_R2I(cp_slt_table);
@@ -94,7 +96,7 @@ switch (label) {
         CP_R2I((insn >> 30) & 1 ? cp_sra_table : cp_srl_table);
         break;
     case tc_label::ADDIW_rdN:
-        CP_R2I(cp_addw_table);
+        CP_DIRECTI(cp_addiw_table, cp_addw_table);
         break;
     case tc_label::SLLIW_rdN:
         CP_R2I(cp_sllw_table);
@@ -212,16 +214,18 @@ switch (label) {
             2);
         break;
     case tc_label::C_ADDI:
-        f.reg2i(cp_add_table, CP_C_RD, CP_C_RD, static_cast<uint64_t>(insn_get_CI_CB_imm_se(insn)));
+        f.reg2directi(cp_addi_table, cp_add_table, CP_C_RD, CP_C_RD,
+            static_cast<uint64_t>(insn_get_CI_CB_imm_se(insn)));
         break;
     case tc_label::C_ADDIW:
-        f.reg2i(cp_addw_table, CP_C_RD, CP_C_RD, static_cast<uint64_t>(insn_get_CI_CB_imm_se(insn)));
+        f.reg2directi(cp_addiw_table, cp_addw_table, CP_C_RD, CP_C_RD,
+            static_cast<uint64_t>(insn_get_CI_CB_imm_se(insn)));
         break;
     case tc_label::C_ADDI4SPN:
-        f.reg2i(cp_add_table, CP_C_RDP, 2, static_cast<uint64_t>(insn_get_CIW_imm(insn)));
+        f.reg2directi(cp_addi_table, cp_add_table, CP_C_RDP, 2, static_cast<uint64_t>(insn_get_CIW_imm(insn)));
         break;
     case tc_label::C_ADDI16SP:
-        f.reg2i(cp_add_table, 2, 2, static_cast<uint64_t>(insn_get_C_ADDI16SP_imm(insn)));
+        f.reg2directi(cp_addi_table, cp_add_table, 2, 2, static_cast<uint64_t>(insn_get_C_ADDI16SP_imm(insn)));
         break;
     case tc_label::C_ANDI:
         f.reg2i(cp_and_table, CP_C_RS1P, CP_C_RS1P, static_cast<uint64_t>(insn_get_CI_CB_imm_se(insn)));
@@ -555,6 +559,7 @@ switch (label) {
 
 #undef CP_R3
 #undef CP_R2I
+#undef CP_DIRECTI
 #undef CP_LOAD
 #undef CP_STORE
 #undef CP_BR

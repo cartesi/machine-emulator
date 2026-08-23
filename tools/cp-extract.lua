@@ -43,6 +43,7 @@ local IMM_ORDINAL = { cp_imm64_0 = 0, cp_imm64_1 = 1, cp_imm64_2 = 2, cp_imm64_3
 -- declared legal.
 local A64_B_OPCODE, A64_B_MASK = 0x14000000, 0xfc000000 -- unconditional B
 local A64_MOV_WIDE_BITS = 0x25 -- movz/movk share bits 23-28 = 100101
+local A64_ADD_IMM_OPCODE, A64_ADD_IMM_MASK = 0x11000000, 0x1f000000
 local A64_NOP = 0xd503201f
 local X86_JMP_REL32 = 0xe9 -- jmp rel32 opcode byte
 local X86_TWOBYTE, X86_JCC_LO, X86_JCC_HI = 0x0f, 0x80, 0x8f -- jcc rel32
@@ -240,7 +241,7 @@ local function parse_elf(data, path)
             table.sort(patches, function(a, b)
                 return a.offset < b.offset
             end)
-            stencils[#stencils + 1] = { name = name, code = code, patches = patches }
+            stencils[#stencils + 1] = { name = name, code = code, patches = patches, arch = arch }
         end
     end
     return stencils
@@ -452,7 +453,7 @@ local function parse_macho(data, path)
             end
         end
         local code = data:sub(text.offset + fn.start + 1, text.offset + fn.start + size)
-        stencils[#stencils + 1] = { name = fn.name, code = code, patches = fn.patches }
+        stencils[#stencils + 1] = { name = fn.name, code = code, patches = fn.patches, arch = arch }
     end
     return stencils
 end
@@ -460,6 +461,70 @@ end
 --------------------------------------------------------------------------
 -- Merge and emit
 --------------------------------------------------------------------------
+
+-- Semantic immediate stencils are compiled from the interpreter execute
+-- bodies with this guest-immediate sentinel. It has no object relocation:
+-- validate the compiler's exact host immediate form and synthesize the one
+-- runtime patch record. Any compiler shape drift fails the build.
+local SEM_IMM_SENTINEL = 0x5a5
+local function add_semantic_immediate_patch(st)
+    if not st.name:match("^cp_addiw?_[0-9]+_[0-9]+$") then
+        return
+    end
+    local found
+    if st.arch == "aarch64" then
+        for off = 0, #st.code - 4, 4 do
+            local insn = string.unpack("<I4", st.code, off + 1)
+            local add_imm = insn & A64_ADD_IMM_MASK == A64_ADD_IMM_OPCODE and insn & (3 << 29) == 0
+            if add_imm and (insn >> 10) & 0xfff == SEM_IMM_SENTINEL then
+                if found then
+                    die("%s: multiple semantic immediate fields", st.name)
+                end
+                found = off
+            end
+        end
+        if found == nil then
+            die("%s: semantic sentinel did not compile to ADD immediate", st.name)
+        end
+        st.patches[#st.patches + 1] = { offset = found, kind = "U12", ordinal = 0, addend = 0 }
+    else
+        local marker = string.pack("<I4", SEM_IMM_SENTINEL)
+        local start = 1
+        while true do
+            local at = st.code:find(marker, start, true)
+            if not at then
+                break
+            end
+            if found then
+                die("%s: multiple semantic immediate fields", st.name)
+            end
+            found = at - 1
+            start = at + 1
+        end
+        if found == nil then
+            die("%s: semantic sentinel did not compile to an imm32", st.name)
+        end
+        -- Accept only ADD r/m,imm32 or LEA disp32, the two shapes GCC/clang
+        -- use for these execute bodies. The sentinel bytes are the field.
+        local add_modrm = found >= 2 and st.code:byte(found) or 0
+        local add_mod = add_modrm >> 6
+        local valid = found >= 2 and st.code:byte(found - 1) == 0x81 and add_modrm & 0x38 == 0 and
+            (add_mod == 2 or add_mod == 3)
+        for back = 2, 3 do
+            local opcode = found >= back and st.code:byte(found - back + 1) or 0
+            local modrm = found >= back and st.code:byte(found - back + 2) or 0
+            local has_sib = modrm & 7 == 4
+            valid = valid or (opcode == 0x8d and modrm >> 6 == 2 and has_sib == (back == 3))
+        end
+        if not valid then
+            die("%s: semantic imm32 is not in ADD or LEA", st.name)
+        end
+        st.patches[#st.patches + 1] = { offset = found, kind = "ABS32", ordinal = 0, addend = 0 }
+    end
+    table.sort(st.patches, function(a, b)
+        return a.offset < b.offset
+    end)
+end
 
 local stencils = {}
 local by_name = {}
@@ -476,6 +541,7 @@ for i = 3, #arg do
         die("%s: neither ELF64 nor Mach-O 64", arg[i])
     end
     for _, st in ipairs(list) do
+        add_semantic_immediate_patch(st)
         if by_name[st.name] then
             die("duplicate stencil %s (in %s)", st.name, arg[i])
         end
@@ -498,7 +564,7 @@ hdr:write([[
 #define CP_STENCILS_TABLES_H
 #include <stdint.h>
 
-enum cp_patch_kind { CP_P_JUMP26, CP_P_G0, CP_P_G1, CP_P_G2, CP_P_G3, CP_P_ABS64, CP_P_JMPREL32 };
+enum cp_patch_kind { CP_P_JUMP26, CP_P_G0, CP_P_G1, CP_P_G2, CP_P_G3, CP_P_ABS64, CP_P_JMPREL32, CP_P_U12, CP_P_ABS32 };
 typedef struct {
     uint16_t offset;
     uint8_t kind;
@@ -523,6 +589,8 @@ local KIND_ENUM = {
     G3 = "CP_P_G3",
     ABS64 = "CP_P_ABS64",
     JMPREL32 = "CP_P_JMPREL32",
+    U12 = "CP_P_U12",
+    ABS32 = "CP_P_ABS32",
 }
 
 for profile_id, st in ipairs(stencils) do

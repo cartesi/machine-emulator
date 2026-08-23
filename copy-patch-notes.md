@@ -1806,6 +1806,15 @@ Also unexplained: the pre-fix head aborts three times rather than once,
 though an emission abort is supposed to blacklist permanently on the first
 failure; the penalty table is hash-indexed and a colliding head can evict
 the entry, which is a candidate but is not measured.
+
+### Note on the results file split (2026-08-23)
+
+`results-matrix5.json` is the AArch64 board. The x86-64 board committed in
+`606d93b7` overwrote it rather than taking its own name, which this reconciliation
+restores; the x86-64 data now lives in `results-matrix5-amd64.json`. The two
+boards are not comparable cell by cell -- different hosts -- and should not
+share a file again.
+
 ## Done: the direct ADDI stencils needed two more amd64 encodings (2026-08-23)
 
 `a540901a` does not extract under GCC on Linux/x86-64 -- the same

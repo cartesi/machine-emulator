@@ -129,28 +129,37 @@ static void cp_insert_hpage(cp_state *c, uint64_t hpage) {
     ++c->ntraced_pages;
 }
 
-// Front cache (RVVM jtlb): direct-mapped {vpc, call_fn}, probed by the
-// generated lookup tail with the same index. Entries hold self-validating
-// call entries, so staleness degrades to a cold exit, never wrong
-// execution; dead traces are purged eagerly all the same.
+// Front cache (RVVM jtlb): one direct-mapped bank per translation context.
+// Generated lookup tails bake their recording context's bank address, so
+// they cannot bypass the single trace's context tag. The exact head map
+// remains single-trace-per-pc; these banks are only lookup accelerators.
 static_assert(sizeof(cp_front_entry) == 16, "lookup stencil indexes 16-byte entries");
 static_assert(cp_state::front_size == 256, "lookup stencil bakes a 255 mask");
+static_assert(cp_state::front_contexts == TLB_NUM_CTX, "front cache follows the TLB context count");
 
-static FORCE_INLINE void cp_front_put(cp_state *c, uint64_t pc, const void *fn) {
-    c->front[(pc >> 1) & (cp_state::front_size - 1)] = cp_front_entry{pc, fn};
+static FORCE_INLINE size_t cp_front_context(uint64_t ctx_slot_base) {
+    return static_cast<size_t>(ctx_slot_base / TLB_SET_SIZE);
+}
+
+static FORCE_INLINE void cp_front_put(cp_state *c, uint64_t ctx_slot_base, uint64_t pc, const void *fn) {
+    c->front[cp_front_context(ctx_slot_base)][(pc >> 1) & (cp_state::front_size - 1)] = cp_front_entry{pc, fn};
 }
 
 static FORCE_INLINE void cp_front_purge(cp_state *c, uint64_t pc) {
-    auto &e = c->front[(pc >> 1) & (cp_state::front_size - 1)];
-    if (e.pc == pc) {
-        e.pc = 1; // odd: architectural targets have bit 0 clear
+    for (auto &bank : c->front) {
+        auto &e = bank[(pc >> 1) & (cp_state::front_size - 1)];
+        if (e.pc == pc) {
+            e.pc = 1; // odd: architectural targets have bit 0 clear
+        }
     }
 }
 
 static void cp_front_reset(cp_state *c) {
-    for (auto &e : c->front) {
-        e.pc = 1;
-        e.fn = nullptr;
+    for (auto &bank : c->front) {
+        for (auto &e : bank) {
+            e.pc = 1;
+            e.fn = nullptr;
+        }
     }
 }
 
@@ -164,6 +173,55 @@ static FORCE_INLINE bool cp_hpage_traced(const cp_state *c, uint64_t hpage) {
         s = (s + 1) & (cp_state::set_slots - 1);
     }
     return false;
+}
+
+static void cp_pending_link_add(cp_state *c, uint16_t pred_idx) {
+    cp_trace &pred = c->pool[pred_idx];
+    uint32_t slot = cp_pc_slot(pred.successor);
+    const uint64_t tag = pred.successor + 1;
+    while (c->pending_link_pc[slot] != 0 && c->pending_link_pc[slot] != tag) {
+        slot = (slot + 1) & (cp_state::set_slots - 1);
+    }
+    if (c->pending_link_pc[slot] == 0) {
+        c->pending_link_pc[slot] = tag;
+        c->pending_link_trace[slot] = cp_state::none_link;
+    }
+    for (uint16_t p = c->pending_link_trace[slot]; p != cp_state::none_link; p = c->link_next[p]) {
+        if (p == pred_idx) {
+            return;
+        }
+    }
+    c->link_next[pred_idx] = c->pending_link_trace[slot];
+    c->pending_link_trace[slot] = pred_idx;
+}
+
+static void cp_retire_context_trace(cp_state *c, cp_trace &trace) {
+    if (trace.dead) {
+        return;
+    }
+    const uint16_t target = static_cast<uint16_t>(&trace - c->pool);
+    trace.dead = true;
+    cp_front_purge(c, trace.head);
+    ++c->context_replacements;
+
+    // A patched predecessor bypasses the head map. Restore every incoming
+    // edge before treating the old trace as a miss, and retain the
+    // predecessor as pending so a later same-context replacement can link.
+    cp_heap_unprotect(&c->heap);
+    for (uint32_t i = 0; i < c->ntraces; ++i) {
+        cp_trace &pred = c->pool[i];
+        if (pred.link_target == target) {
+            cp_patch_branch(c->heap.base + pred.link_site, pred.link_kind, pred.link_addend,
+                const_cast<uint8_t *>(static_cast<const uint8_t *>(c->continue_island)));
+            cp_heap_lower(&c->heap, pred.link_site);
+            pred.link_target = cp_state::none_link;
+            ++c->links_severed;
+            if (!pred.dead) {
+                cp_pending_link_add(c, static_cast<uint16_t>(i));
+            }
+        }
+    }
+    cp_heap_protect_flush(&c->heap);
 }
 
 // Increment 1 has no inter-trace links, so killing is the dead flag alone;
@@ -243,12 +301,16 @@ static void cp_free(void *p) {
     if (std::getenv("CP_STATS") != nullptr) {
         std::fprintf(stderr,
             "cp: installed %llu empty-marked %llu invalidated %llu flushes %llu emitted %llu bytes "
-            "compile-ms %llu entries %llu call-entries %llu links %llu severed %llu\n",
+            "compile-ms %llu entries %llu call-entries %llu links %llu severed %llu "
+            "context-misses %llu context-replacements %llu context-link-rejects %llu\n",
             static_cast<unsigned long long>(c->installed), static_cast<unsigned long long>(c->empty_marked),
             static_cast<unsigned long long>(c->invalidated), static_cast<unsigned long long>(c->flushes),
             static_cast<unsigned long long>(c->emitted_bytes), static_cast<unsigned long long>(c->compile_ns / 1000000),
             static_cast<unsigned long long>(c->entries), static_cast<unsigned long long>(c->call_entries),
-            static_cast<unsigned long long>(c->links), static_cast<unsigned long long>(c->links_severed));
+            static_cast<unsigned long long>(c->links), static_cast<unsigned long long>(c->links_severed),
+            static_cast<unsigned long long>(c->context_misses),
+            static_cast<unsigned long long>(c->context_replacements),
+            static_cast<unsigned long long>(c->context_link_rejects));
         std::fprintf(stderr,
             "cp: fin cyclic %llu dynamic %llu page %llu installed %llu maxlen %llu uncompilable %llu trap %llu "
             "evictions %llu\n",
@@ -662,7 +724,7 @@ struct cp_former {
             if (c->rec_failed) {
                 return;
             }
-            emit_guarded(tab[t][base], c->reg_dirty);
+            emit_guarded(tab[t][base], c->reg_dirty, c->rec_ctx_slot_base);
             free_scratch(t);
             return;
         }
@@ -676,7 +738,8 @@ struct cp_former {
         if (c->rec_failed) {
             return;
         }
-        emit_guarded(tab[d][base], fresh ? (c->reg_dirty & ~(1u << static_cast<uint32_t>(d))) : c->reg_dirty);
+        emit_guarded(tab[d][base], fresh ? (c->reg_dirty & ~(1u << static_cast<uint32_t>(d))) : c->reg_dirty,
+            c->rec_ctx_slot_base);
         free_scratch(scratch);
     }
 
@@ -687,20 +750,20 @@ struct cp_former {
         if (c->rec_failed) {
             return;
         }
-        emit_guarded(tab[base][val], c->reg_dirty);
+        emit_guarded(tab[base][val], c->reg_dirty, c->rec_ctx_slot_base);
         free_scratch(scratch);
     }
 
     // Emits a hit-or-bail stencil, deferring the bail block to finish.
     // bail_dirty is the dirty set the bail block may store: the caller
     // excludes destinations the guarded instruction has not yet written.
-    void emit_guarded(const cp_stencil_t *st, uint32_t bail_dirty) {
+    void emit_guarded(const cp_stencil_t *st, uint32_t bail_dirty, uint64_t imm0 = 0) {
         if (c->nbails >= cp_state::max_bails) {
             c->rec_failed = true;
             return;
         }
         log_next_bail = static_cast<int16_t>(c->nbails);
-        uint8_t *at = emit1(st, 0, 0, reinterpret_cast<uint8_t *>(this)); // placeholder target
+        uint8_t *at = emit1(st, imm0, 0, reinterpret_cast<uint8_t *>(this)); // placeholder target
         if (at == nullptr) {
             return;
         }
@@ -1172,7 +1235,8 @@ static void cp_emit_probe_exit(cp_state *c, uint32_t dirty, const uint8_t (&slot
     uint8_t *fall[2] = {nullptr, nullptr};
     const uint64_t imm_stub[2] = {static_cast<uint64_t>(delta), pending};
     const uint64_t imm_li[2] = {target_vpc, 0};
-    const uint64_t imm_lu[2] = {reinterpret_cast<uint64_t>(&c->front[0]), 0};
+    const uint64_t imm_lu[2] = {
+        reinterpret_cast<uint64_t>(&c->front[cp_front_context(c->rec_ctx_slot_base)][0]), 0};
     uint8_t *miss[2] = {const_cast<uint8_t *>(static_cast<const uint8_t *>(miss_island)), nullptr};
     if (cp_emit(&c->heap, &cp_s_cp_exit_stub, imm_stub, fall) == nullptr ||
         cp_emit(&c->heap, cp_li_table[0], imm_li, fall) == nullptr ||
@@ -1343,7 +1407,8 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
         uint8_t *isl[2] = {const_cast<uint8_t *>(static_cast<const uint8_t *>(c->miss_island)), nullptr};
         const uint64_t imm_stub[2] = {0, c->rec_len};
         const uint64_t imm_dep[2] = {reinterpret_cast<uint64_t>(&penumbra_fin->fetch_vf_offset), 0};
-        const uint64_t imm_lu[2] = {reinterpret_cast<uint64_t>(&c->front[0]), 0};
+        const uint64_t imm_lu[2] = {
+            reinterpret_cast<uint64_t>(&c->front[cp_front_context(c->rec_ctx_slot_base)][0]), 0};
         if (cp_emit(&c->heap, &cp_s_cp_exit_stub, imm_stub, fall) == nullptr ||
             cp_emit(&c->heap, cp_deposit_pc_table[dynamic_slot], imm_dep, fall) == nullptr ||
             cp_emit(&c->heap, cp_lookup_table[dynamic_slot], imm_lu, isl) == nullptr) {
@@ -1413,7 +1478,7 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
     t.exec_count = 0;
     t.fn = c->rec_start;
     t.call_fn = c->rec_call_start;
-    cp_front_put(c, t.head, t.call_fn);
+    cp_front_put(c, t.ctx_slot_base, t.head, t.call_fn);
     ++c->ntraces;
     cp_insert(c, t.head, static_cast<uint16_t>(c->ntraces));
     ++c->installed;
@@ -1438,10 +1503,9 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
         }
     }
     // Same-page pending links (RVVM policy: link when either end installs).
-    // Exits are pc-relative and the trace bodies probe the TLB with the
-    // runtime context, so a same-page retarget needs no vf or ctx equality,
-    // and the successor's tick guard still runs. Cross-page successors keep
-    // the island: their fetch fills belong to the interpreter.
+    // Bodies bake their recording context, so a link requires both mapping
+    // and context equality. Cross-page successors keep the island: their
+    // fetch fills belong to the interpreter.
     const uint16_t idx = static_cast<uint16_t>(c->ntraces - 1);
     c->link_next[idx] = cp_state::none_link;
     {
@@ -1454,6 +1518,7 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
         if (c->pending_link_pc[slot] == tag) {
             uint16_t p = c->pending_link_trace[slot];
             c->pending_link_trace[slot] = cp_state::none_link;
+            uint16_t keep = cp_state::none_link;
             while (p != cp_state::none_link) {
                 cp_trace &pred = c->pool[p];
                 const uint16_t next = c->link_next[p];
@@ -1464,41 +1529,42 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
                 // trace stays alive because its own host page was never
                 // written).
                 if (!pred.dead && pred.link_site != 0 && pred.link_target == cp_state::none_link &&
-                    pred.code_vf_offset == t.code_vf_offset) {
+                    pred.code_vf_offset == t.code_vf_offset && pred.ctx_slot_base == t.ctx_slot_base) {
                     cp_patch_branch(c->heap.base + pred.link_site, pred.link_kind, pred.link_addend,
                         const_cast<uint8_t *>(static_cast<const uint8_t *>(t.fn)));
                     cp_heap_lower(&c->heap, pred.link_site);
                     pred.link_target = idx;
                     ++c->links;
+                } else if (!pred.dead && pred.link_site != 0 && pred.link_target == cp_state::none_link &&
+                    pred.code_vf_offset == t.code_vf_offset) {
+                    ++c->context_link_rejects;
+                    c->link_next[p] = keep;
+                    keep = p;
                 }
                 p = next;
             }
+            c->pending_link_trace[slot] = keep;
         }
     }
     if (!cyclic && t.link_site != 0 && tlb_addr_page(t.successor) == tlb_addr_page(t.head)) {
         // This trace's own straight exit: link now or register as pending.
         // The vf equality requirement is the content check described above.
         bool interpreted = false;
+        bool linked = false;
         if (const cp_trace *succ = cp_find(c, t.successor, &interpreted); succ != nullptr) {
-            if (succ->code_vf_offset == t.code_vf_offset) {
+            if (succ->code_vf_offset == t.code_vf_offset && succ->ctx_slot_base == t.ctx_slot_base) {
                 cp_patch_branch(c->heap.base + t.link_site, t.link_kind, t.link_addend,
                     const_cast<uint8_t *>(static_cast<const uint8_t *>(succ->fn)));
                 cp_heap_lower(&c->heap, t.link_site);
                 t.link_target = static_cast<uint16_t>(succ - c->pool);
                 ++c->links;
+                linked = true;
+            } else if (succ->code_vf_offset == t.code_vf_offset) {
+                ++c->context_link_rejects;
             }
-        } else if (!interpreted) {
-            uint32_t slot = cp_pc_slot(t.successor);
-            const uint64_t tag = t.successor + 1;
-            while (c->pending_link_pc[slot] != 0 && c->pending_link_pc[slot] != tag) {
-                slot = (slot + 1) & (cp_state::set_slots - 1);
-            }
-            if (c->pending_link_pc[slot] == 0) {
-                c->pending_link_pc[slot] = tag;
-                c->pending_link_trace[slot] = cp_state::none_link;
-            }
-            c->link_next[idx] = c->pending_link_trace[slot];
-            c->pending_link_trace[slot] = idx;
+        }
+        if (!linked && !interpreted) {
+            cp_pending_link_add(c, idx);
         }
     }
     cp_heap_protect_flush(&c->heap);
@@ -1558,17 +1624,15 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     c->rec_carry_ok = true;
     c->rec_guest_slots = 0;
     c->rec_scratch_slots = 0;
-    // Fused call prologue: one stencil probes the hot code-TLB slot of the
-    // CURRENT translation context (the interpreter's own per-transit fetch
-    // probe, so hits and misses reproduce its hashed fill sequence, and a
-    // same-content entry from another context now legally hits), compares
-    // the recorded vh for content identity, re-encodes the pc from the
-    // incoming deposit, and publishes the mapping; the second publishes
-    // the entry-time pma from the shadow slot of the same index. A miss
-    // bails with the deposit untouched and resumes the fetch path.
+    // The call prologue probes the recording context's hot code-TLB slot. It
+    // compares the recorded vh for content identity, re-encodes the pc from
+    // the incoming deposit, and publishes the mapping; the final stencil
+    // publishes the entry-time pma from the shadow slot of the same index. A
+    // miss bails with the deposit untouched and resumes the fetch path.
     static_assert(offsetof(penumbra_state, tlb_ctx_slot_base) - offsetof(penumbra_state, fetch_vf_offset) == 8,
         "cp_call_probe derives the vf address from the ctx address");
     static_assert(sizeof(hot_tlb_slot) == 16, "cp_call_probe bakes the hot slot size");
+    static_assert(TLB_NUM_CTX == 4 && TLB_SET_SIZE == 256, "cp_call_probe bakes the context geometry");
     static_assert(sizeof(shadow_tlb_slot) == 32 && offsetof(shadow_tlb_slot, pma_index) == 16,
         "cp_call_pma bakes the shadow slot layout");
     constexpr size_t cp_tcc_fetch_page_off = 32; // matches the generator's literal
@@ -1769,29 +1833,31 @@ static FORCE_INLINE const void *cp_hook_site(tc_context<STATE_ACCESS> *tcc, uint
     if (!c->recording) {
         bool interpreted = false;
         const cp_trace *t = cp_find(c, vpc, &interpreted);
+        auto *const penumbra = reinterpret_cast<penumbra_state *>(
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
+        if (t != nullptr && t->ctx_slot_base != penumbra->tlb_ctx_slot_base) {
+            ++c->context_misses;
+            cp_retire_context_trace(c, *const_cast<cp_trace *>(t));
+            t = nullptr;
+            interpreted = false;
+        }
         if (t != nullptr) {
-            auto *const probe_penumbra = reinterpret_cast<penumbra_state *>(
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
-            cp_probe(c, probe_penumbra, vpc);
+            cp_probe(c, penumbra, vpc);
         }
         if (t != nullptr && !cp_enter_allowed(c)) {
             return nullptr;
         }
         if (t != nullptr) {
-            auto *const penumbra = reinterpret_cast<penumbra_state *>(
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
             if constexpr (CALL_ENTRY) {
-                // The call-entry prologue validates itself in generated code
-                // (context guard, hot code-TLB probe), so the hook only hands
-                // it over, like lightning's call_fn. A validation miss bails
-                // to the island with the deposit pc and resumes the ordinary
-                // fetch path.
+                // The C lookup has admitted the recording context. The
+                // context-banked front cache provides the same guarantee to
+                // generated entries; the shared call prologue validates the
+                // hot code-TLB mapping.
                 ++c->entries;
                 ++c->call_entries;
                 ++const_cast<cp_trace *>(t)->exec_count;
-                cp_front_put(c, vpc, t->call_fn);
+                cp_front_put(c, t->ctx_slot_base, vpc, t->call_fn);
                 if (cp_log_enabled()) [[unlikely]] {
                     std::fprintf(stderr, "cp-callenter vpc=%llx len=%u\n", static_cast<unsigned long long>(vpc),
                         t->len);

@@ -23,8 +23,10 @@
 #define CP_R2I(tab) f.reg2i(tab, insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)))
 #define CP_DIRECTI(tab, fallback)                                                                                      \
     f.reg2directi(tab, fallback, insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)))
-#define CP_LOAD(tab) f.load(tab, insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)))
-#define CP_STORE(tab) f.store(tab, insn_get_rs1(insn), insn_get_rs2(insn), static_cast<uint64_t>(insn_S_get_imm(insn)))
+#define CP_LOAD(name)                                                                                                  \
+    f.load(cp_##name##_table, insn_get_rd(insn), insn_get_rs1(insn), static_cast<uint64_t>(insn_I_get_imm(insn)))
+#define CP_STORE(name)                                                                                                 \
+    f.store(cp_##name##_table, insn_get_rs1(insn), insn_get_rs2(insn), static_cast<uint64_t>(insn_S_get_imm(insn)))
 #define CP_BR(tab, comp)                                                                                               \
     f.branch(tab, comp, insn_get_rs1(insn), insn_get_rs2(insn), pc + static_cast<uint64_t>(insn_B_get_imm(insn)), 4)
 
@@ -156,37 +158,37 @@ switch (label) {
 
     // Loads and stores, hit-or-bail.
     case tc_label::LD_rdN:
-        CP_LOAD(cp_ld_table);
+        CP_LOAD(ld);
         break;
     case tc_label::LW_rdN:
-        CP_LOAD(cp_lw_table);
+        CP_LOAD(lw);
         break;
     case tc_label::LWU_rdN:
-        CP_LOAD(cp_lwu_table);
+        CP_LOAD(lwu);
         break;
     case tc_label::LH_rdN:
-        CP_LOAD(cp_lh_table);
+        CP_LOAD(lh);
         break;
     case tc_label::LHU_rdN:
-        CP_LOAD(cp_lhu_table);
+        CP_LOAD(lhu);
         break;
     case tc_label::LB_rdN:
-        CP_LOAD(cp_lb_table);
+        CP_LOAD(lb);
         break;
     case tc_label::LBU_rdN:
-        CP_LOAD(cp_lbu_table);
+        CP_LOAD(lbu);
         break;
     case tc_label::SD:
-        CP_STORE(cp_sd_table);
+        CP_STORE(sd);
         break;
     case tc_label::SW:
-        CP_STORE(cp_sw_table);
+        CP_STORE(sw);
         break;
     case tc_label::SH:
-        CP_STORE(cp_sh_table);
+        CP_STORE(sh);
         break;
     case tc_label::SB:
-        CP_STORE(cp_sb_table);
+        CP_STORE(sb);
         break;
 
     // Compressed forms, decoded with the same helpers their cases use.

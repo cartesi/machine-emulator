@@ -254,7 +254,7 @@ $(LIGHTNING_LIB): $(LIGHTNING_SOURCE_DIR)/configure
 	cd $(LIGHTNING_DIR) && $(abspath $(LIGHTNING_SOURCE_DIR))/configure \
 		--disable-shared --enable-static --disable-disassembler \
 		CC=$(CC) CFLAGS="-O2 -fPIC -fno-strict-aliasing"
-	$(MAKE) -C $(LIGHTNING_DIR)
+	$(MAKE) -C $(LIGHTNING_DIR)/lib liblightning.la
 
 submodules:
 	git submodule update --init --recursive
@@ -294,7 +294,7 @@ check-format-lua check-lua format-lua:
 lint-% check-format-% format-% check-format-lua-% check-lua-% format-lua-%:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(if $(findstring -doc,$@),doc,$(if $(findstring -src,$@),src,tests)) $(subst -doc,,$(subst -src,,$(subst -tests,,$@)))
 
-source-default:
+source-default: $(if $(filter yes,$(lightning)),bundle-lightning)
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
 
 uarch: $(SRCDIR)/cm-version.h $(SRCDIR)/interpret-jump-table.hpp

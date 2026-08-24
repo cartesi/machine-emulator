@@ -3196,16 +3196,16 @@ commands. Defaults to both enabled. The `cartesi-machine` command-line
 options `--no-htif-yield-automatic` and `--no-htif-yield-manual` clear
 the corresponding bits.
 
-The `uarch` entry describes the microarchitecture state. The
-`uarch.processor` field controls the uarch processor. Like the main
-processor, it includes a `uarch.processor.registers` flat table with all
-registers. Register `uarch.processor.registers.halt` is non-zero when
-the uarch is halted. The `uarch.ram` field controls the uarch RAM.
-Unlike the main processor RAM, the uarch RAM is fixed in length.
-Moreover, the `uarch.ram.backing_store.data_filename` is typically left
-blank (other than in unit tests), as the emulator automatically fills
-the uarch RAM with an implementation of the main processor fetch-execute
-loop compiled to function within the uarch.
+The `uarch` entry describes the uarch state. The `uarch.processor` field
+controls the uarch processor. Like the main processor, it includes a
+`uarch.processor.registers` flat table with all registers. Register
+`uarch.processor.registers.halt` is non-zero when the uarch is halted.
+The `uarch.ram` field controls the uarch RAM. Unlike the main processor
+RAM, the uarch RAM is fixed in length. Moreover, the
+`uarch.ram.backing_store.data_filename` is typically left blank (other
+than in unit tests), as the emulator automatically fills the uarch RAM
+with an implementation of the main processor fetch-execute loop compiled
+to function within the uarch.
 
 The `pmas` entry describes the memory range containing one PMA (for
 *physical memory attributes*) entry for each address range that is
@@ -7486,10 +7486,10 @@ via the `cartesi.AR_*` constants, and discoverable at runtime via the
 The uarch has its own private address ranges, which are not accessible
 to the main processor:
 
-| Physical address        | Mapping                  |
-|-------------------------|--------------------------|
-| `0x00400000-0x00400fff` | Microarchitecture shadow |
-| `0x00600000-0x007fffff` | Microarchitecture RAM    |
+| Physical address        | Mapping      |
+|-------------------------|--------------|
+| `0x00400000-0x00400fff` | Uarch shadow |
+| `0x00600000-0x007fffff` | Uarch RAM    |
 
 The uarch shadow holds the uarch processor state. The uarch RAM holds
 the uarch program that decodes and executes one main processor
@@ -7502,10 +7502,10 @@ entry in the array of Physical Memory Attribute records (PMAs). The PMA
 array occupies `0x00010000-0x00010fff` and starts at address `0x10000`
 (exposed as `cartesi.AR_PMAS_START`). This is how the RISC-V interpreter
 discovers the available ranges at runtime, regardless of whether it is
-compiled to run directly on the host or inside a ZK prover. The
-microarchitecture’s private ranges are not visible to the main processor
-and have no PMA entries, though a driver id is reserved for the uarch
-shadow state for consistency.
+compiled to run directly on the host or inside a ZK prover. The uarch’s
+private ranges are not visible to the main processor and have no PMA
+entries, though a driver id is reserved for the uarch shadow state for
+consistency.
 
 Each PMA consists of 2 64-bit words. The first word gives the start of a
 range and the second word its length. These words are readable both
@@ -9092,10 +9092,10 @@ boundary is checked as an ordinary uarch step.
 For the transition that resets the uarch, `verify_reset_uarch` settles
 rejected inputs by itself. Replaying a reset from a state that has
 yielded manual with reject ends at the recorded revert state hash,
-rather than at the state with a pristine microarchitecture. The
-processing of a rejected input therefore ends at the boundary it started
-from, as the input bisection expects. Every other transition is a single
-uarch step, checked with `verify_step_uarch` as before.
+rather than at the state with a pristine uarch. The processing of a
+rejected input therefore ends at the boundary it started from, as the
+input bisection expects. Every other transition is a single uarch step,
+checked with `verify_step_uarch` as before.
 
 ### Verifying an epoch result
 

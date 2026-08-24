@@ -329,7 +329,7 @@ typedef enum cm_reg {
     CM_REG_HTIF_IHALT,
     CM_REG_HTIF_ICONSOLE,
     CM_REG_HTIF_IYIELD,
-    // Microarchitecture registers
+    // Uarch registers
     CM_REG_UARCH_X0,
     CM_REG_UARCH_X1,
     CM_REG_UARCH_X2,
@@ -384,7 +384,7 @@ typedef enum cm_reg {
 
 /// \brief Hash function types.
 typedef enum cm_hash_function {
-    CM_HASH_KECCAK256 = 0, ///< Keccak-256 (recommended for fraud proofs using microarchitecture)
+    CM_HASH_KECCAK256 = 0, ///< Keccak-256 (recommended for fraud proofs using uarch)
     CM_HASH_SHA256 = 1,    ///< SHA-256 (recommended for fraud proofs using zkVMs)
 } cm_hash_function;
 
@@ -893,7 +893,7 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint64_t log2_mcycle_period,
     uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count, const char *previous_partial_bundle, const char **result);
 
-/// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
+/// \brief Runs the machine uarch until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param uarch_cycle_end End micro cycle value.
 /// \param uarch_break_reason Receives reason for returning (can be NULL).
@@ -960,7 +960,7 @@ CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_b
 CM_API cm_error cm_collect_uarch_cycle_root_hashes(cm_machine *m, uint64_t mcycle_end,
     int32_t log2_bundle_uarch_cycle_count, const char *revert_uarch_tail, const char **result);
 
-/// \brief Resets the entire microarchitecture state to pristine values.
+/// \brief Resets the entire uarch state to pristine values.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_reset_uarch(cm_machine *m);
@@ -1015,7 +1015,7 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint
 CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
     cm_break_reason *break_reason);
 
-/// \brief Runs the microarchitecture for the given cycle count (or halt) writing a binary step log to a file.
+/// \brief Runs the uarch for the given cycle count (or halt) writing a binary step log to a file.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param uarch_cycle_count Number of uarch cycles to advance; the run stops earlier on halt or overflow.
 /// \param log_filename Path where the binary step log will be saved.
@@ -1024,7 +1024,7 @@ CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *lo
 CM_API cm_error cm_log_step_uarch(cm_machine *m, uint64_t uarch_cycle_count, const char *log_filename,
     cm_uarch_break_reason *uarch_break_reason);
 
-/// \brief Resets the entire microarchitecture state to pristine values writing a binary step log to a file.
+/// \brief Resets the entire uarch state to pristine values writing a binary step log to a file.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param log_filename Path where the binary step log will be saved.
 /// \returns 0 for success, non zero code for error.

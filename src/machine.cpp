@@ -2058,8 +2058,7 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
 
 void machine::reset_uarch() {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
-        throw std::runtime_error{
-            "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
+        throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
     write_reg(reg::uarch_halt, UARCH_HALT_INIT);
     write_reg(reg::uarch_pc, UARCH_PC_INIT);
@@ -2077,8 +2076,7 @@ void machine::reset_uarch() {
 
 void machine::log_reset_uarch(const std::string &filename) {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
-        throw std::runtime_error{
-            "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
+        throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
     const auto root_hash_before = get_root_hash();
     uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
@@ -2112,11 +2110,10 @@ machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_befor
 
 uarch_interpreter_break_reason machine::log_step_uarch(uint64_t uarch_cycle_count, const std::string &filename) {
     if (is_unreproducible()) {
-        throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
+        throw std::runtime_error("uarch cannot be used with unreproducible machines");
     }
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
-        throw std::runtime_error{
-            "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
+        throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
     const auto root_hash_before = get_root_hash();
     uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
@@ -2153,11 +2150,10 @@ machine_config machine::get_default_config() {
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
-        throw std::runtime_error{
-            "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
+        throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
     if (is_unreproducible()) {
-        throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
+        throw std::runtime_error("uarch cannot be used with unreproducible machines");
     }
     const uarch_state_access a(*this);
     return uarch_interpret(a, uarch_cycle_end);
@@ -2202,7 +2198,7 @@ interpreter_break_reason machine::get_state_break_reason(interpreter_break_reaso
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
     if (read_reg(reg::uarch_cycle) != 0) {
-        throw std::runtime_error{"microarchitecture is not reset"};
+        throw std::runtime_error{"uarch is not reset"};
     }
     const auto root_hash_before = get_root_hash();
     init_hot_tlb_contents();
@@ -2247,7 +2243,7 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
     }
     const auto uarch_cycle = read_reg(reg::uarch_cycle);
     if (uarch_cycle != 0) {
-        throw std::invalid_argument{"microarchitecture is not reset"};
+        throw std::invalid_argument{"uarch is not reset"};
     }
     const state_access a(*this);
     return get_state_break_reason(interpret_with_console(a, m_console, mcycle_end));
@@ -2356,7 +2352,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
         throw std::runtime_error{"update hash tree failed"};
     }
     if (read_reg(reg::uarch_cycle) != 0) {
-        throw std::runtime_error{"microarchitecture is not reset"};
+        throw std::runtime_error{"uarch is not reset"};
     }
 
     // Initialize the phase unchanged and report the machine's current break reason. The loop
@@ -2589,14 +2585,13 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
         throw std::runtime_error{"cannot collect hashes when soft yield is enabled"};
     }
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
-        throw std::runtime_error{
-            "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
+        throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
     if (read_reg(reg::uarch_cycle) != 0) {
-        throw std::runtime_error{"microarchitecture is not reset"};
+        throw std::runtime_error{"uarch is not reset"};
     }
 
     uarch_cycle_root_hashes result;

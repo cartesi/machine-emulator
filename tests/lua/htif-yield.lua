@@ -33,10 +33,10 @@ where options are:
     (default: environment $CARTESI_TESTS_PATH)
 
   --uarch-test
-    use microarchitecture to run tests
+    use uarch to run tests
 
   --uarch-ram-image=<filename>
-    name of file containing microarchitecture RAM image.
+    name of file containing uarch RAM image.
 
 ]=],
         arg[0]
@@ -161,7 +161,7 @@ local yields = {
 }
 
 local function run_machine_with_uarch(machine)
-    -- mimics "machine:run()" using the microarchitecture
+    -- mimics "machine:run()" using the uarch
     while true do
         local ubr = machine:run_uarch()
         if ubr == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then

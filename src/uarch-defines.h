@@ -26,16 +26,16 @@
 /// \brief Log2 size of the entire uarch memory range: shadow and ram
 #define UARCH_STATE_LOG2_SIZE_DEF 22
 
-/// \brief Initial value of the microarchitecture halt register
+/// \brief Initial value of the uarch halt register
 #define UARCH_HALT_INIT_DEF 0
 
-/// \brief Initial value of a microarchitecture general-purpose register
+/// \brief Initial value of a uarch general-purpose register
 #define UARCH_X_INIT_DEF 0
 
-/// \brief Initial value of the microarchitecture program counter
+/// \brief Initial value of the uarch program counter
 #define UARCH_PC_INIT_DEF AR_UARCH_RAM_START_DEF
 
-/// \brief Initial value of the microarchitecture cycle register
+/// \brief Initial value of the uarch cycle register
 #define UARCH_CYCLE_INIT_DEF 0
 
 /// \brief Log2 of the expected maximum uarch cycle
@@ -44,7 +44,7 @@
 /// \brief Maximum uarch cycle
 #define UARCH_CYCLE_MAX_DEF ((1ULL << UARCH_LOG2_CYCLE_MAX_DEF) - 1)
 
-// microarchitecture ecall function codes
+// uarch ecall function codes
 // function code 3 was mark_dirty_page, now removed, and the gap is intentional
 #define UARCH_ECALL_FN_HALT_DEF 1      // halt uarch
 #define UARCH_ECALL_FN_PUTCHAR_DEF 2   // putchar

@@ -1536,22 +1536,22 @@ describe("collect hashes", function()
             }
 
             if hash_function == "keccak256" then
-                it("should fail when microarchitecture is not reset", function()
+                it("should fail when uarch is not reset", function()
                     local machine <close> = cartesi.machine(empty_machine_config)
                     machine:run_uarch(1)
                     expect.fail(function()
                         machine:collect_mcycle_root_hashes(0, log2_mcycle_period(32), 1)
-                    end, "microarchitecture is not reset")
+                    end, "uarch is not reset")
                     expect.fail(function()
                         machine:collect_uarch_cycle_root_hashes(1)
-                    end, "microarchitecture is not reset")
+                    end, "uarch is not reset")
                 end)
             else
                 it("should fail when collecting uarch cycles", function()
                     local machine <close> = cartesi.machine(empty_machine_config)
                     expect.fail(function()
                         machine:collect_uarch_cycle_root_hashes(1)
-                    end, "microarchitecture can only be used with hash tree")
+                    end, "uarch can only be used with hash tree")
                 end)
             end
 
@@ -1658,7 +1658,7 @@ describe("collect hashes", function()
                 it("should match dense uarch root hashes", function()
                     --[[
                     This test runs a big machine booting a full Linux kernel (without a root filesystem) until it halts,
-                    using microarchitecture stepping for the final mcycles only.
+                    using uarch stepping for the final mcycles only.
                     This verifies that collecting root hashes via uarch is correct for complete mcycles,
                     while minimizing test runtime by limiting uarch execution to a few mcycles.
                     ]]
@@ -1686,7 +1686,7 @@ describe("collect hashes", function()
                 it("should match dense uarch root hashes while yielding", function()
                     expect.truthy(yield_last_mcycle ~= nil and yield_last_root_hash ~= nil)
                     --[[
-                    This test verifies that collecting root hashes via microarchitecture stepping remains correct even
+                    This test verifies that collecting root hashes via uarch stepping remains correct even
                     when execution is interrupted by both manual and automatic yields at various points.
                     It ensures that root hash collection is robust and accurate across different yield scenarios.
                     ]]

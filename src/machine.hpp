@@ -73,7 +73,7 @@ private:
     mutable machine_address_ranges m_ars; ///< Address ranges
     mutable hash_tree m_ht;               ///< Top level hash tree
     processor_state *const m_s;           ///< Big machine processor state
-    uarch_processor_state *const m_us;    ///< Microarchitecture processor state
+    uarch_processor_state *const m_us;    ///< Uarch processor state
 
     std::unordered_map<std::string, uint64_t> m_counters; ///< Counters used for statistics collection
 
@@ -94,8 +94,8 @@ private:
     /// \param r Machine runtime configuration
     void init_processor(const processor_config &p, const machine_runtime_config &r);
 
-    /// \brief Initializes microarchitecture processor
-    /// \param c Microarchitecture processor configuration
+    /// \brief Initializes uarch processor
+    /// \param c Uarch processor configuration
     void init_uarch_processor(const uarch_processor_config &p);
 
     /// \brief Initializes console if needed
@@ -283,7 +283,7 @@ public:
     static machine_hash verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
         uint64_t mcycle_count);
 
-    /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
+    /// \brief Runs the machine in the uarch until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
     /// \param uarch_cycle_end uarch_cycle limit
     uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end);
@@ -327,7 +327,7 @@ public:
     /// \brief Resets the entire uarch state to pristine values.
     void reset_uarch();
 
-    /// \brief Resets the microarchitecture state and writes a binary step log to a file.
+    /// \brief Resets the uarch state and writes a binary step log to a file.
     /// \param filename Path where the binary step log will be saved.
     void log_reset_uarch(const std::string &filename);
 

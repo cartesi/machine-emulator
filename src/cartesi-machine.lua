@@ -870,13 +870,13 @@ where options are:
     log and save a step of <mcycle-count> mcycles to <filename>.
 
   --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump]
-    log <uarch-cycle-count> microarchitecture cycles (default 1) to <filename>
+    log <uarch-cycle-count> uarch cycles (default 1) to <filename>
     as a binary step log. logging stops early at the uarch halt, so a count at
     or above the per-mcycle uarch budget records one whole mcycle.
     append ",dump" to also write a human-readable printout to stderr.
 
   --log-reset-uarch=<filename>
-    reset the microarchitecture state and write a binary step log to <filename>.
+    reset the uarch state and write a binary step log to <filename>.
 
   --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...]
     send a cmio response to the rx buffer and write a binary step log to a file.
@@ -917,7 +917,7 @@ where options are:
     (.json/.lua), defaulting to Lua.
 
   --uarch-ram-image=<filename>
-    name of file containing microarchitecture RAM image.
+    name of file containing uarch RAM image.
 
   --dump-memory-ranges[=<dir>]
     dump all memory ranges to files under <dir>.
@@ -3177,7 +3177,7 @@ end
 if mcycle_root_hashes or computation_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
 end
--- The microarchitecture only runs in machines configured with keccak256.
+-- The uarch only runs in machines configured with keccak256.
 if cmdline.cmio_advance and cmdline.cmio_advance.uarch_cycle_computation_hash then
     assert(
         initial_config.hash_tree.hash_function == "keccak256",
@@ -4103,7 +4103,7 @@ if cmdline.max_uarch_cycle > 0 then
         report_mcycles(machine)
         report_uarch_cycles(machine)
     elseif break_reason == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
-        -- The microarchitecture halted after completing one main processor instruction.
+        -- The uarch halted after completing one main processor instruction.
         -- The mcycle counter was incremented unless the machine was already halted.
         local newly_halted = machine:read_reg("iflags_H") ~= 0 and not previously_halted
         if cmdline.auto_reset_uarch then machine:reset_uarch() end
@@ -4126,7 +4126,7 @@ if cmdline.log_step_uarch then
     end
 end
 if cmdline.log_reset_uarch then
-    stderr("Resetting microarchitecture state: please wait\n")
+    stderr("Resetting uarch state: please wait\n")
     os.remove(cmdline.log_reset_uarch.filename)
     machine:log_reset_uarch(cmdline.log_reset_uarch.filename)
 end

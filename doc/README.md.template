@@ -2145,7 +2145,7 @@ Field `iyield` is a bitmask declaring whether the emulator honors automatic and 
 Defaults to both enabled.
 The `cartesi-machine` command-line options `--no-htif-yield-automatic` and `--no-htif-yield-manual` clear the corresponding bits.
 
-The `uarch` entry describes the microarchitecture state.
+The `uarch` entry describes the uarch state.
 The `uarch.processor` field controls the uarch processor.
 Like the main processor, it includes a `uarch.processor.registers` flat table with all registers.
 Register `uarch.processor.registers.halt` is non-zero when the uarch is halted.
@@ -4206,8 +4206,8 @@ The uarch has its own private address ranges, which are not accessible to the ma
 
 | Physical address | Mapping |
 |------------------|---------|
-| []{replace=ar_table/uarch_shadow} | Microarchitecture shadow |
-| []{replace=ar_table/uarch_ram} | Microarchitecture RAM |
+| []{replace=ar_table/uarch_shadow} | Uarch shadow |
+| []{replace=ar_table/uarch_ram} | Uarch RAM |
 
 The uarch shadow holds the uarch processor state.
 The uarch RAM holds the uarch program that decodes and executes one main processor instruction per uarch run before halting.
@@ -4217,7 +4217,7 @@ The uarch RAM holds the uarch program that decodes and executes one main process
 Each address range visible to the main processor is described by an entry in the array of Physical Memory Attribute records (PMAs).
 The PMA array occupies []{replace=ar_table/pmas} and starts at address []{replace=ar_table/pmas_start} (exposed as `cartesi.AR_PMAS_START`).
 This is how the RISC-V interpreter discovers the available ranges at runtime, regardless of whether it is compiled to run directly on the host or inside a ZK prover.
-The microarchitecture's private ranges are not visible to the main processor and have no PMA entries, though a driver id is reserved for the uarch shadow state for consistency.
+The uarch's private ranges are not visible to the main processor and have no PMA entries, though a driver id is reserved for the uarch shadow state for consistency.
 
 Each PMA consists of 2 64-bit words.
 The first word gives the start of a range and the second word its length.
@@ -4909,7 +4909,7 @@ A dishonest player can post a valid log of a machine including some other input,
 When the contract holds no input at the disputed index (the epoch ended before it), there is nothing to include, and the transition out of the boundary is checked as an ordinary uarch step.
 
 For the transition that resets the uarch, `verify_reset_uarch` settles rejected inputs by itself.
-Replaying a reset from a state that has yielded manual with reject ends at the recorded revert state hash, rather than at the state with a pristine microarchitecture.
+Replaying a reset from a state that has yielded manual with reject ends at the recorded revert state hash, rather than at the state with a pristine uarch.
 The processing of a rejected input therefore ends at the boundary it started from, as the input bisection expects.
 Every other transition is a single uarch step, checked with `verify_step_uarch` as before.
 

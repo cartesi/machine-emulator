@@ -1013,7 +1013,7 @@ tests_util.make_do_test(build_machine, machine_type, { processor = { registers =
     function(machine)
         assert(machine:read_reg("mcycle") == 1)
 
-        -- Advance one mcycle by running the "big interpreter" compiled to the microarchitecture that is embedded
+        -- Advance one mcycle by running the "big interpreter" compiled to the uarch that is embedded
         -- in the emulator executable. Note that the config used to create the machine has an empty uarch key;
         -- therefore, the embedded uarch image is used.
         machine:run_uarch()
@@ -1822,7 +1822,7 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
                 _, err = pcall(function()
                     machine:log_step(1, filename)
                 end)
-                check_error_find(err, "microarchitecture is not reset")
+                check_error_find(err, "uarch is not reset")
                 machine:reset_uarch()
             end
             status = machine:log_step(1, filename)

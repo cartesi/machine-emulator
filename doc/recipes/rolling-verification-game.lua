@@ -192,7 +192,7 @@ end
 -- level advances whole inputs. The mcycle level runs to an offset from the disputed input's
 -- boundary, including the input first when the fork still stands there, and reverts a fork
 -- that finds the guest rejecting back to the boundary. The uarch_cycle level runs the
--- microarchitecture within the disputed instruction, again including the input first when that
+-- uarch within the disputed instruction, again including the input first when that
 -- instruction is the one that resumes the machine.
 -- docs:begin commit_bisection
 local function commit_bisection(player, branch, level, target)

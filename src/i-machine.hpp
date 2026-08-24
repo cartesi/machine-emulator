@@ -267,17 +267,17 @@ public:
         do_destroy();
     }
 
-    /// \brief Resets the microarchitecture state to pristine value
+    /// \brief Resets the uarch state to pristine value
     void reset_uarch() {
         do_reset_uarch();
     }
 
-    /// \brief Resets the microarchitecture state to pristine value and writes a step log to \p filename.
+    /// \brief Resets the uarch state to pristine value and writes a step log to \p filename.
     void log_reset_uarch(const std::string &filename) {
         do_log_reset_uarch(filename);
     }
 
-    /// \brief Runs the microarchitecture until the machine advances to the next mcycle or the current  micro cycle
+    /// \brief Runs the uarch until the machine advances to the next mcycle or the current  micro cycle
     /// (uarch_cycle) reaches uarch_cycle_end \param uarch_cycle_end uarch_cycle limit
     uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end) {
         return do_run_uarch(uarch_cycle_end);

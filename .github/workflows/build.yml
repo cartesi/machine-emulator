@@ -328,19 +328,19 @@ jobs:
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-machine-c-api
 
-      - name: Run rv64ui test suite on microarchitecture
+      - name: Run rv64ui test suite on uarch
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
 
-      - name: Record and replay rv64ui test suite on microarchitecture
+      - name: Record and replay rv64ui test suite on uarch
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests verify
 
-      - name: Run test suite with Microarchitecture
+      - name: Run test suite with Uarch
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --jobs=$(nproc) run_uarch
 
-      - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
+      - name: Run test suite with uarch and host based interpreters comparing machine hashes at every step
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --concurrency=update_hash_tree:1 --test="^rv64ui.*$" --jobs=$(nproc) run_host_and_uarch
 
@@ -358,7 +358,7 @@ jobs:
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
-      - name: Test microarchitecture interpreter
+      - name: Test uarch interpreter
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests-debian-packager make test-uarch-interpreter
 
@@ -495,19 +495,19 @@ jobs:
         run: |
           docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-machine-c-api
 
-      - name: Run rv64ui test suite on microarchitecture
+      - name: Run rv64ui test suite on uarch
         run: |
           docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
 
-      - name: Record and replay rv64ui test suite on microarchitecture
+      - name: Record and replay rv64ui test suite on uarch
         run: |
           docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests verify
 
-      - name: Run test suite with Microarchitecture
+      - name: Run test suite with Uarch
         run: |
           docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --jobs=$(nproc) run_uarch
 
-      - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
+      - name: Run test suite with uarch and host based interpreters comparing machine hashes at every step
         run: |
           docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --concurrency=update_hash_tree:1 --jobs=$(nproc) run_host_and_uarch
 
@@ -525,7 +525,7 @@ jobs:
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
-      - name: Test microarchitecture interpreter
+      - name: Test uarch interpreter
         run: |
           docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests-debian-packager make test-uarch-interpreter
 

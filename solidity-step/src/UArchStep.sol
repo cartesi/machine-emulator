@@ -26,7 +26,7 @@ library UArchStep {
     enum UArchStepStatus {
         Success, // one micro instruction was executed successfully
         UArchCycleOverflow, // uarch cycle reached or was already at its maximum value
-        UArchHalted // microarchitecture reached or was already at its halted fixed point
+        UArchHalted // uarch reached or was already at its halted fixed point
 
     }
 

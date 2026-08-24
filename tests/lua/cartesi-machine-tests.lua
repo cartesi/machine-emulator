@@ -302,7 +302,7 @@ local riscv_tests = {
     { "step_max_pages_flush.bin", 1037 },
 }
 
--- Microarchitecture configuration
+-- Uarch configuration
 local uarch
 
 -- Print help and exit
@@ -351,7 +351,7 @@ where options are:
     write the output of the list command as json
 
   --uarch-ram-image=<filename>
-    name of file containing microarchitecture RAM image.
+    name of file containing uarch RAM image.
 
   --save-step-logs=<dir>
     save step logs to <dir> (run_step only)
@@ -375,13 +375,13 @@ and command can be:
     step log file, and check the final hash against a reference machine
 
   run_uarch
-    run test in the microarchitecture and report if payload and cycles match expected
+    run test in the uarch and report if payload and cycles match expected
 
   run_uarch_coverage
     like run_uarch but collects executed uarch PCs into --uarch-pc-output-dir
 
   run_host_and_uarch
-    run test in two machines: host and microarchitecture based; checking if root hashes match after each mcycle.
+    run test in two machines: host and uarch based; checking if root hashes match after each mcycle.
 
   hash
     output root hash at every <number> of cycles

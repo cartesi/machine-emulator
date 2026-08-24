@@ -3378,7 +3378,7 @@ describe("cartesi-machine CLI", function()
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
         }, "%-%-uarch%-cycle%-computation%-hash cannot be combined with %-%-mcycle%-computation%-hash")
-        -- The microarchitecture only runs with keccak256.
+        -- The uarch only runs with keccak256.
         run_fail({
             "--hash-tree=hash_function:sha256",
             "--cmio-advance-state=input_file_index_end:0",

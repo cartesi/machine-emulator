@@ -27,10 +27,10 @@
 #define AR_SHADOW_TLB_LENGTH_DEF 0x6000            ///< Shadow TLB length in bytes
 #define AR_PMAS_START_DEF 0x10000                  ///< PMA Array start address
 #define AR_PMAS_LENGTH_DEF 0x1000                  ///< PMA Array length in bytes
-#define AR_SHADOW_UARCH_STATE_START_DEF 0x400000   ///< microarchitecture shadow state start address
-#define AR_SHADOW_UARCH_STATE_LENGTH_DEF 0x1000    ///< microarchitecture shadow state length
-#define AR_UARCH_RAM_START_DEF 0x600000            ///< microarchitecture RAM start address
-#define AR_UARCH_RAM_LENGTH_DEF 0x200000           ///< microarchitecture RAM length
+#define AR_SHADOW_UARCH_STATE_START_DEF 0x400000   ///< uarch shadow state start address
+#define AR_SHADOW_UARCH_STATE_LENGTH_DEF 0x1000    ///< uarch shadow state length
+#define AR_UARCH_RAM_START_DEF 0x600000            ///< uarch RAM start address
+#define AR_UARCH_RAM_LENGTH_DEF 0x200000           ///< uarch RAM length
 #define AR_CLINT_START_DEF 0x2000000               ///< CLINT start address
 #define AR_CLINT_LENGTH_DEF 0xC0000                ///< CLINT length in bytes
 #define AR_PLIC_START_DEF 0x40100000               ///< Start of PLIC range

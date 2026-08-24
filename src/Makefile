@@ -31,7 +31,7 @@ LUA_BIN=lua5.4
 # Are we on an environment that has the riscv64-cartesi-linux-gnu-* toolchain?
 DEV_ENV_HAS_TOOLCHAIN ?= no
 
-# If instead of building the microarchitecture you want to use a pre-built image file, modify this variable to
+# If instead of building the uarch you want to use a pre-built image file, modify this variable to
 # indicate the path of the desired file.
 UARCH_PRISTINE_RAM_C ?= ../uarch/uarch-pristine-ram.c
 UARCH_PRISTINE_HASH_C ?= ../uarch/uarch-pristine-hash.c

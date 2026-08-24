@@ -18,7 +18,7 @@
 #define ASSERT_PRINTF_HPP
 
 /// \file
-/// \brief Microarchitecture-dependent includes for printf and assert
+/// \brief Uarch-dependent includes for printf and assert
 
 #if defined(MICROARCHITECTURE)
 #include "../uarch/uarch-runtime.hpp" // IWYU pragma: export

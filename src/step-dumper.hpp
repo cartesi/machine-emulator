@@ -74,7 +74,9 @@ public:
 /// \param filename Path to a binary step log file produced by machine::log_step_uarch.
 /// \details Replays the log purely to produce the printout; no caller belief is checked. A log
 /// that fails the final root hash check keeps its printout, with the failure appended as a warning.
-std::string dump_step_uarch(const std::string &filename);
+/// Exported: the Lua binding is compiled into cartesi/jsonrpc.so as well, which resolves the
+/// symbol from cartesi.so at load time.
+__attribute__((visibility("default"))) std::string dump_step_uarch(const std::string &filename);
 
 } // namespace cartesi
 

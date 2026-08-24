@@ -13,21 +13,23 @@ machine:run_uarch(ucycle)
 
 -- Obtain state hash before the step and record the step into a binary log file
 local hash_before = machine:get_root_hash()
-os.remove("uarch-step.log")
 machine:log_step_uarch(1, "uarch-step.log")
 local hash_after = machine:get_root_hash()
 
--- Potentially mess with the log file to provoke a verification failure. The argument
--- is a Lua expression receiving the log bytes in `log` and returning the tampered bytes.
-if arg[4] then
+-- Potentially provoke a verification failure. flip:<offset> flips one bit inside the log
+-- file; lie gives the verifier a false state hash to start from.
+local offset = arg[4] and arg[4]:match("^flip:(%d+)$")
+if offset then
     local f = assert(io.open("uarch-step.log", "rb"))
     local log = f:read("a")
     f:close()
-    local env = { string = string, log = log }
-    local tampered = assert(load("return " .. arg[4], arg[4], "t", env))()
+    offset = tonumber(offset)
+    log = log:sub(1, offset - 1) .. string.char(log:byte(offset) ~ 1) .. log:sub(offset + 1)
     f = assert(io.open("uarch-step.log", "wb"))
-    f:write(tampered)
+    f:write(log)
     f:close()
+elseif arg[4] == "lie" then
+    hash_before = string.char(hash_before:byte(1) ~ 1) .. hash_before:sub(2)
 end
 
 -- Verify the uarch step log and check the hash it advances to

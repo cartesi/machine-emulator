@@ -116,20 +116,10 @@ coverage-pipeline: $(STEP_LOG)
 #   one-mcycle/             one 1-mcycle log for the prove->compress->Sepolia pipeline
 #   reject-machine/         structurally-invalid logs the guest must reject (tampers the above)
 fixtures:
-	@mkdir -p $(MACHINE_FIXTURES_DIR)
-	# The record-*.lua recorders require an empty output dir (they never delete); clear any stale
-	# reject/one-mcycle fixtures here so a re-run starts clean. The recorders recreate the dirs.
-	rm -rf $(abspath $(FIXTURES_DIR))/reject-machine $(ONE_MCYCLE_DIR)
 	@cd $(EMULATOR_DIR) && eval $$($(MAKE) env) && \
-	  $(LUA) tests/lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) --hash-function=sha256 \
-	    $(if $(MACHINE_TEST),--test='$(MACHINE_TEST)',) \
-	    --test-path=tests/build/machine \
-	    --save-step-logs=$(MACHINE_FIXTURES_DIR) run_step && \
-	  $(LUA) tests/lua/record-one-mcycle.lua --hash-function=sha256 \
-	    --output-dir=$(ONE_MCYCLE_DIR) && \
-	  $(LUA) tests/lua/record-adversarial-machine.lua \
-	    --fixtures-dir=$(abspath $(FIXTURES_DIR)) \
-	    --output-dir=$(abspath $(FIXTURES_DIR))/reject-machine
+	  RECORDERS_DIR=tests/lua MACHINE_TESTS_PATH=tests/build/machine \
+	  LUA='$(LUA)' JOBS=$(NUM_JOBS) MACHINE_TEST='$(MACHINE_TEST)' \
+	  tests/scripts/record-machine-step-fixtures.sh $(abspath $(FIXTURES_DIR))
 
 $(STEP_LOG):
 	@echo "$(STEP_LOG) not found; run 'make fixtures' (needs a built emulator)" >&2

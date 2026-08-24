@@ -1010,17 +1010,13 @@ jobs:
         run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
 
       - name: Generate risc0 fixtures
+        # record-machine-step-fixtures.sh is the same recorder the risc0/Makefile fixtures target
+        # runs; its defaults target the installed emulator inside the tests image.
         run: |
           mkdir -p risc0/test/fixtures/cartesi-machine-tests risc0/test/fixtures/one-mcycle
           chmod -R 777 risc0/test/fixtures
           docker run --rm -t -v ${{ github.workspace }}/risc0/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
-            cartesi-machine-tests --jobs=$(nproc) --hash-function=sha256 --save-step-logs=/fixtures/cartesi-machine-tests run_step
-          docker run --rm -t -v ${{ github.workspace }}/risc0/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
-            /usr/share/cartesi-machine/tests/lua/record-one-mcycle.lua --output-dir=/fixtures/one-mcycle
-          # Adversarial logs the guest must reject (test_reject_fixtures.rs). Mirrors the third
-          # recorder in risc0/Makefile's fixtures target; tampers the positive logs above.
-          docker run --rm -t -v ${{ github.workspace }}/risc0/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
-            /usr/share/cartesi-machine/tests/lua/record-adversarial-machine.lua --fixtures-dir=/fixtures --output-dir=/fixtures/reject-machine
+            /usr/share/cartesi-machine/tests/scripts/record-machine-step-fixtures.sh /fixtures
           ls -lR risc0/test/fixtures
 
       - name: Install Rust toolchain
@@ -1206,26 +1202,14 @@ jobs:
             || { echo "ERROR: src/EmulatorConstants.sol is stale. Run 'make -C solidity-step gen-constants' and commit."; exit 1; }
 
       - name: Generate solidity-step fixtures
+        # record-uarch-step-fixtures.sh is the same recorder the solidity-step/Makefile fixtures
+        # target runs; its defaults target the installed emulator inside the tests image.
         run: |
           FIX=solidity-step/test/fixtures
-          mkdir -p $FIX/uarch-tests-per-cycle $FIX/uarch-solidity-scope $FIX/send-cmio-response $FIX/reset-uarch
+          mkdir -p $FIX
           chmod -R 777 $FIX
-          IMG=${{ github.repository_owner }}/machine-emulator:tests
-          # uarch-riscv-tests is the installed wrapper (it bakes CARTESI_TESTS_UARCH_PATH); the
-          # record-*.lua recorders are run directly (executable, with a lua5.4 shebang). Mirrors
-          # solidity-step/Makefile's fixtures target; adversarial recorders tamper the positive sets.
-          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
-            uarch-riscv-tests --test='rv64ui%-uarch%-.+%.bin' --per-cycle-logs --output-dir=/fixtures/uarch-tests-per-cycle record_uarch_tests
-          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
-            /usr/share/cartesi-machine/tests/lua/record-solidity-uarch-scope.lua --output-dir=/fixtures/uarch-solidity-scope
-          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
-            /usr/share/cartesi-machine/tests/lua/record-send-cmio-response.lua --output-dir=/fixtures/send-cmio-response
-          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
-            /usr/share/cartesi-machine/tests/lua/record-reset-uarch.lua --output-dir=/fixtures/reset-uarch
-          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
-            /usr/share/cartesi-machine/tests/lua/record-adversarial-uarch.lua --fixtures-dir=/fixtures --output-dir=/fixtures/reject-uarch
-          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures $IMG \
-            /usr/share/cartesi-machine/tests/lua/record-adversarial-send-cmio-response.lua --fixtures-dir=/fixtures --output-dir=/fixtures/reject-send-cmio-response
+          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
+            /usr/share/cartesi-machine/tests/scripts/record-uarch-step-fixtures.sh /fixtures
           ls -lR $FIX
 
       - name: Run solidity-step tests

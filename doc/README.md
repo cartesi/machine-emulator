@@ -2810,32 +2810,32 @@ emit a character is an `ecall` with `a7 = UARCH_ECALL_FN_PUTCHAR` and
 In the following command, the `--max-mcycle` and `--max-uarch-cycle`
 options tell `cartesi-machine` to stop just before the putchar `ecall`.
 The `--log-step-uarch` command-line option instructs `cartesi-machine`
-to then record a single uarch step into a binary step log file, and its
-`pretty` flag to also dump a user-friendly printout of the logged step
-to screen:
+to then record a single uarch step into a binary step log file. The
+`dump` flag also dumps a user-friendly version of the logged step to
+screen:
 
 ``` bash
 cartesi-machine \
     --max-mcycle=41536683 \
     --max-uarch-cycle=2242 \
-    --log-step-uarch=uarch-step.log,pretty
+    --log-step-uarch=uarch-step.log,dump
 ```
 
 producing the log
 
 ``` text
 Gathering micro step log: please wait
-1: read uarch.cycle@0x400008: 0x8c2
-2: read uarch.halt@0x400000: 0x0
-3: read uarch.pc@0x400010: 0x6021d0
-4: read @0x6021d0: 0x51300000073
+1: read uarch.cycle@0x400008: 0x8c2(2242)
+2: read uarch.halt@0x400000: 0x0(0)
+3: read uarch.pc@0x400010: 0x6021d0(6300112)
+4: read @0x6021d0: 0x51300000073(5579162517619)
 begin ecall
-  5: read uarch.x17@0x4000a0: 0x2
-  6: read uarch.x10@0x400068: 0xa
-  7: write uarch.pc@0x400010: 0x6021d0 -> 0x6021d4
+  5: read uarch.x17@0x4000a0: 0x2(2)
+  6: read uarch.x10@0x400068: 0xa(10)
+  7: write uarch.pc@0x400010: 0x6021d0(6300112) -> 0x6021d4(6300116)
 end ecall
-8: write uarch.cycle@0x400008: 0x8c2 -> 0x8c3
-9: read uarch.halt@0x400000: 0x0
+8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
+9: read uarch.halt@0x400000: 0x0(0)
 ```
 
 Understanding these logs in detail is unnecessary for all but the most
@@ -5407,7 +5407,7 @@ recording the log.
 
 The binary format of the step log file is as follows:
 
-    step_log ::= header page_entry^page_count node_entry^node_count sibling^sibling_count
+    step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^sibling_count
 
     header ::= {                        -- 112 bytes
       signature             ::= "CTSI" 3 0 0 0,  -- magic + version + reserved
@@ -5433,7 +5433,7 @@ The binary format of the step log file is as follows:
       hash_after  ::= hash              -- subtree hash after it
     }
 
-    sibling ::= hash                    -- hashes of the subtrees not covered by pages
+    sibling_entry ::= hash              -- hashes of the subtrees not covered by pages
                                         -- or nodes, in the order a depth-first walk of
                                         -- the state hash tree consumes them
 
@@ -5441,19 +5441,19 @@ All integers are little-endian and every `hash` is 32 bytes. The page
 entries record, as of first touch, every page of machine state the step
 read or wrote. The node entries record bulk writes that replace whole
 subtrees at once, as the uarch reset and the input-inclusion transitions
-do. The siblings complete the picture: combined with the hashes of the
-pages and nodes, they reconstruct the machine’s root hash. A step log is
-therefore self-contained, and anyone can check one against a pair of
-state hashes without instantiating a machine.
+do. Combined with the hashes of the pages and nodes, the siblings
+reconstruct the machine’s root hash. A step log is therefore
+self-contained, and anyone can check one against a pair of state hashes
+without instantiating a machine.
 
 #### Inspecting step logs
 
-The static method `cartesi.machine:pretty_print_step_uarch(<filename>)`
-returns a user-friendly printout of the uarch step recorded in a binary
-log file. It replays the step against the state carried in the log and
-describes every access the step performed, identifying what each address
-refers to (a register, a CSR, memory). Addresses and values are printed
-in hexadecimal and decimal.
+The static method `cartesi.machine:dump_step_uarch(<filename>)` returns
+a user-friendly version of the uarch step recorded in a binary log file.
+It replays the step against the state carried in the log and describes
+every access the step performed, identifying what each address refers to
+(a register, a CSR, memory). Addresses and values are printed in
+hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:
 
@@ -5474,10 +5474,9 @@ machine:run_uarch(ucycle)
 assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 
 -- Record the step into a binary log file and dump its printout to screen
-os.remove("uarch-step.log")
 machine:log_step_uarch(1, "uarch-step.log")
 io.stderr:write(string.format("\nStep log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
-io.stderr:write(cartesi.machine:pretty_print_step_uarch("uarch-step.log"))
+io.stderr:write(cartesi.machine:dump_step_uarch("uarch-step.log"))
 ```
 
 with command:
@@ -5499,17 +5498,17 @@ produces the output:
        \    / CARTESI
 Step log of uarch step at mcycle=41536683 uarch_cycle=2242:
 
-1: read uarch.cycle@0x400008: 0x8c2
-2: read uarch.halt@0x400000: 0x0
-3: read uarch.pc@0x400010: 0x6021d0
-4: read @0x6021d0: 0x51300000073
+1: read uarch.cycle@0x400008: 0x8c2(2242)
+2: read uarch.halt@0x400000: 0x0(0)
+3: read uarch.pc@0x400010: 0x6021d0(6300112)
+4: read @0x6021d0: 0x51300000073(5579162517619)
 begin ecall
-  5: read uarch.x17@0x4000a0: 0x2
-  6: read uarch.x10@0x400068: 0xa
-  7: write uarch.pc@0x400010: 0x6021d0 -> 0x6021d4
+  5: read uarch.x17@0x4000a0: 0x2(2)
+  6: read uarch.x10@0x400068: 0xa(10)
+  7: write uarch.pc@0x400010: 0x6021d0(6300112) -> 0x6021d4(6300116)
 end ecall
-8: write uarch.cycle@0x400008: 0x8c2 -> 0x8c3
-9: read uarch.halt@0x400000: 0x0
+8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
+9: read uarch.halt@0x400000: 0x0(0)
 ```
 
 Understanding these logs in detail is unnecessary for all but the most
@@ -5523,9 +5522,7 @@ row `\    / CARTESI` in the splash screen.
 
 #### Verifying state transitions
 
-A step log carries everything a verifier needs: the state the step
-touched (pages and nodes) and the sibling hashes tying that state into
-the machine’s root hash. The static method
+The static method
 `machine:verify_step_uarch(<state_hash_before>, <filename>, <uarch_cycle_count>)`
 first checks that the log’s contents reproduce `<state_hash_before>`,
 then replays the logged uarch step against them, exactly as a true
@@ -5553,21 +5550,23 @@ machine:run_uarch(ucycle)
 
 -- Obtain state hash before the step and record the step into a binary log file
 local hash_before = machine:get_root_hash()
-os.remove("uarch-step.log")
 machine:log_step_uarch(1, "uarch-step.log")
 local hash_after = machine:get_root_hash()
 
--- Potentially mess with the log file to provoke a verification failure. The argument
--- is a Lua expression receiving the log bytes in `log` and returning the tampered bytes.
-if arg[4] then
+-- Potentially provoke a verification failure. flip:<offset> flips one bit inside the log
+-- file; lie gives the verifier a false state hash to start from.
+local offset = arg[4] and arg[4]:match("^flip:(%d+)$")
+if offset then
     local f = assert(io.open("uarch-step.log", "rb"))
     local log = f:read("a")
     f:close()
-    local env = { string = string, log = log }
-    local tampered = assert(load("return " .. arg[4], arg[4], "t", env))()
+    offset = tonumber(offset)
+    log = log:sub(1, offset - 1) .. string.char(log:byte(offset) ~ 1) .. log:sub(offset + 1)
     f = assert(io.open("uarch-step.log", "wb"))
-    f:write(tampered)
+    f:write(log)
     f:close()
+elseif arg[4] == "lie" then
+    hash_before = string.char(hash_before:byte(1) ~ 1) .. hash_before:sub(2)
 end
 
 -- Verify the uarch step log and check the hash it advances to
@@ -5585,51 +5584,52 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242"
 State transition accepted!
 ```
 
-The script is much more interesting when the argument is used to “mess”
-with the log before verification. For example, flipping one bit inside
-the logged page data means the pages no longer reproduce the agreed
-before-hash, so verification rejects the log outright:
+The script is much more interesting when the optional last argument is
+used to “mess” with the verification. For example, flipping one bit
+inside the logged page data means the pages no longer reproduce the
+agreed before-hash, so verification rejects the log:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" 'log:sub(1, 199) .. string.char(log:byte(200) ~ 1) .. log:sub(201)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" flip:200
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:34: initial root hash mismatch
+lua5.4: verify-uarch-step.lua:36: initial root hash mismatch
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:34: in main chunk
+	verify-uarch-step.lua:36: in main chunk
 	[C]: in ?
 ```
 
 Tampering instead with the log’s own claimed after-hash leaves the
-replay intact, but the state hash the step provably advances to exposes
-the lie:
+replay intact, but the state hash the replay reaches no longer matches
+the claim:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" 'log:sub(1, 59) .. string.char(log:byte(60) ~ 1) .. log:sub(61)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" flip:60
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:34: final root hash mismatch
+lua5.4: verify-uarch-step.lua:36: final root hash mismatch
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:34: in main chunk
+	verify-uarch-step.lua:36: in main chunk
 	[C]: in ?
 ```
 
-Truncating the log fails the decoder’s size accounting before any replay
-happens:
+Lying to the verifier about the state hash the step starts from also
+fails: the claim no longer matches the before-hash recorded in the log
+header.
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" 'log:sub(1, #log - 32)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" lie
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:34: sibling count does not match step log size
+lua5.4: verify-uarch-step.lua:36: root hash before does not match step log header
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:34: in main chunk
+	verify-uarch-step.lua:36: in main chunk
 	[C]: in ?
 ```
 
@@ -9005,29 +9005,34 @@ agreed on determine the form of the disputed transition, and the referee
 asks player 1 for the matching logs:
 
 ``` lua
+-- Both players run in the referee's directory, so each names its log files by its role.
+local step_log_name = arg[1] .. "-step.log"
+local reset_log_name = arg[1] .. "-reset.log"
+local cmio_log_name = arg[1] .. "-cmio.log"
+
 local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
-        os.remove("cmio.log")
+        os.remove(cmio_log_name)
         agreed:log_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             player.boundary.data,
             agreed:get_root_hash(),
-            "cmio.log"
+            cmio_log_name
         )
-        os.remove("uarch-step.log")
-        agreed:log_step_uarch(1, "uarch-step.log")
-        return { send_cmio_log = read_file("cmio.log"), step_log = read_file("uarch-step.log") }
+        os.remove(step_log_name)
+        agreed:log_step_uarch(1, step_log_name)
+        return { send_cmio_log = read_file(cmio_log_name), step_log = read_file(step_log_name) }
     end
-    os.remove("uarch-step.log")
-    agreed:log_step_uarch(1, "uarch-step.log")
+    os.remove(step_log_name)
+    agreed:log_step_uarch(1, step_log_name)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        os.remove("uarch-reset.log")
-        agreed:log_reset_uarch("uarch-reset.log")
-        return { step_log = read_file("uarch-step.log"), reset_log = read_file("uarch-reset.log") }
+        os.remove(reset_log_name)
+        agreed:log_reset_uarch(reset_log_name)
+        return { step_log = read_file(step_log_name), reset_log = read_file(reset_log_name) }
     end
-    return { step_log = read_file("uarch-step.log") }
+    return { step_log = read_file(step_log_name) }
 end
 ```
 

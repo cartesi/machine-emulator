@@ -1834,7 +1834,8 @@ The one that actually triggers the host to emit a character is an `ecall` with `
 This happens when `uarch_cycle` is []{replace=cycles_uarch_putchar_ecall/stderr}.
 
 In the following command, the `--max-mcycle` and `--max-uarch-cycle` options tell `cartesi-machine` to stop just before the putchar `ecall`.
-The `--log-step-uarch` command-line option instructs `cartesi-machine` to then record a single uarch step into a binary step log file, and its `dump` flag to also dump a user-friendly printout of the logged step to screen:
+The `--log-step-uarch` command-line option instructs `cartesi-machine` to then record a single uarch step into a binary step log file.
+The `dump` flag also dumps a user-friendly version of the logged step to screen:
 ```{.bash key=rarely_log_uarch_putchar replace=source vars=cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr}
 cartesi-machine \
     --max-mcycle=$cycles \
@@ -2983,7 +2984,7 @@ Note that the functions indeed perform the action, and therefore modify the uarc
 The binary format of the step log file is as follows:
 
 ```
-step_log ::= header page_entry^page_count node_entry^node_count sibling^sibling_count
+step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^sibling_count
 
 header ::= {                        -- 112 bytes
   signature             ::= "CTSI" 3 0 0 0,  -- magic + version + reserved
@@ -3009,7 +3010,7 @@ node_entry ::= {                    -- 80 bytes: a bulk write spanning > 1 page
   hash_after  ::= hash              -- subtree hash after it
 }
 
-sibling ::= hash                    -- hashes of the subtrees not covered by pages
+sibling_entry ::= hash              -- hashes of the subtrees not covered by pages
                                     -- or nodes, in the order a depth-first walk of
                                     -- the state hash tree consumes them
 ```
@@ -3017,12 +3018,12 @@ sibling ::= hash                    -- hashes of the subtrees not covered by pag
 All integers are little-endian and every `hash` is 32 bytes.
 The page entries record, as of first touch, every page of machine state the step read or wrote.
 The node entries record bulk writes that replace whole subtrees at once, as the uarch reset and the input-inclusion transitions do.
-The siblings complete the picture: combined with the hashes of the pages and nodes, they reconstruct the machine's root hash.
+Combined with the hashes of the pages and nodes, the siblings reconstruct the machine's root hash.
 A step log is therefore self-contained, and anyone can check one against a pair of state hashes without instantiating a machine.
 
 #### Inspecting step logs
 
-The static method `cartesi.machine:dump_step_uarch(<filename>)` returns a user-friendly printout of the uarch step recorded in a binary log file.
+The static method `cartesi.machine:dump_step_uarch(<filename>)` returns a user-friendly version of the uarch step recorded in a binary log file.
 It replays the step against the state carried in the log and describes every access the step performed, identifying what each address refers to (a register, a CSR, memory).
 Addresses and values are printed in hexadecimal and decimal.
 
@@ -3034,6 +3035,7 @@ with command:
 ```{.bash key=dump_uarch_step vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=dump_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/dump-uarch-step.lua" .
+rm -f uarch-step.log
 {
 # docs:begin cmd
 lua5.4 dump-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles"
@@ -3053,7 +3055,6 @@ The uarch step being executed is the ECALL micro-instruction that asks the emula
 
 #### Verifying state transitions
 
-A step log carries everything a verifier needs: the state the step touched (pages and nodes) and the sibling hashes tying that state into the machine's root hash.
 The static method `machine:verify_step_uarch(<state_hash_before>, <filename>, <uarch_cycle_count>)` first checks that the log's contents reproduce `<state_hash_before>`, then replays the logged uarch step against them, exactly as a true Cartesi Machine uarch would execute it.
 It returns the state hash the step provably advances to, for the caller to compare against the state hash under dispute.
 Note there is no need for a Cartesi Machine instance to verify a transition: all required state information is in the step log.
@@ -3067,6 +3068,7 @@ Running the script without arguments accepts the valid state transition:
 ```{.bash key=verify_uarch_step_run vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
+rm -f uarch-step.log
 {
 # docs:begin cmd
 lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles"
@@ -3076,44 +3078,47 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles"
 ```{replace=verify_uarch_step_run/stderr}
 ```
 
-The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the log before verification.
-For example, flipping one bit inside the logged page data means the pages no longer reproduce the agreed before-hash, so verification rejects the log outright:
+The script is much more interesting when the optional last argument is used to &ldquo;mess&rdquo; with the verification.
+For example, flipping one bit inside the logged page data means the pages no longer reproduce the agreed before-hash, so verification rejects the log:
 ```{.bash key=verify_uarch_step_mess_page vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
+rm -f uarch-step.log
 {
 # docs:begin cmd
-lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log:sub(1, 199) .. string.char(log:byte(200) ~ 1) .. log:sub(201)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" flip:200
 # docs:end cmd
 } || true
 ```
 ```{replace=verify_uarch_step_mess_page/stderr}
 ```
 
-Tampering instead with the log's own claimed after-hash leaves the replay intact, but the state hash the step provably advances to exposes the lie:
+Tampering instead with the log's own claimed after-hash leaves the replay intact, but the state hash the replay reaches no longer matches the claim:
 ```{.bash key=verify_uarch_step_mess_claim vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
+rm -f uarch-step.log
 {
 # docs:begin cmd
-lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log:sub(1, 59) .. string.char(log:byte(60) ~ 1) .. log:sub(61)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" flip:60
 # docs:end cmd
 } || true
 ```
 ```{replace=verify_uarch_step_mess_claim/stderr}
 ```
 
-Truncating the log fails the decoder's size accounting before any replay happens:
-```{.bash key=verify_uarch_step_mess_truncate vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
+Lying to the verifier about the state hash the step starts from also fails: the claim no longer matches the before-hash recorded in the log header.
+```{.bash key=verify_uarch_step_mess_lie vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
+rm -f uarch-step.log
 {
 # docs:begin cmd
-lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log:sub(1, #log - 32)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" lie
 # docs:end cmd
 } || true
 ```
-```{replace=verify_uarch_step_mess_truncate/stderr}
+```{replace=verify_uarch_step_mess_lie/stderr}
 ```
 
 In a nutshell, only valid state transitions are accepted by the `machine:verify_step_uarch()` method.

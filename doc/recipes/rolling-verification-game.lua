@@ -241,29 +241,34 @@ end
 -- the reset, and every other is an ordinary step. A combined transition is committed as its two
 -- logs, each performing the action it records.
 -- docs:begin commit_log
+-- Both players run in the referee's directory, so each names its log files by its role.
+local step_log_name = arg[1] .. "-step.log"
+local reset_log_name = arg[1] .. "-reset.log"
+local cmio_log_name = arg[1] .. "-cmio.log"
+
 local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
-        os.remove("cmio.log")
+        os.remove(cmio_log_name)
         agreed:log_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             player.boundary.data,
             agreed:get_root_hash(),
-            "cmio.log"
+            cmio_log_name
         )
-        os.remove("uarch-step.log")
-        agreed:log_step_uarch(1, "uarch-step.log")
-        return { send_cmio_log = read_file("cmio.log"), step_log = read_file("uarch-step.log") }
+        os.remove(step_log_name)
+        agreed:log_step_uarch(1, step_log_name)
+        return { send_cmio_log = read_file(cmio_log_name), step_log = read_file(step_log_name) }
     end
-    os.remove("uarch-step.log")
-    agreed:log_step_uarch(1, "uarch-step.log")
+    os.remove(step_log_name)
+    agreed:log_step_uarch(1, step_log_name)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        os.remove("uarch-reset.log")
-        agreed:log_reset_uarch("uarch-reset.log")
-        return { step_log = read_file("uarch-step.log"), reset_log = read_file("uarch-reset.log") }
+        os.remove(reset_log_name)
+        agreed:log_reset_uarch(reset_log_name)
+        return { step_log = read_file(step_log_name), reset_log = read_file(reset_log_name) }
     end
-    return { step_log = read_file("uarch-step.log") }
+    return { step_log = read_file(step_log_name) }
 end
 -- docs:end commit_log
 

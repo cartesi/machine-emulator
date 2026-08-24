@@ -112,17 +112,21 @@ end
 -- then a fixed point, and the reset, committed as two logs, every other an ordinary step,
 -- decided by the cycle the referee names rather than the machine's own uarch_cycle, which sits
 -- at the halt.
+-- Both players run in the referee's directory, so each names its log files by its role.
+local step_log_name = arg[1] .. "-step.log"
+local reset_log_name = arg[1] .. "-reset.log"
+
 local function commit_log(player, branch, _mcycle, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
-    os.remove("uarch-step.log")
-    agreed:log_step_uarch(1, "uarch-step.log")
+    os.remove(step_log_name)
+    agreed:log_step_uarch(1, step_log_name)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        os.remove("uarch-reset.log")
-        agreed:log_reset_uarch("uarch-reset.log")
-        return { step_log = read_file("uarch-step.log"), reset_log = read_file("uarch-reset.log") }
+        os.remove(reset_log_name)
+        agreed:log_reset_uarch(reset_log_name)
+        return { step_log = read_file(step_log_name), reset_log = read_file(reset_log_name) }
     end
-    return { step_log = read_file("uarch-step.log") }
+    return { step_log = read_file(step_log_name) }
 end
 
 -- The output captured during commit_final_hash, the result bytes and the output drive's subtree

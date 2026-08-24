@@ -102,30 +102,11 @@ test-transpile:
 gen-all:       gen-constants gen-transpiled
 check-gen-all: check-gen-constants check-gen-transpiled test-transpile
 
-# One fixture set per recorder, each with its own _manifest.csv. The adversarial
-# recorders tamper the valid logs, so they must run last; all recorders use
-# emulator-relative paths, hence the cd into $(EMULATOR_DIR).
 fixtures: fixtures-clean
-	@mkdir -p $(FIXTURES_DIR)
 	@cd $(EMULATOR_DIR) && eval $$($(MAKE) env) && \
-	  $(LUA_BIN) tests/lua/uarch-riscv-tests.lua \
-	    --test-path=tests/build/uarch \
-	    --test='$(UARCH_TEST_PATTERN)' \
-	    --output-dir=$(abspath $(FIXTURES_DIR))/uarch-tests-per-cycle \
-	    --per-cycle-logs \
-	    record_uarch_tests && \
-	  $(LUA_BIN) tests/lua/record-solidity-uarch-scope.lua \
-	    --output-dir=$(abspath $(FIXTURES_DIR))/uarch-solidity-scope && \
-	  $(LUA_BIN) tests/lua/record-send-cmio-response.lua \
-	    --output-dir=$(abspath $(FIXTURES_DIR))/send-cmio-response && \
-	  $(LUA_BIN) tests/lua/record-reset-uarch.lua \
-	    --output-dir=$(abspath $(FIXTURES_DIR))/reset-uarch && \
-	  $(LUA_BIN) tests/lua/record-adversarial-uarch.lua \
-	    --fixtures-dir=$(abspath $(FIXTURES_DIR)) \
-	    --output-dir=$(abspath $(FIXTURES_DIR))/reject-uarch && \
-	  $(LUA_BIN) tests/lua/record-adversarial-send-cmio-response.lua \
-	    --fixtures-dir=$(abspath $(FIXTURES_DIR)) \
-	    --output-dir=$(abspath $(FIXTURES_DIR))/reject-send-cmio-response
+	  RECORDERS_DIR=tests/lua UARCH_TESTS_PATH=tests/build/uarch \
+	  LUA='$(LUA_BIN)' UARCH_TEST_PATTERN='$(UARCH_TEST_PATTERN)' \
+	  tests/scripts/record-uarch-step-fixtures.sh $(abspath $(FIXTURES_DIR))
 
 fixtures-clean:
 	rm -rf $(FIXTURES_DIR)

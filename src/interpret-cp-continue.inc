@@ -32,17 +32,23 @@ TC_CALLCONV static execute_status cp_continue(const STATE_ACCESS a, uint32_t ins
         const uint64_t vpc = pc_to_virtual(a, pc);
         bool interpreted = false;
         const cp_trace *probe_t = cp_find(c, vpc, &interpreted);
+        auto *const probe_penumbra = reinterpret_cast<penumbra_state *>(
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
+        if (probe_t != nullptr && probe_t->ctx_slot_base != probe_penumbra->tlb_ctx_slot_base) {
+            ++c->context_misses;
+            cp_retire_context_trace(c, *const_cast<cp_trace *>(probe_t));
+            probe_t = nullptr;
+            interpreted = false;
+        }
         if (probe_t != nullptr) {
-            auto *const probe_penumbra = reinterpret_cast<penumbra_state *>(
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                reinterpret_cast<unsigned char *>(tcc) - offsetof(penumbra_state, scratch));
             cp_probe(c, probe_penumbra, vpc);
         }
         if (const cp_trace *t = probe_t; t != nullptr && cp_enter_allowed(c)) {
             // Installed: enter through the self-validating call entry (its
             // validation bails reach cp_continue_cold, never back here).
             ++c->continue_enters;
-            cp_front_put(c, vpc, t->call_fn);
+            cp_front_put(c, t->ctx_slot_base, vpc, t->call_fn);
             if (cp_log_enabled()) [[unlikely]] {
                 std::fprintf(stderr, "cp-contenter vpc=%llx len=%u\n", static_cast<unsigned long long>(vpc), t->len);
             }

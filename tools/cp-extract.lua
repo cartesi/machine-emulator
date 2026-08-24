@@ -467,6 +467,9 @@ end
 -- validate the compiler's exact host immediate form and synthesize the one
 -- runtime patch record. Any compiler shape drift fails the build.
 local SEM_IMM_SENTINEL = 0x5a5
+local SEM_CTX_SENTINEL = 0x500
+local SEM_MEMORY_OP = { lb = true, lbu = true, ld = true, lh = true, lhu = true, lw = true, lwu = true,
+    sb = true, sd = true, sh = true, sw = true }
 local function add_semantic_immediate_patch(st)
     if not st.name:match("^cp_addiw?_[0-9]+_[0-9]+$") then
         return
@@ -565,6 +568,61 @@ local function add_semantic_immediate_patch(st)
     end)
 end
 
+-- Context-specialized memory stencils use one semantic family. The compiler
+-- materializes this aligned sentinel as the TLB context-bank base; validate
+-- that exact native instruction and synthesize immediate ordinal 0. Formation
+-- patches it to 0, 256, 512, or 768.
+local function add_semantic_context_patch(st)
+    local op = st.name:match("^cp_([a-z0-9]+)_[0-9]+_[0-9]+$")
+    if not SEM_MEMORY_OP[op] then
+        return
+    end
+    local found
+    if st.arch == "aarch64" then
+        for off = 0, #st.code - 4, 4 do
+            local insn = string.unpack("<I4", st.code, off + 1)
+            local movz = insn & 0x7f800000 == 0x52800000 and (insn >> 21) & 3 == 0
+            if movz and (insn >> 5) & 0xffff == SEM_CTX_SENTINEL then
+                if found then
+                    die("%s: multiple semantic context fields", st.name)
+                end
+                found = off
+            end
+        end
+        if found == nil then
+            die("%s: context sentinel did not compile to MOVZ", st.name)
+        end
+        st.patches[#st.patches + 1] = { offset = found, kind = "G0", ordinal = 0, addend = 0 }
+    else
+        local marker = string.pack("<I4", SEM_CTX_SENTINEL)
+        local start = 1
+        while true do
+            local at = st.code:find(marker, start, true)
+            if not at then
+                break
+            end
+            if found then
+                die("%s: multiple semantic context fields", st.name)
+            end
+            found = at - 1
+            start = at + 1
+        end
+        if found == nil then
+            die("%s: context sentinel did not compile to an imm32", st.name)
+        end
+        -- Accept MOV r32,imm32. Other compiler shapes fail closed until they
+        -- are decoded and validated explicitly.
+        local opcode = found >= 1 and st.code:byte(found) or 0
+        if opcode < 0xb8 or opcode > 0xbf then
+            die("%s: semantic context imm32 is not in MOV r32,imm32", st.name)
+        end
+        st.patches[#st.patches + 1] = { offset = found, kind = "ABS32", ordinal = 0, addend = 0 }
+    end
+    table.sort(st.patches, function(a, b)
+        return a.offset < b.offset
+    end)
+end
+
 local stencils = {}
 local by_name = {}
 for i = 3, #arg do
@@ -581,6 +639,7 @@ for i = 3, #arg do
     end
     for _, st in ipairs(list) do
         add_semantic_immediate_patch(st)
+        add_semantic_context_patch(st)
         if by_name[st.name] then
             die("duplicate stencil %s (in %s)", st.name, arg[i])
         end

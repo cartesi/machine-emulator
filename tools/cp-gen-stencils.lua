@@ -192,9 +192,9 @@ emit("}")
 emit("")
 
 -- Fused call prologue, stencil one: probe the hot code-TLB slot of the
--- CURRENT translation context (exactly the interpreter's own per-transit
--- fetch probe, so hits and misses reproduce its hashed fill sequence;
--- content identity comes from the vh compare), then establish: pc derives
+-- current translation context (exactly the interpreter's per-transit fetch
+-- probe; content identity comes from the vh compare), then
+-- establish: pc derives
 -- from the incoming deposit (vpc + caller vf, the universal entry
 -- convention) without a hole, the fetch register and penumbra vf publish
 -- the recorded mapping, and the computed slot index rides to stencil two
@@ -368,9 +368,10 @@ gem("    state_access s;")
 gem("    uint64_t *v1;")
 gem("    uint64_t *v2;")
 gem("    uint64_t *vd;")
+gem("    uint64_t ctx_slot_base;")
 gem("    static_assert(sizeof(state_access) == sizeof(uint64_t));")
-gem("    cp_mem_access(uint64_t sa_bits, uint64_t *a1, uint64_t *a2, uint64_t *ad)")
-gem("        : s(std::bit_cast<state_access>(sa_bits)), v1(a1), v2(a2), vd(ad) {}")
+gem("    cp_mem_access(uint64_t sa_bits, uint64_t *a1, uint64_t *a2, uint64_t *ad, uint64_t ctxb)")
+gem("        : s(std::bit_cast<state_access>(sa_bits)), v1(a1), v2(a2), vd(ad), ctx_slot_base(ctxb) {}")
 gem("    static const char *do_get_name() {")
 gem('        return "cp_mem_access";')
 gem("    }")
@@ -381,7 +382,7 @@ gem("    void do_write_x(int /*i*/, uint64_t val) const {")
 gem("        *vd = val;")
 gem("    }")
 gem("    uint64_t do_read_tlb_ctx_slot_base() const {")
-gem("        return s.read_tlb_ctx_slot_base();")
+gem("        return ctx_slot_base == UINT64_MAX ? s.read_tlb_ctx_slot_base() : ctx_slot_base;")
 gem("    }")
 gem("    template <TLB_set_index E>")
 gem("    uint64_t do_read_tlb_vaddr_page(uint64_t i) const {")
@@ -533,14 +534,18 @@ gem("// instantiation of read/write_virtual_memory for cp_mem_access and")
 gem("// preferred by partial ordering. Mutates nothing and reports failure,")
 gem("// so the wrapper bails and the interpreter re-executes the")
 gem("// instruction portably, running the true slow path there.")
+gem("template <typename>")
+gem("inline constexpr bool is_cp_mem_access = false;")
+gem("template <>")
+gem("inline constexpr bool is_cp_mem_access<cp_mem_access> = true;")
 gem("template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>")
-gem("    requires(std::is_same_v<STATE_ACCESS, cp_mem_access>)")
+gem("    requires(is_cp_mem_access<STATE_ACCESS>)")
 gem("static FORCE_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(const STATE_ACCESS /*a*/, uint64_t pc,")
 gem("    uint64_t /*mcycle*/, uint64_t /*vaddr*/, T * /*pval*/) {")
 gem("    return {false, pc};")
 gem("}")
 gem("template <typename T, typename STATE_ACCESS>")
-gem("    requires(std::is_same_v<STATE_ACCESS, cp_mem_access>)")
+gem("    requires(is_cp_mem_access<STATE_ACCESS>)")
 gem("static FORCE_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(const STATE_ACCESS /*a*/,")
 gem("    uint64_t pc, uint64_t /*mcycle*/, uint64_t /*vaddr*/, uint64_t /*val64*/) {")
 gem("    return {execute_status::failure, pc};")
@@ -552,7 +557,7 @@ gem("// anything else reports failure and the wrapper bails. This also")
 gem("// keeps the whole path inlinable, which the full read_csr/write_csr")
 gem("// switches are not.")
 gem("template <typename STATE_ACCESS>")
-gem("    requires(std::is_same_v<STATE_ACCESS, cp_mem_access>)")
+gem("    requires(is_cp_mem_access<STATE_ACCESS>)")
 gem("static FORCE_INLINE uint64_t read_csr(const STATE_ACCESS a, uint64_t /*mcycle*/, CSR_address csraddr,")
 gem("    bool *status) {")
 gem("    switch (csraddr) {")
@@ -568,7 +573,7 @@ gem("            return 0;")
 gem("    }")
 gem("}")
 gem("template <typename STATE_ACCESS>")
-gem("    requires(std::is_same_v<STATE_ACCESS, cp_mem_access>)")
+gem("    requires(is_cp_mem_access<STATE_ACCESS>)")
 gem("static FORCE_INLINE execute_status write_csr(const STATE_ACCESS a, uint64_t /*mcycle*/, CSR_address csraddr,")
 gem("    uint64_t val) {")
 gem("    switch (csraddr) {")
@@ -586,7 +591,7 @@ gem("// Same interception for the illegal-instruction raise: a CSR body's")
 gem("// only failure (FS off for the FP CSRs) must bail to the interpreter,")
 gem("// which re-executes the instruction and raises architecturally.")
 gem("template <typename STATE_ACCESS>")
-gem("    requires(std::is_same_v<STATE_ACCESS, cp_mem_access>)")
+gem("    requires(is_cp_mem_access<STATE_ACCESS>)")
 gem("static FORCE_INLINE execute_status raise_illegal_insn_exception(const STATE_ACCESS /*a*/, uint64_t & /*pc*/,")
 gem("    uint32_t /*insn*/) {")
 gem("    return execute_status::failure;")
@@ -1084,6 +1089,11 @@ local SEM_STORE_OPS = {
     sw = { "execute_SW", s_insn(2) },
     sd = { "execute_SD", s_insn(3) },
 }
+-- The extractor validates this exact materialized constant in every memory
+-- stencil and turns it into immediate patch ordinal 0. It is a multiple of
+-- TLB_SET_SIZE, like every runtime context base, and fits the native hosts'
+-- compact immediate forms.
+local CTX_SLOT_BASE_SENTINEL = 0x500
 for _, name in ipairs(sem_sorted(SEM_LOAD_OPS)) do
     local fn_name, insn = SEM_LOAD_OPS[name][1], SEM_LOAD_OPS[name][2]
     for d = 0, NSLOTS - 1 do
@@ -1093,7 +1103,7 @@ for _, name in ipairs(sem_sorted(SEM_LOAD_OPS)) do
             gem(("    uint64_t v1 = r%d;"):format(src))
             gem("    uint64_t v2 = 0;")
             gem("    uint64_t vd = 0;")
-            gem("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd);")
+            gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, 0x%x);"):format(CTX_SLOT_BASE_SENTINEL))
             gem("    uint64_t spc = 0;")
             gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
             gem("    if (st != cartesi::execute_status::success) {")
@@ -1131,7 +1141,7 @@ for _, opname in ipairs(sem_sorted(SEM_CSR_OPS)) do
                 gem(("    uint64_t v1 = r%d;"):format(s1))
                 gem("    uint64_t v2 = 0;")
                 gem("    uint64_t vd = 0;")
-                gem("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd);")
+                gem("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, UINT64_MAX);")
                 gem("    uint64_t spc = 0;")
                 gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
                 gem("    if (st != cartesi::execute_status::success) {")
@@ -1153,7 +1163,7 @@ for _, csrname in ipairs(sem_sorted(SEM_CSRS)) do
         gem("    uint64_t v1 = 0;")
         gem("    uint64_t v2 = 0;")
         gem("    uint64_t vd = 0;")
-        gem("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd);")
+        gem("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, UINT64_MAX);")
         gem("    uint64_t spc = 0;")
         gem(("    const auto st = cartesi::execute_CSRRS(acc, spc, 0, 0x%08xu);"):format(insn))
         gem("    if (st != cartesi::execute_status::success) {")
@@ -1175,7 +1185,7 @@ for _, name in ipairs(sem_sorted(SEM_STORE_OPS)) do
             gem(("    uint64_t v1 = r%d;"):format(base))
             gem(("    uint64_t v2 = r%d;"):format(val))
             gem("    uint64_t vd = 0;")
-            gem("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd);")
+            gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, 0x%x);"):format(CTX_SLOT_BASE_SENTINEL))
             gem("    uint64_t spc = 0;")
             gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
             gem("    if (st != cartesi::execute_status::success) {")

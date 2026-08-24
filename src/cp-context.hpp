@@ -40,7 +40,7 @@ struct cp_trace {
     bool carried;        ///< Loop-carried cyclic form (diagnostics)
     uint32_t exec_count; ///< Hook entries into this trace (C-side, diagnostics)
     const void *fn;      ///< Entry pointer (the tick guard)
-    const void *call_fn; ///< Call-entry prologue: mapping establishment, then fn
+    const void *call_fn; ///< Call entry used by generated lookup paths
     // Straight-exit link (RVVM block_links analog, one trailing site per
     // trace): the terminal exit's branch, retargeted from the island to the
     // successor's entry when both ends are installed in the same guest page.
@@ -82,6 +82,7 @@ struct cp_state {
     static constexpr uint32_t max_traces = 16384;
     static constexpr uint32_t set_slots = 65536; ///< 4x traces, power of two
     static constexpr uint32_t front_size = 256;  ///< RVVM_TLB_SIZE
+    static constexpr uint32_t front_contexts = 4;
     static constexpr uint16_t interpreted_marker = 0xffff;
     static constexpr uint32_t nslots = CP_NSLOTS; ///< Guest cache slots in the contract
     static constexpr uint32_t max_bails = 64;
@@ -105,7 +106,7 @@ struct cp_state {
                                       ///< the interpreter slow path advances
     const void *terminal_island;
 
-    cp_front_entry front[front_size];
+    cp_front_entry front[front_contexts][front_size];
 
     cp_trace pool[max_traces];
     uint32_t ntraces;
@@ -220,15 +221,18 @@ struct cp_state {
     uint64_t call_entries;
     uint64_t links;
     uint64_t links_severed;
-    uint64_t tick_bails;     ///< Entries rejected by the tick guard
-    uint64_t ctx_bails;      ///< Call entries rejected by the context guard
-    uint64_t page_bails;     ///< Call entries rejected by the hot-slot page probe
-    uint64_t vh_bails;       ///< Call entries rejected by the hot-slot vh probe
-    uint64_t lookup_misses;  ///< Dynamic terminals whose front probe missed
-    uint64_t branch_bails;   ///< Exits through a branch-direction guard
-    uint64_t mem_bails;      ///< Exits through a memory (hot-TLB) guard
-    uint64_t fp_soft_calls;  ///< Hard FP guard misses completed by soft_only
-    uint64_t terminal_exits; ///< Straight-terminal exits (cyclic tick bails count as tick)
+    uint64_t context_misses;       ///< Entry lookups whose installed trace had another context
+    uint64_t context_replacements; ///< Context-mismatched traces retired for replacement
+    uint64_t context_link_rejects; ///< Link candidates rejected solely for context mismatch
+    uint64_t tick_bails;           ///< Entries rejected by the tick guard
+    uint64_t ctx_bails;            ///< Call entries rejected by the context guard
+    uint64_t page_bails;           ///< Call entries rejected by the hot-slot page probe
+    uint64_t vh_bails;             ///< Call entries rejected by the hot-slot vh probe
+    uint64_t lookup_misses;        ///< Dynamic terminals whose front probe missed
+    uint64_t branch_bails;         ///< Exits through a branch-direction guard
+    uint64_t mem_bails;            ///< Exits through a memory (hot-TLB) guard
+    uint64_t fp_soft_calls;        ///< Hard FP guard misses completed by soft_only
+    uint64_t terminal_exits;       ///< Straight-terminal exits (cyclic tick bails count as tick)
     // Formation-cause counters: what ended each recording.
     uint64_t fin_cyclic;
     uint64_t fin_dynamic;   ///< JALR-class terminal

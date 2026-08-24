@@ -22,6 +22,8 @@ EMULATOR_VERSION_MINOR=21
 EMULATOR_VERSION_PATCH=0
 EMULATOR_VERSION_LABEL=
 
+.DEFAULT_GOAL := all
+
 TARGET_OS?=$(shell uname)
 
 LUA_INC=$(shell pkg-config --cflags-only-I lua5.4)
@@ -744,7 +746,7 @@ interpret.o: interpret.cpp cm-version.h interpret-jump-table.hpp
 	$(CXX) $(CXXFLAGS) $(INTERPRET_CXXFLAGS) -c -o $@ $<
 
 interpret-tc.o: interpret-tc.cpp interpret.cpp cm-version.h interpret-jump-table.hpp \
-		interpret-tc-cases.inc interpret-tc-table.inc
+		interpret-tc-cases.inc interpret-tc-table.inc $(LIGHTNING_LIB)
 	$(CXX) $(CXXFLAGS) $(TC_INTERPRET_CXXFLAGS) -c -o $@ $<
 
 $(LIGHTNING_LIB):

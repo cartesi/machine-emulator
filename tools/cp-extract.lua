@@ -2,9 +2,9 @@
 -- Copy-and-patch stencil extractor (see copy-patch-rvvm.md).
 --
 -- Consumes one or more stencil objects, validates that every stencil is
--- expressible by the supported patch kinds, and emits a C header with the
--- code bytes, patch descriptors, and placement lookup tables, plus a
--- readable manifest.
+-- expressible by the supported patch kinds, and emits a compact C interface,
+-- a C++ translation unit with the code bytes, patch descriptors, and placement
+-- lookup tables, plus a readable manifest.
 --
 -- Two container formats:
 -- - ELF64 (the structural C TU, compiled bare-metal; and every TU on Linux
@@ -20,13 +20,14 @@
 -- symbol, bad addend, misaligned or out-of-bounds or overlapping patch,
 -- malformed layout, duplicate stencil, or unexpected trailing bytes aborts.
 --
--- Usage: lua5.4 cp-extract.lua <output.h> <output-manifest.txt> <obj>...
+-- Usage: lua5.4 cp-extract.lua <output.h> <output.cpp> <output-manifest.txt> <obj>...
 
-local hdr_path = assert(arg[1], "usage: cp-extract.lua <header> <manifest> <obj>...")
-local man_path = assert(arg[2])
+local hdr_path = assert(arg[1], "usage: cp-extract.lua <header> <source> <manifest> <obj>...")
+local src_path = assert(arg[2])
+local man_path = assert(arg[3])
 -- Guest cache slot count, from the build (must match the generator's).
 local NSLOTS = tonumber(os.getenv("CP_NSLOTS")) or 7
-if arg[3] == nil then
+if arg[4] == nil then
     io.stderr:write("cp-extract: no input objects\n")
     os.exit(1)
 end
@@ -56,9 +57,7 @@ local EM_AARCH64, EM_X86_64 = 183, 62
 local SHT_SYMTAB, SHT_RELA, SHT_PROGBITS = 2, 4, 1
 
 local function parse_elf(data, path)
-    if data:byte(5) ~= 2 or data:byte(6) ~= 1 then
-        die("%s: expected ELF64 little-endian", path)
-    end
+    if data:byte(5) ~= 2 or data:byte(6) ~= 1 then die("%s: expected ELF64 little-endian", path) end
     local e_machine = string.unpack("<I2", data, 0x12 + 1)
     local arch
     if e_machine == EM_AARCH64 then
@@ -72,22 +71,24 @@ local function parse_elf(data, path)
     local e_shentsize = string.unpack("<I2", data, 0x3a + 1)
     local e_shnum = string.unpack("<I2", data, 0x3c + 1)
     local e_shstrndx = string.unpack("<I2", data, 0x3e + 1)
-    if e_shentsize ~= 64 then
-        die("%s: unexpected section header entry size %d", path, e_shentsize)
-    end
+    if e_shentsize ~= 64 then die("%s: unexpected section header entry size %d", path, e_shentsize) end
 
     local sections = {}
     for i = 0, e_shnum - 1 do
         local base = e_shoff + i * 64 + 1
         local name_off, sh_type, flags, _, offset, size, link, info = string.unpack("<I4I4I8I8I8I8I4I4", data, base)
-        sections[i] =
-            { name_off = name_off, type = sh_type, flags = flags, offset = offset, size = size, link = link,
-                info = info }
+        sections[i] = {
+            name_off = name_off,
+            type = sh_type,
+            flags = flags,
+            offset = offset,
+            size = size,
+            link = link,
+            info = info,
+        }
     end
     local shstr = sections[e_shstrndx]
-    local function str_at(tab_off, off)
-        return data:match("^[^\0]*", tab_off + off + 1) or ""
-    end
+    local function str_at(tab_off, off) return data:match("^[^\0]*", tab_off + off + 1) or "" end
     for i = 0, e_shnum - 1 do
         sections[i].name = str_at(shstr.offset, sections[i].name_off)
     end
@@ -99,9 +100,7 @@ local function parse_elf(data, path)
             strtab = sections[symtab.link]
         end
     end
-    if not symtab then
-        die("%s: no symbol table", path)
-    end
+    if not symtab then die("%s: no symbol table", path) end
     local syms = {}
     local nsyms = symtab.size // 24
     for i = 0, nsyms - 1 do
@@ -129,9 +128,7 @@ local function parse_elf(data, path)
 
     local rela_by_target = {}
     for i = 0, e_shnum - 1 do
-        if sections[i].type == SHT_RELA then
-            rela_by_target[sections[i].info] = sections[i]
-        end
+        if sections[i].type == SHT_RELA then rela_by_target[sections[i].info] = sections[i] end
     end
 
     local stencils = {}
@@ -139,9 +136,7 @@ local function parse_elf(data, path)
         local s = sections[i]
         local name = s.name:match("^%.text%.(cp_.+)$")
         if s.type == SHT_PROGBITS and name then
-            if s.flags & 0x4 == 0 then
-                die("%s: section not executable", name)
-            end
+            if s.flags & 0x4 == 0 then die("%s: section not executable", name) end
             if s.size == 0 or (arch == "aarch64" and s.size % 4 ~= 0) then
                 die("%s: bad section size %d", name, s.size)
             end
@@ -150,18 +145,19 @@ local function parse_elf(data, path)
                 local sym = syms[j]
                 -- "$x"/"$d" are AArch64 mapping symbols, not functions
                 if sym.shndx == i and sym.name ~= "" and sym.name:sub(1, 1) ~= "$" then
-                    if found then
-                        die("%s: multiple symbols in section", name)
-                    end
+                    if found then die("%s: multiple symbols in section", name) end
                     found = sym
                 end
             end
-            if not found or found.name ~= name then
-                die("%s: missing or misnamed function symbol", name)
-            end
+            if not found or found.name ~= name then die("%s: missing or misnamed function symbol", name) end
             if found.value ~= 0 or found.size ~= s.size then
-                die("%s: symbol does not span section (value %d size %d, section %d)", name, found.value,
-                    found.size, s.size)
+                die(
+                    "%s: symbol does not span section (value %d size %d, section %d)",
+                    name,
+                    found.value,
+                    found.size,
+                    s.size
+                )
             end
 
             local code = data:sub(s.offset + 1, s.offset + s.size)
@@ -176,59 +172,41 @@ local function parse_elf(data, path)
                     local rtype = info & 0xffffffff
                     local rsym = info >> 32
                     local kind = RELOC_KIND[rtype]
-                    if not kind then
-                        die("%s: unsupported relocation type %d at +%d", name, rtype, off)
-                    end
+                    if not kind then die("%s: unsupported relocation type %d at +%d", name, rtype, off) end
                     local width = kind == "ABS64" and 8 or 4
-                    if off + width > s.size then
-                        die("%s: out-of-bounds patch at +%d", name, off)
-                    end
-                    if arch == "aarch64" and off % 4 ~= 0 then
-                        die("%s: misaligned patch at +%d", name, off)
-                    end
-                    if seen_off[off] then
-                        die("%s: overlapping patches at +%d", name, off)
-                    end
+                    if off + width > s.size then die("%s: out-of-bounds patch at +%d", name, off) end
+                    if arch == "aarch64" and off % 4 ~= 0 then die("%s: misaligned patch at +%d", name, off) end
+                    if seen_off[off] then die("%s: overlapping patches at +%d", name, off) end
                     seen_off[off] = true
                     local target = syms[rsym] and syms[rsym].name or "?"
                     local ordinal
                     if kind == "JUMP26" or kind == "JMPREL32" then
                         ordinal = CONT_ORDINAL[target]
-                        if not ordinal then
-                            die("%s: %s to unexpected symbol %s", name, kind, target)
-                        end
+                        if not ordinal then die("%s: %s to unexpected symbol %s", name, kind, target) end
                         if kind == "JUMP26" then
-                            if addend ~= 0 then
-                                die("%s: JUMP26 with addend %d at +%d", name, addend, off)
-                            end
+                            if addend ~= 0 then die("%s: JUMP26 with addend %d at +%d", name, addend, off) end
                             local insn = string.unpack("<I4", code, off + 1)
                             if insn & A64_B_MASK ~= A64_B_OPCODE then
                                 die("%s: JUMP26 patch site +%d is not a B instruction (%08x)", name, off, insn)
                             end
                         else
-                            if addend ~= -4 then
-                                die("%s: JMPREL32 with addend %d at +%d", name, addend, off)
-                            end
+                            if addend ~= -4 then die("%s: JMPREL32 with addend %d at +%d", name, addend, off) end
                             local jmp = off >= 1 and code:byte(off) == X86_JMP_REL32
-                            local jcc = off >= 2 and code:byte(off - 1) == X86_TWOBYTE and
-                                code:byte(off) >= X86_JCC_LO and code:byte(off) <= X86_JCC_HI
+                            local jcc = off >= 2
+                                and code:byte(off - 1) == X86_TWOBYTE
+                                and code:byte(off) >= X86_JCC_LO
+                                and code:byte(off) <= X86_JCC_HI
                             if not jmp and not jcc then
                                 die("%s: JMPREL32 patch site +%d is not jmp/jcc rel32", name, off)
                             end
                         end
                     else
                         ordinal = IMM_ORDINAL[target]
-                        if not ordinal then
-                            die("%s: %s to unexpected symbol %s", name, kind, target)
-                        end
+                        if not ordinal then die("%s: %s to unexpected symbol %s", name, kind, target) end
                         if kind == "ABS64" then
-                            if addend < 0 then
-                                die("%s: ABS64 with negative addend %d at +%d", name, addend, off)
-                            end
+                            if addend < 0 then die("%s: ABS64 with negative addend %d at +%d", name, addend, off) end
                         else
-                            if addend ~= 0 then
-                                die("%s: %s with addend %d at +%d", name, kind, addend, off)
-                            end
+                            if addend ~= 0 then die("%s: %s with addend %d at +%d", name, kind, addend, off) end
                             local insn = string.unpack("<I4", code, off + 1)
                             if (insn >> 23) & 0x3f ~= A64_MOV_WIDE_BITS then
                                 die("%s: %s patch site +%d is not movz/movk (%08x)", name, kind, off, insn)
@@ -238,9 +216,7 @@ local function parse_elf(data, path)
                     patches[#patches + 1] = { offset = off, kind = kind, ordinal = ordinal, addend = addend }
                 end
             end
-            table.sort(patches, function(a, b)
-                return a.offset < b.offset
-            end)
+            table.sort(patches, function(a, b) return a.offset < b.offset end)
             stencils[#stencils + 1] = { name = name, code = code, patches = patches, arch = arch }
         end
     end
@@ -262,8 +238,12 @@ local X86_64_RELOC_BRANCH = 2
 -- multi-byte forms, under any run of 66/2e prefixes (the assembler pads
 -- between subsections with prefix-stacked long NOPs).
 local X86_NOP_BASES = {
-    "\x90", "\x0f\x1f\x00", "\x0f\x1f\x40\x00", "\x0f\x1f\x44\x00\x00",
-    "\x0f\x1f\x80\x00\x00\x00\x00", "\x0f\x1f\x84\x00\x00\x00\x00\x00",
+    "\x90",
+    "\x0f\x1f\x00",
+    "\x0f\x1f\x40\x00",
+    "\x0f\x1f\x44\x00\x00",
+    "\x0f\x1f\x80\x00\x00\x00\x00",
+    "\x0f\x1f\x84\x00\x00\x00\x00\x00",
 }
 
 local function parse_macho(data, path)
@@ -302,12 +282,8 @@ local function parse_macho(data, path)
         end
         pos = pos + cmdsize
     end
-    if not text then
-        die("%s: no (__TEXT,__text) section", path)
-    end
-    if not symoff then
-        die("%s: no symbol table", path)
-    end
+    if not text then die("%s: no (__TEXT,__text) section", path) end
+    if not symoff then die("%s: no symbol table", path) end
 
     -- Symbols: nlist_64 records; keep _cp_* defined in __text plus the
     -- full list for relocation targets.
@@ -322,12 +298,8 @@ local function parse_macho(data, path)
             funcs[#funcs + 1] = { name = name:sub(2), start = n_value }
         end
     end
-    if #funcs == 0 then
-        die("%s: no cp_* symbols in __text", path)
-    end
-    table.sort(funcs, function(a, b)
-        return a.start < b.start
-    end)
+    if #funcs == 0 then die("%s: no cp_* symbols in __text", path) end
+    table.sort(funcs, function(a, b) return a.start < b.start end)
     for i = 1, #funcs do
         funcs[i].limit = i < #funcs and funcs[i + 1].start or text.size
         funcs[i].patches = {}
@@ -356,14 +328,19 @@ local function parse_macho(data, path)
         local rtype = (info >> 28) & 0xf
         local expected = arch == "aarch64" and ARM64_RELOC_BRANCH26 or X86_64_RELOC_BRANCH
         if rtype ~= expected or pcrel ~= 1 or length ~= 2 or extern ~= 1 then
-            die("%s: unsupported Mach-O relocation (type %d pcrel %d length %d extern %d) at +%d", path, rtype,
-                pcrel, length, extern, r_address)
+            die(
+                "%s: unsupported Mach-O relocation (type %d pcrel %d length %d extern %d) at +%d",
+                path,
+                rtype,
+                pcrel,
+                length,
+                extern,
+                r_address
+            )
         end
         local target = syms[symnum] and syms[symnum].name or "?"
         local ordinal_ = CONT_ORDINAL[target:sub(2)]
-        if not ordinal_ then
-            die("%s: branch to unexpected symbol %s at +%d", path, target, r_address)
-        end
+        if not ordinal_ then die("%s: branch to unexpected symbol %s at +%d", path, target, r_address) end
         local fn = func_at(r_address)
         if r_address < fn.start or r_address + 4 > fn.limit or (arch == "aarch64" and r_address % 4 ~= 0) then
             die("%s: relocation at +%d outside or misaligned in %s", path, r_address, fn.name)
@@ -380,16 +357,13 @@ local function parse_macho(data, path)
             -- field end, so a zero stored field means the same thing as
             -- ELF's -4 addend, which is what the runtime patcher applies.
             local jmp = off >= 1 and data:byte(text.offset + r_address) == X86_JMP_REL32
-            local jcc = off >= 2 and data:byte(text.offset + r_address - 1) == X86_TWOBYTE and
-                data:byte(text.offset + r_address) >= X86_JCC_LO and
-                data:byte(text.offset + r_address) <= X86_JCC_HI
-            if not jmp and not jcc then
-                die("%s: BRANCH patch site +%d is not jmp/jcc rel32", fn.name, off)
-            end
+            local jcc = off >= 2
+                and data:byte(text.offset + r_address - 1) == X86_TWOBYTE
+                and data:byte(text.offset + r_address) >= X86_JCC_LO
+                and data:byte(text.offset + r_address) <= X86_JCC_HI
+            if not jmp and not jcc then die("%s: BRANCH patch site +%d is not jmp/jcc rel32", fn.name, off) end
             local stored = string.unpack("<i4", data, text.offset + r_address + 1)
-            if stored ~= 0 then
-                die("%s: BRANCH with stored addend %d at +%d", fn.name, stored, off)
-            end
+            if stored ~= 0 then die("%s: BRANCH with stored addend %d at +%d", fn.name, stored, off) end
             fn.patches[#fn.patches + 1] = { offset = off, kind = "JMPREL32", ordinal = ordinal_, addend = -4 }
         end
     end
@@ -401,14 +375,10 @@ local function parse_macho(data, path)
         if #fn.patches == 0 then
             die("%s: no continuation relocation (every semantic stencil ends in a branch)", fn.name)
         end
-        table.sort(fn.patches, function(a, b)
-            return a.offset < b.offset
-        end)
+        table.sort(fn.patches, function(a, b) return a.offset < b.offset end)
         local seen = {}
         for _, p in ipairs(fn.patches) do
-            if seen[p.offset] then
-                die("%s: overlapping patches at +%d", fn.name, p.offset)
-            end
+            if seen[p.offset] then die("%s: overlapping patches at +%d", fn.name, p.offset) end
             seen[p.offset] = true
         end
         local size = fn.patches[#fn.patches].offset + 4
@@ -433,8 +403,10 @@ local function parse_macho(data, path)
                     pad = pad + 1
                 else
                     local p = pad
-                    while p < fn.limit and (data:byte(text.offset + p + 1) == 0x66 or
-                        data:byte(text.offset + p + 1) == 0x2e) do
+                    while
+                        p < fn.limit
+                        and (data:byte(text.offset + p + 1) == 0x66 or data:byte(text.offset + p + 1) == 0x2e)
+                    do
                         p = p + 1
                     end
                     local matched
@@ -468,45 +440,44 @@ end
 -- runtime patch record. Any compiler shape drift fails the build.
 local SEM_IMM_SENTINEL = 0x5a5
 local SEM_CTX_SENTINEL = 0x500
-local SEM_MEMORY_OP = { lb = true, lbu = true, ld = true, lh = true, lhu = true, lw = true, lwu = true,
-    sb = true, sd = true, sh = true, sw = true }
+local SEM_MEMORY_OP = {
+    lb = true,
+    lbu = true,
+    ld = true,
+    lh = true,
+    lhu = true,
+    lw = true,
+    lwu = true,
+    sb = true,
+    sd = true,
+    sh = true,
+    sw = true,
+}
 local function add_semantic_immediate_patch(st)
-    if not st.name:match("^cp_addiw?_[0-9]+_[0-9]+$") then
-        return
-    end
+    if not st.name:match("^cp_addiw?_[0-9]+_[0-9]+$") then return end
     local found
     if st.arch == "aarch64" then
         for off = 0, #st.code - 4, 4 do
             local insn = string.unpack("<I4", st.code, off + 1)
             local add_imm = insn & A64_ADD_IMM_MASK == A64_ADD_IMM_OPCODE and insn & (3 << 29) == 0
             if add_imm and (insn >> 10) & 0xfff == SEM_IMM_SENTINEL then
-                if found then
-                    die("%s: multiple semantic immediate fields", st.name)
-                end
+                if found then die("%s: multiple semantic immediate fields", st.name) end
                 found = off
             end
         end
-        if found == nil then
-            die("%s: semantic sentinel did not compile to ADD immediate", st.name)
-        end
+        if found == nil then die("%s: semantic sentinel did not compile to ADD immediate", st.name) end
         st.patches[#st.patches + 1] = { offset = found, kind = "U12", ordinal = 0, addend = 0 }
     else
         local marker = string.pack("<I4", SEM_IMM_SENTINEL)
         local start = 1
         while true do
             local at = st.code:find(marker, start, true)
-            if not at then
-                break
-            end
-            if found then
-                die("%s: multiple semantic immediate fields", st.name)
-            end
+            if not at then break end
+            if found then die("%s: multiple semantic immediate fields", st.name) end
             found = at - 1
             start = at + 1
         end
-        if found == nil then
-            die("%s: semantic sentinel did not compile to an imm32", st.name)
-        end
+        if found == nil then die("%s: semantic sentinel did not compile to an imm32", st.name) end
         -- Accept only ADD r/m,imm32 or LEA disp32, the two shapes GCC/clang
         -- use for these execute bodies. The sentinel bytes are the field.
         --
@@ -524,9 +495,7 @@ local function add_semantic_immediate_patch(st)
             -- for a stack-to-stack slot pair.
             if imm_start >= 2 and code:byte(imm_start - 1) == 0x05 then
                 local rex = imm_start >= 3 and code:byte(imm_start - 2) or 0
-                if imm_start == 2 or rex & 0xf0 == 0x40 or rex ~= 0x0f then
-                    return true
-                end
+                if imm_start == 2 or rex & 0xf0 == 0x40 or rex ~= 0x0f then return true end
             end
             for p = 1, imm_start - 2 do
                 if code:byte(p) == 0x81 then
@@ -543,9 +512,7 @@ local function add_semantic_immediate_patch(st)
                         elseif mod == 2 or (mod == 0 and rm == 5) then
                             len = len + 4 -- disp32 / RIP-relative
                         end
-                        if p + len == imm_start then
-                            return true
-                        end
+                        if p + len == imm_start then return true end
                     end
                 end
             end
@@ -558,14 +525,10 @@ local function add_semantic_immediate_patch(st)
             local has_sib = modrm & 7 == 4
             valid = valid or (opcode == 0x8d and modrm >> 6 == 2 and has_sib == (back == 3))
         end
-        if not valid then
-            die("%s: semantic imm32 is not in ADD or LEA", st.name)
-        end
+        if not valid then die("%s: semantic imm32 is not in ADD or LEA", st.name) end
         st.patches[#st.patches + 1] = { offset = found, kind = "ABS32", ordinal = 0, addend = 0 }
     end
-    table.sort(st.patches, function(a, b)
-        return a.offset < b.offset
-    end)
+    table.sort(st.patches, function(a, b) return a.offset < b.offset end)
 end
 
 local function signed_packed_bytes(b0, b1, b2, b3)
@@ -579,26 +542,18 @@ end
 local function add_semantic_context_selector(st)
     local op = st.name:match("^cp_([a-z0-9]+)_")
     local indexed = st.name:match("_%d+_%d+$") or st.name:match("_%d+_%d+_%d+$")
-    if not indexed or not SEM_MEMORY_OP[op] then
-        return
-    end
-    if st.arch ~= "aarch64" then
-        die("%s: expected context variants on %s", st.name, st.arch)
-    end
+    if not indexed or not SEM_MEMORY_OP[op] then return end
+    if st.arch ~= "aarch64" then die("%s: expected context variants on %s", st.name, st.arch) end
     local found, original
     for off = 0, #st.code - 4, 4 do
         local insn = string.unpack("<I4", st.code, off + 1)
         local movz = insn & 0x7f800000 == 0x52800000 and (insn >> 21) & 3 == 0
         if movz and (insn >> 5) & 0xffff == SEM_CTX_SENTINEL then
-            if found then
-                die("%s: multiple semantic context fields", st.name)
-            end
+            if found then die("%s: multiple semantic context fields", st.name) end
             found, original = off, insn
         end
     end
-    if found == nil then
-        die("%s: context sentinel did not compile to MOVZ", st.name)
-    end
+    if found == nil then die("%s: context sentinel did not compile to MOVZ", st.name) end
     local words = {}
     for ctx = 0, 3 do
         words[ctx + 1] = (original & ~(0xffff << 5)) | ((ctx * 0x100) << 5)
@@ -610,13 +565,15 @@ local function add_semantic_context_selector(st)
         local b2 = (words[3] >> shift) & 0xff
         local b3 = (words[4] >> shift) & 0xff
         if b0 ~= b1 or b0 ~= b2 or b0 ~= b3 then
-            st.patches[#st.patches + 1] = { offset = found + byte, kind = "SELECT8", ordinal = 0,
-                addend = signed_packed_bytes(b0, b1, b2, b3) }
+            st.patches[#st.patches + 1] = {
+                offset = found + byte,
+                kind = "SELECT8",
+                ordinal = 0,
+                addend = signed_packed_bytes(b0, b1, b2, b3),
+            }
         end
     end
-    table.sort(st.patches, function(a, b)
-        return a.offset < b.offset
-    end)
+    table.sort(st.patches, function(a, b) return a.offset < b.offset end)
 end
 
 -- A semantic memory stencil is compiled once for each of the four valid TLB
@@ -625,9 +582,7 @@ end
 -- each context without decoding host instructions or retaining four bodies.
 local function merge_context_variants(name, variants)
     for i = 1, 4 do
-        if variants[i] == nil then
-            die("%s: missing context variant %d", name, i - 1)
-        end
+        if variants[i] == nil then die("%s: missing context variant %d", name, i - 1) end
     end
     local base = variants[1]
     base.name = name
@@ -643,14 +598,10 @@ local function merge_context_variants(name, variants)
             end
         end
     end
-    local function patch_width(kind)
-        return kind == "ABS64" and 8 or 4
-    end
+    local function patch_width(kind) return kind == "ABS64" and 8 or 4 end
     local function overlaps_existing_patch(off)
         for _, p in ipairs(base.patches) do
-            if off >= p.offset and off < p.offset + patch_width(p.kind) then
-                return true
-            end
+            if off >= p.offset and off < p.offset + patch_width(p.kind) then return true end
         end
         return false
     end
@@ -664,24 +615,24 @@ local function merge_context_variants(name, variants)
             if overlaps_existing_patch(off) then
                 die("%s: context byte at +%d overlaps an existing patch", name, off)
             end
-            base.patches[#base.patches + 1] = { offset = off, kind = "SELECT8", ordinal = 0,
-                addend = signed_packed_bytes(b0, b1, b2, b3) }
+            base.patches[#base.patches + 1] = {
+                offset = off,
+                kind = "SELECT8",
+                ordinal = 0,
+                addend = signed_packed_bytes(b0, b1, b2, b3),
+            }
             nselect = nselect + 1
         end
     end
-    if nselect == 0 then
-        die("%s: context variants produced identical code", name)
-    end
-    table.sort(base.patches, function(a, b)
-        return a.offset < b.offset
-    end)
+    if nselect == 0 then die("%s: context variants produced identical code", name) end
+    table.sort(base.patches, function(a, b) return a.offset < b.offset end)
     return base
 end
 
 local stencils = {}
 local by_name = {}
 local context_variants = {}
-for i = 3, #arg do
+for i = 4, #arg do
     local f = assert(io.open(arg[i], "rb"))
     local data = f:read("a")
     f:close()
@@ -699,36 +650,27 @@ for i = 3, #arg do
             local variants = context_variants[name] or {}
             context_variants[name] = variants
             ctx = tonumber(ctx) + 1
-            if variants[ctx] then
-                die("duplicate context variant %s_ctx%d (in %s)", name, ctx - 1, arg[i])
-            end
+            if variants[ctx] then die("duplicate context variant %s_ctx%d (in %s)", name, ctx - 1, arg[i]) end
             variants[ctx] = st
         else
             add_semantic_immediate_patch(st)
             add_semantic_context_selector(st)
-            if by_name[st.name] then
-                die("duplicate stencil %s (in %s)", st.name, arg[i])
-            end
+            if by_name[st.name] then die("duplicate stencil %s (in %s)", st.name, arg[i]) end
             by_name[st.name] = true
             stencils[#stencils + 1] = st
         end
     end
 end
 for name, variants in pairs(context_variants) do
-    if by_name[name] then
-        die("context stencil conflicts with %s", name)
-    end
+    if by_name[name] then die("context stencil conflicts with %s", name) end
     by_name[name] = true
     stencils[#stencils + 1] = merge_context_variants(name, variants)
 end
-if #stencils == 0 then
-    die("no cp_* stencils found")
-end
-table.sort(stencils, function(a, b)
-    return a.name < b.name
-end)
+if #stencils == 0 then die("no cp_* stencils found") end
+table.sort(stencils, function(a, b) return a.name < b.name end)
 
 local hdr = assert(io.open(hdr_path, "w"))
+local src = assert(io.open(src_path, "w"))
 local man = assert(io.open(man_path, "w"))
 hdr:write([[
 /* Generated by tools/cp-extract.lua. Do not edit. */
@@ -736,7 +678,22 @@ hdr:write([[
 #define CP_STENCILS_TABLES_H
 #include <stdint.h>
 
-enum cp_patch_kind { CP_P_JUMP26, CP_P_G0, CP_P_G1, CP_P_G2, CP_P_G3, CP_P_ABS64, CP_P_JMPREL32, CP_P_U12, CP_P_ABS32, CP_P_SELECT8 };
+#ifndef CP_NSLOTS
+#error "define CP_NSLOTS before including cp-stencils-tables.h"
+#endif
+
+enum cp_patch_kind {
+    CP_P_JUMP26,
+    CP_P_G0,
+    CP_P_G1,
+    CP_P_G2,
+    CP_P_G3,
+    CP_P_ABS64,
+    CP_P_JMPREL32,
+    CP_P_U12,
+    CP_P_ABS32,
+    CP_P_SELECT8
+};
 typedef struct {
     uint16_t offset;
     uint8_t kind;
@@ -750,6 +707,17 @@ typedef struct {
     uint16_t npatches;
     const cp_patch_t *patches;
 } cp_stencil_t;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+]])
+src:write([[
+/* Generated by tools/cp-extract.lua. Do not edit. */
+#include "cp-stencils-tables.h"
+
+extern "C" {
 
 ]])
 
@@ -771,16 +739,22 @@ for profile_id, st in ipairs(stencils) do
     for k = 1, #st.code do
         bytes[k] = string.format("%d", st.code:byte(k))
     end
-    hdr:write(("static const uint8_t cp_code_%s[] = {%s};\n"):format(st.name, table.concat(bytes, ",")))
+    src:write(("static const uint8_t cp_code_%s[] = {%s};\n"):format(st.name, table.concat(bytes, ",")))
     if #st.patches > 0 then
         local recs = {}
         for _, p in ipairs(st.patches) do
             recs[#recs + 1] = ("{%d,%s,%d,%d}"):format(p.offset, KIND_ENUM[p.kind], p.ordinal, p.addend)
         end
-        hdr:write(("static const cp_patch_t cp_patches_%s[] = {%s};\n"):format(st.name, table.concat(recs, ",")))
+        src:write(("static const cp_patch_t cp_patches_%s[] = {%s};\n"):format(st.name, table.concat(recs, ",")))
     end
-    hdr:write(
-        ("static const cp_stencil_t cp_s_%s = {%d, cp_code_%s, %d, %d, %s};\n"):format(
+    local enumerated = st.name:match("_[0-9]+$")
+        or st.name:match("_[0-9]+_[0-9]+$")
+        or st.name:match("_[0-9]+_[0-9]+_[0-9]+$")
+        or st.name:match("_x86_fma$")
+    local storage = enumerated and "static const" or "extern const"
+    src:write(
+        ("%s cp_stencil_t cp_s_%s = {%d, cp_code_%s, %d, %d, %s};\n"):format(
+            storage,
             st.name,
             profile_id,
             st.name,
@@ -789,19 +763,25 @@ for profile_id, st in ipairs(stencils) do
             #st.patches > 0 and ("cp_patches_" .. st.name) or "0"
         )
     )
+    if not enumerated then hdr:write(("extern const cp_stencil_t cp_s_%s;\n"):format(st.name)) end
     local pdesc = {}
     for _, p in ipairs(st.patches) do
-        pdesc[#pdesc + 1] = ("%s@%d#%d%s"):format(p.kind, p.offset, p.ordinal,
-            p.addend ~= 0 and ("+" .. p.addend) or "")
+        pdesc[#pdesc + 1] = ("%s@%d#%d%s"):format(
+            p.kind,
+            p.offset,
+            p.ordinal,
+            p.addend ~= 0 and ("+" .. p.addend) or ""
+        )
     end
     man:write(("%s size %d patches [%s]\n"):format(st.name, #st.code, table.concat(pdesc, " ")))
 end
 
-hdr:write("static const char *const cp_stencil_profile_names[] = {0")
+hdr:write("extern const char *const cp_stencil_profile_names[];\n")
+src:write("extern const char *const cp_stencil_profile_names[] = {0")
 for _, st in ipairs(stencils) do
-    hdr:write((',"%s"'):format(st.name))
+    src:write((',"%s"'):format(st.name))
 end
-hdr:write("};\n")
+src:write("};\n")
 
 -- Placement lookup tables, discovered from stencil names: cp_<f>_d_s1_s2
 -- families get [8][8][8] tables, cp_<f>_d_s [8][8], cp_<f>_d [8].
@@ -840,10 +820,9 @@ local function sorted_keys(t)
     table.sort(keys)
     return keys
 end
+local function header_dim(n) return n == NSLOTS and "CP_NSLOTS" or tostring(n) end
 local function need(n)
-    if not by_name[n] then
-        die("incomplete enumerated family: missing %s", n)
-    end
+    if not by_name[n] then die("incomplete enumerated family: missing %s", n) end
     return "&cp_s_" .. n
 end
 -- x86 FMA alternatives deliberately do not form another placement table.
@@ -854,63 +833,86 @@ local mutable_fams = {}
 for _, st in ipairs(stencils) do
     local base, d, s = st.name:match("^(cp_.+_([0-9]+)_([0-9]+))_x86_fma$")
     if base then
-        if not by_name[base] then
-            die("x86 FMA override has no baseline stencil: %s", st.name)
-        end
+        if not by_name[base] then die("x86 FMA override has no baseline stencil: %s", st.name) end
         local fam = base:match("^cp_(.-)_[0-9]+_[0-9]+$")
         mutable_fams[fam] = true
         x86_fma_overrides[#x86_fma_overrides + 1] = { alt = st.name, fam = fam, d = d, s = s }
     end
 end
 for _, fam in ipairs(sorted_keys(fams[3])) do
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[%d][%d][%d] = {\n"):format(fam, NSLOTS, NSLOTS, NSLOTS))
+    hdr:write(("extern const cp_stencil_t *const cp_%s_table[CP_NSLOTS][CP_NSLOTS][CP_NSLOTS];\n"):format(fam))
+    src:write(("extern const cp_stencil_t *const cp_%s_table[%d][%d][%d] = {\n"):format(fam, NSLOTS, NSLOTS, NSLOTS))
     for d = 0, NSLOTS - 1 do
-        hdr:write("{")
+        src:write("{")
         for s1 = 0, NSLOTS - 1 do
-            hdr:write("{")
+            src:write("{")
             local row = {}
             for s2 = 0, NSLOTS - 1 do
                 row[#row + 1] = need(("cp_%s_%d_%d_%d"):format(fam, d, s1, s2))
             end
-            hdr:write(table.concat(row, ","), "},")
+            src:write(table.concat(row, ","), "},")
         end
-        hdr:write("},\n")
+        src:write("},\n")
     end
-    hdr:write("};\n")
+    src:write("};\n")
 end
 for _, fam in ipairs(sorted_keys(fams[2])) do
     local amax, bmax = fams[2][fam].amax, fams[2][fam].bmax
     local bmin = fam == "gxl" or fam == "gxs"
     local pointer_const = mutable_fams[fam] and "" or "const "
-    hdr:write(("static const cp_stencil_t *%scp_%s_table[%d][%d] = {\n"):format(pointer_const, fam, amax + 1,
-        bmax + 1 - (bmin and 1 or 0)))
+    hdr:write(
+        ("extern const cp_stencil_t *%scp_%s_table[%s][%s];\n"):format(
+            pointer_const,
+            fam,
+            header_dim(amax + 1),
+            header_dim(bmax + 1 - (bmin and 1 or 0))
+        )
+    )
+    src:write(
+        ("extern const cp_stencil_t *%scp_%s_table[%d][%d] = {\n"):format(
+            pointer_const,
+            fam,
+            amax + 1,
+            bmax + 1 - (bmin and 1 or 0)
+        )
+    )
     for a = 0, amax do
         local row = {}
         for b = (bmin and 1 or 0), bmax do
             row[#row + 1] = need(("cp_%s_%d_%d"):format(fam, a, b))
         end
-        hdr:write("{", table.concat(row, ","), "},\n")
+        src:write("{", table.concat(row, ","), "},\n")
     end
-    hdr:write("};\n")
+    src:write("};\n")
 end
 for _, fam in ipairs(sorted_keys(fams[1])) do
     local row = {}
     for a = 0, NSLOTS - 1 do
         row[#row + 1] = need(("cp_%s_%d"):format(fam, a))
     end
-    hdr:write(("static const cp_stencil_t *const cp_%s_table[%d] = {%s};\n"):format(fam, NSLOTS,
-        table.concat(row, ",")))
+    hdr:write(("extern const cp_stencil_t *const cp_%s_table[CP_NSLOTS];\n"):format(fam))
+    src:write(
+        ("extern const cp_stencil_t *const cp_%s_table[%d] = {%s};\n"):format(fam, NSLOTS, table.concat(row, ","))
+    )
 end
 
-hdr:write("static inline void cp_enable_x86_fma_stencils(void) {\n")
+hdr:write("void cp_enable_x86_fma_stencils(void);\n")
+src:write("void cp_enable_x86_fma_stencils(void) {\n")
 for _, override in ipairs(x86_fma_overrides) do
-    hdr:write(("cp_%s_table[%s][%s] = &cp_s_%s;\n"):format(
-        override.fam, override.d, override.s, override.alt))
+    src:write(("cp_%s_table[%s][%s] = &cp_s_%s;\n"):format(override.fam, override.d, override.s, override.alt))
 end
-hdr:write("}\n")
+src:write("}\n")
 
-hdr:write("\n#endif\n")
+hdr:write([[
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+]])
+src:write('\n} // extern "C"\n')
 hdr:close()
+src:close()
 man:close()
 
 io.write(("cp-extract: %d stencils validated\n"):format(#stencils))

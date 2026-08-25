@@ -1117,6 +1117,20 @@ end
 gem("#endif")
 gem("")
 
+-- C.MV is a register copy, not an ADD with an x0 operand. Keeping it as a
+-- two-slot family avoids allocating and retaining a roster slot for x0.
+for d = 0, NSLOTS - 1 do
+    for s = 0, NSLOTS - 1 do
+        gem(('extern "C" CONT void cp_mv_%d_%d(%s)'):format(d, s, params))
+        gem("{")
+        if d ~= s then
+            gem(("    r%d = r%d;"):format(d, s))
+        end
+        gem("    TAIL return cp_cont_0(" .. args .. ");")
+        gem("}")
+        gem("")
+    end
+end
 
 -- Immediate stencils remain semantic stencils: the interpreter execute body
 -- sees a fixed sentinel immediate, which the extractor validates and turns

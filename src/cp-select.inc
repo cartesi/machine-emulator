@@ -205,7 +205,7 @@ switch (label) {
         f.jump(pc + static_cast<uint64_t>(insn_get_C_J_imm(insn)));
         break;
     case tc_label::C_MV:
-        f.reg3(cp_add_table, CP_C_RD, 0, CP_C_RS2);
+        f.move(CP_C_RD, CP_C_RS2);
         break;
     case tc_label::C_BEQZ:
         f.branch(cp_beq_table, cp_bne_table, CP_C_RS1P, 0, pc + static_cast<uint64_t>(insn_get_C_BEQZ_BNEZ_imm(insn)),

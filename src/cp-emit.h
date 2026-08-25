@@ -165,7 +165,7 @@ static inline size_t cp_heap_remaining(const cp_heap_t *h) {
 
 /* Copies one stencil at the heap cursor and applies its patches. imm fills
  * the value holes (as many as the stencil's highest immediate ordinal, up
- * to four), cont[2] the continuations (NULL continuation 0 means
+ * to four), cont the continuations (NULL continuation 0 means
  * fallthrough, elided when the branch is trailing). Returns the stencil
  * address, or NULL when the heap is full (caller flushes all and retries).
  */

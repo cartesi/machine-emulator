@@ -75,6 +75,7 @@ emit("")
 emit("/* Continuation holes (patched to branch targets). */")
 emit(("CONT extern void cp_cont_0(%s);"):format(params))
 emit(("CONT extern void cp_cont_1(%s);"):format(params))
+emit(("CONT extern void cp_cont_2(%s);"):format(params))
 emit("/* 64-bit value holes. */")
 emit("#if defined(__x86_64__) && defined(__clang__)")
 emit("#define CP_HOLE __attribute__((model(\"large\")))")
@@ -603,6 +604,7 @@ gem("#define CONT __attribute__((preserve_none))")
 gem("#define TAIL __attribute__((musttail))")
 gem(("extern \"C\" CONT void cp_cont_0(%s);"):format(params))
 gem(("extern \"C\" CONT void cp_cont_1(%s);"):format(params))
+gem(("extern \"C\" CONT void cp_cont_2(%s);"):format(params))
 gem("")
 
 local function sem_sorted(t)
@@ -1190,6 +1192,101 @@ for d1 = 0, NSLOTS - 1 do
     end
 end
 
+-- Complete sieve scaled-address load: C.SLLI rd,2; C.ADD rd,rs2;
+-- C.LW load_rd,0(rd). The address is published before the guarded load so a
+-- TLB miss retires the two arithmetic instructions and resumes at C.LW.
+local function l_insn(f3)
+    return (1 << 15) | (f3 << 12) | (3 << 7) | 0x03
+end
+local CTX_SLOT_BASES = arch == "x86_64" and { 0, 0x100, 0x200, 0x300 } or { 0x500 }
+for d = 0, NSLOTS - 1 do
+    for a = 0, NSLOTS - 1 do
+        for l = 0, NSLOTS - 1 do
+            for ctx, ctx_slot_base in ipairs(CTX_SLOT_BASES) do
+                local suffix = #CTX_SLOT_BASES == 1 and "" or ("_ctx%d"):format(ctx - 1)
+                gem(("extern \"C\" CONT void cp_lw_slli2_add_%d_%d_%d%s(%s)"):
+                    format(d, a, l, suffix, params))
+                gem("{")
+                gem(("    uint64_t shift_src = r%d;"):format(d))
+                gem("    uint64_t unused = 0;")
+                gem("    uint64_t shifted = 0;")
+                gem("    const cartesi::cp_slot_access shift_acc(&shift_src, &unused, &shifted);")
+                gem("    uint64_t spc = 0;")
+                gem(("    (void) cartesi::execute_SLLI<cartesi::rd_kind::xN>(shift_acc, spc, 0x%08xu);"):
+                    format(slli_insn(2)))
+                if a == d then
+                    gem("    uint64_t add_src = shifted;")
+                else
+                    gem(("    uint64_t add_src = r%d;"):format(a))
+                end
+                gem("    uint64_t address = 0;")
+                gem("    const cartesi::cp_slot_access add_acc(&shifted, &add_src, &address);")
+                gem(("    (void) cartesi::execute_ADD<cartesi::rd_kind::xN>(add_acc, spc, 0x%08xu);"):
+                    format(SEM_REG_OPS.add[2]))
+                gem(("    r%d = address;"):format(d))
+                gem("    uint64_t loaded = 0;")
+                gem(("    const cartesi::cp_mem_access mem_acc(sa, &address, &unused, &loaded, 0x%x);"):
+                    format(ctx_slot_base))
+                gem(("    const auto st = cartesi::execute_LW<cartesi::rd_kind::xN>(mem_acc, spc, 0, 0x%08xu);"):
+                    format(l_insn(2)))
+                gem("    if (st != cartesi::execute_status::success) {")
+                gem("        TAIL return cp_cont_1(" .. args .. ");")
+                gem("    }")
+                gem(("    r%d = loaded;"):format(l))
+                gem("    TAIL return cp_cont_0(" .. args .. ");")
+                gem("}")
+                gem("")
+            end
+        end
+    end
+end
+
+-- LBU+BNE has three outcomes: the recorded branch direction continues,
+-- a memory miss resumes at LBU, and a direction mismatch retires both guest
+-- instructions before leaving for the alternate successor.
+for _, hot in ipairs({ { "bnet", true }, { "bnef", false } }) do
+    local stem, hot_taken = hot[1], hot[2]
+    for d = 0, NSLOTS - 1 do
+        for b = 0, NSLOTS - 1 do
+            for q = 0, NSLOTS - 1 do
+                for ctx, ctx_slot_base in ipairs(CTX_SLOT_BASES) do
+                    local suffix = #CTX_SLOT_BASES == 1 and "" or ("_ctx%d"):format(ctx - 1)
+                    gem(("extern \"C\" CONT void cp_lbu_%s_%d_%d_%d%s(%s)"):
+                        format(stem, d, b, q, suffix, params))
+                    gem("{")
+                    gem(("    uint64_t address = r%d;"):format(b))
+                    gem("    uint64_t unused = 0;")
+                    gem("    uint64_t loaded = 0;")
+                    gem(("    const cartesi::cp_mem_access mem_acc(sa, &address, &unused, &loaded, 0x%x);"):
+                        format(ctx_slot_base))
+                    gem("    uint64_t spc = 0;")
+                    gem(("    const auto st = cartesi::execute_LBU<cartesi::rd_kind::xN>(mem_acc, spc, 0, 0x%08xu);"):
+                        format(l_insn(4)))
+                    gem("    if (st != cartesi::execute_status::success) {")
+                    gem("        TAIL return cp_cont_1(" .. args .. ");")
+                    gem("    }")
+                    gem(("    r%d = loaded;"):format(d))
+                    gem(("    uint64_t compare = r%d;"):format(q))
+                    gem("    uint64_t branch_result = 0;")
+                    gem("    const cartesi::cp_slot_access branch_acc(&loaded, &compare, &branch_result);")
+                    gem("    spc = 0x1000;")
+                    gem(("    (void) cartesi::execute_BNE(branch_acc, spc, 0x%08xu);"):format(SEM_BR_OPS.bne[2]))
+                    if hot_taken then
+                        gem("    if (spc != 0x1000 + 8) {")
+                    else
+                        gem("    if (spc == 0x1000 + 8) {")
+                    end
+                    gem("        TAIL return cp_cont_2(" .. args .. ");")
+                    gem("    }")
+                    gem("    TAIL return cp_cont_0(" .. args .. ");")
+                    gem("}")
+                    gem("")
+                end
+            end
+        end
+    end
+end
+
 -- C.MV is a register copy, not an ADD with an x0 operand. Keeping it as a
 -- two-slot family avoids allocating and retaining a roster slot for x0.
 for d = 0, NSLOTS - 1 do
@@ -1259,9 +1356,6 @@ for _, name in ipairs(sem_sorted(SEM_BR_OPS)) do
 end
 -- Memory families: loads I-type imm=0 (formation pre-adds immediates),
 -- stores S-type imm=0. Base slot binds rs1=1, store value binds rs2=2.
-local function l_insn(f3)
-    return (1 << 15) | (f3 << 12) | (3 << 7) | 0x03
-end
 local function s_insn(f3)
     return (2 << 20) | (1 << 15) | (f3 << 12) | 0x23
 end
@@ -1284,7 +1378,6 @@ local SEM_STORE_OPS = {
 -- four values for build-time differencing. AArch64 materializes one fixed-
 -- width sentinel whose validated field is expanded into the same selector
 -- data by the extractor.
-local CTX_SLOT_BASES = arch == "x86_64" and { 0, 0x100, 0x200, 0x300 } or { 0x500 }
 for _, name in ipairs(sem_sorted(SEM_LOAD_OPS)) do
     local fn_name, insn = SEM_LOAD_OPS[name][1], SEM_LOAD_OPS[name][2]
     for d = 0, NSLOTS - 1 do

@@ -440,14 +440,18 @@ static bool cp_imm_enabled() {
 
 /// \brief Finds a stencil's bail branch (the continuation-1 patch), the one
 /// site guards re-point at their bail blocks.
-static const cp_patch_t *cp_bail_patch(const cp_stencil_t *st) {
+static const cp_patch_t *cp_cont_patch(const cp_stencil_t *st, uint16_t ordinal) {
     for (uint16_t i = 0; i < st->npatches; ++i) {
         const cp_patch_t *p = &st->patches[i];
-        if ((p->kind == CP_P_JUMP26 || p->kind == CP_P_JMPREL32) && p->ordinal == 1) {
+        if ((p->kind == CP_P_JUMP26 || p->kind == CP_P_JMPREL32) && p->ordinal == ordinal) {
             return p;
         }
     }
     return nullptr;
+}
+
+static const cp_patch_t *cp_bail_patch(const cp_stencil_t *st) {
+    return cp_cont_patch(st, 1);
 }
 
 static FORCE_INLINE void cp_save_checkpoint(const cp_state *c, cp_state::cp_form_checkpoint &p) {
@@ -493,10 +497,12 @@ struct cp_former {
     // guard owning a bails[] entry whose site the replay re-records.
     int8_t log_next_load = -1;
     int16_t log_next_bail = -1;
+    int16_t log_next_bail2 = -1;
     int16_t log_next_resume_bail = -1;
-    uint8_t *emit1(const cp_stencil_t *st, uint64_t imm0 = 0, uint64_t imm1 = 0, uint8_t *bail = nullptr) {
+    uint8_t *emit1(const cp_stencil_t *st, uint64_t imm0 = 0, uint64_t imm1 = 0, uint8_t *bail = nullptr,
+        uint8_t *bail2 = nullptr) {
         const uint64_t imm[2] = {imm0, imm1};
-        uint8_t *cont[2] = {nullptr, bail};
+        uint8_t *cont[3] = {nullptr, bail, bail2};
         uint8_t *at = cp_emit(&c->heap, st, imm, cont);
         if (at == nullptr) {
             c->rec_failed = true;
@@ -507,12 +513,14 @@ struct cp_former {
             r.imm0 = imm0;
             r.imm1 = imm1;
             r.bail_index = log_next_bail;
+            r.bail_index2 = log_next_bail2;
             r.resume_bail_index = log_next_resume_bail;
             r.load_slot = log_next_load;
         } else {
             c->rec_carry_ok = false;
         }
         log_next_bail = -1;
+        log_next_bail2 = -1;
         log_next_resume_bail = -1;
         log_next_load = -1;
         return at;
@@ -793,6 +801,87 @@ struct cp_former {
             return;
         }
         emit1(table[d1][d2][a]);
+    }
+
+    void fused_scaled_lw(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t address_rd,
+        uint8_t add_rs, uint8_t load_rd) {
+        const int address = alloc_src(address_rd);
+        const int add = alloc_src(add_rs);
+        if (c->rec_failed) {
+            return;
+        }
+        const int address_out = alloc_dst(address_rd);
+        if (c->rec_failed || address_out != address) {
+            c->rec_failed = true;
+            return;
+        }
+        const bool fresh = c->reg_slot[load_rd] < 0;
+        const int load = alloc_dst(load_rd);
+        if (c->rec_failed) {
+            return;
+        }
+        const uint32_t bail_dirty = fresh ? (c->reg_dirty & ~(1u << static_cast<uint32_t>(load))) : c->reg_dirty;
+        emit_guarded(table[address][add][load], bail_dirty, cp_front_context(c->rec_ctx_slot_base));
+    }
+
+    void fused_lbu_bne(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1,
+        uint64_t imm, uint8_t compare_rs, uint32_t memory_pending, int64_t branch_delta, uint32_t branch_pending) {
+        if (c->nbails + 2 > cp_state::max_bails) {
+            c->rec_failed = true;
+            return;
+        }
+        int scratch = -1;
+        const int base = address(rs1, imm, scratch);
+        const int compare = alloc_src(compare_rs);
+        if (c->rec_failed) {
+            return;
+        }
+        const bool fresh = c->reg_slot[rd] < 0;
+        const int d = alloc_dst(rd);
+        if (c->rec_failed) {
+            return;
+        }
+        const uint32_t memory_dirty = fresh ? (c->reg_dirty & ~(1u << static_cast<uint32_t>(d))) : c->reg_dirty;
+        const uint32_t memory_index = c->nbails;
+        const uint32_t branch_index = memory_index + 1;
+        log_next_bail = static_cast<int16_t>(memory_index);
+        log_next_bail2 = static_cast<int16_t>(branch_index);
+        auto *placeholder = reinterpret_cast<uint8_t *>(this);
+        const cp_stencil_t *st = table[d][base][compare];
+        uint8_t *at = emit1(st, cp_front_context(c->rec_ctx_slot_base), 0, placeholder, placeholder);
+        if (at == nullptr) {
+            return;
+        }
+        const cp_patch_t *memory_patch = cp_cont_patch(st, 1);
+        const cp_patch_t *branch_patch = cp_cont_patch(st, 2);
+        if (memory_patch == nullptr || branch_patch == nullptr) {
+            c->rec_failed = true;
+            return;
+        }
+        cp_bail &memory = c->bails[c->nbails++];
+        memory.guard_site = static_cast<uint32_t>((at + memory_patch->offset) - c->heap.base);
+        memory.guard_kind = memory_patch->kind;
+        memory.guard_addend = memory_patch->addend;
+        memory.delta = static_cast<int64_t>(pc - c->rec_head);
+        memory.pending = memory_pending;
+        memory.dirty = memory_dirty;
+        std::memcpy(memory.slot_guest, c->slot_guest, sizeof(memory.slot_guest));
+        memory.is_branch = false;
+        memory.is_fp = false;
+        memory.is_cold = false;
+
+        cp_bail &branch = c->bails[c->nbails++];
+        branch.guard_site = static_cast<uint32_t>((at + branch_patch->offset) - c->heap.base);
+        branch.guard_kind = branch_patch->kind;
+        branch.guard_addend = branch_patch->addend;
+        branch.delta = branch_delta;
+        branch.pending = branch_pending;
+        branch.dirty = c->reg_dirty;
+        std::memcpy(branch.slot_guest, c->slot_guest, sizeof(branch.slot_guest));
+        branch.is_branch = true;
+        branch.is_fp = false;
+        branch.is_cold = false;
+        free_scratch(scratch);
     }
 
     void li(uint8_t rd, uint64_t value) {
@@ -1217,14 +1306,25 @@ struct cp_former {
     }
 };
 
-enum class cp_fusion_op : uint8_t { none, slli, c_slli, srli, srli_full, srliw, c_add, auipc, addi };
-enum class cp_fusion_match : uint8_t { slli_add, srliw_slli, slli_srli, zext32_add, shift_extract_add, auipc_addi };
+enum class cp_fusion_op : uint8_t { none, slli, c_slli, srli, srli_full, srliw, c_add, c_lw, lbu, bne, auipc, addi };
+enum class cp_fusion_match : uint8_t {
+    slli_add,
+    srliw_slli,
+    slli_srli,
+    zext32_add,
+    shift_extract_add,
+    scaled_lw,
+    lbu_bne,
+    auipc_addi
+};
 enum class cp_fusion_emit : uint8_t {
     slli_add,
     reg2,
     repartition_srliw_slli_add,
     zext32_add,
     shift_extract_add,
+    scaled_lw,
+    lbu_bne,
     constant
 };
 
@@ -1291,6 +1391,9 @@ static constexpr cp_fusion_variant cp_fusion_zext32_add_variants[] = {
 static constexpr cp_fusion_variant cp_fusion_shift_extract_add_variants[] = {
     {32, 31, nullptr, cp_slli32_srli31_add_table},
 };
+static constexpr cp_fusion_variant cp_fusion_scaled_lw_variants[] = {
+    {2, 0, nullptr, cp_lw_slli2_add_table},
+};
 static constexpr cp_fusion_variant cp_fusion_no_variants[] = {{0, 0, nullptr, nullptr}};
 static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
     {"slli-add", cp_fusion_match::slli_add, cp_fusion_emit::slli_add, 2, cp_fusion_slli_add_variants, 3},
@@ -1303,6 +1406,8 @@ static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
         cp_fusion_zext32_add_variants, 1},
     {"shift-extract-add", cp_fusion_match::shift_extract_add, cp_fusion_emit::shift_extract_add, 3,
         cp_fusion_shift_extract_add_variants, 1},
+    {"scaled-lw", cp_fusion_match::scaled_lw, cp_fusion_emit::scaled_lw, 3, cp_fusion_scaled_lw_variants, 1},
+    {"lbu-bne", cp_fusion_match::lbu_bne, cp_fusion_emit::lbu_bne, 2, cp_fusion_no_variants, 1},
 };
 static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {0, cp_fusion_op::c_add, 1},
@@ -1318,12 +1423,17 @@ static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {10, cp_fusion_op::slli, 11},
     {1, cp_fusion_op::srli_full, 12},
     {12, cp_fusion_op::slli, 13},
+    {0, cp_fusion_op::c_lw, 14},
+    {14, cp_fusion_op::c_add, 15},
+    {15, cp_fusion_op::c_slli, 16},
+    {0, cp_fusion_op::bne, 17},
+    {17, cp_fusion_op::lbu, 18},
 };
 static constexpr cp_fusion_trie_node cp_fusion_nodes[] = {
-    {-1}, {-1}, {0}, {1}, {-1}, {2}, {-1}, {3}, {-1}, {4}, {-1}, {5}, {-1}, {6},
+    {-1}, {-1}, {0}, {1}, {-1}, {2}, {-1}, {3}, {-1}, {4}, {-1}, {5}, {-1}, {6}, {-1}, {-1}, {7}, {-1}, {8},
 };
 static constexpr cp_fusion_config cp_fusion_host_config = {
-    cp_fusion_edges, 13, cp_fusion_nodes, cp_fusion_terminals, 7};
+    cp_fusion_edges, 18, cp_fusion_nodes, cp_fusion_terminals, 9};
 #elif defined(__x86_64__)
 static constexpr cp_fusion_variant cp_fusion_srliw_slli_variants[] = {
     {5, 2, cp_srliw5_slli2_table, nullptr},
@@ -1334,6 +1444,9 @@ static constexpr cp_fusion_variant cp_fusion_zext32_add_variants[] = {
 static constexpr cp_fusion_variant cp_fusion_shift_extract_add_variants[] = {
     {32, 31, nullptr, cp_slli32_srli31_add_table},
 };
+static constexpr cp_fusion_variant cp_fusion_scaled_lw_variants[] = {
+    {2, 0, nullptr, cp_lw_slli2_add_table},
+};
 static constexpr cp_fusion_variant cp_fusion_no_variants[] = {{0, 0, nullptr, nullptr}};
 static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
     {"srliw-slli", cp_fusion_match::srliw_slli, cp_fusion_emit::reg2, 2, cp_fusion_srliw_slli_variants, 1},
@@ -1342,6 +1455,8 @@ static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
         cp_fusion_zext32_add_variants, 1},
     {"shift-extract-add", cp_fusion_match::shift_extract_add, cp_fusion_emit::shift_extract_add, 3,
         cp_fusion_shift_extract_add_variants, 1},
+    {"scaled-lw", cp_fusion_match::scaled_lw, cp_fusion_emit::scaled_lw, 3, cp_fusion_scaled_lw_variants, 1},
+    {"lbu-bne", cp_fusion_match::lbu_bne, cp_fusion_emit::lbu_bne, 2, cp_fusion_no_variants, 1},
 };
 static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {0, cp_fusion_op::c_slli, 1},
@@ -1353,12 +1468,17 @@ static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {6, cp_fusion_op::slli, 7},
     {5, cp_fusion_op::srli_full, 8},
     {8, cp_fusion_op::slli, 9},
+    {0, cp_fusion_op::c_lw, 10},
+    {10, cp_fusion_op::c_add, 11},
+    {11, cp_fusion_op::c_slli, 12},
+    {0, cp_fusion_op::bne, 13},
+    {13, cp_fusion_op::lbu, 14},
 };
 static constexpr cp_fusion_trie_node cp_fusion_nodes[] = {
-    {-1}, {-1}, {0}, {-1}, {1}, {-1}, {-1}, {2}, {-1}, {3},
+    {-1}, {-1}, {0}, {-1}, {1}, {-1}, {-1}, {2}, {-1}, {3}, {-1}, {-1}, {4}, {-1}, {5},
 };
 static constexpr cp_fusion_config cp_fusion_host_config = {
-    cp_fusion_edges, 9, cp_fusion_nodes, cp_fusion_terminals, 4};
+    cp_fusion_edges, 14, cp_fusion_nodes, cp_fusion_terminals, 6};
 #else
 static constexpr cp_fusion_config cp_fusion_host_config = {nullptr, 0, nullptr, nullptr, 0};
 #endif
@@ -1377,6 +1497,12 @@ static FORCE_INLINE cp_fusion_op cp_fusion_class(uint16_t label, uint32_t insn) 
             return ((insn >> 30) & 1) == 0 ? cp_fusion_op::srliw : cp_fusion_op::none;
         case tc_label::C_ADD:
             return cp_fusion_op::c_add;
+        case tc_label::C_LW:
+            return cp_fusion_op::c_lw;
+        case tc_label::LBU_rdN:
+            return cp_fusion_op::lbu;
+        case tc_label::BNE:
+            return cp_fusion_op::bne;
         case tc_label::AUIPC_rdN:
             return cp_fusion_op::auipc;
         case tc_label::ADDI_rdN:
@@ -1461,6 +1587,29 @@ static const cp_fusion_variant *cp_fusion_terminal_variant(
             imm0 = static_cast<uint32_t>(insn_I_get_imm(seq[0].insn));
             imm1 = static_cast<uint32_t>(insn_I_get_imm(seq[1].insn));
             break;
+        case cp_fusion_match::scaled_lw: {
+            const uint32_t address_rd = insn_get_rd(seq[0].insn);
+            const uint32_t add_rs = insn_get_CR_CSS_rs2(seq[1].insn);
+            const uint32_t load_rd = insn_get_CIW_CL_rd_CS_CA_rs2(seq[2].insn);
+            if (address_rd != insn_get_rd(seq[1].insn) ||
+                address_rd != insn_get_CL_CS_CA_CB_rs1(seq[2].insn) || address_rd == add_rs || load_rd == add_rs) {
+                return nullptr;
+            }
+            imm0 = insn_get_CI_CB_imm(seq[0].insn);
+            imm1 = static_cast<uint32_t>(insn_get_C_LW_C_SW_imm(seq[2].insn));
+            break;
+        }
+        case cp_fusion_match::lbu_bne: {
+            const uint32_t rd = insn_get_rd(seq[0].insn);
+            const uint32_t base = insn_get_rs1(seq[0].insn);
+            const uint32_t branch_rs1 = insn_get_rs1(seq[1].insn);
+            const uint32_t branch_rs2 = insn_get_rs2(seq[1].insn);
+            const uint32_t compare = rd == branch_rs1 ? branch_rs2 : (rd == branch_rs2 ? branch_rs1 : 0);
+            if (rd == 0 || compare == 0 || rd == base || rd == compare || base == compare) {
+                return nullptr;
+            }
+            return &terminal.variants[0];
+        }
         case cp_fusion_match::auipc_addi: {
             const uint32_t rd = insn_get_rd(seq[0].insn);
             if (rd == 0 || rd != insn_get_rd(seq[1].insn) || rd != insn_get_rs1(seq[1].insn)) {
@@ -1510,6 +1659,15 @@ static uint8_t cp_fusion_emit_replacement(cp_state *c, const cp_fusion_terminal 
                 insn_get_CR_CSS_rs2(seq[2].insn));
             things[0] = {start, first, 3};
             return 1;
+        case cp_fusion_emit::scaled_lw:
+            f.pc = seq[2].vpc;
+            f.fused_scaled_lw(variant.table3, insn_get_rd(seq[0].insn), insn_get_CR_CSS_rs2(seq[1].insn),
+                insn_get_CIW_CL_rd_CS_CA_rs2(seq[2].insn));
+            things[0] = {start, first, 3};
+            return 1;
+        case cp_fusion_emit::lbu_bne:
+            c->rec_failed = true; // emitted only after the recorded direction resolves
+            return 0;
         case cp_fusion_emit::constant:
             f.li(insn_get_rd(seq[0].insn), seq[0].vpc + static_cast<uint64_t>(insn_U_get_imm(seq[0].insn)) +
                     static_cast<uint64_t>(insn_I_get_imm(seq[1].insn)));
@@ -1558,6 +1716,9 @@ static void cp_fusion_record(cp_state *c, uint64_t vpc, uint32_t insn, tc_label 
     if (best < 0) {
         return;
     }
+    if (cp_fusion_host_config.terminals[best].emit == cp_fusion_emit::lbu_bne) {
+        return; // branch direction is known on the next record call
+    }
 
     uint16_t first_thing = c->fusion_nthings;
     while (first_thing > 0 && c->fusion_things[first_thing - 1].first >= best_first) {
@@ -1585,6 +1746,76 @@ static void cp_fusion_record(cp_state *c, uint64_t vpc, uint32_t insn, tc_label 
     c->fusion_old_bytes += old_bytes;
     c->fusion_new_bytes += new_bytes;
     ++c->fusion_terminals[best];
+}
+
+static bool cp_fusion_resolve_lbu_bne(cp_state *c, uint64_t successor) {
+    static const bool disabled = std::getenv("CP_FUSION_LBU_BNE_DISABLE") != nullptr;
+    if (disabled) {
+        return false;
+    }
+    if (c->fusion_ninsns < 2 || c->rec_len == 0) {
+        return false;
+    }
+    const uint16_t first = static_cast<uint16_t>(c->fusion_ninsns - 2);
+    const auto *seq = &c->fusion_insns[first];
+    if (cp_fusion_class(seq[0].label, seq[0].insn) != cp_fusion_op::lbu ||
+        cp_fusion_class(seq[1].label, seq[1].insn) != cp_fusion_op::bne) {
+        return false;
+    }
+    int8_t terminal_index = -1;
+    for (uint8_t i = 0; i < cp_fusion_host_config.nterminals; ++i) {
+        if (cp_fusion_host_config.terminals[i].emit == cp_fusion_emit::lbu_bne) {
+            terminal_index = static_cast<int8_t>(i);
+            break;
+        }
+    }
+    if (terminal_index < 0) {
+        return false;
+    }
+    const auto &terminal = cp_fusion_host_config.terminals[terminal_index];
+    if (cp_fusion_terminal_variant(terminal, seq) == nullptr) {
+        return false;
+    }
+    const uint64_t taken = c->pb_taken_target;
+    const uint64_t fall = c->pb_vaddr + c->pb_size;
+    if (successor != taken && successor != fall) {
+        return false;
+    }
+
+    uint16_t first_thing = c->fusion_nthings;
+    while (first_thing > 0 && c->fusion_things[first_thing - 1].first >= first) {
+        --first_thing;
+    }
+    if (first_thing >= c->fusion_nthings || c->fusion_things[first_thing].first != first) {
+        return false;
+    }
+    const auto checkpoint = c->fusion_things[first_thing].start;
+    const uint64_t old_bytes = c->heap.curr - checkpoint.heap_curr;
+    cp_restore_checkpoint(c, checkpoint);
+
+    const uint32_t rd = insn_get_rd(seq[0].insn);
+    const uint32_t branch_rs1 = insn_get_rs1(seq[1].insn);
+    const uint32_t branch_rs2 = insn_get_rs2(seq[1].insn);
+    const uint32_t compare = rd == branch_rs1 ? branch_rs2 : branch_rs1;
+    const bool hot_taken = successor == taken;
+    const auto table = hot_taken ? cp_lbu_bnet_table : cp_lbu_bnef_table;
+    cp_former f{c, seq[0].vpc};
+    f.fused_lbu_bne(table, static_cast<uint8_t>(rd), static_cast<uint8_t>(insn_get_rs1(seq[0].insn)),
+        static_cast<uint64_t>(insn_I_get_imm(seq[0].insn)), static_cast<uint8_t>(compare), c->rec_len - 1,
+        static_cast<int64_t>((hot_taken ? fall : taken) - c->rec_head), c->rec_len + 1);
+    if (c->rec_failed) {
+        return true;
+    }
+
+    const uint64_t new_bytes = c->heap.curr - checkpoint.heap_curr;
+    c->fusion_nthings = first_thing;
+    c->fusion_things[c->fusion_nthings++] = {checkpoint, first, 2};
+    ++c->fusion_rewrites;
+    c->fusion_guest_insns += 2;
+    c->fusion_old_bytes += old_bytes;
+    c->fusion_new_bytes += new_bytes;
+    ++c->fusion_terminals[terminal_index];
+    return true;
 }
 
 static void cp_fusion_print_terminal_stats(const cp_state *c) {
@@ -1856,7 +2087,8 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
                 continue;
             }
             const uint64_t imm_b[2] = {r.imm0, r.imm1};
-            uint8_t *cont_b[2] = {nullptr, r.bail_index >= 0 ? c->heap.base : nullptr};
+            uint8_t *cont_b[3] = {nullptr, r.bail_index >= 0 ? c->heap.base : nullptr,
+                r.bail_index2 >= 0 ? c->heap.base : nullptr};
             uint8_t *at = cp_emit(&c->heap, r.st, imm_b, cont_b);
             if (at == nullptr) {
                 c->rec_failed = true;
@@ -1865,6 +2097,13 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
             if (r.bail_index >= 0) {
                 const cp_patch_t *p = cp_bail_patch(r.st);
                 cp_bail &b = c->bails[r.bail_index];
+                b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
+                b.guard_kind = p->kind;
+                b.guard_addend = p->addend;
+            }
+            if (r.bail_index2 >= 0) {
+                const cp_patch_t *p = cp_cont_patch(r.st, 2);
+                cp_bail &b = c->bails[r.bail_index2];
                 b.guard_site = static_cast<uint32_t>((at + p->offset) - c->heap.base);
                 b.guard_kind = p->kind;
                 b.guard_addend = p->addend;
@@ -2179,19 +2418,21 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
         c->have_pending_branch = false;
         const uint64_t taken = c->pb_taken_target;
         const uint64_t fall = c->pb_vaddr + c->pb_size;
-        const int s1 = f.alloc_src(c->pb_rs1);
-        const int s2 = f.alloc_src(c->pb_rs2);
-        if (!c->rec_failed) {
-            if (vpc == taken) {
-                f.pc = c->pb_vaddr;
-                f.guard_branch(c->pb_tab[s1][s2], static_cast<int64_t>(fall - c->rec_head));
-            } else if (vpc == fall) {
-                f.pc = c->pb_vaddr;
-                f.guard_branch(c->pb_comp[s1][s2], static_cast<int64_t>(taken - c->rec_head));
-            } else {
-                c->rec_failed = true; // trap between: boundary cancel races
+        if (!cp_fusion_resolve_lbu_bne(c, vpc)) {
+            const int s1 = f.alloc_src(c->pb_rs1);
+            const int s2 = f.alloc_src(c->pb_rs2);
+            if (!c->rec_failed) {
+                if (vpc == taken) {
+                    f.pc = c->pb_vaddr;
+                    f.guard_branch(c->pb_tab[s1][s2], static_cast<int64_t>(fall - c->rec_head));
+                } else if (vpc == fall) {
+                    f.pc = c->pb_vaddr;
+                    f.guard_branch(c->pb_comp[s1][s2], static_cast<int64_t>(taken - c->rec_head));
+                } else {
+                    c->rec_failed = true; // trap between: boundary cancel races
+                }
+                f.pc = vpc;
             }
-            f.pc = vpc;
         }
         if (!c->rec_failed) {
             ++c->rec_len;

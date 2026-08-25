@@ -1013,6 +1013,106 @@ for _, name in ipairs(sem_sorted(SEM_REG_OPS)) do
     end
 end
 
+-- Greedy fusion, first terminal: C.SLLI rd,shamt; C.ADD rd,rs2. Both
+-- instructions update the same guest register, so its source and destination
+-- share one roster slot. Fixed shift families keep the fused stencil free of
+-- a new semantic-immediate patch shape. This is selected only on AArch64,
+-- where the compiler folds the pair to a shifted-register add.
+gem("#if defined(__aarch64__)")
+local function slli_insn(shamt)
+    return (shamt << 20) | (1 << 15) | (1 << 12) | (3 << 7) | 0x13
+end
+for shamt = 1, 3 do
+    for d = 0, NSLOTS - 1 do
+        for s = 0, NSLOTS - 1 do
+            gem(("extern \"C\" CONT void cp_slli_add_sh%d_%d_%d(%s)"):format(shamt, d, s, params))
+            gem("{")
+            gem(("    uint64_t shift_src = r%d;"):format(d))
+            gem("    uint64_t unused = 0;")
+            gem("    uint64_t shifted = 0;")
+            gem("    const cartesi::cp_slot_access shift_acc(&shift_src, &unused, &shifted);")
+            gem("    uint64_t spc = 0;")
+            gem(("    (void) cartesi::execute_SLLI<cartesi::rd_kind::xN>(shift_acc, spc, 0x%08xu);"):
+                format(slli_insn(shamt)))
+            if d == s then
+                gem("    uint64_t add_src = shifted;")
+            else
+                gem(("    uint64_t add_src = r%d;"):format(s))
+            end
+            gem("    uint64_t result = 0;")
+            gem("    const cartesi::cp_slot_access add_acc(&shifted, &add_src, &result);")
+            gem(("    (void) cartesi::execute_ADD<cartesi::rd_kind::xN>(add_acc, spc, 0x%08xu);"):
+                format(SEM_REG_OPS.add[2]))
+            gem(("    r%d = result;"):format(d))
+            gem("    TAIL return cp_cont_0(" .. args .. ");")
+            gem("}")
+            gem("")
+        end
+    end
+end
+
+-- The dominant sieve sequence has fixed shifts: SRLIW rd,rs1,5 followed by
+-- C.SLLI rd,2. Unlike two independent immediate stencils, this semantic
+-- stencil exposes both shifts directly to the host compiler and never
+-- materializes either shift count in a roster slot.
+local function srliw_insn(shamt)
+    return (shamt << 20) | (1 << 15) | (5 << 12) | (3 << 7) | 0x1b
+end
+for d = 0, NSLOTS - 1 do
+    for s = 0, NSLOTS - 1 do
+        gem(("extern \"C\" CONT void cp_srliw5_slli2_%d_%d(%s)"):format(d, s, params))
+        gem("{")
+        gem(("    uint64_t shift_src = r%d;"):format(s))
+        gem("    uint64_t unused = 0;")
+        gem("    uint64_t first = 0;")
+        gem("    const cartesi::cp_slot_access first_acc(&shift_src, &unused, &first);")
+        gem("    uint64_t spc = 0;")
+        gem(("    (void) cartesi::execute_SRLIW<cartesi::rd_kind::xN>(first_acc, spc, 0x%08xu);"):
+            format(srliw_insn(5)))
+        gem("    uint64_t result = 0;")
+        gem("    const cartesi::cp_slot_access second_acc(&first, &unused, &result);")
+        gem(("    (void) cartesi::execute_SLLI<cartesi::rd_kind::xN>(second_acc, spc, 0x%08xu);"):
+            format(slli_insn(2)))
+        gem(("    r%d = result;"):format(d))
+        gem("    TAIL return cp_cont_0(" .. args .. ");")
+        gem("}")
+        gem("")
+    end
+end
+
+-- These are the two same-destination SLLI;SRLI immediate shapes with useful
+-- dynamic weight in the measured AArch64 workloads. Constant shifts let the
+-- compiler select a single bitfield operation where profitable.
+local function srli_insn(shamt)
+    return (shamt << 20) | (1 << 15) | (5 << 12) | (3 << 7) | 0x13
+end
+for _, shifts in ipairs({ { 10, 20 }, { 32, 32 } }) do
+    local left, right = shifts[1], shifts[2]
+    for d = 0, NSLOTS - 1 do
+        for s = 0, NSLOTS - 1 do
+            gem(("extern \"C\" CONT void cp_slli%d_srli%d_%d_%d(%s)"):format(left, right, d, s, params))
+            gem("{")
+            gem(("    uint64_t shift_src = r%d;"):format(s))
+            gem("    uint64_t unused = 0;")
+            gem("    uint64_t first = 0;")
+            gem("    const cartesi::cp_slot_access first_acc(&shift_src, &unused, &first);")
+            gem("    uint64_t spc = 0;")
+            gem(("    (void) cartesi::execute_SLLI<cartesi::rd_kind::xN>(first_acc, spc, 0x%08xu);"):
+                format(slli_insn(left)))
+            gem("    uint64_t result = 0;")
+            gem("    const cartesi::cp_slot_access second_acc(&first, &unused, &result);")
+            gem(("    (void) cartesi::execute_SRLI<cartesi::rd_kind::xN>(second_acc, spc, 0x%08xu);"):
+                format(srli_insn(right)))
+            gem(("    r%d = result;"):format(d))
+            gem("    TAIL return cp_cont_0(" .. args .. ");")
+            gem("}")
+            gem("")
+        end
+    end
+end
+gem("#endif")
+gem("")
+
 
 -- Immediate stencils remain semantic stencils: the interpreter execute body
 -- sees a fixed sentinel immediate, which the extractor validates and turns

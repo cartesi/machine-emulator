@@ -46,13 +46,13 @@ static uint64_t out_bail[NPARAMS];
 
 // Emits stencil -> store_exit(out_hit) with the bail continuation aimed at a
 // separate store_exit(out_bail); returns the chain entry.
-static uint8_t *emit_chain(const cp_stencil_t *st) {
+static uint8_t *emit_chain(const cp_stencil_t *st, uint64_t stencil_imm0 = 0) {
     heap.curr = 0;
     cp_heap_unprotect(&heap);
     uint64_t imm_bail[2] = {reinterpret_cast<uint64_t>(out_bail), 0};
     uint8_t *none[2] = {nullptr, nullptr};
     uint8_t *bail = cp_emit(&heap, &cp_s_cp_store_exit, imm_bail, none);
-    uint64_t imm[2] = {0, 0};
+    uint64_t imm[2] = {stencil_imm0, 0};
     uint8_t *cont[2] = {nullptr, bail};
     uint8_t *entry = cp_emit(&heap, st, imm, cont);
     uint64_t imm_hit[2] = {reinterpret_cast<uint64_t>(out_hit), 0};
@@ -103,6 +103,7 @@ int main() {
 
     const uint64_t g_init[CP_NSLOTS_PAD] = {warm_vaddr, 0xaaaaaaaaaaaaaaaaull, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
         15, 16};
+    const uint64_t ctx_slot_base = a.read_tlb_ctx_slot_base();
     const auto run = [&](uint8_t *entry, const uint64_t g[CP_NSLOTS_PAD]) {
         std::memset(out_hit, 0xee, sizeof(out_hit));
         std::memset(out_bail, 0xdd, sizeof(out_bail));
@@ -122,7 +123,7 @@ int main() {
 
     // 1. LD hit: slot1 = [slot0], hit continuation taken, value exact.
     {
-        uint8_t *entry = emit_chain(cp_ld_table[1][0]);
+        uint8_t *entry = emit_chain(cp_ld_table[1][0], ctx_slot_base);
         run(entry, g_init);
         check(out_hit[SLOT_POS[1]] == pattern, "ld hit value");
         check(out_hit[SLOT_POS[0]] == warm_vaddr, "ld base preserved");
@@ -134,7 +135,7 @@ int main() {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
         g[0] = warm_vaddr + 8;
-        uint8_t *entry = emit_chain(cp_lb_table[1][0]);
+        uint8_t *entry = emit_chain(cp_lb_table[1][0], ctx_slot_base);
         run(entry, g);
         check(out_hit[SLOT_POS[1]] == 0xffffffffffffff80ull, "lb sign extension");
     }
@@ -145,7 +146,7 @@ int main() {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
         g[0] = cold_vaddr;
-        uint8_t *entry = emit_chain(cp_ld_table[1][0]);
+        uint8_t *entry = emit_chain(cp_ld_table[1][0], ctx_slot_base);
         run(entry, g);
         check(out_bail[SLOT_POS[1]] == 0xaaaaaaaaaaaaaaaaull, "cold ld bails with slots intact");
         check(out_hit[0] == 0xeeeeeeeeeeeeeeeeull, "cold ld hit not taken");
@@ -156,7 +157,7 @@ int main() {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
         g[1] = 0xcafef00dcafef00dull;
-        uint8_t *entry = emit_chain(cp_sd_table[0][1]);
+        uint8_t *entry = emit_chain(cp_sd_table[0][1], ctx_slot_base);
         run(entry, g);
         check(out_hit[0] != 0xeeeeeeeeeeeeeeeeull || out_hit[SLOT_POS[0]] == warm_vaddr, "sd hit taken");
         uint64_t readback = 0;
@@ -169,9 +170,9 @@ int main() {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
         g[1] = 0xffffffff80000001ull;
-        uint8_t *entry = emit_chain(cp_sw_table[0][1]);
+        uint8_t *entry = emit_chain(cp_sw_table[0][1], ctx_slot_base);
         run(entry, g);
-        uint8_t *entry2 = emit_chain(cp_lwu_table[2][0]);
+        uint8_t *entry2 = emit_chain(cp_lwu_table[2][0], ctx_slot_base);
         run(entry2, g);
         check(out_hit[SLOT_POS[2]] == 0x80000001ull, "sw + lwu round trip");
     }

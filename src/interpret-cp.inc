@@ -689,6 +689,21 @@ struct cp_former {
         emit1(tab[d][s1][s2]);
     }
 
+    void move(uint8_t rd, uint8_t rs) {
+        const int s = alloc_src(rs);
+        if (rd == 0 || c->rec_failed) {
+            return;
+        }
+        if (rd == rs) {
+            return;
+        }
+        const int d = alloc_dst(rd);
+        if (c->rec_failed) {
+            return;
+        }
+        emit1(cp_mv_table[d][s]);
+    }
+
     void reg2i(const cp_stencil_t *const (&tab)[CP_NSLOTS][CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1,
         uint64_t imm) {
         const int s1 = alloc_src(rs1);

@@ -177,11 +177,22 @@ int main() {
         check(out_hit[SLOT_POS[2]] == 0x80000001ull, "sw + lwu round trip");
     }
 
+    // 6. Direct MV copies the source without an artificial x0 operand.
+    {
+        uint64_t g[CP_NSLOTS_PAD];
+        std::memcpy(g, g_init, sizeof(g));
+        g[0] = 0x0123456789abcdefull;
+        uint8_t *entry = emit_chain(cp_mv_table[1][0]);
+        run(entry, g);
+        check(out_hit[SLOT_POS[1]] == g[0], "mv exact value");
+        check(out_hit[SLOT_POS[0]] == g[0], "mv source preserved");
+    }
+
     // Exact FP stencils are guarded only by mstatus.FS. They use integer
     // and soft-float bit semantics and never take the arithmetic fallback.
     a.write_mstatus((a.read_mstatus() & ~MSTATUS_FS_MASK) | MSTATUS_FS_DIRTY);
 
-    // 6. Sign injection preserves payload bits and replaces only the sign.
+    // 7. Sign injection preserves payload bits and replaces only the sign.
     {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
@@ -193,7 +204,7 @@ int main() {
         check(out_bail[0] == 0xddddddddddddddddull, "fsgnj.s has no fallback");
     }
 
-    // 7. Min handles signaling NaN and accumulates NV exactly.
+    // 8. Min handles signaling NaN and accumulates NV exactly.
     {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
@@ -206,7 +217,7 @@ int main() {
         check((a.read_fcsr() & FFLAGS_NV_MASK) != 0, "fmin.s signaling NaN flag");
     }
 
-    // 8. Comparisons write the integer roster destination and preserve the
+    // 9. Comparisons write the integer roster destination and preserve the
     // same NaN exception behavior as the portable implementation.
     {
         uint64_t g[CP_NSLOTS_PAD];
@@ -220,7 +231,7 @@ int main() {
         check(a.read_fcsr() == 0, "flt.d exact flags");
     }
 
-    // 9. Classification performs mandatory NaN unboxing: malformed single
+    // 10. Classification performs mandatory NaN unboxing: malformed single
     // precision input is classified as the canonical quiet NaN.
     {
         uint64_t g[CP_NSLOTS_PAD];
@@ -231,7 +242,7 @@ int main() {
         check(out_hit[SLOT_POS[0]] == i_sfloat32::fclass(i_sfloat32::F_QNAN), "fclass.s malformed box");
     }
 
-    // 10. FS-off fails before any exact operation and leaves every roster
+    // 11. FS-off fails before any exact operation and leaves every roster
     // value untouched for portable exception handling.
     {
         a.write_mstatus(a.read_mstatus() & ~MSTATUS_FS_MASK);

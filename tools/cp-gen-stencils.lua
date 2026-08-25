@@ -382,7 +382,7 @@ gem("    void do_write_x(int /*i*/, uint64_t val) const {")
 gem("        *vd = val;")
 gem("    }")
 gem("    uint64_t do_read_tlb_ctx_slot_base() const {")
-gem("        return ctx_slot_base == UINT64_MAX ? s.read_tlb_ctx_slot_base() : ctx_slot_base;")
+gem("        return ctx_slot_base;")
 gem("    }")
 gem("    template <TLB_set_index E>")
 gem("    uint64_t do_read_tlb_vaddr_page(uint64_t i) const {")
@@ -603,16 +603,6 @@ gem("#define CONT __attribute__((preserve_none))")
 gem("#define TAIL __attribute__((musttail))")
 gem(("extern \"C\" CONT void cp_cont_0(%s);"):format(params))
 gem(("extern \"C\" CONT void cp_cont_1(%s);"):format(params))
-gem("")
-
--- Keep the context-bank base independently patchable on x86. Without this
--- barrier GCC can fold the sentinel into the hot-TLB array displacement,
--- leaving no field that formation can specialize per trace.
-gem("#if defined(__x86_64__)")
-gem("static inline uint64_t cp_ctx_slot_base(uint64_t v) { __asm__(\"\" : \"+r\"(v)); return v; }")
-gem("#else")
-gem("static inline uint64_t cp_ctx_slot_base(uint64_t v) { return v; }")
-gem("#endif")
 gem("")
 
 local function sem_sorted(t)
@@ -1203,31 +1193,33 @@ local SEM_STORE_OPS = {
     sw = { "execute_SW", s_insn(2) },
     sd = { "execute_SD", s_insn(3) },
 }
--- The extractor validates this exact materialized constant in every memory
--- stencil and turns it into immediate patch ordinal 0. It is a multiple of
--- TLB_SET_SIZE, like every runtime context base, and fits the native hosts'
--- compact immediate forms.
-local CTX_SLOT_BASE_SENTINEL = 0x500
+-- x86-64 folds fixed contexts into address displacements, so compile all
+-- four values for build-time differencing. AArch64 materializes one fixed-
+-- width sentinel whose validated field is expanded into the same selector
+-- data by the extractor.
+local CTX_SLOT_BASES = arch == "x86_64" and { 0, 0x100, 0x200, 0x300 } or { 0x500 }
 for _, name in ipairs(sem_sorted(SEM_LOAD_OPS)) do
     local fn_name, insn = SEM_LOAD_OPS[name][1], SEM_LOAD_OPS[name][2]
     for d = 0, NSLOTS - 1 do
         for src = 0, NSLOTS - 1 do
-            gem(("extern \"C\" CONT void cp_%s_%d_%d(%s)"):format(name, d, src, params))
-            gem("{")
-            gem(("    uint64_t v1 = r%d;"):format(src))
-            gem("    uint64_t v2 = 0;")
-            gem("    uint64_t vd = 0;")
-            gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, cp_ctx_slot_base(0x%x));"):
-                format(CTX_SLOT_BASE_SENTINEL))
-            gem("    uint64_t spc = 0;")
-            gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
-            gem("    if (st != cartesi::execute_status::success) {")
-            gem("        TAIL return cp_cont_1(" .. args .. ");")
-            gem("    }")
-            gem(("    r%d = vd;"):format(d))
-            gem("    TAIL return cp_cont_0(" .. args .. ");")
-            gem("}")
-            gem("")
+            for ctx, ctx_slot_base in ipairs(CTX_SLOT_BASES) do
+                local suffix = #CTX_SLOT_BASES == 1 and "" or ("_ctx%d"):format(ctx - 1)
+                gem(("extern \"C\" CONT void cp_%s_%d_%d%s(%s)"):format(name, d, src, suffix, params))
+                gem("{")
+                gem(("    uint64_t v1 = r%d;"):format(src))
+                gem("    uint64_t v2 = 0;")
+                gem("    uint64_t vd = 0;")
+                gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, 0x%x);"):format(ctx_slot_base))
+                gem("    uint64_t spc = 0;")
+                gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
+                gem("    if (st != cartesi::execute_status::success) {")
+                gem("        TAIL return cp_cont_1(" .. args .. ");")
+                gem("    }")
+                gem(("    r%d = vd;"):format(d))
+                gem("    TAIL return cp_cont_0(" .. args .. ");")
+                gem("}")
+                gem("")
+            end
         end
     end
 end
@@ -1295,21 +1287,23 @@ for _, name in ipairs(sem_sorted(SEM_STORE_OPS)) do
     local fn_name, insn = SEM_STORE_OPS[name][1], SEM_STORE_OPS[name][2]
     for base = 0, NSLOTS - 1 do
         for val = 0, NSLOTS - 1 do
-            gem(("extern \"C\" CONT void cp_%s_%d_%d(%s)"):format(name, base, val, params))
-            gem("{")
-            gem(("    uint64_t v1 = r%d;"):format(base))
-            gem(("    uint64_t v2 = r%d;"):format(val))
-            gem("    uint64_t vd = 0;")
-            gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, cp_ctx_slot_base(0x%x));"):
-                format(CTX_SLOT_BASE_SENTINEL))
-            gem("    uint64_t spc = 0;")
-            gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
-            gem("    if (st != cartesi::execute_status::success) {")
-            gem("        TAIL return cp_cont_1(" .. args .. ");")
-            gem("    }")
-            gem("    TAIL return cp_cont_0(" .. args .. ");")
-            gem("}")
-            gem("")
+            for ctx, ctx_slot_base in ipairs(CTX_SLOT_BASES) do
+                local suffix = #CTX_SLOT_BASES == 1 and "" or ("_ctx%d"):format(ctx - 1)
+                gem(("extern \"C\" CONT void cp_%s_%d_%d%s(%s)"):format(name, base, val, suffix, params))
+                gem("{")
+                gem(("    uint64_t v1 = r%d;"):format(base))
+                gem(("    uint64_t v2 = r%d;"):format(val))
+                gem("    uint64_t vd = 0;")
+                gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, 0x%x);"):format(ctx_slot_base))
+                gem("    uint64_t spc = 0;")
+                gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
+                gem("    if (st != cartesi::execute_status::success) {")
+                gem("        TAIL return cp_cont_1(" .. args .. ");")
+                gem("    }")
+                gem("    TAIL return cp_cont_0(" .. args .. ");")
+                gem("}")
+                gem("")
+            end
         end
     end
 end

@@ -1051,6 +1051,9 @@ for shamt = 1, 3 do
     end
 end
 
+gem("#endif")
+gem("")
+
 -- The dominant sieve sequence has fixed shifts: SRLIW rd,rs1,5 followed by
 -- C.SLLI rd,2. Unlike two independent immediate stencils, this semantic
 -- stencil exposes both shifts directly to the host compiler and never
@@ -1083,6 +1086,7 @@ end
 -- These are the two same-destination SLLI;SRLI immediate shapes with useful
 -- dynamic weight in the measured AArch64 workloads. Constant shifts let the
 -- compiler select a single bitfield operation where profitable.
+gem("#if defined(__aarch64__)")
 local function srli_insn(shamt)
     return (shamt << 20) | (1 << 15) | (5 << 12) | (3 << 7) | 0x13
 end

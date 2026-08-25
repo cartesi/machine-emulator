@@ -790,7 +790,7 @@ struct cp_former {
             if (c->rec_failed) {
                 return;
             }
-            emit_guarded(tab[t][base], c->reg_dirty, c->rec_ctx_slot_base);
+            emit_guarded(tab[t][base], c->reg_dirty, cp_front_context(c->rec_ctx_slot_base));
             free_scratch(t);
             return;
         }
@@ -805,7 +805,7 @@ struct cp_former {
             return;
         }
         emit_guarded(tab[d][base], fresh ? (c->reg_dirty & ~(1u << static_cast<uint32_t>(d))) : c->reg_dirty,
-            c->rec_ctx_slot_base);
+            cp_front_context(c->rec_ctx_slot_base));
         free_scratch(scratch);
     }
 
@@ -816,7 +816,7 @@ struct cp_former {
         if (c->rec_failed) {
             return;
         }
-        emit_guarded(tab[base][val], c->reg_dirty, c->rec_ctx_slot_base);
+        emit_guarded(tab[base][val], c->reg_dirty, cp_front_context(c->rec_ctx_slot_base));
         free_scratch(scratch);
     }
 
@@ -1635,6 +1635,9 @@ static void cp_repatch_imm(uint8_t *dst, const cp_stencil_t *st, uint8_t ordinal
             std::memcpy(&insn, site, 4);
             insn = (insn & ~((1u << 30) | (0xfffu << 10))) | (negative << 30) | ((magnitude & 0xfffu) << 10);
             std::memcpy(site, &insn, 4);
+        } else if (p->kind == CP_P_SELECT8) {
+            const uint32_t choices = static_cast<uint32_t>(p->addend);
+            *site = static_cast<uint8_t>(choices >> (8u * static_cast<uint32_t>(value)));
         } else {
             const unsigned shift = 16u * static_cast<unsigned>(p->kind - CP_P_G0);
             const uint32_t field = static_cast<uint32_t>(value >> shift) & 0xffffu;

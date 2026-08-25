@@ -233,6 +233,12 @@ static inline uint8_t *cp_emit(cp_heap_t *h, const cp_stencil_t *st, const uint6
                 memcpy(site, &insn, 4);
                 break;
             }
+            case CP_P_SELECT8: {
+                const uint32_t selector = (uint32_t) imm[p->ordinal];
+                const uint32_t choices = (uint32_t) p->addend;
+                *site = (uint8_t) (choices >> (8u * selector));
+                break;
+            }
             default: { /* CP_P_G0..G3: 16-bit field at bits 5-20 */
                 unsigned shift = 16u * (unsigned) (p->kind - CP_P_G0);
                 uint32_t field = (uint32_t) ((imm[p->ordinal] >> shift) & 0xffffu);

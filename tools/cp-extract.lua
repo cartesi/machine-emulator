@@ -568,63 +568,118 @@ local function add_semantic_immediate_patch(st)
     end)
 end
 
--- Context-specialized memory stencils use one semantic family. The compiler
--- materializes this aligned sentinel as the TLB context-bank base; validate
--- that exact native instruction and synthesize immediate ordinal 0. Formation
--- patches it to 0, 256, 512, or 768.
-local function add_semantic_context_patch(st)
+local function signed_packed_bytes(b0, b1, b2, b3)
+    local packed = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    return packed >= 0x80000000 and packed - 0x100000000 or packed
+end
+
+-- Fixed-width context fields are expanded into the same byte-selector data
+-- used by whole-function differencing. The emitted patcher therefore has no
+-- host instruction knowledge.
+local function add_semantic_context_selector(st)
     local op = st.name:match("^cp_([a-z0-9]+)_[0-9]+_[0-9]+$")
     if not SEM_MEMORY_OP[op] then
         return
     end
-    local found
-    if st.arch == "aarch64" then
-        for off = 0, #st.code - 4, 4 do
-            local insn = string.unpack("<I4", st.code, off + 1)
-            local movz = insn & 0x7f800000 == 0x52800000 and (insn >> 21) & 3 == 0
-            if movz and (insn >> 5) & 0xffff == SEM_CTX_SENTINEL then
-                if found then
-                    die("%s: multiple semantic context fields", st.name)
-                end
-                found = off
-            end
-        end
-        if found == nil then
-            die("%s: context sentinel did not compile to MOVZ", st.name)
-        end
-        st.patches[#st.patches + 1] = { offset = found, kind = "G0", ordinal = 0, addend = 0 }
-    else
-        local marker = string.pack("<I4", SEM_CTX_SENTINEL)
-        local start = 1
-        while true do
-            local at = st.code:find(marker, start, true)
-            if not at then
-                break
-            end
+    if st.arch ~= "aarch64" then
+        die("%s: expected context variants on %s", st.name, st.arch)
+    end
+    local found, original
+    for off = 0, #st.code - 4, 4 do
+        local insn = string.unpack("<I4", st.code, off + 1)
+        local movz = insn & 0x7f800000 == 0x52800000 and (insn >> 21) & 3 == 0
+        if movz and (insn >> 5) & 0xffff == SEM_CTX_SENTINEL then
             if found then
                 die("%s: multiple semantic context fields", st.name)
             end
-            found = at - 1
-            start = at + 1
+            found, original = off, insn
         end
-        if found == nil then
-            die("%s: context sentinel did not compile to an imm32", st.name)
+    end
+    if found == nil then
+        die("%s: context sentinel did not compile to MOVZ", st.name)
+    end
+    local words = {}
+    for ctx = 0, 3 do
+        words[ctx + 1] = (original & ~(0xffff << 5)) | ((ctx * 0x100) << 5)
+    end
+    for byte = 0, 3 do
+        local shift = byte * 8
+        local b0 = (words[1] >> shift) & 0xff
+        local b1 = (words[2] >> shift) & 0xff
+        local b2 = (words[3] >> shift) & 0xff
+        local b3 = (words[4] >> shift) & 0xff
+        if b0 ~= b1 or b0 ~= b2 or b0 ~= b3 then
+            st.patches[#st.patches + 1] = { offset = found + byte, kind = "SELECT8", ordinal = 0,
+                addend = signed_packed_bytes(b0, b1, b2, b3) }
         end
-        -- Accept MOV r32,imm32. Other compiler shapes fail closed until they
-        -- are decoded and validated explicitly.
-        local opcode = found >= 1 and st.code:byte(found) or 0
-        if opcode < 0xb8 or opcode > 0xbf then
-            die("%s: semantic context imm32 is not in MOV r32,imm32", st.name)
-        end
-        st.patches[#st.patches + 1] = { offset = found, kind = "ABS32", ordinal = 0, addend = 0 }
     end
     table.sort(st.patches, function(a, b)
         return a.offset < b.offset
     end)
 end
 
+-- A semantic memory stencil is compiled once for each of the four valid TLB
+-- contexts. Keep one body and encode every differing byte as a generic
+-- four-way selector patch. This reproduces the compiler's native code for
+-- each context without decoding host instructions or retaining four bodies.
+local function merge_context_variants(name, variants)
+    for i = 1, 4 do
+        if variants[i] == nil then
+            die("%s: missing context variant %d", name, i - 1)
+        end
+    end
+    local base = variants[1]
+    base.name = name
+    for i = 2, 4 do
+        local other = variants[i]
+        if other.arch ~= base.arch or #other.code ~= #base.code or #other.patches ~= #base.patches then
+            die("%s: context variant %d changed stencil layout", name, i - 1)
+        end
+        for j, p in ipairs(base.patches) do
+            local q = other.patches[j]
+            if q.offset ~= p.offset or q.kind ~= p.kind or q.ordinal ~= p.ordinal or q.addend ~= p.addend then
+                die("%s: context variant %d changed patch layout", name, i - 1)
+            end
+        end
+    end
+    local function patch_width(kind)
+        return kind == "ABS64" and 8 or 4
+    end
+    local function overlaps_existing_patch(off)
+        for _, p in ipairs(base.patches) do
+            if off >= p.offset and off < p.offset + patch_width(p.kind) then
+                return true
+            end
+        end
+        return false
+    end
+    local nselect = 0
+    for off = 0, #base.code - 1 do
+        local b0 = variants[1].code:byte(off + 1)
+        local b1 = variants[2].code:byte(off + 1)
+        local b2 = variants[3].code:byte(off + 1)
+        local b3 = variants[4].code:byte(off + 1)
+        if b0 ~= b1 or b0 ~= b2 or b0 ~= b3 then
+            if overlaps_existing_patch(off) then
+                die("%s: context byte at +%d overlaps an existing patch", name, off)
+            end
+            base.patches[#base.patches + 1] = { offset = off, kind = "SELECT8", ordinal = 0,
+                addend = signed_packed_bytes(b0, b1, b2, b3) }
+            nselect = nselect + 1
+        end
+    end
+    if nselect == 0 then
+        die("%s: context variants produced identical code", name)
+    end
+    table.sort(base.patches, function(a, b)
+        return a.offset < b.offset
+    end)
+    return base
+end
+
 local stencils = {}
 local by_name = {}
+local context_variants = {}
 for i = 3, #arg do
     local f = assert(io.open(arg[i], "rb"))
     local data = f:read("a")
@@ -638,14 +693,32 @@ for i = 3, #arg do
         die("%s: neither ELF64 nor Mach-O 64", arg[i])
     end
     for _, st in ipairs(list) do
-        add_semantic_immediate_patch(st)
-        add_semantic_context_patch(st)
-        if by_name[st.name] then
-            die("duplicate stencil %s (in %s)", st.name, arg[i])
+        local name, ctx = st.name:match("^(cp_[a-z0-9]+_[0-9]+_[0-9]+)_ctx([0-3])$")
+        if name then
+            local variants = context_variants[name] or {}
+            context_variants[name] = variants
+            ctx = tonumber(ctx) + 1
+            if variants[ctx] then
+                die("duplicate context variant %s_ctx%d (in %s)", name, ctx - 1, arg[i])
+            end
+            variants[ctx] = st
+        else
+            add_semantic_immediate_patch(st)
+            add_semantic_context_selector(st)
+            if by_name[st.name] then
+                die("duplicate stencil %s (in %s)", st.name, arg[i])
+            end
+            by_name[st.name] = true
+            stencils[#stencils + 1] = st
         end
-        by_name[st.name] = true
-        stencils[#stencils + 1] = st
     end
+end
+for name, variants in pairs(context_variants) do
+    if by_name[name] then
+        die("context stencil conflicts with %s", name)
+    end
+    by_name[name] = true
+    stencils[#stencils + 1] = merge_context_variants(name, variants)
 end
 if #stencils == 0 then
     die("no cp_* stencils found")
@@ -662,7 +735,7 @@ hdr:write([[
 #define CP_STENCILS_TABLES_H
 #include <stdint.h>
 
-enum cp_patch_kind { CP_P_JUMP26, CP_P_G0, CP_P_G1, CP_P_G2, CP_P_G3, CP_P_ABS64, CP_P_JMPREL32, CP_P_U12, CP_P_ABS32 };
+enum cp_patch_kind { CP_P_JUMP26, CP_P_G0, CP_P_G1, CP_P_G2, CP_P_G3, CP_P_ABS64, CP_P_JMPREL32, CP_P_U12, CP_P_ABS32, CP_P_SELECT8 };
 typedef struct {
     uint16_t offset;
     uint8_t kind;
@@ -689,6 +762,7 @@ local KIND_ENUM = {
     JMPREL32 = "CP_P_JMPREL32",
     U12 = "CP_P_U12",
     ABS32 = "CP_P_ABS32",
+    SELECT8 = "CP_P_SELECT8",
 }
 
 for profile_id, st in ipairs(stencils) do

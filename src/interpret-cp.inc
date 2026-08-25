@@ -765,6 +765,36 @@ struct cp_former {
         emit1(table[d][s]);
     }
 
+    void fused_zext32_add(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1,
+        uint8_t rs2) {
+        const int s = alloc_src(rs1);
+        const int a = alloc_src(rs2);
+        if (c->rec_failed) {
+            return;
+        }
+        const int d = alloc_dst(rd);
+        if (c->rec_failed) {
+            return;
+        }
+        emit1(table[d][s][a]);
+    }
+
+    void fused_shift_extract_add(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t rd1,
+        uint8_t rd2, uint8_t rs3) {
+        const int s = alloc_src(rd2);
+        const int a = alloc_src(rs3);
+        if (c->rec_failed) {
+            return;
+        }
+        const int d1 = alloc_dst(rd1);
+        const int d2 = alloc_dst(rd2);
+        if (c->rec_failed || d2 != s) {
+            c->rec_failed = true;
+            return;
+        }
+        emit1(table[d1][d2][a]);
+    }
+
     void li(uint8_t rd, uint64_t value) {
         if (rd == 0) {
             return;
@@ -1187,16 +1217,25 @@ struct cp_former {
     }
 };
 
-enum class cp_fusion_op : uint8_t { none, slli, c_slli, srli, srliw, c_add, auipc, addi };
-enum class cp_fusion_match : uint8_t { slli_add, srliw_slli, slli_srli, auipc_addi };
-enum class cp_fusion_emit : uint8_t { slli_add, reg2, repartition_srliw_slli_add, constant };
+enum class cp_fusion_op : uint8_t { none, slli, c_slli, srli, srli_full, srliw, c_add, auipc, addi };
+enum class cp_fusion_match : uint8_t { slli_add, srliw_slli, slli_srli, zext32_add, shift_extract_add, auipc_addi };
+enum class cp_fusion_emit : uint8_t {
+    slli_add,
+    reg2,
+    repartition_srliw_slli_add,
+    zext32_add,
+    shift_extract_add,
+    constant
+};
 
 using cp_fusion_table2 = const cp_stencil_t *const (*)[CP_NSLOTS];
+using cp_fusion_table3 = const cp_stencil_t *const (*)[CP_NSLOTS][CP_NSLOTS];
 
 struct cp_fusion_variant {
     uint8_t imm0;
     uint8_t imm1;
-    cp_fusion_table2 table;
+    cp_fusion_table2 table2;
+    cp_fusion_table3 table3;
 };
 
 struct cp_fusion_terminal {
@@ -1232,21 +1271,27 @@ struct cp_fusion_config {
 // the walk, validation, rewind, and replacement mechanism is shared.
 #if defined(__aarch64__)
 static constexpr cp_fusion_variant cp_fusion_slli_add_variants[] = {
-    {1, 0, cp_slli_add_sh1_table},
-    {2, 0, cp_slli_add_sh2_table},
-    {3, 0, cp_slli_add_sh3_table},
+    {1, 0, cp_slli_add_sh1_table, nullptr},
+    {2, 0, cp_slli_add_sh2_table, nullptr},
+    {3, 0, cp_slli_add_sh3_table, nullptr},
 };
 static constexpr cp_fusion_variant cp_fusion_srliw_slli_variants[] = {
-    {5, 2, cp_srliw5_slli2_table},
+    {5, 2, cp_srliw5_slli2_table, nullptr},
 };
 static constexpr cp_fusion_variant cp_fusion_repartition_variants[] = {
-    {5, 2, cp_slli_add_sh2_table},
+    {5, 2, cp_slli_add_sh2_table, nullptr},
 };
 static constexpr cp_fusion_variant cp_fusion_slli_srli_variants[] = {
-    {10, 20, cp_slli10_srli20_table},
-    {32, 32, cp_slli32_srli32_table},
+    {10, 20, cp_slli10_srli20_table, nullptr},
+    {32, 32, cp_slli32_srli32_table, nullptr},
 };
-static constexpr cp_fusion_variant cp_fusion_no_variants[] = {{0, 0, nullptr}};
+static constexpr cp_fusion_variant cp_fusion_zext32_add_variants[] = {
+    {32, 32, nullptr, cp_slli32_srli32_add_table},
+};
+static constexpr cp_fusion_variant cp_fusion_shift_extract_add_variants[] = {
+    {32, 31, nullptr, cp_slli32_srli31_add_table},
+};
+static constexpr cp_fusion_variant cp_fusion_no_variants[] = {{0, 0, nullptr, nullptr}};
 static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
     {"slli-add", cp_fusion_match::slli_add, cp_fusion_emit::slli_add, 2, cp_fusion_slli_add_variants, 3},
     {"srliw-slli-add", cp_fusion_match::srliw_slli, cp_fusion_emit::repartition_srliw_slli_add, 3,
@@ -1254,6 +1299,10 @@ static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
     {"srliw-slli", cp_fusion_match::srliw_slli, cp_fusion_emit::reg2, 2, cp_fusion_srliw_slli_variants, 1},
     {"slli-srli", cp_fusion_match::slli_srli, cp_fusion_emit::reg2, 2, cp_fusion_slli_srli_variants, 2},
     {"auipc-addi", cp_fusion_match::auipc_addi, cp_fusion_emit::constant, 2, cp_fusion_no_variants, 1},
+    {"zext32-add", cp_fusion_match::zext32_add, cp_fusion_emit::zext32_add, 3,
+        cp_fusion_zext32_add_variants, 1},
+    {"shift-extract-add", cp_fusion_match::shift_extract_add, cp_fusion_emit::shift_extract_add, 3,
+        cp_fusion_shift_extract_add_variants, 1},
 };
 static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {0, cp_fusion_op::c_add, 1},
@@ -1265,30 +1314,51 @@ static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {6, cp_fusion_op::slli, 7},
     {0, cp_fusion_op::addi, 8},
     {8, cp_fusion_op::auipc, 9},
+    {1, cp_fusion_op::srli, 10},
+    {10, cp_fusion_op::slli, 11},
+    {1, cp_fusion_op::srli_full, 12},
+    {12, cp_fusion_op::slli, 13},
 };
 static constexpr cp_fusion_trie_node cp_fusion_nodes[] = {
-    {-1}, {-1}, {0}, {1}, {-1}, {2}, {-1}, {3}, {-1}, {4},
+    {-1}, {-1}, {0}, {1}, {-1}, {2}, {-1}, {3}, {-1}, {4}, {-1}, {5}, {-1}, {6},
 };
 static constexpr cp_fusion_config cp_fusion_host_config = {
-    cp_fusion_edges, 9, cp_fusion_nodes, cp_fusion_terminals, 5};
+    cp_fusion_edges, 13, cp_fusion_nodes, cp_fusion_terminals, 7};
 #elif defined(__x86_64__)
 static constexpr cp_fusion_variant cp_fusion_srliw_slli_variants[] = {
-    {5, 2, cp_srliw5_slli2_table},
+    {5, 2, cp_srliw5_slli2_table, nullptr},
 };
-static constexpr cp_fusion_variant cp_fusion_no_variants[] = {{0, 0, nullptr}};
+static constexpr cp_fusion_variant cp_fusion_zext32_add_variants[] = {
+    {32, 32, nullptr, cp_slli32_srli32_add_table},
+};
+static constexpr cp_fusion_variant cp_fusion_shift_extract_add_variants[] = {
+    {32, 31, nullptr, cp_slli32_srli31_add_table},
+};
+static constexpr cp_fusion_variant cp_fusion_no_variants[] = {{0, 0, nullptr, nullptr}};
 static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
     {"srliw-slli", cp_fusion_match::srliw_slli, cp_fusion_emit::reg2, 2, cp_fusion_srliw_slli_variants, 1},
     {"auipc-addi", cp_fusion_match::auipc_addi, cp_fusion_emit::constant, 2, cp_fusion_no_variants, 1},
+    {"zext32-add", cp_fusion_match::zext32_add, cp_fusion_emit::zext32_add, 3,
+        cp_fusion_zext32_add_variants, 1},
+    {"shift-extract-add", cp_fusion_match::shift_extract_add, cp_fusion_emit::shift_extract_add, 3,
+        cp_fusion_shift_extract_add_variants, 1},
 };
 static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {0, cp_fusion_op::c_slli, 1},
     {1, cp_fusion_op::srliw, 2},
     {0, cp_fusion_op::addi, 3},
     {3, cp_fusion_op::auipc, 4},
+    {0, cp_fusion_op::c_add, 5},
+    {5, cp_fusion_op::srli, 6},
+    {6, cp_fusion_op::slli, 7},
+    {5, cp_fusion_op::srli_full, 8},
+    {8, cp_fusion_op::slli, 9},
 };
-static constexpr cp_fusion_trie_node cp_fusion_nodes[] = {{-1}, {-1}, {0}, {-1}, {1}};
+static constexpr cp_fusion_trie_node cp_fusion_nodes[] = {
+    {-1}, {-1}, {0}, {-1}, {1}, {-1}, {-1}, {2}, {-1}, {3},
+};
 static constexpr cp_fusion_config cp_fusion_host_config = {
-    cp_fusion_edges, 4, cp_fusion_nodes, cp_fusion_terminals, 2};
+    cp_fusion_edges, 9, cp_fusion_nodes, cp_fusion_terminals, 4};
 #else
 static constexpr cp_fusion_config cp_fusion_host_config = {nullptr, 0, nullptr, nullptr, 0};
 #endif
@@ -1301,6 +1371,8 @@ static FORCE_INLINE cp_fusion_op cp_fusion_class(uint16_t label, uint32_t insn) 
             return cp_fusion_op::slli;
         case tc_label::C_SRLI:
             return cp_fusion_op::srli;
+        case tc_label::SRLI_SRAI_rdN:
+            return ((insn >> 30) & 1) == 0 ? cp_fusion_op::srli_full : cp_fusion_op::none;
         case tc_label::SRLIW_SRAIW_rdN:
             return ((insn >> 30) & 1) == 0 ? cp_fusion_op::srliw : cp_fusion_op::none;
         case tc_label::C_ADD:
@@ -1365,6 +1437,30 @@ static const cp_fusion_variant *cp_fusion_terminal_variant(
             imm0 = static_cast<uint32_t>(insn_I_get_imm(seq[0].insn));
             imm1 = insn_get_CI_CB_imm(seq[1].insn);
             break;
+        case cp_fusion_match::zext32_add: {
+            const uint32_t rd = insn_get_rd(seq[0].insn);
+            const uint32_t rs1 = insn_get_rs1(seq[0].insn);
+            const uint32_t rs2 = insn_get_CR_CSS_rs2(seq[2].insn);
+            if (rd != insn_get_CL_CS_CA_CB_rs1(seq[1].insn) || rd != insn_get_rd(seq[2].insn) || rd == rs1 ||
+                rd == rs2 || rs1 == rs2) {
+                return nullptr;
+            }
+            imm0 = static_cast<uint32_t>(insn_I_get_imm(seq[0].insn));
+            imm1 = insn_get_CI_CB_imm(seq[1].insn);
+            break;
+        }
+        case cp_fusion_match::shift_extract_add:
+            if (insn_get_rd(seq[0].insn) != insn_get_rs1(seq[1].insn) ||
+                insn_get_rd(seq[1].insn) != insn_get_rs1(seq[0].insn) ||
+                insn_get_rd(seq[1].insn) != insn_get_rd(seq[2].insn) ||
+                insn_get_rd(seq[0].insn) == insn_get_rd(seq[1].insn) ||
+                insn_get_rd(seq[0].insn) == insn_get_CR_CSS_rs2(seq[2].insn) ||
+                insn_get_rd(seq[1].insn) == insn_get_CR_CSS_rs2(seq[2].insn)) {
+                return nullptr;
+            }
+            imm0 = static_cast<uint32_t>(insn_I_get_imm(seq[0].insn));
+            imm1 = static_cast<uint32_t>(insn_I_get_imm(seq[1].insn));
+            break;
         case cp_fusion_match::auipc_addi: {
             const uint32_t rd = insn_get_rd(seq[0].insn);
             if (rd == 0 || rd != insn_get_rd(seq[1].insn) || rd != insn_get_rs1(seq[1].insn)) {
@@ -1387,11 +1483,11 @@ static uint8_t cp_fusion_emit_replacement(cp_state *c, const cp_fusion_terminal 
     cp_former f{c, seq[0].vpc};
     switch (terminal.emit) {
         case cp_fusion_emit::slli_add:
-            f.fused_slli_add(variant.table, insn_get_rd(seq[0].insn), insn_get_CR_CSS_rs2(seq[1].insn));
+            f.fused_slli_add(variant.table2, insn_get_rd(seq[0].insn), insn_get_CR_CSS_rs2(seq[1].insn));
             things[0] = {start, first, 2};
             return 1;
         case cp_fusion_emit::reg2:
-            f.fused_reg2(variant.table, insn_get_rd(seq[0].insn), insn_get_rs1(seq[0].insn));
+            f.fused_reg2(variant.table2, insn_get_rd(seq[0].insn), insn_get_rs1(seq[0].insn));
             things[0] = {start, first, 2};
             return 1;
         case cp_fusion_emit::repartition_srliw_slli_add: {
@@ -1399,11 +1495,21 @@ static uint8_t cp_fusion_emit_replacement(cp_state *c, const cp_fusion_terminal 
             cp_state::cp_form_checkpoint middle{};
             cp_save_checkpoint(c, middle);
             f.pc = seq[1].vpc;
-            f.fused_slli_add(variant.table, insn_get_rd(seq[1].insn), insn_get_CR_CSS_rs2(seq[2].insn));
+            f.fused_slli_add(variant.table2, insn_get_rd(seq[1].insn), insn_get_CR_CSS_rs2(seq[2].insn));
             things[0] = {start, first, 1};
             things[1] = {middle, static_cast<uint16_t>(first + 1), 2};
             return 2;
         }
+        case cp_fusion_emit::zext32_add:
+            f.fused_zext32_add(variant.table3, insn_get_rd(seq[0].insn), insn_get_rs1(seq[0].insn),
+                insn_get_CR_CSS_rs2(seq[2].insn));
+            things[0] = {start, first, 3};
+            return 1;
+        case cp_fusion_emit::shift_extract_add:
+            f.fused_shift_extract_add(variant.table3, insn_get_rd(seq[0].insn), insn_get_rd(seq[1].insn),
+                insn_get_CR_CSS_rs2(seq[2].insn));
+            things[0] = {start, first, 3};
+            return 1;
         case cp_fusion_emit::constant:
             f.li(insn_get_rd(seq[0].insn), seq[0].vpc + static_cast<uint64_t>(insn_U_get_imm(seq[0].insn)) +
                     static_cast<uint64_t>(insn_I_get_imm(seq[1].insn)));

@@ -188,11 +188,30 @@ int main() {
         check(out_hit[SLOT_POS[0]] == g[0], "mv source preserved");
     }
 
+    // 7. Fixed zlib shift/extract/add chains preserve both their final and
+    // intermediate architectural destinations.
+    {
+        uint64_t g[CP_NSLOTS_PAD];
+        std::memcpy(g, g_init, sizeof(g));
+        g[0] = 0xabcdef1287654321ull;
+        g[2] = 11;
+        uint8_t *entry = emit_chain(cp_slli32_srli32_add_table[1][0][2]);
+        run(entry, g);
+        check(out_hit[SLOT_POS[1]] == UINT64_C(0x87654321) + 11, "zext32 add result");
+
+        g[0] = 0xabcdef1287654321ull;
+        g[2] = 13;
+        entry = emit_chain(cp_slli32_srli31_add_table[1][0][2]);
+        run(entry, g);
+        check(out_hit[SLOT_POS[1]] == UINT64_C(0x87654321) << 32, "shift extract intermediate");
+        check(out_hit[SLOT_POS[0]] == (UINT64_C(0x87654321) << 1) + 13, "shift extract add result");
+    }
+
     // Exact FP stencils are guarded only by mstatus.FS. They use integer
     // and soft-float bit semantics and never take the arithmetic fallback.
     a.write_mstatus((a.read_mstatus() & ~MSTATUS_FS_MASK) | MSTATUS_FS_DIRTY);
 
-    // 7. Sign injection preserves payload bits and replaces only the sign.
+    // 8. Sign injection preserves payload bits and replaces only the sign.
     {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
@@ -204,7 +223,7 @@ int main() {
         check(out_bail[0] == 0xddddddddddddddddull, "fsgnj.s has no fallback");
     }
 
-    // 8. Min handles signaling NaN and accumulates NV exactly.
+    // 9. Min handles signaling NaN and accumulates NV exactly.
     {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
@@ -217,7 +236,7 @@ int main() {
         check((a.read_fcsr() & FFLAGS_NV_MASK) != 0, "fmin.s signaling NaN flag");
     }
 
-    // 9. Comparisons write the integer roster destination and preserve the
+    // 10. Comparisons write the integer roster destination and preserve the
     // same NaN exception behavior as the portable implementation.
     {
         uint64_t g[CP_NSLOTS_PAD];
@@ -231,7 +250,7 @@ int main() {
         check(a.read_fcsr() == 0, "flt.d exact flags");
     }
 
-    // 10. Classification performs mandatory NaN unboxing: malformed single
+    // 11. Classification performs mandatory NaN unboxing: malformed single
     // precision input is classified as the canonical quiet NaN.
     {
         uint64_t g[CP_NSLOTS_PAD];
@@ -242,7 +261,7 @@ int main() {
         check(out_hit[SLOT_POS[0]] == i_sfloat32::fclass(i_sfloat32::F_QNAN), "fclass.s malformed box");
     }
 
-    // 11. FS-off fails before any exact operation and leaves every roster
+    // 12. FS-off fails before any exact operation and leaves every roster
     // value untouched for portable exception handling.
     {
         a.write_mstatus(a.read_mstatus() & ~MSTATUS_FS_MASK);

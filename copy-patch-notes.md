@@ -1966,3 +1966,61 @@ let the single wedged cell block the remaining 183.
 Not measured: whether the -6.1% memcpy and -3.4% int64 the AArch64 ADDI
 entry reports transfer to this architecture. That needs the same-binary
 `CP_IMM_DISABLE=1` control, which is the next step.
+
+## Done: current AArch64 four-build matrix (2026-08-25)
+
+The complete AArch64 matrix was rerun after the context, lowering, fusion,
+generic-trie, and generated-table changes. The main column is commit
+`bd095381`, tail-call and Lightning are `8d9f970b`, and copy-patch is current
+commit `15a03a6f`. The main, tail-call, and Lightning binaries are the preserved
+hash-identical binaries from the 2026-08-24 matrix; copy-patch was freshly
+built with the MacPorts Clang toolchain.
+
+Protocol: fixed musl stress-ng bogo-ops, the same kernel and rootfs as the
+previous AArch64 matrix, each build's three-run boot median subtracted, and
+three interleaved repetitions. All 156 workload cells completed. Median
+boot-subtracted CPU seconds:
+
+    workload     main   tail-call  Lightning     CP    CP/main  CP/light
+    nop          6.380    4.078      0.393     0.378    0.059     0.962
+    regs        13.748   13.844      1.896     1.807    0.131     0.953
+    branch       1.033    0.715      0.731     1.122    1.086     1.535
+    tree         2.462    2.590      2.033     1.750    0.711     0.861
+    qsort        3.992    3.892      2.651     1.421    0.356     0.536
+    memcpy      10.548    7.938      2.467     3.021    0.286     1.225
+    zlib         8.511    8.608      4.677     3.786    0.445     0.809
+    hash         6.796    4.929      2.480     1.781    0.262     0.718
+    syscall      1.659    1.034      0.470     0.469    0.283     0.998
+    double       2.743    1.785      1.611     1.832    0.668     1.137
+    sieve       14.740   11.480      2.039     1.986    0.135     0.974
+    int64        4.336    2.841      1.563     0.728    0.168     0.466
+    matrixprod   3.949    3.561      1.610     1.123    0.284     0.698
+    geomean      4.748    3.754      1.561     1.359    0.286     0.871
+
+Current copy-patch takes 28.6 percent of main's geomean time: a 3.49x
+speedup, or 71.4 percent less elapsed CPU time. It beats main on 12/13 rows;
+branch is the only loss at 8.6 percent. It also takes 87.1 percent of
+Lightning's geomean time, a 1.15x speedup, and wins 10/13 rows. Its Lightning
+losses remain branch, memcpy, and double.
+
+Boot medians were main 0.119 s, tail-call 0.142 s, Lightning 0.148 s, and
+copy-patch 0.180 s. Thus CP pays 61 ms more boot CPU time than main; boot is
+not included in the workload table.
+
+Every repetition within each build retired the identical mcycle. Tail-call,
+Lightning, and copy-patch also retired identical mcycles to one another on
+every workload. Main retired a systematically different count because it
+predates the feature branch's guest-clock/configuration history, so this is
+not a same-source backend hash gate. Backend correctness remains covered by
+the same-source differential and machine tests recorded above.
+
+Binary SHA-256 identities:
+
+    main        15e324427e1b1c4728e55a1f41f33e58f7b8a689150011a408fdd176bb31d21a
+    tail-call   b94f267547b08c65120369e5afdab2977e619c4e810180d610fa57f63ec8d5d4
+    Lightning   4912b741bea2458b6dbe0c1666c24059bf3e1a7f0ed9ae6a5446560b59d54b95
+    copy-patch  02105f1bf05af8f66321e9c9ea4f40d5445e7b6ac9e2310df3583b4072a9e95e
+
+The incrementally written raw result is preserved at
+`scratch/fusion-pairs/aarch64-current-2026-08-25/timing-matrix.json` in the
+canonical local checkout.

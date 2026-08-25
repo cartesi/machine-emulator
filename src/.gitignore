@@ -12,6 +12,7 @@ interpret-jump-table.hpp
 cp-stencils.c
 cp-stencils.elf.o
 cp-stencils-tables.h
+cp-stencils-tables.cpp
 cp-stencils-manifest.txt
 cp-stencils-test
 cp-stencils-semantic.cpp

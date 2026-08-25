@@ -427,7 +427,7 @@ PGO_WORKLOAD=\
 	dhrystone 5000000; \
 	whetstone 25000
 
-LINTER_IGNORE_SOURCES=cp-stencils.c cp-stencils-semantic.cpp
+LINTER_IGNORE_SOURCES=cp-stencils.c cp-stencils-semantic.cpp cp-stencils-tables.cpp
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
 
 CLANG_TIDY=clang-tidy
@@ -438,12 +438,14 @@ CLANG_FORMAT=clang-format
 CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp) $(wildcard ../uarch/*.h) $(wildcard ../uarch/*.hpp)
 CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UARCH_FILES)))
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
-CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.hpp cp-stencils.c cp-stencils-semantic.cpp cp-stencils-tables.h
+CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.hpp cp-stencils.c cp-stencils-semantic.cpp cp-stencils-tables.cpp \
+	cp-stencils-tables.h
 CLANG_FORMAT_FILES:=$(strip $(CLANG_FORMAT_FILES))
 CLANG_FORMAT_FILES:=$(filter-out $(CLANG_FORMAT_IGNORE_FILES),$(strip $(CLANG_FORMAT_FILES)))
 
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --collapse-simple-statement Always --respect-ignores
+LUA_FILES?=.
 
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
@@ -537,6 +539,9 @@ LIBCARTESI_OBJS:= \
 
 ifeq ($(tailcall),yes)
 LIBCARTESI_OBJS+=interpret-tc.o
+endif
+ifeq ($(copy_patch),yes)
+LIBCARTESI_OBJS+=cp-stencils-tables.o
 endif
 
 CARTESI_CLUA_OBJS:= \
@@ -660,13 +665,13 @@ check-format:
 	@$(CLANG_FORMAT) -Werror --dry-run $(CLANG_FORMAT_FILES)
 
 format-lua:
-	@$(STYLUA) $(STYLUA_FLAGS) .
+	@$(STYLUA) $(STYLUA_FLAGS) $(LUA_FILES)
 
 check-format-lua:
-	@$(STYLUA) $(STYLUA_FLAGS) --check .
+	@$(STYLUA) $(STYLUA_FLAGS) --check $(LUA_FILES)
 
 check-lua:
-	luacheck .
+	luacheck $(LUA_FILES)
 
 fs.ext2: fs/*
 	genext2fs -f -i 512 -b 8192 -d fs fs.ext2
@@ -727,6 +732,9 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
+interpret.clang-tidy: CXXFLAGS+=$(filter -D%,$(INTERPRET_CXXFLAGS))
+interpret-tc.clang-tidy: CXXFLAGS+=$(filter -D%,$(TC_INTERPRET_CXXFLAGS))
+
 %.clang-tidy: %.c
 	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) $(CLANG_TIDY_WARNS) -DCLANG_TIDY_LINT
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
@@ -752,11 +760,16 @@ interpret-tc.o: interpret-tc.cpp interpret.cpp cm-version.h interpret-jump-table
 $(LIGHTNING_LIB):
 	$(MAKE) -C .. bundle-lightning
 
-# One generator run emits both TUs; the .cpp rule only orders after it.
-cp-stencils.c: ../tools/cp-gen-stencils.lua
-	$(LUA_BIN) $< $@ cp-stencils-semantic.cpp $(CP_NSLOTS) $(CP_TARGET_ARCH)
+CP_GENERATE_COMMAND=$(LUA_BIN) ../tools/cp-gen-stencils.lua cp-stencils.c cp-stencils-semantic.cpp $(CP_NSLOTS) \
+	$(CP_TARGET_ARCH)
 
-cp-stencils-semantic.cpp: cp-stencils.c ;
+# One generator run emits both TUs. If either output is removed independently,
+# its rule repeats the generation instead of accepting a missing side output.
+cp-stencils.c: ../tools/cp-gen-stencils.lua
+	$(CP_GENERATE_COMMAND)
+
+cp-stencils-semantic.cpp: cp-stencils.c
+	@if [ ! -f $@ ]; then $(CP_GENERATE_COMMAND); fi
 
 cp-stencils.elf.o: cp-stencils.c
 	$(CP_CC) $(CP_STENCIL_FLAGS) -c -o $@ $<
@@ -773,20 +786,29 @@ CP_SEMANTIC_CXXFLAGS=-ffunction-sections -fomit-frame-pointer -fno-stack-protect
 cp-stencils-semantic.stencil.o: cp-stencils-semantic.cpp interpret.cpp cm-version.h interpret-jump-table.hpp
 	$(CXX) $(CXXFLAGS) $(CP_SEMANTIC_CXXFLAGS) -c -o $@ $<
 
-# The manifest is written by the same extractor run; depending on the header
-# alone keeps the rule single-target for old GNU make.
-cp-stencils-tables.h: cp-stencils.elf.o cp-stencils-semantic.stencil.o ../tools/cp-extract.lua
-	CP_NSLOTS=$(CP_NSLOTS) $(LUA_BIN) ../tools/cp-extract.lua $@ cp-stencils-manifest.txt cp-stencils.elf.o \
-		cp-stencils-semantic.stencil.o
+CP_EXTRACT_COMMAND=CP_NSLOTS=$(CP_NSLOTS) $(LUA_BIN) ../tools/cp-extract.lua cp-stencils-tables.h \
+	cp-stencils-tables.cpp cp-stencils-manifest.txt cp-stencils.elf.o cp-stencils-semantic.stencil.o
 
-cp-stencils-test: cp-stencils-test.c cp-stencils-tables.h
-	$(CC) -O2 -I. -DCP_NSLOTS=$(CP_NSLOTS) -o $@ $<
+# One extractor run emits the interface, source, and manifest. As above, the
+# secondary source rule restores its output if it is removed independently.
+cp-stencils-tables.h: cp-stencils.elf.o cp-stencils-semantic.stencil.o ../tools/cp-extract.lua
+	$(CP_EXTRACT_COMMAND)
+
+cp-stencils-tables.cpp: cp-stencils-tables.h
+	@if [ ! -f $@ ]; then $(CP_EXTRACT_COMMAND); fi
+
+cp-stencils-tables.o: cp-stencils-tables.cpp cp-stencils-tables.h
+	$(CXX) $(CXXFLAGS) -DCP_NSLOTS=$(CP_NSLOTS) -c -o $@ $<
+
+cp-stencils-test: cp-stencils-test.c cp-stencils-tables.o
+	$(CC) -O2 -I. -DCP_NSLOTS=$(CP_NSLOTS) -o $@ $< cp-stencils-tables.o
 
 # Runtime memory-stencil test against a live machine; includes interpret.cpp
 # for the warm-up paths, links the shared library for the machine itself.
-cp-machine-test: cp-machine-test.cpp cp-stencils-tables.h cp-emit.h $(LIBCARTESI_OBJS) interpret.cpp cm-version.h \
+cp-machine-test: cp-machine-test.cpp cp-stencils-tables.o cp-emit.h $(LIBCARTESI_OBJS) interpret.cpp cm-version.h \
 		interpret-jump-table.hpp
-	$(CXX) $(CXXFLAGS) $(CP_SEMANTIC_CXXFLAGS) -DCP_NSLOTS=$(CP_NSLOTS) -o $@ $< $(LIBCARTESI_OBJS) \
+	$(CXX) $(CXXFLAGS) $(CP_SEMANTIC_CXXFLAGS) -DCP_NSLOTS=$(CP_NSLOTS) -o $@ $< cp-stencils-tables.o \
+		$(filter-out cp-stencils-tables.o,$(LIBCARTESI_OBJS)) \
 		$(LIBCARTESI_LIBS) $(LDFLAGS)
 
 test-cp-stencils: cp-stencils-test cp-machine-test

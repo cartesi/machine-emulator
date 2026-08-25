@@ -45,14 +45,14 @@ static uint64_t cp_now_ns() {
 #if defined(__x86_64__)
 #if CP_NSLOTS == 6
 template <typename STATE_ACCESS>
-using cp_chain_fn = TC_CALLCONV execute_status(const STATE_ACCESS, uint32_t,
-    i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t, i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, tc_context<STATE_ACCESS> *);
+using cp_chain_fn = TC_CALLCONV execute_status(const STATE_ACCESS, uint32_t, i_state_access_fast_addr_t<STATE_ACCESS>,
+    uint64_t, i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    tc_context<STATE_ACCESS> *);
 #elif CP_NSLOTS == 7
 template <typename STATE_ACCESS>
-using cp_chain_fn = TC_CALLCONV execute_status(const STATE_ACCESS, uint32_t,
-    i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t, i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, tc_context<STATE_ACCESS> *);
+using cp_chain_fn = TC_CALLCONV execute_status(const STATE_ACCESS, uint32_t, i_state_access_fast_addr_t<STATE_ACCESS>,
+    uint64_t, i_state_access_fast_addr_t<STATE_ACCESS>, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    tc_context<STATE_ACCESS> *);
 #else
 #error "extend the x86-64 copy-and-patch chain entry roster for this CP_NSLOTS"
 #endif
@@ -66,11 +66,11 @@ static NO_INLINE execute_status cp_enter_chain(const STATE_ACCESS a, uint32_t in
     // extra cache/context positions establish the frame used by traces.
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
 #if CP_NSLOTS == 6
-    return reinterpret_cast<cp_chain_fn<STATE_ACCESS> *>(const_cast<void *>(fn))(a, insn, pc, cd, fetch, 0, 0, 0, 0,
-        0, tcc);
+    return reinterpret_cast<cp_chain_fn<STATE_ACCESS> *>(
+        const_cast<void *>(fn))(a, insn, pc, cd, fetch, 0, 0, 0, 0, 0, tcc);
 #else
-    return reinterpret_cast<cp_chain_fn<STATE_ACCESS> *>(const_cast<void *>(fn))(a, insn, pc, cd, fetch, 0, 0, 0, 0,
-        0, 0, tcc);
+    return reinterpret_cast<cp_chain_fn<STATE_ACCESS> *>(
+        const_cast<void *>(fn))(a, insn, pc, cd, fetch, 0, 0, 0, 0, 0, 0, tcc);
 #endif
 }
 #endif
@@ -324,10 +324,8 @@ static void cp_free(void *p) {
             static_cast<unsigned long long>(c->continue_enters), static_cast<unsigned long long>(c->continue_trips));
         std::fprintf(stderr, "cp: carried %llu\n", static_cast<unsigned long long>(c->carried));
         std::fprintf(stderr, "cp: fusion rewrites %llu guest-insns %llu old-bytes %llu new-bytes %llu\n",
-            static_cast<unsigned long long>(c->fusion_rewrites),
-            static_cast<unsigned long long>(c->fusion_guest_insns),
-            static_cast<unsigned long long>(c->fusion_old_bytes),
-            static_cast<unsigned long long>(c->fusion_new_bytes));
+            static_cast<unsigned long long>(c->fusion_rewrites), static_cast<unsigned long long>(c->fusion_guest_insns),
+            static_cast<unsigned long long>(c->fusion_old_bytes), static_cast<unsigned long long>(c->fusion_new_bytes));
         cp_fusion_print_terminal_stats(c);
         for (int rank = 0; rank < 10; ++rank) {
             uint32_t best = 0;
@@ -787,8 +785,8 @@ struct cp_former {
         emit1(table[d][s][a]);
     }
 
-    void fused_shift_extract_add(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t rd1,
-        uint8_t rd2, uint8_t rs3) {
+    void fused_shift_extract_add(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t rd1, uint8_t rd2,
+        uint8_t rs3) {
         const int s = alloc_src(rd2);
         const int a = alloc_src(rs3);
         if (c->rec_failed) {
@@ -803,8 +801,8 @@ struct cp_former {
         emit1(table[d1][d2][a]);
     }
 
-    void fused_scaled_lw(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t address_rd,
-        uint8_t add_rs, uint8_t load_rd) {
+    void fused_scaled_lw(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t address_rd, uint8_t add_rs,
+        uint8_t load_rd) {
         const int address = alloc_src(address_rd);
         const int add = alloc_src(add_rs);
         if (c->rec_failed) {
@@ -824,8 +822,8 @@ struct cp_former {
         emit_guarded(table[address][add][load], bail_dirty, cp_front_context(c->rec_ctx_slot_base));
     }
 
-    void fused_lbu_bne(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1,
-        uint64_t imm, uint8_t compare_rs, uint32_t memory_pending, int64_t branch_delta, uint32_t branch_pending) {
+    void fused_lbu_bne(const cp_stencil_t *const (*table)[CP_NSLOTS][CP_NSLOTS], uint8_t rd, uint8_t rs1, uint64_t imm,
+        uint8_t compare_rs, uint32_t memory_pending, int64_t branch_delta, uint32_t branch_pending) {
         if (c->nbails + 2 > cp_state::max_bails) {
             c->rec_failed = true;
             return;
@@ -1405,8 +1403,7 @@ static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
     {"srliw-slli", cp_fusion_match::srliw_slli, cp_fusion_emit::reg2, 2, cp_fusion_srliw_slli_variants, 1},
     {"slli-srli", cp_fusion_match::slli_srli, cp_fusion_emit::reg2, 2, cp_fusion_slli_srli_variants, 2},
     {"auipc-addi", cp_fusion_match::auipc_addi, cp_fusion_emit::constant, 2, cp_fusion_no_variants, 1},
-    {"zext32-add", cp_fusion_match::zext32_add, cp_fusion_emit::zext32_add, 3,
-        cp_fusion_zext32_add_variants, 1},
+    {"zext32-add", cp_fusion_match::zext32_add, cp_fusion_emit::zext32_add, 3, cp_fusion_zext32_add_variants, 1},
     {"shift-extract-add", cp_fusion_match::shift_extract_add, cp_fusion_emit::shift_extract_add, 3,
         cp_fusion_shift_extract_add_variants, 1},
     {"scaled-lw", cp_fusion_match::scaled_lw, cp_fusion_emit::scaled_lw, 3, cp_fusion_scaled_lw_variants, 1},
@@ -1434,10 +1431,28 @@ static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {17, cp_fusion_op::lbu, 18},
 };
 static constexpr cp_fusion_trie_node cp_fusion_nodes[] = {
-    {-1}, {-1}, {0}, {1}, {-1}, {2}, {-1}, {3}, {-1}, {4}, {-1}, {5}, {-1}, {6}, {-1}, {-1}, {7}, {-1}, {8},
+    {-1},
+    {-1},
+    {0},
+    {1},
+    {-1},
+    {2},
+    {-1},
+    {3},
+    {-1},
+    {4},
+    {-1},
+    {5},
+    {-1},
+    {6},
+    {-1},
+    {-1},
+    {7},
+    {-1},
+    {8},
 };
-static constexpr cp_fusion_config cp_fusion_host_config = {
-    cp_fusion_edges, 18, cp_fusion_nodes, cp_fusion_terminals, 9};
+static constexpr cp_fusion_config cp_fusion_host_config = {cp_fusion_edges, 18, cp_fusion_nodes, cp_fusion_terminals,
+    9};
 #elif defined(__x86_64__)
 static constexpr cp_fusion_variant cp_fusion_srliw_slli_variants[] = {
     {5, 2, cp_srliw5_slli2_table, nullptr},
@@ -1455,8 +1470,7 @@ static constexpr cp_fusion_variant cp_fusion_no_variants[] = {{0, 0, nullptr, nu
 static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
     {"srliw-slli", cp_fusion_match::srliw_slli, cp_fusion_emit::reg2, 2, cp_fusion_srliw_slli_variants, 1},
     {"auipc-addi", cp_fusion_match::auipc_addi, cp_fusion_emit::constant, 2, cp_fusion_no_variants, 1},
-    {"zext32-add", cp_fusion_match::zext32_add, cp_fusion_emit::zext32_add, 3,
-        cp_fusion_zext32_add_variants, 1},
+    {"zext32-add", cp_fusion_match::zext32_add, cp_fusion_emit::zext32_add, 3, cp_fusion_zext32_add_variants, 1},
     {"shift-extract-add", cp_fusion_match::shift_extract_add, cp_fusion_emit::shift_extract_add, 3,
         cp_fusion_shift_extract_add_variants, 1},
     {"scaled-lw", cp_fusion_match::scaled_lw, cp_fusion_emit::scaled_lw, 3, cp_fusion_scaled_lw_variants, 1},
@@ -1480,10 +1494,24 @@ static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {13, cp_fusion_op::lbu, 14},
 };
 static constexpr cp_fusion_trie_node cp_fusion_nodes[] = {
-    {-1}, {-1}, {0}, {-1}, {1}, {-1}, {-1}, {2}, {-1}, {3}, {-1}, {-1}, {4}, {-1}, {5},
+    {-1},
+    {-1},
+    {0},
+    {-1},
+    {1},
+    {-1},
+    {-1},
+    {2},
+    {-1},
+    {3},
+    {-1},
+    {-1},
+    {4},
+    {-1},
+    {5},
 };
-static constexpr cp_fusion_config cp_fusion_host_config = {
-    cp_fusion_edges, 14, cp_fusion_nodes, cp_fusion_terminals, 6};
+static constexpr cp_fusion_config cp_fusion_host_config = {cp_fusion_edges, 14, cp_fusion_nodes, cp_fusion_terminals,
+    6};
 #else
 static constexpr cp_fusion_config cp_fusion_host_config = {nullptr, 0, nullptr, nullptr, 0};
 #endif
@@ -1537,8 +1565,8 @@ static bool cp_fusion_consecutive(const cp_state::cp_fusion_insn *seq, uint16_t 
     return true;
 }
 
-static const cp_fusion_variant *cp_fusion_terminal_variant(
-    const cp_fusion_terminal &terminal, const cp_state::cp_fusion_insn *seq) {
+static const cp_fusion_variant *cp_fusion_terminal_variant(const cp_fusion_terminal &terminal,
+    const cp_state::cp_fusion_insn *seq) {
     if (!cp_fusion_consecutive(seq, terminal.length)) {
         return nullptr;
     }
@@ -1596,8 +1624,8 @@ static const cp_fusion_variant *cp_fusion_terminal_variant(
             const uint32_t address_rd = insn_get_rd(seq[0].insn);
             const uint32_t add_rs = insn_get_CR_CSS_rs2(seq[1].insn);
             const uint32_t load_rd = insn_get_CIW_CL_rd_CS_CA_rs2(seq[2].insn);
-            if (address_rd != insn_get_rd(seq[1].insn) ||
-                address_rd != insn_get_CL_CS_CA_CB_rs1(seq[2].insn) || address_rd == add_rs || load_rd == add_rs) {
+            if (address_rd != insn_get_rd(seq[1].insn) || address_rd != insn_get_CL_CS_CA_CB_rs1(seq[2].insn) ||
+                address_rd == add_rs || load_rd == add_rs) {
                 return nullptr;
             }
             imm0 = insn_get_CI_CB_imm(seq[0].insn);
@@ -1690,7 +1718,8 @@ static uint8_t cp_fusion_emit_replacement(cp_state *c, const cp_fusion_terminal 
             return 1;
         }
         case cp_fusion_emit::constant:
-            f.li(insn_get_rd(seq[0].insn), seq[0].vpc + static_cast<uint64_t>(insn_U_get_imm(seq[0].insn)) +
+            f.li(insn_get_rd(seq[0].insn),
+                seq[0].vpc + static_cast<uint64_t>(insn_U_get_imm(seq[0].insn)) +
                     static_cast<uint64_t>(insn_I_get_imm(seq[1].insn)));
             things[0] = {start, first, 2};
             return 1;
@@ -1747,8 +1776,7 @@ static void cp_fusion_record(cp_state *c, uint64_t vpc, uint32_t insn, tc_label 
     const uint16_t max_walk = std::min<uint16_t>(c->fusion_ninsns, cp_state::max_fusion_len);
     for (uint16_t depth = 0; depth < max_walk; ++depth) {
         const uint16_t at = static_cast<uint16_t>(current - depth);
-        node = cp_fusion_trie_next(
-            node, cp_fusion_class(c->fusion_insns[at].label, c->fusion_insns[at].insn));
+        node = cp_fusion_trie_next(node, cp_fusion_class(c->fusion_insns[at].label, c->fusion_insns[at].insn));
         if (node == UINT8_MAX) {
             break;
         }
@@ -1933,8 +1961,7 @@ static void cp_emit_probe_exit(cp_state *c, uint32_t dirty, const uint8_t (&slot
     uint8_t *fall[2] = {nullptr, nullptr};
     const uint64_t imm_stub[2] = {static_cast<uint64_t>(delta), pending};
     const uint64_t imm_li[2] = {target_vpc, 0};
-    const uint64_t imm_lu[2] = {
-        reinterpret_cast<uint64_t>(&c->front[cp_front_context(c->rec_ctx_slot_base)][0]), 0};
+    const uint64_t imm_lu[2] = {reinterpret_cast<uint64_t>(&c->front[cp_front_context(c->rec_ctx_slot_base)][0]), 0};
     uint8_t *miss[2] = {const_cast<uint8_t *>(static_cast<const uint8_t *>(miss_island)), nullptr};
     if (cp_emit(&c->heap, &cp_s_cp_exit_stub, imm_stub, fall) == nullptr ||
         cp_emit(&c->heap, cp_li_table[0], imm_li, fall) == nullptr ||
@@ -2116,8 +2143,8 @@ static void cp_finish(tc_context<STATE_ACCESS> *tcc, bool cyclic, int dynamic_sl
         uint8_t *isl[2] = {const_cast<uint8_t *>(static_cast<const uint8_t *>(c->miss_island)), nullptr};
         const uint64_t imm_stub[2] = {0, c->rec_len};
         const uint64_t imm_dep[2] = {reinterpret_cast<uint64_t>(&penumbra_fin->fetch_vf_offset), 0};
-        const uint64_t imm_lu[2] = {
-            reinterpret_cast<uint64_t>(&c->front[cp_front_context(c->rec_ctx_slot_base)][0]), 0};
+        const uint64_t imm_lu[2] = {reinterpret_cast<uint64_t>(&c->front[cp_front_context(c->rec_ctx_slot_base)][0]),
+            0};
         if (cp_emit(&c->heap, &cp_s_cp_exit_stub, imm_stub, fall) == nullptr ||
             cp_emit(&c->heap, cp_deposit_pc_table[dynamic_slot], imm_dep, fall) == nullptr ||
             cp_emit(&c->heap, cp_lookup_table[dynamic_slot], imm_lu, isl) == nullptr) {

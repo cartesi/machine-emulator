@@ -1756,12 +1756,6 @@ static bool cp_fusion_resolve_lbu_bne(cp_state *c, uint64_t successor) {
     if (c->fusion_ninsns < 2 || c->rec_len == 0) {
         return false;
     }
-    const uint16_t first = static_cast<uint16_t>(c->fusion_ninsns - 2);
-    const auto *seq = &c->fusion_insns[first];
-    if (cp_fusion_class(seq[0].label, seq[0].insn) != cp_fusion_op::lbu ||
-        cp_fusion_class(seq[1].label, seq[1].insn) != cp_fusion_op::bne) {
-        return false;
-    }
     int8_t terminal_index = -1;
     for (uint8_t i = 0; i < cp_fusion_host_config.nterminals; ++i) {
         if (cp_fusion_host_config.terminals[i].emit == cp_fusion_emit::lbu_bne) {
@@ -1772,7 +1766,13 @@ static bool cp_fusion_resolve_lbu_bne(cp_state *c, uint64_t successor) {
     if (terminal_index < 0) {
         return false;
     }
+    const uint16_t first = static_cast<uint16_t>(c->fusion_ninsns - 2);
     const auto &terminal = cp_fusion_host_config.terminals[terminal_index];
+    const auto *seq = &c->fusion_insns[first];
+    if (cp_fusion_class(seq[0].label, seq[0].insn) != cp_fusion_op::lbu ||
+        cp_fusion_class(seq[1].label, seq[1].insn) != cp_fusion_op::bne) {
+        return false;
+    }
     if (cp_fusion_terminal_variant(terminal, seq) == nullptr) {
         return false;
     }

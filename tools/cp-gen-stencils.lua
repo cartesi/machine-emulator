@@ -605,6 +605,16 @@ gem(("extern \"C\" CONT void cp_cont_0(%s);"):format(params))
 gem(("extern \"C\" CONT void cp_cont_1(%s);"):format(params))
 gem("")
 
+-- Keep the context-bank base independently patchable on x86. Without this
+-- barrier GCC can fold the sentinel into the hot-TLB array displacement,
+-- leaving no field that formation can specialize per trace.
+gem("#if defined(__x86_64__)")
+gem("static inline uint64_t cp_ctx_slot_base(uint64_t v) { __asm__(\"\" : \"+r\"(v)); return v; }")
+gem("#else")
+gem("static inline uint64_t cp_ctx_slot_base(uint64_t v) { return v; }")
+gem("#endif")
+gem("")
+
 local function sem_sorted(t)
     local names = {}
     for name in pairs(t) do
@@ -1207,7 +1217,8 @@ for _, name in ipairs(sem_sorted(SEM_LOAD_OPS)) do
             gem(("    uint64_t v1 = r%d;"):format(src))
             gem("    uint64_t v2 = 0;")
             gem("    uint64_t vd = 0;")
-            gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, 0x%x);"):format(CTX_SLOT_BASE_SENTINEL))
+            gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, cp_ctx_slot_base(0x%x));"):
+                format(CTX_SLOT_BASE_SENTINEL))
             gem("    uint64_t spc = 0;")
             gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
             gem("    if (st != cartesi::execute_status::success) {")
@@ -1289,7 +1300,8 @@ for _, name in ipairs(sem_sorted(SEM_STORE_OPS)) do
             gem(("    uint64_t v1 = r%d;"):format(base))
             gem(("    uint64_t v2 = r%d;"):format(val))
             gem("    uint64_t vd = 0;")
-            gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, 0x%x);"):format(CTX_SLOT_BASE_SENTINEL))
+            gem(("    const cartesi::cp_mem_access acc(sa, &v1, &v2, &vd, cp_ctx_slot_base(0x%x));"):
+                format(CTX_SLOT_BASE_SENTINEL))
             gem("    uint64_t spc = 0;")
             gem(("    const auto st = cartesi::%s(acc, spc, 0, 0x%08xu);"):format(fn_name, insn))
             gem("    if (st != cartesi::execute_status::success) {")

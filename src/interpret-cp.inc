@@ -321,6 +321,18 @@ static void cp_free(void *p) {
         std::fprintf(stderr, "cp: continue-enters %llu continue-trips %llu\n",
             static_cast<unsigned long long>(c->continue_enters), static_cast<unsigned long long>(c->continue_trips));
         std::fprintf(stderr, "cp: carried %llu\n", static_cast<unsigned long long>(c->carried));
+        std::fprintf(stderr, "cp: fusion rewrites %llu guest-insns %llu old-bytes %llu new-bytes %llu\n",
+            static_cast<unsigned long long>(c->fusion_rewrites),
+            static_cast<unsigned long long>(c->fusion_guest_insns),
+            static_cast<unsigned long long>(c->fusion_old_bytes),
+            static_cast<unsigned long long>(c->fusion_new_bytes));
+        std::fprintf(stderr,
+            "cp: fusion terminals slli-add %llu srliw-slli %llu repartition %llu slli-srli %llu auipc-addi %llu\n",
+            static_cast<unsigned long long>(c->fusion_slli_add),
+            static_cast<unsigned long long>(c->fusion_srliw_slli),
+            static_cast<unsigned long long>(c->fusion_repartition),
+            static_cast<unsigned long long>(c->fusion_slli_srli),
+            static_cast<unsigned long long>(c->fusion_auipc_addi));
         for (int rank = 0; rank < 10; ++rank) {
             uint32_t best = 0;
             const cp_trace *bt = nullptr;
@@ -440,6 +452,38 @@ static const cp_patch_t *cp_bail_patch(const cp_stencil_t *st) {
         }
     }
     return nullptr;
+}
+
+static FORCE_INLINE void cp_save_checkpoint(const cp_state *c, cp_state::cp_form_checkpoint &p) {
+    p.heap_curr = c->heap.curr;
+    std::memcpy(p.reg_slot, c->reg_slot, sizeof(p.reg_slot));
+    std::memcpy(p.slot_guest, c->slot_guest, sizeof(p.slot_guest));
+    std::memcpy(p.last_used, c->rec_last_used, sizeof(p.last_used));
+    p.reg_dirty = c->reg_dirty;
+    p.nslots_used = c->nslots_used;
+    p.use_clock = c->rec_use_clock;
+    p.log_len = c->rec_log_len;
+    p.guest_slots = c->rec_guest_slots;
+    p.scratch_slots = c->rec_scratch_slots;
+    p.nbails = c->nbails;
+    p.carry_ok = c->rec_carry_ok;
+    p.evictions = c->evictions;
+}
+
+static FORCE_INLINE void cp_restore_checkpoint(cp_state *c, const cp_state::cp_form_checkpoint &p) {
+    c->heap.curr = p.heap_curr;
+    std::memcpy(c->reg_slot, p.reg_slot, sizeof(c->reg_slot));
+    std::memcpy(c->slot_guest, p.slot_guest, sizeof(c->slot_guest));
+    std::memcpy(c->rec_last_used, p.last_used, sizeof(c->rec_last_used));
+    c->reg_dirty = p.reg_dirty;
+    c->nslots_used = p.nslots_used;
+    c->rec_use_clock = p.use_clock;
+    c->rec_log_len = p.log_len;
+    c->rec_guest_slots = p.guest_slots;
+    c->rec_scratch_slots = p.scratch_slots;
+    c->nbails = p.nbails;
+    c->rec_carry_ok = p.carry_ok;
+    c->evictions = p.evictions;
 }
 
 struct cp_former {
@@ -683,6 +727,66 @@ struct cp_former {
         }
         emit1(tab[d][s], imm);
     }
+
+#if defined(__aarch64__)
+    void fused_slli_add(uint8_t rd, uint8_t rs2, uint32_t shamt) {
+        const int d = alloc_src(rd);
+        const int s = alloc_src(rs2);
+        if (c->rec_failed) {
+            return;
+        }
+        const int out = alloc_dst(rd);
+        if (c->rec_failed || out != d) {
+            c->rec_failed = true;
+            return;
+        }
+        switch (shamt) {
+            case 1:
+                emit1(cp_slli_add_sh1_table[d][s]);
+                break;
+            case 2:
+                emit1(cp_slli_add_sh2_table[d][s]);
+                break;
+            case 3:
+                emit1(cp_slli_add_sh3_table[d][s]);
+                break;
+            default:
+                c->rec_failed = true;
+                break;
+        }
+    }
+
+    void fused_srliw5_slli2(uint8_t rd, uint8_t rs1) {
+        const int s = alloc_src(rs1);
+        if (c->rec_failed) {
+            return;
+        }
+        const int d = alloc_dst(rd);
+        if (c->rec_failed) {
+            return;
+        }
+        emit1(cp_srliw5_slli2_table[d][s]);
+    }
+
+    void fused_slli_srli(uint8_t rd, uint8_t rs1, uint32_t left, uint32_t right) {
+        const int s = alloc_src(rs1);
+        if (c->rec_failed) {
+            return;
+        }
+        const int d = alloc_dst(rd);
+        if (c->rec_failed) {
+            return;
+        }
+        if (left == 10 && right == 20) {
+            emit1(cp_slli10_srli20_table[d][s]);
+        } else if (left == 32 && right == 32) {
+            emit1(cp_slli32_srli32_table[d][s]);
+        } else {
+            c->rec_failed = true;
+        }
+    }
+
+#endif
 
     void li(uint8_t rd, uint64_t value) {
         if (rd == 0) {
@@ -1105,6 +1209,256 @@ struct cp_former {
         c->rec_failed = true; // uncompilable: caller finishes before this insn
     }
 };
+
+#if defined(__aarch64__)
+enum class cp_fusion_op : uint8_t { none, slli, c_slli, srli, srliw, c_add, auipc, addi };
+enum class cp_fusion_terminal : uint8_t {
+    none,
+    slli_add,
+    srliw_slli,
+    srliw_slli_add,
+    slli_srli,
+    auipc_addi,
+};
+
+struct cp_fusion_trie_edge {
+    uint8_t from;
+    cp_fusion_op op;
+    uint8_t to;
+};
+
+struct cp_fusion_trie_node {
+    cp_fusion_terminal terminal;
+};
+
+// Reverse trie: matching begins at the newly emitted instruction and walks
+// backward over the flattened guest instructions represented by the current
+// emitted things. Terminals replace only complete things.
+static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
+    {0, cp_fusion_op::c_add, 1},
+    {1, cp_fusion_op::c_slli, 2},
+    {2, cp_fusion_op::srliw, 3},
+    {0, cp_fusion_op::c_slli, 4},
+    {4, cp_fusion_op::srliw, 5},
+    {0, cp_fusion_op::srli, 6},
+    {6, cp_fusion_op::slli, 7},
+    {0, cp_fusion_op::addi, 8},
+    {8, cp_fusion_op::auipc, 9},
+};
+static constexpr cp_fusion_trie_node cp_fusion_nodes[] = {
+    {cp_fusion_terminal::none},
+    {cp_fusion_terminal::none},
+    {cp_fusion_terminal::slli_add},
+    {cp_fusion_terminal::srliw_slli_add},
+    {cp_fusion_terminal::none},
+    {cp_fusion_terminal::srliw_slli},
+    {cp_fusion_terminal::none},
+    {cp_fusion_terminal::slli_srli},
+    {cp_fusion_terminal::none},
+    {cp_fusion_terminal::auipc_addi},
+};
+
+static FORCE_INLINE cp_fusion_op cp_fusion_class(uint16_t label, uint32_t insn) {
+    switch (static_cast<tc_label>(label)) {
+        case tc_label::C_SLLI:
+            return cp_fusion_op::c_slli;
+        case tc_label::SLLI_rdN:
+            return cp_fusion_op::slli;
+        case tc_label::C_SRLI:
+            return cp_fusion_op::srli;
+        case tc_label::SRLIW_SRAIW_rdN:
+            return ((insn >> 30) & 1) == 0 ? cp_fusion_op::srliw : cp_fusion_op::none;
+        case tc_label::C_ADD:
+            return cp_fusion_op::c_add;
+        case tc_label::AUIPC_rdN:
+            return cp_fusion_op::auipc;
+        case tc_label::ADDI_rdN:
+            return cp_fusion_op::addi;
+        default:
+            return cp_fusion_op::none;
+    }
+}
+
+static FORCE_INLINE uint8_t cp_fusion_trie_next(uint8_t node, cp_fusion_op op) {
+    for (const auto &edge : cp_fusion_edges) {
+        if (edge.from == node && edge.op == op) {
+            return edge.to;
+        }
+    }
+    return UINT8_MAX;
+}
+
+static bool cp_fusion_slli_add_valid(const cp_state::cp_fusion_insn *seq) {
+    const uint32_t slli = seq[0].insn;
+    const uint32_t add = seq[1].insn;
+    const uint32_t shamt = insn_get_CI_CB_imm(slli);
+    return seq[1].vpc == seq[0].vpc + 2 && insn_get_rd(slli) == insn_get_rd(add) && shamt >= 1 && shamt <= 3;
+}
+
+static bool cp_fusion_consecutive(const cp_state::cp_fusion_insn *seq, uint16_t count) {
+    for (uint16_t i = 1; i < count; ++i) {
+        const uint8_t size = cp_label_size[seq[i - 1].label];
+        if (seq[i].vpc != seq[i - 1].vpc + size) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool cp_fusion_srliw_slli_valid(const cp_state::cp_fusion_insn *seq) {
+    return cp_fusion_consecutive(seq, 2) && (seq[0].insn >> 30) == 0 && insn_I_get_imm(seq[0].insn) == 5 &&
+        insn_get_CI_CB_imm(seq[1].insn) == 2 && insn_get_rd(seq[0].insn) == insn_get_rd(seq[1].insn);
+}
+
+static bool cp_fusion_slli_srli_valid(const cp_state::cp_fusion_insn *seq) {
+    const uint32_t left = static_cast<uint32_t>(insn_I_get_imm(seq[0].insn));
+    const uint32_t right = insn_get_CI_CB_imm(seq[1].insn);
+    return cp_fusion_consecutive(seq, 2) && insn_get_rd(seq[0].insn) == insn_get_CL_CS_CA_CB_rs1(seq[1].insn) &&
+        ((left == 10 && right == 20) || (left == 32 && right == 32));
+}
+
+static bool cp_fusion_auipc_addi_valid(const cp_state::cp_fusion_insn *seq) {
+    const uint32_t rd = insn_get_rd(seq[0].insn);
+    return cp_fusion_consecutive(seq, 2) && rd != 0 && rd == insn_get_rd(seq[1].insn) &&
+        rd == insn_get_rs1(seq[1].insn);
+}
+
+static bool cp_fusion_terminal_valid(cp_fusion_terminal terminal, const cp_state::cp_fusion_insn *seq) {
+    switch (terminal) {
+        case cp_fusion_terminal::slli_add:
+            return cp_fusion_slli_add_valid(seq);
+        case cp_fusion_terminal::srliw_slli:
+            return cp_fusion_srliw_slli_valid(seq);
+        case cp_fusion_terminal::srliw_slli_add:
+            return cp_fusion_srliw_slli_valid(seq) && cp_fusion_slli_add_valid(seq + 1);
+        case cp_fusion_terminal::slli_srli:
+            return cp_fusion_slli_srli_valid(seq);
+        case cp_fusion_terminal::auipc_addi:
+            return cp_fusion_auipc_addi_valid(seq);
+        case cp_fusion_terminal::none:
+            return false;
+    }
+    return false;
+}
+
+static uint8_t cp_fusion_emit(cp_state *c, cp_fusion_terminal terminal, const cp_state::cp_fusion_insn *seq,
+    uint16_t first, const cp_state::cp_form_checkpoint &start, cp_state::cp_fusion_thing *things) {
+    cp_former f{c, seq[0].vpc};
+    switch (terminal) {
+        case cp_fusion_terminal::slli_add:
+            f.fused_slli_add(insn_get_rd(seq[0].insn), insn_get_CR_CSS_rs2(seq[1].insn),
+                insn_get_CI_CB_imm(seq[0].insn));
+            things[0] = {start, first, 2};
+            return 1;
+        case cp_fusion_terminal::srliw_slli:
+            f.fused_srliw5_slli2(insn_get_rd(seq[0].insn), insn_get_rs1(seq[0].insn));
+            things[0] = {start, first, 2};
+            return 1;
+        case cp_fusion_terminal::srliw_slli_add: {
+            f.reg2i(cp_srlw_table, insn_get_rd(seq[0].insn), insn_get_rs1(seq[0].insn), 5);
+            cp_state::cp_form_checkpoint middle{};
+            cp_save_checkpoint(c, middle);
+            f.pc = seq[1].vpc;
+            f.fused_slli_add(insn_get_rd(seq[1].insn), insn_get_CR_CSS_rs2(seq[2].insn), 2);
+            things[0] = {start, first, 1};
+            things[1] = {middle, static_cast<uint16_t>(first + 1), 2};
+            return 2;
+        }
+        case cp_fusion_terminal::slli_srli:
+            f.fused_slli_srli(insn_get_rd(seq[0].insn), insn_get_rs1(seq[0].insn),
+                static_cast<uint32_t>(insn_I_get_imm(seq[0].insn)), insn_get_CI_CB_imm(seq[1].insn));
+            things[0] = {start, first, 2};
+            return 1;
+        case cp_fusion_terminal::auipc_addi:
+            f.li(insn_get_rd(seq[0].insn), seq[0].vpc + static_cast<uint64_t>(insn_U_get_imm(seq[0].insn)) +
+                    static_cast<uint64_t>(insn_I_get_imm(seq[1].insn)));
+            things[0] = {start, first, 2};
+            return 1;
+        case cp_fusion_terminal::none:
+            c->rec_failed = true;
+            return 0;
+    }
+    return 0;
+}
+
+static void cp_fusion_record(cp_state *c, uint64_t vpc, uint32_t insn, tc_label label,
+    const cp_state::cp_form_checkpoint &start) {
+    if (c->fusion_ninsns >= cp_state::max_len || c->fusion_nthings >= cp_state::max_len) {
+        return;
+    }
+    const uint16_t current = c->fusion_ninsns++;
+    c->fusion_insns[current] = {vpc, insn, static_cast<uint16_t>(label)};
+    c->fusion_things[c->fusion_nthings++] = {start, current, 1};
+
+    uint8_t node = 0;
+    cp_fusion_terminal best = cp_fusion_terminal::none;
+    uint16_t best_first = current;
+    uint16_t best_len = 0;
+    const uint16_t max_walk = std::min<uint16_t>(c->fusion_ninsns, cp_state::max_fusion_len);
+    for (uint16_t depth = 0; depth < max_walk; ++depth) {
+        const uint16_t at = static_cast<uint16_t>(current - depth);
+        node = cp_fusion_trie_next(
+            node, cp_fusion_class(c->fusion_insns[at].label, c->fusion_insns[at].insn));
+        if (node == UINT8_MAX) {
+            break;
+        }
+        const cp_fusion_terminal terminal = cp_fusion_nodes[node].terminal;
+        if (terminal != cp_fusion_terminal::none && cp_fusion_terminal_valid(terminal, &c->fusion_insns[at])) {
+            best = terminal;
+            best_first = at;
+            best_len = depth + 1;
+        }
+    }
+    if (best == cp_fusion_terminal::none) {
+        return;
+    }
+
+    uint16_t first_thing = c->fusion_nthings;
+    while (first_thing > 0 && c->fusion_things[first_thing - 1].first >= best_first) {
+        --first_thing;
+    }
+    if (first_thing >= c->fusion_nthings || c->fusion_things[first_thing].first != best_first) {
+        return; // the longest terminal begins inside an already fused thing
+    }
+    const auto checkpoint = c->fusion_things[first_thing].start;
+    const uint64_t old_bytes = c->heap.curr - checkpoint.heap_curr;
+    cp_restore_checkpoint(c, checkpoint);
+    cp_state::cp_fusion_thing replacement[2]{};
+    const uint8_t nreplacement =
+        cp_fusion_emit(c, best, &c->fusion_insns[best_first], best_first, checkpoint, replacement);
+    if (c->rec_failed) {
+        return;
+    }
+    const uint64_t new_bytes = c->heap.curr - checkpoint.heap_curr;
+    c->fusion_nthings = first_thing;
+    for (uint8_t i = 0; i < nreplacement; ++i) {
+        c->fusion_things[c->fusion_nthings++] = replacement[i];
+    }
+    ++c->fusion_rewrites;
+    c->fusion_guest_insns += best_len;
+    c->fusion_old_bytes += old_bytes;
+    c->fusion_new_bytes += new_bytes;
+    switch (best) {
+        case cp_fusion_terminal::slli_add:
+            ++c->fusion_slli_add;
+            break;
+        case cp_fusion_terminal::srliw_slli:
+            ++c->fusion_srliw_slli;
+            break;
+        case cp_fusion_terminal::srliw_slli_add:
+            ++c->fusion_repartition;
+            break;
+        case cp_fusion_terminal::slli_srli:
+            ++c->fusion_slli_srli;
+            break;
+        case cp_fusion_terminal::auipc_addi:
+            ++c->fusion_auipc_addi;
+            break;
+        case cp_fusion_terminal::none:
+            break;
+    }
+}
+#endif
 
 // Debug switch: refuse trace entries past a budget, so a divergence can be
 // bisected to the exact entry without changing what gets recorded (the
@@ -1624,6 +1978,8 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     c->rec_carry_ok = true;
     c->rec_guest_slots = 0;
     c->rec_scratch_slots = 0;
+    c->fusion_ninsns = 0;
+    c->fusion_nthings = 0;
     // The call prologue probes the recording context's hot code-TLB slot. It
     // compares the recorded vh for content identity, re-encodes the pc from
     // the incoming deposit, and publishes the mapping; the final stencil
@@ -1769,21 +2125,18 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
             static_cast<unsigned long long>(vpc), c->rec_len);
     }
     c->rec_insn_start = c->heap.base + c->heap.curr;
-    std::memcpy(c->snap_reg_slot, c->reg_slot, sizeof(c->snap_reg_slot));
-    std::memcpy(c->snap_slot_guest, c->slot_guest, sizeof(c->snap_slot_guest));
-    std::memcpy(c->snap_last_used, c->rec_last_used, sizeof(c->snap_last_used));
-    c->snap_reg_dirty = c->reg_dirty;
-    c->snap_nslots_used = c->nslots_used;
-    c->snap_use_clock = c->rec_use_clock;
-    c->snap_log_len = c->rec_log_len;
-    c->snap_guest_slots = c->rec_guest_slots;
-    c->snap_scratch_slots = c->rec_scratch_slots;
-    c->snap_carry_ok = c->rec_carry_ok;
+    cp_save_checkpoint(c, c->rec_insn_checkpoint);
     c->rec_vaddr = vpc;
     c->rec_end_vaddr = vpc + size;
     const uint64_t pc = vpc;
 
 #include "cp-select.inc"
+
+#if defined(__aarch64__)
+    if (!c->rec_failed) {
+        cp_fusion_record(c, vpc, insn, label, c->rec_insn_checkpoint);
+    }
+#endif
 
     if (!c->rec_failed && f.dynamic_slot >= 0) {
         ++c->rec_len;
@@ -1795,17 +2148,7 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
         // Roll back this instruction and finish with what preceded it,
         // restoring the register-cache bookkeeping the failed allocations
         // mutated (their emitted spills are being discarded too).
-        c->heap.curr = static_cast<size_t>(c->rec_insn_start - c->heap.base);
-        std::memcpy(c->reg_slot, c->snap_reg_slot, sizeof(c->snap_reg_slot));
-        std::memcpy(c->slot_guest, c->snap_slot_guest, sizeof(c->snap_slot_guest));
-        std::memcpy(c->rec_last_used, c->snap_last_used, sizeof(c->snap_last_used));
-        c->reg_dirty = c->snap_reg_dirty;
-        c->nslots_used = c->snap_nslots_used;
-        c->rec_use_clock = c->snap_use_clock;
-        c->rec_log_len = c->snap_log_len;
-        c->rec_guest_slots = c->snap_guest_slots;
-        c->rec_scratch_slots = c->snap_scratch_slots;
-        c->rec_carry_ok = c->snap_carry_ok;
+        cp_restore_checkpoint(c, c->rec_insn_checkpoint);
         c->rec_end_vaddr = vpc;
         c->rec_failed = false;
         ++c->fin_uncompilable;

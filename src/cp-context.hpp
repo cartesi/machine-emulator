@@ -129,9 +129,30 @@ struct cp_state {
 
     static constexpr uint32_t max_len = 256;  ///< Guest instructions per trace
     static constexpr uint32_t max_log = 4096; ///< Emission-log records
-    uint64_t heap_reset_curr;                 ///< Heap cursor after the island, flush target
+    static constexpr uint32_t max_fusion_len = 8;
+    uint64_t heap_reset_curr; ///< Heap cursor after the island, flush target
 
-    /// rief One logged body emission, enough to replay it: the loop-carry
+    // Formation checkpoint used both by uncompilable-instruction rollback
+    // and by greedy fusion rewrites. Native bytes alone are not enough to
+    // rewind: slot allocation, replay logging, deferred bails, and loop-carry
+    // eligibility must return to the same guest boundary as the heap cursor.
+    struct cp_form_checkpoint {
+        size_t heap_curr;
+        int8_t reg_slot[32];
+        uint8_t slot_guest[nslots];
+        uint32_t reg_dirty;
+        uint8_t nslots_used;
+        uint32_t last_used[nslots];
+        uint32_t use_clock;
+        uint32_t log_len;
+        uint32_t guest_slots;
+        uint32_t scratch_slots;
+        uint32_t nbails;
+        bool carry_ok;
+        uint64_t evictions;
+    };
+
+    /// \brief One logged body emission, enough to replay it: the loop-carry
     /// transform re-emits an eligible cyclic body with first-use loads
     /// hoisted to a preheader, so nothing positional survives a reorder.
     struct cp_emit_rec {
@@ -144,7 +165,6 @@ struct cp_state {
     };
     cp_emit_rec rec_log[max_log]; ///< Formation scratch, one open recording
     uint32_t rec_log_len;
-    uint32_t snap_log_len;      ///< Rolled back with the per-insn snapshot
     bool rec_carry_ok;          ///< Loop-carry eligibility: guest and scratch
                                 ///< slot sets stay disjoint (a preheader-loaded
                                 ///< value must survive the whole body, and an
@@ -152,9 +172,21 @@ struct cp_state {
                                 ///< on later iterations), and the log fit
     uint32_t rec_guest_slots;   ///< Slots ever bound to a guest register
     uint32_t rec_scratch_slots; ///< Slots ever taken as scratch
-    uint32_t snap_guest_slots;
-    uint32_t snap_scratch_slots;
-    bool snap_carry_ok;
+
+    struct cp_fusion_insn {
+        uint64_t vpc;
+        uint32_t insn;
+        uint16_t label;
+    };
+    struct cp_fusion_thing {
+        cp_form_checkpoint start;
+        uint16_t first;
+        uint16_t count;
+    };
+    cp_fusion_insn fusion_insns[max_len];
+    cp_fusion_thing fusion_things[max_len];
+    uint16_t fusion_ninsns;
+    uint16_t fusion_nthings;
 
     // Formation: the one open trace.
     bool recording;
@@ -186,16 +218,7 @@ struct cp_state {
     // least-recently-used unlocked slot spills (store if dirty) and remaps.
     uint32_t rec_last_used[nslots];
     uint32_t rec_use_clock;
-    // Register-cache snapshot taken with rec_insn_start: the uncompilable
-    // rollback discards the failed instruction's emitted bytes, including
-    // any eviction spills, so the bookkeeping those allocations mutated
-    // must be restored with the heap cursor or spilled registers are lost.
-    int8_t snap_reg_slot[32];
-    uint8_t snap_slot_guest[nslots];
-    uint32_t snap_reg_dirty;
-    uint8_t snap_nslots_used;
-    uint32_t snap_last_used[nslots];
-    uint32_t snap_use_clock;
+    cp_form_checkpoint rec_insn_checkpoint;
     // Pending branch: direction known only when the next instruction's pc
     // arrives, so branches lag one record call.
     bool have_pending_branch;
@@ -239,12 +262,21 @@ struct cp_state {
     uint64_t fin_page;      ///< Guest-page crossing or mapping change
     uint64_t fin_installed; ///< Stopped at an installed head
     uint64_t fin_maxlen;
-    uint64_t fin_uncompilable; ///< Unclassifiable instruction rollback
-    uint64_t fin_trap;         ///< Successor mismatch (trap between records)
-    uint64_t evictions;        ///< Register-cache spills during formation
-    uint64_t continue_enters;  ///< Exits that entered an installed trace from C
-    uint64_t continue_trips;   ///< Exits that tripped compilation (dispatcher miss)
-    uint64_t carried;          ///< Cyclic traces installed in loop-carried form
+    uint64_t fin_uncompilable;   ///< Unclassifiable instruction rollback
+    uint64_t fin_trap;           ///< Successor mismatch (trap between records)
+    uint64_t evictions;          ///< Register-cache spills during formation
+    uint64_t continue_enters;    ///< Exits that entered an installed trace from C
+    uint64_t continue_trips;     ///< Exits that tripped compilation (dispatcher miss)
+    uint64_t carried;            ///< Cyclic traces installed in loop-carried form
+    uint64_t fusion_rewrites;    ///< Greedy suffix replacements emitted
+    uint64_t fusion_guest_insns; ///< Guest instructions covered by replacements
+    uint64_t fusion_old_bytes;   ///< Replaced native bytes
+    uint64_t fusion_new_bytes;   ///< Replacement native bytes
+    uint64_t fusion_slli_add;
+    uint64_t fusion_srliw_slli;
+    uint64_t fusion_repartition;
+    uint64_t fusion_slli_srli;
+    uint64_t fusion_auipc_addi;
 };
 
 } // namespace cartesi

@@ -130,6 +130,7 @@ struct cp_state {
     static constexpr uint32_t max_len = 256;  ///< Guest instructions per trace
     static constexpr uint32_t max_log = 4096; ///< Emission-log records
     static constexpr uint32_t max_fusion_len = 8;
+    static constexpr uint32_t max_fusion_terminals = 8;
     uint64_t heap_reset_curr; ///< Heap cursor after the island, flush target
 
     // Formation checkpoint used both by uncompilable-instruction rollback
@@ -272,11 +273,7 @@ struct cp_state {
     uint64_t fusion_guest_insns; ///< Guest instructions covered by replacements
     uint64_t fusion_old_bytes;   ///< Replaced native bytes
     uint64_t fusion_new_bytes;   ///< Replacement native bytes
-    uint64_t fusion_slli_add;
-    uint64_t fusion_srliw_slli;
-    uint64_t fusion_repartition;
-    uint64_t fusion_slli_srli;
-    uint64_t fusion_auipc_addi;
+    uint64_t fusion_terminals[max_fusion_terminals];
 };
 
 } // namespace cartesi

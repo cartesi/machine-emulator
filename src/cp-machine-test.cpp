@@ -43,6 +43,7 @@ using cp_entry_t = __attribute__((preserve_none)) void (*)(uint64_t, uint64_t, u
 static cp_heap_t heap;
 static uint64_t out_hit[NPARAMS];
 static uint64_t out_bail[NPARAMS];
+static uint64_t out_alt[NPARAMS];
 
 // Emits stencil -> store_exit(out_hit) with the bail continuation aimed at a
 // separate store_exit(out_bail); returns the chain entry.
@@ -54,6 +55,23 @@ static uint8_t *emit_chain(const cp_stencil_t *st, uint64_t stencil_selector = 0
     uint8_t *bail = cp_emit(&heap, &cp_s_cp_store_exit, imm_bail, none);
     uint64_t imm[2] = {stencil_selector, 0};
     uint8_t *cont[2] = {nullptr, bail};
+    uint8_t *entry = cp_emit(&heap, st, imm, cont);
+    uint64_t imm_hit[2] = {reinterpret_cast<uint64_t>(out_hit), 0};
+    cp_emit(&heap, &cp_s_cp_store_exit, imm_hit, none);
+    cp_heap_protect_flush(&heap);
+    return entry;
+}
+
+static uint8_t *emit_chain3(const cp_stencil_t *st, uint64_t stencil_selector = 0) {
+    heap.curr = 0;
+    cp_heap_unprotect(&heap);
+    uint64_t imm_bail[2] = {reinterpret_cast<uint64_t>(out_bail), 0};
+    uint64_t imm_alt[2] = {reinterpret_cast<uint64_t>(out_alt), 0};
+    uint8_t *none[2] = {nullptr, nullptr};
+    uint8_t *bail = cp_emit(&heap, &cp_s_cp_store_exit, imm_bail, none);
+    uint8_t *alt = cp_emit(&heap, &cp_s_cp_store_exit, imm_alt, none);
+    uint64_t imm[2] = {stencil_selector, 0};
+    uint8_t *cont[3] = {nullptr, bail, alt};
     uint8_t *entry = cp_emit(&heap, st, imm, cont);
     uint64_t imm_hit[2] = {reinterpret_cast<uint64_t>(out_hit), 0};
     cp_emit(&heap, &cp_s_cp_store_exit, imm_hit, none);
@@ -107,6 +125,7 @@ int main() {
     const auto run = [&](uint8_t *entry, const uint64_t g[CP_NSLOTS_PAD]) {
         std::memset(out_hit, 0xee, sizeof(out_hit));
         std::memset(out_bail, 0xdd, sizeof(out_bail));
+        std::memset(out_alt, 0xcc, sizeof(out_alt));
 #if defined(__x86_64__) && CP_NSLOTS == 6
         reinterpret_cast<cp_entry_t>(entry)(sa_bits, g[0], 0x111100ull, 0x2222ull, 0x3333ull, g[1], g[2], g[3], g[4],
             g[5], 0x4444ull, g[6], g[7], g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]);
@@ -207,11 +226,59 @@ int main() {
         check(out_hit[SLOT_POS[0]] == (UINT64_C(0x87654321) << 1) + 13, "shift extract add result");
     }
 
+    // 8. The complete sieve scaled load publishes its address before a
+    // load miss and writes the load destination only on a hit.
+    {
+        uint64_t g[CP_NSLOTS_PAD];
+        std::memcpy(g, g_init, sizeof(g));
+        g[0] = warm_vaddr >> 2;
+        g[1] = 0;
+        uint8_t *entry = emit_chain(cp_lw_slli2_add_table[0][1][2], ctx);
+        run(entry, g);
+        check(out_hit[SLOT_POS[0]] == warm_vaddr, "scaled lw address");
+        check(out_hit[SLOT_POS[2]] == UINT64_C(0xffffffff80000001), "scaled lw result");
+
+        entry = emit_chain(cp_lw_slli2_add_table[0][1][0], ctx);
+        run(entry, g);
+        check(out_hit[SLOT_POS[0]] == UINT64_C(0xffffffff80000001), "scaled lw aliased result");
+
+        g[0] = cold_vaddr >> 2;
+        entry = emit_chain(cp_lw_slli2_add_table[0][1][2], ctx);
+        run(entry, g);
+        check(out_bail[SLOT_POS[0]] == cold_vaddr, "scaled lw miss commits address");
+        check(out_bail[SLOT_POS[2]] == g[2], "scaled lw miss preserves destination");
+    }
+
+    // 9. LBU+BNE distinguishes its memory miss and branch mismatch exits,
+    // committing the loaded byte only after a successful memory access.
+    {
+        uint64_t g[CP_NSLOTS_PAD];
+        std::memcpy(g, g_init, sizeof(g));
+        g[0] = warm_vaddr + 8;
+        g[1] = 0xaaaaaaaaaaaaaaaaull;
+        g[2] = 0x7f;
+        uint8_t *entry = emit_chain3(cp_lbu_bnet_table[1][0][2], ctx);
+        run(entry, g);
+        check(out_hit[SLOT_POS[1]] == 0x80, "lbu bne taken result");
+
+        g[2] = 0x80;
+        run(entry, g);
+        check(out_alt[SLOT_POS[1]] == 0x80, "lbu bne mismatch result");
+
+        entry = emit_chain3(cp_lbu_bnef_table[1][0][2], ctx);
+        run(entry, g);
+        check(out_hit[SLOT_POS[1]] == 0x80, "lbu bne fallthrough result");
+
+        g[0] = cold_vaddr;
+        run(entry, g);
+        check(out_bail[SLOT_POS[1]] == 0xaaaaaaaaaaaaaaaaull, "lbu bne miss preserves destination");
+    }
+
     // Exact FP stencils are guarded only by mstatus.FS. They use integer
     // and soft-float bit semantics and never take the arithmetic fallback.
     a.write_mstatus((a.read_mstatus() & ~MSTATUS_FS_MASK) | MSTATUS_FS_DIRTY);
 
-    // 8. Sign injection preserves payload bits and replaces only the sign.
+    // 10. Sign injection preserves payload bits and replaces only the sign.
     {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
@@ -223,7 +290,7 @@ int main() {
         check(out_bail[0] == 0xddddddddddddddddull, "fsgnj.s has no fallback");
     }
 
-    // 9. Min handles signaling NaN and accumulates NV exactly.
+    // 11. Min handles signaling NaN and accumulates NV exactly.
     {
         uint64_t g[CP_NSLOTS_PAD];
         std::memcpy(g, g_init, sizeof(g));
@@ -236,7 +303,7 @@ int main() {
         check((a.read_fcsr() & FFLAGS_NV_MASK) != 0, "fmin.s signaling NaN flag");
     }
 
-    // 10. Comparisons write the integer roster destination and preserve the
+    // 12. Comparisons write the integer roster destination and preserve the
     // same NaN exception behavior as the portable implementation.
     {
         uint64_t g[CP_NSLOTS_PAD];
@@ -250,7 +317,7 @@ int main() {
         check(a.read_fcsr() == 0, "flt.d exact flags");
     }
 
-    // 11. Classification performs mandatory NaN unboxing: malformed single
+    // 13. Classification performs mandatory NaN unboxing: malformed single
     // precision input is classified as the canonical quiet NaN.
     {
         uint64_t g[CP_NSLOTS_PAD];
@@ -261,7 +328,7 @@ int main() {
         check(out_hit[SLOT_POS[0]] == i_sfloat32::fclass(i_sfloat32::F_QNAN), "fclass.s malformed box");
     }
 
-    // 12. FS-off fails before any exact operation and leaves every roster
+    // 14. FS-off fails before any exact operation and leaves every roster
     // value untouched for portable exception handling.
     {
         a.write_mstatus(a.read_mstatus() & ~MSTATUS_FS_MASK);

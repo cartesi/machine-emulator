@@ -130,7 +130,7 @@ struct cp_state {
     static constexpr uint32_t max_len = 256;  ///< Guest instructions per trace
     static constexpr uint32_t max_log = 4096; ///< Emission-log records
     static constexpr uint32_t max_fusion_len = 8;
-    static constexpr uint32_t max_fusion_terminals = 8;
+    static constexpr uint32_t max_fusion_terminals = 12;
     uint64_t heap_reset_curr; ///< Heap cursor after the island, flush target
 
     // Formation checkpoint used both by uncompilable-instruction rollback
@@ -161,6 +161,7 @@ struct cp_state {
         uint64_t imm0;
         uint64_t imm1;
         int16_t bail_index;        ///< bails[] entry to re-site at replay, -1 none
+        int16_t bail_index2;       ///< optional second bail owned by the same stencil
         int16_t resume_bail_index; ///< FP bail whose success resumes after this emission
         int8_t load_slot;          ///< Hoistable first-use load target, -1 none
     };

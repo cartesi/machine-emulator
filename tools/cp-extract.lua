@@ -36,7 +36,7 @@ local function die(fmt, ...)
     os.exit(1)
 end
 
-local CONT_ORDINAL = { cp_cont_0 = 0, cp_cont_1 = 1 }
+local CONT_ORDINAL = { cp_cont_0 = 0, cp_cont_1 = 1, cp_cont_2 = 2 }
 local IMM_ORDINAL = { cp_imm64_0 = 0, cp_imm64_1 = 1, cp_imm64_2 = 2, cp_imm64_3 = 3 }
 
 -- Instruction encodings verified at patch sites before a field rewrite is
@@ -577,8 +577,9 @@ end
 -- used by whole-function differencing. The emitted patcher therefore has no
 -- host instruction knowledge.
 local function add_semantic_context_selector(st)
-    local op = st.name:match("^cp_([a-z0-9]+)_[0-9]+_[0-9]+$")
-    if not SEM_MEMORY_OP[op] then
+    local op = st.name:match("^cp_([a-z0-9]+)_")
+    local indexed = st.name:match("_%d+_%d+$") or st.name:match("_%d+_%d+_%d+$")
+    if not indexed or not SEM_MEMORY_OP[op] then
         return
     end
     if st.arch ~= "aarch64" then
@@ -693,7 +694,7 @@ for i = 3, #arg do
         die("%s: neither ELF64 nor Mach-O 64", arg[i])
     end
     for _, st in ipairs(list) do
-        local name, ctx = st.name:match("^(cp_[a-z0-9]+_[0-9]+_[0-9]+)_ctx([0-3])$")
+        local name, ctx = st.name:match("^(cp_[a-z0-9_]+)_ctx([0-3])$")
         if name then
             local variants = context_variants[name] or {}
             context_variants[name] = variants

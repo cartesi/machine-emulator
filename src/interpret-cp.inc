@@ -1262,6 +1262,7 @@ struct cp_former {
         const cp_stencil_t *const (&comp)[CP_NSLOTS][CP_NSLOTS], uint8_t rs1, uint8_t rs2, uint64_t taken_target,
         uint8_t size) {
         c->have_pending_branch = true;
+        c->pb_fusion.terminal = cp_state::no_fusion_terminal;
         c->pb_vaddr = pc;
         c->pb_taken_target = taken_target;
         c->pb_tab = tab;
@@ -1327,6 +1328,7 @@ enum class cp_fusion_emit : uint8_t {
     lbu_bne,
     constant
 };
+enum class cp_fusion_stage : uint8_t { immediate, branch_successor };
 
 using cp_fusion_table2 = const cp_stencil_t *const (*)[CP_NSLOTS];
 using cp_fusion_table3 = const cp_stencil_t *const (*)[CP_NSLOTS][CP_NSLOTS];
@@ -1345,6 +1347,7 @@ struct cp_fusion_terminal {
     uint8_t length;
     const cp_fusion_variant *variants;
     uint8_t nvariants;
+    cp_fusion_stage stage = cp_fusion_stage::immediate;
 };
 
 struct cp_fusion_trie_edge {
@@ -1407,7 +1410,8 @@ static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
     {"shift-extract-add", cp_fusion_match::shift_extract_add, cp_fusion_emit::shift_extract_add, 3,
         cp_fusion_shift_extract_add_variants, 1},
     {"scaled-lw", cp_fusion_match::scaled_lw, cp_fusion_emit::scaled_lw, 3, cp_fusion_scaled_lw_variants, 1},
-    {"lbu-bne", cp_fusion_match::lbu_bne, cp_fusion_emit::lbu_bne, 2, cp_fusion_no_variants, 1},
+    {"lbu-bne", cp_fusion_match::lbu_bne, cp_fusion_emit::lbu_bne, 2, cp_fusion_no_variants, 1,
+        cp_fusion_stage::branch_successor},
 };
 static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {0, cp_fusion_op::c_add, 1},
@@ -1456,7 +1460,8 @@ static constexpr cp_fusion_terminal cp_fusion_terminals[] = {
     {"shift-extract-add", cp_fusion_match::shift_extract_add, cp_fusion_emit::shift_extract_add, 3,
         cp_fusion_shift_extract_add_variants, 1},
     {"scaled-lw", cp_fusion_match::scaled_lw, cp_fusion_emit::scaled_lw, 3, cp_fusion_scaled_lw_variants, 1},
-    {"lbu-bne", cp_fusion_match::lbu_bne, cp_fusion_emit::lbu_bne, 2, cp_fusion_no_variants, 1},
+    {"lbu-bne", cp_fusion_match::lbu_bne, cp_fusion_emit::lbu_bne, 2, cp_fusion_no_variants, 1,
+        cp_fusion_stage::branch_successor},
 };
 static constexpr cp_fusion_trie_edge cp_fusion_edges[] = {
     {0, cp_fusion_op::c_slli, 1},
@@ -1628,7 +1633,7 @@ static const cp_fusion_variant *cp_fusion_terminal_variant(
 
 static uint8_t cp_fusion_emit_replacement(cp_state *c, const cp_fusion_terminal &terminal,
     const cp_fusion_variant &variant, const cp_state::cp_fusion_insn *seq, uint16_t first,
-    const cp_state::cp_form_checkpoint &start, cp_state::cp_fusion_thing *things) {
+    const cp_state::cp_form_checkpoint &start, cp_state::cp_fusion_thing *things, const uint64_t *successor = nullptr) {
     cp_former f{c, seq[0].vpc};
     switch (terminal.emit) {
         case cp_fusion_emit::slli_add:
@@ -1665,9 +1670,25 @@ static uint8_t cp_fusion_emit_replacement(cp_state *c, const cp_fusion_terminal 
                 insn_get_CIW_CL_rd_CS_CA_rs2(seq[2].insn));
             things[0] = {start, first, 3};
             return 1;
-        case cp_fusion_emit::lbu_bne:
-            c->rec_failed = true; // emitted only after the recorded direction resolves
-            return 0;
+        case cp_fusion_emit::lbu_bne: {
+            if (successor == nullptr) {
+                c->rec_failed = true;
+                return 0;
+            }
+            const uint64_t taken = c->pb_taken_target;
+            const uint64_t fall = c->pb_vaddr + c->pb_size;
+            const uint32_t rd = insn_get_rd(seq[0].insn);
+            const uint32_t branch_rs1 = insn_get_rs1(seq[1].insn);
+            const uint32_t branch_rs2 = insn_get_rs2(seq[1].insn);
+            const uint32_t compare = rd == branch_rs1 ? branch_rs2 : branch_rs1;
+            const bool hot_taken = *successor == taken;
+            const auto table = hot_taken ? cp_lbu_bnet_table : cp_lbu_bnef_table;
+            f.fused_lbu_bne(table, static_cast<uint8_t>(rd), static_cast<uint8_t>(insn_get_rs1(seq[0].insn)),
+                static_cast<uint64_t>(insn_I_get_imm(seq[0].insn)), static_cast<uint8_t>(compare), c->rec_len - 1,
+                static_cast<int64_t>((hot_taken ? fall : taken) - c->rec_head), c->rec_len + 1);
+            things[0] = {start, first, terminal.length};
+            return 1;
+        }
         case cp_fusion_emit::constant:
             f.li(insn_get_rd(seq[0].insn), seq[0].vpc + static_cast<uint64_t>(insn_U_get_imm(seq[0].insn)) +
                     static_cast<uint64_t>(insn_I_get_imm(seq[1].insn)));
@@ -1676,6 +1697,38 @@ static uint8_t cp_fusion_emit_replacement(cp_state *c, const cp_fusion_terminal 
     }
     c->rec_failed = true;
     return 0;
+}
+
+static bool cp_fusion_rewrite(cp_state *c, uint8_t terminal_index, uint8_t variant_index, uint16_t first,
+    const uint64_t *successor = nullptr) {
+    const auto &terminal = cp_fusion_host_config.terminals[terminal_index];
+    uint16_t first_thing = c->fusion_nthings;
+    while (first_thing > 0 && c->fusion_things[first_thing - 1].first >= first) {
+        --first_thing;
+    }
+    if (first_thing >= c->fusion_nthings || c->fusion_things[first_thing].first != first) {
+        return false; // the terminal begins inside an already fused thing
+    }
+    const auto checkpoint = c->fusion_things[first_thing].start;
+    const uint64_t old_bytes = c->heap.curr - checkpoint.heap_curr;
+    cp_restore_checkpoint(c, checkpoint);
+    cp_state::cp_fusion_thing replacement[2]{};
+    const uint8_t nreplacement = cp_fusion_emit_replacement(c, terminal, terminal.variants[variant_index],
+        &c->fusion_insns[first], first, checkpoint, replacement, successor);
+    if (c->rec_failed) {
+        return true;
+    }
+    const uint64_t new_bytes = c->heap.curr - checkpoint.heap_curr;
+    c->fusion_nthings = first_thing;
+    for (uint8_t i = 0; i < nreplacement; ++i) {
+        c->fusion_things[c->fusion_nthings++] = replacement[i];
+    }
+    ++c->fusion_rewrites;
+    c->fusion_guest_insns += terminal.length;
+    c->fusion_old_bytes += old_bytes;
+    c->fusion_new_bytes += new_bytes;
+    ++c->fusion_terminals[terminal_index];
+    return true;
 }
 
 static void cp_fusion_record(cp_state *c, uint64_t vpc, uint32_t insn, tc_label label,
@@ -1691,7 +1744,6 @@ static void cp_fusion_record(cp_state *c, uint64_t vpc, uint32_t insn, tc_label 
     int8_t best = -1;
     const cp_fusion_variant *best_variant = nullptr;
     uint16_t best_first = current;
-    uint16_t best_len = 0;
     const uint16_t max_walk = std::min<uint16_t>(c->fusion_ninsns, cp_state::max_fusion_len);
     for (uint16_t depth = 0; depth < max_walk; ++depth) {
         const uint16_t at = static_cast<uint16_t>(current - depth);
@@ -1710,70 +1762,29 @@ static void cp_fusion_record(cp_state *c, uint64_t vpc, uint32_t insn, tc_label 
             best = terminal_index;
             best_variant = variant;
             best_first = at;
-            best_len = depth + 1;
         }
     }
     if (best < 0) {
         return;
     }
-    if (cp_fusion_host_config.terminals[best].emit == cp_fusion_emit::lbu_bne) {
-        return; // branch direction is known on the next record call
-    }
-
-    uint16_t first_thing = c->fusion_nthings;
-    while (first_thing > 0 && c->fusion_things[first_thing - 1].first >= best_first) {
-        --first_thing;
-    }
-    if (first_thing >= c->fusion_nthings || c->fusion_things[first_thing].first != best_first) {
-        return; // the longest terminal begins inside an already fused thing
-    }
-    const auto checkpoint = c->fusion_things[first_thing].start;
-    const uint64_t old_bytes = c->heap.curr - checkpoint.heap_curr;
-    cp_restore_checkpoint(c, checkpoint);
-    cp_state::cp_fusion_thing replacement[2]{};
-    const uint8_t nreplacement = cp_fusion_emit_replacement(c, cp_fusion_host_config.terminals[best], *best_variant,
-        &c->fusion_insns[best_first], best_first, checkpoint, replacement);
-    if (c->rec_failed) {
+    const auto &terminal = cp_fusion_host_config.terminals[best];
+    const auto variant_index = static_cast<uint8_t>(best_variant - terminal.variants);
+    if (terminal.stage == cp_fusion_stage::branch_successor) {
+        if (!c->have_pending_branch) {
+            c->rec_failed = true;
+            return;
+        }
+        c->pb_fusion = {best_first, static_cast<uint8_t>(best), variant_index};
         return;
     }
-    const uint64_t new_bytes = c->heap.curr - checkpoint.heap_curr;
-    c->fusion_nthings = first_thing;
-    for (uint8_t i = 0; i < nreplacement; ++i) {
-        c->fusion_things[c->fusion_nthings++] = replacement[i];
-    }
-    ++c->fusion_rewrites;
-    c->fusion_guest_insns += best_len;
-    c->fusion_old_bytes += old_bytes;
-    c->fusion_new_bytes += new_bytes;
-    ++c->fusion_terminals[best];
+    cp_fusion_rewrite(c, static_cast<uint8_t>(best), variant_index, best_first);
 }
 
-static bool cp_fusion_resolve_lbu_bne(cp_state *c, uint64_t successor) {
-    static const bool disabled = std::getenv("CP_FUSION_LBU_BNE_DISABLE") != nullptr;
-    if (disabled) {
-        return false;
-    }
-    if (c->fusion_ninsns < 2 || c->rec_len == 0) {
-        return false;
-    }
-    int8_t terminal_index = -1;
-    for (uint8_t i = 0; i < cp_fusion_host_config.nterminals; ++i) {
-        if (cp_fusion_host_config.terminals[i].emit == cp_fusion_emit::lbu_bne) {
-            terminal_index = static_cast<int8_t>(i);
-            break;
-        }
-    }
-    if (terminal_index < 0) {
-        return false;
-    }
-    const uint16_t first = static_cast<uint16_t>(c->fusion_ninsns - 2);
-    const auto &terminal = cp_fusion_host_config.terminals[terminal_index];
-    const auto *seq = &c->fusion_insns[first];
-    if (cp_fusion_class(seq[0].label, seq[0].insn) != cp_fusion_op::lbu ||
-        cp_fusion_class(seq[1].label, seq[1].insn) != cp_fusion_op::bne) {
-        return false;
-    }
-    if (cp_fusion_terminal_variant(terminal, seq) == nullptr) {
+static bool cp_fusion_resolve_deferred(cp_state *c, uint64_t successor) {
+    const auto candidate = c->pb_fusion;
+    c->pb_fusion.terminal = cp_state::no_fusion_terminal;
+    const uint8_t terminal_index = candidate.terminal;
+    if (terminal_index == cp_state::no_fusion_terminal) {
         return false;
     }
     const uint64_t taken = c->pb_taken_target;
@@ -1781,41 +1792,7 @@ static bool cp_fusion_resolve_lbu_bne(cp_state *c, uint64_t successor) {
     if (successor != taken && successor != fall) {
         return false;
     }
-
-    uint16_t first_thing = c->fusion_nthings;
-    while (first_thing > 0 && c->fusion_things[first_thing - 1].first >= first) {
-        --first_thing;
-    }
-    if (first_thing >= c->fusion_nthings || c->fusion_things[first_thing].first != first) {
-        return false;
-    }
-    const auto checkpoint = c->fusion_things[first_thing].start;
-    const uint64_t old_bytes = c->heap.curr - checkpoint.heap_curr;
-    cp_restore_checkpoint(c, checkpoint);
-
-    const uint32_t rd = insn_get_rd(seq[0].insn);
-    const uint32_t branch_rs1 = insn_get_rs1(seq[1].insn);
-    const uint32_t branch_rs2 = insn_get_rs2(seq[1].insn);
-    const uint32_t compare = rd == branch_rs1 ? branch_rs2 : branch_rs1;
-    const bool hot_taken = successor == taken;
-    const auto table = hot_taken ? cp_lbu_bnet_table : cp_lbu_bnef_table;
-    cp_former f{c, seq[0].vpc};
-    f.fused_lbu_bne(table, static_cast<uint8_t>(rd), static_cast<uint8_t>(insn_get_rs1(seq[0].insn)),
-        static_cast<uint64_t>(insn_I_get_imm(seq[0].insn)), static_cast<uint8_t>(compare), c->rec_len - 1,
-        static_cast<int64_t>((hot_taken ? fall : taken) - c->rec_head), c->rec_len + 1);
-    if (c->rec_failed) {
-        return true;
-    }
-
-    const uint64_t new_bytes = c->heap.curr - checkpoint.heap_curr;
-    c->fusion_nthings = first_thing;
-    c->fusion_things[c->fusion_nthings++] = {checkpoint, first, 2};
-    ++c->fusion_rewrites;
-    c->fusion_guest_insns += 2;
-    c->fusion_old_bytes += old_bytes;
-    c->fusion_new_bytes += new_bytes;
-    ++c->fusion_terminals[terminal_index];
-    return true;
+    return cp_fusion_rewrite(c, terminal_index, candidate.variant, candidate.first, &successor);
 }
 
 static void cp_fusion_print_terminal_stats(const cp_state *c) {
@@ -2351,6 +2328,7 @@ static void cp_begin(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint64
     }
     c->rec_use_clock = 0;
     c->have_pending_branch = false;
+    c->pb_fusion.terminal = cp_state::no_fusion_terminal;
     c->nbails = 0;
     c->rec_log_len = 0;
     c->rec_carry_ok = true;
@@ -2418,7 +2396,7 @@ static void cp_record(const STATE_ACCESS a, tc_context<STATE_ACCESS> *tcc, uint6
         c->have_pending_branch = false;
         const uint64_t taken = c->pb_taken_target;
         const uint64_t fall = c->pb_vaddr + c->pb_size;
-        if (!cp_fusion_resolve_lbu_bne(c, vpc)) {
+        if (!cp_fusion_resolve_deferred(c, vpc)) {
             const int s1 = f.alloc_src(c->pb_rs1);
             const int s2 = f.alloc_src(c->pb_rs2);
             if (!c->rec_failed) {

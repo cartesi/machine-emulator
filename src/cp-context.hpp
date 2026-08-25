@@ -131,6 +131,7 @@ struct cp_state {
     static constexpr uint32_t max_log = 4096; ///< Emission-log records
     static constexpr uint32_t max_fusion_len = 8;
     static constexpr uint32_t max_fusion_terminals = 12;
+    static constexpr uint8_t no_fusion_terminal = 0xff;
     uint64_t heap_reset_curr; ///< Heap cursor after the island, flush target
 
     // Formation checkpoint used both by uncompilable-instruction rollback
@@ -185,6 +186,11 @@ struct cp_state {
         uint16_t first;
         uint16_t count;
     };
+    struct cp_fusion_candidate {
+        uint16_t first;
+        uint8_t terminal;
+        uint8_t variant;
+    };
     cp_fusion_insn fusion_insns[max_len];
     cp_fusion_thing fusion_things[max_len];
     uint16_t fusion_ninsns;
@@ -231,6 +237,7 @@ struct cp_state {
     uint8_t pb_rs1;
     uint8_t pb_rs2;
     uint8_t pb_size;
+    cp_fusion_candidate pb_fusion; ///< Trie match awaiting the recorded branch's successor
     // Deferred guard bails for this trace.
     cp_bail bails[max_bails];
     uint32_t nbails;

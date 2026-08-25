@@ -1117,6 +1117,79 @@ end
 gem("#endif")
 gem("")
 
+-- The two dominant zlib shift/extract/add chains have fixed shifts and
+-- three distinct roster operands. Keeping the complete expression in one
+-- semantic stencil lets the host compiler retain both intermediates while
+-- still materializing every architectural destination.
+for d = 0, NSLOTS - 1 do
+    for s = 0, NSLOTS - 1 do
+        for a = 0, NSLOTS - 1 do
+            gem(("extern \"C\" CONT void cp_slli32_srli32_add_%d_%d_%d(%s)"):format(d, s, a, params))
+            gem("{")
+            gem(("    uint64_t shift_src = r%d;"):format(s))
+            gem("    uint64_t unused = 0;")
+            gem("    uint64_t first = 0;")
+            gem("    const cartesi::cp_slot_access first_acc(&shift_src, &unused, &first);")
+            gem("    uint64_t spc = 0;")
+            gem(("    (void) cartesi::execute_SLLI<cartesi::rd_kind::xN>(first_acc, spc, 0x%08xu);"):
+                format(slli_insn(32)))
+            gem("    uint64_t extracted = 0;")
+            gem("    const cartesi::cp_slot_access extract_acc(&first, &unused, &extracted);")
+            gem(("    (void) cartesi::execute_SRLI<cartesi::rd_kind::xN>(extract_acc, spc, 0x%08xu);"):
+                format(srli_insn(32)))
+            if a == d then
+                gem("    uint64_t add_src = extracted;")
+            else
+                gem(("    uint64_t add_src = r%d;"):format(a))
+            end
+            gem("    uint64_t result = 0;")
+            gem("    const cartesi::cp_slot_access add_acc(&extracted, &add_src, &result);")
+            gem(("    (void) cartesi::execute_ADD<cartesi::rd_kind::xN>(add_acc, spc, 0x%08xu);"):
+                format(SEM_REG_OPS.add[2]))
+            gem(("    r%d = result;"):format(d))
+            gem("    TAIL return cp_cont_0(" .. args .. ");")
+            gem("}")
+            gem("")
+        end
+    end
+end
+
+for d1 = 0, NSLOTS - 1 do
+    for d2 = 0, NSLOTS - 1 do
+        for a = 0, NSLOTS - 1 do
+            gem(("extern \"C\" CONT void cp_slli32_srli31_add_%d_%d_%d(%s)"):format(d1, d2, a, params))
+            gem("{")
+            gem(("    uint64_t shift_src = r%d;"):format(d2))
+            gem("    uint64_t unused = 0;")
+            gem("    uint64_t first = 0;")
+            gem("    const cartesi::cp_slot_access first_acc(&shift_src, &unused, &first);")
+            gem("    uint64_t spc = 0;")
+            gem(("    (void) cartesi::execute_SLLI<cartesi::rd_kind::xN>(first_acc, spc, 0x%08xu);"):
+                format(slli_insn(32)))
+            gem("    uint64_t extracted = 0;")
+            gem("    const cartesi::cp_slot_access extract_acc(&first, &unused, &extracted);")
+            gem(("    (void) cartesi::execute_SRLI<cartesi::rd_kind::xN>(extract_acc, spc, 0x%08xu);"):
+                format(srli_insn(31)))
+            if a == d2 then
+                gem("    uint64_t add_src = extracted;")
+            elseif a == d1 then
+                gem("    uint64_t add_src = first;")
+            else
+                gem(("    uint64_t add_src = r%d;"):format(a))
+            end
+            gem("    uint64_t result = 0;")
+            gem("    const cartesi::cp_slot_access add_acc(&extracted, &add_src, &result);")
+            gem(("    (void) cartesi::execute_ADD<cartesi::rd_kind::xN>(add_acc, spc, 0x%08xu);"):
+                format(SEM_REG_OPS.add[2]))
+            gem(("    r%d = first;"):format(d1))
+            gem(("    r%d = result;"):format(d2))
+            gem("    TAIL return cp_cont_0(" .. args .. ");")
+            gem("}")
+            gem("")
+        end
+    end
+end
+
 -- C.MV is a register copy, not an ADD with an x0 operand. Keeping it as a
 -- two-slot family avoids allocating and retaining a roster slot for x0.
 for d = 0, NSLOTS - 1 do

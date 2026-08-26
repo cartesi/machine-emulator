@@ -2092,3 +2092,113 @@ The raw full-system and native results are preserved in
 Their SHA-256 hashes are respectively
 `639095e0804a80efc7b6f220ae8e35063c2e6a0d9b386321580a30b6a2680f4e` and
 `dcacd8f05a5955b87e5b080d62ef5c89a7067fdd095d46ec5280bde87336eb33`.
+
+## Done: current amd64 matrices on m600 (2026-08-26)
+
+Both matrices were repeated on m600, an AMD Ryzen 9 7940HS running Linux
+6.8.0-138 with the CPU-frequency governor fixed at `performance`. Each
+full-system column used the same fixed musl stress-ng, kernel, rootfs, and
+bogo-op counts. Each binary's three-run boot median was subtracted, and every
+workload used three interleaved repetitions.
+
+### Main, plain tail-call, Lightning, and copy-patch
+
+Main is `bd095381`; plain tail-call and Lightning are `8d9f970b`. Their
+preserved GCC 16 binaries are hash-identical to the previous amd64 matrix.
+Copy-patch was freshly built at `2606a6bb` with GCC 16 and
+`tailcall=yes copy_patch=yes`; the code tip is `15a03a6f`, because the two
+following commits only record matrices. Boot-subtracted CPU seconds:
+
+    workload      main     tail    light       cp   cp/main  cp/light
+    nop          14.432   10.214    0.455    0.533    0.037     1.171
+    regs         32.015   24.386    2.303    6.072    0.190     2.637
+    branch        1.206    0.912    0.907    1.214    1.007     1.338
+    tree          2.673    2.749    2.335    2.325    0.870     0.996
+    qsort         4.816    3.923    2.575    2.504    0.520     0.972
+    memcpy       12.450   10.584    3.209    3.852    0.309     1.200
+    zlib          8.890    7.121    7.251    4.733    0.532     0.653
+    hash          7.812    5.860    2.793    2.667    0.341     0.955
+    syscall       2.051    1.085    0.567    0.718    0.350     1.266
+    double        3.022    2.865    2.032    2.909    0.963     1.432
+    sieve        30.057   11.914    2.459    3.471    0.115     1.412
+    int64         4.822    3.969    1.803    1.194    0.248     0.662
+    matrixprod    4.703    3.663    1.454    1.843    0.392     1.268
+    geomean       6.330    4.723    1.839    2.123    0.335     1.154
+
+Copy-patch is 2.98x faster than main and 2.23x faster than plain tail-call,
+but Lightning is 1.15x faster than copy-patch. Copy-patch beats main on
+12/13 rows; branch is the only loss. It beats Lightning on tree, qsort,
+zlib, hash, and int64, but loses the other eight rows. The largest loss is
+regs at 2.64x Lightning.
+
+Boot medians were main 0.148 s, plain tail-call 0.173 s, Lightning 0.191 s,
+and copy-patch 0.224 s. Tail-call, Lightning, and copy-patch retired identical
+mcycles on every workload and repetition. Main retired a systematically
+different count because it is from the older main source/configuration
+lineage. The long interpreted rows were noisier than the JIT rows: main regs
+had a 15.6 percent max/min range relative to its median, and tail-call nop
+30.2 percent. Lightning's worst range was 4.7 percent and copy-patch's 9.7
+percent; the medians preserve the stable JIT ordering.
+
+### Copy-patch, QEMU, RVVM, and native host
+
+The same current copy-patch binary was compared with QEMU system 8.2.2,
+QEMU system with deterministic icount, RVVM `33ea63aa` built from source,
+and native stress-ng 0.17.06 at `e6bda983` built with GCC 14. Full-system
+columns use boot-subtracted time; the Cartesi harness reports process CPU
+time, while QEMU and RVVM are timed with monotonic wall time. These
+CPU-bound, single-hart workloads make the values useful, but the clock-source
+difference is part of the protocol and should not be hidden.
+
+The native column used a calibration run followed by three runs scaled to
+about 1.5 seconds and divided by the scale factor. It is a throughput
+reference, not a strict virtualization-overhead bound: it runs x86-64 Linux
+code with the host ABI and glibc rather than the guest's static RISC-V musl
+binary. Median seconds:
+
+    workload       cp     qemu   icount    rvvm      host
+    nop          0.562    0.331    0.794   0.541    0.1353
+    regs         6.015    1.519    1.692   1.399    3.7722
+    branch       1.204    2.218    2.188   1.329    0.1541
+    tree         2.328    1.988    2.412   1.316    0.7022
+    qsort        2.440    2.221    2.931   1.341    0.0378
+    memcpy       3.840    2.957    5.353   1.771    0.1943
+    zlib         4.746    2.908    4.831   2.077    0.4439
+    hash         2.671    1.606    2.417   1.940    0.2678
+    syscall      0.723    0.618    1.216   0.641    0.2139
+    double       2.914    1.338    1.397   3.515    0.0765
+    sieve        3.469    1.804    3.987   2.005    0.3845
+    int64        1.185    1.579    1.737   0.516    0.0987
+    matrixprod   1.770    1.401    1.910   0.959    0.0103
+    geomean      2.118    1.517    2.205   1.293    0.1855
+
+Copy-patch takes 1.40x QEMU-system time and 1.64x RVVM time, but only 0.96x
+QEMU-icount time. It beats QEMU system only on branch and int64, and beats
+RVVM only on branch and double. It takes 11.41x native-host time on the
+13-row geomean. The independently run copy-patch geomeans agree to 0.2
+percent between the two matrices (2.123 and 2.118).
+
+All competitive cells completed, including plain QEMU syscall. RVVM regs had
+one 3.15 s sample beside two 1.39-1.40 s samples, so the median rejects it.
+QEMU-icount syscall instead had one 0.70 s sample and two 1.22 s samples;
+the reported 1.216 s median keeps the repeated slower value. Full-system
+boot medians were copy-patch 0.217 s, QEMU system 0.325 s, QEMU icount
+0.341 s, and RVVM 0.142 s.
+
+Binary SHA-256 identities:
+
+    main        dad8f660fa15a49a1fd16de839fe9aca0a92ee49088f21294c9bc99f1d2822e8
+    tail-call   9c69e675e084e580852419ffb4e2b00bfc39249b1b5107c750d65e1c4c933189
+    Lightning   358ca9ead180247c351f60036cae1adca2fcb2599701a45e96ec3dc5ed25eed2
+    copy-patch  ef4967b03aa9985a6cf52ab79069ac2c23373b74c54230d28805a2ae172a458a
+    QEMU        49b77f94862a9ae0e6e31d031a31cce9a668d647b5e827d706bf1e9951e96710
+    RVVM        e9eb90bf2592a0f260425bf179fbc7611baf82ec38e7ca2a2308d3451cad01c5
+    native      66d844e838db3067d85be93656606f3291b8d554982f5e46454e26cb2c801714
+
+The raw results are preserved under
+`scratch/fusion-pairs/amd64-current-2026-08-26/` as
+`jitters-results.json`, `competitive-results.json`, and `host-results.json`.
+Their SHA-256 hashes are respectively
+`69b0a51a13fc585c817a1dd01d2ab97b716996c4131f1d2c4313a0e6483fd9a0`,
+`89c965ffb8fc7b62578b7dd2495e4c2088082ad03b97cbe4f17635e8a0709656`,
+and `5f0edb8df30750b3a4c37b88ea636266b3140cda3dc0124b4ee46e4a026b0b73`.

@@ -2024,3 +2024,71 @@ Binary SHA-256 identities:
 The incrementally written raw result is preserved at
 `scratch/fusion-pairs/aarch64-current-2026-08-25/timing-matrix.json` in the
 canonical local checkout.
+
+## Done: current AArch64 competitive matrix (2026-08-26)
+
+The current copy-patch binary was measured against QEMU system, QEMU system
+with deterministic icount, RVVM, and the native host. The copy-patch binary
+contains the code at `15a03a6f`; `b197691b` only adds the four-Cartesi matrix
+notes above. QEMU is MacPorts 11.1.0. RVVM is the pinned uninstrumented
+`33ea63aa`. All full-system columns use the same fixed musl stress-ng,
+kernel, rootfs, and bogo-op counts.
+
+The full-system protocol used fresh three-run boot medians, boot-subtracted
+wall time, and three interleaved repetitions. Native stress-ng is the same
+0.17.06 source revision, `e6bda983`, built with MacPorts GCC 15. Each native
+row used a calibration run followed by three runs scaled to about 1.5 seconds
+and divided by the scale factor. Median seconds:
+
+    workload       cp     qemu   icount    rvvm      host
+    nop          0.382    0.478    0.651   0.527    0.2248
+    regs         1.807    1.798    1.912   1.264       N/A
+    branch       1.145    3.060    3.067   1.459    0.2006
+    tree         1.749    2.936    2.974   1.326    0.2668
+    qsort        1.420    3.563    3.634   1.264    0.0348
+    memcpy       3.008    4.994    5.491   1.408    0.2031
+    zlib         3.779    4.014    4.241   2.128    0.7570
+    hash         1.771    1.857    1.989   1.930    0.3072
+    syscall      0.474    0.837    0.870   0.560       N/A
+    double       1.825    1.732    1.735   3.307    0.1097
+    sieve        1.972    1.784    2.116   1.757    0.8901
+    int64        0.725    2.245    2.290   0.346    0.2157
+    matrixprod   1.122    2.332    2.400   0.859    0.0025
+    geomean-13   1.361    2.083    2.229   1.185       N/A
+    geomean-11   1.460    2.293    2.462   1.261    0.1525
+
+The 13-row emulator geomean says copy-patch is 1.53x faster than QEMU system
+and 1.64x faster than QEMU icount, but RVVM remains 1.15x faster than
+copy-patch. Copy-patch beats QEMU system on 10/13 rows and RVVM on 5/13. The
+common 11-row geomean excludes native `regs` and `syscall`; copy-patch takes
+9.57x native-host time on that subset. The native column is a throughput
+reference, not a strict virtualization overhead: it runs ARM64/Darwin with a
+different ABI, libc, kernel, and architecture-specific stress-ng code.
+
+Native `regs` is unavailable because the stressor terminates on SIGSEGV with
+zero bogo operations. Only its object was compiled with
+`-fomit-frame-pointer`, required because GCC reserves `x29`; all measured
+stressor objects use the default flags. Native `syscall` is unavailable
+because the Darwin stressor does not provide a comparable fixed-bogo Linux
+syscall workload. These cells are not estimated. Isolated QEMU outliers in
+icount regs and non-icount memcpy were retained in the raw samples and
+rejected naturally by the three-run medians.
+
+Full-system boot medians were copy-patch 0.178 s, QEMU system 0.334 s, QEMU
+icount 0.345 s, and RVVM 0.110 s. Relative to the `bcca04f1` board,
+copy-patch's 13-row geomean improves from 1.408 to 1.361 seconds (3.4
+percent), while QEMU and RVVM moved only 1.5 and 0.7 percent respectively.
+
+Binary SHA-256 identities:
+
+    copy-patch  02105f1bf05af8f66321e9c9ea4f40d5445e7b6ac9e2310df3583b4072a9e95e
+    QEMU        8282a657b4cb0dc0cfc93c4155840257f08803781f54b4ff5164d56f4113ba99
+    RVVM        08a8e42949caa7e904ee78af8dcc2131f666b9de439e7411f774cec8d8744bcb
+    native      ad6f9643d839d2e26d8580d18bc4229a3ad2e4f1bc86faa6cc919298ab123546
+
+The raw full-system and native results are preserved in
+`scratch/fusion-pairs/aarch64-competitive-2026-08-26/results.json` and
+`scratch/fusion-pairs/aarch64-competitive-2026-08-26/host-results.json`.
+Their SHA-256 hashes are respectively
+`639095e0804a80efc7b6f220ae8e35063c2e6a0d9b386321580a30b6a2680f4e` and
+`dcacd8f05a5955b87e5b080d62ef5c89a7067fdd095d46ec5280bde87336eb33`.

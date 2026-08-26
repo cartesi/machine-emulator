@@ -2346,3 +2346,80 @@ directory. SHA-256 identities are:
     factorial-results.json          799cf3e4c6550b208f5c01a51a81584076d8a147a2569a76bec43ebb19d1ea86
     branch-factorial-results.json   7a68fd35ab471ea93f4e900661c56653faa3ed7f746b7fa6f2950f490cdf4027
     perf archive                    fecbfb0eb39bb6b9caa13b5da3836001c30dc8a42e21eb10d21ce3c932d78295
+
+## Review: the 2026-08-22..26 work, independently regated and assessed (2026-08-26)
+
+The context, fusion, lowering, and matrix work above was reviewed from the
+outside, with the gates rerun rather than trusted.
+
+### Independent verification on the AArch64 host
+
+The current tip was rebuilt natively (clang, CP_NSLOTS=16) and the full
+battery rerun: cp-stencils-test and cp-machine-test pass, boot halts at
+mcycle 55407040, all 13 balanced boards are hash-identical to a same-tip
+stock build, and all 267 machine tests pass. The absolute board hashes
+differ from the pre-0ac08aa3 canon because the uarch pristine artifacts
+were regenerated on 2026-08-22, exactly as the staleness entry predicts;
+the canon was regenerated from the same-tip stock column per that entry's
+own rule. The fused stencils were also read for soundness: they compose
+the interpreter's own execute bodies (no handwritten guest semantics),
+and the fused LBU-BNE formation keeps the bail invariants exactly -- the
+memory bail precedes any retirement and excludes a fresh destination from
+its dirty set, the branch bail follows both retirements with the full
+dirty set and its own pending count.
+
+### Conclusions reviewed and accepted
+
+- The chain-start front-cache pre-check rejection. The 37.8 percent
+  positive-hit measurement kills the proposal; the redirection toward
+  removing or throttling the full-map miss path is right.
+- The cross-page successor links rejection. The counters prove the links
+  worked and the dispatch they saved was not the cost.
+- The matrixprod truncation reattribution. Both earlier stories were
+  wrong; the fix published the one hot trace that used to abort at
+  emission, 7x the generated-code time from 19 percent fewer traces.
+- The uniform-tax reading of the x86-64 board, directionally: a flat
+  1.4x median swing across unrelated rows is what a global per-operation
+  cost looks like, not a stencil-family defect.
+- The process findings: the stale-baseline rule (stock column from the
+  tree under test, always) and the TC_BACKEND_ENTER breakage, which was
+  a latent defect of the a0f32c05 port -- plain tailcall builds stopped
+  compiling and nothing caught it.
+
+### Three gaps, each with a cheap experiment attached
+
+1. The amd64 slot ceiling claim is falsified by this branch's own
+   evidence. The ADDI defect entry disassembles GCC keeping guest slots
+   past the six preserve_none argument registers on the stack, working
+   and gated, so raising CP_NSLOTS on amd64 under GCC is feasible --
+   memory-resident slots, a performance question rather than a
+   feasibility one. With amd64 regs at 2.64x Lightning (the same shape
+   AArch64 regs had before its 16-slot fix), an amd64 NSLOTS sweep
+   (10, 12, 16) is the top amd64 experiment, ahead of further fusion
+   tuning.
+2. The uniform tax is undertested. Its two named components are
+   separable for cheap: build AArch64 at CP_NSLOTS=7 and rerun the
+   board. Whatever fraction of the 1.47x median swing reproduces is the
+   slot share; the remainder bounds the call-entry cost. Run before
+   investing in either fix.
+3. The AArch64 fusion attribution is missing, and the tag probe is
+   back. The amd64 ablation shows fusion geomean-neutral there; the
+   AArch64 3.4 percent bundles context specialization, C.MV, tables,
+   and fusion with no per-change split, so the amd64 ablation should be
+   repeated on AArch64 before fusion's stencil-count cost is credited.
+   Separately, the statistical profiles now put the hot-TLB tag load at
+   28-48 percent of JIT samples on regs, sieve, and memcpy -- the
+   broadest measured in-JIT cost. The parked memoization was falsified
+   on the balanced rootfs workloads before these profiles existed, and
+   the preheader-hoisted-capture variant (capture once per trace entry
+   instead of per iteration, removing exactly the measured cost) was
+   left open. It deserves a queue slot on the same evidence standard
+   that promoted the ADDI stencils.
+
+### Record note
+
+The six feature commits (8d9f970b..15a03a6f) are title-only, and the
+notes carry their measurements but not their design or soundness
+arguments; verifying the fused-exit accounting and the single-source
+discipline required reading the generator and formation code. Both hold.
+The argument belongs in the record next to the gates.

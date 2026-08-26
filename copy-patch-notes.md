@@ -2202,3 +2202,50 @@ Their SHA-256 hashes are respectively
 `69b0a51a13fc585c817a1dd01d2ab97b716996c4131f1d2c4313a0e6483fd9a0`,
 `89c965ffb8fc7b62578b7dd2495e4c2088082ad03b97cbe4f17635e8a0709656`,
 and `5f0edb8df30750b3a4c37b88ea636266b3140cda3dc0124b4ee46e4a026b0b73`.
+
+## Done: current-tip amd64 fusion ablation (2026-08-26)
+
+The expanded fusion suite was isolated on m600 at code tip `15a03a6f` with
+GCC 16, seven copy-patch guest slots, and the CPU governor fixed at
+`performance`. Both builds retain context specialization and direct `C_MV`
+lowering. The no-fusion build omits the formation-time matcher and always
+resolves recorded branches through the ordinary unfused path; it still links
+the generated fusion tables, so binary size is not part of this comparison.
+
+Five boot measurements per build gave independently subtracted medians of
+0.221 s with fusion and 0.218 s without it. The matrix used seven repetitions,
+interleaved by workload with alternating build order. Median boot-subtracted
+CPU seconds:
+
+    workload     no fusion   fusion   fusion/no-fusion   change
+    nop              0.542    0.557       1.028          +2.77%
+    regs             6.076    6.059       0.997          -0.28%
+    branch           1.198    1.220       1.018          +1.84%
+    tree             2.374    2.352       0.991          -0.93%
+    qsort            2.457    2.448       0.996          -0.37%
+    memcpy           3.861    3.938       1.020          +1.99%
+    zlib             5.083    4.775       0.939          -6.06%
+    hash             2.676    2.685       1.003          +0.34%
+    syscall          0.725    0.733       1.011          +1.10%
+    double           2.934    2.937       1.001          +0.10%
+    sieve            3.462    3.486       1.007          +0.69%
+    int64            1.192    1.195       1.003          +0.25%
+    matrixprod       1.770    1.779       1.005          +0.51%
+    geomean                              1.001          +0.13%
+
+Fusion won all seven paired zlib repetitions; its paired-ratio mean was a
+5.92 percent improvement. It lost all seven nop and branch repetitions. The
+13-row geomean is effectively neutral and slightly negative. Excluding nop,
+the geomean changes by -0.09 percent.
+
+Every A/B cell retired the same guest `mcycle`. Final root hashes also matched
+for branch, memcpy, sieve, and zlib, covering the largest win, two clear
+regressions, and the guarded scaled-load family. Boot-subtracted formation
+counts show 1,124 zlib rewrites: 1,003 `auipc-addi`, 14 `zext32-add`, 22
+`shift-extract-add`, 16 `scaled-lw`, and 69 `lbu-bne`. These are trace-formation
+counts rather than dynamic execution weights.
+
+The raw seven-repetition data and exact ablation drivers are preserved under
+`scratch/fusion-pairs/amd64-fusion-ab-2026-08-26/`. The SHA-256 of
+`results.json` is
+`9e31c62e705d4400011e95dc318158df8f46adedeba1bab9979a30090c0382b6`.

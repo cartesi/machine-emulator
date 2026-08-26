@@ -2249,3 +2249,100 @@ The raw seven-repetition data and exact ablation drivers are preserved under
 `scratch/fusion-pairs/amd64-fusion-ab-2026-08-26/`. The SHA-256 of
 `results.json` is
 `9e31c62e705d4400011e95dc318158df8f46adedeba1bab9979a30090c0382b6`.
+
+### Why the amd64 fusion result is nearly neutral
+
+`perf record` used the software `cpu-clock:u` event at 999 Hz. A wrapper
+warmed the machine for one guest Gcycle, printed `READY`, and only then
+attached perf; boot is therefore absent from both elapsed time and samples.
+The measured window was eight guest Gcycles except for nop, which used 64.
+The generated-code map assigns every sample in the copy-patch heap to its
+exact stencil. Results for the workloads most relevant to the ablation were:
+
+    workload   no-fusion time/JIT samples   fusion time/JIT samples
+    branch       17.209 s / 6,191             17.380 s / 6,273
+    memcpy        3.453 s / 3,375              3.474 s / 3,390
+    zlib          8.907 s / 7,914              8.433 s / 7,332
+    sieve         3.390 s / 3,329              3.422 s / 3,362
+    nop           2.317 s / 1,476              2.456 s / 1,441
+
+These are time samples, not a proxy hardware counter. The zlib improvement
+is in generated code: JIT samples fall by 582 (7.4 percent). Fused
+`lbu-bne` stencils alone account for 31.4 percent of fusion's zlib JIT
+samples. The hottest exact stencils are `cp_lbu_bnet_6_4_5` (1,083 samples)
+and `cp_lbu_bnef_6_4_5` (826), replacing an unfused
+`cp_lbu_6_5` hot spot (1,661) plus its separate branch and register traffic.
+
+Neither branch nor memcpy has a fused family among its hot generated-code
+stencils. In branch, 82 of the 173 additional samples are in generated code
+and 91 are outside it. The workload forms 34,072 traces beyond boot, but its
+1,271 additional fusion rewrites are dominated by cold code: 1,195 are
+`auipc-addi`, followed by 54 `lbu-bne`, 16 `scaled-lw`, four `zext32-add`,
+and two `shift-extract-add`. This is precisely the shape in which a small
+per-instruction matcher cost is visible while most replacements have too
+little dynamic weight to repay it.
+
+To separate matching from replacement without changing binary layout, one
+experimental binary provided three process-start modes: matching and
+rewriting, matching with rewrites suppressed, and both disabled. Seven
+interleaved repetitions gave the following median paired changes. "Matcher"
+is match-only versus disabled; "template" is fusion versus match-only.
+
+    workload    matcher    template    total
+    branch       +1.19%      -2.72%     -0.82%
+    memcpy       +0.22%       0.00%     +0.41%
+    nop          -0.51%      +3.20%     +3.06%
+    sieve        -0.03%      +0.81%     +0.83%
+    zlib         +0.06%      -5.94%     -6.03%
+
+Because the short branch measurements were noisy, a second experiment used
+18 repetitions and all six mode orders equally often. The paired-ratio mean
+matcher cost was +0.93 percent (95 percent CI +/-0.89), the template effect
+was -0.90 percent (+/-0.63), and the total was +0.02 percent (+/-0.92).
+Thus the trie has a measurable cost in this formation-heavy workload, but
+the earlier separate-binary branch loss is not reproduced when code layout
+is held fixed. Matching and the aggregate replacement benefit cancel.
+
+The sieve result is not statistically established. In the original seven
+paired repetitions its mean loss was 0.59 percent with a 95 percent CI from
+-0.32 to +1.50 percent. Perf attributes virtually the entire point estimate
+to generated code, but the fused `cp_srliw5_slli2_1_0` is only 3.33 percent
+of JIT samples. Formation counters beyond boot report 89 `srliw-slli`, 850
+`auipc-addi`, four `zext32-add`, 14 `scaled-lw`, and 48 `lbu-bne` rewrites.
+Static formation frequency is therefore a poor predictor of dynamic payoff.
+
+Disassembly does not show intrinsically poor templates. The hot zlib fused
+load/branch performs the TLB check and load, compares the byte directly in
+`eax`, and branches without the unfused store to and reload from a roster
+slot. Its representative hot trace is 2,150 bytes versus 2,246 bytes without
+fusion. In the hot sieve trace, the fused shift pair is only:
+
+    mov    %r13d,%esi
+    shr    $0x5,%esi
+    shl    $0x2,%rsi
+
+The unfused form materializes both shift counts, uses variable-count shifts,
+sign-extends and round-trips the intermediate through the stack. The fused
+trace is 1,224 bytes versus 1,275 bytes and also keeps the resulting scaled
+address in a host register through the following load and store. Any sieve
+loss is consequently a secondary allocation/alignment effect or ordinary
+run variance, not bad local lowering.
+
+The verdict is that fusion's disappointing geomean is primarily a dynamic
+coverage problem. Where an important pattern is hot (`lbu-bne` in zlib), the
+templates are good and the gain is large. Most other rewrites, especially
+`auipc-addi`, occur in cold traces. The generic trie walk has a real roughly
+one-percent cost on branch-like formation-heavy execution, but is negligible
+on zlib and sieve and is not the dominant explanation for the lack of broad
+amd64 gains. Future candidates should be ranked by perf-weighted execution
+coverage and by the native instructions removed, not by static pair/triple
+counts alone. If matcher work is reduced, it should use a generic table-driven
+root transition or equivalent trie optimization, not opcode-specific checks.
+
+Raw perf data, maps, scripts, reports, actual generated traces, formation
+statistics, and the identical-binary drivers are under the same scratch
+directory. SHA-256 identities are:
+
+    factorial-results.json          799cf3e4c6550b208f5c01a51a81584076d8a147a2569a76bec43ebb19d1ea86
+    branch-factorial-results.json   7a68fd35ab471ea93f4e900661c56653faa3ed7f746b7fa6f2950f490cdf4027
+    perf archive                    fecbfb0eb39bb6b9caa13b5da3836001c30dc8a42e21eb10d21ce3c932d78295

@@ -9543,19 +9543,19 @@ Calls to `story` report semantic milestones; their formatting and all
 presentation-only calculations live in `prt-story.lua`, outside the
 algorithm snippets.
 
-A tournament opens to a fixed audience, gathers claim submissions, is
-sealed, and runs on the claims it sealed with. Before the mcycle
-tournament opens, the server accepts players subscribing to the agreed
-initial state hash until a *sealer* closes that phase, so the referee
-never needs to know how many players to expect. The mcycle tournament
-then opens to those subscribers. A player submits its computation hash’s
-two children and a standard `Proof` for the final state hash at the
-tree’s last leaf. The referee checks that the children join into the
-proof’s root and verifies the proof with `hash_tree.verify_slice()`, the
-same membership check `joinTournament` performs on chain
-(`validate_join` in `prt.lua`). `partition_claims` groups identical
-submissions by computation hash, subscribes every submitter to its
-claim, and sorts the resulting claims by computation hash, so the
+A tournament opens to a fixed audience, gathers claim commitments, and
+runs on the valid claims it received. Before the mcycle tournament
+opens, the server accepts players subscribing to the agreed initial
+state hash until a *sealer* closes that phase, so the referee never
+needs to know how many players to expect. The mcycle tournament then
+opens to those subscribers. A player submits its computation hash’s two
+children and a standard `Proof` for the final state hash at the tree’s
+last leaf. The referee checks that the children join into the proof’s
+root and verifies the proof with `hash_tree.verify_slice()`, the same
+membership check `joinTournament` performs on chain
+(`validate_claim_commitment` in `prt.lua`). `partition_claims` groups
+identical submissions by computation hash, subscribes every submitter to
+its claim, and sorts the resulting claims by computation hash, so the
 bracket is a pure function of the claim set, not of the order in which
 players happened to connect.
 
@@ -9680,7 +9680,7 @@ An mcycle match settles into a uarch tournament. The two claims part
 ways over what the state hash was after one period of one input, so each
 side must now defend a uarch claim over that period, whose final state
 is the mcycle leaf it committed to. The uarch tournament follows the
-same lifecycle as the mcycle one, open, submit, seal, run, with two
+same lifecycle as the mcycle one, open, submit, run, with two
 differences: its audience is the holders of the two disputed claims, and
 a claim may only join if its final state is one of the two contested
 values, the same restriction `validContestedFinalState` imposes on chain
@@ -9815,29 +9815,30 @@ holder resolves a request first, the referee counts the reply still owed
 by this connection as stale before assigning its next request, then
 drops that many replies from the stream. A tournament always opens to a
 fixed audience: subscribers to the agreed initial state hash for the
-mcycle one, and holders of the two disputed claims for a nested one. The
-referee asks the sealer to seal each tournament as it opens, and the
-submissions close once the seal arrives and every connection in the
-audience has submitted or closed (`open_tournament`). Claim operations
-authenticate themselves by proof, and sealing does not: it is the
-referee’s trusted orchestration, standing in for the clock the contracts
-use. The transport enforces that trust: a connection announces its role
-once, on its first line, the sealer is the connection that announced
-itself as such, and one seal request at a time is bound to it, so its
-next reply closes exactly the subscription or tournament phase awaiting
-that reply. The model thus assumes a process announces its role
-honestly, and a sealer that goes away fails the referee outright, since
-no tournament could ever close again. Nothing in the referee waits on
-the clock, and nothing depends on the order replies arrive in, not even
-which connections stay open. A claim with nobody left to answer for it
-is eliminated at once, which is all that ever happens to the claim of a
-player who walks away, and a claim anybody answers for survives. The
-narration of each match goes to its own file, and the tournament
-narrates each round in bracket order before and after its matches run,
-so the transcript is a pure function of the claim set, whatever order
-the replies arrive in over the network. The recipe below checks exactly
-that, by running the same tournament twice with the players launched in
-opposite orders and requiring identical transcripts.
+mcycle one, and holders of the two disputed claims for a nested one.
+Inside the demonstration server, submissions close once its trusted
+closing signal arrives and every connection in the audience has
+submitted or closed; this timing substitute is hidden below
+`open_tournament`. Claim operations authenticate themselves by proof,
+and sealing does not: it is the referee’s trusted orchestration,
+standing in for the clock the contracts use. The transport enforces that
+trust: a connection announces its role once, on its first line, the
+sealer is the connection that announced itself as such, and one seal
+request at a time is bound to it, so its next reply closes exactly the
+subscription or tournament phase awaiting that reply. The model thus
+assumes a process announces its role honestly, and a sealer that goes
+away fails the referee outright, since no tournament could ever close
+again. Nothing in the referee waits on the clock, and nothing depends on
+the order replies arrive in, not even which connections stay open. A
+claim with nobody left to answer for it is eliminated at once, which is
+all that ever happens to the claim of a player who walks away, and a
+claim anybody answers for survives. The narration of each match goes to
+its own file, and the tournament narrates each round in bracket order
+before and after its matches run, so the transcript is a pure function
+of the claim set, whatever order the replies arrive in over the network.
+The recipe below checks exactly that, by running the same tournament
+twice with the players launched in opposite orders and requiring
+identical transcripts.
 
 ### Running the tournament
 
@@ -9912,7 +9913,8 @@ each opens:
 lua5.4 prt.lua seal 127.0.0.1:8096
 ```
 
-The six subscribers commit claims, which are sealed into the tournament:
+The six subscribers commit claims, which are admitted into the
+tournament:
 
 ``` text
 Claim 0x1a22b0c7..., with final state 0xdd2e60cd..., joined.

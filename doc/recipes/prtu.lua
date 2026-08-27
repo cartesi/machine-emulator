@@ -935,11 +935,10 @@ function server_meta.__index.accept_subscribers(self, initial_hash)
     wait(self, entry)
 end
 
--- Opens a tournament to a fixed audience, asking each connection to submit a claim, and
--- returns the submissions once the sealer seals the tournament and every connection in the
--- audience has submitted or closed.
--- docs:begin open_tournament
-function server_meta.__index.open_tournament(self, conns, descriptor, ...)
+-- Collects claim submissions from a fixed audience. This transport primitive hides how the
+-- demonstration decides that submission time is over.
+-- docs:begin collect_submissions
+function server_meta.__index.collect_submissions(self, conns, descriptor, ...)
     local entry = {
         kind = "collect",
         response_schema = descriptor.response_schema,
@@ -951,7 +950,7 @@ function server_meta.__index.open_tournament(self, conns, descriptor, ...)
     request_seal(self, entry)
     return wait(self, entry).replies
 end
--- docs:end open_tournament
+-- docs:end collect_submissions
 
 -- Runs the referee: spawns its main logic, then drives the event loop until it is done.
 function server_meta.__index.run(self, main)

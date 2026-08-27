@@ -45,7 +45,6 @@ local prtu = require("prtu")
 local prt_story = require("prt-story")
 
 local keccak = cartesi.keccak256
-local hex = prtu.hex
 local new_match, valid_move, advance_match = prtu.new_match, prtu.valid_move, prtu.advance_match
 
 -- The seal role carries no dispute: it is the sealer, which closes the submissions of every
@@ -121,6 +120,17 @@ local function validate_join(witness, height)
     return { root = root, left = witness.left, right = witness.right, final_state = witness.proof.target_hash }
 end
 
+-- Orders binary hashes by their bytes, independent of the process locale.
+local function hash_less(a, b)
+    for i = 1, math.min(#a, #b) do
+        local ai, bi = a:byte(i), b:byte(i)
+        if ai ~= bi then
+            return ai < bi
+        end
+    end
+    return #a < #b
+end
+
 -- Turns the submissions to a tournament into its distinct claims, sorted by root hash. Each
 -- valid submission is kept only if `accept` allows it (a uarch tournament accepts only the two
 -- contested finals) and merged with the identical claim any other player submitted, and its
@@ -132,18 +142,17 @@ local function distinct_claims(submissions, height, accept)
     for _, submission in ipairs(submissions) do
         local ok, claim = pcall(validate_join, submission.value, height)
         if ok and (not accept or accept(claim)) then
-            local root_hex = hex(claim.root)
-            if not by_root[root_hex] then
-                by_root[root_hex] = claim
+            if not by_root[claim.root] then
+                by_root[claim.root] = claim
                 claims[#claims + 1] = claim
             end
-            server:add_holder(root_hex, submission.connection)
+            server:add_holder(claim.root, submission.connection)
         elseif not ok then
             stderrf("a submission failed validation: %s\n", tostring(claim))
         end
     end
     table.sort(claims, function(a, b)
-        return hex(a.root) < hex(b.root)
+        return hash_less(a.root, b.root)
     end)
     return claims
 end
@@ -184,7 +193,7 @@ local function wait_for_agreed_hash(m, tournament, leaf_index)
         return tournament.initial_hash
     end
     for _, claim in ipairs({ m.one, m.two }) do
-        local conns = server:subscribers({ hex(claim.root) })
+        local conns = server:subscribers({ claim.root })
         local move = server:accept_first(conns, function(v)
             return valid_claim_proof(v, leaf_index - 1, tournament.height, claim.root) and v
         end, operations.prove, claim.root, leaf_index - 1)
@@ -204,7 +213,7 @@ end
 local function settle_uarch_match(tournament, m, transition_index, agree_hash, d1, d2)
     local disputed_period = tournament.disputed_period
     story.transition_opened(tournament, m, transition_index)
-    local conns = server:subscribers({ hex(m.one.root), hex(m.two.root) })
+    local conns = server:subscribers({ m.one.root, m.two.root })
     local hash = server:accept_first(conns, function(v)
         return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
     end, operations.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
@@ -226,7 +235,7 @@ local run_tournament
 local function open_uarch_tournament(parent, m, disputed_period, agree_hash, d1, d2)
     local submissions = server:open_tournament(
         m.tag,
-        server:subscribers({ hex(m.one.root), hex(m.two.root) }),
+        server:subscribers({ m.one.root, m.two.root }),
         operations.commit_uarch_claim,
         disputed_period.input_index,
         disputed_period.period_index,
@@ -288,7 +297,7 @@ end
 -- docs:begin run_match
 local function run_match(tournament, m)
     while true do
-        local conns = server:subscribers({ hex(m.turn.root) })
+        local conns = server:subscribers({ m.turn.root })
         local move = server:accept_first(conns, function(v)
             return valid_move(m, v) and v
         end, operations.advance, m.turn.root, m.height, m.index, m.left_node)
@@ -434,7 +443,7 @@ end
 -- docs:begin wait_for_result
 local function wait_for_result(winner)
     story.tournament_winner(winner)
-    local conns = server:subscribers({ hex(winner.root) })
+    local conns = server:subscribers({ winner.root })
     local result = server:accept_first(conns, function(v)
         return verify_result(v, winner.final_state) and v
     end, operations.prove_result)

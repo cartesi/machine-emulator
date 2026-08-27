@@ -9642,7 +9642,7 @@ isolated dispute over. A claim nobody opens loses by default:
 ``` lua
 local function run_match(tournament, m)
     while true do
-        local conns = server:subscribers({ hex(m.turn.root) })
+        local conns = server:subscribers({ m.turn.root })
         local move = server:accept_first(conns, function(v)
             return valid_move(m, v) and v
         end, operations.advance, m.turn.root, m.height, m.index, m.left_node)
@@ -9732,7 +9732,7 @@ whoever ends up supplying the winning log:
 local function settle_uarch_match(tournament, m, transition_index, agree_hash, d1, d2)
     local disputed_period = tournament.disputed_period
     story.transition_opened(tournament, m, transition_index)
-    local conns = server:subscribers({ hex(m.one.root), hex(m.two.root) })
+    local conns = server:subscribers({ m.one.root, m.two.root })
     local hash = server:accept_first(conns, function(v)
         return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
     end, operations.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)

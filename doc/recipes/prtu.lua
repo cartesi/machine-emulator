@@ -29,8 +29,6 @@ local function short_hash(hash)
     return cartesi.tohex(hash):sub(1, 10) .. "..."
 end
 
-local hex, unhex = cartesi.tohex, cartesi.fromhex
-
 --------------------------------------------------------------------------------
 -- Narration
 --
@@ -561,7 +559,7 @@ local function new_server(dispatcher, listener)
         dispatcher = dispatcher,
         listener = listener,
         connections = {},
-        holders = {}, -- claim root hex -> set of connections that hold (can defend) it
+        holders = {}, -- binary claim root -> set of connections that hold (can defend) it
         active = {}, -- set of requests whose coroutines are waiting
         open_tournaments = {}, -- tournaments in creation order, including ones already sealed
         seal_queue = {}, -- tournaments waiting for the sealer, in creation order
@@ -835,20 +833,20 @@ function server_meta.__index.accept(self)
 end
 
 -- Records that a connection holds a claim, so it is asked about that claim's matches.
-function server_meta.__index.add_holder(self, root_hex, connection)
-    local set = self.holders[root_hex]
+function server_meta.__index.add_holder(self, root, connection)
+    local set = self.holders[root]
     if not set then
         set = {}
-        self.holders[root_hex] = set
+        self.holders[root] = set
     end
     set[connection] = true
 end
 
 -- The live connections that hold any of the given claim roots.
-function server_meta.__index.subscribers(self, root_hexes)
+function server_meta.__index.subscribers(self, roots)
     local seen, list = {}, {}
-    for _, root_hex in ipairs(root_hexes) do
-        local set = self.holders[root_hex]
+    for _, root in ipairs(roots) do
+        local set = self.holders[root]
         if set then
             for connection in pairs(set) do
                 if not connection.dead and not seen[connection] then
@@ -949,8 +947,6 @@ return {
     SCHEMA_DICT = SCHEMA_DICT,
     operation = operation,
     short_hash = short_hash,
-    hex = hex,
-    unhex = unhex,
     narrate = narrate,
     push_run = push_run,
     slice_runs = slice_runs,

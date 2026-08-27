@@ -14,19 +14,21 @@ local push_run, slice_runs = prtu.push_run, prtu.slice_runs
 local new_tree = prtu.new_tree
 
 -- The request and response schemas this game adds to the shared dictionary.
-prtu.SCHEMA_DICT.JoinRequest = {}
+prtu.SCHEMA_DICT.JoinRequest = { items = {} }
 prtu.SCHEMA_DICT.JoinResponse = {
     left = "Base64",
     right = "Base64",
     proof = "Proof",
 }
-prtu.SCHEMA_DICT.AdvanceRequest = { root = "Base64", opponent_left = "Base64" }
+prtu.SCHEMA_DICT.AdvanceRequest = { items = { "Base64", "Default", "Default", "Base64" } }
 prtu.SCHEMA_DICT.AdvanceResponse = { l = "Base64", r = "Base64", nl = "Base64", nr = "Base64" }
-prtu.SCHEMA_DICT.ProveRequest = { root = "Base64" }
+prtu.SCHEMA_DICT.ProveRequest = { items = { "Base64", "Default" } }
 prtu.SCHEMA_DICT.ProveResponse = "Proof"
-prtu.SCHEMA_DICT.CommitUarchClaimRequest = { d1 = "Base64", d2 = "Base64" }
+prtu.SCHEMA_DICT.CommitUarchClaimRequest = {
+    items = { "Default", "Default", "Base64", "Base64" },
+}
 prtu.SCHEMA_DICT.CommitUarchClaimResponse = "JoinResponse"
-prtu.SCHEMA_DICT.TransitionLogsRequest = {}
+prtu.SCHEMA_DICT.TransitionLogsRequest = { items = { "Default", "Default", "Default" } }
 prtu.SCHEMA_DICT.TransitionLogsResponse = {
     send_cmio_log = "AccessLog",
     step_log = "AccessLog",
@@ -34,26 +36,23 @@ prtu.SCHEMA_DICT.TransitionLogsResponse = {
 }
 -- The epoch result: an output, its proof in the outputs Merkle tree, and the proof tying that
 -- tree's root into the winning final state.
-prtu.SCHEMA_DICT.ProveResultRequest = {}
+prtu.SCHEMA_DICT.ProveResultRequest = { items = {} }
 prtu.SCHEMA_DICT.ProveResultResponse = {
     output = "Base64",
     output_proof = "Proof",
     outputs_merkle_root_proof = "Proof",
 }
-prtu.SCHEMA_DICT.FinishRequest = {}
+prtu.SCHEMA_DICT.FinishRequest = { items = {} }
 prtu.SCHEMA_DICT.FinishResponse = "Default"
 
-local OPERATION_SCHEMAS = {
-    join = { request_schema = "JoinRequest", response_schema = "JoinResponse" },
-    advance = { request_schema = "AdvanceRequest", response_schema = "AdvanceResponse" },
-    prove = { request_schema = "ProveRequest", response_schema = "ProveResponse" },
-    commit_uarch_claim = {
-        request_schema = "CommitUarchClaimRequest",
-        response_schema = "CommitUarchClaimResponse",
-    },
-    transition_logs = { request_schema = "TransitionLogsRequest", response_schema = "TransitionLogsResponse" },
-    prove_result = { request_schema = "ProveResultRequest", response_schema = "ProveResultResponse" },
-    finish = { request_schema = "FinishRequest", response_schema = "FinishResponse" },
+local OPERATIONS = {
+    join = prtu.operation("join", "JoinRequest", "JoinResponse"),
+    advance = prtu.operation("advance", "AdvanceRequest", "AdvanceResponse"),
+    prove = prtu.operation("prove", "ProveRequest", "ProveResponse"),
+    commit_uarch_claim = prtu.operation("commit_uarch_claim", "CommitUarchClaimRequest", "CommitUarchClaimResponse"),
+    transition_logs = prtu.operation("transition_logs", "TransitionLogsRequest", "TransitionLogsResponse"),
+    prove_result = prtu.operation("prove_result", "ProveResultRequest", "ProveResultResponse"),
+    finish = prtu.operation("finish", "FinishRequest", "FinishResponse"),
 }
 
 local function stderrf(fmt, ...)
@@ -432,21 +431,21 @@ end
 -- returning its two children l and r, and, above the leaves, the two children nl and nr of
 -- the child the walk descends into. The descent goes left when l differs from the opponent's
 -- exposed left child, which the referee passes as opp_left.
-function ops.advance(player, arguments)
-    local tree = held(player, arguments.root)
-    local l, r = tree:children(arguments.height, arguments.index)
+function ops.advance(player, root, height, index, opponent_left)
+    local tree = held(player, root)
+    local l, r = tree:children(height, index)
     local move = { l = l, r = r }
-    if arguments.height > 1 then
-        local descend_left = l ~= arguments.opponent_left
-        local child_index = descend_left and 2 * arguments.index or 2 * arguments.index + 1
-        move.nl, move.nr = tree:children(arguments.height - 1, child_index)
+    if height > 1 then
+        local descend_left = l ~= opponent_left
+        local child_index = descend_left and 2 * index or 2 * index + 1
+        move.nl, move.nr = tree:children(height - 1, child_index)
     end
     return move
 end
 
 -- The proof of one leaf of one of the player's claims.
-function ops.prove(player, arguments)
-    return held(player, arguments.root):prove(arguments.leaf_index)
+function ops.prove(player, root, leaf_index)
+    return held(player, root):prove(leaf_index)
 end
 
 -- Joins the uarch tournament over one mcycle period that the player's mcycle claim is
@@ -456,20 +455,19 @@ end
 -- and the period index are 0-based, as the referee counts them. A holder whose uarch claim
 -- ends in neither contested value cannot defend its parent claim, and dies on the
 -- contradiction.
-function ops.commit_uarch_claim(player, arguments)
-    local input_index, period_index = arguments.input_index, arguments.period_index
+function ops.commit_uarch_claim(player, input_index, period_index, d1, d2)
     stderrf("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
     player.uarch_claim = player.make_uarch_tree(player, input_index + 1, period_index)
     local witness = join_witness(player.uarch_claim)
     local final_state = witness.proof.target_hash
     assert(
-        final_state == arguments.d1 or final_state == arguments.d2,
+        final_state == d1 or final_state == d2,
         string.format(
             "%s: uarch final %s matches neither contested final %s nor %s",
             player.label,
             short_hash(final_state),
-            short_hash(arguments.d1),
-            short_hash(arguments.d2)
+            short_hash(d1),
+            short_hash(d2)
         )
     )
     stderrf("%s: uarch claim ready\n", player.label)
@@ -482,9 +480,7 @@ end
 -- The transition closing an instruction executes one more step, by then a fixed point, and
 -- the reset. Every other transition is an ordinary uarch step.
 -- docs:begin transition_logs
-function ops.transition_logs(player, arguments)
-    local input_index, period_index, transition_index =
-        arguments.input_index, arguments.period_index, arguments.transition_index
+function ops.transition_logs(player, input_index, period_index, transition_index)
     local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
@@ -559,7 +555,7 @@ local function new_player(label, inputs)
     local player = {
         label = label,
         inputs = inputs,
-        operation_schemas = OPERATION_SCHEMAS,
+        operations = OPERATIONS,
         boundaries = {},
         fixed_leaves = {},
         make_mcycle_tree = function(self)
@@ -693,6 +689,7 @@ end
 
 M.TEMPLATE = TEMPLATE
 M.new_player = new_player
+M.OPERATIONS = OPERATIONS
 M.make_quitter = make_quitter
 M.make_forger = make_forger
 M.make_tamperer = make_tamperer

@@ -9,7 +9,7 @@ local geometry = require("prt-geometry")
 local prtu = require("prtu")
 
 local keccak = cartesi.keccak256
-local short_hash = prtu.short_hash
+local format_short_hash = prtu.format_short_hash
 local push_run, slice_runs = prtu.push_run, prtu.slice_runs
 local new_tree = prtu.new_tree
 
@@ -47,20 +47,30 @@ prtu.SCHEMA_DICT.FinishRequest = { items = {} }
 prtu.SCHEMA_DICT.FinishResponse = "Default"
 
 local REQUESTS = {
-    commit_mcycle_claim = prtu.request("commit_mcycle_claim", "CommitMcycleClaimRequest", "CommitMcycleClaimResponse"),
-    advance = prtu.request("advance", "AdvanceRequest", "AdvanceResponse"),
-    prove_state = prtu.request("prove_state", "ProveStateRequest", "ProveStateResponse"),
-    commit_uarch_claim = prtu.request("commit_uarch_claim", "CommitUarchClaimRequest", "CommitUarchClaimResponse"),
-    transition_logs = prtu.request("transition_logs", "TransitionLogsRequest", "TransitionLogsResponse"),
-    prove_result = prtu.request("prove_result", "ProveResultRequest", "ProveResultResponse"),
-    finish = prtu.request("finish", "FinishRequest", "FinishResponse"),
+    commit_mcycle_claim = prtu.define_request(
+        "commit_mcycle_claim",
+        "CommitMcycleClaimRequest",
+        "CommitMcycleClaimResponse"
+    ),
+    advance = prtu.define_request("advance", "AdvanceRequest", "AdvanceResponse"),
+    prove_state = prtu.define_request("prove_state", "ProveStateRequest", "ProveStateResponse"),
+    commit_uarch_claim = prtu.define_request(
+        "commit_uarch_claim",
+        "CommitUarchClaimRequest",
+        "CommitUarchClaimResponse"
+    ),
+    provide_transition_logs = prtu.define_request(
+        "provide_transition_logs",
+        "TransitionLogsRequest",
+        "TransitionLogsResponse"
+    ),
+    prove_result = prtu.define_request("prove_result", "ProveResultRequest", "ProveResultResponse"),
+    finish = prtu.define_request("finish", "FinishRequest", "FinishResponse"),
 }
 
-local function stderrf(fmt, ...)
+local function write_stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
 end
-
-local TEMPLATE = "rolling-calculator-template"
 
 --------------------------------------------------------------------------------
 -- Geometry
@@ -95,10 +105,10 @@ end
 
 -- Instantiates the rolling calculator template on its own freshly spawned server. The
 -- template is stored at its first manual yield, standing ready for the epoch's first input.
-local function new_remote_machine()
+local function new_remote_machine(template)
     local server = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
     server:set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
-    return server(TEMPLATE)
+    return server(template)
 end
 
 -- Runs a machine toward the target mcycle, resuming through automatic yields until it reaches
@@ -212,7 +222,7 @@ end
 -- of its boundary, the recorded revert state, exactly as a Cartesi Node rolls back.
 -- docs:begin build_mcycle_claim
 local function build_mcycle_claim(player)
-    local machine = new_remote_machine()
+    local machine = new_remote_machine(player.template)
     local runs = {}
     local filled = 0
     local epoch_pad_entry
@@ -380,19 +390,19 @@ end
 local handlers = {}
 
 -- The claim in the player's lineage with the given root.
-local function held(player, computation_hash)
+local function get_claim_tree(player, computation_hash)
     for _, tree in ipairs({ player.mcycle_claim, player.uarch_claim }) do
-        if tree:root() == computation_hash then
+        if tree:get_root() == computation_hash then
             return tree
         end
     end
-    error("asked about a claim this player does not hold: " .. short_hash(computation_hash))
+    error("asked about a claim this player does not hold: " .. format_short_hash(computation_hash))
 end
 
 -- The witness for joining with a claim: the computation hash's two children and the standard proof of its
 -- final state, the last leaf.
-local function commitment_witness(tree)
-    local left, right = tree:children(tree.height, 0)
+local function make_commitment_witness(tree)
+    local left, right = tree:get_children(tree.height, 0)
     return { left = left, right = right, proof = tree:prove((1 << tree.height) - 1) }
 end
 
@@ -400,14 +410,14 @@ end
 -- transcript can be read against the players, without the referee ever narrating who holds
 -- what.
 function handlers.commit_mcycle_claim(player)
-    stderrf("%s: building mcycle claim\n", player.label)
+    write_stderr("%s: building mcycle claim\n", player.label)
     player.mcycle_claim = player.make_mcycle_tree(player)
-    local witness = commitment_witness(player.mcycle_claim)
-    stderrf(
+    local witness = make_commitment_witness(player.mcycle_claim)
+    write_stderr(
         "%s: posted claim %s with final state %s\n",
         player.label,
-        short_hash(player.mcycle_claim:root()),
-        short_hash(witness.proof.target_hash)
+        format_short_hash(player.mcycle_claim:get_root()),
+        format_short_hash(witness.proof.target_hash)
     )
     return witness
 end
@@ -417,20 +427,20 @@ end
 -- the child the walk descends into. The descent goes left when l differs from the opponent's
 -- exposed left child, which the referee passes as opp_left.
 function handlers.advance(player, computation_hash, height, index, opponent_left)
-    local tree = held(player, computation_hash)
-    local l, r = tree:children(height, index)
+    local tree = get_claim_tree(player, computation_hash)
+    local l, r = tree:get_children(height, index)
     local move = { l = l, r = r }
     if height > 1 then
         local descend_left = l ~= opponent_left
         local child_index = descend_left and 2 * index or 2 * index + 1
-        move.nl, move.nr = tree:children(height - 1, child_index)
+        move.nl, move.nr = tree:get_children(height - 1, child_index)
     end
     return move
 end
 
 -- Proves the state at one index of one of the player's computation hashes.
 function handlers.prove_state(player, computation_hash, state_index)
-    return held(player, computation_hash):prove(state_index)
+    return get_claim_tree(player, computation_hash):prove(state_index)
 end
 
 -- Joins the uarch tournament over one mcycle period that the player's mcycle claim is
@@ -441,21 +451,21 @@ end
 -- ends in neither contested value cannot defend its parent claim, and dies on the
 -- contradiction.
 function handlers.commit_uarch_claim(player, input_index, period_index, claim1_next_hash, claim2_next_hash)
-    stderrf("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
+    write_stderr("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
     player.uarch_claim = player.make_uarch_tree(player, input_index + 1, period_index)
-    local witness = commitment_witness(player.uarch_claim)
+    local witness = make_commitment_witness(player.uarch_claim)
     local final_state = witness.proof.target_hash
     assert(
         final_state == claim1_next_hash or final_state == claim2_next_hash,
         string.format(
             "%s: uarch final %s matches neither contested final %s nor %s",
             player.label,
-            short_hash(final_state),
-            short_hash(claim1_next_hash),
-            short_hash(claim2_next_hash)
+            format_short_hash(final_state),
+            format_short_hash(claim1_next_hash),
+            format_short_hash(claim2_next_hash)
         )
     )
-    stderrf("%s: uarch claim ready\n", player.label)
+    write_stderr("%s: uarch claim ready\n", player.label)
     return witness
 end
 
@@ -464,8 +474,8 @@ end
 -- input boundary includes the input, when the epoch has one, before the first uarch step.
 -- The transition closing an instruction executes one more step, by then a fixed point, and
 -- the reset. Every other transition is an ordinary uarch step.
--- docs:begin transition_logs
-function handlers.transition_logs(player, input_index, period_index, transition_index)
+-- docs:begin provide_transition_logs
+function handlers.provide_transition_logs(player, input_index, period_index, transition_index)
     local mcycle_offset = transition_index >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
@@ -484,7 +494,7 @@ function handlers.transition_logs(player, input_index, period_index, transition_
     end
     return { step_log = machine:log_step_uarch() }
 end
--- docs:end transition_logs
+-- docs:end provide_transition_logs
 
 -- The epoch result, proving the epoch's output against the final state a claim commits to. The
 -- player re-runs the whole epoch on a fresh machine, folding each accepted input's outputs into
@@ -494,7 +504,7 @@ end
 -- Once the epoch closes, the frontier proves the last output against the final state.
 -- docs:begin prove_result
 function handlers.prove_result(player)
-    local machine = new_remote_machine()
+    local machine = new_remote_machine(player.template)
     local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     local frontier = hash_tree.frontier_copy(genesis_frontier)
     local outputs, leaves, root_hash_proof = {}, {}, nil
@@ -536,10 +546,11 @@ end
 
 -- A player bundles the game's operations and their schemas with the machines it builds along
 -- the way.
-local function new_player(label, inputs)
+local function new_player(label, inputs, template)
     local player = {
         label = label,
         inputs = inputs,
+        template = template,
         requests = REQUESTS,
         boundaries = {},
         fixed_leaves = {},
@@ -618,7 +629,7 @@ local function make_fabulist(player, input_index, leaf_offset)
     -- mcycle claim: splice the patched entry into the honest runs and patch its refinement
     local entry = global_leaf >> LOG2_MCYCLE_BUNDLE
     local leaf_in_entry = global_leaf & ((1 << LOG2_MCYCLE_BUNDLE) - 1)
-    local function patched_refine_mcycle(self)
+    local function refine_patched_mcycle_claim(self)
         local runs = slice_runs(refine_mcycle_claim(self, entry), 0, 1 << LOG2_MCYCLE_BUNDLE)
         local before = slice_runs(runs, 0, leaf_in_entry)
         push_run(before, fake, 1)
@@ -629,7 +640,7 @@ local function make_fabulist(player, input_index, leaf_offset)
     end
     player.make_mcycle_tree = function(self)
         local runs = build_mcycle_claim(self)
-        local patched_entry = new_tree(LOG2_MCYCLE_BUNDLE, 0, patched_refine_mcycle(self), nil):root()
+        local patched_entry = new_tree(LOG2_MCYCLE_BUNDLE, 0, refine_patched_mcycle_claim(self), nil):get_root()
         local spliced = slice_runs(runs, 0, entry)
         push_run(spliced, patched_entry, 1)
         for _, run in ipairs(slice_runs(runs, entry + 1, MCYCLE_ENTRIES - entry - 1)) do
@@ -637,7 +648,7 @@ local function make_fabulist(player, input_index, leaf_offset)
         end
         return new_tree(MCYCLE_HEIGHT, LOG2_MCYCLE_BUNDLE, spliced, function(_, e)
             if e == entry then
-                return patched_refine_mcycle(self)
+                return refine_patched_mcycle_claim(self)
             end
             return refine_mcycle_claim(self, e)
         end)
@@ -646,7 +657,7 @@ local function make_fabulist(player, input_index, leaf_offset)
     local lie_input, lie_period = input_index + 1, leaf_offset
     local last_entry = (1 << (UARCH_HEIGHT - LOG2_UARCH_BUNDLE)) - 1
     local last_in_entry = (1 << LOG2_UARCH_BUNDLE) - 1
-    local function patched_refine_uarch(self)
+    local function refine_patched_uarch_claim(self)
         local runs = refine_uarch_claim(self, lie_input, lie_period, last_entry)
         local before = slice_runs(runs, 0, last_in_entry)
         push_run(before, fake, 1)
@@ -658,21 +669,20 @@ local function make_fabulist(player, input_index, leaf_offset)
             return honest_make_uarch_tree(self, input_index_1, period_index)
         end
         local runs = build_uarch_claim(self, lie_input, lie_period)
-        local patched_entry = new_tree(LOG2_UARCH_BUNDLE, 0, patched_refine_uarch(self), nil):root()
+        local patched_entry = new_tree(LOG2_UARCH_BUNDLE, 0, refine_patched_uarch_claim(self), nil):get_root()
         local total = 1 << (UARCH_HEIGHT - LOG2_UARCH_BUNDLE)
         local spliced = slice_runs(runs, 0, last_entry)
         push_run(spliced, patched_entry, 1)
         assert(#spliced > 0 and total == last_entry + 1)
         return new_tree(UARCH_HEIGHT, LOG2_UARCH_BUNDLE, spliced, function(_, e)
             if e == last_entry then
-                return patched_refine_uarch(self)
+                return refine_patched_uarch_claim(self)
             end
             return refine_uarch_claim(self, lie_input, lie_period, e)
         end)
     end
 end
 
-M.TEMPLATE = TEMPLATE
 M.new_player = new_player
 M.REQUESTS = REQUESTS
 M.make_quitter = make_quitter

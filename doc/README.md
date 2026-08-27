@@ -9488,7 +9488,7 @@ claim tree therefore stores *runs*, each a node hash and how many
 consecutive times it appears. The root of a subtree holding
 2<sup>k</sup> copies of the same node takes k hashes by repeated
 squaring, cached per node, so a run of any length costs nothing to stand
-under a query (`runs_node` in `prtu.lua`).
+under a query (`get_runs_node` in `prtu.lua`).
 
 Second, the stored nodes need not be the leaves. The machine can deliver
 the sampled hashes in *bundles*, one subtree root per 2<sup>4</sup>
@@ -9499,7 +9499,7 @@ inputs of our epoch fit in about nine thousand stored mcycle entries,
 and one uarch span in about three thousand. When a dispute descends
 below a stored entry, the player recovers the leaves under that one
 entry by re-running a fork of the input’s boundary machine through the
-entry’s window, and caches the result (`tree_node` in `prtu.lua`). Only
+entry’s window, and caches the result (`get_node` in `prtu.lua`). Only
 the entries a dispute actually visits are ever expanded, and each costs
 one machine re-run.
 
@@ -9531,9 +9531,9 @@ way its matches settle. Everything hard, the accept loop, the wire, the
 coroutine scheduling, is hidden in the referee server:
 
 ``` lua
-local function run_referee(referee, dapp_contract)
-    server:accept_subscribers(referee.initial_hash)
-    local winner = run_tournament(open_mcycle_tournament(referee, dapp_contract))
+local function run_referee(dapp_contract)
+    server:accept_subscribers(dapp_contract.initial_hash)
+    local winner = run_tournament(open_mcycle_tournament(dapp_contract))
     assert(winner, "the tournament ended with no winner")
     wait_for_result(winner)
 end
@@ -9594,7 +9594,7 @@ node to open and, above the leaves, the grandchildren join into the
 child the walk descends into:
 
 ``` lua
-local function valid_move(match, move)
+local function is_valid_move(match, move)
     if keccak(move.l, move.r) ~= match.other_parent then
         return false
     end
@@ -9651,19 +9651,19 @@ isolated dispute over. A claim nobody opens loses by default:
 ``` lua
 local function run_match(tournament, match)
     while true do
-        local conns = server:subscribers({ match.turn_claim.computation_hash })
+        local conns = server:get_subscribers({ match.turn_claim.computation_hash })
         local move = server:accept_first(conns, function(v)
-            return valid_move(match, v) and v
+            return is_valid_move(match, v) and v
         end, REQUESTS.advance, match.turn_claim.computation_hash, match.height, match.index, match.left_node)
         if not move then
-            story.default_win(match)
+            story.report_default_win(match)
             return match.other_claim
         end
         local dispute = advance_match(match, move)
         if dispute then
             return settle_dispute(tournament, match, dispute)
         end
-        story.match_advanced(match)
+        story.report_match_progress(match)
     end
 end
 ```
@@ -9704,7 +9704,7 @@ local function settle_mcycle_match(
         open_uarch_tournament(tournament, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
     local uarch_winner = run_tournament(uarch_tournament)
     local survivor = uarch_winner and (uarch_winner.final_state == claim1_next_hash and match.claim1 or match.claim2)
-    story.uarch_tournament_settled(match, uarch_winner, survivor)
+    story.report_uarch_result(match, uarch_winner, survivor)
     return survivor
 end
 ```
@@ -9747,15 +9747,15 @@ whoever ends up supplying the winning log:
 ``` lua
 local function settle_uarch_match(tournament, match, transition_index, current_hash, claim1_next_hash, claim2_next_hash)
     local disputed_period = tournament.disputed_period
-    story.transition_opened(tournament, match, transition_index)
-    local conns = server:subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
+    story.report_transition(tournament, match, transition_index)
+    local conns = server:get_subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
     local next_hash = server:accept_first(conns, function(v)
         return verify_transition(tournament.dapp_contract, disputed_period, transition_index, current_hash, v)
-    end, REQUESTS.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
+    end, REQUESTS.provide_transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
     local winner = next_hash == claim1_next_hash and match.claim1
         or next_hash == claim2_next_hash and match.claim2
         or nil
-    story.transition_settled(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
+    story.report_transition_result(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
     return winner
 end
 ```
@@ -9764,7 +9764,7 @@ The logs come from a holder of either claim, produced by positioning a
 fresh fork at the transition and logging it:
 
 ``` lua
-function handlers.transition_logs(player, input_index, period_index, transition_index)
+function handlers.provide_transition_logs(player, input_index, period_index, transition_index)
     local mcycle_offset = transition_index >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())

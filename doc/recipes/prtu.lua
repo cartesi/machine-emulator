@@ -35,7 +35,7 @@ local hex, unhex = cartesi.tohex, cartesi.fromhex
 --------------------------------------------------------------------------------
 -- Narration
 --
--- The referee narrates the tournament into tagged files, one per subject (the claims, the
+-- The referee narrates the tournament into tagged files, one per story tag (the claims, the
 -- tournament, each match, the verdict), so the rendered walkthrough can print one story
 -- whole and reduce another to its first and last few lines. Matches run concurrently, so
 -- several files are open at once. Every line echoes to stdout, so a live run still reads as
@@ -391,11 +391,10 @@ end
 -- Wire protocol
 --
 -- Each message is one line, the compact JSON of a Lua value by cartesi.tojson plus a
--- newline. The referee sends requests {subject, code, schema}, where subject names what the
--- move is about (a claim, or a match at a height) and code is a Lua snippet the player runs
--- against its own state. A player answers {subject, label, value}, the value encoded under
--- the schema the request named so binary hashes, proofs, and access logs survive the trip.
--- The valid move for a subject is unique, fixed by the claim's committed tree, so a claim
+-- newline. The referee sends requests {code, schema}, where code is a Lua snippet the player
+-- runs against its own state. A player answers {label, value}, the value encoded under the
+-- schema the request named so binary hashes, proofs, and access logs survive the trip.
+-- The valid move for an operation is unique, fixed by the claim's committed tree, so a claim
 -- cannot be misrepresented and it never matters who sends a move: the referee takes the first
 -- move that proves itself and ignores the rest. The label rides along only for tracing.
 --------------------------------------------------------------------------------
@@ -404,7 +403,7 @@ end
 local SCHEMA_DICT = {}
 
 -- The envelope schema for replies under a named value schema, registered on first use, so
--- both sides encode {subject, label, value} with the value's binary fields transformed.
+-- both sides encode {label, value} with the value's binary fields transformed.
 local function reply_schema(schema)
     if not schema then
         return nil
@@ -458,8 +457,8 @@ end
 
 -- The player side is a plain blocking loop: announce itself, then read a request, run its
 -- snippet with the player as its environment, and answer with the value the snippet produces,
--- tagged by the request's subject and stamped with the player's label (which the referee
--- never uses to decide). Every request is routed to a holder of the claim it is about, so a snippet that
+-- stamped with the player's label (which the referee never uses to decide). Every request is
+-- routed to a holder of the claim it is about, so a snippet that
 -- produces nothing, or fails, is a bug in the player, and the process dies with it: the
 -- referee sees the connection close, and the claim loses its holder. The loop also ends when
 -- the game releases the player, or when the referee goes away.
@@ -467,7 +466,7 @@ end
 local function serve(player, server_address)
     local host, port = server_address:match("^(.-):(%d+)$")
     player.connection = assert(socket.connect(host, tonumber(port)))
-    local hello = player.hello or cartesi.tojson({ subject = "player", label = player.label }, -1)
+    local hello = player.hello or cartesi.tojson({ role = "player", label = player.label }, -1)
     assert(player.connection:send(hello .. "\n"))
     repeat
         local line = player.connection:receive("*l")
@@ -479,7 +478,7 @@ local function serve(player, server_address)
         local chunk = assert(load(request.code, "=referee", "t", player))
         local value = chunk()
         assert(value ~= nil, "the request produced no value")
-        local reply = { subject = request.subject, label = player.label, value = value }
+        local reply = { label = player.label, value = value }
         local encoded = cartesi.tojson(reply, -1, reply_schema(request.schema), SCHEMA_DICT)
         trace_wire("to referee", player.label, encoded)
         assert(player.connection:send(encoded .. "\n"))
@@ -495,7 +494,7 @@ end
 local function new_sealer()
     local sealer = {
         label = "sealer",
-        hello = cartesi.tojson({ subject = "sealer" }, -1),
+        hello = cartesi.tojson({ role = "sealer" }, -1),
         seal = function(_, id)
             return id
         end,
@@ -536,7 +535,10 @@ local function new_server(dispatcher, listener)
         listener = listener,
         connections = {},
         holders = {}, -- claim root hex -> set of connections that hold (can defend) it
-        parked = {}, -- subject -> the request parked on it
+        active = {}, -- set of requests whose coroutines are waiting
+        open_tournaments = {}, -- tournaments in creation order, including ones already sealed
+        seal_queue = {}, -- tournaments waiting for the sealer, in creation order
+        seal_active = nil, -- the one tournament currently being sent to the sealer
         sealer = nil, -- the sealer's connection, once it announces itself
         done = false,
     }, server_meta)
@@ -555,24 +557,27 @@ local function enqueue(self, connection, line)
     end
 end
 
--- Resolves a parked request: forgets its subject and hands the result to its coroutine.
+-- Resolves the request globally and hands the result to its coroutine. Individual connections
+-- may still be unanswered and owe replies; send_request accounts for each such reply before
+-- assigning that connection new work.
 local function resolve(self, entry, result)
-    self.parked[entry.subject] = nil
+    entry.resolved = true
+    self.active[entry] = nil
     if entry.cortn then
         self.dispatcher:schedule(entry.cortn, result)
     end
 end
 
--- Re-examines a parked request after a reply, a closed connection, or a seal. A move request
+-- Re-examines a request after a reply, a closed connection, or a seal. A move request
 -- resolves as soon as it has taken a valid value, and otherwise once every connection asked
--- has answered or closed, with nothing. A collection stays parked while a connection is
+-- has answered or closed, with nothing. A collection stays active while a connection is
 -- still to answer, and a tournament's submissions also until the seal, then resolves with
--- the replies gathered. Later replies to a resolved request find no subject and are ignored.
+-- the replies gathered.
 local function settle(self, entry)
-    if self.parked[entry.subject] ~= entry then
+    if not self.active[entry] then
         return
     end
-    if entry.kind == "ask" then
+    if entry.kind == "accept_first" then
         if entry.value ~= nil or not next(entry.pending) then
             resolve(self, entry, { value = entry.value })
         end
@@ -583,7 +588,7 @@ end
 
 -- Drops a connection from every request waiting on it, settling those it was the last of.
 local function forget_connection(self, connection)
-    for _, entry in pairs(self.parked) do
+    for entry in pairs(self.active) do
         if entry.pending[connection] then
             entry.pending[connection] = nil
             settle(self, entry)
@@ -602,27 +607,52 @@ local function close_connection(self, connection)
     end
 end
 
--- Encodes a request line: the subject the move is about, the snippet the player runs, and the
--- reply schema.
-local function request_line(subject, schema, code, ...)
-    return cartesi.tojson({ subject = subject, code = string.format(code, ...), schema = schema }, -1) .. "\n"
+-- Encodes the snippet the player runs and the schema of its reply.
+local function request_line(schema, code, ...)
+    return cartesi.tojson({ code = string.format(code, ...), schema = schema }, -1) .. "\n"
 end
 
--- Asks the sealer to seal a tournament, once there is a sealer to ask. The request is bound
--- to the sealer's connection: only its reply can seal.
-local function request_seal(self, tournament)
-    if not self.sealer then
+-- Sends one request at a time over a connection. If another connection resolved the previous
+-- request first, its reply is now stale; count it before replacing the current request. TCP
+-- preserves reply order, so the reader can discard exactly that many replies before accepting
+-- the reply to the new request.
+local function send_request(self, connection, entry, line)
+    if connection.dead then
         return
     end
-    local subject = "seal-" .. tournament.subject
-    local entry = { kind = "seal", subject = subject, tournament = tournament, pending = { [self.sealer] = true } }
-    self.parked[subject] = entry
-    enqueue(self, self.sealer, request_line(subject, nil, 'return sealer:seal("%s")', tournament.subject))
+    if connection.current_request then
+        assert(connection.current_request.resolved, "a connection was assigned concurrent requests")
+        connection.stale_requests_pending = connection.stale_requests_pending + 1
+    end
+    connection.current_request = entry
+    enqueue(self, connection, line)
 end
 
--- Files a reply on the request parked on its subject. A reply from a connection the request
--- is not waiting on (a forged seal, a repeat, or a late one) is ignored. The envelope already
--- identified the request, so a value that does not decode under the request's schema is an
+local request_next_seal
+
+-- Queues a tournament for the trusted sealer. The sealer is deliberately serialized like a
+-- player: one request is in flight, and its next reply necessarily belongs to that request.
+local function request_seal(self, tournament)
+    if not self.sealer or tournament.seal_requested then
+        return
+    end
+    tournament.seal_requested = true
+    self.seal_queue[#self.seal_queue + 1] = tournament
+    request_next_seal(self)
+end
+
+request_next_seal = function(self)
+    if self.seal_active or not self.sealer or #self.seal_queue == 0 then
+        return
+    end
+    local tournament = table.remove(self.seal_queue, 1)
+    local entry = { kind = "seal", tournament = tournament, pending = { [self.sealer] = true } }
+    self.seal_active = entry
+    send_request(self, self.sealer, entry, request_line(nil, 'return sealer:seal("%s")', tournament.id))
+end
+
+-- Files the next reply from a connection on its current request. A value that does not decode
+-- under the request's schema is an
 -- invalid operation, not a malformed connection: it counts as the connection's answer, is
 -- rejected, and leaves the connection open, exactly like a value the acceptor rejects, so
 -- the order replies arrive in cannot decide which connections stay open. A move request
@@ -637,10 +667,12 @@ local function deliver(self, entry, connection, line)
     entry.pending[connection] = nil
     local ok, decoded = pcall(cartesi.fromjson, line, reply_schema(entry.schema), SCHEMA_DICT)
     if entry.kind == "seal" then
-        assert(ok and decoded.value == entry.tournament.subject, "the sealer did not seal the tournament asked")
-        self.parked[entry.subject] = nil
+        assert(ok and decoded.value == entry.tournament.id, "the sealer did not seal the tournament asked")
+        entry.resolved = true
+        self.seal_active = nil
         entry.tournament.open = false
         settle(self, entry.tournament)
+        request_next_seal(self)
         return
     end
     if ok and entry.kind == "collect" then
@@ -656,7 +688,7 @@ end
 
 -- A connection announced itself as the sealer. There is one sealer, the first to announce,
 -- and it is never part of a tournament's audience. Every tournament already open, still
--- waiting for its seal, is handed to it at once.
+-- waiting for its seal, is queued in creation order.
 local function announce_sealer(self, connection)
     if self.sealer then
         close_connection(self, connection)
@@ -664,8 +696,8 @@ local function announce_sealer(self, connection)
     end
     connection.is_sealer = true
     self.sealer = connection
-    for _, entry in pairs(self.parked) do
-        if entry.kind == "collect" and entry.open then
+    for _, entry in ipairs(self.open_tournaments) do
+        if entry.open then
             request_seal(self, entry)
         end
     end
@@ -675,10 +707,10 @@ end
 -- when that is still open.
 local function announce_player(self, connection)
     connection.is_player = true
-    for _, entry in pairs(self.parked) do
+    for _, entry in ipairs(self.open_tournaments) do
         if entry.grows and entry.open then
             entry.pending[connection] = true
-            enqueue(self, connection, entry.line)
+            send_request(self, connection, entry, entry.line)
         end
     end
 end
@@ -688,9 +720,9 @@ end
 local function announce(self, connection, message)
     if connection.is_player or connection.is_sealer then
         close_connection(self, connection)
-    elseif message.subject == "sealer" then
+    elseif message.role == "sealer" then
         announce_sealer(self, connection)
-    elseif message.subject == "player" then
+    elseif message.role == "player" then
         announce_player(self, connection)
     else
         close_connection(self, connection)
@@ -698,11 +730,12 @@ local function announce(self, connection, message)
 end
 
 -- Adopts a new connection: spawns its writer, which drains the outbox, and its reader, which
--- routes each incoming line to the request parked on its subject. The first line a
+-- assigns replies to requests in TCP order. Replies left behind when another player resolved
+-- a request are discarded by count before the current reply is delivered. The first line a
 -- connection sends announces what it is, a player or the sealer.
 function server_meta.__index.adopt(self, sock)
     sock:settimeout(0)
-    local connection = { sock = sock, outbox = {} }
+    local connection = { sock = sock, outbox = {}, stale_requests_pending = 0 }
     self.connections[#self.connections + 1] = connection
     self.dispatcher:spawn(function()
         while true do
@@ -726,19 +759,23 @@ function server_meta.__index.adopt(self, sock)
                 return
             end
             trace_wire("from player", nil, line)
-            -- The subject is a plain field, decodable without the reply schema.
-            local ok, message = pcall(cartesi.fromjson, line)
-            if not ok or type(message) ~= "table" then
-                close_connection(self, connection)
-                return
-            end
             local announced = connection.is_player or connection.is_sealer
-            if message.subject == "sealer" or message.subject == "player" or not announced then
-                announce(self, connection, message)
+            if connection.stale_requests_pending > 0 and announced then
+                connection.stale_requests_pending = connection.stale_requests_pending - 1
             else
-                local entry = self.parked[message.subject]
-                if entry then
-                    deliver(self, entry, connection, line)
+                local ok, message = pcall(cartesi.fromjson, line)
+                if not ok or type(message) ~= "table" then
+                    close_connection(self, connection)
+                    return
+                end
+                if message.role or not announced then
+                    announce(self, connection, message)
+                else
+                    local entry = connection.current_request
+                    connection.current_request = nil
+                    if entry and not entry.resolved then
+                        deliver(self, entry, connection, line)
+                    end
                 end
             end
             if connection.dead then
@@ -802,45 +839,44 @@ function server_meta.__index.everyone(self)
     return list
 end
 
--- Parks a request on its subject, asking the given connections. The set asked is frozen here,
--- and a connection already closed is not in it.
+-- Starts a request on the given connections. The set asked is frozen here, and a connection
+-- already closed is not in it.
 local function park(self, entry, conns, line)
-    assert(not self.parked[entry.subject], "subject already parked")
     entry.cortn = coroutine.running()
     entry.pending = {}
     entry.line = line
-    self.parked[entry.subject] = entry
+    self.active[entry] = true
     for _, connection in ipairs(conns) do
         if not connection.dead then
             entry.pending[connection] = true
-            enqueue(self, connection, line)
+            send_request(self, connection, entry, line)
         end
     end
 end
 
--- Suspends the running coroutine until its parked request resolves.
+-- Suspends the running coroutine until its request resolves.
 local function wait(self, entry)
     settle(self, entry)
     return coroutine.yield()
 end
 
--- Asks the given connections for the move a subject needs, and returns the first truthy value
--- produced by `accept`, or nil once every connection asked has answered without one or closed.
+-- Asks the given connections for a move and returns the first truthy value produced by
+-- `accept`, or nil once every connection asked has answered without one or closed.
 -- A claim nobody answers for is thereby eliminated at once.
--- docs:begin ask
-function server_meta.__index.ask(self, subject, conns, schema, accept, code, ...)
-    local entry = { kind = "ask", subject = subject, schema = schema, accept = accept }
-    park(self, entry, conns, request_line(subject, schema, code, ...))
+-- docs:begin accept_first
+function server_meta.__index.accept_first(self, conns, schema, accept, code, ...)
+    local entry = { kind = "accept_first", schema = schema, accept = accept }
+    park(self, entry, conns, request_line(schema, code, ...))
     return wait(self, entry).value
 end
--- docs:end ask
+-- docs:end accept_first
 
 -- Asks the given connections (every player, when nil) for a value, and returns the replies,
 -- each with the label and connection that sent it, once every connection asked has replied or
 -- closed.
-function server_meta.__index.collect(self, subject, conns, schema, code, ...)
-    local entry = { kind = "collect", subject = subject, schema = schema, replies = {}, open = false }
-    park(self, entry, conns or self:everyone(), request_line(subject, schema, code, ...))
+function server_meta.__index.collect(self, conns, schema, code, ...)
+    local entry = { kind = "collect", schema = schema, replies = {}, open = false }
+    park(self, entry, conns or self:everyone(), request_line(schema, code, ...))
     return wait(self, entry).replies
 end
 
@@ -850,8 +886,9 @@ end
 -- submitted or closed.
 -- docs:begin open_tournament
 function server_meta.__index.open_tournament(self, id, conns, schema, code, ...)
-    local entry = { kind = "collect", subject = id, schema = schema, replies = {}, open = true, grows = not conns }
-    park(self, entry, conns or self:everyone(), request_line(id, schema, code, ...))
+    local entry = { kind = "collect", id = id, schema = schema, replies = {}, open = true, grows = not conns }
+    self.open_tournaments[#self.open_tournaments + 1] = entry
+    park(self, entry, conns or self:everyone(), request_line(schema, code, ...))
     request_seal(self, entry)
     return wait(self, entry).replies
 end

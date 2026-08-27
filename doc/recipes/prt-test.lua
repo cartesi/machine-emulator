@@ -130,9 +130,9 @@ end
 
 -- Runs `scenario` as the referee's main logic against a fresh server on a loopback port. The
 -- scenario gets the server and a `client` constructor. Each client is a coroutine of the same
--- dispatcher that connects, announces itself (as a player unless told otherwise), and answers every request line with
--- what `handler` returns for it: a reply table (encoded as is), "close" to hang up, a raw
--- line to send verbatim, or nil to never answer.
+-- dispatcher that connects, announces itself (as a player unless told otherwise), and answers
+-- every request line with what `handler` returns for it: a reply table (encoded as is),
+-- "close" to hang up, a raw line to send verbatim, or nil to delay its answer.
 local function with_server(scenario)
     local listener = assert(socket.bind("127.0.0.1", 0))
     local _, port = listener:getsockname()
@@ -143,7 +143,7 @@ local function with_server(scenario)
         dispatcher:spawn(function()
             local sock = assert(socket.connect("127.0.0.1", port))
             sock:settimeout(0)
-            assert(sock:send(cartesi.tojson(hello or { subject = "player" }, -1) .. "\n"))
+            assert(sock:send(cartesi.tojson(hello or { role = "player" }, -1) .. "\n"))
             local partial
             while true do
                 assert(dispatcher:wake_when_readable(sock) == "io")
@@ -192,7 +192,7 @@ end
 local function submitter(claim, move)
     return function(request)
         if request.code:find("join") then
-            return { subject = request.subject, label = claim, value = claim }
+            return { label = claim, value = claim }
         end
         return move(request)
     end
@@ -207,15 +207,15 @@ with_server(function(server, client, wait_connections)
     -- exactly the first two, and must not resolve before the sealer seals it.
     local answered = {}
     local function answer(value)
-        return function(request)
+        return function()
             answered[#answered + 1] = value
-            return { subject = request.subject, value = value }
+            return { value = value }
         end
     end
     client(nil, submitter("a", answer("valid")))
     client(nil, submitter("b", answer("invalid")))
-    client({ subject = "sealer" }, function(request)
-        return { subject = request.subject, value = request.code:match('"(.-)"') }
+    client({ role = "sealer" }, function(request)
+        return { value = request.code:match('"(.-)"') }
     end)
     local submissions = server:open_tournament("root", nil, nil, "return player:join()")
     table.sort(submissions, function(x, y)
@@ -234,40 +234,47 @@ with_server(function(server, client, wait_connections)
     wait_connections(4)
 
     -- First valid move wins, the rejected proof leaves its connection open.
-    assert(server:ask("m1", server:subscribers({ "x" }), nil, is_valid, "return 1") == "valid", "valid move not taken")
+    assert(
+        server:accept_first(server:subscribers({ "x" }), nil, is_valid, "return 1") == "valid",
+        "valid move not taken"
+    )
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
 
     -- The acceptor's result, rather than the submitted value, is returned.
-    local mapped = server:ask("m1-mapped", { a }, nil, function(v)
+    local mapped = server:accept_first({ a }, nil, function(v)
         return is_valid(v) and "mapped"
     end, "return 1")
-    assert(mapped == "mapped", "ask did not return the acceptor result")
+    assert(mapped == "mapped", "accept_first did not return the acceptor result")
 
-    -- A valid move resolves the request at once, while another holder is still to answer:
-    -- the mute holder never replies on this subject, and the referee advances regardless.
-    local mute_asked = false
+    -- A valid move resolves the request while another holder still owes a reply. When that
+    -- holder is asked again, TCP delivers the old reply first; the referee drops it by count
+    -- and accepts the following reply for the current request.
+    local delayed = false
     client(nil, function(request)
-        if request.subject == "m1-early" then
-            mute_asked = true
-            return nil -- no reply ever comes
+        if request.code == "return 'early'" then
+            delayed = true
+            return nil
+        elseif delayed then
+            delayed = false
+            return cartesi.tojson({ value = "invalid" }, -1) .. "\n" .. cartesi.tojson({ value = "valid" }, -1)
         end
-        return { subject = request.subject, value = "valid" }
+        return { value = "valid" }
     end)
     wait_connections(5)
     local m = server.connections[5]
-    assert(server:ask("m1-early", { m, a }, nil, is_valid, "return 1") == "valid", "valid move not taken early")
-    assert(server.parked["m1-early"] == nil, "a resolved request stayed parked")
-    assert(mute_asked, "the mute holder was not asked")
+    assert(server:accept_first({ m, a }, nil, is_valid, "return 'early'") == "valid", "valid move not taken early")
+    assert(server:accept_first({ m }, nil, is_valid, "return 'after-early'") == "valid", "stale reply was accepted")
+    assert(m.stale_requests_pending == 0 and not m.current_request, "stale reply was not consumed")
     assert(not m.dead, "a pending holder was closed")
     -- Without a valid move, the request waits for every holder, and resolves to nil only then.
     local replies_seen = 0
-    client(nil, function(request)
+    client(nil, function()
         replies_seen = replies_seen + 1
-        return { subject = request.subject, value = "invalid" }
+        return { value = "invalid" }
     end)
     wait_connections(6)
     local n = server.connections[6]
-    assert(server:ask("m1-all", { n, b }, nil, is_valid, "return 1") == nil, "an unproved move was taken")
+    assert(server:accept_first({ n, b }, nil, is_valid, "return 1") == nil, "an unproved move was taken")
     assert(replies_seen == 1, "the request resolved before every holder answered")
     assert(not n.dead and not b.dead, "an unproved move closed a connection")
 
@@ -276,7 +283,7 @@ with_server(function(server, client, wait_connections)
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
 
     -- Every holder answers without proof: the request resolves to nil, connections stay open.
-    assert(server:ask("m2", { b }, nil, is_valid, "return 1") == nil, "an unproved move was taken")
+    assert(server:accept_first({ b }, nil, is_valid, "return 1") == nil, "an unproved move was taken")
     assert(not b.dead, "an unproved move closed its connection")
 
     -- A holder that closes counts as answered. With every holder gone, the claim is unanswered.
@@ -284,11 +291,11 @@ with_server(function(server, client, wait_connections)
         return "close"
     end)
     wait_connections(7)
-    local replies = server:collect("who", nil, nil, "return player:label()")
+    local replies = server:collect(nil, nil, "return player:label()")
     local d = server.connections[7]
     assert(d.dead and #replies == 5, "the closing client was not dropped from the collection")
     assert(
-        server:ask("m3", { d }, nil, is_valid, "return 1") == nil,
+        server:accept_first({ d }, nil, is_valid, "return 1") == nil,
         "a request to a closed connection did not resolve"
     )
 
@@ -298,13 +305,13 @@ with_server(function(server, client, wait_connections)
     -- assumption about the order two sockets become readable.
     prtu.SCHEMA_DICT.Pair = { l = "Base64", r = "Base64" }
     prtu.SCHEMA_DICT.PairReply = { value = "Pair" }
-    -- Each fake client answers on the subject it was asked about, with its fixed value.
+    -- Each fake client answers typed requests with its fixed value.
     local function typed_client(value, schema)
         client(nil, function(request)
-            if request.subject:find("^typed") then
-                return cartesi.tojson({ subject = request.subject, value = value }, -1, schema, prtu.SCHEMA_DICT)
+            if request.schema == "Pair" then
+                return cartesi.tojson({ value = value }, -1, schema, prtu.SCHEMA_DICT)
             end
-            return { subject = request.subject, value = "valid" }
+            return { value = "valid" }
         end)
         wait_connections(#server.connections + 1)
         return server.connections[#server.connections]
@@ -313,15 +320,15 @@ with_server(function(server, client, wait_connections)
         return v.l == "a" and v.r == "b" and v
     end
     local bad = typed_client({ l = 1, r = "not base64!" })
-    assert(server:ask("typed", { bad }, "Pair", well_typed, "return 1") == nil, "a schema-invalid value was taken")
-    assert(server.parked["typed"] == nil, "ask did not unpark its subject")
+    assert(server:accept_first({ bad }, "Pair", well_typed, "return 1") == nil, "a schema-invalid value was taken")
+    assert(not next(server.active), "accept_first left a resolved request active")
     assert(not bad.dead, "a schema-invalid reply closed its connection")
     -- Alongside a well-typed reply, whichever arrives first, the well-typed value is taken and
     -- both connections stay open.
     local good = typed_client({ l = "a", r = "b" }, "PairReply")
-    local taken = server:ask("typed-pair", { bad, good }, "Pair", well_typed, "return 1")
+    local taken = server:accept_first({ bad, good }, "Pair", well_typed, "return 1")
     assert(taken and taken.l == "a", "the well-typed reply was not taken")
-    assert(server.parked["typed-pair"] == nil, "ask did not unpark its subject")
+    assert(not next(server.active), "accept_first left a resolved request active")
     assert(not bad.dead and not good.dead, "a schema-invalid reply closed a connection")
 
     -- An undecodable line closes its sender.
@@ -329,7 +336,7 @@ with_server(function(server, client, wait_connections)
         return "this is not json"
     end)
     wait_connections(10)
-    server:collect("garbage", nil, nil, "return player:label()")
+    server:collect(nil, nil, "return player:label()")
     local dead = 0
     for _, connection in ipairs(server.connections) do
         if connection.dead then
@@ -339,15 +346,13 @@ with_server(function(server, client, wait_connections)
     assert(dead == 2, "an undecodable line did not close its sender")
     assert(not a.dead and not b.dead, "a live player was closed")
 
-    -- Sealing is sender-bound. A player forging a seal leaves the tournament open, and it
-    -- closes only on the sealer's seal, which then finds the forger's submission in it.
+    -- Sealing is connection-bound. An extra player reply cannot be consumed as a seal; the
+    -- tournament closes only on the sealer's reply and includes the player's submission.
     client(nil, function(request)
-        if request.subject == "t2" then
-            return cartesi.tojson({ subject = "seal-t2", value = "t2" }, -1)
-                .. "\n"
-                .. cartesi.tojson({ subject = "t2", value = "forger" }, -1)
+        if request.code:find("join") then
+            return cartesi.tojson({ value = "forger" }, -1) .. "\n" .. cartesi.tojson({ value = "t2" }, -1)
         end
-        return { subject = request.subject, value = "valid" }
+        return { value = "valid" }
     end)
     wait_connections(11)
     local f = server.connections[11]
@@ -356,13 +361,13 @@ with_server(function(server, client, wait_connections)
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
     -- sealer.
-    client({ subject = "player" }, function()
-        return { subject = "player" }
+    client({ role = "player" }, function()
+        return { role = "player" }
     end)
     wait_connections(12)
-    server:collect("again", { server.connections[12] }, nil, "return 1")
+    server:collect({ server.connections[12] }, nil, "return 1")
     assert(server.connections[12].dead, "a repeated role announcement was accepted")
-    client({ subject = "sealer" }, function()
+    client({ role = "sealer" }, function()
         return "close"
     end)
     wait_connections(13)
@@ -371,8 +376,8 @@ end)
 
 -- A seal naming another tournament is a sealer bug and fails the referee.
 local ok, err = pcall(with_server, function(server, client, wait_connections)
-    client({ subject = "sealer" }, function(request)
-        return { subject = request.subject, value = "other" }
+    client({ role = "sealer" }, function()
+        return { value = "other" }
     end)
     wait_connections(1)
     server:open_tournament("t", {}, nil, "return player:join()")
@@ -381,7 +386,7 @@ assert(not ok and err:find("did not seal the tournament asked"), "a wrong seal w
 
 -- The sealer going away fails the referee outright: a tournament could never close again.
 ok, err = pcall(with_server, function(server, client, wait_connections)
-    client({ subject = "sealer" }, function()
+    client({ role = "sealer" }, function()
         return "close"
     end)
     wait_connections(1)

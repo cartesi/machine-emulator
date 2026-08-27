@@ -5,7 +5,7 @@
 -- Then the referee server, driven over loopback sockets by fake players living in the same
 -- dispatcher: the tournament lifecycle, first-valid moves, rejected proofs that leave their
 -- connection open, and claims eliminated once every holder answered without proof or closed.
--- The sealer connects while the root tournament is open and must not be asked to submit.
+-- The sealer connects while the mcycle tournament is open and must not be asked to submit.
 -- Runs in well under a second and exits nonzero on the first failure.
 
 local cartesi = require("cartesi")
@@ -203,7 +203,7 @@ local function is_valid(v)
 end
 
 with_server(function(server, client, wait_connections)
-    -- Two players connect before the sealer, one after it. The root tournament must gather
+    -- Two players connect before the sealer, one after it. The mcycle tournament must gather
     -- exactly the first two, and must not resolve before the sealer seals it.
     local answered = {}
     local function answer(value)
@@ -223,13 +223,13 @@ with_server(function(server, client, wait_connections)
     end)
     assert(
         #submissions == 2 and submissions[1].value == "a" and submissions[2].value == "b",
-        "root tournament gathered the wrong submissions"
+        "mcycle tournament gathered the wrong submissions"
     )
     assert(server.sealer and server.sealer.is_sealer, "the sealer was not adopted")
     local a, b = submissions[1].connection, submissions[2].connection
     server:add_holder("x", a)
     server:add_holder("x", b)
-    -- A late joiner, after the seal, is not part of the root tournament.
+    -- A late joiner, after the seal, is not part of the mcycle tournament.
     client(nil, submitter("c", answer("valid")))
     wait_connections(4)
 

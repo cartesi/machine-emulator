@@ -5334,13 +5334,13 @@ The uarch build (`build_uarch_claim`) expands one period, instruction by instruc
 
 Seen from the referee, the whole game is short.
 It waits for the players' opening claims, reduces them to the one that survives every match, and announces it.
-The root tournament packs what the reduction needs: the agreed initial state hash, the dapp contract that owns the epoch's inputs (deployed as in the rolling verification game), and the way its matches settle.
+The mcycle tournament packs what the reduction needs: the agreed initial state hash, the dapp contract that owns the epoch's inputs (deployed as in the rolling verification game), and the way its matches settle.
 Everything hard, the accept loop, the wire, the coroutine scheduling, is hidden in the referee server:
 ```{.lua key=prt_run_referee include=prt.lua/run_referee title="prt.lua (excerpt)"}
 ```
 
 A tournament opens, gathers claim submissions, is sealed, and runs on the claims it sealed with.
-The root tournament is open to every player that connects until a *sealer* seals it, so the referee never needs to know how many players to expect.
+The mcycle tournament is open to every player that connects until a *sealer* seals it, so the referee never needs to know how many players to expect.
 A player submits its claim root's two children and a standard `Proof` for the final state hash at the tree's last leaf.
 The referee checks that the children join into the proof's root and verifies the proof with `hash_tree.verify_slice()`, the same membership check `joinTournament` performs on chain (`validate_join` in `prt.lua`).
 Identical claims merge, however many players submit them, each submitter is recorded as a holder of its claim, and the distinct claims are sorted by root hash, so the bracket is a pure function of the claim set, not of the order in which players happened to connect (`distinct_claims`).
@@ -5517,7 +5517,7 @@ lua5.4 prt.lua fabulist 127.0.0.1:8096 10 2 60000 \
     input-0.bin input-1.bin input-2.bin
 } > /dev/null 2> fixed_fabulist.stderr &
 while ! players_in 5; do sleep 1; done
-# Every player is in. The sealer seals the root tournament on the players that connected, so
+# Every player is in. The sealer seals the mcycle tournament on the players that connected, so
 # the gathered claims are a pure function of who connected, not of network timing, and stays
 # to seal every uarch tournament as it opens.
 {
@@ -5584,7 +5584,7 @@ The players take the referee address and the same mcycle period, and nothing tha
 ```
 ```{.bash replace=prt_run/source/fabulist}
 ```
-Once every player is in, the sealer seals the root tournament, and stays to seal every uarch tournament as it opens:
+Once every player is in, the sealer seals the mcycle tournament, and stays to seal every uarch tournament as it opens:
 ```{.bash replace=prt_run/source/seal}
 ```
 

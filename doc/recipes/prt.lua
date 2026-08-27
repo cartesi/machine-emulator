@@ -31,7 +31,7 @@
 --   prt.lua seal     <address>
 --
 -- The seal role is the sealer: it stays connected and seals every tournament the referee
--- opens. The recipe starts it once every player is in, so the root tournament seals on the
+-- opens. The recipe starts it once every player is in, so the mcycle tournament seals on the
 -- players that connected, and every nested tournament seals as soon as it opens.
 --
 -- The referee lives here. The players, their machines, claim builds, and dishonest strategies
@@ -246,11 +246,11 @@ end
 local run_tournament
 
 -- Opens the uarch tournament of an mcycle match over the period its claims part ways on, to
--- the holders of the two claims, and returns the claims it seals with: the valid submissions
--- whose final state is one of the two contested values, the same restriction
+-- the holders of the two claims, and returns it with the claims it seals with: the valid
+-- submissions whose final state is one of the two contested values, the same restriction
 -- validContestedFinalState imposes on chain.
 -- docs:begin open_uarch_tournament
-local function open_uarch_tournament(m, period, d1, d2)
+local function open_uarch_tournament(parent, m, period, agree_hash, d1, d2)
     local submissions = server:open_tournament(
         m.tag,
         server:subscribers({ hex(m.one.root), hex(m.two.root) }),
@@ -267,7 +267,16 @@ local function open_uarch_tournament(m, period, d1, d2)
     for _, claim in ipairs(claims) do
         narrate(m.tag, "Claim %s, with final state %s, joined.", short_hash(claim.root), short_hash(claim.final_state))
     end
-    return claims
+    return {
+        level = "uarch",
+        tag = m.tag,
+        height = UARCH_HEIGHT,
+        initial_hash = agree_hash,
+        dapp_contract = parent.dapp_contract,
+        period = period,
+        settle = settle_uarch_match,
+        claims = claims,
+    }
 end
 -- docs:end open_uarch_tournament
 
@@ -285,16 +294,8 @@ local function settle_mcycle_match(tournament, m, position, agree_hash, d1, d2)
         period.period_index,
         short_hash(agree_hash)
     )
-    local claims = open_uarch_tournament(m, period, d1, d2)
-    local winner = run_tournament({
-        level = "uarch",
-        tag = m.tag,
-        height = UARCH_HEIGHT,
-        initial_hash = agree_hash,
-        dapp_contract = tournament.dapp_contract,
-        period = period,
-        settle = settle_uarch_match,
-    }, claims)
+    local uarch_tournament = open_uarch_tournament(tournament, m, period, agree_hash, d1, d2)
+    local winner = run_tournament(uarch_tournament)
     if not winner then
         narrate(m.tag, "The uarch tournament had no winner. Both claims are eliminated.")
         return nil
@@ -389,7 +390,7 @@ local function run_all(tasks)
 end
 
 -- Names a new match of a tournament: the tournament's name followed by the match's number in
--- it. The root tournament's matches are match_1, match_2, and so on, narrated as 1, 2, and so
+-- it. The mcycle tournament's matches are match_1, match_2, and so on, narrated as 1, 2, and so
 -- on, and the matches of the uarch tournament match_1 opens are match_1_1, match_1_2, and so
 -- on, narrated as 1.1, 1.2, and so on. A match's name is fixed by its place in the bracket, so
 -- it is the same on every run.
@@ -453,7 +454,8 @@ end
 -- Runs the tournament, eliminating claims round by round until a single one is left. That is
 -- all a tournament is: a reduction of the claims to the one that survives every match.
 -- docs:begin run_tournament
-function run_tournament(tournament, claims)
+function run_tournament(tournament)
+    local claims = tournament.claims
     local round = 0
     while #claims > 1 do
         round = round + 1
@@ -463,12 +465,12 @@ function run_tournament(tournament, claims)
 end
 -- docs:end run_tournament
 
--- Opens the root tournament to every player that connects until the sealer seals it, and
--- returns the distinct mcycle claims it seals with, sorted so the bracket is a pure function
+-- Opens the mcycle tournament to every player that connects until the sealer seals it, and
+-- returns it with the distinct claims it seals with, sorted so the bracket is a pure function
 -- of the claim set. The referee never needs to know the player count: the tournament closes
 -- once it is sealed and every player it asked has submitted or closed.
--- docs:begin open_root_tournament
-local function open_root_tournament()
+-- docs:begin open_mcycle_tournament
+local function open_mcycle_tournament(referee, dapp_contract)
     local submissions = server:open_tournament("tournament", nil, "Join", "return player:join()")
     local claims = distinct_claims(submissions, MCYCLE_HEIGHT)
     for _, claim in ipairs(claims) do
@@ -479,9 +481,17 @@ local function open_root_tournament()
             short_hash(claim.final_state)
         )
     end
-    return claims
+    return {
+        level = "mcycle",
+        tag = "tournament",
+        height = MCYCLE_HEIGHT,
+        initial_hash = referee.initial_hash,
+        dapp_contract = dapp_contract,
+        settle = settle_mcycle_match,
+        claims = claims,
+    }
 end
--- docs:end open_root_tournament
+-- docs:end open_mcycle_tournament
 
 -- Verifies an epoch result against the settled final state, the way the Dave contracts would on
 -- the blockchain. The outputs Merkle root proof must be whole-machine, sit at the tx-buffer
@@ -519,7 +529,7 @@ local function wait_for_result(winner)
 end
 -- docs:end wait_for_result
 
--- Seen from the referee, the whole game is short. It opens the root tournament, reduces the
+-- Seen from the referee, the whole game is short. It opens the mcycle tournament, reduces the
 -- claims it seals with to the one that survives every match, and settles the epoch on its
 -- result. The mcycle tournament packs what the reduction needs: the agreed initial state hash,
 -- the dapp contract whose inputs verification trusts, and the way its matches settle.
@@ -527,18 +537,7 @@ end
 -- the referee server this is handed to.
 -- docs:begin run_referee
 local function run_referee(referee, dapp_contract)
-    local claims = open_root_tournament()
-    local winner = claims[1]
-    if #claims > 1 then
-        winner = run_tournament({
-            level = "mcycle",
-            tag = "tournament",
-            height = MCYCLE_HEIGHT,
-            initial_hash = referee.initial_hash,
-            dapp_contract = dapp_contract,
-            settle = settle_mcycle_match,
-        }, claims)
-    end
+    local winner = run_tournament(open_mcycle_tournament(referee, dapp_contract))
     assert(winner, "the tournament ended with no winner")
     wait_for_result(winner)
 end

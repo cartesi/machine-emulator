@@ -626,10 +626,10 @@ end
 -- invalid operation, not a malformed connection: it counts as the connection's answer, is
 -- rejected, and leaves the connection open, exactly like a value the validator rejects, so
 -- the order replies arrive in cannot decide which connections stay open. A move request
--- takes the first reply that validates. A collection keeps every reply that decodes. A seal,
--- from the sealer and naming the tournament it was asked for, closes that tournament's
--- submissions, and a seal that does not decode or names another tournament is a failure of
--- the referee's own orchestration.
+-- takes the first truthy result its validator returns. A collection keeps every reply that
+-- decodes. A seal, from the sealer and naming the tournament it was asked for, closes that
+-- tournament's submissions, and a seal that does not decode or names another tournament is
+-- a failure of the referee's own orchestration.
 local function deliver(self, entry, connection, line)
     if not entry.pending[connection] then
         return
@@ -646,9 +646,9 @@ local function deliver(self, entry, connection, line)
     if ok and entry.kind == "collect" then
         entry.replies[#entry.replies + 1] = { value = decoded.value, label = decoded.label, connection = connection }
     elseif ok and entry.value == nil then
-        local validated, accepted = pcall(entry.validate, decoded.value)
-        if validated and accepted then
-            entry.value = decoded.value
+        local validated, value = pcall(entry.validate, decoded.value)
+        if validated and value then
+            entry.value = value
         end
     end
     settle(self, entry)
@@ -824,8 +824,8 @@ local function wait(self, entry)
     return coroutine.yield()
 end
 
--- Asks the given connections for the move a subject needs, and returns the first reply that
--- passes `validate`, or nil once every connection asked has answered without one or closed.
+-- Asks the given connections for the move a subject needs, and returns the first truthy value
+-- produced by `validate`, or nil once every connection asked has answered without one or closed.
 -- A claim nobody answers for is thereby eliminated at once.
 -- docs:begin ask
 function server_meta.__index.ask(self, subject, conns, schema, validate, code, ...)

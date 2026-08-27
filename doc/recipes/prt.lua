@@ -187,7 +187,7 @@ local function wait_for_agreed_hash(m, tournament, position)
         local subject = string.format("%s-agree-%d-%s", m.tag, position, hex(claim.root))
         local conns = server:subscribers({ hex(claim.root) })
         local move = server:ask(subject, conns, "Proof", function(v)
-            return valid_claim_proof(v, position - 1, tournament.height, claim.root)
+            return valid_claim_proof(v, position - 1, tournament.height, claim.root) and v
         end, 'return player:prove("%s", %d)', hex(claim.root), position - 1)
         if move then
             return move.target_hash
@@ -219,14 +219,13 @@ local function settle_uarch_match(tournament, m, position, agree_hash, d1, d2)
     narrate(m.tag, "The disputed transition is %s.", transition_form(tournament, position))
     local subject = string.format("%s-logs-%d", m.tag, position)
     local conns = server:subscribers({ hex(m.one.root), hex(m.two.root) })
-    local logs = server:ask(subject, conns, "Logs", function(v)
-        return (pcall(verify_transition, tournament.dapp_contract, period, position, agree_hash, v))
+    local hash = server:ask(subject, conns, "Logs", function(v)
+        return verify_transition(tournament.dapp_contract, period, position, agree_hash, v)
     end, "return player:transition_logs(%d, %d, %d)", period.input_index, period.period_index, position)
-    if not logs then
+    if not hash then
         narrate(m.tag, "No log settled the transition. Both claims are eliminated.")
         return nil
     end
-    local hash = verify_transition(tournament.dapp_contract, period, position, agree_hash, logs)
     narrate(m.tag, "The disputed transition provably leads to %s.", short_hash(hash))
     if hash ~= d1 and hash ~= d2 then
         narrate(m.tag, "Neither claim committed to it. Both are eliminated.")
@@ -344,7 +343,7 @@ local function run_match(tournament, m)
         local subject = string.format("%s-h%d", m.tag, m.height)
         local conns = server:subscribers({ hex(m.turn.root) })
         local move = server:ask(subject, conns, "Advance", function(v)
-            return valid_move(m, v)
+            return valid_move(m, v) and v
         end, 'return player:advance("%s", %d, %d, "%s")', hex(m.turn.root), m.height, m.index, hex(m.left_node))
         if not move then
             narrate(
@@ -520,7 +519,7 @@ local function wait_for_result(winner)
     narrate("verdict", "Winner final state hash: %s", cartesi.tohex(winner.final_state))
     local conns = server:subscribers({ hex(winner.root) })
     local result = server:ask("result", conns, "EpochResult", function(v)
-        return verify_result(v, winner.final_state)
+        return verify_result(v, winner.final_state) and v
     end, "return player:prove_result()")
     assert(result, "no result proved against the winning final state")
     local payload = evmu.decode_calldata(NOTICE, result.output, "raw").payload

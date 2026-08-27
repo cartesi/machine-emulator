@@ -4885,10 +4885,10 @@ The referee and the players receive the epoch's inputs in the command line, as t
 
 ```{.lua key=rollup_constants replace=null outputs=log2_max_advance_states_per_epoch,log2_max_mcycles_per_advance_state,log2_max_uarch_cycles_per_mcycle,log2_mcycle_leaves,log2_uarch_leaves}
 local cartesi = require("cartesi")
+local geometry = require("prt-geometry")
 local util = require("cartesi.util")
--- the claim tree heights use the walkthrough's mcycle period of 2^10 mcycles,
--- the log2_mcycle_computation_hash_period value passed to prt.lua below
-local log2_period = 10
+-- the claim tree heights use the fixed PRT mcycle period
+local log2_period = geometry.LOG2_MCYCLES_PER_PERIOD
 local log2_mcycle_leaves = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
     + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
     - log2_period
@@ -5447,7 +5447,7 @@ The *fabulist* computes the whole epoch honestly and lies about a single sample,
 It can defend every other request with honest data, but the reset that closes its lied-about period contradicts the leaf itself.
 Two fabulists run, lying about different samples, so they dispute each other too, which is why there are five dishonest players and four ways of being dishonest.
 
-To run the tournament, start the referee, giving it the mcycle period and the epoch's input files.
+To run the tournament, start the referee with the epoch's input files.
 ```{.lua key=prt_test_src include=prt-test.lua replace=null}
 ```
 ```{.bash key=prt_test depends=prt_test_src,prt_runs_node replace=null}
@@ -5457,7 +5457,7 @@ lua5.4 "$RECIPES_DIR/prt-test.lua"
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prt-story.lua" "$RECIPES_DIR/prtu.lua" .
+ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prt-geometry.lua" "$RECIPES_DIR/prt-story.lua" "$RECIPES_DIR/prtu.lua" .
 cartesi-rollup-data.lua --utf8-payload encode advance > forged-input-2.bin <<EOF
 {
   "chain_id": 0,
@@ -5478,41 +5478,41 @@ EOF
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8096\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
 {
 # docs:begin referee
-lua5.4 prt.lua referee 127.0.0.1:8096 10 \
+lua5.4 prt.lua referee 127.0.0.1:8096 \
     input-0.bin input-1.bin input-2.bin
 # docs:end referee
 } > /dev/null 2> referee.stderr &
 while ! netstat -ntl 2>&1 | grep '\<8096\>' > /dev/null; do sleep 1; done
 {
 # docs:begin honest
-lua5.4 prt.lua honest 127.0.0.1:8096 10 \
+lua5.4 prt.lua honest 127.0.0.1:8096 \
     input-0.bin input-1.bin input-2.bin
 # docs:end honest
 } > /dev/null 2> honest.stderr &
 while ! players_in 1; do sleep 1; done
 {
 # docs:begin quitter
-lua5.4 prt.lua quitter 127.0.0.1:8096 10
+lua5.4 prt.lua quitter 127.0.0.1:8096
 # docs:end quitter
 } > /dev/null 2> quitter.stderr &
 while ! players_in 2; do sleep 1; done
 {
 # docs:begin forger
-lua5.4 prt.lua forger 127.0.0.1:8096 10 2 forged-input-2.bin \
+lua5.4 prt.lua forger 127.0.0.1:8096 2 forged-input-2.bin \
     input-0.bin input-1.bin input-2.bin
 # docs:end forger
 } > /dev/null 2> forger.stderr &
 while ! players_in 3; do sleep 1; done
 {
 # docs:begin tamperer
-lua5.4 prt.lua tamperer 127.0.0.1:8096 10 0 100 \
+lua5.4 prt.lua tamperer 127.0.0.1:8096 0 100 \
     input-0.bin input-1.bin input-2.bin
 # docs:end tamperer
 } > /dev/null 2> tamperer.stderr &
 while ! players_in 4; do sleep 1; done
 {
 # docs:begin fabulist
-lua5.4 prt.lua fabulist 127.0.0.1:8096 10 2 2000 \
+lua5.4 prt.lua fabulist 127.0.0.1:8096 2 2000 \
     input-0.bin input-1.bin input-2.bin
 # docs:end fabulist
 } > /dev/null 2> fabulist.stderr &
@@ -5520,7 +5520,7 @@ while ! players_in 5; do sleep 1; done
 {
 # A second fabulist lies about a sample after input 2 has reached its fixed point. Its
 # uarch claim therefore exercises fixed-point padding for the entire disputed span.
-lua5.4 prt.lua fabulist 127.0.0.1:8096 10 2 60000 \
+lua5.4 prt.lua fabulist 127.0.0.1:8096 2 60000 \
     input-0.bin input-1.bin input-2.bin
 } > /dev/null 2> fixed_fabulist.stderr &
 while ! players_in 6; do sleep 1; done
@@ -5553,21 +5553,21 @@ done
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
+ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prt-geometry.lua" "$RECIPES_DIR/prt-story.lua" "$RECIPES_DIR/prtu.lua" .
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8097\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
-lua5.4 prt.lua referee 127.0.0.1:8097 10 input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
+lua5.4 prt.lua referee 127.0.0.1:8097 input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
 while ! netstat -ntl 2>&1 | grep '\<8097\>' > /dev/null; do sleep 1; done
-lua5.4 prt.lua fabulist 127.0.0.1:8097 10 2 60000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fixed_fabulist.stderr &
+lua5.4 prt.lua fabulist 127.0.0.1:8097 2 60000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fixed_fabulist.stderr &
 while ! players_in 1; do sleep 1; done
-lua5.4 prt.lua fabulist 127.0.0.1:8097 10 2 2000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fabulist.stderr &
+lua5.4 prt.lua fabulist 127.0.0.1:8097 2 2000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fabulist.stderr &
 while ! players_in 2; do sleep 1; done
-lua5.4 prt.lua tamperer 127.0.0.1:8097 10 0 100 input-0.bin input-1.bin input-2.bin > /dev/null 2> tamperer.stderr &
+lua5.4 prt.lua tamperer 127.0.0.1:8097 0 100 input-0.bin input-1.bin input-2.bin > /dev/null 2> tamperer.stderr &
 while ! players_in 3; do sleep 1; done
-lua5.4 prt.lua forger 127.0.0.1:8097 10 2 "$forged" input-0.bin input-1.bin input-2.bin > /dev/null 2> forger.stderr &
+lua5.4 prt.lua forger 127.0.0.1:8097 2 "$forged" input-0.bin input-1.bin input-2.bin > /dev/null 2> forger.stderr &
 while ! players_in 4; do sleep 1; done
-lua5.4 prt.lua quitter 127.0.0.1:8097 10 > /dev/null 2> quitter.stderr &
+lua5.4 prt.lua quitter 127.0.0.1:8097 > /dev/null 2> quitter.stderr &
 while ! players_in 5; do sleep 1; done
-lua5.4 prt.lua honest 127.0.0.1:8097 10 input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
+lua5.4 prt.lua honest 127.0.0.1:8097 input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
 while ! players_in 6; do sleep 1; done
 lua5.4 prt.lua seal 127.0.0.1:8097 > /dev/null 2> sealer.stderr &
 wait
@@ -5579,7 +5579,7 @@ for f in claims posted tournament verdict match_*; do
 done
 echo "The reversed run narrated every file identically."
 ```
-The players take the referee address and the same mcycle period, and nothing that names their number or their order:
+The players take the referee address, and nothing that names their number or their order:
 ```{.bash replace=prt_run/source/honest}
 ```
 ```{.bash replace=prt_run/source/quitter}

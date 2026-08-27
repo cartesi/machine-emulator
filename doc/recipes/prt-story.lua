@@ -12,11 +12,28 @@ local M = {}
 
 function M.new(uarch_cycles_per_mcycle)
     local story = {}
+    local tournament_streams = setmetatable({}, { __mode = "k" })
+    local match_streams = setmetatable({}, { __mode = "k" })
+    local match_counts = setmetatable({}, { __mode = "k" })
 
-    function story.claims_joined(tag, claims)
+    local function tournament_stream(tournament)
+        return tournament.level == "mcycle" and "tournament"
+            or assert(tournament_streams[tournament], "uarch tournament has no narration stream")
+    end
+
+    local function match_stream(match)
+        return assert(match_streams[match], "match has no narration stream")
+    end
+
+    local function match_label(match)
+        return (match_stream(match):sub(#"match_" + 1):gsub("_", "."))
+    end
+
+    function story.claims_joined(tournament, claims)
+        local stream = tournament.level == "mcycle" and "claims" or tournament_stream(tournament)
         for _, claim in ipairs(claims) do
             narrate(
-                tag,
+                stream,
                 "Claim %s, with final state %s, joined.",
                 short_hash(claim.computation_hash),
                 short_hash(claim.final_state)
@@ -36,32 +53,33 @@ function M.new(uarch_cycles_per_mcycle)
         elseif transition_index & (uarch_cycles_per_mcycle - 1) == uarch_cycles_per_mcycle - 1 then
             form = "a uarch step and the uarch reset closing an instruction"
         end
-        narrate(match.tag, "The disputed transition is %s.", form)
+        narrate(match_stream(match), "The disputed transition is %s.", form)
     end
 
     function story.transition_settled(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
         if not next_hash then
-            narrate(match.tag, "No log settled the transition. Both claims are eliminated.")
+            narrate(match_stream(match), "No log settled the transition. Both claims are eliminated.")
             return
         end
-        narrate(match.tag, "The disputed transition provably leads to %s.", short_hash(next_hash))
+        narrate(match_stream(match), "The disputed transition provably leads to %s.", short_hash(next_hash))
         if not winner then
-            narrate(match.tag, "Neither claim committed to it. Both are eliminated.")
+            narrate(match_stream(match), "Neither claim committed to it. Both are eliminated.")
             return
         end
         local loser = winner == match.claim1 and match.claim2 or match.claim1
         local lost = winner == match.claim1 and claim2_next_hash or claim1_next_hash
         narrate(
-            match.tag,
+            match_stream(match),
             "Claim %s committed to %s and is eliminated.",
             short_hash(loser.computation_hash),
             short_hash(lost)
         )
     end
 
-    function story.uarch_tournament_opened(match, disputed_period, agreed_hash)
+    function story.uarch_tournament_opened(tournament, match, disputed_period, agreed_hash)
+        tournament_streams[tournament] = match_stream(match)
         narrate(
-            match.tag,
+            tournament_stream(tournament),
             "A uarch tournament opens over input %d, period %d, starting from %s.",
             disputed_period.input_index,
             disputed_period.period_index,
@@ -71,12 +89,12 @@ function M.new(uarch_cycles_per_mcycle)
 
     function story.uarch_tournament_settled(match, winner, survivor)
         if not winner then
-            narrate(match.tag, "The uarch tournament had no winner. Both claims are eliminated.")
+            narrate(match_stream(match), "The uarch tournament had no winner. Both claims are eliminated.")
             return
         end
         local loser = survivor == match.claim1 and match.claim2 or match.claim1
         narrate(
-            match.tag,
+            match_stream(match),
             "The uarch winner confirms %s. Claim %s is eliminated.",
             short_hash(winner.final_state),
             short_hash(loser.computation_hash)
@@ -85,11 +103,11 @@ function M.new(uarch_cycles_per_mcycle)
 
     function story.dispute_isolated(match, dispute, agreed_hash)
         if not agreed_hash then
-            narrate(match.tag, "Nobody proved the agreed state. Both claims are eliminated.")
+            narrate(match_stream(match), "Nobody proved the agreed state. Both claims are eliminated.")
             return
         end
         narrate(
-            match.tag,
+            match_stream(match),
             "The claims diverge at state %d: %s against %s, from the agreed state %s.",
             dispute.state_index,
             short_hash(dispute.claim1_next_hash),
@@ -100,7 +118,7 @@ function M.new(uarch_cycles_per_mcycle)
 
     function story.default_win(match)
         narrate(
-            match.tag,
+            match_stream(match),
             "Nobody opened claim %s. Claim %s wins by default.",
             short_hash(match.turn_claim.computation_hash),
             short_hash(match.other_claim.computation_hash)
@@ -109,7 +127,7 @@ function M.new(uarch_cycles_per_mcycle)
 
     function story.match_advanced(match)
         narrate(
-            match.tag,
+            match_stream(match),
             "Height %d: the claims first disagree within leaves [0x%x, 0x%x].",
             match.height,
             match.index << match.height,
@@ -118,11 +136,15 @@ function M.new(uarch_cycles_per_mcycle)
     end
 
     function story.match_opened(tournament, round, match)
+        local count = (match_counts[tournament] or 0) + 1
+        match_counts[tournament] = count
+        local prefix = tournament.level == "mcycle" and "match" or tournament_stream(tournament)
+        match_streams[match] = string.format("%s_%d", prefix, count)
         narrate(
-            tournament.tag,
+            tournament_stream(tournament),
             "Round %d, match %s, at the %s level: claim %s against claim %s.",
             round,
-            match.id,
+            match_label(match),
             tournament.level,
             short_hash(match.claim1.computation_hash),
             short_hash(match.claim2.computation_hash)
@@ -133,18 +155,18 @@ function M.new(uarch_cycles_per_mcycle)
         for slot, match in ipairs(matches) do
             if results[slot] then
                 narrate(
-                    tournament.tag,
+                    tournament_stream(tournament),
                     "Match %s: claim %s wins.",
-                    match.id,
+                    match_label(match),
                     short_hash(results[slot].computation_hash)
                 )
             else
-                narrate(tournament.tag, "Match %s: no claim survives.", match.id)
+                narrate(tournament_stream(tournament), "Match %s: no claim survives.", match_label(match))
             end
         end
         if #claims % 2 == 1 then
             narrate(
-                tournament.tag,
+                tournament_stream(tournament),
                 "Claim %s takes a bye to round %d.",
                 short_hash(claims[#claims].computation_hash),
                 round + 1

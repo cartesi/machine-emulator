@@ -5342,8 +5342,9 @@ Everything hard, the accept loop, the wire, the coroutine scheduling, is hidden 
 ```
 Calls to `story` report semantic milestones; their formatting and all presentation-only calculations live in `prt-story.lua`, outside the algorithm snippets.
 
-A tournament opens, gathers claim submissions, is sealed, and runs on the claims it sealed with.
-The mcycle tournament is open to every player that connects until a *sealer* seals it, so the referee never needs to know how many players to expect.
+A tournament opens to a fixed audience, gathers claim submissions, is sealed, and runs on the claims it sealed with.
+Before the mcycle tournament opens, the server accepts players subscribing to the agreed initial state hash until a *sealer* closes that phase, so the referee never needs to know how many players to expect.
+The mcycle tournament then opens to those subscribers.
 A player submits its computation hash's two children and a standard `Proof` for the final state hash at the tree's last leaf.
 The referee checks that the children join into the proof's root and verifies the proof with `hash_tree.verify_slice()`, the same membership check `joinTournament` performs on chain (`validate_join` in `prt.lua`).
 Identical claims merge, however many players submit them, each submitter is recorded as a holder of its claim, and the distinct claims are sorted by computation hash, so the bracket is a pure function of the claim set, not of the order in which players happened to connect (`distinct_claims`).
@@ -5416,10 +5417,10 @@ A request whose every holder answered without proof, or closed, resolves to noth
 Each connection has at most one unresolved request.
 Replies arrive in request order because TCP is a FIFO stream.
 When another holder resolves a request first, the referee counts the reply still owed by this connection as stale before assigning its next request, then drops that many replies from the stream.
-A tournament opens to an audience, every player that connects until the seal for the mcycle one, the holders of the two disputed claims for a nested one.
+A tournament always opens to a fixed audience: subscribers to the agreed initial state hash for the mcycle one, and holders of the two disputed claims for a nested one.
 The referee asks the sealer to seal each tournament as it opens, and the submissions close once the seal arrives and every connection in the audience has submitted or closed (`open_tournament`).
 Claim operations authenticate themselves by proof, and sealing does not: it is the referee's trusted orchestration, standing in for the clock the contracts use.
-The transport enforces that trust: a connection announces its role once, on its first line, the sealer is the connection that announced itself as such, and one seal request at a time is bound to it, so its next reply closes exactly the tournament awaiting that reply.
+The transport enforces that trust: a connection announces its role once, on its first line, the sealer is the connection that announced itself as such, and one seal request at a time is bound to it, so its next reply closes exactly the subscription or tournament phase awaiting that reply.
 The model thus assumes a process announces its role honestly, and a sealer that goes away fails the referee outright, since no tournament could ever close again.
 Nothing in the referee waits on the clock, and nothing depends on the order replies arrive in, not even which connections stay open.
 A claim with nobody left to answer for it is eliminated at once, which is all that ever happens to the claim of a player who walks away, and a claim anybody answers for survives.
@@ -5471,9 +5472,9 @@ cartesi-rollup-data.lua --utf8-payload encode advance > forged-input-2.bin <<EOF
 EOF
 # Each player's loopback connection to the referee shows up as two established entries (one per
 # end), so half the established entries mentioning the port is the number of players connected.
-# Each player is launched only after the previous one is in, so the sealer seals the root
-# tournament once all are. The quitter closes its connection right after submitting, so it is
-# waited on by the claim it announces instead, and never counts as connected.
+# Each player is launched only after the previous one has subscribed, so the sealer closes
+# initial subscriptions once all are in. The quitter stays connected until it is later asked
+# to commit its claim, then closes immediately afterward.
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8096\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
 {
 # docs:begin referee
@@ -5494,38 +5495,37 @@ while ! players_in 1; do sleep 1; done
 lua5.4 prt.lua quitter 127.0.0.1:8096 10
 # docs:end quitter
 } > /dev/null 2> quitter.stderr &
-while ! grep -q "posted claim" quitter.stderr; do sleep 1; done
+while ! players_in 2; do sleep 1; done
 {
 # docs:begin forger
 lua5.4 prt.lua forger 127.0.0.1:8096 10 2 forged-input-2.bin \
     input-0.bin input-1.bin input-2.bin
 # docs:end forger
 } > /dev/null 2> forger.stderr &
-while ! players_in 2; do sleep 1; done
+while ! players_in 3; do sleep 1; done
 {
 # docs:begin tamperer
 lua5.4 prt.lua tamperer 127.0.0.1:8096 10 0 100 \
     input-0.bin input-1.bin input-2.bin
 # docs:end tamperer
 } > /dev/null 2> tamperer.stderr &
-while ! players_in 3; do sleep 1; done
+while ! players_in 4; do sleep 1; done
 {
 # docs:begin fabulist
 lua5.4 prt.lua fabulist 127.0.0.1:8096 10 2 2000 \
     input-0.bin input-1.bin input-2.bin
 # docs:end fabulist
 } > /dev/null 2> fabulist.stderr &
-while ! players_in 4; do sleep 1; done
+while ! players_in 5; do sleep 1; done
 {
 # A second fabulist lies about a sample after input 2 has reached its fixed point. Its
 # uarch claim therefore exercises fixed-point padding for the entire disputed span.
 lua5.4 prt.lua fabulist 127.0.0.1:8096 10 2 60000 \
     input-0.bin input-1.bin input-2.bin
 } > /dev/null 2> fixed_fabulist.stderr &
-while ! players_in 5; do sleep 1; done
-# Every player is in. The sealer seals the mcycle tournament on the players that connected, so
-# the gathered claims are a pure function of who connected, not of network timing, and stays
-# to seal every uarch tournament as it opens.
+while ! players_in 6; do sleep 1; done
+# Every player is in. The sealer closes initial subscriptions, then seals the mcycle tournament
+# on exactly those subscribers, and stays to seal every uarch tournament as it opens.
 {
 # docs:begin seal
 lua5.4 prt.lua seal 127.0.0.1:8096
@@ -5566,9 +5566,9 @@ while ! players_in 3; do sleep 1; done
 lua5.4 prt.lua forger 127.0.0.1:8097 10 2 "$forged" input-0.bin input-1.bin input-2.bin > /dev/null 2> forger.stderr &
 while ! players_in 4; do sleep 1; done
 lua5.4 prt.lua quitter 127.0.0.1:8097 10 > /dev/null 2> quitter.stderr &
-while ! grep -q "posted claim" quitter.stderr; do sleep 1; done
-lua5.4 prt.lua honest 127.0.0.1:8097 10 input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
 while ! players_in 5; do sleep 1; done
+lua5.4 prt.lua honest 127.0.0.1:8097 10 input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
+while ! players_in 6; do sleep 1; done
 lua5.4 prt.lua seal 127.0.0.1:8097 > /dev/null 2> sealer.stderr &
 wait
 cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr sealer.stderr >&2
@@ -5590,11 +5590,11 @@ The players take the referee address and the same mcycle period, and nothing tha
 ```
 ```{.bash replace=prt_run/source/fabulist}
 ```
-Once every player is in, the sealer seals the mcycle tournament, and stays to seal every uarch tournament as it opens:
+Once every player is in, the sealer closes the initial subscription phase, then seals the mcycle tournament and every uarch tournament as each opens:
 ```{.bash replace=prt_run/source/seal}
 ```
 
-The six claims are sealed into the tournament:
+The six subscribers commit claims, which are sealed into the tournament:
 ```{replace=prt_run/claims}
 ```
 The referee narrates claims, never players.
@@ -5658,7 +5658,7 @@ This model simplifies the PRT contracts in ways worth naming.
 The referee is one trusted process, where Dave is a family of contracts the blockchain executes.
 A closed connection stands in for the chess clocks that meter each claim's total thinking time (a player that hangs stalls the demonstration, where the contracts would time it out), and no bonds change hands.
 At both the mcycle level and the uarch level, a Dave tournament stays open for a fixed time allowance, and a claim may join while it lasts.
-The demo closes each join as soon as the claims it awaits are in, rather than waiting the allowance out.
+The demo closes each claim-submission phase as soon as the claims it awaits are in, rather than waiting the allowance out.
 For the real thing, see the [Dave repository](https://github.com/cartesi/dave), the [Permissionless Refereed Tournaments](https://arxiv.org/abs/2212.12439) paper, and the [Dave](https://doi.org/10.1145/3734698) paper.
 
 [modeline]: # ( vim: set filetype=markdown spell spelllang=en: )

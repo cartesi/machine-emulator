@@ -19,9 +19,10 @@
 --
 -- Roles, selected by the first argument. Every game role takes the referee address and log2 of
 -- the mcycle period, and every machine-holding role takes the epoch's input files. The referee
--- is never told how many players to expect: it gathers claims until a seal connection closes the
--- join phase. The referee sorts the claims it gathers, so the bracket and the whole narration are
--- a pure function of the claim set, not of the order in which players connect.
+-- is never told how many players to expect: it accepts subscribers until a seal connection
+-- closes that phase, then asks those subscribers for claims. The referee sorts the claims it
+-- gathers, so the bracket and the whole narration are a pure function of the claim set, not of
+-- the order in which players connect.
 --   prt.lua referee  <address> <log2-period> <input> [<input> ...]
 --   prt.lua honest   <address> <log2-period> <input> [<input> ...]
 --   prt.lua quitter  <address> <log2-period>
@@ -30,9 +31,10 @@
 --   prt.lua fabulist <address> <log2-period> <input-index> <leaf-offset> <input> [<input> ...]
 --   prt.lua seal     <address>
 --
--- The seal role is the sealer: it stays connected and seals every tournament the referee
--- opens. The recipe starts it once every player is in, so the mcycle tournament seals on the
--- players that connected, and every nested tournament seals as soon as it opens.
+-- The seal role is the sealer: it stays connected and closes the initial subscription phase
+-- and every tournament the referee opens. The recipe starts it once every player is in, so
+-- those players form the mcycle tournament's audience, and every tournament then seals as
+-- soon as it opens.
 --
 -- The referee lives here. The players, their machines, claim builds, and dishonest strategies
 -- live in prt-player.lua, and the claim trees, the match walk, and the referee server in
@@ -47,9 +49,9 @@ local prt_story = require("prt-story")
 local keccak = cartesi.keccak256
 local new_match, valid_move, advance_match = prtu.new_match, prtu.valid_move, prtu.advance_match
 
--- The seal role carries no dispute: it is the sealer, which closes the submissions of every
--- tournament the referee opens, the mcycle one once the last player has connected, and every
--- nested one as it opens. It needs none of the game geometry.
+-- The seal role carries no dispute: it is the sealer, which closes the initial subscription
+-- phase once the last player has connected, then the submissions of every tournament as it
+-- opens. It needs none of the game geometry.
 if arg[1] == "seal" then
     return prtu.serve(prtu.new_sealer(), assert(arg[2], "missing referee address"))
 end
@@ -151,7 +153,7 @@ local function distinct_claims(submissions, height, accept)
                 by_root[claim.computation_hash] = claim
                 claims[#claims + 1] = claim
             end
-            server:add_holder(claim.computation_hash, submission.connection)
+            server:subscribe(claim.computation_hash, submission.connection)
         elseif not ok then
             stderrf("a submission failed validation: %s\n", tostring(claim))
         end
@@ -407,13 +409,13 @@ function run_tournament(tournament)
 end
 -- docs:end run_tournament
 
--- Opens the mcycle tournament to every player that connects until the sealer seals it, and
+-- Opens the mcycle tournament to the players that subscribed to its initial state hash, and
 -- returns it with the distinct claims it seals with, sorted so the bracket is a pure function
--- of the claim set. The referee never needs to know the player count: the tournament closes
--- once it is sealed and every player it asked has submitted or closed.
+-- of the claim set.
 -- docs:begin open_mcycle_tournament
 local function open_mcycle_tournament(referee, dapp_contract)
-    local submissions = server:open_tournament(nil, request.join)
+    local submissions =
+        server:open_tournament(server:subscribers({ referee.initial_hash }), request.commit_mcycle_claim)
     local claims = distinct_claims(submissions, MCYCLE_HEIGHT)
     local tournament = {
         level = "mcycle",
@@ -469,6 +471,7 @@ end
 -- the referee server this is handed to.
 -- docs:begin run_referee
 local function run_referee(referee, dapp_contract)
+    server:accept_subscribers(referee.initial_hash)
     local winner = run_tournament(open_mcycle_tournament(referee, dapp_contract))
     assert(winner, "the tournament ended with no winner")
     wait_for_result(winner)

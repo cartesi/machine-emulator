@@ -407,7 +407,7 @@ end
 
 -- The witness for joining with a claim: the computation hash's two children and the standard proof of its
 -- final state, the last leaf.
-local function join_witness(tree)
+local function commitment_witness(tree)
     local left, right = tree:children(tree.height, 0)
     return { left = left, right = right, proof = tree:prove((1 << tree.height) - 1) }
 end
@@ -418,7 +418,7 @@ end
 function handlers.commit_mcycle_claim(player)
     stderrf("%s: building mcycle claim\n", player.label)
     player.mcycle_claim = player.make_mcycle_tree(player)
-    local witness = join_witness(player.mcycle_claim)
+    local witness = commitment_witness(player.mcycle_claim)
     stderrf(
         "%s: posted claim %s with final state %s\n",
         player.label,
@@ -459,7 +459,7 @@ end
 function handlers.commit_uarch_claim(player, input_index, period_index, claim1_next_hash, claim2_next_hash)
     stderrf("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
     player.uarch_claim = player.make_uarch_tree(player, input_index + 1, period_index)
-    local witness = join_witness(player.uarch_claim)
+    local witness = commitment_witness(player.uarch_claim)
     local final_state = witness.proof.target_hash
     assert(
         final_state == claim1_next_hash or final_state == claim2_next_hash,

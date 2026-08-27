@@ -114,9 +114,9 @@ local function valid_claim_proof(proof, index, height, computation_hash)
         and pcall(hash_tree.verify_slice, proof)
 end
 
--- Validates a join witness: its two children establish the computation hash, and its standard proof places
--- the final state at the tree's last leaf. Returns the claim.
-local function validate_join(witness, height)
+-- Validates a claim commitment: its two children establish the computation hash, and its
+-- standard proof places the final state at the tree's last leaf. Returns the claim.
+local function validate_claim_commitment(witness, height)
     local computation_hash = keccak(witness.left, witness.right)
     assert(valid_claim_proof(witness.proof, (1 << height) - 1, height, computation_hash), "invalid final-state proof")
     return {
@@ -139,15 +139,15 @@ local function hash_less(a, b)
 end
 
 -- Partitions tournament submissions by computation hash, returning one claim per partition,
--- sorted by that hash. Each valid submission is kept only if `accept` allows it (a uarch
--- tournament accepts only the two contested finals), and its sender subscribes to requests for
--- that claim. The sort makes the bracket a pure function of the claim set, not of connection order.
+-- sorted by that hash. `validate` turns an accepted commitment into its claim, and each sender
+-- subscribes to requests for that claim. The sort makes the bracket a pure function of the claim
+-- set, not of connection order.
 -- docs:begin partition_claims
-local function partition_claims(submissions, height, accept)
+local function partition_claims(submissions, validate)
     local claims, by_hash = {}, {}
     for _, submission in ipairs(submissions) do
-        local ok, claim = pcall(validate_join, submission.value, height)
-        if ok and (not accept or accept(claim)) then
+        local ok, claim = pcall(validate, submission.value)
+        if ok then
             if not by_hash[claim.computation_hash] then
                 by_hash[claim.computation_hash] = claim
                 claims[#claims + 1] = claim
@@ -163,6 +163,15 @@ local function partition_claims(submissions, height, accept)
     return claims
 end
 -- docs:end partition_claims
+
+-- Opens a tournament to a fixed audience and partitions its valid claim commitments.
+local function open_tournament(conns, validate, descriptor, ...)
+    return partition_claims(server:collect_submissions(conns, descriptor, ...), validate)
+end
+
+local function validate_mcycle_claim(witness)
+    return validate_claim_commitment(witness, MCYCLE_HEIGHT)
+end
 
 -- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
 -- them on the blockchain, without ever instantiating a machine. The transition index picks the
@@ -236,9 +245,8 @@ end
 local run_tournament
 
 -- Opens the uarch tournament of an mcycle match over the period its claims part ways on, to
--- the holders of the two claims, and returns it with the claims it seals with: the valid
--- submissions whose final state is one of the two contested values, the same restriction
--- validContestedFinalState imposes on chain.
+-- the holders of the two claims. Its valid claims are restricted to the two contested final
+-- states, as validContestedFinalState requires on chain.
 -- docs:begin open_uarch_tournament
 local function open_uarch_tournament(parent, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
     local tournament = {
@@ -250,17 +258,20 @@ local function open_uarch_tournament(parent, match, disputed_period, agreed_hash
         settle = settle_uarch_match,
     }
     story.uarch_tournament_opened(tournament, match, disputed_period, agreed_hash)
-    local submissions = server:open_tournament(
+    local function validate(witness)
+        local claim = validate_claim_commitment(witness, UARCH_HEIGHT)
+        assert(claim.final_state == claim1_next_hash or claim.final_state == claim2_next_hash)
+        return claim
+    end
+    local claims = open_tournament(
         server:subscribers({ match.claim1.computation_hash, match.claim2.computation_hash }),
+        validate,
         request.commit_uarch_claim,
         disputed_period.input_index,
         disputed_period.period_index,
         claim1_next_hash,
         claim2_next_hash
     )
-    local claims = partition_claims(submissions, UARCH_HEIGHT, function(claim)
-        return claim.final_state == claim1_next_hash or claim.final_state == claim2_next_hash
-    end)
     tournament.claims = claims
     story.claims_joined(tournament, claims)
     return tournament
@@ -408,14 +419,15 @@ function run_tournament(tournament)
 end
 -- docs:end run_tournament
 
--- Opens the mcycle tournament to the players that subscribed to its initial state hash, and
--- returns it with the distinct claims it seals with, sorted so the bracket is a pure function
--- of the claim set.
+-- Opens the mcycle tournament to the players that subscribed to its initial state hash and
+-- returns it with the resulting claims sorted into a deterministic bracket.
 -- docs:begin open_mcycle_tournament
 local function open_mcycle_tournament(referee, dapp_contract)
-    local submissions =
-        server:open_tournament(server:subscribers({ referee.initial_hash }), request.commit_mcycle_claim)
-    local claims = partition_claims(submissions, MCYCLE_HEIGHT)
+    local claims = open_tournament(
+        server:subscribers({ referee.initial_hash }),
+        validate_mcycle_claim,
+        request.commit_mcycle_claim
+    )
     local tournament = {
         level = "mcycle",
         height = MCYCLE_HEIGHT,
@@ -463,7 +475,7 @@ end
 -- docs:end wait_for_result
 
 -- Seen from the referee, the whole game is short. It opens the mcycle tournament, reduces the
--- claims it seals with to the one that survives every match, and settles the epoch on its
+-- claims it opened with to the one that survives every match, and settles the epoch on its
 -- result. The mcycle tournament packs what the reduction needs: the agreed initial state hash,
 -- the dapp contract whose inputs verification trusts, and the way its matches settle.
 -- Everything hard, the accept loop, the wire, the coroutine scheduling, runs underneath, in

@@ -379,6 +379,7 @@ end
 -- docs:begin run_round
 local function run_round(tournament, claims, round)
     local matches = pair_claims(tournament, claims, round)
+    local bye = #claims % 2 == 1 and claims[#claims] or nil
     local tasks = {}
     for slot, match in ipairs(matches) do
         tasks[slot] = function()
@@ -386,15 +387,15 @@ local function run_round(tournament, claims, round)
         end
     end
     local results, winners = run_all(tasks), {}
-    story.report_round(tournament, claims, round, matches, results)
+    story.report_round(tournament, round, matches, results, bye)
     for slot = 1, #matches do
         local winner = results[slot]
         if winner then
             winners[#winners + 1] = winner
         end
     end
-    if #claims % 2 == 1 then
-        winners[#winners + 1] = claims[#claims]
+    if bye then
+        winners[#winners + 1] = bye
     end
     return winners
 end
@@ -500,7 +501,6 @@ end
 -- holds the agreed initial state hash and epoch inputs.
 local function new_referee(server_address)
     server = prtu.new_server(server_address)
-    server:accept()
     return {
         run = function(_, dapp_contract)
             server:run(function()

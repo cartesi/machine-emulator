@@ -9643,21 +9643,9 @@ isolated dispute over. A claim nobody opens loses by default:
 local function run_match(tournament, m)
     while true do
         local conns = server:subscribers({ hex(m.turn.root) })
-        local move = server:accept_first(
-            conns,
-            function(v)
-                return valid_move(m, v) and v
-            end,
-            "advance",
-            {
-                root = m.turn.root,
-                height = m.height,
-                index = m.index,
-                opponent_left = m.left_node,
-            },
-            "AdvanceRequest",
-            "AdvanceResponse"
-        )
+        local move = server:accept_first(conns, function(v)
+            return valid_move(m, v) and v
+        end, operations.advance, m.turn.root, m.height, m.index, m.left_node)
         if not move then
             story.default_win(m)
             return m.other
@@ -9745,20 +9733,9 @@ local function settle_uarch_match(tournament, m, transition_index, agree_hash, d
     local disputed_period = tournament.disputed_period
     story.transition_opened(tournament, m, transition_index)
     local conns = server:subscribers({ hex(m.one.root), hex(m.two.root) })
-    local hash = server:accept_first(
-        conns,
-        function(v)
-            return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
-        end,
-        "transition_logs",
-        {
-            input_index = disputed_period.input_index,
-            period_index = disputed_period.period_index,
-            transition_index = transition_index,
-        },
-        "TransitionLogsRequest",
-        "TransitionLogsResponse"
-    )
+    local hash = server:accept_first(conns, function(v)
+        return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
+    end, operations.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
     local winner = hash == d1 and m.one or hash == d2 and m.two or nil
     story.transition_settled(m, hash, winner, d1, d2)
     return winner
@@ -9769,9 +9746,7 @@ The logs come from a holder of either claim, produced by positioning a
 fresh fork at the transition and logging it:
 
 ``` lua
-function ops.transition_logs(player, arguments)
-    local input_index, period_index, transition_index =
-        arguments.input_index, arguments.period_index, arguments.transition_index
+function ops.transition_logs(player, input_index, period_index, transition_index)
     local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())

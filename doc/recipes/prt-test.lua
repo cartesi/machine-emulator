@@ -202,6 +202,10 @@ local function is_valid(v)
     return v == "valid" and v
 end
 
+local function operation(name, response_schema)
+    return prtu.operation(name, nil, response_schema)
+end
+
 with_server(function(server, client, wait_connections)
     -- Two players connect before the sealer, one after it. The mcycle tournament must gather
     -- exactly the first two, and must not resolve before the sealer seals it.
@@ -215,9 +219,9 @@ with_server(function(server, client, wait_connections)
     client(nil, submitter("a", answer("valid")))
     client(nil, submitter("b", answer("invalid")))
     client({ role = "sealer" }, function(request)
-        return { value = request.arguments.id }
+        return { value = request.arguments[1] }
     end)
-    local submissions = server:open_tournament("root", nil, "join", {})
+    local submissions = server:open_tournament("root", nil, operation("join"))
     table.sort(submissions, function(x, y)
         return x.value < y.value
     end)
@@ -234,13 +238,16 @@ with_server(function(server, client, wait_connections)
     wait_connections(4)
 
     -- First valid move wins, the rejected proof leaves its connection open.
-    assert(server:accept_first(server:subscribers({ "x" }), is_valid, "move", {}) == "valid", "valid move not taken")
+    assert(
+        server:accept_first(server:subscribers({ "x" }), is_valid, operation("move")) == "valid",
+        "valid move not taken"
+    )
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
 
     -- The acceptor's result, rather than the submitted value, is returned.
     local mapped = server:accept_first({ a }, function(v)
         return is_valid(v) and "mapped"
-    end, "mapped", {})
+    end, operation("mapped"))
     assert(mapped == "mapped", "accept_first did not return the acceptor result")
 
     -- A valid move resolves the request while another holder still owes a reply. When that
@@ -259,8 +266,8 @@ with_server(function(server, client, wait_connections)
     end)
     wait_connections(5)
     local m = server.connections[5]
-    assert(server:accept_first({ m, a }, is_valid, "early", {}) == "valid", "valid move not taken early")
-    assert(server:accept_first({ m }, is_valid, "after_early", {}) == "valid", "stale reply was accepted")
+    assert(server:accept_first({ m, a }, is_valid, operation("early")) == "valid", "valid move not taken early")
+    assert(server:accept_first({ m }, is_valid, operation("after_early")) == "valid", "stale reply was accepted")
     assert(m.stale_requests_pending == 0 and not m.current_request, "stale reply was not consumed")
     assert(not m.dead, "a pending holder was closed")
     -- Without a valid move, the request waits for every holder, and resolves to nil only then.
@@ -271,16 +278,16 @@ with_server(function(server, client, wait_connections)
     end)
     wait_connections(6)
     local n = server.connections[6]
-    assert(server:accept_first({ n, b }, is_valid, "move", {}) == nil, "an unproved move was taken")
+    assert(server:accept_first({ n, b }, is_valid, operation("move")) == nil, "an unproved move was taken")
     assert(replies_seen == 1, "the request resolved before every holder answered")
     assert(not n.dead and not b.dead, "an unproved move closed a connection")
 
     -- A nested tournament asks only its audience, and seals at once.
-    local nested = server:open_tournament("nested", { a }, "join", {})
+    local nested = server:open_tournament("nested", { a }, operation("join"))
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
 
     -- Every holder answers without proof: the request resolves to nil, connections stay open.
-    assert(server:accept_first({ b }, is_valid, "move", {}) == nil, "an unproved move was taken")
+    assert(server:accept_first({ b }, is_valid, operation("move")) == nil, "an unproved move was taken")
     assert(not b.dead, "an unproved move closed its connection")
 
     -- A holder that closes counts as answered. With every holder gone, the claim is unanswered.
@@ -288,10 +295,13 @@ with_server(function(server, client, wait_connections)
         return "close"
     end)
     wait_connections(7)
-    local replies = server:collect(nil, "label", {})
+    local replies = server:collect(nil, operation("label"))
     local d = server.connections[7]
     assert(d.dead and #replies == 5, "the closing client was not dropped from the collection")
-    assert(server:accept_first({ d }, is_valid, "move", {}) == nil, "a request to a closed connection did not resolve")
+    assert(
+        server:accept_first({ d }, is_valid, operation("move")) == nil,
+        "a request to a closed connection did not resolve"
+    )
 
     -- A reply whose value violates the operation's response schema is an invalid operation, not a
     -- malformed connection. Asked alone, a holder answering with such a value leaves the
@@ -315,7 +325,7 @@ with_server(function(server, client, wait_connections)
     end
     local bad = typed_client({ l = 1, r = "not base64!" })
     assert(
-        server:accept_first({ bad }, well_typed, "typed", {}, nil, "PairResponse") == nil,
+        server:accept_first({ bad }, well_typed, operation("typed", "PairResponse")) == nil,
         "a schema-invalid value was taken"
     )
     assert(not next(server.active), "accept_first left a resolved request active")
@@ -323,7 +333,7 @@ with_server(function(server, client, wait_connections)
     -- Alongside a well-typed reply, whichever arrives first, the well-typed value is taken and
     -- both connections stay open.
     local good = typed_client({ l = "a", r = "b" }, "PairResponseEnvelope")
-    local taken = server:accept_first({ bad, good }, well_typed, "typed", {}, nil, "PairResponse")
+    local taken = server:accept_first({ bad, good }, well_typed, operation("typed", "PairResponse"))
     assert(taken and taken.l == "a", "the well-typed reply was not taken")
     assert(not next(server.active), "accept_first left a resolved request active")
     assert(not bad.dead and not good.dead, "a schema-invalid reply closed a connection")
@@ -333,7 +343,7 @@ with_server(function(server, client, wait_connections)
         return "this is not json"
     end)
     wait_connections(10)
-    server:collect(nil, "label", {})
+    server:collect(nil, operation("label"))
     local dead = 0
     for _, connection in ipairs(server.connections) do
         if connection.dead then
@@ -353,7 +363,7 @@ with_server(function(server, client, wait_connections)
     end)
     wait_connections(11)
     local f = server.connections[11]
-    local t2 = server:open_tournament("t2", { f }, "join", {})
+    local t2 = server:open_tournament("t2", { f }, operation("join"))
     assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged seal was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
@@ -362,7 +372,7 @@ with_server(function(server, client, wait_connections)
         return { role = "player" }
     end)
     wait_connections(12)
-    server:collect({ server.connections[12] }, "again", {})
+    server:collect({ server.connections[12] }, operation("again"))
     assert(server.connections[12].dead, "a repeated role announcement was accepted")
     client({ role = "sealer" }, function()
         return "close"
@@ -377,7 +387,7 @@ local ok, err = pcall(with_server, function(server, client, wait_connections)
         return { value = "other" }
     end)
     wait_connections(1)
-    server:open_tournament("t", {}, "join", {})
+    server:open_tournament("t", {}, operation("join"))
 end)
 assert(not ok and err:find("did not seal the tournament asked"), "a wrong seal was accepted")
 
@@ -387,7 +397,7 @@ ok, err = pcall(with_server, function(server, client, wait_connections)
         return "close"
     end)
     wait_connections(1)
-    server:open_tournament("t", {}, "join", {})
+    server:open_tournament("t", {}, operation("join"))
 end)
 assert(not ok and err:find("the sealer went away"), "sealer EOF did not fail the referee")
 print("prt-test: ok")

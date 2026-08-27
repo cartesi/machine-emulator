@@ -59,7 +59,7 @@ end
 local LOG2_MCYCLES_PER_PERIOD = assert(tonumber(arg[3]), "missing log2 of the mcycle period")
 local prt_player = require("prt-player")
 prt_player.configure(LOG2_MCYCLES_PER_PERIOD)
-local request = prt_player.REQUESTS
+local REQUESTS = prt_player.REQUESTS
 local MCYCLE_HEIGHT, UARCH_HEIGHT = prt_player.MCYCLE_HEIGHT, prt_player.UARCH_HEIGHT
 local PERIODS_PER_INPUT = prt_player.PERIODS_PER_INPUT
 local UARCH_CYCLES_PER_MCYCLE = prt_player.UARCH_CYCLES_PER_MCYCLE
@@ -165,8 +165,8 @@ end
 -- docs:end partition_claims
 
 -- Opens a tournament to a fixed audience and partitions its valid claim commitments.
-local function open_tournament(conns, validate, descriptor, ...)
-    return partition_claims(server:collect_submissions(conns, descriptor, ...), validate)
+local function open_tournament(conns, validate, request, ...)
+    return partition_claims(server:collect_submissions(conns, request, ...), validate)
 end
 
 local function validate_mcycle_claim(witness)
@@ -211,7 +211,7 @@ local function wait_for_agreed_hash(match, tournament, state_index)
         local conns = server:subscribers({ claim.computation_hash })
         local move = server:accept_first(conns, function(v)
             return valid_claim_proof(v, state_index - 1, tournament.height, claim.computation_hash) and v
-        end, request.prove_state, claim.computation_hash, state_index - 1)
+        end, REQUESTS.prove_state, claim.computation_hash, state_index - 1)
         if move then
             return move.target_hash
         end
@@ -231,7 +231,7 @@ local function settle_uarch_match(tournament, match, transition_index, current_h
     local conns = server:subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
     local next_hash = server:accept_first(conns, function(v)
         return verify_transition(tournament.dapp_contract, disputed_period, transition_index, current_hash, v)
-    end, request.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
+    end, REQUESTS.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
     local winner = next_hash == claim1_next_hash and match.claim1
         or next_hash == claim2_next_hash and match.claim2
         or nil
@@ -266,7 +266,7 @@ local function open_uarch_tournament(parent, match, disputed_period, agreed_hash
     local claims = open_tournament(
         server:subscribers({ match.claim1.computation_hash, match.claim2.computation_hash }),
         validate,
-        request.commit_uarch_claim,
+        REQUESTS.commit_uarch_claim,
         disputed_period.input_index,
         disputed_period.period_index,
         claim1_next_hash,
@@ -333,7 +333,7 @@ local function run_match(tournament, match)
         local conns = server:subscribers({ match.turn_claim.computation_hash })
         local move = server:accept_first(conns, function(v)
             return valid_move(match, v) and v
-        end, request.advance, match.turn_claim.computation_hash, match.height, match.index, match.left_node)
+        end, REQUESTS.advance, match.turn_claim.computation_hash, match.height, match.index, match.left_node)
         if not move then
             story.default_win(match)
             return match.other_claim
@@ -426,7 +426,7 @@ local function open_mcycle_tournament(referee, dapp_contract)
     local claims = open_tournament(
         server:subscribers({ referee.initial_hash }),
         validate_mcycle_claim,
-        request.commit_mcycle_claim
+        REQUESTS.commit_mcycle_claim
     )
     local tournament = {
         level = "mcycle",
@@ -467,10 +467,10 @@ local function wait_for_result(winner)
     local conns = server:subscribers({ winner.computation_hash })
     local result = server:accept_first(conns, function(v)
         return verify_result(v, winner.final_state) and v
-    end, request.prove_result)
+    end, REQUESTS.prove_result)
     assert(result, "no result proved against the winning final state")
     story.result_posted(result)
-    server:collect(nil, request.finish)
+    server:collect(nil, REQUESTS.finish)
 end
 -- docs:end wait_for_result
 

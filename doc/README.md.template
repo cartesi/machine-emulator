@@ -5419,7 +5419,7 @@ When another holder resolves a request first, the referee counts the reply still
 A tournament opens to an audience, every player that connects until the seal for the mcycle one, the holders of the two disputed claims for a nested one.
 The referee asks the sealer to seal each tournament as it opens, and the submissions close once the seal arrives and every connection in the audience has submitted or closed (`open_tournament`).
 Claim operations authenticate themselves by proof, and sealing does not: it is the referee's trusted orchestration, standing in for the clock the contracts use.
-The transport enforces that trust: a connection announces its role once, on its first line, the sealer is the connection that announced itself as such, a seal request is bound to it, and a seal is taken only from it, for the tournament it names.
+The transport enforces that trust: a connection announces its role once, on its first line, the sealer is the connection that announced itself as such, and one seal request at a time is bound to it, so its next reply closes exactly the tournament awaiting that reply.
 The model thus assumes a process announces its role honestly, and a sealer that goes away fails the referee outright, since no tournament could ever close again.
 Nothing in the referee waits on the clock, and nothing depends on the order replies arrive in, not even which connections stay open.
 A claim with nobody left to answer for it is eliminated at once, which is all that ever happens to the claim of a player who walks away, and a claim anybody answers for survives.

@@ -103,11 +103,11 @@ for _, lie in ipairs({ 0, 1, 6, 13, LEAVES - 1 }) do
         assert(honest.root ~= liar.root)
         -- honest opens first
         local dispute = walk(honest, liar)
-        assert(dispute.position == lie, "walk missed the divergent leaf")
+        assert(dispute.leaf_index == lie, "walk missed the divergent leaf")
         assert(dispute.d1 == base and dispute.d2 == fake, "walk misattributed the leaves")
         -- liar opens first: the same leaf, the commitments swapped
         local mirrored = walk(liar, honest)
-        assert(mirrored.position == lie and mirrored.d1 == fake and mirrored.d2 == base, "walk is not symmetric")
+        assert(mirrored.leaf_index == lie and mirrored.d1 == fake and mirrored.d2 == base, "walk is not symmetric")
         -- a right leaf exposes the agreed left leaf, a left leaf does not
         if lie % 2 == 1 then
             assert(dispute.agreed == honest.leaves[lie - 1] and mirrored.agreed == dispute.agreed, "wrong agreed leaf")
@@ -237,11 +237,11 @@ with_server(function(server, client, wait_connections)
     assert(server:ask("m1", server:subscribers({ "x" }), nil, is_valid, "return 1") == "valid", "valid move not taken")
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
 
-    -- The validator's result, rather than the submitted value, is returned.
+    -- The acceptor's result, rather than the submitted value, is returned.
     local mapped = server:ask("m1-mapped", { a }, nil, function(v)
         return is_valid(v) and "mapped"
     end, "return 1")
-    assert(mapped == "mapped", "ask did not return the validator result")
+    assert(mapped == "mapped", "ask did not return the acceptor result")
 
     -- A valid move resolves the request at once, while another holder is still to answer:
     -- the mute holder never replies on this subject, and the referee advances regardless.

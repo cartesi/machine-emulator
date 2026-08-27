@@ -5313,6 +5313,8 @@ The claim tree therefore stores *runs*, each a node hash and how many consecutiv
 The root of a subtree holding 2<sup>k</sup> copies of the same node takes k hashes by repeated squaring, cached per node, so a run of any length costs nothing to stand under a query (`runs_node` in `prtu.lua`).
 ```{.lua key=prt_runs_node include=prtu.lua replace=null}
 ```
+```{.lua key=prt_story include=prt-story.lua replace=null}
+```
 
 Second, the stored nodes need not be the leaves.
 The machine can deliver the sampled hashes in *bundles*, one subtree root per 2<sup>4</sup> mcycle samples (or per 2<sup>16</sup> uarch transitions), which divides the entries a player stores and carries by that much.
@@ -5338,6 +5340,7 @@ The mcycle tournament packs what the reduction needs: the agreed initial state h
 Everything hard, the accept loop, the wire, the coroutine scheduling, is hidden in the referee server:
 ```{.lua key=prt_run_referee include=prt.lua/run_referee title="prt.lua (excerpt)"}
 ```
+Calls to `story` report semantic milestones; their formatting and all presentation-only calculations live in `prt-story.lua`, outside the algorithm snippets.
 
 A tournament opens, gathers claim submissions, is sealed, and runs on the claims it sealed with.
 The mcycle tournament is open to every player that connects until a *sealer* seals it, so the referee never needs to know how many players to expect.
@@ -5374,13 +5377,13 @@ When the divergence lands on a right leaf, the agreed state is the left leaf, ju
 
 An mcycle match settles into a uarch tournament.
 The two claims part ways over what the state hash was after one period of one input, so each side must now defend a uarch claim over that period, whose final state is the mcycle leaf it committed to.
-The uarch tournament follows the same lifecycle as the root one, open, submit, seal, run, with two differences: its audience is the holders of the two disputed claims, and a claim may only join if its final state is one of the two contested values, the same restriction `validContestedFinalState` imposes on chain (`open_uarch_tournament`).
+The uarch tournament follows the same lifecycle as the mcycle one, open, submit, seal, run, with two differences: its audience is the holders of the two disputed claims, and a claim may only join if its final state is one of the two contested values, the same restriction `validContestedFinalState` imposes on chain (`open_uarch_tournament`).
 The uarch winner's final state names the mcycle claim that survives:
 ```{.lua key=prt_settle_mcycle include=prt.lua/settle_mcycle_match title="prt.lua (excerpt)"}
 ```
 
 A uarch match settles against the machine itself.
-The walk has isolated a single uarch transition, out of an agreed state hash, and the position picks the transition's form, as in Dave's `CartesiStateTransition.sol`.
+The walk has isolated a single uarch transition out of an agreed state hash, and its index within the disputed mcycle period picks the transition's form, as in Dave's `CartesiStateTransition.sol`.
 The transition out of an input boundary includes the input the dapp contract holds (never one a player supplies) before the first uarch step.
 The transition closing an instruction verifies a step, by then a fixed point, and the uarch reset, which carries the revert when the instruction rejected an input.
 Every other transition is an ordinary uarch step:
@@ -5410,7 +5413,7 @@ When a match needs a move, the server asks the holders of the claim in question,
 A reply that fails to prove itself is rejected, as the blockchain rejects a bad transaction, and counts as that connection's answer.
 Only a line the referee cannot decode, or a closed socket, ends a connection.
 A request whose every holder answered without proof, or closed, resolves to nothing, and the claim it was about is eliminated (`ask` in `prtu.lua`).
-A tournament opens to an audience, every player that connects until the seal for the root one, the holders of the two disputed claims for a nested one.
+A tournament opens to an audience, every player that connects until the seal for the mcycle one, the holders of the two disputed claims for a nested one.
 The referee asks the sealer to seal each tournament as it opens, and the submissions close once the seal arrives and every connection in the audience has submitted or closed (`open_tournament`).
 Claim operations authenticate themselves by proof, and sealing does not: it is the referee's trusted orchestration, standing in for the clock the contracts use.
 The transport enforces that trust: a connection announces its role once, on its first line, the sealer is the connection that announced itself as such, a seal request is bound to it, and a seal is taken only from it, for the tournament it names.
@@ -5446,11 +5449,11 @@ To run the tournament, start the referee, giving it the mcycle period and the ep
 ```{.bash key=prt_test depends=prt_test_src,prt_runs_node replace=null}
 lua5.4 "$RECIPES_DIR/prt-test.lua"
 ```
-```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_runs_node,prt_build_mcycle_claim,prt_run_match,prt_test outputs=claims,posted,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_4_elided,match_4_1_elided,match_5_elided,match_5_1_elided replace=source/referee}
+```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,prt_test outputs=claims,posted,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_4_elided,match_4_1_elided,match_5_elided,match_5_1_elided replace=source/referee}
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
+ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prt-story.lua" "$RECIPES_DIR/prtu.lua" .
 cartesi-rollup-data.lua --utf8-payload encode advance > forged-input-2.bin <<EOF
 {
   "chain_id": 0,

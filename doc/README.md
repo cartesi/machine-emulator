@@ -9536,6 +9536,10 @@ local function run_referee(referee, dapp_contract)
 end
 ```
 
+Calls to `story` report semantic milestones; their formatting and all
+presentation-only calculations live in `prt-story.lua`, outside the
+algorithm snippets.
+
 A tournament opens, gathers claim submissions, is sealed, and runs on
 the claims it sealed with. The mcycle tournament is open to every player
 that connects until a *sealer* seals it, so the referee never needs to
@@ -9605,15 +9609,15 @@ exposed children are leaves, and the walk returns the isolated dispute:
 local function advance_match(m, move)
     local descend_left = move.l ~= m.left_node
     if m.height == 1 then
-        local position, d_turn, d_other, agreed
+        local leaf_index, d_turn, d_other, agreed
         if descend_left then
-            position, d_turn, d_other = 2 * m.index, move.l, m.left_node
+            leaf_index, d_turn, d_other = 2 * m.index, move.l, m.left_node
         else
-            position, d_turn, d_other, agreed = 2 * m.index + 1, move.r, m.right_node, move.l
+            leaf_index, d_turn, d_other, agreed = 2 * m.index + 1, move.r, m.right_node, move.l
         end
         local d1 = m.turn == m.one and d_turn or d_other
         local d2 = m.turn == m.one and d_other or d_turn
-        return { position = position, agreed = agreed, d1 = d1, d2 = d2 }
+        return { leaf_index = leaf_index, agreed = agreed, d1 = d1, d2 = d2 }
     end
     if descend_left then
         m.other_parent, m.index = m.left_node, 2 * m.index
@@ -9642,25 +9646,14 @@ local function run_match(tournament, m)
             return valid_move(m, v) and v
         end, 'return player:advance("%s", %d, %d, "%s")', hex(m.turn.root), m.height, m.index, hex(m.left_node))
         if not move then
-            narrate(
-                m.tag,
-                "Nobody opened claim %s. Claim %s wins by default.",
-                short_hash(m.turn.root),
-                short_hash(m.other.root)
-            )
+            story.default_win(m)
             return m.other
         end
         local dispute = advance_match(m, move)
         if dispute then
             return settle_dispute(tournament, m, dispute)
         end
-        narrate(
-            m.tag,
-            "Height %d: the claims first disagree within leaves [0x%x, 0x%x].",
-            m.height,
-            m.index << m.height,
-            ((m.index + 1) << m.height) - 1
-        )
+        story.match_advanced(m)
     end
 end
 ```
@@ -9677,7 +9670,7 @@ An mcycle match settles into a uarch tournament. The two claims part
 ways over what the state hash was after one period of one input, so each
 side must now defend a uarch claim over that period, whose final state
 is the mcycle leaf it committed to. The uarch tournament follows the
-same lifecycle as the root one, open, submit, seal, run, with two
+same lifecycle as the mcycle one, open, submit, seal, run, with two
 differences: its audience is the holders of the two disputed claims, and
 a claim may only join if its final state is one of the two contested
 values, the same restriction `validContestedFinalState` imposes on chain
@@ -9685,57 +9678,42 @@ values, the same restriction `validContestedFinalState` imposes on chain
 mcycle claim that survives:
 
 ``` lua
-local function settle_mcycle_match(tournament, m, position, agree_hash, d1, d2)
-    local period = { input_index = position // LEAVES_PER_INPUT, period_index = position % LEAVES_PER_INPUT }
-    narrate(
-        m.tag,
-        "A uarch tournament opens over input %d, period %d, starting from %s.",
-        period.input_index,
-        period.period_index,
-        short_hash(agree_hash)
-    )
-    local uarch_tournament = open_uarch_tournament(tournament, m, period, agree_hash, d1, d2)
-    local winner = run_tournament(uarch_tournament)
-    if not winner then
-        narrate(m.tag, "The uarch tournament had no winner. Both claims are eliminated.")
-        return nil
-    end
-    local survivor, loser = m.one, m.two
-    if winner.final_state == d2 then
-        survivor, loser = m.two, m.one
-    end
-    narrate(
-        m.tag,
-        "The uarch winner confirms %s. Claim %s is eliminated.",
-        short_hash(winner.final_state),
-        short_hash(loser.root)
-    )
+local function settle_mcycle_match(tournament, m, epoch_period_index, agree_hash, d1, d2)
+    local disputed_period = {
+        input_index = epoch_period_index // PERIODS_PER_INPUT,
+        period_index = epoch_period_index % PERIODS_PER_INPUT,
+    }
+    story.uarch_tournament_opened(m, disputed_period, agree_hash)
+    local uarch_tournament = open_uarch_tournament(tournament, m, disputed_period, agree_hash, d1, d2)
+    local uarch_winner = run_tournament(uarch_tournament)
+    local survivor = uarch_winner and (uarch_winner.final_state == d1 and m.one or m.two)
+    story.uarch_tournament_settled(m, uarch_winner, survivor)
     return survivor
 end
 ```
 
 A uarch match settles against the machine itself. The walk has isolated
-a single uarch transition, out of an agreed state hash, and the position
-picks the transition’s form, as in Dave’s `CartesiStateTransition.sol`.
-The transition out of an input boundary includes the input the dapp
-contract holds (never one a player supplies) before the first uarch
-step. The transition closing an instruction verifies a step, by then a
-fixed point, and the uarch reset, which carries the revert when the
-instruction rejected an input. Every other transition is an ordinary
-uarch step:
+a single uarch transition out of an agreed state hash, and its index
+within the disputed mcycle period picks the transition’s form, as in
+Dave’s `CartesiStateTransition.sol`. The transition out of an input
+boundary includes the input the dapp contract holds (never one a player
+supplies) before the first uarch step. The transition closing an
+instruction verifies a step, by then a fixed point, and the uarch reset,
+which carries the revert when the instruction rejected an input. Every
+other transition is an ordinary uarch step:
 
 ``` lua
-local function verify_transition(dapp_contract, period, position, agree_hash, logs)
+local function verify_transition(dapp_contract, disputed_period, transition_index, agree_hash, logs)
     local machine = cartesi.machine
-    local t_uarch = position & (UARCH_SPAN - 1)
+    local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local hash = agree_hash
-    local data = dapp_contract.inputs[period.input_index + 1]
-    if position == 0 and period.period_index == 0 and data then
+    local data = dapp_contract.inputs[disputed_period.input_index + 1]
+    if transition_index == 0 and disputed_period.period_index == 0 and data then
         local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
         hash = machine:verify_send_cmio_response(reason, data, hash, logs.send_cmio_log, hash)
     end
     hash = machine:verify_step_uarch(hash, logs.step_log)
-    if t_uarch == UARCH_SPAN - 1 then
+    if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
         hash = machine:verify_reset_uarch(hash, logs.reset_log)
     end
     return hash
@@ -9750,28 +9728,25 @@ true hash wins the match; a claim that committed to anything else loses,
 whoever ends up supplying the winning log:
 
 ``` lua
-local function settle_uarch_match(tournament, m, position, agree_hash, d1, d2)
-    local period = tournament.period
-    narrate(m.tag, "The disputed transition is %s.", transition_form(tournament, position))
-    local subject = string.format("%s-logs-%d", m.tag, position)
+local function settle_uarch_match(tournament, m, transition_index, agree_hash, d1, d2)
+    local disputed_period = tournament.disputed_period
+    story.transition_opened(tournament, m, transition_index)
+    local subject = string.format("%s-logs-%d", m.tag, transition_index)
     local conns = server:subscribers({ hex(m.one.root), hex(m.two.root) })
-    local hash = server:ask(subject, conns, "Logs", function(v)
-        return verify_transition(tournament.dapp_contract, period, position, agree_hash, v)
-    end, "return player:transition_logs(%d, %d, %d)", period.input_index, period.period_index, position)
-    if not hash then
-        narrate(m.tag, "No log settled the transition. Both claims are eliminated.")
-        return nil
-    end
-    narrate(m.tag, "The disputed transition provably leads to %s.", short_hash(hash))
-    if hash ~= d1 and hash ~= d2 then
-        narrate(m.tag, "Neither claim committed to it. Both are eliminated.")
-        return nil
-    end
-    local winner, loser, lost = m.one, m.two, d2
-    if hash == d2 then
-        winner, loser, lost = m.two, m.one, d1
-    end
-    narrate(m.tag, "Claim %s committed to %s and is eliminated.", short_hash(loser.root), short_hash(lost))
+    local hash = server:ask(
+        subject,
+        conns,
+        "Logs",
+        function(v)
+            return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
+        end,
+        "return player:transition_logs(%d, %d, %d)",
+        disputed_period.input_index,
+        disputed_period.period_index,
+        transition_index
+    )
+    local winner = hash == d1 and m.one or hash == d2 and m.two or nil
+    story.transition_settled(m, hash, winner, d1, d2)
     return winner
 end
 ```
@@ -9780,20 +9755,20 @@ The logs come from a holder of either claim, produced by positioning a
 fresh fork at the transition and logging it:
 
 ``` lua
-function ops.transition_logs(player, input_index, period_index, position)
-    local t_mcycle = position >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    local t_uarch = position & (UARCH_SPAN - 1)
+function ops.transition_logs(player, input_index, period_index, transition_index)
+    local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
     local data = player.inputs[input_index + 1]
-    if position == 0 and period_index == 0 and data then
+    if transition_index == 0 and period_index == 0 and data then
         local revert_root_hash = machine:get_root_hash()
         local send_cmio_log =
             machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
-    advance_fork(player, machine, input_index + 1, period_index * PERIOD + t_mcycle)
-    machine:run_uarch(t_uarch)
-    if t_uarch == UARCH_SPAN - 1 then
+    advance_fork(player, machine, input_index + 1, period_index * MCYCLES_PER_PERIOD + mcycle_offset)
+    machine:run_uarch(uarch_cycle)
+    if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
         local step_log = machine:log_step_uarch()
         return { step_log = step_log, reset_log = machine:log_reset_uarch() }
     end
@@ -9826,7 +9801,7 @@ that connection’s answer. Only a line the referee cannot decode, or a
 closed socket, ends a connection. A request whose every holder answered
 without proof, or closed, resolves to nothing, and the claim it was
 about is eliminated (`ask` in `prtu.lua`). A tournament opens to an
-audience, every player that connects until the seal for the root one,
+audience, every player that connects until the seal for the mcycle one,
 the holders of the two disputed claims for a nested one. The referee
 asks the sealer to seal each tournament as it opens, and the submissions
 close once the seal arrives and every connection in the audience has

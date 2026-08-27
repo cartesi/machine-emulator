@@ -144,7 +144,6 @@ local function run_with_server(scenario)
     local server = prtu.new_server("127.0.0.1:0")
     local _, port = server.listener:getsockname()
     local dispatcher = server.dispatcher
-    server:accept()
     local function run_client(hello, handler)
         dispatcher:spawn(function()
             local sock = assert(socket.connect("127.0.0.1", port))
@@ -230,6 +229,7 @@ run_with_server(function(server, run_client, wait_connections)
     server:accept_subscribers("initial")
     local submissions =
         server:collect_submissions(server:get_subscribers({ "initial" }), define_request("commit_mcycle_claim"))
+    assert(#server.open_phases == 0, "sealed phases were retained")
     table.sort(submissions, function(x, y)
         return x.value < y.value
     end)
@@ -302,6 +302,7 @@ run_with_server(function(server, run_client, wait_connections)
     -- A nested tournament asks only its audience, and seals at once.
     local nested = server:collect_submissions({ a }, define_request("commit_mcycle_claim"))
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
+    assert(#server.open_phases == 0, "sealed nested tournament was retained")
 
     -- Every holder answers without proof: the request resolves to nil, connections stay open.
     assert(server:accept_first({ b }, is_valid, define_request("move")) == nil, "an unproved move was taken")
@@ -396,6 +397,30 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     wait_connections(13)
     assert(server.connections[13].dead and server.sealer == server.connections[3], "a second sealer was accepted")
+
+    -- A stale reply is still a protocol line: malformed JSON closes the connection before the
+    -- stale position is discarded.
+    local delayed_malformed = false
+    run_client(nil, function(wire_request)
+        if wire_request.operation == "malformed_early" then
+            delayed_malformed = true
+            return nil
+        elseif delayed_malformed then
+            return "not json\n" .. cartesi.tojson({ value = "valid" }, -1)
+        end
+        return { value = "valid" }
+    end)
+    wait_connections(14)
+    local malformed = server.connections[14]
+    assert(
+        server:accept_first({ malformed, a }, is_valid, define_request("malformed_early")) == "valid",
+        "valid move did not resolve before the delayed malformed reply"
+    )
+    assert(
+        server:accept_first({ malformed }, is_valid, define_request("after_malformed")) == nil,
+        "a malformed stale line produced a value"
+    )
+    assert(malformed.dead, "a malformed stale line did not close its sender")
 end)
 
 -- An invalid seal response is a sealer bug and fails the referee.

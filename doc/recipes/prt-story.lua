@@ -150,7 +150,7 @@ function story.report_match(tournament, round, match)
     )
 end
 
-function story.report_round(tournament, claims, round, matches, results)
+function story.report_round(tournament, round, matches, results, bye)
     for slot, match in ipairs(matches) do
         if results[slot] then
             narrate(
@@ -163,11 +163,11 @@ function story.report_round(tournament, claims, round, matches, results)
             narrate(get_tournament_stream(tournament), "Match %s: no claim survives.", get_match_label(match))
         end
     end
-    if #claims % 2 == 1 then
+    if bye then
         narrate(
             get_tournament_stream(tournament),
             "Claim %s takes a bye to round %d.",
-            format_short_hash(claims[#claims].computation_hash),
+            format_short_hash(bye.computation_hash),
             round + 1
         )
     end

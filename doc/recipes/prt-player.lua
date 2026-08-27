@@ -1,5 +1,5 @@
 -- The player side of the PRT game: the machines, the claim builds, the operations the
--- referee's snippets invoke, and the dishonest strategies. The whole geometry follows from the
+-- referee invokes, and the dishonest strategies. The whole geometry follows from the
 -- log2 of the mcycle period, so the module is configured with it before use, and publishes
 -- the geometry along with the player constructors so the referee shares the same numbers.
 
@@ -9,28 +9,51 @@ local hash_tree = require("cartesi.hash-tree")
 local prtu = require("prtu")
 
 local keccak = cartesi.keccak256
-local short_hash, hex, unhex = prtu.short_hash, prtu.hex, prtu.unhex
+local short_hash = prtu.short_hash
 local push_run, slice_runs = prtu.push_run, prtu.slice_runs
 local new_tree = prtu.new_tree
 
--- The reply schemas this game adds to the shared dictionary.
-prtu.SCHEMA_DICT.Join = {
+-- The request and response schemas this game adds to the shared dictionary.
+prtu.SCHEMA_DICT.JoinRequest = {}
+prtu.SCHEMA_DICT.JoinResponse = {
     left = "Base64",
     right = "Base64",
     proof = "Proof",
 }
-prtu.SCHEMA_DICT.Advance = { l = "Base64", r = "Base64", nl = "Base64", nr = "Base64" }
-prtu.SCHEMA_DICT.Logs = {
+prtu.SCHEMA_DICT.AdvanceRequest = { root = "Base64", opponent_left = "Base64" }
+prtu.SCHEMA_DICT.AdvanceResponse = { l = "Base64", r = "Base64", nl = "Base64", nr = "Base64" }
+prtu.SCHEMA_DICT.ProveRequest = { root = "Base64" }
+prtu.SCHEMA_DICT.ProveResponse = "Proof"
+prtu.SCHEMA_DICT.CommitUarchClaimRequest = { d1 = "Base64", d2 = "Base64" }
+prtu.SCHEMA_DICT.CommitUarchClaimResponse = "JoinResponse"
+prtu.SCHEMA_DICT.TransitionLogsRequest = {}
+prtu.SCHEMA_DICT.TransitionLogsResponse = {
     send_cmio_log = "AccessLog",
     step_log = "AccessLog",
     reset_log = "AccessLog",
 }
 -- The epoch result: an output, its proof in the outputs Merkle tree, and the proof tying that
 -- tree's root into the winning final state.
-prtu.SCHEMA_DICT.EpochResult = {
+prtu.SCHEMA_DICT.ProveResultRequest = {}
+prtu.SCHEMA_DICT.ProveResultResponse = {
     output = "Base64",
     output_proof = "Proof",
     outputs_merkle_root_proof = "Proof",
+}
+prtu.SCHEMA_DICT.FinishRequest = {}
+prtu.SCHEMA_DICT.FinishResponse = "Default"
+
+local OPERATION_SCHEMAS = {
+    join = { request_schema = "JoinRequest", response_schema = "JoinResponse" },
+    advance = { request_schema = "AdvanceRequest", response_schema = "AdvanceResponse" },
+    prove = { request_schema = "ProveRequest", response_schema = "ProveResponse" },
+    commit_uarch_claim = {
+        request_schema = "CommitUarchClaimRequest",
+        response_schema = "CommitUarchClaimResponse",
+    },
+    transition_logs = { request_schema = "TransitionLogsRequest", response_schema = "TransitionLogsResponse" },
+    prove_result = { request_schema = "ProveResultRequest", response_schema = "ProveResultResponse" },
+    finish = { request_schema = "FinishRequest", response_schema = "FinishResponse" },
 }
 
 local function stderrf(fmt, ...)
@@ -363,7 +386,7 @@ end
 --------------------------------------------------------------------------------
 -- Player: operations
 --
--- The handlers below are what the referee's snippets invoke. Each returns the value to
+-- The handlers below are the operations the referee invokes. Each returns the value to
 -- answer with. A player follows one claim lineage: its mcycle claim, and, while that claim's
 -- match is suspended in a uarch tournament, the uarch claim it committed there. The referee
 -- only asks a player about claims it holds, so a request about any other claim is a bug, and
@@ -373,13 +396,13 @@ end
 local ops = {}
 
 -- The claim in the player's lineage with the given root.
-local function held(player, root_hex)
+local function held(player, root)
     for _, tree in ipairs({ player.mcycle_claim, player.uarch_claim }) do
-        if hex(tree:root()) == root_hex then
+        if tree:root() == root then
             return tree
         end
     end
-    error("asked about a claim this player does not hold: " .. root_hex)
+    error("asked about a claim this player does not hold: " .. short_hash(root))
 end
 
 -- The witness for joining with a claim: the root's two children and the standard proof of its
@@ -409,20 +432,21 @@ end
 -- returning its two children l and r, and, above the leaves, the two children nl and nr of
 -- the child the walk descends into. The descent goes left when l differs from the opponent's
 -- exposed left child, which the referee passes as opp_left.
-function ops.advance(player, root_hex, h, index, opp_left_hex)
-    local tree = held(player, root_hex)
-    local l, r = tree:children(h, index)
+function ops.advance(player, arguments)
+    local tree = held(player, arguments.root)
+    local l, r = tree:children(arguments.height, arguments.index)
     local move = { l = l, r = r }
-    if h > 1 then
-        local descend_left = l ~= unhex(opp_left_hex)
-        move.nl, move.nr = tree:children(h - 1, descend_left and 2 * index or 2 * index + 1)
+    if arguments.height > 1 then
+        local descend_left = l ~= arguments.opponent_left
+        local child_index = descend_left and 2 * arguments.index or 2 * arguments.index + 1
+        move.nl, move.nr = tree:children(arguments.height - 1, child_index)
     end
     return move
 end
 
 -- The proof of one leaf of one of the player's claims.
-function ops.prove(player, root_hex, index)
-    return held(player, root_hex):prove(index)
+function ops.prove(player, arguments)
+    return held(player, arguments.root):prove(arguments.leaf_index)
 end
 
 -- Joins the uarch tournament over one mcycle period that the player's mcycle claim is
@@ -432,20 +456,20 @@ end
 -- and the period index are 0-based, as the referee counts them. A holder whose uarch claim
 -- ends in neither contested value cannot defend its parent claim, and dies on the
 -- contradiction.
-function ops.commit_uarch_claim(player, input_index, period_index, d1_hex, d2_hex)
+function ops.commit_uarch_claim(player, arguments)
+    local input_index, period_index = arguments.input_index, arguments.period_index
     stderrf("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
     player.uarch_claim = player.make_uarch_tree(player, input_index + 1, period_index)
     local witness = join_witness(player.uarch_claim)
     local final_state = witness.proof.target_hash
-    local final_hex = hex(final_state)
     assert(
-        final_hex == d1_hex or final_hex == d2_hex,
+        final_state == arguments.d1 or final_state == arguments.d2,
         string.format(
             "%s: uarch final %s matches neither contested final %s nor %s",
             player.label,
             short_hash(final_state),
-            short_hash(unhex(d1_hex)),
-            short_hash(unhex(d2_hex))
+            short_hash(arguments.d1),
+            short_hash(arguments.d2)
         )
     )
     stderrf("%s: uarch claim ready\n", player.label)
@@ -458,7 +482,9 @@ end
 -- The transition closing an instruction executes one more step, by then a fixed point, and
 -- the reset. Every other transition is an ordinary uarch step.
 -- docs:begin transition_logs
-function ops.transition_logs(player, input_index, period_index, transition_index)
+function ops.transition_logs(player, arguments)
+    local input_index, period_index, transition_index =
+        arguments.input_index, arguments.period_index, arguments.transition_index
     local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
@@ -527,13 +553,13 @@ function ops.finish(player)
     return true
 end
 
--- A player bundles the game's operations with the machines it builds along the way. It
--- also carries a reference to itself under `player`, since it is the environment the
--- referee's snippets run in.
+-- A player bundles the game's operations and their schemas with the machines it builds along
+-- the way.
 local function new_player(label, inputs)
     local player = {
         label = label,
         inputs = inputs,
+        operation_schemas = OPERATION_SCHEMAS,
         boundaries = {},
         fixed_leaves = {},
         make_mcycle_tree = function(self)
@@ -555,7 +581,6 @@ local function new_player(label, inputs)
     for name, handler in pairs(ops) do
         player[name] = handler
     end
-    player.player = player
     return player
 end
 

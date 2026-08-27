@@ -40,14 +40,14 @@ local wait_for_any, wait_for_log, wait_for_commitments = vgu.wait_for_any, vgu.w
 -- The schemas this game adds to the shared dictionary.
 -- The disputed transition's access logs. A combined transition carries two logs, an ordinary
 -- step just the one.
-vgu.SCHEMA_DICT.LogCommitment = {
+vgu.SCHEMA_DICT.CommitLogResponse = {
     send_cmio_log = "AccessLog",
     step_log = "AccessLog",
     reset_log = "AccessLog",
 }
 -- An output, its proof in the outputs Merkle tree, and the proof tying that tree's root hash
 -- into the final state hash.
-vgu.SCHEMA_DICT.EpochResult = {
+vgu.SCHEMA_DICT.ProveOutputResponse = {
     output = "Base64",
     output_proof = "Proof",
     outputs_merkle_root_proof = "Proof",
@@ -196,8 +196,9 @@ end
 -- microarchitecture within the disputed instruction, again including the input first when that
 -- instruction is the one that resumes the machine.
 -- docs:begin commit_bisection
-local function commit_bisection(player, branch, level, target)
-    take_branch(player, branch)
+local function commit_bisection(player, arguments)
+    take_branch(player, arguments.branch)
+    local level, target = arguments.level, arguments.target
     local agreed = player.agreed
     if level == "input" then
         local machine = assert(agreed.machine:fork_server())
@@ -243,8 +244,9 @@ end
 -- the reset, and every other is an ordinary step. A combined transition is committed as its two
 -- logs, each performing the action it records.
 -- docs:begin commit_log
-local function commit_log(player, branch, mcycle_offset, uarch_cycle)
-    take_branch(player, branch)
+local function commit_log(player, arguments)
+    take_branch(player, arguments.branch)
+    local mcycle_offset, uarch_cycle = arguments.mcycle, arguments.uarch_cycle
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
         local revert_root_hash = agreed:get_root_hash()
@@ -283,6 +285,18 @@ local function new_player(machine, inputs, send_result_delay)
         agreed = { machine = machine, input_index = 0 },
         inputs = inputs,
         send_result_delay = send_result_delay,
+        operation_schemas = {
+            commit_final_hash = {
+                request_schema = "CommitFinalHashRequest",
+                response_schema = "CommitFinalHashResponse",
+            },
+            commit_bisection = {
+                request_schema = "CommitBisectionRequest",
+                response_schema = "CommitBisectionResponse",
+            },
+            commit_log = { request_schema = "CommitLogRequest", response_schema = "CommitLogResponse" },
+            prove_output = { request_schema = "ProveOutputRequest", response_schema = "ProveOutputResponse" },
+        },
         advance = advance,
         revert_if_rejected = revert_if_rejected,
         commit_final_hash = commit_final_hash,
@@ -298,7 +312,7 @@ end
 
 -- Asks both players for the result and returns the first epoch result to arrive.
 local function wait_for_output(players)
-    return wait_for_any(players, "EpochResult", "return player:prove_output()")
+    return wait_for_any(players, "prove_output", {}, "ProveOutputRequest", "ProveOutputResponse")
 end
 
 -- Checks an epoch result against a verified final hash. The outputs Merkle root proof must

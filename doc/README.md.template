@@ -5255,7 +5255,7 @@ Commitments can be compared in any order, so claims pair up in a tournament of c
 A commitment also does not belong to whoever posted it.
 Every request the referee issues is about a claim, any player may answer, and an answer must prove itself against the claim, so it never matters who sent it.
 Claims are what matter, not players.
-Every honest player computes the same claims and defends them interchangeably, and a claim survives as long as anyone at all defends it.
+Every honest player computes the same claims, and a claim survives as long as anyone at all defends it.
 An unanswered request eliminates a claim, never a player.
 
 ### Computation hash claims
@@ -5304,36 +5304,30 @@ The production dispute in Dave's `ArbitrationConstants.sol` covers a larger epoc
 
 ### Claim trees with repetition
 
-An mcycle claim tree has 2<sup>[]{replace=rollup_constants/log2_mcycle_leaves code=no}</sup> leaves and a uarch claim tree 2<sup>[]{replace=rollup_constants/log2_uarch_leaves code=no}</sup>, and a player holds several claims at once, so materializing them is out of the question.
+An mcycle claim tree has 2<sup>[]{replace=rollup_constants/log2_mcycle_leaves code=no}</sup> leaves and a uarch claim tree 2<sup>[]{replace=rollup_constants/log2_uarch_leaves code=no}</sup>, and a player holds its mcycle claim and, while that claim's match is suspended in a uarch tournament, the uarch claim it committed there, so materializing them is out of the question.
 Two observations keep them small.
 
 First, almost all leaves are repetitions.
 The calculator is done with each input within about 50 million mcycles, and everything after that, out to the input's 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup>th mcycle, repeats one state hash.
 The claim tree therefore stores *runs*, each a node hash and how many consecutive times it appears.
-The root of a subtree holding 2<sup>k</sup> copies of the same node takes k hashes by repeated squaring, cached per node, so a run of any length costs nothing to stand under a query:
-```{.lua key=prt_runs_node include=prtu.lua/runs_node title="prtu.lua (excerpt)"}
+The root of a subtree holding 2<sup>k</sup> copies of the same node takes k hashes by repeated squaring, cached per node, so a run of any length costs nothing to stand under a query (`runs_node` in `prtu.lua`).
+```{.lua key=prt_runs_node include=prtu.lua replace=null}
 ```
 
 Second, the stored nodes need not be the leaves.
 The machine can deliver the sampled hashes in *bundles*, one subtree root per 2<sup>4</sup> mcycle samples (or per 2<sup>16</sup> uarch transitions), which divides the entries a player stores and carries by that much.
 Bundle roots are interior nodes of the claim tree, so the root is unchanged.
 The three inputs of our epoch fit in about nine thousand stored mcycle entries, and one uarch span in about three thousand.
-When a dispute descends below a stored entry, the player recovers the leaves under that one entry by re-running a fork of the input's boundary machine through the entry's window, and caches the result:
-```{.lua key=prt_tree_node include=prtu.lua/tree_node title="prtu.lua (excerpt)"}
-```
+When a dispute descends below a stored entry, the player recovers the leaves under that one entry by re-running a fork of the input's boundary machine through the entry's window, and caches the result (`tree_node` in `prtu.lua`).
 Only the entries a dispute actually visits are ever expanded, and each costs one machine re-run.
 
 The builds themselves stream out of the emulator.
 They follow the same collection contract as `cartesi-machine`'s computation-hash builders: each input owns a fixed-capacity segment, collection state threads across yields, and the final repeatable group returned at a fixed point fills the segment's remaining positions.
 The only different sink is PRT's run-compressed tree, which retains the nodes needed to answer later tournament queries.
-The mcycle build advances the whole epoch once, folding each input's bundles into runs, padding each input's span with the fixed point where its guest stopped, and keeping a fork at each input boundary to anchor every later re-run:
-```{.lua key=prt_build_mcycle_claim include=prt.lua/build_mcycle_claim title="prt.lua (excerpt)"}
-```
-The refinement re-run recovers one entry's samples the same way:
-```{.lua key=prt_refine_mcycle_claim include=prt.lua/refine_mcycle_claim title="prt.lua (excerpt)"}
-```
-The uarch build expands one period, instruction by instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose stream already carries the halt repetitions compressed and the reset entries marked:
-```{.lua key=prt_build_uarch_claim include=prt.lua/build_uarch_claim title="prt.lua (excerpt)"}
+The mcycle build (`build_mcycle_claim` in `prt-player.lua`) advances the whole epoch once, folding each input's bundles into runs, padding each input's span with the fixed point where its guest stopped, and keeping a fork at each input boundary to anchor every later re-run.
+The refinement re-run (`refine_mcycle_claim`) recovers one entry's samples the same way.
+The uarch build (`build_uarch_claim`) expands one period, instruction by instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose stream already carries the halt repetitions compressed and the reset entries marked.
+```{.lua key=prt_build_mcycle_claim include=prt-player.lua replace=null}
 ```
 
 ### The tournament
@@ -5345,35 +5339,42 @@ Everything hard, the accept loop, the wire, the coroutine scheduling, is hidden 
 ```{.lua key=prt_run_referee include=prt.lua/run_referee title="prt.lua (excerpt)"}
 ```
 
-A player joins by posting its claim root's two children, its final state hash (the tree's last leaf), and the last leaf's proof.
-The referee checks that the children join into the root and that the proof folds from the final state up to it, the same check `joinTournament` performs on chain:
-```{.lua key=prt_fold_proof include=prtu.lua/fold_proof title="prtu.lua (excerpt)"}
-```
-Identical claims merge, however many players post them, and the distinct claims are sorted by root hash, so the bracket is a pure function of the claim set, not of the order in which players happened to connect.
+A tournament opens, gathers claim submissions, is sealed, and runs on the claims it sealed with.
+The root tournament is open to every player that connects until a *sealer* seals it, so the referee never needs to know how many players to expect.
+A player submits its claim root's two children and a standard `Proof` for the final state hash at the tree's last leaf.
+The referee checks that the children join into the proof's root and verifies the proof with `hash_tree.verify_slice()`, the same membership check `joinTournament` performs on chain (`validate_join` in `prt.lua`).
+Identical claims merge, however many players submit them, each submitter is recorded as a holder of its claim, and the distinct claims are sorted by root hash, so the bracket is a pure function of the claim set, not of the order in which players happened to connect (`distinct_claims`).
 
 The tournament is that reduction: while more than one claim survives, run a round, which pairs the survivors, runs their matches at once, and keeps the winners, an odd claim taking a bye:
 ```{.lua key=prt_run_tournament include=prt.lua/run_tournament title="prt.lua (excerpt)"}
 ```
-A round pairs the surviving claims and hands the matches to `run_all`, which runs them all at the same time and returns their results once every one is over.
-The winners are kept in bracket order, so the next round depends only on the claims, not on the order in which the matches happened to finish, and a match that eliminated both sides contributes no winner:
-```{.lua key=prt_run_round include=prt.lua/run_round title="prt.lua (excerpt)"}
-```
+A round (`run_round`) pairs the surviving claims and runs their matches all at the same time.
+The winners are kept in bracket order, so the next round depends only on the claims, not on the order in which the matches happened to finish, and a match that eliminated both sides contributes no winner.
 
 A match walks the two claim trees down to the leaf where they first diverge, the two players alternating, one move per round, exactly as in Dave's `Match.sol`.
 The referee holds one node to open and the opponent's standing left and right children.
 The on-turn player opens its node, exposing that node's two children and, above the leaves, the two grandchildren of the side the walk descends into.
-The walk goes left when the exposed left child differs from the opponent's, since the disagreement is then in the left subtree, and right otherwise, and the turn passes to the opponent:
+The referee stores nothing of the claims but the three nodes of the walk's current step, seeded from the two roots exactly as `Match.sol` seeds them (`new_match` in `prtu.lua`).
+A move is valid when the exposed children join into the node to open and, above the leaves, the grandchildren join into the child the walk descends into:
+```{.lua key=prt_valid_move include=prtu.lua/valid_move title="prtu.lua (excerpt)"}
+```
+The walk goes left when the exposed left child differs from the opponent's, since the disagreement is then in the left subtree, and right otherwise, and the turn passes to the opponent.
+At height 1 the exposed children are leaves, and the walk returns the isolated dispute:
+```{.lua key=prt_advance_match include=prtu.lua/advance_match title="prtu.lua (excerpt)"}
+```
+These functions are pure, so the walk is checked on synthetic claim trees, differing at one chosen leaf, before any machine is involved.
+The match itself is the loop that asks the holders of the on-turn claim to open its node, takes the first move that validates, and hands the isolated dispute over.
+A claim nobody opens loses by default:
 ```{.lua key=prt_run_match include=prt.lua/run_match title="prt.lua (excerpt)"}
 ```
-The referee stores nothing of the claims but the three nodes of the walk's current step.
 The walk converges on the leftmost divergent leaf, which is what makes the leaf before it agreed by both.
-When the divergence lands on a right leaf, the agreed state is the left leaf, just exposed; when it lands on a left leaf, the referee asks for a proof of the leaf before it, against either claim, since both committed to it.
+When the divergence lands on a right leaf, the agreed state is the left leaf, just exposed; when it lands on a left leaf, the referee asks for a proof of the leaf before it, against either claim, since both committed to it (`settle_dispute`).
 
 ### Settling a match
 
 An mcycle match settles into a uarch tournament.
 The two claims part ways over what the state hash was after one period of one input, so each side must now defend a uarch claim over that period, whose final state is the mcycle leaf it committed to.
-The uarch tournament is open like the mcycle one, except that a claim may only join if its final state is one of the two contested values, the same restriction `validContestedFinalState` imposes on chain.
+The uarch tournament follows the same lifecycle as the root one, open, submit, seal, run, with two differences: its audience is the holders of the two disputed claims, and a claim may only join if its final state is one of the two contested values, the same restriction `validContestedFinalState` imposes on chain (`open_uarch_tournament`).
 The uarch winner's final state names the mcycle claim that survives:
 ```{.lua key=prt_settle_mcycle include=prt.lua/settle_mcycle_match title="prt.lua (excerpt)"}
 ```
@@ -5390,41 +5391,42 @@ Any log that verifies reaches the one true after-hash, and no log can reach a fa
 A claim that committed to that true hash wins the match; a claim that committed to anything else loses, whoever ends up supplying the winning log:
 ```{.lua key=prt_settle_uarch include=prt.lua/settle_uarch_match title="prt.lua (excerpt)"}
 ```
-The logs come from any player holding the disputed claim, produced by positioning a fresh fork at the transition and logging it:
-```{.lua key=prt_transition_logs include=prt.lua/transition_logs title="prt.lua (excerpt)"}
+The logs come from a holder of either claim, produced by positioning a fresh fork at the transition and logging it:
+```{.lua key=prt_transition_logs include=prt-player.lua/transition_logs title="prt-player.lua (excerpt)"}
 ```
 
 ### The referee server
 
 The players are passive.
-Each is a plain blocking loop that reads a request, runs the snippet it carries against the player's own claims and machines, and answers with the value the snippet produces, tagged by the request's subject and stamped with the player's label:
-```{.lua key=prt_serve include=prtu.lua/serve title="prtu.lua (excerpt)"}
-```
+Each is a plain blocking loop that reads a request, runs the snippet it carries against the player's own claims and machines, and answers with the value the snippet produces, tagged by the request's subject.
+A player follows one claim lineage, its mcycle claim and, while that claim's match is suspended in a uarch tournament, the uarch claim it committed there, and the referee only ever asks a player about claims it holds.
+A snippet that produces nothing, or fails, is therefore a bug in the player, and the process dies on it rather than answer (`serve` in `prtu.lua`).
 A claim cannot be misrepresented, so the move for a subject is unique, whoever computes it.
-The label rides along only for the narration, which credits every player that supplied a move, never one racing sender.
+The referee never narrates who holds a claim.
+Each player announces its own claim on its standard error, and that is how the transcript below is read against the players.
 
 The referee server is the single event loop the players connect to.
-When a match needs a move it notifies the subscribers of the claim in question, parks the match coroutine on the move's subject, and waits.
-Each move a player sends is routed by its subject to the coroutine parked on it, and a move no coroutine awaits is dropped.
-A move that fails to prove itself is malformed, and closes its sender's connection:
-```{.lua key=prt_await include=prtu.lua/await title="prtu.lua (excerpt)"}
-```
-
-The order of the narration must be a pure function of the claims, not of the order moves arrive over the network.
-The server therefore runs in synchronous ticks.
-Each tick it snapshots the parked subjects, waits until every one has a valid move (or times out a silent one), then resumes the parked coroutines in a fixed priority order, one step per match:
-```{.lua key=prt_tick include=prtu.lua/tick_loop title="prtu.lua (excerpt)"}
-```
-A subject silent past the timeout eliminates its claim, which is all that ever happens to the claim of a player who walks away.
-The wall-clock timeout bounds how long the referee waits for a move, never the order the moves are narrated in, so two runs of the same dispute read identically.
+When a match needs a move, the server asks the holders of the claim in question, parks the match coroutine on the move's subject, and takes the first reply that proves itself.
+A reply that fails to prove itself is rejected, as the blockchain rejects a bad transaction, and counts as that connection's answer.
+Only a line the referee cannot decode, or a closed socket, ends a connection.
+A request whose every holder answered without proof, or closed, resolves to nothing, and the claim it was about is eliminated (`ask` in `prtu.lua`).
+A tournament opens to an audience, every player that connects until the seal for the root one, the holders of the two disputed claims for a nested one.
+The referee asks the sealer to seal each tournament as it opens, and the submissions close once the seal arrives and every connection in the audience has submitted or closed (`open_tournament`).
+Claim operations authenticate themselves by proof, and sealing does not: it is the referee's trusted orchestration, standing in for the clock the contracts use.
+The transport enforces that trust: a connection announces its role once, on its first line, the sealer is the connection that announced itself as such, a seal request is bound to it, and a seal is taken only from it, for the tournament it names.
+The model thus assumes a process announces its role honestly, and a sealer that goes away fails the referee outright, since no tournament could ever close again.
+Nothing in the referee waits on the clock, and nothing depends on the order replies arrive in, not even which connections stay open.
+A claim with nobody left to answer for it is eliminated at once, which is all that ever happens to the claim of a player who walks away, and a claim anybody answers for survives.
+The narration of each match goes to its own file, and the tournament narrates each round in bracket order before and after its matches run, so the transcript is a pure function of the claim set, whatever order the replies arrive in over the network.
+The recipe below checks exactly that, by running the same tournament twice with the players launched in opposite orders and requiring identical transcripts.
 
 ### Running the tournament
 
-Five players contest the epoch, one honest and four dishonest, each dishonest in its own way.
+Six players contest the epoch, one honest and five dishonest, each dishonest in its own way.
 
 The *quitter* fabricates a claim out of thin air, every leaf the same made-up hash.
 Such a claim is cheap to commit to, it is one run, and its join proof is perfectly valid.
-The quitter then never answers another request.
+The quitter then walks away, closing its connection right after submitting.
 
 The *forger* runs the honest code over a forged input list, claiming input 2 asked for `2+2048` rather than `2^2048`.
 Its claims are self-consistent everywhere, and it defends them faithfully, but no log of feeding the forged input replays against the input the referee holds.
@@ -5435,15 +5437,20 @@ The corruption never changes an output.
 It still moves every state hash after it, and the true transition out of the last agreed state contradicts the first moved sample.
 
 The *fabulist* computes the whole epoch honestly and lies about a single sample, overwriting one leaf of the honest claim deep inside input 2.
-It can defend every other request with honest data, and it defends other claims' disputes with honest proofs, but the reset that closes its lied-about period contradicts the leaf itself.
+It can defend every other request with honest data, but the reset that closes its lied-about period contradicts the leaf itself.
+Two fabulists run, lying about different samples, so they dispute each other too, which is why there are five dishonest players and four ways of being dishonest.
 
 To run the tournament, start the referee, giving it the mcycle period and the epoch's input files.
-```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_runs_node,prt_build_mcycle_claim outputs=claims,tournament,verdict,match_1_elided,match_2_elided,match_3_elided,match_4_elided,match_6_elided,match_7 replace=source/referee}
+```{.lua key=prt_test_src include=prt-test.lua replace=null}
+```
+```{.bash key=prt_test depends=prt_test_src,prt_runs_node replace=null}
+lua5.4 "$RECIPES_DIR/prt-test.lua"
+```
+```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_runs_node,prt_build_mcycle_claim,prt_run_match,prt_test outputs=claims,posted,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_4_elided,match_4_1_elided,match_5_elided,match_5_1_elided replace=source/referee}
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/prt.lua" .
-ln -sf "$RECIPES_DIR/prtu.lua" .
+ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
 cartesi-rollup-data.lua --utf8-payload encode advance > forged-input-2.bin <<EOF
 {
   "chain_id": 0,
@@ -5457,10 +5464,11 @@ cartesi-rollup-data.lua --utf8-payload encode advance > forged-input-2.bin <<EOF
 }
 EOF
 # Each player's loopback connection to the referee shows up as two established entries (one per
-# end), so half the entries mentioning the port is the number of players connected. Each player
-# is launched only after the previous one connects, so the seal closes the join phase once all
-# are in.
-players_in() { [ "$(($(netstat -nt 2>&1 | grep -c '\<8096\>') / 2))" -ge "$1" ]; }
+# end), so half the established entries mentioning the port is the number of players connected.
+# Each player is launched only after the previous one is in, so the sealer seals the root
+# tournament once all are. The quitter closes its connection right after submitting, so it is
+# waited on by the claim it announces instead, and never counts as connected.
+players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8096\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
 {
 # docs:begin referee
 lua5.4 prt.lua referee 127.0.0.1:8096 10 \
@@ -5480,52 +5488,90 @@ while ! players_in 1; do sleep 1; done
 lua5.4 prt.lua quitter 127.0.0.1:8096 10
 # docs:end quitter
 } > /dev/null 2> quitter.stderr &
-while ! players_in 2; do sleep 1; done
+while ! grep -q "posted claim" quitter.stderr; do sleep 1; done
 {
 # docs:begin forger
 lua5.4 prt.lua forger 127.0.0.1:8096 10 2 forged-input-2.bin \
     input-0.bin input-1.bin input-2.bin
 # docs:end forger
 } > /dev/null 2> forger.stderr &
-while ! players_in 3; do sleep 1; done
+while ! players_in 2; do sleep 1; done
 {
 # docs:begin tamperer
 lua5.4 prt.lua tamperer 127.0.0.1:8096 10 0 100 \
     input-0.bin input-1.bin input-2.bin
 # docs:end tamperer
 } > /dev/null 2> tamperer.stderr &
-while ! players_in 4; do sleep 1; done
+while ! players_in 3; do sleep 1; done
 {
 # docs:begin fabulist
 lua5.4 prt.lua fabulist 127.0.0.1:8096 10 2 2000 \
     input-0.bin input-1.bin input-2.bin
 # docs:end fabulist
 } > /dev/null 2> fabulist.stderr &
-while ! players_in 5; do sleep 1; done
+while ! players_in 4; do sleep 1; done
 {
 # A second fabulist lies about a sample after input 2 has reached its fixed point. Its
 # uarch claim therefore exercises fixed-point padding for the entire disputed span.
 lua5.4 prt.lua fabulist 127.0.0.1:8096 10 2 60000 \
     input-0.bin input-1.bin input-2.bin
 } > /dev/null 2> fixed_fabulist.stderr &
-while ! players_in 6; do sleep 1; done
-# Every player is in. Sealing the join window starts the referee at once and keeps the gathered
-# claims a pure function of who connected, not of network timing.
+while ! players_in 5; do sleep 1; done
+# Every player is in. The sealer seals the root tournament on the players that connected, so
+# the gathered claims are a pure function of who connected, not of network timing, and stays
+# to seal every uarch tournament as it opens.
+{
+# docs:begin seal
 lua5.4 prt.lua seal 127.0.0.1:8096
+# docs:end seal
+} > /dev/null 2> sealer.stderr &
 wait
-cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr >&2
+cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr sealer.stderr >&2
+# Each player announces the claim it posted, and the referee never says who holds what.
+grep -h "posted claim" honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr > posted
 # The winner's claim must be the mcycle computation hash the direct run produced, and the
 # winner's final state must be the state hash the calculator's first epoch saved.
 grep -q "Winner claim root: $(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read(4)))' < "$mch")" verdict
 grep -q "Winner final state hash: $(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read(4)))' < "$epoch_hash")" verdict
 # The second fabulist must force a uarch dispute in the fixed tail.
 grep -q "A uarch tournament opens over input 2, period 60000" match_[0-9]*
-# The referee narrates each subject into its own file. Reduce each long walk to its ends.
-{ head -n 3 match_1; echo ...; tail -n 6 match_1; } > match_1_elided
-tail -n 5 match_2 > match_2_elided
-tail -n 5 match_3 > match_3_elided
-tail -n 4 match_4 > match_4_elided
-tail -n 5 match_6 > match_6_elided
+# The referee narrates each match into its own file. Reduce each long walk to its ends.
+for m in 2 3 4 5; do
+    { head -n 3 match_$m; echo ...; tail -n 6 match_$m; } > match_${m}_elided
+    tail -n 5 match_${m}_1 > match_${m}_1_elided
+done
+```
+```{.bash key=prt_run_reversed vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,forged->prt_run/forged-input-2.bin/path,prt_run depends=prt_run replace=null}
+# The same tournament, with the players launched in the opposite order and on another port.
+# Every narration file must come out identical to the run above.
+rm -f rolling-calculator-template
+ln -sf "$tmpl" rolling-calculator-template
+ln -sf $rolling_calc_encode/input-[012].bin .
+ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
+players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8097\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
+lua5.4 prt.lua referee 127.0.0.1:8097 10 input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
+while ! netstat -ntl 2>&1 | grep '\<8097\>' > /dev/null; do sleep 1; done
+lua5.4 prt.lua fabulist 127.0.0.1:8097 10 2 60000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fixed_fabulist.stderr &
+while ! players_in 1; do sleep 1; done
+lua5.4 prt.lua fabulist 127.0.0.1:8097 10 2 2000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fabulist.stderr &
+while ! players_in 2; do sleep 1; done
+lua5.4 prt.lua tamperer 127.0.0.1:8097 10 0 100 input-0.bin input-1.bin input-2.bin > /dev/null 2> tamperer.stderr &
+while ! players_in 3; do sleep 1; done
+lua5.4 prt.lua forger 127.0.0.1:8097 10 2 "$forged" input-0.bin input-1.bin input-2.bin > /dev/null 2> forger.stderr &
+while ! players_in 4; do sleep 1; done
+lua5.4 prt.lua quitter 127.0.0.1:8097 10 > /dev/null 2> quitter.stderr &
+while ! grep -q "posted claim" quitter.stderr; do sleep 1; done
+lua5.4 prt.lua honest 127.0.0.1:8097 10 input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
+while ! players_in 5; do sleep 1; done
+lua5.4 prt.lua seal 127.0.0.1:8097 > /dev/null 2> sealer.stderr &
+wait
+cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr sealer.stderr >&2
+grep -h "posted claim" honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr > posted
+for f in claims posted tournament verdict match_*; do
+    case $f in *_elided) continue;; esac
+    diff "$f" "$prt_run/$f"
+done
+echo "The reversed run narrated every file identically."
 ```
 The players take the referee address and the same mcycle period, and nothing that names their number or their order:
 ```{.bash replace=prt_run/source/honest}
@@ -5538,43 +5584,58 @@ The players take the referee address and the same mcycle period, and nothing tha
 ```
 ```{.bash replace=prt_run/source/fabulist}
 ```
+Once every player is in, the sealer seals the root tournament, and stays to seal every uarch tournament as it opens:
+```{.bash replace=prt_run/source/seal}
+```
 
-The six claims open the tournament:
+The six claims are sealed into the tournament:
 ```{replace=prt_run/claims}
 ```
-Honest and fabulist commit to the same final state (the fabulist lies only about an interior sample), but their claims differ, so they still dispute.
+The referee narrates claims, never players.
+Each player announces the claim it posted on its own standard error, which is how the transcript reads against them (the two fabulists are listed in launch order, the one lying at period 2000 of input 2 first):
+```{replace=prt_run/posted}
+```
+Honest and the two fabulists commit to the same final state (a fabulist lies only about an interior sample), but their claims differ, so they still dispute.
 The referee sorts the claims and reduces them round by round, the matches of a round running at once and the odd claim out taking a bye, until one claim is left:
 ```{replace=prt_run/tournament}
 ```
 
-The first match, honest against fabulist, shows the whole shape of a dispute.
-The mcycle walk converges on the fabulist's lie, a sample deep inside input 2, and opens a uarch tournament over that period:
-```{replace=prt_run/match_1_elided}
+The quitter's claim sorts first and meets the tamperer in match 1.
+The quitter has already closed its connection, so the very first request to open its claim finds no holder, and the match is over:
+```{replace=prt_run/match_1}
 ```
-Both sides commit a uarch claim over the period, its walk converges on the disputed uarch transition, and, since the lie sits at the end of an instruction, the transition that closes it (a uarch step and the uarch reset) settles the match against the fabulist:
-```{replace=prt_run/match_3_elided}
+
+Match 2, between the two fabulists, shows the whole shape of a dispute.
+The mcycle walk converges on the leftmost lie, the first fabulist's sample deep inside input 2, and opens a uarch tournament over that period to the two holders.
+The second fabulist, honest there, submits the truthful uarch claim:
+```{replace=prt_run/match_2_elided}
+```
+The uarch walk converges on the disputed transition and, since the lie sits at the end of an instruction, the transition that closes it (a uarch step and the uarch reset) settles the match against the first fabulist:
+```{replace=prt_run/match_2_1_elided}
 ```
 
 The other disputes settle the same way, each on a different form of transition.
-The tamperer, disputed by the forger, diverges at the corrupted sample in input 0; the truthful span there is defended by three rivals at once, and an ordinary uarch step settles it:
-```{replace=prt_run/match_2_elided}
+The forger, meeting the honest player in match 3, is caught where it fed its forged input: the transition that includes input 2, which no forged input replays against the one the referee holds:
+```{replace=prt_run/match_3_elided}
 ```
+```{replace=prt_run/match_3_1_elided}
+```
+The tamperer, disputed by the surviving fabulist in the second round, diverges at the corrupted sample in input 0, and an ordinary uarch step settles it:
 ```{replace=prt_run/match_4_elided}
 ```
-The forger, meeting the honest player in the second round, is caught where it fed its forged input: the transition that includes input 2, which no forged input replays against the one the referee holds:
-```{replace=prt_run/match_6_elided}
+```{replace=prt_run/match_4_1_elided}
 ```
-The quitter, having taken byes to the final round, never answers a single move, and loses on the referee's clock:
-```{replace=prt_run/match_7}
+The second fabulist meets the honest player in the final, where its lie, a sample after input 2 has reached its fixed point, is contradicted by the reset closing an instruction that no longer advances:
+```{replace=prt_run/match_5_elided}
 ```
-Each dishonest player was eliminated by a different mechanism: a uarch reset, an ordinary uarch step, an input inclusion, and a timeout.
-Three of the four disputes were settled inside a uarch tournament that a *rival* joined to defend the truth, never the honest player alone.
-Every player defends the truth wherever its own lie does not reach, so no honest claim ever stood by itself.
+```{replace=prt_run/match_5_1_elided}
+```
+Each dishonest player was eliminated by a different mechanism: a closed connection, a uarch reset, an input inclusion, and an ordinary uarch step.
+The honest player took part in two of the four disputes.
+The other two were settled between dishonest players, each defending the truth where its own lie did not reach, so the tournament never needed the honest player to police every liar.
 
 The winning claim commits only to the epoch's final state hash, not to its output, so one step remains, the same one that closes the verification games.
-The referee waits for the epoch's actual output, proved against the winning final state, and takes the first result that verifies, from any holder of the winning claim, since a wrong output cannot prove into the true state:
-```{.lua key=prt_wait_for_result include=prt.lua/wait_for_result title="prt.lua (excerpt)"}
-```
+The referee waits for the epoch's actual output, proved against the winning final state, and takes the first result that verifies, from any holder of the winning claim, since a wrong output cannot prove into the true state (`wait_for_result`).
 The result carries the output, its proof in the epoch's outputs Merkle tree, and the proof tying that tree's root into the final state, the same construction the rolling verification game builds, so it verifies exactly as shown there.
 
 The verdict settles the epoch:
@@ -5583,10 +5644,13 @@ The verdict settles the epoch:
 The winning claim root is the mcycle computation hash `cartesi-machine` computed directly, checked by the script above, and the winning final state hash is the state the calculator's first epoch saved as `epoch-0-state-hash.bin`.
 The result proved against it is the calculator's answer for the epoch's last input.
 The tournament ends on the same state the direct run produced, however many liars stood in the way.
+The same tournament, run again with the players launched in the opposite order, narrates every file identically, which the recipe checks by diffing the two runs:
+```{replace=prt_run_reversed/stdout}
+```
 
 This model simplifies the PRT contracts in ways worth naming.
 The referee is one trusted process, where Dave is a family of contracts the blockchain executes.
-Flat per-request deadlines stand in for the chess clocks that meter each claim's total thinking time, and no bonds change hands.
+A closed connection stands in for the chess clocks that meter each claim's total thinking time (a player that hangs stalls the demonstration, where the contracts would time it out), and no bonds change hands.
 At both the mcycle level and the uarch level, a Dave tournament stays open for a fixed time allowance, and a claim may join while it lasts.
 The demo closes each join as soon as the claims it awaits are in, rather than waiting the allowance out.
 For the real thing, see the [Dave repository](https://github.com/cartesi/dave), the [Permissionless Refereed Tournaments](https://arxiv.org/abs/2212.12439) paper, and the [Dave](https://doi.org/10.1145/3734698) paper.

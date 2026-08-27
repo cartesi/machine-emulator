@@ -199,7 +199,7 @@ local function submitter(claim, move)
 end
 
 local function is_valid(v)
-    return v == "valid"
+    return v == "valid" and v
 end
 
 with_server(function(server, client, wait_connections)
@@ -236,6 +236,12 @@ with_server(function(server, client, wait_connections)
     -- First valid move wins, the rejected proof leaves its connection open.
     assert(server:ask("m1", server:subscribers({ "x" }), nil, is_valid, "return 1") == "valid", "valid move not taken")
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
+
+    -- The validator's result, rather than the submitted value, is returned.
+    local mapped = server:ask("m1-mapped", { a }, nil, function(v)
+        return is_valid(v) and "mapped"
+    end, "return 1")
+    assert(mapped == "mapped", "ask did not return the validator result")
 
     -- A valid move resolves the request at once, while another holder is still to answer:
     -- the mute holder never replies on this subject, and the referee advances regardless.
@@ -304,7 +310,7 @@ with_server(function(server, client, wait_connections)
         return server.connections[#server.connections]
     end
     local function well_typed(v)
-        return v.l == "a" and v.r == "b"
+        return v.l == "a" and v.r == "b" and v
     end
     local bad = typed_client({ l = 1, r = "not base64!" })
     assert(server:ask("typed", { bad }, "Pair", well_typed, "return 1") == nil, "a schema-invalid value was taken")

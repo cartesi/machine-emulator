@@ -560,11 +560,12 @@ end
 --------------------------------------------------------------------------------
 
 local server_meta = { __index = {} }
+local accept_connections
 
 local function new_server(address)
     local host, port = address:match("^(.-):(%d+)$")
     assert(host and port, "invalid server address")
-    return setmetatable({
+    local server = setmetatable({
         dispatcher = new_dispatcher(),
         listener = assert(socket.bind(host, tonumber(port))),
         connections = {},
@@ -576,6 +577,8 @@ local function new_server(address)
         sealer = nil, -- the sealer's connection, once it announces itself
         done = false,
     }, server_meta)
+    accept_connections(server)
+    return server
 end
 
 -- Queues a line on a connection and wakes its writer.
@@ -620,6 +623,19 @@ local function settle(self, entry)
     end
 end
 
+-- Closes and forgets a subscription or tournament phase once its trusted seal arrives.
+local function close_phase(self, phase)
+    phase.open = false
+    for index, open_phase in ipairs(self.open_phases) do
+        if open_phase == phase then
+            table.remove(self.open_phases, index)
+            settle(self, phase)
+            return
+        end
+    end
+    error("sealed phase was not open")
+end
+
 -- Drops a connection from every request waiting on it, settling those it was the last of.
 local function forget_connection(self, connection)
     for entry in pairs(self.active) do
@@ -647,10 +663,13 @@ local function encode_request(request, arguments)
     return cartesi.tojson(wire_request, -1, ensure_request_envelope_schema(request.request_schema), SCHEMA_DICT) .. "\n"
 end
 
--- Sends one request at a time over a connection. If another connection resolved the previous
--- request first, its reply is now stale; count it before replacing the current request. TCP
--- preserves reply order, so the reader can discard exactly that many replies before accepting
--- the reply to the new request.
+-- Sends one request at a time over a connection. The referee preserves this invariant because
+-- each process follows one claim lineage, each claim enters only one match in a round, and a
+-- parent match is suspended during its uarch tournament. If another connection resolved the
+-- previous request first, its reply is now stale; count it before replacing the current request.
+-- TCP preserves reply order, so the reader can discard exactly that many replies before
+-- accepting the reply to the new request. A player served by serve() answers every request or
+-- closes; an arbitrary silent peer can stall this demonstration.
 local function send_request(self, connection, entry, line)
     if connection.dead then
         return
@@ -710,8 +729,7 @@ local function deliver(self, entry, connection, line)
         assert(ok and decoded.value == true, "the sealer did not close the phase asked")
         entry.resolved = true
         self.seal_active = nil
-        entry.phase.open = false
-        settle(self, entry.phase)
+        close_phase(self, entry.phase)
         request_next_seal(self)
         return
     end
@@ -798,15 +816,15 @@ function server_meta.__index.adopt(self, sock)
                 return
             end
             trace_wire("from player", nil, line)
+            local ok, message = pcall(cartesi.fromjson, line)
+            if not ok or type(message) ~= "table" then
+                close_connection(self, connection)
+                return
+            end
             local announced = connection.is_player or connection.is_sealer
             if connection.stale_requests_pending > 0 and announced then
                 connection.stale_requests_pending = connection.stale_requests_pending - 1
             else
-                local ok, message = pcall(cartesi.fromjson, line)
-                if not ok or type(message) ~= "table" then
-                    close_connection(self, connection)
-                    return
-                end
                 if message.role or not announced then
                     announce(self, connection, message)
                 else
@@ -828,7 +846,7 @@ end
 -- Accepts connections, adopting each as it arrives, until the game ends. The referee is never
 -- told how many players to expect: it takes every one that connects until the sealer closes
 -- the initial subscription phase.
-function server_meta.__index.accept(self)
+accept_connections = function(self)
     self.listener:settimeout(0)
     self.dispatcher:spawn(function()
         while not self.done do

@@ -41,10 +41,10 @@
 -- prtu.lua.
 
 local cartesi = require("cartesi")
-local socket = require("socket")
 local hash_tree = require("cartesi.hash-tree")
+local socket = require("socket")
+local util = require("cartesi.util")
 local prtu = require("prtu")
-local prt_story = require("prt-story")
 
 local keccak = cartesi.keccak256
 local new_match, valid_move, advance_match = prtu.new_match, prtu.valid_move, prtu.advance_match
@@ -62,24 +62,17 @@ local REQUESTS = prt_player.REQUESTS
 local MCYCLE_HEIGHT, UARCH_HEIGHT = geometry.MCYCLE_HEIGHT, geometry.UARCH_HEIGHT
 local PERIODS_PER_INPUT = geometry.PERIODS_PER_INPUT
 local UARCH_CYCLES_PER_MCYCLE = geometry.UARCH_CYCLES_PER_MCYCLE
-local story = prt_story.new(UARCH_CYCLES_PER_MCYCLE)
+local story = require("prt-story")
 
 local function stderrf(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
-end
-
--- Reads an input, an ABI-encoded EvmAdvance blob, from a file. The referee and the players
--- all read the same bytes the blockchain posted.
-local function read_input(filename)
-    local file <close> = assert(io.open(filename, "rb"))
-    return file:read("a")
 end
 
 -- Reads the epoch's inputs from the files on the command line, starting at `first`.
 local function read_inputs(first)
     local inputs = {}
     for index = first, #arg do
-        inputs[index - first + 1] = read_input(arg[index])
+        inputs[index - first + 1] = util.read_file(arg[index])
     end
     assert(#inputs > 0, "missing input files")
     return inputs
@@ -535,7 +528,7 @@ elseif role == "quitter" then
     prtu.serve(player, server_address)
 elseif role == "forger" then
     local index = assert(tonumber(arg[3]), "missing forged input index")
-    local forged = read_input(assert(arg[4], "missing forged input file"))
+    local forged = util.read_file(assert(arg[4], "missing forged input file"))
     local player = prt_player.new_player("forger", read_inputs(5))
     prt_player.make_forger(player, index, forged)
     prtu.serve(player, server_address)

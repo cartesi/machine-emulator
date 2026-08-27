@@ -1,6 +1,6 @@
 -- The parts of the PRT game that do not depend on what is being disputed: the claim trees
 -- (Merkle trees over runs of repeated nodes, refined on demand), the match walk, the referee's
--- coroutine dispatcher, the referee server that carries the wire protocol, and the tagged
+-- coroutine dispatcher, the referee server that carries the wire protocol, and the
 -- narration. The game script supplies the machines, the commitment builds, the tournament,
 -- and the verification of the disputed transition.
 
@@ -406,7 +406,7 @@ end
 
 -- The schemas shared by every request. The game script adds its operation schemas.
 local SCHEMA_DICT = {
-    SealRequest = { items = { "Default" } },
+    SealRequest = { items = {} },
     SealResponse = "Default",
 }
 
@@ -518,7 +518,7 @@ local function serve(player, server_address)
 end
 -- docs:end serve
 
--- The sealer is a player with one operation: sealing the tournament the referee names. It
+-- The sealer is a player with one operation: sealing the next tournament. It
 -- announces itself as the sealer on connecting, and the referee sends it a seal request for every
 -- tournament it opens, the root one and every nested one, so a tournament closes its
 -- claim submissions by the same lifecycle at both levels.
@@ -527,8 +527,8 @@ local function new_sealer()
         label = "sealer",
         hello = cartesi.tojson({ role = "sealer" }, -1),
         requests = { seal = SEAL },
-        seal = function(_, id)
-            return id
+        seal = function()
+            return true
         end,
     }
     return sealer
@@ -552,8 +552,8 @@ end
 -- trusted orchestration, standing in for the clock the contracts use, and the transport
 -- enforces that trust. A connection announces its role once, on its first line, and a
 -- second announcement closes it. The sealer is whichever connection first announced itself
--- as such, a seal request is bound to that connection, and a seal is taken only from it, for
--- the tournament it names. The model therefore assumes a process announces its role
+-- as such, a seal request is bound to that connection, and its next reply seals the one
+-- tournament currently assigned to it. The model therefore assumes a process announces its role
 -- honestly. A sealer that goes away fails the referee outright, since no tournament could
 -- ever close again.
 --------------------------------------------------------------------------------
@@ -685,7 +685,7 @@ request_next_seal = function(self)
         pending = { [self.sealer] = true },
     }
     self.seal_active = entry
-    send_request(self, self.sealer, entry, request_line(SEAL, { tournament.id }))
+    send_request(self, self.sealer, entry, request_line(SEAL, {}))
 end
 
 -- Files the next reply from a connection on its current request. A value that does not decode
@@ -694,9 +694,8 @@ end
 -- rejected, and leaves the connection open, exactly like a value the acceptor rejects, so
 -- the order replies arrive in cannot decide which connections stay open. A move request
 -- takes the first truthy result its acceptor returns. A collection keeps every reply that
--- decodes. A seal, from the sealer and naming the tournament it was asked for, closes that
--- tournament's submissions, and a seal that does not decode or names another tournament is
--- a failure of the referee's own orchestration.
+-- decodes. A successful seal response from the sealer closes the one tournament assigned to
+-- it; an invalid response is a failure of the referee's own orchestration.
 local function deliver(self, entry, connection, line)
     if not entry.pending[connection] then
         return
@@ -704,7 +703,7 @@ local function deliver(self, entry, connection, line)
     entry.pending[connection] = nil
     local ok, decoded = pcall(cartesi.fromjson, line, response_envelope_schema(entry.response_schema), SCHEMA_DICT)
     if entry.kind == "seal" then
-        assert(ok and decoded.value == entry.tournament.id, "the sealer did not seal the tournament asked")
+        assert(ok and decoded.value == true, "the sealer did not seal the tournament asked")
         entry.resolved = true
         self.seal_active = nil
         entry.tournament.open = false
@@ -922,10 +921,9 @@ end
 -- submissions once the sealer seals the tournament and every connection in the audience has
 -- submitted or closed.
 -- docs:begin open_tournament
-function server_meta.__index.open_tournament(self, id, conns, descriptor, ...)
+function server_meta.__index.open_tournament(self, conns, descriptor, ...)
     local entry = {
         kind = "collect",
-        id = id,
         response_schema = descriptor.response_schema,
         replies = {},
         open = true,

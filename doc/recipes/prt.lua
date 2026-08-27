@@ -240,8 +240,16 @@ local run_tournament
 -- validContestedFinalState imposes on chain.
 -- docs:begin open_uarch_tournament
 local function open_uarch_tournament(parent, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
+    local tournament = {
+        level = "uarch",
+        height = UARCH_HEIGHT,
+        initial_hash = agreed_hash,
+        dapp_contract = parent.dapp_contract,
+        disputed_period = disputed_period,
+        settle = settle_uarch_match,
+    }
+    story.uarch_tournament_opened(tournament, match, disputed_period, agreed_hash)
     local submissions = server:open_tournament(
-        match.tag,
         server:subscribers({ match.claim1.computation_hash, match.claim2.computation_hash }),
         request.commit_uarch_claim,
         disputed_period.input_index,
@@ -252,17 +260,9 @@ local function open_uarch_tournament(parent, match, disputed_period, agreed_hash
     local claims = distinct_claims(submissions, UARCH_HEIGHT, function(claim)
         return claim.final_state == claim1_next_hash or claim.final_state == claim2_next_hash
     end)
-    story.claims_joined(match.tag, claims)
-    return {
-        level = "uarch",
-        tag = match.tag,
-        height = UARCH_HEIGHT,
-        initial_hash = agreed_hash,
-        dapp_contract = parent.dapp_contract,
-        disputed_period = disputed_period,
-        settle = settle_uarch_match,
-        claims = claims,
-    }
+    tournament.claims = claims
+    story.claims_joined(tournament, claims)
+    return tournament
 end
 -- docs:end open_uarch_tournament
 
@@ -283,7 +283,6 @@ local function settle_mcycle_match(
         input_index = epoch_period_index // PERIODS_PER_INPUT,
         period_index = epoch_period_index % PERIODS_PER_INPUT,
     }
-    story.uarch_tournament_opened(match, disputed_period, agreed_hash)
     local uarch_tournament =
         open_uarch_tournament(tournament, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
     local uarch_winner = run_tournament(uarch_tournament)
@@ -355,24 +354,11 @@ local function run_all(tasks)
     return results
 end
 
--- Names a new match of a tournament: the tournament's name followed by the match's number in
--- it. The mcycle tournament's matches are match_1, match_2, and so on, narrated as 1, 2, and so
--- on, and the matches of the uarch tournament match_1 opens are match_1_1, match_1_2, and so
--- on, narrated as 1.1, 1.2, and so on. A match's name is fixed by its place in the bracket, so
--- it is the same on every run.
-local function name_match(tournament)
-    tournament.match_count = (tournament.match_count or 0) + 1
-    local tag =
-        string.format("%s_%d", tournament.level == "uarch" and tournament.tag or "match", tournament.match_count)
-    return tag, (tag:sub(#"match_" + 1):gsub("_", "."))
-end
-
 -- Pairs the surviving claims two by two into the matches of a round, in bracket order.
 local function pair_claims(tournament, claims, round)
     local matches = {}
     for i = 1, #claims - 1, 2 do
         local match = new_match(claims[i], claims[i + 1], tournament.height)
-        match.tag, match.id = name_match(tournament)
         story.match_opened(tournament, round, match)
         matches[#matches + 1] = match
     end
@@ -427,18 +413,18 @@ end
 -- once it is sealed and every player it asked has submitted or closed.
 -- docs:begin open_mcycle_tournament
 local function open_mcycle_tournament(referee, dapp_contract)
-    local submissions = server:open_tournament("tournament", nil, request.join)
+    local submissions = server:open_tournament(nil, request.join)
     local claims = distinct_claims(submissions, MCYCLE_HEIGHT)
-    story.claims_joined("claims", claims)
-    return {
+    local tournament = {
         level = "mcycle",
-        tag = "tournament",
         height = MCYCLE_HEIGHT,
         initial_hash = referee.initial_hash,
         dapp_contract = dapp_contract,
         settle = settle_mcycle_match,
         claims = claims,
     }
+    story.claims_joined(tournament, claims)
+    return tournament
 end
 -- docs:end open_mcycle_tournament
 

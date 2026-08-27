@@ -9640,9 +9640,8 @@ isolated dispute over. A claim nobody opens loses by default:
 ``` lua
 local function run_match(tournament, m)
     while true do
-        local subject = string.format("%s-h%d", m.tag, m.height)
         local conns = server:subscribers({ hex(m.turn.root) })
-        local move = server:ask(subject, conns, "Advance", function(v)
+        local move = server:accept_first(conns, "Advance", function(v)
             return valid_move(m, v) and v
         end, 'return player:advance("%s", %d, %d, "%s")', hex(m.turn.root), m.height, m.index, hex(m.left_node))
         if not move then
@@ -9731,10 +9730,8 @@ whoever ends up supplying the winning log:
 local function settle_uarch_match(tournament, m, transition_index, agree_hash, d1, d2)
     local disputed_period = tournament.disputed_period
     story.transition_opened(tournament, m, transition_index)
-    local subject = string.format("%s-logs-%d", m.tag, transition_index)
     local conns = server:subscribers({ hex(m.one.root), hex(m.two.root) })
-    local hash = server:ask(
-        subject,
+    local hash = server:accept_first(
         conns,
         "Logs",
         function(v)
@@ -9780,27 +9777,30 @@ end
 
 The players are passive. Each is a plain blocking loop that reads a
 request, runs the snippet it carries against the player’s own claims and
-machines, and answers with the value the snippet produces, tagged by the
-request’s subject. A player follows one claim lineage, its mcycle claim
-and, while that claim’s match is suspended in a uarch tournament, the
-uarch claim it committed there, and the referee only ever asks a player
-about claims it holds. A snippet that produces nothing, or fails, is
-therefore a bug in the player, and the process dies on it rather than
-answer (`serve` in `prtu.lua`). A claim cannot be misrepresented, so the
-move for a subject is unique, whoever computes it. The referee never
-narrates who holds a claim. Each player announces its own claim on its
-standard error, and that is how the transcript below is read against the
-players.
+machines, and answers with the value the snippet produces. A player
+follows one claim lineage, its mcycle claim and, while that claim’s
+match is suspended in a uarch tournament, the uarch claim it committed
+there, and the referee only ever asks a player about claims it holds. A
+snippet that produces nothing, or fails, is therefore a bug in the
+player, and the process dies on it rather than answer (`serve` in
+`prtu.lua`). A claim cannot be misrepresented, so the valid move for an
+operation is unique, whoever computes it. The referee never narrates who
+holds a claim. Each player announces its own claim on its standard
+error, and that is how the transcript below is read against the players.
 
 The referee server is the single event loop the players connect to. When
 a match needs a move, the server asks the holders of the claim in
-question, parks the match coroutine on the move’s subject, and takes the
-first reply that proves itself. A reply that fails to prove itself is
-rejected, as the blockchain rejects a bad transaction, and counts as
-that connection’s answer. Only a line the referee cannot decode, or a
-closed socket, ends a connection. A request whose every holder answered
-without proof, or closed, resolves to nothing, and the claim it was
-about is eliminated (`ask` in `prtu.lua`). A tournament opens to an
+question and takes the first reply that proves itself. A reply that
+fails to prove itself is rejected, as the blockchain rejects a bad
+transaction, and counts as that connection’s answer. Only a line the
+referee cannot decode, or a closed socket, ends a connection. A request
+whose every holder answered without proof, or closed, resolves to
+nothing, and the claim it was about is eliminated (`accept_first` in
+`prtu.lua`). Each connection has at most one unresolved request. Replies
+arrive in request order because TCP is a FIFO stream. When another
+holder resolves a request first, the referee counts the reply still owed
+by this connection as stale before assigning its next request, then
+drops that many replies from the stream. A tournament opens to an
 audience, every player that connects until the seal for the mcycle one,
 the holders of the two disputed claims for a nested one. The referee
 asks the sealer to seal each tournament as it opens, and the submissions

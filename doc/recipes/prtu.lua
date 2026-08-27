@@ -228,17 +228,17 @@ end
 --------------------------------------------------------------------------------
 
 -- Seeds a match over two claims of the given tree height. Claim one opens first, so the walk
--- starts with one's root as the node to open and two's join-exposed root children standing.
+-- starts with claim1's computation hash as the node to open and claim2's join-exposed children standing.
 -- docs:begin new_match
-local function new_match(one, two, height)
+local function new_match(claim1, claim2, height)
     return {
-        one = one,
-        two = two,
-        turn = one, -- the claim whose node is other_parent
-        other = two,
-        other_parent = one.root,
-        left_node = two.left,
-        right_node = two.right,
+        claim1 = claim1,
+        claim2 = claim2,
+        turn_claim = claim1, -- the claim whose node is other_parent
+        other_claim = claim2,
+        other_parent = claim1.computation_hash,
+        left_node = claim2.left,
+        right_node = claim2.right,
         height = height,
         index = 0,
     }
@@ -248,12 +248,12 @@ end
 -- Checks a move against the match state: the children must join into the node to open, and,
 -- above the leaves, the grandchildren must join into the child the walk descends into.
 -- docs:begin valid_move
-local function valid_move(m, move)
-    if keccak(move.l, move.r) ~= m.other_parent then
+local function valid_move(match, move)
+    if keccak(move.l, move.r) ~= match.other_parent then
         return false
     end
-    if m.height > 1 then
-        return keccak(move.nl, move.nr) == ((move.l ~= m.left_node) and move.l or move.r)
+    if match.height > 1 then
+        return keccak(move.nl, move.nr) == ((move.l ~= match.left_node) and move.l or move.r)
     end
     return true
 end
@@ -263,30 +263,36 @@ end
 -- chosen grandchildren become the standing left and right, the opponent's node on the chosen
 -- side becomes the next to open, and the turn passes. At height 1 the exposed children are
 -- leaves, and the walk is over: it returns the isolated dispute, the divergent leaf's index,
--- what each claim committed to there (d1 for claim one, d2 for claim two), and, when the
+-- what each claim committed to there, and, when the
 -- divergence is at a right leaf, the agreed state before it, the left leaf both sides exposed.
 -- docs:begin advance_match
-local function advance_match(m, move)
-    local descend_left = move.l ~= m.left_node
-    if m.height == 1 then
-        local leaf_index, d_turn, d_other, agreed
+local function advance_match(match, move)
+    local descend_left = move.l ~= match.left_node
+    if match.height == 1 then
+        local state_index, turn_state_hash, other_state_hash, agreed_hash
         if descend_left then
-            leaf_index, d_turn, d_other = 2 * m.index, move.l, m.left_node
+            state_index, turn_state_hash, other_state_hash = 2 * match.index, move.l, match.left_node
         else
-            leaf_index, d_turn, d_other, agreed = 2 * m.index + 1, move.r, m.right_node, move.l
+            state_index, turn_state_hash, other_state_hash, agreed_hash =
+                2 * match.index + 1, move.r, match.right_node, move.l
         end
-        local d1 = m.turn == m.one and d_turn or d_other
-        local d2 = m.turn == m.one and d_other or d_turn
-        return { leaf_index = leaf_index, agreed = agreed, d1 = d1, d2 = d2 }
+        local claim1_next_hash = match.turn_claim == match.claim1 and turn_state_hash or other_state_hash
+        local claim2_next_hash = match.turn_claim == match.claim1 and other_state_hash or turn_state_hash
+        return {
+            state_index = state_index,
+            agreed_hash = agreed_hash,
+            claim1_next_hash = claim1_next_hash,
+            claim2_next_hash = claim2_next_hash,
+        }
     end
     if descend_left then
-        m.other_parent, m.index = m.left_node, 2 * m.index
+        match.other_parent, match.index = match.left_node, 2 * match.index
     else
-        m.other_parent, m.index = m.right_node, 2 * m.index + 1
+        match.other_parent, match.index = match.right_node, 2 * match.index + 1
     end
-    m.left_node, m.right_node = move.nl, move.nr
-    m.height = m.height - 1
-    m.turn, m.other = m.other, m.turn
+    match.left_node, match.right_node = move.nl, move.nr
+    match.height = match.height - 1
+    match.turn_claim, match.other_claim = match.other_claim, match.turn_claim
     return nil
 end
 -- docs:end advance_match
@@ -407,11 +413,11 @@ local SCHEMA_DICT = {
 -- Describes one operation once, for both ends of the wire. Referee calls pass the descriptor
 -- followed by ordinary positional arguments; the descriptor supplies the operation name and
 -- the schemas used to encode its argument tuple and decode its response.
-local function operation(name, request_schema, response_schema)
+local function request(name, request_schema, response_schema)
     return { name = name, request_schema = request_schema, response_schema = response_schema }
 end
 
-local SEAL = operation("seal", "SealRequest", "SealResponse")
+local SEAL = request("seal", "SealRequest", "SealResponse")
 
 -- The envelope schema for requests under a named argument schema, registered on first use.
 local function request_envelope_schema(schema)
@@ -498,10 +504,10 @@ local function serve(player, server_address)
         end
         trace_wire("from referee", player.label, line)
         local envelope = cartesi.fromjson(line)
-        local descriptor = assert(player.operations[envelope.operation], "unknown operation")
-        local request = cartesi.fromjson(line, request_envelope_schema(descriptor.request_schema), SCHEMA_DICT)
-        local handler = assert(player[request.operation], "missing operation")
-        local value = handler(player, table.unpack(request.arguments or {}))
+        local descriptor = assert(player.requests[envelope.operation], "unknown operation")
+        local wire_request = cartesi.fromjson(line, request_envelope_schema(descriptor.request_schema), SCHEMA_DICT)
+        local handler = assert(player[wire_request.operation], "missing operation")
+        local value = handler(player, table.unpack(wire_request.arguments or {}))
         assert(value ~= nil, "the operation produced no value")
         local response = { label = player.label, value = value }
         local encoded = cartesi.tojson(response, -1, response_envelope_schema(descriptor.response_schema), SCHEMA_DICT)
@@ -520,7 +526,7 @@ local function new_sealer()
     local sealer = {
         label = "sealer",
         hello = cartesi.tojson({ role = "sealer" }, -1),
-        operations = { seal = SEAL },
+        requests = { seal = SEAL },
         seal = function(_, id)
             return id
         end,
@@ -559,7 +565,7 @@ local function new_server(dispatcher, listener)
         dispatcher = dispatcher,
         listener = listener,
         connections = {},
-        holders = {}, -- binary claim root -> set of connections that hold (can defend) it
+        holders = {}, -- computation hash -> set of connections that hold (can defend) it
         active = {}, -- set of requests whose coroutines are waiting
         open_tournaments = {}, -- tournaments in creation order, including ones already sealed
         seal_queue = {}, -- tournaments waiting for the sealer, in creation order
@@ -634,8 +640,8 @@ end
 
 -- Encodes an operation and its positional Lua arguments under the descriptor's request schema.
 local function request_line(descriptor, arguments)
-    local request = { operation = descriptor.name, arguments = arguments }
-    return cartesi.tojson(request, -1, request_envelope_schema(descriptor.request_schema), SCHEMA_DICT) .. "\n"
+    local wire_request = { operation = descriptor.name, arguments = arguments }
+    return cartesi.tojson(wire_request, -1, request_envelope_schema(descriptor.request_schema), SCHEMA_DICT) .. "\n"
 end
 
 -- Sends one request at a time over a connection. If another connection resolved the previous
@@ -842,7 +848,7 @@ function server_meta.__index.add_holder(self, root, connection)
     set[connection] = true
 end
 
--- The live connections that hold any of the given claim roots.
+-- The live connections that hold any of the given computation hashes.
 function server_meta.__index.subscribers(self, roots)
     local seen, list = {}, {}
     for _, root in ipairs(roots) do
@@ -945,7 +951,7 @@ end
 
 return {
     SCHEMA_DICT = SCHEMA_DICT,
-    operation = operation,
+    request = request,
     short_hash = short_hash,
     narrate = narrate,
     push_run = push_run,

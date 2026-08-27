@@ -22,8 +22,8 @@ prtu.SCHEMA_DICT.JoinResponse = {
 }
 prtu.SCHEMA_DICT.AdvanceRequest = { items = { "Base64", "Default", "Default", "Base64" } }
 prtu.SCHEMA_DICT.AdvanceResponse = { l = "Base64", r = "Base64", nl = "Base64", nr = "Base64" }
-prtu.SCHEMA_DICT.ProveRequest = { items = { "Base64", "Default" } }
-prtu.SCHEMA_DICT.ProveResponse = "Proof"
+prtu.SCHEMA_DICT.ProveStateRequest = { items = { "Base64", "Default" } }
+prtu.SCHEMA_DICT.ProveStateResponse = "Proof"
 prtu.SCHEMA_DICT.CommitUarchClaimRequest = {
     items = { "Default", "Default", "Base64", "Base64" },
 }
@@ -45,14 +45,14 @@ prtu.SCHEMA_DICT.ProveResultResponse = {
 prtu.SCHEMA_DICT.FinishRequest = { items = {} }
 prtu.SCHEMA_DICT.FinishResponse = "Default"
 
-local OPERATIONS = {
-    join = prtu.operation("join", "JoinRequest", "JoinResponse"),
-    advance = prtu.operation("advance", "AdvanceRequest", "AdvanceResponse"),
-    prove = prtu.operation("prove", "ProveRequest", "ProveResponse"),
-    commit_uarch_claim = prtu.operation("commit_uarch_claim", "CommitUarchClaimRequest", "CommitUarchClaimResponse"),
-    transition_logs = prtu.operation("transition_logs", "TransitionLogsRequest", "TransitionLogsResponse"),
-    prove_result = prtu.operation("prove_result", "ProveResultRequest", "ProveResultResponse"),
-    finish = prtu.operation("finish", "FinishRequest", "FinishResponse"),
+local REQUESTS = {
+    join = prtu.request("join", "JoinRequest", "JoinResponse"),
+    advance = prtu.request("advance", "AdvanceRequest", "AdvanceResponse"),
+    prove_state = prtu.request("prove_state", "ProveStateRequest", "ProveStateResponse"),
+    commit_uarch_claim = prtu.request("commit_uarch_claim", "CommitUarchClaimRequest", "CommitUarchClaimResponse"),
+    transition_logs = prtu.request("transition_logs", "TransitionLogsRequest", "TransitionLogsResponse"),
+    prove_result = prtu.request("prove_result", "ProveResultRequest", "ProveResultResponse"),
+    finish = prtu.request("finish", "FinishRequest", "FinishResponse"),
 }
 
 local function stderrf(fmt, ...)
@@ -392,19 +392,19 @@ end
 -- the player dies on it.
 --------------------------------------------------------------------------------
 
-local ops = {}
+local handlers = {}
 
 -- The claim in the player's lineage with the given root.
-local function held(player, root)
+local function held(player, computation_hash)
     for _, tree in ipairs({ player.mcycle_claim, player.uarch_claim }) do
-        if tree:root() == root then
+        if tree:root() == computation_hash then
             return tree
         end
     end
-    error("asked about a claim this player does not hold: " .. short_hash(root))
+    error("asked about a claim this player does not hold: " .. short_hash(computation_hash))
 end
 
--- The witness for joining with a claim: the root's two children and the standard proof of its
+-- The witness for joining with a claim: the computation hash's two children and the standard proof of its
 -- final state, the last leaf.
 local function join_witness(tree)
     local left, right = tree:children(tree.height, 0)
@@ -414,7 +414,7 @@ end
 -- The opening commitment: the player's mcycle claim. The player announces its root, so a
 -- transcript can be read against the players, without the referee ever narrating who holds
 -- what.
-function ops.join(player)
+function handlers.join(player)
     stderrf("%s: building mcycle claim\n", player.label)
     player.mcycle_claim = player.make_mcycle_tree(player)
     local witness = join_witness(player.mcycle_claim)
@@ -431,8 +431,8 @@ end
 -- returning its two children l and r, and, above the leaves, the two children nl and nr of
 -- the child the walk descends into. The descent goes left when l differs from the opponent's
 -- exposed left child, which the referee passes as opp_left.
-function ops.advance(player, root, height, index, opponent_left)
-    local tree = held(player, root)
+function handlers.advance(player, computation_hash, height, index, opponent_left)
+    local tree = held(player, computation_hash)
     local l, r = tree:children(height, index)
     local move = { l = l, r = r }
     if height > 1 then
@@ -443,9 +443,9 @@ function ops.advance(player, root, height, index, opponent_left)
     return move
 end
 
--- The proof of one leaf of one of the player's claims.
-function ops.prove(player, root, leaf_index)
-    return held(player, root):prove(leaf_index)
+-- Proves the state at one index of one of the player's computation hashes.
+function handlers.prove_state(player, computation_hash, state_index)
+    return held(player, computation_hash):prove(state_index)
 end
 
 -- Joins the uarch tournament over one mcycle period that the player's mcycle claim is
@@ -455,19 +455,19 @@ end
 -- and the period index are 0-based, as the referee counts them. A holder whose uarch claim
 -- ends in neither contested value cannot defend its parent claim, and dies on the
 -- contradiction.
-function ops.commit_uarch_claim(player, input_index, period_index, d1, d2)
+function handlers.commit_uarch_claim(player, input_index, period_index, claim1_next_hash, claim2_next_hash)
     stderrf("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
     player.uarch_claim = player.make_uarch_tree(player, input_index + 1, period_index)
     local witness = join_witness(player.uarch_claim)
     local final_state = witness.proof.target_hash
     assert(
-        final_state == d1 or final_state == d2,
+        final_state == claim1_next_hash or final_state == claim2_next_hash,
         string.format(
             "%s: uarch final %s matches neither contested final %s nor %s",
             player.label,
             short_hash(final_state),
-            short_hash(d1),
-            short_hash(d2)
+            short_hash(claim1_next_hash),
+            short_hash(claim2_next_hash)
         )
     )
     stderrf("%s: uarch claim ready\n", player.label)
@@ -480,7 +480,7 @@ end
 -- The transition closing an instruction executes one more step, by then a fixed point, and
 -- the reset. Every other transition is an ordinary uarch step.
 -- docs:begin transition_logs
-function ops.transition_logs(player, input_index, period_index, transition_index)
+function handlers.transition_logs(player, input_index, period_index, transition_index)
     local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
@@ -508,7 +508,7 @@ end
 -- hash. A rejected input reverts to the pre-feed snapshot, exactly as a Cartesi Node rolls back.
 -- Once the epoch closes, the frontier proves the last output against the final state.
 -- docs:begin prove_result
-function ops.prove_result(player)
+function handlers.prove_result(player)
     local machine = new_remote_machine()
     local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     local frontier = hash_tree.frontier_copy(genesis_frontier)
@@ -544,7 +544,7 @@ end
 -- docs:end prove_result
 
 -- The end of the tournament releases the player.
-function ops.finish(player)
+function handlers.finish(player)
     player.done = true
     return true
 end
@@ -555,7 +555,7 @@ local function new_player(label, inputs)
     local player = {
         label = label,
         inputs = inputs,
-        operations = OPERATIONS,
+        requests = REQUESTS,
         boundaries = {},
         fixed_leaves = {},
         make_mcycle_tree = function(self)
@@ -574,7 +574,7 @@ local function new_player(label, inputs)
             )
         end,
     }
-    for name, handler in pairs(ops) do
+    for name, handler in pairs(handlers) do
         player[name] = handler
     end
     return player
@@ -595,7 +595,7 @@ local function make_quitter(player)
     end
     player.join = function(self)
         self.done = true
-        return ops.join(self)
+        return handlers.join(self)
     end
 end
 
@@ -689,7 +689,7 @@ end
 
 M.TEMPLATE = TEMPLATE
 M.new_player = new_player
-M.OPERATIONS = OPERATIONS
+M.REQUESTS = REQUESTS
 M.make_quitter = make_quitter
 M.make_forger = make_forger
 M.make_tamperer = make_tamperer

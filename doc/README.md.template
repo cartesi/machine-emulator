@@ -5347,7 +5347,7 @@ Before the mcycle tournament opens, the server accepts players subscribing to th
 The mcycle tournament then opens to those subscribers.
 A player submits its computation hash's two children and a standard `Proof` for the final state hash at the tree's last leaf.
 The referee checks that the children join into the proof's root and verifies the proof with `hash_tree.verify_slice()`, the same membership check `joinTournament` performs on chain (`validate_join` in `prt.lua`).
-Identical claims merge, however many players submit them, each submitter is recorded as a holder of its claim, and the distinct claims are sorted by computation hash, so the bracket is a pure function of the claim set, not of the order in which players happened to connect (`distinct_claims`).
+`partition_claims` groups identical submissions by computation hash, subscribes every submitter to its claim, and sorts the resulting claims by computation hash, so the bracket is a pure function of the claim set, not of the order in which players happened to connect.
 
 The tournament is that reduction: while more than one claim survives, run a round, which pairs the survivors, runs their matches at once, and keeps the winners, an odd claim taking a bye:
 ```{.lua key=prt_run_tournament include=prt.lua/run_tournament title="prt.lua (excerpt)"}

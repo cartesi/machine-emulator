@@ -21,12 +21,12 @@ local LEAVES = 1 << HEIGHT
 
 -- A claim over leaves that repeat `base` except at `lie`, which holds `fake`. Built either
 -- flat or bundled 2^2 leaves per stored entry, so the refine path is exercised too.
-local function synthetic_claim(base, lie, fake, bundled)
+local function make_synthetic_claim(base, lie, fake, bundled)
     local leaves = {}
     for i = 0, LEAVES - 1 do
         leaves[i] = i == lie and fake or base
     end
-    local function leaf_runs(first, count)
+    local function build_leaf_runs(first, count)
         local runs = {}
         for i = first, first + count - 1 do
             push_run(runs, leaves[i], 1)
@@ -38,16 +38,17 @@ local function synthetic_claim(base, lie, fake, bundled)
         local entry_height = 2
         local runs = {}
         for entry = 0, (LEAVES >> entry_height) - 1 do
-            local entry_tree = prtu.new_tree(entry_height, 0, leaf_runs(entry << entry_height, 1 << entry_height), nil)
-            push_run(runs, entry_tree:root(), 1)
+            local entry_tree =
+                prtu.new_tree(entry_height, 0, build_leaf_runs(entry << entry_height, 1 << entry_height), nil)
+            push_run(runs, entry_tree:get_root(), 1)
         end
         tree = prtu.new_tree(HEIGHT, entry_height, runs, function(_, entry)
-            return leaf_runs(entry << entry_height, 1 << entry_height)
+            return build_leaf_runs(entry << entry_height, 1 << entry_height)
         end)
     else
-        tree = prtu.new_tree(HEIGHT, 0, leaf_runs(0, LEAVES), nil)
+        tree = prtu.new_tree(HEIGHT, 0, build_leaf_runs(0, LEAVES), nil)
     end
-    local left, right = tree:children(HEIGHT, 0)
+    local left, right = tree:get_children(HEIGHT, 0)
     local proof = tree:prove(LEAVES - 1)
     hash_tree.verify_slice(proof)
     assert(
@@ -55,11 +56,11 @@ local function synthetic_claim(base, lie, fake, bundled)
             and proof.log2_target_size == 0
             and proof.log2_root_size == HEIGHT
             and #proof.sibling_hashes == HEIGHT
-            and proof.root_hash == tree:root(),
+            and proof.root_hash == tree:get_root(),
         "wrong final-state proof"
     )
     return {
-        computation_hash = tree:root(),
+        computation_hash = tree:get_root(),
         left = left,
         right = right,
         final_state = proof.target_hash,
@@ -71,11 +72,11 @@ end
 -- The move a player holding the on-turn claim makes, as handlers.advance does in prt-player.lua.
 local function open(match)
     local tree = match.turn_claim.tree
-    local l, r = tree:children(match.height, match.index)
+    local l, r = tree:get_children(match.height, match.index)
     local move = { l = l, r = r }
     if match.height > 1 then
         local descend_left = l ~= match.left_node
-        move.nl, move.nr = tree:children(match.height - 1, descend_left and 2 * match.index or 2 * match.index + 1)
+        move.nl, move.nr = tree:get_children(match.height - 1, descend_left and 2 * match.index or 2 * match.index + 1)
     end
     return move
 end
@@ -85,9 +86,9 @@ local function walk(claim1, claim2)
     local match = prtu.new_match(claim1, claim2, HEIGHT)
     while true do
         local move = open(match)
-        assert(prtu.valid_move(match, move), "the honest move failed validation")
+        assert(prtu.is_valid_move(match, move), "the honest move failed validation")
         local corrupted = { l = move.r, r = move.l, nl = move.nl, nr = move.nr }
-        assert(not prtu.valid_move(match, corrupted) or move.l == move.r, "a swapped move validated")
+        assert(not prtu.is_valid_move(match, corrupted) or move.l == move.r, "a swapped move validated")
         local dispute = prtu.advance_match(match, move)
         if dispute then
             return dispute
@@ -98,8 +99,8 @@ end
 local base, fake = keccak("base"), keccak("fake")
 for _, lie in ipairs({ 0, 1, 6, 13, LEAVES - 1 }) do
     for _, bundled in ipairs({ false, true }) do
-        local honest = synthetic_claim(base, nil, nil, bundled)
-        local liar = synthetic_claim(base, lie, fake, bundled)
+        local honest = make_synthetic_claim(base, nil, nil, bundled)
+        local liar = make_synthetic_claim(base, lie, fake, bundled)
         assert(honest.computation_hash ~= liar.computation_hash)
         -- honest opens first
         local dispute = walk(honest, liar)
@@ -139,13 +140,12 @@ end
 -- dispatcher that connects, announces itself (as a player unless told otherwise), and answers
 -- every request line with what `handler` returns for it: a reply table (encoded as is),
 -- "close" to hang up, a raw line to send verbatim, or nil to delay its answer.
-local function with_server(scenario)
-    local listener = assert(socket.bind("127.0.0.1", 0))
-    local _, port = listener:getsockname()
-    local dispatcher = prtu.new_dispatcher()
-    local server = prtu.new_server(dispatcher, listener)
+local function run_with_server(scenario)
+    local server = prtu.new_server("127.0.0.1:0")
+    local _, port = server.listener:getsockname()
+    local dispatcher = server.dispatcher
     server:accept()
-    local function client(hello, handler)
+    local function run_client(hello, handler)
         dispatcher:spawn(function()
             local sock = assert(socket.connect("127.0.0.1", port))
             sock:settimeout(0)
@@ -190,12 +190,12 @@ local function with_server(scenario)
         end
     end
     server:run(function()
-        scenario(server, client, wait_connections)
+        scenario(server, run_client, wait_connections)
     end)
 end
 
 -- A player that submits `claim` to any tournament and answers every move with `move`.
-local function submitter(claim, move)
+local function make_submitter(claim, move)
     return function(request)
         if request.operation == "commit_mcycle_claim" then
             return { label = claim, value = claim }
@@ -208,11 +208,11 @@ local function is_valid(v)
     return v == "valid" and v
 end
 
-local function request(name, response_schema)
-    return prtu.request(name, nil, response_schema)
+local function define_request(name, response_schema)
+    return prtu.define_request(name, nil, response_schema)
 end
 
-with_server(function(server, client, wait_connections)
+run_with_server(function(server, run_client, wait_connections)
     -- Two players connect before the sealer, one after it. The mcycle tournament must gather
     -- exactly the first two, and must not resolve before the sealer seals it.
     local answered = {}
@@ -222,13 +222,14 @@ with_server(function(server, client, wait_connections)
             return { value = value }
         end
     end
-    client(nil, submitter("a", answer("valid")))
-    client(nil, submitter("b", answer("invalid")))
-    client({ role = "sealer" }, function()
+    run_client(nil, make_submitter("a", answer("valid")))
+    run_client(nil, make_submitter("b", answer("invalid")))
+    run_client({ role = "sealer" }, function()
         return { value = true }
     end)
     server:accept_subscribers("initial")
-    local submissions = server:collect_submissions(server:subscribers({ "initial" }), request("commit_mcycle_claim"))
+    local submissions =
+        server:collect_submissions(server:get_subscribers({ "initial" }), define_request("commit_mcycle_claim"))
     table.sort(submissions, function(x, y)
         return x.value < y.value
     end)
@@ -241,12 +242,12 @@ with_server(function(server, client, wait_connections)
     server:subscribe("x", a)
     server:subscribe("x", b)
     -- A late joiner, after the seal, is not part of the mcycle tournament.
-    client(nil, submitter("c", answer("valid")))
+    run_client(nil, make_submitter("c", answer("valid")))
     wait_connections(4)
 
     -- First valid move wins, the rejected proof leaves its connection open.
     assert(
-        server:accept_first(server:subscribers({ "x" }), is_valid, request("move")) == "valid",
+        server:accept_first(server:get_subscribers({ "x" }), is_valid, define_request("move")) == "valid",
         "valid move not taken"
     )
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
@@ -254,14 +255,14 @@ with_server(function(server, client, wait_connections)
     -- The acceptor's result, rather than the submitted value, is returned.
     local mapped = server:accept_first({ a }, function(v)
         return is_valid(v) and "mapped"
-    end, request("mapped"))
+    end, define_request("mapped"))
     assert(mapped == "mapped", "accept_first did not return the acceptor result")
 
     -- A valid move resolves the request while another holder still owes a reply. When that
     -- holder is asked again, TCP delivers the old reply first; the referee drops it by count
     -- and accepts the following reply for the current request.
     local delayed = false
-    client(nil, function(wire_request)
+    run_client(nil, function(wire_request)
         if wire_request.operation == "early" then
             delayed = true
             return nil
@@ -274,11 +275,11 @@ with_server(function(server, client, wait_connections)
     wait_connections(5)
     local delayed_connection = server.connections[5]
     assert(
-        server:accept_first({ delayed_connection, a }, is_valid, request("early")) == "valid",
+        server:accept_first({ delayed_connection, a }, is_valid, define_request("early")) == "valid",
         "valid move not taken early"
     )
     assert(
-        server:accept_first({ delayed_connection }, is_valid, request("after_early")) == "valid",
+        server:accept_first({ delayed_connection }, is_valid, define_request("after_early")) == "valid",
         "stale reply was accepted"
     )
     assert(
@@ -288,34 +289,34 @@ with_server(function(server, client, wait_connections)
     assert(not delayed_connection.dead, "a pending holder was closed")
     -- Without a valid move, the request waits for every holder, and resolves to nil only then.
     local replies_seen = 0
-    client(nil, function()
+    run_client(nil, function()
         replies_seen = replies_seen + 1
         return { value = "invalid" }
     end)
     wait_connections(6)
     local n = server.connections[6]
-    assert(server:accept_first({ n, b }, is_valid, request("move")) == nil, "an unproved move was taken")
+    assert(server:accept_first({ n, b }, is_valid, define_request("move")) == nil, "an unproved move was taken")
     assert(replies_seen == 1, "the request resolved before every holder answered")
     assert(not n.dead and not b.dead, "an unproved move closed a connection")
 
     -- A nested tournament asks only its audience, and seals at once.
-    local nested = server:collect_submissions({ a }, request("commit_mcycle_claim"))
+    local nested = server:collect_submissions({ a }, define_request("commit_mcycle_claim"))
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
 
     -- Every holder answers without proof: the request resolves to nil, connections stay open.
-    assert(server:accept_first({ b }, is_valid, request("move")) == nil, "an unproved move was taken")
+    assert(server:accept_first({ b }, is_valid, define_request("move")) == nil, "an unproved move was taken")
     assert(not b.dead, "an unproved move closed its connection")
 
     -- A holder that closes counts as answered. With every holder gone, the claim is unanswered.
-    client(nil, function()
+    run_client(nil, function()
         return "close"
     end)
     wait_connections(7)
-    local replies = server:collect(nil, request("label"))
+    local replies = server:collect(nil, define_request("label"))
     local d = server.connections[7]
     assert(d.dead and #replies == 5, "the closing client was not dropped from the collection")
     assert(
-        server:accept_first({ d }, is_valid, request("move")) == nil,
+        server:accept_first({ d }, is_valid, define_request("move")) == nil,
         "a request to a closed connection did not resolve"
     )
 
@@ -326,8 +327,8 @@ with_server(function(server, client, wait_connections)
     prtu.SCHEMA_DICT.PairResponse = { l = "Base64", r = "Base64" }
     prtu.SCHEMA_DICT.PairResponseEnvelope = { value = "PairResponse" }
     -- Each fake client answers typed requests with its fixed value.
-    local function typed_client(value, schema)
-        client(nil, function(wire_request)
+    local function run_typed_client(value, schema)
+        run_client(nil, function(wire_request)
             if wire_request.operation == "typed" then
                 return cartesi.tojson({ value = value }, -1, schema, prtu.SCHEMA_DICT)
             end
@@ -336,30 +337,30 @@ with_server(function(server, client, wait_connections)
         wait_connections(#server.connections + 1)
         return server.connections[#server.connections]
     end
-    local function well_typed(v)
+    local function is_well_typed(v)
         return v.l == "a" and v.r == "b" and v
     end
-    local bad = typed_client({ l = 1, r = "not base64!" })
+    local bad = run_typed_client({ l = 1, r = "not base64!" })
     assert(
-        server:accept_first({ bad }, well_typed, request("typed", "PairResponse")) == nil,
+        server:accept_first({ bad }, is_well_typed, define_request("typed", "PairResponse")) == nil,
         "a schema-invalid value was taken"
     )
     assert(not next(server.active), "accept_first left a resolved request active")
     assert(not bad.dead, "a schema-invalid reply closed its connection")
     -- Alongside a well-typed reply, whichever arrives first, the well-typed value is taken and
     -- both connections stay open.
-    local good = typed_client({ l = "a", r = "b" }, "PairResponseEnvelope")
-    local taken = server:accept_first({ bad, good }, well_typed, request("typed", "PairResponse"))
+    local good = run_typed_client({ l = "a", r = "b" }, "PairResponseEnvelope")
+    local taken = server:accept_first({ bad, good }, is_well_typed, define_request("typed", "PairResponse"))
     assert(taken and taken.l == "a", "the well-typed reply was not taken")
     assert(not next(server.active), "accept_first left a resolved request active")
     assert(not bad.dead and not good.dead, "a schema-invalid reply closed a connection")
 
     -- An undecodable line closes its sender.
-    client(nil, function()
+    run_client(nil, function()
         return "this is not json"
     end)
     wait_connections(10)
-    server:collect(nil, request("label"))
+    server:collect(nil, define_request("label"))
     local dead = 0
     for _, connection in ipairs(server.connections) do
         if connection.dead then
@@ -371,7 +372,7 @@ with_server(function(server, client, wait_connections)
 
     -- Sealing is connection-bound. An extra player reply cannot be consumed as a seal; the
     -- tournament closes only on the sealer's reply and includes the player's submission.
-    client(nil, function(wire_request)
+    run_client(nil, function(wire_request)
         if wire_request.operation == "commit_mcycle_claim" then
             return cartesi.tojson({ value = "forger" }, -1) .. "\n" .. cartesi.tojson({ value = true }, -1)
         end
@@ -379,18 +380,18 @@ with_server(function(server, client, wait_connections)
     end)
     wait_connections(11)
     local f = server.connections[11]
-    local t2 = server:collect_submissions({ f }, request("commit_mcycle_claim"))
+    local t2 = server:collect_submissions({ f }, define_request("commit_mcycle_claim"))
     assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged seal was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
     -- sealer.
-    client({ role = "player" }, function()
+    run_client({ role = "player" }, function()
         return { role = "player" }
     end)
     wait_connections(12)
-    server:collect({ server.connections[12] }, request("again"))
+    server:collect({ server.connections[12] }, define_request("again"))
     assert(server.connections[12].dead, "a repeated role announcement was accepted")
-    client({ role = "sealer" }, function()
+    run_client({ role = "sealer" }, function()
         return "close"
     end)
     wait_connections(13)
@@ -398,22 +399,22 @@ with_server(function(server, client, wait_connections)
 end)
 
 -- An invalid seal response is a sealer bug and fails the referee.
-local ok, err = pcall(with_server, function(server, client, wait_connections)
-    client({ role = "sealer" }, function()
+local ok, err = pcall(run_with_server, function(server, run_client, wait_connections)
+    run_client({ role = "sealer" }, function()
         return { value = "other" }
     end)
     wait_connections(1)
-    server:collect_submissions({}, request("commit_mcycle_claim"))
+    server:collect_submissions({}, define_request("commit_mcycle_claim"))
 end)
 assert(not ok and err:find("did not close the phase asked"), "an invalid seal was accepted")
 
 -- The sealer going away fails the referee outright: a tournament could never close again.
-ok, err = pcall(with_server, function(server, client, wait_connections)
-    client({ role = "sealer" }, function()
+ok, err = pcall(run_with_server, function(server, run_client, wait_connections)
+    run_client({ role = "sealer" }, function()
         return "close"
     end)
     wait_connections(1)
-    server:collect_submissions({}, request("commit_mcycle_claim"))
+    server:collect_submissions({}, define_request("commit_mcycle_claim"))
 end)
 assert(not ok and err:find("the sealer went away"), "sealer EOF did not fail the referee")
 print("prt-test: ok")

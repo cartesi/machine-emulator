@@ -25,7 +25,7 @@ local function trace_wire(direction, name, line)
 end
 
 -- A hash is shown by its first four bytes.
-local function short_hash(hash)
+local function format_short_hash(hash)
     return cartesi.tohex(hash):sub(1, 10) .. "..."
 end
 
@@ -124,7 +124,7 @@ end
 
 -- The root of the complete subtree holding 2^k copies of hash, by repeated squaring, cached
 -- per hash. This is what makes repetitions free: a run of any length costs one hash chain.
-local function iterated(tree, hash, k)
+local function compute_repeated_root(tree, hash, k)
     local chain = tree.iterated[hash]
     if not chain then
         chain = { [0] = hash }
@@ -138,30 +138,30 @@ end
 
 -- The node at height h, index q, over a runs array whose entries sit at entry_height.
 -- A range covered by a single run is an iterated hash, anything else splits in two.
--- docs:begin runs_node
-local function runs_node(tree, runs, entry_height, h, q)
+-- docs:begin get_runs_node
+local function get_runs_node(tree, runs, entry_height, h, q)
     local first = q << (h - entry_height)
     local count = 1 << (h - entry_height)
     local i = find_run(runs, first)
     if not math.ult(runs.cum[i] - 1, first + count - 1) then -- a single run covers the range
-        return iterated(tree, runs[i].hash, h - entry_height)
+        return compute_repeated_root(tree, runs[i].hash, h - entry_height)
     end
     return keccak(
-        runs_node(tree, runs, entry_height, h - 1, 2 * q),
-        runs_node(tree, runs, entry_height, h - 1, 2 * q + 1)
+        get_runs_node(tree, runs, entry_height, h - 1, 2 * q),
+        get_runs_node(tree, runs, entry_height, h - 1, 2 * q + 1)
     )
 end
--- docs:end runs_node
+-- docs:end get_runs_node
 
 local tree_meta = { __index = {} }
 
 -- The node at height h, index q. At or above entry_height it resolves over the stored runs.
 -- Below, it locates the one stored entry standing over the node and queries the leaf runs
 -- recovered by refine, so only the entries a dispute actually visits are ever expanded.
--- docs:begin tree_node
-function tree_meta.__index.node(tree, h, q)
+-- docs:begin get_tree_node
+function tree_meta.__index.get_node(tree, h, q)
     if h >= tree.entry_height then
-        return runs_node(tree, tree.runs, tree.entry_height, h, q)
+        return get_runs_node(tree, tree.runs, tree.entry_height, h, q)
     end
     local entry = q >> (tree.entry_height - h)
     local leaf_runs = tree.refined[entry]
@@ -170,17 +170,17 @@ function tree_meta.__index.node(tree, h, q)
         assert(leaf_runs.total == 1 << tree.entry_height, "refine did not produce a full entry")
         tree.refined[entry] = leaf_runs
     end
-    return runs_node(tree, leaf_runs, 0, h, q - (entry << (tree.entry_height - h)))
+    return get_runs_node(tree, leaf_runs, 0, h, q - (entry << (tree.entry_height - h)))
 end
--- docs:end tree_node
+-- docs:end get_tree_node
 
-function tree_meta.__index.root(tree)
-    return tree:node(tree.height, 0)
+function tree_meta.__index.get_root(tree)
+    return tree:get_node(tree.height, 0)
 end
 
 -- The two children of the node at height h, index q.
-function tree_meta.__index.children(tree, h, q)
-    return tree:node(h - 1, 2 * q), tree:node(h - 1, 2 * q + 1)
+function tree_meta.__index.get_children(tree, h, q)
+    return tree:get_node(h - 1, 2 * q), tree:get_node(h - 1, 2 * q + 1)
 end
 
 -- The proof of a leaf index, in the standard cartesi.hash-tree representation. Claim-tree
@@ -189,14 +189,14 @@ end
 function tree_meta.__index.prove(tree, index)
     local siblings = {}
     for level = 0, tree.height - 1 do
-        siblings[level + 1] = tree:node(level, (index >> level) ~ 1)
+        siblings[level + 1] = tree:get_node(level, (index >> level) ~ 1)
     end
     return {
         target_address = index,
         log2_target_size = 0,
-        target_hash = tree:node(0, index),
+        target_hash = tree:get_node(0, index),
         log2_root_size = tree.height,
-        root_hash = tree:root(),
+        root_hash = tree:get_root(),
         sibling_hashes = siblings,
     }
 end
@@ -247,8 +247,8 @@ end
 
 -- Checks a move against the match state: the children must join into the node to open, and,
 -- above the leaves, the grandchildren must join into the child the walk descends into.
--- docs:begin valid_move
-local function valid_move(match, move)
+-- docs:begin is_valid_move
+local function is_valid_move(match, move)
     if keccak(move.l, move.r) ~= match.other_parent then
         return false
     end
@@ -257,7 +257,7 @@ local function valid_move(match, move)
     end
     return true
 end
--- docs:end valid_move
+-- docs:end is_valid_move
 
 -- Applies a valid move. Above the leaves, the walk descends one height: the on-turn claim's
 -- chosen grandchildren become the standing left and right, the opponent's node on the chosen
@@ -420,7 +420,7 @@ end
 local SEAL = define_request("seal", "SealRequest", "SealResponse")
 
 -- The envelope schema for requests under a named argument schema, registered on first use.
-local function request_envelope_schema(schema)
+local function ensure_request_envelope_schema(schema)
     if not schema then
         return nil
     end
@@ -433,7 +433,7 @@ end
 
 -- The envelope schema for responses under a named value schema, registered on first use, so
 -- both sides encode {label, value} with the value's binary fields transformed.
-local function response_envelope_schema(schema)
+local function ensure_response_envelope_schema(schema)
     if not schema then
         return nil
     end
@@ -505,12 +505,13 @@ local function serve(player, server_address)
         trace_wire("from referee", player.label, line)
         local envelope = cartesi.fromjson(line)
         local request = assert(player.requests[envelope.operation], "unknown operation")
-        local wire_request = cartesi.fromjson(line, request_envelope_schema(request.request_schema), SCHEMA_DICT)
+        local wire_request = cartesi.fromjson(line, ensure_request_envelope_schema(request.request_schema), SCHEMA_DICT)
         local handler = assert(player[wire_request.operation], "missing operation")
         local value = handler(player, table.unpack(wire_request.arguments or {}))
         assert(value ~= nil, "the operation produced no value")
         local response = { label = player.label, value = value }
-        local encoded = cartesi.tojson(response, -1, response_envelope_schema(request.response_schema), SCHEMA_DICT)
+        local encoded =
+            cartesi.tojson(response, -1, ensure_response_envelope_schema(request.response_schema), SCHEMA_DICT)
         trace_wire("to referee", player.label, encoded)
         assert(player.connection:send(encoded .. "\n"))
     until player.done
@@ -560,10 +561,12 @@ end
 
 local server_meta = { __index = {} }
 
-local function new_server(dispatcher, listener)
+local function new_server(address)
+    local host, port = address:match("^(.-):(%d+)$")
+    assert(host and port, "invalid server address")
     return setmetatable({
-        dispatcher = dispatcher,
-        listener = listener,
+        dispatcher = new_dispatcher(),
+        listener = assert(socket.bind(host, tonumber(port))),
         connections = {},
         subscriptions = {}, -- routing hash -> set of connections interested in defending it
         active = {}, -- set of requests whose coroutines are waiting
@@ -639,9 +642,9 @@ local function close_connection(self, connection)
 end
 
 -- Encodes a request and its positional Lua arguments under its request schema.
-local function request_line(request, arguments)
+local function encode_request(request, arguments)
     local wire_request = { operation = request.name, arguments = arguments }
-    return cartesi.tojson(wire_request, -1, request_envelope_schema(request.request_schema), SCHEMA_DICT) .. "\n"
+    return cartesi.tojson(wire_request, -1, ensure_request_envelope_schema(request.request_schema), SCHEMA_DICT) .. "\n"
 end
 
 -- Sends one request at a time over a connection. If another connection resolved the previous
@@ -685,7 +688,7 @@ request_next_seal = function(self)
         pending = { [self.sealer] = true },
     }
     self.seal_active = entry
-    send_request(self, self.sealer, entry, request_line(SEAL, {}))
+    send_request(self, self.sealer, entry, encode_request(SEAL, {}))
 end
 
 -- Files the next reply from a connection on its current request. A value that does not decode
@@ -701,7 +704,8 @@ local function deliver(self, entry, connection, line)
         return
     end
     entry.pending[connection] = nil
-    local ok, decoded = pcall(cartesi.fromjson, line, response_envelope_schema(entry.response_schema), SCHEMA_DICT)
+    local ok, decoded =
+        pcall(cartesi.fromjson, line, ensure_response_envelope_schema(entry.response_schema), SCHEMA_DICT)
     if entry.kind == "seal" then
         assert(ok and decoded.value == true, "the sealer did not close the phase asked")
         entry.resolved = true
@@ -847,7 +851,7 @@ function server_meta.__index.subscribe(self, root, connection)
 end
 
 -- The live connections subscribed to any of the given routing hashes.
-function server_meta.__index.subscribers(self, roots)
+function server_meta.__index.get_subscribers(self, roots)
     local seen, list = {}, {}
     for _, root in ipairs(roots) do
         local set = self.subscriptions[root]
@@ -864,7 +868,7 @@ function server_meta.__index.subscribers(self, roots)
 end
 
 -- Every live player connection.
-function server_meta.__index.everyone(self)
+function server_meta.__index.get_players(self)
     local list = {}
     for _, connection in ipairs(self.connections) do
         if not connection.dead and connection.is_player then
@@ -901,7 +905,7 @@ end
 -- docs:begin accept_first
 function server_meta.__index.accept_first(self, conns, accept, request, ...)
     local entry = { kind = "accept_first", response_schema = request.response_schema, accept = accept }
-    park(self, entry, conns, request_line(request, { ... }))
+    park(self, entry, conns, encode_request(request, { ... }))
     return wait(self, entry).value
 end
 -- docs:end accept_first
@@ -911,7 +915,7 @@ end
 -- closed.
 function server_meta.__index.collect(self, conns, request, ...)
     local entry = { kind = "collect", response_schema = request.response_schema, replies = {}, open = false }
-    park(self, entry, conns or self:everyone(), request_line(request, { ... }))
+    park(self, entry, conns or self:get_players(), encode_request(request, { ... }))
     return wait(self, entry).replies
 end
 
@@ -928,7 +932,7 @@ function server_meta.__index.accept_subscribers(self, initial_hash)
     }
     self.active[entry] = true
     self.open_phases[#self.open_phases + 1] = entry
-    for _, connection in ipairs(self:everyone()) do
+    for _, connection in ipairs(self:get_players()) do
         self:subscribe(initial_hash, connection)
     end
     request_seal(self, entry)
@@ -946,7 +950,7 @@ function server_meta.__index.collect_submissions(self, conns, request, ...)
         open = true,
     }
     self.open_phases[#self.open_phases + 1] = entry
-    park(self, entry, conns, request_line(request, { ... }))
+    park(self, entry, conns, encode_request(request, { ... }))
     request_seal(self, entry)
     return wait(self, entry).replies
 end
@@ -965,16 +969,15 @@ end
 
 return {
     SCHEMA_DICT = SCHEMA_DICT,
-    request = define_request,
-    short_hash = short_hash,
+    define_request = define_request,
+    format_short_hash = format_short_hash,
     narrate = narrate,
     push_run = push_run,
     slice_runs = slice_runs,
     new_tree = new_tree,
     new_match = new_match,
-    valid_move = valid_move,
+    is_valid_move = is_valid_move,
     advance_match = advance_match,
-    new_dispatcher = new_dispatcher,
     new_server = new_server,
     serve = serve,
     new_sealer = new_sealer,

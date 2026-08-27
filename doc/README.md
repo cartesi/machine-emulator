@@ -9765,7 +9765,7 @@ fresh fork at the transition and logging it:
 
 ``` lua
 function handlers.transition_logs(player, input_index, period_index, transition_index)
-    local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local mcycle_offset = transition_index >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
     local data = player.inputs[input_index + 1]
@@ -9870,38 +9870,37 @@ run, lying about different samples, so they dispute each other too,
 which is why there are five dishonest players and four ways of being
 dishonest.
 
-To run the tournament, start the referee, giving it the mcycle period
-and the epoch’s input files.
+To run the tournament, start the referee with the epoch’s input files.
 
 ``` bash
-lua5.4 prt.lua referee 127.0.0.1:8096 10 \
+lua5.4 prt.lua referee 127.0.0.1:8096 \
     input-0.bin input-1.bin input-2.bin
 ```
 
-The players take the referee address and the same mcycle period, and
-nothing that names their number or their order:
+The players take the referee address, and nothing that names their
+number or their order:
 
 ``` bash
-lua5.4 prt.lua honest 127.0.0.1:8096 10 \
-    input-0.bin input-1.bin input-2.bin
-```
-
-``` bash
-lua5.4 prt.lua quitter 127.0.0.1:8096 10
-```
-
-``` bash
-lua5.4 prt.lua forger 127.0.0.1:8096 10 2 forged-input-2.bin \
+lua5.4 prt.lua honest 127.0.0.1:8096 \
     input-0.bin input-1.bin input-2.bin
 ```
 
 ``` bash
-lua5.4 prt.lua tamperer 127.0.0.1:8096 10 0 100 \
+lua5.4 prt.lua quitter 127.0.0.1:8096
+```
+
+``` bash
+lua5.4 prt.lua forger 127.0.0.1:8096 2 forged-input-2.bin \
     input-0.bin input-1.bin input-2.bin
 ```
 
 ``` bash
-lua5.4 prt.lua fabulist 127.0.0.1:8096 10 2 2000 \
+lua5.4 prt.lua tamperer 127.0.0.1:8096 0 100 \
+    input-0.bin input-1.bin input-2.bin
+```
+
+``` bash
+lua5.4 prt.lua fabulist 127.0.0.1:8096 2 2000 \
     input-0.bin input-1.bin input-2.bin
 ```
 

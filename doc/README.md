@@ -9641,9 +9641,18 @@ isolated dispute over. A claim nobody opens loses by default:
 local function run_match(tournament, m)
     while true do
         local conns = server:subscribers({ hex(m.turn.root) })
-        local move = server:accept_first(conns, "Advance", function(v)
-            return valid_move(m, v) and v
-        end, 'return player:advance("%s", %d, %d, "%s")', hex(m.turn.root), m.height, m.index, hex(m.left_node))
+        local move = server:accept_first(
+            conns,
+            function(v)
+                return valid_move(m, v) and v
+            end,
+            "Advance",
+            'return player:advance("%s", %d, %d, "%s")',
+            hex(m.turn.root),
+            m.height,
+            m.index,
+            hex(m.left_node)
+        )
         if not move then
             story.default_win(m)
             return m.other
@@ -9733,10 +9742,10 @@ local function settle_uarch_match(tournament, m, transition_index, agree_hash, d
     local conns = server:subscribers({ hex(m.one.root), hex(m.two.root) })
     local hash = server:accept_first(
         conns,
-        "Logs",
         function(v)
             return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
         end,
+        "Logs",
         "return player:transition_logs(%d, %d, %d)",
         disputed_period.input_index,
         disputed_period.period_index,

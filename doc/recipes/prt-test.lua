@@ -235,15 +235,15 @@ with_server(function(server, client, wait_connections)
 
     -- First valid move wins, the rejected proof leaves its connection open.
     assert(
-        server:accept_first(server:subscribers({ "x" }), nil, is_valid, "return 1") == "valid",
+        server:accept_first(server:subscribers({ "x" }), is_valid, nil, "return 1") == "valid",
         "valid move not taken"
     )
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
 
     -- The acceptor's result, rather than the submitted value, is returned.
-    local mapped = server:accept_first({ a }, nil, function(v)
+    local mapped = server:accept_first({ a }, function(v)
         return is_valid(v) and "mapped"
-    end, "return 1")
+    end, nil, "return 1")
     assert(mapped == "mapped", "accept_first did not return the acceptor result")
 
     -- A valid move resolves the request while another holder still owes a reply. When that
@@ -262,8 +262,8 @@ with_server(function(server, client, wait_connections)
     end)
     wait_connections(5)
     local m = server.connections[5]
-    assert(server:accept_first({ m, a }, nil, is_valid, "return 'early'") == "valid", "valid move not taken early")
-    assert(server:accept_first({ m }, nil, is_valid, "return 'after-early'") == "valid", "stale reply was accepted")
+    assert(server:accept_first({ m, a }, is_valid, nil, "return 'early'") == "valid", "valid move not taken early")
+    assert(server:accept_first({ m }, is_valid, nil, "return 'after-early'") == "valid", "stale reply was accepted")
     assert(m.stale_requests_pending == 0 and not m.current_request, "stale reply was not consumed")
     assert(not m.dead, "a pending holder was closed")
     -- Without a valid move, the request waits for every holder, and resolves to nil only then.
@@ -274,7 +274,7 @@ with_server(function(server, client, wait_connections)
     end)
     wait_connections(6)
     local n = server.connections[6]
-    assert(server:accept_first({ n, b }, nil, is_valid, "return 1") == nil, "an unproved move was taken")
+    assert(server:accept_first({ n, b }, is_valid, nil, "return 1") == nil, "an unproved move was taken")
     assert(replies_seen == 1, "the request resolved before every holder answered")
     assert(not n.dead and not b.dead, "an unproved move closed a connection")
 
@@ -283,7 +283,7 @@ with_server(function(server, client, wait_connections)
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
 
     -- Every holder answers without proof: the request resolves to nil, connections stay open.
-    assert(server:accept_first({ b }, nil, is_valid, "return 1") == nil, "an unproved move was taken")
+    assert(server:accept_first({ b }, is_valid, nil, "return 1") == nil, "an unproved move was taken")
     assert(not b.dead, "an unproved move closed its connection")
 
     -- A holder that closes counts as answered. With every holder gone, the claim is unanswered.
@@ -295,7 +295,7 @@ with_server(function(server, client, wait_connections)
     local d = server.connections[7]
     assert(d.dead and #replies == 5, "the closing client was not dropped from the collection")
     assert(
-        server:accept_first({ d }, nil, is_valid, "return 1") == nil,
+        server:accept_first({ d }, is_valid, nil, "return 1") == nil,
         "a request to a closed connection did not resolve"
     )
 
@@ -320,13 +320,13 @@ with_server(function(server, client, wait_connections)
         return v.l == "a" and v.r == "b" and v
     end
     local bad = typed_client({ l = 1, r = "not base64!" })
-    assert(server:accept_first({ bad }, "Pair", well_typed, "return 1") == nil, "a schema-invalid value was taken")
+    assert(server:accept_first({ bad }, well_typed, "Pair", "return 1") == nil, "a schema-invalid value was taken")
     assert(not next(server.active), "accept_first left a resolved request active")
     assert(not bad.dead, "a schema-invalid reply closed its connection")
     -- Alongside a well-typed reply, whichever arrives first, the well-typed value is taken and
     -- both connections stay open.
     local good = typed_client({ l = "a", r = "b" }, "PairReply")
-    local taken = server:accept_first({ bad, good }, "Pair", well_typed, "return 1")
+    local taken = server:accept_first({ bad, good }, well_typed, "Pair", "return 1")
     assert(taken and taken.l == "a", "the well-typed reply was not taken")
     assert(not next(server.active), "accept_first left a resolved request active")
     assert(not bad.dead and not good.dead, "a schema-invalid reply closed a connection")

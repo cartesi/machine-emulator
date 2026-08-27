@@ -138,19 +138,18 @@ local function hash_less(a, b)
     return #a < #b
 end
 
--- Turns the submissions to a tournament into its distinct claims, sorted by computation hash. Each
--- valid submission is kept only if `accept` allows it (a uarch tournament accepts only the two
--- contested finals) and merged with the identical claim any other player submitted, and its
--- sender is recorded as a holder, so that claim's matches ask it. The sort makes the bracket a
--- pure function of the claim set, not of the order players connected.
--- docs:begin distinct_claims
-local function distinct_claims(submissions, height, accept)
-    local claims, by_root = {}, {}
+-- Partitions tournament submissions by computation hash, returning one claim per partition,
+-- sorted by that hash. Each valid submission is kept only if `accept` allows it (a uarch
+-- tournament accepts only the two contested finals), and its sender subscribes to requests for
+-- that claim. The sort makes the bracket a pure function of the claim set, not of connection order.
+-- docs:begin partition_claims
+local function partition_claims(submissions, height, accept)
+    local claims, by_hash = {}, {}
     for _, submission in ipairs(submissions) do
         local ok, claim = pcall(validate_join, submission.value, height)
         if ok and (not accept or accept(claim)) then
-            if not by_root[claim.computation_hash] then
-                by_root[claim.computation_hash] = claim
+            if not by_hash[claim.computation_hash] then
+                by_hash[claim.computation_hash] = claim
                 claims[#claims + 1] = claim
             end
             server:subscribe(claim.computation_hash, submission.connection)
@@ -163,7 +162,7 @@ local function distinct_claims(submissions, height, accept)
     end)
     return claims
 end
--- docs:end distinct_claims
+-- docs:end partition_claims
 
 -- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
 -- them on the blockchain, without ever instantiating a machine. The transition index picks the
@@ -259,7 +258,7 @@ local function open_uarch_tournament(parent, match, disputed_period, agreed_hash
         claim1_next_hash,
         claim2_next_hash
     )
-    local claims = distinct_claims(submissions, UARCH_HEIGHT, function(claim)
+    local claims = partition_claims(submissions, UARCH_HEIGHT, function(claim)
         return claim.final_state == claim1_next_hash or claim.final_state == claim2_next_hash
     end)
     tournament.claims = claims
@@ -416,7 +415,7 @@ end
 local function open_mcycle_tournament(referee, dapp_contract)
     local submissions =
         server:open_tournament(server:subscribers({ referee.initial_hash }), request.commit_mcycle_claim)
-    local claims = distinct_claims(submissions, MCYCLE_HEIGHT)
+    local claims = partition_claims(submissions, MCYCLE_HEIGHT)
     local tournament = {
         level = "mcycle",
         height = MCYCLE_HEIGHT,

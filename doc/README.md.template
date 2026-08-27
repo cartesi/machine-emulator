@@ -5401,9 +5401,9 @@ The logs come from a holder of either claim, produced by positioning a fresh for
 ### The referee server
 
 The players are passive.
-Each is a plain blocking loop that reads a request, runs the snippet it carries against the player's own claims and machines, and answers with the value the snippet produces.
+Each is a plain blocking loop that reads a typed operation and its arguments, dispatches it against the player's own claims and machines, and answers with the operation's typed value.
 A player follows one claim lineage, its mcycle claim and, while that claim's match is suspended in a uarch tournament, the uarch claim it committed there, and the referee only ever asks a player about claims it holds.
-A snippet that produces nothing, or fails, is therefore a bug in the player, and the process dies on it rather than answer (`serve` in `prtu.lua`).
+An unknown operation, missing result, or failure is therefore a bug in the player, and the process dies on it rather than answer (`serve` in `prtu.lua`).
 A claim cannot be misrepresented, so the valid move for an operation is unique, whoever computes it.
 The referee never narrates who holds a claim.
 Each player announces its own claim on its standard error, and that is how the transcript below is read against the players.

@@ -7,9 +7,9 @@
 --
 -- All game logic lives in the referee, which never trusts a player. The players are thin and
 -- identical, differing only in the machine they hold, the honest one bare and the dishonest
--- one a composite that reports a fake machine past the cheat point. Each runs Lua code the
--- referee sends against its machine and replies. The fork trick lets it answer bisection
--- queries without re-running from scratch. The narration, the wire protocol, the player
+-- one a composite that reports a fake machine past the cheat point. Each dispatches typed
+-- operations the referee sends against its machine and replies. The fork trick lets it answer
+-- bisection queries without re-running from scratch. The narration, the wire protocol, the player
 -- plumbing, and the bisection loop live in the vgu.lua module, shared with the rolling variant
 -- of the game.
 --
@@ -33,13 +33,13 @@ local wait_for_any, wait_for_log, wait_for_commitments = vgu.wait_for_any, vgu.w
 
 -- The schemas this game adds to the shared dictionary.
 -- A value at a proof's target and the proof itself, used for the winner's output drive.
-vgu.SCHEMA_DICT.StateValueProof = {
+vgu.SCHEMA_DICT.ProveOutputResponse = {
     target_value = "Base64",
     proof = "Proof",
 }
 -- The disputed transition's access logs. The transition that closes an instruction carries a
 -- step and a reset log, an ordinary step just the one.
-vgu.SCHEMA_DICT.LogCommitment = {
+vgu.SCHEMA_DICT.CommitLogResponse = {
     step_log = "AccessLog",
     reset_log = "AccessLog",
 }
@@ -90,16 +90,16 @@ end
 -- advances the fork to the target (an mcycle or uarch_cycle per level), and returns its root
 -- hash. An mcycle round at or past the halting mcycle is a fixed point answered with the cached
 -- final hash, no fork at all.
-local function commit_bisection(player, branch, level, target)
-    take_branch(player, branch)
-    if level == "mcycle" and target >= player.halt_mcycle then
+local function commit_bisection(player, arguments)
+    take_branch(player, arguments.branch)
+    if arguments.level == "mcycle" and arguments.target >= player.halt_mcycle then
         return player.final_hash
     end
     player.tentative = { machine = assert(player.agreed.machine:fork_server()) }
-    if level == "mcycle" then
-        player.tentative.machine:run(target)
+    if arguments.level == "mcycle" then
+        player.tentative.machine:run(arguments.target)
     else
-        player.tentative.machine:run_uarch(target)
+        player.tentative.machine:run_uarch(arguments.target)
     end
     return player.tentative.machine:get_root_hash()
 end
@@ -111,10 +111,10 @@ end
 -- then a fixed point, and the reset, committed as two logs, every other an ordinary step,
 -- decided by the cycle the referee names rather than the machine's own uarch_cycle, which sits
 -- at the halt.
-local function commit_log(player, branch, _mcycle, uarch_cycle)
-    take_branch(player, branch)
+local function commit_log(player, arguments)
+    take_branch(player, arguments.branch)
     local agreed = player.agreed.machine
-    if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+    if arguments.uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
         local step_log = agreed:log_step_uarch()
         return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
     end
@@ -138,6 +138,18 @@ local function new_player(machine, send_result_delay)
     return vgu.new_player({
         agreed = { machine = machine },
         send_result_delay = send_result_delay,
+        operation_schemas = {
+            commit_final_hash = {
+                request_schema = "CommitFinalHashRequest",
+                response_schema = "CommitFinalHashResponse",
+            },
+            commit_bisection = {
+                request_schema = "CommitBisectionRequest",
+                response_schema = "CommitBisectionResponse",
+            },
+            commit_log = { request_schema = "CommitLogRequest", response_schema = "CommitLogResponse" },
+            prove_output = { request_schema = "ProveOutputRequest", response_schema = "ProveOutputResponse" },
+        },
         commit_final_hash = commit_final_hash,
         commit_bisection = commit_bisection,
         commit_log = commit_log,
@@ -151,7 +163,7 @@ end
 
 -- Asks both players for the result and returns the first output proof to arrive.
 local function wait_for_output(players)
-    return wait_for_any(players, "StateValueProof", "return player:prove_output()")
+    return wait_for_any(players, "prove_output", {}, "ProveOutputRequest", "ProveOutputResponse")
 end
 
 -- Checks an output submission against a verified final hash. The proof must be whole-machine, the

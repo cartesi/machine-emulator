@@ -9028,8 +9028,9 @@ uarch cycles of the disputed instruction. A single player operation
 serves the three levels:
 
 ``` lua
-local function commit_bisection(player, branch, level, target)
-    take_branch(player, branch)
+local function commit_bisection(player, arguments)
+    take_branch(player, arguments.branch)
+    local level, target = arguments.level, arguments.target
     local agreed = player.agreed
     if level == "input" then
         local machine = assert(agreed.machine:fork_server())
@@ -9082,8 +9083,9 @@ agreed on determine the form of the disputed transition, and the referee
 asks player 1 for the matching logs:
 
 ``` lua
-local function commit_log(player, branch, mcycle_offset, uarch_cycle)
-    take_branch(player, branch)
+local function commit_log(player, arguments)
+    take_branch(player, arguments.branch)
+    local mcycle_offset, uarch_cycle = arguments.mcycle, arguments.uarch_cycle
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
         local revert_root_hash = agreed:get_root_hash()
@@ -9646,12 +9648,15 @@ local function run_match(tournament, m)
             function(v)
                 return valid_move(m, v) and v
             end,
-            "Advance",
-            'return player:advance("%s", %d, %d, "%s")',
-            hex(m.turn.root),
-            m.height,
-            m.index,
-            hex(m.left_node)
+            "advance",
+            {
+                root = m.turn.root,
+                height = m.height,
+                index = m.index,
+                opponent_left = m.left_node,
+            },
+            "AdvanceRequest",
+            "AdvanceResponse"
         )
         if not move then
             story.default_win(m)
@@ -9745,11 +9750,14 @@ local function settle_uarch_match(tournament, m, transition_index, agree_hash, d
         function(v)
             return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
         end,
-        "Logs",
-        "return player:transition_logs(%d, %d, %d)",
-        disputed_period.input_index,
-        disputed_period.period_index,
-        transition_index
+        "transition_logs",
+        {
+            input_index = disputed_period.input_index,
+            period_index = disputed_period.period_index,
+            transition_index = transition_index,
+        },
+        "TransitionLogsRequest",
+        "TransitionLogsResponse"
     )
     local winner = hash == d1 and m.one or hash == d2 and m.two or nil
     story.transition_settled(m, hash, winner, d1, d2)
@@ -9761,7 +9769,9 @@ The logs come from a holder of either claim, produced by positioning a
 fresh fork at the transition and logging it:
 
 ``` lua
-function ops.transition_logs(player, input_index, period_index, transition_index)
+function ops.transition_logs(player, arguments)
+    local input_index, period_index, transition_index =
+        arguments.input_index, arguments.period_index, arguments.transition_index
     local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
@@ -9785,17 +9795,18 @@ end
 ### The referee server
 
 The players are passive. Each is a plain blocking loop that reads a
-request, runs the snippet it carries against the player’s own claims and
-machines, and answers with the value the snippet produces. A player
-follows one claim lineage, its mcycle claim and, while that claim’s
-match is suspended in a uarch tournament, the uarch claim it committed
-there, and the referee only ever asks a player about claims it holds. A
-snippet that produces nothing, or fails, is therefore a bug in the
-player, and the process dies on it rather than answer (`serve` in
-`prtu.lua`). A claim cannot be misrepresented, so the valid move for an
-operation is unique, whoever computes it. The referee never narrates who
-holds a claim. Each player announces its own claim on its standard
-error, and that is how the transcript below is read against the players.
+typed operation and its arguments, dispatches it against the player’s
+own claims and machines, and answers with the operation’s typed value. A
+player follows one claim lineage, its mcycle claim and, while that
+claim’s match is suspended in a uarch tournament, the uarch claim it
+committed there, and the referee only ever asks a player about claims it
+holds. An unknown operation, missing result, or failure is therefore a
+bug in the player, and the process dies on it rather than answer
+(`serve` in `prtu.lua`). A claim cannot be misrepresented, so the valid
+move for an operation is unique, whoever computes it. The referee never
+narrates who holds a claim. Each player announces its own claim on its
+standard error, and that is how the transcript below is read against the
+players.
 
 The referee server is the single event loop the players connect to. When
 a match needs a move, the server asks the holders of the claim in

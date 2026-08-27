@@ -410,14 +410,14 @@ local SCHEMA_DICT = {
     SealResponse = "Default",
 }
 
--- Describes one operation once, for both ends of the wire. Referee calls pass the descriptor
--- followed by ordinary positional arguments; the descriptor supplies the operation name and
+-- Describes one request once, for both ends of the wire. Referee calls pass the request
+-- followed by ordinary positional arguments; the request supplies the operation name and
 -- the schemas used to encode its argument tuple and decode its response.
-local function request(name, request_schema, response_schema)
+local function define_request(name, request_schema, response_schema)
     return { name = name, request_schema = request_schema, response_schema = response_schema }
 end
 
-local SEAL = request("seal", "SealRequest", "SealResponse")
+local SEAL = define_request("seal", "SealRequest", "SealResponse")
 
 -- The envelope schema for requests under a named argument schema, registered on first use.
 local function request_envelope_schema(schema)
@@ -504,13 +504,13 @@ local function serve(player, server_address)
         end
         trace_wire("from referee", player.label, line)
         local envelope = cartesi.fromjson(line)
-        local descriptor = assert(player.requests[envelope.operation], "unknown operation")
-        local wire_request = cartesi.fromjson(line, request_envelope_schema(descriptor.request_schema), SCHEMA_DICT)
+        local request = assert(player.requests[envelope.operation], "unknown operation")
+        local wire_request = cartesi.fromjson(line, request_envelope_schema(request.request_schema), SCHEMA_DICT)
         local handler = assert(player[wire_request.operation], "missing operation")
         local value = handler(player, table.unpack(wire_request.arguments or {}))
         assert(value ~= nil, "the operation produced no value")
         local response = { label = player.label, value = value }
-        local encoded = cartesi.tojson(response, -1, response_envelope_schema(descriptor.response_schema), SCHEMA_DICT)
+        local encoded = cartesi.tojson(response, -1, response_envelope_schema(request.response_schema), SCHEMA_DICT)
         trace_wire("to referee", player.label, encoded)
         assert(player.connection:send(encoded .. "\n"))
     until player.done
@@ -638,10 +638,10 @@ local function close_connection(self, connection)
     end
 end
 
--- Encodes an operation and its positional Lua arguments under the descriptor's request schema.
-local function request_line(descriptor, arguments)
-    local wire_request = { operation = descriptor.name, arguments = arguments }
-    return cartesi.tojson(wire_request, -1, request_envelope_schema(descriptor.request_schema), SCHEMA_DICT) .. "\n"
+-- Encodes a request and its positional Lua arguments under its request schema.
+local function request_line(request, arguments)
+    local wire_request = { operation = request.name, arguments = arguments }
+    return cartesi.tojson(wire_request, -1, request_envelope_schema(request.request_schema), SCHEMA_DICT) .. "\n"
 end
 
 -- Sends one request at a time over a connection. If another connection resolved the previous
@@ -899,9 +899,9 @@ end
 -- `accept`, or nil once every connection asked has answered without one or closed.
 -- A claim nobody answers for is thereby eliminated at once.
 -- docs:begin accept_first
-function server_meta.__index.accept_first(self, conns, accept, descriptor, ...)
-    local entry = { kind = "accept_first", response_schema = descriptor.response_schema, accept = accept }
-    park(self, entry, conns, request_line(descriptor, { ... }))
+function server_meta.__index.accept_first(self, conns, accept, request, ...)
+    local entry = { kind = "accept_first", response_schema = request.response_schema, accept = accept }
+    park(self, entry, conns, request_line(request, { ... }))
     return wait(self, entry).value
 end
 -- docs:end accept_first
@@ -909,9 +909,9 @@ end
 -- Asks the given connections (every player, when nil) for a value, and returns the replies,
 -- each with the label and connection that sent it, once every connection asked has replied or
 -- closed.
-function server_meta.__index.collect(self, conns, descriptor, ...)
-    local entry = { kind = "collect", response_schema = descriptor.response_schema, replies = {}, open = false }
-    park(self, entry, conns or self:everyone(), request_line(descriptor, { ... }))
+function server_meta.__index.collect(self, conns, request, ...)
+    local entry = { kind = "collect", response_schema = request.response_schema, replies = {}, open = false }
+    park(self, entry, conns or self:everyone(), request_line(request, { ... }))
     return wait(self, entry).replies
 end
 
@@ -938,15 +938,15 @@ end
 -- Collects claim submissions from a fixed audience. This transport primitive hides how the
 -- demonstration decides that submission time is over.
 -- docs:begin collect_submissions
-function server_meta.__index.collect_submissions(self, conns, descriptor, ...)
+function server_meta.__index.collect_submissions(self, conns, request, ...)
     local entry = {
         kind = "collect",
-        response_schema = descriptor.response_schema,
+        response_schema = request.response_schema,
         replies = {},
         open = true,
     }
     self.open_phases[#self.open_phases + 1] = entry
-    park(self, entry, conns, request_line(descriptor, { ... }))
+    park(self, entry, conns, request_line(request, { ... }))
     request_seal(self, entry)
     return wait(self, entry).replies
 end
@@ -965,7 +965,7 @@ end
 
 return {
     SCHEMA_DICT = SCHEMA_DICT,
-    request = request,
+    request = define_request,
     short_hash = short_hash,
     narrate = narrate,
     push_run = push_run,

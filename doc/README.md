@@ -9654,7 +9654,7 @@ local function run_match(tournament, match)
         local conns = server:subscribers({ match.turn_claim.computation_hash })
         local move = server:accept_first(conns, function(v)
             return valid_move(match, v) and v
-        end, request.advance, match.turn_claim.computation_hash, match.height, match.index, match.left_node)
+        end, REQUESTS.advance, match.turn_claim.computation_hash, match.height, match.index, match.left_node)
         if not move then
             story.default_win(match)
             return match.other_claim
@@ -9751,7 +9751,7 @@ local function settle_uarch_match(tournament, match, transition_index, current_h
     local conns = server:subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
     local next_hash = server:accept_first(conns, function(v)
         return verify_transition(tournament.dapp_contract, disputed_period, transition_index, current_hash, v)
-    end, request.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
+    end, REQUESTS.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
     local winner = next_hash == claim1_next_hash and match.claim1
         or next_hash == claim2_next_hash and match.claim2
         or nil

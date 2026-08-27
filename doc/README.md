@@ -9545,16 +9545,16 @@ algorithm snippets.
 A tournament opens, gathers claim submissions, is sealed, and runs on
 the claims it sealed with. The mcycle tournament is open to every player
 that connects until a *sealer* seals it, so the referee never needs to
-know how many players to expect. A player submits its claim root’s two
-children and a standard `Proof` for the final state hash at the tree’s
-last leaf. The referee checks that the children join into the proof’s
-root and verifies the proof with `hash_tree.verify_slice()`, the same
-membership check `joinTournament` performs on chain (`validate_join` in
-`prt.lua`). Identical claims merge, however many players submit them,
-each submitter is recorded as a holder of its claim, and the distinct
-claims are sorted by root hash, so the bracket is a pure function of the
-claim set, not of the order in which players happened to connect
-(`distinct_claims`).
+know how many players to expect. A player submits its computation hash’s
+two children and a standard `Proof` for the final state hash at the
+tree’s last leaf. The referee checks that the children join into the
+proof’s root and verifies the proof with `hash_tree.verify_slice()`, the
+same membership check `joinTournament` performs on chain
+(`validate_join` in `prt.lua`). Identical claims merge, however many
+players submit them, each submitter is recorded as a holder of its
+claim, and the distinct claims are sorted by computation hash, so the
+bracket is a pure function of the claim set, not of the order in which
+players happened to connect (`distinct_claims`).
 
 The tournament is that reduction: while more than one claim survives,
 run a round, which pairs the survivors, runs their matches at once, and
@@ -9591,12 +9591,12 @@ node to open and, above the leaves, the grandchildren join into the
 child the walk descends into:
 
 ``` lua
-local function valid_move(m, move)
-    if keccak(move.l, move.r) ~= m.other_parent then
+local function valid_move(match, move)
+    if keccak(move.l, move.r) ~= match.other_parent then
         return false
     end
-    if m.height > 1 then
-        return keccak(move.nl, move.nr) == ((move.l ~= m.left_node) and move.l or move.r)
+    if match.height > 1 then
+        return keccak(move.nl, move.nr) == ((move.l ~= match.left_node) and move.l or move.r)
     end
     return true
 end
@@ -9608,27 +9608,33 @@ right otherwise, and the turn passes to the opponent. At height 1 the
 exposed children are leaves, and the walk returns the isolated dispute:
 
 ``` lua
-local function advance_match(m, move)
-    local descend_left = move.l ~= m.left_node
-    if m.height == 1 then
-        local leaf_index, d_turn, d_other, agreed
+local function advance_match(match, move)
+    local descend_left = move.l ~= match.left_node
+    if match.height == 1 then
+        local state_index, turn_state_hash, other_state_hash, agreed_hash
         if descend_left then
-            leaf_index, d_turn, d_other = 2 * m.index, move.l, m.left_node
+            state_index, turn_state_hash, other_state_hash = 2 * match.index, move.l, match.left_node
         else
-            leaf_index, d_turn, d_other, agreed = 2 * m.index + 1, move.r, m.right_node, move.l
+            state_index, turn_state_hash, other_state_hash, agreed_hash =
+                2 * match.index + 1, move.r, match.right_node, move.l
         end
-        local d1 = m.turn == m.one and d_turn or d_other
-        local d2 = m.turn == m.one and d_other or d_turn
-        return { leaf_index = leaf_index, agreed = agreed, d1 = d1, d2 = d2 }
+        local claim1_next_hash = match.turn_claim == match.claim1 and turn_state_hash or other_state_hash
+        local claim2_next_hash = match.turn_claim == match.claim1 and other_state_hash or turn_state_hash
+        return {
+            state_index = state_index,
+            agreed_hash = agreed_hash,
+            claim1_next_hash = claim1_next_hash,
+            claim2_next_hash = claim2_next_hash,
+        }
     end
     if descend_left then
-        m.other_parent, m.index = m.left_node, 2 * m.index
+        match.other_parent, match.index = match.left_node, 2 * match.index
     else
-        m.other_parent, m.index = m.right_node, 2 * m.index + 1
+        match.other_parent, match.index = match.right_node, 2 * match.index + 1
     end
-    m.left_node, m.right_node = move.nl, move.nr
-    m.height = m.height - 1
-    m.turn, m.other = m.other, m.turn
+    match.left_node, match.right_node = move.nl, move.nr
+    match.height = match.height - 1
+    match.turn_claim, match.other_claim = match.other_claim, match.turn_claim
     return nil
 end
 ```
@@ -9640,21 +9646,21 @@ open its node, takes the first move that validates, and hands the
 isolated dispute over. A claim nobody opens loses by default:
 
 ``` lua
-local function run_match(tournament, m)
+local function run_match(tournament, match)
     while true do
-        local conns = server:subscribers({ m.turn.root })
+        local conns = server:subscribers({ match.turn_claim.computation_hash })
         local move = server:accept_first(conns, function(v)
-            return valid_move(m, v) and v
-        end, operations.advance, m.turn.root, m.height, m.index, m.left_node)
+            return valid_move(match, v) and v
+        end, request.advance, match.turn_claim.computation_hash, match.height, match.index, match.left_node)
         if not move then
-            story.default_win(m)
-            return m.other
+            story.default_win(match)
+            return match.other_claim
         end
-        local dispute = advance_match(m, move)
+        local dispute = advance_match(match, move)
         if dispute then
-            return settle_dispute(tournament, m, dispute)
+            return settle_dispute(tournament, match, dispute)
         end
-        story.match_advanced(m)
+        story.match_advanced(match)
     end
 end
 ```
@@ -9679,16 +9685,24 @@ values, the same restriction `validContestedFinalState` imposes on chain
 mcycle claim that survives:
 
 ``` lua
-local function settle_mcycle_match(tournament, m, epoch_period_index, agree_hash, d1, d2)
+local function settle_mcycle_match(
+    tournament,
+    match,
+    epoch_period_index,
+    agreed_hash,
+    claim1_next_hash,
+    claim2_next_hash
+)
     local disputed_period = {
         input_index = epoch_period_index // PERIODS_PER_INPUT,
         period_index = epoch_period_index % PERIODS_PER_INPUT,
     }
-    story.uarch_tournament_opened(m, disputed_period, agree_hash)
-    local uarch_tournament = open_uarch_tournament(tournament, m, disputed_period, agree_hash, d1, d2)
+    story.uarch_tournament_opened(match, disputed_period, agreed_hash)
+    local uarch_tournament =
+        open_uarch_tournament(tournament, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
     local uarch_winner = run_tournament(uarch_tournament)
-    local survivor = uarch_winner and (uarch_winner.final_state == d1 and m.one or m.two)
-    story.uarch_tournament_settled(m, uarch_winner, survivor)
+    local survivor = uarch_winner and (uarch_winner.final_state == claim1_next_hash and match.claim1 or match.claim2)
+    story.uarch_tournament_settled(match, uarch_winner, survivor)
     return survivor
 end
 ```
@@ -9704,10 +9718,10 @@ which carries the revert when the instruction rejected an input. Every
 other transition is an ordinary uarch step:
 
 ``` lua
-local function verify_transition(dapp_contract, disputed_period, transition_index, agree_hash, logs)
+local function verify_transition(dapp_contract, disputed_period, transition_index, current_hash, logs)
     local machine = cartesi.machine
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
-    local hash = agree_hash
+    local hash = current_hash
     local data = dapp_contract.inputs[disputed_period.input_index + 1]
     if transition_index == 0 and disputed_period.period_index == 0 and data then
         local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
@@ -9729,15 +9743,17 @@ true hash wins the match; a claim that committed to anything else loses,
 whoever ends up supplying the winning log:
 
 ``` lua
-local function settle_uarch_match(tournament, m, transition_index, agree_hash, d1, d2)
+local function settle_uarch_match(tournament, match, transition_index, current_hash, claim1_next_hash, claim2_next_hash)
     local disputed_period = tournament.disputed_period
-    story.transition_opened(tournament, m, transition_index)
-    local conns = server:subscribers({ m.one.root, m.two.root })
-    local hash = server:accept_first(conns, function(v)
-        return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
-    end, operations.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
-    local winner = hash == d1 and m.one or hash == d2 and m.two or nil
-    story.transition_settled(m, hash, winner, d1, d2)
+    story.transition_opened(tournament, match, transition_index)
+    local conns = server:subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
+    local next_hash = server:accept_first(conns, function(v)
+        return verify_transition(tournament.dapp_contract, disputed_period, transition_index, current_hash, v)
+    end, request.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
+    local winner = next_hash == claim1_next_hash and match.claim1
+        or next_hash == claim2_next_hash and match.claim2
+        or nil
+    story.transition_settled(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
     return winner
 end
 ```
@@ -9746,7 +9762,7 @@ The logs come from a holder of either claim, produced by positioning a
 fresh fork at the transition and logging it:
 
 ``` lua
-function ops.transition_logs(player, input_index, period_index, transition_index)
+function handlers.transition_logs(player, input_index, period_index, transition_index)
     local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
@@ -9971,7 +9987,7 @@ fabulist:
 
 ``` text
 Height 1: the claims first disagree within leaves [0x3ffffffe, 0x3fffffff].
-The claims diverge at leaf 1073741823: 0x4953b2b7... against 0xcba0fec7..., from the agreed state 0xc59ff659....
+The claims diverge at state 1073741823: 0x4953b2b7... against 0xcba0fec7..., from the agreed state 0xc59ff659....
 The disputed transition is a uarch step and the uarch reset closing an instruction.
 The disputed transition provably leads to 0xcba0fec7....
 Claim 0x3c15fedb... committed to 0x4953b2b7... and is eliminated.
@@ -9997,7 +10013,7 @@ The uarch winner confirms 0x87004b64.... Claim 0x98e1ce81... is eliminated.
 
 ``` text
 Height 1: the claims first disagree within leaves [0x0, 0x1].
-The claims diverge at leaf 0: 0x5bef34c8... against 0x5396bc25..., from the agreed state 0xf4018067....
+The claims diverge at state 0: 0x5bef34c8... against 0x5396bc25..., from the agreed state 0xf4018067....
 The disputed transition is the inclusion of input 2 and the first uarch step.
 The disputed transition provably leads to 0x5396bc25....
 Claim 0xbc1636f3... committed to 0x5bef34c8... and is eliminated.
@@ -10022,7 +10038,7 @@ The uarch winner confirms 0xa04dee27.... Claim 0x4f4b4987... is eliminated.
 
 ``` text
 Height 1: the claims first disagree within leaves [0x0, 0x1].
-The claims diverge at leaf 0: 0x2bf9c834... against 0xe8d770a9..., from the agreed state 0x53805328....
+The claims diverge at state 0: 0x2bf9c834... against 0xe8d770a9..., from the agreed state 0x53805328....
 The disputed transition is an ordinary uarch step.
 The disputed transition provably leads to 0xe8d770a9....
 Claim 0x18226d60... committed to 0x2bf9c834... and is eliminated.
@@ -10047,7 +10063,7 @@ The uarch winner confirms 0x5d4ca486.... Claim 0x923b6eb7... is eliminated.
 
 ``` text
 Height 1: the claims first disagree within leaves [0x3ffffffe, 0x3fffffff].
-The claims diverge at leaf 1073741823: 0x5d4ca486... against 0x4953b2b7..., from the agreed state 0x9a3c0962....
+The claims diverge at state 1073741823: 0x5d4ca486... against 0x4953b2b7..., from the agreed state 0x9a3c0962....
 The disputed transition is a uarch step and the uarch reset closing an instruction.
 The disputed transition provably leads to 0x5d4ca486....
 Claim 0xace2aca3... committed to 0x4953b2b7... and is eliminated.
@@ -10074,16 +10090,16 @@ The verdict settles the epoch:
 
 ``` text
 Tournament winner is claim 0xc75bbba2....
-Winner claim root: 0xc75bbba25fef709d149eeb65a911bd7a7877713f2984164409da12118631b41e
+Winner computation hash: 0xc75bbba25fef709d149eeb65a911bd7a7877713f2984164409da12118631b41e
 Winner final state hash: 0x5d4ca486a943799b75423a1763daf881fa064e2115309f98ab22096cbcb3ec7c
 Result proved against the final state:
 32317006071311007300714876688669951960444102669715484032130345427524655138867890893197201411522913463688717960921898019494119559150490921095088152386448283120630877367300996091750197750389652106796057638384067568276792218642619756161838094338476170470581645852036305042887575891541065808607552399123930385521914333389668342420684974786564569494856176035326322058077805659331026192708460314150258592864177116725943603718461857357598351152301645904403697613233287231227125684710820209725157101726931323469678542580656697935045997268352998638215525166389437335543602135433229604645318478604952148193555853611059596230656
 ```
 
-The winning claim root is the mcycle computation hash `cartesi-machine`
-computed directly, checked by the script above, and the winning final
-state hash is the state the calculator’s first epoch saved as
-`epoch-0-state-hash.bin`. The result proved against it is the
+The winner’s computation hash is the mcycle computation hash
+`cartesi-machine` computed directly, checked by the script above, and
+the winning final state hash is the state the calculator’s first epoch
+saved as `epoch-0-state-hash.bin`. The result proved against it is the
 calculator’s answer for the epoch’s last input. The tournament ends on
 the same state the direct run produced, however many liars stood in the
 way. The same tournament, run again with the players launched in the

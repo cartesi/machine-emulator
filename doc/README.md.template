@@ -5310,7 +5310,7 @@ Two observations keep them small.
 First, almost all leaves are repetitions.
 The calculator is done with each input within about 50 million mcycles, and everything after that, out to the input's 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup>th mcycle, repeats one state hash.
 The claim tree therefore stores *runs*, each a node hash and how many consecutive times it appears.
-The root of a subtree holding 2<sup>k</sup> copies of the same node takes k hashes by repeated squaring, cached per node, so a run of any length costs nothing to stand under a query (`runs_node` in `prtu.lua`).
+The root of a subtree holding 2<sup>k</sup> copies of the same node takes k hashes by repeated squaring, cached per node, so a run of any length costs nothing to stand under a query (`get_runs_node` in `prtu.lua`).
 ```{.lua key=prt_runs_node include=prtu.lua replace=null}
 ```
 ```{.lua key=prt_story include=prt-story.lua replace=null}
@@ -5320,7 +5320,7 @@ Second, the stored nodes need not be the leaves.
 The machine can deliver the sampled hashes in *bundles*, one subtree root per 2<sup>4</sup> mcycle samples (or per 2<sup>16</sup> uarch transitions), which divides the entries a player stores and carries by that much.
 Bundle roots are interior nodes of the claim tree, so the root is unchanged.
 The three inputs of our epoch fit in about nine thousand stored mcycle entries, and one uarch span in about three thousand.
-When a dispute descends below a stored entry, the player recovers the leaves under that one entry by re-running a fork of the input's boundary machine through the entry's window, and caches the result (`tree_node` in `prtu.lua`).
+When a dispute descends below a stored entry, the player recovers the leaves under that one entry by re-running a fork of the input's boundary machine through the entry's window, and caches the result (`get_node` in `prtu.lua`).
 Only the entries a dispute actually visits are ever expanded, and each costs one machine re-run.
 
 The builds themselves stream out of the emulator.
@@ -5360,7 +5360,7 @@ The referee holds one node to open and the opponent's standing left and right ch
 The on-turn player opens its node, exposing that node's two children and, above the leaves, the two grandchildren of the side the walk descends into.
 The referee stores nothing of the claims but the three nodes of the walk's current step, seeded from the two roots exactly as `Match.sol` seeds them (`new_match` in `prtu.lua`).
 A move is valid when the exposed children join into the node to open and, above the leaves, the grandchildren join into the child the walk descends into:
-```{.lua key=prt_valid_move include=prtu.lua/valid_move title="prtu.lua (excerpt)"}
+```{.lua key=prt_is_valid_move include=prtu.lua/is_valid_move title="prtu.lua (excerpt)"}
 ```
 The walk goes left when the exposed left child differs from the opponent's, since the disagreement is then in the left subtree, and right otherwise, and the turn passes to the opponent.
 At height 1 the exposed children are leaves, and the walk returns the isolated dispute:
@@ -5396,7 +5396,7 @@ A claim that committed to that true hash wins the match; a claim that committed 
 ```{.lua key=prt_settle_uarch include=prt.lua/settle_uarch_match title="prt.lua (excerpt)"}
 ```
 The logs come from a holder of either claim, produced by positioning a fresh fork at the transition and logging it:
-```{.lua key=prt_transition_logs include=prt-player.lua/transition_logs title="prt-player.lua (excerpt)"}
+```{.lua key=prt_provide_transition_logs include=prt-player.lua/provide_transition_logs title="prt-player.lua (excerpt)"}
 ```
 
 ### The referee server

@@ -522,29 +522,21 @@ if role == "referee" then
     local referee = new_referee(server_address)
     referee:run(dapp_contract)
 elseif role == "honest" then
-    prtu.serve(prt_player.new_player("honest", read_inputs(3), MACHINE_TEMPLATE), server_address)
+    prtu.serve(prt_player.make_honest(read_inputs(3), MACHINE_TEMPLATE), server_address)
 elseif role == "quitter" then
-    local player = prt_player.new_player("quitter", {}, MACHINE_TEMPLATE)
-    prt_player.make_quitter(player)
-    prtu.serve(player, server_address)
+    prtu.serve(prt_player.make_quitter(), server_address)
 elseif role == "forger" then
     local index = assert(tonumber(arg[3]), "missing forged input index")
     local forged = util.read_file(assert(arg[4], "missing forged input file"))
-    local player = prt_player.new_player("forger", read_inputs(5), MACHINE_TEMPLATE)
-    prt_player.make_forger(player, index, forged)
-    prtu.serve(player, server_address)
+    prtu.serve(prt_player.make_forger(read_inputs(5), MACHINE_TEMPLATE, index, forged), server_address)
 elseif role == "tamperer" then
     local input_index = assert(tonumber(arg[3]), "missing tampered input index")
     local entry_offset = assert(tonumber(arg[4]), "missing tamper entry offset")
-    local player = prt_player.new_player("tamperer", read_inputs(5), MACHINE_TEMPLATE)
-    prt_player.make_tamperer(player, input_index, entry_offset)
-    prtu.serve(player, server_address)
+    prtu.serve(prt_player.make_tamperer(read_inputs(5), MACHINE_TEMPLATE, input_index, entry_offset), server_address)
 elseif role == "fabulist" then
     local input_index = assert(tonumber(arg[3]), "missing lied-about input index")
     local leaf_offset = assert(tonumber(arg[4]), "missing lied-about leaf offset")
-    local player = prt_player.new_player("fabulist", read_inputs(5), MACHINE_TEMPLATE)
-    prt_player.make_fabulist(player, input_index, leaf_offset)
-    prtu.serve(player, server_address)
+    prtu.serve(prt_player.make_fabulist(read_inputs(5), MACHINE_TEMPLATE, input_index, leaf_offset), server_address)
 else
     error("unknown role: " .. role)
 end

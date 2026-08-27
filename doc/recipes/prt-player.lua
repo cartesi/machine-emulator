@@ -577,14 +577,20 @@ local function new_player(label, inputs, template)
 end
 
 --------------------------------------------------------------------------------
--- The dishonest players
+-- Player roles
 --------------------------------------------------------------------------------
+
+-- The honest player uses the common claim builders and handlers unchanged.
+local function make_honest(inputs, template)
+    return new_player("honest", inputs, template)
+end
 
 -- The quitter posts a claim fabricated out of thin air, every leaf the same made-up hash,
 -- and walks away: it closes its connection right after joining, so the first request about
 -- its claim finds no holder and eliminates it. The claim is built straight from leaf runs, so
 -- it never needs a machine, or even the inputs.
-local function make_quitter(player)
+local function make_quitter()
+    local player = new_player("quitter", {})
     player.make_mcycle_tree = function()
         local fake = keccak("quitter")
         return new_tree(MCYCLE_HEIGHT, 0, { { hash = fake, count = 1 << MCYCLE_HEIGHT } }, nil)
@@ -593,21 +599,25 @@ local function make_quitter(player)
         self.done = true
         return handlers.commit_mcycle_claim(self)
     end
+    return player
 end
 
 -- The forger runs the honest code over a forged input: it swaps the epoch's input at
 -- `index` for its own. Its claims are self-consistent everywhere, and it defends them
 -- faithfully, but the dispute converges on the transition that includes the input, and no
 -- log of feeding the forged input replays against the input the referee holds.
-local function make_forger(player, index, forged_data)
+local function make_forger(inputs, template, index, forged_data)
+    local player = new_player("forger", inputs, template)
     player.inputs[index + 1] = forged_data
+    return player
 end
 
 -- The tamperer corrupts its machine mid-computation, writing over a word of RAM the guest
 -- never reads, and honestly commits to the corrupted history. Every re-run repeats the
 -- corruption, so its claims are self-consistent, but the true transition out of the last
 -- agreed state does not lead to its next sample, and the dispute converges there.
-local function make_tamperer(player, input_index, entry_offset)
+local function make_tamperer(inputs, template, input_index, entry_offset)
+    local player = new_player("tamperer", inputs, template)
     player.tamper = {
         input = input_index + 1,
         offset = entry_offset << (LOG2_MCYCLE_BUNDLE + LOG2_MCYCLES_PER_PERIOD),
@@ -616,6 +626,7 @@ local function make_tamperer(player, input_index, entry_offset)
             machine:write_memory(cartesi.AR_RAM_START + ram_length - 8, "CORRUPT!")
         end,
     }
+    return player
 end
 
 -- The fabulist computes the whole epoch honestly and then lies about a single sample: its
@@ -623,7 +634,8 @@ end
 -- every request with honest data, and other claims' disputes it can even settle with
 -- honest proofs, but the dispute against its own claim converges on the overwritten leaf,
 -- where the true reset that closes the last instruction of the span contradicts it.
-local function make_fabulist(player, input_index, leaf_offset)
+local function make_fabulist(inputs, template, input_index, leaf_offset)
+    local player = new_player("fabulist", inputs, template)
     local fake = keccak("fabulist")
     local global_leaf = input_index * PERIODS_PER_INPUT + leaf_offset
     -- mcycle claim: splice the patched entry into the honest runs and patch its refinement
@@ -681,10 +693,11 @@ local function make_fabulist(player, input_index, leaf_offset)
             return refine_uarch_claim(self, lie_input, lie_period, e)
         end)
     end
+    return player
 end
 
-M.new_player = new_player
 M.REQUESTS = REQUESTS
+M.make_honest = make_honest
 M.make_quitter = make_quitter
 M.make_forger = make_forger
 M.make_tamperer = make_tamperer

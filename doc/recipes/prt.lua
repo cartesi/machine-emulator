@@ -42,12 +42,11 @@
 
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
-local socket = require("socket")
 local util = require("cartesi.util")
 local prtu = require("prtu")
 
 local keccak = cartesi.keccak256
-local new_match, valid_move, advance_match = prtu.new_match, prtu.valid_move, prtu.advance_match
+local new_match, is_valid_move, advance_match = prtu.new_match, prtu.is_valid_move, prtu.advance_match
 
 -- The seal role carries no dispute: it is the sealer, which closes the initial subscription
 -- phase once the last player has connected, then the submissions of every tournament as it
@@ -63,8 +62,9 @@ local MCYCLE_HEIGHT, UARCH_HEIGHT = geometry.MCYCLE_HEIGHT, geometry.UARCH_HEIGH
 local PERIODS_PER_INPUT = geometry.PERIODS_PER_INPUT
 local UARCH_CYCLES_PER_MCYCLE = geometry.UARCH_CYCLES_PER_MCYCLE
 local story = require("prt-story")
+local MACHINE_TEMPLATE = "rolling-calculator-template"
 
-local function stderrf(fmt, ...)
+local function write_stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
 end
 
@@ -90,11 +90,11 @@ end
 
 -- The referee server and its coroutine dispatcher, built with the referee and shared by every
 -- coroutine of its logic.
-local server, dispatcher
+local server
 
 -- Whether a standard hash-tree proof places a leaf at the expected logical index and geometry
 -- under the expected computation hash.
-local function valid_claim_proof(proof, index, height, computation_hash)
+local function is_valid_claim_proof(proof, index, height, computation_hash)
     if type(proof) ~= "table" or type(proof.sibling_hashes) ~= "table" then
         return false
     end
@@ -110,7 +110,10 @@ end
 -- standard proof places the final state at the tree's last leaf. Returns the claim.
 local function validate_claim_commitment(witness, height)
     local computation_hash = keccak(witness.left, witness.right)
-    assert(valid_claim_proof(witness.proof, (1 << height) - 1, height, computation_hash), "invalid final-state proof")
+    assert(
+        is_valid_claim_proof(witness.proof, (1 << height) - 1, height, computation_hash),
+        "invalid final-state proof"
+    )
     return {
         computation_hash = computation_hash,
         left = witness.left,
@@ -120,7 +123,7 @@ local function validate_claim_commitment(witness, height)
 end
 
 -- Orders binary hashes by their bytes, independent of the process locale.
-local function hash_less(a, b)
+local function is_hash_less(a, b)
     for i = 1, math.min(#a, #b) do
         local ai, bi = a:byte(i), b:byte(i)
         if ai ~= bi then
@@ -146,11 +149,11 @@ local function partition_claims(submissions, validate)
             end
             server:subscribe(claim.computation_hash, submission.connection)
         elseif not ok then
-            stderrf("a submission failed validation: %s\n", tostring(claim))
+            write_stderr("a submission failed validation: %s\n", tostring(claim))
         end
     end
     table.sort(claims, function(a, b)
-        return hash_less(a.computation_hash, b.computation_hash)
+        return is_hash_less(a.computation_hash, b.computation_hash)
     end)
     return claims
 end
@@ -200,9 +203,9 @@ local function wait_for_agreed_hash(match, tournament, state_index)
         return tournament.initial_hash
     end
     for _, claim in ipairs({ match.claim1, match.claim2 }) do
-        local conns = server:subscribers({ claim.computation_hash })
+        local conns = server:get_subscribers({ claim.computation_hash })
         local move = server:accept_first(conns, function(v)
-            return valid_claim_proof(v, state_index - 1, tournament.height, claim.computation_hash) and v
+            return is_valid_claim_proof(v, state_index - 1, tournament.height, claim.computation_hash) and v
         end, REQUESTS.prove_state, claim.computation_hash, state_index - 1)
         if move then
             return move.target_hash
@@ -219,15 +222,15 @@ end
 -- docs:begin settle_uarch_match
 local function settle_uarch_match(tournament, match, transition_index, current_hash, claim1_next_hash, claim2_next_hash)
     local disputed_period = tournament.disputed_period
-    story.transition_opened(tournament, match, transition_index)
-    local conns = server:subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
+    story.report_transition(tournament, match, transition_index)
+    local conns = server:get_subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
     local next_hash = server:accept_first(conns, function(v)
         return verify_transition(tournament.dapp_contract, disputed_period, transition_index, current_hash, v)
-    end, REQUESTS.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
+    end, REQUESTS.provide_transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
     local winner = next_hash == claim1_next_hash and match.claim1
         or next_hash == claim2_next_hash and match.claim2
         or nil
-    story.transition_settled(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
+    story.report_transition_result(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
     return winner
 end
 -- docs:end settle_uarch_match
@@ -249,14 +252,14 @@ local function open_uarch_tournament(parent, match, disputed_period, agreed_hash
         disputed_period = disputed_period,
         settle = settle_uarch_match,
     }
-    story.uarch_tournament_opened(tournament, match, disputed_period, agreed_hash)
+    story.report_uarch_tournament(tournament, match, disputed_period, agreed_hash)
     local function validate(witness)
         local claim = validate_claim_commitment(witness, UARCH_HEIGHT)
         assert(claim.final_state == claim1_next_hash or claim.final_state == claim2_next_hash)
         return claim
     end
     local claims = open_tournament(
-        server:subscribers({ match.claim1.computation_hash, match.claim2.computation_hash }),
+        server:get_subscribers({ match.claim1.computation_hash, match.claim2.computation_hash }),
         validate,
         REQUESTS.commit_uarch_claim,
         disputed_period.input_index,
@@ -265,7 +268,7 @@ local function open_uarch_tournament(parent, match, disputed_period, agreed_hash
         claim2_next_hash
     )
     tournament.claims = claims
-    story.claims_joined(tournament, claims)
+    story.report_claims(tournament, claims)
     return tournament
 end
 -- docs:end open_uarch_tournament
@@ -291,7 +294,7 @@ local function settle_mcycle_match(
         open_uarch_tournament(tournament, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
     local uarch_winner = run_tournament(uarch_tournament)
     local survivor = uarch_winner and (uarch_winner.final_state == claim1_next_hash and match.claim1 or match.claim2)
-    story.uarch_tournament_settled(match, uarch_winner, survivor)
+    story.report_uarch_result(match, uarch_winner, survivor)
     return survivor
 end
 -- docs:end settle_mcycle_match
@@ -301,7 +304,7 @@ end
 -- docs:begin settle_dispute
 local function settle_dispute(tournament, match, dispute)
     local agreed_hash = dispute.agreed_hash or wait_for_agreed_hash(match, tournament, dispute.state_index)
-    story.dispute_isolated(match, dispute, agreed_hash)
+    story.report_dispute(match, dispute, agreed_hash)
     if not agreed_hash then
         return nil
     end
@@ -322,19 +325,19 @@ end
 -- docs:begin run_match
 local function run_match(tournament, match)
     while true do
-        local conns = server:subscribers({ match.turn_claim.computation_hash })
+        local conns = server:get_subscribers({ match.turn_claim.computation_hash })
         local move = server:accept_first(conns, function(v)
-            return valid_move(match, v) and v
+            return is_valid_move(match, v) and v
         end, REQUESTS.advance, match.turn_claim.computation_hash, match.height, match.index, match.left_node)
         if not move then
-            story.default_win(match)
+            story.report_default_win(match)
             return match.other_claim
         end
         local dispute = advance_match(match, move)
         if dispute then
             return settle_dispute(tournament, match, dispute)
         end
-        story.match_advanced(match)
+        story.report_match_progress(match)
     end
 end
 -- docs:end run_match
@@ -346,14 +349,14 @@ local function run_all(tasks)
     local results, pending = {}, 0
     for slot, task in ipairs(tasks) do
         pending = pending + 1
-        dispatcher:spawn(function()
+        server.dispatcher:spawn(function()
             results[slot] = task()
             pending = pending - 1
-            dispatcher:schedule(main, "task_done")
+            server.dispatcher:schedule(main, "task_done")
         end)
     end
     while pending > 0 do
-        dispatcher:wake_when_scheduled()
+        server.dispatcher:wake_when_scheduled()
     end
     return results
 end
@@ -363,7 +366,7 @@ local function pair_claims(tournament, claims, round)
     local matches = {}
     for i = 1, #claims - 1, 2 do
         local match = new_match(claims[i], claims[i + 1], tournament.height)
-        story.match_opened(tournament, round, match)
+        story.report_match(tournament, round, match)
         matches[#matches + 1] = match
     end
     return matches
@@ -383,7 +386,7 @@ local function run_round(tournament, claims, round)
         end
     end
     local results, winners = run_all(tasks), {}
-    story.round_settled(tournament, claims, round, matches, results)
+    story.report_round(tournament, claims, round, matches, results)
     for slot = 1, #matches do
         local winner = results[slot]
         if winner then
@@ -414,21 +417,21 @@ end
 -- Opens the mcycle tournament to the players that subscribed to its initial state hash and
 -- returns it with the resulting claims sorted into a deterministic bracket.
 -- docs:begin open_mcycle_tournament
-local function open_mcycle_tournament(referee, dapp_contract)
+local function open_mcycle_tournament(dapp_contract)
     local claims = open_tournament(
-        server:subscribers({ referee.initial_hash }),
+        server:get_subscribers({ dapp_contract.initial_hash }),
         validate_mcycle_claim,
         REQUESTS.commit_mcycle_claim
     )
     local tournament = {
         level = "mcycle",
         height = MCYCLE_HEIGHT,
-        initial_hash = referee.initial_hash,
+        initial_hash = dapp_contract.initial_hash,
         dapp_contract = dapp_contract,
         settle = settle_mcycle_match,
         claims = claims,
     }
-    story.claims_joined(tournament, claims)
+    story.report_claims(tournament, claims)
     return tournament
 end
 -- docs:end open_mcycle_tournament
@@ -455,13 +458,13 @@ end
 -- holder of the winning claim, since a wrong result cannot match, then releases the players.
 -- docs:begin wait_for_result
 local function wait_for_result(winner)
-    story.tournament_winner(winner)
-    local conns = server:subscribers({ winner.computation_hash })
+    story.report_winner(winner)
+    local conns = server:get_subscribers({ winner.computation_hash })
     local result = server:accept_first(conns, function(v)
         return verify_result(v, winner.final_state) and v
     end, REQUESTS.prove_result)
     assert(result, "no result proved against the winning final state")
-    story.result_posted(result)
+    story.report_result(result)
     server:collect(nil, REQUESTS.finish)
 end
 -- docs:end wait_for_result
@@ -473,9 +476,9 @@ end
 -- Everything hard, the accept loop, the wire, the coroutine scheduling, runs underneath, in
 -- the referee server this is handed to.
 -- docs:begin run_referee
-local function run_referee(referee, dapp_contract)
-    server:accept_subscribers(referee.initial_hash)
-    local winner = run_tournament(open_mcycle_tournament(referee, dapp_contract))
+local function run_referee(dapp_contract)
+    server:accept_subscribers(dapp_contract.initial_hash)
+    local winner = run_tournament(open_mcycle_tournament(dapp_contract))
     assert(winner, "the tournament ended with no winner")
     wait_for_result(winner)
 end
@@ -485,25 +488,23 @@ end
 -- epoch's inputs are all posted to the blockchain, so the contract holds its own copy of
 -- every one, the copy that verification trusts over anything a player commits.
 local function deploy(inputs)
-    return { inputs = inputs }
+    local machine <close> = cartesi.machine(MACHINE_TEMPLATE)
+    return {
+        initial_hash = machine:get_root_hash(),
+        inputs = inputs,
+    }
 end
 
--- The referee, standing in for the Dave contracts. It holds only what the blockchain would: the
--- agreed initial state hash (the template's own root hash, what a freshly deployed application
--- looks like on chain), the deployed dapp contract, and, during a match, one node hash per side
--- of the walk. Its server hides the accept loop, the wire, and the coroutine scheduling; run()
--- drives run_referee inside it, against the dapp contract it is handed.
+-- The referee, standing in for the Dave contracts. Its server hides the accept loop, the wire,
+-- and coroutine scheduling; run() drives run_referee against the deployed dapp contract, which
+-- holds the agreed initial state hash and epoch inputs.
 local function new_referee(server_address)
-    local host, port = server_address:match("^(.-):(%d+)$")
-    local listener = assert(socket.bind(host, tonumber(port)))
-    dispatcher = prtu.new_dispatcher()
-    server = prtu.new_server(dispatcher, listener)
+    server = prtu.new_server(server_address)
     server:accept()
     return {
-        initial_hash = cartesi.machine(prt_player.TEMPLATE):get_root_hash(),
-        run = function(self, dapp_contract)
+        run = function(_, dapp_contract)
             server:run(function()
-                run_referee(self, dapp_contract)
+                run_referee(dapp_contract)
             end)
         end,
     }
@@ -521,27 +522,27 @@ if role == "referee" then
     local referee = new_referee(server_address)
     referee:run(dapp_contract)
 elseif role == "honest" then
-    prtu.serve(prt_player.new_player("honest", read_inputs(3)), server_address)
+    prtu.serve(prt_player.new_player("honest", read_inputs(3), MACHINE_TEMPLATE), server_address)
 elseif role == "quitter" then
-    local player = prt_player.new_player("quitter", {})
+    local player = prt_player.new_player("quitter", {}, MACHINE_TEMPLATE)
     prt_player.make_quitter(player)
     prtu.serve(player, server_address)
 elseif role == "forger" then
     local index = assert(tonumber(arg[3]), "missing forged input index")
     local forged = util.read_file(assert(arg[4], "missing forged input file"))
-    local player = prt_player.new_player("forger", read_inputs(5))
+    local player = prt_player.new_player("forger", read_inputs(5), MACHINE_TEMPLATE)
     prt_player.make_forger(player, index, forged)
     prtu.serve(player, server_address)
 elseif role == "tamperer" then
     local input_index = assert(tonumber(arg[3]), "missing tampered input index")
     local entry_offset = assert(tonumber(arg[4]), "missing tamper entry offset")
-    local player = prt_player.new_player("tamperer", read_inputs(5))
+    local player = prt_player.new_player("tamperer", read_inputs(5), MACHINE_TEMPLATE)
     prt_player.make_tamperer(player, input_index, entry_offset)
     prtu.serve(player, server_address)
 elseif role == "fabulist" then
     local input_index = assert(tonumber(arg[3]), "missing lied-about input index")
     local leaf_offset = assert(tonumber(arg[4]), "missing lied-about leaf offset")
-    local player = prt_player.new_player("fabulist", read_inputs(5))
+    local player = prt_player.new_player("fabulist", read_inputs(5), MACHINE_TEMPLATE)
     prt_player.make_fabulist(player, input_index, leaf_offset)
     prtu.serve(player, server_address)
 else

@@ -14,12 +14,13 @@ local push_run, slice_runs = prtu.push_run, prtu.slice_runs
 local new_tree = prtu.new_tree
 
 -- The request and response schemas this game adds to the shared dictionary.
-prtu.SCHEMA_DICT.JoinRequest = { items = {} }
-prtu.SCHEMA_DICT.JoinResponse = {
+prtu.SCHEMA_DICT.ClaimCommitment = {
     left = "Base64",
     right = "Base64",
     proof = "Proof",
 }
+prtu.SCHEMA_DICT.CommitMcycleClaimRequest = { items = {} }
+prtu.SCHEMA_DICT.CommitMcycleClaimResponse = "ClaimCommitment"
 prtu.SCHEMA_DICT.AdvanceRequest = { items = { "Base64", "Default", "Default", "Base64" } }
 prtu.SCHEMA_DICT.AdvanceResponse = { l = "Base64", r = "Base64", nl = "Base64", nr = "Base64" }
 prtu.SCHEMA_DICT.ProveStateRequest = { items = { "Base64", "Default" } }
@@ -27,7 +28,7 @@ prtu.SCHEMA_DICT.ProveStateResponse = "Proof"
 prtu.SCHEMA_DICT.CommitUarchClaimRequest = {
     items = { "Default", "Default", "Base64", "Base64" },
 }
-prtu.SCHEMA_DICT.CommitUarchClaimResponse = "JoinResponse"
+prtu.SCHEMA_DICT.CommitUarchClaimResponse = "ClaimCommitment"
 prtu.SCHEMA_DICT.TransitionLogsRequest = { items = { "Default", "Default", "Default" } }
 prtu.SCHEMA_DICT.TransitionLogsResponse = {
     send_cmio_log = "AccessLog",
@@ -46,7 +47,7 @@ prtu.SCHEMA_DICT.FinishRequest = { items = {} }
 prtu.SCHEMA_DICT.FinishResponse = "Default"
 
 local REQUESTS = {
-    join = prtu.request("join", "JoinRequest", "JoinResponse"),
+    commit_mcycle_claim = prtu.request("commit_mcycle_claim", "CommitMcycleClaimRequest", "CommitMcycleClaimResponse"),
     advance = prtu.request("advance", "AdvanceRequest", "AdvanceResponse"),
     prove_state = prtu.request("prove_state", "ProveStateRequest", "ProveStateResponse"),
     commit_uarch_claim = prtu.request("commit_uarch_claim", "CommitUarchClaimRequest", "CommitUarchClaimResponse"),
@@ -414,7 +415,7 @@ end
 -- The opening commitment: the player's mcycle claim. The player announces its root, so a
 -- transcript can be read against the players, without the referee ever narrating who holds
 -- what.
-function handlers.join(player)
+function handlers.commit_mcycle_claim(player)
     stderrf("%s: building mcycle claim\n", player.label)
     player.mcycle_claim = player.make_mcycle_tree(player)
     local witness = join_witness(player.mcycle_claim)
@@ -593,9 +594,9 @@ local function make_quitter(player)
         local fake = keccak("quitter")
         return new_tree(MCYCLE_HEIGHT, 0, { { hash = fake, count = 1 << MCYCLE_HEIGHT } }, nil)
     end
-    player.join = function(self)
+    player.commit_mcycle_claim = function(self)
         self.done = true
-        return handlers.join(self)
+        return handlers.commit_mcycle_claim(self)
     end
 end
 

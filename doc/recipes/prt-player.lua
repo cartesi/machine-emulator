@@ -1,11 +1,11 @@
 -- The player side of the PRT game: the machines, the claim builds, the operations the
 -- referee invokes, and the dishonest strategies. The whole geometry follows from the
--- log2 of the mcycle period, so the module is configured with it before use, and publishes
--- the geometry along with the player constructors so the referee shares the same numbers.
+-- fixed mcycle period, shared with the referee through prt-geometry.lua.
 
 local cartesi = require("cartesi")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
 local hash_tree = require("cartesi.hash-tree")
+local geometry = require("prt-geometry")
 local prtu = require("prtu")
 
 local keccak = cartesi.keccak256
@@ -73,34 +73,18 @@ local TEMPLATE = "rolling-calculator-template"
 -- below a bundle are answered by refining it.
 --------------------------------------------------------------------------------
 
-local ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-local ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 local LOG2_MCYCLE_BUNDLE = 4
 local LOG2_UARCH_BUNDLE = 16
 
-local LOG2_MCYCLES_PER_PERIOD, MCYCLES_PER_PERIOD, UARCH_CYCLES_PER_MCYCLE
-local MCYCLE_HEIGHT, UARCH_HEIGHT, PERIODS_PER_INPUT, ENTRIES_PER_INPUT, MCYCLE_ENTRIES
-
--- Fixes the geometry from the log2 of the mcycle period, before any player is built. The
--- referee reads the same numbers back from the module table.
 local M = {}
-function M.configure(log2_mcycles_per_period)
-    LOG2_MCYCLES_PER_PERIOD = log2_mcycles_per_period
-    MCYCLES_PER_PERIOD = 1 << LOG2_MCYCLES_PER_PERIOD
-    UARCH_CYCLES_PER_MCYCLE = 1 << ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    assert(UARCH_CYCLES_PER_MCYCLE - 1 == cartesi.UARCH_CYCLE_MAX, "uarch cycles per mcycle do not match the emulator")
-
-    MCYCLE_HEIGHT = ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
-        + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
-        - LOG2_MCYCLES_PER_PERIOD
-    UARCH_HEIGHT = LOG2_MCYCLES_PER_PERIOD + ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    PERIODS_PER_INPUT = 1 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLES_PER_PERIOD)
-    ENTRIES_PER_INPUT = PERIODS_PER_INPUT >> LOG2_MCYCLE_BUNDLE
-    MCYCLE_ENTRIES = ENTRIES_PER_INPUT << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
-    M.MCYCLE_HEIGHT, M.UARCH_HEIGHT = MCYCLE_HEIGHT, UARCH_HEIGHT
-    M.PERIODS_PER_INPUT, M.UARCH_CYCLES_PER_MCYCLE = PERIODS_PER_INPUT, UARCH_CYCLES_PER_MCYCLE
-end
+local LOG2_MCYCLES_PER_PERIOD = geometry.LOG2_MCYCLES_PER_PERIOD
+local MCYCLES_PER_PERIOD = geometry.MCYCLES_PER_PERIOD
+local UARCH_CYCLES_PER_MCYCLE = geometry.UARCH_CYCLES_PER_MCYCLE
+local MCYCLE_HEIGHT, UARCH_HEIGHT = geometry.MCYCLE_HEIGHT, geometry.UARCH_HEIGHT
+local PERIODS_PER_INPUT = geometry.PERIODS_PER_INPUT
+local ENTRIES_PER_INPUT = PERIODS_PER_INPUT >> LOG2_MCYCLE_BUNDLE
+local MCYCLE_ENTRIES = ENTRIES_PER_INPUT << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 
 -- A machine stopped at a manual yield, halt, or mcycle overflow no longer advances on its own.
 local function is_at_fixed_point(break_reason)
@@ -244,7 +228,7 @@ local function build_mcycle_claim(player)
             assert(not is_at_fixed_point(break_reason), "the machine stopped before the tamper point")
             tamper.apply(machine)
         end
-        collect_mcycle_entries(collection, base + (1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE))
+        collect_mcycle_entries(collection, base + (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE))
         assert(collection.count == collection.capacity, "mcycle computation hash input is incomplete")
         epoch_pad_entry = collection.pad_entry or runs[#runs].hash
         filled = filled + ENTRIES_PER_INPUT
@@ -306,7 +290,7 @@ end
 -- entry): the real bundles, the halt bundle repeated to fill the instruction's transitions,
 -- and the reset bundle that closes it.
 local function push_uarch_mcycle(runs, hashes, first, last, log2_bundle)
-    local capacity = 1 << (ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - log2_bundle)
+    local capacity = 1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - log2_bundle)
     local real = last - first - 1
     assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
     for i = first, last - 2 do
@@ -482,7 +466,7 @@ end
 -- the reset. Every other transition is an ordinary uarch step.
 -- docs:begin transition_logs
 function handlers.transition_logs(player, input_index, period_index, transition_index)
-    local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local mcycle_offset = transition_index >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
     local data = player.inputs[input_index + 1]

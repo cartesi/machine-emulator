@@ -671,7 +671,7 @@ local function announce_sealer(self, connection)
     end
 end
 
--- A connection announced itself as a player. It is asked to submit to the root tournament,
+-- A connection announced itself as a player. It is asked to submit to the mcycle tournament,
 -- when that is still open.
 local function announce_player(self, connection)
     connection.is_player = true
@@ -751,7 +751,7 @@ end
 
 -- Accepts connections, adopting each as it arrives, until the game ends. The referee is never
 -- told how many players to expect: it takes every one that connects until the sealer seals
--- the root tournament.
+-- the mcycle tournament.
 function server_meta.__index.accept(self)
     self.listener:settimeout(0)
     self.dispatcher:spawn(function()

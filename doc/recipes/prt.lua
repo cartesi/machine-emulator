@@ -17,18 +17,18 @@
 -- isolates is a single state transition, settled by verifying access logs, exactly as in the
 -- verification games.
 --
--- Roles, selected by the first argument. Every game role takes the referee address and log2 of
--- the mcycle period, and every machine-holding role takes the epoch's input files. The referee
+-- Roles, selected by the first argument. Every game role takes the referee address, and every
+-- machine-holding role takes the epoch's input files. The referee
 -- is never told how many players to expect: it accepts subscribers until a seal connection
 -- closes that phase, then asks those subscribers for claims. The referee sorts the claims it
 -- gathers, so the bracket and the whole narration are a pure function of the claim set, not of
 -- the order in which players connect.
---   prt.lua referee  <address> <log2-period> <input> [<input> ...]
---   prt.lua honest   <address> <log2-period> <input> [<input> ...]
---   prt.lua quitter  <address> <log2-period>
---   prt.lua forger   <address> <log2-period> <index> <forged-input> <input> [<input> ...]
---   prt.lua tamperer <address> <log2-period> <input-index> <entry-offset> <input> [<input> ...]
---   prt.lua fabulist <address> <log2-period> <input-index> <leaf-offset> <input> [<input> ...]
+--   prt.lua referee  <address> <input> [<input> ...]
+--   prt.lua honest   <address> <input> [<input> ...]
+--   prt.lua quitter  <address>
+--   prt.lua forger   <address> <index> <forged-input> <input> [<input> ...]
+--   prt.lua tamperer <address> <input-index> <entry-offset> <input> [<input> ...]
+--   prt.lua fabulist <address> <input-index> <leaf-offset> <input> [<input> ...]
 --   prt.lua seal     <address>
 --
 -- The seal role is the sealer: it stays connected and closes the initial subscription phase
@@ -56,13 +56,12 @@ if arg[1] == "seal" then
     return prtu.serve(prtu.new_sealer(), assert(arg[2], "missing referee address"))
 end
 
-local LOG2_MCYCLES_PER_PERIOD = assert(tonumber(arg[3]), "missing log2 of the mcycle period")
+local geometry = require("prt-geometry")
 local prt_player = require("prt-player")
-prt_player.configure(LOG2_MCYCLES_PER_PERIOD)
 local REQUESTS = prt_player.REQUESTS
-local MCYCLE_HEIGHT, UARCH_HEIGHT = prt_player.MCYCLE_HEIGHT, prt_player.UARCH_HEIGHT
-local PERIODS_PER_INPUT = prt_player.PERIODS_PER_INPUT
-local UARCH_CYCLES_PER_MCYCLE = prt_player.UARCH_CYCLES_PER_MCYCLE
+local MCYCLE_HEIGHT, UARCH_HEIGHT = geometry.MCYCLE_HEIGHT, geometry.UARCH_HEIGHT
+local PERIODS_PER_INPUT = geometry.PERIODS_PER_INPUT
+local UARCH_CYCLES_PER_MCYCLE = geometry.UARCH_CYCLES_PER_MCYCLE
 local story = prt_story.new(UARCH_CYCLES_PER_MCYCLE)
 
 local function stderrf(fmt, ...)
@@ -525,31 +524,31 @@ local role = assert(arg[1], "missing role")
 local server_address = assert(arg[2], "missing referee address")
 
 if role == "referee" then
-    local dapp_contract = deploy(read_inputs(4))
+    local dapp_contract = deploy(read_inputs(3))
     local referee = new_referee(server_address)
     referee:run(dapp_contract)
 elseif role == "honest" then
-    prtu.serve(prt_player.new_player("honest", read_inputs(4)), server_address)
+    prtu.serve(prt_player.new_player("honest", read_inputs(3)), server_address)
 elseif role == "quitter" then
     local player = prt_player.new_player("quitter", {})
     prt_player.make_quitter(player)
     prtu.serve(player, server_address)
 elseif role == "forger" then
-    local index = assert(tonumber(arg[4]), "missing forged input index")
-    local forged = read_input(assert(arg[5], "missing forged input file"))
-    local player = prt_player.new_player("forger", read_inputs(6))
+    local index = assert(tonumber(arg[3]), "missing forged input index")
+    local forged = read_input(assert(arg[4], "missing forged input file"))
+    local player = prt_player.new_player("forger", read_inputs(5))
     prt_player.make_forger(player, index, forged)
     prtu.serve(player, server_address)
 elseif role == "tamperer" then
-    local input_index = assert(tonumber(arg[4]), "missing tampered input index")
-    local entry_offset = assert(tonumber(arg[5]), "missing tamper entry offset")
-    local player = prt_player.new_player("tamperer", read_inputs(6))
+    local input_index = assert(tonumber(arg[3]), "missing tampered input index")
+    local entry_offset = assert(tonumber(arg[4]), "missing tamper entry offset")
+    local player = prt_player.new_player("tamperer", read_inputs(5))
     prt_player.make_tamperer(player, input_index, entry_offset)
     prtu.serve(player, server_address)
 elseif role == "fabulist" then
-    local input_index = assert(tonumber(arg[4]), "missing lied-about input index")
-    local leaf_offset = assert(tonumber(arg[5]), "missing lied-about leaf offset")
-    local player = prt_player.new_player("fabulist", read_inputs(6))
+    local input_index = assert(tonumber(arg[3]), "missing lied-about input index")
+    local leaf_offset = assert(tonumber(arg[4]), "missing lied-about leaf offset")
+    local player = prt_player.new_player("fabulist", read_inputs(5))
     prt_player.make_fabulist(player, input_index, leaf_offset)
     prtu.serve(player, server_address)
 else

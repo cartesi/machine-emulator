@@ -44,7 +44,7 @@ local TEMPLATE = "rolling-calculator-template"
 --
 -- The epoch spans 2^24 inputs of 2^48 mcycles each, and every mcycle expands into 2^20
 -- uarch transitions, the same three coordinates as the rolling verification game. The mcycle
--- claim samples the epoch every 2^LOG2_PERIOD mcycles. The uarch claim expands one mcycle
+-- claim samples the epoch every 2^LOG2_MCYCLES_PER_PERIOD mcycles. The uarch claim expands one mcycle
 -- period into its uarch transitions. Each claim is stored bundled: the machine delivers one
 -- subtree root per 2^bundle leaves, so the stored tree is that much shallower, and queries
 -- below a bundle are answered by refining it.
@@ -56,24 +56,27 @@ local ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE
 local LOG2_MCYCLE_BUNDLE = 4
 local LOG2_UARCH_BUNDLE = 16
 
-local LOG2_PERIOD, PERIOD, UARCH_SPAN, MCYCLE_HEIGHT, UARCH_HEIGHT, LEAVES_PER_INPUT, ENTRIES_PER_INPUT, MCYCLE_ENTRIES
+local LOG2_MCYCLES_PER_PERIOD, MCYCLES_PER_PERIOD, UARCH_CYCLES_PER_MCYCLE
+local MCYCLE_HEIGHT, UARCH_HEIGHT, PERIODS_PER_INPUT, ENTRIES_PER_INPUT, MCYCLE_ENTRIES
 
 -- Fixes the geometry from the log2 of the mcycle period, before any player is built. The
 -- referee reads the same numbers back from the module table.
 local M = {}
-function M.configure(log2_period)
-    LOG2_PERIOD = log2_period
-    PERIOD = 1 << LOG2_PERIOD
-    UARCH_SPAN = 1 << ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    assert(UARCH_SPAN - 1 == cartesi.UARCH_CYCLE_MAX, "uarch span does not match the emulator")
+function M.configure(log2_mcycles_per_period)
+    LOG2_MCYCLES_PER_PERIOD = log2_mcycles_per_period
+    MCYCLES_PER_PERIOD = 1 << LOG2_MCYCLES_PER_PERIOD
+    UARCH_CYCLES_PER_MCYCLE = 1 << ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    assert(UARCH_CYCLES_PER_MCYCLE - 1 == cartesi.UARCH_CYCLE_MAX, "uarch cycles per mcycle do not match the emulator")
 
-    MCYCLE_HEIGHT = ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_PERIOD
-    UARCH_HEIGHT = LOG2_PERIOD + ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    LEAVES_PER_INPUT = 1 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_PERIOD)
-    ENTRIES_PER_INPUT = LEAVES_PER_INPUT >> LOG2_MCYCLE_BUNDLE
+    MCYCLE_HEIGHT = ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+        + ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+        - LOG2_MCYCLES_PER_PERIOD
+    UARCH_HEIGHT = LOG2_MCYCLES_PER_PERIOD + ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    PERIODS_PER_INPUT = 1 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLES_PER_PERIOD)
+    ENTRIES_PER_INPUT = PERIODS_PER_INPUT >> LOG2_MCYCLE_BUNDLE
     MCYCLE_ENTRIES = ENTRIES_PER_INPUT << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
     M.MCYCLE_HEIGHT, M.UARCH_HEIGHT = MCYCLE_HEIGHT, UARCH_HEIGHT
-    M.LEAVES_PER_INPUT, M.UARCH_SPAN = LEAVES_PER_INPUT, UARCH_SPAN
+    M.PERIODS_PER_INPUT, M.UARCH_CYCLES_PER_MCYCLE = PERIODS_PER_INPUT, UARCH_CYCLES_PER_MCYCLE
 end
 
 -- A machine stopped at a manual yield, halt, or mcycle overflow no longer advances on its own.
@@ -179,7 +182,7 @@ local function collect_mcycle_entries(collection, mcycle_end)
     repeat
         collected = collection.machine:collect_mcycle_root_hashes(
             mcycle_end,
-            LOG2_PERIOD,
+            LOG2_MCYCLES_PER_PERIOD,
             collection.mcycle_phase,
             collection.log2_bundle,
             collection.partial_bundle
@@ -254,12 +257,12 @@ local function refine_mcycle_claim(player, entry)
     if input_index > #player.inputs then -- epoch tail: repetitions of the last fixed point
         return { { hash = player.fixed_leaves[#player.inputs], count = bundle } }
     end
-    local window_start = (entry % ENTRIES_PER_INPUT) * bundle * PERIOD
+    local window_start = (entry % ENTRIES_PER_INPUT) * bundle * MCYCLES_PER_PERIOD
     local machine <close> = assert(player.boundaries[input_index]:fork_server())
     local base = advance_fork(player, machine, input_index, window_start)
     local runs = {}
     local collection = new_mcycle_collection(machine, runs, bundle, 0)
-    collect_mcycle_entries(collection, base + window_start + bundle * PERIOD)
+    collect_mcycle_entries(collection, base + window_start + bundle * MCYCLES_PER_PERIOD)
     assert(collection.count == collection.capacity, "mcycle refinement did not fill its entry")
     return runs
 end
@@ -269,7 +272,7 @@ end
 -- Player: building a uarch claim
 --
 -- A uarch claim expands the mcycle period ending at the disputed leaf: the state hash
--- after every uarch transition of its 2^LOG2_PERIOD instructions, delivered as one bundle
+-- after every uarch transition of its 2^LOG2_MCYCLES_PER_PERIOD instructions, delivered as one bundle
 -- root per 2^LOG2_UARCH_BUNDLE transitions. Each instruction contributes its real uarch
 -- cycles, repetitions of the uarch halt state filling its span, and the reset that closes
 -- it. An input stopped at a manual yield, halt, or mcycle overflow no longer advances, so
@@ -318,13 +321,14 @@ end
 local function build_uarch_claim(player, input_index, period_index)
     local machine <close> = assert(player.boundaries[input_index]:fork_server())
     local revert_uarch_tail = machine:collect_uarch_cycle_root_hashes(math.maxinteger, 0).hashes
-    local base = advance_fork(player, machine, input_index, period_index * PERIOD)
-    local start = base + period_index * PERIOD
+    local base = advance_fork(player, machine, input_index, period_index * MCYCLES_PER_PERIOD)
+    local start = base + period_index * MCYCLES_PER_PERIOD
     local runs = {}
     local mcycles = 0
-    while mcycles < PERIOD do
-        local collected = machine:collect_uarch_cycle_root_hashes(start + PERIOD, LOG2_UARCH_BUNDLE, revert_uarch_tail)
-        mcycles = push_uarch_collection(runs, collected, mcycles, PERIOD, LOG2_UARCH_BUNDLE)
+    while mcycles < MCYCLES_PER_PERIOD do
+        local collected =
+            machine:collect_uarch_cycle_root_hashes(start + MCYCLES_PER_PERIOD, LOG2_UARCH_BUNDLE, revert_uarch_tail)
+        mcycles = push_uarch_collection(runs, collected, mcycles, MCYCLES_PER_PERIOD, LOG2_UARCH_BUNDLE)
         if collected.break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
             machine:receive_cmio_request()
         end
@@ -341,13 +345,13 @@ end
 -- docs:begin refine_uarch_claim
 local function refine_uarch_claim(player, input_index, period_index, entry)
     local bundle = 1 << LOG2_UARCH_BUNDLE
-    local entries_per_mcycle = UARCH_SPAN >> LOG2_UARCH_BUNDLE
+    local entries_per_mcycle = UARCH_CYCLES_PER_MCYCLE >> LOG2_UARCH_BUNDLE
     local mcycle_offset = entry // entries_per_mcycle
     local window_start = (entry % entries_per_mcycle) * bundle
     local machine <close> = assert(player.boundaries[input_index]:fork_server())
     local revert_uarch_tail = machine:collect_uarch_cycle_root_hashes(math.maxinteger, 0).hashes
-    local base = advance_fork(player, machine, input_index, period_index * PERIOD + mcycle_offset)
-    local target = base + period_index * PERIOD + mcycle_offset
+    local base = advance_fork(player, machine, input_index, period_index * MCYCLES_PER_PERIOD + mcycle_offset)
+    local target = base + period_index * MCYCLES_PER_PERIOD + mcycle_offset
     local mcycle_end = math.min(target + 1, machine:read_reg("mcycle") + 1)
     local collected = machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, revert_uarch_tail)
     local runs = {}
@@ -454,20 +458,20 @@ end
 -- The transition closing an instruction executes one more step, by then a fixed point, and
 -- the reset. Every other transition is an ordinary uarch step.
 -- docs:begin transition_logs
-function ops.transition_logs(player, input_index, period_index, position)
-    local t_mcycle = position >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    local t_uarch = position & (UARCH_SPAN - 1)
+function ops.transition_logs(player, input_index, period_index, transition_index)
+    local mcycle_offset = transition_index >> ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
     local data = player.inputs[input_index + 1]
-    if position == 0 and period_index == 0 and data then
+    if transition_index == 0 and period_index == 0 and data then
         local revert_root_hash = machine:get_root_hash()
         local send_cmio_log =
             machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
-    advance_fork(player, machine, input_index + 1, period_index * PERIOD + t_mcycle)
-    machine:run_uarch(t_uarch)
-    if t_uarch == UARCH_SPAN - 1 then
+    advance_fork(player, machine, input_index + 1, period_index * MCYCLES_PER_PERIOD + mcycle_offset)
+    machine:run_uarch(uarch_cycle)
+    if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
         local step_log = machine:log_step_uarch()
         return { step_log = step_log, reset_log = machine:log_reset_uarch() }
     end
@@ -589,7 +593,7 @@ end
 local function make_tamperer(player, input_index, entry_offset)
     player.tamper = {
         input = input_index + 1,
-        offset = entry_offset << (LOG2_MCYCLE_BUNDLE + LOG2_PERIOD),
+        offset = entry_offset << (LOG2_MCYCLE_BUNDLE + LOG2_MCYCLES_PER_PERIOD),
         apply = function(machine)
             local ram_length = machine:get_initial_config().ram.length
             machine:write_memory(cartesi.AR_RAM_START + ram_length - 8, "CORRUPT!")
@@ -604,7 +608,7 @@ end
 -- where the true reset that closes the last instruction of the span contradicts it.
 local function make_fabulist(player, input_index, leaf_offset)
     local fake = keccak("fabulist")
-    local global_leaf = input_index * LEAVES_PER_INPUT + leaf_offset
+    local global_leaf = input_index * PERIODS_PER_INPUT + leaf_offset
     -- mcycle claim: splice the patched entry into the honest runs and patch its refinement
     local entry = global_leaf >> LOG2_MCYCLE_BUNDLE
     local leaf_in_entry = global_leaf & ((1 << LOG2_MCYCLE_BUNDLE) - 1)

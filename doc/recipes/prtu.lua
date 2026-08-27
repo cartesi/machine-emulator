@@ -265,22 +265,22 @@ end
 -- Applies a valid move. Above the leaves, the walk descends one height: the on-turn claim's
 -- chosen grandchildren become the standing left and right, the opponent's node on the chosen
 -- side becomes the next to open, and the turn passes. At height 1 the exposed children are
--- leaves, and the walk is over: it returns the isolated dispute, the divergent leaf's position,
+-- leaves, and the walk is over: it returns the isolated dispute, the divergent leaf's index,
 -- what each claim committed to there (d1 for claim one, d2 for claim two), and, when the
 -- divergence is at a right leaf, the agreed state before it, the left leaf both sides exposed.
 -- docs:begin advance_match
 local function advance_match(m, move)
     local descend_left = move.l ~= m.left_node
     if m.height == 1 then
-        local position, d_turn, d_other, agreed
+        local leaf_index, d_turn, d_other, agreed
         if descend_left then
-            position, d_turn, d_other = 2 * m.index, move.l, m.left_node
+            leaf_index, d_turn, d_other = 2 * m.index, move.l, m.left_node
         else
-            position, d_turn, d_other, agreed = 2 * m.index + 1, move.r, m.right_node, move.l
+            leaf_index, d_turn, d_other, agreed = 2 * m.index + 1, move.r, m.right_node, move.l
         end
         local d1 = m.turn == m.one and d_turn or d_other
         local d2 = m.turn == m.one and d_other or d_turn
-        return { position = position, agreed = agreed, d1 = d1, d2 = d2 }
+        return { leaf_index = leaf_index, agreed = agreed, d1 = d1, d2 = d2 }
     end
     if descend_left then
         m.other_parent, m.index = m.left_node, 2 * m.index
@@ -624,9 +624,9 @@ end
 -- is not waiting on (a forged seal, a repeat, or a late one) is ignored. The envelope already
 -- identified the request, so a value that does not decode under the request's schema is an
 -- invalid operation, not a malformed connection: it counts as the connection's answer, is
--- rejected, and leaves the connection open, exactly like a value the validator rejects, so
+-- rejected, and leaves the connection open, exactly like a value the acceptor rejects, so
 -- the order replies arrive in cannot decide which connections stay open. A move request
--- takes the first truthy result its validator returns. A collection keeps every reply that
+-- takes the first truthy result its acceptor returns. A collection keeps every reply that
 -- decodes. A seal, from the sealer and naming the tournament it was asked for, closes that
 -- tournament's submissions, and a seal that does not decode or names another tournament is
 -- a failure of the referee's own orchestration.
@@ -646,8 +646,8 @@ local function deliver(self, entry, connection, line)
     if ok and entry.kind == "collect" then
         entry.replies[#entry.replies + 1] = { value = decoded.value, label = decoded.label, connection = connection }
     elseif ok and entry.value == nil then
-        local validated, value = pcall(entry.validate, decoded.value)
-        if validated and value then
+        local succeeded, value = pcall(entry.accept, decoded.value)
+        if succeeded and value then
             entry.value = value
         end
     end
@@ -825,11 +825,11 @@ local function wait(self, entry)
 end
 
 -- Asks the given connections for the move a subject needs, and returns the first truthy value
--- produced by `validate`, or nil once every connection asked has answered without one or closed.
+-- produced by `accept`, or nil once every connection asked has answered without one or closed.
 -- A claim nobody answers for is thereby eliminated at once.
 -- docs:begin ask
-function server_meta.__index.ask(self, subject, conns, schema, validate, code, ...)
-    local entry = { kind = "ask", subject = subject, schema = schema, validate = validate }
+function server_meta.__index.ask(self, subject, conns, schema, accept, code, ...)
+    local entry = { kind = "ask", subject = subject, schema = schema, accept = accept }
     park(self, entry, conns, request_line(subject, schema, code, ...))
     return wait(self, entry).value
 end

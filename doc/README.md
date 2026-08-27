@@ -9522,7 +9522,7 @@ marked.
 
 Seen from the referee, the whole game is short. It waits for the
 players’ opening claims, reduces them to the one that survives every
-match, and announces it. The root tournament packs what the reduction
+match, and announces it. The mcycle tournament packs what the reduction
 needs: the agreed initial state hash, the dapp contract that owns the
 epoch’s inputs (deployed as in the rolling verification game), and the
 way its matches settle. Everything hard, the accept loop, the wire, the
@@ -9530,25 +9530,14 @@ coroutine scheduling, is hidden in the referee server:
 
 ``` lua
 local function run_referee(referee, dapp_contract)
-    local claims = open_root_tournament()
-    local winner = claims[1]
-    if #claims > 1 then
-        winner = run_tournament({
-            level = "mcycle",
-            tag = "tournament",
-            height = MCYCLE_HEIGHT,
-            initial_hash = referee.initial_hash,
-            dapp_contract = dapp_contract,
-            settle = settle_mcycle_match,
-        }, claims)
-    end
+    local winner = run_tournament(open_mcycle_tournament(referee, dapp_contract))
     assert(winner, "the tournament ended with no winner")
     wait_for_result(winner)
 end
 ```
 
 A tournament opens, gathers claim submissions, is sealed, and runs on
-the claims it sealed with. The root tournament is open to every player
+the claims it sealed with. The mcycle tournament is open to every player
 that connects until a *sealer* seals it, so the referee never needs to
 know how many players to expect. A player submits its claim root’s two
 children and a standard `Proof` for the final state hash at the tree’s
@@ -9566,7 +9555,8 @@ run a round, which pairs the survivors, runs their matches at once, and
 keeps the winners, an odd claim taking a bye:
 
 ``` lua
-function run_tournament(tournament, claims)
+function run_tournament(tournament)
+    local claims = tournament.claims
     local round = 0
     while #claims > 1 do
         round = round + 1
@@ -9704,16 +9694,8 @@ local function settle_mcycle_match(tournament, m, position, agree_hash, d1, d2)
         period.period_index,
         short_hash(agree_hash)
     )
-    local claims = open_uarch_tournament(m, period, d1, d2)
-    local winner = run_tournament({
-        level = "uarch",
-        tag = m.tag,
-        height = UARCH_HEIGHT,
-        initial_hash = agree_hash,
-        dapp_contract = tournament.dapp_contract,
-        period = period,
-        settle = settle_uarch_match,
-    }, claims)
+    local uarch_tournament = open_uarch_tournament(tournament, m, period, agree_hash, d1, d2)
+    local winner = run_tournament(uarch_tournament)
     if not winner then
         narrate(m.tag, "The uarch tournament had no winner. Both claims are eliminated.")
         return nil
@@ -9934,8 +9916,8 @@ lua5.4 prt.lua fabulist 127.0.0.1:8096 10 2 2000 \
     input-0.bin input-1.bin input-2.bin
 ```
 
-Once every player is in, the sealer seals the root tournament, and stays
-to seal every uarch tournament as it opens:
+Once every player is in, the sealer seals the mcycle tournament, and
+stays to seal every uarch tournament as it opens:
 
 ``` bash
 lua5.4 prt.lua seal 127.0.0.1:8096

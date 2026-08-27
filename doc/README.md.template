@@ -5344,9 +5344,9 @@ Calls to `story` report semantic milestones; their formatting and all presentati
 
 A tournament opens, gathers claim submissions, is sealed, and runs on the claims it sealed with.
 The mcycle tournament is open to every player that connects until a *sealer* seals it, so the referee never needs to know how many players to expect.
-A player submits its claim root's two children and a standard `Proof` for the final state hash at the tree's last leaf.
+A player submits its computation hash's two children and a standard `Proof` for the final state hash at the tree's last leaf.
 The referee checks that the children join into the proof's root and verifies the proof with `hash_tree.verify_slice()`, the same membership check `joinTournament` performs on chain (`validate_join` in `prt.lua`).
-Identical claims merge, however many players submit them, each submitter is recorded as a holder of its claim, and the distinct claims are sorted by root hash, so the bracket is a pure function of the claim set, not of the order in which players happened to connect (`distinct_claims`).
+Identical claims merge, however many players submit them, each submitter is recorded as a holder of its claim, and the distinct claims are sorted by computation hash, so the bracket is a pure function of the claim set, not of the order in which players happened to connect (`distinct_claims`).
 
 The tournament is that reduction: while more than one claim survives, run a round, which pairs the survivors, runs their matches at once, and keeps the winners, an odd claim taking a bye:
 ```{.lua key=prt_run_tournament include=prt.lua/run_tournament title="prt.lua (excerpt)"}
@@ -5537,7 +5537,7 @@ cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fa
 grep -h "posted claim" honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr > posted
 # The winner's claim must be the mcycle computation hash the direct run produced, and the
 # winner's final state must be the state hash the calculator's first epoch saved.
-grep -q "Winner claim root: $(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read(4)))' < "$mch")" verdict
+grep -q "Winner computation hash: $(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read(4)))' < "$mch")" verdict
 grep -q "Winner final state hash: $(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read(4)))' < "$epoch_hash")" verdict
 # The second fabulist must force a uarch dispute in the fixed tail.
 grep -q "A uarch tournament opens over input 2, period 60000" match_[0-9]*
@@ -5647,7 +5647,7 @@ The result carries the output, its proof in the epoch's outputs Merkle tree, and
 The verdict settles the epoch:
 ```{replace=prt_run/verdict}
 ```
-The winning claim root is the mcycle computation hash `cartesi-machine` computed directly, checked by the script above, and the winning final state hash is the state the calculator's first epoch saved as `epoch-0-state-hash.bin`.
+The winner's computation hash is the mcycle computation hash `cartesi-machine` computed directly, checked by the script above, and the winning final state hash is the state the calculator's first epoch saved as `epoch-0-state-hash.bin`.
 The result proved against it is the calculator's answer for the epoch's last input.
 The tournament ends on the same state the direct run produced, however many liars stood in the way.
 The same tournament, run again with the players launched in the opposite order, narrates every file identically, which the recipe checks by diffing the two runs:

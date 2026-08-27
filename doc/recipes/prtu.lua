@@ -864,7 +864,7 @@ end
 -- `accept`, or nil once every connection asked has answered without one or closed.
 -- A claim nobody answers for is thereby eliminated at once.
 -- docs:begin accept_first
-function server_meta.__index.accept_first(self, conns, schema, accept, code, ...)
+function server_meta.__index.accept_first(self, conns, accept, schema, code, ...)
     local entry = { kind = "accept_first", schema = schema, accept = accept }
     park(self, entry, conns, request_line(schema, code, ...))
     return wait(self, entry).value

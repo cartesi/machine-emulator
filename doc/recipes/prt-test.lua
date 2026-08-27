@@ -224,10 +224,10 @@ with_server(function(server, client, wait_connections)
     end
     client(nil, submitter("a", answer("valid")))
     client(nil, submitter("b", answer("invalid")))
-    client({ role = "sealer" }, function(wire_request)
-        return { value = wire_request.arguments[1] }
+    client({ role = "sealer" }, function()
+        return { value = true }
     end)
-    local submissions = server:open_tournament("root", nil, request("join"))
+    local submissions = server:open_tournament(nil, request("join"))
     table.sort(submissions, function(x, y)
         return x.value < y.value
     end)
@@ -298,7 +298,7 @@ with_server(function(server, client, wait_connections)
     assert(not n.dead and not b.dead, "an unproved move closed a connection")
 
     -- A nested tournament asks only its audience, and seals at once.
-    local nested = server:open_tournament("nested", { a }, request("join"))
+    local nested = server:open_tournament({ a }, request("join"))
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
 
     -- Every holder answers without proof: the request resolves to nil, connections stay open.
@@ -372,13 +372,13 @@ with_server(function(server, client, wait_connections)
     -- tournament closes only on the sealer's reply and includes the player's submission.
     client(nil, function(wire_request)
         if wire_request.operation == "join" then
-            return cartesi.tojson({ value = "forger" }, -1) .. "\n" .. cartesi.tojson({ value = "t2" }, -1)
+            return cartesi.tojson({ value = "forger" }, -1) .. "\n" .. cartesi.tojson({ value = true }, -1)
         end
         return { value = "valid" }
     end)
     wait_connections(11)
     local f = server.connections[11]
-    local t2 = server:open_tournament("t2", { f }, request("join"))
+    local t2 = server:open_tournament({ f }, request("join"))
     assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged seal was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
@@ -396,13 +396,13 @@ with_server(function(server, client, wait_connections)
     assert(server.connections[13].dead and server.sealer == server.connections[3], "a second sealer was accepted")
 end)
 
--- A seal naming another tournament is a sealer bug and fails the referee.
+-- An invalid seal response is a sealer bug and fails the referee.
 local ok, err = pcall(with_server, function(server, client, wait_connections)
     client({ role = "sealer" }, function()
         return { value = "other" }
     end)
     wait_connections(1)
-    server:open_tournament("t", {}, request("join"))
+    server:open_tournament({}, request("join"))
 end)
 assert(not ok and err:find("did not seal the tournament asked"), "a wrong seal was accepted")
 
@@ -412,7 +412,7 @@ ok, err = pcall(with_server, function(server, client, wait_connections)
         return "close"
     end)
     wait_connections(1)
-    server:open_tournament("t", {}, request("join"))
+    server:open_tournament({}, request("join"))
 end)
 assert(not ok and err:find("the sealer went away"), "sealer EOF did not fail the referee")
 print("prt-test: ok")

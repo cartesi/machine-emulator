@@ -9697,7 +9697,6 @@ local function settle_mcycle_match(
         input_index = epoch_period_index // PERIODS_PER_INPUT,
         period_index = epoch_period_index % PERIODS_PER_INPUT,
     }
-    story.uarch_tournament_opened(match, disputed_period, agreed_hash)
     local uarch_tournament =
         open_uarch_tournament(tournament, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
     local uarch_winner = run_tournament(uarch_tournament)
@@ -9821,20 +9820,21 @@ themselves by proof, and sealing does not: it is the referee’s trusted
 orchestration, standing in for the clock the contracts use. The
 transport enforces that trust: a connection announces its role once, on
 its first line, the sealer is the connection that announced itself as
-such, a seal request is bound to it, and a seal is taken only from it,
-for the tournament it names. The model thus assumes a process announces
-its role honestly, and a sealer that goes away fails the referee
-outright, since no tournament could ever close again. Nothing in the
-referee waits on the clock, and nothing depends on the order replies
-arrive in, not even which connections stay open. A claim with nobody
-left to answer for it is eliminated at once, which is all that ever
-happens to the claim of a player who walks away, and a claim anybody
-answers for survives. The narration of each match goes to its own file,
-and the tournament narrates each round in bracket order before and after
-its matches run, so the transcript is a pure function of the claim set,
-whatever order the replies arrive in over the network. The recipe below
-checks exactly that, by running the same tournament twice with the
-players launched in opposite orders and requiring identical transcripts.
+such, and one seal request at a time is bound to it, so its next reply
+closes exactly the tournament awaiting that reply. The model thus
+assumes a process announces its role honestly, and a sealer that goes
+away fails the referee outright, since no tournament could ever close
+again. Nothing in the referee waits on the clock, and nothing depends on
+the order replies arrive in, not even which connections stay open. A
+claim with nobody left to answer for it is eliminated at once, which is
+all that ever happens to the claim of a player who walks away, and a
+claim anybody answers for survives. The narration of each match goes to
+its own file, and the tournament narrates each round in bracket order
+before and after its matches run, so the transcript is a pure function
+of the claim set, whatever order the replies arrive in over the network.
+The recipe below checks exactly that, by running the same tournament
+twice with the players launched in opposite orders and requiring
+identical transcripts.
 
 ### Running the tournament
 

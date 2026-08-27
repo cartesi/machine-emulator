@@ -183,9 +183,8 @@ local function wait_for_agreed_hash(m, tournament, leaf_index)
         return tournament.initial_hash
     end
     for _, claim in ipairs({ m.one, m.two }) do
-        local subject = string.format("%s-agree-%d-%s", m.tag, leaf_index, hex(claim.root))
         local conns = server:subscribers({ hex(claim.root) })
-        local move = server:ask(subject, conns, "Proof", function(v)
+        local move = server:accept_first(conns, "Proof", function(v)
             return valid_claim_proof(v, leaf_index - 1, tournament.height, claim.root) and v
         end, 'return player:prove("%s", %d)', hex(claim.root), leaf_index - 1)
         if move then
@@ -204,10 +203,8 @@ end
 local function settle_uarch_match(tournament, m, transition_index, agree_hash, d1, d2)
     local disputed_period = tournament.disputed_period
     story.transition_opened(tournament, m, transition_index)
-    local subject = string.format("%s-logs-%d", m.tag, transition_index)
     local conns = server:subscribers({ hex(m.one.root), hex(m.two.root) })
-    local hash = server:ask(
-        subject,
+    local hash = server:accept_first(
         conns,
         "Logs",
         function(v)
@@ -299,9 +296,8 @@ end
 -- docs:begin run_match
 local function run_match(tournament, m)
     while true do
-        local subject = string.format("%s-h%d", m.tag, m.height)
         local conns = server:subscribers({ hex(m.turn.root) })
-        local move = server:ask(subject, conns, "Advance", function(v)
+        local move = server:accept_first(conns, "Advance", function(v)
             return valid_move(m, v) and v
         end, 'return player:advance("%s", %d, %d, "%s")', hex(m.turn.root), m.height, m.index, hex(m.left_node))
         if not move then
@@ -447,12 +443,12 @@ end
 local function wait_for_result(winner)
     story.tournament_winner(winner)
     local conns = server:subscribers({ hex(winner.root) })
-    local result = server:ask("result", conns, "EpochResult", function(v)
+    local result = server:accept_first(conns, "EpochResult", function(v)
         return verify_result(v, winner.final_state) and v
     end, "return player:prove_result()")
     assert(result, "no result proved against the winning final state")
     story.result_posted(result)
-    server:collect("finish", nil, nil, "return player:finish()")
+    server:collect(nil, nil, "return player:finish()")
 end
 -- docs:end wait_for_result
 

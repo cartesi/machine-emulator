@@ -18,13 +18,13 @@ function M.new(uarch_cycles_per_mcycle)
             narrate(
                 tag,
                 "Claim %s, with final state %s, joined.",
-                short_hash(claim.root),
+                short_hash(claim.computation_hash),
                 short_hash(claim.final_state)
             )
         end
     end
 
-    function story.transition_opened(tournament, m, transition_index)
+    function story.transition_opened(tournament, match, transition_index)
         local disputed_period = tournament.disputed_period
         local form = "an ordinary uarch step"
         if
@@ -36,110 +36,125 @@ function M.new(uarch_cycles_per_mcycle)
         elseif transition_index & (uarch_cycles_per_mcycle - 1) == uarch_cycles_per_mcycle - 1 then
             form = "a uarch step and the uarch reset closing an instruction"
         end
-        narrate(m.tag, "The disputed transition is %s.", form)
+        narrate(match.tag, "The disputed transition is %s.", form)
     end
 
-    function story.transition_settled(m, hash, winner, d1, d2)
-        if not hash then
-            narrate(m.tag, "No log settled the transition. Both claims are eliminated.")
+    function story.transition_settled(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
+        if not next_hash then
+            narrate(match.tag, "No log settled the transition. Both claims are eliminated.")
             return
         end
-        narrate(m.tag, "The disputed transition provably leads to %s.", short_hash(hash))
+        narrate(match.tag, "The disputed transition provably leads to %s.", short_hash(next_hash))
         if not winner then
-            narrate(m.tag, "Neither claim committed to it. Both are eliminated.")
+            narrate(match.tag, "Neither claim committed to it. Both are eliminated.")
             return
         end
-        local loser = winner == m.one and m.two or m.one
-        local lost = winner == m.one and d2 or d1
-        narrate(m.tag, "Claim %s committed to %s and is eliminated.", short_hash(loser.root), short_hash(lost))
+        local loser = winner == match.claim1 and match.claim2 or match.claim1
+        local lost = winner == match.claim1 and claim2_next_hash or claim1_next_hash
+        narrate(
+            match.tag,
+            "Claim %s committed to %s and is eliminated.",
+            short_hash(loser.computation_hash),
+            short_hash(lost)
+        )
     end
 
-    function story.uarch_tournament_opened(m, disputed_period, agree_hash)
+    function story.uarch_tournament_opened(match, disputed_period, agreed_hash)
         narrate(
-            m.tag,
+            match.tag,
             "A uarch tournament opens over input %d, period %d, starting from %s.",
             disputed_period.input_index,
             disputed_period.period_index,
-            short_hash(agree_hash)
+            short_hash(agreed_hash)
         )
     end
 
-    function story.uarch_tournament_settled(m, winner, survivor)
+    function story.uarch_tournament_settled(match, winner, survivor)
         if not winner then
-            narrate(m.tag, "The uarch tournament had no winner. Both claims are eliminated.")
+            narrate(match.tag, "The uarch tournament had no winner. Both claims are eliminated.")
             return
         end
-        local loser = survivor == m.one and m.two or m.one
+        local loser = survivor == match.claim1 and match.claim2 or match.claim1
         narrate(
-            m.tag,
+            match.tag,
             "The uarch winner confirms %s. Claim %s is eliminated.",
             short_hash(winner.final_state),
-            short_hash(loser.root)
+            short_hash(loser.computation_hash)
         )
     end
 
-    function story.dispute_isolated(m, dispute, agree_hash)
-        if not agree_hash then
-            narrate(m.tag, "Nobody proved the agreed state. Both claims are eliminated.")
+    function story.dispute_isolated(match, dispute, agreed_hash)
+        if not agreed_hash then
+            narrate(match.tag, "Nobody proved the agreed state. Both claims are eliminated.")
             return
         end
         narrate(
-            m.tag,
-            "The claims diverge at leaf %d: %s against %s, from the agreed state %s.",
-            dispute.leaf_index,
-            short_hash(dispute.d1),
-            short_hash(dispute.d2),
-            short_hash(agree_hash)
+            match.tag,
+            "The claims diverge at state %d: %s against %s, from the agreed state %s.",
+            dispute.state_index,
+            short_hash(dispute.claim1_next_hash),
+            short_hash(dispute.claim2_next_hash),
+            short_hash(agreed_hash)
         )
     end
 
-    function story.default_win(m)
+    function story.default_win(match)
         narrate(
-            m.tag,
+            match.tag,
             "Nobody opened claim %s. Claim %s wins by default.",
-            short_hash(m.turn.root),
-            short_hash(m.other.root)
+            short_hash(match.turn_claim.computation_hash),
+            short_hash(match.other_claim.computation_hash)
         )
     end
 
-    function story.match_advanced(m)
+    function story.match_advanced(match)
         narrate(
-            m.tag,
+            match.tag,
             "Height %d: the claims first disagree within leaves [0x%x, 0x%x].",
-            m.height,
-            m.index << m.height,
-            ((m.index + 1) << m.height) - 1
+            match.height,
+            match.index << match.height,
+            ((match.index + 1) << match.height) - 1
         )
     end
 
-    function story.match_opened(tournament, round, m)
+    function story.match_opened(tournament, round, match)
         narrate(
             tournament.tag,
             "Round %d, match %s, at the %s level: claim %s against claim %s.",
             round,
-            m.id,
+            match.id,
             tournament.level,
-            short_hash(m.one.root),
-            short_hash(m.two.root)
+            short_hash(match.claim1.computation_hash),
+            short_hash(match.claim2.computation_hash)
         )
     end
 
     function story.round_settled(tournament, claims, round, matches, results)
-        for slot, m in ipairs(matches) do
+        for slot, match in ipairs(matches) do
             if results[slot] then
-                narrate(tournament.tag, "Match %s: claim %s wins.", m.id, short_hash(results[slot].root))
+                narrate(
+                    tournament.tag,
+                    "Match %s: claim %s wins.",
+                    match.id,
+                    short_hash(results[slot].computation_hash)
+                )
             else
-                narrate(tournament.tag, "Match %s: no claim survives.", m.id)
+                narrate(tournament.tag, "Match %s: no claim survives.", match.id)
             end
         end
         if #claims % 2 == 1 then
-            narrate(tournament.tag, "Claim %s takes a bye to round %d.", short_hash(claims[#claims].root), round + 1)
+            narrate(
+                tournament.tag,
+                "Claim %s takes a bye to round %d.",
+                short_hash(claims[#claims].computation_hash),
+                round + 1
+            )
         end
     end
 
     function story.tournament_winner(winner)
-        narrate("verdict", "Tournament winner is claim %s.", short_hash(winner.root))
-        narrate("verdict", "Winner claim root: %s", cartesi.tohex(winner.root))
+        narrate("verdict", "Tournament winner is claim %s.", short_hash(winner.computation_hash))
+        narrate("verdict", "Winner computation hash: %s", cartesi.tohex(winner.computation_hash))
         narrate("verdict", "Winner final state hash: %s", cartesi.tohex(winner.final_state))
     end
 

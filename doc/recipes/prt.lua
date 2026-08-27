@@ -58,6 +58,7 @@ end
 local LOG2_MCYCLES_PER_PERIOD = assert(tonumber(arg[3]), "missing log2 of the mcycle period")
 local prt_player = require("prt-player")
 prt_player.configure(LOG2_MCYCLES_PER_PERIOD)
+local operations = prt_player.OPERATIONS
 local MCYCLE_HEIGHT, UARCH_HEIGHT = prt_player.MCYCLE_HEIGHT, prt_player.UARCH_HEIGHT
 local PERIODS_PER_INPUT = prt_player.PERIODS_PER_INPUT
 local UARCH_CYCLES_PER_MCYCLE = prt_player.UARCH_CYCLES_PER_MCYCLE
@@ -184,19 +185,9 @@ local function wait_for_agreed_hash(m, tournament, leaf_index)
     end
     for _, claim in ipairs({ m.one, m.two }) do
         local conns = server:subscribers({ hex(claim.root) })
-        local move = server:accept_first(
-            conns,
-            function(v)
-                return valid_claim_proof(v, leaf_index - 1, tournament.height, claim.root) and v
-            end,
-            "prove",
-            {
-                root = claim.root,
-                leaf_index = leaf_index - 1,
-            },
-            "ProveRequest",
-            "ProveResponse"
-        )
+        local move = server:accept_first(conns, function(v)
+            return valid_claim_proof(v, leaf_index - 1, tournament.height, claim.root) and v
+        end, operations.prove, claim.root, leaf_index - 1)
         if move then
             return move.target_hash
         end
@@ -214,20 +205,9 @@ local function settle_uarch_match(tournament, m, transition_index, agree_hash, d
     local disputed_period = tournament.disputed_period
     story.transition_opened(tournament, m, transition_index)
     local conns = server:subscribers({ hex(m.one.root), hex(m.two.root) })
-    local hash = server:accept_first(
-        conns,
-        function(v)
-            return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
-        end,
-        "transition_logs",
-        {
-            input_index = disputed_period.input_index,
-            period_index = disputed_period.period_index,
-            transition_index = transition_index,
-        },
-        "TransitionLogsRequest",
-        "TransitionLogsResponse"
-    )
+    local hash = server:accept_first(conns, function(v)
+        return verify_transition(tournament.dapp_contract, disputed_period, transition_index, agree_hash, v)
+    end, operations.transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
     local winner = hash == d1 and m.one or hash == d2 and m.two or nil
     story.transition_settled(m, hash, winner, d1, d2)
     return winner
@@ -244,13 +224,15 @@ local run_tournament
 -- validContestedFinalState imposes on chain.
 -- docs:begin open_uarch_tournament
 local function open_uarch_tournament(parent, m, disputed_period, agree_hash, d1, d2)
-    local submissions =
-        server:open_tournament(m.tag, server:subscribers({ hex(m.one.root), hex(m.two.root) }), "commit_uarch_claim", {
-            input_index = disputed_period.input_index,
-            period_index = disputed_period.period_index,
-            d1 = d1,
-            d2 = d2,
-        }, "CommitUarchClaimRequest", "CommitUarchClaimResponse")
+    local submissions = server:open_tournament(
+        m.tag,
+        server:subscribers({ hex(m.one.root), hex(m.two.root) }),
+        operations.commit_uarch_claim,
+        disputed_period.input_index,
+        disputed_period.period_index,
+        d1,
+        d2
+    )
     local claims = distinct_claims(submissions, UARCH_HEIGHT, function(claim)
         return claim.final_state == d1 or claim.final_state == d2
     end)
@@ -307,21 +289,9 @@ end
 local function run_match(tournament, m)
     while true do
         local conns = server:subscribers({ hex(m.turn.root) })
-        local move = server:accept_first(
-            conns,
-            function(v)
-                return valid_move(m, v) and v
-            end,
-            "advance",
-            {
-                root = m.turn.root,
-                height = m.height,
-                index = m.index,
-                opponent_left = m.left_node,
-            },
-            "AdvanceRequest",
-            "AdvanceResponse"
-        )
+        local move = server:accept_first(conns, function(v)
+            return valid_move(m, v) and v
+        end, operations.advance, m.turn.root, m.height, m.index, m.left_node)
         if not move then
             story.default_win(m)
             return m.other
@@ -426,7 +396,7 @@ end
 -- once it is sealed and every player it asked has submitted or closed.
 -- docs:begin open_mcycle_tournament
 local function open_mcycle_tournament(referee, dapp_contract)
-    local submissions = server:open_tournament("tournament", nil, "join", {}, "JoinRequest", "JoinResponse")
+    local submissions = server:open_tournament("tournament", nil, operations.join)
     local claims = distinct_claims(submissions, MCYCLE_HEIGHT)
     story.claims_joined("claims", claims)
     return {
@@ -467,10 +437,10 @@ local function wait_for_result(winner)
     local conns = server:subscribers({ hex(winner.root) })
     local result = server:accept_first(conns, function(v)
         return verify_result(v, winner.final_state) and v
-    end, "prove_result", {}, "ProveResultRequest", "ProveResultResponse")
+    end, operations.prove_result)
     assert(result, "no result proved against the winning final state")
     story.result_posted(result)
-    server:collect(nil, "finish", {}, "FinishRequest", "FinishResponse")
+    server:collect(nil, operations.finish)
 end
 -- docs:end wait_for_result
 

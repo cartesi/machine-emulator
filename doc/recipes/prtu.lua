@@ -402,9 +402,18 @@ end
 
 -- The schemas shared by every request. The game script adds its operation schemas.
 local SCHEMA_DICT = {
-    SealRequest = {},
+    SealRequest = { items = { "Default" } },
     SealResponse = "Default",
 }
+
+-- Describes one operation once, for both ends of the wire. Referee calls pass the descriptor
+-- followed by ordinary positional arguments; the descriptor supplies the operation name and
+-- the schemas used to encode its argument tuple and decode its response.
+local function operation(name, request_schema, response_schema)
+    return { name = name, request_schema = request_schema, response_schema = response_schema }
+end
+
+local SEAL = operation("seal", "SealRequest", "SealResponse")
 
 -- The envelope schema for requests under a named argument schema, registered on first use.
 local function request_envelope_schema(schema)
@@ -491,13 +500,13 @@ local function serve(player, server_address)
         end
         trace_wire("from referee", player.label, line)
         local envelope = cartesi.fromjson(line)
-        local schemas = assert(player.operation_schemas[envelope.operation], "unknown operation")
-        local request = cartesi.fromjson(line, request_envelope_schema(schemas.request_schema), SCHEMA_DICT)
-        local operation = assert(player[request.operation], "missing operation")
-        local value = operation(player, request.arguments or {})
+        local descriptor = assert(player.operations[envelope.operation], "unknown operation")
+        local request = cartesi.fromjson(line, request_envelope_schema(descriptor.request_schema), SCHEMA_DICT)
+        local handler = assert(player[request.operation], "missing operation")
+        local value = handler(player, table.unpack(request.arguments or {}))
         assert(value ~= nil, "the operation produced no value")
         local response = { label = player.label, value = value }
-        local encoded = cartesi.tojson(response, -1, response_envelope_schema(schemas.response_schema), SCHEMA_DICT)
+        local encoded = cartesi.tojson(response, -1, response_envelope_schema(descriptor.response_schema), SCHEMA_DICT)
         trace_wire("to referee", player.label, encoded)
         assert(player.connection:send(encoded .. "\n"))
     until player.done
@@ -513,9 +522,9 @@ local function new_sealer()
     local sealer = {
         label = "sealer",
         hello = cartesi.tojson({ role = "sealer" }, -1),
-        operation_schemas = { seal = { request_schema = "SealRequest", response_schema = "SealResponse" } },
-        seal = function(_, arguments)
-            return arguments.id
+        operations = { seal = SEAL },
+        seal = function(_, id)
+            return id
         end,
     }
     return sealer
@@ -625,10 +634,10 @@ local function close_connection(self, connection)
     end
 end
 
--- Encodes an operation and its Lua arguments under the request schema.
-local function request_line(operation, arguments, request_schema)
-    local request = { operation = operation, arguments = arguments }
-    return cartesi.tojson(request, -1, request_envelope_schema(request_schema), SCHEMA_DICT) .. "\n"
+-- Encodes an operation and its positional Lua arguments under the descriptor's request schema.
+local function request_line(descriptor, arguments)
+    local request = { operation = descriptor.name, arguments = arguments }
+    return cartesi.tojson(request, -1, request_envelope_schema(descriptor.request_schema), SCHEMA_DICT) .. "\n"
 end
 
 -- Sends one request at a time over a connection. If another connection resolved the previous
@@ -672,7 +681,7 @@ request_next_seal = function(self)
         pending = { [self.sealer] = true },
     }
     self.seal_active = entry
-    send_request(self, self.sealer, entry, request_line("seal", { id = tournament.id }, "SealRequest"))
+    send_request(self, self.sealer, entry, request_line(SEAL, { tournament.id }))
 end
 
 -- Files the next reply from a connection on its current request. A value that does not decode
@@ -888,9 +897,9 @@ end
 -- `accept`, or nil once every connection asked has answered without one or closed.
 -- A claim nobody answers for is thereby eliminated at once.
 -- docs:begin accept_first
-function server_meta.__index.accept_first(self, conns, accept, operation, arguments, request_schema, response_schema)
-    local entry = { kind = "accept_first", response_schema = response_schema, accept = accept }
-    park(self, entry, conns, request_line(operation, arguments, request_schema))
+function server_meta.__index.accept_first(self, conns, accept, descriptor, ...)
+    local entry = { kind = "accept_first", response_schema = descriptor.response_schema, accept = accept }
+    park(self, entry, conns, request_line(descriptor, { ... }))
     return wait(self, entry).value
 end
 -- docs:end accept_first
@@ -898,9 +907,9 @@ end
 -- Asks the given connections (every player, when nil) for a value, and returns the replies,
 -- each with the label and connection that sent it, once every connection asked has replied or
 -- closed.
-function server_meta.__index.collect(self, conns, operation, arguments, request_schema, response_schema)
-    local entry = { kind = "collect", response_schema = response_schema, replies = {}, open = false }
-    park(self, entry, conns or self:everyone(), request_line(operation, arguments, request_schema))
+function server_meta.__index.collect(self, conns, descriptor, ...)
+    local entry = { kind = "collect", response_schema = descriptor.response_schema, replies = {}, open = false }
+    park(self, entry, conns or self:everyone(), request_line(descriptor, { ... }))
     return wait(self, entry).replies
 end
 
@@ -909,17 +918,17 @@ end
 -- submissions once the sealer seals the tournament and every connection in the audience has
 -- submitted or closed.
 -- docs:begin open_tournament
-function server_meta.__index.open_tournament(self, id, conns, operation, arguments, request_schema, response_schema)
+function server_meta.__index.open_tournament(self, id, conns, descriptor, ...)
     local entry = {
         kind = "collect",
         id = id,
-        response_schema = response_schema,
+        response_schema = descriptor.response_schema,
         replies = {},
         open = true,
         grows = not conns,
     }
     self.open_tournaments[#self.open_tournaments + 1] = entry
-    park(self, entry, conns or self:everyone(), request_line(operation, arguments, request_schema))
+    park(self, entry, conns or self:everyone(), request_line(descriptor, { ... }))
     request_seal(self, entry)
     return wait(self, entry).replies
 end
@@ -938,6 +947,7 @@ end
 
 return {
     SCHEMA_DICT = SCHEMA_DICT,
+    operation = operation,
     short_hash = short_hash,
     hex = hex,
     unhex = unhex,

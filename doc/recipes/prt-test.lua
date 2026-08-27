@@ -228,7 +228,7 @@ with_server(function(server, client, wait_connections)
         return { value = true }
     end)
     server:accept_subscribers("initial")
-    local submissions = server:open_tournament(server:subscribers({ "initial" }), request("commit_mcycle_claim"))
+    local submissions = server:collect_submissions(server:subscribers({ "initial" }), request("commit_mcycle_claim"))
     table.sort(submissions, function(x, y)
         return x.value < y.value
     end)
@@ -299,7 +299,7 @@ with_server(function(server, client, wait_connections)
     assert(not n.dead and not b.dead, "an unproved move closed a connection")
 
     -- A nested tournament asks only its audience, and seals at once.
-    local nested = server:open_tournament({ a }, request("commit_mcycle_claim"))
+    local nested = server:collect_submissions({ a }, request("commit_mcycle_claim"))
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
 
     -- Every holder answers without proof: the request resolves to nil, connections stay open.
@@ -379,7 +379,7 @@ with_server(function(server, client, wait_connections)
     end)
     wait_connections(11)
     local f = server.connections[11]
-    local t2 = server:open_tournament({ f }, request("commit_mcycle_claim"))
+    local t2 = server:collect_submissions({ f }, request("commit_mcycle_claim"))
     assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged seal was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
@@ -403,7 +403,7 @@ local ok, err = pcall(with_server, function(server, client, wait_connections)
         return { value = "other" }
     end)
     wait_connections(1)
-    server:open_tournament({}, request("commit_mcycle_claim"))
+    server:collect_submissions({}, request("commit_mcycle_claim"))
 end)
 assert(not ok and err:find("did not close the phase asked"), "an invalid seal was accepted")
 
@@ -413,7 +413,7 @@ ok, err = pcall(with_server, function(server, client, wait_connections)
         return "close"
     end)
     wait_connections(1)
-    server:open_tournament({}, request("commit_mcycle_claim"))
+    server:collect_submissions({}, request("commit_mcycle_claim"))
 end)
 assert(not ok and err:find("the sealer went away"), "sealer EOF did not fail the referee")
 print("prt-test: ok")

@@ -518,10 +518,9 @@ local function serve(player, server_address)
 end
 -- docs:end serve
 
--- The sealer is a player with one operation: sealing the next tournament. It
--- announces itself as the sealer on connecting, and the referee sends it a seal request for every
--- tournament it opens, the root one and every nested one, so a tournament closes its
--- claim submissions by the same lifecycle at both levels.
+-- The sealer is a player with one operation: closing the next phase. It announces itself as
+-- the sealer on connecting, and the referee first asks it to close initial subscriptions, then
+-- to seal every tournament's claim submissions by the same lifecycle at both levels.
 local function new_sealer()
     local sealer = {
         label = "sealer",
@@ -537,10 +536,11 @@ end
 --------------------------------------------------------------------------------
 -- Referee server
 --
--- Every player connects to the referee server, which is the single event loop. A tournament
--- opens with an audience, the connections asked to submit a claim to it, and its submissions
--- close once the sealer seals it and every connection in the audience has submitted or
--- closed. A move request asks the holders of a claim, and takes the first reply that proves
+-- Every player connects to the referee server, which is the single event loop. Connections
+-- arriving during the initial subscription phase subscribe to its initial hash. A tournament
+-- then opens with a fixed audience, the connections asked to submit a claim to it, and its
+-- submissions close once the sealer seals it and every connection in the audience has submitted
+-- or closed. A move request asks the holders of a claim, and takes the first reply that proves
 -- itself. A reply that fails to prove itself, or does not even decode under the operation's
 -- schema, is rejected, as the blockchain rejects a bad transaction, and counts as that
 -- connection's answer. Only a line that cannot be decoded enough to identify a message, or a
@@ -565,11 +565,11 @@ local function new_server(dispatcher, listener)
         dispatcher = dispatcher,
         listener = listener,
         connections = {},
-        holders = {}, -- computation hash -> set of connections that hold (can defend) it
+        subscriptions = {}, -- routing hash -> set of connections interested in defending it
         active = {}, -- set of requests whose coroutines are waiting
-        open_tournaments = {}, -- tournaments in creation order, including ones already sealed
-        seal_queue = {}, -- tournaments waiting for the sealer, in creation order
-        seal_active = nil, -- the one tournament currently being sent to the sealer
+        open_phases = {}, -- subscription and tournament phases in creation order
+        seal_queue = {}, -- phases waiting for the sealer, in creation order
+        seal_active = nil, -- the one phase currently being sent to the sealer
         sealer = nil, -- the sealer's connection, once it announces itself
         done = false,
     }, server_meta)
@@ -662,14 +662,14 @@ end
 
 local request_next_seal
 
--- Queues a tournament for the trusted sealer. The sealer is deliberately serialized like a
+-- Queues a phase for the trusted sealer. The sealer is deliberately serialized like a
 -- player: one request is in flight, and its next reply necessarily belongs to that request.
-local function request_seal(self, tournament)
-    if not self.sealer or tournament.seal_requested then
+local function request_seal(self, phase)
+    if not self.sealer or phase.seal_requested then
         return
     end
-    tournament.seal_requested = true
-    self.seal_queue[#self.seal_queue + 1] = tournament
+    phase.seal_requested = true
+    self.seal_queue[#self.seal_queue + 1] = phase
     request_next_seal(self)
 end
 
@@ -677,10 +677,10 @@ request_next_seal = function(self)
     if self.seal_active or not self.sealer or #self.seal_queue == 0 then
         return
     end
-    local tournament = table.remove(self.seal_queue, 1)
+    local phase = table.remove(self.seal_queue, 1)
     local entry = {
         kind = "seal",
-        tournament = tournament,
+        phase = phase,
         response_schema = "SealResponse",
         pending = { [self.sealer] = true },
     }
@@ -694,7 +694,7 @@ end
 -- rejected, and leaves the connection open, exactly like a value the acceptor rejects, so
 -- the order replies arrive in cannot decide which connections stay open. A move request
 -- takes the first truthy result its acceptor returns. A collection keeps every reply that
--- decodes. A successful seal response from the sealer closes the one tournament assigned to
+-- decodes. A successful seal response from the sealer closes the one phase assigned to
 -- it; an invalid response is a failure of the referee's own orchestration.
 local function deliver(self, entry, connection, line)
     if not entry.pending[connection] then
@@ -703,11 +703,11 @@ local function deliver(self, entry, connection, line)
     entry.pending[connection] = nil
     local ok, decoded = pcall(cartesi.fromjson, line, response_envelope_schema(entry.response_schema), SCHEMA_DICT)
     if entry.kind == "seal" then
-        assert(ok and decoded.value == true, "the sealer did not seal the tournament asked")
+        assert(ok and decoded.value == true, "the sealer did not close the phase asked")
         entry.resolved = true
         self.seal_active = nil
-        entry.tournament.open = false
-        settle(self, entry.tournament)
+        entry.phase.open = false
+        settle(self, entry.phase)
         request_next_seal(self)
         return
     end
@@ -723,8 +723,8 @@ local function deliver(self, entry, connection, line)
 end
 
 -- A connection announced itself as the sealer. There is one sealer, the first to announce,
--- and it is never part of a tournament's audience. Every tournament already open, still
--- waiting for its seal, is queued in creation order.
+-- and it is never part of a tournament's audience. Every phase already open, still waiting
+-- for its seal, is queued in creation order.
 local function announce_sealer(self, connection)
     if self.sealer then
         close_connection(self, connection)
@@ -732,21 +732,20 @@ local function announce_sealer(self, connection)
     end
     connection.is_sealer = true
     self.sealer = connection
-    for _, entry in ipairs(self.open_tournaments) do
+    for _, entry in ipairs(self.open_phases) do
         if entry.open then
             request_seal(self, entry)
         end
     end
 end
 
--- A connection announced itself as a player. It is asked to submit to the mcycle tournament,
--- when that is still open.
+-- A connection announced itself as a player. While the initial subscription phase is open,
+-- connecting subscribes it to the initial hash that phase advertises.
 local function announce_player(self, connection)
     connection.is_player = true
-    for _, entry in ipairs(self.open_tournaments) do
-        if entry.grows and entry.open then
-            entry.pending[connection] = true
-            send_request(self, connection, entry, entry.line)
+    for _, entry in ipairs(self.open_phases) do
+        if entry.subscription_hash and entry.open then
+            self:subscribe(entry.subscription_hash, connection)
         end
     end
 end
@@ -823,8 +822,8 @@ function server_meta.__index.adopt(self, sock)
 end
 
 -- Accepts connections, adopting each as it arrives, until the game ends. The referee is never
--- told how many players to expect: it takes every one that connects until the sealer seals
--- the mcycle tournament.
+-- told how many players to expect: it takes every one that connects until the sealer closes
+-- the initial subscription phase.
 function server_meta.__index.accept(self)
     self.listener:settimeout(0)
     self.dispatcher:spawn(function()
@@ -837,21 +836,21 @@ function server_meta.__index.accept(self)
     end)
 end
 
--- Records that a connection holds a claim, so it is asked about that claim's matches.
-function server_meta.__index.add_holder(self, root, connection)
-    local set = self.holders[root]
+-- Subscribes a connection to requests routed by a state or computation hash.
+function server_meta.__index.subscribe(self, root, connection)
+    local set = self.subscriptions[root]
     if not set then
         set = {}
-        self.holders[root] = set
+        self.subscriptions[root] = set
     end
     set[connection] = true
 end
 
--- The live connections that hold any of the given computation hashes.
+-- The live connections subscribed to any of the given routing hashes.
 function server_meta.__index.subscribers(self, roots)
     local seen, list = {}, {}
     for _, root in ipairs(roots) do
-        local set = self.holders[root]
+        local set = self.subscriptions[root]
         if set then
             for connection in pairs(set) do
                 if not connection.dead and not seen[connection] then
@@ -916,10 +915,29 @@ function server_meta.__index.collect(self, conns, descriptor, ...)
     return wait(self, entry).replies
 end
 
--- Opens a tournament to the given audience (every player that has connected, and every one
--- that connects before the seal, when nil), asking each to submit a claim, and returns the
--- submissions once the sealer seals the tournament and every connection in the audience has
--- submitted or closed.
+-- Accepts players subscribing to an initial hash until the sealer closes the phase. A player
+-- connection itself expresses interest in the one computation served by this referee.
+function server_meta.__index.accept_subscribers(self, initial_hash)
+    local entry = {
+        kind = "collect",
+        replies = {},
+        pending = {},
+        open = true,
+        subscription_hash = initial_hash,
+        cortn = coroutine.running(),
+    }
+    self.active[entry] = true
+    self.open_phases[#self.open_phases + 1] = entry
+    for _, connection in ipairs(self:everyone()) do
+        self:subscribe(initial_hash, connection)
+    end
+    request_seal(self, entry)
+    wait(self, entry)
+end
+
+-- Opens a tournament to a fixed audience, asking each connection to submit a claim, and
+-- returns the submissions once the sealer seals the tournament and every connection in the
+-- audience has submitted or closed.
 -- docs:begin open_tournament
 function server_meta.__index.open_tournament(self, conns, descriptor, ...)
     local entry = {
@@ -927,10 +945,9 @@ function server_meta.__index.open_tournament(self, conns, descriptor, ...)
         response_schema = descriptor.response_schema,
         replies = {},
         open = true,
-        grows = not conns,
     }
-    self.open_tournaments[#self.open_tournaments + 1] = entry
-    park(self, entry, conns or self:everyone(), request_line(descriptor, { ... }))
+    self.open_phases[#self.open_phases + 1] = entry
+    park(self, entry, conns, request_line(descriptor, { ... }))
     request_seal(self, entry)
     return wait(self, entry).replies
 end

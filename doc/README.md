@@ -10026,71 +10026,7 @@ quitter has already closed its connection, so the very first request to
 open its claim finds no holder, and the match is over:
 
 ``` text
-Height 61: the claims first disagree within leaves [0x0, 0x1fffffffffffffff].
-Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
-Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
-Height 58: the claims first disagree within leaves [0x0, 0x3ffffffffffffff].
-Height 57: the claims first disagree within leaves [0x0, 0x1ffffffffffffff].
-Height 56: the claims first disagree within leaves [0x0, 0xffffffffffffff].
-Height 55: the claims first disagree within leaves [0x0, 0x7fffffffffffff].
-Height 54: the claims first disagree within leaves [0x0, 0x3fffffffffffff].
-Height 53: the claims first disagree within leaves [0x0, 0x1fffffffffffff].
-Height 52: the claims first disagree within leaves [0x0, 0xfffffffffffff].
-Height 51: the claims first disagree within leaves [0x0, 0x7ffffffffffff].
-Height 50: the claims first disagree within leaves [0x0, 0x3ffffffffffff].
-Height 49: the claims first disagree within leaves [0x0, 0x1ffffffffffff].
-Height 48: the claims first disagree within leaves [0x0, 0xffffffffffff].
-Height 47: the claims first disagree within leaves [0x0, 0x7fffffffffff].
-Height 46: the claims first disagree within leaves [0x0, 0x3fffffffffff].
-Height 45: the claims first disagree within leaves [0x0, 0x1fffffffffff].
-Height 44: the claims first disagree within leaves [0x0, 0xfffffffffff].
-Height 43: the claims first disagree within leaves [0x0, 0x7ffffffffff].
-Height 42: the claims first disagree within leaves [0x0, 0x3ffffffffff].
-Height 41: the claims first disagree within leaves [0x0, 0x1ffffffffff].
-Height 40: the claims first disagree within leaves [0x0, 0xffffffffff].
-Height 39: the claims first disagree within leaves [0x0, 0x7fffffffff].
-Height 38: the claims first disagree within leaves [0x0, 0x3fffffffff].
-Height 37: the claims first disagree within leaves [0x0, 0x1fffffffff].
-Height 36: the claims first disagree within leaves [0x0, 0xfffffffff].
-Height 35: the claims first disagree within leaves [0x0, 0x7ffffffff].
-Height 34: the claims first disagree within leaves [0x0, 0x3ffffffff].
-Height 33: the claims first disagree within leaves [0x0, 0x1ffffffff].
-Height 32: the claims first disagree within leaves [0x0, 0xffffffff].
-Height 31: the claims first disagree within leaves [0x0, 0x7fffffff].
-Height 30: the claims first disagree within leaves [0x0, 0x3fffffff].
-Height 29: the claims first disagree within leaves [0x0, 0x1fffffff].
-Height 28: the claims first disagree within leaves [0x0, 0xfffffff].
-Height 27: the claims first disagree within leaves [0x0, 0x7ffffff].
-Height 26: the claims first disagree within leaves [0x0, 0x3ffffff].
-Height 25: the claims first disagree within leaves [0x0, 0x1ffffff].
-Height 24: the claims first disagree within leaves [0x0, 0xffffff].
-Height 23: the claims first disagree within leaves [0x0, 0x7fffff].
-Height 22: the claims first disagree within leaves [0x0, 0x3fffff].
-Height 21: the claims first disagree within leaves [0x0, 0x1fffff].
-Height 20: the claims first disagree within leaves [0x0, 0xfffff].
-Height 19: the claims first disagree within leaves [0x0, 0x7ffff].
-Height 18: the claims first disagree within leaves [0x0, 0x3ffff].
-Height 17: the claims first disagree within leaves [0x0, 0x1ffff].
-Height 16: the claims first disagree within leaves [0x0, 0xffff].
-Height 15: the claims first disagree within leaves [0x0, 0x7fff].
-Height 14: the claims first disagree within leaves [0x0, 0x3fff].
-Height 13: the claims first disagree within leaves [0x0, 0x1fff].
-Height 12: the claims first disagree within leaves [0x0, 0xfff].
-Height 11: the claims first disagree within leaves [0x0, 0x7ff].
-Height 10: the claims first disagree within leaves [0x0, 0x3ff].
-Height 9: the claims first disagree within leaves [0x0, 0x1ff].
-Height 8: the claims first disagree within leaves [0x0, 0xff].
-Height 7: the claims first disagree within leaves [0x0, 0x7f].
-Height 6: the claims first disagree within leaves [0x0, 0x3f].
-Height 5: the claims first disagree within leaves [0x0, 0x1f].
-Height 4: the claims first disagree within leaves [0x0, 0xf].
-Height 3: the claims first disagree within leaves [0x0, 0x7].
-Height 2: the claims first disagree within leaves [0x0, 0x3].
-Height 1: the claims first disagree within leaves [0x0, 0x1].
-The claims diverge at state 0: 0xdd2e60cd... against 0xfc8bdf6c..., from the agreed state 0x4c266b9a....
-A uarch tournament opens over input 0, period 0, starting from 0x4c266b9a....
-Claim 0x36094d82..., with final state 0xfc8bdf6c..., joined.
-The uarch winner confirms 0xfc8bdf6c.... Claim 0x1a22b0c7... is eliminated.
+Nobody opened claim 0x1a22b0c7.... Claim 0x4f4b4987... wins by default.
 ```
 
 Match 2, between the two fabulists, shows the whole shape of a dispute.

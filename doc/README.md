@@ -8711,15 +8711,14 @@ player was honest. Otherwise, by assumption, the other one is.
 
 ``` lua
 local function verify_state_transition(uarch_cycle, state_hash_before, log, state_hash_after)
-    local machine = cartesi.machine
     local pass = pcall(function()
         eventf("Verifying uarch step log!")
-        local hash = machine:verify_step_uarch(state_hash_before, log.step_log)
+        local obtained_state_hash = cartesi.machine:verify_step_uarch(state_hash_before, log.step_log)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
-            hash = machine:verify_reset_uarch(hash, log.reset_log)
+            obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
         end
-        assert(hash == state_hash_after, "log does not reach the committed after-hash")
+        assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
     end)
     eventf("Log is %s!", pass and "valid" or "invalid")
     return pass
@@ -9098,7 +9097,7 @@ local function commit_log(player, arguments)
     end
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
         local step_log = agreed:log_step_uarch()
-        return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
+        return { step_log = step_log, reset_uarch_log = agreed:log_reset_uarch() }
     end
     return { step_log = agreed:log_step_uarch() }
 end
@@ -9120,22 +9119,27 @@ local function verify_state_transition(
     log,
     state_hash_after
 )
-    local machine = cartesi.machine
     local data = dapp_contract.inputs[input + 1]
     local pass = pcall(function()
-        local hash = state_hash_before
+        local obtained_state_hash = state_hash_before
         if mcycle_offset == 0 and uarch_cycle == 0 and data then
             eventf("Verifying input inclusion log!")
             local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-            hash = machine:verify_send_cmio_response(reason, data, hash, log.send_cmio_log, hash)
+            obtained_state_hash = cartesi.machine:verify_send_cmio_response(
+                reason,
+                data,
+                obtained_state_hash,
+                log.send_cmio_log,
+                obtained_state_hash
+            )
         end
         eventf("Verifying uarch step log!")
-        hash = machine:verify_step_uarch(hash, log.step_log)
+        obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, log.step_log)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
-            hash = machine:verify_reset_uarch(hash, log.reset_log)
+            obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
         end
-        assert(hash == state_hash_after, "log does not reach the committed after-hash")
+        assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
     end)
     eventf("Log is %s!", pass and "valid" or "invalid")
     return pass
@@ -9532,7 +9536,7 @@ coroutine scheduling, is hidden in the referee server:
 
 ``` lua
 local function run_referee(dapp_contract)
-    server:accept_subscribers(dapp_contract.initial_hash)
+    server:accept_subscribers(dapp_contract.initial_state_hash)
     local winner = run_tournament(open_mcycle_tournament(dapp_contract))
     assert(winner, "the tournament ended with no winner")
     wait_for_result(winner)
@@ -9613,20 +9617,20 @@ exposed children are leaves, and the walk returns the isolated dispute:
 local function advance_match(match, move)
     local descend_left = move.l ~= match.left_node
     if match.height == 1 then
-        local state_index, turn_state_hash, other_state_hash, agreed_hash
+        local state_index, turn_state_hash, other_state_hash, agreed_state_hash
         if descend_left then
             state_index, turn_state_hash, other_state_hash = 2 * match.index, move.l, match.left_node
         else
-            state_index, turn_state_hash, other_state_hash, agreed_hash =
+            state_index, turn_state_hash, other_state_hash, agreed_state_hash =
                 2 * match.index + 1, move.r, match.right_node, move.l
         end
-        local claim1_next_hash = match.turn_claim == match.claim1 and turn_state_hash or other_state_hash
-        local claim2_next_hash = match.turn_claim == match.claim1 and other_state_hash or turn_state_hash
+        local claim1_next_state_hash = match.turn_claim == match.claim1 and turn_state_hash or other_state_hash
+        local claim2_next_state_hash = match.turn_claim == match.claim1 and other_state_hash or turn_state_hash
         return {
             state_index = state_index,
-            agreed_hash = agreed_hash,
-            claim1_next_hash = claim1_next_hash,
-            claim2_next_hash = claim2_next_hash,
+            agreed_state_hash = agreed_state_hash,
+            claim1_next_state_hash = claim1_next_state_hash,
+            claim2_next_state_hash = claim2_next_state_hash,
         }
     end
     if descend_left then
@@ -9691,18 +9695,21 @@ local function settle_mcycle_match(
     tournament,
     match,
     epoch_period_index,
-    agreed_hash,
-    claim1_next_hash,
-    claim2_next_hash
+    agreed_state_hash,
+    claim1_next_state_hash,
+    claim2_next_state_hash
 )
-    local disputed_period = {
-        input_index = epoch_period_index // PERIODS_PER_INPUT,
-        period_index = epoch_period_index % PERIODS_PER_INPUT,
-    }
-    local uarch_tournament =
-        open_uarch_tournament(tournament, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
+    local uarch_tournament = open_uarch_tournament(
+        tournament,
+        match,
+        epoch_period_index,
+        agreed_state_hash,
+        claim1_next_state_hash,
+        claim2_next_state_hash
+    )
     local uarch_winner = run_tournament(uarch_tournament)
-    local survivor = uarch_winner and (uarch_winner.final_state == claim1_next_hash and match.claim1 or match.claim2)
+    local survivor = uarch_winner
+        and (uarch_winner.final_state_hash == claim1_next_state_hash and match.claim1 or match.claim2)
     story.report_uarch_result(match, uarch_winner, survivor)
     return survivor
 end
@@ -9719,20 +9726,33 @@ which carries the revert when the instruction rejected an input. Every
 other transition is an ordinary uarch step:
 
 ``` lua
-local function verify_transition(dapp_contract, disputed_period, transition_index, current_hash, logs)
-    local machine = cartesi.machine
-    local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
-    local hash = current_hash
-    local data = dapp_contract.inputs[disputed_period.input_index + 1]
-    if transition_index == 0 and disputed_period.period_index == 0 and data then
+local function verify_state_transition(
+    dapp_contract,
+    current_state_hash,
+    epoch_period_index,
+    state_transition_offset,
+    logs
+)
+    local input_index = epoch_period_index // PERIODS_PER_INPUT
+    local period_index = epoch_period_index % PERIODS_PER_INPUT
+    local uarch_cycle = state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1)
+    local obtained_state_hash = current_state_hash
+    local data = dapp_contract.inputs[input_index + 1]
+    if state_transition_offset == 0 and period_index == 0 and data then
         local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-        hash = machine:verify_send_cmio_response(reason, data, hash, logs.send_cmio_log, hash)
+        obtained_state_hash = cartesi.machine:verify_send_cmio_response(
+            reason,
+            data,
+            obtained_state_hash,
+            logs.send_cmio_log,
+            obtained_state_hash
+        )
     end
-    hash = machine:verify_step_uarch(hash, logs.step_log)
+    obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, logs.step_log)
     if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
-        hash = machine:verify_reset_uarch(hash, logs.reset_log)
+        obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, logs.reset_uarch_log)
     end
-    return hash
+    return obtained_state_hash
 end
 ```
 
@@ -9744,17 +9764,29 @@ true hash wins the match; a claim that committed to anything else loses,
 whoever ends up supplying the winning log:
 
 ``` lua
-local function settle_uarch_match(tournament, match, transition_index, current_hash, claim1_next_hash, claim2_next_hash)
-    local disputed_period = tournament.disputed_period
-    story.report_transition(tournament, match, transition_index)
+local function settle_uarch_match(
+    tournament,
+    match,
+    state_transition_offset,
+    current_state_hash,
+    claim1_next_state_hash,
+    claim2_next_state_hash
+)
+    story.report_transition(tournament, match, state_transition_offset)
     local conns = server:get_subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
-    local next_hash = server:accept_first(conns, function(v)
-        return verify_transition(tournament.dapp_contract, disputed_period, transition_index, current_hash, v)
-    end, REQUESTS.provide_transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
-    local winner = next_hash == claim1_next_hash and match.claim1
-        or next_hash == claim2_next_hash and match.claim2
+    local obtained_state_hash = server:accept_first(conns, function(v)
+        return verify_state_transition(
+            tournament.dapp_contract,
+            current_state_hash,
+            tournament.epoch_period_index,
+            state_transition_offset,
+            v
+        )
+    end, REQUESTS.provide_transition_logs, tournament.input_index, tournament.period_index, state_transition_offset)
+    local winner = obtained_state_hash == claim1_next_state_hash and match.claim1
+        or obtained_state_hash == claim2_next_state_hash and match.claim2
         or nil
-    story.report_transition_result(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
+    story.report_transition_result(match, obtained_state_hash, winner, claim1_next_state_hash, claim2_next_state_hash)
     return winner
 end
 ```
@@ -9763,22 +9795,22 @@ The logs come from a holder of either claim, produced by positioning a
 fresh fork at the transition and logging it:
 
 ``` lua
-function handlers.provide_transition_logs(player, input_index, period_index, transition_index)
-    local mcycle_offset = transition_index >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
+function handlers.provide_transition_logs(player, input_index, period_index, state_transition_offset)
+    local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local uarch_cycle = state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
     local data = player.inputs[input_index + 1]
-    if transition_index == 0 and period_index == 0 and data then
-        local revert_root_hash = machine:get_root_hash()
+    if state_transition_offset == 0 and period_index == 0 and data then
+        local revert_state_hash = machine:get_root_hash()
         local send_cmio_log =
-            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
     advance_fork(player, machine, input_index + 1, period_index * MCYCLES_PER_PERIOD + mcycle_offset)
     machine:run_uarch(uarch_cycle)
     if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
         local step_log = machine:log_step_uarch()
-        return { step_log = step_log, reset_log = machine:log_reset_uarch() }
+        return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }
     end
     return { step_log = machine:log_step_uarch() }
 end

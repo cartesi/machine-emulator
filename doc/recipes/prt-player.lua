@@ -33,7 +33,7 @@ prtu.SCHEMA_DICT.TransitionLogsRequest = { items = { "Default", "Default", "Defa
 prtu.SCHEMA_DICT.TransitionLogsResponse = {
     send_cmio_log = "AccessLog",
     step_log = "AccessLog",
-    reset_log = "AccessLog",
+    reset_uarch_log = "AccessLog",
 }
 -- The epoch result: an output, its proof in the outputs Merkle tree, and the proof tying that
 -- tree's root into the winning final state.
@@ -132,7 +132,7 @@ end
 --
 -- The player advances the whole epoch once, collecting the machine state hash every period
 -- as bundle roots, one entry per 2^LOG2_MCYCLE_BUNDLE samples. A machine stopped at a
--- manual yield, halt, or mcycle overflow repeats its hash to the end of its input's span, and
+-- manual yield, halt, or mcycle overflow repeats its state hash to the end of its input's span, and
 -- the machine pads the stream accordingly, so each input contributes a short prefix of real entries
 -- followed by one enormous run. The player keeps a fork at each input boundary, which
 -- anchors every later re-run: refining an entry, building a uarch claim, or producing the
@@ -147,8 +147,8 @@ end
 local function advance_fork(player, machine, index, offset)
     local data = player.inputs[index]
     if data then
-        local revert_root_hash = machine:get_root_hash()
-        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+        local revert_state_hash = machine:get_root_hash()
+        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
     end
     local base = machine:read_reg("mcycle")
     local tamper = player.tamper
@@ -228,8 +228,8 @@ local function build_mcycle_claim(player)
     local epoch_pad_entry
     for index, data in ipairs(player.inputs) do
         player.boundaries[index] = assert(machine:fork_server())
-        local revert_root_hash = machine:get_root_hash()
-        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+        local revert_state_hash = machine:get_root_hash()
+        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
         local base = machine:read_reg("mcycle")
         local collection = new_mcycle_collection(machine, runs, ENTRIES_PER_INPUT, LOG2_MCYCLE_BUNDLE)
         local tamper = player.tamper
@@ -244,11 +244,11 @@ local function build_mcycle_claim(player)
         filled = filled + ENTRIES_PER_INPUT
         local _, reason = machine:receive_cmio_request()
         if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
-            player.fixed_leaves[index] = player.boundaries[index]:get_root_hash()
+            player.fixed_state_hashes[index] = player.boundaries[index]:get_root_hash()
             machine:shutdown_server()
             machine:swap(assert(player.boundaries[index]:fork_server()))
         else
-            player.fixed_leaves[index] = machine:get_root_hash()
+            player.fixed_state_hashes[index] = machine:get_root_hash()
         end
     end
     -- the rest of the epoch repeats the last input's fixed point
@@ -272,7 +272,7 @@ local function refine_mcycle_claim(player, entry)
     local bundle = 1 << LOG2_MCYCLE_BUNDLE
     local input_index = entry // ENTRIES_PER_INPUT + 1
     if input_index > #player.inputs then -- epoch tail: repetitions of the last fixed point
-        return { { hash = player.fixed_leaves[#player.inputs], count = bundle } }
+        return { { hash = player.fixed_state_hashes[#player.inputs], count = bundle } }
     end
     local window_start = (entry % ENTRIES_PER_INPUT) * bundle * MCYCLES_PER_PERIOD
     local machine <close> = assert(player.boundaries[input_index]:fork_server())
@@ -450,19 +450,19 @@ end
 -- and the period index are 0-based, as the referee counts them. A holder whose uarch claim
 -- ends in neither contested value cannot defend its parent claim, and dies on the
 -- contradiction.
-function handlers.commit_uarch_claim(player, input_index, period_index, claim1_next_hash, claim2_next_hash)
+function handlers.commit_uarch_claim(player, input_index, period_index, claim1_next_state_hash, claim2_next_state_hash)
     write_stderr("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
     player.uarch_claim = player.make_uarch_tree(player, input_index + 1, period_index)
     local claim = make_claim(player.uarch_claim)
-    local final_state = claim.proof.target_hash
+    local final_state_hash = claim.proof.target_hash
     assert(
-        final_state == claim1_next_hash or final_state == claim2_next_hash,
+        final_state_hash == claim1_next_state_hash or final_state_hash == claim2_next_state_hash,
         string.format(
             "%s: uarch final %s matches neither contested final %s nor %s",
             player.label,
-            format_short_hash(final_state),
-            format_short_hash(claim1_next_hash),
-            format_short_hash(claim2_next_hash)
+            format_short_hash(final_state_hash),
+            format_short_hash(claim1_next_state_hash),
+            format_short_hash(claim2_next_state_hash)
         )
     )
     write_stderr("%s: uarch claim ready\n", player.label)
@@ -475,22 +475,22 @@ end
 -- The transition closing an instruction executes one more step, by then a fixed point, and
 -- the reset. Every other transition is an ordinary uarch step.
 -- docs:begin provide_transition_logs
-function handlers.provide_transition_logs(player, input_index, period_index, transition_index)
-    local mcycle_offset = transition_index >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
+function handlers.provide_transition_logs(player, input_index, period_index, state_transition_offset)
+    local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local uarch_cycle = state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
     local data = player.inputs[input_index + 1]
-    if transition_index == 0 and period_index == 0 and data then
-        local revert_root_hash = machine:get_root_hash()
+    if state_transition_offset == 0 and period_index == 0 and data then
+        local revert_state_hash = machine:get_root_hash()
         local send_cmio_log =
-            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
     advance_fork(player, machine, input_index + 1, period_index * MCYCLES_PER_PERIOD + mcycle_offset)
     machine:run_uarch(uarch_cycle)
     if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
         local step_log = machine:log_step_uarch()
-        return { step_log = step_log, reset_log = machine:log_reset_uarch() }
+        return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }
     end
     return { step_log = machine:log_step_uarch() }
 end
@@ -507,12 +507,12 @@ function handlers.prove_result(player)
     local machine = new_remote_machine(player.template)
     local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     local frontier = hash_tree.frontier_copy(genesis_frontier)
-    local outputs, leaves, root_hash_proof = {}, {}, nil
+    local outputs, leaves, state_hash_proof = {}, {}, nil
     for _, data in ipairs(player.inputs) do
         local snapshot = assert(machine:fork_server())
         local sink = {}
-        local revert_root_hash = machine:get_root_hash()
-        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+        local revert_state_hash = machine:get_root_hash()
+        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
         run_to(machine, math.maxinteger, sink)
         local _, reason, reported_root = machine:receive_cmio_request()
         if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
@@ -522,7 +522,7 @@ function handlers.prove_result(player)
                 hash_tree.frontier_push_back(frontier, leaves[#leaves])
             end
             assert(hash_tree.frontier_get_root_hash(frontier) == reported_root, "outputs Merkle root mismatch")
-            root_hash_proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+            state_hash_proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
         else
             machine:shutdown_server()
             machine:swap(assert(snapshot:fork_server()))
@@ -533,7 +533,7 @@ function handlers.prove_result(player)
     return {
         output = outputs[#outputs],
         output_proof = hash_tree.frontier_next_proofs(genesis_frontier, leaves)[#leaves],
-        outputs_merkle_root_proof = root_hash_proof,
+        outputs_merkle_root_proof = state_hash_proof,
     }
 end
 -- docs:end prove_result
@@ -553,7 +553,7 @@ local function new_player(label, inputs, template)
         template = template,
         requests = REQUESTS,
         boundaries = {},
-        fixed_leaves = {},
+        fixed_state_hashes = {},
         make_mcycle_tree = function(self)
             return new_tree(MCYCLE_HEIGHT, LOG2_MCYCLE_BUNDLE, build_mcycle_claim(self), function(_, entry)
                 return refine_mcycle_claim(self, entry)
@@ -585,15 +585,15 @@ local function make_honest(inputs, template)
     return new_player("honest", inputs, template)
 end
 
--- The quitter posts a claim fabricated out of thin air, every leaf the same made-up hash,
+-- The quitter posts a claim fabricated out of thin air, every leaf the same made-up state hash,
 -- and walks away: it closes its connection right after joining, so the first request about
 -- its claim finds no holder and eliminates it. The claim is built straight from leaf runs, so
 -- it never needs a machine, or even the inputs.
 local function make_quitter()
     local player = new_player("quitter", {})
     player.make_mcycle_tree = function()
-        local fake = keccak("quitter")
-        return new_tree(MCYCLE_HEIGHT, 0, { { hash = fake, count = 1 << MCYCLE_HEIGHT } }, nil)
+        local fake_state_hash = keccak("quitter")
+        return new_tree(MCYCLE_HEIGHT, 0, { { hash = fake_state_hash, count = 1 << MCYCLE_HEIGHT } }, nil)
     end
     player.commit_mcycle_claim = function(self)
         self.done = true
@@ -630,13 +630,13 @@ local function make_tamperer(inputs, template, input_index, entry_offset)
 end
 
 -- The fabulist computes the whole epoch honestly and then lies about a single sample: its
--- claim is the honest claim with one leaf overwritten by a made-up hash. It can defend
+-- claim is the honest claim with one leaf overwritten by a made-up state hash. It can defend
 -- every request with honest data, and other claims' disputes it can even settle with
 -- honest proofs, but the dispute against its own claim converges on the overwritten leaf,
 -- where the true reset that closes the last instruction of the span contradicts it.
 local function make_fabulist(inputs, template, input_index, leaf_offset)
     local player = new_player("fabulist", inputs, template)
-    local fake = keccak("fabulist")
+    local fake_state_hash = keccak("fabulist")
     local global_leaf = input_index * PERIODS_PER_INPUT + leaf_offset
     -- mcycle claim: splice the patched entry into the honest runs and patch its refinement
     local entry = global_leaf >> LOG2_MCYCLE_BUNDLE
@@ -644,7 +644,7 @@ local function make_fabulist(inputs, template, input_index, leaf_offset)
     local function refine_patched_mcycle_claim(self)
         local runs = slice_runs(refine_mcycle_claim(self, entry), 0, 1 << LOG2_MCYCLE_BUNDLE)
         local before = slice_runs(runs, 0, leaf_in_entry)
-        push_run(before, fake, 1)
+        push_run(before, fake_state_hash, 1)
         for _, run in ipairs(slice_runs(runs, leaf_in_entry + 1, (1 << LOG2_MCYCLE_BUNDLE) - leaf_in_entry - 1)) do
             push_run(before, run.hash, run.count)
         end
@@ -672,7 +672,7 @@ local function make_fabulist(inputs, template, input_index, leaf_offset)
     local function refine_patched_uarch_claim(self)
         local runs = refine_uarch_claim(self, lie_input, lie_period, last_entry)
         local before = slice_runs(runs, 0, last_in_entry)
-        push_run(before, fake, 1)
+        push_run(before, fake_state_hash, 1)
         return before
     end
     local honest_make_uarch_tree = player.make_uarch_tree

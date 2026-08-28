@@ -5388,7 +5388,7 @@ The walk has isolated a single uarch transition out of an agreed state hash, and
 The transition out of an input boundary includes the input the dapp contract holds (never one a player supplies) before the first uarch step.
 The transition closing an instruction verifies a step, by then a fixed point, and the uarch reset, which carries the revert when the instruction rejected an input.
 Every other transition is an ordinary uarch step:
-```{.lua key=prt_verify_transition include=prt.lua/verify_transition title="prt.lua (excerpt)"}
+```{.lua key=prt_verify_state_transition include=prt.lua/verify_state_transition title="prt.lua (excerpt)"}
 ```
 The transition out of the agreed state is unique, so this is the heart of the whole game.
 Any log that verifies reaches the one true after-hash, and no log can reach a false one, since its proofs are checked against the agreed before-state.

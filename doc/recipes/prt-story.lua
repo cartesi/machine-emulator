@@ -35,54 +35,63 @@ function story.report_claims(tournament, claims)
             stream,
             "Claim %s, with final state %s, joined.",
             format_short_hash(claim.computation_hash),
-            format_short_hash(claim.final_state)
+            format_short_hash(claim.final_state_hash)
         )
     end
 end
 
-function story.report_transition(tournament, match, transition_index)
-    local disputed_period = tournament.disputed_period
+function story.report_transition(tournament, match, state_transition_offset)
     local form = "an ordinary uarch step"
     if
-        transition_index == 0
-        and disputed_period.period_index == 0
-        and tournament.dapp_contract.inputs[disputed_period.input_index + 1]
+        state_transition_offset == 0
+        and tournament.period_index == 0
+        and tournament.dapp_contract.inputs[tournament.input_index + 1]
     then
-        form = "the inclusion of input " .. disputed_period.input_index .. " and the first uarch step"
-    elseif transition_index & (UARCH_CYCLES_PER_MCYCLE - 1) == UARCH_CYCLES_PER_MCYCLE - 1 then
+        form = "the inclusion of input " .. tournament.input_index .. " and the first uarch step"
+    elseif state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1) == UARCH_CYCLES_PER_MCYCLE - 1 then
         form = "a uarch step and the uarch reset closing an instruction"
     end
     narrate(get_match_stream(match), "The disputed transition is %s.", form)
 end
 
-function story.report_transition_result(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
-    if not next_hash then
+function story.report_transition_result(
+    match,
+    obtained_state_hash,
+    winner,
+    claim1_next_state_hash,
+    claim2_next_state_hash
+)
+    if not obtained_state_hash then
         narrate(get_match_stream(match), "No log settled the transition. Both claims are eliminated.")
         return
     end
-    narrate(get_match_stream(match), "The disputed transition provably leads to %s.", format_short_hash(next_hash))
+    narrate(
+        get_match_stream(match),
+        "The disputed transition provably leads to %s.",
+        format_short_hash(obtained_state_hash)
+    )
     if not winner then
         narrate(get_match_stream(match), "Neither claim committed to it. Both are eliminated.")
         return
     end
     local loser = winner == match.claim1 and match.claim2 or match.claim1
-    local lost = winner == match.claim1 and claim2_next_hash or claim1_next_hash
+    local lost_state_hash = winner == match.claim1 and claim2_next_state_hash or claim1_next_state_hash
     narrate(
         get_match_stream(match),
         "Claim %s committed to %s and is eliminated.",
         format_short_hash(loser.computation_hash),
-        format_short_hash(lost)
+        format_short_hash(lost_state_hash)
     )
 end
 
-function story.report_uarch_tournament(tournament, match, disputed_period, agreed_hash)
+function story.report_uarch_tournament(tournament, match, agreed_state_hash)
     tournament_streams[tournament] = get_match_stream(match)
     narrate(
         get_tournament_stream(tournament),
         "A uarch tournament opens over input %d, period %d, starting from %s.",
-        disputed_period.input_index,
-        disputed_period.period_index,
-        format_short_hash(agreed_hash)
+        tournament.input_index,
+        tournament.period_index,
+        format_short_hash(agreed_state_hash)
     )
 end
 
@@ -95,13 +104,13 @@ function story.report_uarch_result(match, winner, survivor)
     narrate(
         get_match_stream(match),
         "The uarch winner confirms %s. Claim %s is eliminated.",
-        format_short_hash(winner.final_state),
+        format_short_hash(winner.final_state_hash),
         format_short_hash(loser.computation_hash)
     )
 end
 
-function story.report_dispute(match, dispute, agreed_hash)
-    if not agreed_hash then
+function story.report_dispute(match, dispute, agreed_state_hash)
+    if not agreed_state_hash then
         narrate(get_match_stream(match), "Nobody proved the agreed state. Both claims are eliminated.")
         return
     end
@@ -109,9 +118,9 @@ function story.report_dispute(match, dispute, agreed_hash)
         get_match_stream(match),
         "The claims diverge at state %d: %s against %s, from the agreed state %s.",
         dispute.state_index,
-        format_short_hash(dispute.claim1_next_hash),
-        format_short_hash(dispute.claim2_next_hash),
-        format_short_hash(agreed_hash)
+        format_short_hash(dispute.claim1_next_state_hash),
+        format_short_hash(dispute.claim2_next_state_hash),
+        format_short_hash(agreed_state_hash)
     )
 end
 
@@ -176,7 +185,7 @@ end
 function story.report_winner(winner)
     narrate("verdict", "Tournament winner is claim %s.", format_short_hash(winner.computation_hash))
     narrate("verdict", "Winner computation hash: %s", cartesi.tohex(winner.computation_hash))
-    narrate("verdict", "Winner final state hash: %s", cartesi.tohex(winner.final_state))
+    narrate("verdict", "Winner final state hash: %s", cartesi.tohex(winner.final_state_hash))
 end
 
 function story.report_result(result)

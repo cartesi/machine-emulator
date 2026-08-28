@@ -372,14 +372,14 @@ function handlers.commit_mcycle_claim(player)
     return claim
 end
 
--- One alternating step of the walk down a claim: opens the claim's node at (height, index),
--- returning its children and the children of the node the walk descends into.
-function handlers.advance_bisection(player, computation_hash, height, index, other_left_node)
+-- Reveals the nodes the referee needs for one bisection advance: the claim's node at
+-- (height, node_index), and the children of the node the walk descends into.
+function handlers.reveal_bisection(player, computation_hash, height, node_index, other_left_node)
     assert(height > 1)
     local tree = get_claim_tree(player, computation_hash)
-    local turn_left_node, turn_right_node = tree:get_children(height, index)
+    local turn_left_node, turn_right_node = tree:get_children(height, node_index)
     local descend_left = turn_left_node ~= other_left_node
-    local child_index = descend_left and 2 * index or 2 * index + 1
+    local child_index = descend_left and 2 * node_index or 2 * node_index + 1
     local turn_next_left_node, turn_next_right_node = tree:get_children(height - 1, child_index)
     return {
         turn_left_node = turn_left_node,
@@ -391,12 +391,12 @@ end
 
 -- Seals the leftmost divergence: exposes the final leaves and proves the agreed state
 -- immediately before them, except at state zero where the referee already knows that state.
-function handlers.seal_divergence(player, computation_hash, index, other_left_node)
+function handlers.seal_divergence(player, computation_hash, node_index, other_left_node)
     local tree = get_claim_tree(player, computation_hash)
-    local turn_left_node, turn_right_node = tree:get_children(1, index)
+    local turn_left_node, turn_right_node = tree:get_children(1, node_index)
     local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
     local descend_left = turn_left_node ~= other_left_node
-    local state_index = 2 * index + (descend_left and 0 or 1)
+    local state_index = 2 * node_index + (descend_left and 0 or 1)
     if state_index ~= 0 then
         response.agreed_state_hash_proof = tree:prove(state_index - 1)
         assert(
@@ -501,12 +501,6 @@ function handlers.prove_result(player)
     }
 end
 -- docs:end prove_result
-
--- The end of the tournament releases the player.
-function handlers.finish(player)
-    player.done = true
-    return true
-end
 
 -- A player bundles the game's operations and their schemas with the machines it builds along
 -- the way.

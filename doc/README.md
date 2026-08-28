@@ -9540,8 +9540,10 @@ coroutine scheduling, is hidden in the referee server:
 local function run_referee(dapp_contract)
     server:accept_subscribers(dapp_contract.initial_state_hash)
     local winner = run_tournament(open_mcycle_tournament(dapp_contract))
-    assert(winner, "the tournament ended with no winner")
-    wait_for_result(winner)
+    story.report_winner(winner)
+    if winner then
+        wait_for_result(winner)
+    end
 end
 ```
 
@@ -9617,13 +9619,13 @@ local function advance_bisection(match, response)
     assert(match.height > 1)
     local descend_left = response.turn_left_node ~= match.other_left_node
     if descend_left then
-        match.turn_parent_node, match.index = match.other_left_node, 2 * match.index
+        match.turn_parent_node, match.node_index = match.other_left_node, 2 * match.node_index
     else
-        match.turn_parent_node, match.index = match.other_right_node, 2 * match.index + 1
+        match.turn_parent_node, match.node_index = match.other_right_node, 2 * match.node_index + 1
     end
     match.other_left_node, match.other_right_node = response.turn_next_left_node, response.turn_next_right_node
     match.height = match.height - 1
-    match.turn = get_other_index(match.turn)
+    match.turn = get_other_turn(match.turn)
 end
 ```
 
@@ -9637,7 +9639,7 @@ local function validate_seal_response(tournament, match, response)
     assert(match.height == 1)
     assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
     local descend_left = response.turn_left_node ~= match.other_left_node
-    local state_index = 2 * match.index + (descend_left and 0 or 1)
+    local state_index = 2 * match.node_index + (descend_left and 0 or 1)
     local agreed_state_hash
     if state_index ~= 0 then
         local proof = response.agreed_state_hash_proof
@@ -9656,7 +9658,7 @@ local function validate_seal_response(tournament, match, response)
     local other_state_hash = descend_left and match.other_left_node or match.other_right_node
     local next_state_hashes = {}
     next_state_hashes[match.turn] = turn_state_hash
-    next_state_hashes[get_other_index(match.turn)] = other_state_hash
+    next_state_hashes[get_other_turn(match.turn)] = other_state_hash
     return {
         state_index = state_index,
         agreed_state_hash = agreed_state_hash,
@@ -9680,15 +9682,15 @@ local function run_match(tournament, match)
             function(response)
                 return validate_bisection_response(match, response)
             end,
-            REQUESTS.advance_bisection,
+            REQUESTS.reveal_bisection,
             turn_claim.computation_hash,
             match.height,
-            match.index,
+            match.node_index,
             match.other_left_node
         )
         if not response then
             story.report_default_win(match)
-            return get_other_index(match.turn)
+            return get_other_turn(match.turn)
         end
         advance_bisection(match, response)
         story.report_match_progress(match)
@@ -9701,12 +9703,12 @@ local function run_match(tournament, match)
         end,
         REQUESTS.seal_divergence,
         turn_claim.computation_hash,
-        match.index,
+        match.node_index,
         match.other_left_node
     )
     if not divergence then
         story.report_default_win(match)
-        return get_other_index(match.turn)
+        return get_other_turn(match.turn)
     end
     return settle_match(tournament, match, divergence)
 end
@@ -10024,7 +10026,71 @@ quitter has already closed its connection, so the very first request to
 open its claim finds no holder, and the match is over:
 
 ``` text
-Nobody opened claim 0x1a22b0c7.... Claim 0x4f4b4987... wins by default.
+Height 61: the claims first disagree within leaves [0x0, 0x1fffffffffffffff].
+Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
+Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
+Height 58: the claims first disagree within leaves [0x0, 0x3ffffffffffffff].
+Height 57: the claims first disagree within leaves [0x0, 0x1ffffffffffffff].
+Height 56: the claims first disagree within leaves [0x0, 0xffffffffffffff].
+Height 55: the claims first disagree within leaves [0x0, 0x7fffffffffffff].
+Height 54: the claims first disagree within leaves [0x0, 0x3fffffffffffff].
+Height 53: the claims first disagree within leaves [0x0, 0x1fffffffffffff].
+Height 52: the claims first disagree within leaves [0x0, 0xfffffffffffff].
+Height 51: the claims first disagree within leaves [0x0, 0x7ffffffffffff].
+Height 50: the claims first disagree within leaves [0x0, 0x3ffffffffffff].
+Height 49: the claims first disagree within leaves [0x0, 0x1ffffffffffff].
+Height 48: the claims first disagree within leaves [0x0, 0xffffffffffff].
+Height 47: the claims first disagree within leaves [0x0, 0x7fffffffffff].
+Height 46: the claims first disagree within leaves [0x0, 0x3fffffffffff].
+Height 45: the claims first disagree within leaves [0x0, 0x1fffffffffff].
+Height 44: the claims first disagree within leaves [0x0, 0xfffffffffff].
+Height 43: the claims first disagree within leaves [0x0, 0x7ffffffffff].
+Height 42: the claims first disagree within leaves [0x0, 0x3ffffffffff].
+Height 41: the claims first disagree within leaves [0x0, 0x1ffffffffff].
+Height 40: the claims first disagree within leaves [0x0, 0xffffffffff].
+Height 39: the claims first disagree within leaves [0x0, 0x7fffffffff].
+Height 38: the claims first disagree within leaves [0x0, 0x3fffffffff].
+Height 37: the claims first disagree within leaves [0x0, 0x1fffffffff].
+Height 36: the claims first disagree within leaves [0x0, 0xfffffffff].
+Height 35: the claims first disagree within leaves [0x0, 0x7ffffffff].
+Height 34: the claims first disagree within leaves [0x0, 0x3ffffffff].
+Height 33: the claims first disagree within leaves [0x0, 0x1ffffffff].
+Height 32: the claims first disagree within leaves [0x0, 0xffffffff].
+Height 31: the claims first disagree within leaves [0x0, 0x7fffffff].
+Height 30: the claims first disagree within leaves [0x0, 0x3fffffff].
+Height 29: the claims first disagree within leaves [0x0, 0x1fffffff].
+Height 28: the claims first disagree within leaves [0x0, 0xfffffff].
+Height 27: the claims first disagree within leaves [0x0, 0x7ffffff].
+Height 26: the claims first disagree within leaves [0x0, 0x3ffffff].
+Height 25: the claims first disagree within leaves [0x0, 0x1ffffff].
+Height 24: the claims first disagree within leaves [0x0, 0xffffff].
+Height 23: the claims first disagree within leaves [0x0, 0x7fffff].
+Height 22: the claims first disagree within leaves [0x0, 0x3fffff].
+Height 21: the claims first disagree within leaves [0x0, 0x1fffff].
+Height 20: the claims first disagree within leaves [0x0, 0xfffff].
+Height 19: the claims first disagree within leaves [0x0, 0x7ffff].
+Height 18: the claims first disagree within leaves [0x0, 0x3ffff].
+Height 17: the claims first disagree within leaves [0x0, 0x1ffff].
+Height 16: the claims first disagree within leaves [0x0, 0xffff].
+Height 15: the claims first disagree within leaves [0x0, 0x7fff].
+Height 14: the claims first disagree within leaves [0x0, 0x3fff].
+Height 13: the claims first disagree within leaves [0x0, 0x1fff].
+Height 12: the claims first disagree within leaves [0x0, 0xfff].
+Height 11: the claims first disagree within leaves [0x0, 0x7ff].
+Height 10: the claims first disagree within leaves [0x0, 0x3ff].
+Height 9: the claims first disagree within leaves [0x0, 0x1ff].
+Height 8: the claims first disagree within leaves [0x0, 0xff].
+Height 7: the claims first disagree within leaves [0x0, 0x7f].
+Height 6: the claims first disagree within leaves [0x0, 0x3f].
+Height 5: the claims first disagree within leaves [0x0, 0x1f].
+Height 4: the claims first disagree within leaves [0x0, 0xf].
+Height 3: the claims first disagree within leaves [0x0, 0x7].
+Height 2: the claims first disagree within leaves [0x0, 0x3].
+Height 1: the claims first disagree within leaves [0x0, 0x1].
+The claims diverge at state 0: 0xdd2e60cd... against 0xfc8bdf6c..., from the agreed state 0x4c266b9a....
+A uarch tournament opens over input 0, period 0, starting from 0x4c266b9a....
+Claim 0x36094d82..., with final state 0xfc8bdf6c..., joined.
+The uarch winner confirms 0xfc8bdf6c.... Claim 0x1a22b0c7... is eliminated.
 ```
 
 Match 2, between the two fabulists, shows the whole shape of a dispute.

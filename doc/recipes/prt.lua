@@ -46,7 +46,7 @@ local util = require("cartesi.util")
 local prtu = require("prtu")
 
 local keccak = cartesi.keccak256
-local get_other_index = prtu.get_other_index
+local get_other_turn = prtu.get_other_turn
 
 -- The seal role carries no dispute: it is the sealer, which closes the initial subscription
 -- phase once the last player has connected, then the claims of every tournament as it
@@ -78,6 +78,8 @@ end
 -- A match walks two claim trees down to the leaf where they first diverge, the two claims
 -- alternating, one response per round, exactly as in Dave's Match.sol. The referee holds one node
 -- to open (`turn_parent_node`) and the other claim's standing left and right children. The on-turn
+-- node is located by (`height`, `node_index`) in the computation tree; `node_index` is its
+-- zero-based index among the nodes at that height, not a state-leaf index. The on-turn
 -- claim opens its node, exposing the two children and, above the leaves, the two grandchildren
 -- of the side the walk descends into. The walk follows the side where the claims first
 -- disagree, converging on the leftmost divergent leaf, and the turn passes to the opponent each
@@ -95,7 +97,7 @@ local function new_match(claim1, claim2, height)
         other_left_node = claim2.computation_hash_left,
         other_right_node = claim2.computation_hash_right,
         height = height,
-        index = 0,
+        node_index = 0,
     }
 end
 -- docs:end new_match
@@ -108,13 +110,13 @@ local function advance_bisection(match, response)
     assert(match.height > 1)
     local descend_left = response.turn_left_node ~= match.other_left_node
     if descend_left then
-        match.turn_parent_node, match.index = match.other_left_node, 2 * match.index
+        match.turn_parent_node, match.node_index = match.other_left_node, 2 * match.node_index
     else
-        match.turn_parent_node, match.index = match.other_right_node, 2 * match.index + 1
+        match.turn_parent_node, match.node_index = match.other_right_node, 2 * match.node_index + 1
     end
     match.other_left_node, match.other_right_node = response.turn_next_left_node, response.turn_next_right_node
     match.height = match.height - 1
-    match.turn = get_other_index(match.turn)
+    match.turn = get_other_turn(match.turn)
 end
 -- docs:end advance_bisection
 
@@ -257,7 +259,7 @@ local function validate_seal_response(tournament, match, response)
     assert(match.height == 1)
     assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
     local descend_left = response.turn_left_node ~= match.other_left_node
-    local state_index = 2 * match.index + (descend_left and 0 or 1)
+    local state_index = 2 * match.node_index + (descend_left and 0 or 1)
     local agreed_state_hash
     if state_index ~= 0 then
         local proof = response.agreed_state_hash_proof
@@ -276,7 +278,7 @@ local function validate_seal_response(tournament, match, response)
     local other_state_hash = descend_left and match.other_left_node or match.other_right_node
     local next_state_hashes = {}
     next_state_hashes[match.turn] = turn_state_hash
-    next_state_hashes[get_other_index(match.turn)] = other_state_hash
+    next_state_hashes[get_other_turn(match.turn)] = other_state_hash
     return {
         state_index = state_index,
         agreed_state_hash = agreed_state_hash,
@@ -330,17 +332,6 @@ local function open_uarch_tournament(
 )
     local input_index = epoch_period_index // PERIODS_PER_INPUT
     local period_index = epoch_period_index % PERIODS_PER_INPUT
-    local tournament = {
-        level = "uarch",
-        height = UARCH_HEIGHT,
-        initial_state_hash = agreed_state_hash,
-        dapp_contract = mcycle_tournament.dapp_contract,
-        epoch_period_index = epoch_period_index,
-        input_index = input_index,
-        period_index = period_index,
-        settle_state_hash = settle_uarch_state_hash,
-    }
-    story.report_uarch_tournament(tournament, mcycle_match, agreed_state_hash)
     local function validate_uarch_claim(submitted_claim)
         local claim = validate_claim(submitted_claim, UARCH_HEIGHT)
         assert(claim.final_state_hash == next_state_hashes[1] or claim.final_state_hash == next_state_hashes[2])
@@ -354,8 +345,19 @@ local function open_uarch_tournament(
         period_index,
         next_state_hashes
     )
-    tournament.claims = claims
-    story.report_claims(tournament, claims)
+    local tournament = {
+        level = "uarch",
+        height = UARCH_HEIGHT,
+        initial_state_hash = agreed_state_hash,
+        dapp_contract = mcycle_tournament.dapp_contract,
+        settle_state_hash = settle_uarch_state_hash,
+        claims = claims,
+        epoch_period_index = epoch_period_index,
+        input_index = input_index,
+        period_index = period_index,
+    }
+    story.report_uarch_tournament(tournament, mcycle_match, agreed_state_hash)
+    story.report_claims(tournament)
     return tournament
 end
 -- docs:end open_uarch_tournament
@@ -413,15 +415,15 @@ local function run_match(tournament, match)
             function(response)
                 return validate_bisection_response(match, response)
             end,
-            REQUESTS.advance_bisection,
+            REQUESTS.reveal_bisection,
             turn_claim.computation_hash,
             match.height,
-            match.index,
+            match.node_index,
             match.other_left_node
         )
         if not response then
             story.report_default_win(match)
-            return get_other_index(match.turn)
+            return get_other_turn(match.turn)
         end
         advance_bisection(match, response)
         story.report_match_progress(match)
@@ -434,12 +436,12 @@ local function run_match(tournament, match)
         end,
         REQUESTS.seal_divergence,
         turn_claim.computation_hash,
-        match.index,
+        match.node_index,
         match.other_left_node
     )
     if not divergence then
         story.report_default_win(match)
-        return get_other_index(match.turn)
+        return get_other_turn(match.turn)
     end
     return settle_match(tournament, match, divergence)
 end
@@ -524,7 +526,7 @@ local function open_mcycle_tournament(dapp_contract)
         settle_state_hash = settle_mcycle_state_hash,
         claims = claims,
     }
-    story.report_claims(tournament, claims)
+    story.report_claims(tournament)
     return tournament
 end
 -- docs:end open_mcycle_tournament
@@ -547,26 +549,23 @@ local function verify_result(result, final_state_hash)
 end
 verify_result = util.protect(verify_result)
 
--- Waits on the settled claim, the one the tournament leaves standing. Announces it, then, since
--- the claim commits only to the epoch's final state hash, waits for the epoch's actual output,
+-- Waits on the settled claim, the one the tournament leaves standing. Since the claim commits
+-- only to the epoch's final state hash, waits for the epoch's actual output,
 -- proved against that hash. The referee takes the first posted result that verifies, from any
--- holder of the winning claim, since a wrong result cannot match, then releases the players.
+-- holder of the winning claim, since a wrong result cannot match.
 -- docs:begin wait_for_result
 local function wait_for_result(winner)
-    story.report_winner(winner)
     local conns = server:get_subscribers({ winner.computation_hash })
     local result = server:accept_first_valid(conns, function(response)
         return verify_result(response, winner.final_state_hash) and response
     end, REQUESTS.prove_result)
-    assert(result, "no result proved against the winning final state")
     story.report_result(result)
-    server:collect(nil, REQUESTS.finish)
 end
 -- docs:end wait_for_result
 
 -- Seen from the referee, the whole game is short. It opens the mcycle tournament, reduces the
--- claims it opened with to the one that survives every match, and settles the epoch on its
--- result. The mcycle tournament packs what the reduction needs: the agreed initial state hash,
+-- claims it opened with, and, if one survives every match, settles the epoch on its result.
+-- The mcycle tournament packs what the reduction needs: the agreed initial state hash,
 -- the dapp contract whose inputs verification trusts, and the way its matches settle.
 -- Everything hard, the accept loop, the wire, the coroutine scheduling, runs underneath, in
 -- the referee server this is handed to.
@@ -574,8 +573,10 @@ end
 local function run_referee(dapp_contract)
     server:accept_subscribers(dapp_contract.initial_state_hash)
     local winner = run_tournament(open_mcycle_tournament(dapp_contract))
-    assert(winner, "the tournament ended with no winner")
-    wait_for_result(winner)
+    story.report_winner(winner)
+    if winner then
+        wait_for_result(winner)
+    end
 end
 -- docs:end run_referee
 
@@ -607,16 +608,6 @@ end
 --------------------------------------------------------------------------------
 -- Role dispatch
 --------------------------------------------------------------------------------
-
--- Loading the recipe as a module exposes its pure match mechanics to the focused tests.
-if ... == "prt" then
-    return {
-        new_match = new_match,
-        validate_bisection_response = validate_bisection_response,
-        advance_bisection = advance_bisection,
-        validate_seal_response = validate_seal_response,
-    }
-end
 
 local role = assert(arg[1], "missing role")
 local server_address = assert(arg[2], "missing referee address")

@@ -14,13 +14,13 @@ local push_run, slice_runs = prtu.push_run, prtu.slice_runs
 local new_tree = prtu.new_tree
 
 -- The request and response schemas this game adds to the shared dictionary.
-prtu.SCHEMA_DICT.ClaimCommitment = {
+prtu.SCHEMA_DICT.Claim = {
     left = "Base64",
     right = "Base64",
     proof = "Proof",
 }
 prtu.SCHEMA_DICT.CommitMcycleClaimRequest = { items = {} }
-prtu.SCHEMA_DICT.CommitMcycleClaimResponse = "ClaimCommitment"
+prtu.SCHEMA_DICT.CommitMcycleClaimResponse = "Claim"
 prtu.SCHEMA_DICT.AdvanceRequest = { items = { "Base64", "Default", "Default", "Base64" } }
 prtu.SCHEMA_DICT.AdvanceResponse = { l = "Base64", r = "Base64", nl = "Base64", nr = "Base64" }
 prtu.SCHEMA_DICT.ProveStateRequest = { items = { "Base64", "Default" } }
@@ -28,7 +28,7 @@ prtu.SCHEMA_DICT.ProveStateResponse = "Proof"
 prtu.SCHEMA_DICT.CommitUarchClaimRequest = {
     items = { "Default", "Default", "Base64", "Base64" },
 }
-prtu.SCHEMA_DICT.CommitUarchClaimResponse = "ClaimCommitment"
+prtu.SCHEMA_DICT.CommitUarchClaimResponse = "Claim"
 prtu.SCHEMA_DICT.TransitionLogsRequest = { items = { "Default", "Default", "Default" } }
 prtu.SCHEMA_DICT.TransitionLogsResponse = {
     send_cmio_log = "AccessLog",
@@ -399,27 +399,27 @@ local function get_claim_tree(player, computation_hash)
     error("asked about a claim this player does not hold: " .. format_short_hash(computation_hash))
 end
 
--- The witness for joining with a claim: the computation hash's two children and the standard proof of its
--- final state, the last leaf.
-local function make_commitment_witness(tree)
+-- A claim: the computation hash's two children and the standard proof of its final state,
+-- the last leaf.
+local function make_claim(tree)
     local left, right = tree:get_children(tree.height, 0)
     return { left = left, right = right, proof = tree:prove((1 << tree.height) - 1) }
 end
 
--- The opening commitment: the player's mcycle claim. The player announces its root, so a
+-- The player's opening mcycle claim. The player announces its root, so a
 -- transcript can be read against the players, without the referee ever narrating who holds
 -- what.
 function handlers.commit_mcycle_claim(player)
     write_stderr("%s: building mcycle claim\n", player.label)
     player.mcycle_claim = player.make_mcycle_tree(player)
-    local witness = make_commitment_witness(player.mcycle_claim)
+    local claim = make_claim(player.mcycle_claim)
     write_stderr(
         "%s: posted claim %s with final state %s\n",
         player.label,
         format_short_hash(player.mcycle_claim:get_root()),
-        format_short_hash(witness.proof.target_hash)
+        format_short_hash(claim.proof.target_hash)
     )
-    return witness
+    return claim
 end
 
 -- One alternating step of the walk down a claim: opens the claim's node at (h, index),
@@ -453,8 +453,8 @@ end
 function handlers.commit_uarch_claim(player, input_index, period_index, claim1_next_hash, claim2_next_hash)
     write_stderr("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
     player.uarch_claim = player.make_uarch_tree(player, input_index + 1, period_index)
-    local witness = make_commitment_witness(player.uarch_claim)
-    local final_state = witness.proof.target_hash
+    local claim = make_claim(player.uarch_claim)
+    local final_state = claim.proof.target_hash
     assert(
         final_state == claim1_next_hash or final_state == claim2_next_hash,
         string.format(
@@ -466,7 +466,7 @@ function handlers.commit_uarch_claim(player, input_index, period_index, claim1_n
         )
     )
     write_stderr("%s: uarch claim ready\n", player.label)
-    return witness
+    return claim
 end
 
 -- The disputed transition's access logs, produced by positioning a fresh fork at the

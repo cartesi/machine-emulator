@@ -9410,15 +9410,15 @@ The change everything else follows from is that players no longer answer
 bisection queries about a live machine. Each player opens by committing
 to a *computation hash*, the root of a Merkle tree whose leaves are the
 machine state hashes sampled along the whole computation, and the
-dispute walks down the committed trees instead. Commitments can be
-compared in any order, so claims pair up in a tournament of concurrent
-matches instead of a single game. A commitment also does not belong to
-whoever posted it. Every request the referee issues is about a claim,
-any player may answer, and an answer must prove itself against the
-claim, so it never matters who sent it. Claims are what matter, not
-players. Every honest player computes the same claims, and a claim
-survives as long as anyone at all defends it. An unanswered request
-eliminates a claim, never a player.
+dispute walks down the committed trees instead. Claims can be compared
+in any order, so they pair up in a tournament of concurrent matches
+instead of a single game. A claim also does not belong to whoever posted
+it. Every request the referee issues is about a claim, any player may
+answer, and an answer must prove itself against the claim, so it never
+matters who sent it. Claims are what matter, not players. Every honest
+player computes the same claims, and a claim survives as long as anyone
+at all defends it. An unanswered request eliminates a claim, never a
+player.
 
 ### Computation hash claims
 
@@ -9465,11 +9465,11 @@ samples the state hash as the machine runs and reports where it stopped
 advancing.
 
 The demonstration uses p = 10. The two levels pull the sampling period
-in opposite directions. Mcycle commitments cost one hash per period, so
-they want a long period, and uarch commitments expand one whole period
-into uarch transitions, so they want a short one. For this epoch,
-2<sup>10</sup> mcycles balances the two build times, with room on either
-side for larger inputs. The production dispute in Dave’s
+in opposite directions. Mcycle claims cost one hash per period, so they
+want a long period, and uarch claims expand one whole period into uarch
+transitions, so they want a short one. For this epoch, 2<sup>10</sup>
+mcycles balances the two build times, with room on either side for
+larger inputs. The production dispute in Dave’s
 `ArbitrationConstants.sol` covers a larger epoch, but is otherwise
 analogous.
 
@@ -9543,21 +9543,20 @@ Calls to `story` report semantic milestones; their formatting and all
 presentation-only calculations live in `prt-story.lua`, outside the
 algorithm snippets.
 
-A tournament opens to a fixed audience, gathers claim commitments, and
-runs on the valid claims it received. Before the mcycle tournament
-opens, the server accepts players subscribing to the agreed initial
-state hash until a *sealer* closes that phase, so the referee never
-needs to know how many players to expect. The mcycle tournament then
-opens to those subscribers. A player submits its computation hash’s two
-children and a standard `Proof` for the final state hash at the tree’s
-last leaf. The referee checks that the children join into the proof’s
-root and verifies the proof with `hash_tree.verify_slice()`, the same
-membership check `joinTournament` performs on chain
-(`validate_claim_commitment` in `prt.lua`). `partition_claims` groups
-identical submissions by computation hash, subscribes every submitter to
-its claim, and sorts the resulting claims by computation hash, so the
-bracket is a pure function of the claim set, not of the order in which
-players happened to connect.
+A tournament opens to a fixed audience, gathers claims, and runs on the
+valid claims it received. Before the mcycle tournament opens, the server
+accepts players subscribing to the agreed initial state hash until a
+*sealer* closes that phase, so the referee never needs to know how many
+players to expect. The mcycle tournament then opens to those
+subscribers. A claim contains its computation hash’s two children and a
+standard `Proof` for the final state hash at the tree’s last leaf. The
+referee checks that the children join into the proof’s root and verifies
+the proof with `hash_tree.verify_slice()`, the same membership check
+`joinTournament` performs on chain (`validate_claim` in `prt.lua`).
+`partition_claims` groups identical claims by computation hash,
+subscribes every sender to its claim, and sorts the resulting claims by
+computation hash, so the bracket is a pure function of the claim set,
+not of the order in which players happened to connect.
 
 The tournament is that reduction: while more than one claim survives,
 run a round, which pairs the survivors, runs their matches at once, and
@@ -9816,9 +9815,9 @@ by this connection as stale before assigning its next request, then
 drops that many replies from the stream. A tournament always opens to a
 fixed audience: subscribers to the agreed initial state hash for the
 mcycle one, and holders of the two disputed claims for a nested one.
-Inside the demonstration server, submissions close once its trusted
-closing signal arrives and every connection in the audience has
-submitted or closed; this timing substitute is hidden below
+Inside the demonstration server, claim collection closes once its
+trusted closing signal arrives and every connection in the audience has
+answered or closed; this timing substitute is hidden below
 `open_tournament`. Claim operations authenticate themselves by proof,
 and sealing does not: it is the referee’s trusted orchestration,
 standing in for the clock the contracts use. The transport enforces that
@@ -10122,7 +10121,7 @@ that meter each claim’s total thinking time (a player that hangs stalls
 the demonstration, where the contracts would time it out), and no bonds
 change hands. At both the mcycle level and the uarch level, a Dave
 tournament stays open for a fixed time allowance, and a claim may join
-while it lasts. The demo closes each claim-submission phase as soon as
+while it lasts. The demo closes each claim-collection phase as soon as
 the claims it awaits are in, rather than waiting the allowance out. For
 the real thing, see the [Dave
 repository](https://github.com/cartesi/dave), the [Permissionless

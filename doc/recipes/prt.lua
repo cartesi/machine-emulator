@@ -605,6 +605,16 @@ local function new_referee(server_address)
     }
 end
 
+-- Requiring this script from prt-test.lua exposes the referee walk without running a CLI role.
+if ... == "prt" then
+    return {
+        new_match = new_match,
+        validate_bisection_response = validate_bisection_response,
+        advance_bisection = advance_bisection,
+        validate_seal_response = validate_seal_response,
+    }
+end
+
 --------------------------------------------------------------------------------
 -- Role dispatch
 --------------------------------------------------------------------------------

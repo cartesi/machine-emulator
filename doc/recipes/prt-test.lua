@@ -1,7 +1,7 @@
 -- Checks the parts of the PRT game that need no machine. First the claim trees over runs, claim
 -- proofs, and the match walk: two synthetic claims that differ at one leaf are walked down
 -- under every claim order, and the walk must isolate exactly that leaf, name what each claim
--- committed to there, and expose the agreed state before it when the leaf is a right one.
+-- committed to there, and carry a proof of the agreed state before it in the final response.
 -- Then the referee server, driven over loopback sockets by fake players living in the same
 -- dispatcher: the tournament lifecycle, first-valid moves, rejected proofs that leave their
 -- connection open, and claims eliminated once every holder answered without proof or closed.
@@ -12,12 +12,14 @@ local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local socket = require("socket")
 local prtu = require("prtu")
+local prt = require("prt")
 
 local keccak = cartesi.keccak256
 local push_run = prtu.push_run
 
 local HEIGHT = 5
 local LEAVES = 1 << HEIGHT
+local INITIAL_STATE_HASH = keccak("initial")
 
 -- A claim over leaves that repeat `base_state_hash` except at `lie`, which holds
 -- `fake_state_hash`. Built either
@@ -49,7 +51,7 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
     else
         tree = prtu.new_tree(HEIGHT, 0, build_leaf_runs(0, LEAVES), nil)
     end
-    local left, right = tree:get_children(HEIGHT, 0)
+    local computation_hash_left, computation_hash_right = tree:get_children(HEIGHT, 0)
     local proof = tree:prove(LEAVES - 1)
     hash_tree.verify_slice(proof)
     assert(
@@ -62,39 +64,69 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
     )
     return {
         computation_hash = tree:get_root(),
-        left = left,
-        right = right,
+        computation_hash_left = computation_hash_left,
+        computation_hash_right = computation_hash_right,
         final_state_hash = proof.target_hash,
         tree = tree,
         leaves = leaves,
     }
 end
 
--- The move a player holding the on-turn claim makes, as handlers.advance_bisection does in prt-player.lua.
-local function open(match)
+-- The internal-node response a player holding the on-turn claim makes.
+local function make_bisection_response(match)
+    assert(match.height > 1)
     local tree = match.claims[match.turn].tree
-    local l, r = tree:get_children(match.height, match.index)
-    local move = { l = l, r = r }
-    if match.height > 1 then
-        local descend_left = l ~= match.left_node
-        move.nl, move.nr = tree:get_children(match.height - 1, descend_left and 2 * match.index or 2 * match.index + 1)
-    end
-    return move
+    local turn_left_node, turn_right_node = tree:get_children(match.height, match.index)
+    local descend_left = turn_left_node ~= match.other_left_node
+    local turn_next_left_node, turn_next_right_node =
+        tree:get_children(match.height - 1, descend_left and 2 * match.index or 2 * match.index + 1)
+    return {
+        turn_left_node = turn_left_node,
+        turn_right_node = turn_right_node,
+        turn_next_left_node = turn_next_left_node,
+        turn_next_right_node = turn_next_right_node,
+    }
 end
 
--- Walks a match to its divergence, checking every move validates and a corrupted one does not.
-local function walk(claim0, claim1)
-    local match = prtu.new_match(claim0, claim1, HEIGHT)
-    while true do
-        local move = open(match)
-        assert(prtu.is_valid_move(match, move), "the honest move failed validation")
-        local corrupted = { l = move.r, r = move.l, nl = move.nl, nr = move.nr }
-        assert(not prtu.is_valid_move(match, corrupted) or move.l == move.r, "a swapped move validated")
-        local divergence = prtu.advance_bisection(match, move)
-        if divergence then
-            return divergence
-        end
+-- The final response exposes the divergent leaves and proves the preceding agreed state.
+local function make_seal_response(match)
+    assert(match.height == 1)
+    local tree = match.claims[match.turn].tree
+    local turn_left_node, turn_right_node = tree:get_children(1, match.index)
+    local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
+    local descend_left = turn_left_node ~= match.other_left_node
+    local state_index = 2 * match.index + (descend_left and 0 or 1)
+    if state_index ~= 0 then
+        response.agreed_state_hash_proof = tree:prove(state_index - 1)
     end
+    return response
+end
+
+local function swap_turn_children(response)
+    return {
+        turn_left_node = response.turn_right_node,
+        turn_right_node = response.turn_left_node,
+        turn_next_left_node = response.turn_next_left_node,
+        turn_next_right_node = response.turn_next_right_node,
+        agreed_state_hash_proof = response.agreed_state_hash_proof,
+    }
+end
+
+-- Walks a match to its divergence, checking every response validates and a corrupted one does not.
+local function walk(claim1, claim2)
+    local match = prt.new_match(claim1, claim2, HEIGHT)
+    local tournament = { height = HEIGHT, initial_state_hash = INITIAL_STATE_HASH }
+    while match.height > 1 do
+        local response = make_bisection_response(match)
+        prt.validate_bisection_response(match, response)
+        local valid = pcall(prt.validate_bisection_response, match, swap_turn_children(response))
+        assert(not valid or response.turn_left_node == response.turn_right_node, "a swapped response validated")
+        prt.advance_bisection(match, response)
+    end
+    local response = make_seal_response(match)
+    local valid = pcall(prt.validate_seal_response, tournament, match, swap_turn_children(response))
+    assert(not valid or response.turn_left_node == response.turn_right_node, "a swapped seal validated")
+    return prt.validate_seal_response(tournament, match, response)
 end
 
 local base_state_hash, fake_state_hash = keccak("base"), keccak("fake")
@@ -107,37 +139,28 @@ for _, lie in ipairs({ 0, 1, 6, 13, LEAVES - 1 }) do
         local divergence = walk(honest, liar)
         assert(divergence.state_index == lie, "walk missed the divergent state")
         assert(
-            divergence.claim0_next_state_hash == base_state_hash
-                and divergence.claim1_next_state_hash == fake_state_hash,
+            divergence.next_state_hashes[1] == base_state_hash and divergence.next_state_hashes[2] == fake_state_hash,
             "walk misattributed the states"
         )
         -- liar opens first: the same leaf, the claims swapped
         local mirrored = walk(liar, honest)
         assert(
             mirrored.state_index == lie
-                and mirrored.claim0_next_state_hash == fake_state_hash
-                and mirrored.claim1_next_state_hash == base_state_hash,
+                and mirrored.next_state_hashes[1] == fake_state_hash
+                and mirrored.next_state_hashes[2] == base_state_hash,
             "walk is not symmetric"
         )
-        -- a right leaf exposes the agreed left leaf, a left leaf does not
-        if lie % 2 == 1 then
+        if lie == 0 then
+            assert(
+                divergence.agreed_state_hash == INITIAL_STATE_HASH and mirrored.agreed_state_hash == INITIAL_STATE_HASH,
+                "wrong initial agreed state"
+            )
+        else
             assert(
                 divergence.agreed_state_hash == honest.leaves[lie - 1]
                     and mirrored.agreed_state_hash == divergence.agreed_state_hash,
                 "wrong agreed state"
             )
-        else
-            assert(
-                divergence.agreed_state_hash == nil and mirrored.agreed_state_hash == nil,
-                "left state exposed an agreed state"
-            )
-            if lie > 0 then
-                local proof = liar.tree:prove(lie - 1)
-                assert(proof.target_hash == honest.leaves[lie - 1], "the leaf before the divergence is not agreed")
-                hash_tree.verify_slice(proof)
-                assert(proof.root_hash == liar.computation_hash, "agreed-state proof has the wrong computation hash")
-                assert(proof.root_hash ~= honest.computation_hash or lie == 0)
-            end
         end
     end
 end
@@ -204,13 +227,13 @@ local function run_with_server(scenario)
     end)
 end
 
--- A player that returns `claim` to any tournament and answers every move with `move`.
-local function make_claimer(claim, move)
+-- A player that returns `claim` to any tournament and answers every request with `answer`.
+local function make_claimer(claim, answer)
     return function(request)
         if request.operation == "commit_mcycle_claim" then
             return { label = claim, value = claim }
         end
-        return move(request)
+        return answer(request)
     end
 end
 
@@ -256,20 +279,20 @@ run_with_server(function(server, run_client, wait_connections)
     run_client(nil, make_claimer("c", answer("valid")))
     wait_connections(4)
 
-    -- First valid move wins, the rejected proof leaves its connection open.
+    -- The first valid response wins; a rejected response leaves its connection open.
     assert(
-        server:accept_first(server:get_subscribers({ "x" }), is_valid, define_request("move")) == "valid",
-        "valid move not taken"
+        server:accept_first_valid(server:get_subscribers({ "x" }), is_valid, define_request("answer")) == "valid",
+        "valid response not taken"
     )
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
 
     -- The acceptor's result, rather than the submitted value, is returned.
-    local mapped = server:accept_first({ a }, function(v)
+    local mapped = server:accept_first_valid({ a }, function(v)
         return is_valid(v) and "mapped"
     end, define_request("mapped"))
-    assert(mapped == "mapped", "accept_first did not return the acceptor result")
+    assert(mapped == "mapped", "accept_first_valid did not return the acceptor result")
 
-    -- A valid move resolves the request while another holder still owes a reply. When that
+    -- A valid response resolves the request while another holder still owes a reply. When that
     -- holder is asked again, TCP delivers the old reply first; the referee drops it by count
     -- and accepts the following reply for the current request.
     local delayed = false
@@ -286,11 +309,11 @@ run_with_server(function(server, run_client, wait_connections)
     wait_connections(5)
     local delayed_connection = server.connections[5]
     assert(
-        server:accept_first({ delayed_connection, a }, is_valid, define_request("early")) == "valid",
-        "valid move not taken early"
+        server:accept_first_valid({ delayed_connection, a }, is_valid, define_request("early")) == "valid",
+        "valid response not taken early"
     )
     assert(
-        server:accept_first({ delayed_connection }, is_valid, define_request("after_early")) == "valid",
+        server:accept_first_valid({ delayed_connection }, is_valid, define_request("after_early")) == "valid",
         "stale reply was accepted"
     )
     assert(
@@ -298,7 +321,7 @@ run_with_server(function(server, run_client, wait_connections)
         "stale reply was not consumed"
     )
     assert(not delayed_connection.dead, "a pending holder was closed")
-    -- Without a valid move, the request waits for every holder, and resolves to nil only then.
+    -- Without a valid response, the request waits for every holder, and resolves to nil only then.
     local replies_seen = 0
     run_client(nil, function()
         replies_seen = replies_seen + 1
@@ -306,9 +329,12 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     wait_connections(6)
     local n = server.connections[6]
-    assert(server:accept_first({ n, b }, is_valid, define_request("move")) == nil, "an unproved move was taken")
+    assert(
+        server:accept_first_valid({ n, b }, is_valid, define_request("answer")) == nil,
+        "an invalid response was taken"
+    )
     assert(replies_seen == 1, "the request resolved before every holder answered")
-    assert(not n.dead and not b.dead, "an unproved move closed a connection")
+    assert(not n.dead and not b.dead, "an invalid response closed a connection")
 
     -- A nested tournament asks only its audience, and seals at once.
     local nested = server:collect_claims({ a }, define_request("commit_mcycle_claim"))
@@ -316,8 +342,8 @@ run_with_server(function(server, run_client, wait_connections)
     assert(#server.open_phases == 0, "sealed nested tournament was retained")
 
     -- Every holder answers without proof: the request resolves to nil, connections stay open.
-    assert(server:accept_first({ b }, is_valid, define_request("move")) == nil, "an unproved move was taken")
-    assert(not b.dead, "an unproved move closed its connection")
+    assert(server:accept_first_valid({ b }, is_valid, define_request("answer")) == nil, "an invalid response was taken")
+    assert(not b.dead, "an invalid response closed its connection")
 
     -- A holder that closes counts as answered. With every holder gone, the claim is unanswered.
     run_client(nil, function()
@@ -328,7 +354,7 @@ run_with_server(function(server, run_client, wait_connections)
     local d = server.connections[7]
     assert(d.dead and #replies == 5, "the closing client was not dropped from the collection")
     assert(
-        server:accept_first({ d }, is_valid, define_request("move")) == nil,
+        server:accept_first_valid({ d }, is_valid, define_request("answer")) == nil,
         "a request to a closed connection did not resolve"
     )
 
@@ -354,17 +380,17 @@ run_with_server(function(server, run_client, wait_connections)
     end
     local bad = run_typed_client({ l = 1, r = "not base64!" })
     assert(
-        server:accept_first({ bad }, is_well_typed, define_request("typed", "PairResponse")) == nil,
+        server:accept_first_valid({ bad }, is_well_typed, define_request("typed", "PairResponse")) == nil,
         "a schema-invalid value was taken"
     )
-    assert(not next(server.active), "accept_first left a resolved request active")
+    assert(not next(server.active), "accept_first_valid left a resolved request active")
     assert(not bad.dead, "a schema-invalid reply closed its connection")
     -- Alongside a well-typed reply, whichever arrives first, the well-typed value is taken and
     -- both connections stay open.
     local good = run_typed_client({ l = "a", r = "b" }, "PairResponseEnvelope")
-    local taken = server:accept_first({ bad, good }, is_well_typed, define_request("typed", "PairResponse"))
+    local taken = server:accept_first_valid({ bad, good }, is_well_typed, define_request("typed", "PairResponse"))
     assert(taken and taken.l == "a", "the well-typed reply was not taken")
-    assert(not next(server.active), "accept_first left a resolved request active")
+    assert(not next(server.active), "accept_first_valid left a resolved request active")
     assert(not bad.dead and not good.dead, "a schema-invalid reply closed a connection")
 
     -- An undecodable line closes its sender.
@@ -424,11 +450,11 @@ run_with_server(function(server, run_client, wait_connections)
     wait_connections(14)
     local malformed = server.connections[14]
     assert(
-        server:accept_first({ malformed, a }, is_valid, define_request("malformed_early")) == "valid",
-        "valid move did not resolve before the delayed malformed reply"
+        server:accept_first_valid({ malformed, a }, is_valid, define_request("malformed_early")) == "valid",
+        "valid response did not resolve before the delayed malformed reply"
     )
     assert(
-        server:accept_first({ malformed }, is_valid, define_request("after_malformed")) == nil,
+        server:accept_first_valid({ malformed }, is_valid, define_request("after_malformed")) == nil,
         "a malformed stale line produced a value"
     )
     assert(malformed.dead, "a malformed stale line did not close its sender")

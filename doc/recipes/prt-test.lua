@@ -19,12 +19,13 @@ local push_run = prtu.push_run
 local HEIGHT = 5
 local LEAVES = 1 << HEIGHT
 
--- A claim over leaves that repeat `base` except at `lie`, which holds `fake`. Built either
+-- A claim over leaves that repeat `base_state_hash` except at `lie`, which holds
+-- `fake_state_hash`. Built either
 -- flat or bundled 2^2 leaves per stored entry, so the refine path is exercised too.
-local function make_synthetic_claim(base, lie, fake, bundled)
+local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)
     local leaves = {}
     for i = 0, LEAVES - 1 do
-        leaves[i] = i == lie and fake or base
+        leaves[i] = i == lie and fake_state_hash or base_state_hash
     end
     local function build_leaf_runs(first, count)
         local runs = {}
@@ -63,7 +64,7 @@ local function make_synthetic_claim(base, lie, fake, bundled)
         computation_hash = tree:get_root(),
         left = left,
         right = right,
-        final_state = proof.target_hash,
+        final_state_hash = proof.target_hash,
         tree = tree,
         leaves = leaves,
     }
@@ -96,30 +97,39 @@ local function walk(claim1, claim2)
     end
 end
 
-local base, fake = keccak("base"), keccak("fake")
+local base_state_hash, fake_state_hash = keccak("base"), keccak("fake")
 for _, lie in ipairs({ 0, 1, 6, 13, LEAVES - 1 }) do
     for _, bundled in ipairs({ false, true }) do
-        local honest = make_synthetic_claim(base, nil, nil, bundled)
-        local liar = make_synthetic_claim(base, lie, fake, bundled)
+        local honest = make_synthetic_claim(base_state_hash, nil, nil, bundled)
+        local liar = make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)
         assert(honest.computation_hash ~= liar.computation_hash)
         -- honest opens first
         local dispute = walk(honest, liar)
         assert(dispute.state_index == lie, "walk missed the divergent state")
-        assert(dispute.claim1_next_hash == base and dispute.claim2_next_hash == fake, "walk misattributed the states")
+        assert(
+            dispute.claim1_next_state_hash == base_state_hash and dispute.claim2_next_state_hash == fake_state_hash,
+            "walk misattributed the states"
+        )
         -- liar opens first: the same leaf, the claims swapped
         local mirrored = walk(liar, honest)
         assert(
-            mirrored.state_index == lie and mirrored.claim1_next_hash == fake and mirrored.claim2_next_hash == base,
+            mirrored.state_index == lie
+                and mirrored.claim1_next_state_hash == fake_state_hash
+                and mirrored.claim2_next_state_hash == base_state_hash,
             "walk is not symmetric"
         )
         -- a right leaf exposes the agreed left leaf, a left leaf does not
         if lie % 2 == 1 then
             assert(
-                dispute.agreed_hash == honest.leaves[lie - 1] and mirrored.agreed_hash == dispute.agreed_hash,
+                dispute.agreed_state_hash == honest.leaves[lie - 1]
+                    and mirrored.agreed_state_hash == dispute.agreed_state_hash,
                 "wrong agreed state"
             )
         else
-            assert(dispute.agreed_hash == nil and mirrored.agreed_hash == nil, "left state exposed an agreed state")
+            assert(
+                dispute.agreed_state_hash == nil and mirrored.agreed_state_hash == nil,
+                "left state exposed an agreed state"
+            )
             if lie > 0 then
                 local proof = liar.tree:prove(lie - 1)
                 assert(proof.target_hash == honest.leaves[lie - 1], "the leaf before the divergence is not agreed")

@@ -269,20 +269,20 @@ end
 local function advance_match(match, move)
     local descend_left = move.l ~= match.left_node
     if match.height == 1 then
-        local state_index, turn_state_hash, other_state_hash, agreed_hash
+        local state_index, turn_state_hash, other_state_hash, agreed_state_hash
         if descend_left then
             state_index, turn_state_hash, other_state_hash = 2 * match.index, move.l, match.left_node
         else
-            state_index, turn_state_hash, other_state_hash, agreed_hash =
+            state_index, turn_state_hash, other_state_hash, agreed_state_hash =
                 2 * match.index + 1, move.r, match.right_node, move.l
         end
-        local claim1_next_hash = match.turn_claim == match.claim1 and turn_state_hash or other_state_hash
-        local claim2_next_hash = match.turn_claim == match.claim1 and other_state_hash or turn_state_hash
+        local claim1_next_state_hash = match.turn_claim == match.claim1 and turn_state_hash or other_state_hash
+        local claim2_next_state_hash = match.turn_claim == match.claim1 and other_state_hash or turn_state_hash
         return {
             state_index = state_index,
-            agreed_hash = agreed_hash,
-            claim1_next_hash = claim1_next_hash,
-            claim2_next_hash = claim2_next_hash,
+            agreed_state_hash = agreed_state_hash,
+            claim1_next_state_hash = claim1_next_state_hash,
+            claim2_next_state_hash = claim2_next_state_hash,
         }
     end
     if descend_left then
@@ -939,19 +939,19 @@ end
 
 -- Accepts players subscribing to an initial hash until the sealer closes the phase. A player
 -- connection itself expresses interest in the one computation served by this referee.
-function server_meta.__index.accept_subscribers(self, initial_hash)
+function server_meta.__index.accept_subscribers(self, initial_state_hash)
     local entry = {
         kind = "collect",
         replies = {},
         pending = {},
         open = true,
-        subscription_hash = initial_hash,
+        subscription_hash = initial_state_hash,
         cortn = coroutine.running(),
     }
     self.active[entry] = true
     self.open_phases[#self.open_phases + 1] = entry
     for _, connection in ipairs(self:get_players()) do
-        self:subscribe(initial_hash, connection)
+        self:subscribe(initial_state_hash, connection)
     end
     request_seal(self, entry)
     wait(self, entry)

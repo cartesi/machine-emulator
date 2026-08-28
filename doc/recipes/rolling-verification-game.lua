@@ -44,7 +44,7 @@ local REQUESTS = vgu.REQUESTS
 vgu.SCHEMA_DICT.CommitLogResponse = {
     send_cmio_log = "AccessLog",
     step_log = "AccessLog",
-    reset_log = "AccessLog",
+    reset_uarch_log = "AccessLog",
 }
 -- An output, its proof in the outputs Merkle tree, and the proof tying that tree's root hash
 -- into the final state hash.
@@ -260,7 +260,7 @@ local function commit_log(player, arguments)
     end
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
         local step_log = agreed:log_step_uarch()
-        return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
+        return { step_log = step_log, reset_uarch_log = agreed:log_reset_uarch() }
     end
     return { step_log = agreed:log_step_uarch() }
 end
@@ -343,22 +343,27 @@ local function verify_state_transition(
     log,
     state_hash_after
 )
-    local machine = cartesi.machine
     local data = dapp_contract.inputs[input + 1]
     local pass = pcall(function()
-        local hash = state_hash_before
+        local obtained_state_hash = state_hash_before
         if mcycle_offset == 0 and uarch_cycle == 0 and data then
             eventf("Verifying input inclusion log!")
             local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-            hash = machine:verify_send_cmio_response(reason, data, hash, log.send_cmio_log, hash)
+            obtained_state_hash = cartesi.machine:verify_send_cmio_response(
+                reason,
+                data,
+                obtained_state_hash,
+                log.send_cmio_log,
+                obtained_state_hash
+            )
         end
         eventf("Verifying uarch step log!")
-        hash = machine:verify_step_uarch(hash, log.step_log)
+        obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, log.step_log)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
-            hash = machine:verify_reset_uarch(hash, log.reset_log)
+            obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
         end
-        assert(hash == state_hash_after, "log does not reach the committed after-hash")
+        assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
     end)
     eventf("Log is %s!", pass and "valid" or "invalid")
     return pass

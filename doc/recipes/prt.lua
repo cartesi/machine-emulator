@@ -37,8 +37,8 @@
 -- soon as it opens.
 --
 -- The referee lives here. The players, their machines, claim builds, and dishonest strategies
--- live in prt-player.lua, and the claim trees, the match walk, and the referee server in
--- prtu.lua.
+-- live in prt-player.lua; the shared protocol, claim trees, referee server, and hidden
+-- narration live in prtu.lua.
 
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
@@ -46,7 +46,7 @@ local util = require("cartesi.util")
 local prtu = require("prtu")
 
 local keccak = cartesi.keccak256
-local new_match, is_valid_move, advance_bisection = prtu.new_match, prtu.is_valid_move, prtu.advance_bisection
+local get_other_index = prtu.get_other_index
 
 -- The seal role carries no dispute: it is the sealer, which closes the initial subscription
 -- phase once the last player has connected, then the claims of every tournament as it
@@ -55,18 +55,12 @@ if arg[1] == "seal" then
     return prtu.serve(prtu.new_sealer(), assert(arg[2], "missing referee address"))
 end
 
-local geometry = require("prt-geometry")
-local prt_player = require("prt-player")
-local REQUESTS = prt_player.REQUESTS
-local MCYCLE_HEIGHT, UARCH_HEIGHT = geometry.MCYCLE_HEIGHT, geometry.UARCH_HEIGHT
-local PERIODS_PER_INPUT = geometry.PERIODS_PER_INPUT
-local UARCH_CYCLES_PER_MCYCLE = geometry.UARCH_CYCLES_PER_MCYCLE
-local story = require("prt-story")
+local REQUESTS = prtu.REQUESTS
+local MCYCLE_HEIGHT, UARCH_HEIGHT = prtu.MCYCLE_HEIGHT, prtu.UARCH_HEIGHT
+local PERIODS_PER_INPUT = prtu.PERIODS_PER_INPUT
+local UARCH_CYCLES_PER_MCYCLE = prtu.UARCH_CYCLES_PER_MCYCLE
+local story = prtu.story
 local MACHINE_TEMPLATE = "rolling-calculator-template"
-
-local function write_stderr(fmt, ...)
-    io.stderr:write(string.format(fmt, ...))
-end
 
 -- Reads the epoch's inputs from the files on the command line, starting at `first`.
 local function read_inputs(first)
@@ -77,6 +71,52 @@ local function read_inputs(first)
     assert(#inputs > 0, "missing input files")
     return inputs
 end
+
+--------------------------------------------------------------------------------
+-- Match walk
+--
+-- A match walks two claim trees down to the leaf where they first diverge, the two claims
+-- alternating, one response per round, exactly as in Dave's Match.sol. The referee holds one node
+-- to open (`turn_parent_node`) and the other claim's standing left and right children. The on-turn
+-- claim opens its node, exposing the two children and, above the leaves, the two grandchildren
+-- of the side the walk descends into. The walk follows the side where the claims first
+-- disagree, converging on the leftmost divergent leaf, and the turn passes to the opponent each
+-- round. These functions are pure over the match state and response.
+--------------------------------------------------------------------------------
+
+-- Seeds a match over two claims of the given tree height. The first claim opens first, so the walk
+-- starts with its computation hash as the node to open and the second claim's join-exposed children standing.
+-- docs:begin new_match
+local function new_match(claim1, claim2, height)
+    return {
+        claims = { claim1, claim2 },
+        turn = 1,
+        turn_parent_node = claim1.computation_hash,
+        other_left_node = claim2.computation_hash_left,
+        other_right_node = claim2.computation_hash_right,
+        height = height,
+        index = 0,
+    }
+end
+-- docs:end new_match
+
+-- Applies a valid response, descending one height: the on-turn claim's chosen grandchildren become
+-- the standing left and right, the other claim's node on the chosen side becomes the next to
+-- open, and the turn passes.
+-- docs:begin advance_bisection
+local function advance_bisection(match, response)
+    assert(match.height > 1)
+    local descend_left = response.turn_left_node ~= match.other_left_node
+    if descend_left then
+        match.turn_parent_node, match.index = match.other_left_node, 2 * match.index
+    else
+        match.turn_parent_node, match.index = match.other_right_node, 2 * match.index + 1
+    end
+    match.other_left_node, match.other_right_node = response.turn_next_left_node, response.turn_next_right_node
+    match.height = match.height - 1
+    match.turn = get_other_index(match.turn)
+end
+-- docs:end advance_bisection
 
 --------------------------------------------------------------------------------
 -- Referee
@@ -95,19 +135,19 @@ local server
 -- Validates a claim: its two children establish the computation hash, and its standard proof
 -- places the final state at the tree's last leaf. Returns its normalized referee representation.
 local function validate_claim(submitted_claim, height)
-    local computation_hash = keccak(submitted_claim.left, submitted_claim.right)
-    local proof = submitted_claim.proof
-    assert(proof.target_address == (1 << height) - 1)
-    assert(proof.log2_target_size == 0)
-    assert(proof.log2_root_size == height)
-    assert(#proof.sibling_hashes == height)
-    assert(proof.root_hash == computation_hash)
-    hash_tree.verify_slice(proof)
+    local computation_hash = keccak(submitted_claim.computation_hash_left, submitted_claim.computation_hash_right)
+    local final_state_hash_proof = submitted_claim.final_state_hash_proof
+    assert(final_state_hash_proof.target_address == (1 << height) - 1)
+    assert(final_state_hash_proof.log2_target_size == 0)
+    assert(final_state_hash_proof.log2_root_size == height)
+    assert(#final_state_hash_proof.sibling_hashes == height)
+    assert(final_state_hash_proof.root_hash == computation_hash)
+    hash_tree.verify_slice(final_state_hash_proof)
     return {
         computation_hash = computation_hash,
-        left = submitted_claim.left,
-        right = submitted_claim.right,
-        final_state_hash = proof.target_hash,
+        computation_hash_left = submitted_claim.computation_hash_left,
+        computation_hash_right = submitted_claim.computation_hash_right,
+        final_state_hash = final_state_hash_proof.target_hash,
     }
 end
 
@@ -126,19 +166,17 @@ end
 -- that hash. Each sender subscribes to requests for its valid claim. The sort makes the bracket a
 -- pure function of the claim set, not of connection order.
 -- docs:begin partition_claims
-local function partition_claims(responses, validate)
+local function partition_claims(responses, validate_submitted_claim)
     local claims, by_hash = {}, {}
-    validate = util.protect(validate)
+    validate_submitted_claim = util.protect(validate_submitted_claim)
     for _, response in ipairs(responses) do
-        local claim, err = validate(response.value)
+        local claim = validate_submitted_claim(response.value)
         if claim then
             if not by_hash[claim.computation_hash] then
                 by_hash[claim.computation_hash] = claim
                 claims[#claims + 1] = claim
             end
             server:subscribe(claim.computation_hash, response.connection)
-        else
-            write_stderr("a claim failed validation: %s\n", tostring(err))
         end
     end
     table.sort(claims, function(a, b)
@@ -149,8 +187,8 @@ end
 -- docs:end partition_claims
 
 -- Opens a tournament to a fixed audience and partitions its valid claims.
-local function open_tournament(conns, validate, request, ...)
-    return partition_claims(server:collect_claims(conns, request, ...), validate)
+local function open_tournament(conns, validate_submitted_claim, request, ...)
+    return partition_claims(server:collect_claims(conns, request, ...), validate_submitted_claim)
 end
 
 local function validate_mcycle_claim(submitted_claim)
@@ -181,12 +219,13 @@ local function verify_state_transition(
     local data = dapp_contract.inputs[input_index + 1]
     if state_transition_offset == 0 and period_index == 0 and data then
         local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+        local revert_root_hash = current_state_hash
         obtained_state_hash = cartesi.machine:verify_send_cmio_response(
             reason,
             data,
-            obtained_state_hash,
+            revert_root_hash,
             logs.send_cmio_log,
-            obtained_state_hash
+            current_state_hash
         )
     end
     obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, logs.step_log)
@@ -198,69 +237,81 @@ end
 verify_state_transition = util.protect(verify_state_transition)
 -- docs:end verify_state_transition
 
--- The state hash both claims agree on right before the divergent leaf, when the walk did not
--- expose it. At leaf 0 it is the tournament's initial state hash, which the referee knows.
--- Otherwise it is the leaf before the divergence, requested as a proof against either claim:
--- the walk finds the leftmost divergence, so the two trees agree at every earlier leaf, and a
--- proof against either one binds them both. The standard proof verifies against the computation hash.
-local function wait_for_agreed_state_hash(match, tournament, state_index)
-    if state_index == 0 then
-        return tournament.initial_state_hash
-    end
-    for claim_index = 0, 1 do
-        local claim = match.claims[claim_index]
-        local conns = server:get_subscribers({ claim.computation_hash })
-        local proof = server:accept_first(conns, function(proof)
-            assert(proof.target_address == state_index - 1)
-            assert(proof.log2_target_size == 0)
-            assert(proof.log2_root_size == tournament.height)
-            assert(#proof.sibling_hashes == tournament.height)
-            assert(proof.root_hash == claim.computation_hash)
-            hash_tree.verify_slice(proof)
-            return proof
-        end, REQUESTS.prove_state, claim.computation_hash, state_index - 1)
-        if proof then
-            return proof.target_hash
-        end
-    end
-    return nil
+-- Validates an internal-node bisection response.
+-- docs:begin validate_bisection_response
+local function validate_bisection_response(match, response)
+    assert(match.height > 1)
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
+    local turn_child_node = (response.turn_left_node ~= match.other_left_node) and response.turn_left_node
+        or response.turn_right_node
+    assert(keccak(response.turn_next_left_node, response.turn_next_right_node) == turn_child_node)
+    return response
 end
+-- docs:end validate_bisection_response
+
+-- Validates a seal-divergence response and returns the normalized divergence. The leaves must
+-- open the on-turn node. At state zero the agreed state is the tournament's initial state;
+-- otherwise the on-turn claim must prove the preceding state against its computation hash.
+-- docs:begin validate_seal_response
+local function validate_seal_response(tournament, match, response)
+    assert(match.height == 1)
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
+    local descend_left = response.turn_left_node ~= match.other_left_node
+    local state_index = 2 * match.index + (descend_left and 0 or 1)
+    local agreed_state_hash
+    if state_index ~= 0 then
+        local proof = response.agreed_state_hash_proof
+        assert(proof.target_address == state_index - 1)
+        assert(proof.log2_target_size == 0)
+        assert(proof.log2_root_size == tournament.height)
+        assert(#proof.sibling_hashes == tournament.height)
+        assert(proof.root_hash == match.claims[match.turn].computation_hash)
+        assert(descend_left or proof.target_hash == response.turn_left_node)
+        hash_tree.verify_slice(proof)
+        agreed_state_hash = proof.target_hash
+    else
+        agreed_state_hash = tournament.initial_state_hash
+    end
+    local turn_state_hash = descend_left and response.turn_left_node or response.turn_right_node
+    local other_state_hash = descend_left and match.other_left_node or match.other_right_node
+    local next_state_hashes = {}
+    next_state_hashes[match.turn] = turn_state_hash
+    next_state_hashes[get_other_index(match.turn)] = other_state_hash
+    return {
+        state_index = state_index,
+        agreed_state_hash = agreed_state_hash,
+        next_state_hashes = next_state_hashes,
+    }
+end
+-- docs:end validate_seal_response
 
 -- Settles a uarch match once the walk isolates the divergent leaf. The referee asks the
 -- holders of both claims for the transition's logs and takes the first answer that verifies
 -- against the agreed state hash. The transition out of the agreed state is unique, so any log
 -- that verifies reaches the one true next state hash. Returns that hash, or nil when nobody
 -- proves a transition.
--- docs:begin settle_uarch_match
-local function settle_uarch_match(
+-- docs:begin settle_uarch_state_hash
+local function settle_uarch_state_hash(
     tournament,
     match,
     state_transition_offset,
     current_state_hash,
-    claim0_next_state_hash,
-    claim1_next_state_hash
+    next_state_hashes
 )
-    local conns = server:get_subscribers({ match.claims[0].computation_hash, match.claims[1].computation_hash })
-    local obtained_state_hash = server:accept_first(conns, function(logs)
+    local conns = server:get_subscribers({ match.claims[1].computation_hash, match.claims[2].computation_hash })
+    local obtained_state_hash = server:accept_first_valid(conns, function(response)
         return verify_state_transition(
             tournament.dapp_contract,
             current_state_hash,
             tournament.epoch_period_index,
             state_transition_offset,
-            logs
+            response
         )
-    end, REQUESTS.provide_transition_logs, tournament.input_index, tournament.period_index, state_transition_offset)
-    story.report_state_transition(
-        tournament,
-        match,
-        state_transition_offset,
-        obtained_state_hash,
-        claim0_next_state_hash,
-        claim1_next_state_hash
-    )
+    end, REQUESTS.prove_state_transition, tournament.input_index, tournament.period_index, state_transition_offset)
+    story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
 end
--- docs:end settle_uarch_match
+-- docs:end settle_uarch_state_hash
 
 -- Forward declaration: settling an mcycle match spawns a uarch tournament, which runs
 -- matches, which settle against the machine.
@@ -275,8 +326,7 @@ local function open_uarch_tournament(
     mcycle_match,
     epoch_period_index,
     agreed_state_hash,
-    claim0_next_state_hash,
-    claim1_next_state_hash
+    next_state_hashes
 )
     local input_index = epoch_period_index // PERIODS_PER_INPUT
     local period_index = epoch_period_index % PERIODS_PER_INPUT
@@ -288,22 +338,21 @@ local function open_uarch_tournament(
         epoch_period_index = epoch_period_index,
         input_index = input_index,
         period_index = period_index,
-        settle_match = settle_uarch_match,
+        settle_state_hash = settle_uarch_state_hash,
     }
     story.report_uarch_tournament(tournament, mcycle_match, agreed_state_hash)
     local function validate_uarch_claim(submitted_claim)
         local claim = validate_claim(submitted_claim, UARCH_HEIGHT)
-        assert(claim.final_state_hash == claim0_next_state_hash or claim.final_state_hash == claim1_next_state_hash)
+        assert(claim.final_state_hash == next_state_hashes[1] or claim.final_state_hash == next_state_hashes[2])
         return claim
     end
     local claims = open_tournament(
-        server:get_subscribers({ mcycle_match.claims[0].computation_hash, mcycle_match.claims[1].computation_hash }),
+        server:get_subscribers({ mcycle_match.claims[1].computation_hash, mcycle_match.claims[2].computation_hash }),
         validate_uarch_claim,
         REQUESTS.commit_uarch_claim,
         input_index,
         period_index,
-        claim0_next_state_hash,
-        claim1_next_state_hash
+        next_state_hashes
     )
     tournament.claims = claims
     story.report_claims(tournament, claims)
@@ -315,78 +364,84 @@ end
 -- ways over what the state hash was after one period of one input. A uarch tournament opens
 -- over that period, its holders submit uarch claims, and the uarch winner's final state settles
 -- the disputed state hash.
--- docs:begin settle_mcycle_match
-local function settle_mcycle_match(
+-- docs:begin settle_mcycle_state_hash
+local function settle_mcycle_state_hash(
     mcycle_tournament,
     mcycle_match,
     epoch_period_index,
     agreed_state_hash,
-    claim0_next_state_hash,
-    claim1_next_state_hash
+    next_state_hashes
 )
-    local uarch_tournament = open_uarch_tournament(
-        mcycle_tournament,
-        mcycle_match,
-        epoch_period_index,
-        agreed_state_hash,
-        claim0_next_state_hash,
-        claim1_next_state_hash
-    )
+    local uarch_tournament =
+        open_uarch_tournament(mcycle_tournament, mcycle_match, epoch_period_index, agreed_state_hash, next_state_hashes)
     local uarch_winner = run_tournament(uarch_tournament)
-    story.report_uarch_result(mcycle_match, uarch_winner, claim0_next_state_hash, claim1_next_state_hash)
+    story.report_uarch_result(mcycle_match, uarch_winner, next_state_hashes)
     return uarch_winner and uarch_winner.final_state_hash
 end
--- docs:end settle_mcycle_match
+-- docs:end settle_mcycle_state_hash
 
--- Settles the divergence a match walk isolated: recovers the agreed state before the divergent
--- leaf, when the walk did not expose it, and hands the hashes to the tournament's match settler.
--- docs:begin settle_divergence
-local function settle_divergence(tournament, match, divergence)
-    local agreed_state_hash = divergence.agreed_state_hash
-        or wait_for_agreed_state_hash(match, tournament, divergence.state_index)
-    story.report_divergence(match, divergence, agreed_state_hash)
-    if not agreed_state_hash then
-        return 2
-    end
-    local settled_state_hash = tournament.settle_match(
-        tournament,
+-- Settles a match from its sealed divergence, handing the agreed and contested state hashes
+-- to the tournament's level-specific settler.
+-- docs:begin settle_match
+local function settle_match(tournament, match, divergence)
+    story.report_divergence(match, divergence)
+    local settled_state_hash = tournament:settle_state_hash(
         match,
         divergence.state_index,
-        agreed_state_hash,
-        divergence.claim0_next_state_hash,
-        divergence.claim1_next_state_hash
+        divergence.agreed_state_hash,
+        divergence.next_state_hashes
     )
-    if settled_state_hash == divergence.claim0_next_state_hash then
-        return 0
-    elseif settled_state_hash == divergence.claim1_next_state_hash then
-        return 1
+    for claim_index = 1, 2 do
+        if settled_state_hash == divergence.next_state_hashes[claim_index] then
+            return claim_index
+        end
     end
-    return 2
+    return 0
 end
--- docs:end settle_divergence
+-- docs:end settle_match
 
--- Runs one match to its end and returns the winning claim index: zero or one for a winner, two
+-- Runs one match to its end and returns the winning claim index: one or two for a winner, zero
 -- when both die. Each round
 -- asks the holders of the on-turn claim to open its node, and the walk advances on the first
--- move that validates. A claim nobody opens loses by default.
+-- response that validates. A claim nobody opens loses by default.
 -- docs:begin run_match
 local function run_match(tournament, match)
-    while true do
+    while match.height > 1 do
         local turn_claim = match.claims[match.turn]
-        local conns = server:get_subscribers({ turn_claim.computation_hash })
-        local move = server:accept_first(conns, function(move)
-            return is_valid_move(match, move) and move
-        end, REQUESTS.advance_bisection, turn_claim.computation_hash, match.height, match.index, match.left_node)
-        if not move then
+        local response = server:accept_first_valid(
+            server:get_subscribers({ turn_claim.computation_hash }),
+            function(response)
+                return validate_bisection_response(match, response)
+            end,
+            REQUESTS.advance_bisection,
+            turn_claim.computation_hash,
+            match.height,
+            match.index,
+            match.other_left_node
+        )
+        if not response then
             story.report_default_win(match)
-            return match.turn ~ 1
+            return get_other_index(match.turn)
         end
-        local divergence = advance_bisection(match, move)
-        if divergence then
-            return settle_divergence(tournament, match, divergence)
-        end
+        advance_bisection(match, response)
         story.report_match_progress(match)
     end
+    local turn_claim = match.claims[match.turn]
+    local divergence = server:accept_first_valid(
+        server:get_subscribers({ turn_claim.computation_hash }),
+        function(response)
+            return validate_seal_response(tournament, match, response)
+        end,
+        REQUESTS.seal_divergence,
+        turn_claim.computation_hash,
+        match.index,
+        match.other_left_node
+    )
+    if not divergence then
+        story.report_default_win(match)
+        return get_other_index(match.turn)
+    end
+    return settle_match(tournament, match, divergence)
 end
 -- docs:end run_match
 
@@ -466,7 +521,7 @@ local function open_mcycle_tournament(dapp_contract)
         height = MCYCLE_HEIGHT,
         initial_state_hash = dapp_contract.initial_state_hash,
         dapp_contract = dapp_contract,
-        settle_match = settle_mcycle_match,
+        settle_state_hash = settle_mcycle_state_hash,
         claims = claims,
     }
     story.report_claims(tournament, claims)
@@ -500,8 +555,8 @@ verify_result = util.protect(verify_result)
 local function wait_for_result(winner)
     story.report_winner(winner)
     local conns = server:get_subscribers({ winner.computation_hash })
-    local result = server:accept_first(conns, function(result)
-        return verify_result(result, winner.final_state_hash) and result
+    local result = server:accept_first_valid(conns, function(response)
+        return verify_result(response, winner.final_state_hash) and response
     end, REQUESTS.prove_result)
     assert(result, "no result proved against the winning final state")
     story.report_result(result)
@@ -553,8 +608,19 @@ end
 -- Role dispatch
 --------------------------------------------------------------------------------
 
+-- Loading the recipe as a module exposes its pure match mechanics to the focused tests.
+if ... == "prt" then
+    return {
+        new_match = new_match,
+        validate_bisection_response = validate_bisection_response,
+        advance_bisection = advance_bisection,
+        validate_seal_response = validate_seal_response,
+    }
+end
+
 local role = assert(arg[1], "missing role")
 local server_address = assert(arg[2], "missing referee address")
+local prt_player = role ~= "referee" and require("prt-player") or nil
 
 if role == "referee" then
     local dapp_contract = deploy(read_inputs(3))

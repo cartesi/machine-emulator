@@ -4885,10 +4885,10 @@ The referee and the players receive the epoch's inputs in the command line, as t
 
 ```{.lua key=rollup_constants replace=null outputs=log2_max_advance_states_per_epoch,log2_max_mcycles_per_advance_state,log2_max_uarch_cycles_per_mcycle,log2_mcycle_leaves,log2_uarch_leaves}
 local cartesi = require("cartesi")
-local geometry = require("prt-geometry")
+local prtu = require("prtu")
 local util = require("cartesi.util")
 -- the claim tree heights use the fixed PRT mcycle period
-local log2_period = geometry.LOG2_MCYCLES_PER_PERIOD
+local log2_period = prtu.LOG2_MCYCLES_PER_PERIOD
 local log2_mcycle_leaves = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
     + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
     - log2_period
@@ -5313,7 +5313,7 @@ The claim tree therefore stores *runs*, each a node hash and how many consecutiv
 The root of a subtree holding 2<sup>k</sup> copies of the same node takes k hashes by repeated squaring, cached per node, so a run of any length costs nothing to stand under a query (`get_runs_node` in `prtu.lua`).
 ```{.lua key=prt_runs_node include=prtu.lua replace=null}
 ```
-```{.lua key=prt_story include=prt-story.lua replace=null}
+```{.lua key=prt_story include=prtu.lua/story replace=null}
 ```
 
 Second, the stored nodes need not be the leaves.
@@ -5340,7 +5340,7 @@ The mcycle tournament packs what the reduction needs: the agreed initial state h
 Everything hard, the accept loop, the wire, the coroutine scheduling, is hidden in the referee server:
 ```{.lua key=prt_run_referee include=prt.lua/run_referee title="prt.lua (excerpt)"}
 ```
-Calls to `story` report semantic milestones; their formatting and all presentation-only calculations live in `prt-story.lua`, outside the algorithm snippets.
+Calls to `story` report semantic milestones; their formatting and all presentation-only calculations live in a hidden section of `prtu.lua`, outside the algorithm snippets.
 
 A tournament opens to a fixed audience, gathers claims, and runs on the valid claims it received.
 Before the mcycle tournament opens, the server accepts players subscribing to the agreed initial state hash until a *sealer* closes that phase, so the referee never needs to know how many players to expect.
@@ -5355,24 +5355,25 @@ The tournament is that reduction: while more than one claim survives, run a roun
 A round (`run_round`) pairs the surviving claims and runs their matches all at the same time.
 The surviving claims are kept in bracket order, so the next round depends only on the claims, not on the order in which the matches happened to finish, and a match that eliminated both sides contributes nothing.
 
-A match walks the two claim trees down to the leaf where they first diverge, the two players alternating, one move per round, exactly as in Dave's `Match.sol`.
-The referee holds one node to open and the opponent's standing left and right children.
+A match walks the two claim trees down to the leaf where they first diverge, the two players alternating, one response per round, exactly as in Dave's `Match.sol`.
+The referee holds the node the on-turn claim must open and the other claim's standing left and right children.
 The on-turn player opens its node, exposing that node's two children and, above the leaves, the two grandchildren of the side the walk descends into.
-The referee stores nothing of the claims but the three nodes of the walk's current step, seeded from the two roots exactly as `Match.sol` seeds them (`new_match` in `prtu.lua`).
-A move is valid when the exposed children join into the node to open and, above the leaves, the grandchildren join into the child the walk descends into:
-```{.lua key=prt_is_valid_move include=prtu.lua/is_valid_move title="prtu.lua (excerpt)"}
+The referee stores nothing of the claims but the three nodes of the walk's current step, seeded from the two roots exactly as `Match.sol` seeds them (`new_match` in `prt.lua`).
+A response is valid when the exposed children join into the node to open and, above the leaves, the grandchildren join into the child the walk descends into:
+```{.lua key=prt_validate_bisection_response include=prt.lua/validate_bisection_response title="prt.lua (excerpt)"}
 ```
-The walk goes left when the exposed left child differs from the opponent's, since the disagreement is then in the left subtree, and right otherwise, and the turn passes to the opponent.
-At height 1 the exposed children are leaves, and the walk returns the isolated divergence:
-```{.lua key=prt_advance_bisection include=prtu.lua/advance_bisection title="prtu.lua (excerpt)"}
+The walk goes left when the exposed left child differs from the other claim's, since the disagreement is then in the left subtree, and right otherwise, and the turn passes to the other claim:
+```{.lua key=prt_advance_bisection include=prt.lua/advance_bisection title="prt.lua (excerpt)"}
+```
+At height 1 a separate sealing response exposes the divergent leaves and proves the agreed state immediately before them against the on-turn claim, just as Dave's `sealDivergence` does; at state zero, the referee already knows the tournament's initial state:
+```{.lua key=prt_validate_seal_response include=prt.lua/validate_seal_response title="prt.lua (excerpt)"}
 ```
 These functions are pure, so the walk is checked on synthetic claim trees, differing at one chosen leaf, before any machine is involved.
-The match itself is the loop that asks the holders of the on-turn claim to open its node, takes the first move that validates, and hands the isolated divergence over.
+The match itself is the loop that asks the holders of the on-turn claim to open its node, takes the first response that validates, and hands the isolated divergence over.
 A claim nobody opens loses by default:
 ```{.lua key=prt_run_match include=prt.lua/run_match title="prt.lua (excerpt)"}
 ```
-The walk converges on the leftmost divergent leaf, which is what makes the leaf before it agreed by both.
-When the divergence lands on a right leaf, the agreed state is the left leaf, just exposed; when it lands on a left leaf, the referee asks for a proof of the leaf before it, against either claim, since both committed to it (`settle_divergence`).
+The walk converges on the leftmost divergent leaf, which is what makes the leaf before it agreed by both. The final response must prove that state even when a right-leaf divergence also exposed it as the left leaf. A missing or invalid final response loses by the same default rule as any earlier bisection response, so settlement always receives an agreed state.
 
 ### Settling a match
 
@@ -5380,7 +5381,7 @@ An mcycle match settles into a uarch tournament.
 The two claims part ways over what the state hash was after one period of one input, so each side must now defend a uarch claim over that period, whose final state is the mcycle leaf it committed to.
 The uarch tournament follows the same lifecycle as the mcycle one, open, submit, run, with two differences: its audience is the holders of the two disputed claims, and a claim may only join if its final state is one of the two contested values, the same restriction `validContestedFinalState` imposes on chain (`open_uarch_tournament`).
 The uarch winner's final state names the mcycle claim that survives:
-```{.lua key=prt_settle_mcycle include=prt.lua/settle_mcycle_match title="prt.lua (excerpt)"}
+```{.lua key=prt_settle_mcycle_state_hash include=prt.lua/settle_mcycle_state_hash title="prt.lua (excerpt)"}
 ```
 
 A uarch match settles against the machine itself.
@@ -5393,10 +5394,10 @@ Every other transition is an ordinary uarch step:
 The transition out of the agreed state is unique, so this is the heart of the whole game.
 Any log that verifies reaches the one true after-hash, and no log can reach a false one, since its proofs are checked against the agreed before-state.
 A claim that committed to that true hash wins the match; a claim that committed to anything else loses, whoever ends up supplying the winning log:
-```{.lua key=prt_settle_uarch include=prt.lua/settle_uarch_match title="prt.lua (excerpt)"}
+```{.lua key=prt_settle_uarch_state_hash include=prt.lua/settle_uarch_state_hash title="prt.lua (excerpt)"}
 ```
 The logs come from a holder of either claim, produced by positioning a fresh fork at the transition and logging it:
-```{.lua key=prt_provide_transition_logs include=prt-player.lua/provide_transition_logs title="prt-player.lua (excerpt)"}
+```{.lua key=prt_prove_state_transition include=prt-player.lua/prove_state_transition title="prt-player.lua (excerpt)"}
 ```
 
 ### The referee server
@@ -5405,15 +5406,15 @@ The players are passive.
 Each is a plain blocking loop that reads a typed operation and its arguments, dispatches it against the player's own claims and machines, and answers with the operation's typed value.
 A player follows one claim lineage, its mcycle claim and, while that claim's match is suspended in a uarch tournament, the uarch claim it committed there, and the referee only ever asks a player about claims it holds.
 An unknown operation, missing result, or failure is therefore a bug in the player, and the process dies on it rather than answer (`serve` in `prtu.lua`).
-A claim cannot be misrepresented, so the valid move for an operation is unique, whoever computes it.
+A claim cannot be misrepresented, so the valid response for an operation is unique, whoever computes it.
 The referee never narrates who holds a claim.
 Each player announces its own claim on its standard error, and that is how the transcript below is read against the players.
 
 The referee server is the single event loop the players connect to.
-When a match needs a move, the server asks the holders of the claim in question and takes the first reply that proves itself.
+When a match needs a response, the server asks the holders of the claim in question and takes the first reply that proves itself.
 A reply that fails to prove itself is rejected, as the blockchain rejects a bad transaction, and counts as that connection's answer.
 Only a line the referee cannot decode, or a closed socket, ends a connection.
-A request whose every holder answered without proof, or closed, resolves to nothing, and the claim it was about is eliminated (`accept_first` in `prtu.lua`).
+A request whose every holder answered without proof, or closed, resolves to nothing, and the claim it was about is eliminated (`accept_first_valid` in `prtu.lua`).
 Each connection has at most one unresolved request.
 Replies arrive in request order because TCP is a FIFO stream.
 When another holder resolves a request first, the referee counts the reply still owed by this connection as stale before assigning its next request, then drops that many replies from the stream.
@@ -5457,7 +5458,7 @@ lua5.4 "$RECIPES_DIR/prt-test.lua"
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prt-geometry.lua" "$RECIPES_DIR/prt-story.lua" "$RECIPES_DIR/prtu.lua" .
+ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
 cartesi-rollup-data.lua --utf8-payload encode advance > forged-input-2.bin <<EOF
 {
   "chain_id": 0,
@@ -5553,7 +5554,7 @@ done
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prt-geometry.lua" "$RECIPES_DIR/prt-story.lua" "$RECIPES_DIR/prtu.lua" .
+ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8097\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
 lua5.4 prt.lua referee 127.0.0.1:8097 input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
 while ! netstat -ntl 2>&1 | grep '\<8097\>' > /dev/null; do sleep 1; done

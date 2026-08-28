@@ -9546,8 +9546,8 @@ end
 ```
 
 Calls to `story` report semantic milestones; their formatting and all
-presentation-only calculations live in `prt-story.lua`, outside the
-algorithm snippets.
+presentation-only calculations live in a hidden section of `prtu.lua`,
+outside the algorithm snippets.
 
 A tournament opens to a fixed audience, gathers claims, and runs on the
 valid claims it received. Before the mcycle tournament opens, the server
@@ -9586,100 +9586,138 @@ matches happened to finish, and a match that eliminated both sides
 contributes nothing.
 
 A match walks the two claim trees down to the leaf where they first
-diverge, the two players alternating, one move per round, exactly as in
-Dave’s `Match.sol`. The referee holds one node to open and the
-opponent’s standing left and right children. The on-turn player opens
-its node, exposing that node’s two children and, above the leaves, the
-two grandchildren of the side the walk descends into. The referee stores
-nothing of the claims but the three nodes of the walk’s current step,
-seeded from the two roots exactly as `Match.sol` seeds them (`new_match`
-in `prtu.lua`). A move is valid when the exposed children join into the
-node to open and, above the leaves, the grandchildren join into the
-child the walk descends into:
+diverge, the two players alternating, one response per round, exactly as
+in Dave’s `Match.sol`. The referee holds the node the on-turn claim must
+open and the other claim’s standing left and right children. The on-turn
+player opens its node, exposing that node’s two children and, above the
+leaves, the two grandchildren of the side the walk descends into. The
+referee stores nothing of the claims but the three nodes of the walk’s
+current step, seeded from the two roots exactly as `Match.sol` seeds
+them (`new_match` in `prt.lua`). A response is valid when the exposed
+children join into the node to open and, above the leaves, the
+grandchildren join into the child the walk descends into:
 
 ``` lua
-local function is_valid_move(match, move)
-    if keccak(move.l, move.r) ~= match.other_parent then
-        return false
-    end
-    if match.height > 1 then
-        return keccak(move.nl, move.nr) == ((move.l ~= match.left_node) and move.l or move.r)
-    end
-    return true
+local function validate_bisection_response(match, response)
+    assert(match.height > 1)
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
+    local turn_child_node = (response.turn_left_node ~= match.other_left_node) and response.turn_left_node
+        or response.turn_right_node
+    assert(keccak(response.turn_next_left_node, response.turn_next_right_node) == turn_child_node)
+    return response
 end
 ```
 
-The walk goes left when the exposed left child differs from the
-opponent’s, since the disagreement is then in the left subtree, and
-right otherwise, and the turn passes to the opponent. At height 1 the
-exposed children are leaves, and the walk returns the isolated
-divergence:
+The walk goes left when the exposed left child differs from the other
+claim’s, since the disagreement is then in the left subtree, and right
+otherwise, and the turn passes to the other claim:
 
 ``` lua
-local function advance_bisection(match, move)
-    local descend_left = move.l ~= match.left_node
-    if match.height == 1 then
-        local state_index, turn_state_hash, other_state_hash, agreed_state_hash
-        if descend_left then
-            state_index, turn_state_hash, other_state_hash = 2 * match.index, move.l, match.left_node
-        else
-            state_index, turn_state_hash, other_state_hash, agreed_state_hash =
-                2 * match.index + 1, move.r, match.right_node, move.l
-        end
-        local next_state_hashes = {}
-        next_state_hashes[match.turn] = turn_state_hash
-        next_state_hashes[match.turn ~ 1] = other_state_hash
-        return {
-            state_index = state_index,
-            agreed_state_hash = agreed_state_hash,
-            claim0_next_state_hash = next_state_hashes[0],
-            claim1_next_state_hash = next_state_hashes[1],
-        }
-    end
+local function advance_bisection(match, response)
+    assert(match.height > 1)
+    local descend_left = response.turn_left_node ~= match.other_left_node
     if descend_left then
-        match.other_parent, match.index = match.left_node, 2 * match.index
+        match.turn_parent_node, match.index = match.other_left_node, 2 * match.index
     else
-        match.other_parent, match.index = match.right_node, 2 * match.index + 1
+        match.turn_parent_node, match.index = match.other_right_node, 2 * match.index + 1
     end
-    match.left_node, match.right_node = move.nl, move.nr
+    match.other_left_node, match.other_right_node = response.turn_next_left_node, response.turn_next_right_node
     match.height = match.height - 1
-    match.turn = match.turn ~ 1
-    return nil
+    match.turn = get_other_index(match.turn)
+end
+```
+
+At height 1 a separate sealing response exposes the divergent leaves and
+proves the agreed state immediately before them against the on-turn
+claim, just as Dave’s `sealDivergence` does; at state zero, the referee
+already knows the tournament’s initial state:
+
+``` lua
+local function validate_seal_response(tournament, match, response)
+    assert(match.height == 1)
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
+    local descend_left = response.turn_left_node ~= match.other_left_node
+    local state_index = 2 * match.index + (descend_left and 0 or 1)
+    local agreed_state_hash
+    if state_index ~= 0 then
+        local proof = response.agreed_state_hash_proof
+        assert(proof.target_address == state_index - 1)
+        assert(proof.log2_target_size == 0)
+        assert(proof.log2_root_size == tournament.height)
+        assert(#proof.sibling_hashes == tournament.height)
+        assert(proof.root_hash == match.claims[match.turn].computation_hash)
+        assert(descend_left or proof.target_hash == response.turn_left_node)
+        hash_tree.verify_slice(proof)
+        agreed_state_hash = proof.target_hash
+    else
+        agreed_state_hash = tournament.initial_state_hash
+    end
+    local turn_state_hash = descend_left and response.turn_left_node or response.turn_right_node
+    local other_state_hash = descend_left and match.other_left_node or match.other_right_node
+    local next_state_hashes = {}
+    next_state_hashes[match.turn] = turn_state_hash
+    next_state_hashes[get_other_index(match.turn)] = other_state_hash
+    return {
+        state_index = state_index,
+        agreed_state_hash = agreed_state_hash,
+        next_state_hashes = next_state_hashes,
+    }
 end
 ```
 
 These functions are pure, so the walk is checked on synthetic claim
 trees, differing at one chosen leaf, before any machine is involved. The
 match itself is the loop that asks the holders of the on-turn claim to
-open its node, takes the first move that validates, and hands the
+open its node, takes the first response that validates, and hands the
 isolated divergence over. A claim nobody opens loses by default:
 
 ``` lua
 local function run_match(tournament, match)
-    while true do
+    while match.height > 1 do
         local turn_claim = match.claims[match.turn]
-        local conns = server:get_subscribers({ turn_claim.computation_hash })
-        local move = server:accept_first(conns, function(move)
-            return is_valid_move(match, move) and move
-        end, REQUESTS.advance_bisection, turn_claim.computation_hash, match.height, match.index, match.left_node)
-        if not move then
+        local response = server:accept_first_valid(
+            server:get_subscribers({ turn_claim.computation_hash }),
+            function(response)
+                return validate_bisection_response(match, response)
+            end,
+            REQUESTS.advance_bisection,
+            turn_claim.computation_hash,
+            match.height,
+            match.index,
+            match.other_left_node
+        )
+        if not response then
             story.report_default_win(match)
-            return match.turn ~ 1
+            return get_other_index(match.turn)
         end
-        local divergence = advance_bisection(match, move)
-        if divergence then
-            return settle_divergence(tournament, match, divergence)
-        end
+        advance_bisection(match, response)
         story.report_match_progress(match)
     end
+    local turn_claim = match.claims[match.turn]
+    local divergence = server:accept_first_valid(
+        server:get_subscribers({ turn_claim.computation_hash }),
+        function(response)
+            return validate_seal_response(tournament, match, response)
+        end,
+        REQUESTS.seal_divergence,
+        turn_claim.computation_hash,
+        match.index,
+        match.other_left_node
+    )
+    if not divergence then
+        story.report_default_win(match)
+        return get_other_index(match.turn)
+    end
+    return settle_match(tournament, match, divergence)
 end
 ```
 
 The walk converges on the leftmost divergent leaf, which is what makes
-the leaf before it agreed by both. When the divergence lands on a right
-leaf, the agreed state is the left leaf, just exposed; when it lands on
-a left leaf, the referee asks for a proof of the leaf before it, against
-either claim, since both committed to it (`settle_divergence`).
+the leaf before it agreed by both. The final response must prove that
+state even when a right-leaf divergence also exposed it as the left
+leaf. A missing or invalid final response loses by the same default rule
+as any earlier bisection response, so settlement always receives an
+agreed state.
 
 ### Settling a match
 
@@ -9695,24 +9733,17 @@ values, the same restriction `validContestedFinalState` imposes on chain
 mcycle claim that survives:
 
 ``` lua
-local function settle_mcycle_match(
+local function settle_mcycle_state_hash(
     mcycle_tournament,
     mcycle_match,
     epoch_period_index,
     agreed_state_hash,
-    claim0_next_state_hash,
-    claim1_next_state_hash
+    next_state_hashes
 )
-    local uarch_tournament = open_uarch_tournament(
-        mcycle_tournament,
-        mcycle_match,
-        epoch_period_index,
-        agreed_state_hash,
-        claim0_next_state_hash,
-        claim1_next_state_hash
-    )
+    local uarch_tournament =
+        open_uarch_tournament(mcycle_tournament, mcycle_match, epoch_period_index, agreed_state_hash, next_state_hashes)
     local uarch_winner = run_tournament(uarch_tournament)
-    story.report_uarch_result(mcycle_match, uarch_winner, claim0_next_state_hash, claim1_next_state_hash)
+    story.report_uarch_result(mcycle_match, uarch_winner, next_state_hashes)
     return uarch_winner and uarch_winner.final_state_hash
 end
 ```
@@ -9742,12 +9773,13 @@ local function verify_state_transition(
     local data = dapp_contract.inputs[input_index + 1]
     if state_transition_offset == 0 and period_index == 0 and data then
         local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+        local revert_root_hash = current_state_hash
         obtained_state_hash = cartesi.machine:verify_send_cmio_response(
             reason,
             data,
-            obtained_state_hash,
+            revert_root_hash,
             logs.send_cmio_log,
-            obtained_state_hash
+            current_state_hash
         )
     end
     obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, logs.step_log)
@@ -9767,32 +9799,24 @@ true hash wins the match; a claim that committed to anything else loses,
 whoever ends up supplying the winning log:
 
 ``` lua
-local function settle_uarch_match(
+local function settle_uarch_state_hash(
     tournament,
     match,
     state_transition_offset,
     current_state_hash,
-    claim0_next_state_hash,
-    claim1_next_state_hash
+    next_state_hashes
 )
-    local conns = server:get_subscribers({ match.claims[0].computation_hash, match.claims[1].computation_hash })
-    local obtained_state_hash = server:accept_first(conns, function(logs)
+    local conns = server:get_subscribers({ match.claims[1].computation_hash, match.claims[2].computation_hash })
+    local obtained_state_hash = server:accept_first_valid(conns, function(response)
         return verify_state_transition(
             tournament.dapp_contract,
             current_state_hash,
             tournament.epoch_period_index,
             state_transition_offset,
-            logs
+            response
         )
-    end, REQUESTS.provide_transition_logs, tournament.input_index, tournament.period_index, state_transition_offset)
-    story.report_state_transition(
-        tournament,
-        match,
-        state_transition_offset,
-        obtained_state_hash,
-        claim0_next_state_hash,
-        claim1_next_state_hash
-    )
+    end, REQUESTS.prove_state_transition, tournament.input_index, tournament.period_index, state_transition_offset)
+    story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
 end
 ```
@@ -9801,7 +9825,7 @@ The logs come from a holder of either claim, produced by positioning a
 fresh fork at the transition and logging it:
 
 ``` lua
-function handlers.provide_transition_logs(player, input_index, period_index, state_transition_offset)
+function handlers.prove_state_transition(player, input_index, period_index, state_transition_offset)
     local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
@@ -9833,31 +9857,31 @@ committed there, and the referee only ever asks a player about claims it
 holds. An unknown operation, missing result, or failure is therefore a
 bug in the player, and the process dies on it rather than answer
 (`serve` in `prtu.lua`). A claim cannot be misrepresented, so the valid
-move for an operation is unique, whoever computes it. The referee never
-narrates who holds a claim. Each player announces its own claim on its
-standard error, and that is how the transcript below is read against the
-players.
+response for an operation is unique, whoever computes it. The referee
+never narrates who holds a claim. Each player announces its own claim on
+its standard error, and that is how the transcript below is read against
+the players.
 
 The referee server is the single event loop the players connect to. When
-a match needs a move, the server asks the holders of the claim in
+a match needs a response, the server asks the holders of the claim in
 question and takes the first reply that proves itself. A reply that
 fails to prove itself is rejected, as the blockchain rejects a bad
 transaction, and counts as that connection’s answer. Only a line the
 referee cannot decode, or a closed socket, ends a connection. A request
 whose every holder answered without proof, or closed, resolves to
-nothing, and the claim it was about is eliminated (`accept_first` in
-`prtu.lua`). Each connection has at most one unresolved request. Replies
-arrive in request order because TCP is a FIFO stream. When another
-holder resolves a request first, the referee counts the reply still owed
-by this connection as stale before assigning its next request, then
-drops that many replies from the stream. A tournament always opens to a
-fixed audience: subscribers to the agreed initial state hash for the
-mcycle one, and holders of the two disputed claims for a nested one.
-Inside the demonstration server, claim collection closes once its
-trusted closing signal arrives and every connection in the audience has
-answered or closed; this timing substitute is hidden below
-`open_tournament`. Claim operations authenticate themselves by proof,
-and sealing does not: it is the referee’s trusted orchestration,
+nothing, and the claim it was about is eliminated (`accept_first_valid`
+in `prtu.lua`). Each connection has at most one unresolved request.
+Replies arrive in request order because TCP is a FIFO stream. When
+another holder resolves a request first, the referee counts the reply
+still owed by this connection as stale before assigning its next
+request, then drops that many replies from the stream. A tournament
+always opens to a fixed audience: subscribers to the agreed initial
+state hash for the mcycle one, and holders of the two disputed claims
+for a nested one. Inside the demonstration server, claim collection
+closes once its trusted closing signal arrives and every connection in
+the audience has answered or closed; this timing substitute is hidden
+below `open_tournament`. Claim operations authenticate themselves by
+proof, and sealing does not: it is the referee’s trusted orchestration,
 standing in for the clock the contracts use. The transport enforces that
 trust: a connection announces its role once, on its first line, the
 sealer is the connection that announced itself as such, and one seal

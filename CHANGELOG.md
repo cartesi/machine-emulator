@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added `protect` to `cartesi.util` for converting errors into `nil, error` results while preserving coroutine yields
 - Added fixed-length tuple schemas to `cartesi.tojson`/`cartesi.fromjson`: an array-valued `items` field assigns one schema type to each tuple position and requires the encoded array to have the same length
 
 ## [0.21.0] - 2026-08-04

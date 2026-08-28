@@ -229,9 +229,9 @@ local function new_tree(height, entry_height, runs, refine)
     }, tree_meta)
 end
 
--- The index of the other claim in a two-claim match.
-local function get_other_index(index)
-    return 3 - index
+-- The other turn in a two-claim match.
+local function get_other_turn(turn)
+    return 3 - turn
 end
 
 --------------------------------------------------------------------------------
@@ -261,9 +261,9 @@ local function get_match_label(match)
     return (get_match_stream(match):sub(#"match_" + 1):gsub("_", "."))
 end
 
-function story.report_claims(tournament, claims)
+function story.report_claims(tournament)
     local stream = tournament.level == "mcycle" and "claims" or get_tournament_stream(tournament)
-    for _, claim in ipairs(claims) do
+    for _, claim in ipairs(tournament.claims) do
         narrate(
             stream,
             "Claim %s, with final state %s, joined.",
@@ -311,7 +311,7 @@ function story.report_state_transition(
         narrate(get_match_stream(match), "Neither claim committed to it. Both are eliminated.")
         return
     end
-    local losing_claim_index = get_other_index(winning_claim_index)
+    local losing_claim_index = get_other_turn(winning_claim_index)
     local loser = match.claims[losing_claim_index]
     narrate(
         get_match_stream(match),
@@ -345,7 +345,7 @@ function story.report_uarch_result(mcycle_match, winner, next_state_hashes)
         end
     end
     assert(winning_claim_index, "uarch winner did not settle either mcycle claim")
-    local loser = mcycle_match.claims[get_other_index(winning_claim_index)]
+    local loser = mcycle_match.claims[get_other_turn(winning_claim_index)]
     narrate(
         get_match_stream(mcycle_match),
         "The uarch winner confirms %s. Claim %s is eliminated.",
@@ -367,7 +367,7 @@ end
 
 function story.report_default_win(match)
     local turn_claim = match.claims[match.turn]
-    local other_claim = match.claims[get_other_index(match.turn)]
+    local other_claim = match.claims[get_other_turn(match.turn)]
     narrate(
         get_match_stream(match),
         "Nobody opened claim %s. Claim %s wins by default.",
@@ -381,8 +381,8 @@ function story.report_match_progress(match)
         get_match_stream(match),
         "Height %d: the claims first disagree within leaves [0x%x, 0x%x].",
         match.height,
-        match.index << match.height,
-        ((match.index + 1) << match.height) - 1
+        match.node_index << match.height,
+        ((match.node_index + 1) << match.height) - 1
     )
 end
 
@@ -427,12 +427,18 @@ function story.report_round(tournament, round, matches, unmatched_claim)
 end
 
 function story.report_winner(winner)
+    if not winner then
+        return
+    end
     narrate("verdict", "Tournament winner is claim %s.", format_short_hash(winner.computation_hash))
     narrate("verdict", "Winner computation hash: %s", cartesi.tohex(winner.computation_hash))
     narrate("verdict", "Winner final state hash: %s", cartesi.tohex(winner.final_state_hash))
 end
 
 function story.report_result(result)
+    if not result then
+        return
+    end
     local payload = evmu.decode_calldata(NOTICE, result.output, "raw").payload
     narrate("verdict", "Result proved against the final state:\n%s", payload)
 end
@@ -556,8 +562,8 @@ local SCHEMA_DICT = {
     },
     CommitMcycleClaimRequest = { items = {} },
     CommitMcycleClaimResponse = "Claim",
-    AdvanceBisectionRequest = { items = { "Base64", "Default", "Default", "Base64" } },
-    AdvanceBisectionResponse = {
+    RevealBisectionRequest = { items = { "Base64", "Default", "Default", "Base64" } },
+    RevealBisectionResponse = {
         turn_left_node = "Base64",
         turn_right_node = "Base64",
         turn_next_left_node = "Base64",
@@ -584,8 +590,6 @@ local SCHEMA_DICT = {
         output_proof = "Proof",
         outputs_merkle_root_proof = "Proof",
     },
-    FinishRequest = { items = {} },
-    FinishResponse = "Default",
 }
 
 -- Describes one request once, for both ends of the wire. Referee calls pass the request
@@ -602,7 +606,7 @@ local REQUESTS = {
         "CommitMcycleClaimRequest",
         "CommitMcycleClaimResponse"
     ),
-    advance_bisection = define_request("advance_bisection", "AdvanceBisectionRequest", "AdvanceBisectionResponse"),
+    reveal_bisection = define_request("reveal_bisection", "RevealBisectionRequest", "RevealBisectionResponse"),
     seal_divergence = define_request("seal_divergence", "SealDivergenceRequest", "SealDivergenceResponse"),
     commit_uarch_claim = define_request("commit_uarch_claim", "CommitUarchClaimRequest", "CommitUarchClaimResponse"),
     prove_state_transition = define_request(
@@ -611,7 +615,6 @@ local REQUESTS = {
         "ProveStateTransitionResponse"
     ),
     prove_result = define_request("prove_result", "ProveResultRequest", "ProveResultResponse"),
-    finish = define_request("finish", "FinishRequest", "FinishResponse"),
 }
 
 -- The envelope schema for requests under a named argument schema, registered on first use.
@@ -685,14 +688,14 @@ end
 -- holder of the claim it is about, so a missing operation or result is a bug in the player, and
 -- the process dies with it: the
 -- referee sees the connection close, and the claim loses its holder. The loop also ends when
--- the game releases the player, or when the referee goes away.
+-- the referee goes away.
 -- docs:begin serve
 local function serve(player, server_address)
     local host, port = server_address:match("^(.-):(%d+)$")
     player.connection = assert(socket.connect(host, tonumber(port)))
     local hello = player.hello or cartesi.tojson({ role = "player", label = player.label }, -1)
     assert(player.connection:send(hello .. "\n"))
-    repeat
+    while true do
         local line = player.connection:receive("*l")
         if not line then
             break
@@ -709,7 +712,7 @@ local function serve(player, server_address)
             cartesi.tojson(response, -1, ensure_response_envelope_schema(request.response_schema), SCHEMA_DICT)
         trace_wire("to referee", player.label, encoded)
         assert(player.connection:send(encoded .. "\n"))
-    until player.done
+    end
     player.connection:close()
 end
 -- docs:end serve
@@ -1173,7 +1176,8 @@ function server_meta.__index.collect_claims(self, conns, request, ...)
 end
 -- docs:end collect_claims
 
--- Runs the referee: spawns its main logic, then drives the event loop until it is done.
+-- Runs the referee: spawns its main logic, drives the event loop until it is done, then closes
+-- the listener and every connection so all player loops leave on EOF.
 function server_meta.__index.run(self, main)
     self.dispatcher:spawn(function()
         main()
@@ -1181,6 +1185,10 @@ function server_meta.__index.run(self, main)
     end)
     while not self.done do
         self.dispatcher:step()
+    end
+    self.listener:close()
+    for _, connection in ipairs(self.connections) do
+        connection.sock:close()
     end
 end
 
@@ -1200,7 +1208,7 @@ return {
     push_run = push_run,
     slice_runs = slice_runs,
     new_tree = new_tree,
-    get_other_index = get_other_index,
+    get_other_turn = get_other_turn,
     new_server = new_server,
     serve = serve,
     new_sealer = new_sealer,

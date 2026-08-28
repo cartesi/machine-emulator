@@ -5363,16 +5363,16 @@ A move is valid when the exposed children join into the node to open and, above 
 ```{.lua key=prt_is_valid_move include=prtu.lua/is_valid_move title="prtu.lua (excerpt)"}
 ```
 The walk goes left when the exposed left child differs from the opponent's, since the disagreement is then in the left subtree, and right otherwise, and the turn passes to the opponent.
-At height 1 the exposed children are leaves, and the walk returns the isolated dispute:
-```{.lua key=prt_advance_match include=prtu.lua/advance_match title="prtu.lua (excerpt)"}
+At height 1 the exposed children are leaves, and the walk returns the isolated divergence:
+```{.lua key=prt_advance_bisection include=prtu.lua/advance_bisection title="prtu.lua (excerpt)"}
 ```
 These functions are pure, so the walk is checked on synthetic claim trees, differing at one chosen leaf, before any machine is involved.
-The match itself is the loop that asks the holders of the on-turn claim to open its node, takes the first move that validates, and hands the isolated dispute over.
+The match itself is the loop that asks the holders of the on-turn claim to open its node, takes the first move that validates, and hands the isolated divergence over.
 A claim nobody opens loses by default:
 ```{.lua key=prt_run_match include=prt.lua/run_match title="prt.lua (excerpt)"}
 ```
 The walk converges on the leftmost divergent leaf, which is what makes the leaf before it agreed by both.
-When the divergence lands on a right leaf, the agreed state is the left leaf, just exposed; when it lands on a left leaf, the referee asks for a proof of the leaf before it, against either claim, since both committed to it (`settle_dispute`).
+When the divergence lands on a right leaf, the agreed state is the left leaf, just exposed; when it lands on a left leaf, the referee asks for a proof of the leaf before it, against either claim, since both committed to it (`settle_divergence`).
 
 ### Settling a match
 

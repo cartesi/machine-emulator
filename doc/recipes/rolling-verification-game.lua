@@ -29,6 +29,7 @@ local cartesi_jsonrpc = require("cartesi.jsonrpc")
 local socket = require("socket")
 local evmu = require("cartesi.evmu")
 local hash_tree = require("cartesi.hash-tree")
+local util = require("cartesi.util")
 local dishonest = require("dishonest")
 local vgu = require("vgu")
 
@@ -312,15 +313,17 @@ end
 -- docs:begin verify_result
 local function verify_result(result, final_hash)
     local outputs_merkle_root_proof, output_proof = result.outputs_merkle_root_proof, result.output_proof
-    return outputs_merkle_root_proof.root_hash == final_hash
-        and outputs_merkle_root_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
-        and outputs_merkle_root_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START
-        and outputs_merkle_root_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE
-        and pcall(hash_tree.verify_slice, outputs_merkle_root_proof)
-        and cartesi.keccak256(output_proof.root_hash) == outputs_merkle_root_proof.target_hash
-        and pcall(hash_tree.verify_slice, output_proof)
-        and cartesi.keccak256(result.output) == output_proof.target_hash
+    assert(outputs_merkle_root_proof.root_hash == final_hash)
+    assert(outputs_merkle_root_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
+    assert(outputs_merkle_root_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START)
+    assert(outputs_merkle_root_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE)
+    hash_tree.verify_slice(outputs_merkle_root_proof)
+    assert(cartesi.keccak256(output_proof.root_hash) == outputs_merkle_root_proof.target_hash)
+    hash_tree.verify_slice(output_proof)
+    assert(cartesi.keccak256(result.output) == output_proof.target_hash)
+    return true
 end
+verify_result = util.protect(verify_result)
 -- docs:end verify_result
 
 -- Verifies the disputed transition's logs on their own, the way a Cartesi contract would on the
@@ -332,7 +335,7 @@ end
 -- contract's own copy of the epoch's inputs, never from a player, so a log that includes any
 -- other input fails, however consistent it is. Past the epoch's last input the contract holds
 -- no input, there is nothing to include, and the transition reduces to an ordinary step. A
--- rejected log raises an error, and pcall turns it into a false verdict.
+-- rejected log raises an error, and protect turns it into a false verdict.
 -- docs:begin verify_state_transition
 local function verify_state_transition(
     dapp_contract,
@@ -344,30 +347,28 @@ local function verify_state_transition(
     state_hash_after
 )
     local data = dapp_contract.inputs[input + 1]
-    local pass = pcall(function()
-        local obtained_state_hash = state_hash_before
-        if mcycle_offset == 0 and uarch_cycle == 0 and data then
-            eventf("Verifying input inclusion log!")
-            local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-            obtained_state_hash = cartesi.machine:verify_send_cmio_response(
-                reason,
-                data,
-                obtained_state_hash,
-                log.send_cmio_log,
-                obtained_state_hash
-            )
-        end
-        eventf("Verifying uarch step log!")
-        obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, log.step_log)
-        if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-            eventf("Verifying uarch reset log!")
-            obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
-        end
-        assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
-    end)
-    eventf("Log is %s!", pass and "valid" or "invalid")
-    return pass
+    local obtained_state_hash = state_hash_before
+    if mcycle_offset == 0 and uarch_cycle == 0 and data then
+        eventf("Verifying input inclusion log!")
+        local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+        obtained_state_hash = cartesi.machine:verify_send_cmio_response(
+            reason,
+            data,
+            obtained_state_hash,
+            log.send_cmio_log,
+            obtained_state_hash
+        )
+    end
+    eventf("Verifying uarch step log!")
+    obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, log.step_log)
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+        eventf("Verifying uarch reset log!")
+        obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
+    end
+    assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
+    return true
 end
+verify_state_transition = util.protect(verify_state_transition)
 -- docs:end verify_state_transition
 
 -- Drives the interactive dispute and returns the winner. It shrinks the interval of
@@ -393,7 +394,7 @@ local function settle_dispute(players, initial_hash, dapp_contract)
     eventf("Player 1 posted logs")
 
     -- Player 1 won if its logs verify against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(
+    local valid = verify_state_transition(
         dapp_contract,
         input,
         mcycle_offset,
@@ -401,7 +402,9 @@ local function settle_dispute(players, initial_hash, dapp_contract)
         bisection.last_agreed_hash,
         log,
         bisection.hash_after
-    ) and players[1] or players[2]
+    )
+    eventf("Log is %s!", valid and "valid" or "invalid")
+    local winner = valid and players[1] or players[2]
     eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
     return winner
 end

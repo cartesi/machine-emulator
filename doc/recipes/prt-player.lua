@@ -539,7 +539,7 @@ end
 --------------------------------------------------------------------------------
 
 -- The honest player uses the common claim builders and handlers unchanged.
-local function make_honest(inputs, template)
+local function new_honest(inputs, template)
     return new_player("honest", inputs, template)
 end
 
@@ -547,7 +547,7 @@ end
 -- and walks away: it closes its connection right after joining, so the first request about
 -- its claim finds no holder and eliminates it. The claim is built straight from leaf runs, so
 -- it never needs a machine, or even the inputs.
-local function make_quitter()
+local function new_quitter()
     local player = new_player("quitter", {})
     player.make_mcycle_tree = function()
         local fake_state_hash = keccak("quitter")
@@ -564,7 +564,7 @@ end
 -- `index` for its own. Its claims are self-consistent everywhere, and it defends them
 -- faithfully, but the dispute converges on the transition that includes the input, and no
 -- log of feeding the forged input replays against the input the referee holds.
-local function make_forger(inputs, template, index, forged_data)
+local function new_forger(inputs, template, index, forged_data)
     local player = new_player("forger", inputs, template)
     player.inputs[index + 1] = forged_data
     return player
@@ -574,7 +574,7 @@ end
 -- never reads, and honestly commits to the corrupted history. Every re-run repeats the
 -- corruption, so its claims are self-consistent, but the true transition out of the last
 -- agreed state does not lead to its next sample, and the dispute converges there.
-local function make_tamperer(inputs, template, input_index, entry_offset)
+local function new_tamperer(inputs, template, input_index, entry_offset)
     local player = new_player("tamperer", inputs, template)
     player.tamper = {
         input = input_index + 1,
@@ -592,7 +592,7 @@ end
 -- every request with honest data, and other claims' disputes it can even settle with
 -- honest proofs, but the dispute against its own claim converges on the overwritten leaf,
 -- where the true reset that closes the last instruction of the span contradicts it.
-local function make_fabulist(inputs, template, input_index, leaf_offset)
+local function new_fabulist(inputs, template, input_index, leaf_offset)
     local player = new_player("fabulist", inputs, template)
     local fake_state_hash = keccak("fabulist")
     local global_leaf = input_index * PERIODS_PER_INPUT + leaf_offset
@@ -654,10 +654,10 @@ local function make_fabulist(inputs, template, input_index, leaf_offset)
     return player
 end
 
-M.make_honest = make_honest
-M.make_quitter = make_quitter
-M.make_forger = make_forger
-M.make_tamperer = make_tamperer
-M.make_fabulist = make_fabulist
+M.new_honest = new_honest
+M.new_quitter = new_quitter
+M.new_forger = new_forger
+M.new_tamperer = new_tamperer
+M.new_fabulist = new_fabulist
 
 return M

@@ -36,6 +36,7 @@ local vgu = require("vgu")
 local phase, eventf, short_hash = vgu.phase, vgu.eventf, vgu.short_hash
 local take_branch, bisect_level = vgu.take_branch, vgu.bisect_level
 local wait_for_any, wait_for_log, wait_for_commitments = vgu.wait_for_any, vgu.wait_for_log, vgu.wait_for_commitments
+local REQUESTS = vgu.REQUESTS
 
 -- The schemas this game adds to the shared dictionary.
 -- The disputed transition's access logs. A combined transition carries two logs, an ordinary
@@ -285,18 +286,7 @@ local function new_player(machine, inputs, send_result_delay)
         agreed = { machine = machine, input_index = 0 },
         inputs = inputs,
         send_result_delay = send_result_delay,
-        operation_schemas = {
-            commit_final_hash = {
-                request_schema = "CommitFinalHashRequest",
-                response_schema = "CommitFinalHashResponse",
-            },
-            commit_bisection = {
-                request_schema = "CommitBisectionRequest",
-                response_schema = "CommitBisectionResponse",
-            },
-            commit_log = { request_schema = "CommitLogRequest", response_schema = "CommitLogResponse" },
-            prove_output = { request_schema = "ProveOutputRequest", response_schema = "ProveOutputResponse" },
-        },
+        requests = REQUESTS,
         advance = advance,
         revert_if_rejected = revert_if_rejected,
         commit_final_hash = commit_final_hash,
@@ -312,7 +302,7 @@ end
 
 -- Asks both players for the result and returns the first epoch result to arrive.
 local function wait_for_output(players)
-    return wait_for_any(players, "prove_output", {}, "ProveOutputRequest", "ProveOutputResponse")
+    return wait_for_any(players, REQUESTS.prove_output, {})
 end
 
 -- Checks an epoch result against a verified final hash. The outputs Merkle root proof must

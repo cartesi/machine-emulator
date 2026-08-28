@@ -8648,9 +8648,9 @@ local function settle_dispute(players, initial_hash)
     eventf("Player 1 posted log")
 
     -- Player 1 won if its log verifies against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(uarch_cycle, bisection.last_agreed_hash, log, bisection.hash_after)
-            and players[1]
-        or players[2]
+    local valid = verify_state_transition(uarch_cycle, bisection.last_agreed_hash, log, bisection.hash_after)
+    eventf("Log is %s!", valid and "valid" or "invalid")
+    local winner = valid and players[1] or players[2]
     eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
     return winner
 end
@@ -8711,18 +8711,16 @@ player was honest. Otherwise, by assumption, the other one is.
 
 ``` lua
 local function verify_state_transition(uarch_cycle, state_hash_before, log, state_hash_after)
-    local pass = pcall(function()
-        eventf("Verifying uarch step log!")
-        local obtained_state_hash = cartesi.machine:verify_step_uarch(state_hash_before, log.step_log)
-        if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-            eventf("Verifying uarch reset log!")
-            obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
-        end
-        assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
-    end)
-    eventf("Log is %s!", pass and "valid" or "invalid")
-    return pass
+    eventf("Verifying uarch step log!")
+    local obtained_state_hash = cartesi.machine:verify_step_uarch(state_hash_before, log.step_log)
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+        eventf("Verifying uarch reset log!")
+        obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
+    end
+    assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
+    return true
 end
+verify_state_transition = util.protect(verify_state_transition)
 ```
 
 ### Verifying the result
@@ -8752,13 +8750,15 @@ hash.
 
 ``` lua
 local function verify_output(dapp_contract, output, final_hash)
-    return output.proof.root_hash == final_hash
-        and output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
-        and output.proof.target_address == dapp_contract.output.start
-        and output.proof.log2_target_size == dapp_contract.output.log2_size
-        and hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
-        and pcall(hash_tree.verify_slice, output.proof)
+    assert(output.proof.root_hash == final_hash)
+    assert(output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
+    assert(output.proof.target_address == dapp_contract.output.start)
+    assert(output.proof.log2_target_size == dapp_contract.output.log2_size)
+    assert(hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash)
+    hash_tree.verify_slice(output.proof)
+    return true
 end
+verify_output = util.protect(verify_output)
 ```
 
 A result that does not, from the dishonest player or anyone else, is
@@ -8926,7 +8926,7 @@ local function settle_dispute(players, initial_hash, dapp_contract)
     eventf("Player 1 posted logs")
 
     -- Player 1 won if its logs verify against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(
+    local valid = verify_state_transition(
         dapp_contract,
         input,
         mcycle_offset,
@@ -8934,7 +8934,9 @@ local function settle_dispute(players, initial_hash, dapp_contract)
         bisection.last_agreed_hash,
         log,
         bisection.hash_after
-    ) and players[1] or players[2]
+    )
+    eventf("Log is %s!", valid and "valid" or "invalid")
+    local winner = valid and players[1] or players[2]
     eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
     return winner
 end
@@ -9120,30 +9122,28 @@ local function verify_state_transition(
     state_hash_after
 )
     local data = dapp_contract.inputs[input + 1]
-    local pass = pcall(function()
-        local obtained_state_hash = state_hash_before
-        if mcycle_offset == 0 and uarch_cycle == 0 and data then
-            eventf("Verifying input inclusion log!")
-            local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-            obtained_state_hash = cartesi.machine:verify_send_cmio_response(
-                reason,
-                data,
-                obtained_state_hash,
-                log.send_cmio_log,
-                obtained_state_hash
-            )
-        end
-        eventf("Verifying uarch step log!")
-        obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, log.step_log)
-        if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-            eventf("Verifying uarch reset log!")
-            obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
-        end
-        assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
-    end)
-    eventf("Log is %s!", pass and "valid" or "invalid")
-    return pass
+    local obtained_state_hash = state_hash_before
+    if mcycle_offset == 0 and uarch_cycle == 0 and data then
+        eventf("Verifying input inclusion log!")
+        local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+        obtained_state_hash = cartesi.machine:verify_send_cmio_response(
+            reason,
+            data,
+            obtained_state_hash,
+            log.send_cmio_log,
+            obtained_state_hash
+        )
+    end
+    eventf("Verifying uarch step log!")
+    obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, log.step_log)
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+        eventf("Verifying uarch reset log!")
+        obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
+    end
+    assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
+    return true
 end
+verify_state_transition = util.protect(verify_state_transition)
 ```
 
 For the transition that includes the input, the referee passes the
@@ -9186,15 +9186,17 @@ result that verifies against the winner’s final hash:
 ``` lua
 local function verify_result(result, final_hash)
     local outputs_merkle_root_proof, output_proof = result.outputs_merkle_root_proof, result.output_proof
-    return outputs_merkle_root_proof.root_hash == final_hash
-        and outputs_merkle_root_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
-        and outputs_merkle_root_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START
-        and outputs_merkle_root_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE
-        and pcall(hash_tree.verify_slice, outputs_merkle_root_proof)
-        and cartesi.keccak256(output_proof.root_hash) == outputs_merkle_root_proof.target_hash
-        and pcall(hash_tree.verify_slice, output_proof)
-        and cartesi.keccak256(result.output) == output_proof.target_hash
+    assert(outputs_merkle_root_proof.root_hash == final_hash)
+    assert(outputs_merkle_root_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
+    assert(outputs_merkle_root_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START)
+    assert(outputs_merkle_root_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE)
+    hash_tree.verify_slice(outputs_merkle_root_proof)
+    assert(cartesi.keccak256(output_proof.root_hash) == outputs_merkle_root_proof.target_hash)
+    hash_tree.verify_slice(output_proof)
+    assert(cartesi.keccak256(result.output) == output_proof.target_hash)
+    return true
 end
+verify_result = util.protect(verify_result)
 ```
 
 ### Running the rolling game
@@ -9611,10 +9613,11 @@ end
 The walk goes left when the exposed left child differs from the
 opponent’s, since the disagreement is then in the left subtree, and
 right otherwise, and the turn passes to the opponent. At height 1 the
-exposed children are leaves, and the walk returns the isolated dispute:
+exposed children are leaves, and the walk returns the isolated
+divergence:
 
 ``` lua
-local function advance_match(match, move)
+local function advance_bisection(match, move)
     local descend_left = move.l ~= match.left_node
     if match.height == 1 then
         local state_index, turn_state_hash, other_state_hash, agreed_state_hash
@@ -9624,13 +9627,14 @@ local function advance_match(match, move)
             state_index, turn_state_hash, other_state_hash, agreed_state_hash =
                 2 * match.index + 1, move.r, match.right_node, move.l
         end
-        local claim1_next_state_hash = match.turn_claim == match.claim1 and turn_state_hash or other_state_hash
-        local claim2_next_state_hash = match.turn_claim == match.claim1 and other_state_hash or turn_state_hash
+        local next_state_hashes = {}
+        next_state_hashes[match.turn] = turn_state_hash
+        next_state_hashes[match.turn ~ 1] = other_state_hash
         return {
             state_index = state_index,
             agreed_state_hash = agreed_state_hash,
-            claim1_next_state_hash = claim1_next_state_hash,
-            claim2_next_state_hash = claim2_next_state_hash,
+            claim0_next_state_hash = next_state_hashes[0],
+            claim1_next_state_hash = next_state_hashes[1],
         }
     end
     if descend_left then
@@ -9640,7 +9644,7 @@ local function advance_match(match, move)
     end
     match.left_node, match.right_node = move.nl, move.nr
     match.height = match.height - 1
-    match.turn_claim, match.other_claim = match.other_claim, match.turn_claim
+    match.turn = match.turn ~ 1
     return nil
 end
 ```
@@ -9649,22 +9653,24 @@ These functions are pure, so the walk is checked on synthetic claim
 trees, differing at one chosen leaf, before any machine is involved. The
 match itself is the loop that asks the holders of the on-turn claim to
 open its node, takes the first move that validates, and hands the
-isolated dispute over. A claim nobody opens loses by default:
+isolated divergence over. A claim nobody opens loses by default:
 
 ``` lua
 local function run_match(tournament, match)
     while true do
-        local conns = server:get_subscribers({ match.turn_claim.computation_hash })
-        local move = server:accept_first(conns, function(v)
-            return is_valid_move(match, v) and v
-        end, REQUESTS.advance, match.turn_claim.computation_hash, match.height, match.index, match.left_node)
+        local turn_claim = match.claims[match.turn]
+        local other_claim = match.claims[match.turn ~ 1]
+        local conns = server:get_subscribers({ turn_claim.computation_hash })
+        local move = server:accept_first(conns, function(move)
+            return is_valid_move(match, move) and move
+        end, REQUESTS.advance_bisection, turn_claim.computation_hash, match.height, match.index, match.left_node)
         if not move then
             story.report_default_win(match)
-            return match.other_claim
+            return other_claim
         end
-        local dispute = advance_match(match, move)
-        if dispute then
-            return settle_dispute(tournament, match, dispute)
+        local divergence = advance_bisection(match, move)
+        if divergence then
+            return settle_divergence(tournament, match, divergence)
         end
         story.report_match_progress(match)
     end
@@ -9675,7 +9681,7 @@ The walk converges on the leftmost divergent leaf, which is what makes
 the leaf before it agreed by both. When the divergence lands on a right
 leaf, the agreed state is the left leaf, just exposed; when it lands on
 a left leaf, the referee asks for a proof of the leaf before it, against
-either claim, since both committed to it (`settle_dispute`).
+either claim, since both committed to it (`settle_divergence`).
 
 ### Settling a match
 
@@ -9692,26 +9698,24 @@ mcycle claim that survives:
 
 ``` lua
 local function settle_mcycle_match(
-    tournament,
-    match,
+    mcycle_tournament,
+    mcycle_match,
     epoch_period_index,
     agreed_state_hash,
-    claim1_next_state_hash,
-    claim2_next_state_hash
+    claim0_next_state_hash,
+    claim1_next_state_hash
 )
     local uarch_tournament = open_uarch_tournament(
-        tournament,
-        match,
+        mcycle_tournament,
+        mcycle_match,
         epoch_period_index,
         agreed_state_hash,
-        claim1_next_state_hash,
-        claim2_next_state_hash
+        claim0_next_state_hash,
+        claim1_next_state_hash
     )
     local uarch_winner = run_tournament(uarch_tournament)
-    local survivor = uarch_winner
-        and (uarch_winner.final_state_hash == claim1_next_state_hash and match.claim1 or match.claim2)
-    story.report_uarch_result(match, uarch_winner, survivor)
-    return survivor
+    story.report_uarch_result(mcycle_match, uarch_winner, claim0_next_state_hash, claim1_next_state_hash)
+    return uarch_winner and uarch_winner.final_state_hash
 end
 ```
 
@@ -9754,6 +9758,7 @@ local function verify_state_transition(
     end
     return obtained_state_hash
 end
+verify_state_transition = util.protect(verify_state_transition)
 ```
 
 The transition out of the agreed state is unique, so this is the heart
@@ -9769,25 +9774,28 @@ local function settle_uarch_match(
     match,
     state_transition_offset,
     current_state_hash,
-    claim1_next_state_hash,
-    claim2_next_state_hash
+    claim0_next_state_hash,
+    claim1_next_state_hash
 )
-    story.report_transition(tournament, match, state_transition_offset)
-    local conns = server:get_subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
-    local obtained_state_hash = server:accept_first(conns, function(v)
+    local conns = server:get_subscribers({ match.claims[0].computation_hash, match.claims[1].computation_hash })
+    local obtained_state_hash = server:accept_first(conns, function(logs)
         return verify_state_transition(
             tournament.dapp_contract,
             current_state_hash,
             tournament.epoch_period_index,
             state_transition_offset,
-            v
+            logs
         )
     end, REQUESTS.provide_transition_logs, tournament.input_index, tournament.period_index, state_transition_offset)
-    local winner = obtained_state_hash == claim1_next_state_hash and match.claim1
-        or obtained_state_hash == claim2_next_state_hash and match.claim2
-        or nil
-    story.report_transition_result(match, obtained_state_hash, winner, claim1_next_state_hash, claim2_next_state_hash)
-    return winner
+    story.report_state_transition(
+        tournament,
+        match,
+        state_transition_offset,
+        obtained_state_hash,
+        claim0_next_state_hash,
+        claim1_next_state_hash
+    )
+    return obtained_state_hash
 end
 ```
 

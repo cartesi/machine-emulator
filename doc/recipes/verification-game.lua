@@ -161,35 +161,35 @@ end
 -- proof must roll up to the final hash. Returns whether it holds.
 -- docs:begin verify_output
 local function verify_output(dapp_contract, output, final_hash)
-    return output.proof.root_hash == final_hash
-        and output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
-        and output.proof.target_address == dapp_contract.output.start
-        and output.proof.log2_target_size == dapp_contract.output.log2_size
-        and hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
-        and pcall(hash_tree.verify_slice, output.proof)
+    assert(output.proof.root_hash == final_hash)
+    assert(output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
+    assert(output.proof.target_address == dapp_contract.output.start)
+    assert(output.proof.log2_target_size == dapp_contract.output.log2_size)
+    assert(hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash)
+    hash_tree.verify_slice(output.proof)
+    return true
 end
+verify_output = util.protect(verify_output)
 -- docs:end verify_output
 
 -- Verifies the disputed transition's logs on their own, the way a Cartesi contract would on the
 -- blockchain, without ever instantiating a machine. Every transition carries a uarch step, and
 -- the only one out of UARCH_CYCLE_MAX-1 follows it with the terminal reset. Each verification
 -- returns the state hash its log provably advances to, the next one starts from it, and the
--- last must reach the committed after-hash. A rejected log raises an error, and pcall turns it
--- into a false verdict.
+-- last must reach the committed after-hash. A rejected log raises an error, and protect turns
+-- it into a false verdict.
 -- docs:begin verify_state_transition
 local function verify_state_transition(uarch_cycle, state_hash_before, log, state_hash_after)
-    local pass = pcall(function()
-        eventf("Verifying uarch step log!")
-        local obtained_state_hash = cartesi.machine:verify_step_uarch(state_hash_before, log.step_log)
-        if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-            eventf("Verifying uarch reset log!")
-            obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
-        end
-        assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
-    end)
-    eventf("Log is %s!", pass and "valid" or "invalid")
-    return pass
+    eventf("Verifying uarch step log!")
+    local obtained_state_hash = cartesi.machine:verify_step_uarch(state_hash_before, log.step_log)
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+        eventf("Verifying uarch reset log!")
+        obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
+    end
+    assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
+    return true
 end
+verify_state_transition = util.protect(verify_state_transition)
 -- docs:end verify_state_transition
 
 -- Drives the interactive dispute and returns the winner. It shrinks the interval of
@@ -221,9 +221,9 @@ local function settle_dispute(players, initial_hash)
     eventf("Player 1 posted log")
 
     -- Player 1 won if its log verifies against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(uarch_cycle, bisection.last_agreed_hash, log, bisection.hash_after)
-            and players[1]
-        or players[2]
+    local valid = verify_state_transition(uarch_cycle, bisection.last_agreed_hash, log, bisection.hash_after)
+    eventf("Log is %s!", valid and "valid" or "invalid")
+    local winner = valid and players[1] or players[2]
     eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
     return winner
 end

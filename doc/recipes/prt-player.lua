@@ -1,11 +1,10 @@
 -- The player side of the PRT game: the machines, the claim builds, the operations the
 -- referee invokes, and the dishonest strategies. The whole geometry follows from the
--- fixed mcycle period, shared with the referee through prt-geometry.lua.
+-- fixed mcycle period, shared with the referee through prtu.lua.
 
 local cartesi = require("cartesi")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
 local hash_tree = require("cartesi.hash-tree")
-local geometry = require("prt-geometry")
 local prtu = require("prtu")
 
 local keccak = cartesi.keccak256
@@ -13,60 +12,7 @@ local format_short_hash = prtu.format_short_hash
 local push_run, slice_runs = prtu.push_run, prtu.slice_runs
 local new_tree = prtu.new_tree
 
--- The request and response schemas this game adds to the shared dictionary.
-prtu.SCHEMA_DICT.Claim = {
-    left = "Base64",
-    right = "Base64",
-    proof = "Proof",
-}
-prtu.SCHEMA_DICT.CommitMcycleClaimRequest = { items = {} }
-prtu.SCHEMA_DICT.CommitMcycleClaimResponse = "Claim"
-prtu.SCHEMA_DICT.AdvanceBisectionRequest = { items = { "Base64", "Default", "Default", "Base64" } }
-prtu.SCHEMA_DICT.AdvanceBisectionResponse = { l = "Base64", r = "Base64", nl = "Base64", nr = "Base64" }
-prtu.SCHEMA_DICT.ProveStateRequest = { items = { "Base64", "Default" } }
-prtu.SCHEMA_DICT.ProveStateResponse = "Proof"
-prtu.SCHEMA_DICT.CommitUarchClaimRequest = {
-    items = { "Default", "Default", "Base64", "Base64" },
-}
-prtu.SCHEMA_DICT.CommitUarchClaimResponse = "Claim"
-prtu.SCHEMA_DICT.TransitionLogsRequest = { items = { "Default", "Default", "Default" } }
-prtu.SCHEMA_DICT.TransitionLogsResponse = {
-    send_cmio_log = "AccessLog",
-    step_log = "AccessLog",
-    reset_uarch_log = "AccessLog",
-}
--- The epoch result: an output, its proof in the outputs Merkle tree, and the proof tying that
--- tree's root into the winning final state.
-prtu.SCHEMA_DICT.ProveResultRequest = { items = {} }
-prtu.SCHEMA_DICT.ProveResultResponse = {
-    output = "Base64",
-    output_proof = "Proof",
-    outputs_merkle_root_proof = "Proof",
-}
-prtu.SCHEMA_DICT.FinishRequest = { items = {} }
-prtu.SCHEMA_DICT.FinishResponse = "Default"
-
-local REQUESTS = {
-    commit_mcycle_claim = prtu.define_request(
-        "commit_mcycle_claim",
-        "CommitMcycleClaimRequest",
-        "CommitMcycleClaimResponse"
-    ),
-    advance_bisection = prtu.define_request("advance_bisection", "AdvanceBisectionRequest", "AdvanceBisectionResponse"),
-    prove_state = prtu.define_request("prove_state", "ProveStateRequest", "ProveStateResponse"),
-    commit_uarch_claim = prtu.define_request(
-        "commit_uarch_claim",
-        "CommitUarchClaimRequest",
-        "CommitUarchClaimResponse"
-    ),
-    provide_transition_logs = prtu.define_request(
-        "provide_transition_logs",
-        "TransitionLogsRequest",
-        "TransitionLogsResponse"
-    ),
-    prove_result = prtu.define_request("prove_result", "ProveResultRequest", "ProveResultResponse"),
-    finish = prtu.define_request("finish", "FinishRequest", "FinishResponse"),
-}
+local REQUESTS = prtu.REQUESTS
 
 local function write_stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
@@ -88,11 +34,11 @@ local LOG2_MCYCLE_BUNDLE = 4
 local LOG2_UARCH_BUNDLE = 16
 
 local M = {}
-local LOG2_MCYCLES_PER_PERIOD = geometry.LOG2_MCYCLES_PER_PERIOD
-local MCYCLES_PER_PERIOD = geometry.MCYCLES_PER_PERIOD
-local UARCH_CYCLES_PER_MCYCLE = geometry.UARCH_CYCLES_PER_MCYCLE
-local MCYCLE_HEIGHT, UARCH_HEIGHT = geometry.MCYCLE_HEIGHT, geometry.UARCH_HEIGHT
-local PERIODS_PER_INPUT = geometry.PERIODS_PER_INPUT
+local LOG2_MCYCLES_PER_PERIOD = prtu.LOG2_MCYCLES_PER_PERIOD
+local MCYCLES_PER_PERIOD = prtu.MCYCLES_PER_PERIOD
+local UARCH_CYCLES_PER_MCYCLE = prtu.UARCH_CYCLES_PER_MCYCLE
+local MCYCLE_HEIGHT, UARCH_HEIGHT = prtu.MCYCLE_HEIGHT, prtu.UARCH_HEIGHT
+local PERIODS_PER_INPUT = prtu.PERIODS_PER_INPUT
 local ENTRIES_PER_INPUT = PERIODS_PER_INPUT >> LOG2_MCYCLE_BUNDLE
 local MCYCLE_ENTRIES = ENTRIES_PER_INPUT << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 
@@ -402,8 +348,12 @@ end
 -- A claim: the computation hash's two children and the standard proof of its final state,
 -- the last leaf.
 local function make_claim(tree)
-    local left, right = tree:get_children(tree.height, 0)
-    return { left = left, right = right, proof = tree:prove((1 << tree.height) - 1) }
+    local computation_hash_left, computation_hash_right = tree:get_children(tree.height, 0)
+    return {
+        computation_hash_left = computation_hash_left,
+        computation_hash_right = computation_hash_right,
+        final_state_hash_proof = tree:prove((1 << tree.height) - 1),
+    }
 end
 
 -- The player's opening mcycle claim. The player announces its root, so a
@@ -411,36 +361,50 @@ end
 -- what.
 function handlers.commit_mcycle_claim(player)
     write_stderr("%s: building mcycle claim\n", player.label)
-    player.mcycle_claim = player.make_mcycle_tree(player)
+    player.mcycle_claim = player:make_mcycle_tree()
     local claim = make_claim(player.mcycle_claim)
     write_stderr(
         "%s: posted claim %s with final state %s\n",
         player.label,
         format_short_hash(player.mcycle_claim:get_root()),
-        format_short_hash(claim.proof.target_hash)
+        format_short_hash(claim.final_state_hash_proof.target_hash)
     )
     return claim
 end
 
--- One alternating step of the walk down a claim: opens the claim's node at (h, index),
--- returning its two children l and r, and, above the leaves, the two children nl and nr of
--- the child the walk descends into. The descent goes left when l differs from the opponent's
--- exposed left child, which the referee passes as opp_left.
-function handlers.advance_bisection(player, computation_hash, height, index, opponent_left)
+-- One alternating step of the walk down a claim: opens the claim's node at (height, index),
+-- returning its children and the children of the node the walk descends into.
+function handlers.advance_bisection(player, computation_hash, height, index, other_left_node)
+    assert(height > 1)
     local tree = get_claim_tree(player, computation_hash)
-    local l, r = tree:get_children(height, index)
-    local move = { l = l, r = r }
-    if height > 1 then
-        local descend_left = l ~= opponent_left
-        local child_index = descend_left and 2 * index or 2 * index + 1
-        move.nl, move.nr = tree:get_children(height - 1, child_index)
-    end
-    return move
+    local turn_left_node, turn_right_node = tree:get_children(height, index)
+    local descend_left = turn_left_node ~= other_left_node
+    local child_index = descend_left and 2 * index or 2 * index + 1
+    local turn_next_left_node, turn_next_right_node = tree:get_children(height - 1, child_index)
+    return {
+        turn_left_node = turn_left_node,
+        turn_right_node = turn_right_node,
+        turn_next_left_node = turn_next_left_node,
+        turn_next_right_node = turn_next_right_node,
+    }
 end
 
--- Proves the state at one index of one of the player's computation hashes.
-function handlers.prove_state(player, computation_hash, state_index)
-    return get_claim_tree(player, computation_hash):prove(state_index)
+-- Seals the leftmost divergence: exposes the final leaves and proves the agreed state
+-- immediately before them, except at state zero where the referee already knows that state.
+function handlers.seal_divergence(player, computation_hash, index, other_left_node)
+    local tree = get_claim_tree(player, computation_hash)
+    local turn_left_node, turn_right_node = tree:get_children(1, index)
+    local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
+    local descend_left = turn_left_node ~= other_left_node
+    local state_index = 2 * index + (descend_left and 0 or 1)
+    if state_index ~= 0 then
+        response.agreed_state_hash_proof = tree:prove(state_index - 1)
+        assert(
+            descend_left or response.agreed_state_hash_proof.target_hash == turn_left_node,
+            "right divergence has the wrong agreed state"
+        )
+    end
+    return response
 end
 
 -- Joins the uarch tournament over one mcycle period that the player's mcycle claim is
@@ -450,19 +414,19 @@ end
 -- and the period index are 0-based, as the referee counts them. A holder whose uarch claim
 -- ends in neither contested value cannot defend its parent claim, and dies on the
 -- contradiction.
-function handlers.commit_uarch_claim(player, input_index, period_index, claim0_next_state_hash, claim1_next_state_hash)
+function handlers.commit_uarch_claim(player, input_index, period_index, next_state_hashes)
     write_stderr("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
-    player.uarch_claim = player.make_uarch_tree(player, input_index + 1, period_index)
+    player.uarch_claim = player:make_uarch_tree(input_index + 1, period_index)
     local claim = make_claim(player.uarch_claim)
-    local final_state_hash = claim.proof.target_hash
+    local final_state_hash = claim.final_state_hash_proof.target_hash
     assert(
-        final_state_hash == claim0_next_state_hash or final_state_hash == claim1_next_state_hash,
+        final_state_hash == next_state_hashes[1] or final_state_hash == next_state_hashes[2],
         string.format(
             "%s: uarch final %s matches neither contested final %s nor %s",
             player.label,
             format_short_hash(final_state_hash),
-            format_short_hash(claim0_next_state_hash),
-            format_short_hash(claim1_next_state_hash)
+            format_short_hash(next_state_hashes[1]),
+            format_short_hash(next_state_hashes[2])
         )
     )
     write_stderr("%s: uarch claim ready\n", player.label)
@@ -474,8 +438,8 @@ end
 -- input boundary includes the input, when the epoch has one, before the first uarch step.
 -- The transition closing an instruction executes one more step, by then a fixed point, and
 -- the reset. Every other transition is an ordinary uarch step.
--- docs:begin provide_transition_logs
-function handlers.provide_transition_logs(player, input_index, period_index, state_transition_offset)
+-- docs:begin prove_state_transition
+function handlers.prove_state_transition(player, input_index, period_index, state_transition_offset)
     local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1)
     local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
@@ -494,7 +458,7 @@ function handlers.provide_transition_logs(player, input_index, period_index, sta
     end
     return { step_log = machine:log_step_uarch() }
 end
--- docs:end provide_transition_logs
+-- docs:end prove_state_transition
 
 -- The epoch result, proving the epoch's output against the final state a claim commits to. The
 -- player re-runs the whole epoch on a fresh machine, folding each accepted input's outputs into
@@ -696,7 +660,6 @@ local function make_fabulist(inputs, template, input_index, leaf_offset)
     return player
 end
 
-M.REQUESTS = REQUESTS
 M.make_honest = make_honest
 M.make_quitter = make_quitter
 M.make_forger = make_forger

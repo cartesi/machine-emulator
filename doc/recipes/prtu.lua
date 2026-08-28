@@ -1,13 +1,28 @@
--- The parts of the PRT game that do not depend on what is being disputed: the claim trees
--- (Merkle trees over runs of repeated nodes, refined on demand), the match walk, the referee's
--- coroutine dispatcher, the referee server that carries the wire protocol, and the
--- narration. The game script supplies the machines, the claim builds, the tournament,
--- and the verification of the disputed transition.
+-- The parts of the PRT game shared by referee and players: geometry, request schemas, claim
+-- trees (Merkle trees over runs of repeated nodes, refined on demand), the referee's coroutine
+-- dispatcher and server, and narration. The game script supplies the match walk,
+-- machines, claim builds, tournament, and verification of the disputed transition.
 
 local cartesi = require("cartesi")
+local evmu = require("cartesi.evmu")
 local socket = require("socket")
 
 local keccak = cartesi.keccak256
+
+--------------------------------------------------------------------------------
+-- Geometry
+--------------------------------------------------------------------------------
+
+local LOG2_MCYCLES_PER_PERIOD = 10
+local MCYCLES_PER_PERIOD = 1 << LOG2_MCYCLES_PER_PERIOD
+local UARCH_CYCLES_PER_MCYCLE = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+assert(UARCH_CYCLES_PER_MCYCLE - 1 == cartesi.UARCH_CYCLE_MAX, "uarch cycles per mcycle do not match the emulator")
+
+local MCYCLE_HEIGHT = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+    + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+    - LOG2_MCYCLES_PER_PERIOD
+local UARCH_HEIGHT = LOG2_MCYCLES_PER_PERIOD + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+local PERIODS_PER_INPUT = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLES_PER_PERIOD)
 
 --------------------------------------------------------------------------------
 -- Small utilities
@@ -214,87 +229,214 @@ local function new_tree(height, entry_height, runs, refine)
     }, tree_meta)
 end
 
+-- The index of the other claim in a two-claim match.
+local function get_other_index(index)
+    return 3 - index
+end
+
 --------------------------------------------------------------------------------
--- Match walk
+-- Story
 --
--- A match walks two claim trees down to the leaf where they first diverge, the two claims
--- alternating, one move per round, exactly as in Dave's Match.sol. The referee holds one node
--- to open (`other_parent`) and the opponent's standing left and right children. The on-turn
--- claim opens its node, exposing the two children and, above the leaves, the two grandchildren
--- of the side the walk descends into. The walk follows the side where the claims first
--- disagree, converging on the leftmost divergent leaf, and the turn passes to the opponent each
--- round. Nothing here touches the wire: the functions are pure over the match state and the
--- move, so the walk can be checked on synthetic trees.
+-- The referee reports semantic events; this table owns their formatting and every
+-- presentation-only calculation, keeping narration out of the tournament algorithm.
 --------------------------------------------------------------------------------
 
--- Seeds a match over two claims of the given tree height. Claim zero opens first, so the walk
--- starts with claim0's computation hash as the node to open and claim1's join-exposed children standing.
--- docs:begin new_match
-local function new_match(claim0, claim1, height)
-    return {
-        claims = { [0] = claim0, [1] = claim1 },
-        turn = 0,
-        other_parent = claim0.computation_hash,
-        left_node = claim1.left,
-        right_node = claim1.right,
-        height = height,
-        index = 0,
-    }
-end
--- docs:end new_match
+-- docs:begin story
+local story = {}
+local NOTICE = "Notice(bytes payload)"
+local tournament_streams = setmetatable({}, { __mode = "k" })
+local match_streams = setmetatable({}, { __mode = "k" })
+local match_counts = setmetatable({}, { __mode = "k" })
 
--- Checks a move against the match state: the children must join into the node to open, and,
--- above the leaves, the grandchildren must join into the child the walk descends into.
--- docs:begin is_valid_move
-local function is_valid_move(match, move)
-    if keccak(move.l, move.r) ~= match.other_parent then
-        return false
-    end
-    if match.height > 1 then
-        return keccak(move.nl, move.nr) == ((move.l ~= match.left_node) and move.l or move.r)
-    end
-    return true
+local function get_tournament_stream(tournament)
+    return tournament.level == "mcycle" and "tournament"
+        or assert(tournament_streams[tournament], "uarch tournament has no narration stream")
 end
--- docs:end is_valid_move
 
--- Applies a valid move. Above the leaves, the walk descends one height: the on-turn claim's
--- chosen grandchildren become the standing left and right, the opponent's node on the chosen
--- side becomes the next to open, and the turn passes. At height 1 the exposed children are
--- leaves, and the walk is over: it returns the isolated divergence, the divergent leaf's index,
--- what each claim committed to there, and, when the divergence is at a right leaf, the agreed
--- state before it, the left leaf both sides exposed.
--- docs:begin advance_bisection
-local function advance_bisection(match, move)
-    local descend_left = move.l ~= match.left_node
-    if match.height == 1 then
-        local state_index, turn_state_hash, other_state_hash, agreed_state_hash
-        if descend_left then
-            state_index, turn_state_hash, other_state_hash = 2 * match.index, move.l, match.left_node
-        else
-            state_index, turn_state_hash, other_state_hash, agreed_state_hash =
-                2 * match.index + 1, move.r, match.right_node, move.l
+local function get_match_stream(match)
+    return assert(match_streams[match], "match has no narration stream")
+end
+
+local function get_match_label(match)
+    return (get_match_stream(match):sub(#"match_" + 1):gsub("_", "."))
+end
+
+function story.report_claims(tournament, claims)
+    local stream = tournament.level == "mcycle" and "claims" or get_tournament_stream(tournament)
+    for _, claim in ipairs(claims) do
+        narrate(
+            stream,
+            "Claim %s, with final state %s, joined.",
+            format_short_hash(claim.computation_hash),
+            format_short_hash(claim.final_state_hash)
+        )
+    end
+end
+
+function story.report_state_transition(
+    tournament,
+    match,
+    state_transition_offset,
+    obtained_state_hash,
+    next_state_hashes
+)
+    local form = "an ordinary uarch step"
+    if
+        state_transition_offset == 0
+        and tournament.period_index == 0
+        and tournament.dapp_contract.inputs[tournament.input_index + 1]
+    then
+        form = "the inclusion of input " .. tournament.input_index .. " and the first uarch step"
+    elseif state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1) == UARCH_CYCLES_PER_MCYCLE - 1 then
+        form = "a uarch step and the uarch reset closing an instruction"
+    end
+    narrate(get_match_stream(match), "The disputed transition is %s.", form)
+    if not obtained_state_hash then
+        narrate(get_match_stream(match), "No log settled the transition. Both claims are eliminated.")
+        return
+    end
+    narrate(
+        get_match_stream(match),
+        "The disputed transition provably leads to %s.",
+        format_short_hash(obtained_state_hash)
+    )
+    local winning_claim_index
+    for claim_index = 1, 2 do
+        if obtained_state_hash == next_state_hashes[claim_index] then
+            winning_claim_index = claim_index
+            break
         end
-        local next_state_hashes = {}
-        next_state_hashes[match.turn] = turn_state_hash
-        next_state_hashes[match.turn ~ 1] = other_state_hash
-        return {
-            state_index = state_index,
-            agreed_state_hash = agreed_state_hash,
-            claim0_next_state_hash = next_state_hashes[0],
-            claim1_next_state_hash = next_state_hashes[1],
-        }
     end
-    if descend_left then
-        match.other_parent, match.index = match.left_node, 2 * match.index
-    else
-        match.other_parent, match.index = match.right_node, 2 * match.index + 1
+    if not winning_claim_index then
+        narrate(get_match_stream(match), "Neither claim committed to it. Both are eliminated.")
+        return
     end
-    match.left_node, match.right_node = move.nl, move.nr
-    match.height = match.height - 1
-    match.turn = match.turn ~ 1
-    return nil
+    local losing_claim_index = get_other_index(winning_claim_index)
+    local loser = match.claims[losing_claim_index]
+    narrate(
+        get_match_stream(match),
+        "Claim %s committed to %s and is eliminated.",
+        format_short_hash(loser.computation_hash),
+        format_short_hash(next_state_hashes[losing_claim_index])
+    )
 end
--- docs:end advance_bisection
+
+function story.report_uarch_tournament(uarch_tournament, mcycle_match, agreed_state_hash)
+    tournament_streams[uarch_tournament] = get_match_stream(mcycle_match)
+    narrate(
+        get_tournament_stream(uarch_tournament),
+        "A uarch tournament opens over input %d, period %d, starting from %s.",
+        uarch_tournament.input_index,
+        uarch_tournament.period_index,
+        format_short_hash(agreed_state_hash)
+    )
+end
+
+function story.report_uarch_result(mcycle_match, winner, next_state_hashes)
+    if not winner then
+        narrate(get_match_stream(mcycle_match), "The uarch tournament had no winner. Both claims are eliminated.")
+        return
+    end
+    local winning_claim_index
+    for claim_index = 1, 2 do
+        if winner.final_state_hash == next_state_hashes[claim_index] then
+            winning_claim_index = claim_index
+            break
+        end
+    end
+    assert(winning_claim_index, "uarch winner did not settle either mcycle claim")
+    local loser = mcycle_match.claims[get_other_index(winning_claim_index)]
+    narrate(
+        get_match_stream(mcycle_match),
+        "The uarch winner confirms %s. Claim %s is eliminated.",
+        format_short_hash(winner.final_state_hash),
+        format_short_hash(loser.computation_hash)
+    )
+end
+
+function story.report_divergence(match, divergence)
+    narrate(
+        get_match_stream(match),
+        "The claims diverge at state %d: %s against %s, from the agreed state %s.",
+        divergence.state_index,
+        format_short_hash(divergence.next_state_hashes[1]),
+        format_short_hash(divergence.next_state_hashes[2]),
+        format_short_hash(divergence.agreed_state_hash)
+    )
+end
+
+function story.report_default_win(match)
+    local turn_claim = match.claims[match.turn]
+    local other_claim = match.claims[get_other_index(match.turn)]
+    narrate(
+        get_match_stream(match),
+        "Nobody opened claim %s. Claim %s wins by default.",
+        format_short_hash(turn_claim.computation_hash),
+        format_short_hash(other_claim.computation_hash)
+    )
+end
+
+function story.report_match_progress(match)
+    narrate(
+        get_match_stream(match),
+        "Height %d: the claims first disagree within leaves [0x%x, 0x%x].",
+        match.height,
+        match.index << match.height,
+        ((match.index + 1) << match.height) - 1
+    )
+end
+
+function story.report_match(tournament, round, match)
+    local count = (match_counts[tournament] or 0) + 1
+    match_counts[tournament] = count
+    local prefix = tournament.level == "mcycle" and "match" or get_tournament_stream(tournament)
+    match_streams[match] = string.format("%s_%d", prefix, count)
+    narrate(
+        get_tournament_stream(tournament),
+        "Round %d, match %s, at the %s level: claim %s against claim %s.",
+        round,
+        get_match_label(match),
+        tournament.level,
+        format_short_hash(match.claims[1].computation_hash),
+        format_short_hash(match.claims[2].computation_hash)
+    )
+end
+
+function story.report_round(tournament, round, matches, unmatched_claim)
+    for _, match in ipairs(matches) do
+        local winning_claim = match.claims[match.winner]
+        if winning_claim then
+            narrate(
+                get_tournament_stream(tournament),
+                "Match %s: claim %s wins.",
+                get_match_label(match),
+                format_short_hash(winning_claim.computation_hash)
+            )
+        else
+            narrate(get_tournament_stream(tournament), "Match %s: no claim survives.", get_match_label(match))
+        end
+    end
+    if unmatched_claim then
+        narrate(
+            get_tournament_stream(tournament),
+            "Claim %s advances unmatched to round %d.",
+            format_short_hash(unmatched_claim.computation_hash),
+            round + 1
+        )
+    end
+end
+
+function story.report_winner(winner)
+    narrate("verdict", "Tournament winner is claim %s.", format_short_hash(winner.computation_hash))
+    narrate("verdict", "Winner computation hash: %s", cartesi.tohex(winner.computation_hash))
+    narrate("verdict", "Winner final state hash: %s", cartesi.tohex(winner.final_state_hash))
+end
+
+function story.report_result(result)
+    local payload = evmu.decode_calldata(NOTICE, result.output, "raw").payload
+    narrate("verdict", "Result proved against the final state:\n%s", payload)
+end
+-- docs:end story
 
 --------------------------------------------------------------------------------
 -- Coroutine dispatcher
@@ -398,15 +540,52 @@ end
 -- answers {label, value}, encoded under the operation's response schema, so binary hashes,
 -- proofs, and access logs survive both directions. Schema names are local metadata, not wire
 -- fields.
--- The valid move for an operation is unique, fixed by the claim's committed tree, so a claim
--- cannot be misrepresented and it never matters who sends a move: the referee takes the first
--- move that proves itself and ignores the rest. The label rides along only for tracing.
+-- The valid response for an operation is unique, fixed by the claim's committed tree, so a claim
+-- cannot be misrepresented and it never matters who responds: the referee takes the first
+-- response that proves itself and ignores the rest. The label rides along only for tracing.
 --------------------------------------------------------------------------------
 
--- The schemas shared by every request. The game script adds its operation schemas.
+-- The schemas shared by the PRT wire protocol.
 local SCHEMA_DICT = {
     SealRequest = { items = {} },
     SealResponse = "Default",
+    Claim = {
+        computation_hash_left = "Base64",
+        computation_hash_right = "Base64",
+        final_state_hash_proof = "Proof",
+    },
+    CommitMcycleClaimRequest = { items = {} },
+    CommitMcycleClaimResponse = "Claim",
+    AdvanceBisectionRequest = { items = { "Base64", "Default", "Default", "Base64" } },
+    AdvanceBisectionResponse = {
+        turn_left_node = "Base64",
+        turn_right_node = "Base64",
+        turn_next_left_node = "Base64",
+        turn_next_right_node = "Base64",
+    },
+    SealDivergenceRequest = { items = { "Base64", "Default", "Base64" } },
+    SealDivergenceResponse = {
+        turn_left_node = "Base64",
+        turn_right_node = "Base64",
+        agreed_state_hash_proof = "Proof",
+    },
+    NextStateHashes = { items = { "Base64", "Base64" } },
+    CommitUarchClaimRequest = { items = { "Default", "Default", "NextStateHashes" } },
+    CommitUarchClaimResponse = "Claim",
+    ProveStateTransitionRequest = { items = { "Default", "Default", "Default" } },
+    ProveStateTransitionResponse = {
+        send_cmio_log = "AccessLog",
+        step_log = "AccessLog",
+        reset_uarch_log = "AccessLog",
+    },
+    ProveResultRequest = { items = {} },
+    ProveResultResponse = {
+        output = "Base64",
+        output_proof = "Proof",
+        outputs_merkle_root_proof = "Proof",
+    },
+    FinishRequest = { items = {} },
+    FinishResponse = "Default",
 }
 
 -- Describes one request once, for both ends of the wire. Referee calls pass the request
@@ -417,6 +596,23 @@ local function define_request(name, request_schema, response_schema)
 end
 
 local SEAL = define_request("seal", "SealRequest", "SealResponse")
+local REQUESTS = {
+    commit_mcycle_claim = define_request(
+        "commit_mcycle_claim",
+        "CommitMcycleClaimRequest",
+        "CommitMcycleClaimResponse"
+    ),
+    advance_bisection = define_request("advance_bisection", "AdvanceBisectionRequest", "AdvanceBisectionResponse"),
+    seal_divergence = define_request("seal_divergence", "SealDivergenceRequest", "SealDivergenceResponse"),
+    commit_uarch_claim = define_request("commit_uarch_claim", "CommitUarchClaimRequest", "CommitUarchClaimResponse"),
+    prove_state_transition = define_request(
+        "prove_state_transition",
+        "ProveStateTransitionRequest",
+        "ProveStateTransitionResponse"
+    ),
+    prove_result = define_request("prove_result", "ProveResultRequest", "ProveResultResponse"),
+    finish = define_request("finish", "FinishRequest", "FinishResponse"),
+}
 
 -- The envelope schema for requests under a named argument schema, registered on first use.
 local function ensure_request_envelope_schema(schema)
@@ -540,7 +736,7 @@ end
 -- arriving during the initial subscription phase subscribe to its initial hash. A tournament
 -- then opens with a fixed audience, the connections asked for a claim, and its claim collection
 -- closes once the sealer seals it and every connection in the audience has answered
--- or closed. A move request asks the holders of a claim, and takes the first reply that proves
+-- or closed. An accept-first request asks the holders of a claim and takes the first reply that proves
 -- itself. A reply that fails to prove itself, or does not even decode under the operation's
 -- schema, is rejected, as the blockchain rejects a bad transaction, and counts as that
 -- connection's answer. Only a line that cannot be decoded enough to identify a message, or a
@@ -593,10 +789,10 @@ local function enqueue(self, connection, line)
     end
 end
 
--- Resolves the request globally and hands the result to its coroutine. Individual connections
+-- Completes the request globally and hands the result to its coroutine. Individual connections
 -- may still be unanswered and owe replies; send_request accounts for each such reply before
 -- assigning that connection new work.
-local function resolve(self, entry, result)
+local function complete_request(self, entry, result)
     entry.resolved = true
     self.active[entry] = nil
     if entry.cortn then
@@ -604,21 +800,21 @@ local function resolve(self, entry, result)
     end
 end
 
--- Re-examines a request after a reply, a closed connection, or a seal. A move request
+-- Re-examines a request after a reply, a closed connection, or a seal. An accept-first-valid request
 -- resolves as soon as it has taken a valid value, and otherwise once every connection asked
 -- has answered or closed, with nothing. A collection stays active while a connection is
 -- still to answer, and a tournament's claim collection also until the seal, then resolves with
 -- the replies gathered.
-local function settle(self, entry)
+local function advance_if_complete(self, entry)
     if not self.active[entry] then
         return
     end
-    if entry.kind == "accept_first" then
+    if entry.kind == "accept_first_valid" then
         if entry.value ~= nil or not next(entry.pending) then
-            resolve(self, entry, { value = entry.value })
+            complete_request(self, entry, { value = entry.value })
         end
     elseif not entry.open and not next(entry.pending) then
-        resolve(self, entry, { replies = entry.replies })
+        complete_request(self, entry, { replies = entry.replies })
     end
 end
 
@@ -628,7 +824,7 @@ local function close_phase(self, phase)
     for index, open_phase in ipairs(self.open_phases) do
         if open_phase == phase then
             table.remove(self.open_phases, index)
-            settle(self, phase)
+            advance_if_complete(self, phase)
             return
         end
     end
@@ -640,7 +836,7 @@ local function forget_connection(self, connection)
     for entry in pairs(self.active) do
         if entry.pending[connection] then
             entry.pending[connection] = nil
-            settle(self, entry)
+            advance_if_complete(self, entry)
         end
     end
 end
@@ -713,7 +909,7 @@ end
 -- under the operation's response schema is an
 -- invalid operation, not a malformed connection: it counts as the connection's answer, is
 -- rejected, and leaves the connection open, exactly like a value the acceptor rejects, so
--- the order replies arrive in cannot decide which connections stay open. A move request
+-- the order replies arrive in cannot decide which connections stay open. An accept-first request
 -- takes the first truthy result its acceptor returns. A collection keeps every reply that
 -- decodes. A successful seal response from the sealer closes the one phase assigned to
 -- it; an invalid response is a failure of the referee's own orchestration.
@@ -735,12 +931,12 @@ local function deliver(self, entry, connection, line)
     if ok and entry.kind == "collect" then
         entry.replies[#entry.replies + 1] = { value = decoded.value, label = decoded.label, connection = connection }
     elseif ok and entry.value == nil then
-        local succeeded, value = pcall(entry.accept, decoded.value)
+        local succeeded, value = pcall(entry.accept_response, decoded.value)
         if succeeded and value then
             entry.value = value
         end
     end
-    settle(self, entry)
+    advance_if_complete(self, entry)
 end
 
 -- A connection announced itself as the sealer. There is one sealer, the first to announce,
@@ -912,20 +1108,24 @@ end
 
 -- Suspends the running coroutine until its request resolves.
 local function wait(self, entry)
-    settle(self, entry)
+    advance_if_complete(self, entry)
     return coroutine.yield()
 end
 
--- Asks the given connections for a move and returns the first truthy value produced by
--- `accept`, or nil once every connection asked has answered without one or closed.
+-- Asks the given connections for a response and returns the first truthy value produced by
+-- `accept_response`, or nil once every connection asked has answered without one or closed.
 -- A claim nobody answers for is thereby eliminated at once.
--- docs:begin accept_first
-function server_meta.__index.accept_first(self, conns, accept, request, ...)
-    local entry = { kind = "accept_first", response_schema = request.response_schema, accept = accept }
+-- docs:begin accept_first_valid
+function server_meta.__index.accept_first_valid(self, conns, accept_response, request, ...)
+    local entry = {
+        kind = "accept_first_valid",
+        response_schema = request.response_schema,
+        accept_response = accept_response,
+    }
     park(self, entry, conns, encode_request(request, { ... }))
     return wait(self, entry).value
 end
--- docs:end accept_first
+-- docs:end accept_first_valid
 
 -- Asks the given connections (every player, when nil) for a value, and returns the replies,
 -- each with the label and connection that sent it, once every connection asked has replied or
@@ -987,14 +1187,20 @@ end
 return {
     SCHEMA_DICT = SCHEMA_DICT,
     define_request = define_request,
+    REQUESTS = REQUESTS,
+    LOG2_MCYCLES_PER_PERIOD = LOG2_MCYCLES_PER_PERIOD,
+    MCYCLES_PER_PERIOD = MCYCLES_PER_PERIOD,
+    UARCH_CYCLES_PER_MCYCLE = UARCH_CYCLES_PER_MCYCLE,
+    MCYCLE_HEIGHT = MCYCLE_HEIGHT,
+    UARCH_HEIGHT = UARCH_HEIGHT,
+    PERIODS_PER_INPUT = PERIODS_PER_INPUT,
+    story = story,
     format_short_hash = format_short_hash,
     narrate = narrate,
     push_run = push_run,
     slice_runs = slice_runs,
     new_tree = new_tree,
-    new_match = new_match,
-    is_valid_move = is_valid_move,
-    advance_bisection = advance_bisection,
+    get_other_index = get_other_index,
     new_server = new_server,
     serve = serve,
     new_sealer = new_sealer,

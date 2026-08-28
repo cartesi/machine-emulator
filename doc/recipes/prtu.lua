@@ -227,18 +227,16 @@ end
 -- move, so the walk can be checked on synthetic trees.
 --------------------------------------------------------------------------------
 
--- Seeds a match over two claims of the given tree height. Claim one opens first, so the walk
--- starts with claim1's computation hash as the node to open and claim2's join-exposed children standing.
+-- Seeds a match over two claims of the given tree height. Claim zero opens first, so the walk
+-- starts with claim0's computation hash as the node to open and claim1's join-exposed children standing.
 -- docs:begin new_match
-local function new_match(claim1, claim2, height)
+local function new_match(claim0, claim1, height)
     return {
-        claim1 = claim1,
-        claim2 = claim2,
-        turn_claim = claim1, -- the claim whose node is other_parent
-        other_claim = claim2,
-        other_parent = claim1.computation_hash,
-        left_node = claim2.left,
-        right_node = claim2.right,
+        claims = { [0] = claim0, [1] = claim1 },
+        turn = 0,
+        other_parent = claim0.computation_hash,
+        left_node = claim1.left,
+        right_node = claim1.right,
         height = height,
         index = 0,
     }
@@ -262,11 +260,11 @@ end
 -- Applies a valid move. Above the leaves, the walk descends one height: the on-turn claim's
 -- chosen grandchildren become the standing left and right, the opponent's node on the chosen
 -- side becomes the next to open, and the turn passes. At height 1 the exposed children are
--- leaves, and the walk is over: it returns the isolated dispute, the divergent leaf's index,
--- what each claim committed to there, and, when the
--- divergence is at a right leaf, the agreed state before it, the left leaf both sides exposed.
--- docs:begin advance_match
-local function advance_match(match, move)
+-- leaves, and the walk is over: it returns the isolated divergence, the divergent leaf's index,
+-- what each claim committed to there, and, when the divergence is at a right leaf, the agreed
+-- state before it, the left leaf both sides exposed.
+-- docs:begin advance_bisection
+local function advance_bisection(match, move)
     local descend_left = move.l ~= match.left_node
     if match.height == 1 then
         local state_index, turn_state_hash, other_state_hash, agreed_state_hash
@@ -276,13 +274,14 @@ local function advance_match(match, move)
             state_index, turn_state_hash, other_state_hash, agreed_state_hash =
                 2 * match.index + 1, move.r, match.right_node, move.l
         end
-        local claim1_next_state_hash = match.turn_claim == match.claim1 and turn_state_hash or other_state_hash
-        local claim2_next_state_hash = match.turn_claim == match.claim1 and other_state_hash or turn_state_hash
+        local next_state_hashes = {}
+        next_state_hashes[match.turn] = turn_state_hash
+        next_state_hashes[match.turn ~ 1] = other_state_hash
         return {
             state_index = state_index,
             agreed_state_hash = agreed_state_hash,
-            claim1_next_state_hash = claim1_next_state_hash,
-            claim2_next_state_hash = claim2_next_state_hash,
+            claim0_next_state_hash = next_state_hashes[0],
+            claim1_next_state_hash = next_state_hashes[1],
         }
     end
     if descend_left then
@@ -292,10 +291,10 @@ local function advance_match(match, move)
     end
     match.left_node, match.right_node = move.nl, move.nr
     match.height = match.height - 1
-    match.turn_claim, match.other_claim = match.other_claim, match.turn_claim
+    match.turn = match.turn ~ 1
     return nil
 end
--- docs:end advance_match
+-- docs:end advance_bisection
 
 --------------------------------------------------------------------------------
 -- Coroutine dispatcher
@@ -995,7 +994,7 @@ return {
     new_tree = new_tree,
     new_match = new_match,
     is_valid_move = is_valid_move,
-    advance_match = advance_match,
+    advance_bisection = advance_bisection,
     new_server = new_server,
     serve = serve,
     new_sealer = new_sealer,

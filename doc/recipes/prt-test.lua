@@ -70,9 +70,9 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
     }
 end
 
--- The move a player holding the on-turn claim makes, as handlers.advance does in prt-player.lua.
+-- The move a player holding the on-turn claim makes, as handlers.advance_bisection does in prt-player.lua.
 local function open(match)
-    local tree = match.turn_claim.tree
+    local tree = match.claims[match.turn].tree
     local l, r = tree:get_children(match.height, match.index)
     local move = { l = l, r = r }
     if match.height > 1 then
@@ -82,17 +82,17 @@ local function open(match)
     return move
 end
 
--- Walks a match to its dispute, checking every move validates and a corrupted one does not.
-local function walk(claim1, claim2)
-    local match = prtu.new_match(claim1, claim2, HEIGHT)
+-- Walks a match to its divergence, checking every move validates and a corrupted one does not.
+local function walk(claim0, claim1)
+    local match = prtu.new_match(claim0, claim1, HEIGHT)
     while true do
         local move = open(match)
         assert(prtu.is_valid_move(match, move), "the honest move failed validation")
         local corrupted = { l = move.r, r = move.l, nl = move.nl, nr = move.nr }
         assert(not prtu.is_valid_move(match, corrupted) or move.l == move.r, "a swapped move validated")
-        local dispute = prtu.advance_match(match, move)
-        if dispute then
-            return dispute
+        local divergence = prtu.advance_bisection(match, move)
+        if divergence then
+            return divergence
         end
     end
 end
@@ -104,30 +104,31 @@ for _, lie in ipairs({ 0, 1, 6, 13, LEAVES - 1 }) do
         local liar = make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)
         assert(honest.computation_hash ~= liar.computation_hash)
         -- honest opens first
-        local dispute = walk(honest, liar)
-        assert(dispute.state_index == lie, "walk missed the divergent state")
+        local divergence = walk(honest, liar)
+        assert(divergence.state_index == lie, "walk missed the divergent state")
         assert(
-            dispute.claim1_next_state_hash == base_state_hash and dispute.claim2_next_state_hash == fake_state_hash,
+            divergence.claim0_next_state_hash == base_state_hash
+                and divergence.claim1_next_state_hash == fake_state_hash,
             "walk misattributed the states"
         )
         -- liar opens first: the same leaf, the claims swapped
         local mirrored = walk(liar, honest)
         assert(
             mirrored.state_index == lie
-                and mirrored.claim1_next_state_hash == fake_state_hash
-                and mirrored.claim2_next_state_hash == base_state_hash,
+                and mirrored.claim0_next_state_hash == fake_state_hash
+                and mirrored.claim1_next_state_hash == base_state_hash,
             "walk is not symmetric"
         )
         -- a right leaf exposes the agreed left leaf, a left leaf does not
         if lie % 2 == 1 then
             assert(
-                dispute.agreed_state_hash == honest.leaves[lie - 1]
-                    and mirrored.agreed_state_hash == dispute.agreed_state_hash,
+                divergence.agreed_state_hash == honest.leaves[lie - 1]
+                    and mirrored.agreed_state_hash == divergence.agreed_state_hash,
                 "wrong agreed state"
             )
         else
             assert(
-                dispute.agreed_state_hash == nil and mirrored.agreed_state_hash == nil,
+                divergence.agreed_state_hash == nil and mirrored.agreed_state_hash == nil,
                 "left state exposed an agreed state"
             )
             if lie > 0 then

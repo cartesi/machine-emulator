@@ -72,6 +72,18 @@ local SCHEMA_DICT = {
     ProveOutputRequest = {},
 }
 
+-- Defines the operation name and both wire schemas once, for use by players and the referee.
+local function define_request(name, request_schema, response_schema)
+    return { name = name, request_schema = request_schema, response_schema = response_schema }
+end
+
+local REQUESTS = {
+    commit_final_hash = define_request("commit_final_hash", "CommitFinalHashRequest", "CommitFinalHashResponse"),
+    commit_bisection = define_request("commit_bisection", "CommitBisectionRequest", "CommitBisectionResponse"),
+    commit_log = define_request("commit_log", "CommitLogRequest", "CommitLogResponse"),
+    prove_output = define_request("prove_output", "ProveOutputRequest", "ProveOutputResponse"),
+}
+
 local function request_envelope_schema(schema)
     local name = schema .. "Envelope"
     if not SCHEMA_DICT[name] then
@@ -178,10 +190,10 @@ local function run(player, server_address)
         local line = assert(player.connection:receive("*l"))
         trace_wire(player, "from", line)
         local envelope = cartesi.fromjson(line)
-        local schemas = assert(player.operation_schemas[envelope.operation], "unknown operation")
-        local request = cartesi.fromjson(line, request_envelope_schema(schemas.request_schema), SCHEMA_DICT)
+        local descriptor = assert(player.requests[envelope.operation], "unknown operation")
+        local request = cartesi.fromjson(line, request_envelope_schema(descriptor.request_schema), SCHEMA_DICT)
         local operation = assert(player[request.operation], "missing operation")
-        assert(send(player, operation(player, request.arguments or {}), schemas.response_schema))
+        assert(send(player, operation(player, request.arguments or {}), descriptor.response_schema))
     until player.done
     player.connection:close()
     if player.tentative then
@@ -212,12 +224,12 @@ end
 -- one, the new request is sent and the stale reply counted to be dropped. A player handling
 -- nothing is simply asked. A player that has posted its result has exited and closed, so the send
 -- fails; it is marked dead and skipped from then on.
-local function request(player, operation, arguments, request_schema)
+local function request(player, descriptor, arguments)
     if player.dead then
         return
     end
-    local value = { operation = operation, arguments = arguments }
-    local schema = request_envelope_schema(request_schema)
+    local value = { operation = descriptor.name, arguments = arguments }
+    local schema = request_envelope_schema(descriptor.request_schema)
     local line = cartesi.tojson(value, -1, schema, SCHEMA_DICT)
     if player.last_request == line then
         return
@@ -234,22 +246,22 @@ local function request(player, operation, arguments, request_schema)
 end
 
 -- Asks a player to run one operation and waits for its response.
-local function wait_for_one(player, operation, arguments, request_schema, response_schema)
-    request(player, operation, arguments, request_schema)
-    return receive(player, response_schema)
+local function wait_for_one(player, descriptor, arguments)
+    request(player, descriptor, arguments)
+    return receive(player, descriptor.response_schema)
 end
 
 -- Broadcasts the request to every player, then collects every reply in completion order through
 -- receive_any, so the players compute in parallel and a slow one never holds up a ready one.
 -- Returns the replies keyed by player index.
-local function wait_for_all(players, operation, arguments, request_schema, response_schema)
+local function wait_for_all(players, descriptor, arguments)
     local conns, replies = {}, {}
     for _, player in ipairs(players) do
-        request(player, operation, arguments, request_schema)
+        request(player, descriptor, arguments)
         conns[#conns + 1] = player.connection
     end
     for _ = 1, #conns do
-        local player, reply = receive_any(players, conns, response_schema)
+        local player, reply = receive_any(players, conns, descriptor.response_schema)
         replies[player.index] = reply
     end
     return replies
@@ -258,28 +270,28 @@ end
 -- Broadcasts the request and returns the first reply to arrive, leaving the rest. It shares the
 -- request discipline above and does not judge the reply, the caller does. A player that died
 -- (exited after posting its result) is skipped, so its closed connection is never polled.
-local function wait_for_any(players, operation, arguments, request_schema, response_schema)
+local function wait_for_any(players, descriptor, arguments)
     local conns = {}
     for _, player in ipairs(players) do
-        request(player, operation, arguments, request_schema)
+        request(player, descriptor, arguments)
         if not player.dead then
             conns[#conns + 1] = player.connection
         end
     end
-    local _, reply = receive_any(players, conns, response_schema)
+    local _, reply = receive_any(players, conns, descriptor.response_schema)
     return reply
 end
 
 -- Asks both players for their opening commitment and returns the two, keyed by index.
 local function wait_for_final_hash(players)
-    return wait_for_all(players, "commit_final_hash", {}, "CommitFinalHashRequest", "CommitFinalHashResponse")
+    return wait_for_all(players, REQUESTS.commit_final_hash, {})
 end
 
 -- Broadcasts one bisection round at `target` on `level`, carrying the branch taken at the
 -- previous round, and returns both players' root hashes there, keyed by player index.
 local function wait_for_bisection(players, branch, level, target)
     local arguments = { branch = branch, level = level, target = target }
-    return wait_for_all(players, "commit_bisection", arguments, "CommitBisectionRequest", "CommitBisectionResponse")
+    return wait_for_all(players, REQUESTS.commit_bisection, arguments)
 end
 
 -- Sends a player the terminal round and waits for the disputed transition's log commitment,
@@ -287,7 +299,7 @@ end
 -- converged on, which the game's commit_log interprets.
 local function wait_for_log(player, branch, mcycle, uarch_cycle)
     local arguments = { branch = branch, mcycle = mcycle, uarch_cycle = uarch_cycle }
-    return wait_for_one(player, "commit_log", arguments, "CommitLogRequest", "CommitLogResponse")
+    return wait_for_one(player, REQUESTS.commit_log, arguments)
 end
 
 -- Waits for both players to connect, collects their commitments, and announces them. It binds the
@@ -340,6 +352,8 @@ end
 
 return {
     SCHEMA_DICT = SCHEMA_DICT,
+    REQUESTS = REQUESTS,
+    define_request = define_request,
     short_hash = short_hash,
     phase = phase,
     eventf = eventf,

@@ -106,7 +106,7 @@ for _, lie in ipairs({ 0, 1, 6, 13, LEAVES - 1 }) do
         local dispute = walk(honest, liar)
         assert(dispute.state_index == lie, "walk missed the divergent state")
         assert(dispute.claim1_next_hash == base and dispute.claim2_next_hash == fake, "walk misattributed the states")
-        -- liar opens first: the same leaf, the commitments swapped
+        -- liar opens first: the same leaf, the claims swapped
         local mirrored = walk(liar, honest)
         assert(
             mirrored.state_index == lie and mirrored.claim1_next_hash == fake and mirrored.claim2_next_hash == base,
@@ -193,8 +193,8 @@ local function run_with_server(scenario)
     end)
 end
 
--- A player that submits `claim` to any tournament and answers every move with `move`.
-local function make_submitter(claim, move)
+-- A player that returns `claim` to any tournament and answers every move with `move`.
+local function make_claimer(claim, move)
     return function(request)
         if request.operation == "commit_mcycle_claim" then
             return { label = claim, value = claim }
@@ -221,28 +221,28 @@ run_with_server(function(server, run_client, wait_connections)
             return { value = value }
         end
     end
-    run_client(nil, make_submitter("a", answer("valid")))
-    run_client(nil, make_submitter("b", answer("invalid")))
+    run_client(nil, make_claimer("a", answer("valid")))
+    run_client(nil, make_claimer("b", answer("invalid")))
     run_client({ role = "sealer" }, function()
         return { value = true }
     end)
     server:accept_subscribers("initial")
-    local submissions =
-        server:collect_submissions(server:get_subscribers({ "initial" }), define_request("commit_mcycle_claim"))
+    local responses =
+        server:collect_claims(server:get_subscribers({ "initial" }), define_request("commit_mcycle_claim"))
     assert(#server.open_phases == 0, "sealed phases were retained")
-    table.sort(submissions, function(x, y)
+    table.sort(responses, function(x, y)
         return x.value < y.value
     end)
     assert(
-        #submissions == 2 and submissions[1].value == "a" and submissions[2].value == "b",
-        "mcycle tournament gathered the wrong submissions"
+        #responses == 2 and responses[1].value == "a" and responses[2].value == "b",
+        "mcycle tournament gathered the wrong claims"
     )
     assert(server.sealer and server.sealer.is_sealer, "the sealer was not adopted")
-    local a, b = submissions[1].connection, submissions[2].connection
+    local a, b = responses[1].connection, responses[2].connection
     server:subscribe("x", a)
     server:subscribe("x", b)
     -- A late joiner, after the seal, is not part of the mcycle tournament.
-    run_client(nil, make_submitter("c", answer("valid")))
+    run_client(nil, make_claimer("c", answer("valid")))
     wait_connections(4)
 
     -- First valid move wins, the rejected proof leaves its connection open.
@@ -300,7 +300,7 @@ run_with_server(function(server, run_client, wait_connections)
     assert(not n.dead and not b.dead, "an unproved move closed a connection")
 
     -- A nested tournament asks only its audience, and seals at once.
-    local nested = server:collect_submissions({ a }, define_request("commit_mcycle_claim"))
+    local nested = server:collect_claims({ a }, define_request("commit_mcycle_claim"))
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
     assert(#server.open_phases == 0, "sealed nested tournament was retained")
 
@@ -372,7 +372,7 @@ run_with_server(function(server, run_client, wait_connections)
     assert(not a.dead and not b.dead, "a live player was closed")
 
     -- Sealing is connection-bound. An extra player reply cannot be consumed as a seal; the
-    -- tournament closes only on the sealer's reply and includes the player's submission.
+    -- tournament closes only on the sealer's reply and includes the player's claim.
     run_client(nil, function(wire_request)
         if wire_request.operation == "commit_mcycle_claim" then
             return cartesi.tojson({ value = "forger" }, -1) .. "\n" .. cartesi.tojson({ value = true }, -1)
@@ -381,7 +381,7 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     wait_connections(11)
     local f = server.connections[11]
-    local t2 = server:collect_submissions({ f }, define_request("commit_mcycle_claim"))
+    local t2 = server:collect_claims({ f }, define_request("commit_mcycle_claim"))
     assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged seal was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
@@ -429,7 +429,7 @@ local ok, err = pcall(run_with_server, function(server, run_client, wait_connect
         return { value = "other" }
     end)
     wait_connections(1)
-    server:collect_submissions({}, define_request("commit_mcycle_claim"))
+    server:collect_claims({}, define_request("commit_mcycle_claim"))
 end)
 assert(not ok and err:find("did not close the phase asked"), "an invalid seal was accepted")
 
@@ -439,7 +439,7 @@ ok, err = pcall(run_with_server, function(server, run_client, wait_connections)
         return "close"
     end)
     wait_connections(1)
-    server:collect_submissions({}, define_request("commit_mcycle_claim"))
+    server:collect_claims({}, define_request("commit_mcycle_claim"))
 end)
 assert(not ok and err:find("the sealer went away"), "sealer EOF did not fail the referee")
 print("prt-test: ok")

@@ -49,7 +49,7 @@ local keccak = cartesi.keccak256
 local new_match, is_valid_move, advance_match = prtu.new_match, prtu.is_valid_move, prtu.advance_match
 
 -- The seal role carries no dispute: it is the sealer, which closes the initial subscription
--- phase once the last player has connected, then the submissions of every tournament as it
+-- phase once the last player has connected, then the claims of every tournament as it
 -- opens. It needs none of the game geometry.
 if arg[1] == "seal" then
     return prtu.serve(prtu.new_sealer(), assert(arg[2], "missing referee address"))
@@ -106,19 +106,16 @@ local function is_valid_claim_proof(proof, index, height, computation_hash)
         and pcall(hash_tree.verify_slice, proof)
 end
 
--- Validates a claim commitment: its two children establish the computation hash, and its
--- standard proof places the final state at the tree's last leaf. Returns the claim.
-local function validate_claim_commitment(witness, height)
-    local computation_hash = keccak(witness.left, witness.right)
-    assert(
-        is_valid_claim_proof(witness.proof, (1 << height) - 1, height, computation_hash),
-        "invalid final-state proof"
-    )
+-- Validates a claim: its two children establish the computation hash, and its standard proof
+-- places the final state at the tree's last leaf. Returns its normalized referee representation.
+local function validate_claim(claim, height)
+    local computation_hash = keccak(claim.left, claim.right)
+    assert(is_valid_claim_proof(claim.proof, (1 << height) - 1, height, computation_hash), "invalid final-state proof")
     return {
         computation_hash = computation_hash,
-        left = witness.left,
-        right = witness.right,
-        final_state = witness.proof.target_hash,
+        left = claim.left,
+        right = claim.right,
+        final_state = claim.proof.target_hash,
     }
 end
 
@@ -133,23 +130,22 @@ local function is_hash_less(a, b)
     return #a < #b
 end
 
--- Partitions tournament submissions by computation hash, returning one claim per partition,
--- sorted by that hash. `validate` turns an accepted commitment into its claim, and each sender
--- subscribes to requests for that claim. The sort makes the bracket a pure function of the claim
--- set, not of connection order.
+-- Partitions claim responses by computation hash, returning one claim per partition, sorted by
+-- that hash. Each sender subscribes to requests for its valid claim. The sort makes the bracket a
+-- pure function of the claim set, not of connection order.
 -- docs:begin partition_claims
-local function partition_claims(submissions, validate)
+local function partition_claims(responses, validate)
     local claims, by_hash = {}, {}
-    for _, submission in ipairs(submissions) do
-        local ok, claim = pcall(validate, submission.value)
+    for _, response in ipairs(responses) do
+        local ok, claim = pcall(validate, response.value)
         if ok then
             if not by_hash[claim.computation_hash] then
                 by_hash[claim.computation_hash] = claim
                 claims[#claims + 1] = claim
             end
-            server:subscribe(claim.computation_hash, submission.connection)
+            server:subscribe(claim.computation_hash, response.connection)
         elseif not ok then
-            write_stderr("a submission failed validation: %s\n", tostring(claim))
+            write_stderr("a claim failed validation: %s\n", tostring(claim))
         end
     end
     table.sort(claims, function(a, b)
@@ -159,13 +155,13 @@ local function partition_claims(submissions, validate)
 end
 -- docs:end partition_claims
 
--- Opens a tournament to a fixed audience and partitions its valid claim commitments.
+-- Opens a tournament to a fixed audience and partitions its valid claims.
 local function open_tournament(conns, validate, request, ...)
-    return partition_claims(server:collect_submissions(conns, request, ...), validate)
+    return partition_claims(server:collect_claims(conns, request, ...), validate)
 end
 
-local function validate_mcycle_claim(witness)
-    return validate_claim_commitment(witness, MCYCLE_HEIGHT)
+local function validate_mcycle_claim(claim)
+    return validate_claim(claim, MCYCLE_HEIGHT)
 end
 
 -- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
@@ -253,8 +249,8 @@ local function open_uarch_tournament(parent, match, disputed_period, agreed_hash
         settle = settle_uarch_match,
     }
     story.report_uarch_tournament(tournament, match, disputed_period, agreed_hash)
-    local function validate(witness)
-        local claim = validate_claim_commitment(witness, UARCH_HEIGHT)
+    local function validate(claim)
+        claim = validate_claim(claim, UARCH_HEIGHT)
         assert(claim.final_state == claim1_next_hash or claim.final_state == claim2_next_hash)
         return claim
     end

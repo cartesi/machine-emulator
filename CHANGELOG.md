@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added fixed-length tuple schemas to `cartesi.tojson`/`cartesi.fromjson`: an array-valued `items` field assigns one schema type to each tuple position and requires the encoded array to have the same length
+
 ## [0.21.0] - 2026-08-04
 ### Added
 - Added `--nvram` and `nvram` machine configuration for guest-visible UIO memory ranges

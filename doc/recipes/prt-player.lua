@@ -21,8 +21,8 @@ prtu.SCHEMA_DICT.Claim = {
 }
 prtu.SCHEMA_DICT.CommitMcycleClaimRequest = { items = {} }
 prtu.SCHEMA_DICT.CommitMcycleClaimResponse = "Claim"
-prtu.SCHEMA_DICT.AdvanceRequest = { items = { "Base64", "Default", "Default", "Base64" } }
-prtu.SCHEMA_DICT.AdvanceResponse = { l = "Base64", r = "Base64", nl = "Base64", nr = "Base64" }
+prtu.SCHEMA_DICT.AdvanceBisectionRequest = { items = { "Base64", "Default", "Default", "Base64" } }
+prtu.SCHEMA_DICT.AdvanceBisectionResponse = { l = "Base64", r = "Base64", nl = "Base64", nr = "Base64" }
 prtu.SCHEMA_DICT.ProveStateRequest = { items = { "Base64", "Default" } }
 prtu.SCHEMA_DICT.ProveStateResponse = "Proof"
 prtu.SCHEMA_DICT.CommitUarchClaimRequest = {
@@ -52,7 +52,7 @@ local REQUESTS = {
         "CommitMcycleClaimRequest",
         "CommitMcycleClaimResponse"
     ),
-    advance = prtu.define_request("advance", "AdvanceRequest", "AdvanceResponse"),
+    advance_bisection = prtu.define_request("advance_bisection", "AdvanceBisectionRequest", "AdvanceBisectionResponse"),
     prove_state = prtu.define_request("prove_state", "ProveStateRequest", "ProveStateResponse"),
     commit_uarch_claim = prtu.define_request(
         "commit_uarch_claim",
@@ -426,7 +426,7 @@ end
 -- returning its two children l and r, and, above the leaves, the two children nl and nr of
 -- the child the walk descends into. The descent goes left when l differs from the opponent's
 -- exposed left child, which the referee passes as opp_left.
-function handlers.advance(player, computation_hash, height, index, opponent_left)
+function handlers.advance_bisection(player, computation_hash, height, index, opponent_left)
     local tree = get_claim_tree(player, computation_hash)
     local l, r = tree:get_children(height, index)
     local move = { l = l, r = r }
@@ -450,19 +450,19 @@ end
 -- and the period index are 0-based, as the referee counts them. A holder whose uarch claim
 -- ends in neither contested value cannot defend its parent claim, and dies on the
 -- contradiction.
-function handlers.commit_uarch_claim(player, input_index, period_index, claim1_next_state_hash, claim2_next_state_hash)
+function handlers.commit_uarch_claim(player, input_index, period_index, claim0_next_state_hash, claim1_next_state_hash)
     write_stderr("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
     player.uarch_claim = player.make_uarch_tree(player, input_index + 1, period_index)
     local claim = make_claim(player.uarch_claim)
     local final_state_hash = claim.proof.target_hash
     assert(
-        final_state_hash == claim1_next_state_hash or final_state_hash == claim2_next_state_hash,
+        final_state_hash == claim0_next_state_hash or final_state_hash == claim1_next_state_hash,
         string.format(
             "%s: uarch final %s matches neither contested final %s nor %s",
             player.label,
             format_short_hash(final_state_hash),
-            format_short_hash(claim1_next_state_hash),
-            format_short_hash(claim2_next_state_hash)
+            format_short_hash(claim0_next_state_hash),
+            format_short_hash(claim1_next_state_hash)
         )
     )
     write_stderr("%s: uarch claim ready\n", player.label)

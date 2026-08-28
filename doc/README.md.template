@@ -5449,7 +5449,12 @@ It can defend every other request with honest data, but the reset that closes it
 Two fabulists run, lying about different samples, so they dispute each other too, which is why there are five dishonest players and four ways of being dishonest.
 
 To run the tournament, start the referee with the epoch's input files.
-```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match outputs=claims,posted,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_4_elided,match_4_1_elided,match_5_elided,match_5_1_elided replace=source/referee}
+```{.lua key=prt_test_src include=prt-test.lua replace=null}
+```
+```{.bash key=prt_test depends=prt_test_src,prt_runs_node replace=null}
+lua5.4 "$RECIPES_DIR/prt-test.lua"
+```
+```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,prt_test outputs=claims,posted,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_4_elided,match_4_1_elided,match_5_elided,match_5_1_elided replace=source/referee}
 rm -f rolling-calculator-template
 ln -sf "$tmpl" rolling-calculator-template
 ln -sf $rolling_calc_encode/input-[012].bin .
@@ -5537,6 +5542,8 @@ grep -q "Winner computation hash: $(lua5.4 -l cartesi -e 'io.write(cartesi.tohex
 grep -q "Winner final state hash: $(lua5.4 -l cartesi -e 'io.write(cartesi.tohex(io.read(4)))' < "$epoch_hash")" verdict
 # The second fabulist must force a uarch dispute in the fixed tail.
 grep -q "A uarch tournament opens over input 2, period 60000" match_[0-9]*
+# The quitter must close immediately after committing, so its first match ends by default.
+grep -q "wins by default" match_1
 # The referee narrates each match into its own file. Reduce each long walk to its ends.
 for m in 2 3 4 5; do
     { head -n 3 match_$m; echo ...; tail -n 6 match_$m; } > match_${m}_elided

@@ -712,6 +712,9 @@ local function serve(player, server_address)
             cartesi.tojson(response, -1, ensure_response_envelope_schema(request.response_schema), SCHEMA_DICT)
         trace_wire("to referee", player.label, encoded)
         assert(player.connection:send(encoded .. "\n"))
+        if player.done then
+            break
+        end
     end
     player.connection:close()
 end

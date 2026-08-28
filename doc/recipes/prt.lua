@@ -346,7 +346,7 @@ local function settle_divergence(tournament, match, divergence)
         or wait_for_agreed_state_hash(match, tournament, divergence.state_index)
     story.report_divergence(match, divergence, agreed_state_hash)
     if not agreed_state_hash then
-        return nil
+        return 2
     end
     local settled_state_hash = tournament.settle_match(
         tournament,
@@ -357,29 +357,29 @@ local function settle_divergence(tournament, match, divergence)
         divergence.claim1_next_state_hash
     )
     if settled_state_hash == divergence.claim0_next_state_hash then
-        return match.claims[0]
+        return 0
     elseif settled_state_hash == divergence.claim1_next_state_hash then
-        return match.claims[1]
+        return 1
     end
-    return nil
+    return 2
 end
 -- docs:end settle_divergence
 
--- Runs one match to its end and returns the winning claim, or nil when both die. Each round
+-- Runs one match to its end and returns the winning claim index: zero or one for a winner, two
+-- when both die. Each round
 -- asks the holders of the on-turn claim to open its node, and the walk advances on the first
 -- move that validates. A claim nobody opens loses by default.
 -- docs:begin run_match
 local function run_match(tournament, match)
     while true do
         local turn_claim = match.claims[match.turn]
-        local other_claim = match.claims[match.turn ~ 1]
         local conns = server:get_subscribers({ turn_claim.computation_hash })
         local move = server:accept_first(conns, function(move)
             return is_valid_move(match, move) and move
         end, REQUESTS.advance_bisection, turn_claim.computation_hash, match.height, match.index, match.left_node)
         if not move then
             story.report_default_win(match)
-            return other_claim
+            return match.turn ~ 1
         end
         local divergence = advance_bisection(match, move)
         if divergence then
@@ -390,27 +390,27 @@ local function run_match(tournament, match)
 end
 -- docs:end run_match
 
--- Runs the tasks concurrently, one coroutine each in the referee server's dispatcher, and
--- returns their results once every task has finished, indexed as the tasks were.
-local function run_all(tasks)
-    local main = coroutine.running()
-    local results, pending = {}, 0
-    for slot, task in ipairs(tasks) do
-        pending = pending + 1
+-- Runs the matches concurrently, one coroutine each in the referee server's dispatcher, and
+-- records their winners once every match has finished.
+local function run_matches(tournament, matches)
+    local round_coroutine = coroutine.running()
+    local unfinished_matches = 0
+    for _, match in ipairs(matches) do
+        unfinished_matches = unfinished_matches + 1
         server.dispatcher:spawn(function()
-            results[slot] = task()
-            pending = pending - 1
-            server.dispatcher:schedule(main, "task_done")
+            match.winner = run_match(tournament, match)
+            unfinished_matches = unfinished_matches - 1
+            server.dispatcher:schedule(round_coroutine, "match_done")
         end)
     end
-    while pending > 0 do
+    while unfinished_matches > 0 do
         server.dispatcher:wake_when_scheduled()
     end
-    return results
 end
 
 -- Pairs the surviving claims two by two into the matches of a round, in bracket order.
-local function pair_claims(tournament, claims, round)
+local function pair_claims(tournament, round)
+    local claims = tournament.claims
     local matches = {}
     for i = 1, #claims - 1, 2 do
         local match = new_match(claims[i], claims[i + 1], tournament.height)
@@ -420,32 +420,22 @@ local function pair_claims(tournament, claims, round)
     return matches
 end
 
--- Runs one round: pairs the surviving claims, runs their matches at once, and returns the
--- winners, an odd claim out taking a bye to the next round. A match that eliminates both sides
--- leaves neither behind. The round is narrated before and after its matches run, in bracket
--- order, so the transcript never depends on the order the matches happened to finish.
+-- Runs one round: pairs the surviving claims, runs their matches at once, and replaces the
+-- tournament's claims with the survivors, an unmatched claim advancing first into the next
+-- round. A match that eliminates both sides leaves neither behind. The round is narrated before
+-- and after its matches run, in bracket order, so the transcript never depends on finish order.
 -- docs:begin run_round
-local function run_round(tournament, claims, round)
-    local matches = pair_claims(tournament, claims, round)
-    local bye = #claims % 2 == 1 and claims[#claims] or nil
-    local tasks = {}
-    for slot, match in ipairs(matches) do
-        tasks[slot] = function()
-            return run_match(tournament, match)
-        end
+local function run_round(tournament, round)
+    local claims = tournament.claims
+    local matches = pair_claims(tournament, round)
+    local unmatched_claim = #claims % 2 == 1 and claims[#claims] or nil
+    run_matches(tournament, matches)
+    story.report_round(tournament, round, matches, unmatched_claim)
+    local surviving_claims = { unmatched_claim }
+    for _, match in ipairs(matches) do
+        surviving_claims[#surviving_claims + 1] = match.claims[match.winner]
     end
-    local results, winners = run_all(tasks), {}
-    story.report_round(tournament, round, matches, results, bye)
-    for slot = 1, #matches do
-        local winner = results[slot]
-        if winner then
-            winners[#winners + 1] = winner
-        end
-    end
-    if bye then
-        winners[#winners + 1] = bye
-    end
-    return winners
+    tournament.claims = surviving_claims
 end
 -- docs:end run_round
 
@@ -453,13 +443,12 @@ end
 -- all a tournament is: a reduction of the claims to the one that survives every match.
 -- docs:begin run_tournament
 function run_tournament(tournament)
-    local claims = tournament.claims
     local round = 0
-    while #claims > 1 do
+    while #tournament.claims > 1 do
         round = round + 1
-        claims = run_round(tournament, claims, round)
+        run_round(tournament, round)
     end
-    return claims[1]
+    return tournament.claims[1]
 end
 -- docs:end run_tournament
 

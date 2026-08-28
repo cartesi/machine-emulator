@@ -5349,11 +5349,11 @@ A claim contains its computation hash's two children and a standard `Proof` for 
 The referee checks that the children join into the proof's root and verifies the proof with `hash_tree.verify_slice()`, the same membership check `joinTournament` performs on chain (`validate_claim` in `prt.lua`).
 `partition_claims` groups identical claims by computation hash, subscribes every sender to its claim, and sorts the resulting claims by computation hash, so the bracket is a pure function of the claim set, not of the order in which players happened to connect.
 
-The tournament is that reduction: while more than one claim survives, run a round, which pairs the survivors, runs their matches at once, and keeps the winners, an odd claim taking a bye:
+The tournament is that reduction: while more than one claim survives, run a round, which pairs the survivors, runs their matches at once, and keeps the surviving claims, an odd claim advancing unmatched:
 ```{.lua key=prt_run_tournament include=prt.lua/run_tournament title="prt.lua (excerpt)"}
 ```
 A round (`run_round`) pairs the surviving claims and runs their matches all at the same time.
-The winners are kept in bracket order, so the next round depends only on the claims, not on the order in which the matches happened to finish, and a match that eliminated both sides contributes no winner.
+The surviving claims are kept in bracket order, so the next round depends only on the claims, not on the order in which the matches happened to finish, and a match that eliminated both sides contributes nothing.
 
 A match walks the two claim trees down to the leaf where they first diverge, the two players alternating, one move per round, exactly as in Dave's `Match.sol`.
 The referee holds one node to open and the opponent's standing left and right children.
@@ -5602,7 +5602,7 @@ Each player announces the claim it posted on its own standard error, which is ho
 ```{replace=prt_run/posted}
 ```
 Honest and the two fabulists commit to the same final state (a fabulist lies only about an interior sample), but their claims differ, so they still dispute.
-The referee sorts the claims and reduces them round by round, the matches of a round running at once and the odd claim out taking a bye, until one claim is left:
+The referee sorts the claims and reduces them round by round, the matches of a round running at once and the odd claim advancing unmatched, until one claim is left:
 ```{replace=prt_run/tournament}
 ```
 

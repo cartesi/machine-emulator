@@ -9566,25 +9566,24 @@ not of the order in which players happened to connect.
 
 The tournament is that reduction: while more than one claim survives,
 run a round, which pairs the survivors, runs their matches at once, and
-keeps the winners, an odd claim taking a bye:
+keeps the surviving claims, an odd claim advancing unmatched:
 
 ``` lua
 function run_tournament(tournament)
-    local claims = tournament.claims
     local round = 0
-    while #claims > 1 do
+    while #tournament.claims > 1 do
         round = round + 1
-        claims = run_round(tournament, claims, round)
+        run_round(tournament, round)
     end
-    return claims[1]
+    return tournament.claims[1]
 end
 ```
 
 A round (`run_round`) pairs the surviving claims and runs their matches
-all at the same time. The winners are kept in bracket order, so the next
-round depends only on the claims, not on the order in which the matches
-happened to finish, and a match that eliminated both sides contributes
-no winner.
+all at the same time. The surviving claims are kept in bracket order, so
+the next round depends only on the claims, not on the order in which the
+matches happened to finish, and a match that eliminated both sides
+contributes nothing.
 
 A match walks the two claim trees down to the leaf where they first
 diverge, the two players alternating, one move per round, exactly as in
@@ -9659,14 +9658,13 @@ isolated divergence over. A claim nobody opens loses by default:
 local function run_match(tournament, match)
     while true do
         local turn_claim = match.claims[match.turn]
-        local other_claim = match.claims[match.turn ~ 1]
         local conns = server:get_subscribers({ turn_claim.computation_hash })
         local move = server:accept_first(conns, function(move)
             return is_valid_move(match, move) and move
         end, REQUESTS.advance_bisection, turn_claim.computation_hash, match.height, match.index, match.left_node)
         if not move then
             story.report_default_win(match)
-            return other_claim
+            return match.turn ~ 1
         end
         local divergence = advance_bisection(match, move)
         if divergence then
@@ -9980,8 +9978,8 @@ fabulist: posted claim 0x923b6eb7... with final state 0x5d4ca486...
 Honest and the two fabulists commit to the same final state (a fabulist
 lies only about an interior sample), but their claims differ, so they
 still dispute. The referee sorts the claims and reduces them round by
-round, the matches of a round running at once and the odd claim out
-taking a bye, until one claim is left:
+round, the matches of a round running at once and the odd claim
+advancing unmatched, until one claim is left:
 
 ``` text
 Round 1, match 1, at the mcycle level: claim 0x1a22b0c7... against claim 0x4f4b4987....
@@ -9992,8 +9990,8 @@ Match 2: claim 0x923b6eb7... wins.
 Match 3: claim 0xc75bbba2... wins.
 Round 2, match 4, at the mcycle level: claim 0x4f4b4987... against claim 0x923b6eb7....
 Match 4: claim 0x923b6eb7... wins.
-Claim 0xc75bbba2... takes a bye to round 3.
-Round 3, match 5, at the mcycle level: claim 0x923b6eb7... against claim 0xc75bbba2....
+Claim 0xc75bbba2... advances unmatched to round 3.
+Round 3, match 5, at the mcycle level: claim 0xc75bbba2... against claim 0x923b6eb7....
 Match 5: claim 0xc75bbba2... wins.
 ```
 

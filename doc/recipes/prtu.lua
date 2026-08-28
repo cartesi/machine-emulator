@@ -1,7 +1,7 @@
 -- The parts of the PRT game that do not depend on what is being disputed: the claim trees
 -- (Merkle trees over runs of repeated nodes, refined on demand), the match walk, the referee's
 -- coroutine dispatcher, the referee server that carries the wire protocol, and the
--- narration. The game script supplies the machines, the commitment builds, the tournament,
+-- narration. The game script supplies the machines, the claim builds, the tournament,
 -- and the verification of the disputed transition.
 
 local cartesi = require("cartesi")
@@ -521,7 +521,7 @@ end
 
 -- The sealer is a player with one operation: closing the next phase. It announces itself as
 -- the sealer on connecting, and the referee first asks it to close initial subscriptions, then
--- to seal every tournament's claim submissions by the same lifecycle at both levels.
+-- to close every tournament's claim collection by the same lifecycle at both levels.
 local function new_sealer()
     local sealer = {
         label = "sealer",
@@ -539,8 +539,8 @@ end
 --
 -- Every player connects to the referee server, which is the single event loop. Connections
 -- arriving during the initial subscription phase subscribe to its initial hash. A tournament
--- then opens with a fixed audience, the connections asked to submit a claim to it, and its
--- submissions close once the sealer seals it and every connection in the audience has submitted
+-- then opens with a fixed audience, the connections asked for a claim, and its claim collection
+-- closes once the sealer seals it and every connection in the audience has answered
 -- or closed. A move request asks the holders of a claim, and takes the first reply that proves
 -- itself. A reply that fails to prove itself, or does not even decode under the operation's
 -- schema, is rejected, as the blockchain rejects a bad transaction, and counts as that
@@ -608,7 +608,7 @@ end
 -- Re-examines a request after a reply, a closed connection, or a seal. A move request
 -- resolves as soon as it has taken a valid value, and otherwise once every connection asked
 -- has answered or closed, with nothing. A collection stays active while a connection is
--- still to answer, and a tournament's submissions also until the seal, then resolves with
+-- still to answer, and a tournament's claim collection also until the seal, then resolves with
 -- the replies gathered.
 local function settle(self, entry)
     if not self.active[entry] then
@@ -957,10 +957,10 @@ function server_meta.__index.accept_subscribers(self, initial_hash)
     wait(self, entry)
 end
 
--- Collects claim submissions from a fixed audience. This transport primitive hides how the
--- demonstration decides that submission time is over.
--- docs:begin collect_submissions
-function server_meta.__index.collect_submissions(self, conns, request, ...)
+-- Collects claims from a fixed audience. This transport primitive hides how the demonstration
+-- decides that claim collection is over.
+-- docs:begin collect_claims
+function server_meta.__index.collect_claims(self, conns, request, ...)
     local entry = {
         kind = "collect",
         response_schema = request.response_schema,
@@ -972,7 +972,7 @@ function server_meta.__index.collect_submissions(self, conns, request, ...)
     request_seal(self, entry)
     return wait(self, entry).replies
 end
--- docs:end collect_submissions
+-- docs:end collect_claims
 
 -- Runs the referee: spawns its main logic, then drives the event loop until it is done.
 function server_meta.__index.run(self, main)

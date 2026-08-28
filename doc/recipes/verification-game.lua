@@ -42,7 +42,7 @@ vgu.SCHEMA_DICT.ProveOutputResponse = {
 -- step and a reset log, an ordinary step just the one.
 vgu.SCHEMA_DICT.CommitLogResponse = {
     step_log = "AccessLog",
-    reset_log = "AccessLog",
+    reset_uarch_log = "AccessLog",
 }
 
 local TEMPLATE = "calculator-template"
@@ -117,7 +117,7 @@ local function commit_log(player, arguments)
     local agreed = player.agreed.machine
     if arguments.uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
         local step_log = agreed:log_step_uarch()
-        return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
+        return { step_log = step_log, reset_uarch_log = agreed:log_reset_uarch() }
     end
     return { step_log = agreed:log_step_uarch() }
 end
@@ -178,15 +178,14 @@ end
 -- into a false verdict.
 -- docs:begin verify_state_transition
 local function verify_state_transition(uarch_cycle, state_hash_before, log, state_hash_after)
-    local machine = cartesi.machine
     local pass = pcall(function()
         eventf("Verifying uarch step log!")
-        local hash = machine:verify_step_uarch(state_hash_before, log.step_log)
+        local obtained_state_hash = cartesi.machine:verify_step_uarch(state_hash_before, log.step_log)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
-            hash = machine:verify_reset_uarch(hash, log.reset_log)
+            obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, log.reset_uarch_log)
         end
-        assert(hash == state_hash_after, "log does not reach the committed after-hash")
+        assert(obtained_state_hash == state_hash_after, "log does not reach the committed after-hash")
     end)
     eventf("Log is %s!", pass and "valid" or "invalid")
     return pass

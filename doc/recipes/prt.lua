@@ -115,7 +115,7 @@ local function validate_claim(claim, height)
         computation_hash = computation_hash,
         left = claim.left,
         right = claim.right,
-        final_state = claim.proof.target_hash,
+        final_state_hash = claim.proof.target_hash,
     }
 end
 
@@ -165,38 +165,52 @@ local function validate_mcycle_claim(claim)
 end
 
 -- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
--- them on the blockchain, without ever instantiating a machine. The transition index picks the
--- form, as in CartesiStateTransition.sol: the transition out of an input boundary includes
+-- them on the blockchain, without ever instantiating a machine. `epoch_period_index` and
+-- `state_transition_offset` are the 64-bit-safe split of CartesiStateTransition.sol's epoch-local
+-- counter. The counter picks the form: the transition out of an input boundary includes
 -- the input the dapp contract holds (never one a player supplies), the transition closing an
 -- instruction verifies a step and then the reset, and every other is an ordinary step. Each
 -- verification returns the state hash its log provably advances to, and the chain starts
--- from the agreed state hash. Returns the hash the logs reach, or raises on a bad log.
--- docs:begin verify_transition
-local function verify_transition(dapp_contract, disputed_period, transition_index, current_hash, logs)
-    local machine = cartesi.machine
-    local uarch_cycle = transition_index & (UARCH_CYCLES_PER_MCYCLE - 1)
-    local hash = current_hash
-    local data = dapp_contract.inputs[disputed_period.input_index + 1]
-    if transition_index == 0 and disputed_period.period_index == 0 and data then
+-- from the agreed state hash. Returns the state hash the logs reach, or raises on a bad log.
+-- docs:begin verify_state_transition
+local function verify_state_transition(
+    dapp_contract,
+    current_state_hash,
+    epoch_period_index,
+    state_transition_offset,
+    logs
+)
+    local input_index = epoch_period_index // PERIODS_PER_INPUT
+    local period_index = epoch_period_index % PERIODS_PER_INPUT
+    local uarch_cycle = state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1)
+    local obtained_state_hash = current_state_hash
+    local data = dapp_contract.inputs[input_index + 1]
+    if state_transition_offset == 0 and period_index == 0 and data then
         local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-        hash = machine:verify_send_cmio_response(reason, data, hash, logs.send_cmio_log, hash)
+        obtained_state_hash = cartesi.machine:verify_send_cmio_response(
+            reason,
+            data,
+            obtained_state_hash,
+            logs.send_cmio_log,
+            obtained_state_hash
+        )
     end
-    hash = machine:verify_step_uarch(hash, logs.step_log)
+    obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, logs.step_log)
     if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
-        hash = machine:verify_reset_uarch(hash, logs.reset_log)
+        obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, logs.reset_uarch_log)
     end
-    return hash
+    return obtained_state_hash
 end
--- docs:end verify_transition
+-- docs:end verify_state_transition
 
 -- The state hash both claims agree on right before the divergent leaf, when the walk did not
 -- expose it. At leaf 0 it is the tournament's initial state hash, which the referee knows.
 -- Otherwise it is the leaf before the divergence, requested as a proof against either claim:
 -- the walk finds the leftmost divergence, so the two trees agree at every earlier leaf, and a
 -- proof against either one binds them both. The standard proof verifies against the computation hash.
-local function wait_for_agreed_hash(match, tournament, state_index)
+local function wait_for_agreed_state_hash(match, tournament, state_index)
     if state_index == 0 then
-        return tournament.initial_hash
+        return tournament.initial_state_hash
     end
     for _, claim in ipairs({ match.claim1, match.claim2 }) do
         local conns = server:get_subscribers({ claim.computation_hash })
@@ -213,20 +227,32 @@ end
 -- Settles a uarch match once the walk isolates the divergent leaf. The referee asks the
 -- holders of both claims for the transition's logs and takes the first answer that verifies
 -- against the agreed state hash. The transition out of the agreed state is unique, so any log
--- that verifies reaches the one true after-hash. The claim that committed to it wins, and a
+-- that verifies reaches the one true next state hash. The claim that committed to it wins, and a
 -- claim that committed to anything else loses. Nobody proving anything eliminates both.
 -- docs:begin settle_uarch_match
-local function settle_uarch_match(tournament, match, transition_index, current_hash, claim1_next_hash, claim2_next_hash)
-    local disputed_period = tournament.disputed_period
-    story.report_transition(tournament, match, transition_index)
+local function settle_uarch_match(
+    tournament,
+    match,
+    state_transition_offset,
+    current_state_hash,
+    claim1_next_state_hash,
+    claim2_next_state_hash
+)
+    story.report_transition(tournament, match, state_transition_offset)
     local conns = server:get_subscribers({ match.claim1.computation_hash, match.claim2.computation_hash })
-    local next_hash = server:accept_first(conns, function(v)
-        return verify_transition(tournament.dapp_contract, disputed_period, transition_index, current_hash, v)
-    end, REQUESTS.provide_transition_logs, disputed_period.input_index, disputed_period.period_index, transition_index)
-    local winner = next_hash == claim1_next_hash and match.claim1
-        or next_hash == claim2_next_hash and match.claim2
+    local obtained_state_hash = server:accept_first(conns, function(v)
+        return verify_state_transition(
+            tournament.dapp_contract,
+            current_state_hash,
+            tournament.epoch_period_index,
+            state_transition_offset,
+            v
+        )
+    end, REQUESTS.provide_transition_logs, tournament.input_index, tournament.period_index, state_transition_offset)
+    local winner = obtained_state_hash == claim1_next_state_hash and match.claim1
+        or obtained_state_hash == claim2_next_state_hash and match.claim2
         or nil
-    story.report_transition_result(match, next_hash, winner, claim1_next_hash, claim2_next_hash)
+    story.report_transition_result(match, obtained_state_hash, winner, claim1_next_state_hash, claim2_next_state_hash)
     return winner
 end
 -- docs:end settle_uarch_match
@@ -239,29 +265,40 @@ local run_tournament
 -- the holders of the two claims. Its valid claims are restricted to the two contested final
 -- states, as validContestedFinalState requires on chain.
 -- docs:begin open_uarch_tournament
-local function open_uarch_tournament(parent, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
+local function open_uarch_tournament(
+    parent,
+    match,
+    epoch_period_index,
+    agreed_state_hash,
+    claim1_next_state_hash,
+    claim2_next_state_hash
+)
+    local input_index = epoch_period_index // PERIODS_PER_INPUT
+    local period_index = epoch_period_index % PERIODS_PER_INPUT
     local tournament = {
         level = "uarch",
         height = UARCH_HEIGHT,
-        initial_hash = agreed_hash,
+        initial_state_hash = agreed_state_hash,
         dapp_contract = parent.dapp_contract,
-        disputed_period = disputed_period,
+        epoch_period_index = epoch_period_index,
+        input_index = input_index,
+        period_index = period_index,
         settle = settle_uarch_match,
     }
-    story.report_uarch_tournament(tournament, match, disputed_period, agreed_hash)
+    story.report_uarch_tournament(tournament, match, agreed_state_hash)
     local function validate(claim)
         claim = validate_claim(claim, UARCH_HEIGHT)
-        assert(claim.final_state == claim1_next_hash or claim.final_state == claim2_next_hash)
+        assert(claim.final_state_hash == claim1_next_state_hash or claim.final_state_hash == claim2_next_state_hash)
         return claim
     end
     local claims = open_tournament(
         server:get_subscribers({ match.claim1.computation_hash, match.claim2.computation_hash }),
         validate,
         REQUESTS.commit_uarch_claim,
-        disputed_period.input_index,
-        disputed_period.period_index,
-        claim1_next_hash,
-        claim2_next_hash
+        input_index,
+        period_index,
+        claim1_next_state_hash,
+        claim2_next_state_hash
     )
     tournament.claims = claims
     story.report_claims(tournament, claims)
@@ -278,18 +315,21 @@ local function settle_mcycle_match(
     tournament,
     match,
     epoch_period_index,
-    agreed_hash,
-    claim1_next_hash,
-    claim2_next_hash
+    agreed_state_hash,
+    claim1_next_state_hash,
+    claim2_next_state_hash
 )
-    local disputed_period = {
-        input_index = epoch_period_index // PERIODS_PER_INPUT,
-        period_index = epoch_period_index % PERIODS_PER_INPUT,
-    }
-    local uarch_tournament =
-        open_uarch_tournament(tournament, match, disputed_period, agreed_hash, claim1_next_hash, claim2_next_hash)
+    local uarch_tournament = open_uarch_tournament(
+        tournament,
+        match,
+        epoch_period_index,
+        agreed_state_hash,
+        claim1_next_state_hash,
+        claim2_next_state_hash
+    )
     local uarch_winner = run_tournament(uarch_tournament)
-    local survivor = uarch_winner and (uarch_winner.final_state == claim1_next_hash and match.claim1 or match.claim2)
+    local survivor = uarch_winner
+        and (uarch_winner.final_state_hash == claim1_next_state_hash and match.claim1 or match.claim2)
     story.report_uarch_result(match, uarch_winner, survivor)
     return survivor
 end
@@ -299,18 +339,19 @@ end
 -- leaf, when the walk did not expose it, and hands the dispute to the tournament's settle.
 -- docs:begin settle_dispute
 local function settle_dispute(tournament, match, dispute)
-    local agreed_hash = dispute.agreed_hash or wait_for_agreed_hash(match, tournament, dispute.state_index)
-    story.report_dispute(match, dispute, agreed_hash)
-    if not agreed_hash then
+    local agreed_state_hash = dispute.agreed_state_hash
+        or wait_for_agreed_state_hash(match, tournament, dispute.state_index)
+    story.report_dispute(match, dispute, agreed_state_hash)
+    if not agreed_state_hash then
         return nil
     end
     return tournament.settle(
         tournament,
         match,
         dispute.state_index,
-        agreed_hash,
-        dispute.claim1_next_hash,
-        dispute.claim2_next_hash
+        agreed_state_hash,
+        dispute.claim1_next_state_hash,
+        dispute.claim2_next_state_hash
     )
 end
 -- docs:end settle_dispute
@@ -416,14 +457,14 @@ end
 -- docs:begin open_mcycle_tournament
 local function open_mcycle_tournament(dapp_contract)
     local claims = open_tournament(
-        server:get_subscribers({ dapp_contract.initial_hash }),
+        server:get_subscribers({ dapp_contract.initial_state_hash }),
         validate_mcycle_claim,
         REQUESTS.commit_mcycle_claim
     )
     local tournament = {
         level = "mcycle",
         height = MCYCLE_HEIGHT,
-        initial_hash = dapp_contract.initial_hash,
+        initial_state_hash = dapp_contract.initial_state_hash,
         dapp_contract = dapp_contract,
         settle = settle_mcycle_match,
         claims = claims,
@@ -437,14 +478,14 @@ end
 -- the blockchain. The outputs Merkle root proof must be whole-machine, sit at the tx-buffer
 -- word, and roll up to the final state. The output proof's root must be the value that word
 -- holds, and its target the hash of the output itself. Returns whether it all holds.
-local function verify_result(result, final_state)
-    local root_hash_proof, output_proof = result.outputs_merkle_root_proof, result.output_proof
-    return root_hash_proof.root_hash == final_state
-        and root_hash_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
-        and root_hash_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START
-        and root_hash_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE
-        and pcall(hash_tree.verify_slice, root_hash_proof)
-        and keccak(output_proof.root_hash) == root_hash_proof.target_hash
+local function verify_result(result, final_state_hash)
+    local state_hash_proof, output_proof = result.outputs_merkle_root_proof, result.output_proof
+    return state_hash_proof.root_hash == final_state_hash
+        and state_hash_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
+        and state_hash_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START
+        and state_hash_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE
+        and pcall(hash_tree.verify_slice, state_hash_proof)
+        and keccak(output_proof.root_hash) == state_hash_proof.target_hash
         and pcall(hash_tree.verify_slice, output_proof)
         and keccak(result.output) == output_proof.target_hash
 end
@@ -458,7 +499,7 @@ local function wait_for_result(winner)
     story.report_winner(winner)
     local conns = server:get_subscribers({ winner.computation_hash })
     local result = server:accept_first(conns, function(v)
-        return verify_result(v, winner.final_state) and v
+        return verify_result(v, winner.final_state_hash) and v
     end, REQUESTS.prove_result)
     assert(result, "no result proved against the winning final state")
     story.report_result(result)
@@ -474,7 +515,7 @@ end
 -- the referee server this is handed to.
 -- docs:begin run_referee
 local function run_referee(dapp_contract)
-    server:accept_subscribers(dapp_contract.initial_hash)
+    server:accept_subscribers(dapp_contract.initial_state_hash)
     local winner = run_tournament(open_mcycle_tournament(dapp_contract))
     assert(winner, "the tournament ended with no winner")
     wait_for_result(winner)
@@ -487,7 +528,7 @@ end
 local function deploy(inputs)
     local machine <close> = cartesi.machine(MACHINE_TEMPLATE)
     return {
-        initial_hash = machine:get_root_hash(),
+        initial_state_hash = machine:get_root_hash(),
         inputs = inputs,
     }
 end

@@ -5,7 +5,7 @@
 -- Then the referee server, driven over loopback sockets by fake players living in the same
 -- dispatcher: the tournament lifecycle, first-valid moves, rejected proofs that leave their
 -- connection open, and claims eliminated once every holder answered without proof or closed.
--- The sealer connects while the mcycle tournament is open and must not be asked to submit.
+-- The phase closer connects while the mcycle tournament is open and must not be asked to submit.
 -- Runs in well under a second and exits nonzero on the first failure.
 
 local cartesi = require("cartesi")
@@ -23,7 +23,7 @@ local INITIAL_STATE_HASH = keccak("initial")
 
 -- A claim over leaves that repeat `base_state_hash` except at `lie`, which holds
 -- `fake_state_hash`. Built either
--- flat or bundled 2^2 leaves per stored entry, so the refine path is exercised too.
+-- flat or bundled 2^2 leaves per stored bundle, so the refine path is exercised too.
 local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)
     local leaves = {}
     for i = 0, LEAVES - 1 do
@@ -38,15 +38,15 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
     end
     local tree
     if bundled then
-        local entry_height = 2
+        local bundle_height = 2
         local runs = {}
-        for entry = 0, (LEAVES >> entry_height) - 1 do
-            local entry_tree =
-                prtu.new_tree(entry_height, 0, build_leaf_runs(entry << entry_height, 1 << entry_height), nil)
-            push_run(runs, entry_tree:get_root(), 1)
+        for bundle = 0, (LEAVES >> bundle_height) - 1 do
+            local bundle_tree =
+                prtu.new_tree(bundle_height, 0, build_leaf_runs(bundle << bundle_height, 1 << bundle_height), nil)
+            push_run(runs, bundle_tree:get_root(), 1)
         end
-        tree = prtu.new_tree(HEIGHT, entry_height, runs, function(_, entry)
-            return build_leaf_runs(entry << entry_height, 1 << entry_height)
+        tree = prtu.new_tree(HEIGHT, bundle_height, runs, function(_, bundle)
+            return build_leaf_runs(bundle << bundle_height, 1 << bundle_height)
         end)
     else
         tree = prtu.new_tree(HEIGHT, 0, build_leaf_runs(0, LEAVES), nil)
@@ -191,7 +191,8 @@ local function run_with_server(scenario)
                 if not line and err ~= "timeout" then
                     return
                 elseif line then
-                    local reply = handler(cartesi.fromjson(line))
+                    local wire_request = cartesi.fromjson(line)
+                    local reply = wire_request.operation == "finish" and { value = true } or handler(wire_request)
                     if reply == "close" then
                         sock:close()
                         return
@@ -211,7 +212,7 @@ local function run_with_server(scenario)
         while true do
             local announced = 0
             for _, connection in ipairs(server.connections) do
-                if connection.is_player or connection.is_sealer or connection.dead then
+                if connection.is_player or connection.is_phase_closer or connection.dead then
                     announced = announced + 1
                 end
             end
@@ -246,8 +247,8 @@ local function define_request(name, response_schema)
 end
 
 run_with_server(function(server, run_client, wait_connections)
-    -- Two players connect before the sealer, one after it. The mcycle tournament must gather
-    -- exactly the first two, and must not resolve before the sealer seals it.
+    -- Two players connect before the phase closer, one after it. The mcycle tournament must
+    -- gather exactly the first two, and must not resolve before the phase closer closes it.
     local answered = {}
     local function answer(value)
         return function()
@@ -257,13 +258,13 @@ run_with_server(function(server, run_client, wait_connections)
     end
     run_client(nil, make_claimer("a", answer("valid")))
     run_client(nil, make_claimer("b", answer("invalid")))
-    run_client({ role = "sealer" }, function()
+    run_client({ role = "phase_closer" }, function()
         return { value = true }
     end)
     server:accept_subscribers("initial")
     local responses =
         server:collect_claims(server:get_subscribers({ "initial" }), define_request("commit_mcycle_claim"))
-    assert(#server.open_phases == 0, "sealed phases were retained")
+    assert(#server.open_phases == 0, "closed phases were retained")
     table.sort(responses, function(x, y)
         return x.value < y.value
     end)
@@ -271,11 +272,11 @@ run_with_server(function(server, run_client, wait_connections)
         #responses == 2 and responses[1].value == "a" and responses[2].value == "b",
         "mcycle tournament gathered the wrong claims"
     )
-    assert(server.sealer and server.sealer.is_sealer, "the sealer was not adopted")
+    assert(server.phase_closer and server.phase_closer.is_phase_closer, "the phase closer was not adopted")
     local a, b = responses[1].connection, responses[2].connection
     server:subscribe("x", a)
     server:subscribe("x", b)
-    -- A late joiner, after the seal, is not part of the mcycle tournament.
+    -- A late joiner, after the phase closes, is not part of the mcycle tournament.
     run_client(nil, make_claimer("c", answer("valid")))
     wait_connections(4)
 
@@ -336,10 +337,10 @@ run_with_server(function(server, run_client, wait_connections)
     assert(replies_seen == 1, "the request resolved before every holder answered")
     assert(not n.dead and not b.dead, "an invalid response closed a connection")
 
-    -- A nested tournament asks only its audience, and seals at once.
+    -- A nested tournament asks only its audience, and closes at once.
     local nested = server:collect_claims({ a }, define_request("commit_mcycle_claim"))
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
-    assert(#server.open_phases == 0, "sealed nested tournament was retained")
+    assert(#server.open_phases == 0, "closed nested tournament was retained")
 
     -- Every holder answers without proof: the request resolves to nil, connections stay open.
     assert(server:accept_first_valid({ b }, is_valid, define_request("answer")) == nil, "an invalid response was taken")
@@ -408,8 +409,8 @@ run_with_server(function(server, run_client, wait_connections)
     assert(dead == 2, "an undecodable line did not close its sender")
     assert(not a.dead and not b.dead, "a live player was closed")
 
-    -- Sealing is connection-bound. An extra player reply cannot be consumed as a seal; the
-    -- tournament closes only on the sealer's reply and includes the player's claim.
+    -- Phase closing is connection-bound. An extra player reply cannot close a phase; the
+    -- tournament closes only on the phase closer's reply and includes the player's claim.
     run_client(nil, function(wire_request)
         if wire_request.operation == "commit_mcycle_claim" then
             return cartesi.tojson({ value = "forger" }, -1) .. "\n" .. cartesi.tojson({ value = true }, -1)
@@ -419,21 +420,24 @@ run_with_server(function(server, run_client, wait_connections)
     wait_connections(11)
     local f = server.connections[11]
     local t2 = server:collect_claims({ f }, define_request("commit_mcycle_claim"))
-    assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged seal was not ignored")
+    assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged close was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
-    -- sealer.
+    -- phase closer.
     run_client({ role = "player" }, function()
         return { role = "player" }
     end)
     wait_connections(12)
     server:collect({ server.connections[12] }, define_request("again"))
     assert(server.connections[12].dead, "a repeated role announcement was accepted")
-    run_client({ role = "sealer" }, function()
+    run_client({ role = "phase_closer" }, function()
         return "close"
     end)
     wait_connections(13)
-    assert(server.connections[13].dead and server.sealer == server.connections[3], "a second sealer was accepted")
+    assert(
+        server.connections[13].dead and server.phase_closer == server.connections[3],
+        "a second phase closer was accepted"
+    )
 
     -- A stale reply is still a protocol line: malformed JSON closes the connection before the
     -- stale position is discarded.
@@ -460,23 +464,23 @@ run_with_server(function(server, run_client, wait_connections)
     assert(malformed.dead, "a malformed stale line did not close its sender")
 end)
 
--- An invalid seal response is a sealer bug and fails the referee.
+-- An invalid close response is a phase-closer bug and fails the referee.
 local ok, err = pcall(run_with_server, function(server, run_client, wait_connections)
-    run_client({ role = "sealer" }, function()
+    run_client({ role = "phase_closer" }, function()
         return { value = "other" }
     end)
     wait_connections(1)
     server:collect_claims({}, define_request("commit_mcycle_claim"))
 end)
-assert(not ok and err:find("did not close the phase asked"), "an invalid seal was accepted")
+assert(not ok and err:find("did not close the phase asked"), "an invalid phase close was accepted")
 
--- The sealer going away fails the referee outright: a tournament could never close again.
+-- The phase closer going away fails the referee outright: a tournament could never close again.
 ok, err = pcall(run_with_server, function(server, run_client, wait_connections)
-    run_client({ role = "sealer" }, function()
+    run_client({ role = "phase_closer" }, function()
         return "close"
     end)
     wait_connections(1)
     server:collect_claims({}, define_request("commit_mcycle_claim"))
 end)
-assert(not ok and err:find("the sealer went away"), "sealer EOF did not fail the referee")
+assert(not ok and err:find("the phase closer went away"), "phase-closer EOF did not fail the referee")
 print("prt-test: ok")

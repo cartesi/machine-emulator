@@ -8880,8 +8880,9 @@ processing. We again assume one of the players is honest.
 In this demonstration, the epoch under dispute is the calculator’s
 [first epoch](#rolling-cartesi-machines). The referee and the players
 receive the epoch’s inputs in the command line, as the same encoded
-files the calculator processed, standing in for the record the
-blockchain keeps.
+files the calculator processed, and each builds the same dapp contract
+from them, standing in for reading it off the blockchain. A player takes
+the inputs, the initial state hash, and the geometry from that contract.
 
 ### Settling a dispute
 
@@ -9499,14 +9500,14 @@ under a query (`get_runs_node` in `prtu.lua`).
 Second, the stored nodes need not be the leaves. The machine can deliver
 the sampled hashes in *bundles*, one subtree root per 2<sup>4</sup>
 mcycle samples (or per 2<sup>16</sup> uarch transitions), which divides
-the entries a player stores and carries by that much. Bundle roots are
+the nodes a player stores and carries by that much. Bundle roots are
 interior nodes of the claim tree, so the root is unchanged. The three
-inputs of our epoch fit in about nine thousand stored mcycle entries,
+inputs of our epoch fit in about nine thousand stored mcycle bundles,
 and one uarch span in about three thousand. When a dispute descends
-below a stored entry, the player recovers the leaves under that one
-entry by re-running a fork of the input’s boundary machine through the
-entry’s window, and caches the result (`get_node` in `prtu.lua`). Only
-the entries a dispute actually visits are ever expanded, and each costs
+below a stored bundle, the player recovers the leaves under that one
+bundle by re-running a fork of the input’s boundary machine through the
+bundle’s window, and caches the result (`get_node` in `prtu.lua`). Only
+the bundles a dispute actually visits are ever expanded, and each costs
 one machine re-run.
 
 The builds themselves stream out of the emulator. They follow the same
@@ -9520,10 +9521,10 @@ later tournament queries. The mcycle build (`build_mcycle_claim` in
 bundles into runs, padding each input’s span with the fixed point where
 its guest stopped, and keeping a fork at each input boundary to anchor
 every later re-run. The refinement re-run (`refine_mcycle_claim`)
-recovers one entry’s samples the same way. The uarch build
+recovers one bundle’s samples the same way. The uarch build
 (`build_uarch_claim`) expands one period, instruction by instruction,
 through `machine:collect_uarch_cycle_root_hashes()`, whose stream
-already carries the halt repetitions compressed and the reset entries
+already carries the halt repetitions compressed and the reset hashes
 marked.
 
 ### The tournament
@@ -9553,18 +9554,18 @@ outside the algorithm snippets.
 
 A tournament opens to a fixed audience, gathers claims, and runs on the
 valid claims it received. Before the mcycle tournament opens, the server
-accepts players subscribing to the agreed initial state hash until a
-*sealer* closes that phase, so the referee never needs to know how many
-players to expect. The mcycle tournament then opens to those
-subscribers. A claim contains its computation hash’s two children and a
-standard `Proof` for the final state hash at the tree’s last leaf. The
-referee checks that the children join into the proof’s root and verifies
-the proof with `hash_tree.verify_slice()`, the same membership check
-`joinTournament` performs on chain (`validate_claim` in `prt.lua`).
-`partition_claims` groups identical claims by computation hash,
-subscribes every sender to its claim, and sorts the resulting claims by
-computation hash, so the bracket is a pure function of the claim set,
-not of the order in which players happened to connect.
+accepts players subscribing to the agreed initial state hash during an
+initial phase, so the referee never needs to know how many players to
+expect. The mcycle tournament then opens to those subscribers. A claim
+contains its computation hash’s two children and a standard `Proof` for
+the final state hash at the tree’s last leaf. The referee checks that
+the children join into the proof’s root and verifies the proof with
+`hash_tree.verify_slice()`, the same membership check `joinTournament`
+performs on chain (`validate_claim` in `prt.lua`). `partition_claims`
+groups identical claims by computation hash, subscribes every sender to
+its claim, and sorts the resulting claims by computation hash, so the
+bracket is a pure function of the claim set, not of the order in which
+players happened to connect.
 
 The tournament is that reduction: while more than one claim survives,
 run a round, which pairs the survivors, runs their matches at once, and
@@ -9768,9 +9769,10 @@ local function verify_state_transition(
     state_transition_offset,
     logs
 )
-    local input_index = epoch_period_index // PERIODS_PER_INPUT
-    local period_index = epoch_period_index % PERIODS_PER_INPUT
-    local uarch_cycle = state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1)
+    local periods_per_input = dapp_contract.geometry.periods_per_input
+    local input_index = epoch_period_index // periods_per_input
+    local period_index = epoch_period_index % periods_per_input
+    local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
     local obtained_state_hash = current_state_hash
     local data = dapp_contract.inputs[input_index + 1]
     if state_transition_offset == 0 and period_index == 0 and data then
@@ -9785,7 +9787,7 @@ local function verify_state_transition(
         )
     end
     obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, logs.step_log)
-    if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, logs.reset_uarch_log)
     end
     return obtained_state_hash
@@ -9829,8 +9831,8 @@ fresh fork at the transition and logging it:
 ``` lua
 function handlers.prove_state_transition(player, input_index, period_index, state_transition_offset)
     local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    local uarch_cycle = state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1)
-    local machine <close> = assert(player.boundaries[input_index + 1]:fork_server())
+    local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
+    local machine <close> = fork_input_boundary(player, input_index + 1)
     local data = player.inputs[input_index + 1]
     if state_transition_offset == 0 and period_index == 0 and data then
         local revert_state_hash = machine:get_root_hash()
@@ -9838,9 +9840,9 @@ function handlers.prove_state_transition(player, input_index, period_index, stat
             machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
-    advance_fork(player, machine, input_index + 1, period_index * MCYCLES_PER_PERIOD + mcycle_offset)
+    advance_fork(player, machine, input_index + 1, period_index * player.geometry.mcycles_per_period + mcycle_offset)
     machine:run_uarch(uarch_cycle)
-    if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step_log = machine:log_step_uarch()
         return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }
     end
@@ -9879,29 +9881,22 @@ still owed by this connection as stale before assigning its next
 request, then drops that many replies from the stream. A tournament
 always opens to a fixed audience: subscribers to the agreed initial
 state hash for the mcycle one, and holders of the two disputed claims
-for a nested one. Inside the demonstration server, claim collection
-closes once its trusted closing signal arrives and every connection in
-the audience has answered or closed; this timing substitute is hidden
-below `open_tournament`. Claim operations authenticate themselves by
-proof, and sealing does not: it is the referee’s trusted orchestration,
-standing in for the clock the contracts use. The transport enforces that
-trust: a connection announces its role once, on its first line, the
-sealer is the connection that announced itself as such, and one seal
-request at a time is bound to it, so its next reply closes exactly the
-subscription or tournament phase awaiting that reply. The model thus
-assumes a process announces its role honestly, and a sealer that goes
-away fails the referee outright, since no tournament could ever close
-again. Nothing in the referee waits on the clock, and nothing depends on
-the order replies arrive in, not even which connections stay open. A
-claim with nobody left to answer for it is eliminated at once, which is
-all that ever happens to the claim of a player who walks away, and a
-claim anybody answers for survives. The narration of each match goes to
-its own file, and the tournament narrates each round in bracket order
-before and after its matches run, so the transcript is a pure function
-of the claim set, whatever order the replies arrive in over the network.
-The recipe below checks exactly that, by running the same tournament
-twice with the players launched in opposite orders and requiring
-identical transcripts.
+for a nested one. When the demonstration decides that a tournament’s
+claims are all in is a matter of presentation, hidden below
+`open_tournament`, and not part of the protocol. Every operation this
+section describes, committing a claim, revealing a bisection, sealing a
+divergence, proving a transition, proving the result, authenticates
+itself by proof, and the referee never trusts a sender. Nothing in the
+referee waits on the clock, and nothing depends on the order replies
+arrive in, not even which connections stay open. A claim with nobody
+left to answer for it is eliminated at once, which is all that ever
+happens to the claim of a player who walks away, and a claim anybody
+answers for survives. The narration of each match goes to its own file,
+and the tournament narrates each round in bracket order before and after
+its matches run, so the transcript is a pure function of the claim set,
+whatever order the replies arrive in over the network. The recipe below
+checks exactly that, by running the same tournament twice with the
+players launched in opposite orders and requiring identical transcripts.
 
 ### Running the tournament
 
@@ -9940,8 +9935,8 @@ lua5.4 prt.lua referee 127.0.0.1:8096 \
     input-0.bin input-1.bin input-2.bin
 ```
 
-The players take the referee address, and nothing that names their
-number or their order:
+The players take the referee address and the inputs, and nothing that
+names their number or their order:
 
 ``` bash
 lua5.4 prt.lua honest 127.0.0.1:8096 \
@@ -9949,7 +9944,8 @@ lua5.4 prt.lua honest 127.0.0.1:8096 \
 ```
 
 ``` bash
-lua5.4 prt.lua quitter 127.0.0.1:8096
+lua5.4 prt.lua quitter 127.0.0.1:8096 \
+    input-0.bin input-1.bin input-2.bin
 ```
 
 ``` bash
@@ -9965,14 +9961,6 @@ lua5.4 prt.lua tamperer 127.0.0.1:8096 0 100 \
 ``` bash
 lua5.4 prt.lua fabulist 127.0.0.1:8096 2 2000 \
     input-0.bin input-1.bin input-2.bin
-```
-
-Once every player is in, the sealer closes the initial subscription
-phase, then seals the mcycle tournament and every uarch tournament as
-each opens:
-
-``` bash
-lua5.4 prt.lua seal 127.0.0.1:8096
 ```
 
 The six subscribers commit claims, which are admitted into the
@@ -10144,15 +10132,14 @@ two were settled between dishonest players, each defending the truth
 where its own lie did not reach, so the tournament never needed the
 honest player to police every liar.
 
-The winning claim commits only to the epoch’s final state hash, not to
-its output, so one step remains, the same one that closes the
-verification games. The referee waits for the epoch’s actual output,
-proved against the winning final state, and takes the first result that
-verifies, from any holder of the winning claim, since a wrong output
-cannot prove into the true state (`wait_for_result`). The result carries
-the output, its proof in the epoch’s outputs Merkle tree, and the proof
-tying that tree’s root into the final state, the same construction the
-rolling verification game builds, so it verifies exactly as shown there.
+The winning claim commits to the epoch’s final state hash, which in turn
+commits to the outputs Merkle root. The referee first establishes that
+root from a proof against the winning final state (`wait_for_result`).
+The same response may offer an output, identified by its index and
+proved against the established root; if it does not, the referee can ask
+for an output separately without checking the state proof again. An
+epoch with no output therefore still settles its outputs root, and no
+player needs to invent an output for it.
 
 The verdict settles the epoch:
 
@@ -10185,9 +10172,16 @@ that meter each claim’s total thinking time (a player that hangs stalls
 the demonstration, where the contracts would time it out), and no bonds
 change hands. At both the mcycle level and the uarch level, a Dave
 tournament stays open for a fixed time allowance, and a claim may join
-while it lasts. The demo closes each claim-collection phase as soon as
-the claims it awaits are in, rather than waiting the allowance out. For
-the real thing, see the [Dave
+while it lasts. In Dave, a dispute starts as soon as two claims exist.
+Each claim that joins is paired with the one waiting, a match winner is
+paired with the next to arrive, and a claim that joins late may meet one
+that has already won. The model instead gathers a tournament’s claims,
+sorts them, and runs the dispute in rounds, as a regular tournament
+bracket would, which is simpler to narrate and makes the bracket a pure
+function of the claim set. That is the only reason the demonstration
+needs to know when a tournament’s claims are all in, and it closes each
+claim collection as soon as the claims it awaits are in, rather than
+waiting the allowance out. For the real thing, see the [Dave
 repository](https://github.com/cartesi/dave), the [Permissionless
 Refereed Tournaments](https://arxiv.org/abs/2212.12439) paper, and the
 [Dave](https://doi.org/10.1145/3734698) paper.

@@ -17,24 +17,24 @@
 -- isolates is a single state transition, settled by verifying access logs, exactly as in the
 -- verification games.
 --
--- Roles, selected by the first argument. Every game role takes the referee address, and every
--- machine-holding role takes the epoch's input files. The referee
--- is never told how many players to expect: it accepts subscribers until a seal connection
--- closes that phase, then asks those subscribers for claims. The referee sorts the claims it
--- gathers, so the bracket and the whole narration are a pure function of the claim set, not of
--- the order in which players connect.
+-- Roles, selected by the first argument. Every game role takes the referee address and the
+-- epoch's input files, from which each process builds the same dapp contract, standing in
+-- for reading it off the chain. The referee is never told how many players to expect: it
+-- accepts subscribers until a phase-closer connection closes that phase, then asks those
+-- subscribers for claims. The referee sorts the claims it gathers, so the bracket and the
+-- whole narration are a pure function of the claim set, not of the order in which players
+-- connect.
 --   prt.lua referee  <address> <input> [<input> ...]
 --   prt.lua honest   <address> <input> [<input> ...]
---   prt.lua quitter  <address>
+--   prt.lua quitter  <address> <input> [<input> ...]
 --   prt.lua forger   <address> <index> <forged-input> <input> [<input> ...]
---   prt.lua tamperer <address> <input-index> <entry-offset> <input> [<input> ...]
+--   prt.lua tamperer <address> <input-index> <bundle-offset> <input> [<input> ...]
 --   prt.lua fabulist <address> <input-index> <leaf-offset> <input> [<input> ...]
---   prt.lua seal     <address>
+--   prt.lua phase_closer <address>
 --
--- The seal role is the sealer: it stays connected and closes the initial subscription phase
--- and every tournament the referee opens. The recipe starts it once every player is in, so
--- those players form the mcycle tournament's audience, and every tournament then seals as
--- soon as it opens.
+-- The phase-closer role stays connected and closes the initial subscription phase and every
+-- tournament the referee opens. The recipe starts it once every player is in, so those players
+-- form the mcycle tournament's audience, and every tournament then closes as soon as it opens.
 --
 -- The referee lives here. The players, their machines, claim builds, and dishonest strategies
 -- live in prt-player.lua; the shared protocol, claim trees, referee server, and hidden
@@ -44,31 +44,28 @@ local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local util = require("cartesi.util")
 local prtu = require("prtu")
+local prt_player = require("prt-player")
 
 local keccak = cartesi.keccak256
 local get_other_turn = prtu.get_other_turn
 
--- The seal role carries no dispute: it is the sealer, which closes the initial subscription
--- phase once the last player has connected, then the claims of every tournament as it
--- opens. It needs none of the game geometry.
-if arg[1] == "seal" then
-    return prtu.serve(prtu.new_sealer(), assert(arg[2], "missing referee address"))
+-- The phase closer carries no dispute. It closes the initial subscription phase once the last
+-- player has connected, then the claim collection of every tournament as it opens. It needs
+-- none of the game geometry.
+if arg[1] == "phase_closer" then
+    return prtu.run_client(prtu.new_phase_closer(), assert(arg[2], "missing referee address"))
 end
 
 local REQUESTS = prtu.REQUESTS
-local MCYCLE_HEIGHT, UARCH_HEIGHT = prtu.MCYCLE_HEIGHT, prtu.UARCH_HEIGHT
-local PERIODS_PER_INPUT = prtu.PERIODS_PER_INPUT
-local UARCH_CYCLES_PER_MCYCLE = prtu.UARCH_CYCLES_PER_MCYCLE
 local story = prtu.story
 local MACHINE_TEMPLATE = "rolling-calculator-template"
 
--- Reads the epoch's inputs from the files on the command line, starting at `first`.
-local function read_inputs(first)
+-- Reads one epoch input from each command-line filename.
+local function read_inputs(...)
     local inputs = {}
-    for index = first, #arg do
-        inputs[index - first + 1] = util.read_file(arg[index])
+    for index, path in ipairs({ ... }) do
+        inputs[index] = util.read_file(path)
     end
-    assert(#inputs > 0, "missing input files")
     return inputs
 end
 
@@ -193,10 +190,6 @@ local function open_tournament(conns, validate_submitted_claim, request, ...)
     return partition_claims(server:collect_claims(conns, request, ...), validate_submitted_claim)
 end
 
-local function validate_mcycle_claim(submitted_claim)
-    return validate_claim(submitted_claim, MCYCLE_HEIGHT)
-end
-
 -- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
 -- them on the blockchain, without ever instantiating a machine. `epoch_period_index` and
 -- `state_transition_offset` are the 64-bit-safe split of CartesiStateTransition.sol's epoch-local
@@ -214,9 +207,10 @@ local function verify_state_transition(
     state_transition_offset,
     logs
 )
-    local input_index = epoch_period_index // PERIODS_PER_INPUT
-    local period_index = epoch_period_index % PERIODS_PER_INPUT
-    local uarch_cycle = state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1)
+    local periods_per_input = dapp_contract.geometry.periods_per_input
+    local input_index = epoch_period_index // periods_per_input
+    local period_index = epoch_period_index % periods_per_input
+    local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
     local obtained_state_hash = current_state_hash
     local data = dapp_contract.inputs[input_index + 1]
     if state_transition_offset == 0 and period_index == 0 and data then
@@ -231,7 +225,7 @@ local function verify_state_transition(
         )
     end
     obtained_state_hash = cartesi.machine:verify_step_uarch(obtained_state_hash, logs.step_log)
-    if uarch_cycle == UARCH_CYCLES_PER_MCYCLE - 1 then
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         obtained_state_hash = cartesi.machine:verify_reset_uarch(obtained_state_hash, logs.reset_uarch_log)
     end
     return obtained_state_hash
@@ -330,10 +324,11 @@ local function open_uarch_tournament(
     agreed_state_hash,
     next_state_hashes
 )
-    local input_index = epoch_period_index // PERIODS_PER_INPUT
-    local period_index = epoch_period_index % PERIODS_PER_INPUT
+    local geometry = mcycle_tournament.dapp_contract.geometry
+    local input_index = epoch_period_index // geometry.periods_per_input
+    local period_index = epoch_period_index % geometry.periods_per_input
     local function validate_uarch_claim(submitted_claim)
-        local claim = validate_claim(submitted_claim, UARCH_HEIGHT)
+        local claim = validate_claim(submitted_claim, geometry.uarch_height)
         assert(claim.final_state_hash == next_state_hashes[1] or claim.final_state_hash == next_state_hashes[2])
         return claim
     end
@@ -347,7 +342,7 @@ local function open_uarch_tournament(
     )
     local tournament = {
         level = "uarch",
-        height = UARCH_HEIGHT,
+        height = geometry.uarch_height,
         initial_state_hash = agreed_state_hash,
         dapp_contract = mcycle_tournament.dapp_contract,
         settle_state_hash = settle_uarch_state_hash,
@@ -513,14 +508,17 @@ end
 -- returns it with the resulting claims sorted into a deterministic bracket.
 -- docs:begin open_mcycle_tournament
 local function open_mcycle_tournament(dapp_contract)
+    local geometry = dapp_contract.geometry
     local claims = open_tournament(
         server:get_subscribers({ dapp_contract.initial_state_hash }),
-        validate_mcycle_claim,
+        function(submitted_claim)
+            return validate_claim(submitted_claim, geometry.mcycle_height)
+        end,
         REQUESTS.commit_mcycle_claim
     )
     local tournament = {
         level = "mcycle",
-        height = MCYCLE_HEIGHT,
+        height = geometry.mcycle_height,
         initial_state_hash = dapp_contract.initial_state_hash,
         dapp_contract = dapp_contract,
         settle_state_hash = settle_mcycle_state_hash,
@@ -531,34 +529,54 @@ local function open_mcycle_tournament(dapp_contract)
 end
 -- docs:end open_mcycle_tournament
 
--- Verifies an epoch result against the settled final state, the way the Dave contracts would on
--- the blockchain. The outputs Merkle root proof must be whole-machine, sit at the tx-buffer
--- word, and roll up to the final state. The output proof's root must be the value that word
--- holds, and its target the hash of the output itself. Returns whether it all holds.
-local function verify_result(result, final_state_hash)
-    local state_hash_proof, output_proof = result.outputs_merkle_root_proof, result.output_proof
+-- Establishes the outputs Merkle root committed by the settled final state. The proof must be
+-- whole-machine, sit at the tx-buffer word, and roll up to that state.
+local function verify_outputs_merkle_root(result, final_state_hash)
+    local state_hash_proof = result.outputs_merkle_root_proof
     assert(state_hash_proof.root_hash == final_state_hash)
     assert(state_hash_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
     assert(state_hash_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START)
     assert(state_hash_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE)
     hash_tree.verify_slice(state_hash_proof)
-    assert(keccak(output_proof.root_hash) == state_hash_proof.target_hash)
-    hash_tree.verify_slice(output_proof)
+    assert(keccak(result.outputs_merkle_root) == state_hash_proof.target_hash)
+    return result.outputs_merkle_root
+end
+verify_outputs_merkle_root = util.protect(verify_outputs_merkle_root)
+
+local function verify_output(result, outputs_merkle_root)
+    local output_proof = result.output_proof
+    assert(result.output_index == output_proof.target_address)
+    assert(output_proof.log2_target_size == 0)
+    assert(output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
+    assert(output_proof.root_hash == outputs_merkle_root)
     assert(keccak(result.output) == output_proof.target_hash)
+    hash_tree.verify_slice(output_proof)
     return true
 end
-verify_result = util.protect(verify_result)
+verify_output = util.protect(verify_output)
 
--- Waits on the settled claim, the one the tournament leaves standing. Since the claim commits
--- only to the epoch's final state hash, waits for the epoch's actual output,
--- proved against that hash. The referee takes the first posted result that verifies, from any
--- holder of the winning claim, since a wrong result cannot match.
+-- Waits on the settled claim, the one the tournament leaves standing. It first establishes the
+-- outputs Merkle root committed by the winning final state. That response may also offer an
+-- output. Otherwise the referee asks for one separately and checks it against the cached root.
+-- An epoch with no output therefore still settles its outputs root without inventing a result.
 -- docs:begin wait_for_result
 local function wait_for_result(winner)
     local conns = server:get_subscribers({ winner.computation_hash })
-    local result = server:accept_first_valid(conns, function(response)
-        return verify_result(response, winner.final_state_hash) and response
-    end, REQUESTS.prove_result)
+    local established = server:accept_first_valid(conns, function(response)
+        local outputs_merkle_root = verify_outputs_merkle_root(response, winner.final_state_hash)
+        if not outputs_merkle_root then
+            return nil
+        end
+        local output = verify_output(response, outputs_merkle_root) and response or nil
+        return { outputs_merkle_root = outputs_merkle_root, output = output }
+    end, REQUESTS.prove_outputs_merkle_root)
+    if not established then
+        return story.report_result(nil)
+    end
+    local result = established.output
+        or server:accept_first_valid(conns, function(response)
+            return verify_output(response, established.outputs_merkle_root) and response
+        end, REQUESTS.prove_output)
     story.report_result(result)
 end
 -- docs:end wait_for_result
@@ -580,27 +598,46 @@ local function run_referee(dapp_contract)
 end
 -- docs:end run_referee
 
+-- The dispute geometry the contract fixes at deployment. Its one free parameter is the mcycle
+-- period, log2 of the mcycles between two samples of an mcycle claim. The claim heights and
+-- the periods per input follow from it and the emulator's rollup constants. The contract
+-- announces the period to the players when it asks for their mcycle claims, as Dave's
+-- tournament descriptor does, and the players derive the rest for themselves.
+-- docs:begin new_geometry
+local function new_geometry(log2_mcycles_per_period)
+    return {
+        log2_mcycles_per_period = log2_mcycles_per_period,
+        mcycle_height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+            + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+            - log2_mcycles_per_period,
+        uarch_height = log2_mcycles_per_period + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
+        periods_per_input = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period),
+    }
+end
+-- docs:end new_geometry
+
 -- Models application deployment, returning the contract context the referee works against. The
 -- epoch's inputs are all posted to the blockchain, so the contract holds its own copy of
--- every one, the copy that verification trusts over anything a player commits.
+-- every one, the copy that verification trusts over anything a player commits. The geometry
+-- is fixed here too, with the documentation's period of 2^10 mcycles.
 local function deploy(inputs)
-    local machine <close> = cartesi.machine(MACHINE_TEMPLATE)
+    local machine_template = MACHINE_TEMPLATE
+    local machine <close> = cartesi.machine(machine_template)
     return {
+        machine_template = machine_template,
         initial_state_hash = machine:get_root_hash(),
         inputs = inputs,
+        geometry = new_geometry(10),
     }
 end
 
--- The referee, standing in for the Dave contracts. Its server hides the accept loop, the wire,
--- and coroutine scheduling; run() drives run_referee against the deployed dapp contract, which
--- holds the agreed initial state hash and epoch inputs.
-local function new_referee(server_address)
-    server = prtu.new_server(server_address)
+-- The referee, standing in for the Dave contracts. Like a player constructor, this binds the
+-- role's game logic to the deployed dapp contract without creating or running its transport.
+local function new_referee(dapp_contract)
     return {
-        run = function(_, dapp_contract)
-            server:run(function()
-                run_referee(dapp_contract)
-            end)
+        run = function(_, referee_server)
+            server = referee_server
+            run_referee(dapp_contract)
         end,
     }
 end
@@ -621,28 +658,57 @@ end
 
 local role = assert(arg[1], "missing role")
 local server_address = assert(arg[2], "missing referee address")
-local prt_player = role ~= "referee" and require("prt-player") or nil
+local next_argument = 3
 
+local function take_argument(message)
+    local value = assert(arg[next_argument], message)
+    next_argument = next_argument + 1
+    return value
+end
+
+local function take_remaining_arguments()
+    local first = next_argument
+    next_argument = #arg + 1
+    return table.unpack(arg, first, #arg)
+end
+
+local run_role
 if role == "referee" then
-    local dapp_contract = deploy(read_inputs(3))
-    local referee = new_referee(server_address)
-    referee:run(dapp_contract)
+    run_role = function(dapp_contract)
+        prtu.run_server(new_referee(dapp_contract), server_address)
+    end
 elseif role == "honest" then
-    prtu.serve(prt_player.new_honest(read_inputs(3), MACHINE_TEMPLATE), server_address)
+    run_role = function(dapp_contract)
+        prtu.run_client(prt_player.new_honest(dapp_contract), server_address)
+    end
 elseif role == "quitter" then
-    prtu.serve(prt_player.new_quitter(), server_address)
+    run_role = function(dapp_contract)
+        prtu.run_client(prt_player.new_quitter(dapp_contract), server_address)
+    end
 elseif role == "forger" then
-    local index = assert(tonumber(arg[3]), "missing forged input index")
-    local forged = util.read_file(assert(arg[4], "missing forged input file"))
-    prtu.serve(prt_player.new_forger(read_inputs(5), MACHINE_TEMPLATE, index, forged), server_address)
+    local index = assert(tonumber(take_argument("missing forged input index")), "invalid forged input index")
+    local forged = util.read_file(take_argument("missing forged input file"))
+    run_role = function(dapp_contract)
+        prtu.run_client(prt_player.new_forger(dapp_contract, index, forged), server_address)
+    end
 elseif role == "tamperer" then
-    local input_index = assert(tonumber(arg[3]), "missing tampered input index")
-    local entry_offset = assert(tonumber(arg[4]), "missing tamper entry offset")
-    prtu.serve(prt_player.new_tamperer(read_inputs(5), MACHINE_TEMPLATE, input_index, entry_offset), server_address)
+    local input_index = assert(tonumber(take_argument("missing tampered input index")), "invalid tampered input index")
+    local bundle_offset =
+        assert(tonumber(take_argument("missing tamper bundle offset")), "invalid tamper bundle offset")
+    run_role = function(dapp_contract)
+        prtu.run_client(prt_player.new_tamperer(dapp_contract, input_index, bundle_offset), server_address)
+    end
 elseif role == "fabulist" then
-    local input_index = assert(tonumber(arg[3]), "missing lied-about input index")
-    local leaf_offset = assert(tonumber(arg[4]), "missing lied-about leaf offset")
-    prtu.serve(prt_player.new_fabulist(read_inputs(5), MACHINE_TEMPLATE, input_index, leaf_offset), server_address)
+    local input_index =
+        assert(tonumber(take_argument("missing lied-about input index")), "invalid lied-about input index")
+    local leaf_offset =
+        assert(tonumber(take_argument("missing lied-about leaf offset")), "invalid lied-about leaf offset")
+    run_role = function(dapp_contract)
+        prtu.run_client(prt_player.new_fabulist(dapp_contract, input_index, leaf_offset), server_address)
+    end
 else
     error("unknown role: " .. role)
 end
+
+local dapp_contract = deploy(read_inputs(take_remaining_arguments()))
+run_role(dapp_contract)

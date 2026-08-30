@@ -10,21 +10,6 @@ local socket = require("socket")
 local keccak = cartesi.keccak256
 
 --------------------------------------------------------------------------------
--- Geometry
---------------------------------------------------------------------------------
-
-local LOG2_MCYCLES_PER_PERIOD = 10
-local MCYCLES_PER_PERIOD = 1 << LOG2_MCYCLES_PER_PERIOD
-local UARCH_CYCLES_PER_MCYCLE = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-assert(UARCH_CYCLES_PER_MCYCLE - 1 == cartesi.UARCH_CYCLE_MAX, "uarch cycles per mcycle do not match the emulator")
-
-local MCYCLE_HEIGHT = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
-    + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
-    - LOG2_MCYCLES_PER_PERIOD
-local UARCH_HEIGHT = LOG2_MCYCLES_PER_PERIOD + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-local PERIODS_PER_INPUT = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLES_PER_PERIOD)
-
---------------------------------------------------------------------------------
 -- Small utilities
 --------------------------------------------------------------------------------
 
@@ -73,9 +58,9 @@ end
 -- A claim commits to 2^height leaves, the state hashes of a computation hash, but almost
 -- all of them are repetitions: a machine that stopped advancing repeats its state hash to
 -- the end of its span. The tree therefore stores runs, each a node hash and how many
--- consecutive times it appears. The stored nodes can sit above the leaves, at entry_height,
--- when the machine delivers them bundled. A query that descends below a stored entry is
--- answered by refine(tree, entry_index), which recovers the leaf runs under that one entry
+-- consecutive times it appears. The stored nodes can sit above the leaves, at bundle_height,
+-- when the machine delivers them bundled. A query that descends below a stored bundle is
+-- answered by refine(tree, bundle_index), which recovers the leaf runs under that one bundle
 -- (by re-running a machine through it) and caches them. Nothing else of the tree is ever
 -- materialized.
 --------------------------------------------------------------------------------
@@ -122,8 +107,8 @@ local function seal_runs(runs)
     return runs
 end
 
--- The first run covering entry index (0-based). Counts compare as unsigned, since the
--- tallest trees hold more entries than a signed integer.
+-- The first run covering node index (0-based). Counts compare as unsigned, since the
+-- tallest trees hold more nodes than a signed integer.
 local function find_run(runs, index)
     local lo, hi = 1, #runs
     while lo < hi do
@@ -151,41 +136,41 @@ local function compute_repeated_root(tree, hash, k)
     return chain[k]
 end
 
--- The node at height h, index q, over a runs array whose entries sit at entry_height.
+-- The node at height h, index q, over a runs array whose nodes sit at bundle_height.
 -- A range covered by a single run is an iterated hash, anything else splits in two.
 -- docs:begin get_runs_node
-local function get_runs_node(tree, runs, entry_height, h, q)
-    local first = q << (h - entry_height)
-    local count = 1 << (h - entry_height)
+local function get_runs_node(tree, runs, bundle_height, h, q)
+    local first = q << (h - bundle_height)
+    local count = 1 << (h - bundle_height)
     local i = find_run(runs, first)
     if not math.ult(runs.cum[i] - 1, first + count - 1) then -- a single run covers the range
-        return compute_repeated_root(tree, runs[i].hash, h - entry_height)
+        return compute_repeated_root(tree, runs[i].hash, h - bundle_height)
     end
     return keccak(
-        get_runs_node(tree, runs, entry_height, h - 1, 2 * q),
-        get_runs_node(tree, runs, entry_height, h - 1, 2 * q + 1)
+        get_runs_node(tree, runs, bundle_height, h - 1, 2 * q),
+        get_runs_node(tree, runs, bundle_height, h - 1, 2 * q + 1)
     )
 end
 -- docs:end get_runs_node
 
 local tree_meta = { __index = {} }
 
--- The node at height h, index q. At or above entry_height it resolves over the stored runs.
--- Below, it locates the one stored entry standing over the node and queries the leaf runs
--- recovered by refine, so only the entries a dispute actually visits are ever expanded.
+-- The node at height h, index q. At or above bundle_height it resolves over the stored runs.
+-- Below, it locates the one stored bundle standing over the node and queries the leaf runs
+-- recovered by refine, so only the bundles a dispute actually visits are ever expanded.
 -- docs:begin get_tree_node
 function tree_meta.__index.get_node(tree, h, q)
-    if h >= tree.entry_height then
-        return get_runs_node(tree, tree.runs, tree.entry_height, h, q)
+    if h >= tree.bundle_height then
+        return get_runs_node(tree, tree.runs, tree.bundle_height, h, q)
     end
-    local entry = q >> (tree.entry_height - h)
-    local leaf_runs = tree.refined[entry]
+    local bundle = q >> (tree.bundle_height - h)
+    local leaf_runs = tree.refined[bundle]
     if not leaf_runs then
-        leaf_runs = seal_runs(tree:refine(entry))
-        assert(leaf_runs.total == 1 << tree.entry_height, "refine did not produce a full entry")
-        tree.refined[entry] = leaf_runs
+        leaf_runs = seal_runs(tree:refine(bundle))
+        assert(leaf_runs.total == 1 << tree.bundle_height, "refine did not produce a full bundle")
+        tree.refined[bundle] = leaf_runs
     end
-    return get_runs_node(tree, leaf_runs, 0, h, q - (entry << (tree.entry_height - h)))
+    return get_runs_node(tree, leaf_runs, 0, h, q - (bundle << (tree.bundle_height - h)))
 end
 -- docs:end get_tree_node
 
@@ -216,12 +201,12 @@ function tree_meta.__index.prove(tree, index)
     }
 end
 
--- A claim tree of 2^height leaves, stored as runs of nodes at entry_height, with
--- refine(tree, entry_index) recovering the leaf runs under one entry on demand.
-local function new_tree(height, entry_height, runs, refine)
+-- A claim tree of 2^height leaves, stored as runs of nodes at bundle_height, with
+-- refine(tree, bundle_index) recovering the leaf runs under one bundle on demand.
+local function new_tree(height, bundle_height, runs, refine)
     return setmetatable({
         height = height,
-        entry_height = entry_height,
+        bundle_height = bundle_height,
         runs = seal_runs(runs),
         refine = refine,
         refined = {},
@@ -287,7 +272,7 @@ function story.report_state_transition(
         and tournament.dapp_contract.inputs[tournament.input_index + 1]
     then
         form = "the inclusion of input " .. tournament.input_index .. " and the first uarch step"
-    elseif state_transition_offset & (UARCH_CYCLES_PER_MCYCLE - 1) == UARCH_CYCLES_PER_MCYCLE - 1 then
+    elseif state_transition_offset & cartesi.UARCH_CYCLE_MAX == cartesi.UARCH_CYCLE_MAX then
         form = "a uarch step and the uarch reset closing an instruction"
     end
     narrate(get_match_stream(match), "The disputed transition is %s.", form)
@@ -551,10 +536,12 @@ end
 -- response that proves itself and ignores the rest. The label rides along only for tracing.
 --------------------------------------------------------------------------------
 
--- The schemas shared by the PRT wire protocol.
+-- The schemas used by the PRT requests and private transport lifecycle.
 local SCHEMA_DICT = {
-    SealRequest = { items = {} },
-    SealResponse = "Default",
+    ClosePhaseRequest = { items = {} },
+    ClosePhaseResponse = "Default",
+    FinishRequest = { items = {} },
+    FinishResponse = "Default",
     Claim = {
         computation_hash_left = "Base64",
         computation_hash_right = "Base64",
@@ -584,11 +571,19 @@ local SCHEMA_DICT = {
         step_log = "AccessLog",
         reset_uarch_log = "AccessLog",
     },
-    ProveResultRequest = { items = {} },
-    ProveResultResponse = {
+    ProveOutputsMerkleRootRequest = { items = {} },
+    ProveOutputsMerkleRootResponse = {
+        outputs_merkle_root = "Base64",
+        outputs_merkle_root_proof = "Proof",
+        output_index = "Default",
         output = "Base64",
         output_proof = "Proof",
-        outputs_merkle_root_proof = "Proof",
+    },
+    ProveOutputRequest = { items = {} },
+    ProveOutputResponse = {
+        output_index = "Default",
+        output = "Base64",
+        output_proof = "Proof",
     },
 }
 
@@ -599,7 +594,8 @@ local function define_request(name, request_schema, response_schema)
     return { name = name, request_schema = request_schema, response_schema = response_schema }
 end
 
-local SEAL = define_request("seal", "SealRequest", "SealResponse")
+local CLOSE_PHASE = define_request("close_phase", "ClosePhaseRequest", "ClosePhaseResponse")
+local FINISH = define_request("finish", "FinishRequest", "FinishResponse")
 local REQUESTS = {
     commit_mcycle_claim = define_request(
         "commit_mcycle_claim",
@@ -614,7 +610,12 @@ local REQUESTS = {
         "ProveStateTransitionRequest",
         "ProveStateTransitionResponse"
     ),
-    prove_result = define_request("prove_result", "ProveResultRequest", "ProveResultResponse"),
+    prove_outputs_merkle_root = define_request(
+        "prove_outputs_merkle_root",
+        "ProveOutputsMerkleRootRequest",
+        "ProveOutputsMerkleRootResponse"
+    ),
+    prove_output = define_request("prove_output", "ProveOutputRequest", "ProveOutputResponse"),
 }
 
 -- The envelope schema for requests under a named argument schema, registered on first use.
@@ -682,6 +683,22 @@ end
 -- Players
 --------------------------------------------------------------------------------
 
+-- Dispatches one wire request. Finish is transport cleanup rather than a player operation, so
+-- it is handled here and kept out of the player-loop snippet.
+local function answer_request(player, line)
+    local envelope = cartesi.fromjson(line)
+    local request = envelope.operation == FINISH.name and FINISH
+        or assert(player.requests[envelope.operation], "unknown operation")
+    local wire_request = cartesi.fromjson(line, ensure_request_envelope_schema(request.request_schema), SCHEMA_DICT)
+    local handler = player[wire_request.operation]
+    local value = request == FINISH and true
+        or assert(handler, "missing operation")(player, table.unpack(wire_request.arguments or {}))
+    assert(value ~= nil, "the operation produced no value")
+    local response = { label = player.label, value = value }
+    local encoded = cartesi.tojson(response, -1, ensure_response_envelope_schema(request.response_schema), SCHEMA_DICT)
+    return encoded, request == FINISH or player.done
+end
+
 -- The player side is a plain blocking loop: announce itself, then read a request, decode its
 -- arguments under the operation's request schema, dispatch the operation, and answer with its
 -- value under the response schema. The label is only for tracing. Every request is routed to a
@@ -689,8 +706,8 @@ end
 -- the process dies with it: the
 -- referee sees the connection close, and the claim loses its holder. The loop also ends when
 -- the referee goes away.
--- docs:begin serve
-local function serve(player, server_address)
+-- docs:begin run_client
+local function run_client(player, server_address)
     local host, port = server_address:match("^(.-):(%d+)$")
     player.connection = assert(socket.connect(host, tonumber(port)))
     local hello = player.hello or cartesi.tojson({ role = "player", label = player.label }, -1)
@@ -701,38 +718,30 @@ local function serve(player, server_address)
             break
         end
         trace_wire("from referee", player.label, line)
-        local envelope = cartesi.fromjson(line)
-        local request = assert(player.requests[envelope.operation], "unknown operation")
-        local wire_request = cartesi.fromjson(line, ensure_request_envelope_schema(request.request_schema), SCHEMA_DICT)
-        local handler = assert(player[wire_request.operation], "missing operation")
-        local value = handler(player, table.unpack(wire_request.arguments or {}))
-        assert(value ~= nil, "the operation produced no value")
-        local response = { label = player.label, value = value }
-        local encoded =
-            cartesi.tojson(response, -1, ensure_response_envelope_schema(request.response_schema), SCHEMA_DICT)
+        local encoded, done = answer_request(player, line)
         trace_wire("to referee", player.label, encoded)
         assert(player.connection:send(encoded .. "\n"))
-        if player.done then
+        if done then
             break
         end
     end
     player.connection:close()
 end
--- docs:end serve
+-- docs:end run_client
 
--- The sealer is a player with one operation: closing the next phase. It announces itself as
--- the sealer on connecting, and the referee first asks it to close initial subscriptions, then
--- to close every tournament's claim collection by the same lifecycle at both levels.
-local function new_sealer()
-    local sealer = {
-        label = "sealer",
-        hello = cartesi.tojson({ role = "sealer" }, -1),
-        requests = { seal = SEAL },
-        seal = function()
+-- The phase closer is a separate transport role with one operation: closing the next phase.
+-- The referee first asks it to close initial subscriptions, then every tournament's claim
+-- collection by the same lifecycle at both levels.
+local function new_phase_closer()
+    local phase_closer = {
+        label = "phase_closer",
+        hello = cartesi.tojson({ role = "phase_closer" }, -1),
+        requests = { close_phase = CLOSE_PHASE },
+        close_phase = function()
             return true
         end,
     }
-    return sealer
+    return phase_closer
 end
 
 --------------------------------------------------------------------------------
@@ -741,7 +750,7 @@ end
 -- Every player connects to the referee server, which is the single event loop. Connections
 -- arriving during the initial subscription phase subscribe to its initial hash. A tournament
 -- then opens with a fixed audience, the connections asked for a claim, and its claim collection
--- closes once the sealer seals it and every connection in the audience has answered
+-- closes once the phase closer closes it and every connection in the audience has answered
 -- or closed. An accept-first request asks the holders of a claim and takes the first reply that proves
 -- itself. A reply that fails to prove itself, or does not even decode under the operation's
 -- schema, is rejected, as the blockchain rejects a bad transaction, and counts as that
@@ -750,13 +759,13 @@ end
 -- eliminated at once. Nothing depends on the clock, and nothing depends on the order replies
 -- arrive in, so the outcome is a pure function of the claims.
 --
--- Claim operations authenticate themselves by proof. Sealing does not: it is the referee's
+-- Claim operations authenticate themselves by proof. Phase closing does not: it is the referee's
 -- trusted orchestration, standing in for the clock the contracts use, and the transport
 -- enforces that trust. A connection announces its role once, on its first line, and a
--- second announcement closes it. The sealer is whichever connection first announced itself
--- as such, a seal request is bound to that connection, and its next reply seals the one
+-- second announcement closes it. The phase closer is whichever connection first announced
+-- itself as such, a close-phase request is bound to that connection, and its next reply closes the one
 -- tournament currently assigned to it. The model therefore assumes a process announces its role
--- honestly. A sealer that goes away fails the referee outright, since no tournament could
+-- honestly. A phase closer that goes away fails the referee outright, since no tournament could
 -- ever close again.
 --------------------------------------------------------------------------------
 
@@ -773,9 +782,9 @@ local function new_server(address)
         subscriptions = {}, -- routing hash -> set of connections interested in defending it
         active = {}, -- set of requests whose coroutines are waiting
         open_phases = {}, -- subscription and tournament phases in creation order
-        seal_queue = {}, -- phases waiting for the sealer, in creation order
-        seal_active = nil, -- the one phase currently being sent to the sealer
-        sealer = nil, -- the sealer's connection, once it announces itself
+        phase_close_queue = {}, -- phases waiting for the phase closer, in creation order
+        phase_close_active = nil, -- the one phase currently being sent to the phase closer
+        phase_closer = nil, -- the phase closer's connection, once it announces itself
         done = false,
     }, server_meta)
     accept_connections(server)
@@ -806,10 +815,10 @@ local function complete_request(self, entry, result)
     end
 end
 
--- Re-examines a request after a reply, a closed connection, or a seal. An accept-first-valid request
+-- Re-examines a request after a reply, a closed connection, or a phase close. An accept-first-valid request
 -- resolves as soon as it has taken a valid value, and otherwise once every connection asked
 -- has answered or closed, with nothing. A collection stays active while a connection is
--- still to answer, and a tournament's claim collection also until the seal, then resolves with
+-- still to answer, and a tournament's claim collection also until the phase closes, then resolves with
 -- the replies gathered.
 local function advance_if_complete(self, entry)
     if not self.active[entry] then
@@ -824,7 +833,7 @@ local function advance_if_complete(self, entry)
     end
 end
 
--- Closes and forgets a subscription or tournament phase once its trusted seal arrives.
+-- Closes and forgets a subscription or tournament phase once its trusted close arrives.
 local function close_phase(self, phase)
     phase.open = false
     for index, open_phase in ipairs(self.open_phases) do
@@ -834,7 +843,7 @@ local function close_phase(self, phase)
             return
         end
     end
-    error("sealed phase was not open")
+    error("closed phase was not open")
 end
 
 -- Drops a connection from every request waiting on it, settling those it was the last of.
@@ -854,7 +863,7 @@ local function close_connection(self, connection)
         connection.dead = true
         connection.sock:close()
         forget_connection(self, connection)
-        assert(connection ~= self.sealer, "the sealer went away, no tournament can close again")
+        assert(connection ~= self.phase_closer, "the phase closer went away, no tournament can close again")
     end
 end
 
@@ -883,32 +892,32 @@ local function send_request(self, connection, entry, line)
     enqueue(self, connection, line)
 end
 
-local request_next_seal
+local request_next_phase_close
 
--- Queues a phase for the trusted sealer. The sealer is deliberately serialized like a
--- player: one request is in flight, and its next reply necessarily belongs to that request.
-local function request_seal(self, phase)
-    if not self.sealer or phase.seal_requested then
+-- Queues a phase for the trusted phase closer. It is deliberately serialized: one request is
+-- in flight, and its next reply necessarily belongs to that request.
+local function request_phase_close(self, phase)
+    if not self.phase_closer or phase.close_requested then
         return
     end
-    phase.seal_requested = true
-    self.seal_queue[#self.seal_queue + 1] = phase
-    request_next_seal(self)
+    phase.close_requested = true
+    self.phase_close_queue[#self.phase_close_queue + 1] = phase
+    request_next_phase_close(self)
 end
 
-request_next_seal = function(self)
-    if self.seal_active or not self.sealer or #self.seal_queue == 0 then
+request_next_phase_close = function(self)
+    if self.phase_close_active or not self.phase_closer or #self.phase_close_queue == 0 then
         return
     end
-    local phase = table.remove(self.seal_queue, 1)
+    local phase = table.remove(self.phase_close_queue, 1)
     local entry = {
-        kind = "seal",
+        kind = "close_phase",
         phase = phase,
-        response_schema = "SealResponse",
-        pending = { [self.sealer] = true },
+        response_schema = "ClosePhaseResponse",
+        pending = { [self.phase_closer] = true },
     }
-    self.seal_active = entry
-    send_request(self, self.sealer, entry, encode_request(SEAL, {}))
+    self.phase_close_active = entry
+    send_request(self, self.phase_closer, entry, encode_request(CLOSE_PHASE, {}))
 end
 
 -- Files the next reply from a connection on its current request. A value that does not decode
@@ -917,7 +926,7 @@ end
 -- rejected, and leaves the connection open, exactly like a value the acceptor rejects, so
 -- the order replies arrive in cannot decide which connections stay open. An accept-first request
 -- takes the first truthy result its acceptor returns. A collection keeps every reply that
--- decodes. A successful seal response from the sealer closes the one phase assigned to
+-- decodes. A successful close response from the phase closer closes the one phase assigned to
 -- it; an invalid response is a failure of the referee's own orchestration.
 local function deliver(self, entry, connection, line)
     if not entry.pending[connection] then
@@ -926,12 +935,12 @@ local function deliver(self, entry, connection, line)
     entry.pending[connection] = nil
     local ok, decoded =
         pcall(cartesi.fromjson, line, ensure_response_envelope_schema(entry.response_schema), SCHEMA_DICT)
-    if entry.kind == "seal" then
-        assert(ok and decoded.value == true, "the sealer did not close the phase asked")
+    if entry.kind == "close_phase" then
+        assert(ok and decoded.value == true, "the phase closer did not close the phase asked")
         entry.resolved = true
-        self.seal_active = nil
+        self.phase_close_active = nil
         close_phase(self, entry.phase)
-        request_next_seal(self)
+        request_next_phase_close(self)
         return
     end
     if ok and entry.kind == "collect" then
@@ -945,19 +954,19 @@ local function deliver(self, entry, connection, line)
     advance_if_complete(self, entry)
 end
 
--- A connection announced itself as the sealer. There is one sealer, the first to announce,
+-- A connection announced itself as the phase closer. There is one, the first to announce,
 -- and it is never part of a tournament's audience. Every phase already open, still waiting
--- for its seal, is queued in creation order.
-local function announce_sealer(self, connection)
-    if self.sealer then
+-- for its close, is queued in creation order.
+local function announce_phase_closer(self, connection)
+    if self.phase_closer then
         close_connection(self, connection)
         return
     end
-    connection.is_sealer = true
-    self.sealer = connection
+    connection.is_phase_closer = true
+    self.phase_closer = connection
     for _, entry in ipairs(self.open_phases) do
         if entry.open then
-            request_seal(self, entry)
+            request_phase_close(self, entry)
         end
     end
 end
@@ -976,10 +985,10 @@ end
 -- The first line of a connection announces its role, once. A connection that announces again,
 -- or sends anything else before announcing, is closed.
 local function announce(self, connection, message)
-    if connection.is_player or connection.is_sealer then
+    if connection.is_player or connection.is_phase_closer then
         close_connection(self, connection)
-    elseif message.role == "sealer" then
-        announce_sealer(self, connection)
+    elseif message.role == "phase_closer" then
+        announce_phase_closer(self, connection)
     elseif message.role == "player" then
         announce_player(self, connection)
     else
@@ -990,7 +999,7 @@ end
 -- Adopts a new connection: spawns its writer, which drains the outbox, and its reader, which
 -- assigns replies to requests in TCP order. Replies left behind when another player resolved
 -- a request are discarded by count before the current reply is delivered. The first line a
--- connection sends announces what it is, a player or the sealer.
+-- connection sends announces what it is, a player or the phase closer.
 function server_meta.__index.adopt(self, sock)
     sock:settimeout(0)
     local connection = { sock = sock, outbox = {}, stale_requests_pending = 0 }
@@ -1022,7 +1031,7 @@ function server_meta.__index.adopt(self, sock)
                 close_connection(self, connection)
                 return
             end
-            local announced = connection.is_player or connection.is_sealer
+            local announced = connection.is_player or connection.is_phase_closer
             if connection.stale_requests_pending > 0 and announced then
                 connection.stale_requests_pending = connection.stale_requests_pending - 1
             else
@@ -1045,7 +1054,7 @@ function server_meta.__index.adopt(self, sock)
 end
 
 -- Accepts connections, adopting each as it arrives, until the game ends. The referee is never
--- told how many players to expect: it takes every one that connects until the sealer closes
+-- told how many players to expect: it takes every one that connects until the phase closer closes
 -- the initial subscription phase.
 accept_connections = function(self)
     self.listener:settimeout(0)
@@ -1142,7 +1151,7 @@ function server_meta.__index.collect(self, conns, request, ...)
     return wait(self, entry).replies
 end
 
--- Accepts players subscribing to an initial hash until the sealer closes the phase. A player
+-- Accepts players subscribing to an initial hash until the phase closer closes the phase. A player
 -- connection itself expresses interest in the one computation served by this referee.
 function server_meta.__index.accept_subscribers(self, initial_state_hash)
     local entry = {
@@ -1158,7 +1167,7 @@ function server_meta.__index.accept_subscribers(self, initial_state_hash)
     for _, connection in ipairs(self:get_players()) do
         self:subscribe(initial_state_hash, connection)
     end
-    request_seal(self, entry)
+    request_phase_close(self, entry)
     wait(self, entry)
 end
 
@@ -1174,16 +1183,18 @@ function server_meta.__index.collect_claims(self, conns, request, ...)
     }
     self.open_phases[#self.open_phases + 1] = entry
     park(self, entry, conns, encode_request(request, { ... }))
-    request_seal(self, entry)
+    request_phase_close(self, entry)
     return wait(self, entry).replies
 end
 -- docs:end collect_claims
 
--- Runs the referee: spawns its main logic, drives the event loop until it is done, then closes
--- the listener and every connection so all player loops leave on EOF.
+-- Runs the referee: spawns its main logic, releases every remaining player when it is done,
+-- then closes the listener and connections. Socket closing remains the fallback for peers that
+-- are not sent the finish request, including the phase closer.
 function server_meta.__index.run(self, main)
     self.dispatcher:spawn(function()
         main()
+        self:collect(nil, FINISH)
         self.done = true
     end)
     while not self.done do
@@ -1195,16 +1206,19 @@ function server_meta.__index.run(self, main)
     end
 end
 
+-- Runs the listening side of the protocol. The referee itself contains only the game logic;
+-- this function owns its listener, connection multiplexer, and coroutine dispatcher.
+local function run_server(referee, server_address)
+    local referee_server = new_server(server_address)
+    referee_server:run(function()
+        referee:run(referee_server)
+    end)
+end
+
 return {
     SCHEMA_DICT = SCHEMA_DICT,
     define_request = define_request,
     REQUESTS = REQUESTS,
-    LOG2_MCYCLES_PER_PERIOD = LOG2_MCYCLES_PER_PERIOD,
-    MCYCLES_PER_PERIOD = MCYCLES_PER_PERIOD,
-    UARCH_CYCLES_PER_MCYCLE = UARCH_CYCLES_PER_MCYCLE,
-    MCYCLE_HEIGHT = MCYCLE_HEIGHT,
-    UARCH_HEIGHT = UARCH_HEIGHT,
-    PERIODS_PER_INPUT = PERIODS_PER_INPUT,
     story = story,
     format_short_hash = format_short_hash,
     narrate = narrate,
@@ -1212,7 +1226,8 @@ return {
     slice_runs = slice_runs,
     new_tree = new_tree,
     get_other_turn = get_other_turn,
-    new_server = new_server,
-    serve = serve,
-    new_sealer = new_sealer,
+    new_server = new_server, -- prt-test.lua exercises the transport primitives directly
+    run_server = run_server,
+    run_client = run_client,
+    new_phase_closer = new_phase_closer,
 }

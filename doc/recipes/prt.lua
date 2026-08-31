@@ -5,9 +5,9 @@
 -- any number of players over the epoch's history. Where the verification game bisected live,
 -- PRT has each player commit upfront to a computation hash, the root of a Merkle tree of
 -- machine state hashes sampled along the whole computation, and the dispute walks down the
--- two trees. Claims are what matter, not players: any player may answer any request about
+-- two trees. Claims are what matter, not players: any player may answer any event concerning
 -- any claim, every answer carries its own proof, and the referee takes the first answer that
--- verifies. A request nobody answers eliminates the claim it was about, never a player.
+-- verifies. An event nobody answers eliminates the claim it concerned, never a player.
 --
 -- The dispute has two levels, one per cycle counter. An mcycle claim commits to the machine
 -- state hash every 2^p mcycles across the epoch (the mcycle computation hash of
@@ -17,19 +17,20 @@
 -- isolates is a single state transition, settled by verifying access logs, exactly as in the
 -- verification games.
 --
--- Roles, selected by the first argument. Every game role takes the referee address and the
--- epoch's input files, from which each process builds the same dapp contract, standing in
--- for reading it off the chain. The referee is never told how many players to expect: it
--- accepts subscribers until a phase-closer connection closes that phase, then asks those
--- subscribers for claims. The referee sorts the claims it gathers, so the bracket and the
--- whole narration are a pure function of the claim set, not of the order in which players
--- connect.
---   prt.lua referee  <address> <input> [<input> ...]
---   prt.lua honest   <address> <input> [<input> ...]
---   prt.lua quitter  <address> <input> [<input> ...]
---   prt.lua forger   <address> <index> <forged-input> <input> [<input> ...]
---   prt.lua tamperer <address> <input-index> <bundle-offset> <input> [<input> ...]
---   prt.lua fabulist <address> <input-index> <leaf-offset> <input> [<input> ...]
+-- Roles, selected by the first argument. Every game role takes the referee address, the
+-- epoch's initial state hash, and the epoch's input files, from which each process builds
+-- the same dapp contract, standing in for reading it off the chain. A machine-holding
+-- player finds its own snapshot of the initial machine stored under that hash name. The
+-- referee is never told how many players to expect: it accepts subscribers until a
+-- phase-closer connection closes that phase, then emits the tournament event to those
+-- subscribers. The referee sorts the claims it gathers, so the bracket and the whole narration are a pure
+-- function of the claim set, not of the order in which players connect.
+--   prt.lua referee  <address> <initial-state-hash> <input> [<input> ...]
+--   prt.lua honest   <address> <initial-state-hash> <input> [<input> ...]
+--   prt.lua quitter  <address> <initial-state-hash> <input> [<input> ...]
+--   prt.lua forger   <address> <initial-state-hash> <index> <forged-input> <input> [<input> ...]
+--   prt.lua tamperer <address> <initial-state-hash> <input-index> <bundle-offset> <input> [<input> ...]
+--   prt.lua fabulist <address> <initial-state-hash> <input-index> <leaf-offset> <input> [<input> ...]
 --   prt.lua phase_closer <address>
 --
 -- The phase-closer role stays connected and closes the initial subscription phase and every
@@ -56,9 +57,8 @@ if arg[1] == "phase_closer" then
     return prtu.run_client(prtu.new_phase_closer(), assert(arg[2], "missing referee address"))
 end
 
-local REQUESTS = prtu.REQUESTS
+local EVENTS = prtu.EVENTS
 local story = prtu.story
-local MACHINE_TEMPLATE = "rolling-calculator-template"
 
 -- Reads one epoch input from each command-line filename.
 local function read_inputs(...)
@@ -162,8 +162,8 @@ local function is_hash_less(a, b)
 end
 
 -- Partitions claim responses by computation hash, returning one claim per partition, sorted by
--- that hash. Each sender subscribes to requests for its valid claim. The sort makes the bracket a
--- pure function of the claim set, not of connection order.
+-- that hash. Each sender subscribes to events concerning its valid claim. The sort makes the
+-- bracket a pure function of the claim set, not of connection order.
 -- docs:begin partition_claims
 local function partition_claims(responses, validate_submitted_claim)
     local claims, by_hash = {}, {}
@@ -186,8 +186,8 @@ end
 -- docs:end partition_claims
 
 -- Opens a tournament to a fixed audience and partitions its valid claims.
-local function open_tournament(conns, validate_submitted_claim, request, ...)
-    return partition_claims(server:collect_claims(conns, request, ...), validate_submitted_claim)
+local function open_tournament(conns, validate_submitted_claim, event, ...)
+    return partition_claims(server:collect_claims(conns, event, ...), validate_submitted_claim)
 end
 
 -- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
@@ -281,8 +281,8 @@ local function validate_seal_response(tournament, match, response)
 end
 -- docs:end validate_seal_response
 
--- Settles a uarch match once the walk isolates the divergent leaf. The referee asks the
--- holders of both claims for the transition's logs and takes the first answer that verifies
+-- Settles a uarch match once the walk isolates the divergent leaf. The referee emits the
+-- disputed transition to both claims' holders and takes the first answer that verifies
 -- against the agreed state hash. The transition out of the agreed state is unique, so any log
 -- that verifies reaches the one true next state hash. Returns that hash, or nil when nobody
 -- proves a transition.
@@ -295,7 +295,7 @@ local function settle_uarch_state_hash(
     next_state_hashes
 )
     local conns = server:get_subscribers({ match.claims[1].computation_hash, match.claims[2].computation_hash })
-    local obtained_state_hash = server:accept_first_valid(conns, function(response)
+    local obtained_state_hash = server:emit(EVENTS.prove_state_transition, conns, function(response)
         return verify_state_transition(
             tournament.dapp_contract,
             current_state_hash,
@@ -303,7 +303,7 @@ local function settle_uarch_state_hash(
             state_transition_offset,
             response
         )
-    end, REQUESTS.prove_state_transition, tournament.input_index, tournament.period_index, state_transition_offset)
+    end, tournament.input_index, tournament.period_index, state_transition_offset)
     story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
 end
@@ -335,7 +335,7 @@ local function open_uarch_tournament(
     local claims = open_tournament(
         server:get_subscribers({ mcycle_match.claims[1].computation_hash, mcycle_match.claims[2].computation_hash }),
         validate_uarch_claim,
-        REQUESTS.commit_uarch_claim,
+        EVENTS.commit_uarch_claim,
         input_index,
         period_index,
         next_state_hashes
@@ -399,18 +399,18 @@ end
 
 -- Runs one match to its end and returns the winning claim index: one or two for a winner, zero
 -- when both die. Each round
--- asks the holders of the on-turn claim to open its node, and the walk advances on the first
+-- emits each bisection turn to the on-turn claim's holders, and the walk advances on the first
 -- response that validates. A claim nobody opens loses by default.
 -- docs:begin run_match
 local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
-        local response = server:accept_first_valid(
+        local response = server:emit(
+            EVENTS.reveal_bisection,
             server:get_subscribers({ turn_claim.computation_hash }),
             function(response)
                 return validate_bisection_response(match, response)
             end,
-            REQUESTS.reveal_bisection,
             turn_claim.computation_hash,
             match.height,
             match.node_index,
@@ -424,12 +424,12 @@ local function run_match(tournament, match)
         story.report_match_progress(match)
     end
     local turn_claim = match.claims[match.turn]
-    local divergence = server:accept_first_valid(
+    local divergence = server:emit(
+        EVENTS.seal_divergence,
         server:get_subscribers({ turn_claim.computation_hash }),
         function(response)
             return validate_seal_response(tournament, match, response)
         end,
-        REQUESTS.seal_divergence,
         turn_claim.computation_hash,
         match.node_index,
         match.other_left_node
@@ -514,7 +514,7 @@ local function open_mcycle_tournament(dapp_contract)
         function(submitted_claim)
             return validate_claim(submitted_claim, geometry.mcycle_height)
         end,
-        REQUESTS.commit_mcycle_claim
+        EVENTS.commit_mcycle_claim
     )
     local tournament = {
         level = "mcycle",
@@ -557,26 +557,27 @@ verify_output = util.protect(verify_output)
 
 -- Waits on the settled claim, the one the tournament leaves standing. It first establishes the
 -- outputs Merkle root committed by the winning final state. That response may also offer an
--- output. Otherwise the referee asks for one separately and checks it against the cached root.
+-- output. Otherwise the referee emits the established root separately and checks any offered
+-- output against it.
 -- An epoch with no output therefore still settles its outputs root without inventing a result.
 -- docs:begin wait_for_result
 local function wait_for_result(winner)
     local conns = server:get_subscribers({ winner.computation_hash })
-    local established = server:accept_first_valid(conns, function(response)
+    local established = server:emit(EVENTS.prove_outputs_merkle_root, conns, function(response)
         local outputs_merkle_root = verify_outputs_merkle_root(response, winner.final_state_hash)
         if not outputs_merkle_root then
             return nil
         end
         local output = verify_output(response, outputs_merkle_root) and response or nil
         return { outputs_merkle_root = outputs_merkle_root, output = output }
-    end, REQUESTS.prove_outputs_merkle_root)
+    end)
     if not established then
         return story.report_result(nil)
     end
     local result = established.output
-        or server:accept_first_valid(conns, function(response)
+        or server:emit(EVENTS.prove_output, conns, function(response)
             return verify_output(response, established.outputs_merkle_root) and response
-        end, REQUESTS.prove_output)
+        end)
     story.report_result(result)
 end
 -- docs:end wait_for_result
@@ -601,8 +602,8 @@ end
 -- The dispute geometry the contract fixes at deployment. Its one free parameter is the mcycle
 -- period, log2 of the mcycles between two samples of an mcycle claim. The claim heights and
 -- the periods per input follow from it and the emulator's rollup constants. The contract
--- announces the period to the players when it asks for their mcycle claims, as Dave's
--- tournament descriptor does, and the players derive the rest for themselves.
+-- publishes the period, as Dave's tournament descriptor does, and the players derive the
+-- rest for themselves.
 -- docs:begin new_geometry
 local function new_geometry(log2_mcycles_per_period)
     return {
@@ -616,16 +617,14 @@ local function new_geometry(log2_mcycles_per_period)
 end
 -- docs:end new_geometry
 
--- Models application deployment, returning the contract context the referee works against. The
--- epoch's inputs are all posted to the blockchain, so the contract holds its own copy of
--- every one, the copy that verification trusts over anything a player commits. The geometry
--- is fixed here too, with the documentation's period of 2^10 mcycles.
-local function deploy(inputs)
-    local machine_template = MACHINE_TEMPLATE
-    local machine <close> = cartesi.machine(machine_template)
+-- Builds the contract context the referee and players read from the chain.
+-- The initial state hash is announced at deployment, and the epoch's inputs are all posted
+-- to the blockchain, so the contract holds its own copy of every one, the copy that
+-- verification trusts over anything a player commits. The geometry is fixed here too, with
+-- the documentation's period of 2^10 mcycles.
+local function make_dapp_contract(initial_state_hash, inputs)
     return {
-        machine_template = machine_template,
-        initial_state_hash = machine:get_root_hash(),
+        initial_state_hash = initial_state_hash,
         inputs = inputs,
         geometry = new_geometry(10),
     }
@@ -635,9 +634,10 @@ end
 -- role's game logic to the deployed dapp contract without creating or running its transport.
 local function new_referee(dapp_contract)
     return {
-        run = function(_, referee_server)
+        dapp_contract = dapp_contract,
+        run = function(self, referee_server)
             server = referee_server
-            run_referee(dapp_contract)
+            run_referee(self.dapp_contract)
         end,
     }
 end
@@ -671,6 +671,9 @@ local function take_remaining_arguments()
     next_argument = #arg + 1
     return table.unpack(arg, first, #arg)
 end
+
+local initial_state_hash = cartesi.fromhex(take_argument("missing initial state hash"))
+assert(#initial_state_hash == 32, "invalid initial state hash")
 
 local run_role
 if role == "referee" then
@@ -710,5 +713,5 @@ else
     error("unknown role: " .. role)
 end
 
-local dapp_contract = deploy(read_inputs(take_remaining_arguments()))
+local dapp_contract = make_dapp_contract(initial_state_hash, read_inputs(take_remaining_arguments()))
 run_role(dapp_contract)

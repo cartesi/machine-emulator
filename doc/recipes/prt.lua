@@ -599,14 +599,14 @@ end
 -- docs:end run_referee
 
 -- The dispute geometry the contract fixes at deployment. Its one free parameter is the mcycle
--- period, log2 of the mcycles between two samples of an mcycle claim. The claim heights and
--- the periods per input follow from it and the emulator's rollup constants. The contract
--- publishes the period, as Dave's tournament descriptor does, and the players derive the
--- rest for themselves.
+-- period, log2 of the mcycles between two samples of an mcycle claim. The remaining values
+-- follow from it and the emulator's rollup constants. The referee and players use this same
+-- geometry.
 -- docs:begin new_geometry
 local function new_geometry(log2_mcycles_per_period)
     return {
         log2_mcycles_per_period = log2_mcycles_per_period,
+        mcycles_per_period = 1 << log2_mcycles_per_period,
         mcycle_height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
             + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
             - log2_mcycles_per_period,

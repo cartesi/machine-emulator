@@ -27,30 +27,10 @@ end
 -- below a bundle are answered by refining it.
 --------------------------------------------------------------------------------
 
-local ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 local LOG2_MCYCLE_BUNDLE = 4
 local LOG2_UARCH_BUNDLE = 16
 
 local M = {}
-
--- The geometry a player derives from the mcycle period the dapp contract publishes: the
--- claim heights, the periods per input, and the player's own storage counts, the bundles
--- per input and in the whole epoch.
-local function new_geometry(log2_mcycles_per_period)
-    local periods_per_input = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period)
-    local bundles_per_input = periods_per_input >> LOG2_MCYCLE_BUNDLE
-    return {
-        log2_mcycles_per_period = log2_mcycles_per_period,
-        mcycles_per_period = 1 << log2_mcycles_per_period,
-        mcycle_height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
-            + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
-            - log2_mcycles_per_period,
-        uarch_height = log2_mcycles_per_period + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
-        periods_per_input = periods_per_input,
-        bundles_per_input = bundles_per_input,
-        mcycle_bundles = bundles_per_input << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH,
-    }
-end
 
 -- The mcycle offset at which a tamperer corrupts its machine, bundle-aligned.
 local function tamper_offset(player)
@@ -206,8 +186,7 @@ local function build_mcycle_claim(player)
         local revert_state_hash = machine:get_root_hash()
         machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
         local base = machine:read_reg("mcycle")
-        local collection =
-            new_mcycle_collection(player, machine, runs, player.geometry.bundles_per_input, LOG2_MCYCLE_BUNDLE)
+        local collection = new_mcycle_collection(player, machine, runs, player.bundles_per_input, LOG2_MCYCLE_BUNDLE)
         local tamper = player.tamper
         if tamper and tamper.input == index then
             local break_reason = collect_mcycle_bundles(collection, base + tamper_offset(player))
@@ -217,7 +196,7 @@ local function build_mcycle_claim(player)
         collect_mcycle_bundles(collection, base + (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE))
         assert(collection.count == collection.capacity, "mcycle computation hash input is incomplete")
         epoch_pad_bundle = collection.pad_bundle or runs[#runs].hash
-        filled = filled + player.geometry.bundles_per_input
+        filled = filled + player.bundles_per_input
         local _, reason = machine:receive_cmio_request()
         if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             player.fixed_state_hashes[index] = player.boundaries[index]:get_root_hash()
@@ -228,7 +207,7 @@ local function build_mcycle_claim(player)
         end
     end
     -- the rest of the epoch repeats the last input's fixed point
-    push_run(runs, epoch_pad_bundle, player.geometry.mcycle_bundles - filled)
+    push_run(runs, epoch_pad_bundle, player.mcycle_bundles - filled)
     player.epoch_machine = machine
     return runs
 end
@@ -257,11 +236,11 @@ end
 -- docs:begin refine_mcycle_claim
 local function refine_mcycle_claim(player, bundle)
     local bundle_size = 1 << LOG2_MCYCLE_BUNDLE
-    local input_index = bundle // player.geometry.bundles_per_input + 1
+    local input_index = bundle // player.bundles_per_input + 1
     if input_index > #player.inputs then -- epoch tail: repetitions of the last fixed point
         return { { hash = player.fixed_state_hashes[#player.inputs], count = bundle_size } }
     end
-    local window_start = (bundle % player.geometry.bundles_per_input) * bundle_size * player.geometry.mcycles_per_period
+    local window_start = (bundle % player.bundles_per_input) * bundle_size * player.geometry.mcycles_per_period
     local machine <close> = fork_input_boundary(player, input_index)
     local base = advance_fork(player, machine, input_index, window_start)
     local runs = {}
@@ -570,10 +549,14 @@ end
 -- A player reads the epoch inputs and geometry off the dapp contract, and finds its own
 -- snapshot of the initial machine stored under the contract's initial state hash.
 local function new_player(label, dapp_contract)
+    local geometry = dapp_contract.geometry
+    local bundles_per_input = geometry.periods_per_input >> LOG2_MCYCLE_BUNDLE
     local player = {
         label = label,
         inputs = dapp_contract.inputs,
-        geometry = new_geometry(dapp_contract.geometry.log2_mcycles_per_period),
+        geometry = geometry,
+        bundles_per_input = bundles_per_input,
+        mcycle_bundles = bundles_per_input << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH,
         initial_state_hash = dapp_contract.initial_state_hash,
         boundaries = {},
         fixed_state_hashes = {},
@@ -694,7 +677,7 @@ local function new_fabulist(dapp_contract, input_index, leaf_offset)
         local patched_bundle = new_tree(LOG2_MCYCLE_BUNDLE, 0, refine_patched_mcycle_claim(self), nil):get_root()
         local spliced = slice_runs(runs, 0, bundle)
         push_run(spliced, patched_bundle, 1)
-        for _, run in ipairs(slice_runs(runs, bundle + 1, self.geometry.mcycle_bundles - bundle - 1)) do
+        for _, run in ipairs(slice_runs(runs, bundle + 1, self.mcycle_bundles - bundle - 1)) do
             push_run(spliced, run.hash, run.count)
         end
         return new_tree(self.geometry.mcycle_height, LOG2_MCYCLE_BUNDLE, spliced, function(_, e)

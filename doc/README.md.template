@@ -4881,13 +4881,13 @@ As before, the game opens with each player committing a final state hash, now th
 We again assume one of the players is honest.
 
 In this demonstration, the epoch under dispute is the calculator's [first epoch](#rolling-cartesi-machines).
-The referee and the players receive the epoch's inputs in the command line, as the same encoded files the calculator processed, and each builds the same dapp contract from them, standing in for reading it off the blockchain.
-A player takes the inputs, the initial state hash, and the geometry from that contract.
+The referee and players receive the epoch's initial state hash and encoded inputs on the command line, standing in for reading the same dapp contract from the blockchain.
+A player finds its own snapshot of the initial machine in content-addressed local storage and verifies that the machine has the contract's initial state hash before using it.
 
 ```{.lua key=rollup_constants replace=null outputs=log2_max_advance_states_per_epoch,log2_max_mcycles_per_advance_state,log2_max_uarch_cycles_per_mcycle,log2_mcycle_leaves,log2_uarch_leaves}
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
--- the claim tree heights use the mcycle period prt.lua's deploy() fixes
+-- the claim tree heights use the mcycle period prt.lua's dapp contract fixes
 local log2_period = 10
 local log2_mcycle_leaves = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
     + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
@@ -5414,7 +5414,7 @@ The referee server is the single event loop the players connect to.
 When a match needs a response, the server asks the holders of the claim in question and takes the first reply that proves itself.
 A reply that fails to prove itself is rejected, as the blockchain rejects a bad transaction, and counts as that connection's answer.
 Only a line the referee cannot decode, or a closed socket, ends a connection.
-A request whose every holder answered without proof, or closed, resolves to nothing, and the claim it was about is eliminated (`accept_first_valid` in `prtu.lua`).
+An event whose every holder answered without proof, or closed, resolves to nothing, and the claim it concerned is eliminated (`emit` in `prtu.lua`).
 Each connection has at most one unresolved request.
 Replies arrive in request order because TCP is a FIFO stream.
 When another holder resolves a request first, the referee counts the reply still owed by this connection as stale before assigning its next request, then drops that many replies from the stream.
@@ -5446,15 +5446,20 @@ The *fabulist* computes the whole epoch honestly and lies about a single sample,
 It can defend every other request with honest data, but the reset that closes its lied-about period contradicts the leaf itself.
 Two fabulists run, lying about different samples, so they dispute each other too, which is why there are five dishonest players and four ways of being dishonest.
 
-To run the tournament, start the referee with the epoch's input files.
+To run the tournament, start the referee with the epoch's initial state hash and input files.
 ```{.lua key=prt_test_src include=prt-test.lua replace=null}
 ```
 ```{.bash key=prt_test depends=prt_test_src,prt_runs_node replace=null}
 lua5.4 "$RECIPES_DIR/prt-test.lua"
 ```
 ```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,prt_test outputs=claims,posted,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_4_elided,match_4_1_elided,match_5_elided,match_5_1_elided replace=source/referee}
-rm -f rolling-calculator-template
-ln -sf "$tmpl" rolling-calculator-template
+# The chain publishes the initial state hash; a player finds its machine snapshot stored
+# under that name
+initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
+local machine <close> = cartesi.machine("'"$tmpl"'")
+io.write(cartesi.tohex(machine:get_root_hash()))')
+rm -f "$initial_state_hash"
+ln -sf "$tmpl" "$initial_state_hash"
 ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
 cartesi-rollup-data.lua --utf8-payload encode advance > forged-input-2.bin <<EOF
@@ -5477,42 +5482,42 @@ EOF
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8096\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
 {
 # docs:begin referee
-lua5.4 prt.lua referee 127.0.0.1:8096 \
+lua5.4 prt.lua referee 127.0.0.1:8096 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end referee
 } > /dev/null 2> referee.stderr &
 while ! netstat -ntl 2>&1 | grep '\<8096\>' > /dev/null; do sleep 1; done
 {
 # docs:begin honest
-lua5.4 prt.lua honest 127.0.0.1:8096 \
+lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end honest
 } > /dev/null 2> honest.stderr &
 while ! players_in 1; do sleep 1; done
 {
 # docs:begin quitter
-lua5.4 prt.lua quitter 127.0.0.1:8096 \
+lua5.4 prt.lua quitter 127.0.0.1:8096 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end quitter
 } > /dev/null 2> quitter.stderr &
 while ! players_in 2; do sleep 1; done
 {
 # docs:begin forger
-lua5.4 prt.lua forger 127.0.0.1:8096 2 forged-input-2.bin \
+lua5.4 prt.lua forger 127.0.0.1:8096 "$initial_state_hash" 2 forged-input-2.bin \
     input-0.bin input-1.bin input-2.bin
 # docs:end forger
 } > /dev/null 2> forger.stderr &
 while ! players_in 3; do sleep 1; done
 {
 # docs:begin tamperer
-lua5.4 prt.lua tamperer 127.0.0.1:8096 0 100 \
+lua5.4 prt.lua tamperer 127.0.0.1:8096 "$initial_state_hash" 0 100 \
     input-0.bin input-1.bin input-2.bin
 # docs:end tamperer
 } > /dev/null 2> tamperer.stderr &
 while ! players_in 4; do sleep 1; done
 {
 # docs:begin fabulist
-lua5.4 prt.lua fabulist 127.0.0.1:8096 2 2000 \
+lua5.4 prt.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000 \
     input-0.bin input-1.bin input-2.bin
 # docs:end fabulist
 } > /dev/null 2> fabulist.stderr &
@@ -5520,7 +5525,7 @@ while ! players_in 5; do sleep 1; done
 {
 # A second fabulist lies about a sample after input 2 has reached its fixed point. Its
 # uarch claim therefore exercises fixed-point padding for the entire disputed span.
-lua5.4 prt.lua fabulist 127.0.0.1:8096 2 60000 \
+lua5.4 prt.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 60000 \
     input-0.bin input-1.bin input-2.bin
 } > /dev/null 2> fixed_fabulist.stderr &
 while ! players_in 6; do sleep 1; done
@@ -5550,24 +5555,29 @@ done
 ```{.bash key=prt_run_reversed vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,forged->prt_run/forged-input-2.bin/path,prt_run depends=prt_run replace=null}
 # The same tournament, with the players launched in the opposite order and on another port.
 # Every narration file must come out identical to the run above.
-rm -f rolling-calculator-template
-ln -sf "$tmpl" rolling-calculator-template
+# The chain publishes the initial state hash; a player finds its machine snapshot stored
+# under that name
+initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
+local machine <close> = cartesi.machine("'"$tmpl"'")
+io.write(cartesi.tohex(machine:get_root_hash()))')
+rm -f "$initial_state_hash"
+ln -sf "$tmpl" "$initial_state_hash"
 ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8097\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
-lua5.4 prt.lua referee 127.0.0.1:8097 input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
+lua5.4 prt.lua referee 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
 while ! netstat -ntl 2>&1 | grep '\<8097\>' > /dev/null; do sleep 1; done
-lua5.4 prt.lua fabulist 127.0.0.1:8097 2 60000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fixed_fabulist.stderr &
+lua5.4 prt.lua fabulist 127.0.0.1:8097 "$initial_state_hash" 2 60000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fixed_fabulist.stderr &
 while ! players_in 1; do sleep 1; done
-lua5.4 prt.lua fabulist 127.0.0.1:8097 2 2000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fabulist.stderr &
+lua5.4 prt.lua fabulist 127.0.0.1:8097 "$initial_state_hash" 2 2000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fabulist.stderr &
 while ! players_in 2; do sleep 1; done
-lua5.4 prt.lua tamperer 127.0.0.1:8097 0 100 input-0.bin input-1.bin input-2.bin > /dev/null 2> tamperer.stderr &
+lua5.4 prt.lua tamperer 127.0.0.1:8097 "$initial_state_hash" 0 100 input-0.bin input-1.bin input-2.bin > /dev/null 2> tamperer.stderr &
 while ! players_in 3; do sleep 1; done
-lua5.4 prt.lua forger 127.0.0.1:8097 2 "$forged" input-0.bin input-1.bin input-2.bin > /dev/null 2> forger.stderr &
+lua5.4 prt.lua forger 127.0.0.1:8097 "$initial_state_hash" 2 "$forged" input-0.bin input-1.bin input-2.bin > /dev/null 2> forger.stderr &
 while ! players_in 4; do sleep 1; done
-lua5.4 prt.lua quitter 127.0.0.1:8097 input-0.bin input-1.bin input-2.bin > /dev/null 2> quitter.stderr &
+lua5.4 prt.lua quitter 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> quitter.stderr &
 while ! players_in 5; do sleep 1; done
-lua5.4 prt.lua honest 127.0.0.1:8097 input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
+lua5.4 prt.lua honest 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
 while ! players_in 6; do sleep 1; done
 lua5.4 prt.lua phase_closer 127.0.0.1:8097 > /dev/null 2> phase_closer.stderr &
 wait
@@ -5579,7 +5589,7 @@ for f in claims posted tournament verdict match_*; do
 done
 echo "The reversed run narrated every file identically."
 ```
-The players take the referee address and the inputs, and nothing that names their number or their order:
+The players take the referee address, the initial state hash, and the inputs, and nothing that names their number or their order:
 ```{.bash replace=prt_run/source/honest}
 ```
 ```{.bash replace=prt_run/source/quitter}

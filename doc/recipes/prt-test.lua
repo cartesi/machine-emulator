@@ -172,7 +172,7 @@ end
 -- Runs `scenario` as the referee's main logic against a fresh server on a loopback port. The
 -- scenario gets the server and a `client` constructor. Each client is a coroutine of the same
 -- dispatcher that connects, announces itself (as a player unless told otherwise), and answers
--- every request line with what `handler` returns for it: a reply table (encoded as is),
+-- every event line with what `handler` returns for it: a reply table (encoded as is),
 -- "close" to hang up, a raw line to send verbatim, or nil to delay its answer.
 local function run_with_server(scenario)
     local server = prtu.new_server("127.0.0.1:0")
@@ -191,8 +191,8 @@ local function run_with_server(scenario)
                 if not line and err ~= "timeout" then
                     return
                 elseif line then
-                    local wire_request = cartesi.fromjson(line)
-                    local reply = wire_request.operation == "finish" and { value = true } or handler(wire_request)
+                    local wire_event = cartesi.fromjson(line)
+                    local reply = wire_event.operation == "finish" and { value = true } or handler(wire_event)
                     if reply == "close" then
                         sock:close()
                         return
@@ -228,13 +228,13 @@ local function run_with_server(scenario)
     end)
 end
 
--- A player that returns `claim` to any tournament and answers every request with `answer`.
+-- A player that returns `claim` to any tournament and answers every event with `answer`.
 local function make_claimer(claim, answer)
-    return function(request)
-        if request.operation == "commit_mcycle_claim" then
+    return function(event)
+        if event.operation == "commit_mcycle_claim" then
             return { label = claim, value = claim }
         end
-        return answer(request)
+        return answer(event)
     end
 end
 
@@ -242,8 +242,8 @@ local function is_valid(v)
     return v == "valid" and v
 end
 
-local function define_request(name, response_schema)
-    return prtu.define_request(name, nil, response_schema)
+local function define_event(name, response_schema)
+    return prtu.define_event(name, nil, response_schema)
 end
 
 run_with_server(function(server, run_client, wait_connections)
@@ -263,7 +263,7 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     server:accept_subscribers("initial")
     local responses =
-        server:collect_claims(server:get_subscribers({ "initial" }), define_request("commit_mcycle_claim"))
+        server:collect_claims(server:get_subscribers({ "initial" }), define_event("commit_mcycle_claim"), {})
     assert(#server.open_phases == 0, "closed phases were retained")
     table.sort(responses, function(x, y)
         return x.value < y.value
@@ -282,23 +282,23 @@ run_with_server(function(server, run_client, wait_connections)
 
     -- The first valid response wins; a rejected response leaves its connection open.
     assert(
-        server:accept_first_valid(server:get_subscribers({ "x" }), is_valid, define_request("answer")) == "valid",
+        server:emit(server:get_subscribers({ "x" }), define_event("answer"), {}, is_valid) == "valid",
         "valid response not taken"
     )
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
 
     -- The acceptor's result, rather than the submitted value, is returned.
-    local mapped = server:accept_first_valid({ a }, function(v)
+    local mapped = server:emit({ a }, define_event("mapped"), {}, function(v)
         return is_valid(v) and "mapped"
-    end, define_request("mapped"))
-    assert(mapped == "mapped", "accept_first_valid did not return the acceptor result")
+    end)
+    assert(mapped == "mapped", "emit did not return the acceptor result")
 
-    -- A valid response resolves the request while another holder still owes a reply. When that
+    -- A valid response resolves the event while another holder still owes a reply. When that
     -- holder is asked again, TCP delivers the old reply first; the referee drops it by count
-    -- and accepts the following reply for the current request.
+    -- and accepts the following reply for the current event.
     local delayed = false
-    run_client(nil, function(wire_request)
-        if wire_request.operation == "early" then
+    run_client(nil, function(wire_event)
+        if wire_event.operation == "early" then
             delayed = true
             return nil
         elseif delayed then
@@ -310,19 +310,19 @@ run_with_server(function(server, run_client, wait_connections)
     wait_connections(5)
     local delayed_connection = server.connections[5]
     assert(
-        server:accept_first_valid({ delayed_connection, a }, is_valid, define_request("early")) == "valid",
+        server:emit({ delayed_connection, a }, define_event("early"), {}, is_valid) == "valid",
         "valid response not taken early"
     )
     assert(
-        server:accept_first_valid({ delayed_connection }, is_valid, define_request("after_early")) == "valid",
+        server:emit({ delayed_connection }, define_event("after_early"), {}, is_valid) == "valid",
         "stale reply was accepted"
     )
     assert(
-        delayed_connection.stale_requests_pending == 0 and not delayed_connection.current_request,
+        delayed_connection.stale_replies_pending == 0 and not delayed_connection.current_event,
         "stale reply was not consumed"
     )
     assert(not delayed_connection.dead, "a pending holder was closed")
-    -- Without a valid response, the request waits for every holder, and resolves to nil only then.
+    -- Without a valid response, the event waits for every holder, and resolves to nil only then.
     local replies_seen = 0
     run_client(nil, function()
         replies_seen = replies_seen + 1
@@ -330,20 +330,17 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     wait_connections(6)
     local n = server.connections[6]
-    assert(
-        server:accept_first_valid({ n, b }, is_valid, define_request("answer")) == nil,
-        "an invalid response was taken"
-    )
-    assert(replies_seen == 1, "the request resolved before every holder answered")
+    assert(server:emit({ n, b }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
+    assert(replies_seen == 1, "the event resolved before every holder answered")
     assert(not n.dead and not b.dead, "an invalid response closed a connection")
 
     -- A nested tournament asks only its audience, and closes at once.
-    local nested = server:collect_claims({ a }, define_request("commit_mcycle_claim"))
+    local nested = server:collect_claims({ a }, define_event("commit_mcycle_claim"), {})
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
     assert(#server.open_phases == 0, "closed nested tournament was retained")
 
-    -- Every holder answers without proof: the request resolves to nil, connections stay open.
-    assert(server:accept_first_valid({ b }, is_valid, define_request("answer")) == nil, "an invalid response was taken")
+    -- Every holder answers without proof: the event resolves to nil, connections stay open.
+    assert(server:emit({ b }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
     assert(not b.dead, "an invalid response closed its connection")
 
     -- A holder that closes counts as answered. With every holder gone, the claim is unanswered.
@@ -351,24 +348,24 @@ run_with_server(function(server, run_client, wait_connections)
         return "close"
     end)
     wait_connections(7)
-    local replies = server:collect(nil, define_request("label"))
+    local replies = server:collect(nil, define_event("label"), {})
     local d = server.connections[7]
     assert(d.dead and #replies == 5, "the closing client was not dropped from the collection")
     assert(
-        server:accept_first_valid({ d }, is_valid, define_request("answer")) == nil,
-        "a request to a closed connection did not resolve"
+        server:emit({ d }, define_event("answer"), {}, is_valid) == nil,
+        "an event to a closed connection did not resolve"
     )
 
-    -- A reply whose value violates the operation's response schema is an invalid operation, not a
+    -- A reply whose value violates the event's response schema is an invalid response, not a
     -- malformed connection. Asked alone, a holder answering with such a value leaves the
-    -- request with nothing, and the holder open. This is the invariant itself, and needs no
+    -- event with nothing, and the holder open. This is the invariant itself, and needs no
     -- assumption about the order two sockets become readable.
     prtu.SCHEMA_DICT.PairResponse = { l = "Base64", r = "Base64" }
     prtu.SCHEMA_DICT.PairResponseEnvelope = { value = "PairResponse" }
-    -- Each fake client answers typed requests with its fixed value.
+    -- Each fake client answers typed events with its fixed value.
     local function run_typed_client(value, schema)
-        run_client(nil, function(wire_request)
-            if wire_request.operation == "typed" then
+        run_client(nil, function(wire_event)
+            if wire_event.operation == "typed" then
                 return cartesi.tojson({ value = value }, -1, schema, prtu.SCHEMA_DICT)
             end
             return { value = "valid" }
@@ -381,17 +378,17 @@ run_with_server(function(server, run_client, wait_connections)
     end
     local bad = run_typed_client({ l = 1, r = "not base64!" })
     assert(
-        server:accept_first_valid({ bad }, is_well_typed, define_request("typed", "PairResponse")) == nil,
+        server:emit({ bad }, define_event("typed", "PairResponse"), {}, is_well_typed) == nil,
         "a schema-invalid value was taken"
     )
-    assert(not next(server.active), "accept_first_valid left a resolved request active")
+    assert(not next(server.active), "emit left a resolved event active")
     assert(not bad.dead, "a schema-invalid reply closed its connection")
     -- Alongside a well-typed reply, whichever arrives first, the well-typed value is taken and
     -- both connections stay open.
     local good = run_typed_client({ l = "a", r = "b" }, "PairResponseEnvelope")
-    local taken = server:accept_first_valid({ bad, good }, is_well_typed, define_request("typed", "PairResponse"))
+    local taken = server:emit({ bad, good }, define_event("typed", "PairResponse"), {}, is_well_typed)
     assert(taken and taken.l == "a", "the well-typed reply was not taken")
-    assert(not next(server.active), "accept_first_valid left a resolved request active")
+    assert(not next(server.active), "emit left a resolved event active")
     assert(not bad.dead and not good.dead, "a schema-invalid reply closed a connection")
 
     -- An undecodable line closes its sender.
@@ -399,7 +396,7 @@ run_with_server(function(server, run_client, wait_connections)
         return "this is not json"
     end)
     wait_connections(10)
-    server:collect(nil, define_request("label"))
+    server:collect(nil, define_event("label"), {})
     local dead = 0
     for _, connection in ipairs(server.connections) do
         if connection.dead then
@@ -411,15 +408,15 @@ run_with_server(function(server, run_client, wait_connections)
 
     -- Phase closing is connection-bound. An extra player reply cannot close a phase; the
     -- tournament closes only on the phase closer's reply and includes the player's claim.
-    run_client(nil, function(wire_request)
-        if wire_request.operation == "commit_mcycle_claim" then
+    run_client(nil, function(wire_event)
+        if wire_event.operation == "commit_mcycle_claim" then
             return cartesi.tojson({ value = "forger" }, -1) .. "\n" .. cartesi.tojson({ value = true }, -1)
         end
         return { value = "valid" }
     end)
     wait_connections(11)
     local f = server.connections[11]
-    local t2 = server:collect_claims({ f }, define_request("commit_mcycle_claim"))
+    local t2 = server:collect_claims({ f }, define_event("commit_mcycle_claim"), {})
     assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged close was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
@@ -428,7 +425,7 @@ run_with_server(function(server, run_client, wait_connections)
         return { role = "player" }
     end)
     wait_connections(12)
-    server:collect({ server.connections[12] }, define_request("again"))
+    server:collect({ server.connections[12] }, define_event("again"), {})
     assert(server.connections[12].dead, "a repeated role announcement was accepted")
     run_client({ role = "phase_closer" }, function()
         return "close"
@@ -442,8 +439,8 @@ run_with_server(function(server, run_client, wait_connections)
     -- A stale reply is still a protocol line: malformed JSON closes the connection before the
     -- stale position is discarded.
     local delayed_malformed = false
-    run_client(nil, function(wire_request)
-        if wire_request.operation == "malformed_early" then
+    run_client(nil, function(wire_event)
+        if wire_event.operation == "malformed_early" then
             delayed_malformed = true
             return nil
         elseif delayed_malformed then
@@ -454,11 +451,11 @@ run_with_server(function(server, run_client, wait_connections)
     wait_connections(14)
     local malformed = server.connections[14]
     assert(
-        server:accept_first_valid({ malformed, a }, is_valid, define_request("malformed_early")) == "valid",
+        server:emit({ malformed, a }, define_event("malformed_early"), {}, is_valid) == "valid",
         "valid response did not resolve before the delayed malformed reply"
     )
     assert(
-        server:accept_first_valid({ malformed }, is_valid, define_request("after_malformed")) == nil,
+        server:emit({ malformed }, define_event("after_malformed"), {}, is_valid) == nil,
         "a malformed stale line produced a value"
     )
     assert(malformed.dead, "a malformed stale line did not close its sender")
@@ -470,7 +467,7 @@ local ok, err = pcall(run_with_server, function(server, run_client, wait_connect
         return { value = "other" }
     end)
     wait_connections(1)
-    server:collect_claims({}, define_request("commit_mcycle_claim"))
+    server:collect_claims({}, define_event("commit_mcycle_claim"), {})
 end)
 assert(not ok and err:find("did not close the phase asked"), "an invalid phase close was accepted")
 
@@ -480,7 +477,7 @@ ok, err = pcall(run_with_server, function(server, run_client, wait_connections)
         return "close"
     end)
     wait_connections(1)
-    server:collect_claims({}, define_request("commit_mcycle_claim"))
+    server:collect_claims({}, define_event("commit_mcycle_claim"), {})
 end)
 assert(not ok and err:find("the phase closer went away"), "phase-closer EOF did not fail the referee")
 print("prt-test: ok")

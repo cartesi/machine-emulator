@@ -15,15 +15,21 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
--- Generates the UARCH (keccak256) reject fixtures: valid uarch base fixtures tampered (or
--- replayed with deliberately wrong claimed values) so the keccak replayers -- the Solidity
--- verifier and the C++/Lua host in keccak mode -- must reject identically. The big-machine
--- (sha256) reject fixtures for RISC0 are a separate generator. The manifest's expectError
--- column carries a normalized tag each replayer maps to its own error (C++ message pattern /
--- Solidity selector / RISC0 reject).
+-- Generates the uarch reject fixtures (keccak256).
 --
--- Tampering a page or the pre-state node re-roots root_before via the same fold the
--- replayer uses, so the log still decodes and the rejection fires at its intended layer.
+-- Run uarch-riscv-tests.lua and record-reset-uarch.lua first: they write the base logs this script
+-- reads from --fixtures-dir. Here they are tampered, or replayed with deliberately wrong claimed
+-- values, and the copies written to --output-dir.
+--
+-- Each fixture is a manifest row: a log, the arguments to verify it with, and the rejection it must
+-- produce. The Solidity verifier and the C++/Lua host in keccak mode both replay the rows and must
+-- reject alike. The expectError column carries a normalized tag each replayer maps to its own error
+-- (C++ message pattern, Solidity selector, RISC0 reject).
+--
+-- The claimed before/after roots handed to the verifier come from the base fixtures' own manifests,
+-- recorded from the live machine.
+--
+-- The big-machine (sha256) reject fixtures for RISC0 are a separate generator.
 
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
@@ -57,10 +63,6 @@ assert(output_dir, "--output-dir is required")
 
 local UARCH_BASE = fixtures_dir .. "/uarch-tests-per-cycle/rv64ui-uarch-add/00000.log"
 local RESET_BASE = fixtures_dir .. "/reset-uarch/reset-uarch.log"
--- A reset whose machine is paused on a rejected input: the reset reverts, so the verifier substitutes
--- the recorded revert root instead of recomputing the post root.
-local REVERT_RESET_BASE = fixtures_dir .. "/reset-uarch/reset-uarch-rejected.log"
-
 -- Cycle 0 fetches its first instruction at UARCH_PC_INIT (start of uarch RAM).
 local PC_INIT = cartesi.UARCH_RAM_START_ADDRESS
 local PC_PAGE = PC_INIT >> 12
@@ -72,17 +74,22 @@ local INSN_ECALL = 0x00000073 -- with pristine x17 (=0), an unknown ecall functi
 -- A 32-byte value distinct from any real root, for belief/claim mismatches.
 local BOGUS = string.rep("\186", 32)
 
--- Overwrite the 32-bit instruction fetched at PC_INIT, then re-root so the log decodes.
+-- Overwrite the 32-bit instruction fetched at PC_INIT.
 local function inject_uarch_instruction(log, insn)
     for _, page in ipairs(log.pages) do
         if page.index == PC_PAGE then
             local le = string.pack("<I4", insn)
             page.data = page.data:sub(1, PC_OFF) .. le .. page.data:sub(PC_OFF + 5)
-            log.root_hash_before = test_util.recompute_step_log_root(log, false, "keccak256")
             return
         end
     end
     error(string.format("page 0x%x not found in base log", PC_PAGE))
+end
+
+-- Claimed before/after roots for a base fixture, from its directory's manifest row.
+local function base_claims(base_path)
+    local dir, name = base_path:match("^(.*)/([^/]+)$")
+    return manifest.read_claims(dir, name)
 end
 
 -- The uarch reset accesses the revert root hash (0xfe0) and htif.tohost, both in shadow page 0,
@@ -96,8 +103,9 @@ do
     HTIF_TOHOST_OFF = m:get_reg_address("htif_tohost") & 0xfff
 end
 
--- Flip a byte at `off` within the page at `page_idx` WITHOUT re-rooting, so the header pre-root no
--- longer matches. Errors if the page is absent -- a guard that the reset still records this page.
+-- Flip a byte at `off` within the page at `page_idx`, so the recomputed pre-root no longer
+-- matches the claimed one. Errors if the page is absent -- a guard that the reset still records
+-- this page.
 local function tamper_page_byte(log, page_idx, off)
     for _, page in ipairs(log.pages) do
         if page.index == page_idx then
@@ -181,38 +189,29 @@ local cases = {
         end,
     },
     {
-        tag = "unconsumed_node",
-        kind = "reset_uarch",
-        base = RESET_BASE,
-        mutate = function(log)
-            test_util.inject_unconsumed_node(log)
-        end,
-    },
-    {
-        -- Same injection on a reverted reset: the revert substitutes the recorded root instead of
-        -- recomputing it, so only the explicit unconsumed-node assertion on the revert path catches this.
-        tag = "unconsumed_node",
-        name = "reset_rejected_unconsumed_node",
-        kind = "reset_uarch",
-        base = REVERT_RESET_BASE,
-        mutate = function(log)
-            test_util.inject_unconsumed_node(log)
-        end,
-    },
-    {
-        tag = "initial_root_mismatch",
+        tag = "too_few_siblings",
         kind = "cycle",
         base = UARCH_BASE,
-        -- Tamper a page byte WITHOUT re-rooting: the header's pre-root no longer matches.
+        -- Drop a sibling the tree walk needs; the fold runs out of sibling hashes.
+        mutate = function(log)
+            table.remove(log.siblings)
+        end,
+    },
+    {
+        tag = "root_before_mismatch",
+        name = "page_tampered",
+        kind = "cycle",
+        base = UARCH_BASE,
+        -- Tamper a page byte: the recomputed pre-root no longer matches the claimed one.
         mutate = function(log)
             local p = log.pages[#log.pages]
             p.data = string.char(p.data:byte(1) ~ 0xff) .. p.data:sub(2)
         end,
     },
     -- The revert root hash and htif.tohost the reset accesses are bound into the proof: tampering
-    -- either, in the shadow page the reset records, trips the pre-root recompute.
+    -- either, in the shadow page the reset records, changes the recomputed pre-root.
     {
-        tag = "initial_root_mismatch",
+        tag = "root_before_mismatch",
         name = "reset_revert_hash_tampered",
         kind = "reset_uarch",
         base = RESET_BASE,
@@ -221,20 +220,12 @@ local cases = {
         end,
     },
     {
-        tag = "initial_root_mismatch",
+        tag = "root_before_mismatch",
         name = "reset_htif_tohost_tampered",
         kind = "reset_uarch",
         base = RESET_BASE,
         mutate = function(log)
             tamper_page_byte(log, SHADOW_PAGE, HTIF_TOHOST_OFF)
-        end,
-    },
-    {
-        tag = "nonzero_cycle_count",
-        kind = "reset_uarch",
-        base = RESET_BASE,
-        mutate = function(log)
-            log.requested_cycle_count = 7
         end,
     },
     -- Content traps (instruction injected at PC, log re-rooted)
@@ -244,7 +235,7 @@ local cases = {
         base = UARCH_BASE,
         mutate = function(log)
             inject_uarch_instruction(log, INSN_ILLEGAL)
-            return { before = log.root_hash_before }
+            return { before = test_util.recompute_step_log_root(log, "keccak256") }
         end,
     },
     {
@@ -253,7 +244,7 @@ local cases = {
         base = UARCH_BASE,
         mutate = function(log)
             inject_uarch_instruction(log, INSN_EBREAK)
-            return { before = log.root_hash_before }
+            return { before = test_util.recompute_step_log_root(log, "keccak256") }
         end,
     },
     {
@@ -262,10 +253,10 @@ local cases = {
         base = UARCH_BASE,
         mutate = function(log)
             inject_uarch_instruction(log, INSN_ECALL)
-            return { before = log.root_hash_before }
+            return { before = test_util.recompute_step_log_root(log, "keccak256") }
         end,
     },
-    -- Belief / Layer-2 (valid log; the manifest lies about the transition)
+    -- Wrong claims (valid log; the manifest lies about the transition)
     {
         tag = "root_before_mismatch",
         kind = "cycle",
@@ -282,26 +273,7 @@ local cases = {
             return { after = BOGUS }
         end,
     },
-    {
-        tag = "cycle_count_mismatch",
-        kind = "cycle",
-        base = UARCH_BASE,
-        mutate = function(log)
-            return { cycle = log.requested_cycle_count + 1 }
-        end,
-    },
-    {
-        tag = "final_root_mismatch",
-        kind = "cycle",
-        base = UARCH_BASE,
-        -- Header claims a post root the replay won't reproduce; claim the same bogus value
-        -- so the Layer-1 final-root check fires before the Layer-2 argument check.
-        mutate = function(log)
-            log.root_hash_after = BOGUS
-            return { after = BOGUS }
-        end,
-    },
-    -- Belief / Layer-2 on the reset entrypoint (verifyReset has its own copies of these checks)
+    -- Wrong claims on the reset entrypoint (verifyReset has its own copies of these checks)
     {
         tag = "root_before_mismatch",
         name = "reset_root_before_mismatch",
@@ -320,26 +292,6 @@ local cases = {
             return { after = BOGUS }
         end,
     },
-    {
-        tag = "final_root_mismatch",
-        name = "reset_final_root_mismatch",
-        kind = "reset_uarch",
-        base = RESET_BASE,
-        mutate = function(log)
-            log.root_hash_after = BOGUS
-            return { after = BOGUS }
-        end,
-    },
-    -- Replay-semantic (decode accepts via hash_before; replay rejects the post-hash)
-    {
-        tag = "reset_node_wrong_posthash",
-        kind = "reset_uarch",
-        base = RESET_BASE,
-        mutate = function(log)
-            local n = log.nodes[1]
-            n.hash_after = string.char(n.hash_after:byte(1) ~ 0xff) .. n.hash_after:sub(2)
-        end,
-    },
 }
 
 test_util.prepare_empty_output_dir(output_dir)
@@ -348,6 +300,7 @@ out:write(manifest.HEADER)
 
 for _, case in ipairs(cases) do
     local log = test_util.read_step_log_file(case.base)
+    local claims = base_claims(case.base)
     local claim = case.mutate(log) or {}
     -- Distinct filename when several cases share a tag (same rejection on different entrypoints).
     local name = (case.name or case.tag) .. ".log"
@@ -356,9 +309,9 @@ for _, case in ipairs(cases) do
         kind = case.kind,
         name = name,
         hash_function = "keccak256",
-        requested_cycle_count = claim.cycle or log.requested_cycle_count,
-        initial_root_hash = claim.before or log.root_hash_before,
-        final_root_hash = claim.after or log.root_hash_after,
+        requested_cycle_count = claim.cycle or claims.cycle,
+        initial_root_hash = claim.before or claims.before,
+        final_root_hash = claim.after or claims.after,
         expect_error = case.tag,
     })
     stderr("adversarial: %-26s (%s)\n", case.tag, case.kind)

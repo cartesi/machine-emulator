@@ -24,14 +24,14 @@ use std::os::raw::{c_char, c_ulong, c_ulonglong};
 type MachineHash = [u8; 32];
 
 extern "C" {
-    /// C++ code that replays the logged step and returns verified header values via output params.
-    /// The log buffer is mutable: the replay writes page data and re-zeroes the per-page scratch
-    /// hash slots in place.
+    /// C++ code that replays `mcycle_count` cycles over the logged witness and returns the
+    /// replay-derived roots via output params. The log buffer is mutable: the replay writes
+    /// page data and re-zeroes the per-page scratch hash slots in place.
     pub fn risc0_replay_steps(
         raw_log_data: *mut u8,
         raw_log_size: c_ulonglong,
+        mcycle_count: c_ulonglong,
         out_root_hash_before: *mut u8,
-        out_mcycle_count: *mut u64,
         out_root_hash_after: *mut u8,
     );
 }
@@ -122,8 +122,15 @@ pub extern "C" fn zk_concat_hash(
 }
 
 fn main() {
-    let mut log_data = Vec::<u8>::new();
-    env::stdin().read_to_end(&mut log_data).unwrap();
+    // Input: an 8-byte little-endian requested cycle count, then the step log bytes.
+    let mut input = Vec::<u8>::new();
+    env::stdin().read_to_end(&mut input).unwrap();
+    assert!(
+        input.len() >= 8,
+        "input shorter than the cycle count prefix"
+    );
+    let mcycle_count = u64::from_le_bytes(input[0..8].try_into().unwrap());
+    let mut log_data = input.split_off(8);
     // step_log::decode reinterprets the buffer as structs with uint64 fields; the wire
     // layout keeps every field 8-aligned relative to the buffer start.
     assert!(
@@ -132,15 +139,14 @@ fn main() {
     );
 
     let mut root_hash_before: MachineHash = [0; 32];
-    let mut mcycle_count: u64 = 0;
     let mut root_hash_after: MachineHash = [0; 32];
 
     unsafe {
         risc0_replay_steps(
             log_data.as_mut_ptr(),
             log_data.len() as c_ulonglong,
+            mcycle_count,
             root_hash_before.as_mut_ptr(),
-            &mut mcycle_count,
             root_hash_after.as_mut_ptr(),
         );
     }

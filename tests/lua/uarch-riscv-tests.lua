@@ -460,7 +460,7 @@ local function record_uarch_tests(tests)
     end
 
     -- Batched mode: each test produces <output_dir>/<test_name>.log; manifest
-    -- rows accumulate from worker fragments, then merge into <output_dir>/_manifest.csv.
+    -- rows accumulate in worker row files, then merge into <output_dir>/_manifest.csv.
     tests_util.prepare_empty_output_dir(output_dir)
     local failures = parallel.run(loggable_tests, jobs, function(test)
         local ctx = {
@@ -472,7 +472,7 @@ local function record_uarch_tests(tests)
         local machine <close> = build_machine(ctx.ram_image)
         record_test_step_log(machine, ctx)
         check_test_result(machine, ctx)
-        manifest_mod.write_fragment(output_dir, ctx.test_name, ctx)
+        manifest_mod.write_row_file(output_dir, ctx.test_name, ctx)
     end)
     if failures ~= nil and failures > 0 then
         stderr("\nFAILED %d of %d tests\n\n", failures, #loggable_tests)
@@ -483,7 +483,7 @@ local function record_uarch_tests(tests)
     for _, test in ipairs(loggable_tests) do
         test_names[#test_names + 1] = test[1]:gsub("%.bin$", "")
     end
-    manifest_mod.concat_fragments(output_dir, test_names)
+    manifest_mod.concat_row_files(output_dir, test_names)
 
     stderr("\nPASSED all %d tests\n\n", #loggable_tests)
     os.exit(0)

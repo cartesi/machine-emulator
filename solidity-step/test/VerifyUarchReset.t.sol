@@ -48,6 +48,6 @@ contract VerifyUarchResetTest is ManifestParser {
         );
         // The rejected reset substitutes the revert hash (== rootHashAfter); the plain and accepted
         // resets do not revert and check the recomputed tree root. All must agree with the manifest.
-        Verify.verifyReset(ctx, r.rootHashBefore, r.rootHashAfter);
+        require(Verify.verifyReset(ctx, r.rootHashBefore) == r.rootHashAfter, "root after mismatch");
     }
 }

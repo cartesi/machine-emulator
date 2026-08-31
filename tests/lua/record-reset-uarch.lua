@@ -97,7 +97,7 @@ local TOHOST_RX_ACCEPTED = (cartesi.HTIF_DEV_YIELD << 56)
     | (cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED << 32)
 
 -- Records a uarch reset whose machine is paused on a rejected manual yield. The reset substitutes the
--- recorded revert root hash as its post-state, so the logged root_hash_after is REVERT_ROOT_HASH, not
+-- recorded revert root hash as its post-state, so the transition ends at REVERT_ROOT_HASH, not at
 -- the physical (pristine-uarch) root hash.
 local function create_rejected_reset_uarch_step_log()
     local machine <close> = build_machine()

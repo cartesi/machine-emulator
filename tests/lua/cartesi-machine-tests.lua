@@ -993,8 +993,9 @@ local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
         fatal("%s: failed. Final hash does not match reference machine\n", ctx.ram_image)
     end
     ctx.read_htif_tohost_data = machine:read_reg("htif_tohost_data")
-    -- Save the step log plus a manifest fragment carrying the live-machine root
-    -- hashes (the replayer's Layer-2 source of truth). Fragments are merged after.
+    -- Save the step log plus a manifest row file carrying the live-machine root
+    -- hashes (the recorded truth replay tests check claims against). Row files
+    -- are merged after.
     if save_step_logs_dir then
         local test_name = step_log_name(ctx)
         local final_name = string.format("step-%s.log", test_name)
@@ -1002,7 +1003,7 @@ local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
         local final_path = logs_dir .. "/" .. final_name
         local cmd = string.format("cp '%s' '%s'", log_filename, final_path)
         assert(os.execute(cmd), "failed to copy step log to " .. final_path)
-        manifest_mod.write_fragment(logs_dir, test_name, {
+        manifest_mod.write_row_file(logs_dir, test_name, {
             kind = "machine",
             name = final_name,
             hash_function = hash_function or "keccak256",
@@ -1099,7 +1100,7 @@ elseif command == "run_step" then
         check_and_print_result(machine, row)
         post_fn(machine, pre_ctx)
     end)
-    -- Merge the per-test manifest fragments written by the workers (deduped, since
+    -- Merge the per-test manifest row files written by the workers (deduped, since
     -- prepost variants can repeat a ram_image) into one _manifest.csv.
     if save_step_logs_dir and (not failures or failures == 0) then
         local logs_dir = save_step_logs_dir:gsub("/+$", "")
@@ -1111,7 +1112,7 @@ elseif command == "run_step" then
                 keys[#keys + 1] = test_name
             end
         end
-        manifest_mod.concat_fragments(logs_dir, keys)
+        manifest_mod.concat_row_files(logs_dir, keys)
     end
 elseif command == "run_step_uarch" then
     failures = parallel.run(contexts, jobs, function(row)

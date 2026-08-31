@@ -27,16 +27,12 @@ contract StepLogDecodeTest is ManifestParser {
     uint64 constant EXPECTED_FIRST_PAGE_INDEX = 1024;
 
     bytes fixture;
-    uint64 expectedCycleCount;
     bytes32 expectedRootBefore;
-    bytes32 expectedRootAfter;
 
     function setUp() public {
         Row memory row;
         (fixture, row) = sampleStepLog();
-        expectedCycleCount = row.requestedCycleCount;
         expectedRootBefore = row.rootHashBefore;
-        expectedRootAfter = row.rootHashAfter;
     }
 
     /// The sibling cap must cover the page cap's worst case: a maximally address-spread log can
@@ -51,20 +47,16 @@ contract StepLogDecodeTest is ManifestParser {
     function testDecodeHappy() public view {
         StepLog.Context memory ctx = this.decode(fixture);
 
-        assertEq(
-            ctx.requestedCycleCount, expectedCycleCount, "requestedCycleCount matches manifest"
-        );
         assertEq(ctx.hashFunction, 0, "hashFunction keccak256");
-        assertEq(ctx.rootHashBefore, expectedRootBefore, "rootHashBefore matches manifest");
-        assertEq(ctx.rootHashAfter, expectedRootAfter, "rootHashAfter matches manifest");
+        assertEq(
+            ctx.rootHashBefore, expectedRootBefore, "recomputed rootHashBefore matches manifest"
+        );
 
         uint256 pageCount = ctx.pageIndices.length;
         assertGt(pageCount, 0, "log has pages");
         assertEq(ctx.pageData.length, pageCount * 4096, "pageData length tracks pageCount");
         assertEq(ctx.pageHashes.length, pageCount, "pageHashes allocated per page");
         assertEq(ctx.pageIndices[0], EXPECTED_FIRST_PAGE_INDEX, "uarch shadow state page first");
-
-        assertTrue(ctx.rootHashBefore != ctx.rootHashAfter, "step changed the root");
     }
 
     /// decodeAt returns the offset just past the decoded log.
@@ -74,7 +66,7 @@ contract StepLogDecodeTest is ManifestParser {
     }
 
     function testRejectsShortLog() public {
-        bytes memory truncated = new bytes(50);
+        bytes memory truncated = new bytes(32);
         vm.expectRevert(StepLog.HeaderTruncated.selector);
         this.decodeAt(truncated, 0);
     }
@@ -103,14 +95,16 @@ contract StepLogDecodeTest is ManifestParser {
         this.decodeAt(bad, 0);
     }
 
-    /// Decoding verifies pre-state Merkle integrity, so a tampered page byte must reject.
-    function testRejectsTamperedPage() public {
+    /// Decode recomputes the pre-state root, so a tampered page byte changes it.
+    function testTamperedPageChangesRootBefore() public view {
         bytes memory bad = bytes(fixture);
         // First page data starts after the header + the 8-byte page index.
         uint256 firstPageDataOff = StepLog.HEADER_SIZE + 8;
         bad[firstPageDataOff] = bytes1(uint8(bad[firstPageDataOff]) ^ 0xff);
-        vm.expectRevert(StepLog.InitialRootHashMismatch.selector);
-        this.decodeAt(bad, 0);
+        StepLog.Context memory ctx = this.decode(bad);
+        assertTrue(
+            ctx.rootHashBefore != expectedRootBefore, "tamper must change the recomputed root"
+        );
     }
 
     /// A valid log with junk appended is tolerated by decodeAt (cursor primitive) but

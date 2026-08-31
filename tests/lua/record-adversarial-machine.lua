@@ -51,6 +51,7 @@ assert(output_dir, "--output-dir is required")
 -- A fixed base log: the mutations below assume its shape (multiple pages, many siblings), so the
 -- base is chosen, not derived from the manifest. It is part of the full positive fixture set.
 local BASE = fixtures_dir .. "/cartesi-machine-tests/step-rv64mi-p-access.log"
+local BASE_NAME = "step-rv64mi-p-access.log"
 do
     local f = io.open(BASE, "rb")
     if not f then
@@ -81,14 +82,6 @@ local cases = {
         tag = "nonzero_scratch_hash",
         mutate = function(log)
             log.pages[1].scratch_hash = string.rep("\255", 32)
-        end,
-    },
-    {
-        tag = "initial_root_mismatch",
-        -- Tamper a page byte without re-rooting: the header's pre-root no longer matches.
-        mutate = function(log)
-            local p = log.pages[#log.pages]
-            p.data = string.char(p.data:byte(1) ~ 0xff) .. p.data:sub(2)
         end,
     },
     {
@@ -128,6 +121,10 @@ local cases = {
     },
 }
 
+-- The reject tests feed prove claimed roots, which the log does not carry, so they come
+-- from the base fixture's row in the positive manifest.
+local base_claims = manifest.read_claims(fixtures_dir .. "/cartesi-machine-tests", BASE_NAME)
+
 test_util.prepare_empty_output_dir(output_dir)
 local out <close> = assert(io.open(output_dir .. "/" .. manifest.MANIFEST_NAME, "w"))
 out:write(manifest.HEADER)
@@ -141,9 +138,9 @@ for _, case in ipairs(cases) do
         kind = "machine",
         name = name,
         hash_function = "sha256",
-        requested_cycle_count = log.requested_cycle_count,
-        initial_root_hash = log.root_hash_before,
-        final_root_hash = log.root_hash_after,
+        requested_cycle_count = base_claims.cycle,
+        initial_root_hash = base_claims.before,
+        final_root_hash = base_claims.after,
         expect_error = case.tag,
     })
     stderr("adversarial machine: %-26s\n", case.tag)

@@ -21,7 +21,6 @@ RISC0_TEST_DEV_ONLY ?= 0
 
 LUA_BIN          ?= lua5.4
 LUA              ?= $(LUA_BIN)
-STEP_LOG_UTIL    := $(abspath ../src/step-log-util.lua)
 CARTESI_RISC0_CLI := $(abspath rust/target/debug/cartesi-risc0-cli)
 EMULATOR_DIR     := $(abspath ..)
 # Restricts which machine tests are recorded (Lua pattern, full match); default = all.
@@ -42,6 +41,10 @@ STEP_LOG         := $(ONE_MCYCLE_DIR)/one-mcycle.log
 RECEIPT          := $(FIXTURES_DIR)/receipt.bin
 SEAL             := $(FIXTURES_DIR)/seal.bin
 JOURNAL          := $(FIXTURES_DIR)/journal.bin
+# Prints the fixture's recorded claims as shell assignments (CYCLE_COUNT,
+# HASH_BEFORE, HASH_AFTER); needs only lua5.4, not a built emulator.
+READ_CLAIMS      := $(LUA) $(EMULATOR_DIR)/tests/lua/cartesi/tests/step_log_manifest.lua \
+                    claims $(ONE_MCYCLE_DIR) one-mcycle.log
 
 all: rust
 
@@ -67,9 +70,7 @@ test-dev-mode:
 
 test-pipeline: $(SEAL)
 	@echo "--- Verifying receipt ---"
-	@HASH_BEFORE=$$($(LUA) $(STEP_LOG_UTIL) root-hash-before $(STEP_LOG)) && \
-	CYCLE_COUNT=$$($(LUA) $(STEP_LOG_UTIL) requested-cycle-count $(STEP_LOG)) && \
-	HASH_AFTER=$$($(LUA) $(STEP_LOG_UTIL) root-hash-after $(STEP_LOG)) && \
+	@CLAIMS=$$($(READ_CLAIMS)) && eval "$$CLAIMS" && \
 	$(CARTESI_RISC0_CLI) verify \
 		$(RECEIPT) "$$HASH_BEFORE" "$$CYCLE_COUNT" "$$HASH_AFTER" && \
 	echo "--- Verifying seal ---" && \
@@ -100,9 +101,7 @@ endif
 
 coverage-pipeline: $(STEP_LOG)
 	@echo "--- Instrumented pipeline (prove -> verify -> compress -> verify-seal) ---"
-	@HASH_BEFORE=$$($(LUA) $(STEP_LOG_UTIL) root-hash-before $(STEP_LOG)) && \
-	CYCLE_COUNT=$$($(LUA) $(STEP_LOG_UTIL) requested-cycle-count $(STEP_LOG)) && \
-	HASH_AFTER=$$($(LUA) $(STEP_LOG_UTIL) root-hash-after $(STEP_LOG)) && \
+	@CLAIMS=$$($(READ_CLAIMS)) && eval "$$CLAIMS" && \
 	rm -f $(COV_RECEIPT) $(COV_SEAL) $(COV_JOURNAL) && \
 	cd rust && \
 	$(COVERAGE_CLI) prove "$$HASH_BEFORE" $(STEP_LOG) "$$CYCLE_COUNT" "$$HASH_AFTER" $(COV_RECEIPT) && \
@@ -128,9 +127,7 @@ $(STEP_LOG):
 $(RECEIPT): $(STEP_LOG) $(CARTESI_RISC0_CLI)
 	@mkdir -p $(FIXTURES_DIR)
 	@echo "--- Proving step log ---"
-	@HASH_BEFORE=$$($(LUA) $(STEP_LOG_UTIL) root-hash-before $(STEP_LOG)) && \
-	CYCLE_COUNT=$$($(LUA) $(STEP_LOG_UTIL) requested-cycle-count $(STEP_LOG)) && \
-	HASH_AFTER=$$($(LUA) $(STEP_LOG_UTIL) root-hash-after $(STEP_LOG)) && \
+	@CLAIMS=$$($(READ_CLAIMS)) && eval "$$CLAIMS" && \
 	$(CARTESI_RISC0_CLI) prove \
 		"$$HASH_BEFORE" $(STEP_LOG) "$$CYCLE_COUNT" "$$HASH_AFTER" \
 		$(RECEIPT)

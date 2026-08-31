@@ -158,7 +158,7 @@ public:
     // \param log_size The size of the log data
     // \param required_hash_function When set, reject a log declaring any other hash function
     // (see step_log::decode); machine step logs are otherwise hash-function agnostic
-    // \throw runtime_error if the initial root hash does not match or the log data is invalid
+    // \throw runtime_error if the log data is invalid
     replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size,
         std::optional<hash_function_type> required_hash_function = std::nullopt) :
         m_context(context) {
@@ -175,21 +175,15 @@ public:
     // \brief Finish the replay and return the obtained root hash after
     // \param revert_on_rejected_yield Whether a machine left paused on a manual rejected yield makes the
     // recorded revert root hash the canonical post-operation hash.
-    // \throw runtime_error if the final root hash does not match the step log header
     // \details A step or uarch reset that leaves the machine paused on a rejected input reverts: its
     // canonical post-operation hash is the recorded revert root hash. A send_cmio_response is not a step;
     // when it no-ops on an already-rejected machine the transition is the identity, so it never reverts
     // and its post-operation hash is the recomputed machine root hash.
     machine_hash finish(bool revert_on_rejected_yield = true) {
-        machine_hash obtained_root_hash{};
         if (revert_on_rejected_yield && is_rejected_manual_yield(*this)) {
-            m_context.log.check_all_nodes_consumed();
-            obtained_root_hash = read_revert_root_hash();
-        } else {
-            obtained_root_hash = m_context.log.compute_root_hash(true);
+            return read_revert_root_hash();
         }
-        m_context.log.check_root_hash_after(obtained_root_hash);
-        return obtained_root_hash;
+        return m_context.log.compute_root_hash();
     }
 
 private:
@@ -431,9 +425,9 @@ private:
     /// \param data Pointer to source bytes.
     /// \param data_length Number of valid bytes at \p data.
     /// \param write_length_log2_size Log2 of the full write length (data + padding).
-    /// \details Supra-page writes hash (data || zero padding) and compare to the logged
-    /// node's hash_after. Sub-page writes mutate the logged page in place so its new hash
-    /// feeds the finish()-time root reconstruction.
+    /// \details Supra-page writes hash (data || zero padding) into the logged node's slot.
+    /// Sub-page writes mutate the logged page in place so its new hash feeds the
+    /// finish()-time root reconstruction.
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) const {
         if (data == nullptr) {
@@ -444,19 +438,14 @@ private:
             THROW(std::invalid_argument, "write length is less than data length");
         }
         if (write_length_log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
-            // Supra-page: hash data + zero-pad via pristine-streaming and compare to the logged node.
-            const auto *node = m_context.log.try_find_node(paddr);
+            // Supra-page: hash data + zero-pad via pristine-streaming into the logged node's slot.
+            auto *node = m_context.log.try_find_node(paddr);
             if (node == nullptr || !std::cmp_equal(node->log2_size, write_length_log2_size)) {
                 THROW(std::runtime_error, "write_memory_with_padding node not found in log");
             }
-            machine_hash data_hash{};
             merkle_tree_hash_padded(m_context.log.hash_function, data, data_length, write_length_log2_size,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                reinterpret_cast<hash_type>(&data_hash));
-            if (node->hash_after != data_hash) {
-                THROW(std::runtime_error, "write_memory_with_padding does not match logged hash");
-            }
-            m_context.log.consumed_node_count++;
+                reinterpret_cast<hash_type>(&node->hash));
             return;
         }
         // Sub-page: mutate the logged page in place so its new hash flows into root reconstruction.

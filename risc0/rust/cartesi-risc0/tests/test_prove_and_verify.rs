@@ -4,10 +4,9 @@ use std::fs;
 use std::path::Path;
 
 // Expected hashes come from the _manifest.csv written by the recorder from the
-// LIVE machine - an independent source of truth, not re-read from the log header.
-// This is what makes the test exercise the verifier's Layer 2 (caller belief vs
-// log) and not just Layer 1 (log internal consistency): a log whose header
-// disagrees with the recorded truth is caught here.
+// LIVE machine - an independent source of truth. The log itself carries no
+// claims, so these rows are the claims the prover commits to and the
+// verification checks against.
 struct ManifestRow {
     kind: String,
     name: String,

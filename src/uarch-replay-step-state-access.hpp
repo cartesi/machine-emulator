@@ -76,9 +76,8 @@ public:
     /// \param context Context to be filled with replay step log data
     /// \param log_image Pointer to the step log file bytes
     /// \param log_size Size of the log bytes
-    /// \throw runtime_error if the log is malformed, declares a hash function other than
-    /// Keccak-256 (the only one the uarch protocol and its on-chain verifier support),
-    /// or the initial root hash does not match
+    /// \throw runtime_error if the log is malformed or declares a hash function other than
+    /// Keccak-256 (the only one the uarch protocol and its on-chain verifier support)
     uarch_replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size) : m_context(context) {
         m_context.log = step_log::decode(log_image, log_size, hash_function_type::keccak256);
     }
@@ -88,15 +87,10 @@ public:
         // When the reset reverted the state on a rejected input, the canonical root hash after the
         // step is the recorded revert root hash, not the recomputed tree root (which reflects the
         // pristine uarch).
-        machine_hash obtained_root_hash{};
         if (m_context.reverted) {
-            m_context.log.check_all_nodes_consumed();
-            obtained_root_hash = m_context.reverted_root_hash;
-        } else {
-            obtained_root_hash = m_context.log.compute_root_hash(true);
+            return m_context.reverted_root_hash;
         }
-        m_context.log.check_root_hash_after(obtained_root_hash);
-        return obtained_root_hash;
+        return m_context.log.compute_root_hash();
     }
 
 private:
@@ -167,21 +161,18 @@ private:
     }
 
     void do_reset_uarch() const {
-        // The log must contain a node covering the full uarch state region
-        // whose post-state matches the well-known pristine uarch hash.
-        const auto *node = m_context.log.try_find_node(UARCH_STATE_START_ADDRESS);
+        // The log must contain a node covering the full uarch state region; the reset
+        // writes the well-known pristine uarch hash into its slot.
+        auto *node = m_context.log.try_find_node(UARCH_STATE_START_ADDRESS);
         if (node == nullptr || node->log2_size != static_cast<uint64_t>(UARCH_STATE_LOG2_SIZE)) {
             THROW(std::runtime_error, "reset uarch node not found in log");
         }
-        if (node->hash_after != get_uarch_pristine_state_hash()) {
-            THROW(std::runtime_error, "reset uarch node has wrong post-hash");
-        }
-        m_context.log.consumed_node_count++;
+        node->hash = get_uarch_pristine_state_hash();
     }
 
     void do_revert_state() const {
         // The canonical post-state hash is the recorded revert root hash, read raw from its leaf in the
-        // witnessed shadow page. finish() compares it, not the recomputed tree root, against the header.
+        // witnessed shadow page. finish() returns it instead of the recomputed tree root.
         constexpr uint64_t paddr = AR_SHADOW_REVERT_ROOT_HASH_START;
         const auto *page_log = m_context.log.find_page(paddr & ~PAGE_OFFSET_MASK);
         std::copy_n(page_log->data + (paddr & PAGE_OFFSET_MASK), m_context.reverted_root_hash.size(),

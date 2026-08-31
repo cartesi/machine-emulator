@@ -23,83 +23,51 @@ import {UArchStep} from "src/UArchStep.sol";
 /// Verifies binary step logs. Decode once, then verify:
 ///
 ///     StepLog.Context memory ctx = StepLog.decode(log);
-///     Verify.verifyStep(ctx, rootBefore, cycleCount, rootAfter);
+///     bytes32 rootAfter = Verify.verifyStep(ctx, rootBefore);
 ///
-/// decode checks the pre-state root and that the log occupies the whole buffer; each
-/// verifyXXX checks the caller's beliefs, runs the operation, and checks the post-state
-/// root. Reverts on mismatch. MUTATES `ctx`; do not reuse a Context across calls. For
-/// multi-log composition, call StepLog.decodeAt in a cursor loop instead.
+/// decode recomputes the pre-state root and checks that the log occupies the whole
+/// buffer; each verifyXXX checks the caller's claimed pre-state root, runs the
+/// operation, and returns the post-state root it obtained, for the caller to compare
+/// against the root under dispute. MUTATES `ctx`; do not reuse a Context across calls.
+/// For multi-log composition, call StepLog.decodeAt in a cursor loop instead.
 ///
-/// Scope: verifyStep verifies exactly one uarch step. A multi-cycle log_step_uarch log, which the
-/// host can record and replay, is rejected here by design; the on-chain dispute granularity is a
-/// single uarch step.
+/// Scope: verifyStep runs exactly one uarch step; the on-chain dispute granularity is a
+/// single uarch step. A multi-cycle log is a valid witness for its first cycle only:
+/// replaying one step of it returns that intermediate root, not the log's endpoint.
 library Verify {
     error RootHashBeforeMismatch(bytes32 expected, bytes32 fromLog);
-    error RootHashAfterMismatch(bytes32 expected, bytes32 fromLog);
-    error UarchCycleCountMismatch(uint64 expected, uint64 fromLog);
-    /// Step logs must declare requested_cycle_count = 1: one verifyStep call is one uarch step.
-    error RequestedCycleCountMustBeOne(uint64 fromLog);
-    /// Reset/cmio logs must declare requested_cycle_count = 0.
-    error RequestedCycleCountMustBeZero(uint64 fromLog);
-    /// Recomputed post-state root does not match the log header (Layer 1).
-    error FinalRootHashMismatch();
 
-    function verifyStep(
-        StepLog.Context memory ctx,
-        bytes32 rootHashBefore,
-        uint64 cycleCount,
-        bytes32 rootHashAfter
-    ) internal pure {
-        if (ctx.rootHashBefore != rootHashBefore) {
-            revert RootHashBeforeMismatch(rootHashBefore, ctx.rootHashBefore);
-        }
-        if (ctx.requestedCycleCount != cycleCount) {
-            revert UarchCycleCountMismatch(cycleCount, ctx.requestedCycleCount);
-        }
-        if (ctx.requestedCycleCount != 1) {
-            revert RequestedCycleCountMustBeOne(ctx.requestedCycleCount);
-        }
-
-        UArchStep.uarchStep(ctx);
-
-        if (StepLog.computeRootHash(ctx, true) != ctx.rootHashAfter) {
-            revert FinalRootHashMismatch();
-        }
-        if (ctx.rootHashAfter != rootHashAfter) {
-            revert RootHashAfterMismatch(rootHashAfter, ctx.rootHashAfter);
-        }
-    }
-
-    function verifyReset(StepLog.Context memory ctx, bytes32 rootHashBefore, bytes32 rootHashAfter)
+    function verifyStep(StepLog.Context memory ctx, bytes32 rootHashBefore)
         internal
         pure
+        returns (bytes32)
     {
         if (ctx.rootHashBefore != rootHashBefore) {
             revert RootHashBeforeMismatch(rootHashBefore, ctx.rootHashBefore);
         }
-        if (ctx.requestedCycleCount != 0) {
-            revert RequestedCycleCountMustBeZero(ctx.requestedCycleCount);
+
+        UArchStep.uarchStep(ctx);
+
+        return StepLog.computeRootHash(ctx);
+    }
+
+    function verifyReset(StepLog.Context memory ctx, bytes32 rootHashBefore)
+        internal
+        pure
+        returns (bytes32)
+    {
+        if (ctx.rootHashBefore != rootHashBefore) {
+            revert RootHashBeforeMismatch(rootHashBefore, ctx.rootHashBefore);
         }
 
         UArchReset.uarchResetState(ctx);
 
         // When the reset reverted the state on a rejected input, the canonical post-state hash is the
         // recorded revert root hash (carried on the context by revertState), not the recomputed tree root.
-        bytes32 finalRootHash;
         if (ctx.reverted) {
-            // Revert substitutes the recorded root instead of recomputing it; still assert no node was
-            // left unconsumed (computeRootHash makes this assertion on the non-reverted path).
-            StepLog.checkAllNodesConsumed(ctx);
-            finalRootHash = ctx.revertedRootHash;
-        } else {
-            finalRootHash = StepLog.computeRootHash(ctx, true);
+            return ctx.revertedRootHash;
         }
-        if (finalRootHash != ctx.rootHashAfter) {
-            revert FinalRootHashMismatch();
-        }
-        if (ctx.rootHashAfter != rootHashAfter) {
-            revert RootHashAfterMismatch(rootHashAfter, ctx.rootHashAfter);
-        }
+        return StepLog.computeRootHash(ctx);
     }
 
     function verifySendCmioResponse(
@@ -107,23 +75,14 @@ library Verify {
         bytes32 rootHashBefore,
         uint16 reason,
         bytes calldata data,
-        bytes32 revertRootHash,
-        bytes32 rootHashAfter
-    ) internal pure {
+        bytes32 revertRootHash
+    ) internal pure returns (bytes32) {
         if (ctx.rootHashBefore != rootHashBefore) {
             revert RootHashBeforeMismatch(rootHashBefore, ctx.rootHashBefore);
-        }
-        if (ctx.requestedCycleCount != 0) {
-            revert RequestedCycleCountMustBeZero(ctx.requestedCycleCount);
         }
 
         SendCmioResponse.sendCmioResponse(ctx, reason, data, uint32(data.length), revertRootHash);
 
-        if (StepLog.computeRootHash(ctx, true) != ctx.rootHashAfter) {
-            revert FinalRootHashMismatch();
-        }
-        if (ctx.rootHashAfter != rootHashAfter) {
-            revert RootHashAfterMismatch(rootHashAfter, ctx.rootHashAfter);
-        }
+        return StepLog.computeRootHash(ctx);
     }
 }

@@ -25,42 +25,74 @@ import {ManifestParser} from "./ManifestParser.sol";
 /// Walks every rv64ui-uarch program (one per-cycle subdirectory, discovered from the
 /// directory layout) and replays its per-cycle decomposition one cycle at a time via
 /// Verify.verifyStep -- exactly the production dispute shape (one step log per uarchStep
-/// call). The (before, after) values come from each cycle row in the per-program manifest,
-/// giving real (non-tautological) Layer 2 coverage at the per-cycle granularity.
+/// call). The (before, after) values come from each cycle row in the per-program manifest --
+/// recorded truth, keeping the comparisons non-tautological at the per-cycle granularity.
+///
+/// The same walk measures gas, so the reported worst case is discovered over every step the
+/// corpus contains rather than sampled. Gas metering stays on for it, which is why
+/// foundry.toml raises block_gas_limit.
 contract VerifyUarchTestsPerCycleTest is ManifestParser {
     function testReplaysAllUarchTestsPerCycle() public {
         string[] memory dirs = programDirs();
-        vm.pauseGasMetering();
+        uint256 totalGas;
+        uint256 totalSteps;
+        uint256 maxGas;
+        uint256 minGas = type(uint256).max;
+        string memory worst;
         for (uint256 i = 0; i < dirs.length; i++) {
-            console.log("Replaying per-cycle:", dirs[i]);
             Row[] memory cycleRows =
                 readManifestRows(string.concat(dirs[i], "/_manifest.csv"), Kind.Cycle);
             require(cycleRows.length > 0, "program has no recorded cycles");
+            // readDir yields absolute paths; the report only needs the program name.
+            string[] memory parts = vm.split(dirs[i], "/");
+            string memory program = parts[parts.length - 1];
             // The rows must form one contiguous whole-program replay: each cycle starts where the
             // previous ended. currentRoot threads that chain across the per-cycle logs.
             bytes32 currentRoot = cycleRows[0].rootHashBefore;
             for (uint256 j = 0; j < cycleRows.length; j++) {
                 assertEq(cycleRows[j].rootHashBefore, currentRoot, "per-cycle rows must chain");
                 bytes memory log = vm.readFileBinary(string.concat(dirs[i], "/", cycleRows[j].name));
-                this.verifyOneCycle(
-                    log,
-                    cycleRows[j].rootHashBefore,
-                    cycleRows[j].requestedCycleCount,
-                    cycleRows[j].rootHashAfter
-                );
+                this.verifyOneCycle(log, cycleRows[j].rootHashBefore, cycleRows[j].rootHashAfter);
+                uint256 used = vm.lastCallGas().gasTotalUsed;
+                totalGas += used;
+                totalSteps++;
+                if (used < minGas) minGas = used;
+                if (used > maxGas) {
+                    maxGas = used;
+                    worst = string.concat(program, "/", cycleRows[j].name);
+                }
                 currentRoot = cycleRows[j].rootHashAfter;
             }
         }
+        console.log(
+            string.concat(
+                "  uarch step gas over ",
+                vm.toString(dirs.length),
+                " programs, ",
+                vm.toString(totalSteps),
+                " steps:"
+            )
+        );
+        console.log(
+            string.concat(
+                "    avg ",
+                vm.toString(totalGas / totalSteps),
+                "  min ",
+                vm.toString(minGas),
+                "  max ",
+                vm.toString(maxGas)
+            )
+        );
+        console.log(string.concat("    worst ", worst));
     }
 
-    /// External self-call so `log` arrives as `bytes calldata` for StepLog.decode.
-    function verifyOneCycle(
-        bytes calldata log,
-        bytes32 rootBefore,
-        uint64 cycleCount,
-        bytes32 rootAfter
-    ) external pure {
+    /// External self-call so `log` arrives as `bytes calldata` for StepLog.decode, and so
+    /// vm.lastCallGas() reports this step alone.
+    function verifyOneCycle(bytes calldata log, bytes32 rootBefore, bytes32 rootAfter)
+        external
+        pure
+    {
         StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifyStep(ctx, rootBefore, cycleCount, rootAfter);
+        require(Verify.verifyStep(ctx, rootBefore) == rootAfter, "root after mismatch");
     }
 }

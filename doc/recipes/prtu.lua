@@ -1,4 +1,4 @@
--- The parts of the PRT game shared by referee and players: geometry, request schemas, claim
+-- The parts of the PRT game shared by referee and players: geometry, event schemas, claim
 -- trees (Merkle trees over runs of repeated nodes, refined on demand), the referee's coroutine
 -- dispatcher and server, and narration. The game script supplies the match walk,
 -- machines, claim builds, tournament, and verification of the disputed transition.
@@ -526,8 +526,8 @@ end
 -- Wire protocol
 --
 -- Each message is one line, the compact JSON of a Lua value by cartesi.tojson plus a
--- newline. The referee sends requests {operation, arguments}, encoding the arguments under
--- the operation's request schema. A player dispatches the operation against its own state and
+-- newline. The referee emits events as {operation, arguments}, encoding the event data under
+-- its schema. A player dispatches the corresponding operation against its own state and
 -- answers {label, value}, encoded under the operation's response schema, so binary hashes,
 -- proofs, and access logs survive both directions. Schema names are local metadata, not wire
 -- fields.
@@ -536,7 +536,7 @@ end
 -- response that proves itself and ignores the rest. The label rides along only for tracing.
 --------------------------------------------------------------------------------
 
--- The schemas used by the PRT requests and private transport lifecycle.
+-- The schemas used by the PRT events and private transport lifecycle.
 local SCHEMA_DICT = {
     ClosePhaseRequest = { items = {} },
     ClosePhaseResponse = "Default",
@@ -594,28 +594,28 @@ local function define_request(name, request_schema, response_schema)
     return { name = name, request_schema = request_schema, response_schema = response_schema }
 end
 
+local function define_event(name, event_schema, response_schema)
+    return define_request(name, event_schema, response_schema)
+end
+
 local CLOSE_PHASE = define_request("close_phase", "ClosePhaseRequest", "ClosePhaseResponse")
 local FINISH = define_request("finish", "FinishRequest", "FinishResponse")
-local REQUESTS = {
-    commit_mcycle_claim = define_request(
-        "commit_mcycle_claim",
-        "CommitMcycleClaimRequest",
-        "CommitMcycleClaimResponse"
-    ),
-    reveal_bisection = define_request("reveal_bisection", "RevealBisectionRequest", "RevealBisectionResponse"),
-    seal_divergence = define_request("seal_divergence", "SealDivergenceRequest", "SealDivergenceResponse"),
-    commit_uarch_claim = define_request("commit_uarch_claim", "CommitUarchClaimRequest", "CommitUarchClaimResponse"),
-    prove_state_transition = define_request(
+local EVENTS = {
+    commit_mcycle_claim = define_event("commit_mcycle_claim", "CommitMcycleClaimRequest", "CommitMcycleClaimResponse"),
+    reveal_bisection = define_event("reveal_bisection", "RevealBisectionRequest", "RevealBisectionResponse"),
+    seal_divergence = define_event("seal_divergence", "SealDivergenceRequest", "SealDivergenceResponse"),
+    commit_uarch_claim = define_event("commit_uarch_claim", "CommitUarchClaimRequest", "CommitUarchClaimResponse"),
+    prove_state_transition = define_event(
         "prove_state_transition",
         "ProveStateTransitionRequest",
         "ProveStateTransitionResponse"
     ),
-    prove_outputs_merkle_root = define_request(
+    prove_outputs_merkle_root = define_event(
         "prove_outputs_merkle_root",
         "ProveOutputsMerkleRootRequest",
         "ProveOutputsMerkleRootResponse"
     ),
-    prove_output = define_request("prove_output", "ProveOutputRequest", "ProveOutputResponse"),
+    prove_output = define_event("prove_output", "ProveOutputRequest", "ProveOutputResponse"),
 }
 
 -- The envelope schema for requests under a named argument schema, registered on first use.
@@ -688,7 +688,7 @@ end
 local function answer_request(player, line)
     local envelope = cartesi.fromjson(line)
     local request = envelope.operation == FINISH.name and FINISH
-        or assert(player.requests[envelope.operation], "unknown operation")
+        or assert((player.requests or EVENTS)[envelope.operation], "unknown operation")
     local wire_request = cartesi.fromjson(line, ensure_request_envelope_schema(request.request_schema), SCHEMA_DICT)
     local handler = player[wire_request.operation]
     local value = request == FINISH and true
@@ -1142,6 +1142,11 @@ function server_meta.__index.accept_first_valid(self, conns, accept_response, re
 end
 -- docs:end accept_first_valid
 
+-- Emits one event and returns the first response the validator accepts.
+function server_meta.__index.emit(self, event, conns, accept_response, ...)
+    return self:accept_first_valid(conns, accept_response, event, ...)
+end
+
 -- Asks the given connections (every player, when nil) for a value, and returns the replies,
 -- each with the label and connection that sent it, once every connection asked has replied or
 -- closed.
@@ -1218,7 +1223,8 @@ end
 return {
     SCHEMA_DICT = SCHEMA_DICT,
     define_request = define_request,
-    REQUESTS = REQUESTS,
+    define_event = define_event,
+    EVENTS = EVENTS,
     story = story,
     format_short_hash = format_short_hash,
     narrate = narrate,

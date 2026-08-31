@@ -8878,11 +8878,12 @@ hash, now the hash of the state in which the epoch’s last input is done
 processing. We again assume one of the players is honest.
 
 In this demonstration, the epoch under dispute is the calculator’s
-[first epoch](#rolling-cartesi-machines). The referee and the players
-receive the epoch’s inputs in the command line, as the same encoded
-files the calculator processed, and each builds the same dapp contract
-from them, standing in for reading it off the blockchain. A player takes
-the inputs, the initial state hash, and the geometry from that contract.
+[first epoch](#rolling-cartesi-machines). The referee and players
+receive the epoch’s initial state hash and encoded inputs on the command
+line, standing in for reading the same dapp contract from the
+blockchain. A player finds its own snapshot of the initial machine in
+content-addressed local storage and verifies that the machine has the
+contract’s initial state hash before using it.
 
 ### Settling a dispute
 
@@ -9678,12 +9679,12 @@ isolated divergence over. A claim nobody opens loses by default:
 local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
-        local response = server:accept_first_valid(
+        local response = server:emit(
+            EVENTS.reveal_bisection,
             server:get_subscribers({ turn_claim.computation_hash }),
             function(response)
                 return validate_bisection_response(match, response)
             end,
-            REQUESTS.reveal_bisection,
             turn_claim.computation_hash,
             match.height,
             match.node_index,
@@ -9697,12 +9698,12 @@ local function run_match(tournament, match)
         story.report_match_progress(match)
     end
     local turn_claim = match.claims[match.turn]
-    local divergence = server:accept_first_valid(
+    local divergence = server:emit(
+        EVENTS.seal_divergence,
         server:get_subscribers({ turn_claim.computation_hash }),
         function(response)
             return validate_seal_response(tournament, match, response)
         end,
-        REQUESTS.seal_divergence,
         turn_claim.computation_hash,
         match.node_index,
         match.other_left_node
@@ -9811,7 +9812,7 @@ local function settle_uarch_state_hash(
     next_state_hashes
 )
     local conns = server:get_subscribers({ match.claims[1].computation_hash, match.claims[2].computation_hash })
-    local obtained_state_hash = server:accept_first_valid(conns, function(response)
+    local obtained_state_hash = server:emit(EVENTS.prove_state_transition, conns, function(response)
         return verify_state_transition(
             tournament.dapp_contract,
             current_state_hash,
@@ -9819,7 +9820,7 @@ local function settle_uarch_state_hash(
             state_transition_offset,
             response
         )
-    end, REQUESTS.prove_state_transition, tournament.input_index, tournament.period_index, state_transition_offset)
+    end, tournament.input_index, tournament.period_index, state_transition_offset)
     story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
 end
@@ -9871,32 +9872,32 @@ a match needs a response, the server asks the holders of the claim in
 question and takes the first reply that proves itself. A reply that
 fails to prove itself is rejected, as the blockchain rejects a bad
 transaction, and counts as that connection’s answer. Only a line the
-referee cannot decode, or a closed socket, ends a connection. A request
+referee cannot decode, or a closed socket, ends a connection. An event
 whose every holder answered without proof, or closed, resolves to
-nothing, and the claim it was about is eliminated (`accept_first_valid`
-in `prtu.lua`). Each connection has at most one unresolved request.
-Replies arrive in request order because TCP is a FIFO stream. When
-another holder resolves a request first, the referee counts the reply
-still owed by this connection as stale before assigning its next
-request, then drops that many replies from the stream. A tournament
-always opens to a fixed audience: subscribers to the agreed initial
-state hash for the mcycle one, and holders of the two disputed claims
-for a nested one. When the demonstration decides that a tournament’s
-claims are all in is a matter of presentation, hidden below
-`open_tournament`, and not part of the protocol. Every operation this
-section describes, committing a claim, revealing a bisection, sealing a
-divergence, proving a transition, proving the result, authenticates
-itself by proof, and the referee never trusts a sender. Nothing in the
-referee waits on the clock, and nothing depends on the order replies
-arrive in, not even which connections stay open. A claim with nobody
-left to answer for it is eliminated at once, which is all that ever
-happens to the claim of a player who walks away, and a claim anybody
-answers for survives. The narration of each match goes to its own file,
-and the tournament narrates each round in bracket order before and after
-its matches run, so the transcript is a pure function of the claim set,
-whatever order the replies arrive in over the network. The recipe below
-checks exactly that, by running the same tournament twice with the
-players launched in opposite orders and requiring identical transcripts.
+nothing, and the claim it concerned is eliminated (`emit` in
+`prtu.lua`). Each connection has at most one unresolved request. Replies
+arrive in request order because TCP is a FIFO stream. When another
+holder resolves a request first, the referee counts the reply still owed
+by this connection as stale before assigning its next request, then
+drops that many replies from the stream. A tournament always opens to a
+fixed audience: subscribers to the agreed initial state hash for the
+mcycle one, and holders of the two disputed claims for a nested one.
+When the demonstration decides that a tournament’s claims are all in is
+a matter of presentation, hidden below `open_tournament`, and not part
+of the protocol. Every operation this section describes, committing a
+claim, revealing a bisection, sealing a divergence, proving a
+transition, proving the result, authenticates itself by proof, and the
+referee never trusts a sender. Nothing in the referee waits on the
+clock, and nothing depends on the order replies arrive in, not even
+which connections stay open. A claim with nobody left to answer for it
+is eliminated at once, which is all that ever happens to the claim of a
+player who walks away, and a claim anybody answers for survives. The
+narration of each match goes to its own file, and the tournament
+narrates each round in bracket order before and after its matches run,
+so the transcript is a pure function of the claim set, whatever order
+the replies arrive in over the network. The recipe below checks exactly
+that, by running the same tournament twice with the players launched in
+opposite orders and requiring identical transcripts.
 
 ### Running the tournament
 
@@ -9928,38 +9929,39 @@ run, lying about different samples, so they dispute each other too,
 which is why there are five dishonest players and four ways of being
 dishonest.
 
-To run the tournament, start the referee with the epoch’s input files.
+To run the tournament, start the referee with the epoch’s initial state
+hash and input files.
 
 ``` bash
-lua5.4 prt.lua referee 127.0.0.1:8096 \
+lua5.4 prt.lua referee 127.0.0.1:8096 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 ```
 
-The players take the referee address and the inputs, and nothing that
-names their number or their order:
+The players take the referee address, the initial state hash, and the
+inputs, and nothing that names their number or their order:
 
 ``` bash
-lua5.4 prt.lua honest 127.0.0.1:8096 \
-    input-0.bin input-1.bin input-2.bin
-```
-
-``` bash
-lua5.4 prt.lua quitter 127.0.0.1:8096 \
+lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 ```
 
 ``` bash
-lua5.4 prt.lua forger 127.0.0.1:8096 2 forged-input-2.bin \
+lua5.4 prt.lua quitter 127.0.0.1:8096 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 ```
 
 ``` bash
-lua5.4 prt.lua tamperer 127.0.0.1:8096 0 100 \
+lua5.4 prt.lua forger 127.0.0.1:8096 "$initial_state_hash" 2 forged-input-2.bin \
     input-0.bin input-1.bin input-2.bin
 ```
 
 ``` bash
-lua5.4 prt.lua fabulist 127.0.0.1:8096 2 2000 \
+lua5.4 prt.lua tamperer 127.0.0.1:8096 "$initial_state_hash" 0 100 \
+    input-0.bin input-1.bin input-2.bin
+```
+
+``` bash
+lua5.4 prt.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000 \
     input-0.bin input-1.bin input-2.bin
 ```
 

@@ -22,8 +22,9 @@ LUA_BIN      ?= $(shell which lua5.4)
 FIXTURES_DIR := test/fixtures
 
 # Restricts which uarch tests are recorded into fixtures. Default = the full
-# rv64ui-uarch suite, so any instruction-handler or ECALL transpilation
-# regression is caught. Override for quick iteration, e.g.
+# rv64ui-uarch suite (the uarch corpus has no -p-/-v- variants), so any
+# instruction-handler or ECALL transpilation regression is caught. Override for
+# quick iteration, e.g.
 #   make UARCH_TEST_PATTERN='rv64ui%-uarch%-add.-%.bin' fixtures
 UARCH_TEST_PATTERN ?= rv64ui%-uarch%-.+%.bin
 

@@ -1051,7 +1051,7 @@ jobs:
 
       - name: Install Foundry
         # Same forge version as the solidity-step job.
-        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: v1.0.0
 
@@ -1112,7 +1112,7 @@ jobs:
       - name: Install Foundry
         # forge is pinned: fmt output and the check-gen-transpiled drift check below must match
         # the version that generated the committed .sol files.
-        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1.7.0
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: v1.0.0
 

@@ -41,7 +41,7 @@ mkdir -p "$fixtures_dir"
 # Per-cycle step logs over the uarch test corpus
 $lua "$recorders_dir/uarch-riscv-tests.lua" --test-path="$tests_path" --test="$pattern" \
     --per-cycle-logs --output-dir="$fixtures_dir/uarch-tests-per-cycle" record_uarch_tests
-# Logs exercising every state accessor the transpiled code uses
+# One- and two-cycle logs pinning the verifier to a single uarch step
 $lua "$recorders_dir/record-uarch-multi-cycle.lua" \
     --output-dir="$fixtures_dir/uarch-multi-cycle"
 # CMIO response and uarch reset transition logs

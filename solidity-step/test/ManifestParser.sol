@@ -18,9 +18,9 @@ pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 
-/// Shared base for tests that walk a `_manifest.csv` produced by
-/// tests/lua/uarch-riscv-tests.lua. Unknown kinds map to `Kind.Unknown` so
-/// readers stay forward-compatible with fixture kinds added later.
+/// Shared base for tests that walk a `_manifest.csv`. Every fixture family writes one,
+/// from its own recorder under tests/lua; the `kind` column says which. Unknown kinds map
+/// to `Kind.Unknown` so readers stay forward-compatible with kinds added later.
 abstract contract ManifestParser is Test {
     enum Kind {
         Unknown,

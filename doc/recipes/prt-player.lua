@@ -1,4 +1,4 @@
--- The player side of the PRT game: the machines, the claim builds, the operations the
+-- The player side of the PRT game: the machines, the claim builds, the event handlers the
 -- referee invokes, and the dishonest strategies. The whole geometry follows from the
 -- fixed mcycle period, shared with the referee through prtu.lua.
 
@@ -11,8 +11,6 @@ local keccak = cartesi.keccak256
 local format_short_hash = prtu.format_short_hash
 local push_run, slice_runs = prtu.push_run, prtu.slice_runs
 local new_tree = prtu.new_tree
-
-local REQUESTS = prtu.REQUESTS
 
 local function write_stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
@@ -35,9 +33,9 @@ local LOG2_UARCH_BUNDLE = 16
 
 local M = {}
 
--- The geometry a player derives from the mcycle period the tournament announces when it asks
--- for the mcycle claim: the claim heights, the periods per input, and the player's own storage
--- counts, the bundles per input and in the whole epoch.
+-- The geometry a player derives from the mcycle period the dapp contract publishes: the
+-- claim heights, the periods per input, and the player's own storage counts, the bundles
+-- per input and in the whole epoch.
 local function new_geometry(log2_mcycles_per_period)
     local periods_per_input = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period)
     local bundles_per_input = periods_per_input >> LOG2_MCYCLE_BUNDLE
@@ -75,12 +73,14 @@ local function repeat_state_hash(state_hash, height)
     return state_hash
 end
 
--- Instantiates the rolling calculator template on its own freshly spawned server. The
--- template is stored at its first manual yield, standing ready for the epoch's first input.
-local function new_remote_machine(template)
+-- Loads the initial machine snapshot from content-addressed local storage on its own freshly
+-- spawned server, and verifies that the stored machine actually has the requested state hash.
+local function load_remote_machine(initial_state_hash)
     local server = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
     server:set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
-    return server(template)
+    local machine = server(cartesi.tohex(initial_state_hash))
+    assert(machine:get_root_hash() == initial_state_hash, "initial machine snapshot hash mismatch")
+    return machine
 end
 
 -- Runs a machine toward the target mcycle, resuming through automatic yields until it reaches
@@ -195,7 +195,7 @@ end
 -- of its boundary, the recorded revert state, exactly as a Cartesi Node rolls back.
 -- docs:begin build_mcycle_claim
 local function build_mcycle_claim(player)
-    local machine = new_remote_machine(player.template)
+    local machine = load_remote_machine(player.initial_state_hash)
     local runs = {}
     local filled = 0
     local initial_state_hash = machine:get_root_hash()
@@ -369,13 +369,12 @@ end
 -- docs:end refine_uarch_claim
 
 --------------------------------------------------------------------------------
--- Player: operations
+-- Player: event responses
 --
--- The handlers below are the operations the referee invokes. Each returns the value to
--- answer with. A player follows one claim lineage: its mcycle claim, and, while that claim's
--- match is suspended in a uarch tournament, the uarch claim it committed there. The referee
--- only asks a player about claims it holds, so a request about any other claim is a bug, and
--- the player dies on it.
+-- The handlers below produce responses to events emitted by the referee. A player follows one
+-- claim lineage: its mcycle claim, and, while that claim's match is suspended in a uarch
+-- tournament, the uarch claim it committed there. The referee emits an event only to holders
+-- of the claim it concerns, so an event about any other claim is a bug, and the player dies on it.
 --------------------------------------------------------------------------------
 
 local handlers = {}
@@ -387,7 +386,7 @@ local function get_claim_tree(player, computation_hash)
             return tree
         end
     end
-    error("asked about a claim this player does not hold: " .. format_short_hash(computation_hash))
+    error("event concerns a claim this player does not hold: " .. format_short_hash(computation_hash))
 end
 
 -- A claim: the computation hash's two children and the standard proof of its final state,
@@ -515,7 +514,7 @@ function handlers.prove_outputs_merkle_root(player)
     if player.result then
         return player.result
     end
-    local machine = new_remote_machine(player.template)
+    local machine = load_remote_machine(player.initial_state_hash)
     local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     local frontier = hash_tree.frontier_copy(genesis_frontier)
     local outputs, leaves = {}, {}
@@ -568,16 +567,14 @@ function handlers.prove_output(player)
     }
 end
 
--- A player bundles the game's operations and their schemas with the machines it builds along
--- the way.
--- A player reads the machine template, epoch inputs, and geometry off the dapp contract.
+-- A player reads the epoch inputs and geometry off the dapp contract, and finds its own
+-- snapshot of the initial machine stored under the contract's initial state hash.
 local function new_player(label, dapp_contract)
     local player = {
         label = label,
         inputs = dapp_contract.inputs,
         geometry = new_geometry(dapp_contract.geometry.log2_mcycles_per_period),
-        template = dapp_contract.machine_template,
-        requests = REQUESTS,
+        initial_state_hash = dapp_contract.initial_state_hash,
         boundaries = {},
         fixed_state_hashes = {},
         make_mcycle_tree = function(self)
@@ -617,7 +614,7 @@ local function new_honest(dapp_contract)
 end
 
 -- The quitter posts a claim fabricated out of thin air, every leaf the same made-up state hash,
--- and walks away: it closes its connection right after joining, so the first request about
+-- and walks away: it closes its connection right after joining, so the first event about
 -- its claim finds no holder and eliminates it. The claim is built straight from leaf runs, so
 -- it never needs a machine, and it reads nothing off the contract but the geometry.
 local function new_quitter(dapp_contract)
@@ -669,7 +666,7 @@ end
 
 -- The fabulist computes the whole epoch honestly and then lies about a single sample: its
 -- claim is the honest claim with one leaf overwritten by a made-up state hash. It can defend
--- every request with honest data, and other claims' disputes it can even settle with
+-- every event with honest data, and other claims' disputes it can even settle with
 -- honest proofs, but the dispute against its own claim converges on the overwritten leaf,
 -- where the true reset that closes the last instruction of the span contradicts it.
 local function new_fabulist(dapp_contract, input_index, leaf_offset)

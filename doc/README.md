@@ -2836,25 +2836,6 @@ begin ecall
 end ecall
 8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
 9: read uarch.halt@0x400000: 0x0(0)
-10: read uarch.cycle@0x400008: 0x8c3(2243)
-11: read uarch.halt@0x400000: 0x0(0)
-12: read uarch.pc@0x400010: 0x6021d4(6300116)
-13: read @0x6021d0: 0x51300000073(5579162517619)
-begin addi
-  14: read uarch.x0@0x400018: 0x0(0)
-  15: write uarch.x10@0x400068: 0xa(10) -> 0x0(0)
-  16: write uarch.pc@0x400010: 0x6021d4(6300116) -> 0x6021d8(6300120)
-end addi
-17: write uarch.cycle@0x400008: 0x8c3(2243) -> 0x8c4(2244)
-18: read uarch.cycle@0x400008: 0x8c4(2244)
-19: read uarch.halt@0x400000: 0x0(0)
-20: read uarch.pc@0x400010: 0x6021d8(6300120)
-21: read @0x6021d8: 0xff01011300008067(18374969135764373607)
-begin jalr
-  22: read uarch.x1@0x400020: 0x6003c0(6292416)
-  23: write uarch.pc@0x400010: 0x6021d8(6300120) -> 0x6003c0(6292416)
-end jalr
-24: write uarch.cycle@0x400008: 0x8c4(2244) -> 0x8c5(2245)
 ```
 
 Understanding these logs in detail is unnecessary for all but the most
@@ -5532,25 +5513,6 @@ begin ecall
 end ecall
 8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
 9: read uarch.halt@0x400000: 0x0(0)
-10: read uarch.cycle@0x400008: 0x8c3(2243)
-11: read uarch.halt@0x400000: 0x0(0)
-12: read uarch.pc@0x400010: 0x6021d4(6300116)
-13: read @0x6021d0: 0x51300000073(5579162517619)
-begin addi
-  14: read uarch.x0@0x400018: 0x0(0)
-  15: write uarch.x10@0x400068: 0xa(10) -> 0x0(0)
-  16: write uarch.pc@0x400010: 0x6021d4(6300116) -> 0x6021d8(6300120)
-end addi
-17: write uarch.cycle@0x400008: 0x8c3(2243) -> 0x8c4(2244)
-18: read uarch.cycle@0x400008: 0x8c4(2244)
-19: read uarch.halt@0x400000: 0x0(0)
-20: read uarch.pc@0x400010: 0x6021d8(6300120)
-21: read @0x6021d8: 0xff01011300008067(18374969135764373607)
-begin jalr
-  22: read uarch.x1@0x400020: 0x6003c0(6292416)
-  23: write uarch.pc@0x400010: 0x6021d8(6300120) -> 0x6003c0(6292416)
-end jalr
-24: write uarch.cycle@0x400008: 0x8c4(2244) -> 0x8c5(2245)
 ```
 
 Understanding these logs in detail is unnecessary for all but the most

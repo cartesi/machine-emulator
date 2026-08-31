@@ -23,8 +23,9 @@ import {Verify} from "src/Verify.sol";
 import {ManifestParser} from "./ManifestParser.sol";
 
 /// Replays each send_cmio_response fixture row via Verify.verifySendCmioResponse, covering
-/// sub-leaf through supra-page payload writes. The manifest carries the raw payload bytes
-/// (column `data`); the verifier hashes it on-chain.
+/// sub-leaf through supra-page payload writes and both sides of the rx-buffer size limit.
+/// The manifest's `data` column is the payload's repeat unit, expanded to `dataLength` by
+/// the parser; the verifier hashes the result on-chain.
 contract VerifySendCmioResponseTest is ManifestParser {
     string constant CMIO_DIR = "test/fixtures/send-cmio-response";
     string constant MANIFEST_CSV = "test/fixtures/send-cmio-response/_manifest.csv";

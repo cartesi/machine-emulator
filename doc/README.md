@@ -9421,11 +9421,11 @@ machine state hashes sampled along the whole computation, and the
 dispute walks down the committed trees instead. Claims can be compared
 in any order, so they pair up in a tournament of concurrent matches
 instead of a single game. A claim also does not belong to whoever posted
-it. Every request the referee issues is about a claim, any player may
+it. Every event the referee emits concerns a claim, any player may
 answer, and an answer must prove itself against the claim, so it never
 matters who sent it. Claims are what matter, not players. Every honest
 player computes the same claims, and a claim survives as long as anyone
-at all defends it. An unanswered request eliminates a claim, never a
+at all defends it. An unanswered event eliminates a claim, never a
 player.
 
 ### Computation hash claims
@@ -9680,15 +9680,12 @@ local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
         local response = server:emit(
-            EVENTS.reveal_bisection,
             server:get_subscribers({ turn_claim.computation_hash }),
+            EVENTS.reveal_bisection,
+            { turn_claim.computation_hash, match.height, match.node_index, match.other_left_node },
             function(response)
                 return validate_bisection_response(match, response)
-            end,
-            turn_claim.computation_hash,
-            match.height,
-            match.node_index,
-            match.other_left_node
+            end
         )
         if not response then
             story.report_default_win(match)
@@ -9699,14 +9696,12 @@ local function run_match(tournament, match)
     end
     local turn_claim = match.claims[match.turn]
     local divergence = server:emit(
-        EVENTS.seal_divergence,
         server:get_subscribers({ turn_claim.computation_hash }),
+        EVENTS.seal_divergence,
+        { turn_claim.computation_hash, match.node_index, match.other_left_node },
         function(response)
             return validate_seal_response(tournament, match, response)
-        end,
-        turn_claim.computation_hash,
-        match.node_index,
-        match.other_left_node
+        end
     )
     if not divergence then
         story.report_default_win(match)
@@ -9812,15 +9807,20 @@ local function settle_uarch_state_hash(
     next_state_hashes
 )
     local conns = server:get_subscribers({ match.claims[1].computation_hash, match.claims[2].computation_hash })
-    local obtained_state_hash = server:emit(EVENTS.prove_state_transition, conns, function(response)
-        return verify_state_transition(
-            tournament.dapp_contract,
-            current_state_hash,
-            tournament.epoch_period_index,
-            state_transition_offset,
-            response
-        )
-    end, tournament.input_index, tournament.period_index, state_transition_offset)
+    local obtained_state_hash = server:emit(
+        conns,
+        EVENTS.prove_state_transition,
+        { tournament.input_index, tournament.period_index, state_transition_offset },
+        function(response)
+            return verify_state_transition(
+                tournament.dapp_contract,
+                current_state_hash,
+                tournament.epoch_period_index,
+                state_transition_offset,
+                response
+            )
+        end
+    )
     story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
 end
@@ -9854,18 +9854,18 @@ end
 ### The referee server
 
 The players are passive. Each is a plain blocking loop that reads a
-typed operation and its arguments, dispatches it against the player’s
-own claims and machines, and answers with the operation’s typed value. A
-player follows one claim lineage, its mcycle claim and, while that
-claim’s match is suspended in a uarch tournament, the uarch claim it
-committed there, and the referee only ever asks a player about claims it
-holds. An unknown operation, missing result, or failure is therefore a
-bug in the player, and the process dies on it rather than answer
-(`serve` in `prtu.lua`). A claim cannot be misrepresented, so the valid
-response for an operation is unique, whoever computes it. The referee
-never narrates who holds a claim. Each player announces its own claim on
-its standard error, and that is how the transcript below is read against
-the players.
+typed event and its arguments, dispatches the corresponding handler
+against the player’s own claims and machines, and sends a typed
+response. A player follows one claim lineage, its mcycle claim and,
+while that claim’s match is suspended in a uarch tournament, the uarch
+claim it committed there, and the referee only ever asks a player about
+claims it holds. An unknown event, missing result, or failure is
+therefore a bug in the player, and the process dies on it rather than
+answer (`run_client` in `prtu.lua`). A claim cannot be misrepresented,
+so the valid response for an event is unique, whoever computes it. The
+referee never narrates who holds a claim. Each player announces its own
+claim on its standard error, and that is how the transcript below is
+read against the players.
 
 The referee server is the single event loop the players connect to. When
 a match needs a response, the server asks the holders of the claim in
@@ -9875,29 +9875,29 @@ transaction, and counts as that connection’s answer. Only a line the
 referee cannot decode, or a closed socket, ends a connection. An event
 whose every holder answered without proof, or closed, resolves to
 nothing, and the claim it concerned is eliminated (`emit` in
-`prtu.lua`). Each connection has at most one unresolved request. Replies
-arrive in request order because TCP is a FIFO stream. When another
-holder resolves a request first, the referee counts the reply still owed
-by this connection as stale before assigning its next request, then
-drops that many replies from the stream. A tournament always opens to a
-fixed audience: subscribers to the agreed initial state hash for the
-mcycle one, and holders of the two disputed claims for a nested one.
-When the demonstration decides that a tournament’s claims are all in is
-a matter of presentation, hidden below `open_tournament`, and not part
-of the protocol. Every operation this section describes, committing a
-claim, revealing a bisection, sealing a divergence, proving a
-transition, proving the result, authenticates itself by proof, and the
-referee never trusts a sender. Nothing in the referee waits on the
-clock, and nothing depends on the order replies arrive in, not even
-which connections stay open. A claim with nobody left to answer for it
-is eliminated at once, which is all that ever happens to the claim of a
-player who walks away, and a claim anybody answers for survives. The
-narration of each match goes to its own file, and the tournament
-narrates each round in bracket order before and after its matches run,
-so the transcript is a pure function of the claim set, whatever order
-the replies arrive in over the network. The recipe below checks exactly
-that, by running the same tournament twice with the players launched in
-opposite orders and requiring identical transcripts.
+`prtu.lua`). Each connection has at most one unresolved event. Replies
+arrive in event order because TCP is a FIFO stream. When another holder
+resolves an event first, the referee counts the reply still owed by this
+connection as stale before assigning its next event, then drops that
+many replies from the stream. A tournament always opens to a fixed
+audience: subscribers to the agreed initial state hash for the mcycle
+one, and holders of the two disputed claims for a nested one. When the
+demonstration decides that a tournament’s claims are all in is a matter
+of presentation, hidden below `open_tournament`, and not part of the
+protocol. Every event this section describes, committing a claim,
+revealing a bisection, sealing a divergence, proving a transition,
+proving the result, authenticates itself by proof, and the referee never
+trusts a sender. Nothing in the referee waits on the clock, and nothing
+depends on the order replies arrive in, not even which connections stay
+open. A claim with nobody left to answer for it is eliminated at once,
+which is all that ever happens to the claim of a player who walks away,
+and a claim anybody answers for survives. The narration of each match
+goes to its own file, and the tournament narrates each round in bracket
+order before and after its matches run, so the transcript is a pure
+function of the claim set, whatever order the replies arrive in over the
+network. The recipe below checks exactly that, by running the same
+tournament twice with the players launched in opposite orders and
+requiring identical transcripts.
 
 ### Running the tournament
 
@@ -9923,11 +9923,10 @@ agreed state contradicts the first moved sample.
 
 The *fabulist* computes the whole epoch honestly and lies about a single
 sample, overwriting one leaf of the honest claim deep inside input 2. It
-can defend every other request with honest data, but the reset that
-closes its lied-about period contradicts the leaf itself. Two fabulists
-run, lying about different samples, so they dispute each other too,
-which is why there are five dishonest players and four ways of being
-dishonest.
+can answer every other event with honest data, but the reset that closes
+its lied-about period contradicts the leaf itself. Two fabulists run,
+lying about different samples, so they dispute each other too, which is
+why there are five dishonest players and four ways of being dishonest.
 
 To run the tournament, start the referee with the epoch’s initial state
 hash and input files.
@@ -10012,8 +10011,8 @@ Match 5: claim 0xc75bbba2... wins.
 ```
 
 The quitter’s claim sorts first and meets the tamperer in match 1. The
-quitter has already closed its connection, so the very first request to
-open its claim finds no holder, and the match is over:
+quitter has already closed its connection, so the first event concerning
+its claim finds no holder, and the match is over:
 
 ``` text
 Nobody opened claim 0x1a22b0c7.... Claim 0x4f4b4987... wins by default.

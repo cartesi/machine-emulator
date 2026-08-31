@@ -1,6 +1,6 @@
 -- The player side of the PRT game: the machines, the claim builds, the event handlers the
 -- referee invokes, and the dishonest strategies. The whole geometry follows from the
--- fixed mcycle period, shared with the referee through prtu.lua.
+-- mcycle period the dapp contract publishes.
 
 local cartesi = require("cartesi")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")

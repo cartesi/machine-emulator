@@ -186,8 +186,8 @@ end
 -- docs:end partition_claims
 
 -- Opens a tournament to a fixed audience and partitions its valid claims.
-local function open_tournament(conns, validate_submitted_claim, event, ...)
-    return partition_claims(server:collect_claims(conns, event, ...), validate_submitted_claim)
+local function open_tournament(conns, event, event_arguments, validate_submitted_claim)
+    return partition_claims(server:collect_claims(conns, event, event_arguments), validate_submitted_claim)
 end
 
 -- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
@@ -295,15 +295,20 @@ local function settle_uarch_state_hash(
     next_state_hashes
 )
     local conns = server:get_subscribers({ match.claims[1].computation_hash, match.claims[2].computation_hash })
-    local obtained_state_hash = server:emit(EVENTS.prove_state_transition, conns, function(response)
-        return verify_state_transition(
-            tournament.dapp_contract,
-            current_state_hash,
-            tournament.epoch_period_index,
-            state_transition_offset,
-            response
-        )
-    end, tournament.input_index, tournament.period_index, state_transition_offset)
+    local obtained_state_hash = server:emit(
+        conns,
+        EVENTS.prove_state_transition,
+        { tournament.input_index, tournament.period_index, state_transition_offset },
+        function(response)
+            return verify_state_transition(
+                tournament.dapp_contract,
+                current_state_hash,
+                tournament.epoch_period_index,
+                state_transition_offset,
+                response
+            )
+        end
+    )
     story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
 end
@@ -334,11 +339,9 @@ local function open_uarch_tournament(
     end
     local claims = open_tournament(
         server:get_subscribers({ mcycle_match.claims[1].computation_hash, mcycle_match.claims[2].computation_hash }),
-        validate_uarch_claim,
         EVENTS.commit_uarch_claim,
-        input_index,
-        period_index,
-        next_state_hashes
+        { input_index, period_index, next_state_hashes },
+        validate_uarch_claim
     )
     local tournament = {
         level = "uarch",
@@ -406,15 +409,12 @@ local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
         local response = server:emit(
-            EVENTS.reveal_bisection,
             server:get_subscribers({ turn_claim.computation_hash }),
+            EVENTS.reveal_bisection,
+            { turn_claim.computation_hash, match.height, match.node_index, match.other_left_node },
             function(response)
                 return validate_bisection_response(match, response)
-            end,
-            turn_claim.computation_hash,
-            match.height,
-            match.node_index,
-            match.other_left_node
+            end
         )
         if not response then
             story.report_default_win(match)
@@ -425,14 +425,12 @@ local function run_match(tournament, match)
     end
     local turn_claim = match.claims[match.turn]
     local divergence = server:emit(
-        EVENTS.seal_divergence,
         server:get_subscribers({ turn_claim.computation_hash }),
+        EVENTS.seal_divergence,
+        { turn_claim.computation_hash, match.node_index, match.other_left_node },
         function(response)
             return validate_seal_response(tournament, match, response)
-        end,
-        turn_claim.computation_hash,
-        match.node_index,
-        match.other_left_node
+        end
     )
     if not divergence then
         story.report_default_win(match)
@@ -511,10 +509,11 @@ local function open_mcycle_tournament(dapp_contract)
     local geometry = dapp_contract.geometry
     local claims = open_tournament(
         server:get_subscribers({ dapp_contract.initial_state_hash }),
+        EVENTS.commit_mcycle_claim,
+        {},
         function(submitted_claim)
             return validate_claim(submitted_claim, geometry.mcycle_height)
-        end,
-        EVENTS.commit_mcycle_claim
+        end
     )
     local tournament = {
         level = "mcycle",
@@ -563,7 +562,7 @@ verify_output = util.protect(verify_output)
 -- docs:begin wait_for_result
 local function wait_for_result(winner)
     local conns = server:get_subscribers({ winner.computation_hash })
-    local established = server:emit(EVENTS.prove_outputs_merkle_root, conns, function(response)
+    local established = server:emit(conns, EVENTS.prove_outputs_merkle_root, {}, function(response)
         local outputs_merkle_root = verify_outputs_merkle_root(response, winner.final_state_hash)
         if not outputs_merkle_root then
             return nil
@@ -575,7 +574,7 @@ local function wait_for_result(winner)
         return story.report_result(nil)
     end
     local result = established.output
-        or server:emit(EVENTS.prove_output, conns, function(response)
+        or server:emit(conns, EVENTS.prove_output, {}, function(response)
             return verify_output(response, established.outputs_merkle_root) and response
         end)
     story.report_result(result)

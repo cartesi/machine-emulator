@@ -32,11 +32,10 @@ local STEP_LOG_SIGNATURE = cartesi and cartesi.STEP_LOG_SIGNATURE or "CTSI\x03\x
 local SIGNATURE_SIZE = #STEP_LOG_SIGNATURE
 
 -- step_log_header layout (see src/step-log.hpp):
---   signature(8) + root_hash_before(32) + requested_cycle_count(8) + root_hash_after(32)
---   + hash_function(8) + page_count(8) + node_count(8) + sibling_count(8)
-local HEADER_SIZE = SIGNATURE_SIZE + 2 * HASH_SIZE + 5 * 8
+--   signature(8) + hash_function(8) + page_count(8) + node_count(8) + sibling_count(8)
+local HEADER_SIZE = SIGNATURE_SIZE + 4 * 8
 local PAGE_ENTRY_SIZE = 8 + PAGE_DATA_SIZE + HASH_SIZE
-local NODE_ENTRY_SIZE = 8 + 8 + 2 * HASH_SIZE
+local NODE_ENTRY_SIZE = 8 + 8 + HASH_SIZE
 local SIBLING_SIZE = HASH_SIZE
 
 local HASH_FUNCTION_NAMES = {
@@ -96,12 +95,6 @@ local function parse_header(data)
     assert(data:sub(1, SIGNATURE_SIZE) == STEP_LOG_SIGNATURE, "invalid step log signature")
     local off = SIGNATURE_SIZE + 1
     local hdr = {}
-    hdr.root_hash_before = data:sub(off, off + HASH_SIZE - 1)
-    off = off + HASH_SIZE
-    hdr.requested_cycle_count = string.unpack("<I8", data, off)
-    off = off + 8
-    hdr.root_hash_after = data:sub(off, off + HASH_SIZE - 1)
-    off = off + HASH_SIZE
     hdr.hash_function = string.unpack("<I8", data, off)
     off = off + 8
     hdr.page_count = string.unpack("<I8", data, off)
@@ -151,8 +144,7 @@ local function read_full(path)
         info.nodes[i] = {
             address = string.unpack("<I8", node_bytes, 1),
             log2_size = string.unpack("<I8", node_bytes, 9),
-            hash_before = node_bytes:sub(17, 17 + HASH_SIZE - 1),
-            hash_after = node_bytes:sub(17 + HASH_SIZE, 17 + 2 * HASH_SIZE - 1),
+            hash = node_bytes:sub(17, 17 + HASH_SIZE - 1),
         }
     end
 
@@ -165,9 +157,6 @@ end
 
 local function print_header(info)
     print("Step log: " .. info.path)
-    print("  root_hash_before: " .. hexstring(info.root_hash_before))
-    print("  requested_cycle_count: " .. info.requested_cycle_count)
-    print("  root_hash_after:  " .. hexstring(info.root_hash_after))
     print("  hash_function:    " .. hash_function_name(info.hash_function))
     print("  page_count:       " .. info.page_count)
     print("  node_count:       " .. info.node_count)
@@ -208,8 +197,7 @@ end
 local function print_stats_row(info)
     print(
         string.format(
-            "%-12d %-6d %-6d %-8d %-12s %s",
-            info.requested_cycle_count,
+            "%-6d %-6d %-8d %-12s %s",
             info.page_count,
             info.node_count,
             info.sibling_count,
@@ -224,21 +212,6 @@ local commands = {}
 function commands.info(args)
     local path = assert(args[1], "usage: step-log-util.lua info <step-log>")
     print_header(read_header(path))
-end
-
-commands["root-hash-before"] = function(args)
-    local path = assert(args[1], "usage: step-log-util.lua root-hash-before <step-log>")
-    io.write(hexstring(read_header(path).root_hash_before))
-end
-
-commands["root-hash-after"] = function(args)
-    local path = assert(args[1], "usage: step-log-util.lua root-hash-after <step-log>")
-    io.write(hexstring(read_header(path).root_hash_after))
-end
-
-commands["requested-cycle-count"] = function(args)
-    local path = assert(args[1], "usage: step-log-util.lua requested-cycle-count <step-log>")
-    io.write(tostring(read_header(path).requested_cycle_count))
 end
 
 function commands.signature(args)
@@ -278,7 +251,7 @@ commands["batch-stats"] = function(args)
     assert(#files > 0, "no .log files found in " .. dir)
     table.sort(files)
 
-    print(string.format("%-12s %-6s %-6s %-8s %-12s %s", "cycles", "pages", "nodes", "siblings", "size", "path"))
+    print(string.format("%-6s %-6s %-8s %-12s %s", "pages", "nodes", "siblings", "size", "path"))
     print(string.rep("-", 80))
 
     local total = { page = 0, node = 0, sibling = 0, size = 0 }
@@ -348,18 +321,11 @@ function commands.nodes(args)
         print("No nodes recorded in " .. path)
         return
     end
-    print(string.format("%-18s %-9s %-64s %-64s %s", "address", "log2_size", "hash_before", "hash_after", "region"))
-    print(string.rep("-", 170))
+    print(string.format("%-18s %-9s %-64s %s", "address", "log2_size", "hash", "region"))
+    print(string.rep("-", 105))
     for _, n in ipairs(info.nodes) do
         print(
-            string.format(
-                "0x%016x %-9d %s %s %s",
-                n.address,
-                n.log2_size,
-                hexstring(n.hash_before),
-                hexstring(n.hash_after),
-                classify_address(n.address)
-            )
+            string.format("0x%016x %-9d %s %s", n.address, n.log2_size, hexstring(n.hash), classify_address(n.address))
         )
     end
 end
@@ -375,10 +341,6 @@ Commands:
 
   info <step-log>              Human-readable header summary
   signature <step-log>         Verify the step log signature (exit non-zero on mismatch)
-  root-hash-before <step-log>  Print root hash before (hex, no newline)
-  requested-cycle-count <step-log>
-                               Print requested_cycle_count from header (decimal, no newline)
-  root-hash-after <step-log>   Print root hash after (hex, no newline)
   stats <step-log> [...]       Full structural breakdown (sizes, regions)
   batch-stats <dir>            Aggregate stats table for all .log files in <dir>
   pages <step-log>             List page indices, addresses, regions

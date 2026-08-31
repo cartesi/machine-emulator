@@ -24,7 +24,6 @@ import {VmSafe} from "forge-std/Vm.sol";
 abstract contract ManifestParser is Test {
     enum Kind {
         Unknown,
-        Program,
         Cycle,
         ResetUarch,
         SendCmioResponse
@@ -111,6 +110,18 @@ abstract contract ManifestParser is Test {
     }
 
     /// First row of `path` matching `kind`; reverts if there are none.
+    /// Returns the row of `kind` whose `name` column matches; reverts if there is no such row.
+    function findManifestRowByName(string memory path, Kind kind, string memory name)
+        internal
+        returns (Row memory)
+    {
+        Row[] memory rows = readManifestRows(path, kind);
+        for (uint256 i = 0; i < rows.length; i++) {
+            if (keccak256(bytes(rows[i].name)) == keccak256(bytes(name))) return rows[i];
+        }
+        revert("no manifest row with that name");
+    }
+
     function firstRow(string memory path, Kind kind) internal returns (Row memory) {
         Row[] memory rows = readManifestRows(path, kind);
         require(rows.length > 0, "no manifest row for kind");
@@ -148,7 +159,6 @@ abstract contract ManifestParser is Test {
 
     function parseKind(string memory s) private pure returns (Kind) {
         bytes32 h = keccak256(bytes(s));
-        if (h == keccak256(bytes("program"))) return Kind.Program;
         if (h == keccak256(bytes("cycle"))) return Kind.Cycle;
         if (h == keccak256(bytes("reset_uarch"))) return Kind.ResetUarch;
         if (h == keccak256(bytes("send_cmio_response"))) return Kind.SendCmioResponse;

@@ -296,18 +296,12 @@ end
 function tests_util.read_step_log_file(filename)
     local file <close> = assert(io.open(filename, "rb"))
     local signature = file:read(8)
-    local root_hash_before = file:read(32)
-    local requested_cycle_count = string.unpack("<I8", file:read(8))
-    local root_hash_after = file:read(32)
     local hash_function = string.unpack("<I8", file:read(8))
     local page_count = string.unpack("<I8", file:read(8))
     local node_count = string.unpack("<I8", file:read(8))
     local sibling_count = string.unpack("<I8", file:read(8))
     local log = {
         signature = signature,
-        root_hash_before = root_hash_before,
-        requested_cycle_count = requested_cycle_count,
-        root_hash_after = root_hash_after,
         hash_function = hash_function,
         pages = {},
         nodes = {},
@@ -324,8 +318,7 @@ function tests_util.read_step_log_file(filename)
         log.nodes[i] = {
             address = string.unpack("<I8", file:read(8)),
             log2_size = string.unpack("<I8", file:read(8)),
-            hash_before = file:read(32),
-            hash_after = file:read(32),
+            hash = file:read(32),
         }
     end
     for i = 1, sibling_count do
@@ -342,9 +335,6 @@ function tests_util.write_step_log_file(logdata, filename)
     local node_count = logdata.override_node_count or #logdata.nodes
     local sibling_count = logdata.override_sibling_count or #logdata.siblings
     file:write(logdata.signature)
-    file:write(logdata.root_hash_before)
-    file:write(string.pack("<I8", logdata.requested_cycle_count))
-    file:write(logdata.root_hash_after)
     file:write(string.pack("<I8", logdata.hash_function))
     file:write(string.pack("<I8", page_count))
     file:write(string.pack("<I8", node_count))
@@ -357,8 +347,7 @@ function tests_util.write_step_log_file(logdata, filename)
     for _, node in ipairs(logdata.nodes) do
         file:write(string.pack("<I8", node.address))
         file:write(string.pack("<I8", node.log2_size))
-        file:write(node.hash_before)
-        file:write(node.hash_after)
+        file:write(node.hash)
     end
     for _, sibling in ipairs(logdata.siblings) do
         file:write(sibling)
@@ -373,15 +362,14 @@ function tests_util.copy_step_log(original_filename, new_filename, callback)
     tests_util.write_step_log_file(log_data, new_filename)
 end
 
--- Turn one sibling subtree into an unchanged node carrying the same hash, leaving the
--- pre-state root identical but adding a node no semantic write consumes. Exercises the
--- replayer's unconsumed-node rejection: every node's hash_after is folded into the
--- post-state root verbatim, so a node must be produced by an actual write.
+-- Turn one sibling subtree into an unchanged node carrying the same hash. The pre-state
+-- root is identical, and a node no write touches folds into the post-state root as an
+-- unchanged region, so the transformed log must still verify.
 --
 -- Mirrors the replayer's three-cursor walk (pages, nodes, siblings) to locate the first
 -- sibling spanning more than one page (node sizes must exceed a page), then moves that
 -- sibling's hash into log.nodes. Works on logs that already carry a node (reset/cmio).
-function tests_util.inject_unconsumed_node(log)
+function tests_util.inject_unchanged_node(log)
     local pages = {}
     for i, p in ipairs(log.pages) do
         pages[i] = p.index
@@ -430,8 +418,7 @@ function tests_util.inject_unconsumed_node(log)
     table.insert(log.nodes, {
         address = target.address,
         log2_size = target.log2_size,
-        hash_before = hash,
-        hash_after = hash,
+        hash = hash,
     })
     table.sort(log.nodes, function(a, b)
         return a.address < b.address
@@ -440,11 +427,10 @@ function tests_util.inject_unconsumed_node(log)
 end
 
 -- Recompute a parsed step log's root by folding pages, nodes, and siblings over the
--- full address space, mirroring the replayer's compute_root_hash. `use_after` selects a
--- node's hash_after (post-state) over hash_before. Lets a generator tamper a page or node
--- and re-derive the matching root so the log still decodes. Same three-cursor walk as
--- inject_unconsumed_node, but returning each subtree's hash instead of locating a target.
-function tests_util.recompute_step_log_root(log, use_after, hash_fn)
+-- full address space, mirroring the replayer's compute_root_hash. Lets a generator
+-- tamper a page or node and re-derive the resulting root. Same three-cursor walk as
+-- inject_unchanged_node, but returning each subtree's hash instead of locating a target.
+function tests_util.recompute_step_log_root(log, hash_fn)
     hash_fn = hash_fn or "keccak256"
     local pages = {}
     for _, p in ipairs(log.pages) do
@@ -478,7 +464,7 @@ function tests_util.recompute_step_log_root(log, use_after, hash_fn)
         then
             local node = nodes[next_node]
             next_node = next_node + 1
-            return use_after and node.hash_after or node.hash_before
+            return node.hash
         end
         if log2_page_count > 0 then
             local left = walk(first_page_index, log2_page_count - 1)

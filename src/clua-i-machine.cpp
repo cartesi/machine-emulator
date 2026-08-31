@@ -1305,7 +1305,7 @@ static int machine_obj_index_verify_step_uarch(lua_State *L) {
 /// \details Not part of the C API: an inspection helper, so the binding calls the C++
 /// implementation directly.
 static int machine_obj_index_dump_step_uarch(lua_State *L) try {
-    lua_pushstring(L, cartesi::dump_step_uarch(luaL_checkstring(L, 2)).c_str());
+    lua_pushstring(L, cartesi::dump_step_uarch(luaL_checkstring(L, 2), luaL_checkinteger(L, 3)).c_str());
     return 1;
 } catch (const std::exception &e) {
     return luaL_error(L, "%s", e.what());

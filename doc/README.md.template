@@ -2986,15 +2986,12 @@ The binary format of the step log file is as follows:
 ```
 step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^sibling_count
 
-header ::= {                        -- 112 bytes
-  signature             ::= "CTSI" 3 0 0 0,  -- magic + version + reserved
-  root_hash_before      ::= hash,   -- machine root hash before the step
-  requested_cycle_count ::= uint64, -- cycle count requested by the caller
-  root_hash_after       ::= hash,   -- machine root hash after the step
-  hash_function         ::= uint64, -- hash function used (e.g. keccak256)
-  page_count            ::= uint64,
-  node_count            ::= uint64,
-  sibling_count         ::= uint64
+header ::= {                        -- 40 bytes
+  signature     ::= "CTSI" 3 0 0 0, -- magic + version + reserved
+  hash_function ::= uint64,         -- hash function used (e.g. keccak256)
+  page_count    ::= uint64,
+  node_count    ::= uint64,
+  sibling_count ::= uint64
 }
 
 page_entry ::= {                    -- 4136 bytes, strictly ascending by index
@@ -3003,11 +3000,11 @@ page_entry ::= {                    -- 4136 bytes, strictly ascending by index
   hash  ::= hash                    -- scratch slot, must be zero on the wire
 }
 
-node_entry ::= {                    -- 80 bytes: a bulk write spanning > 1 page
-  address     ::= uint64,           -- subtree start, aligned to 2^log2_size
-  log2_size   ::= uint64,
-  hash_before ::= hash,             -- subtree hash before the bulk write
-  hash_after  ::= hash              -- subtree hash after it
+node_entry ::= {                    -- 48 bytes: a bulk write spanning > 1 page
+  address   ::= uint64,             -- subtree start, aligned to 2^log2_size
+  log2_size ::= uint64,
+  hash      ::= hash                -- subtree hash before the bulk write; the replay
+                                    -- overwrites it with the hash of what it writes
 }
 
 sibling_entry ::= hash              -- hashes of the subtrees not covered by pages
@@ -3018,13 +3015,15 @@ sibling_entry ::= hash              -- hashes of the subtrees not covered by pag
 All integers are little-endian and every `hash` is 32 bytes.
 The page entries record, as of first touch, every page of machine state the step read or wrote.
 The node entries record bulk writes that replace whole subtrees at once, as the uarch reset and the input-inclusion transitions do.
+A node is a subtree whose contents are not witnessed, only its hash.
 Combined with the hashes of the pages and nodes, the siblings reconstruct the machine's root hash.
+The log is only the witness, carrying no root hash claims and no cycle count: the root hash before is recomputed from the witnessed tree, the caller says how many cycles to replay, and the root hash after is whatever the replay produces, returned for the caller to compare.
 A step log is therefore self-contained, and anyone can check one against a pair of state hashes without instantiating a machine.
 
 #### Inspecting step logs
 
-The static method `cartesi.machine:dump_step_uarch(<filename>)` returns a user-friendly version of the uarch step recorded in a binary log file.
-It replays the step against the state carried in the log and describes every access the step performed, identifying what each address refers to (a register, a CSR, memory).
+The static method `cartesi.machine:dump_step_uarch(<filename>, <uarch_cycle_count>)` returns a user-friendly version of the uarch cycles recorded in a binary log file.
+It replays the requested number of cycles against the state carried in the log (stopping early if the uarch halts) and describes every access performed, identifying what each address refers to (a register, a CSR, memory).
 Addresses and values are printed in hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:
@@ -3093,21 +3092,21 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" flip:200
 ```{replace=verify_uarch_step_mess_page/stderr}
 ```
 
-Tampering instead with the log's own claimed after-hash leaves the replay intact, but the state hash the replay reaches no longer matches the claim:
-```{.bash key=verify_uarch_step_mess_claim vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
+Truncating the log fails the decoder's size accounting before any replay happens:
+```{.bash key=verify_uarch_step_mess_truncate vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
 rm -f uarch-step.log
 {
 # docs:begin cmd
-lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" flip:60
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" truncate
 # docs:end cmd
 } || true
 ```
-```{replace=verify_uarch_step_mess_claim/stderr}
+```{replace=verify_uarch_step_mess_truncate/stderr}
 ```
 
-Lying to the verifier about the state hash the step starts from also fails: the claim no longer matches the before-hash recorded in the log header.
+Lying to the verifier about the state hash the step starts from fails the same comparison from the other side: the claim no longer matches the root recomputed from the log.
 ```{.bash key=verify_uarch_step_mess_lie vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .

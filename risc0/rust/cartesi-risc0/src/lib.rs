@@ -86,7 +86,9 @@ pub fn try_prove(
     root_hash_after: &MachineHash,
 ) -> Result<Receipt, String> {
     let log_data = fs::read(log_file_path).map_err(|e| format!("could not read log file: {e}"))?;
+    // Guest input: the cycle count to run, then the log bytes (see methods/guest main.rs).
     let env = ExecutorEnv::builder()
+        .write_slice(&mcycle_count.to_le_bytes())
         .write_slice(&log_data)
         .build()
         .map_err(|e| format!("could not build executor env: {e}"))?;

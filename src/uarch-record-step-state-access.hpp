@@ -96,24 +96,11 @@ public:
     }
 
     /// \brief Finish recording and save the log file
-    /// \param root_hash_before Root hash before the step
-    /// \param requested_cycle_count Cycles requested by the caller (uarch_cycle delta for log_step_uarch,
-    ///        0 for log_reset_uarch which is not a cycle-running operation)
-    /// \param root_hash_after Root hash after the step
-    void finish(const machine_hash &root_hash_before, uint64_t requested_cycle_count,
-        const machine_hash &root_hash_after) {
-        // Fill in hash_after for each node. The machine's hash tree was refreshed
-        // by the outer get_root_hash call, so skip_hash_tree_update is safe.
-        for (auto &[address, entry] : m_context.touched_nodes) {
-            entry.hash_after = m_m.get_node_hash(address, static_cast<int>(entry.log2_size), skip_hash_tree_update);
-        }
+    void finish() {
         auto sibling_hashes = get_sibling_hashes();
 
         const step_log_header header{
             .signature = STEP_LOG_SIGNATURE,
-            .root_hash_before = root_hash_before,
-            .requested_cycle_count = requested_cycle_count,
-            .root_hash_after = root_hash_after,
             .hash_function = static_cast<uint64_t>(m_context.hash_function),
             .page_count = m_context.touched_pages.size(),
             .node_count = m_context.touched_nodes.size(),
@@ -172,8 +159,7 @@ private:
     /// \brief Record that the subtree at (address, log2_size) is being touched.
     /// \param address subtree start address (must be aligned to 2^log2_size)
     /// \param log2_size log2 of the subtree size (must be > page size and <= root size)
-    /// \details Captures the subtree's current hash as hash_before. hash_after is
-    /// filled in during finish() once the machine's tree has been refreshed.
+    /// \details Captures the subtree's current hash.
     void touch_node(uint64_t address, int log2_size) const {
         if (log2_size <= HASH_TREE_LOG2_PAGE_SIZE || log2_size > HASH_TREE_LOG2_ROOT_SIZE) {
             throw std::runtime_error("node log2 size is out of range");
@@ -207,8 +193,7 @@ private:
             node_entry{
                 .address = address,
                 .log2_size = static_cast<uint64_t>(log2_size),
-                .hash_before = m_m.get_node_hash(address, log2_size, skip_hash_tree_update),
-                .hash_after = {}, // filled in by finish() after the outer get_root_hash() refreshes the tree
+                .hash = m_m.get_node_hash(address, log2_size, skip_hash_tree_update),
             });
     }
 
@@ -314,7 +299,7 @@ private:
 
     void do_revert_state() const {
         // Witness the revert root hash leaf so the replayer can recover the canonical post-state
-        // hash from its page. The substitution into root_hash_after happens in machine::log_reset_uarch.
+        // hash from its page and return it from finish().
         touch_page(AR_SHADOW_REVERT_ROOT_HASH_START);
     }
 

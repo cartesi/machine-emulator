@@ -52,20 +52,16 @@ contract VerifySendCmioResponseTest is ManifestParser {
         }
     }
 
-    /// The no-op fixture (an advance-state response to a machine that rejected its previous input)
-    /// leaves the state unchanged, so its log verifies with equal root hashes before and after.
+    /// sendCmioResponse never fails: on a request it cannot serve it writes nothing instead, so
+    /// the honest party always has a provable transition. The no-op fixture is such a request --
+    /// an advance-state response to a machine that rejected its previous input, so its manual
+    /// yield reason is not rx-accepted. Writing nothing leaves the tree bit-identical, which is
+    /// why the log verifies with equal root hashes before and after.
     function testNoopIsIdentity() public {
-        Row[] memory rows = readManifestRows(MANIFEST_CSV, Kind.SendCmioResponse);
-        bool found;
-        for (uint256 i = 0; i < rows.length; i++) {
-            if (keccak256(bytes(rows[i].name)) == keccak256("send-cmio-response-noop.log")) {
-                assertEq(
-                    rows[i].rootHashBefore, rows[i].rootHashAfter, "no-op must not change root hash"
-                );
-                found = true;
-            }
-        }
-        assertTrue(found, "manifest has no send-cmio-response-noop.log row");
+        Row memory noop = findManifestRowByName(
+            MANIFEST_CSV, Kind.SendCmioResponse, "send-cmio-response-noop.log"
+        );
+        assertEq(noop.rootHashBefore, noop.rootHashAfter, "no-op must not change root hash");
     }
 
     /// External self-call so `log` and `data` arrive as `bytes calldata`
@@ -76,8 +72,11 @@ contract VerifySendCmioResponseTest is ManifestParser {
         pure
     {
         StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifySendCmioResponse(
-            ctx, args.rootHashBefore, args.reason, data, args.revertRootHash, args.rootHashAfter
+        require(
+            Verify.verifySendCmioResponse(
+                ctx, args.rootHashBefore, args.reason, data, args.revertRootHash
+            ) == args.rootHashAfter,
+            "root after mismatch"
         );
     }
 }

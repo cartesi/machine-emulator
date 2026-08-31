@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Reduced the binary step log to a pure witness: the header no longer carries the roots before and after nor the requested cycle count (112 to 40 bytes) and node entries carry a single subtree hash the replay keeps current (80 to 48 bytes); verifiers recompute the root before from the witnessed tree, take the cycle count from the caller, and return the root after for the caller to compare
 
 ## [0.21.0] - 2026-08-04
 ### Added

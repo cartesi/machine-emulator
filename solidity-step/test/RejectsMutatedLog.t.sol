@@ -21,19 +21,15 @@ import {Verify} from "src/Verify.sol";
 import {ManifestParser} from "./ManifestParser.sol";
 
 /// The wire format is tightly packed (no padding, trailing bytes and nonzero scratch rejected), so
-/// every byte is bound into the root, the post-state check, or a count: flipping any one must revert.
+/// every byte is bound into the recomputed pre-state root or a count: flipping any one must revert.
 contract RejectsMutatedLogTest is ManifestParser {
     bytes fixture;
     bytes32 rootHashBefore;
-    uint64 requestedCycleCount;
-    bytes32 rootHashAfter;
 
     function setUp() public {
         Row memory row;
         (fixture, row) = sampleStepLog();
         rootHashBefore = row.rootHashBefore;
-        requestedCycleCount = row.requestedCycleCount;
-        rootHashAfter = row.rootHashAfter;
     }
 
     /// Flip one byte (xor a non-zero mask) at an arbitrary offset and require rejection.
@@ -44,18 +40,13 @@ contract RejectsMutatedLogTest is ManifestParser {
         bytes memory bad = bytes(fixture);
         bad[index] = bytes1(uint8(bad[index]) ^ mask);
         vm.expectRevert();
-        this.verifyStep(bad, rootHashBefore, requestedCycleCount, rootHashAfter);
+        this.verifyStep(bad, rootHashBefore);
     }
 
     /// External wrapper so `log` arrives as calldata for StepLog.decode.
-    function verifyStep(
-        bytes calldata log,
-        bytes32 rootBefore,
-        uint64 cycleCount,
-        bytes32 rootAfter
-    ) external pure {
+    function verifyStep(bytes calldata log, bytes32 rootBefore) external pure {
         StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifyStep(ctx, rootBefore, cycleCount, rootAfter);
+        Verify.verifyStep(ctx, rootBefore);
     }
 }
 
@@ -69,13 +60,11 @@ contract RejectsMutatedResetLogTest is ManifestParser {
 
     bytes fixture;
     bytes32 rootHashBefore;
-    bytes32 rootHashAfter;
 
     function setUp() public {
         Row memory row = firstRow(MANIFEST_CSV, Kind.ResetUarch);
         fixture = vm.readFileBinary(string.concat(RESET_DIR, "/", row.name));
         rootHashBefore = row.rootHashBefore;
-        rootHashAfter = row.rootHashAfter;
     }
 
     /// Flip one byte (xor a non-zero mask) at an arbitrary offset and require rejection.
@@ -86,12 +75,12 @@ contract RejectsMutatedResetLogTest is ManifestParser {
         bytes memory bad = bytes(fixture);
         bad[index] = bytes1(uint8(bad[index]) ^ mask);
         vm.expectRevert();
-        this.verifyReset(bad, rootHashBefore, rootHashAfter);
+        this.verifyReset(bad, rootHashBefore);
     }
 
     /// External wrapper so `log` arrives as calldata for StepLog.decode.
-    function verifyReset(bytes calldata log, bytes32 rootBefore, bytes32 rootAfter) external pure {
+    function verifyReset(bytes calldata log, bytes32 rootBefore) external pure {
         StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifyReset(ctx, rootBefore, rootAfter);
+        Verify.verifyReset(ctx, rootBefore);
     }
 }

@@ -107,19 +107,11 @@ public:
     }
 
     /// \brief Finish recording and save the log file
-    void finish(const machine_hash &root_hash_before, uint64_t requested_cycle_count,
-        const machine_hash &root_hash_after) {
-        // Fill in hash_after for each recorded node (tree is fresh from the outer get_root_hash call).
-        for (auto &[address, entry] : m_context.touched_nodes) {
-            entry.hash_after = m_m.get_node_hash(address, static_cast<int>(entry.log2_size), skip_hash_tree_update);
-        }
+    void finish() {
         auto sibling_hashes = get_sibling_hashes();
 
         const step_log_header header{
             .signature = STEP_LOG_SIGNATURE,
-            .root_hash_before = root_hash_before,
-            .requested_cycle_count = requested_cycle_count,
-            .root_hash_after = root_hash_after,
             .hash_function = static_cast<uint64_t>(m_context.hash_function),
             .page_count = m_context.touched_pages.size(),
             .node_count = m_context.touched_nodes.size(),
@@ -179,8 +171,7 @@ private:
     /// \brief Record that the subtree at (address, log2_size) is being touched.
     /// \param address Subtree start address, must be aligned to 2^log2_size
     /// \param log2_size Log2 of the subtree size. Must be > PAGE_SIZE and <= ROOT_SIZE.
-    /// \details Captures the subtree's current hash as hash_before. hash_after is
-    /// filled in during finish() once the machine's tree has been refreshed.
+    /// \details Captures the subtree's current hash.
     /// Rejects overlaps with existing nodes and enclosure of touched pages so
     /// the "pages and nodes are pairwise disjoint" invariant holds at replay.
     void touch_node(uint64_t address, int log2_size) const {
@@ -216,8 +207,7 @@ private:
             node_entry{
                 .address = address,
                 .log2_size = static_cast<uint64_t>(log2_size),
-                .hash_before = m_m.get_node_hash(address, log2_size, skip_hash_tree_update),
-                .hash_after = {}, // filled in by finish() after the outer get_root_hash() refreshes the tree
+                .hash = m_m.get_node_hash(address, log2_size, skip_hash_tree_update),
             });
     }
 

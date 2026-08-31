@@ -156,14 +156,16 @@ local CMIO_FIXTURE_SIZES = {
     { 65536, "65536" },
 }
 
--- A response larger than the rx buffer replays as a pure no-op: the verifier returns
--- before touching any state, including the advance-state budget grant. The manifest
--- stores only the repeat unit; dataLength tells the replayer how far to expand it.
-local function create_oversized_send_cmio_response_step_log()
+-- The rx-buffer size boundary, recorded from both sides. A response of exactly the buffer
+-- size is the largest legal one and writes normally; one byte more replays as a pure no-op,
+-- the verifier returning before touching any state, including the advance-state budget grant.
+-- These payloads are megabytes, so the manifest stores only the repeat unit; dataLength tells
+-- the replayer how far to expand it.
+local function create_rx_buffer_boundary_step_log(data_length, label, expect_noop)
     local machine <close> = build_machine()
-    local data = string.rep("a", (1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE) + 1)
+    local data = string.rep("a", data_length)
     machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, string.rep("X", 4096))
-    local name = "send-cmio-response-oversized.log"
+    local name = "send-cmio-response-" .. label .. ".log"
     local log_path = output_dir .. "/" .. name
     os.remove(log_path)
     machine:write_reg("iflags_Y", 1)
@@ -184,7 +186,10 @@ local function create_oversized_send_cmio_response_step_log()
     ctx.initial_root_hash = machine:get_root_hash()
     machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH, log_path)
     ctx.final_root_hash = machine:get_root_hash()
-    assert(ctx.initial_root_hash == ctx.final_root_hash, "oversized response must be a no-op")
+    assert(
+        (ctx.initial_root_hash == ctx.final_root_hash) == expect_noop,
+        expect_noop and "oversized response must be a no-op" or "at-limit response must write"
+    )
     local obtained =
         cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log_path, REVERT_ROOT_HASH)
     assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
@@ -206,5 +211,7 @@ manifest_mod.write_row(
     create_send_cmio_response_step_log(32, "advance-grant-saturated", cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, -1)
 )
 manifest_mod.write_row(manifest, create_send_cmio_response_noop_step_log())
-manifest_mod.write_row(manifest, create_oversized_send_cmio_response_step_log())
+local RX_BUFFER_SIZE = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE
+manifest_mod.write_row(manifest, create_rx_buffer_boundary_step_log(RX_BUFFER_SIZE, "rx-buffer", false))
+manifest_mod.write_row(manifest, create_rx_buffer_boundary_step_log(RX_BUFFER_SIZE + 1, "oversized", true))
 stderr("\nsend_cmio_response step logs written to %s\n", output_dir)

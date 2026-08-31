@@ -15,9 +15,17 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
--- Generates the send_cmio_response reject fixtures (keccak256), verified by the Solidity verifier
--- and the C++/Lua host. Rejections about the data argument rather than the log bytes (an oversized
--- response) do not fit a fixture row and stay as per-language unit tests.
+-- Generates the send_cmio_response reject fixtures (keccak256).
+--
+-- Run record-send-cmio-response.lua first: it writes the base logs this script reads from
+-- --fixtures-dir. Here they are tampered and the copies written to --output-dir.
+--
+-- Each fixture is a manifest row: a log, the arguments to verify it with, and the rejection it must
+-- produce. The Solidity verifier and the C++/Lua host both replay the rows and must reject alike.
+--
+-- Only faults in the log bytes become rows. A fault in the data argument has no log to tamper --
+-- an oversized response, or a length disagreeing with the log's node -- so each language tests
+-- those directly instead.
 
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
@@ -68,8 +76,7 @@ local function flip_first_byte(s)
     return string.char(s:byte(1) ~ 0xff) .. s:sub(2)
 end
 
--- iflags.Y must be set for a cmio response; clearing its shadow word (and re-rooting so the
--- log still decodes) makes the replay reject the precondition.
+-- iflags.Y must be set for a cmio response; clearing its shadow word makes the replay a no-op.
 local IFLAGS_Y_ADDR = cartesi.machine:get_reg_address("iflags_Y")
 local IFLAGS_PAGE = IFLAGS_Y_ADDR >> 12
 local IFLAGS_OFF = IFLAGS_Y_ADDR & 0xfff
@@ -78,11 +85,16 @@ local function clear_iflags_y(log)
     for _, page in ipairs(log.pages) do
         if page.index == IFLAGS_PAGE then
             page.data = page.data:sub(1, IFLAGS_OFF) .. string.rep("\0", 8) .. page.data:sub(IFLAGS_OFF + 9)
-            log.root_hash_before = test_util.recompute_step_log_root(log, false, "keccak256")
             return
         end
     end
     error("iflags page not found in cmio base log")
+end
+
+-- Claimed before/after roots for a base fixture, from its directory's manifest row.
+local function base_claims(base_path)
+    local dir, name = base_path:match("^(.*)/([^/]+)$")
+    return manifest.read_claims(dir, name)
 end
 
 -- Each case: tag, base file, payload length, and a mutate(log) that tampers the log in
@@ -105,44 +117,28 @@ local cases = {
         end,
     },
     {
-        tag = "nonzero_cycle_count",
-        base = CMIO_SMALL,
-        data_length = 1,
-        mutate = function(log)
-            log.requested_cycle_count = 7
-        end,
-    },
-    {
-        tag = "final_root_mismatch",
-        base = CMIO_SMALL,
-        data_length = 1,
-        mutate = function(log)
-            log.root_hash_after = BOGUS
-            return { after = BOGUS }
-        end,
-    },
-    {
-        tag = "cmio_node_hash_mismatch",
+        tag = "root_before_mismatch",
+        name = "cmio_node_tampered",
         base = CMIO_SUPRA,
         data_length = 4097,
-        -- hash_after feeds the post-state, not the pre-root, so decode accepts the mutated
-        -- log; the replay recomputes the padded write hash and rejects the wrong node hash.
+        -- The node slot feeds the pre-root fold, so a tampered node hash no longer
+        -- reconstructs the claimed root hash before.
         mutate = function(log)
-            log.nodes[1].hash_after = flip_first_byte(log.nodes[1].hash_after)
+            log.nodes[1].hash = flip_first_byte(log.nodes[1].hash)
         end,
     },
     {
         -- Clearing iflags.Y in a recorded cmio log makes the replay a no-op (send_cmio_response cannot
-        -- fail), so the recomputed post-state stays at the tampered pre-state and never matches the
-        -- logged final hash. The forged "transition from a non-yielding machine" is rejected by the
-        -- final-root check.
-        tag = "cmio_iflags_cleared",
-        expect_error = "final_root_mismatch",
+        -- fail), so the obtained post-state stays at the tampered pre-state and never matches the
+        -- claimed root hash after. The forged "transition from a non-yielding machine" is rejected by
+        -- the caller's comparison.
+        tag = "root_after_mismatch",
+        name = "cmio_iflags_cleared",
         base = CMIO_SMALL,
         data_length = 1,
         mutate = function(log)
             clear_iflags_y(log)
-            return { before = log.root_hash_before }
+            return { before = test_util.recompute_step_log_root(log, "keccak256") }
         end,
     },
 }
@@ -153,21 +149,22 @@ out:write(manifest.HEADER)
 
 for _, case in ipairs(cases) do
     local log = test_util.read_step_log_file(case.base)
+    local claims = base_claims(case.base)
     local claim = case.mutate(log) or {}
-    local name = case.tag .. ".log"
+    local name = (case.name or case.tag) .. ".log"
     test_util.write_step_log_file(log, output_dir .. "/" .. name)
     manifest.write_row(out, {
         kind = "send_cmio_response",
         name = name,
         hash_function = "keccak256",
-        requested_cycle_count = log.requested_cycle_count,
-        initial_root_hash = claim.before or log.root_hash_before,
-        final_root_hash = claim.after or log.root_hash_after,
+        requested_cycle_count = claims.cycle,
+        initial_root_hash = claim.before or claims.before,
+        final_root_hash = claim.after or claims.after,
         reason = CMIO_REASON,
         data_length = case.data_length,
         data = payload(case.data_length),
         revert_root_hash = REVERT_ROOT_HASH,
-        expect_error = case.expect_error or case.tag,
+        expect_error = case.tag,
     })
     stderr("adversarial cmio: %-26s\n", case.tag)
 end

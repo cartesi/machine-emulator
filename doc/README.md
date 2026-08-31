@@ -2836,6 +2836,25 @@ begin ecall
 end ecall
 8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
 9: read uarch.halt@0x400000: 0x0(0)
+10: read uarch.cycle@0x400008: 0x8c3(2243)
+11: read uarch.halt@0x400000: 0x0(0)
+12: read uarch.pc@0x400010: 0x6021d4(6300116)
+13: read @0x6021d0: 0x51300000073(5579162517619)
+begin addi
+  14: read uarch.x0@0x400018: 0x0(0)
+  15: write uarch.x10@0x400068: 0xa(10) -> 0x0(0)
+  16: write uarch.pc@0x400010: 0x6021d4(6300116) -> 0x6021d8(6300120)
+end addi
+17: write uarch.cycle@0x400008: 0x8c3(2243) -> 0x8c4(2244)
+18: read uarch.cycle@0x400008: 0x8c4(2244)
+19: read uarch.halt@0x400000: 0x0(0)
+20: read uarch.pc@0x400010: 0x6021d8(6300120)
+21: read @0x6021d8: 0xff01011300008067(18374969135764373607)
+begin jalr
+  22: read uarch.x1@0x400020: 0x6003c0(6292416)
+  23: write uarch.pc@0x400010: 0x6021d8(6300120) -> 0x6003c0(6292416)
+end jalr
+24: write uarch.cycle@0x400008: 0x8c4(2244) -> 0x8c5(2245)
 ```
 
 Understanding these logs in detail is unnecessary for all but the most
@@ -5409,15 +5428,12 @@ The binary format of the step log file is as follows:
 
     step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^sibling_count
 
-    header ::= {                        -- 112 bytes
-      signature             ::= "CTSI" 3 0 0 0,  -- magic + version + reserved
-      root_hash_before      ::= hash,   -- machine root hash before the step
-      requested_cycle_count ::= uint64, -- cycle count requested by the caller
-      root_hash_after       ::= hash,   -- machine root hash after the step
-      hash_function         ::= uint64, -- hash function used (e.g. keccak256)
-      page_count            ::= uint64,
-      node_count            ::= uint64,
-      sibling_count         ::= uint64
+    header ::= {                        -- 40 bytes
+      signature     ::= "CTSI" 3 0 0 0, -- magic + version + reserved
+      hash_function ::= uint64,         -- hash function used (e.g. keccak256)
+      page_count    ::= uint64,
+      node_count    ::= uint64,
+      sibling_count ::= uint64
     }
 
     page_entry ::= {                    -- 4136 bytes, strictly ascending by index
@@ -5426,11 +5442,11 @@ The binary format of the step log file is as follows:
       hash  ::= hash                    -- scratch slot, must be zero on the wire
     }
 
-    node_entry ::= {                    -- 80 bytes: a bulk write spanning > 1 page
-      address     ::= uint64,           -- subtree start, aligned to 2^log2_size
-      log2_size   ::= uint64,
-      hash_before ::= hash,             -- subtree hash before the bulk write
-      hash_after  ::= hash              -- subtree hash after it
+    node_entry ::= {                    -- 48 bytes: a bulk write spanning > 1 page
+      address   ::= uint64,             -- subtree start, aligned to 2^log2_size
+      log2_size ::= uint64,
+      hash      ::= hash                -- subtree hash before the bulk write; the replay
+                                        -- overwrites it with the hash of what it writes
     }
 
     sibling_entry ::= hash              -- hashes of the subtrees not covered by pages
@@ -5441,18 +5457,25 @@ All integers are little-endian and every `hash` is 32 bytes. The page
 entries record, as of first touch, every page of machine state the step
 read or wrote. The node entries record bulk writes that replace whole
 subtrees at once, as the uarch reset and the input-inclusion transitions
-do. Combined with the hashes of the pages and nodes, the siblings
-reconstruct the machine’s root hash. A step log is therefore
+do. A node is a subtree whose contents are not witnessed, only its hash.
+Combined with the hashes of the pages and nodes, the siblings
+reconstruct the machine’s root hash. The log is only the witness,
+carrying no root hash claims and no cycle count: the root hash before is
+recomputed from the witnessed tree, the caller says how many cycles to
+replay, and the root hash after is whatever the replay produces,
+returned for the caller to compare. A step log is therefore
 self-contained, and anyone can check one against a pair of state hashes
 without instantiating a machine.
 
 #### Inspecting step logs
 
-The static method `cartesi.machine:dump_step_uarch(<filename>)` returns
-a user-friendly version of the uarch step recorded in a binary log file.
-It replays the step against the state carried in the log and describes
-every access the step performed, identifying what each address refers to
-(a register, a CSR, memory). Addresses and values are printed in
+The static method
+`cartesi.machine:dump_step_uarch(<filename>, <uarch_cycle_count>)`
+returns a user-friendly version of the uarch cycles recorded in a binary
+log file. It replays the requested number of cycles against the state
+carried in the log (stopping early if the uarch halts) and describes
+every access performed, identifying what each address refers to (a
+register, a CSR, memory). Addresses and values are printed in
 hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:
@@ -5476,7 +5499,7 @@ assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 -- Record the step into a binary log file and dump its printout to screen
 machine:log_step_uarch(1, "uarch-step.log")
 io.stderr:write(string.format("\nStep log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
-io.stderr:write(cartesi.machine:dump_step_uarch("uarch-step.log"))
+io.stderr:write(cartesi.machine:dump_step_uarch("uarch-step.log", 1))
 ```
 
 with command:
@@ -5509,6 +5532,25 @@ begin ecall
 end ecall
 8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
 9: read uarch.halt@0x400000: 0x0(0)
+10: read uarch.cycle@0x400008: 0x8c3(2243)
+11: read uarch.halt@0x400000: 0x0(0)
+12: read uarch.pc@0x400010: 0x6021d4(6300116)
+13: read @0x6021d0: 0x51300000073(5579162517619)
+begin addi
+  14: read uarch.x0@0x400018: 0x0(0)
+  15: write uarch.x10@0x400068: 0xa(10) -> 0x0(0)
+  16: write uarch.pc@0x400010: 0x6021d4(6300116) -> 0x6021d8(6300120)
+end addi
+17: write uarch.cycle@0x400008: 0x8c3(2243) -> 0x8c4(2244)
+18: read uarch.cycle@0x400008: 0x8c4(2244)
+19: read uarch.halt@0x400000: 0x0(0)
+20: read uarch.pc@0x400010: 0x6021d8(6300120)
+21: read @0x6021d8: 0xff01011300008067(18374969135764373607)
+begin jalr
+  22: read uarch.x1@0x400020: 0x6003c0(6292416)
+  23: write uarch.pc@0x400010: 0x6021d8(6300120) -> 0x6003c0(6292416)
+end jalr
+24: write uarch.cycle@0x400008: 0x8c4(2244) -> 0x8c5(2245)
 ```
 
 Understanding these logs in detail is unnecessary for all but the most
@@ -5554,14 +5596,19 @@ machine:log_step_uarch(1, "uarch-step.log")
 local hash_after = machine:get_root_hash()
 
 -- Potentially provoke a verification failure. flip:<offset> flips one bit inside the log
--- file; lie gives the verifier a false state hash to start from.
+-- file; truncate chops the log's last bytes; lie gives the verifier a false state hash
+-- to start from.
 local offset = arg[4] and arg[4]:match("^flip:(%d+)$")
-if offset then
+if offset or arg[4] == "truncate" then
     local f = assert(io.open("uarch-step.log", "rb"))
     local log = f:read("a")
     f:close()
-    offset = tonumber(offset)
-    log = log:sub(1, offset - 1) .. string.char(log:byte(offset) ~ 1) .. log:sub(offset + 1)
+    if offset then
+        offset = tonumber(offset)
+        log = log:sub(1, offset - 1) .. string.char(log:byte(offset) ~ 1) .. log:sub(offset + 1)
+    else
+        log = log:sub(1, #log - 32)
+    end
     f = assert(io.open("uarch-step.log", "wb"))
     f:write(log)
     f:close()
@@ -5594,42 +5641,41 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" flip:200
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:36: initial root hash mismatch
+lua5.4: verify-uarch-step.lua:41: root hash before does not match step log
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:36: in main chunk
+	verify-uarch-step.lua:41: in main chunk
 	[C]: in ?
 ```
 
-Tampering instead with the log’s own claimed after-hash leaves the
-replay intact, but the state hash the replay reaches no longer matches
-the claim:
+Truncating the log fails the decoder’s size accounting before any replay
+happens:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" flip:60
+lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" truncate
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:36: final root hash mismatch
+lua5.4: verify-uarch-step.lua:41: sibling count does not match step log size
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:36: in main chunk
+	verify-uarch-step.lua:41: in main chunk
 	[C]: in ?
 ```
 
-Lying to the verifier about the state hash the step starts from also
-fails: the claim no longer matches the before-hash recorded in the log
-header.
+Lying to the verifier about the state hash the step starts from fails
+the same comparison from the other side: the claim no longer matches the
+root recomputed from the log.
 
 ``` bash
 lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" lie
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:36: root hash before does not match step log header
+lua5.4: verify-uarch-step.lua:41: root hash before does not match step log
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:36: in main chunk
+	verify-uarch-step.lua:41: in main chunk
 	[C]: in ?
 ```
 
@@ -9193,6 +9239,7 @@ uarch_cycle bisection round 18, interval of disagreement is [0x0, 0x3]
 uarch_cycle bisection round 19, interval of disagreement is [0x0, 0x1]
 Player 1 posted logs
 Verifying input inclusion log!
+Verifying uarch step log!
 Log is invalid!
 Player 2 wins! Final state hash is 0x4d44a727....
 Result posted:

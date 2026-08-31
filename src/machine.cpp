@@ -2028,7 +2028,7 @@ void machine::log_send_cmio_response(uint16_t reason, const unsigned char *data,
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
     const auto root_hash_after = get_root_hash();
-    a.finish(root_hash_before, 0, root_hash_after);
+    a.finish();
     auto obtained_root_hash =
         verify_send_cmio_response(reason, data, length, root_hash_before, filename, revert_root_hash);
     if (!std::ranges::equal(obtained_root_hash, root_hash_after)) {
@@ -2048,9 +2048,6 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
     // Keccak-256 only, mirroring recording: these logs exist for the on-chain verifier
     replay_step_state_access a(context, mapped_data.get_ptr(), data_length, hash_function_type::keccak256);
     context.log.check_root_hash_before(root_hash_before);
-    if (context.log.requested_cycle_count != 0) {
-        throw std::runtime_error("requested_cycle_count must be zero in send_cmio_response log");
-    }
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
     return a.finish(false);
@@ -2082,13 +2079,12 @@ void machine::log_reset_uarch(const std::string &filename) {
     uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     uarch_record_step_state_access a(context, *this);
     uarch_reset_state(a);
-    // get_root_hash() also updates the hash tree, which finish() relies on to record node hashes
     auto root_hash_after = get_root_hash();
     const state_access sa(*this);
     if (is_rejected_manual_yield(sa)) {
         root_hash_after = read_revert_root_hash();
     }
-    a.finish(root_hash_before, 0, root_hash_after);
+    a.finish();
     // root_hash_after holds the revert root hash when the reset reverted the state
     if (!std::ranges::equal(verify_reset_uarch(root_hash_before, filename), root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
@@ -2101,9 +2097,6 @@ machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_befor
     uarch_replay_step_state_access<>::context context;
     uarch_replay_step_state_access<> a(context, mapped_data.get_ptr(), data_length);
     context.log.check_root_hash_before(root_hash_before);
-    if (context.log.requested_cycle_count != 0) {
-        throw std::runtime_error("requested_cycle_count must be zero in reset_uarch log");
-    }
     uarch_reset_state(a);
     return a.finish();
 }
@@ -2121,7 +2114,7 @@ uarch_interpreter_break_reason machine::log_step_uarch(uint64_t uarch_cycle_coun
     const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), uarch_cycle_count);
     const auto break_reason = uarch_interpret(a, uarch_cycle_end);
     const auto root_hash_after = get_root_hash();
-    a.finish(root_hash_before, uarch_cycle_count, root_hash_after);
+    a.finish();
     if (!std::ranges::equal(verify_step_uarch(root_hash_before, filename, uarch_cycle_count), root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
@@ -2135,10 +2128,7 @@ machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before
     uarch_replay_step_state_access<>::context context;
     uarch_replay_step_state_access<> a(context, mapped_data.get_ptr(), data_length);
     context.log.check_root_hash_before(root_hash_before);
-    if (context.log.requested_cycle_count != uarch_cycle_count) {
-        throw std::runtime_error("uarch cycle count does not match step log header");
-    }
-    const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), context.log.requested_cycle_count);
+    const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), uarch_cycle_count);
     uarch_interpret(a, uarch_cycle_end);
     return a.finish();
 }
@@ -2206,13 +2196,12 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     record_step_state_access a(context, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     const auto break_reason = interpret(a, mcycle_end);
-    // get_root_hash() also updates the hash tree, which finish() relies on to record node/page hashes
     auto root_hash_after = get_root_hash();
     const state_access sa(*this);
     if (is_rejected_manual_yield(sa)) {
         root_hash_after = read_revert_root_hash();
     }
-    a.finish(root_hash_before, mcycle_count, root_hash_after);
+    a.finish();
     if (!std::ranges::equal(verify_step(root_hash_before, filename, mcycle_count), root_hash_after)) {
         throw std::runtime_error("mismatch in root hash after replay");
     }
@@ -2224,14 +2213,9 @@ machine_hash machine::verify_step(const_machine_hash_view root_hash_before, cons
     auto data_length = os::file_size(filename);
     auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
     replay_step_state_access::context context;
-    // Constructor reads log header, validates computed initial hash == logged initial hash
     replay_step_state_access a(context, mapped_data.get_ptr(), data_length);
-    // logged initial hash matches computed initial hash
     context.log.check_root_hash_before(root_hash_before);
-    if (context.log.requested_cycle_count != mcycle_count) {
-        throw std::runtime_error("mcycle count does not match step log header");
-    }
-    const uint64_t mcycle_end = saturating_add(a.read_mcycle(), context.log.requested_cycle_count);
+    const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     interpret(a, mcycle_end);
     return a.finish();
 }

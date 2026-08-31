@@ -4122,7 +4122,7 @@ if cmdline.log_step_uarch then
     os.remove(cmdline.log_step_uarch.filename)
     machine:log_step_uarch(cmdline.log_step_uarch.count, cmdline.log_step_uarch.filename)
     if cmdline.log_step_uarch.dump then
-        io.stderr:write(cartesi.machine:dump_step_uarch(cmdline.log_step_uarch.filename))
+        io.stderr:write(cartesi.machine:dump_step_uarch(cmdline.log_step_uarch.filename, cmdline.log_step_uarch.count))
     end
 end
 if cmdline.log_reset_uarch then

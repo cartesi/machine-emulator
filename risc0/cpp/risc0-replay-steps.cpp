@@ -28,8 +28,8 @@ using namespace cartesi;
 extern "C" void risc0_replay_steps(
     unsigned char* step_log_image,
     uint64_t step_log_image_size,
+    uint64_t mcycle_count,
     unsigned char* out_root_hash_before,
-    uint64_t* out_mcycle_count,
     unsigned char* out_root_hash_after)
 {
     replay_step_state_access::context context{};
@@ -37,14 +37,14 @@ extern "C" void risc0_replay_steps(
     uint64_t mcycle_end{};
     // Saturate on overflow, matching machine::verify_step's saturating_add, so the RISC0
     // guest and the host replayer agree on the cycle target.
-    if (__builtin_add_overflow(a.read_mcycle(), context.log.requested_cycle_count, &mcycle_end)) {
+    if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {
         mcycle_end = UINT64_MAX;
     }
     interpret<replay_step_state_access&>(a, mcycle_end);
-    // The journal carries the hash the replay obtained, not the header claim. finish() throws
-    // on a mismatch between the two, so the values agree whenever this line is reached.
+    // The journal carries the guest's inputs and results: the cycle count it was asked to run,
+    // the root hash before recomputed from the witnessed tree, and the root hash after
+    // obtained by the replay.
     const auto obtained_root_hash_after = a.finish();
     std::memcpy(out_root_hash_before, context.log.root_hash_before.data(), 32);
-    *out_mcycle_count = context.log.requested_cycle_count;
     std::memcpy(out_root_hash_after, obtained_root_hash_after.data(), 32);
 }

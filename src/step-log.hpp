@@ -56,17 +56,17 @@ namespace cartesi {
 constexpr std::array<char, 8> STEP_LOG_SIGNATURE = {'C', 'T', 'S', 'I', 3, 0, 0, 0};
 
 /// \brief Fixed-size prefix of a step log file.
+/// \details The log is only the witness: it carries no root hash claims and no cycle count.
+/// The root hash before is recomputed from the witnessed tree at decode time; the cycle count
+/// and the root hash after are the caller's, driving the replay and checking its result.
 struct PACKED step_log_header {
-    std::array<char, 8> signature;  ///< STEP_LOG_SIGNATURE (magic + version + reserved)
-    machine_hash root_hash_before;  ///< Machine root hash before the step
-    uint64_t requested_cycle_count; ///< Cycle count requested by the caller; 0 for operations without one
-    machine_hash root_hash_after;   ///< Machine root hash after the step
-    uint64_t hash_function;         ///< Value of hash_function_type used to hash the log
-    uint64_t page_count;            ///< Number of entries in the pages array
-    uint64_t node_count;            ///< Number of entries in the nodes array
-    uint64_t sibling_count;         ///< Number of entries in the siblings array
+    std::array<char, 8> signature; ///< STEP_LOG_SIGNATURE (magic + version + reserved)
+    uint64_t hash_function;        ///< Value of hash_function_type used to hash the log
+    uint64_t page_count;           ///< Number of entries in the pages array
+    uint64_t node_count;           ///< Number of entries in the nodes array
+    uint64_t sibling_count;        ///< Number of entries in the siblings array
 };
-static_assert(sizeof(step_log_header) == 112, "expected wire size of step_log_header is 112 bytes");
+static_assert(sizeof(step_log_header) == 40, "expected wire size of step_log_header is 40 bytes");
 
 /// \brief One touched page of memory recorded in a step log.
 /// \details The recorder writes \p hash zero-filled; the replayer fills it with
@@ -86,16 +86,15 @@ static_assert(HASH_TREE_PAGE_SIZE == AR_PAGE_SIZE,
     "step-log page_entry.data size must equal the AR_PAGE_SIZE used by the replayer");
 
 /// \brief One subtree-write (bulk write spanning > 1 page) recorded in a step log.
-/// \details hash_before / hash_after are the subtree hashes around the bulk write; the
-/// replayer picks one depending on whether it is reconstructing root_hash_before or
-/// root_hash_after.
+/// \details A node is a subtree whose contents are not witnessed, only its hash. The wire value
+/// is the subtree hash before the step; a replayed bulk write overwrites the slot with the hash
+/// computed from the write's own arguments, so the slot always holds the subtree's current hash.
 struct PACKED node_entry {
-    uint64_t address;         ///< Subtree start address; must be aligned to 2^log2_size
-    uint64_t log2_size;       ///< log2 of the subtree size; must be > page-log2 and <= root-log2
-    machine_hash hash_before; ///< Subtree hash captured before the bulk write
-    machine_hash hash_after;  ///< Subtree hash after the bulk write
+    uint64_t address;   ///< Subtree start address; must be aligned to 2^log2_size
+    uint64_t log2_size; ///< log2 of the subtree size; must be > page-log2 and <= root-log2
+    machine_hash hash;  ///< Subtree hash, kept current during replay
 };
-static_assert(sizeof(node_entry) == 80, "expected wire size of node_entry is 80 bytes");
+static_assert(sizeof(node_entry) == 48, "expected wire size of node_entry is 48 bytes");
 
 using hash_type = unsigned char (*)[MACHINE_HASH_SIZE];
 using const_hash_type = const unsigned char (*)[MACHINE_HASH_SIZE];
@@ -142,14 +141,11 @@ inline void concat_hash(hash_function_type hash_function, const_hash_type left, 
 /// \details Non-owning -- pages/nodes/siblings are spans into the caller's log image. \p pages is
 /// mutable so the root recompute can rehash each page into its scratch slot.
 struct step_log {
-    machine_hash root_hash_before{};   ///< Root hash before the step (from log header)
-    uint64_t requested_cycle_count{0}; ///< Caller-requested cycle count (from log header; see step_log_header)
-    machine_hash root_hash_after{};    ///< Root hash after the step (from log header)
+    machine_hash root_hash_before{}; ///< Root hash before the step, recomputed from the witnessed tree at decode
     hash_function_type hash_function{hash_function_type::keccak256}; ///< Hash function used for the step log
     std::span<page_entry> pages;            ///< Witnessed pages, rehashed into their scratch slots
-    std::span<const node_entry> nodes;      ///< Subtree-write nodes
+    std::span<node_entry> nodes;            ///< Subtree-write nodes, kept current during replay
     std::span<const machine_hash> siblings; ///< Sibling hashes for untouched subtrees
-    uint64_t consumed_node_count{0};        ///< Nodes a semantic write consumed during replay; see compute_root_hash
 
     /// \brief Decode and validate a binary step log.
     /// \param log_image Pointer to the step log file bytes. The returned step_log keeps spans into it,
@@ -158,8 +154,8 @@ struct step_log {
     /// \param required_hash_function When set, reject a log declaring any other hash function.
     /// Verifiers whose protocol fixes the hash function (the on-chain replayer is Keccak-256 only)
     /// pass it so a mismatched log fails here instead of at the initial-root recompute.
-    /// \return A validated step_log whose witnessed tree reconstructs root_hash_before.
-    /// \throw runtime_error if the log is malformed or the initial root hash does not match.
+    /// \return A validated step_log with root_hash_before recomputed from the witnessed tree.
+    /// \throw runtime_error if the log is malformed.
     /// \details Mirrors StepLog.decode in the Solidity replayer: header parse, per-count size bounds,
     /// page ordering, per-node alignment/range, the combined pages+nodes disjointness walk, and the
     /// initial-root recompute.
@@ -204,17 +200,14 @@ struct step_log {
         if (remaining % sizeof(machine_hash) != 0 || header.sibling_count != remaining / sizeof(machine_hash)) {
             THROW(std::runtime_error, "sibling count does not match step log size");
         }
-        log.root_hash_before = header.root_hash_before;
-        log.requested_cycle_count = header.requested_cycle_count;
-        log.root_hash_after = header.root_hash_after;
         if (header.page_count == 0) {
             THROW(std::runtime_error, "page count is zero");
         }
         log.pages = std::span<page_entry>{reinterpret_cast<page_entry *>(log_image + sizeof(step_log_header)),
             static_cast<std::size_t>(header.page_count)};
-        log.nodes = std::span<const node_entry>{
-            reinterpret_cast<const node_entry *>(log_image + sizeof(step_log_header) + pages_bytes),
-            static_cast<std::size_t>(header.node_count)};
+        log.nodes =
+            std::span<node_entry>{reinterpret_cast<node_entry *>(log_image + sizeof(step_log_header) + pages_bytes),
+                static_cast<std::size_t>(header.node_count)};
         log.siblings = std::span<const machine_hash>{
             reinterpret_cast<const machine_hash *>(log_image + sizeof(step_log_header) + pages_bytes + nodes_bytes),
             static_cast<std::size_t>(header.sibling_count)};
@@ -222,10 +215,7 @@ struct step_log {
         validate_pages_ordered(log.pages);
         validate_nodes_aligned(log.nodes);
         validate_entries_ordered_and_disjoint(log.pages, log.nodes);
-        // Pre-state integrity: the recomputed root must match the header's claim.
-        if (log.compute_root_hash(false) != log.root_hash_before) {
-            THROW(std::runtime_error, "initial root hash mismatch");
-        }
+        log.root_hash_before = log.compute_root_hash();
         return log;
     }
 
@@ -254,7 +244,7 @@ struct step_log {
     /// \brief Try to find a subtree-write node by its start address.
     /// \param address Subtree start address.
     /// \return Pointer to the node entry if present, nullptr otherwise.
-    const node_entry *try_find_node(uint64_t address) const {
+    node_entry *try_find_node(uint64_t address) const {
         auto it =
             std::ranges::lower_bound(nodes, address, std::ranges::less{}, [](const auto &n) { return n.address; });
         if (it != nodes.end() && it->address == address) {
@@ -263,13 +253,12 @@ struct step_log {
         return nullptr;
     }
 
-    /// \brief Recompute the machine root hash from the witnessed tree.
-    /// \param use_after When false, use each node's hash_before (reconstructs root_hash_before). When
-    /// true, use each node's hash_after (reconstructs root_hash_after).
+    /// \brief Recompute the machine root hash from the witnessed tree's current state.
     /// \details A zero scratch slot means "needs hashing": pages arrive zero on the wire and replay
-    /// accessors re-zero a page's slot on write, so the before pass hashes every page and the after
-    /// pass rehashes only the pages the operation wrote.
-    machine_hash compute_root_hash(bool use_after) const {
+    /// accessors re-zero a page's slot on write, so the decode-time pass hashes every page and the
+    /// finish-time pass rehashes only the pages the operation wrote. Node slots are used as they
+    /// stand; replayed bulk writes keep them current.
+    machine_hash compute_root_hash() const {
         static const machine_hash all_zeros{};
         for (auto &page : pages) {
             if (page.hash == all_zeros) {
@@ -279,8 +268,8 @@ struct step_log {
         size_t next_page = 0;
         size_t next_node = 0;
         size_t next_sibling = 0;
-        auto root_hash = compute_subtree(0, HASH_TREE_LOG2_ROOT_SIZE - AR_LOG2_PAGE_SIZE, next_page, next_node,
-            next_sibling, use_after);
+        auto root_hash =
+            compute_subtree(0, HASH_TREE_LOG2_ROOT_SIZE - AR_LOG2_PAGE_SIZE, next_page, next_node, next_sibling);
         if (next_page != pages.size()) {
             THROW(std::runtime_error, "too many pages in log");
         }
@@ -290,37 +279,14 @@ struct step_log {
         if (next_sibling != siblings.size()) {
             THROW(std::runtime_error, "too many sibling hashes in log");
         }
-        if (use_after) {
-            check_all_nodes_consumed();
-        }
         return root_hash;
     }
 
-    /// \brief Assert every witnessed node was consumed by a semantic write during replay.
-    /// \details A node's hash_after is folded into root_hash_after verbatim, so a node no semantic
-    /// write consumed would inject an arbitrary post-state subtree. compute_root_hash(true) checks
-    /// this; a reverted operation skips the recompute and must call it explicitly.
-    void check_all_nodes_consumed() const {
-        if (consumed_node_count != nodes.size()) {
-            THROW(std::runtime_error, "unconsumed node in step log");
-        }
-    }
-
-    /// \brief Assert a caller-claimed pre-operation root hash matches the log header.
+    /// \brief Assert a caller-claimed pre-operation root hash matches the witnessed tree.
     /// \param claimed Root hash the caller expects the operation to start from.
-    /// \details decode() already checked the header value against the witnessed tree, so this
-    /// transitively checks the claim against the tree as well.
     void check_root_hash_before(const_machine_hash_view claimed) const {
         if (!std::ranges::equal(claimed, root_hash_before)) {
-            THROW(std::runtime_error, "root hash before does not match step log header");
-        }
-    }
-
-    /// \brief Assert the root hash obtained by replaying matches the log header claim.
-    /// \param obtained Post-operation root hash the replay produced.
-    void check_root_hash_after(const machine_hash &obtained) const {
-        if (obtained != root_hash_after) {
-            THROW(std::runtime_error, "final root hash mismatch");
+            THROW(std::runtime_error, "root hash before does not match step log");
         }
     }
 
@@ -419,10 +385,9 @@ private:
     /// \param next_page Cursor into the pages array; advances past each page consumed.
     /// \param next_node Cursor into the nodes array; advances past each node consumed.
     /// \param next_sibling Cursor into the sibling hashes; advances past each sibling consumed.
-    /// \param use_after Selects which of a node's two stored hashes to use (see compute_root_hash).
     /// \return Root hash of the subtree at (page_index, log2_page_count).
     machine_hash compute_subtree(uint64_t page_index, int log2_page_count, size_t &next_page, size_t &next_node,
-        size_t &next_sibling, bool use_after) const {
+        size_t &next_sibling) const {
         const auto subtree_start_addr = page_index << AR_LOG2_PAGE_SIZE;
         const auto subtree_log2_size = log2_page_count + AR_LOG2_PAGE_SIZE;
         const auto page_count = UINT64_C(1) << log2_page_count;
@@ -440,14 +405,12 @@ private:
         }
         if (node_in && nodes[next_node].address == subtree_start_addr &&
             nodes[next_node].log2_size == static_cast<uint64_t>(subtree_log2_size)) {
-            const auto &n = nodes[next_node++];
-            return use_after ? n.hash_after : n.hash_before;
+            return nodes[next_node++].hash;
         }
         if (log2_page_count > 0) {
-            auto left = compute_subtree(page_index, log2_page_count - 1, next_page, next_node, next_sibling, use_after);
+            auto left = compute_subtree(page_index, log2_page_count - 1, next_page, next_node, next_sibling);
             const auto halfway_page_index = page_index + (page_count >> 1);
-            auto right =
-                compute_subtree(halfway_page_index, log2_page_count - 1, next_page, next_node, next_sibling, use_after);
+            auto right = compute_subtree(halfway_page_index, log2_page_count - 1, next_page, next_node, next_sibling);
             machine_hash hash{};
             concat_hash(hash_function, reinterpret_cast<hash_type>(&left), reinterpret_cast<hash_type>(&right),
                 reinterpret_cast<hash_type>(&hash));

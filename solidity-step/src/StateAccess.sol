@@ -26,9 +26,7 @@ library StateAccess {
     error UnalignedWordAccess(uint64 paddr);
     error UarchXRegisterOutOfRange(uint8 reg);
     error WriteMemoryNodeWrongSize(uint32 expectedLog2Size, uint64 nodeLog2Size);
-    error WriteMemoryHashMismatch(bytes32 expected, bytes32 fromLog);
     error ResetUarchWrongSize(uint64 nodeLog2Size);
-    error ResetUarchWrongPostHash(bytes32 fromLog);
     error Uint32Log2OfZero();
     /// Wraps the message from a C++ THROW(...) call site (transpiled via throwRuntimeError).
     error RuntimeError(string message);
@@ -140,7 +138,7 @@ library StateAccess {
 
     // Records that the reset reverted the canonical state on a rejected input. The page model recomputes
     // the tree from the pages (which reflect the pristine uarch), so the revert root hash is carried on
-    // the context and substituted as the final root hash by Verify.verifyReset.
+    // the context and returned by Verify.verifyReset as the obtained root.
     function revertState(StepLog.Context memory ctx) internal pure {
         ctx.reverted = true;
         ctx.revertedRootHash = readRevertRootHash(ctx);
@@ -182,13 +180,12 @@ library StateAccess {
         }
         // Supra-page: the write spans more than one page, so the recorder did not
         // include the affected pages; it summarised them as a single node entry.
-        bytes32 paddedHash = HashTree.merkleTreeHashPadded(data, uint8(writeLengthLog2Size));
+        // findNode returns a reference into ctx.nodes, so the slot write lands in the context.
         StepLog.NodeEntry memory n = StepLog.findNode(ctx, paddr);
         if (uint32(n.log2Size) != writeLengthLog2Size) {
             revert WriteMemoryNodeWrongSize(writeLengthLog2Size, n.log2Size);
         }
-        if (n.hashAfter != paddedHash) revert WriteMemoryHashMismatch(paddedHash, n.hashAfter);
-        ctx.consumedNodes++;
+        n.hash = HashTree.merkleTreeHashPadded(data, uint8(writeLengthLog2Size));
     }
 
     /// Mirrors do_reset_uarch in uarch-replay-step-state-access.hpp.
@@ -197,10 +194,7 @@ library StateAccess {
         if (n.log2Size != EmulatorConstants.UARCH_STATE_LOG2_SIZE) {
             revert ResetUarchWrongSize(n.log2Size);
         }
-        if (n.hashAfter != EmulatorConstants.UARCH_PRISTINE_STATE_HASH) {
-            revert ResetUarchWrongPostHash(n.hashAfter);
-        }
-        ctx.consumedNodes++;
+        n.hash = EmulatorConstants.UARCH_PRISTINE_STATE_HASH;
     }
 
     // ECALL helpers - match the no-op / write shape of the C++ replay accessor.

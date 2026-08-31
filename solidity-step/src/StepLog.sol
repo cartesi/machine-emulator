@@ -41,28 +41,19 @@ library StepLog {
     error SiblingCountExceedsLimit(uint64 declared);
     error RequiredPageNotFound(uint64 pageIdx);
     error RequiredNodeNotFound(uint64 addr);
-    /// Merkle-integrity check on the pre-state: recomputed root from pages+nodes
-    /// +siblings did not match the header's rootHashBefore.
-    error InitialRootHashMismatch();
     /// decode found bytes left over after the step log body.
     error TrailingBytes(uint256 consumed, uint256 length);
-    /// A node's hashAfter is folded into the post-state root verbatim, so every node
-    /// must be produced by a semantic write; some node was never consumed by the replay.
-    error UnconsumedNodes(uint256 consumed, uint256 total);
 
-    /// Decoded step log. decodeAt verifies the pre-state root, so rootHashBefore is trustworthy;
-    /// the remaining fields are wire claims until Verify.verifyXXX checks the post-state root chain.
+    /// Decoded step log. rootHashBefore is recomputed from the witnessed tree at decode
+    /// time; the log is only the witness, carrying no root hash claims and no cycle count.
     struct Context {
         bytes32 rootHashBefore;
-        uint64 requestedCycleCount;
-        bytes32 rootHashAfter;
         uint8 hashFunction;
         uint64[] pageIndices; // strictly ascending
         bytes pageData; // pageCount * PAGE_SIZE bytes; page i at offset i * PAGE_SIZE
         bytes32[] pageHashes; // filled by computeRootHash
         NodeEntry[] nodes; // internal nodes covering regions > PAGE_SIZE; strictly ascending by addr, no overlaps with pages
         bytes32[] siblings; // hash values for subtrees not covered by pages or nodes; left-to-right order
-        uint256 consumedNodes; // count of nodes a semantic write looked up during replay; see computeRootHash
         bool reverted; // set when uarch reset reverted the state on a rejected input; see Verify.verifyReset
         bytes32 revertedRootHash; // canonical post-state hash when reverted (the recorded revert root hash)
     }
@@ -71,9 +62,6 @@ library StepLog {
     uint256 internal constant U64_SIZE = 8;
 
     uint256 internal constant HEADER_SIZE = 8 // signature
-        + HASH_SIZE // rootHashBefore
-        + U64_SIZE // requestedCycleCount
-        + HASH_SIZE // rootHashAfter
         + U64_SIZE // hashFunction
         + U64_SIZE // pageCount
         + U64_SIZE // nodeCount
@@ -83,27 +71,24 @@ library StepLog {
         + EmulatorConstants.PAGE_SIZE // data
         + HASH_SIZE; // scratch_hash
 
-    /// Whole-subtree update encoded as pre/post hashes.
+    /// A subtree whose contents are not witnessed, only its hash. The wire value is the
+    /// subtree hash before the step; a replayed bulk write overwrites the slot with the
+    /// hash computed from the write's own arguments, so the slot always holds the current hash.
     struct NodeEntry {
         uint64 addr; // subtree start address
         uint64 log2Size; // log2 of subtree size (> page-log2, <= root-log2)
-        bytes32 hashBefore; // subtree root hash before the step
-        bytes32 hashAfter; // subtree root hash after the step
+        bytes32 hash; // subtree hash, kept current during replay
     }
 
     uint256 internal constant NODE_ENTRY_SIZE = U64_SIZE // addr
         + U64_SIZE // log2_size
-        + HASH_SIZE // hash_before
-        + HASH_SIZE; // hash_after
+        + HASH_SIZE; // hash
 
     // Witness-size caps. These only bound the decode work and reject pathological logs
-    // early: the actual verification scope (a single uarch step, reset or cmio) is
-    // enforced by Verify.verifyXXX (requested cycle count, root chain). Two separate
-    // requirements set the values. Protocol: a single uarch step touches <=3 pages and
-    // reset/cmio <=1 node (corpus max 3/1/69), so any cap at or above that is sound.
-    // Tooling: the caps are deliberately larger so a whole-mcycle log (corpus max 31
-    // pages; see test/GasReport.t.sol) passes unmodified decode for gas measurement;
-    // shrinking them to protocol size would not affect consensus, only the gas report.
+    // early: the operation actually performed is whatever Verify.verifyXXX runs, and the
+    // caller's root comparison is what constrains it. A single uarch step touches <=3
+    // pages and reset/cmio <=1 node (corpus max 3/1/69), so any cap at or above that is
+    // sound; the values below leave headroom rather than tracking the corpus.
     // Sibling cap must stay >= 52 (tree depth) * MAX_PAGE_COUNT so a maximally-spread
     // log is not wrongly rejected.
     uint64 internal constant MAX_PAGE_COUNT = 64;
@@ -118,10 +103,10 @@ library StepLog {
         if (newOffset != data.length) revert TrailingBytes(newOffset, data.length);
     }
 
-    /// Decode + structurally validate the step log at `offset`, verify its pre-state
-    /// Merkle root, and return the offset just past it (cursor primitive for multi-log
-    /// composition). The returned `rootHashBefore` is trustworthy; the post-state and
-    /// caller-belief checks still happen in Verify.verifyXXX.
+    /// Decode + structurally validate the step log at `offset`, recompute its pre-state
+    /// Merkle root into `rootHashBefore`, and return the offset just past it (cursor
+    /// primitive for multi-log composition). The caller-belief checks happen in
+    /// Verify.verifyXXX.
     function decodeAt(bytes calldata data, uint256 offset)
         internal
         pure
@@ -137,15 +122,6 @@ library StepLog {
             revert InvalidSignature();
         }
         cursor += 8;
-
-        ctx.rootHashBefore = bytes32(data[cursor:cursor + HASH_SIZE]);
-        cursor += HASH_SIZE;
-
-        ctx.requestedCycleCount = readLE64(data, cursor);
-        cursor += U64_SIZE;
-
-        ctx.rootHashAfter = bytes32(data[cursor:cursor + HASH_SIZE]);
-        cursor += HASH_SIZE;
 
         // This verifier implements keccak256 only
         uint64 hashFn = readLE64(data, cursor);
@@ -213,9 +189,7 @@ library StepLog {
                 }
             }
 
-            n.hashBefore = bytes32(data[cursor:cursor + HASH_SIZE]);
-            cursor += HASH_SIZE;
-            n.hashAfter = bytes32(data[cursor:cursor + HASH_SIZE]);
+            n.hash = bytes32(data[cursor:cursor + HASH_SIZE]);
             cursor += HASH_SIZE;
             ctx.nodes[i] = n;
         }
@@ -228,8 +202,7 @@ library StepLog {
             cursor += HASH_SIZE;
         }
 
-        // Pre-state integrity: the recomputed root must match the header's claim.
-        if (computeRootHash(ctx, false) != ctx.rootHashBefore) revert InitialRootHashMismatch();
+        ctx.rootHashBefore = computeRootHash(ctx);
 
         newOffset = cursor;
     }
@@ -270,13 +243,12 @@ library StepLog {
         }
     }
 
-    /// Hashes each page lazily into ctx.pageHashes, then folds the tree.
-    /// `useAfter` picks each node's hashAfter (true) or hashBefore (false).
+    /// Hashes each page lazily into ctx.pageHashes, then folds the tree over its current state.
     /// A zero pageHashes slot means "needs hashing": slots start zero, and every write zeroes the
-    /// written page's slot (findPageForWrite). So the pre-state call hashes all pages and the
-    /// post-state call rehashes only the pages the operation wrote; clean pages keep the hash the
-    /// pre-state call already validated against rootHashBefore, byte-identical after the step.
-    function computeRootHash(Context memory ctx, bool useAfter) internal pure returns (bytes32) {
+    /// written page's slot (findPageForWrite). So the decode-time call hashes all pages and the
+    /// post-state call rehashes only the pages the operation wrote. Node slots are used as they
+    /// stand; replayed bulk writes keep them current.
+    function computeRootHash(Context memory ctx) internal pure returns (bytes32) {
         uint256 pageCnt = ctx.pageIndices.length;
         for (uint256 i = 0; i < pageCnt; i++) {
             if (ctx.pageHashes[i] == bytes32(0)) {
@@ -293,15 +265,11 @@ library StepLog {
             uint8(
                 EmulatorConstants.HASH_TREE_LOG2_ROOT_SIZE
                     - EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE
-            ), // log2PageCount
-            useAfter
+            ) // log2PageCount
         );
         if (c.nextPage != pageCnt) revert TooManyPages();
         if (c.nextNode != ctx.nodes.length) revert TooManyNodes();
         if (c.nextSibling != ctx.siblings.length) revert TooManySiblings();
-        if (useAfter) {
-            checkAllNodesConsumed(ctx);
-        }
         return root;
     }
 
@@ -313,14 +281,12 @@ library StepLog {
 
     /// Recursively computes the Merkle hash of one subtree, descending until each
     /// covered region resolves to a logged page, node, or sibling. Returns that hash.
-    /// @param c        page/node/sibling cursors, advanced in place as entries are consumed
-    /// @param useAfter pick each matched node's hashAfter (post-state) over hashBefore (pre-state)
+    /// @param c page/node/sibling cursors, advanced in place as entries are consumed
     function computeSubtreeHash(
         Context memory ctx,
         TreeWalkCursors memory c,
         uint64 pageIndex,
-        uint8 log2PageCount,
-        bool useAfter
+        uint8 log2PageCount
     ) private pure returns (bytes32) {
         uint256 subtreeStartAddr = uint256(pageIndex) << EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
         uint8 subtreeLog2Size = log2PageCount + EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
@@ -343,16 +309,14 @@ library StepLog {
                 && ctx.nodes[c.nextNode].log2Size == subtreeLog2Size
         ) {
             // The subtree is fully covered by a node; consume it and return its hash.
-            NodeEntry memory n = ctx.nodes[c.nextNode++];
-            return useAfter ? n.hashAfter : n.hashBefore;
+            return ctx.nodes[c.nextNode++].hash;
         }
 
         if (log2PageCount > 0) {
             // The subtree is partially covered by pages/nodes, so recurse to the left and right halves.
-            bytes32 left = computeSubtreeHash(ctx, c, pageIndex, log2PageCount - 1, useAfter);
+            bytes32 left = computeSubtreeHash(ctx, c, pageIndex, log2PageCount - 1);
             uint64 halfwayPageIndex = pageIndex + (uint64(1) << (log2PageCount - 1));
-            bytes32 right =
-                computeSubtreeHash(ctx, c, halfwayPageIndex, log2PageCount - 1, useAfter);
+            bytes32 right = computeSubtreeHash(ctx, c, halfwayPageIndex, log2PageCount - 1);
             // combine through the EVM scratch space (0x00-0x40) rather than
             // abi.encodePacked, which would allocate a fresh buffer per tree node
             // (~100 nodes per verify); same idiom as HashTree.merkleTreeHash
@@ -366,18 +330,6 @@ library StepLog {
         }
         // Leaf: must be a page (nodes have log2Size > HASH_TREE_LOG2_PAGE_SIZE).
         return ctx.pageHashes[c.nextPage++];
-    }
-
-    /// Assert every witnessed node was consumed by a semantic write during replay.
-    /// Post-state soundness: each node's hashAfter is taken from the wire and folded into
-    /// rootHashAfter, so an unconsumed node would inject an arbitrary post-state subtree. Every node
-    /// must have been looked up by a semantic write (reset/cmio); a uarch step writes only pages, so it
-    /// must carry no nodes at all. computeRootHash(true) calls this; a reverted operation substitutes a
-    /// recorded root instead of recomputing it, so it must call this explicitly to keep the guarantee.
-    function checkAllNodesConsumed(Context memory ctx) internal pure {
-        if (ctx.consumedNodes != ctx.nodes.length) {
-            revert UnconsumedNodes(ctx.consumedNodes, ctx.nodes.length);
-        }
     }
 
     /// Returns a raw memory pointer to byte `paddr` inside ctx.pageData. Callers consume the pointer

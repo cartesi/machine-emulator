@@ -19,9 +19,11 @@ Failure-mode tests for cartesi.machine:verify_step.
 
 Three flavors of failure are exercised:
 
-  - Layer 2 argument checks (caller-belief mismatch with the log header).
-  - Layer 1 / parse-layer corruption (signature, counts, page/sibling
-    structure) in the replay_step_state_access constructor.
+  - Claim checks: a wrong root-hash-before argument is rejected against the
+    recomputed witness root; wrong-after and wrong-count claims surface as
+    return-value mismatches the caller detects.
+  - Parse-layer corruption (signature, counts, page/sibling structure) in
+    the replay_step_state_access constructor.
   - Interpretation-time adversarial logs that are merkle-self-consistent
     but still must be rejected during replay.
 
@@ -134,16 +136,9 @@ end
 
 -- Common pattern: produce a valid log, corrupt it via `mutate`, expect
 -- verify_step to fail with an error containing `expected_substring`.
-local function expect_corruption_error(expected_substring, mutate, verify_overrides)
+local function expect_corruption_error(expected_substring, mutate)
     with_valid_log(function(filename, root_hash_before, root_hash_after)
-        local args = verify_overrides or {}
-        local ok, err = verify_corrupted(
-            filename,
-            mutate,
-            args.root_hash_before or root_hash_before,
-            args.mcycle_count or MCYCLE_COUNT,
-            args.root_hash_after or root_hash_after
-        )
+        local ok, err = verify_corrupted(filename, mutate, root_hash_before, MCYCLE_COUNT, root_hash_after)
         expect.falsy(ok)
         expect.truthy(err and err:find(expected_substring, 1, true), err)
     end)
@@ -152,7 +147,7 @@ end
 --------------------------------------------------------------------------------
 
 describe("verify_step", function()
-    describe("argument validation (Layer 2)", function()
+    describe("argument validation", function()
         it("rejects a wrong root_hash_before argument", function()
             with_valid_log(function(filename)
                 local ok, err = pcall(function()
@@ -171,13 +166,14 @@ describe("verify_step", function()
             end)
         end)
 
-        it("rejects a wrong mcycle_count argument", function()
-            with_valid_log(function(filename, root_hash_before)
-                local ok, err = pcall(function()
-                    cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT + 1)
+        it("cannot reach the true final hash with a wrong mcycle_count argument", function()
+            with_valid_log(function(filename, root_hash_before, root_hash_after)
+                -- A different cycle count replays a different transition: it either runs past
+                -- the witness and throws, or reaches an intermediate state with another hash.
+                local ok, obtained = pcall(function()
+                    return cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT + 1)
                 end)
-                expect.falsy(ok)
-                expect.truthy(err and err:find("mcycle count does not match", 1, true), err)
+                expect.truthy(not ok or obtained ~= root_hash_after)
             end)
         end)
     end)
@@ -208,12 +204,6 @@ describe("verify_step", function()
         it("rejects an unsupported hash function type", function()
             expect_corruption_error("unsupported hash function type", function(log_data)
                 log_data.hash_function = 0xffff
-            end)
-        end)
-
-        it("rejects a logged requested_cycle_count that disagrees with the argument", function()
-            expect_corruption_error("mcycle count does not match", function(log_data)
-                log_data.requested_cycle_count = MCYCLE_COUNT + 1
             end)
         end)
 
@@ -250,7 +240,7 @@ describe("verify_step", function()
 
         -- Flip the declared hash function on an otherwise valid Keccak log and expect the
         -- policy error: the check must fire at header parse, before the pre-root recompute
-        -- turns the mismatch into an unhelpful "initial root hash mismatch".
+        -- turns the mismatch into an unhelpful root-hash-before mismatch.
         local function expect_sha256_rejection(produce, verify)
             local filename, root_hash_before, root_hash_after = produce()
             local corrupted = os.tmpname()
@@ -335,8 +325,8 @@ describe("verify_step", function()
             end)
         end)
 
-        it("rejects modified page data via initial root hash mismatch", function()
-            expect_corruption_error("initial root hash mismatch", function(log_data)
+        it("rejects modified page data via the root hash before check", function()
+            expect_corruption_error("root hash before does not match step log", function(log_data)
                 log_data.pages[1].data = string.reverse(log_data.pages[1].data)
             end)
         end)
@@ -355,21 +345,7 @@ describe("verify_step", function()
                     },
                 }
                 log_data.siblings = { BAD_HASH }
-            end, { root_hash_after = BAD_HASH })
-        end)
-    end)
-
-    describe("root hash validation (Layer 1)", function()
-        it("rejects a corrupted logged root_hash_before", function()
-            expect_corruption_error("initial root hash mismatch", function(log_data)
-                log_data.root_hash_before = BAD_HASH
-            end, { root_hash_before = BAD_HASH })
-        end)
-
-        it("rejects a corrupted logged root_hash_after", function()
-            expect_corruption_error("final root hash mismatch", function(log_data)
-                log_data.root_hash_after = BAD_HASH
-            end, { root_hash_after = BAD_HASH })
+            end)
         end)
     end)
 
@@ -382,48 +358,55 @@ describe("verify_step", function()
                     data = last.data,
                     scratch_hash = last.scratch_hash,
                 })
-            end, { root_hash_after = BAD_HASH })
+            end)
         end)
 
         it("rejects a removed page that frees a sibling slot", function()
             expect_corruption_error("too many sibling hashes in log", function(log_data)
                 table.remove(log_data.pages)
-            end, { root_hash_after = BAD_HASH })
+            end)
         end)
 
         it("rejects a removed sibling hash", function()
             expect_corruption_error("too few sibling hashes in log", function(log_data)
                 table.remove(log_data.siblings)
-            end, { root_hash_after = BAD_HASH })
+            end)
         end)
 
         it("rejects an extra sibling hash", function()
             expect_corruption_error("too many sibling hashes in log", function(log_data)
                 table.insert(log_data.siblings, BAD_HASH)
-            end, { root_hash_after = BAD_HASH })
+            end)
         end)
 
-        it("rejects a modified sibling hash via initial root hash mismatch", function()
-            expect_corruption_error("initial root hash mismatch", function(log_data)
+        it("rejects a modified sibling hash via the root hash before check", function()
+            expect_corruption_error("root hash before does not match step log", function(log_data)
                 log_data.siblings[1] = BAD_HASH
-            end, { root_hash_after = BAD_HASH })
+            end)
         end)
 
         it("rejects an empty sibling list", function()
             expect_corruption_error("too few sibling hashes in log", function(log_data)
                 log_data.siblings = {}
-            end, { root_hash_after = BAD_HASH })
+            end)
         end)
     end)
 
     describe("node validation", function()
-        -- A uarch step writes only pages, so it consumes no nodes. Converting a sibling
-        -- subtree into an unchanged node keeps the pre-state root identical but leaves a
-        -- node no write consumes; its hash_after is folded into the post-state root
-        -- verbatim, so the replayer must reject it.
-        it("rejects an unconsumed subtree-write node", function()
-            expect_corruption_error("unconsumed node in step log", function(log_data)
-                test_util.inject_unconsumed_node(log_data)
+        -- A node no write touches is an unchanged region: its slot folds into both roots
+        -- unmodified. Converting a sibling subtree into such a node must not change the
+        -- outcome of verification.
+        it("accepts an untouched node as an unchanged region", function()
+            with_valid_log(function(filename, root_hash_before, root_hash_after)
+                local transformed = filename .. "-node"
+                test_util.copy_step_log(filename, transformed, function(log_data)
+                    test_util.inject_unchanged_node(log_data)
+                end)
+                local _ <close> = test_util.scope_exit(function()
+                    os.remove(transformed)
+                end)
+                local obtained = cartesi.machine:verify_step(root_hash_before, transformed, MCYCLE_COUNT)
+                expect.truthy(obtained == root_hash_after)
             end)
         end)
 
@@ -432,7 +415,7 @@ describe("verify_step", function()
         it("rejects a node whose log2 size is out of range", function()
             expect_corruption_error("node log2 size out of range", function(log_data)
                 log_data.nodes = {
-                    { address = 0, log2_size = LOG2_ROOT_SIZE + 1, hash_before = BAD_HASH, hash_after = BAD_HASH },
+                    { address = 0, log2_size = LOG2_ROOT_SIZE + 1, hash = BAD_HASH },
                 }
             end)
         end)
@@ -440,12 +423,7 @@ describe("verify_step", function()
         it("rejects a node whose address is not aligned to its size", function()
             expect_corruption_error("node address not aligned to its size", function(log_data)
                 log_data.nodes = {
-                    {
-                        address = PAGE_SIZE,
-                        log2_size = LOG2_PAGE_SIZE + 1,
-                        hash_before = BAD_HASH,
-                        hash_after = BAD_HASH,
-                    },
+                    { address = PAGE_SIZE, log2_size = LOG2_PAGE_SIZE + 1, hash = BAD_HASH },
                 }
             end)
         end)
@@ -455,12 +433,7 @@ describe("verify_step", function()
                 -- A two-page-aligned node covering the first witnessed page's pair overlaps it.
                 local pair_index = log_data.pages[1].index & ~1
                 log_data.nodes = {
-                    {
-                        address = pair_index << LOG2_PAGE_SIZE,
-                        log2_size = LOG2_PAGE_SIZE + 1,
-                        hash_before = BAD_HASH,
-                        hash_after = BAD_HASH,
-                    },
+                    { address = pair_index << LOG2_PAGE_SIZE, log2_size = LOG2_PAGE_SIZE + 1, hash = BAD_HASH },
                 }
             end)
         end)
@@ -537,7 +510,6 @@ describe("verify_step", function()
             for i, p in ipairs(log.pages) do
                 indices[i] = p.index
             end
-            log.root_hash_before = new_root
             log.siblings = get_siblings_for_pages(fresh, indices)
 
             local adversarial = os.tmpname()

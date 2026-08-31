@@ -52,14 +52,20 @@ contract RejectFixturesTest is ManifestParser {
         for (uint256 i = 0; i < rows.length; i++) {
             bytes memory log =
                 vm.readFileBinary(string.concat(REJECT_SEND_CMIO_RESPONSE_DIR, "/", rows[i].name));
-            armExpected(rows[i].expectError);
+            if (isRootAfterMismatchTag(rows[i].expectError)) {
+                bytes32 obtained = this.verifyCmio(
+                    log,
+                    rows[i].rootHashBefore,
+                    rows[i].reason,
+                    rows[i].data,
+                    rows[i].revertRootHash
+                );
+                assertTrue(obtained != rows[i].rootHashAfter, "forged transition must not verify");
+                continue;
+            }
+            expectRevertFor(rows[i].expectError);
             this.verifyCmio(
-                log,
-                rows[i].rootHashBefore,
-                rows[i].reason,
-                rows[i].data,
-                rows[i].revertRootHash,
-                rows[i].rootHashAfter
+                log, rows[i].rootHashBefore, rows[i].reason, rows[i].data, rows[i].revertRootHash
             );
         }
     }
@@ -84,9 +90,7 @@ contract RejectFixturesTest is ManifestParser {
         // The node is sized for 64 KB; claim a smaller supra-page write (4097 B -> log2 13).
         bytes memory data = new bytes(4097);
         vm.expectPartialRevert(StateAccess.WriteMemoryNodeWrongSize.selector);
-        this.verifyCmio(
-            log, big.rootHashBefore, big.reason, data, big.revertRootHash, big.rootHashAfter
-        );
+        this.verifyCmio(log, big.rootHashBefore, big.reason, data, big.revertRootHash);
     }
 
     function replayUarch(Kind kind) internal {
@@ -94,34 +98,45 @@ contract RejectFixturesTest is ManifestParser {
         require(rows.length > 0, "no uarch reject rows for kind");
         for (uint256 i = 0; i < rows.length; i++) {
             bytes memory log = vm.readFileBinary(string.concat(UARCH_DIR, "/", rows[i].name));
-            armExpected(rows[i].expectError);
+            if (isRootAfterMismatchTag(rows[i].expectError)) {
+                bytes32 obtained = kind == Kind.Cycle
+                    ? this.verifyCycle(log, rows[i].rootHashBefore)
+                    : this.verifyReset(log, rows[i].rootHashBefore);
+                assertTrue(obtained != rows[i].rootHashAfter, "forged transition must not verify");
+                continue;
+            }
+            expectRevertFor(rows[i].expectError);
             if (kind == Kind.Cycle) {
-                this.verifyCycle(
-                    log, rows[i].rootHashBefore, rows[i].requestedCycleCount, rows[i].rootHashAfter
-                );
+                this.verifyCycle(log, rows[i].rootHashBefore);
             } else {
-                this.verifyReset(log, rows[i].rootHashBefore, rows[i].rootHashAfter);
+                this.verifyReset(log, rows[i].rootHashBefore);
             }
         }
+    }
+
+    /// The one tag whose rejection is not a revert: the verifier returns an obtained root
+    /// the caller's comparison must refuse.
+    function isRootAfterMismatchTag(string memory tag) internal pure returns (bool) {
+        return keccak256(bytes(tag)) == keccak256("root_after_mismatch");
     }
 
     /// Map the reject tag to the Solidity error it must revert with. Custom errors match by
     /// selector (arguments vary); the interpreter traps share one RuntimeError selector, so
     /// they match the exact message that distinguishes them.
-    function armExpected(string memory tag) internal {
+    function expectRevertFor(string memory tag) internal {
         bytes32 t = keccak256(bytes(tag));
         if (t == keccak256("illegal_instruction")) {
-            expectRuntime("illegal instruction");
+            expectRuntimeError("illegal instruction");
         } else if (t == keccak256("uarch_aborted")) {
-            expectRuntime("uarch aborted");
+            expectRuntimeError("uarch aborted");
         } else if (t == keccak256("unsupported_ecall")) {
-            expectRuntime("unsupported ecall function");
+            expectRuntimeError("unsupported ecall function");
         } else {
             vm.expectPartialRevert(selectorFor(t));
         }
     }
 
-    function expectRuntime(string memory message) internal {
+    function expectRuntimeError(string memory message) internal {
         vm.expectRevert(abi.encodeWithSelector(StateAccess.RuntimeError.selector, message));
     }
 
@@ -135,44 +150,24 @@ contract RejectFixturesTest is ManifestParser {
             return StepLog.NodeLog2SizeOutOfRange.selector;
         }
         if (t == keccak256("nonzero_scratch_hash")) return StepLog.NonZeroScratchHash.selector;
+        if (t == keccak256("too_few_siblings")) return StepLog.TooFewSiblings.selector;
         if (t == keccak256("page_count_zero")) return StepLog.PageCountZero.selector;
         if (t == keccak256("page_index_not_ascending")) return StepLog.PagesNotInOrder.selector;
         if (t == keccak256("entries_overlap")) return StepLog.OverlappingEntries.selector;
-        if (t == keccak256("unconsumed_node")) return StepLog.UnconsumedNodes.selector;
-        if (t == keccak256("initial_root_mismatch")) {
-            return StepLog.InitialRootHashMismatch.selector;
-        }
-        if (t == keccak256("nonzero_cycle_count")) {
-            return Verify.RequestedCycleCountMustBeZero.selector;
-        }
         if (t == keccak256("root_before_mismatch")) return Verify.RootHashBeforeMismatch.selector;
-        if (t == keccak256("root_after_mismatch")) return Verify.RootHashAfterMismatch.selector;
-        if (t == keccak256("cycle_count_mismatch")) return Verify.UarchCycleCountMismatch.selector;
-        if (t == keccak256("final_root_mismatch")) return Verify.FinalRootHashMismatch.selector;
-        if (t == keccak256("reset_node_wrong_posthash")) {
-            return StateAccess.ResetUarchWrongPostHash.selector;
-        }
-        if (t == keccak256("cmio_node_hash_mismatch")) {
-            return StateAccess.WriteMemoryHashMismatch.selector;
-        }
         revert("unmapped reject tag");
     }
 
     // External wrappers so `log`/`data` arrive as calldata for StepLog.decode.
 
-    function verifyCycle(
-        bytes calldata log,
-        bytes32 rootBefore,
-        uint64 cycleCount,
-        bytes32 rootAfter
-    ) external pure {
+    function verifyCycle(bytes calldata log, bytes32 rootBefore) external pure returns (bytes32) {
         StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifyStep(ctx, rootBefore, cycleCount, rootAfter);
+        return Verify.verifyStep(ctx, rootBefore);
     }
 
-    function verifyReset(bytes calldata log, bytes32 rootBefore, bytes32 rootAfter) external pure {
+    function verifyReset(bytes calldata log, bytes32 rootBefore) external pure returns (bytes32) {
         StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifyReset(ctx, rootBefore, rootAfter);
+        return Verify.verifyReset(ctx, rootBefore);
     }
 
     function verifyCmio(
@@ -180,10 +175,9 @@ contract RejectFixturesTest is ManifestParser {
         bytes32 rootBefore,
         uint16 reason,
         bytes calldata data,
-        bytes32 revertRootHash,
-        bytes32 rootAfter
-    ) external pure {
+        bytes32 revertRootHash
+    ) external pure returns (bytes32) {
         StepLog.Context memory ctx = StepLog.decode(log);
-        Verify.verifySendCmioResponse(ctx, rootBefore, reason, data, revertRootHash, rootAfter);
+        return Verify.verifySendCmioResponse(ctx, rootBefore, reason, data, revertRootHash);
     }
 }

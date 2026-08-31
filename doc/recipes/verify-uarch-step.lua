@@ -17,14 +17,19 @@ machine:log_step_uarch(1, "uarch-step.log")
 local hash_after = machine:get_root_hash()
 
 -- Potentially provoke a verification failure. flip:<offset> flips one bit inside the log
--- file; lie gives the verifier a false state hash to start from.
+-- file; truncate chops the log's last bytes; lie gives the verifier a false state hash
+-- to start from.
 local offset = arg[4] and arg[4]:match("^flip:(%d+)$")
-if offset then
+if offset or arg[4] == "truncate" then
     local f = assert(io.open("uarch-step.log", "rb"))
     local log = f:read("a")
     f:close()
-    offset = tonumber(offset)
-    log = log:sub(1, offset - 1) .. string.char(log:byte(offset) ~ 1) .. log:sub(offset + 1)
+    if offset then
+        offset = tonumber(offset)
+        log = log:sub(1, offset - 1) .. string.char(log:byte(offset) ~ 1) .. log:sub(offset + 1)
+    else
+        log = log:sub(1, #log - 32)
+    end
     f = assert(io.open("uarch-step.log", "wb"))
     f:write(log)
     f:close()

@@ -26,7 +26,6 @@ fn expected_message(tag: &str) -> &'static str {
         "bad_signature" => "invalid step log signature",
         "unsupported_hash_function" => "unsupported hash function type",
         "nonzero_scratch_hash" => "scratch hash area is not zero",
-        "initial_root_mismatch" => "initial root hash mismatch",
         "page_count_zero" => "page count is zero",
         "page_count_exceeds_size" => "page count exceeds step log size",
         "sibling_count_mismatch" => "sibling count does not match step log size",
@@ -91,7 +90,7 @@ fn test_guest_rejects_forged_logs() {
     assert!(checked > 0, "no machine reject rows in {}", dir.display());
 }
 
-/// Layer-2: a valid log proven against a claim that disagrees with the journal must be
+/// A valid log proven against a claim that disagrees with the journal must be
 /// rejected host-side. Reuses a positive fixture with one perturbed argument.
 #[test]
 fn test_host_rejects_wrong_belief() {
@@ -124,9 +123,17 @@ fn test_host_rejects_wrong_belief() {
         try_prove(REPLAY_STEP_ELF, &bad, p, cycle, &after).expect_err("wrong root_before accepted");
     assert!(e.contains("root_hash_before mismatch"), "{e:?}");
 
-    let e = try_prove(REPLAY_STEP_ELF, &before, p, cycle + 1, &after)
+    // A wrong cycle count replays a different transition. Probe with fewer cycles: the
+    // replay stops at an intermediate state whose hash cannot match the claimed root
+    // after. (More cycles would be no probe at all: the machine halts at the recorded
+    // count, and running longer through the halt fixed point is the same transition.)
+    assert!(
+        cycle > 1,
+        "need a multi-cycle fixture to probe a wrong count"
+    );
+    let e = try_prove(REPLAY_STEP_ELF, &before, p, cycle - 1, &after)
         .expect_err("wrong cycle accepted");
-    assert!(e.contains("mcycle_count mismatch"), "{e:?}");
+    assert!(e.contains("root_hash_after mismatch"), "{e:?}");
 
     let mut bad = after;
     bad[0] ^= 0xff;

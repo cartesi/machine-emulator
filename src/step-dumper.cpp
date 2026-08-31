@@ -15,7 +15,6 @@
 //
 
 #include <cstdint>
-#include <exception>
 #include <string>
 
 #include "os-filesystem.hpp"
@@ -26,26 +25,18 @@
 
 namespace cartesi {
 
-std::string dump_step_uarch(const std::string &filename) {
+std::string dump_step_uarch(const std::string &filename, uint64_t uarch_cycle_count) {
     auto data_length = os::file_size(filename);
     auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
     uarch_replay_step_state_access<step_dumper>::context context;
     uarch_replay_step_state_access<step_dumper> a(context, mapped_data.get_ptr(), data_length);
     // uarch_interpret's cycle-limit bookkeeping would open the printout with redundant uarch.cycle reads
-    for (uint64_t i = 0; i < context.log.requested_cycle_count; ++i) {
+    for (uint64_t i = 0; i < uarch_cycle_count; ++i) {
         if (uarch_step(a) != UArchStepStatus::Success) {
             break;
         }
     }
-    auto printout = context.printer.str();
-    try {
-        a.finish();
-    } catch (const std::exception &e) {
-        printout += "WARNING: replay does not verify: ";
-        printout += e.what();
-        printout += '\n';
-    }
-    return printout;
+    return context.printer.str();
 }
 
 } // namespace cartesi

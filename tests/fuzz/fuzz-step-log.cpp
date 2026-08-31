@@ -24,9 +24,8 @@
 /// header parsing, the per-count size bounds, the page/node ordering and
 /// disjointness validation, and the initial-root Merkle recompute.
 ///
-/// Scope: the parser and pre-state validation only. Reaching the replay behind
-/// it requires an image whose recomputed Merkle root matches the header claim,
-/// which mutation cannot produce from valid seeds without hash preimages.
+/// Scope: the parser and pre-state validation only; the replay behind it needs
+/// verifier arguments this harness does not model.
 /// Seed the corpus with recorded fixture logs (make fuzz-step-log-seed-corpus)
 /// so mutations explore the validation paths deeply instead of dying on the
 /// signature check.
@@ -53,7 +52,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         // queries and the post-state walk; both must be exception-safe.
         log.try_find_page(log.pages[0].index << 12);
         log.try_find_node(0);
-        log.compute_root_hash(true);
+        log.compute_root_hash();
     } catch (const std::exception &) {
         // rejection is the expected outcome for nearly every input
     }

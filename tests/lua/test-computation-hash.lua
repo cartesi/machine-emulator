@@ -171,6 +171,12 @@ local function check_empty_mcycle(case)
         filesystem.read_file(artifact_dir .. "/" .. case.result) == double_hash(machine:get_root_hash(), height),
         case.id .. ": empty-epoch independent reconstruction differs"
     )
+    local forest = hash_tree.frontier_forest(height, "keccak256")
+    hash_tree.frontier_forest_pad_back(forest, machine:get_root_hash(), 1 << height)
+    assert(
+        hash_tree.frontier_forest_get_root_hash(forest) == double_hash(machine:get_root_hash(), height),
+        case.id .. ": forest-assembled empty epoch differs"
+    )
 end
 
 local function check_small_mcycle(case)
@@ -192,6 +198,13 @@ local function check_small_mcycle(case)
     assert(
         filesystem.read_file(artifact_dir .. "/" .. case.result) == hash_tree.frontier_get_root_hash(frontier),
         case.id .. ": independently assembled mcycle tree differs"
+    )
+    local forest = hash_tree.frontier_forest(height, "keccak256")
+    hash_tree.frontier_forest_push_back(forest, sample_hash)
+    hash_tree.frontier_forest_pad_back(forest, final_hash, (1 << height) - 1)
+    assert(
+        hash_tree.frontier_forest_get_root_hash(forest) == hash_tree.frontier_get_root_hash(frontier),
+        case.id .. ": forest-assembled mcycle tree differs"
     )
 end
 
@@ -232,6 +245,42 @@ local function uarch_period_root(collected, log2_period, log2_bundles_per_mcycle
         )
     end
     return hash_tree.frontier_get_root_hash(frontier)
+end
+
+-- The frontier-forest counterpart of uarch_mcycle_root: one mcycle group assembled from the
+-- real bundles, the repeated halt bundle, and the reset-ending bundle, as a complete forest.
+local function forest_uarch_mcycle_group(collected, mcycle_index, log2_bundles_per_mcycle)
+    local first = collected.mcycle_hash_offsets[mcycle_index]
+    local last = collected.mcycle_hash_offsets[mcycle_index + 1] - 1
+    local group = hash_tree.frontier_forest(log2_bundles_per_mcycle, "keccak256")
+    hash_tree.frontier_forest_append(group, collected.hashes, first, last - 2)
+    local execution_count = last - first - 1
+    hash_tree.frontier_forest_pad_back(
+        group,
+        collected.hashes[last - 1],
+        (1 << log2_bundles_per_mcycle) - 1 - execution_count
+    )
+    hash_tree.frontier_forest_push_back(group, collected.hashes[last])
+    return group
+end
+
+-- The frontier-forest counterpart of uarch_period_root: groups append as complete forests,
+-- and a fixed point repeats the last group across the remainder of the period.
+local function forest_uarch_period_root(collected, log2_period, log2_bundles_per_mcycle)
+    local period = 1 << log2_period
+    local group_count = math.min(#collected.mcycle_hash_offsets - 1, period)
+    local forest = hash_tree.frontier_forest(log2_period + log2_bundles_per_mcycle, "keccak256")
+    for i = 1, group_count do
+        hash_tree.frontier_forest_push_back(forest, forest_uarch_mcycle_group(collected, i, log2_bundles_per_mcycle))
+    end
+    if group_count < period then
+        hash_tree.frontier_forest_pad_back(
+            forest,
+            forest_uarch_mcycle_group(collected, group_count, log2_bundles_per_mcycle),
+            period - group_count
+        )
+    end
+    return hash_tree.frontier_forest_get_root_hash(forest)
 end
 
 local function check_small_uarch(case)
@@ -278,6 +327,11 @@ local function check_small_uarch(case)
         filesystem.read_file(artifact_dir .. "/" .. case.result) == hash_tree.frontier_get_root_hash(period_frontier),
         case.id .. ": independently assembled uarch tree differs"
     )
+    assert(
+        forest_uarch_period_root(collected, case.geometry.log2_mcycle_period, log2_bundles_per_mcycle)
+            == hash_tree.frontier_get_root_hash(period_frontier),
+        case.id .. ": forest-assembled uarch tree differs"
+    )
 end
 
 local function check_uarch_mcycle_overflow(case)
@@ -306,6 +360,11 @@ local function check_uarch_mcycle_overflow(case)
         filesystem.read_file(artifact_dir .. "/" .. case.result)
             == uarch_period_root(collected, case.geometry.log2_mcycle_period, log2_bundles_per_mcycle),
         case.id .. ": independently assembled overflow window differs"
+    )
+    assert(
+        forest_uarch_period_root(collected, case.geometry.log2_mcycle_period, log2_bundles_per_mcycle)
+            == uarch_period_root(collected, case.geometry.log2_mcycle_period, log2_bundles_per_mcycle),
+        case.id .. ": forest-assembled overflow window differs"
     )
 end
 

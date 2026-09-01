@@ -4613,14 +4613,19 @@ The three new outputs of this epoch form the active region in the middle, filled
 The seven leaves to the right are pristine padding, held as a four-leaf, a two-leaf, and a single-leaf subtree, filled gray at their roots.
 Only the hashes actually held are filled, so every node below a frontier or pristine root is left empty, outlined in its subtree's color, because the frontier keeps each whole subtree as that one root hash and never materializes the leaves under it.
 
-The function `frontier_push_back` folds one new output leaf into the frontier:
+The function `frontier_push_back` folds new output leaves into the frontier:
 ```{.lua replace=proof_module/source/frontier_push_back title="hash-tree.lua (excerpt)"}
 ```
 Adding an output advances the leaf count from *c* to *c*+1.
 In binary that clears a run of low set bits and sets the next one up, an ordinary carry.
-The function mirrors the carry, combining the new leaf with the present low levels from the bottom up to the first empty one, clearing each, and storing the resulting hash at that first empty level.
-It is the root of the subtree covering exactly the leaves ending at the new output, the frontier entry the carry creates.
+The helper `carry_back` mirrors it, combining the new leaf with the present low levels from the bottom up to the first empty one, clearing each, and storing the resulting hash at that first empty level:
+```{.lua replace=proof_module/source/carry_back title="hash-tree.lua (excerpt)"}
+```
+The stored hash is the root of the subtree covering exactly the leaves ending at the new output, the frontier entry the carry creates.
 A level is combined only once every 2<sup>*l*</sup> outputs, so a long run of outputs costs constant work each, amortized.
+The function `frontier_append` appends `hashes[first..last]` in order as maximal aligned complete subtrees, each hashed into one entry and carried once:
+```{.lua replace=proof_module/source/frontier_append title="hash-tree.lua (excerpt)"}
+```
 
 The function `frontier_get_root_hash` returns the root hash of the tree, padded with zero leaves to completion:
 ```{.lua replace=proof_module/source/frontier_get_root_hash title="hash-tree.lua (excerpt)"}
@@ -5309,8 +5314,8 @@ Two observations keep them small.
 
 First, almost all leaves are repetitions.
 The calculator is done with each input within about 50 million mcycles, and everything after that, out to the input's 2<sup>[]{replace=rollup_constants/log2_max_mcycles_per_advance_state code=no}</sup>th mcycle, repeats one state hash.
-The claim tree therefore stores *runs*, each a node hash and how many consecutive times it appears.
-The root of a subtree holding 2<sup>k</sup> copies of the same node takes k hashes by repeated squaring, cached per node, so a run of any length costs nothing to stand under a query (`get_runs_node` in `prtu.lua`).
+The claim is therefore stored as a *frontier forest* (`hash_tree.frontier_forest()`), a frontier whose occupied levels retain the complete subtree standing there rather than only its root hash, so the finished tree can also answer node and proof queries.
+Appended values accumulate in a pending partial array whose last value implicitly fills every position padded after it, and each level of a materialized subtree stores its distinct nodes plus the first repeated one, so a repetition of any length costs one stored value and one hash per level.
 ```{.lua key=prt_runs_node include=prtu.lua replace=null}
 ```
 ```{.lua key=prt_story include=prtu.lua/story replace=null}
@@ -5320,13 +5325,14 @@ Second, the stored nodes need not be the leaves.
 The machine can deliver the sampled hashes in *bundles*, one subtree root per 2<sup>4</sup> mcycle samples (or per 2<sup>16</sup> uarch transitions), which divides the nodes a player stores and carries by that much.
 Bundle roots are interior nodes of the claim tree, so the root is unchanged.
 The three inputs of our epoch fit in about nine thousand stored mcycle bundles, and one uarch span in about three thousand.
-When a dispute descends below a stored bundle, the player recovers the leaves under that one bundle by re-running a fork of the input's boundary machine through the bundle's window, and caches the result (`get_node` in `prtu.lua`).
-Only the bundles a dispute actually visits are ever expanded, and each costs one machine re-run.
+When a dispute descends below a stored bundle, the player opens it: a complete forest of the leaves under that one bundle, built by re-running a fork of the input's boundary machine through the bundle's window, exactly as a machine produces the disputed transition's logs.
+The claim tree checks the opened forest against the committed bundle root and caches it (`open_bundle` in `prtu.lua`).
+Only the bundles a dispute actually visits are ever opened, and each costs one machine re-run.
 
 The builds themselves stream out of the emulator.
 They follow the same collection contract as `cartesi-machine`'s computation-hash builders: each input owns a fixed-capacity segment, collection state threads across yields, and the final repeatable group returned at a fixed point fills the segment's remaining positions.
-The only different sink is PRT's run-compressed tree, which retains the nodes needed to answer later tournament queries.
-The mcycle build (`build_mcycle_claim` in `prt-player.lua`) advances the whole epoch once, folding each input's bundles into runs, padding each input's span with the fixed point where its guest stopped, and keeping a fork at each input boundary to anchor every later re-run.
+The only different sink is PRT's frontier forest, which retains the nodes needed to answer later tournament queries.
+The mcycle build (`build_mcycle_claim` in `prt-player.lua`) advances the whole epoch once, pushing each input's bundle roots into the outer forest, padding each input's span with the fixed point where its guest stopped, and keeping a fork at each input boundary to anchor every later re-run.
 The refinement re-run (`refine_mcycle_claim`) recovers one bundle's samples the same way.
 The uarch build (`build_uarch_claim`) expands one period, instruction by instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose stream already carries the halt repetitions compressed and the reset hashes marked.
 ```{.lua key=prt_build_mcycle_claim include=prt-player.lua replace=null}

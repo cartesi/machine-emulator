@@ -3488,9 +3488,7 @@ end
 -- entry fills every unfilled position in the tree segment reserved for the current input.
 local function mcycle_computation_hash_push_collected(self, collected)
     local count = umin(#collected.hashes, self.input_entry_capacity - self.input_entry_count)
-    for i = 1, count do
-        hash_tree.frontier_push_back(self.frontier, collected.hashes[i])
-    end
+    hash_tree.frontier_append(self.frontier, collected.hashes, 1, count + 1)
     self.input_entry_count = self.input_entry_count + count
     if not is_at_fixed_point(collected.break_reason) then return end
     assert(#collected.hashes > 0, "fixed-point mcycle collection has no final entry")
@@ -3612,14 +3610,12 @@ end
 -- The final two entries are the all-halted bundle and the bundle ending in the reset hash.
 -- Push the execution bundles, fill the remaining positions before the final one with copies of
 -- the all-halted bundle (possibly none), and close with the reset-ending bundle.
-local function uarch_cycle_computation_hash_push_mcycle(self, frontier, entries, first, last)
+local function uarch_cycle_computation_hash_push_mcycle(self, frontier, entries, mcycle_hashes_begin, mcycle_hashes_end)
     local bundle_capacity = 1 << self.log2_bundles_per_mcycle
-    local execution_bundle_count = last - first - 1
-    for i = first, last - 2 do
-        hash_tree.frontier_push_back(frontier, entries[i])
-    end
-    hash_tree.frontier_pad_back(frontier, entries[last - 1], bundle_capacity - 1 - execution_bundle_count)
-    hash_tree.frontier_push_back(frontier, entries[last])
+    local execution_bundle_count = mcycle_hashes_end - mcycle_hashes_begin - 2
+    hash_tree.frontier_append(frontier, entries, mcycle_hashes_begin, mcycle_hashes_end - 2)
+    hash_tree.frontier_pad_back(frontier, entries[mcycle_hashes_end - 2], bundle_capacity - 1 - execution_bundle_count)
+    hash_tree.frontier_push_back(frontier, entries[mcycle_hashes_end - 1])
 end
 
 -- Adds each machine cycle's entries to the uarch computation-hash tree and emits its root when
@@ -3635,7 +3631,7 @@ local function uarch_cycle_computation_hash_push_collected(self, collected)
             self.frontier,
             collected.hashes,
             mcycle_hash_offsets[i],
-            mcycle_hash_offsets[i + 1] - 1
+            mcycle_hash_offsets[i + 1]
         )
     end
     self.mcycle_count = self.mcycle_count + count
@@ -3647,7 +3643,7 @@ local function uarch_cycle_computation_hash_push_collected(self, collected)
             pad_frontier,
             collected.hashes,
             mcycle_hash_offsets[count],
-            mcycle_hash_offsets[count + 1] - 1
+            mcycle_hash_offsets[count + 1]
         )
         local pad_mcycle_root = hash_tree.frontier_get_root_hash(pad_frontier)
         hash_tree.frontier_pad_back(

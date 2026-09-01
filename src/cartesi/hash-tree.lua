@@ -138,7 +138,7 @@ end
 -- Folds one complete entry standing at level into the level array by the binary-carry
 -- update, combining with the present low levels up to the first empty one, O(1) amortized.
 -- The frontier carries root hashes and combines them with its hash function. The frontier
--- forest carries complete trees and combines them into hybrid nodes.
+-- forest carries complete trees and combines them into inner nodes.
 -- docs:begin carry_back
 local function carry_back(levels, level, entry, combine)
     while levels[level] do
@@ -424,14 +424,19 @@ end
 -- complete subtree at its declared height, or a completed forest. When a completed forest
 -- is appended, its full top entry is used as the complete tree value.
 
--- The private marker key identifying this module's array trees, hybrid nodes, and forests.
-local tree_marker = {}
-
-local function is_forest(value) return type(value) == "table" and value[tree_marker] == "forest" end
+local function is_forest(value) return type(value) == "table" and value.kind == "forest" end
 
 -- Array-tree levels contain raw hashes or complete trees at their base and raw hashes
 -- above it.
-local function array_value_root(value) return type(value) == "string" and value or value.root end
+local function value_hash(value) return type(value) == "string" and value or value.hash end
+
+-- Returns the value at a 0-based logical index, repeating the last stored value beyond
+-- the explicit prefix.
+local function array_value(values, index) return values[math.min(index + 1, #values)] end
+
+local function append_if(into, value)
+    if into then into[#into + 1] = value end
+end
 
 -- An array tree covers 2^log2_count base values at base_height, storing values[first..last]
 -- (at least one value). The last stored value fills every omitted position. Each level up to
@@ -439,87 +444,80 @@ local function array_value_root(value) return type(value) == "string" and value 
 -- level's end reads its last entry, so a repeated suffix of any length costs one hash per
 -- level.
 local function new_array_tree(hash_function, base_height, log2_count, values, first, last)
-    local levels = { [0] = table.move(values, first, last, 1, {}) }
+    local tree = { table.move(values, first, last, 1, {}) }
     local length = last - first + 1
-    for level = 1, log2_count do
-        local children = levels[level - 1]
+    for level = 2, log2_count + 1 do
+        local children = tree[level - 1]
         local parents = {}
-        local parent_length = math.min((length >> 1) + 1, 1 << (log2_count - level))
+        local parent_length = math.min((length >> 1) + 1, 1 << (log2_count - level + 1))
         for i = 1, parent_length do
-            local left = children[math.min(2 * i - 1, length)]
-            local right = children[math.min(2 * i, length)]
-            parents[i] = hash_function(array_value_root(left), array_value_root(right))
+            local left = array_value(children, 2 * i - 2)
+            local right = array_value(children, 2 * i - 1)
+            parents[i] = hash_function(value_hash(left), value_hash(right))
         end
-        levels[level] = parents
+        tree[level] = parents
         length = parent_length
     end
-    return {
-        [tree_marker] = "array",
-        height = base_height + log2_count,
-        base_height = base_height,
-        levels = levels,
-        root = array_value_root(levels[log2_count][1]),
-    }
+    tree.kind = "array"
+    tree.height = base_height + log2_count
+    tree.base_height = base_height
+    tree.hash = value_hash(tree[#tree][1])
+    return tree
 end
 
--- A hybrid node joins two equal-height trees produced by different regions or by a carry.
-local function new_hybrid_tree(hash_function, left, right)
-    assert(left.height == right.height, "hybrid children have different heights")
+-- An inner tree joins two equal-height trees produced by different regions or by a carry.
+local function new_inner_tree(hash_function, left, right)
+    assert(left.height == right.height, "inner children have different heights")
     return {
-        [tree_marker] = "hybrid",
+        kind = "inner",
         height = left.height + 1,
         left = left,
         right = right,
-        root = hash_function(left.root, right.root),
+        hash = hash_function(left.hash, right.hash),
     }
 end
 
--- The node hash at height log2_size, 0-based index, inside one tree. Descends through
--- hybrid nodes and tree base values. A raw base hash is opaque, so a query
--- below one fails.
-local function get_node(tree, index, log2_size)
-    while true do
-        local kind = tree[tree_marker]
-        if kind == "hybrid" then
-            if log2_size == tree.height then return tree.root end
-            local span = tree.height - 1 - log2_size
-            local branch = index >> span
-            index = index & ((1 << span) - 1)
-            tree = branch == 0 and tree.left or tree.right
-        elseif log2_size >= tree.base_height then
-            local level = tree.levels[log2_size - tree.base_height]
-            return array_value_root(level[math.min(index + 1, #level)])
+-- Descends along leaf_index until bit reaches stop_bit. When siblings is given, appends
+-- the path siblings from the root downward. A raw base hash is opaque below its height,
+-- so a query below one fails.
+local function descend(tree, leaf_index, bit, stop_bit, siblings)
+    if bit == stop_bit then return tree.hash end
+    if tree.kind == "inner" then
+        bit = bit >> 1
+        local child, sibling
+        if (leaf_index & bit) == 0 then
+            child, sibling = tree.left, tree.right
         else
-            local span = tree.base_height - log2_size
-            local base = tree.levels[0]
-            local value = base[math.min((index >> span) + 1, #base)]
-            assert(type(value) ~= "string", "the node is below an opaque hash")
-            index = index & ((1 << span) - 1)
-            tree = value
+            child, sibling = tree.right, tree.left
         end
+        append_if(siblings, sibling.hash)
+        return descend(child, leaf_index, bit, stop_bit, siblings)
     end
+
+    local level_index = 0
+    for level = #tree - 1, 1, -1 do
+        bit = bit >> 1
+        level_index = 2 * level_index
+        if (leaf_index & bit) ~= 0 then level_index = level_index + 1 end
+        local values = tree[level]
+        append_if(siblings, value_hash(array_value(values, level_index ~ 1)))
+        if bit == stop_bit then return value_hash(array_value(values, level_index)) end
+    end
+
+    local value = array_value(tree[1], level_index)
+    assert(type(value) ~= "string", "the node is below an opaque hash")
+    return descend(value, leaf_index, bit, stop_bit, siblings)
+end
+
+local function get_node(tree, index, height)
+    local stop_bit = 1 << height
+    return descend(tree, index << height, 1 << tree.height, stop_bit)
 end
 
 -- Collects the proof siblings of one leaf from the root downward. The caller supplies
 -- the temporary array and reverses it only after this descent succeeds.
 local function get_siblings(tree, index, siblings)
-    local kind = tree[tree_marker]
-    if kind == "hybrid" then
-        local span = tree.height - 1
-        local branch, low = index >> span, index & ((1 << span) - 1)
-        siblings[#siblings + 1] = (branch == 0 and tree.right or tree.left).root
-        return get_siblings(branch == 0 and tree.left or tree.right, low, siblings)
-    end
-    for log2_size = tree.height - 1, tree.base_height, -1 do
-        local level = tree.levels[log2_size - tree.base_height]
-        siblings[#siblings + 1] = array_value_root(level[math.min(((index >> log2_size) ~ 1) + 1, #level)])
-    end
-    if tree.base_height ~= 0 then
-        local base = tree.levels[0]
-        local value = base[math.min((index >> tree.base_height) + 1, #base)]
-        assert(type(value) ~= "string", "the leaf is below an opaque hash")
-        return get_siblings(value, index & ((1 << tree.base_height) - 1), siblings)
-    end
+    descend(tree, index, 1 << tree.height, 1, siblings)
     return siblings
 end
 
@@ -536,7 +534,7 @@ local function frontier_forest(log2_max_leaves, hash_type)
         "unsupported forest height"
     )
     local forest = {
-        [tree_marker] = "forest",
+        kind = "forest",
         hash_function = assert(cartesi[hash_type], "unsupported hash function"),
         height = log2_max_leaves,
         leaf_count = 0,
@@ -558,7 +556,7 @@ local function forest_hash_height(log2_hash_size)
 end
 
 -- Validates one raw hash or completed forest. A completed forest contributes its full
--- top entry, so forests never occur inside array or hybrid trees.
+-- top entry, so forests never occur inside array or inner trees.
 local function forest_value(forest, value, log2_hash_size)
     local declared_height = forest_hash_height(log2_hash_size)
     if type(value) == "string" then
@@ -583,14 +581,14 @@ end
 
 -- Materializes the pending values as maximal aligned complete subtrees. Each becomes an
 -- array tree, except that a single tree value is already the required tree. The trees
--- are folded into the levels, joining carries into hybrid nodes.
+-- are folded into the levels, joining carries into inner trees.
 local function forest_flush(forest)
     local pending = forest.pending
     if not pending then return end
     forest.pending = false
     local hash_function = forest.hash_function
     local values, stored = pending.values, #pending.values
-    local function join(left, right) return new_hybrid_tree(hash_function, left, right) end
+    local function join(left, right) return new_inner_tree(hash_function, left, right) end
     append_complete_subtrees(forest, pending.height + 1, #values + pending.pad_count, function(offset, added_height)
         local first = math.min(offset + 1, stored)
         local last = math.min(offset + (1 << added_height), stored)
@@ -682,20 +680,20 @@ end
 -- The root hash of a full forest, O(1), because completion has already flushed all pending
 -- work. Does not mutate the forest.
 local function frontier_forest_get_root_hash(forest)
-    return assert(forest[forest.height + 1], "the forest is not full").root
+    return assert(forest[forest.height + 1], "the forest is not full").hash
 end
 
--- The node hash at 0-based position index, height log2_size, following the machine API's
--- position-before-size argument order. Requires the forest to be full. Does not mutate the
+-- The node hash at 0-based position index and height, following the machine API's
+-- position-first argument order. Requires the forest to be full. Does not mutate the
 -- forest. O(log2_max_leaves).
-local function frontier_forest_get_node(forest, index, log2_size)
+local function frontier_forest_get_node(forest, index, height)
     local top = assert(forest[forest.height + 1], "the forest is not full")
-    assert(math.type(log2_size) == "integer" and log2_size >= 0 and log2_size <= forest.height, "invalid node height")
+    assert(math.type(height) == "integer" and height >= 0 and height <= forest.height, "invalid node height")
     assert(
-        math.type(index) == "integer" and index >= 0 and index < (1 << (forest.height - log2_size)),
+        math.type(index) == "integer" and index >= 0 and index < (1 << (forest.height - height)),
         "invalid node index"
     )
-    return get_node(top, index, log2_size)
+    return get_node(top, index, height)
 end
 
 -- Appends the proof siblings of one leaf, from the leaf upward, into the given array (a

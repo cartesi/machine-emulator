@@ -1,5 +1,5 @@
--- Checks the parts of the PRT game that need no machine. First the claim trees over runs, claim
--- proofs, and the match walk: two synthetic claims that differ at one leaf are walked down
+-- Checks the parts of the PRT game that need no machine. First the claim trees over frontier
+-- forests, claim proofs, and the match walk: two synthetic claims that differ at one leaf are walked down
 -- under every claim order, and the walk must isolate exactly that leaf, name what each claim
 -- committed to there, and carry a proof of the agreed state before it in the final response.
 -- Then the referee server, driven over loopback sockets by fake players living in the same
@@ -15,7 +15,6 @@ local prtu = require("prtu")
 local prt = require("prt")
 
 local keccak = cartesi.keccak256
-local push_run = prtu.push_run
 
 local HEIGHT = 5
 local LEAVES = 1 << HEIGHT
@@ -29,27 +28,28 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
     for i = 0, LEAVES - 1 do
         leaves[i] = i == lie and fake_state_hash or base_state_hash
     end
-    local function build_leaf_runs(first, count)
-        local runs = {}
-        for i = first, first + count - 1 do
-            push_run(runs, leaves[i], 1)
+    local function build_leaf_forest(first, log2_count)
+        local forest = hash_tree.frontier_forest(log2_count, "keccak256")
+        for i = first, first + (1 << log2_count) - 1 do
+            hash_tree.frontier_forest_push_back(forest, leaves[i])
         end
-        return runs
+        return forest
     end
     local tree
     if bundled then
         local bundle_height = 2
-        local runs = {}
+        local outer = hash_tree.frontier_forest(HEIGHT - bundle_height, "keccak256")
         for bundle = 0, (LEAVES >> bundle_height) - 1 do
-            local bundle_tree =
-                prtu.new_tree(bundle_height, 0, build_leaf_runs(bundle << bundle_height, 1 << bundle_height), nil)
-            push_run(runs, bundle_tree:get_root(), 1)
+            hash_tree.frontier_forest_push_back(
+                outer,
+                hash_tree.frontier_forest_get_root_hash(build_leaf_forest(bundle << bundle_height, bundle_height))
+            )
         end
-        tree = prtu.new_tree(HEIGHT, bundle_height, runs, function(_, bundle)
-            return build_leaf_runs(bundle << bundle_height, 1 << bundle_height)
+        tree = prtu.new_tree(HEIGHT, bundle_height, outer, function(_, bundle)
+            return build_leaf_forest(bundle << bundle_height, bundle_height)
         end)
     else
-        tree = prtu.new_tree(HEIGHT, 0, build_leaf_runs(0, LEAVES), nil)
+        tree = prtu.new_tree(HEIGHT, 0, build_leaf_forest(0, HEIGHT), nil)
     end
     local computation_hash_left, computation_hash_right = tree:get_children(HEIGHT, 0)
     local proof = tree:prove(LEAVES - 1)

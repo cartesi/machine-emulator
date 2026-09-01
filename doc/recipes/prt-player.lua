@@ -9,7 +9,6 @@ local prtu = require("prtu")
 
 local keccak = cartesi.keccak256
 local format_short_hash = prtu.format_short_hash
-local push_run, slice_runs = prtu.push_run, prtu.slice_runs
 local new_tree = prtu.new_tree
 
 local function write_stderr(fmt, ...)
@@ -86,7 +85,7 @@ end
 -- as bundle roots, one per 2^LOG2_MCYCLE_BUNDLE samples. A machine stopped at a
 -- manual yield, halt, or mcycle overflow repeats its state hash to the end of its input's span, and
 -- the machine pads the stream accordingly, so each input contributes a short prefix of real bundles
--- followed by one enormous run. The player keeps a fork at each input boundary, which
+-- followed by one enormous repetition. The player keeps a fork at each input boundary, which
 -- anchors every later re-run: refining a bundle, building a uarch claim, or producing the
 -- disputed transition's logs.
 --------------------------------------------------------------------------------
@@ -117,11 +116,13 @@ end
 -- Adds a collection's bundle roots to one reserved segment of the claim. As in cartesi-machine's
 -- computation-hash builder, roots beyond the segment capacity are ignored, and the final root
 -- returned at a fixed point fills every position that remains. The only difference is the sink:
--- PRT appends run-compressed bundle roots, while cartesi-machine appends to a Merkle frontier.
+-- PRT appends to a frontier forest, which retains the nodes a later match walk needs, while
+-- cartesi-machine appends to a plain frontier.
 local function push_mcycle_collection(collection, collected)
     local count = math.min(#collected.hashes, collection.capacity - collection.count)
-    for i = 1, count do
-        push_run(collection.runs, collected.hashes[i], 1)
+    hash_tree.frontier_forest_append(collection.forest, collected.hashes, 1, count)
+    if count > 0 then
+        collection.last_bundle = collected.hashes[count]
     end
     collection.count = collection.count + count
     if not is_at_fixed_point(collected.break_reason) then
@@ -129,14 +130,14 @@ local function push_mcycle_collection(collection, collected)
     end
     assert(#collected.hashes > 0, "fixed-point mcycle collection has no final bundle")
     collection.pad_bundle = collected.hashes[#collected.hashes]
-    push_run(collection.runs, collection.pad_bundle, collection.capacity - collection.count)
+    hash_tree.frontier_forest_pad_back(collection.forest, collection.pad_bundle, collection.capacity - collection.count)
     collection.count = collection.capacity
 end
 
-local function new_mcycle_collection(player, machine, runs, capacity, log2_bundle)
+local function new_mcycle_collection(player, machine, forest, capacity, log2_bundle)
     return {
         machine = machine,
-        runs = runs,
+        forest = forest,
         capacity = capacity,
         count = 0,
         mcycle_phase = 0,
@@ -168,15 +169,16 @@ local function collect_mcycle_bundles(collection, mcycle_end)
     return collected.break_reason
 end
 
--- Builds the mcycle runs by advancing the epoch. Each input is fed and collected until its
--- fixed point (splitting the collection at the player's tamper point, where the machine is
--- corrupted mid-flight), then padded to its full span with its last bundle, the all-repetition
--- bundle the machine emits at the stop. A rejecting machine trades places with a fresh fork
--- of its boundary, the recorded revert state, exactly as a Cartesi Node rolls back.
+-- Builds the mcycle claim's outer forest by advancing the epoch. Each input is fed and
+-- collected until its fixed point (splitting the collection at the player's tamper point,
+-- where the machine is corrupted mid-flight), then padded to its full span with its last
+-- bundle, the all-repetition bundle the machine emits at the stop. A rejecting machine
+-- trades places with a fresh fork of its boundary, the recorded revert state, exactly as a
+-- Cartesi Node rolls back.
 -- docs:begin build_mcycle_claim
 local function build_mcycle_claim(player)
     local machine = load_remote_machine(player.initial_state_hash)
-    local runs = {}
+    local outer = hash_tree.frontier_forest(player.geometry.mcycle_height - LOG2_MCYCLE_BUNDLE, "keccak256")
     local filled = 0
     local initial_state_hash = machine:get_root_hash()
     local epoch_pad_bundle = repeat_state_hash(initial_state_hash, LOG2_MCYCLE_BUNDLE)
@@ -186,7 +188,7 @@ local function build_mcycle_claim(player)
         local revert_state_hash = machine:get_root_hash()
         machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
         local base = machine:read_reg("mcycle")
-        local collection = new_mcycle_collection(player, machine, runs, player.bundles_per_input, LOG2_MCYCLE_BUNDLE)
+        local collection = new_mcycle_collection(player, machine, outer, player.bundles_per_input, LOG2_MCYCLE_BUNDLE)
         local tamper = player.tamper
         if tamper and tamper.input == index then
             local break_reason = collect_mcycle_bundles(collection, base + tamper_offset(player))
@@ -195,7 +197,7 @@ local function build_mcycle_claim(player)
         end
         collect_mcycle_bundles(collection, base + (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE))
         assert(collection.count == collection.capacity, "mcycle computation hash input is incomplete")
-        epoch_pad_bundle = collection.pad_bundle or runs[#runs].hash
+        epoch_pad_bundle = collection.pad_bundle or collection.last_bundle
         filled = filled + player.bundles_per_input
         local _, reason = machine:receive_cmio_request()
         if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
@@ -207,9 +209,9 @@ local function build_mcycle_claim(player)
         end
     end
     -- the rest of the epoch repeats the last input's fixed point
-    push_run(runs, epoch_pad_bundle, player.mcycle_bundles - filled)
+    hash_tree.frontier_forest_pad_back(outer, epoch_pad_bundle, player.mcycle_bundles - filled)
     player.epoch_machine = machine
-    return runs
+    return outer
 end
 -- docs:end build_mcycle_claim
 
@@ -236,18 +238,19 @@ end
 -- docs:begin refine_mcycle_claim
 local function refine_mcycle_claim(player, bundle)
     local bundle_size = 1 << LOG2_MCYCLE_BUNDLE
+    local bundle_forest = hash_tree.frontier_forest(LOG2_MCYCLE_BUNDLE, "keccak256")
     local input_index = bundle // player.bundles_per_input + 1
     if input_index > #player.inputs then -- epoch tail: repetitions of the last fixed point
-        return { { hash = player.fixed_state_hashes[#player.inputs], count = bundle_size } }
+        hash_tree.frontier_forest_pad_back(bundle_forest, player.fixed_state_hashes[#player.inputs], bundle_size)
+        return bundle_forest
     end
     local window_start = (bundle % player.bundles_per_input) * bundle_size * player.geometry.mcycles_per_period
     local machine <close> = fork_input_boundary(player, input_index)
     local base = advance_fork(player, machine, input_index, window_start)
-    local runs = {}
-    local collection = new_mcycle_collection(player, machine, runs, bundle_size, 0)
+    local collection = new_mcycle_collection(player, machine, bundle_forest, bundle_size, 0)
     collect_mcycle_bundles(collection, base + window_start + bundle_size * player.geometry.mcycles_per_period)
     assert(collection.count == collection.capacity, "mcycle refinement did not fill its bundle")
-    return runs
+    return bundle_forest
 end
 -- docs:end refine_mcycle_claim
 
@@ -262,51 +265,52 @@ end
 -- instructions past the stop repeat the no-op uarch period of the stopped state.
 --------------------------------------------------------------------------------
 
--- Pushes the stream hashes of one instruction (hashes first..last, ending at its reset
--- hash): the real bundles, the halt bundle repeated to fill the instruction's transitions,
--- and the reset bundle that closes it.
-local function push_uarch_mcycle(runs, hashes, first, last, log2_bundle)
+-- Pushes the stream of one instruction (hashes first..last, ending at its reset hash) into
+-- a claim segment: the real bundles, the halt bundle repeated to fill the instruction's
+-- transitions, and the reset bundle that closes it.
+local function push_uarch_mcycle(target, hashes, first, last, log2_bundle)
     local capacity = 1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - log2_bundle)
     local real = last - first - 1
     assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
-    for i = first, last - 2 do
-        push_run(runs, hashes[i], 1)
-    end
-    push_run(runs, hashes[last - 1], capacity - 1 - real)
-    push_run(runs, hashes[last], 1)
+    hash_tree.frontier_forest_append(target, hashes, first, last - 2)
+    hash_tree.frontier_forest_pad_back(target, hashes[last - 1], capacity - 1 - real)
+    hash_tree.frontier_forest_push_back(target, hashes[last])
 end
 
--- Adds each returned mcycle group to a uarch claim segment. A fixed-point collection ends in one
--- repeatable group; after adding it once, repeat that same group to fill the segment. This is the
--- run-compressed counterpart of cartesi-machine's uarch_cycle_computation_hash_push_collected.
-local function push_uarch_collection(runs, collected, count, capacity, log2_bundle)
+-- Adds each returned mcycle group to a uarch claim segment. A fixed-point collection ends in
+-- one repeatable group; after adding it once, build that group as its own complete forest,
+-- repeated to fill the segment, so its bundle roots stay reachable for a later match walk.
+-- This is the forest counterpart of cartesi-machine's
+-- uarch_cycle_computation_hash_push_collected.
+local function push_uarch_collection(target, collected, count, capacity, log2_bundle)
     local offsets = collected.mcycle_hash_offsets
     local wanted = math.min(#offsets - 1, capacity - count)
     for i = 1, wanted do
-        push_uarch_mcycle(runs, collected.hashes, offsets[i], offsets[i + 1] - 1, log2_bundle)
+        push_uarch_mcycle(target, collected.hashes, offsets[i], offsets[i + 1] - 1, log2_bundle)
     end
     count = count + wanted
     if count < capacity and is_at_fixed_point(collected.break_reason) then
         assert(wanted > 0, "fixed-point collection has no padding period")
-        for _ = count + 1, capacity do
-            push_uarch_mcycle(runs, collected.hashes, offsets[wanted], offsets[wanted + 1] - 1, log2_bundle)
-        end
+        local group =
+            hash_tree.frontier_forest(cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - log2_bundle, "keccak256")
+        push_uarch_mcycle(group, collected.hashes, offsets[wanted], offsets[wanted + 1] - 1, log2_bundle)
+        hash_tree.frontier_forest_pad_back(target, group, capacity - count)
         count = capacity
     end
     return count
 end
 
--- Builds the uarch runs for one mcycle period, `period_index` periods past input
--- `input_index`'s boundary. The span covering an input's first period opens with the feed,
--- whose transition also executes the first uarch step. The revert tail, captured at the
--- boundary before the feed, lets the collection cross a rejected yield inside the span.
+-- Builds the uarch claim's outer forest for one mcycle period, `period_index` periods past
+-- input `input_index`'s boundary. The span covering an input's first period opens with the
+-- feed, whose transition also executes the first uarch step. The revert tail, captured at
+-- the boundary before the feed, lets the collection cross a rejected yield inside the span.
 -- docs:begin build_uarch_claim
 local function build_uarch_claim(player, input_index, period_index)
     local machine <close> = fork_input_boundary(player, input_index)
     local revert_uarch_tail = machine:collect_uarch_cycle_root_hashes(math.maxinteger, 0).hashes
     local base = advance_fork(player, machine, input_index, period_index * player.geometry.mcycles_per_period)
     local start = base + period_index * player.geometry.mcycles_per_period
-    local runs = {}
+    local outer = hash_tree.frontier_forest(player.geometry.uarch_height - LOG2_UARCH_BUNDLE, "keccak256")
     local mcycles = 0
     while mcycles < player.geometry.mcycles_per_period do
         local collected = machine:collect_uarch_cycle_root_hashes(
@@ -314,26 +318,20 @@ local function build_uarch_claim(player, input_index, period_index)
             LOG2_UARCH_BUNDLE,
             revert_uarch_tail
         )
-        mcycles = push_uarch_collection(runs, collected, mcycles, player.geometry.mcycles_per_period, LOG2_UARCH_BUNDLE)
+        mcycles =
+            push_uarch_collection(outer, collected, mcycles, player.geometry.mcycles_per_period, LOG2_UARCH_BUNDLE)
         if collected.break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
             machine:receive_cmio_request()
         end
     end
-    return runs
+    return outer
 end
 -- docs:end build_uarch_claim
 
--- Refines one uarch bundle: positions a fork at the bundle's instruction, collects that
--- single instruction's uarch cycles unbundled, expands them into the instruction's
--- 2^ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE transitions, and slices the bundle's window. A
--- fork that stops before the instruction stands at the span's fixed point, whose no-op period
--- expands the same way.
--- docs:begin refine_uarch_claim
-local function refine_uarch_claim(player, input_index, period_index, bundle)
-    local bundle_size = 1 << LOG2_UARCH_BUNDLE
-    local bundles_per_mcycle = 1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_UARCH_BUNDLE)
-    local mcycle_offset = bundle // bundles_per_mcycle
-    local window_start = (bundle % bundles_per_mcycle) * bundle_size
+-- Positions a fresh fork at one instruction of the period and collects that single
+-- instruction's uarch cycles unbundled. A fork that stops before the instruction stands at
+-- the span's fixed point, whose no-op period expands the same way.
+local function collect_uarch_instruction(player, input_index, period_index, mcycle_offset)
     local machine <close> = fork_input_boundary(player, input_index)
     local revert_uarch_tail = machine:collect_uarch_cycle_root_hashes(math.maxinteger, 0).hashes
     local base =
@@ -341,9 +339,46 @@ local function refine_uarch_claim(player, input_index, period_index, bundle)
     local target = base + period_index * player.geometry.mcycles_per_period + mcycle_offset
     local mcycle_end = math.min(target + 1, machine:read_reg("mcycle") + 1)
     local collected = machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, revert_uarch_tail)
-    local runs = {}
-    assert(push_uarch_collection(runs, collected, 0, 1, 0) == 1, "uarch collection returned no mcycle period")
-    return slice_runs(runs, window_start, bundle_size)
+    local offsets = collected.mcycle_hash_offsets
+    assert(#offsets >= 2, "uarch collection returned no mcycle period")
+    return collected.hashes, offsets[1], offsets[2] - 1
+end
+
+-- The forest of one uarch bundle: positions [window_start, window_start + bundle_size) of
+-- the instruction's expanded transitions, the real cycles first, then the halt state
+-- repeated to fill the span, and the reset that closes it.
+local function slice_uarch_window(hashes, first, last, window_start, bundle_size)
+    local capacity = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local real = last - first - 1
+    assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
+    local window_forest = hash_tree.frontier_forest(LOG2_UARCH_BUNDLE, "keccak256")
+    local window_end = window_start + bundle_size
+    local real_end = math.min(window_end, real)
+    if window_start < real_end then
+        hash_tree.frontier_forest_append(window_forest, hashes, first + window_start, first + real_end - 1)
+    end
+    local halt_start = math.max(window_start, real)
+    local halt_end = math.min(window_end, capacity - 1)
+    if halt_start < halt_end then
+        hash_tree.frontier_forest_pad_back(window_forest, hashes[last - 1], halt_end - halt_start)
+    end
+    if window_end == capacity then -- the reset closing the instruction
+        hash_tree.frontier_forest_push_back(window_forest, hashes[last])
+    end
+    return window_forest
+end
+
+-- Refines one uarch bundle: collects the bundle's instruction unbundled, expands it into
+-- the instruction's 2^ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE transitions, and keeps the
+-- bundle's window of them.
+-- docs:begin refine_uarch_claim
+local function refine_uarch_claim(player, input_index, period_index, bundle)
+    local bundle_size = 1 << LOG2_UARCH_BUNDLE
+    local bundles_per_mcycle = 1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_UARCH_BUNDLE)
+    local mcycle_offset = bundle // bundles_per_mcycle
+    local window_start = (bundle % bundles_per_mcycle) * bundle_size
+    local hashes, first, last = collect_uarch_instruction(player, input_index, period_index, mcycle_offset)
+    return slice_uarch_window(hashes, first, last, window_start, bundle_size)
 end
 -- docs:end refine_uarch_claim
 
@@ -598,18 +633,14 @@ end
 
 -- The quitter posts a claim fabricated out of thin air, every leaf the same made-up state hash,
 -- and walks away: it closes its connection right after joining, so the first event about
--- its claim finds no holder and eliminates it. The claim is built straight from leaf runs, so
--- it never needs a machine, and it reads nothing off the contract but the geometry.
+-- its claim finds no holder and eliminates it. The claim is one repeated leaf, so it never
+-- needs a machine, and it reads nothing off the contract but the geometry.
 local function new_quitter(dapp_contract)
     local player = new_player("quitter", dapp_contract)
     player.make_mcycle_tree = function(self)
-        local fake_state_hash = keccak("quitter")
-        return new_tree(
-            self.geometry.mcycle_height,
-            0,
-            { { hash = fake_state_hash, count = 1 << self.geometry.mcycle_height } },
-            nil
-        )
+        local outer = hash_tree.frontier_forest(self.geometry.mcycle_height, "keccak256")
+        hash_tree.frontier_forest_pad_back(outer, keccak("quitter"), 1 << self.geometry.mcycle_height)
+        return new_tree(self.geometry.mcycle_height, 0, outer, nil)
     end
     player.commit_mcycle_claim = function(self)
         self.done = true
@@ -652,69 +683,133 @@ end
 -- every event with honest data, and other claims' disputes it can even settle with
 -- honest proofs, but the dispute against its own claim converges on the overwritten leaf,
 -- where the true reset that closes the last instruction of the span contradicts it.
+
+-- A patched claim delegates every unaffected node and sibling to the honest claim tree;
+-- only the patched bundle's forest and the ancestor path from its root to the claim root
+-- are rebuilt.
+local patched_meta = { __index = {} }
+
+local function new_patched_tree(honest, patched_bundle, patched_forest)
+    local tree = setmetatable({
+        height = honest.height,
+        bundle_height = honest.bundle_height,
+        honest = honest,
+        patched_bundle = patched_bundle,
+        patched_forest = patched_forest,
+        path = { [0] = hash_tree.frontier_forest_get_root_hash(patched_forest) },
+    }, patched_meta)
+    for level = 0, tree.height - tree.bundle_height - 1 do
+        local index = patched_bundle >> level
+        local sibling = honest:get_node(tree.bundle_height + level, index ~ 1)
+        local node = tree.path[level]
+        tree.path[level + 1] = index & 1 == 0 and keccak(node, sibling) or keccak(sibling, node)
+    end
+    return tree
+end
+
+function patched_meta.__index.get_root(tree)
+    return tree.path[tree.height - tree.bundle_height]
+end
+
+function patched_meta.__index.get_node(tree, h, q)
+    if h >= tree.bundle_height then
+        local level = h - tree.bundle_height
+        if q == tree.patched_bundle >> level then
+            return tree.path[level]
+        end
+        return tree.honest:get_node(h, q)
+    end
+    local span = tree.bundle_height - h
+    if q >> span == tree.patched_bundle then
+        return hash_tree.frontier_forest_get_node(tree.patched_forest, q & ((1 << span) - 1), h)
+    end
+    return tree.honest:get_node(h, q)
+end
+
+function patched_meta.__index.get_children(tree, h, q)
+    return tree:get_node(h - 1, 2 * q), tree:get_node(h - 1, 2 * q + 1)
+end
+
+-- Inside the patched bundle, the patched forest supplies the low siblings and the honest
+-- claim the high ones (an ancestor's sibling never stands on the patched path). Outside it,
+-- the honest proof serves, with the siblings standing on the patched path replaced.
+function patched_meta.__index.prove(tree, index)
+    local bundle_height = tree.bundle_height
+    local siblings
+    if index >> bundle_height == tree.patched_bundle then
+        siblings = hash_tree.frontier_forest_get_siblings(tree.patched_forest, index & ((1 << bundle_height) - 1))
+        for level = 0, tree.height - bundle_height - 1 do
+            siblings[#siblings + 1] =
+                tree.honest:get_node(bundle_height + level, (index >> (bundle_height + level)) ~ 1)
+        end
+    else
+        siblings = tree.honest:prove(index).sibling_hashes
+        for level = 0, tree.height - bundle_height - 1 do
+            if (index >> (bundle_height + level)) ~ 1 == tree.patched_bundle >> level then
+                siblings[bundle_height + level + 1] = tree.path[level]
+            end
+        end
+    end
+    return {
+        target_address = index,
+        log2_target_size = 0,
+        target_hash = tree:get_node(0, index),
+        log2_root_size = tree.height,
+        root_hash = tree:get_root(),
+        sibling_hashes = siblings,
+    }
+end
+
 local function new_fabulist(dapp_contract, input_index, leaf_offset)
     local player = new_player("fabulist", dapp_contract)
     local fake_state_hash = keccak("fabulist")
-    -- mcycle claim: splice the patched bundle into the honest runs and patch its refinement.
-    -- The lied-about leaf's bundle, and its position within it, follow the announced period.
+    -- mcycle claim: the lied-about leaf's bundle, and its position within it, follow the
+    -- announced period
     local function lie_bundle(self)
         local global_leaf = input_index * self.geometry.periods_per_input + leaf_offset
         return global_leaf >> LOG2_MCYCLE_BUNDLE, global_leaf & ((1 << LOG2_MCYCLE_BUNDLE) - 1)
     end
+    -- the patched bundle forest holds the honest window with the one leaf overwritten
     local function refine_patched_mcycle_claim(self)
         local bundle, leaf_in_bundle = lie_bundle(self)
-        local runs = slice_runs(refine_mcycle_claim(self, bundle), 0, 1 << LOG2_MCYCLE_BUNDLE)
-        local before = slice_runs(runs, 0, leaf_in_bundle)
-        push_run(before, fake_state_hash, 1)
-        for _, run in ipairs(slice_runs(runs, leaf_in_bundle + 1, (1 << LOG2_MCYCLE_BUNDLE) - leaf_in_bundle - 1)) do
-            push_run(before, run.hash, run.count)
+        local honest_bundle = refine_mcycle_claim(self, bundle)
+        local leaves = {}
+        for i = 1, 1 << LOG2_MCYCLE_BUNDLE do
+            leaves[i] = hash_tree.frontier_forest_get_node(honest_bundle, i - 1, 0)
         end
-        return before
+        leaves[leaf_in_bundle + 1] = fake_state_hash
+        local patched = hash_tree.frontier_forest(LOG2_MCYCLE_BUNDLE, "keccak256")
+        hash_tree.frontier_forest_append(patched, leaves)
+        return patched
     end
+    local honest_make_mcycle_tree = player.make_mcycle_tree
     player.make_mcycle_tree = function(self)
-        local bundle = lie_bundle(self)
-        local runs = build_mcycle_claim(self)
-        local patched_bundle = new_tree(LOG2_MCYCLE_BUNDLE, 0, refine_patched_mcycle_claim(self), nil):get_root()
-        local spliced = slice_runs(runs, 0, bundle)
-        push_run(spliced, patched_bundle, 1)
-        for _, run in ipairs(slice_runs(runs, bundle + 1, self.mcycle_bundles - bundle - 1)) do
-            push_run(spliced, run.hash, run.count)
-        end
-        return new_tree(self.geometry.mcycle_height, LOG2_MCYCLE_BUNDLE, spliced, function(_, e)
-            if e == bundle then
-                return refine_patched_mcycle_claim(self)
-            end
-            return refine_mcycle_claim(self, e)
-        end)
+        return new_patched_tree(honest_make_mcycle_tree(self), (lie_bundle(self)), refine_patched_mcycle_claim(self))
     end
-    -- uarch claim: the period ending at the lied-about sample gets its last leaf patched the same way
+    -- uarch claim: the period ending at the lied-about sample gets its last leaf, the reset
+    -- that closes the span, overwritten the same way
     local lie_input, lie_period = input_index + 1, leaf_offset
     local function last_bundle(self)
         return (1 << (self.geometry.uarch_height - LOG2_UARCH_BUNDLE)) - 1
     end
-    local last_in_bundle = (1 << LOG2_UARCH_BUNDLE) - 1
     local function refine_patched_uarch_claim(self)
-        local runs = refine_uarch_claim(self, lie_input, lie_period, last_bundle(self))
-        local before = slice_runs(runs, 0, last_in_bundle)
-        push_run(before, fake_state_hash, 1)
-        return before
+        local bundles_per_mcycle = 1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_UARCH_BUNDLE)
+        local hashes, first, last =
+            collect_uarch_instruction(self, lie_input, lie_period, last_bundle(self) // bundles_per_mcycle)
+        hashes[last] = fake_state_hash
+        local window_start = (last_bundle(self) % bundles_per_mcycle) << LOG2_UARCH_BUNDLE
+        return slice_uarch_window(hashes, first, last, window_start, 1 << LOG2_UARCH_BUNDLE)
     end
     local honest_make_uarch_tree = player.make_uarch_tree
     player.make_uarch_tree = function(self, input_index_1, period_index)
         if input_index_1 ~= lie_input or period_index ~= lie_period then
             return honest_make_uarch_tree(self, input_index_1, period_index)
         end
-        local runs = build_uarch_claim(self, lie_input, lie_period)
-        local patched_bundle = new_tree(LOG2_UARCH_BUNDLE, 0, refine_patched_uarch_claim(self), nil):get_root()
-        local spliced = slice_runs(runs, 0, last_bundle(self))
-        push_run(spliced, patched_bundle, 1)
-        assert(#spliced > 0)
-        return new_tree(self.geometry.uarch_height, LOG2_UARCH_BUNDLE, spliced, function(_, e)
-            if e == last_bundle(self) then
-                return refine_patched_uarch_claim(self)
-            end
-            return refine_uarch_claim(self, lie_input, lie_period, e)
-        end)
+        return new_patched_tree(
+            honest_make_uarch_tree(self, input_index_1, period_index),
+            last_bundle(self),
+            refine_patched_uarch_claim(self)
+        )
     end
     return player
 end

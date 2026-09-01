@@ -29,7 +29,7 @@ hash_tree.frontier_forest_append(forest, hashes, first, last, log2_hash_size)
 hash_tree.frontier_forest_pad_back(forest, hash_or_forest, count, log2_hash_size)
 
 hash_tree.frontier_forest_get_root_hash(forest)
-hash_tree.frontier_forest_get_node(forest, index, log2_size)
+hash_tree.frontier_forest_get_node(forest, index, height)
 hash_tree.frontier_forest_get_siblings(forest, index, into)
 ```
 
@@ -79,15 +79,15 @@ representations:
 
 1. An array tree has a power-of-two capacity and a non-empty partial array of
    equal-height base values. Each base value is either an opaque hash or an
-   array or hybrid tree taken from a completed forest. The last stored value
+   array or inner tree taken from a completed forest. The last stored value
    fills every omitted position.
    Each higher level is another partial hash array with the same rule: indexing
    beyond its end returns its last entry. Levels continue through the root even
    after their stored length reaches one. This one representation covers a
    fully explicit tree, a completely repeated tree, and an explicit prefix
    followed by repetitions of its last value.
-2. A hybrid tree stores actual nodes with `left`, `right`, and `hash`. Each child
-   is an array or hybrid tree. Hybrid nodes join complete trees produced by
+2. An inner tree stores an actual node with `left`, `right`, and `hash`. Each
+   child is an array or inner tree. Inner nodes join complete trees produced by
    different pending regions or binary carries.
 
 Each complete tree also carries the height needed to validate combinations and
@@ -177,7 +177,7 @@ Flush the pending accumulator when:
 Consecutive `push_back` calls therefore form one array tree even when the hashes
 arrive in several collections. An explicit prefix followed by `pad_back` also
 forms one partially filled array tree. Consecutive compatible `pad_back` calls
-only extend `pad_count`. Hybrid nodes occur at actual boundaries between
+only extend `pad_count`. Inner nodes occur at actual boundaries between
 incompatible regions and during binary carries.
 
 Most calls only validate and extend the pending accumulator. A flush performs
@@ -191,10 +191,10 @@ Once the forest is full, its top entry is the complete root subtree.
 
 - `get_root_hash` returns that entry's root hash in O(1). Completion has already
   flushed all pending work.
-- `get_node(index, log2_size)` follows the machine API's position-before-size
-  argument order. It descends through hybrid trees or indexes the
+- `get_node(index, height)` follows the machine API's position-first
+  argument order. It descends through inner trees or indexes the
   appropriate partial level array, using its last entry when the index is past
-  the stored end. It validates the requested level and 0-based index.
+  the stored end. It validates the requested height and 0-based index.
 - `get_siblings(index, into)` descends once and appends siblings from the leaf
   upward to `into`. It does not allocate or format a proof. A caller can first
   append a bundle forest's siblings and then append the outer forest's siblings
@@ -266,7 +266,7 @@ Let:
 - `R` be the number of Dave builder cells;
 - `M` be the number of mixed internal nodes created by Dave's recursive build;
 - `S` be the slots stored across a frontier forest's partial level arrays; and
-- `J` be its hybrid node count.
+- `J` be its inner node count.
 
 ### Representation size
 
@@ -275,7 +275,7 @@ Let:
 | One base tree repeated to height `H` | One cell and `O(H)` linked `Hash` objects | One base value and one hash in each of `O(H)` partial level arrays |
 | `N` mostly different values | `N` cell tables and `N - 1` linked `Hash` objects | `2N - 1` array slots across `O(H)` level arrays |
 | An explicit prefix of `N` values followed by repetitions | `O(N + M)` cells and linked hashes | `O(N + H)` partial-array slots and hashes |
-| Mixed incompatible regions | `O(R + M)` cells and mixed nodes, plus cached repetition chains | `O(S + J)` partial-array slots and hybrid nodes |
+| Mixed incompatible regions | `O(R + M)` cells and mixed nodes, plus cached repetition chains | `O(S + J)` partial-array slots and inner nodes |
 
 Both representations are `O(H)` for one repeated region and `O(N)` for a dense
 tree. Irregular regions can require `O(RH)` structure in either representation.
@@ -286,7 +286,7 @@ It stores parent hashes in a small number of Lua arrays. Dave retains one table
 per builder cell and one table with `digest`, `left`, and `right` per joined
 hash, in addition to the process-global hash interning and repetition tables.
 Dave may share identical internal hashes globally; a frontier forest shares
-only the complete trees referenced by its partial arrays and hybrid trees.
+only the complete trees referenced by its partial arrays and inner trees.
 
 ### Operation complexity
 
@@ -300,7 +300,7 @@ only the complete trees referenced by its partial arrays and hybrid trees.
 | Read the completed root | `O(1)` after `build` | `O(1)` after the pending accumulator is flushed |
 | Read an arbitrary node | `O(H)` graph traversal; no direct public operation | `O(H)` worst case, often `O(1)` within one partial level array |
 | Append siblings | `O(H)` proof traversal | `O(H)` with one descent and no proof allocation |
-| Replace one subtree | `O(H)` hashes | `O(H)` hashes to rebuild the affected hybrid path |
+| Replace one subtree | `O(H)` hashes | `O(H)` hashes to rebuild the affected inner path |
 
 Dave makes `add(hash, count)` `O(1)` by deferring all tree work to `build`.
 If `V` recursive regions are visited during `build`, its count lookups take at
@@ -357,7 +357,7 @@ environment emitted by `make env` and the required MacPorts path on macOS.
 1. Factor shared frontier alignment, capacity, and carry helpers without changing
    valid existing behavior; make overflow assert.
 2. Add `frontier_append` and its tests.
-3. Implement the partial-array and hybrid complete-tree representations.
+3. Implement the partial-array and inner complete-tree representations.
 4. Implement forest `push_back` and forest `pad_back` using those trees.
 5. Implement full-forest node and sibling queries.
 6. Add unit and computation-hash parity tests.

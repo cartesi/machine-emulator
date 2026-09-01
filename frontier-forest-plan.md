@@ -36,7 +36,7 @@ forest reuses them instead of reimplementing alignment, capacity, and carries:
 - the below-level alignment assert loop (appears in `frontier_push_back`,
   `frontier_pad_back`, and `frontier_get_root_hash`)
 - the binary-carry fold (the `while frontier[level] do` loop), parameterized on
-  a combine function so the forest can carry complete trees (building hybrid
+  a combine function so the forest can carry complete trees (building inner
   nodes) while the frontier carries hashes
 - a capacity helper over the leaf count, including pending forest
   values; `frontier_padding_fits` cannot be reused as is for that check
@@ -63,9 +63,8 @@ scalar pushes, non-default first/last/log2_hash_size, empty and invalid ranges).
 
 ## Step 3. Complete-tree representations
 
-Internal to hash-tree.lua, two tagged tree kinds, each carrying its height.
-Tag them with a private marker key so they remain distinguishable from raw hash
-strings:
+Internal to hash-tree.lua, two tree kinds, each identified by a `kind` field and
+carrying its height. Tables remain distinguishable from raw hash strings:
 
 1. Partial-array tree - a power-of-two capacity and a non-empty partial array
    of equal-height base values. Base values may be opaque hashes or complete
@@ -74,7 +73,7 @@ strings:
    array's end returns its last entry. A one-entry base array is a completely
    repeated tree, a full base array is a dense tree, and an intermediate array
    represents an explicit prefix followed by repetitions.
-2. Hybrid tree - `left`, `right`, `hash`, joining any two equal-height trees.
+2. Inner tree - `left`, `right`, `hash`, joining any two equal-height trees.
 
 Node lookup on a tree routes by kind. Queries below an opaque hash fail with a
 clear error. All validation (hash size, heights, equal child heights, indices)
@@ -113,7 +112,7 @@ composes their sibling arrays.
 - Flush triggers - `push_back` after an implied suffix, a height change, an
   incompatible pad after an implied suffix, or reaching capacity. A flush
   consumes maximal aligned complete subtrees. Each becomes a partial-array
-  tree, with one carry each; hybrid nodes are created at carries.
+  tree, with one carry each; inner nodes are created at carries.
 
 Validate the incoming operation, including its entire reserved range, before a
 flush or any other mutation. No `finish`. Reaching capacity flushes immediately,
@@ -123,9 +122,9 @@ queries require the forest exactly full, and appends past capacity assert.
 
 - `frontier_forest_get_root_hash(forest)` - assert complete and return the top
   level's root, O(1); completion already flushed pending work.
-- `frontier_forest_get_node(forest, index, log2_size)` - follow the machine
-  API's position-before-size argument order, validate level and
-  0-based index, descend by tree kind, and return the node hash. A partial level
+- `frontier_forest_get_node(forest, index, height)` - follow the machine API's
+  position-first argument order, validate height and 0-based index, descend by
+  tree kind, and return the node hash. A partial level
   array returns its last entry for an index past its stored end.
 - `frontier_forest_get_siblings(forest, index, into)` - one descent, appending
   siblings from the leaf upward into the supplied array and returning that
@@ -192,7 +191,7 @@ prt-player.lua:
 
 - `push_mcycle_collection` / `build_mcycle_claim` - append `collected.hashes`
   directly (first/last, no slicing), pad the input's
-  remaining span and the epoch tail with `pad_back`
+  remaining positions and the epoch tail with `pad_back`
 - `push_uarch_mcycle` / `push_uarch_collection` / `build_uarch_claim` - real
   bundles via append over the offsets window, halt repetitions via
   pad_back, the reset-ending bundle via one scalar push_back

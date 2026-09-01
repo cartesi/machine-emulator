@@ -1827,6 +1827,47 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- -------------------------------------------------------------------------
+    -- cmio response payload encodings (--log-send-cmio-response)
+    --
+    -- What: the payload can be given inline under three encodings or read from
+    --       a file as raw bytes. The encoding names match the --hex-payload /
+    --       --base64-payload / --utf8-payload options of rollup.cpp.
+    -- How:  log the same six bytes through every path and compare the resulting
+    --       step logs, which must be byte-identical.
+    -- -------------------------------------------------------------------------
+    it("cmio response payload encodings", function()
+        local function log_response(source)
+            local _ <close>, log_file = scope_temp_pathname()
+            os.remove(log_file)
+            run_ok({
+                "--log-send-cmio-response=" .. log_file .. ",reason:1," .. source,
+                "--max-mcycle=0",
+                "--no-init-splash",
+                "--quiet",
+            })
+            local contents = filesystem.read_file(log_file)
+            expect.truthy(#contents > 0)
+            return contents
+        end
+
+        local _ <close>, payload_file = scope_temp_pathname()
+        filesystem.write_file(payload_file, "hello!")
+
+        -- hex is the default encoding, so the first two must agree
+        local by_hex = log_response("data:0x68656c6c6f21")
+        expect.equal(log_response("data:0x68656c6c6f21,encoding:hex"), by_hex)
+        expect.equal(log_response("data:aGVsbG8h,encoding:base64"), by_hex)
+        expect.equal(log_response("data:hello!,encoding:utf8"), by_hex)
+        expect.equal(log_response("data-file:" .. payload_file), by_hex)
+
+        local log_arg = "--log-send-cmio-response=" .. payload_file .. ",reason:1,"
+        run_fail({ log_arg .. "data:0x00,data-file:" .. payload_file }, "exactly one of data:, data%-file:")
+        run_fail({ log_arg:sub(1, -2) }, "exactly one of data:, data%-file:")
+        run_fail({ log_arg .. "data:0x00,encoding:rot13" }, "encoding must be one of hex, base64, utf8")
+        run_fail({ log_arg .. "data-file:" .. payload_file .. ",encoding:hex" }, "does not apply to data%-file:")
+    end)
+
+    -- -------------------------------------------------------------------------
     -- Post-run uarch advance path (--max-uarch-cycle, --auto-reset-uarch)
     --
     -- What: --max-uarch-cycle and --auto-reset-uarch exercise the uarch advance

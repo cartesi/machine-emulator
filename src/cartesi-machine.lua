@@ -886,9 +886,9 @@ where options are:
     <key>:<value> is one of
         reason:<number>
         filename:<path>
-        file:<path>
-        hex:<0x...>
-        str:<text>
+        data:<text>
+        data-file:<path>
+        encoding:hex|base64|utf8
 
         reason (required)
         the cmio yield reason (e.g., a HTIF_YIELD_*_REASON_* constant).
@@ -896,9 +896,13 @@ where options are:
         filename (required)
         path of the step log file to write.
 
-        file | hex | str (exactly one required)
-        source for the response bytes. "file:" reads from a binary file,
-        "hex:" takes a 0x-prefixed hex string, "str:" takes literal text.
+        data | data-file (exactly one required)
+        the response payload, given inline or read from a file.
+
+        encoding (optional, default hex)
+        how to read data: "hex" for a 0x-prefixed hex string, "base64", or
+        "utf8" for literal text. does not apply to data-file, which is
+        always read as raw bytes.
 
   --auto-reset-uarch
     reset uarch automatically after halt.
@@ -1386,6 +1390,15 @@ end
 
 -- List of supported options
 -- Options are processed in order
+-- Payload encodings accepted by --log-send-cmio-response, named after the
+-- --hex-payload/--base64-payload/--utf8-payload options of rollup.cpp in
+-- machine-guest-tools. cartesi is only required later, so decode lazily.
+local ENCODINGS = {
+    hex = function(v) return cartesi.fromhex(v) end,
+    base64 = function(v) return cartesi.frombase64(v) end,
+    utf8 = function(v) return v end,
+}
+
 -- For each option,
 --   first entry is the pattern to match
 --   second entry is a callback
@@ -2183,8 +2196,14 @@ options = {
             local o = util.parse_options(keys, all, opts)
             assert(o.reason, "missing reason for --log-send-cmio-response")
             assert(o.filename, "missing filename for --log-send-cmio-response")
-            local sources = (o.file and 1 or 0) + (o.hex and 1 or 0) + (o.str and 1 or 0)
-            assert(sources == 1, "--log-send-cmio-response requires exactly one of file:, hex:, str:")
+            local sources = (o.data and 1 or 0) + (o["data-file"] and 1 or 0)
+            assert(sources == 1, "--log-send-cmio-response requires exactly one of data:, data-file:")
+            if o["data-file"] then
+                assert(not o.encoding, "--log-send-cmio-response encoding does not apply to data-file:")
+            else
+                o.encoding = o.encoding or "hex"
+                assert(ENCODINGS[o.encoding], "--log-send-cmio-response encoding must be one of hex, base64, utf8")
+            end
             cmdline.log_send_cmio_response = o
             return true
         end,
@@ -2192,9 +2211,9 @@ options = {
             "filename",
             reason = "number",
             filename = "file",
-            file = "file",
-            hex = "string",
-            str = "string",
+            data = "string",
+            ["data-file"] = "file",
+            encoding = "string",
         },
     },
     {
@@ -4133,14 +4152,11 @@ end
 if cmdline.log_send_cmio_response then
     local o = cmdline.log_send_cmio_response
     local data
-    if o.file then
-        local f <close> = assert(io.open(o.file, "rb"))
+    if o["data-file"] then
+        local f <close> = assert(io.open(o["data-file"], "rb"))
         data = assert(f:read("*a"))
-    elseif o.hex then
-        assert(o.hex:sub(1, 2) == "0x" and #o.hex % 2 == 0, "hex must be 0x-prefixed with even length")
-        data = (o.hex:sub(3):gsub("(%x%x)", function(c) return string.char(tonumber(c, 16)) end))
     else
-        data = o.str
+        data = ENCODINGS[o.encoding](o.data)
     end
     stderr("Logging cmio response: please wait\n")
     os.remove(o.filename)

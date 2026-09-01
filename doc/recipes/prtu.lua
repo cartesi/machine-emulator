@@ -1,13 +1,12 @@
 -- The parts of the PRT game shared by referee and players: geometry, event schemas, claim
--- trees (Merkle trees over runs of repeated nodes, refined on demand), the referee's coroutine
+-- trees (frontier forests of bundle roots, opened on demand), the referee's coroutine
 -- dispatcher and server, and narration. The game script supplies the match walk,
 -- machines, claim builds, tournament, and verification of the disputed transition.
 
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
+local hash_tree = require("cartesi.hash-tree")
 local socket = require("socket")
-
-local keccak = cartesi.keccak256
 
 --------------------------------------------------------------------------------
 -- Small utilities
@@ -55,127 +54,52 @@ end
 --------------------------------------------------------------------------------
 -- Claim trees
 --
--- A claim commits to 2^height leaves, the state hashes of a computation hash, but almost
--- all of them are repetitions: a machine that stopped advancing repeats its state hash to
--- the end of its span. The tree therefore stores runs, each a node hash and how many
--- consecutive times it appears. The stored nodes can sit above the leaves, at bundle_height,
--- when the machine delivers them bundled. A query that descends below a stored bundle is
--- answered by refine(tree, bundle_index), which recovers the leaf runs under that one bundle
--- (by re-running a machine through it) and caches them. Nothing else of the tree is ever
--- materialized.
+-- A claim commits to 2^height leaves, the state hashes of a computation hash, delivered
+-- bundled: the machine reports one bundle root per 2^bundle_height leaves, so the claim
+-- stores an outer frontier forest that much shallower, holding bundle roots at its level
+-- zero. A query that descends below a bundle opens it: refine(tree, bundle_index) builds
+-- the complete forest of the leaves under that one bundle by re-running a machine through
+-- its window, exactly as a machine produces the disputed transition's logs. The opened
+-- forest is checked against the committed bundle root and cached, and nothing else of the
+-- tree is ever materialized.
 --------------------------------------------------------------------------------
-
--- Appends a run, merging with the previous one when the hash repeats.
-local function push_run(runs, hash, count)
-    if count == 0 then
-        return
-    end
-    local last = runs[#runs]
-    if last and last.hash == hash then
-        last.count = last.count + count
-    else
-        runs[#runs + 1] = { hash = hash, count = count }
-    end
-end
-
--- Extracts the sub-range [first, first+count) of a runs array.
-local function slice_runs(runs, first, count)
-    local slice = {}
-    local skipped = 0
-    for _, run in ipairs(runs) do
-        local from = skipped
-        skipped = skipped + run.count
-        local lo = math.max(from, first)
-        local hi = math.min(skipped, first + count)
-        if lo < hi then
-            push_run(slice, run.hash, hi - lo)
-        end
-    end
-    return slice
-end
-
--- Freezes a runs array, computing the cumulative counts binary search needs.
-local function seal_runs(runs)
-    local cum = {}
-    local total = 0
-    for i, run in ipairs(runs) do
-        total = total + run.count
-        cum[i] = total
-    end
-    runs.cum = cum
-    runs.total = total
-    return runs
-end
-
--- The first run covering node index (0-based). Counts compare as unsigned, since the
--- tallest trees hold more nodes than a signed integer.
-local function find_run(runs, index)
-    local lo, hi = 1, #runs
-    while lo < hi do
-        local mid = (lo + hi) >> 1
-        if math.ult(index, runs.cum[mid]) then
-            hi = mid
-        else
-            lo = mid + 1
-        end
-    end
-    return lo
-end
-
--- The root of the complete subtree holding 2^k copies of hash, by repeated squaring, cached
--- per hash. This is what makes repetitions free: a run of any length costs one hash chain.
-local function compute_repeated_root(tree, hash, k)
-    local chain = tree.iterated[hash]
-    if not chain then
-        chain = { [0] = hash }
-        tree.iterated[hash] = chain
-    end
-    for i = #chain + 1, k do
-        chain[i] = keccak(chain[i - 1], chain[i - 1])
-    end
-    return chain[k]
-end
-
--- The node at height h, index q, over a runs array whose nodes sit at bundle_height.
--- A range covered by a single run is an iterated hash, anything else splits in two.
--- docs:begin get_runs_node
-local function get_runs_node(tree, runs, bundle_height, h, q)
-    local first = q << (h - bundle_height)
-    local count = 1 << (h - bundle_height)
-    local i = find_run(runs, first)
-    if not math.ult(runs.cum[i] - 1, first + count - 1) then -- a single run covers the range
-        return compute_repeated_root(tree, runs[i].hash, h - bundle_height)
-    end
-    return keccak(
-        get_runs_node(tree, runs, bundle_height, h - 1, 2 * q),
-        get_runs_node(tree, runs, bundle_height, h - 1, 2 * q + 1)
-    )
-end
--- docs:end get_runs_node
 
 local tree_meta = { __index = {} }
 
--- The node at height h, index q. At or above bundle_height it resolves over the stored runs.
--- Below, it locates the one stored bundle standing over the node and queries the leaf runs
--- recovered by refine, so only the bundles a dispute actually visits are ever expanded.
+-- Opens one bundle: asks refine for the complete forest of the leaves under it, verifies
+-- that forest against the committed bundle root, and caches it. Only the bundles a dispute
+-- actually visits are ever opened, and each costs one machine re-run.
+-- docs:begin open_bundle
+function tree_meta.__index.open_bundle(tree, bundle)
+    local bundle_forest = tree.opened[bundle]
+    if not bundle_forest then
+        bundle_forest = tree:refine(bundle)
+        assert(
+            hash_tree.frontier_forest_get_root_hash(bundle_forest)
+                == hash_tree.frontier_forest_get_node(tree.outer, bundle, 0),
+            "the opened bundle does not match its committed root"
+        )
+        tree.opened[bundle] = bundle_forest
+    end
+    return bundle_forest
+end
+-- docs:end open_bundle
+
+-- The node at height h, index q. At or above bundle_height it is a node of the outer
+-- forest. Below, it locates the one bundle standing over the node and queries the forest
+-- that opens it.
 -- docs:begin get_tree_node
 function tree_meta.__index.get_node(tree, h, q)
     if h >= tree.bundle_height then
-        return get_runs_node(tree, tree.runs, tree.bundle_height, h, q)
+        return hash_tree.frontier_forest_get_node(tree.outer, q, h - tree.bundle_height)
     end
-    local bundle = q >> (tree.bundle_height - h)
-    local leaf_runs = tree.refined[bundle]
-    if not leaf_runs then
-        leaf_runs = seal_runs(tree:refine(bundle))
-        assert(leaf_runs.total == 1 << tree.bundle_height, "refine did not produce a full bundle")
-        tree.refined[bundle] = leaf_runs
-    end
-    return get_runs_node(tree, leaf_runs, 0, h, q - (bundle << (tree.bundle_height - h)))
+    local span = tree.bundle_height - h
+    return hash_tree.frontier_forest_get_node(tree:open_bundle(q >> span), q & ((1 << span) - 1), h)
 end
 -- docs:end get_tree_node
 
 function tree_meta.__index.get_root(tree)
-    return tree:get_node(tree.height, 0)
+    return hash_tree.frontier_forest_get_root_hash(tree.outer)
 end
 
 -- The two children of the node at height h, index q.
@@ -183,14 +107,17 @@ function tree_meta.__index.get_children(tree, h, q)
     return tree:get_node(h - 1, 2 * q), tree:get_node(h - 1, 2 * q + 1)
 end
 
--- The proof of a leaf index, in the standard cartesi.hash-tree representation. Claim-tree
--- addresses are logical leaf indices, so their target size is zero and their root size is the
--- tree height.
+-- The proof of a leaf index, in the standard cartesi.hash-tree representation. The bundle
+-- forest appends its siblings first, then the outer forest appends the bundle siblings into
+-- the same array. Claim-tree addresses are logical leaf indices, so their target size is
+-- zero and their root size is the tree height.
 function tree_meta.__index.prove(tree, index)
     local siblings = {}
-    for level = 0, tree.height - 1 do
-        siblings[level + 1] = tree:get_node(level, (index >> level) ~ 1)
+    if tree.bundle_height > 0 then
+        local bundle_forest = tree:open_bundle(index >> tree.bundle_height)
+        hash_tree.frontier_forest_get_siblings(bundle_forest, index & ((1 << tree.bundle_height) - 1), siblings)
     end
+    hash_tree.frontier_forest_get_siblings(tree.outer, index >> tree.bundle_height, siblings)
     return {
         target_address = index,
         log2_target_size = 0,
@@ -201,16 +128,16 @@ function tree_meta.__index.prove(tree, index)
     }
 end
 
--- A claim tree of 2^height leaves, stored as runs of nodes at bundle_height, with
--- refine(tree, bundle_index) recovering the leaf runs under one bundle on demand.
-local function new_tree(height, bundle_height, runs, refine)
+-- A claim tree of 2^height leaves over an outer forest of bundle roots, with
+-- refine(tree, bundle_index) opening the complete forest under one bundle on demand.
+local function new_tree(height, bundle_height, outer, refine)
+    assert(outer.height == height - bundle_height, "the outer forest does not match the claim height")
     return setmetatable({
         height = height,
         bundle_height = bundle_height,
-        runs = seal_runs(runs),
+        outer = outer,
         refine = refine,
-        refined = {},
-        iterated = {},
+        opened = {},
     }, tree_meta)
 end
 
@@ -1214,8 +1141,6 @@ return {
     story = story,
     format_short_hash = format_short_hash,
     narrate = narrate,
-    push_run = push_run,
-    slice_runs = slice_runs,
     new_tree = new_tree,
     get_other_turn = get_other_turn,
     new_server = new_server, -- prt-test.lua exercises the transport primitives directly

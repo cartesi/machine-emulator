@@ -8317,35 +8317,64 @@ frontier or pristine root is left empty, outlined in its subtree’s
 color, because the frontier keeps each whole subtree as that one root
 hash and never materializes the leaves under it.
 
-The function `frontier_push_back` folds one new output leaf into the
+The function `frontier_push_back` folds new output leaves into the
 frontier:
 
 ``` lua
 local function frontier_push_back(frontier, hash, log2_hash_size)
     local hash_function = assert(frontier.hash_function)
     local level = (log2_hash_size or 0) + 1
-    for below = 1, level - 1 do
-        assert(not frontier[below], "frontier is not aligned to the hash size")
-    end
-    local right = hash
-    while frontier[level] do
-        right = hash_function(frontier[level], right)
-        frontier[level] = false
-        level = level + 1
-    end
-    frontier[level] = right
+    assert_aligned_below(frontier, level, "frontier is not aligned to the hash size")
+    assert(not frontier[#frontier], "too many leaves")
+    return carry_back(frontier, level, hash, hash_function)
 end
 ```
 
 Adding an output advances the leaf count from *c* to *c*+1. In binary
 that clears a run of low set bits and sets the next one up, an ordinary
-carry. The function mirrors the carry, combining the new leaf with the
-present low levels from the bottom up to the first empty one, clearing
-each, and storing the resulting hash at that first empty level. It is
-the root of the subtree covering exactly the leaves ending at the new
-output, the frontier entry the carry creates. A level is combined only
-once every 2<sup>*l*</sup> outputs, so a long run of outputs costs
-constant work each, amortized.
+carry. The helper `carry_back` mirrors it, combining the new leaf with
+the present low levels from the bottom up to the first empty one,
+clearing each, and storing the resulting hash at that first empty level:
+
+``` lua
+local function carry_back(levels, level, entry, combine)
+    while levels[level] do
+        assert(level < #levels, "too many leaves")
+        entry = combine(levels[level], entry)
+        levels[level] = false
+        level = level + 1
+    end
+    levels[level] = entry
+end
+```
+
+The stored hash is the root of the subtree covering exactly the leaves
+ending at the new output, the frontier entry the carry creates. A level
+is combined only once every 2<sup>*l*</sup> outputs, so a long run of
+outputs costs constant work each, amortized. The function
+`frontier_append` appends `hashes[first..last]` in order as maximal
+aligned complete subtrees, each hashed into one entry and carried once:
+
+``` lua
+local function frontier_append(frontier, hashes, first, last, log2_hash_size)
+    local hash_function = assert(frontier.hash_function)
+    first, last = assert_valid_range(hashes, first, last)
+    local first_level = (log2_hash_size or 0) + 1
+    assert_aligned_below(frontier, first_level, "frontier is not aligned to the hash size")
+    assert(frontier_padding_fits(frontier, last - first + 1, first_level), "too many leaves")
+    append_complete_subtrees(frontier, first_level, last - first + 1, function(offset, added_height)
+        local nodes = table.move(hashes, first + offset, first + offset + (1 << added_height) - 1, 1, {})
+        for _ = 1, added_height do
+            local parents = {}
+            for j = 1, #nodes, 2 do
+                parents[#parents + 1] = hash_function(nodes[j], nodes[j + 1])
+            end
+            nodes = parents
+        end
+        return nodes[1]
+    end, hash_function)
+end
+```
 
 The function `frontier_get_root_hash` returns the root hash of the tree,
 padded with zero leaves to completion:
@@ -8357,9 +8386,7 @@ local function frontier_get_root_hash(frontier, pad, log2_pad_size)
     if frontier[height + 1] then return frontier[height + 1] end
     pad = pad or pristine_leaf
     local root = pad
-    for level = 1, log2_pad_size or 0 do
-        assert(not frontier[level], "frontier is not aligned to the pad size")
-    end
+    assert_aligned_below(frontier, (log2_pad_size or 0) + 1, "frontier is not aligned to the pad size")
     -- pad doubles into the all-pad subtree of each level, the right sibling of every empty one
     for level = (log2_pad_size or 0) + 1, height do
         if frontier[level] then
@@ -9492,11 +9519,14 @@ observations keep them small.
 First, almost all leaves are repetitions. The calculator is done with
 each input within about 50 million mcycles, and everything after that,
 out to the input’s 2<sup>48</sup>th mcycle, repeats one state hash. The
-claim tree therefore stores *runs*, each a node hash and how many
-consecutive times it appears. The root of a subtree holding
-2<sup>k</sup> copies of the same node takes k hashes by repeated
-squaring, cached per node, so a run of any length costs nothing to stand
-under a query (`get_runs_node` in `prtu.lua`).
+claim is therefore stored as a *frontier forest*
+(`hash_tree.frontier_forest()`), a frontier whose occupied levels retain
+the complete subtree standing there rather than only its root hash, so
+the finished tree can also answer node and proof queries. Appended
+values accumulate in a pending partial array whose last value implicitly
+fills every position padded after it, and each level of a materialized
+subtree stores its distinct nodes plus the first repeated one, so a
+repetition of any length costs one stored value and one hash per level.
 
 Second, the stored nodes need not be the leaves. The machine can deliver
 the sampled hashes in *bundles*, one subtree root per 2<sup>4</sup>
@@ -9505,28 +9535,30 @@ the nodes a player stores and carries by that much. Bundle roots are
 interior nodes of the claim tree, so the root is unchanged. The three
 inputs of our epoch fit in about nine thousand stored mcycle bundles,
 and one uarch span in about three thousand. When a dispute descends
-below a stored bundle, the player recovers the leaves under that one
-bundle by re-running a fork of the input’s boundary machine through the
-bundle’s window, and caches the result (`get_node` in `prtu.lua`). Only
-the bundles a dispute actually visits are ever expanded, and each costs
-one machine re-run.
+below a stored bundle, the player opens it: a complete forest of the
+leaves under that one bundle, built by re-running a fork of the input’s
+boundary machine through the bundle’s window, exactly as a machine
+produces the disputed transition’s logs. The claim tree checks the
+opened forest against the committed bundle root and caches it
+(`open_bundle` in `prtu.lua`). Only the bundles a dispute actually
+visits are ever opened, and each costs one machine re-run.
 
 The builds themselves stream out of the emulator. They follow the same
 collection contract as `cartesi-machine`’s computation-hash builders:
 each input owns a fixed-capacity segment, collection state threads
 across yields, and the final repeatable group returned at a fixed point
 fills the segment’s remaining positions. The only different sink is
-PRT’s run-compressed tree, which retains the nodes needed to answer
-later tournament queries. The mcycle build (`build_mcycle_claim` in
-`prt-player.lua`) advances the whole epoch once, folding each input’s
-bundles into runs, padding each input’s span with the fixed point where
-its guest stopped, and keeping a fork at each input boundary to anchor
-every later re-run. The refinement re-run (`refine_mcycle_claim`)
-recovers one bundle’s samples the same way. The uarch build
-(`build_uarch_claim`) expands one period, instruction by instruction,
-through `machine:collect_uarch_cycle_root_hashes()`, whose stream
-already carries the halt repetitions compressed and the reset hashes
-marked.
+PRT’s frontier forest, which retains the nodes needed to answer later
+tournament queries. The mcycle build (`build_mcycle_claim` in
+`prt-player.lua`) advances the whole epoch once, pushing each input’s
+bundle roots into the outer forest, padding each input’s span with the
+fixed point where its guest stopped, and keeping a fork at each input
+boundary to anchor every later re-run. The refinement re-run
+(`refine_mcycle_claim`) recovers one bundle’s samples the same way. The
+uarch build (`build_uarch_claim`) expands one period, instruction by
+instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose
+stream already carries the halt repetitions compressed and the reset
+hashes marked.
 
 ### The tournament
 

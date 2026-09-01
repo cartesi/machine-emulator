@@ -36,7 +36,7 @@ forest reuses them instead of reimplementing alignment, capacity, and carries:
 - the below-level alignment assert loop (appears in `frontier_push_back`,
   `frontier_pad_back`, and `frontier_get_root_hash`)
 - the binary-carry fold (the `while frontier[level] do` loop), parameterized on
-  a combine function so the forest can carry complete trees (building inner
+  a combine function so the forest can carry complete trees (building mixed
   nodes) while the frontier carries hashes
 - a capacity helper over the leaf count, including pending forest
   values; `frontier_padding_fits` cannot be reused as is for that check
@@ -66,14 +66,14 @@ scalar pushes, non-default first/last/log2_hash_size, empty and invalid ranges).
 Internal to hash-tree.lua, two tree kinds, each identified by a `kind` field and
 carrying its height. Tables remain distinguishable from raw hash strings:
 
-1. Partial-array tree - a power-of-two capacity and a non-empty partial array
+1. Dense tree - a power-of-two capacity and a non-empty partial array
    of equal-height base values. Base values may be opaque hashes or complete
    trees. The final stored value fills every omitted position. Store one
    partial hash array per higher level through the root; an index past a level
    array's end returns its last entry. A one-entry base array is a completely
    repeated tree, a full base array is a dense tree, and an intermediate array
    represents an explicit prefix followed by repetitions.
-2. Inner tree - `left`, `right`, `hash`, joining any two equal-height trees.
+2. Mixed tree - `left`, `right`, `hash`, joining any two equal-height trees.
 
 Node lookup on a tree routes by kind. Queries below an opaque hash fail with a
 clear error. All validation (hash size, heights, equal child heights, indices)
@@ -111,8 +111,8 @@ composes their sibling arrays.
   tree on root equality.
 - Flush triggers - `push_back` after an implied suffix, a height change, an
   incompatible pad after an implied suffix, or reaching capacity. A flush
-  consumes maximal aligned complete subtrees. Each becomes a partial-array
-  tree, with one carry each; inner nodes are created at carries.
+  consumes maximal aligned complete subtrees. Each becomes a dense tree, with
+  one carry each; mixed nodes are created at carries.
 
 Validate the incoming operation, including its entire reserved range, before a
 flush or any other mutation. No `finish`. Reaching capacity flushes immediately,
@@ -244,7 +244,7 @@ Verification, in order:
 
 ## Order and gating
 
-Follow the implementation order of frontier-forest.md (helpers, array
+Follow the implementation order of frontier-forest.md (helpers, dense
 push_back, tree representations, forest ops, queries, tests, wrapper,
 dishonest paths, checks). Steps 1-6 land and pass before any recipe file
 changes, so the generic structure is gated by unit and corpus parity tests

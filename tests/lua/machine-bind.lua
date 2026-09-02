@@ -1478,9 +1478,9 @@ local function test_send_cmio_input_with_different_arguments()
     local reason = 1
     local max_rx_buffer_len = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE
     local hash_fn = "keccak256"
-    local data_hash = hash_tree.get_root_hash(data, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
+    local data_hash = hash_tree.get_data_root_hash(data, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
     local all_zeros = string.rep("\0", max_rx_buffer_len)
-    local all_zeros_hash = hash_tree.get_root_hash(all_zeros, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
+    local all_zeros_hash = hash_tree.get_data_root_hash(all_zeros, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
     -- prepares and asserts the state before send_cmio_response is called
     local function assert_before_cmio_response_sent(machine)
         machine:write_reg("iflags_Y", 1)

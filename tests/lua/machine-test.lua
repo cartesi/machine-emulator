@@ -206,7 +206,7 @@ do_test("proof check should pass", function(machine)
     local ram_log2_size = math.ceil(math.log(ram.length, 2))
     local hash_fn = machine:get_initial_config().hash_tree.hash_function
     local calculated_ram_hash =
-        hash_tree.get_root_hash(machine:read_memory(ram.start, ram.length), ram_log2_size, hash_fn)
+        hash_tree.get_data_root_hash(machine:read_memory(ram.start, ram.length), ram_log2_size, hash_fn)
     -- Get proof of ram and check if hashes match
     local ram_proof = machine:get_proof(ram.start, ram_log2_size)
     local root_hash = machine:get_root_hash()
@@ -300,7 +300,7 @@ do_test("proof  and root hash should match", function(machine)
     -- Calculate hash
     local initial_memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
     local hash_fn = machine:get_initial_config().hash_tree.hash_function
-    local initial_calculated_hash = hash_tree.get_root_hash(initial_memory_read, 10, hash_fn)
+    local initial_calculated_hash = hash_tree.get_data_root_hash(initial_memory_read, 10, hash_fn)
     assert(initial_ram_proof.target_hash == initial_calculated_hash, "initial hash does not match")
 
     print(
@@ -319,7 +319,7 @@ do_test("proof  and root hash should match", function(machine)
     local ram_proof = machine:get_proof(ram_address_start, 10)
     -- Calculate hash
     local memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local calculated_hash = hash_tree.get_root_hash(memory_read, 10, hash_fn)
+    local calculated_hash = hash_tree.get_data_root_hash(memory_read, 10, hash_fn)
 
     print(
         "end target hash:",

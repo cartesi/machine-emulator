@@ -41,8 +41,8 @@ end
 -- are word-size keccak256 hashes, a trailing partial word zero-padded, and inner nodes hash
 -- their two children. Every node the data does not reach takes its level's pristine hash, the
 -- root of an all-zero subtree, which doubles each level climbed. Overflow is rejected.
--- docs:begin get_root_hash
-local function get_root_hash(data, log2_root_size, hash_type)
+-- docs:begin get_data_root_hash
+local function get_data_root_hash(data, log2_root_size, hash_type)
     local hash_function = cartesi[hash_type or "keccak256"]
     assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
     -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
@@ -66,7 +66,7 @@ local function get_root_hash(data, log2_root_size, hash_type)
     end
     return level[1]
 end
--- docs:end get_root_hash
+-- docs:end get_data_root_hash
 
 -- The functions below are a generic incremental keccak Merkle accumulator (a "back merkle
 -- tree") for the CMIO outputs Merkle tree: a fixed-height tree whose leaves are keccak256(output),
@@ -714,7 +714,7 @@ return {
     roll_hash_up_tree = roll_hash_up_tree,
     verify_slice = verify_slice,
     verify_splice = verify_splice,
-    get_root_hash = get_root_hash,
+    get_data_root_hash = get_data_root_hash,
     frontier = frontier,
     frontier_copy = frontier_copy,
     frontier_push_back = frontier_push_back,

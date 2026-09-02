@@ -8082,7 +8082,7 @@ local template_input_proof = require("pristine-input-proof")
 assert(template_input_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Load actual input hash
-local input_hash = hash_tree.get_root_hash(input_expr .. "\n", input_nvram.log2_size)
+local input_hash = hash_tree.get_data_root_hash(input_expr .. "\n", input_nvram.log2_size)
 
 -- Check that instantiated template hash can be obtained directly from input proof and new input hash
 hash_tree.verify_splice(template_input_proof, input_hash, instantiated_template_hash)
@@ -8099,11 +8099,12 @@ compares against the one obtained off-chain.
 Since the input NVRAM starts completely filled with zeros, only the
 mathematical expression is needed to describe its modified contents. Its
 root hash is computed by
-`hash_tree.get_root_hash(<data>, <log2_root_size>)`, which lays `<data>`
-at the base of a 2^`<log2_root_size>`-byte subtree and returns its root.
+`hash_tree.get_data_root_hash(<data>, <log2_root_size>)`, which lays
+`<data>` at the base of a 2^`<log2_root_size>`-byte subtree and returns
+its root.
 
 ``` lua
-local function get_root_hash(data, log2_root_size, hash_type)
+local function get_data_root_hash(data, log2_root_size, hash_type)
     local hash_function = cartesi[hash_type or "keccak256"]
     assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
     -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
@@ -8203,7 +8204,7 @@ local output_proof = require("output-proof")
 assert(output_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Reconstruct the root hash of the output NVRAM from the result alone
-local output_hash = hash_tree.get_root_hash(result, output_nvram.log2_size)
+local output_hash = hash_tree.get_data_root_hash(result, output_nvram.log2_size)
 
 -- Splicing the reconstructed output drive into the proof must reproduce the agreed machine hash
 hash_tree.verify_splice(output_proof, output_hash, halted_state_hash)
@@ -8216,12 +8217,12 @@ This is possible when all interested parties agree on the final state
 hash *M’* of the Cartesi Machine they ran off-chain. Assuming this to be
 the case, and in possession of the output proof and the result, the
 blockchain reconstructs the root hash of the output NVRAM from the
-result with `hash_tree.get_root_hash`, the same function the previous
-example used for the input drive. It then passes the output proof, this
-reconstructed hash, and the agreed hash *M’* to `verify_splice`, which
-confirms that an output NVRAM with exactly this content sits in the
-machine whose state hash is *M’*. In other words, once everyone agrees
-on *M’*, the result really is there.
+result with `hash_tree.get_data_root_hash`, the same function the
+previous example used for the input drive. It then passes the output
+proof, this reconstructed hash, and the agreed hash *M’* to
+`verify_splice`, which confirms that an output NVRAM with exactly this
+content sits in the machine whose state hash is *M’*. In other words,
+once everyone agrees on *M’*, the result really is there.
 
 ``` bash
 lua5.4 slice-calculator-output.lua "6*2^1024 + 3*2^512"
@@ -8781,7 +8782,9 @@ local function verify_output(dapp_contract, output, final_hash)
     assert(output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
     assert(output.proof.target_address == dapp_contract.output.start)
     assert(output.proof.log2_target_size == dapp_contract.output.log2_size)
-    assert(hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash)
+    assert(
+        hash_tree.get_data_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
+    )
     hash_tree.verify_slice(output.proof)
     return true
 end

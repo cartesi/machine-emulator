@@ -4525,8 +4525,8 @@ For this, it needs only the pristine input proof and the root hash of the modifi
 The splicing operation bubbles that root hash up the tree to recover the state hash, which the script then compares against the one obtained off-chain.
 
 Since the input NVRAM starts completely filled with zeros, only the mathematical expression is needed to describe its modified contents.
-Its root hash is computed by `hash_tree.get_root_hash(<data>, <log2_root_size>)`, which lays `<data>` at the base of a 2^`<log2_root_size>`-byte subtree and returns its root.
-```{.lua replace=proof_module/source/get_root_hash title="hash-tree.lua (excerpt)"}
+Its root hash is computed by `hash_tree.get_data_root_hash(<data>, <log2_root_size>)`, which lays `<data>` at the base of a 2^`<log2_root_size>`-byte subtree and returns its root.
+```{.lua replace=proof_module/source/get_data_root_hash title="hash-tree.lua (excerpt)"}
 ```
 The leaves are the []{replace=hash_tree_constants/word_size code=no}-byte words of `<data>`, each hashed with `cartesi.keccak256`, and a trailing partial word is zero-padded.
 Each inner node is the hash of its two children.
@@ -4560,7 +4560,7 @@ Off-chain, it instantiates the `calculator-template` concretely, writes a mathem
 
 On chain, the blockchain wants to verify the result of the computation.
 This is possible when all interested parties agree on the final state hash *M'* of the Cartesi Machine they ran off-chain.
-Assuming this to be the case, and in possession of the output proof and the result, the blockchain reconstructs the root hash of the output NVRAM from the result with `hash_tree.get_root_hash`, the same function the previous example used for the input drive.
+Assuming this to be the case, and in possession of the output proof and the result, the blockchain reconstructs the root hash of the output NVRAM from the result with `hash_tree.get_data_root_hash`, the same function the previous example used for the input drive.
 It then passes the output proof, this reconstructed hash, and the agreed hash *M'* to `verify_splice`, which confirms that an output NVRAM with exactly this content sits in the machine whose state hash is *M'*.
 In other words, once everyone agrees on *M'*, the result really is there.
 ```{.bash key=lua_slice_calculator_output vars=template->calc_template/calculator-template/path,output_raw_proof depends=slice_calculator_output,proof_module replace=source}

@@ -33,7 +33,7 @@ local output_proof = require("output-proof")
 assert(output_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Reconstruct the root hash of the output NVRAM from the result alone
-local output_hash = hash_tree.get_root_hash(result, output_nvram.log2_size)
+local output_hash = hash_tree.get_data_root_hash(result, output_nvram.log2_size)
 
 -- Splicing the reconstructed output drive into the proof must reproduce the agreed machine hash
 hash_tree.verify_splice(output_proof, output_hash, halted_state_hash)

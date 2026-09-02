@@ -301,25 +301,25 @@ local function frontier_next_proofs(frontier, next_output_hashes)
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
     local leaf_count = frontier_leaf_count(frontier)
-    -- siblings[i] is the i-th new output's sibling array.
+    -- Allocate each proof's sibling array.
     local siblings = {}
     for i = 1, next_output_count do
         siblings[i] = {}
     end
-    -- active holds the node hashes covering global indices [base, base + #active - 1] at the
-    -- current level; start at the leaves over [leaf_count, leaf_count + next_output_count).
+    -- Start with the new leaves at their global indices.
     local active = next_output_hashes
     local base = leaf_count
-    local pristine = pristine_leaf -- the all-pristine subtree at the current level
+    -- Track the pristine subtree at the current level.
+    local pristine = pristine_leaf
     for level = 1, log2_max_leaves do
         local bit = level - 1
         local frontier_entry = frontier[level]
-        -- Each output's proof sibling at this level is its node's neighbour (toggle the low bit).
+        -- Add each output's sibling at this level.
         for i = 1, next_output_count do
             local node = (leaf_count + i - 1) >> bit
             siblings[i][level] = frontier_node(frontier_entry, base, active, pristine, node ~ 1)
         end
-        -- Climb one level: parent p has children 2p and 2p+1; the leftmost index halves.
+        -- Hash the active nodes into their parents.
         local parents = {}
         local parents_base = base >> 1
         for p = parents_base, (base + #active - 1) >> 1 do
@@ -330,7 +330,8 @@ local function frontier_next_proofs(frontier, next_output_hashes)
         active, base = parents, parents_base
         pristine = hash_function(pristine, pristine)
     end
-    local root_hash = active[1] -- after the last level the single active node is the root
+    -- The final active node is the root.
+    local root_hash = active[1]
     local proofs = {}
     for i = 1, next_output_count do
         proofs[i] = {

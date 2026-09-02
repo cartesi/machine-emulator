@@ -8322,10 +8322,10 @@ The function `frontier_push_back` folds one new output leaf into the
 frontier:
 
 ``` lua
-local function frontier_push_back(frontier, hash, log2_hash_size)
+local function frontier_push_back(frontier, hash, height)
     local hash_function = assert(frontier.hash_function)
-    local level = (log2_hash_size or 0) + 1
-    assert_aligned_below(frontier, level, "frontier is not aligned to the hash size")
+    local level = (height or 0) + 1
+    assert_aligned_below(frontier, level, "frontier is not aligned to the subtree size")
     assert(not frontier[#frontier], "too many leaves")
     local right = hash
     while frontier[level] do
@@ -8350,11 +8350,11 @@ constant work each, amortized. The function `frontier_append` appends
 each hashed into one root and pushed back as one entry:
 
 ``` lua
-local function frontier_append(frontier, hashes, first, last, log2_hash_size)
+local function frontier_append(frontier, hashes, first, last, height)
     local hash_function = assert(frontier.hash_function)
-    first, last = assert_valid_range(hashes, first, last)
-    local first_level = (log2_hash_size or 0) + 1
-    assert_aligned_below(frontier, first_level, "frontier is not aligned to the hash size")
+    first, last = normalize_range(hashes, first, last)
+    local first_level = (height or 0) + 1
+    assert_aligned_below(frontier, first_level, "frontier is not aligned to the subtree size")
     assert(frontier_padding_fits(frontier, last - first + 1, first_level), "too many leaves")
     while first <= last do
         local added_height = 0
@@ -8381,15 +8381,15 @@ The function `frontier_get_root_hash` returns the root hash of the tree,
 padded with zero leaves to completion:
 
 ``` lua
-local function frontier_get_root_hash(frontier, pad, log2_pad_size)
+local function frontier_get_root_hash(frontier, pad, pad_height)
     local hash_function = assert(frontier.hash_function)
     local height = #frontier - 1
     if frontier[height + 1] then return frontier[height + 1] end
     pad = pad or pristine_leaf
     local root = pad
-    assert_aligned_below(frontier, (log2_pad_size or 0) + 1, "frontier is not aligned to the pad size")
+    assert_aligned_below(frontier, (pad_height or 0) + 1, "frontier is not aligned to the pad size")
     -- pad doubles into the all-pad subtree of each level, the right sibling of every empty one
-    for level = (log2_pad_size or 0) + 1, height do
+    for level = (pad_height or 0) + 1, height do
         if frontier[level] then
             root = hash_function(frontier[level], root)
         else

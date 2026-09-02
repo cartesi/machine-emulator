@@ -243,9 +243,9 @@ describe("hash-tree.lua", function()
             end, "too many leaves")
         end)
 
-        it("pads with subtree roots when log2_pad_size is given", function()
-            local log2_pad_size = 2
-            local pad_size = 1 << log2_pad_size
+        it("pads with subtree roots at a given height", function()
+            local pad_height = 2
+            local pad_size = 1 << pad_height
             local pad_root = cartesi.keccak256(cartesi.keccak256(pad, pad), cartesi.keccak256(pad, pad))
             -- every aligned fill and every subtree pad count that still fits
             for n = 0, SMALL_MAX // pad_size do
@@ -255,7 +255,7 @@ describe("hash-tree.lua", function()
                     for _, l in ipairs(leaves) do
                         hash_tree.frontier_push_back(frontier, l)
                     end
-                    hash_tree.frontier_pad_back(frontier, pad_root, k, log2_pad_size)
+                    hash_tree.frontier_pad_back(frontier, pad_root, k, pad_height)
                     -- one subtree root pad is pad_size leaf pads
                     expect.equal(
                         hash_tree.frontier_get_root_hash(frontier),
@@ -284,7 +284,7 @@ describe("hash-tree.lua", function()
     describe("frontier_push_back", function()
         local pad = cartesi.keccak256("pad")
 
-        it("pushes a subtree root when log2_hash_size is given", function()
+        it("pushes a subtree root at a given height", function()
             local SMALL_H = 4
             -- push leaves 1..2 individually, then the subtree of leaves 3..4 as one entry
             local leaves = make_leaves(4)
@@ -307,7 +307,7 @@ describe("hash-tree.lua", function()
             hash_tree.frontier_push_back(frontier, leaf(1))
             expect.fail(function()
                 hash_tree.frontier_push_back(frontier, leaf(2), 1)
-            end, "frontier is not aligned to the hash size")
+            end, "frontier is not aligned to the subtree size")
         end)
 
         it("appends an array of hashes like repeated scalar pushes", function()
@@ -421,11 +421,11 @@ describe("hash-tree.lua", function()
             expect.equal(hash_tree.frontier_get_root_hash(frontier), hash_tree.frontier_get_root_hash(frontier, z))
         end)
 
-        it("pads with a subtree root when log2_pad_size is given", function()
-            local log2_pad_size = 2
-            local pad_size = 1 << log2_pad_size
+        it("pads with a subtree root at a given height", function()
+            local pad_height = 2
+            local pad_size = 1 << pad_height
             for n = 0, MAX4 // pad_size do
-                -- fill n complete subtrees of distinct leaves, so levels below log2_pad_size are empty
+                -- fill n complete subtrees of distinct leaves, so levels below pad_height are empty
                 local leaves = make_leaves(n * pad_size)
                 local frontier = hash_tree.frontier(H4, "keccak256")
                 for _, l in ipairs(leaves) do
@@ -447,7 +447,7 @@ describe("hash-tree.lua", function()
                     end
                 end
                 expect.equal(
-                    hash_tree.frontier_get_root_hash(frontier, subtree_root, log2_pad_size),
+                    hash_tree.frontier_get_root_hash(frontier, subtree_root, pad_height),
                     hash_tree.frontier_get_root_hash(expected_frontier)
                 )
             end
@@ -529,13 +529,16 @@ describe("hash-tree.lua", function()
             hash_tree.frontier_forest_append(forest, prefix)
             hash_tree.frontier_forest_pad_back(forest, pad, 6)
             hash_tree.frontier_forest_pad_back(forest, pad, 4) -- extends the same repetition
-            hash_tree.frontier_forest_push_back(forest, prefix[1]) -- a push after a repetition
-            hash_tree.frontier_forest_pad_back(forest, prefix[2], 2) -- an incompatible pad
+            local pad_count = forest.pending.pad_count
+            hash_tree.frontier_forest_push_back(forest, pad) -- a matching push extends it too
+            expect.equal(forest.pending.pad_count, pad_count + 1)
+            hash_tree.frontier_forest_push_back(forest, prefix[1]) -- an incompatible push flushes it
+            hash_tree.frontier_forest_pad_back(forest, prefix[2], 1) -- an incompatible pad
             local leaves = { prefix[1], prefix[2], prefix[3] }
-            for i = 4, 13 do
+            for i = 4, 14 do
                 leaves[i] = pad
             end
-            leaves[14], leaves[15], leaves[16] = prefix[1], prefix[2], prefix[2]
+            leaves[15], leaves[16] = prefix[1], prefix[2]
             expect_matches_reference(forest, leaves)
         end)
 

@@ -49,17 +49,17 @@ case for scalar overflow.
 
 ## Step 2. frontier_append
 
-Add `frontier_append(frontier, hashes, first, last, log2_hash_size)`:
+Add `frontier_append(frontier, hashes, first, last, height)`:
 
 - append `hashes[first..last]` in order, `first` defaulting to 1 and `last` to
   `#hashes`, `first == last + 1` an empty no-op, invalid ranges rejected
-- keep `frontier_push_back(frontier, hash, log2_hash_size)` scalar-only; overflow
+- keep `frontier_push_back(frontier, hash, height)` scalar-only; overflow
   now asserts
 
 Consume the range as maximal aligned complete subtrees. For the plain frontier each
 subtree still hashes pairwise to one root, then one carry. Validate
 alignment and overflow before hashing. Add spec tests (same roots as repeated
-scalar pushes, non-default first/last/log2_hash_size, empty and invalid ranges).
+scalar pushes, non-default first/last/height, empty and invalid ranges).
 
 ## Step 3. Complete-tree representations
 
@@ -95,22 +95,22 @@ taller claim of height `H`, bundling can keep both component forests below 63
 when the bundle height `B` satisfies `B < 63` and `H - B < 63`; the wrapper
 composes their sibling arrays.
 
-- `frontier_forest_push_back(forest, value, log2_hash_size)` - appends one raw
+- `frontier_forest_push_back(forest, value, value_height)` - appends one raw
   hash or completed forest. A completed forest contributes its full top entry.
-- `frontier_forest_append(forest, hashes, first, last, log2_hash_size)` - appends
+- `frontier_forest_append(forest, hashes, first, last, hash_height)` - appends
   a raw hash array slice. Hashes append to
   the pending partial array by reference (copied out of the caller's array at
   call time). A height mismatch or an earlier implied suffix flushes first.
   Raw hashes default to height 0.
-- `frontier_forest_pad_back(forest, value, count, log2_hash_size)` - starts or
+- `frontier_forest_pad_back(forest, value, count, value_height)` - starts or
   extends an implied suffix. The last array value is followed by `pad_count`
   implicit copies. Append the base once when needed, then increase `pad_count`.
   A one-copy pad behaves as a scalar push unless it extends an existing suffix.
   Compatible means same bytes and declared height for raw
   hashes, same object for trees. Never merge an opaque hash with a
   tree on root equality.
-- Flush triggers - `push_back` after an implied suffix, a height change, an
-  incompatible pad after an implied suffix, or reaching capacity. A flush
+- Flush triggers - an incompatible value after an implied suffix, a height
+  change, `append` after an implied suffix, or reaching capacity. A flush
   consumes maximal aligned complete subtrees. Each becomes a dense tree, with
   one carry each; mixed nodes are created at carries.
 

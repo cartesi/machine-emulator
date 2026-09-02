@@ -24,9 +24,9 @@ module-style frontier API:
 ```lua
 local forest = hash_tree.frontier_forest(log2_max_leaves, hash_type)
 
-hash_tree.frontier_forest_push_back(forest, hash_or_forest, log2_hash_size)
-hash_tree.frontier_forest_append(forest, hashes, first, last, log2_hash_size)
-hash_tree.frontier_forest_pad_back(forest, hash_or_forest, count, log2_hash_size)
+hash_tree.frontier_forest_push_back(forest, hash_or_forest, value_height)
+hash_tree.frontier_forest_append(forest, hashes, first, last, hash_height)
+hash_tree.frontier_forest_pad_back(forest, hash_or_forest, count, value_height)
 
 hash_tree.frontier_forest_get_root_hash(forest)
 hash_tree.frontier_forest_get_node(forest, position, height)
@@ -36,11 +36,11 @@ hash_tree.frontier_forest_get_siblings(forest, position, height, into)
 - `push_back` appends one raw hash or completed forest.
 - `append` appends raw `hashes[first..last]` in order. `first` defaults to 1
   and `last` defaults to `#hashes`.
-- A raw hash has height `log2_hash_size`, defaulting to zero. A completed
-  forest carries its own height, which must match `log2_hash_size` when supplied.
+- A raw hash has the supplied `hash_height` or `value_height`, defaulting to zero.
+  A completed forest carries its own height, which must match `value_height` when supplied.
 - Indices are inclusive. `first == last + 1` is an empty no-op range.
 - Both operations require the current leaf count to be aligned to
-  `2^log2_hash_size` and reject overflow.
+  the supplied height and reject overflow.
 
 `pad_back` appends `count` copies of one raw hash or completed forest.
 Its count is in units of the supplied subtree, as it is for
@@ -127,11 +127,11 @@ than maintaining a second interpretation of them.
 ### `push_back` and `append`
 
 `push_back` and `append` add their values to the pending partial array when its
-base height matches and it has no implied repetitions. If pending work already
-has an implied repeated suffix, or has a different base height, flush it first.
-The array range is copied as references when the call is made, so later mutation
-of the caller's array cannot change the forest. No parent hashes are computed
-yet.
+base height matches. `push_back` extends an implied suffix when its value is
+compatible, while `append` flushes any implied suffix first. A different base
+height or incompatible pushed value also flushes pending work. The array range
+is copied as references when the call is made, so later mutation of the caller's
+array cannot change the forest. No parent hashes are computed yet.
 
 When pending work is flushed, consume its `#values + pad_count` entries as maximal aligned
 complete subtrees. Each becomes one dense tree. A subtree inside the explicit
@@ -174,7 +174,8 @@ range when `pad_back` is called, not later when it is flushed.
 
 Flush the pending accumulator when:
 
-- `push_back` follows an implied repeated suffix;
+- `push_back` follows an incompatible implied repeated suffix;
+- `append` follows an implied repeated suffix;
 - a value has a different base height;
 - `pad_back` follows an incompatible implied repeated suffix; or
 - the leaf count reaches the forest capacity.
@@ -314,10 +315,9 @@ most `O(V log R)` and its hashing is proportional to the mixed nodes and
 previously uncached repetition levels. Here `V` is bounded by the materialized
 tree size and is `O(RH)`.
 
-The frontier forest instead defers work until an explicit value follows an
-implied suffix, the base height changes, the implied base changes, or the forest
-fills. Completion flushes immediately, so all valid queries see a materialized
-tree.
+The frontier forest instead defers work until an incompatible value or an array
+append follows an implied suffix, the base height changes, or the forest fills.
+Completion flushes immediately, so all valid queries see a materialized tree.
 Consequently, compatible repeated calls have the same `O(Q)` accumulation cost
 as Dave plus one final `O(H)` flush. Alternating incompatible regions can still
 cost `O(QH)`, but their boundaries also cause Dave's recursive build to retain
@@ -335,7 +335,7 @@ returned by the emulator, incremental construction, and direct node access.
 Add focused cases to `tests/lua/spec-hash-tree-lua.lua`:
 
 - Scalar and array `push_back` produce the same roots as repeated scalar calls,
-  including non-default `first`, `last`, and `log2_hash_size`.
+  including non-default `first`, `last`, and `hash_height`.
 - Empty ranges are no-ops; invalid ranges, misalignment, and overflow fail.
 - Forest roots match ordinary frontier roots for mixed scalar, array, and
   `pad_back` sequences.

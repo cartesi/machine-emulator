@@ -135,40 +135,6 @@ local function assert_valid_range(values, first, last)
     return first, last
 end
 
--- Folds one complete entry standing at level into the level array by the binary-carry
--- update, combining with the present low levels up to the first empty one, O(1) amortized.
--- The frontier carries root hashes and combines them with its hash function. The frontier
--- forest carries complete trees and combines them into mixed nodes.
--- docs:begin carry_back
-local function carry_back(levels, level, entry, combine)
-    while levels[level] do
-        assert(level < #levels, "too many leaves")
-        entry = combine(levels[level], entry)
-        levels[level] = false
-        level = level + 1
-    end
-    levels[level] = entry
-end
--- docs:end carry_back
-
--- Appends count entries standing at first_level as maximal aligned complete subtrees.
--- make_subtree(offset, added_height) constructs each subtree, then carry_back folds it
--- into the levels with combine.
-local function append_complete_subtrees(levels, first_level, count, make_subtree, combine)
-    local offset = 0
-    while count > 0 do
-        local added_height = 0
-        local subtree_count = 1
-        while not levels[first_level + added_height] and subtree_count <= (count >> 1) do
-            added_height = added_height + 1
-            subtree_count = subtree_count << 1
-        end
-        carry_back(levels, first_level + added_height, make_subtree(offset, added_height), combine)
-        offset = offset + subtree_count
-        count = count - subtree_count
-    end
-end
-
 -- Whether count entries standing at first_level still fit, by binary carry over the level
 -- occupancy, so trees taller than a Lua integer need no materialized leaf count.
 local function frontier_padding_fits(frontier, count, first_level)
@@ -186,24 +152,32 @@ local function frontier_padding_fits(frontier, count, first_level)
     return carry == 0
 end
 
--- Appends one entry by the binary-carry update, O(1) amortized. Mutates the frontier
--- in place. The entry is a leaf, or, when log2_hash_size is given, the root of a complete
--- subtree of that height, which requires the levels below it to be empty (the filled leaf
--- count must be a multiple of the entry size). Appending past the tree capacity fails.
+-- Folds one new entry into the frontier by the binary-carry update: combine with the present
+-- low levels up to the first empty one, O(1) amortized. Mutates the frontier in place. The entry
+-- is a leaf, or, when log2_hash_size is given, the root of a complete subtree of that height,
+-- which requires the levels below it to be empty (the filled leaf count must be a multiple of
+-- the entry size). Appending past the tree capacity fails.
 -- docs:begin frontier_push_back
 local function frontier_push_back(frontier, hash, log2_hash_size)
     local hash_function = assert(frontier.hash_function)
     local level = (log2_hash_size or 0) + 1
     assert_aligned_below(frontier, level, "frontier is not aligned to the hash size")
     assert(not frontier[#frontier], "too many leaves")
-    return carry_back(frontier, level, hash, hash_function)
+    local right = hash
+    while frontier[level] do
+        right = hash_function(frontier[level], right)
+        frontier[level] = false
+        level = level + 1
+    end
+    frontier[level] = right
 end
 -- docs:end frontier_push_back
 
 -- Appends hashes[first..last] in order (first defaults to 1, last to #hashes, and
 -- first == last + 1 is an empty range). The hashes are consumed as maximal aligned
--- complete subtrees, each hashed into one entry and carried once. Appending past the
--- tree capacity fails before anything changes.
+-- complete subtrees, each the largest that still starts at the filled leaf count and fits
+-- the remaining range, hashed pairwise into one root and pushed back as one entry.
+-- Appending past the tree capacity fails before anything changes.
 -- docs:begin frontier_append
 local function frontier_append(frontier, hashes, first, last, log2_hash_size)
     local hash_function = assert(frontier.hash_function)
@@ -211,8 +185,14 @@ local function frontier_append(frontier, hashes, first, last, log2_hash_size)
     local first_level = (log2_hash_size or 0) + 1
     assert_aligned_below(frontier, first_level, "frontier is not aligned to the hash size")
     assert(frontier_padding_fits(frontier, last - first + 1, first_level), "too many leaves")
-    append_complete_subtrees(frontier, first_level, last - first + 1, function(offset, added_height)
-        local nodes = table.move(hashes, first + offset, first + offset + (1 << added_height) - 1, 1, {})
+    while first <= last do
+        local added_height = 0
+        local subtree_count = 1
+        while not frontier[first_level + added_height] and subtree_count <= ((last - first + 1) >> 1) do
+            added_height = added_height + 1
+            subtree_count = subtree_count << 1
+        end
+        local nodes = table.move(hashes, first, first + subtree_count - 1, 1, {})
         for _ = 1, added_height do
             local parents = {}
             for j = 1, #nodes, 2 do
@@ -220,8 +200,9 @@ local function frontier_append(frontier, hashes, first, last, log2_hash_size)
             end
             nodes = parents
         end
-        return nodes[1]
-    end, hash_function)
+        frontier_push_back(frontier, nodes[1], first_level + added_height - 1)
+        first = first + subtree_count
+    end
 end
 -- docs:end frontier_append
 
@@ -281,7 +262,14 @@ local function frontier_pad_back(frontier, hash, count, log2_pad_size)
         local size = 1 << (level - first_level)
         if math.ult(count, size) then break end
         if frontier[level] then
-            carry_back(frontier, level, pad_hashes[level], hash_function)
+            local right = pad_hashes[level]
+            while frontier[level] do
+                assert(level < top, "too many leaves")
+                right = hash_function(frontier[level], right)
+                frontier[level] = false
+                level = level + 1
+            end
+            frontier[level] = right
             count = count - size
         else
             level = level + 1
@@ -508,18 +496,6 @@ local function descend(tree, leaf_index, bit, stop_bit, siblings)
     return descend(value, leaf_index, bit, stop_bit, siblings)
 end
 
-local function get_node(tree, index, height)
-    local stop_bit = 1 << height
-    return descend(tree, index << height, 1 << tree.height, stop_bit)
-end
-
--- Collects the proof siblings of one leaf from the root downward. The caller supplies
--- the temporary array and reverses it only after this descent succeeds.
-local function get_siblings(tree, index, siblings)
-    descend(tree, index, 1 << tree.height, 1, siblings)
-    return siblings
-end
-
 -- An empty frontier forest of the given height, ready to append 2^log2_max_leaves leaves.
 -- The level array is that of a frontier. Values first accumulate in a pending partial array
 -- whose last value implicitly fills the positions padded after it, and materialize into
@@ -578,24 +554,39 @@ local function validate_forest_hashes(values, first, last)
     end
 end
 
--- Materializes the pending values as maximal aligned complete subtrees. Each becomes a
--- dense tree, except that a single tree value is already the required tree. The trees
--- are folded into the levels, joining carries into mixed trees.
+-- Materializes the pending values as maximal aligned complete subtrees, each the largest
+-- that still starts at the leaf count and fits the remaining values. Each becomes a
+-- dense tree, except that a single tree value is already the required tree. Each subtree
+-- is folded into the levels by the binary-carry update, joining carries into mixed trees.
 local function forest_flush(forest)
     local pending = forest.pending
     if not pending then return end
     forest.pending = false
-    append_complete_subtrees(
-        forest,
-        pending.height + 1,
-        #pending.values + pending.pad_count,
-        function(offset, added_height)
-            local root = get_or_last(pending.values, offset)
-            if added_height == 0 and is_tree(root) then return root end
-            return new_dense_tree(forest.hash_function, pending.height, added_height, pending.values, offset + 1)
-        end,
-        function(left, right) return new_mixed_tree(forest.hash_function, left, right) end
-    )
+    local first_level = pending.height + 1
+    local offset = 0
+    local count = #pending.values + pending.pad_count
+    while count > 0 do
+        local added_height = 0
+        local subtree_count = 1
+        while not forest[first_level + added_height] and subtree_count <= (count >> 1) do
+            added_height = added_height + 1
+            subtree_count = subtree_count << 1
+        end
+        local subtree = get_or_last(pending.values, offset)
+        if added_height > 0 or not is_tree(subtree) then
+            subtree = new_dense_tree(forest.hash_function, pending.height, added_height, pending.values, offset + 1)
+        end
+        local level = first_level + added_height
+        while forest[level] do
+            assert(level < #forest, "too many leaves")
+            subtree = new_mixed_tree(forest.hash_function, forest[level], subtree)
+            forest[level] = false
+            level = level + 1
+        end
+        forest[level] = subtree
+        offset = offset + subtree_count
+        count = count - subtree_count
+    end
 end
 
 -- Returns pending work compatible with values of the given height. When pad_value
@@ -679,28 +670,40 @@ local function frontier_forest_get_root_hash(forest)
     return assert(forest[forest.height + 1], "the forest is not full").hash
 end
 
--- The node hash at 0-based position index and height, following the machine API's
--- position-first argument order. Requires the forest to be full. Does not mutate the
--- forest. O(log2_max_leaves).
-local function frontier_forest_get_node(forest, index, height)
+-- The node hash at height whose first covered leaf is position, following the machine API's
+-- position-first argument order. Requires the forest to be full and position to be aligned
+-- to the node size. Does not mutate the forest. O(log2_max_leaves).
+local function frontier_forest_get_node(forest, position, height)
     local top = assert(forest[forest.height + 1], "the forest is not full")
     assert(math.type(height) == "integer" and height >= 0 and height <= forest.height, "invalid node height")
     assert(
-        math.type(index) == "integer" and index >= 0 and index < (1 << (forest.height - height)),
-        "invalid node index"
+        math.type(position) == "integer" and position >= 0 and position < (1 << forest.height),
+        "invalid node position"
     )
-    return get_node(top, index, height)
+    assert((position & ((1 << height) - 1)) == 0, "node position is not aligned to its height")
+    local current_bit = 1 << top.height
+    local stop_bit = 1 << height
+    return descend(top, position, current_bit, stop_bit)
 end
 
--- Appends the proof siblings of one leaf, from the leaf upward, into the given array (a
--- new one when omitted) and returns it, in a single descent, O(log2_max_leaves). Does not
--- mutate the forest. A caller proves across two stacked forests by appending the inner
--- forest's siblings and then the outer forest's.
-local function frontier_forest_get_siblings(forest, index, into)
+-- Appends the proof siblings of the node at position and height, from that node upward,
+-- into the given array (a new one when omitted) and returns it, in a single descent,
+-- O(log2_max_leaves). Requires the forest to be full and position to be aligned to the
+-- node size. Does not mutate the forest. A caller proves across two stacked forests by
+-- appending the inner forest's siblings and then the outer forest's.
+local function frontier_forest_get_siblings(forest, position, height, into)
     local top = assert(forest[forest.height + 1], "the forest is not full")
-    assert(math.type(index) == "integer" and index >= 0 and index < (1 << forest.height), "invalid leaf index")
+    assert(math.type(height) == "integer" and height >= 0 and height <= forest.height, "invalid node height")
+    assert(
+        math.type(position) == "integer" and position >= 0 and position < (1 << forest.height),
+        "invalid node position"
+    )
+    assert((position & ((1 << height) - 1)) == 0, "node position is not aligned to its height")
     into = into or {}
-    local siblings = get_siblings(top, index, {})
+    local current_bit = 1 << top.height
+    local stop_bit = 1 << height
+    local siblings = {}
+    descend(top, position, current_bit, stop_bit, siblings)
     for i = #siblings, 1, -1 do
         into[#into + 1] = siblings[i]
     end

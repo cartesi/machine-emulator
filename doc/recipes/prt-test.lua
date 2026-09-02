@@ -51,7 +51,7 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
     else
         tree = prtu.new_tree(HEIGHT, 0, build_leaf_forest(0, HEIGHT), nil)
     end
-    local computation_hash_left, computation_hash_right = tree:get_children(HEIGHT, 0)
+    local computation_hash_left, computation_hash_right = tree:get_children(0, HEIGHT)
     local proof = tree:prove(LEAVES - 1)
     hash_tree.verify_slice(proof)
     assert(
@@ -76,10 +76,10 @@ end
 local function make_bisection_response(match)
     assert(match.height > 1)
     local tree = match.claims[match.turn].tree
-    local turn_left_node, turn_right_node = tree:get_children(match.height, match.node_index)
+    local turn_left_node, turn_right_node = tree:get_children(match.position, match.height)
     local descend_left = turn_left_node ~= match.other_left_node
-    local turn_next_left_node, turn_next_right_node =
-        tree:get_children(match.height - 1, descend_left and 2 * match.node_index or 2 * match.node_index + 1)
+    local child_position = descend_left and match.position or match.position + (1 << (match.height - 1))
+    local turn_next_left_node, turn_next_right_node = tree:get_children(child_position, match.height - 1)
     return {
         turn_left_node = turn_left_node,
         turn_right_node = turn_right_node,
@@ -92,10 +92,10 @@ end
 local function make_seal_response(match)
     assert(match.height == 1)
     local tree = match.claims[match.turn].tree
-    local turn_left_node, turn_right_node = tree:get_children(1, match.node_index)
+    local turn_left_node, turn_right_node = tree:get_children(match.position, 1)
     local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
     local descend_left = turn_left_node ~= match.other_left_node
-    local state_index = 2 * match.node_index + (descend_left and 0 or 1)
+    local state_index = match.position + (descend_left and 0 or 1)
     if state_index ~= 0 then
         response.agreed_state_hash_proof = tree:prove(state_index - 1)
     end

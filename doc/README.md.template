@@ -4613,17 +4613,15 @@ The three new outputs of this epoch form the active region in the middle, filled
 The seven leaves to the right are pristine padding, held as a four-leaf, a two-leaf, and a single-leaf subtree, filled gray at their roots.
 Only the hashes actually held are filled, so every node below a frontier or pristine root is left empty, outlined in its subtree's color, because the frontier keeps each whole subtree as that one root hash and never materializes the leaves under it.
 
-The function `frontier_push_back` folds new output leaves into the frontier:
+The function `frontier_push_back` folds one new output leaf into the frontier:
 ```{.lua replace=proof_module/source/frontier_push_back title="hash-tree.lua (excerpt)"}
 ```
 Adding an output advances the leaf count from *c* to *c*+1.
 In binary that clears a run of low set bits and sets the next one up, an ordinary carry.
-The helper `carry_back` mirrors it, combining the new leaf with the present low levels from the bottom up to the first empty one, clearing each, and storing the resulting hash at that first empty level:
-```{.lua replace=proof_module/source/carry_back title="hash-tree.lua (excerpt)"}
-```
-The stored hash is the root of the subtree covering exactly the leaves ending at the new output, the frontier entry the carry creates.
+The function mirrors the carry, combining the new leaf with the present low levels from the bottom up to the first empty one, clearing each, and storing the resulting hash at that first empty level.
+It is the root of the subtree covering exactly the leaves ending at the new output, the frontier entry the carry creates.
 A level is combined only once every 2<sup>*l*</sup> outputs, so a long run of outputs costs constant work each, amortized.
-The function `frontier_append` appends `hashes[first..last]` in order as maximal aligned complete subtrees, each hashed into one entry and carried once:
+The function `frontier_append` appends `hashes[first..last]` in order as maximal aligned complete subtrees, each hashed into one root and pushed back as one entry:
 ```{.lua replace=proof_module/source/frontier_append title="hash-tree.lua (excerpt)"}
 ```
 

@@ -406,7 +406,7 @@ end
 -- A claim: the computation hash's two children and the standard proof of its final state,
 -- the last leaf.
 local function make_claim(tree)
-    local computation_hash_left, computation_hash_right = tree:get_children(tree.height, 0)
+    local computation_hash_left, computation_hash_right = tree:get_children(0, tree.height)
     return {
         computation_hash_left = computation_hash_left,
         computation_hash_right = computation_hash_right,
@@ -430,14 +430,14 @@ function handlers.commit_mcycle_claim(player)
 end
 
 -- Reveals the nodes the referee needs for one bisection advance: the claim's node at
--- (height, node_index), and the children of the node the walk descends into.
-function handlers.reveal_bisection(player, computation_hash, height, node_index, other_left_node)
+-- (position, height), and the children of the node the walk descends into.
+function handlers.reveal_bisection(player, computation_hash, position, height, other_left_node)
     assert(height > 1)
     local tree = get_claim_tree(player, computation_hash)
-    local turn_left_node, turn_right_node = tree:get_children(height, node_index)
+    local turn_left_node, turn_right_node = tree:get_children(position, height)
     local descend_left = turn_left_node ~= other_left_node
-    local child_index = descend_left and 2 * node_index or 2 * node_index + 1
-    local turn_next_left_node, turn_next_right_node = tree:get_children(height - 1, child_index)
+    local child_position = descend_left and position or position + (1 << (height - 1))
+    local turn_next_left_node, turn_next_right_node = tree:get_children(child_position, height - 1)
     return {
         turn_left_node = turn_left_node,
         turn_right_node = turn_right_node,
@@ -448,12 +448,12 @@ end
 
 -- Seals the leftmost divergence: exposes the final leaves and proves the agreed state
 -- immediately before them, except at state zero where the referee already knows that state.
-function handlers.seal_divergence(player, computation_hash, node_index, other_left_node)
+function handlers.seal_divergence(player, computation_hash, position, other_left_node)
     local tree = get_claim_tree(player, computation_hash)
-    local turn_left_node, turn_right_node = tree:get_children(1, node_index)
+    local turn_left_node, turn_right_node = tree:get_children(position, 1)
     local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
     local descend_left = turn_left_node ~= other_left_node
-    local state_index = 2 * node_index + (descend_left and 0 or 1)
+    local state_index = position + (descend_left and 0 or 1)
     if state_index ~= 0 then
         response.agreed_state_hash_proof = tree:prove(state_index - 1)
         assert(
@@ -700,7 +700,8 @@ local function new_patched_tree(honest, patched_bundle, patched_forest)
     }, patched_meta)
     for level = 0, tree.height - tree.bundle_height - 1 do
         local index = patched_bundle >> level
-        local sibling = honest:get_node(tree.bundle_height + level, index ~ 1)
+        local height = tree.bundle_height + level
+        local sibling = honest:get_node((index ~ 1) << height, height)
         local node = tree.path[level]
         tree.path[level + 1] = index & 1 == 0 and keccak(node, sibling) or keccak(sibling, node)
     end
@@ -711,23 +712,27 @@ function patched_meta.__index.get_root(tree)
     return tree.path[tree.height - tree.bundle_height]
 end
 
-function patched_meta.__index.get_node(tree, h, q)
-    if h >= tree.bundle_height then
-        local level = h - tree.bundle_height
-        if q == tree.patched_bundle >> level then
+function patched_meta.__index.get_node(tree, position, height)
+    if height >= tree.bundle_height then
+        local level = height - tree.bundle_height
+        if position >> height == tree.patched_bundle >> level then
             return tree.path[level]
         end
-        return tree.honest:get_node(h, q)
+        return tree.honest:get_node(position, height)
     end
-    local span = tree.bundle_height - h
-    if q >> span == tree.patched_bundle then
-        return hash_tree.frontier_forest_get_node(tree.patched_forest, q & ((1 << span) - 1), h)
+    if position >> tree.bundle_height == tree.patched_bundle then
+        return hash_tree.frontier_forest_get_node(
+            tree.patched_forest,
+            position & ((1 << tree.bundle_height) - 1),
+            height
+        )
     end
-    return tree.honest:get_node(h, q)
+    return tree.honest:get_node(position, height)
 end
 
-function patched_meta.__index.get_children(tree, h, q)
-    return tree:get_node(h - 1, 2 * q), tree:get_node(h - 1, 2 * q + 1)
+function patched_meta.__index.get_children(tree, position, height)
+    local child_height = height - 1
+    return tree:get_node(position, child_height), tree:get_node(position + (1 << child_height), child_height)
 end
 
 -- Inside the patched bundle, the patched forest supplies the low siblings and the honest
@@ -737,10 +742,10 @@ function patched_meta.__index.prove(tree, index)
     local bundle_height = tree.bundle_height
     local siblings
     if index >> bundle_height == tree.patched_bundle then
-        siblings = hash_tree.frontier_forest_get_siblings(tree.patched_forest, index & ((1 << bundle_height) - 1))
+        siblings = hash_tree.frontier_forest_get_siblings(tree.patched_forest, index & ((1 << bundle_height) - 1), 0)
         for level = 0, tree.height - bundle_height - 1 do
-            siblings[#siblings + 1] =
-                tree.honest:get_node(bundle_height + level, (index >> (bundle_height + level)) ~ 1)
+            local height = bundle_height + level
+            siblings[#siblings + 1] = tree.honest:get_node(((index >> height) ~ 1) << height, height)
         end
     else
         siblings = tree.honest:prove(index).sibling_hashes
@@ -753,7 +758,7 @@ function patched_meta.__index.prove(tree, index)
     return {
         target_address = index,
         log2_target_size = 0,
-        target_hash = tree:get_node(0, index),
+        target_hash = tree:get_node(index, 0),
         log2_root_size = tree.height,
         root_hash = tree:get_root(),
         sibling_hashes = siblings,

@@ -130,6 +130,10 @@ included so that every match event stands alone.
 be recovered by comparing `otherParent` with the prior waiting-left node. When
 the waiting commitment's children are equal, both descents produce the same
 node. Equal children are common in padded computations and fabricated claims.
+Independent clients can use this position directly as the first leaf covered
+by the node at `currentHeight`. Per-level node indices are an internal Dave
+representation and, when required by a call, belong at the contract adapter
+boundary rather than in a client's tree or proof model.
 
 `otherParent` and `leftNode` remain the inputs the next responder needs. With
 the descriptor, this one event contains the complete request for either

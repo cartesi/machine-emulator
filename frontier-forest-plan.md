@@ -122,14 +122,15 @@ queries require the forest exactly full, and appends past capacity assert.
 
 - `frontier_forest_get_root_hash(forest)` - assert complete and return the top
   level's root, O(1); completion already flushed pending work.
-- `frontier_forest_get_node(forest, index, height)` - follow the machine API's
-  position-first argument order, validate height and 0-based index, descend by
-  tree kind, and return the node hash. A partial level
+- `frontier_forest_get_node(forest, position, height)` - follow the machine
+  API's position-first argument order, validate that the 0-based first covered
+  leaf position fits the forest and is aligned to `2^height`, descend by tree
+  kind, and return the node hash. A partial level
   array returns its last entry for an index past its stored end.
-- `frontier_forest_get_siblings(forest, index, into)` - one descent, appending
-  siblings from the leaf upward into the supplied array and returning that
-  array. It performs no proof formatting or allocation beyond the appended
-  entries. Must not be H independent get_node calls.
+- `frontier_forest_get_siblings(forest, position, height, into)` - one descent,
+  appending siblings from the target node upward into the supplied array and
+  returning that array. Position has the same range and alignment rules as
+  `frontier_forest_get_node`. Must not be H independent get_node calls.
 
 ## Step 6. Tests before migration
 
@@ -162,8 +163,9 @@ as a completed forest passed to pad_back).
 Remove `push_run`, `slice_runs`, `seal_runs`, `find_run`,
 `compute_repeated_root`, and `get_runs_node` (and their exports). Keep
 `new_tree`, but replace its implementation with a wrapper that keeps the
-current method API used by prt-player.lua and prt-test.lua: `get_node(h, q)`,
-`get_children(h, q)`, `get_root()`, and `prove(index)`.
+method API used by prt-player.lua and prt-test.lua:
+`get_node(position, height)`, `get_children(position, height)`, `get_root()`,
+and `prove(position)`.
 
 The wrapper owns PRT's lazy bundle expansion:
 

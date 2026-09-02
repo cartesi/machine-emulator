@@ -131,6 +131,13 @@ state_transition_offset =
     (cycle & (2^20 - 1))
 ```
 
+Claim-tree node queries use `(position, height)`, where `position` is the
+index of the node's first covered leaf and must be aligned to `2^height`.
+Proof targets and sibling queries use the same node coordinate. The
+bridge passes an event's authoritative `segmentStartPosition` to the player
+unchanged; any Dave call that requires a per-level node index converts only
+while encoding that call.
+
 ## Implementation
 
 ### 1. ABI and fixtures
@@ -213,10 +220,10 @@ On `MatchCreated` or `MatchAdvanced`:
 2. derive the responder from the descriptor height and current height;
 3. ignore the event unless that responder is a locally held commitment;
 4. for `MatchCreated`, use the implicit zero position; for `MatchAdvanced`,
-   validate `segmentStartPosition` and compute
-   `node_index = segmentStartPosition / 2^currentHeight`;
+   validate that `segmentStartPosition` fits the selected claim tree and is
+   aligned to `2^currentHeight`;
 5. request `reveal_bisection` when `currentHeight > 1`, otherwise request
-   `seal_divergence`; and
+   `seal_divergence`, passing the position and height directly; and
 6. simulate and submit the corresponding contract call.
 
 The emitted position is authoritative. Never infer a descent by comparing node

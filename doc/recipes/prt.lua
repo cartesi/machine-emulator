@@ -75,12 +75,12 @@ end
 -- A match walks two claim trees down to the leaf where they first diverge, the two claims
 -- alternating, one response per round, exactly as in Dave's Match.sol. The referee holds one node
 -- to open (`turn_parent_node`) and the other claim's standing left and right children. The on-turn
--- node is located by (`height`, `node_index`) in the computation tree; `node_index` is its
--- zero-based index among the nodes at that height, not a state-leaf index. The on-turn
--- claim opens its node, exposing the two children and, above the leaves, the two grandchildren
--- of the side the walk descends into. The walk follows the side where the claims first
--- disagree, converging on the leftmost divergent leaf, and the turn passes to the opponent each
--- round. These functions are pure over the match state and response.
+-- node is located by (`position`, `height`) in the computation tree; `position` is the index
+-- of its first covered state leaf and is aligned to 2^height. The on-turn claim opens its node,
+-- exposing the two children and, above the leaves, the two grandchildren of the side the walk
+-- descends into. The walk follows the side where the claims first disagree, converging on the
+-- leftmost divergent leaf, and the turn passes to the opponent each round. These functions are
+-- pure over the match state and response.
 --------------------------------------------------------------------------------
 
 -- Seeds a match over two claims of the given tree height. The first claim opens first, so the walk
@@ -94,7 +94,7 @@ local function new_match(claim1, claim2, height)
         other_left_node = claim2.computation_hash_left,
         other_right_node = claim2.computation_hash_right,
         height = height,
-        node_index = 0,
+        position = 0,
     }
 end
 -- docs:end new_match
@@ -107,9 +107,10 @@ local function advance_bisection(match, response)
     assert(match.height > 1)
     local descend_left = response.turn_left_node ~= match.other_left_node
     if descend_left then
-        match.turn_parent_node, match.node_index = match.other_left_node, 2 * match.node_index
+        match.turn_parent_node = match.other_left_node
     else
-        match.turn_parent_node, match.node_index = match.other_right_node, 2 * match.node_index + 1
+        match.turn_parent_node = match.other_right_node
+        match.position = match.position + (1 << (match.height - 1))
     end
     match.other_left_node, match.other_right_node = response.turn_next_left_node, response.turn_next_right_node
     match.height = match.height - 1
@@ -253,7 +254,7 @@ local function validate_seal_response(tournament, match, response)
     assert(match.height == 1)
     assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
     local descend_left = response.turn_left_node ~= match.other_left_node
-    local state_index = 2 * match.node_index + (descend_left and 0 or 1)
+    local state_index = match.position + (descend_left and 0 or 1)
     local agreed_state_hash
     if state_index ~= 0 then
         local proof = response.agreed_state_hash_proof
@@ -411,7 +412,7 @@ local function run_match(tournament, match)
         local response = server:emit(
             server:get_subscribers({ turn_claim.computation_hash }),
             EVENTS.reveal_bisection,
-            { turn_claim.computation_hash, match.height, match.node_index, match.other_left_node },
+            { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
                 return validate_bisection_response(match, response)
             end
@@ -427,7 +428,7 @@ local function run_match(tournament, match)
     local divergence = server:emit(
         server:get_subscribers({ turn_claim.computation_hash }),
         EVENTS.seal_divergence,
-        { turn_claim.computation_hash, match.node_index, match.other_left_node },
+        { turn_claim.computation_hash, match.position, match.other_left_node },
         function(response)
             return validate_seal_response(tournament, match, response)
         end

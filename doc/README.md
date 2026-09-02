@@ -8317,7 +8317,7 @@ frontier or pristine root is left empty, outlined in its subtree’s
 color, because the frontier keeps each whole subtree as that one root
 hash and never materializes the leaves under it.
 
-The function `frontier_push_back` folds new output leaves into the
+The function `frontier_push_back` folds one new output leaf into the
 frontier:
 
 ``` lua
@@ -8326,34 +8326,27 @@ local function frontier_push_back(frontier, hash, log2_hash_size)
     local level = (log2_hash_size or 0) + 1
     assert_aligned_below(frontier, level, "frontier is not aligned to the hash size")
     assert(not frontier[#frontier], "too many leaves")
-    return carry_back(frontier, level, hash, hash_function)
+    local right = hash
+    while frontier[level] do
+        right = hash_function(frontier[level], right)
+        frontier[level] = false
+        level = level + 1
+    end
+    frontier[level] = right
 end
 ```
 
 Adding an output advances the leaf count from *c* to *c*+1. In binary
 that clears a run of low set bits and sets the next one up, an ordinary
-carry. The helper `carry_back` mirrors it, combining the new leaf with
-the present low levels from the bottom up to the first empty one,
-clearing each, and storing the resulting hash at that first empty level:
-
-``` lua
-local function carry_back(levels, level, entry, combine)
-    while levels[level] do
-        assert(level < #levels, "too many leaves")
-        entry = combine(levels[level], entry)
-        levels[level] = false
-        level = level + 1
-    end
-    levels[level] = entry
-end
-```
-
-The stored hash is the root of the subtree covering exactly the leaves
-ending at the new output, the frontier entry the carry creates. A level
-is combined only once every 2<sup>*l*</sup> outputs, so a long run of
-outputs costs constant work each, amortized. The function
-`frontier_append` appends `hashes[first..last]` in order as maximal
-aligned complete subtrees, each hashed into one entry and carried once:
+carry. The function mirrors the carry, combining the new leaf with the
+present low levels from the bottom up to the first empty one, clearing
+each, and storing the resulting hash at that first empty level. It is
+the root of the subtree covering exactly the leaves ending at the new
+output, the frontier entry the carry creates. A level is combined only
+once every 2<sup>*l*</sup> outputs, so a long run of outputs costs
+constant work each, amortized. The function `frontier_append` appends
+`hashes[first..last]` in order as maximal aligned complete subtrees,
+each hashed into one root and pushed back as one entry:
 
 ``` lua
 local function frontier_append(frontier, hashes, first, last, log2_hash_size)
@@ -8362,8 +8355,14 @@ local function frontier_append(frontier, hashes, first, last, log2_hash_size)
     local first_level = (log2_hash_size or 0) + 1
     assert_aligned_below(frontier, first_level, "frontier is not aligned to the hash size")
     assert(frontier_padding_fits(frontier, last - first + 1, first_level), "too many leaves")
-    append_complete_subtrees(frontier, first_level, last - first + 1, function(offset, added_height)
-        local nodes = table.move(hashes, first + offset, first + offset + (1 << added_height) - 1, 1, {})
+    while first <= last do
+        local added_height = 0
+        local subtree_count = 1
+        while not frontier[first_level + added_height] and subtree_count <= ((last - first + 1) >> 1) do
+            added_height = added_height + 1
+            subtree_count = subtree_count << 1
+        end
+        local nodes = table.move(hashes, first, first + subtree_count - 1, 1, {})
         for _ = 1, added_height do
             local parents = {}
             for j = 1, #nodes, 2 do
@@ -8371,8 +8370,9 @@ local function frontier_append(frontier, hashes, first, last, log2_hash_size)
             end
             nodes = parents
         end
-        return nodes[1]
-    end, hash_function)
+        frontier_push_back(frontier, nodes[1], first_level + added_height - 1)
+        first = first + subtree_count
+    end
 end
 ```
 
@@ -8420,14 +8420,14 @@ local function frontier(log2_max_leaves_or_last_proof, hash_type)
         local hash_function = f.hash_function
         local leaf_count = proof.target_address + 1
         local lowest_complete_level = 1
-        while leaf_count & (1 << (lowest_complete_level - 1)) == 0 do
+        while (leaf_count & (1 << (lowest_complete_level - 1))) == 0 do
             lowest_complete_level = lowest_complete_level + 1
         end
         -- Above the lowest complete level, where the leaf count's bit at that level is set, the last leaf
         -- is a right child, so its proof sibling there is exactly the complete left subtree we need.
         for level = lowest_complete_level + 1, log2_max_leaves do
             local bit = level - 1
-            if leaf_count & (1 << bit) ~= 0 then f[level] = proof.sibling_hashes[level] end
+            if (leaf_count & (1 << bit)) ~= 0 then f[level] = proof.sibling_hashes[level] end
         end
         -- At the lowest complete level, the last leaf is a right child at every lower level, so rolling it
         -- up through the siblings below rebuilds that level's complete left subtree, which ends at the leaf
@@ -9653,9 +9653,10 @@ local function advance_bisection(match, response)
     assert(match.height > 1)
     local descend_left = response.turn_left_node ~= match.other_left_node
     if descend_left then
-        match.turn_parent_node, match.node_index = match.other_left_node, 2 * match.node_index
+        match.turn_parent_node = match.other_left_node
     else
-        match.turn_parent_node, match.node_index = match.other_right_node, 2 * match.node_index + 1
+        match.turn_parent_node = match.other_right_node
+        match.position = match.position + (1 << (match.height - 1))
     end
     match.other_left_node, match.other_right_node = response.turn_next_left_node, response.turn_next_right_node
     match.height = match.height - 1
@@ -9673,7 +9674,7 @@ local function validate_seal_response(tournament, match, response)
     assert(match.height == 1)
     assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
     local descend_left = response.turn_left_node ~= match.other_left_node
-    local state_index = 2 * match.node_index + (descend_left and 0 or 1)
+    local state_index = match.position + (descend_left and 0 or 1)
     local agreed_state_hash
     if state_index ~= 0 then
         local proof = response.agreed_state_hash_proof
@@ -9714,7 +9715,7 @@ local function run_match(tournament, match)
         local response = server:emit(
             server:get_subscribers({ turn_claim.computation_hash }),
             EVENTS.reveal_bisection,
-            { turn_claim.computation_hash, match.height, match.node_index, match.other_left_node },
+            { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
                 return validate_bisection_response(match, response)
             end
@@ -9730,7 +9731,7 @@ local function run_match(tournament, match)
     local divergence = server:emit(
         server:get_subscribers({ turn_claim.computation_hash }),
         EVENTS.seal_divergence,
-        { turn_claim.computation_hash, match.node_index, match.other_left_node },
+        { turn_claim.computation_hash, match.position, match.other_left_node },
         function(response)
             return validate_seal_response(tournament, match, response)
         end

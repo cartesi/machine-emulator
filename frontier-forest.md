@@ -29,8 +29,8 @@ hash_tree.frontier_forest_append(forest, hashes, first, last, log2_hash_size)
 hash_tree.frontier_forest_pad_back(forest, hash_or_forest, count, log2_hash_size)
 
 hash_tree.frontier_forest_get_root_hash(forest)
-hash_tree.frontier_forest_get_node(forest, index, height)
-hash_tree.frontier_forest_get_siblings(forest, index, into)
+hash_tree.frontier_forest_get_node(forest, position, height)
+hash_tree.frontier_forest_get_siblings(forest, position, height, into)
 ```
 
 - `push_back` appends one raw hash or completed forest.
@@ -52,6 +52,11 @@ receiving forest uses the completed forest's full top entry.
 There is no `finish`. A forest has fixed capacity. Reaching capacity immediately
 flushes pending work. Root, node, and sibling queries require the forest to be
 exactly full, and further appends assert as overflow.
+
+Node and sibling queries identify their target by `(position, height)`, where
+position is the target node's first covered leaf and must be aligned to
+`2^height`. The sibling result starts at the target node and climbs to the
+forest root, so it can prove an internal node without descending to a leaf.
 
 Add `frontier_append` with the same array operation. Keep all valid
 `frontier_push_back` and `frontier_pad_back` behavior, but make scalar overflow
@@ -104,11 +109,11 @@ The representation must reject a query below an opaque input hash. PRT handles
 such a query by constructing and validating a separate forest for that bundle;
 the generic forest does not call a refinement callback.
 
-All construction checks fail closed: validate hash sizes, heights, indices,
+All construction checks fail closed: validate hash sizes, heights, positions,
 alignment, capacity, and equal child heights before hashing or modifying the
 frontier forest.
 
-An individual forest supports heights below 63, keeping its capacity and indices
+An individual forest supports heights below 63, keeping its capacity and positions
 in positive Lua integers. Bundling can split a taller claim of height `H` into an
 inner forest of height `B` and an outer forest of height `H - B`; both fit when
 `B < 63` and `H - B < 63`. Periods 17 and 18 already give total claim heights
@@ -191,14 +196,15 @@ Once the forest is full, its top entry is the complete root subtree.
 
 - `get_root_hash` returns that entry's root hash in O(1). Completion has already
   flushed all pending work.
-- `get_node(index, height)` follows the machine API's position-first
-  argument order. It descends through mixed trees or indexes the
-  appropriate partial level array, using its last entry when the index is past
-  the stored end. It validates the requested height and 0-based index.
-- `get_siblings(index, into)` descends once and appends siblings from the leaf
-  upward to `into`. It does not allocate or format a proof. A caller can first
-  append a bundle forest's siblings and then append the outer forest's siblings
-  to form one proof.
+- `get_node(position, height)` follows the machine API's position-first
+  argument order. It descends through mixed trees or indexes the appropriate
+  partial level array, using its last entry when the index is past the stored
+  end. It validates the requested height and aligned 0-based position.
+- `get_siblings(position, height, into)` descends once and appends siblings
+  from the target node upward to `into`. A caller can first append a bundle
+  forest's siblings and then append the outer forest's siblings to form one
+  proof. Siblings are collected temporarily so a failed descent leaves `into`
+  unchanged.
 
 Queries do not alter the committed structure. All hashes needed by a complete
 tree are computed when that tree is constructed; queries need no hash cache.

@@ -482,33 +482,33 @@ describe("hash-tree.lua", function()
             return levels
         end
 
-        -- Checks a full forest against the reference: every node at every height, and every
-        -- leaf's siblings, assembled into a proof that verifies.
+        -- Checks a full forest against the reference: every node at every height and its
+        -- siblings, assembled into a proof that verifies.
         local function expect_matches_reference(forest, leaves)
             local levels = reference_levels(leaves)
             expect.equal(hash_tree.frontier_forest_get_root_hash(forest), levels[H4][1])
             for log2_size = 0, H4 do
                 for index = 0, (MAX4 >> log2_size) - 1 do
-                    expect.equal(
-                        hash_tree.frontier_forest_get_node(forest, index, log2_size),
-                        levels[log2_size][index + 1]
-                    )
+                    local position = index << log2_size
+                    local target_hash = levels[log2_size][index + 1]
+                    expect.equal(hash_tree.frontier_forest_get_node(forest, position, log2_size), target_hash)
+                    local siblings = hash_tree.frontier_forest_get_siblings(forest, position, log2_size)
+                    expect.equal(#siblings, H4 - log2_size)
+                    for sibling_height = log2_size, H4 - 1 do
+                        expect.equal(
+                            siblings[sibling_height - log2_size + 1],
+                            levels[sibling_height][((position >> sibling_height) ~ 1) + 1]
+                        )
+                    end
+                    hash_tree.verify_slice({
+                        target_address = position,
+                        log2_target_size = log2_size,
+                        target_hash = target_hash,
+                        log2_root_size = H4,
+                        root_hash = levels[H4][1],
+                        sibling_hashes = siblings,
+                    })
                 end
-            end
-            for index = 0, MAX4 - 1 do
-                local siblings = hash_tree.frontier_forest_get_siblings(forest, index)
-                expect.equal(#siblings, H4)
-                for log2_size = 0, H4 - 1 do
-                    expect.equal(siblings[log2_size + 1], levels[log2_size][((index >> log2_size) ~ 1) + 1])
-                end
-                hash_tree.verify_slice({
-                    target_address = index,
-                    log2_target_size = 0,
-                    target_hash = leaves[index + 1],
-                    log2_root_size = H4,
-                    root_hash = levels[H4][1],
-                    sibling_hashes = siblings,
-                })
             end
         end
 
@@ -551,13 +551,19 @@ describe("hash-tree.lua", function()
             local frontier = hash_tree.frontier(H4, "keccak256")
             hash_tree.frontier_append(frontier, roots, 1, 4, 2)
             expect.equal(hash_tree.frontier_forest_get_root_hash(forest), hash_tree.frontier_get_root_hash(frontier))
-            expect.equal(hash_tree.frontier_forest_get_node(forest, 1, 2), roots[2])
+            expect.equal(hash_tree.frontier_forest_get_node(forest, 4, 2), roots[2])
             expect.fail(function()
                 hash_tree.frontier_forest_get_node(forest, 0, 1)
             end, "below an opaque hash")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_node(forest, 1, 2)
+            end, "not aligned")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_siblings(forest, 1, 2)
+            end, "not aligned")
             local into = { roots[1] }
             expect.fail(function()
-                hash_tree.frontier_forest_get_siblings(forest, 0, into)
+                hash_tree.frontier_forest_get_siblings(forest, 0, 0, into)
             end, "below an opaque hash")
             expect.equal(#into, 1)
             expect.equal(into[1], roots[1])
@@ -712,7 +718,7 @@ describe("hash-tree.lua", function()
                 target_hash = pad,
                 log2_root_size = H62,
                 root_hash = root,
-                sibling_hashes = hash_tree.frontier_forest_get_siblings(forest, (1 << H62) - 1),
+                sibling_hashes = hash_tree.frontier_forest_get_siblings(forest, (1 << H62) - 1, 0),
             })
             expect.fail(function()
                 hash_tree.frontier_forest_pad_back(forest, pad, 1)

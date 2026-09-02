@@ -85,16 +85,24 @@ function tree_meta.__index.open_bundle(tree, bundle)
 end
 -- docs:end open_bundle
 
--- The node at height h, index q. At or above bundle_height it is a node of the outer
--- forest. Below, it locates the one bundle standing over the node and queries the forest
--- that opens it.
+-- The node at height whose first covered leaf is position. At or above bundle_height it is
+-- a node of the outer forest. Below, it locates the one bundle standing over the node and
+-- queries the forest that opens it.
 -- docs:begin get_tree_node
-function tree_meta.__index.get_node(tree, h, q)
-    if h >= tree.bundle_height then
-        return hash_tree.frontier_forest_get_node(tree.outer, q, h - tree.bundle_height)
+function tree_meta.__index.get_node(tree, position, height)
+    if height >= tree.bundle_height then
+        return hash_tree.frontier_forest_get_node(
+            tree.outer,
+            position >> tree.bundle_height,
+            height - tree.bundle_height
+        )
     end
-    local span = tree.bundle_height - h
-    return hash_tree.frontier_forest_get_node(tree:open_bundle(q >> span), q & ((1 << span) - 1), h)
+    local bundle = position >> tree.bundle_height
+    return hash_tree.frontier_forest_get_node(
+        tree:open_bundle(bundle),
+        position & ((1 << tree.bundle_height) - 1),
+        height
+    )
 end
 -- docs:end get_tree_node
 
@@ -102,9 +110,10 @@ function tree_meta.__index.get_root(tree)
     return hash_tree.frontier_forest_get_root_hash(tree.outer)
 end
 
--- The two children of the node at height h, index q.
-function tree_meta.__index.get_children(tree, h, q)
-    return tree:get_node(h - 1, 2 * q), tree:get_node(h - 1, 2 * q + 1)
+-- The two children of the node at position and height.
+function tree_meta.__index.get_children(tree, position, height)
+    local child_height = height - 1
+    return tree:get_node(position, child_height), tree:get_node(position + (1 << child_height), child_height)
 end
 
 -- The proof of a leaf index, in the standard cartesi.hash-tree representation. The bundle
@@ -115,13 +124,13 @@ function tree_meta.__index.prove(tree, index)
     local siblings = {}
     if tree.bundle_height > 0 then
         local bundle_forest = tree:open_bundle(index >> tree.bundle_height)
-        hash_tree.frontier_forest_get_siblings(bundle_forest, index & ((1 << tree.bundle_height) - 1), siblings)
+        hash_tree.frontier_forest_get_siblings(bundle_forest, index & ((1 << tree.bundle_height) - 1), 0, siblings)
     end
-    hash_tree.frontier_forest_get_siblings(tree.outer, index >> tree.bundle_height, siblings)
+    hash_tree.frontier_forest_get_siblings(tree.outer, index >> tree.bundle_height, 0, siblings)
     return {
         target_address = index,
         log2_target_size = 0,
-        target_hash = tree:get_node(0, index),
+        target_hash = tree:get_node(index, 0),
         log2_root_size = tree.height,
         root_hash = tree:get_root(),
         sibling_hashes = siblings,
@@ -293,8 +302,8 @@ function story.report_match_progress(match)
         get_match_stream(match),
         "Height %d: the claims first disagree within leaves [0x%x, 0x%x].",
         match.height,
-        match.node_index << match.height,
-        ((match.node_index + 1) << match.height) - 1
+        match.position,
+        match.position + (1 << match.height) - 1
     )
 end
 

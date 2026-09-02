@@ -165,7 +165,9 @@ local function verify_output(dapp_contract, output, final_hash)
     assert(output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
     assert(output.proof.target_address == dapp_contract.output.start)
     assert(output.proof.log2_target_size == dapp_contract.output.log2_size)
-    assert(hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash)
+    assert(
+        hash_tree.get_data_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
+    )
     hash_tree.verify_slice(output.proof)
     return true
 end
@@ -281,12 +283,12 @@ end
 -- Builds a referee for a public expression against a deployed dapp contract. The agreed initial
 -- hash depends on the expression, so it is computed here and kept on the referee. Rolling the
 -- hash of the input NVRAM holding the expression up the pristine input proof gives the root hash
--- of the template instantiated with it, with hash_tree.get_root_hash padding the rest to match the honest
+-- of the template instantiated with it, with hash_tree.get_data_root_hash padding the rest to match the honest
 -- player's NVRAM. Honest play starts from exactly this state, never a player-declared one.
 local function new_referee(server_address, dapp_contract, expr)
     local initial_hash = hash_tree.roll_hash_up_tree(
         dapp_contract.input_proof,
-        hash_tree.get_root_hash(expr .. "\n", dapp_contract.input.log2_size)
+        hash_tree.get_data_root_hash(expr .. "\n", dapp_contract.input.log2_size)
     )
     return { server_address = server_address, initial_hash = initial_hash, run = run_referee }
 end

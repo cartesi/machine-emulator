@@ -75,7 +75,8 @@ local zero_hash_tables = {
 }
 
 local function append_page(frontier, page, pristine_page_hash, hash_fn)
-    local page_hash = page == ZERO_PAGE and pristine_page_hash or hash_tree.get_root_hash(page, PAGE_LOG2_SIZE, hash_fn)
+    local page_hash = page == ZERO_PAGE and pristine_page_hash
+        or hash_tree.get_data_root_hash(page, PAGE_LOG2_SIZE, hash_fn)
     hash_tree.frontier_push_back(frontier, page_hash, PAGE_LOG2_WORD_COUNT)
 end
 

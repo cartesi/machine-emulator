@@ -27,7 +27,7 @@ local template_input_proof = require("pristine-input-proof")
 assert(template_input_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Load actual input hash
-local input_hash = hash_tree.get_root_hash(input_expr .. "\n", input_nvram.log2_size)
+local input_hash = hash_tree.get_data_root_hash(input_expr .. "\n", input_nvram.log2_size)
 
 -- Check that instantiated template hash can be obtained directly from input proof and new input hash
 hash_tree.verify_splice(template_input_proof, input_hash, instantiated_template_hash)

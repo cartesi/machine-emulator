@@ -214,7 +214,7 @@ describe("hash tree", function()
                         for _, v in ipairs(machine:get_address_ranges()) do
                             for address = v.start, v.start + v.length - 1, PAGE_SIZE do
                                 local node_hash = machine:get_node_hash(address, LOG2_PAGE_SIZE)
-                                local external_node_hash = hash_tree.get_root_hash(
+                                local external_node_hash = hash_tree.get_data_root_hash(
                                     machine:read_memory(address, PAGE_SIZE),
                                     LOG2_PAGE_SIZE,
                                     hash_function

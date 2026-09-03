@@ -57,12 +57,22 @@ local function repeat_state_hash(state_hash, height)
     return state_hash
 end
 
+-- Forks a machine's server. The fork is shut down when the object holding it is closed or
+-- collected, so a player leaves no server behind when it exits, even on an error.
+local function fork_server(machine)
+    local fork = assert(machine:fork_server())
+    fork:set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
+    return fork
+end
+
 -- Loads the initial machine snapshot from content-addressed local storage on its own freshly
 -- spawned server, and verifies that the stored machine actually has the requested state hash.
+-- The machine lives on a fork of the spawned server, and shuts down with its object too.
 local function load_remote_machine(initial_state_hash)
-    local server = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
+    local server <close> = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
     server:set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
     local machine = server(cartesi.tohex(initial_state_hash))
+    machine:set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
     assert(machine:get_root_hash() == initial_state_hash, "initial machine snapshot hash mismatch")
     return machine
 end
@@ -83,6 +93,32 @@ local function run_to(machine, target, sink)
     end
 end
 
+-- The reason of a valid HTIF manual yield a machine stands at, or nil when the machine
+-- stands at no such request.
+local function manual_yield(machine)
+    if machine:read_reg("iflags_Y") == 0 then
+        return nil
+    end
+    if
+        machine:read_reg("htif_tohost_dev") ~= cartesi.HTIF_DEV_YIELD
+        or machine:read_reg("htif_tohost_cmd") ~= cartesi.HTIF_YIELD_CMD_MANUAL
+    then
+        return nil
+    end
+    return machine:read_reg("htif_tohost_reason")
+end
+
+-- Feeds an input to a machine waiting for one at an rx-accepted manual yield, recording the
+-- state a rejection reverts to. A machine at any other fixed point takes no input, since the
+-- verified transition treats the feed as a no-op there, and idles through the input's span.
+local function feed_input(machine, data)
+    if manual_yield(machine) ~= cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+        return
+    end
+    local revert_state_hash = machine:get_root_hash()
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
+end
+
 --------------------------------------------------------------------------------
 -- Player: building the mcycle claim
 --
@@ -90,21 +126,23 @@ end
 -- as bundle roots, one per 2^LOG2_MCYCLE_BUNDLE samples. A machine stopped at a
 -- manual yield, halt, or mcycle overflow repeats its state hash to the end of its input's span, and
 -- the machine pads the stream accordingly, so each input contributes a short prefix of real bundles
--- followed by one enormous repetition. The player keeps a fork at each input boundary, which
--- anchors every later re-run: refining a bundle, building a uarch claim, or producing the
--- disputed transition's logs.
+-- followed by one enormous repetition. A machine that halted, overflowed, or yielded with an
+-- exception takes no later input, so it repeats its state hash through every later span as
+-- well. The player keeps a fork at each input boundary, which anchors every later re-run:
+-- refining a bundle, building a uarch claim, or producing the disputed transition's logs.
 --------------------------------------------------------------------------------
 
 -- Advances a machine standing at input index's boundary through the feed (when the epoch
 -- has an input there) and on to `offset` mcycles past the post-feed boundary. A player
 -- whose `tamper` hook names this input and an offset on the way corrupts the machine there,
 -- so every re-run repeats the corrupted history. The tamper offset is bundle-aligned, so
--- collection windows never straddle it. Returns the boundary mcycle.
+-- collection windows never straddle it. A fork that finds the guest rejecting on the way
+-- stands at the recorded revert state from then on, so it trades places with a fresh fork of
+-- the boundary, as the claim build does. Returns the boundary mcycle.
 local function advance_fork(player, machine, index, offset)
     local data = player.inputs[index]
     if data then
-        local revert_state_hash = machine:get_root_hash()
-        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
+        feed_input(machine, data)
     end
     local base = machine:read_reg("mcycle")
     local tamper = player.tamper
@@ -115,6 +153,10 @@ local function advance_fork(player, machine, index, offset)
         end
     end
     run_to(machine, base + offset)
+    if manual_yield(machine) == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+        machine:shutdown_server()
+        machine:swap(fork_server(player.boundaries[index]))
+    end
     return base
 end
 
@@ -179,7 +221,8 @@ end
 -- where the machine is corrupted mid-flight), then padded to its full span with its last
 -- bundle, the all-repetition bundle the machine emits at the stop. A rejecting machine
 -- trades places with a fresh fork of its boundary, the recorded revert state, exactly as a
--- Cartesi Node rolls back.
+-- Cartesi Node rolls back. A machine that halted, overflowed, or threw an exception takes no
+-- later input and repeats its state through every later span.
 -- docs:begin build_mcycle_claim
 local function build_mcycle_claim(player)
     local machine = load_remote_machine(player.initial_state_hash)
@@ -189,9 +232,8 @@ local function build_mcycle_claim(player)
     local epoch_pad_bundle = repeat_state_hash(initial_state_hash, LOG2_MCYCLE_BUNDLE)
     player.fixed_state_hashes[0] = initial_state_hash
     for index, data in ipairs(player.inputs) do
-        player.boundaries[index] = assert(machine:fork_server())
-        local revert_state_hash = machine:get_root_hash()
-        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
+        player.boundaries[index] = fork_server(machine)
+        feed_input(machine, data)
         local base = machine:read_reg("mcycle")
         local collection = new_mcycle_collection(player, machine, outer, player.bundles_per_input, LOG2_MCYCLE_BUNDLE)
         local tamper = player.tamper
@@ -204,11 +246,10 @@ local function build_mcycle_claim(player)
         assert(collection.count == collection.capacity, "mcycle computation hash input is incomplete")
         epoch_pad_bundle = collection.pad_bundle or collection.last_bundle
         filled = filled + player.bundles_per_input
-        local _, reason = machine:receive_cmio_request()
-        if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+        if manual_yield(machine) == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             player.fixed_state_hashes[index] = player.boundaries[index]:get_root_hash()
             machine:shutdown_server()
-            machine:swap(assert(player.boundaries[index]:fork_server()))
+            machine:swap(fork_server(player.boundaries[index]))
         else
             player.fixed_state_hashes[index] = machine:get_root_hash()
         end
@@ -228,7 +269,7 @@ local function fork_input_boundary(player, input_index)
         assert(input_index > #player.inputs, "missing posted input boundary")
         boundary = assert(player.epoch_machine, "mcycle claim has not been built")
     end
-    return assert(boundary:fork_server())
+    return fork_server(boundary)
 end
 
 --------------------------------------------------------------------------------
@@ -533,7 +574,8 @@ end
 
 -- Re-runs the whole epoch on a fresh machine, collecting its outputs separately from the three
 -- final-machine leaves Dave uses to validate an epoch result. A rejected input reverts to the
--- pre-feed snapshot, exactly as a Cartesi Node rolls back.
+-- pre-feed snapshot, exactly as a Cartesi Node rolls back. A machine that halted, overflowed,
+-- or threw an exception takes no later input, and its terminal state is the one Dave checks.
 local function compute_epoch_results(player)
     if player.outputs_merkle_root_result then
         return
@@ -543,22 +585,22 @@ local function compute_epoch_results(player)
     local frontier = hash_tree.frontier_copy(genesis_frontier)
     local outputs, leaves = {}, {}
     for _, data in ipairs(player.inputs) do
-        local snapshot = assert(machine:fork_server())
+        local snapshot = fork_server(machine)
         local sink = {}
-        local revert_state_hash = machine:get_root_hash()
-        machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
+        feed_input(machine, data)
         run_to(machine, math.maxinteger, sink)
-        local _, reason, reported_root = machine:receive_cmio_request()
+        local reason = manual_yield(machine)
         if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+            local _, _, reported_root = machine:receive_cmio_request()
             for _, output in ipairs(sink) do
                 outputs[#outputs + 1] = output
                 leaves[#leaves + 1] = keccak(output)
                 hash_tree.frontier_push_back(frontier, leaves[#leaves])
             end
             assert(hash_tree.frontier_get_root_hash(frontier) == reported_root, "outputs Merkle root mismatch")
-        else
+        elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             machine:shutdown_server()
-            machine:swap(assert(snapshot:fork_server()))
+            machine:swap(fork_server(snapshot))
         end
         snapshot:shutdown_server()
     end

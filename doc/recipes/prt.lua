@@ -167,11 +167,22 @@ local function is_hash_less(a, b)
     return #a < #b
 end
 
+-- The routing hash of a claim folds its computation hash into the route of its tournament.
+-- The route identifies the dispute that led to the tournament. The mcycle tournament's route
+-- is the initial state hash. A uarch tournament's route is the id hash of the mcycle match
+-- that opened it, the keccak of its two claims, as Match.sol names a match. The two claims
+-- determine the whole walk, so equal claims in different branches of the bracket, or in the
+-- same branch at different times, are kept apart.
+local function routing_hash(route, claim)
+    return keccak(route, claim.computation_hash)
+end
+
 -- Partitions claim responses by computation hash, returning one claim per partition, sorted by
--- that hash. Each sender subscribes to events concerning its valid claim. The sort makes the
--- bracket a pure function of the claim set, not of connection order.
+-- that hash. Each sender subscribes to events concerning its valid claim, under the given
+-- tournament route. The sort makes the bracket a pure function of the claim set, not of
+-- connection order.
 -- docs:begin partition_claims
-local function partition_claims(responses, validate_submitted_claim)
+local function partition_claims(responses, validate_submitted_claim, route)
     local claims, by_hash = {}, {}
     validate_submitted_claim = util.protect(validate_submitted_claim)
     for _, response in ipairs(responses) do
@@ -181,7 +192,7 @@ local function partition_claims(responses, validate_submitted_claim)
                 by_hash[claim.computation_hash] = claim
                 claims[#claims + 1] = claim
             end
-            server:subscribe(claim.computation_hash, response.connection)
+            server:subscribe(routing_hash(route, claim), response.connection)
         end
     end
     table.sort(claims, function(a, b)
@@ -191,9 +202,9 @@ local function partition_claims(responses, validate_submitted_claim)
 end
 -- docs:end partition_claims
 
--- Opens a tournament to a fixed audience and partitions its valid claims.
-local function open_tournament(conns, event, event_arguments, validate_submitted_claim)
-    return partition_claims(server:collect_claims(conns, event, event_arguments), validate_submitted_claim)
+-- Opens a tournament to a fixed audience and partitions its valid claims under its route.
+local function open_tournament(conns, event, event_arguments, validate_submitted_claim, route)
+    return partition_claims(server:collect_claims(conns, event, event_arguments), validate_submitted_claim, route)
 end
 
 -- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
@@ -300,7 +311,10 @@ local function settle_uarch_state_hash(
     current_state_hash,
     next_state_hashes
 )
-    local conns = server:get_subscribers({ match.claims[1].computation_hash, match.claims[2].computation_hash })
+    local conns = server:get_subscribers({
+        routing_hash(tournament.route, match.claims[1]),
+        routing_hash(tournament.route, match.claims[2]),
+    })
     local obtained_state_hash = server:emit(
         conns,
         EVENTS.prove_state_transition,
@@ -343,14 +357,21 @@ local function open_uarch_tournament(
         assert(claim.final_state_hash == next_state_hashes[1] or claim.final_state_hash == next_state_hashes[2])
         return claim
     end
+    local mcycle_route = mcycle_tournament.route
+    local route = keccak(mcycle_match.claims[1].computation_hash, mcycle_match.claims[2].computation_hash)
     local claims = open_tournament(
-        server:get_subscribers({ mcycle_match.claims[1].computation_hash, mcycle_match.claims[2].computation_hash }),
+        server:get_subscribers({
+            routing_hash(mcycle_route, mcycle_match.claims[1]),
+            routing_hash(mcycle_route, mcycle_match.claims[2]),
+        }),
         EVENTS.commit_uarch_claim,
         { input_index, period_index, next_state_hashes },
-        validate_uarch_claim
+        validate_uarch_claim,
+        route
     )
     local tournament = {
         level = "uarch",
+        route = route,
         height = geometry.uarch_height,
         initial_state_hash = agreed_state_hash,
         dapp_contract = mcycle_tournament.dapp_contract,
@@ -415,7 +436,7 @@ local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
         local response = server:emit(
-            server:get_subscribers({ turn_claim.computation_hash }),
+            server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
@@ -431,7 +452,7 @@ local function run_match(tournament, match)
     end
     local turn_claim = match.claims[match.turn]
     local divergence = server:emit(
-        server:get_subscribers({ turn_claim.computation_hash }),
+        server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
         EVENTS.seal_divergence,
         { turn_claim.computation_hash, match.position, match.other_left_node },
         function(response)
@@ -513,16 +534,19 @@ end
 -- docs:begin open_mcycle_tournament
 local function open_mcycle_tournament(dapp_contract)
     local geometry = dapp_contract.geometry
+    local route = dapp_contract.initial_state_hash
     local claims = open_tournament(
         server:get_subscribers({ dapp_contract.initial_state_hash }),
         EVENTS.commit_mcycle_claim,
         {},
         function(submitted_claim)
             return validate_claim(submitted_claim, geometry.mcycle_height)
-        end
+        end,
+        route
     )
     local tournament = {
         level = "mcycle",
+        route = route,
         height = geometry.mcycle_height,
         initial_state_hash = dapp_contract.initial_state_hash,
         dapp_contract = dapp_contract,
@@ -593,8 +617,8 @@ verify_output = util.protect(verify_output)
 -- and checks any offer against that root.
 -- An epoch with no output therefore still settles its outputs root without inventing a result.
 -- docs:begin wait_for_result
-local function wait_for_result(winner)
-    local conns = server:get_subscribers({ winner.computation_hash })
+local function wait_for_result(tournament, winner)
+    local conns = server:get_subscribers({ routing_hash(tournament.route, winner) })
     local outputs_merkle_root = server:emit(conns, EVENTS.prove_outputs_merkle_root, {}, function(response)
         return verify_outputs_merkle_root(response, winner.final_state_hash)
     end)
@@ -617,10 +641,11 @@ end
 -- docs:begin run_referee
 local function run_referee(dapp_contract)
     server:accept_subscribers(dapp_contract.initial_state_hash)
-    local winner = run_tournament(open_mcycle_tournament(dapp_contract))
+    local tournament = open_mcycle_tournament(dapp_contract)
+    local winner = run_tournament(tournament)
     story.report_winner(winner)
     if winner then
-        wait_for_result(winner)
+        wait_for_result(tournament, winner)
     end
 end
 -- docs:end run_referee

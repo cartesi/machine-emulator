@@ -49,6 +49,11 @@ local prt_player = require("prt-player")
 
 local keccak = cartesi.keccak256
 local get_other_turn = prtu.get_other_turn
+local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
+local WORD_MASK = WORD_SIZE - 1
+local IFLAGS_Y_ADDRESS = cartesi.machine:get_reg_address("iflags_Y")
+local HTIF_TOHOST_ADDRESS = cartesi.machine:get_reg_address("htif_tohost")
+local CMIO_TX_BUFFER_ADDRESS = cartesi.AR_CMIO_TX_BUFFER_START
 
 -- The phase closer carries no dispute. It closes the initial subscription phase once the last
 -- player has connected, then the claim collection of every tournament as it opens. It needs
@@ -529,17 +534,45 @@ local function open_mcycle_tournament(dapp_contract)
 end
 -- docs:end open_mcycle_tournament
 
--- Establishes the outputs Merkle root committed by the settled final state. The proof must be
--- whole-machine, sit at the tx-buffer word, and roll up to that state.
+-- Authenticates the complete data at one expected machine-tree location. Its size follows the
+-- proof, while this protocol requires every machine-validity target to be exactly one word.
+local function verify_machine_word(data, proof, address, final_state_hash)
+    assert(proof.root_hash == final_state_hash)
+    assert(proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
+    assert(proof.target_address == (address & ~WORD_MASK))
+    assert(proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE)
+    assert(#data == 1 << proof.log2_target_size)
+    assert(hash_tree.get_data_root_hash(data, proof.log2_target_size) == proof.target_hash)
+    hash_tree.verify_slice(proof)
+end
+
+-- Reads a little-endian 64-bit integer at a zero-based byte offset.
+local function get_uint64(data, offset)
+    return string.unpack("<I8", data, 1 + offset)
+end
+
+local function split_tohost(tohost)
+    local dev = (tohost & cartesi.HTIF_DEV_MASK) >> cartesi.HTIF_DEV_SHIFT
+    local cmd = (tohost & cartesi.HTIF_CMD_MASK) >> cartesi.HTIF_CMD_SHIFT
+    local reason = (tohost & cartesi.HTIF_REASON_MASK) >> cartesi.HTIF_REASON_SHIFT
+    return dev, cmd, reason
+end
+
+-- Establishes that the settled machine is yielded manually with RX_ACCEPTED, then returns the
+-- outputs Merkle root authenticated at its tx-buffer word, matching Dave's machine validity proof.
 local function verify_outputs_merkle_root(result, final_state_hash)
-    local state_hash_proof = result.outputs_merkle_root_proof
-    assert(state_hash_proof.root_hash == final_state_hash)
-    assert(state_hash_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
-    assert(state_hash_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START)
-    assert(state_hash_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE)
-    hash_tree.verify_slice(state_hash_proof)
-    assert(keccak(result.outputs_merkle_root) == state_hash_proof.target_hash)
-    return result.outputs_merkle_root
+    verify_machine_word(result.iflags_y_data, result.iflags_y_proof, IFLAGS_Y_ADDRESS, final_state_hash)
+    assert(get_uint64(result.iflags_y_data, IFLAGS_Y_ADDRESS & WORD_MASK) ~= 0)
+
+    verify_machine_word(result.htif_tohost_data, result.htif_tohost_proof, HTIF_TOHOST_ADDRESS, final_state_hash)
+    local htif_tohost = get_uint64(result.htif_tohost_data, HTIF_TOHOST_ADDRESS & WORD_MASK)
+    local dev, cmd, reason = split_tohost(htif_tohost)
+    assert(dev == cartesi.HTIF_DEV_YIELD)
+    assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL)
+    assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+
+    verify_machine_word(result.tx_buffer_data, result.tx_buffer_proof, CMIO_TX_BUFFER_ADDRESS, final_state_hash)
+    return result.tx_buffer_data
 end
 verify_outputs_merkle_root = util.protect(verify_outputs_merkle_root)
 
@@ -556,28 +589,21 @@ end
 verify_output = util.protect(verify_output)
 
 -- Waits on the settled claim, the one the tournament leaves standing. It first establishes the
--- outputs Merkle root committed by the winning final state. That response may also offer an
--- output. Otherwise the referee emits the established root separately and checks any offered
--- output against it.
+-- outputs Merkle root committed by the winning final state, then asks separately for an output
+-- and checks any offer against that root.
 -- An epoch with no output therefore still settles its outputs root without inventing a result.
 -- docs:begin wait_for_result
 local function wait_for_result(winner)
     local conns = server:get_subscribers({ winner.computation_hash })
-    local established = server:emit(conns, EVENTS.prove_outputs_merkle_root, {}, function(response)
-        local outputs_merkle_root = verify_outputs_merkle_root(response, winner.final_state_hash)
-        if not outputs_merkle_root then
-            return nil
-        end
-        local output = verify_output(response, outputs_merkle_root) and response or nil
-        return { outputs_merkle_root = outputs_merkle_root, output = output }
+    local outputs_merkle_root = server:emit(conns, EVENTS.prove_outputs_merkle_root, {}, function(response)
+        return verify_outputs_merkle_root(response, winner.final_state_hash)
     end)
-    if not established then
+    if not outputs_merkle_root then
         return story.report_result(nil)
     end
-    local result = established.output
-        or server:emit(conns, EVENTS.prove_output, {}, function(response)
-            return verify_output(response, established.outputs_merkle_root) and response
-        end)
+    local result = server:emit(conns, EVENTS.prove_output, {}, function(response)
+        return verify_output(response, outputs_merkle_root) and response
+    end)
     story.report_result(result)
 end
 -- docs:end wait_for_result

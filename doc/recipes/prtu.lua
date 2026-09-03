@@ -509,11 +509,12 @@ local SCHEMA_DICT = {
     },
     ProveOutputsMerkleRootEvent = { items = {} },
     ProveOutputsMerkleRootResponse = {
-        outputs_merkle_root = "Base64",
-        outputs_merkle_root_proof = "Proof",
-        output_index = "Default",
-        output = "Base64",
-        output_proof = "Proof",
+        iflags_y_data = "Base64",
+        iflags_y_proof = "Proof",
+        htif_tohost_data = "Base64",
+        htif_tohost_proof = "Proof",
+        tx_buffer_data = "Base64",
+        tx_buffer_proof = "Proof",
     },
     ProveOutputEvent = { items = {} },
     ProveOutputResponse = {

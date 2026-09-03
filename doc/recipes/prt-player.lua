@@ -28,6 +28,11 @@ end
 
 local LOG2_MCYCLE_BUNDLE = 4
 local LOG2_UARCH_BUNDLE = 16
+local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
+local WORD_MASK = WORD_SIZE - 1
+local IFLAGS_Y_ADDRESS = cartesi.machine:get_reg_address("iflags_Y")
+local HTIF_TOHOST_ADDRESS = cartesi.machine:get_reg_address("htif_tohost")
+local CMIO_TX_BUFFER_ADDRESS = cartesi.AR_CMIO_TX_BUFFER_START
 
 local M = {}
 
@@ -517,22 +522,26 @@ function handlers.prove_state_transition(player, input_index, period_index, stat
 end
 -- docs:end prove_state_transition
 
--- The epoch result first proves the outputs Merkle root against the final state a claim commits
--- to. The player re-runs the whole epoch on a fresh machine, adding each accepted input's outputs
--- to the outputs Merkle tree frontier, checking it against the root the guest reports, and keeping
--- the accepting state's tx-buffer word proof, which ties that root into the state hash. A rejected
--- input reverts to the pre-feed snapshot, exactly as a Cartesi Node rolls back. When the epoch has
--- an output, the same response may also offer its index, value, and proof against that root.
--- docs:begin prove_outputs_merkle_root
-function handlers.prove_outputs_merkle_root(player)
-    if player.result then
-        return player.result
+-- A machine leaf proof includes the complete target data, separately from the standard proof
+-- that authenticates its hash. Machine registers may sit within a word, so the proof starts at
+-- the containing word boundary.
+local function get_machine_leaf(machine, address)
+    local target_address = address & ~WORD_MASK
+    return machine:read_memory(target_address, WORD_SIZE),
+        machine:get_proof(target_address, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+end
+
+-- Re-runs the whole epoch on a fresh machine, collecting its outputs separately from the three
+-- final-machine leaves Dave uses to validate an epoch result. A rejected input reverts to the
+-- pre-feed snapshot, exactly as a Cartesi Node rolls back.
+local function compute_epoch_results(player)
+    if player.outputs_merkle_root_result then
+        return
     end
     local machine = load_remote_machine(player.initial_state_hash)
     local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     local frontier = hash_tree.frontier_copy(genesis_frontier)
     local outputs, leaves = {}, {}
-    local state_hash_proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
     for _, data in ipairs(player.inputs) do
         local snapshot = assert(machine:fork_server())
         local sink = {}
@@ -547,38 +556,50 @@ function handlers.prove_outputs_merkle_root(player)
                 hash_tree.frontier_push_back(frontier, leaves[#leaves])
             end
             assert(hash_tree.frontier_get_root_hash(frontier) == reported_root, "outputs Merkle root mismatch")
-            state_hash_proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
         else
             machine:shutdown_server()
             machine:swap(assert(snapshot:fork_server()))
         end
         snapshot:shutdown_server()
     end
+    local iflags_y_data, iflags_y_proof = get_machine_leaf(machine, IFLAGS_Y_ADDRESS)
+    local htif_tohost_data, htif_tohost_proof = get_machine_leaf(machine, HTIF_TOHOST_ADDRESS)
+    local tx_buffer_data, tx_buffer_proof = get_machine_leaf(machine, CMIO_TX_BUFFER_ADDRESS)
     machine:shutdown_server()
     local output_index = #outputs - 1
-    player.result = {
-        outputs_merkle_root = hash_tree.frontier_get_root_hash(frontier),
-        outputs_merkle_root_proof = state_hash_proof,
+    player.outputs_merkle_root_result = {
+        iflags_y_data = iflags_y_data,
+        iflags_y_proof = iflags_y_proof,
+        htif_tohost_data = htif_tohost_data,
+        htif_tohost_proof = htif_tohost_proof,
+        tx_buffer_data = tx_buffer_data,
+        tx_buffer_proof = tx_buffer_proof,
+    }
+    player.output_result = {
         output_index = output_index >= 0 and output_index or nil,
         output = outputs[#outputs],
         output_proof = hash_tree.frontier_next_proofs(genesis_frontier, leaves)[#leaves],
     }
-    return player.result
+end
+
+-- Proves that the settled final state is yielded manually with RX_ACCEPTED and authenticates
+-- the word whose data is the outputs Merkle root.
+-- docs:begin prove_outputs_merkle_root
+function handlers.prove_outputs_merkle_root(player)
+    compute_epoch_results(player)
+    return player.outputs_merkle_root_result
 end
 -- docs:end prove_outputs_merkle_root
 
--- Offers the last output, when there is one, after the referee has established the outputs
--- Merkle root from a winning final state. An empty table is no offer.
+-- Separately offers the last output, when there is one, after the referee has established the
+-- outputs Merkle root from a winning final state. An empty table is no offer.
 function handlers.prove_output(player)
-    local result = handlers.prove_outputs_merkle_root(player)
+    compute_epoch_results(player)
+    local result = player.output_result
     if not result.output then
         return {}
     end
-    return {
-        output_index = result.output_index,
-        output = result.output,
-        output_proof = result.output_proof,
-    }
+    return result
 end
 
 -- A player reads the epoch inputs and geometry off the dapp contract, and finds its own

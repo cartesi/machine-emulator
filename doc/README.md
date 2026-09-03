@@ -9577,10 +9577,11 @@ coroutine scheduling, is hidden in the referee server:
 ``` lua
 local function run_referee(dapp_contract)
     server:accept_subscribers(dapp_contract.initial_state_hash)
-    local winner = run_tournament(open_mcycle_tournament(dapp_contract))
+    local tournament = open_mcycle_tournament(dapp_contract)
+    local winner = run_tournament(tournament)
     story.report_winner(winner)
     if winner then
-        wait_for_result(winner)
+        wait_for_result(tournament, winner)
     end
 end
 ```
@@ -9717,7 +9718,7 @@ local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
         local response = server:emit(
-            server:get_subscribers({ turn_claim.computation_hash }),
+            server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
@@ -9733,7 +9734,7 @@ local function run_match(tournament, match)
     end
     local turn_claim = match.claims[match.turn]
     local divergence = server:emit(
-        server:get_subscribers({ turn_claim.computation_hash }),
+        server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
         EVENTS.seal_divergence,
         { turn_claim.computation_hash, match.position, match.other_left_node },
         function(response)
@@ -9843,7 +9844,10 @@ local function settle_uarch_state_hash(
     current_state_hash,
     next_state_hashes
 )
-    local conns = server:get_subscribers({ match.claims[1].computation_hash, match.claims[2].computation_hash })
+    local conns = server:get_subscribers({
+        routing_hash(tournament.route, match.claims[1]),
+        routing_hash(tournament.route, match.claims[2]),
+    })
     local obtained_state_hash = server:emit(
         conns,
         EVENTS.prove_state_transition,

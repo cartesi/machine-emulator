@@ -10172,12 +10172,14 @@ honest player to police every liar.
 
 The winning claim commits to the epoch’s final state hash, which in turn
 commits to the outputs Merkle root. The referee first establishes that
-root from a proof against the winning final state (`wait_for_result`).
-The same response may offer an output, identified by its index and
-proved against the established root; if it does not, the referee can ask
-for an output separately without checking the state proof again. An
-epoch with no output therefore still settles its outputs root, and no
-player needs to invent an output for it.
+root from the same three machine-validity proofs Dave uses: they
+authenticate `iflags_Y`, `htif_tohost`, and the CMIO TX-buffer word
+against the winning final state, establish that the machine yielded
+manually with `RX_ACCEPTED`, and take the root from the TX-buffer data
+(`wait_for_result`). It then asks separately for an output, identified
+by its index and proved against the established root. An epoch with no
+output therefore still settles its outputs root, and no player needs to
+invent an output for it.
 
 The verdict settles the epoch:
 

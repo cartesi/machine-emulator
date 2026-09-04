@@ -129,14 +129,14 @@ fn main() {
         input.len() >= 8,
         "input shorter than the cycle count prefix"
     );
-    let mcycle_count = u64::from_le_bytes(input[0..8].try_into().unwrap());
-    let mut log_data = input.split_off(8);
-    // step_log::decode reinterprets the buffer as structs with uint64 fields; the wire
-    // layout keeps every field 8-aligned relative to the buffer start.
-    assert!(
-        log_data.as_ptr() as usize % 8 == 0,
-        "log buffer is not 8-byte aligned"
-    );
+    let (count_bytes, log_bytes) = input.split_at(8);
+    let mcycle_count = u64::from_le_bytes(count_bytes.try_into().unwrap());
+    // step_log::decode reads uint64 fields in place; a Vec<u8> is not 8-aligned.
+    let mut aligned = vec![0u64; log_bytes.len().div_ceil(8)];
+    let log_data = unsafe {
+        std::slice::from_raw_parts_mut(aligned.as_mut_ptr().cast::<u8>(), log_bytes.len())
+    };
+    log_data.copy_from_slice(log_bytes);
 
     let mut root_hash_before: MachineHash = [0; 32];
     let mut root_hash_after: MachineHash = [0; 32];

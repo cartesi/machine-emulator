@@ -85,12 +85,14 @@ public:
 
     /// \brief Record that the subtree at (address, log2_size) is being touched.
     /// \param address Subtree start address, must be aligned to 2^log2_size
-    /// \param log2_size Log2 of the subtree size. Must be > PAGE_SIZE and <= ROOT_SIZE.
+    /// \param log2_size Log2 of the subtree size. Must be > PAGE_SIZE and < ROOT_SIZE.
     /// \details Captures the subtree's current hash.
     /// Rejects overlaps with existing nodes and enclosure of touched pages so
     /// the "pages and nodes are pairwise disjoint" invariant holds at replay.
     void touch_node(uint64_t address, int log2_size) {
-        if (log2_size <= HASH_TREE_LOG2_PAGE_SIZE || log2_size > HASH_TREE_LOG2_ROOT_SIZE) {
+        // A root-sized node would enclose every page, so the recorder never produces one;
+        // rejecting it also keeps the shift below well defined.
+        if (log2_size <= HASH_TREE_LOG2_PAGE_SIZE || log2_size >= HASH_TREE_LOG2_ROOT_SIZE) {
             throw std::runtime_error("node log2 size is out of range");
         }
         const auto node_size = UINT64_C(1) << log2_size;

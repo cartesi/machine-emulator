@@ -966,26 +966,15 @@ local function step_log_name(row)
 end
 
 local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
-    local log_filename = os.tmpname()
-    local delete_temp = true
-    local deleter = {}
-    setmetatable(deleter, {
-        __gc = function()
-            if delete_temp then
-                os.remove(log_filename)
-            end
-        end,
-    })
-    os.remove(log_filename)
     local root_hash_before = machine:get_root_hash()
     local reference_hash = reference_machine:get_root_hash()
     if root_hash_before ~= reference_hash then
         fatal("%s: failed. Initial hash does not match reference machine\n", ctx.ram_image)
         return
     end
-    machine:log_step(mcycle_count, log_filename)
+    local log = machine:log_step(mcycle_count)
     local root_hash_after = machine:get_root_hash()
-    assert(cartesi.machine:verify_step(root_hash_before, log_filename, mcycle_count) == root_hash_after)
+    assert(cartesi.machine:verify_step(root_hash_before, log, mcycle_count) == root_hash_after)
     -- run the reference machine normally and check final hashes
     reference_machine:run(mcycle_count)
     reference_hash = reference_machine:get_root_hash()
@@ -1000,9 +989,7 @@ local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
         local test_name = step_log_name(ctx)
         local final_name = string.format("step-%s.log", test_name)
         local logs_dir = save_step_logs_dir:gsub("/+$", "")
-        local final_path = logs_dir .. "/" .. final_name
-        local cmd = string.format("cp '%s' '%s'", log_filename, final_path)
-        assert(os.execute(cmd), "failed to copy step log to " .. final_path)
+        util.write_file(log, logs_dir .. "/" .. final_name)
         manifest_mod.write_row_file(logs_dir, test_name, {
             kind = "machine",
             name = final_name,
@@ -1015,16 +1002,6 @@ local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
 end
 
 local function run_machine_step_uarch(machine, reference_machine, ctx, max_mcycle)
-    local log_filename = os.tmpname()
-    local delete_temp = true
-    local deleter = {}
-    setmetatable(deleter, {
-        __gc = function()
-            if delete_temp then
-                os.remove(log_filename)
-            end
-        end,
-    })
     local test_cycles = machine:read_reg("mcycle")
     local ref_cycles = reference_machine:read_reg("mcycle")
     if test_cycles ~= ref_cycles then
@@ -1045,10 +1022,9 @@ local function run_machine_step_uarch(machine, reference_machine, ctx, max_mcycl
         reference_machine:run(1 + ref_cycles)
         -- Test machine advances one mcycle: log all its uarch cycles, then verify the round-trip.
         local root_hash_before = machine:get_root_hash()
-        os.remove(log_filename)
-        machine:log_step_uarch(math.maxinteger, log_filename)
+        local log = machine:log_step_uarch(math.maxinteger)
         local root_hash_after = machine:get_root_hash()
-        assert(cartesi.machine:verify_step_uarch(root_hash_before, log_filename, math.maxinteger) == root_hash_after)
+        assert(cartesi.machine:verify_step_uarch(root_hash_before, log, math.maxinteger) == root_hash_after)
         machine:reset_uarch()
         test_cycles = machine:read_reg("mcycle")
         ref_cycles = reference_machine:read_reg("mcycle")

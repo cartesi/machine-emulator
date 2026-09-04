@@ -22,6 +22,7 @@
 -- Writes <output-dir>/{reset-uarch.log, _manifest.csv}.
 
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local manifest_mod = require("cartesi.tests.step_log_manifest")
 local test_util = require("cartesi.tests.util")
 
@@ -66,7 +67,6 @@ local function create_reset_uarch_step_log()
     local machine <close> = build_machine()
     local name = "reset-uarch.log"
     local log_path = output_dir .. "/" .. name
-    os.remove(log_path)
     machine:write_reg("uarch_halt", 1)
     -- Seed the revert-root-hash slot so the reset accesses it, forcing its shadow page into the log.
     machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, REVERT_ROOT_HASH)
@@ -78,9 +78,10 @@ local function create_reset_uarch_step_log()
         revert_root_hash = REVERT_ROOT_HASH,
     }
     ctx.initial_root_hash = machine:get_root_hash()
-    machine:log_reset_uarch(log_path)
+    local log = machine:log_reset_uarch()
     ctx.final_root_hash = machine:get_root_hash()
-    assert(cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log_path) == ctx.final_root_hash)
+    assert(cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log) == ctx.final_root_hash)
+    util.write_file(log, log_path)
     return ctx
 end
 
@@ -103,7 +104,6 @@ local function create_rejected_reset_uarch_step_log()
     local machine <close> = build_machine()
     local name = "reset-uarch-rejected.log"
     local log_path = output_dir .. "/" .. name
-    os.remove(log_path)
     machine:write_reg("uarch_halt", 1)
     machine:write_reg("iflags_Y", 1)
     machine:write_reg("htif_tohost", TOHOST_RX_REJECTED)
@@ -116,10 +116,11 @@ local function create_rejected_reset_uarch_step_log()
         revert_root_hash = REVERT_ROOT_HASH,
     }
     ctx.initial_root_hash = machine:get_root_hash()
-    machine:log_reset_uarch(log_path)
+    local log = machine:log_reset_uarch()
     -- The reset reverted, so the canonical post-state is the revert root hash, not get_root_hash().
     ctx.final_root_hash = REVERT_ROOT_HASH
-    assert(cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log_path) == ctx.final_root_hash)
+    assert(cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log) == ctx.final_root_hash)
+    util.write_file(log, log_path)
     return ctx
 end
 
@@ -130,7 +131,6 @@ local function create_accepted_reset_uarch_step_log()
     local machine <close> = build_machine()
     local name = "reset-uarch-accepted.log"
     local log_path = output_dir .. "/" .. name
-    os.remove(log_path)
     machine:write_reg("uarch_halt", 1)
     machine:write_reg("iflags_Y", 1)
     machine:write_reg("htif_tohost", TOHOST_RX_ACCEPTED)
@@ -143,10 +143,11 @@ local function create_accepted_reset_uarch_step_log()
         revert_root_hash = REVERT_ROOT_HASH,
     }
     ctx.initial_root_hash = machine:get_root_hash()
-    machine:log_reset_uarch(log_path)
+    local log = machine:log_reset_uarch()
     -- Not reverted: the post-state is the actual post-reset root, not the revert root hash.
     ctx.final_root_hash = machine:get_root_hash()
-    assert(cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log_path) == ctx.final_root_hash)
+    assert(cartesi.machine:verify_reset_uarch(ctx.initial_root_hash, log) == ctx.final_root_hash)
+    util.write_file(log, log_path)
     return ctx
 end
 

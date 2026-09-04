@@ -18,7 +18,7 @@
 #define STEP_LOG_RECORDER_HPP
 
 /// \file
-/// \brief Collects the witness of a recorded step and writes it as a binary step log
+/// \brief Collects the witness of a recorded step and serializes it as a binary step log
 
 #include <algorithm>
 #include <array>
@@ -33,10 +33,7 @@
 #include "hash-tree.hpp"
 #include "machine-hash.hpp"
 #include "machine.hpp"
-#include "os-filesystem.hpp"
-#include "os.hpp"
 #include "step-log.hpp"
-#include "unique-c-ptr.hpp"
 
 namespace cartesi {
 
@@ -50,7 +47,6 @@ class step_log_recorder {
     using sibling_hashes_type = hash_tree::sibling_hashes_type;
     using page_indices_type = std::vector<uint64_t>;
 
-    std::string m_filename;             ///< Where to save the log
     hash_function_type m_hash_function; ///< Hash function type to use for the log
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;               ///< Machine being recorded
@@ -59,17 +55,11 @@ class step_log_recorder {
 
 public:
     /// \brief Constructor
-    /// \param filename where to save the log
     /// \param hash_function hash function type to use for the log
     /// \param m machine being recorded
-    /// \details The log file is saved when finish() is called
-    step_log_recorder(std::string filename, hash_function_type hash_function, machine &m) :
-        m_filename(std::move(filename)),
-        m_hash_function(hash_function),
-        m_m(m) {
-        if (os::exists(m_filename)) {
-            throw std::runtime_error("file already exists");
-        }
+    /// \details The log is serialized when finish() is called
+    step_log_recorder(hash_function_type hash_function, machine &m) : m_hash_function(hash_function), m_m(m) {
+        ;
     }
 
     /// \brief Mark a page as touched and save its contents
@@ -136,8 +126,8 @@ public:
             });
     }
 
-    /// \brief Finish recording and save the log file
-    void finish() {
+    /// \brief Finish recording and return the binary step log
+    std::vector<unsigned char> finish() {
         auto sibling_hashes = get_sibling_hashes();
 
         const step_log_header header{
@@ -147,10 +137,14 @@ public:
             .node_count = m_touched_nodes.size(),
             .sibling_count = sibling_hashes.size(),
         };
-        auto fp = make_unique_fopen(m_filename.c_str(), "wb");
-        if (fwrite(&header, sizeof(header), 1, fp.get()) != 1) {
-            throw std::runtime_error("Could not write header to log file");
-        }
+        std::vector<unsigned char> log;
+        log.reserve(sizeof(header) + (m_touched_pages.size() * sizeof(page_entry)) +
+            (m_touched_nodes.size() * sizeof(node_entry)) + (sibling_hashes.size() * sizeof(machine_hash)));
+        const auto append = [&log](const void *data, size_t size) {
+            const auto *bytes = static_cast<const unsigned char *>(data);
+            log.insert(log.end(), bytes, bytes + size);
+        };
+        append(&header, sizeof(header));
         for (const auto &[address, data] : m_touched_pages) {
             page_entry entry{
                 .index = address >> HASH_TREE_LOG2_PAGE_SIZE,
@@ -158,20 +152,15 @@ public:
                 .hash = {}, // scratch; replayer fills this in from the data
             };
             std::copy_n(data.data(), data.size(), entry.data);
-            if (fwrite(&entry, sizeof(entry), 1, fp.get()) != 1) {
-                throw std::runtime_error("Could not write page entry to log file");
-            }
+            append(&entry, sizeof(entry));
         }
         for (const auto &[_, node] : m_touched_nodes) {
-            if (fwrite(&node, sizeof(node), 1, fp.get()) != 1) {
-                throw std::runtime_error("Could not write node entry to log file");
-            }
+            append(&node, sizeof(node));
         }
-        if (!sibling_hashes.empty() &&
-            fwrite(sibling_hashes.data(), sizeof(machine_hash), sibling_hashes.size(), fp.get()) !=
-                sibling_hashes.size()) {
-            throw std::runtime_error("Could not write sibling hashes to log file");
+        if (!sibling_hashes.empty()) {
+            append(sibling_hashes.data(), sibling_hashes.size() * sizeof(machine_hash));
         }
+        return log;
     }
 
 private:

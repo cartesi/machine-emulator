@@ -148,10 +148,7 @@ end
 local do_test = tests_util.make_do_test(build_machine, machine_type)
 
 local function step_uarch(machine)
-    local filename = os.tmpname()
-    os.remove(filename)
-    machine:log_step_uarch(1, filename)
-    os.remove(filename)
+    machine:log_step_uarch(1)
 end
 
 print("Testing machine for type " .. machine_type)

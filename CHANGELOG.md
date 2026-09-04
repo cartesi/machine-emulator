@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- Changed `log_step`, `log_step_uarch`, `log_reset_uarch` and `log_send_cmio_response` to return the binary step log instead of writing it to a file, and `verify_step`, `verify_step_uarch`, `verify_reset_uarch`, `verify_send_cmio_response` and `dump_step_uarch` to take the log bytes instead of a filename, across the C++, C, Lua, and JSON-RPC APIs; the command line keeps writing logs to files
 - Replaced the `file:`, `hex:` and `str:` payload keys of `--log-send-cmio-response` with `data-file:` for a file read as raw bytes and `data:` under `encoding:hex|base64|utf8` (default `hex`), matching the payload encodings of `rollup.cpp` in machine-guest-tools
 - Reduced the binary step log to a pure witness: the header no longer carries the roots before and after nor the requested cycle count (112 to 40 bytes) and node entries carry a single subtree hash the replay keeps current (80 to 48 bytes); verifiers recompute the root before from the witnessed tree, take the cycle count from the caller, and return the root after for the caller to compare
 

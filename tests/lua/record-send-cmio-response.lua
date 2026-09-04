@@ -22,6 +22,7 @@
 -- Writes <output-dir>/{send-cmio-response-<size>.log, _manifest.csv}.
 
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local manifest_mod = require("cartesi.tests.step_log_manifest")
 local test_util = require("cartesi.tests.util")
 
@@ -75,7 +76,6 @@ local function create_send_cmio_response_step_log(data_length, label, reason, mc
     machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, string.rep("X", 4096))
     local name = "send-cmio-response-" .. label .. ".log"
     local log_path = output_dir .. "/" .. name
-    os.remove(log_path)
     if mcycle then
         machine:write_reg("mcycle", mcycle)
     end
@@ -97,15 +97,16 @@ local function create_send_cmio_response_step_log(data_length, label, reason, mc
         revert_root_hash = REVERT_ROOT_HASH,
     }
     ctx.initial_root_hash = machine:get_root_hash()
-    machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH, log_path)
+    local log = machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH)
     ctx.final_root_hash = machine:get_root_hash()
     if reason == cartesi.HTIF_YIELD_REASON_ADVANCE_STATE then
         assert(ctx.final_root_hash ~= ctx.initial_root_hash, "advance response must change the state")
         assert(machine:read_revert_root_hash() == REVERT_ROOT_HASH, "advance response must record the revert root hash")
     end
     local obtained =
-        cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log_path, REVERT_ROOT_HASH)
+        cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log, REVERT_ROOT_HASH)
     assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
+    util.write_file(log, log_path)
     return ctx
 end
 
@@ -121,7 +122,6 @@ local function create_send_cmio_response_noop_step_log()
     machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
     local name = "send-cmio-response-noop.log"
     local log_path = output_dir .. "/" .. name
-    os.remove(log_path)
     local ctx = {
         kind = "send_cmio_response",
         name = name,
@@ -133,12 +133,13 @@ local function create_send_cmio_response_noop_step_log()
         revert_root_hash = REVERT_ROOT_HASH,
     }
     ctx.initial_root_hash = machine:get_root_hash()
-    machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH, log_path)
+    local log = machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH)
     ctx.final_root_hash = machine:get_root_hash()
     assert(ctx.final_root_hash == ctx.initial_root_hash, "no-op must leave the root hash unchanged")
     local obtained =
-        cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log_path, REVERT_ROOT_HASH)
+        cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log, REVERT_ROOT_HASH)
     assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
+    util.write_file(log, log_path)
     return ctx
 end
 
@@ -167,7 +168,6 @@ local function create_rx_buffer_boundary_step_log(data_length, label, expect_noo
     machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, string.rep("X", 4096))
     local name = "send-cmio-response-" .. label .. ".log"
     local log_path = output_dir .. "/" .. name
-    os.remove(log_path)
     machine:write_reg("iflags_Y", 1)
     local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
     machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
@@ -184,15 +184,16 @@ local function create_rx_buffer_boundary_step_log(data_length, label, expect_noo
         revert_root_hash = REVERT_ROOT_HASH,
     }
     ctx.initial_root_hash = machine:get_root_hash()
-    machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH, log_path)
+    local log = machine:log_send_cmio_response(reason, data, REVERT_ROOT_HASH)
     ctx.final_root_hash = machine:get_root_hash()
     assert(
         (ctx.initial_root_hash == ctx.final_root_hash) == expect_noop,
         expect_noop and "oversized response must be a no-op" or "at-limit response must write"
     )
     local obtained =
-        cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log_path, REVERT_ROOT_HASH)
+        cartesi.machine:verify_send_cmio_response(reason, data, ctx.initial_root_hash, log, REVERT_ROOT_HASH)
     assert(obtained == ctx.final_root_hash, "obtained root hash does not match the machine root hash")
+    util.write_file(log, log_path)
     return ctx
 end
 

@@ -17,6 +17,7 @@
 --
 
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local tests_util = require("cartesi.tests.util")
 local parallel = require("cartesi.parallel")
 local manifest_mod = require("cartesi.tests.step_log_manifest")
@@ -358,26 +359,24 @@ local function step_log_file_name(test_name)
     return test_name .. ".log"
 end
 
--- Records a step log for one uarch test. Mutates ctx with the captured
--- root hashes; self-checks the recorded log via verify_step_uarch.
+-- Records a step log for one uarch test and returns it. Mutates ctx with the
+-- captured root hashes; self-checks the recorded log via verify_step_uarch.
 local function record_test_step_log(machine, ctx)
     ctx.log_file = step_log_file_name(ctx.test_name)
     ctx.kind = "program"
     ctx.name = ctx.log_file
     ctx.hash_function = "keccak256"
-    local log_path = output_dir .. "/" .. ctx.log_file
-    os.remove(log_path)
     ctx.initial_root_hash = machine:get_root_hash()
     -- 2x expected cycles so an overrun bug shows up in actual_cycle rather than
     -- being clipped silently at the expected boundary.
     ctx.requested_cycle_count = 2 * ctx.expected_cycles
-    machine:log_step_uarch(ctx.requested_cycle_count, log_path)
+    local log = machine:log_step_uarch(ctx.requested_cycle_count)
     ctx.final_root_hash = machine:get_root_hash()
     ctx.uarch_run_success = true
     assert(
-        cartesi.machine:verify_step_uarch(ctx.initial_root_hash, log_path, ctx.requested_cycle_count)
-            == ctx.final_root_hash
+        cartesi.machine:verify_step_uarch(ctx.initial_root_hash, log, ctx.requested_cycle_count) == ctx.final_root_hash
     )
+    return log
 end
 
 -- Records one step log per uarch cycle in <output_dir>/<test_name>/.
@@ -395,10 +394,10 @@ local function record_per_cycle_step_logs(ram_image, ctx)
     local before_hash = machine:get_root_hash()
     while true do
         local cycle_name = string.format("%05d.log", cycle)
-        local cycle_path = dir_abs .. "/" .. cycle_name
-        local status = machine:log_step_uarch(1, cycle_path)
+        local log, status = machine:log_step_uarch(1)
         if status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE then
             local after_hash = machine:get_root_hash()
+            util.write_file(log, dir_abs .. "/" .. cycle_name)
             manifest_mod.write_row(manifest, {
                 kind = "cycle",
                 name = cycle_name,
@@ -410,9 +409,8 @@ local function record_per_cycle_step_logs(ram_image, ctx)
             before_hash = after_hash
             cycle = cycle + 1
         else
-            -- The machine was already halted (or cycle overflowed): no transition happened.
-            -- Discard the no-op log so per-cycle replay only sees genuine cycles.
-            os.remove(cycle_path)
+            -- The machine was already halted (or cycle overflowed): no transition happened,
+            -- so the no-op log is dropped and per-cycle replay only sees genuine cycles.
             break
         end
     end
@@ -470,8 +468,9 @@ local function record_uarch_tests(tests)
             uarch_run_success = false,
         }
         local machine <close> = build_machine(ctx.ram_image)
-        record_test_step_log(machine, ctx)
+        local log = record_test_step_log(machine, ctx)
         check_test_result(machine, ctx)
+        util.write_file(log, output_dir .. "/" .. ctx.log_file)
         manifest_mod.write_row_file(output_dir, ctx.test_name, ctx)
     end)
     if failures ~= nil and failures > 0 then
@@ -500,7 +499,7 @@ end
 
 -- Records each test as a multi-cycle uarch step log and verifies it round-trips through
 -- verify_step_uarch: C++ record/replay coverage of the step-proof path over the rv64ui-uarch
--- corpus. Logs go to a private temp dir and are discarded (no fixtures persist); runtime-error
+-- corpus. Logs stay in memory and are discarded (no fixtures persist); runtime-error
 -- tests have no valid log to replay and are skipped, matching record_uarch_tests.
 local function verify(tests)
     local loggable_tests = {}
@@ -509,10 +508,6 @@ local function verify(tests)
             loggable_tests[#loggable_tests + 1] = test
         end
     end
-    -- os.tmpname reserves a unique name (and may create an empty file); turn it into our temp dir.
-    output_dir = os.tmpname()
-    os.remove(output_dir)
-    tests_util.prepare_empty_output_dir(output_dir)
     local failures = parallel.run(loggable_tests, jobs, function(test)
         local ctx = {
             ram_image = test[1],
@@ -523,10 +518,7 @@ local function verify(tests)
         local machine <close> = build_machine(ctx.ram_image)
         record_test_step_log(machine, ctx)
         check_test_result(machine, ctx)
-        os.remove(output_dir .. "/" .. ctx.log_file)
     end)
-    -- plain rmdir; a failed worker may leave its log behind, leaking the temp dir
-    os.remove(output_dir)
     if failures ~= nil then
         if failures > 0 then
             stderr(string.format("\nFAILED %d of %d tests\n\n", failures, #loggable_tests))

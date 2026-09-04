@@ -33,9 +33,12 @@ import {UArchStep} from "src/UArchStep.sol";
 ///
 /// Scope: verifyStep runs exactly one uarch step; the on-chain dispute granularity is a
 /// single uarch step. A multi-cycle log is a valid witness for its first cycle only:
-/// replaying one step of it returns that intermediate root, not the log's endpoint.
+/// replaying one step of it returns that intermediate root, not the log's endpoint. It
+/// must still fit the witness-size caps StepLog.decode enforces; those bound the on-chain
+/// decode work and are sized for single-step logs, not for arbitrarily long recordings.
 library Verify {
     error RootHashBeforeMismatch(bytes32 expected, bytes32 fromLog);
+    error CmioResponseTooLong(uint256 length);
 
     function verifyStep(StepLog.Context memory ctx, bytes32 rootHashBefore)
         internal
@@ -81,6 +84,11 @@ library Verify {
             revert RootHashBeforeMismatch(rootHashBefore, ctx.rootHashBefore);
         }
 
+        // The shared core takes a uint32 length; refuse what would be silently narrowed, as the
+        // C++ verifier does.
+        if (data.length > type(uint32).max) {
+            revert CmioResponseTooLong(data.length);
+        }
         SendCmioResponse.sendCmioResponse(ctx, reason, data, uint32(data.length), revertRootHash);
 
         return StepLog.computeRootHash(ctx);

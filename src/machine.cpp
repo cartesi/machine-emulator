@@ -57,8 +57,6 @@
 #include "machine-runtime-config.hpp"
 #include "mcycle-root-hashes.hpp"
 #include "memory-address-range.hpp"
-#include "os-filesystem.hpp"
-#include "os-mapped-memory.hpp"
 #include "os.hpp"
 #include "pmas-constants.hpp"
 #include "pmas.hpp"
@@ -2011,8 +2009,8 @@ void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uin
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash.value_or(const_machine_hash_view{zero}));
 }
 
-void machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const_machine_hash_view revert_root_hash, const std::string &filename) {
+std::vector<unsigned char> machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    const_machine_hash_view revert_root_hash) {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{
             "send cmio response logs can only be used with hash tree configured with Keccak-256 hash function"};
@@ -2024,30 +2022,30 @@ void machine::log_send_cmio_response(uint16_t reason, const unsigned char *data,
         throw std::invalid_argument{"CMIO response data length does not fit in 32 bits"};
     }
     const auto root_hash_before = get_root_hash();
-    step_log_recorder recorder(filename, m_c.hash_tree.hash_function, *this);
-    record_step_state_access a(recorder, *this);
+    step_log_recorder recorder(m_c.hash_tree.hash_function, *this);
+    const record_step_state_access a(recorder, *this);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
     const auto root_hash_after = get_root_hash();
-    recorder.finish();
-    auto obtained_root_hash =
-        verify_send_cmio_response(reason, data, length, root_hash_before, filename, revert_root_hash);
+    auto log = recorder.finish();
+    auto obtained_root_hash = verify_send_cmio_response(reason, data, length, root_hash_before, log, revert_root_hash);
     if (!std::ranges::equal(obtained_root_hash, root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
+    return log;
 }
 
 machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const_machine_hash_view root_hash_before, const std::string &filename, const_machine_hash_view revert_root_hash) {
+    const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
+    const_machine_hash_view revert_root_hash) {
     // See log_send_cmio_response: the core narrows length to uint32, so reject what would not fit.
     if (length > UINT32_MAX) {
         throw std::invalid_argument{"CMIO response data length does not fit in 32 bits"};
     }
-    auto data_length = os::file_size(filename);
-    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
+    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
     replay_step_state_access::context context;
     // Keccak-256 only, mirroring recording: these logs exist for the on-chain verifier
-    replay_step_state_access a(context, mapped_data.get_ptr(), data_length, hash_function_type::keccak256);
+    replay_step_state_access a(context, image.data(), image.size(), hash_function_type::keccak256);
     context.log.check_root_hash_before(root_hash_before);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
@@ -2072,12 +2070,12 @@ void machine::reset_uarch() {
     }
 }
 
-void machine::log_reset_uarch(const std::string &filename) {
+std::vector<unsigned char> machine::log_reset_uarch() {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
     const auto root_hash_before = get_root_hash();
-    step_log_recorder recorder(filename, m_c.hash_tree.hash_function, *this);
+    step_log_recorder recorder(m_c.hash_tree.hash_function, *this);
     uarch_record_step_state_access a(recorder, *this);
     uarch_reset_state(a);
     auto root_hash_after = get_root_hash();
@@ -2085,24 +2083,25 @@ void machine::log_reset_uarch(const std::string &filename) {
     if (is_rejected_manual_yield(sa)) {
         root_hash_after = read_revert_root_hash();
     }
-    recorder.finish();
+    auto log = recorder.finish();
     // root_hash_after holds the revert root hash when the reset reverted the state
-    if (!std::ranges::equal(verify_reset_uarch(root_hash_before, filename), root_hash_after)) {
+    if (!std::ranges::equal(verify_reset_uarch(root_hash_before, log), root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
+    return log;
 }
 
-machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_before, const std::string &filename) {
-    auto data_length = os::file_size(filename);
-    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
+machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log) {
+    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
     uarch_replay_step_state_access<>::context context;
-    uarch_replay_step_state_access<> a(context, mapped_data.get_ptr(), data_length);
+    uarch_replay_step_state_access<> a(context, image.data(), image.size());
     context.log.check_root_hash_before(root_hash_before);
     uarch_reset_state(a);
     return a.finish();
 }
 
-uarch_interpreter_break_reason machine::log_step_uarch(uint64_t uarch_cycle_count, const std::string &filename) {
+std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> machine::log_step_uarch(
+    uint64_t uarch_cycle_count) {
     if (is_unreproducible()) {
         throw std::runtime_error("uarch cannot be used with unreproducible machines");
     }
@@ -2110,24 +2109,23 @@ uarch_interpreter_break_reason machine::log_step_uarch(uint64_t uarch_cycle_coun
         throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
     const auto root_hash_before = get_root_hash();
-    step_log_recorder recorder(filename, m_c.hash_tree.hash_function, *this);
-    uarch_record_step_state_access a(recorder, *this);
+    step_log_recorder recorder(m_c.hash_tree.hash_function, *this);
+    const uarch_record_step_state_access a(recorder, *this);
     const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), uarch_cycle_count);
     const auto break_reason = uarch_interpret(a, uarch_cycle_end);
     const auto root_hash_after = get_root_hash();
-    recorder.finish();
-    if (!std::ranges::equal(verify_step_uarch(root_hash_before, filename, uarch_cycle_count), root_hash_after)) {
+    auto log = recorder.finish();
+    if (!std::ranges::equal(verify_step_uarch(root_hash_before, log, uarch_cycle_count), root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
-    return break_reason;
+    return {std::move(log), break_reason};
 }
 
-machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
+machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     uint64_t uarch_cycle_count) {
-    auto data_length = os::file_size(filename);
-    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
+    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
     uarch_replay_step_state_access<>::context context;
-    uarch_replay_step_state_access<> a(context, mapped_data.get_ptr(), data_length);
+    uarch_replay_step_state_access<> a(context, image.data(), image.size());
     context.log.check_root_hash_before(root_hash_before);
     const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), uarch_cycle_count);
     uarch_interpret(a, uarch_cycle_end);
@@ -2187,14 +2185,14 @@ interpreter_break_reason machine::get_state_break_reason(interpreter_break_reaso
     return fallback;
 }
 
-interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
+std::pair<std::vector<unsigned char>, interpreter_break_reason> machine::log_step(uint64_t mcycle_count) {
     if (read_reg(reg::uarch_cycle) != 0) {
         throw std::runtime_error{"uarch is not reset"};
     }
     const auto root_hash_before = get_root_hash();
     init_hot_tlb_contents();
-    step_log_recorder recorder(filename, m_c.hash_tree.hash_function, *this);
-    record_step_state_access a(recorder, *this);
+    step_log_recorder recorder(m_c.hash_tree.hash_function, *this);
+    const record_step_state_access a(recorder, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     const auto break_reason = interpret(a, mcycle_end);
     auto root_hash_after = get_root_hash();
@@ -2202,19 +2200,18 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     if (is_rejected_manual_yield(sa)) {
         root_hash_after = read_revert_root_hash();
     }
-    recorder.finish();
-    if (!std::ranges::equal(verify_step(root_hash_before, filename, mcycle_count), root_hash_after)) {
+    auto log = recorder.finish();
+    if (!std::ranges::equal(verify_step(root_hash_before, log, mcycle_count), root_hash_after)) {
         throw std::runtime_error("mismatch in root hash after replay");
     }
-    return break_reason;
+    return {std::move(log), break_reason};
 }
 
-machine_hash machine::verify_step(const_machine_hash_view root_hash_before, const std::string &filename,
+machine_hash machine::verify_step(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     uint64_t mcycle_count) {
-    auto data_length = os::file_size(filename);
-    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
+    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
     replay_step_state_access::context context;
-    replay_step_state_access a(context, mapped_data.get_ptr(), data_length);
+    replay_step_state_access a(context, image.data(), image.size());
     context.log.check_root_hash_before(root_hash_before);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     interpret(a, mcycle_end);

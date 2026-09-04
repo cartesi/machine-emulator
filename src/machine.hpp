@@ -23,10 +23,12 @@
 #include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "address-range.hpp"
 #include "back-merkle-tree.hpp"
@@ -269,18 +271,17 @@ public:
         uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
         const std::optional<back_merkle_tree> &previous_partial_bundle = {});
 
-    /// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
+    /// \brief Runs the machine for the given mcycle count and records a step log of accessed pages and proof data.
     /// \param mcycle_count Number of mcycles to run the machine for.
-    /// \param filename Name of the file to store the log.
-    /// \returns The reason the machine was interrupted.
-    interpreter_break_reason log_step(uint64_t mcycle_count, const std::string &filename);
+    /// \returns The binary step log and the reason the machine was interrupted.
+    std::pair<std::vector<unsigned char>, interpreter_break_reason> log_step(uint64_t mcycle_count);
 
-    /// \brief Checks the validity of a step log file.
+    /// \brief Checks the validity of a step log.
     /// \param root_hash_before Hash of the state before the step.
-    /// \param log_filename Name of the file containing the log.
+    /// \param log Binary step log produced by log_step.
     /// \param mcycle_count Number of mcycles the machine was run for.
     /// \returns Hash of the state after the step, for the caller to check.
-    static machine_hash verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
+    static machine_hash verify_step(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         uint64_t mcycle_count);
 
     /// \brief Runs the machine in the uarch until the mcycles advances by one unit or the micro cycle
@@ -318,33 +319,33 @@ public:
     uarch_cycle_root_hashes collect_uarch_cycle_root_hashes(uint64_t mcycle_end, int32_t log2_bundle_uarch_cycle_count,
         const machine_hashes &revert_uarch_tail = {});
 
-    /// \brief Runs the uarch for the given cycle count (or halt) and writes a binary step log to a file.
+    /// \brief Runs the uarch for the given cycle count (or halt) and records a binary step log.
     /// \param uarch_cycle_count Number of cycles to advance; the run stops earlier on halt or overflow.
-    /// \param filename Path where the binary step log will be saved.
-    /// \returns Reason the uarch step ended.
-    uarch_interpreter_break_reason log_step_uarch(uint64_t uarch_cycle_count, const std::string &filename);
+    /// \returns The binary step log and the reason the uarch step ended.
+    std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> log_step_uarch(uint64_t uarch_cycle_count);
 
     /// \brief Resets the entire uarch state to pristine values.
     void reset_uarch();
 
-    /// \brief Resets the uarch state and writes a binary step log to a file.
-    /// \param filename Path where the binary step log will be saved.
-    void log_reset_uarch(const std::string &filename);
+    /// \brief Resets the uarch state and records a binary step log.
+    /// \returns The binary step log.
+    std::vector<unsigned char> log_reset_uarch();
 
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
     /// \param root_hash_before State hash before step.
-    /// \param filename Path to the binary step log file produced by log_step_uarch.
+    /// \param log Binary step log produced by log_step_uarch.
     /// \param uarch_cycle_count Number of cycles the caller expects to have been advanced.
     /// \returns State hash after step, for the caller to check.
-    static machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
+    static machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         uint64_t uarch_cycle_count);
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset.
-    /// \param filename Path to the binary step log file produced by log_reset_uarch.
+    /// \param log Binary step log produced by log_reset_uarch.
     /// \returns State hash after uarch reset, for the caller to check. When the machine
     /// has rejected an input, this is the recorded revert root hash.
-    static machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before, const std::string &filename);
+    static machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before,
+        std::span<const unsigned char> log);
 
     /// \brief Returns copy of default machine config
     static machine_config get_default_config();
@@ -719,32 +720,32 @@ public:
         }
     }
 
-    /// \brief Sends cmio response and writes a binary step log to a file.
+    /// \brief Sends cmio response and records a binary step log.
     /// \param reason Reason for sending response.
     /// \param data Response data.
     /// \param length Length of response data.
     /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
     /// Unlike send_cmio_response, it is not checked against the machine root hash.
-    /// \param filename Path where the binary step log will be saved.
+    /// \returns The binary step log.
     /// \details Only advance-state responses make sense here, since they are the responses whose state
     /// transitions are proved. The logged operation cannot fail, so the honest party can always prove
     /// the resulting state transition. It is a no-op that leaves the state unchanged when the machine
     /// is not waiting on a manual yield, when an advance-state response finds the machine yielded with
     /// a reason other than rx-accepted (e.g., it rejected an input or threw an exception), or when the
     /// response data does not fit in the rx buffer.
-    void log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const_machine_hash_view revert_root_hash, const std::string &filename);
+    std::vector<unsigned char> log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const_machine_hash_view revert_root_hash);
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
     /// \param reason Reason for sending response.
     /// \param data The response sent when the log was generated.
     /// \param length Length of response.
     /// \param root_hash_before State hash before response was sent.
-    /// \param filename Path to the binary step log file produced by log_send_cmio_response.
+    /// \param log Binary step log produced by log_send_cmio_response.
     /// \param revert_root_hash The revert root hash recorded when the log was generated.
     /// \returns State hash after response was sent, for the caller to check.
     static machine_hash verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const_machine_hash_view root_hash_before, const std::string &filename,
+        const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         const_machine_hash_view revert_root_hash);
 
     /// \brief Returns a description of what is at a given target physical address

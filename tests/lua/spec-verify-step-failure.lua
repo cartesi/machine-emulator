@@ -67,28 +67,23 @@ local function build_machine(hash_fn)
     }, {})
 end
 
--- Produce a fresh valid log + endpoint hashes; each call gives an isolated file.
+-- Produce a fresh valid log + endpoint hashes.
 local function produce_valid_log(hash_fn)
     local machine <close> = build_machine(hash_fn)
     machine:write_reg("mcycle", 0)
     local root_hash_before = machine:get_root_hash()
-    local filename = os.tmpname()
-    os.remove(filename)
-    machine:log_step(MCYCLE_COUNT, filename)
+    local log = machine:log_step(MCYCLE_COUNT)
     local root_hash_after = machine:get_root_hash()
-    return filename, root_hash_before, root_hash_after
+    return log, root_hash_before, root_hash_after
 end
 
 -- Run verify_step against a corrupted copy produced by `mutate`. Returns (ok, err).
-local function verify_corrupted(filename, mutate, root_hash_before, mcycle_count, root_hash_after)
-    local corrupted = os.tmpname()
-    test_util.copy_step_log(filename, corrupted, mutate)
-    local ok, err = pcall(function()
+local function verify_corrupted(log, mutate, root_hash_before, mcycle_count, root_hash_after)
+    local corrupted = test_util.mutate_step_log(log, mutate)
+    return pcall(function()
         local obtained_root_hash = cartesi.machine:verify_step(root_hash_before, corrupted, mcycle_count)
         assert(obtained_root_hash == root_hash_after, "obtained root hash does not match root hash after")
     end)
-    os.remove(corrupted)
-    return ok, err
 end
 
 -- Three-cursor sibling computation: replicates replay_step_state_access's tree
@@ -123,22 +118,16 @@ local function get_siblings_for_pages(machine, page_indices)
     return siblings
 end
 
--- Run `body(filename, root_hash_before, root_hash_after)` against a freshly
--- produced log. Cleans up the file on the way out.
+-- Run `body(log, root_hash_before, root_hash_after)` against a freshly produced log.
 local function with_valid_log(body)
-    local filename, root_hash_before, root_hash_after = produce_valid_log()
-    local ok, err = pcall(body, filename, root_hash_before, root_hash_after)
-    os.remove(filename)
-    if not ok then
-        error(err)
-    end
+    body(produce_valid_log())
 end
 
 -- Common pattern: produce a valid log, corrupt it via `mutate`, expect
 -- verify_step to fail with an error containing `expected_substring`.
 local function expect_corruption_error(expected_substring, mutate)
-    with_valid_log(function(filename, root_hash_before, root_hash_after)
-        local ok, err = verify_corrupted(filename, mutate, root_hash_before, MCYCLE_COUNT, root_hash_after)
+    with_valid_log(function(log, root_hash_before, root_hash_after)
+        local ok, err = verify_corrupted(log, mutate, root_hash_before, MCYCLE_COUNT, root_hash_after)
         expect.falsy(ok)
         expect.truthy(err and err:find(expected_substring, 1, true), err)
     end)
@@ -149,9 +138,9 @@ end
 describe("verify_step", function()
     describe("argument validation", function()
         it("rejects a wrong root_hash_before argument", function()
-            with_valid_log(function(filename)
+            with_valid_log(function(log)
                 local ok, err = pcall(function()
-                    cartesi.machine:verify_step(BAD_HASH, filename, MCYCLE_COUNT)
+                    cartesi.machine:verify_step(BAD_HASH, log, MCYCLE_COUNT)
                 end)
                 expect.falsy(ok)
                 expect.truthy(err and err:find("root hash before does not match", 1, true), err)
@@ -159,19 +148,19 @@ describe("verify_step", function()
         end)
 
         it("returns the root hash after for the caller to check", function()
-            with_valid_log(function(filename, root_hash_before, root_hash_after)
-                local obtained = cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT)
+            with_valid_log(function(log, root_hash_before, root_hash_after)
+                local obtained = cartesi.machine:verify_step(root_hash_before, log, MCYCLE_COUNT)
                 expect.truthy(obtained == root_hash_after)
                 expect.truthy(obtained ~= BAD_HASH)
             end)
         end)
 
         it("cannot reach the true final hash with a wrong mcycle_count argument", function()
-            with_valid_log(function(filename, root_hash_before, root_hash_after)
+            with_valid_log(function(log, root_hash_before, root_hash_after)
                 -- A different cycle count replays a different transition: it either runs past
                 -- the witness and throws, or reaches an intermediate state with another hash.
                 local ok, obtained = pcall(function()
-                    return cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT + 1)
+                    return cartesi.machine:verify_step(root_hash_before, log, MCYCLE_COUNT + 1)
                 end)
                 expect.truthy(not ok or obtained ~= root_hash_after)
             end)
@@ -181,15 +170,10 @@ describe("verify_step", function()
     describe("header validation", function()
         it("rejects a log shorter than the header", function()
             with_valid_log(function(_, root_hash_before)
-                local truncated = os.tmpname()
-                do
-                    local f <close> = assert(io.open(truncated, "wb"))
-                    f:write(string.rep("\0", 16))
-                end
+                local truncated = string.rep("\0", 16)
                 local ok, err = pcall(function()
                     cartesi.machine:verify_step(root_hash_before, truncated, MCYCLE_COUNT)
                 end)
-                os.remove(truncated)
                 expect.falsy(ok)
                 expect.truthy(err and err:find("step log shorter than header", 1, true), err)
             end)
@@ -242,24 +226,20 @@ describe("verify_step", function()
         -- policy error: the check must fire at header parse, before the pre-root recompute
         -- turns the mismatch into an unhelpful root-hash-before mismatch.
         local function expect_sha256_rejection(produce, verify)
-            local filename, root_hash_before, root_hash_after = produce()
-            local corrupted = os.tmpname()
-            test_util.copy_step_log(filename, corrupted, function(log_data)
+            local log, root_hash_before, root_hash_after = produce()
+            local corrupted = test_util.mutate_step_log(log, function(log_data)
                 log_data.hash_function = 1 -- sha256
             end)
-            os.remove(filename)
             local ok, err = pcall(verify, root_hash_before, corrupted, root_hash_after)
-            os.remove(corrupted)
             expect.falsy(ok)
             expect.truthy(err and err:find(POLICY_ERROR, 1, true), err)
         end
 
         it("verify_step accepts a sha256 log", function()
-            local filename, root_hash_before, root_hash_after = produce_valid_log("sha256")
+            local log, root_hash_before, root_hash_after = produce_valid_log("sha256")
             local ok, obtained = pcall(function()
-                return cartesi.machine:verify_step(root_hash_before, filename, MCYCLE_COUNT)
+                return cartesi.machine:verify_step(root_hash_before, log, MCYCLE_COUNT)
             end)
-            os.remove(filename)
             expect.truthy(ok, obtained)
             expect.truthy(obtained == root_hash_after)
         end)
@@ -268,12 +248,10 @@ describe("verify_step", function()
             expect_sha256_rejection(function()
                 local machine <close> = build_machine()
                 local root_hash_before = machine:get_root_hash()
-                local filename = os.tmpname()
-                os.remove(filename)
-                machine:log_step_uarch(1, filename)
-                return filename, root_hash_before, machine:get_root_hash()
-            end, function(root_hash_before, filename)
-                cartesi.machine:verify_step_uarch(root_hash_before, filename, 1)
+                local log = machine:log_step_uarch(1)
+                return log, root_hash_before, machine:get_root_hash()
+            end, function(root_hash_before, log)
+                cartesi.machine:verify_step_uarch(root_hash_before, log, 1)
             end)
         end)
 
@@ -281,12 +259,10 @@ describe("verify_step", function()
             expect_sha256_rejection(function()
                 local machine <close> = build_machine()
                 local root_hash_before = machine:get_root_hash()
-                local filename = os.tmpname()
-                os.remove(filename)
-                machine:log_reset_uarch(filename)
-                return filename, root_hash_before, machine:get_root_hash()
-            end, function(root_hash_before, filename)
-                cartesi.machine:verify_reset_uarch(root_hash_before, filename)
+                local log = machine:log_reset_uarch()
+                return log, root_hash_before, machine:get_root_hash()
+            end, function(root_hash_before, log)
+                cartesi.machine:verify_reset_uarch(root_hash_before, log)
             end)
         end)
 
@@ -296,12 +272,10 @@ describe("verify_step", function()
                 local machine <close> = build_machine()
                 machine:write_reg("iflags_Y", 1)
                 local root_hash_before = machine:get_root_hash()
-                local filename = os.tmpname()
-                os.remove(filename)
-                machine:log_send_cmio_response(1, data, BAD_HASH, filename)
-                return filename, root_hash_before, machine:get_root_hash()
-            end, function(root_hash_before, filename)
-                cartesi.machine:verify_send_cmio_response(1, data, root_hash_before, filename, BAD_HASH)
+                local log = machine:log_send_cmio_response(1, data, BAD_HASH)
+                return log, root_hash_before, machine:get_root_hash()
+            end, function(root_hash_before, log)
+                cartesi.machine:verify_send_cmio_response(1, data, root_hash_before, log, BAD_HASH)
             end)
         end)
     end)
@@ -397,14 +371,8 @@ describe("verify_step", function()
         -- unmodified. Converting a sibling subtree into such a node must not change the
         -- outcome of verification.
         it("accepts an untouched node as an unchanged region", function()
-            with_valid_log(function(filename, root_hash_before, root_hash_after)
-                local transformed = filename .. "-node"
-                test_util.copy_step_log(filename, transformed, function(log_data)
-                    test_util.inject_unchanged_node(log_data)
-                end)
-                local _ <close> = test_util.scope_exit(function()
-                    os.remove(transformed)
-                end)
+            with_valid_log(function(log, root_hash_before, root_hash_after)
+                local transformed = test_util.mutate_step_log(log, test_util.inject_unchanged_node)
                 local obtained = cartesi.machine:verify_step(root_hash_before, transformed, MCYCLE_COUNT)
                 expect.truthy(obtained == root_hash_after)
             end)
@@ -444,27 +412,23 @@ describe("verify_step", function()
         -- agreed root, yet a page the interpreter needs is absent. The
         -- constructor accepts the log; find_page must reject it during replay.
         it("rejects a log with a required page omitted", function()
-            local filename, root_hash_before = produce_valid_log()
-            local log = test_util.read_step_log_file(filename)
-            os.remove(filename)
+            local log, root_hash_before = produce_valid_log()
+            local log_data = test_util.parse_step_log(log)
 
-            assert(#log.pages >= 2, "test needs a machine that produces at least 2 pages per step")
+            assert(#log_data.pages >= 2, "test needs a machine that produces at least 2 pages per step")
 
-            table.remove(log.pages)
+            table.remove(log_data.pages)
             local kept_indices = {}
-            for i, p in ipairs(log.pages) do
+            for i, p in ipairs(log_data.pages) do
                 kept_indices[i] = p.index
             end
             local fresh <close> = build_machine()
-            log.siblings = get_siblings_for_pages(fresh, kept_indices)
+            log_data.siblings = get_siblings_for_pages(fresh, kept_indices)
 
-            local adversarial = os.tmpname()
-            os.remove(adversarial)
-            test_util.write_step_log_file(log, adversarial)
+            local adversarial = test_util.serialize_step_log(log_data)
             local ok, err = pcall(function()
                 cartesi.machine:verify_step(root_hash_before, adversarial, MCYCLE_COUNT)
             end)
-            os.remove(adversarial)
             expect.falsy(ok)
             expect.truthy(err and err:find("required page not found", 1, true), err)
         end)
@@ -472,14 +436,12 @@ describe("verify_step", function()
 
     describe("interpret: corrupted PMA data", function()
         it("rejects a log with invalid PMA entries", function()
-            local filename = produce_valid_log()
-            local log = test_util.read_step_log_file(filename)
-            os.remove(filename)
-            local hash_fn = log.hash_function == 0 and "keccak256" or "sha256"
+            local log_data = test_util.parse_step_log(produce_valid_log())
+            local hash_fn = log_data.hash_function == 0 and "keccak256" or "sha256"
 
             local pma_page_index = cartesi.AR_PMAS_START >> LOG2_PAGE_SIZE
             local pma_pos
-            for i, p in ipairs(log.pages) do
+            for i, p in ipairs(log_data.pages) do
                 if p.index == pma_page_index then
                     pma_pos = i
                     break
@@ -487,13 +449,13 @@ describe("verify_step", function()
             end
             assert(pma_pos, "PMA page not found in log -- machine config must touch it")
 
-            log.pages[pma_pos].data = string.rep("\xff", PAGE_SIZE)
+            log_data.pages[pma_pos].data = string.rep("\xff", PAGE_SIZE)
 
             -- Walk corrupted PMA page up to root, picking siblings from a
             -- pristine machine to keep the merkle tree self-consistent.
             local fresh <close> = build_machine()
             local pma_addr = pma_page_index << LOG2_PAGE_SIZE
-            local node_hash = test_util.merkle_hash(log.pages[pma_pos].data, 0, LOG2_PAGE_SIZE, hash_fn)
+            local node_hash = test_util.merkle_hash(log_data.pages[pma_pos].data, 0, LOG2_PAGE_SIZE, hash_fn)
             for log2_size = LOG2_PAGE_SIZE, LOG2_ROOT_SIZE - 1 do
                 local bit = 1 << log2_size
                 local sibling_addr = (pma_addr ~ bit) & ~(bit - 1)
@@ -507,18 +469,15 @@ describe("verify_step", function()
             local new_root = node_hash
 
             local indices = {}
-            for i, p in ipairs(log.pages) do
+            for i, p in ipairs(log_data.pages) do
                 indices[i] = p.index
             end
-            log.siblings = get_siblings_for_pages(fresh, indices)
+            log_data.siblings = get_siblings_for_pages(fresh, indices)
 
-            local adversarial = os.tmpname()
-            os.remove(adversarial)
-            test_util.write_step_log_file(log, adversarial)
+            local adversarial = test_util.serialize_step_log(log_data)
             local ok, err = pcall(function()
                 cartesi.machine:verify_step(new_root, adversarial, MCYCLE_COUNT)
             end)
-            os.remove(adversarial)
             expect.falsy(ok)
             expect.truthy(err and err:find("when initializing", 1, true), err)
         end)

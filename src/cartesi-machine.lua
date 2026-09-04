@@ -4108,7 +4108,8 @@ end
 if cmdline.log_step_mcycle_count then
     stderr(string.format("Logging step of %d cycles to %s\n", cmdline.log_step_mcycle_count, cmdline.log_step_filename))
     print_root_hash(machine, stderr_unsilenceable)
-    machine:log_step(cmdline.log_step_mcycle_count, cmdline.log_step_filename)
+    local log = machine:log_step(cmdline.log_step_mcycle_count)
+    util.write_file(log, cmdline.log_step_filename)
     print_root_hash(machine, stderr_unsilenceable)
 end
 -- Advance micro cycles
@@ -4138,16 +4139,15 @@ if gdb_stub then gdb_stub:close() end
 if cmdline.log_step_uarch then
     assert(initial_config.processor.registers.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")
-    os.remove(cmdline.log_step_uarch.filename)
-    machine:log_step_uarch(cmdline.log_step_uarch.count, cmdline.log_step_uarch.filename)
+    local log = machine:log_step_uarch(cmdline.log_step_uarch.count)
+    util.write_file(log, cmdline.log_step_uarch.filename)
     if cmdline.log_step_uarch.dump then
-        io.stderr:write(cartesi.machine:dump_step_uarch(cmdline.log_step_uarch.filename, cmdline.log_step_uarch.count))
+        io.stderr:write(cartesi.machine:dump_step_uarch(log, cmdline.log_step_uarch.count))
     end
 end
 if cmdline.log_reset_uarch then
     stderr("Resetting uarch state: please wait\n")
-    os.remove(cmdline.log_reset_uarch.filename)
-    machine:log_reset_uarch(cmdline.log_reset_uarch.filename)
+    util.write_file(machine:log_reset_uarch(), cmdline.log_reset_uarch.filename)
 end
 if cmdline.log_send_cmio_response then
     local o = cmdline.log_send_cmio_response
@@ -4159,8 +4159,7 @@ if cmdline.log_send_cmio_response then
         data = ENCODINGS[o.encoding](o.data)
     end
     stderr("Logging cmio response: please wait\n")
-    os.remove(o.filename)
-    machine:log_send_cmio_response(o.reason, data, machine:get_root_hash(), o.filename)
+    util.write_file(machine:log_send_cmio_response(o.reason, data, machine:get_root_hash()), o.filename)
 end
 if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_memory_ranges_dir) end
 if cmdline.final_hash then

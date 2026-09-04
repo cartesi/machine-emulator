@@ -174,6 +174,12 @@ const char *cm_set_temp_string(const std::string &s) {
     return temp_string.c_str();
 }
 
+const uint8_t *cm_set_temp_data(std::vector<unsigned char> data) {
+    static THREAD_LOCAL std::vector<unsigned char> temp_data;
+    temp_data = std::move(data);
+    return temp_data.data();
+}
+
 cm_error cm_result_failure() {
     return cartesi::cm_exception_to_error_code(get_last_err_msg_storage());
 }
@@ -805,14 +811,22 @@ cm_error cm_reset_uarch(cm_machine *m) try {
     return cm_result_failure();
 }
 
-cm_error cm_log_reset_uarch(cm_machine *m, const char *log_filename) try {
-    if (log_filename == nullptr) {
-        throw std::invalid_argument("invalid log_filename");
+cm_error cm_log_reset_uarch(cm_machine *m, const uint8_t **log, uint64_t *log_length) try {
+    if (log == nullptr || log_length == nullptr) {
+        throw std::invalid_argument("invalid log output");
     }
     auto *cpp_m = convert_from_c(m);
-    cpp_m->log_reset_uarch(log_filename);
+    auto cpp_log = cpp_m->log_reset_uarch();
+    *log_length = cpp_log.size();
+    *log = cm_set_temp_data(std::move(cpp_log));
     return cm_result_success();
 } catch (...) {
+    if (log != nullptr) {
+        *log = nullptr;
+    }
+    if (log_length != nullptr) {
+        *log_length = 0;
+    }
     return cm_result_failure();
 }
 
@@ -830,50 +844,66 @@ cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_re
     return cm_result_failure();
 }
 
-cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
+cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const uint8_t **log, uint64_t *log_length,
     cm_break_reason *break_reason) try {
-    if (log_filename == nullptr) {
-        throw std::invalid_argument("invalid log_filename");
+    if (log == nullptr || log_length == nullptr) {
+        throw std::invalid_argument("invalid log output");
     }
     auto *cpp_m = convert_from_c(m);
-    const auto status = cpp_m->log_step(mcycle_count, log_filename);
+    auto [cpp_log, status] = cpp_m->log_step(mcycle_count);
+    *log_length = cpp_log.size();
+    *log = cm_set_temp_data(std::move(cpp_log));
     if (break_reason != nullptr) {
         *break_reason = static_cast<cm_break_reason>(status);
     }
     return cm_result_success();
 } catch (...) {
+    if (log != nullptr) {
+        *log = nullptr;
+    }
+    if (log_length != nullptr) {
+        *log_length = 0;
+    }
     if (break_reason != nullptr) {
         *break_reason = CM_BREAK_REASON_FAILED;
     }
     return cm_result_failure();
 }
 
-cm_error cm_log_step_uarch(cm_machine *m, uint64_t uarch_cycle_count, const char *log_filename,
+cm_error cm_log_step_uarch(cm_machine *m, uint64_t uarch_cycle_count, const uint8_t **log, uint64_t *log_length,
     cm_uarch_break_reason *uarch_break_reason) try {
-    if (log_filename == nullptr) {
-        throw std::invalid_argument("invalid log_filename");
+    if (log == nullptr || log_length == nullptr) {
+        throw std::invalid_argument("invalid log output");
     }
     auto *cpp_m = convert_from_c(m);
-    const auto reason = cpp_m->log_step_uarch(uarch_cycle_count, log_filename);
+    auto [cpp_log, reason] = cpp_m->log_step_uarch(uarch_cycle_count);
+    *log_length = cpp_log.size();
+    *log = cm_set_temp_data(std::move(cpp_log));
     if (uarch_break_reason != nullptr) {
         *uarch_break_reason = static_cast<cm_uarch_break_reason>(reason);
     }
     return cm_result_success();
 } catch (...) {
+    if (log != nullptr) {
+        *log = nullptr;
+    }
+    if (log_length != nullptr) {
+        *log_length = 0;
+    }
     if (uarch_break_reason != nullptr) {
         *uarch_break_reason = CM_UARCH_BREAK_REASON_FAILED;
     }
     return cm_result_failure();
 }
 
-cm_error cm_verify_step(const cm_hash *root_hash_before, const char *log_filename, uint64_t mcycle_count,
+cm_error cm_verify_step(const cm_hash *root_hash_before, const uint8_t *log, uint64_t log_length, uint64_t mcycle_count,
     cm_hash *obtained_root_hash) try {
-    if (log_filename == nullptr) {
-        throw std::invalid_argument("invalid log_filename");
+    if (log == nullptr) {
+        throw std::invalid_argument("invalid log");
     }
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::machine_hash cpp_obtained_root_hash =
-        cartesi::machine::verify_step(cpp_root_hash_before, log_filename, mcycle_count);
+    const cartesi::machine_hash cpp_obtained_root_hash = cartesi::machine::verify_step(cpp_root_hash_before,
+        std::span<const unsigned char>{log, log_length}, mcycle_count);
     if (obtained_root_hash != nullptr) {
         convert_to_c(cpp_obtained_root_hash, obtained_root_hash);
     }
@@ -882,19 +912,19 @@ cm_error cm_verify_step(const cm_hash *root_hash_before, const char *log_filenam
     return cm_result_failure();
 }
 
-cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
-    uint64_t uarch_cycle_count, cm_hash *obtained_root_hash) try {
-    if (log_filename == nullptr) {
-        throw std::invalid_argument("invalid log_filename");
+cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const uint8_t *log,
+    uint64_t log_length, uint64_t uarch_cycle_count, cm_hash *obtained_root_hash) try {
+    if (log == nullptr) {
+        throw std::invalid_argument("invalid log");
     }
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
+    const std::span<const unsigned char> cpp_log{log, log_length};
     cartesi::machine_hash cpp_obtained_root_hash{};
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
-        cpp_obtained_root_hash = cpp_m->verify_step_uarch(cpp_root_hash_before, log_filename, uarch_cycle_count);
+        cpp_obtained_root_hash = cpp_m->verify_step_uarch(cpp_root_hash_before, cpp_log, uarch_cycle_count);
     } else {
-        cpp_obtained_root_hash =
-            cartesi::machine::verify_step_uarch(cpp_root_hash_before, log_filename, uarch_cycle_count);
+        cpp_obtained_root_hash = cartesi::machine::verify_step_uarch(cpp_root_hash_before, cpp_log, uarch_cycle_count);
     }
     if (obtained_root_hash != nullptr) {
         convert_to_c(cpp_obtained_root_hash, obtained_root_hash);
@@ -904,18 +934,19 @@ cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_befo
     return cm_result_failure();
 }
 
-cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
-    cm_hash *obtained_root_hash) try {
-    if (log_filename == nullptr) {
-        throw std::invalid_argument("invalid log_filename");
+cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_before, const uint8_t *log,
+    uint64_t log_length, cm_hash *obtained_root_hash) try {
+    if (log == nullptr) {
+        throw std::invalid_argument("invalid log");
     }
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
+    const std::span<const unsigned char> cpp_log{log, log_length};
     cartesi::machine_hash cpp_obtained_root_hash{};
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
-        cpp_obtained_root_hash = cpp_m->verify_reset_uarch(cpp_root_hash_before, log_filename);
+        cpp_obtained_root_hash = cpp_m->verify_reset_uarch(cpp_root_hash_before, cpp_log);
     } else {
-        cpp_obtained_root_hash = cartesi::machine::verify_reset_uarch(cpp_root_hash_before, log_filename);
+        cpp_obtained_root_hash = cartesi::machine::verify_reset_uarch(cpp_root_hash_before, cpp_log);
     }
     if (obtained_root_hash != nullptr) {
         convert_to_c(cpp_obtained_root_hash, obtained_root_hash);
@@ -1307,34 +1338,43 @@ cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *da
 }
 
 cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    const cm_hash *revert_root_hash, const char *log_filename) try {
-    if (log_filename == nullptr) {
-        throw std::invalid_argument("invalid log_filename");
+    const cm_hash *revert_root_hash, const uint8_t **log, uint64_t *log_length) try {
+    if (log == nullptr || log_length == nullptr) {
+        throw std::invalid_argument("invalid log output");
     }
     const cartesi::machine_hash cpp_revert_root_hash = convert_from_c(revert_root_hash);
     auto *cpp_m = convert_from_c(m);
-    cpp_m->log_send_cmio_response(reason, data, length, cpp_revert_root_hash, log_filename);
+    auto cpp_log = cpp_m->log_send_cmio_response(reason, data, length, cpp_revert_root_hash);
+    *log_length = cpp_log.size();
+    *log = cm_set_temp_data(std::move(cpp_log));
     return cm_result_success();
 } catch (...) {
+    if (log != nullptr) {
+        *log = nullptr;
+    }
+    if (log_length != nullptr) {
+        *log_length = 0;
+    }
     return cm_result_failure();
 }
 
 cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    const cm_hash *root_hash_before, const char *log_filename, const cm_hash *revert_root_hash,
+    const cm_hash *root_hash_before, const uint8_t *log, uint64_t log_length, const cm_hash *revert_root_hash,
     cm_hash *obtained_root_hash) try {
-    if (log_filename == nullptr) {
-        throw std::invalid_argument("invalid log_filename");
+    if (log == nullptr) {
+        throw std::invalid_argument("invalid log");
     }
     const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine_hash cpp_revert_root_hash = convert_from_c(revert_root_hash);
+    const std::span<const unsigned char> cpp_log{log, log_length};
     cartesi::machine_hash cpp_obtained_root_hash{};
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
-        cpp_obtained_root_hash = cpp_m->verify_send_cmio_response(reason, data, length, cpp_root_hash_before,
-            log_filename, cpp_revert_root_hash);
+        cpp_obtained_root_hash =
+            cpp_m->verify_send_cmio_response(reason, data, length, cpp_root_hash_before, cpp_log, cpp_revert_root_hash);
     } else {
         cpp_obtained_root_hash = cartesi::machine::verify_send_cmio_response(reason, data, length, cpp_root_hash_before,
-            log_filename, cpp_revert_root_hash);
+            cpp_log, cpp_revert_root_hash);
     }
     if (obtained_root_hash != nullptr) {
         convert_to_c(cpp_obtained_root_hash, obtained_root_hash);

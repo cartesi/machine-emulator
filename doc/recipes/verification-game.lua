@@ -30,7 +30,6 @@ local vgu = require("vgu")
 local phase, eventf, short_hash = vgu.phase, vgu.eventf, vgu.short_hash
 local take_branch, bisect_level = vgu.take_branch, vgu.bisect_level
 local wait_for_any, wait_for_log, wait_for_commitments = vgu.wait_for_any, vgu.wait_for_log, vgu.wait_for_commitments
-local read_file, write_file = vgu.read_file, vgu.write_file
 
 -- The schemas this game adds to the shared dictionary.
 -- A value at a proof's target and the proof itself, used for the winner's output drive.
@@ -113,20 +112,14 @@ end
 -- decided by the cycle the referee names rather than the machine's own uarch_cycle, which sits
 -- at the halt.
 -- Both players run in the referee's directory, so each names its log files by its role.
-local step_log_name = arg[1] .. "-step.log"
-local reset_log_name = arg[1] .. "-reset.log"
-
 local function commit_log(player, branch, _mcycle, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
-    os.remove(step_log_name)
-    agreed:log_step_uarch(1, step_log_name)
+    local step_log = agreed:log_step_uarch(1)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        os.remove(reset_log_name)
-        agreed:log_reset_uarch(reset_log_name)
-        return { step_log = read_file(step_log_name), reset_log = read_file(reset_log_name) }
+        return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
     end
-    return { step_log = read_file(step_log_name) }
+    return { step_log = step_log }
 end
 
 -- The output captured during commit_final_hash, the result bytes and the output drive's subtree
@@ -187,12 +180,10 @@ local function verify_state_transition(uarch_cycle, state_hash_before, log, stat
     local machine = cartesi.machine
     local pass = pcall(function()
         eventf("Verifying uarch step log!")
-        write_file("posted-step.log", log.step_log)
-        local hash = machine:verify_step_uarch(state_hash_before, "posted-step.log", 1)
+        local hash = machine:verify_step_uarch(state_hash_before, log.step_log, 1)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
-            write_file("posted-reset.log", log.reset_log)
-            hash = machine:verify_reset_uarch(hash, "posted-reset.log")
+            hash = machine:verify_reset_uarch(hash, log.reset_log)
         end
         assert(hash == state_hash_after, "log does not reach the committed after-hash")
     end)

@@ -15,21 +15,20 @@
 //
 
 #include <cstdint>
+#include <span>
 #include <string>
+#include <vector>
 
-#include "os-filesystem.hpp"
-#include "os-mapped-memory.hpp"
 #include "step-dumper.hpp"
 #include "uarch-replay-step-state-access.hpp"
 #include "uarch-step.hpp"
 
 namespace cartesi {
 
-std::string dump_step_uarch(const std::string &filename, uint64_t uarch_cycle_count) {
-    auto data_length = os::file_size(filename);
-    auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
+std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t uarch_cycle_count) {
+    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
     uarch_replay_step_state_access<step_dumper>::context context;
-    const uarch_replay_step_state_access<step_dumper> a(context, mapped_data.get_ptr(), data_length);
+    const uarch_replay_step_state_access<step_dumper> a(context, image.data(), image.size());
     // uarch_interpret's cycle-limit bookkeeping would open the printout with redundant uarch.cycle reads
     for (uint64_t i = 0; i < uarch_cycle_count; ++i) {
         if (uarch_step(a) != UArchStepStatus::Success) {

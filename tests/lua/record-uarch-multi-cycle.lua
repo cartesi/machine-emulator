@@ -25,6 +25,7 @@
 -- Writes <output-dir>/{one-cycle.log, two-cycle.log, _manifest.csv}.
 
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
 local manifest_mod = require("cartesi.tests.step_log_manifest")
 
@@ -64,13 +65,14 @@ local function record(cycle_count, name)
     local machine <close> = build_machine()
     local log_path = output_dir .. "/" .. name
     local initial_root_hash = machine:get_root_hash()
-    local status = machine:log_step_uarch(cycle_count, log_path)
+    local log, status = machine:log_step_uarch(cycle_count)
     assert(
         status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_UARCH_CYCLE,
         "expected the uarch to advance the full cycle budget, not halt early"
     )
     local final_root_hash = machine:get_root_hash()
-    assert(cartesi.machine:verify_step_uarch(initial_root_hash, log_path, cycle_count) == final_root_hash)
+    assert(cartesi.machine:verify_step_uarch(initial_root_hash, log, cycle_count) == final_root_hash)
+    util.write_file(log, log_path)
     return {
         kind = "cycle",
         name = name,

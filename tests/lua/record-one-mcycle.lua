@@ -24,6 +24,7 @@
 -- Writes <output-dir>/one-mcycle.log plus <output-dir>/_manifest.csv.
 
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local manifest_mod = require("cartesi.tests.step_log_manifest")
 local test_util = require("cartesi.tests.util")
 
@@ -62,7 +63,6 @@ local machine <close> = assert(cartesi.machine({
 test_util.prepare_empty_output_dir(output_dir)
 local name = "one-mcycle.log"
 local log_path = output_dir .. "/" .. name
-os.remove(log_path)
 
 local ctx = {
     kind = "machine",
@@ -71,9 +71,10 @@ local ctx = {
     requested_cycle_count = 1,
 }
 ctx.initial_root_hash = machine:get_root_hash()
-machine:log_step(1, log_path)
+local log = machine:log_step(1)
 ctx.final_root_hash = machine:get_root_hash()
-assert(cartesi.machine:verify_step(ctx.initial_root_hash, log_path, 1) == ctx.final_root_hash)
+assert(cartesi.machine:verify_step(ctx.initial_root_hash, log, 1) == ctx.final_root_hash)
+util.write_file(log, log_path)
 
 local manifest <close> = assert(io.open(output_dir .. "/" .. manifest_mod.MANIFEST_NAME, "w"))
 manifest:write(manifest_mod.HEADER)

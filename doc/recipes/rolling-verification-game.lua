@@ -36,7 +36,6 @@ local vgu = require("vgu")
 local phase, eventf, short_hash = vgu.phase, vgu.eventf, vgu.short_hash
 local take_branch, bisect_level = vgu.take_branch, vgu.bisect_level
 local wait_for_any, wait_for_log, wait_for_commitments = vgu.wait_for_any, vgu.wait_for_log, vgu.wait_for_commitments
-local read_file, write_file = vgu.read_file, vgu.write_file
 
 -- The schemas this game adds to the shared dictionary.
 -- The disputed transition's binary step logs, as raw file bytes. A combined transition
@@ -242,33 +241,22 @@ end
 -- logs, each performing the action it records.
 -- docs:begin commit_log
 -- Both players run in the referee's directory, so each names its log files by its role.
-local step_log_name = arg[1] .. "-step.log"
-local reset_log_name = arg[1] .. "-reset.log"
-local cmio_log_name = arg[1] .. "-cmio.log"
-
 local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
-        os.remove(cmio_log_name)
-        agreed:log_send_cmio_response(
+        local send_cmio_log = agreed:log_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             player.boundary.data,
-            agreed:get_root_hash(),
-            cmio_log_name
+            agreed:get_root_hash()
         )
-        os.remove(step_log_name)
-        agreed:log_step_uarch(1, step_log_name)
-        return { send_cmio_log = read_file(cmio_log_name), step_log = read_file(step_log_name) }
+        return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch(1) }
     end
-    os.remove(step_log_name)
-    agreed:log_step_uarch(1, step_log_name)
+    local step_log = agreed:log_step_uarch(1)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        os.remove(reset_log_name)
-        agreed:log_reset_uarch(reset_log_name)
-        return { step_log = read_file(step_log_name), reset_log = read_file(reset_log_name) }
+        return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
     end
-    return { step_log = read_file(step_log_name) }
+    return { step_log = step_log }
 end
 -- docs:end commit_log
 
@@ -355,16 +343,13 @@ local function verify_state_transition(
         if mcycle_offset == 0 and uarch_cycle == 0 and data then
             eventf("Verifying input inclusion log!")
             local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-            write_file("posted-cmio.log", log.send_cmio_log)
-            hash = machine:verify_send_cmio_response(reason, data, hash, "posted-cmio.log", hash)
+            hash = machine:verify_send_cmio_response(reason, data, hash, log.send_cmio_log, hash)
         end
         eventf("Verifying uarch step log!")
-        write_file("posted-step.log", log.step_log)
-        hash = machine:verify_step_uarch(hash, "posted-step.log", 1)
+        hash = machine:verify_step_uarch(hash, log.step_log, 1)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
-            write_file("posted-reset.log", log.reset_log)
-            hash = machine:verify_reset_uarch(hash, "posted-reset.log")
+            hash = machine:verify_reset_uarch(hash, log.reset_log)
         end
         assert(hash == state_hash_after, "log does not reach the committed after-hash")
     end)

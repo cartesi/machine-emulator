@@ -269,23 +269,12 @@ end
 
 local do_test = tests_util.make_do_test(build_machine, machine_type)
 
--- Step-log filename helpers. os.tmpname() returns a name and creates the file;
--- log_* require the file to not exist, so we remove it first.
-
-local function tmpname_for_log()
-    local filename = os.tmpname()
-    os.remove(filename)
-    return filename
-end
-
 local function step_uarch(machine)
-    local filename = tmpname_for_log()
-    machine:log_step_uarch(1, filename)
-    os.remove(filename)
+    machine:log_step_uarch(1)
 end
 
-local read_step_log_file = tests_util.read_step_log_file
-local copy_step_log = tests_util.copy_step_log
+local parse_step_log = tests_util.parse_step_log
+local mutate_step_log = tests_util.mutate_step_log
 
 -- Sentinel revert root hash send_cmio_response stores in its shadow slot; uarch reset reads it back.
 local CMIO_REVERT_HASH = string.rep("\xab", cartesi.HASH_SIZE)
@@ -823,31 +812,25 @@ end)
 print("\n\ntesting step and verification")
 do_test("machine step should pass verifications", function(machine)
     local initial_hash = machine:get_root_hash()
-    local filename = tmpname_for_log()
-    machine:log_step_uarch(1, filename)
+    local log = machine:log_step_uarch(1)
     local final_hash = machine:get_root_hash()
-    assert(machine:verify_step_uarch(initial_hash, filename, 1) == final_hash)
-    os.remove(filename)
+    assert(machine:verify_step_uarch(initial_hash, log, 1) == final_hash)
 end)
 
 -- The C++ replayer handles multi-cycle uarch step logs (the Solidity verifier is scoped to one
 -- cycle; C++ stays general). Record and verify a 2-cycle log to keep that path covered.
 do_test("multi-cycle uarch step log should pass verification", function(machine)
     local initial_hash = machine:get_root_hash()
-    local filename = tmpname_for_log()
-    machine:log_step_uarch(2, filename)
+    local log = machine:log_step_uarch(2)
     local final_hash = machine:get_root_hash()
-    assert(machine:verify_step_uarch(initial_hash, filename, 2) == final_hash)
-    os.remove(filename)
+    assert(machine:verify_step_uarch(initial_hash, log, 2) == final_hash)
 end)
 
 do_test("dump_step_uarch writes a readable printout", function(machine)
-    local log = tmpname_for_log()
     -- The log records 2 cycles, but its pages carry full contents, so the third (halting) cycle
     -- of the default program ("li a0,123", "li a7,halt", "ecall") replays from the same witness.
-    machine:log_step_uarch(2, log)
+    local log = machine:log_step_uarch(2)
     local text = cartesi.machine:dump_step_uarch(log, 3)
-    os.remove(log)
     -- Match the whole printout line by line; addresses and values are wildcarded so the expectation
     -- survives shadow-layout/cycle drift while order, numbering, names, and brackets stay pinned.
     local expected = {
@@ -898,24 +881,12 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
 end)
 
 do_test("dump_step_uarch raises on a malformed log", function(machine)
-    local log = tmpname_for_log()
-    machine:log_step_uarch(2, log)
+    local log = machine:log_step_uarch(2)
     -- Corrupt one byte of the header's signature so decode rejects the log.
-    local f = assert(io.open(log, "r+b"))
-    local byte = assert(f:read(1))
-    assert(f:seek("set", 0))
-    assert(f:write(string.char((byte:byte() + 1) % 256)))
-    f:close()
-    local ok, err = pcall(cartesi.machine.dump_step_uarch, cartesi.machine, log, 1)
-    os.remove(log)
+    local corrupted = string.char((log:byte(1) + 1) % 256) .. log:sub(2)
+    local ok, err = pcall(cartesi.machine.dump_step_uarch, cartesi.machine, corrupted, 1)
     assert(not ok, "expected error")
     check_error_find(err, "invalid step log signature")
-end)
-
-do_test("dump_step_uarch raises on an unreadable log file", function()
-    local ok, err = pcall(cartesi.machine.dump_step_uarch, cartesi.machine, "/no/such/uarch.log", 1)
-    assert(not ok, "expected error")
-    check_error_find(err, "no/such/uarch.log")
 end)
 
 -- Generic step-log format-corruption rejection is tested against the replay parser in
@@ -926,33 +897,29 @@ print("\n\ntesting verify_step_uarch unhappy paths")
 do_test("verify_step_uarch rejects mismatched claim arguments", function(machine)
     local bad_hash = string.rep("\0", cartesi.HASH_SIZE)
     local initial_hash = machine:get_root_hash()
-    local filename = tmpname_for_log()
-    machine:log_step_uarch(1, filename)
+    local log = machine:log_step_uarch(1)
     local final_hash = machine:get_root_hash()
     -- sanity: happy path
-    assert(machine:verify_step_uarch(initial_hash, filename, 1) == final_hash)
+    assert(machine:verify_step_uarch(initial_hash, log, 1) == final_hash)
     -- bad root_hash_before arg
-    local _, err = pcall(machine.verify_step_uarch, machine, bad_hash, filename, 1)
+    local _, err = pcall(machine.verify_step_uarch, machine, bad_hash, log, 1)
     check_error_find(err, "root hash before does not match")
     -- a wrong cycle count replays a different transition, whose hash cannot match
-    assert(machine:verify_step_uarch(initial_hash, filename, 99) ~= final_hash)
+    assert(machine:verify_step_uarch(initial_hash, log, 99) ~= final_hash)
     -- a wrong belief about the final state is the caller's to detect via the returned hash
-    assert(machine:verify_step_uarch(initial_hash, filename, 1) ~= bad_hash)
-    os.remove(filename)
+    assert(machine:verify_step_uarch(initial_hash, log, 1) ~= bad_hash)
 end)
 
 do_test("step at max uarch cycle preserves state", function(machine)
     machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     local initial_hash = machine:get_root_hash()
-    local filename = tmpname_for_log()
-    machine:log_step_uarch(1, filename)
+    local log = machine:log_step_uarch(1)
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     assert(machine:read_reg("uarch_halt") == 0)
     local final_hash = machine:get_root_hash()
     assert(final_hash == initial_hash)
-    assert(machine:verify_step_uarch(initial_hash, filename, 1) == final_hash)
-    os.remove(filename)
+    assert(machine:verify_step_uarch(initial_hash, log, 1) == final_hash)
 end)
 
 local uarch_proof_step_program = {
@@ -1088,9 +1055,7 @@ local function test_reset_uarch(machine, with_log)
     -- reset uarch state
     if with_log then
         -- Exercise the logging path (log structure/round-trip covered separately).
-        local filename = tmpname_for_log()
-        machine:log_reset_uarch(filename)
-        os.remove(filename)
+        machine:log_reset_uarch()
     else
         machine:reset_uarch()
     end
@@ -1127,9 +1092,8 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
     "log_reset_uarch records the UARCH_STATE node with its pre-reset hash",
     function(machine)
         local pre_hash = machine:get_proof(cartesi.UARCH_STATE_START_ADDRESS, cartesi.UARCH_STATE_LOG2_SIZE).target_hash
-        local filename = tmpname_for_log()
-        machine:log_reset_uarch(filename)
-        local log_data = read_step_log_file(filename)
+        local log = machine:log_reset_uarch()
+        local log_data = parse_step_log(log)
         assert(#log_data.nodes == 1, "expected exactly one node in a reset_uarch log")
         local n = log_data.nodes[1]
         assert(
@@ -1145,7 +1109,6 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
             string.format("node log2_size %d != UARCH_STATE_LOG2_SIZE %d", n.log2_size, cartesi.UARCH_STATE_LOG2_SIZE)
         )
         assert(n.hash == pre_hash, "node hash does not match the pre-reset uarch subtree hash")
-        os.remove(filename)
     end
 )
 
@@ -1156,10 +1119,9 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
         -- page into the log so a consumer can read both straight off the reset proof.
         machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, CMIO_REVERT_HASH)
         local initial_hash = machine:get_root_hash()
-        local filename = tmpname_for_log()
-        machine:log_reset_uarch(filename)
+        local log = machine:log_reset_uarch()
         local final_hash = machine:get_root_hash()
-        local log_data = read_step_log_file(filename)
+        local log_data = parse_step_log(log)
         local page_idx = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START >> cartesi.HASH_TREE_LOG2_PAGE_SIZE
         local offset = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START & ((1 << cartesi.HASH_TREE_LOG2_PAGE_SIZE) - 1)
         local found
@@ -1173,8 +1135,7 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
             found.data:sub(offset + 1, offset + cartesi.HASH_SIZE) == CMIO_REVERT_HASH,
             "revert root hash not found at its shadow slot in the reset log"
         )
-        assert(machine:verify_reset_uarch(initial_hash, filename) == final_hash)
-        os.remove(filename)
+        assert(machine:verify_reset_uarch(initial_hash, log) == final_hash)
     end
 )
 
@@ -1182,16 +1143,14 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
     "Testing verify_reset_uarch",
     function(machine)
         local initial_hash = machine:get_root_hash()
-        local filename = tmpname_for_log()
-        machine:log_reset_uarch(filename)
+        local log = machine:log_reset_uarch()
         local final_hash = machine:get_root_hash()
         -- verify happy path
-        assert(machine:verify_reset_uarch(initial_hash, filename) == final_hash)
+        assert(machine:verify_reset_uarch(initial_hash, log) == final_hash)
         -- verifying incorrect initial hash
         local wrong_hash = string.rep("\0", cartesi.HASH_SIZE)
-        local _, err = pcall(machine.verify_reset_uarch, machine, wrong_hash, filename)
+        local _, err = pcall(machine.verify_reset_uarch, machine, wrong_hash, log)
         check_error_find(err, "root hash before does not match")
-        os.remove(filename)
     end
 )
 
@@ -1199,16 +1158,12 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
     "verify_reset_uarch accepts an untouched node as an unchanged region",
     function(machine)
         local initial_hash = machine:get_root_hash()
-        local filename = tmpname_for_log()
-        machine:log_reset_uarch(filename)
+        local log = machine:log_reset_uarch()
         -- A reset log carries exactly one node (the uarch state). A second node that no
         -- write touches folds into both roots unmodified, so it must not change the outcome.
-        local transformed = tmpname_for_log()
-        copy_step_log(filename, transformed, tests_util.inject_unchanged_node)
-        local expected = machine:verify_reset_uarch(initial_hash, filename)
+        local transformed = mutate_step_log(log, tests_util.inject_unchanged_node)
+        local expected = machine:verify_reset_uarch(initial_hash, log)
         assert(machine:verify_reset_uarch(initial_hash, transformed) == expected)
-        os.remove(filename)
-        os.remove(transformed)
     end
 )
 
@@ -1225,13 +1180,9 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
         machine:write_reg("htif_tohost", tohost_rx_rejected)
         machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, revert_root_hash)
         local initial_hash = machine:get_root_hash()
-        local filename = tmpname_for_log()
-        machine:log_reset_uarch(filename)
-        local transformed = tmpname_for_log()
-        copy_step_log(filename, transformed, tests_util.inject_unchanged_node)
+        local log = machine:log_reset_uarch()
+        local transformed = mutate_step_log(log, tests_util.inject_unchanged_node)
         assert(machine:verify_reset_uarch(initial_hash, transformed) == revert_root_hash)
-        os.remove(filename)
-        os.remove(transformed)
     end
 )
 
@@ -1269,17 +1220,17 @@ tests_util.make_do_test(build_machine, machine_type, { hash_tree = { hash_functi
             success == false and err:match("can only be used with hash tree configured with Keccak%-256 hash function")
         )
         -- log_reset_uarch should fail
-        success, err = pcall(machine.log_reset_uarch, machine, tmpname_for_log())
+        success, err = pcall(machine.log_reset_uarch, machine)
         assert(
             success == false and err:match("can only be used with hash tree configured with Keccak%-256 hash function")
         )
         -- log_uarch step should fail
-        success, err = pcall(machine.log_step_uarch, machine, 1, tmpname_for_log())
+        success, err = pcall(machine.log_step_uarch, machine, 1)
         assert(
             success == false and err:match("can only be used with hash tree configured with Keccak%-256 hash function")
         )
         -- log_send_cmio_response should fail
-        success, err = pcall(machine.log_send_cmio_response, machine, 0, "", CMIO_REVERT_HASH, tmpname_for_log())
+        success, err = pcall(machine.log_send_cmio_response, machine, 0, "", CMIO_REVERT_HASH)
         assert(
             success == false and err:match("can only be used with hash tree configured with Keccak%-256 hash function")
         )
@@ -1292,26 +1243,22 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
     function(machine)
         local bad_hash = string.rep("\0", cartesi.HASH_SIZE)
         local initial_hash = machine:get_root_hash()
-        local filename1 = tmpname_for_log()
-        local filename2 = tmpname_for_log()
-        machine:log_reset_uarch(filename1)
+        local log = machine:log_reset_uarch()
         local final_hash = machine:get_root_hash()
         -- sanity: happy path
-        assert(machine:verify_reset_uarch(initial_hash, filename1) == final_hash)
+        assert(machine:verify_reset_uarch(initial_hash, log) == final_hash)
         -- bad root_hash_before arg
-        local _, err = pcall(machine.verify_reset_uarch, machine, bad_hash, filename1)
+        local _, err = pcall(machine.verify_reset_uarch, machine, bad_hash, log)
         check_error_find(err, "root hash before does not match")
         -- a wrong belief about the final state is the caller's to detect via the returned hash
-        assert(machine:verify_reset_uarch(initial_hash, filename1) ~= bad_hash)
+        assert(machine:verify_reset_uarch(initial_hash, log) ~= bad_hash)
         -- the node hash feeds the pre-root fold, so tampering it breaks the before check
-        copy_step_log(filename1, filename2, function(log_data)
+        local corrupted = mutate_step_log(log, function(log_data)
             assert(#log_data.nodes == 1, "reset_uarch log should have exactly one node")
             log_data.nodes[1].hash = bad_hash
         end)
-        _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, filename2)
+        _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, corrupted)
         check_error_find(err, "root hash before does not match")
-        os.remove(filename1)
-        os.remove(filename2)
     end
 )
 
@@ -1376,7 +1323,7 @@ do_test("send_cmio_response fails if iflags.Y is not set", function(machine)
     end)
     -- the logged operation cannot fail; it is a no-op that leaves the state unchanged
     local hash_before = machine:get_root_hash()
-    machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH, tmpname_for_log())
+    machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH)
     assert(machine:read_reg("iflags_Y") == 0)
     assert(machine:get_root_hash() == hash_before)
 end)
@@ -1391,7 +1338,7 @@ do_test("send_cmio_response fails if data is too big", function(machine)
     end)
     -- the logged operation cannot fail; it is a no-op that leaves the state unchanged
     local hash_before = machine:get_root_hash()
-    machine:log_send_cmio_response(reason, data_too_big, CMIO_REVERT_HASH, tmpname_for_log())
+    machine:log_send_cmio_response(reason, data_too_big, CMIO_REVERT_HASH)
     assert(machine:read_reg("iflags_Y") == 1)
     assert(machine:get_root_hash() == hash_before)
 end)
@@ -1411,12 +1358,11 @@ do_test("advance-state response to a rejected machine logs as a no-op", function
     -- stays paused on a rejected yield, which must NOT trigger a revert substitution (send_cmio_response
     -- is not a step), so the post-operation hash is the unchanged machine root hash.
     local hash_before = machine:get_root_hash()
-    local filename = tmpname_for_log()
-    machine:log_send_cmio_response(advance_reason, data, hash_before, filename)
+    local log = machine:log_send_cmio_response(advance_reason, data, hash_before)
     assert(machine:read_reg("iflags_Y") == 1)
     local hash_after = machine:get_root_hash()
     assert(hash_after == hash_before)
-    local obtained_hash = machine:verify_send_cmio_response(advance_reason, data, hash_before, filename, hash_before)
+    local obtained_hash = machine:verify_send_cmio_response(advance_reason, data, hash_before, log, hash_before)
     assert(obtained_hash == hash_after)
 end)
 
@@ -1537,9 +1483,8 @@ do_test("send_cmio_response across data-size boundaries: machine state + log con
         print(string.format("   data_len=%d  write_log2=%s", c.data_len, tostring(c.write_log2)))
         machine:write_memory(rx_start, initial_rx_buffer)
         local data = string.rep("a", c.data_len)
-        local filename = tmpname_for_log()
         machine:write_reg("iflags_Y", 1)
-        machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH, filename)
+        local log = machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH)
 
         -- Machine state: rx buffer = data || zero pad up to write_len, then the original "x"s.
         local write_len = c.write_log2 and (1 << c.write_log2) or 0
@@ -1554,7 +1499,7 @@ do_test("send_cmio_response across data-size boundaries: machine state + log con
         -- Log content: zero-length writes touch no rx page/node; sub-page writes
         -- emit a page entry at the rx page index; supra-page writes emit a node
         -- entry at rx_start carrying the pre-write subtree hash.
-        local log_data = read_step_log_file(filename)
+        local log_data = parse_step_log(log)
         if c.write_log2 == nil then
             for _, p in ipairs(log_data.pages) do
                 assert(p.index ~= rx_page_idx, string.format("unexpected rx page touch for data_len=%d", c.data_len))
@@ -1589,7 +1534,6 @@ do_test("send_cmio_response across data-size boundaries: machine state + log con
                 string.format("rx page pre-state mismatch for data_len=%d", c.data_len)
             )
         end
-        os.remove(filename)
     end
 end)
 
@@ -1602,37 +1546,35 @@ do_test("verify_send_cmio_response rejects mismatched claim args and node malfor
     local bad_hash = string.rep("\0", cartesi.HASH_SIZE)
     machine:write_reg("iflags_Y", 1)
     local hash_before = machine:get_root_hash()
-    local filename = tmpname_for_log()
-    local corrupted = tmpname_for_log()
-    machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH, filename)
+    local log = machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH)
     local hash_after = machine:get_root_hash()
     -- sanity: happy path
-    assert(machine:verify_send_cmio_response(reason, data, hash_before, filename, CMIO_REVERT_HASH) == hash_after)
+    assert(machine:verify_send_cmio_response(reason, data, hash_before, log, CMIO_REVERT_HASH) == hash_after)
     -- bad root_hash_before arg
-    local _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, bad_hash, filename, CMIO_REVERT_HASH)
+    local _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, bad_hash, log, CMIO_REVERT_HASH)
     check_error_find(err, "root hash before does not match")
     -- a wrong belief about the final state is the caller's to detect via the returned hash
-    assert(machine:verify_send_cmio_response(reason, data, hash_before, filename, CMIO_REVERT_HASH) ~= bad_hash)
+    assert(machine:verify_send_cmio_response(reason, data, hash_before, log, CMIO_REVERT_HASH) ~= bad_hash)
     -- tampered data: same length so the write_length_log2_size matches, but the bytes
     -- differ, so the node slot receives a different padded merkle hash and the obtained
     -- root cannot match the true transition's.
     local bad_data = string.rep("b", #data)
-    assert(machine:verify_send_cmio_response(reason, bad_data, hash_before, filename, CMIO_REVERT_HASH) ~= hash_after)
+    assert(machine:verify_send_cmio_response(reason, bad_data, hash_before, log, CMIO_REVERT_HASH) ~= hash_after)
     -- node log2_size below page size: caught by replay parser
-    copy_step_log(filename, corrupted, function(log_data)
+    local corrupted = mutate_step_log(log, function(log_data)
         assert(#log_data.nodes >= 1, "cmio supra-page log should have at least one node")
         log_data.nodes[1].log2_size = cartesi.HASH_TREE_LOG2_PAGE_SIZE
     end)
     _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
     check_error_find(err, "invalid log format: node log2 size out of range")
     -- node address not aligned to its size: caught by replay parser
-    copy_step_log(filename, corrupted, function(log_data)
+    corrupted = mutate_step_log(log, function(log_data)
         log_data.nodes[1].address = log_data.nodes[1].address + 1
     end)
     _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
     check_error_find(err, "node address not aligned to its size")
     -- duplicate the node so the combined pages+nodes stream has overlap
-    copy_step_log(filename, corrupted, function(log_data)
+    corrupted = mutate_step_log(log, function(log_data)
         table.insert(log_data.nodes, {
             address = log_data.nodes[1].address,
             log2_size = log_data.nodes[1].log2_size,
@@ -1643,13 +1585,11 @@ do_test("verify_send_cmio_response rejects mismatched claim args and node malfor
     check_error_find(err, "page or node overlaps a previous entry")
     -- node log2_size == HASH_TREE_LOG2_ROOT_SIZE spans the whole address space, so the
     -- parser requires address 0; the rx-buffer node's nonzero address trips "not aligned".
-    copy_step_log(filename, corrupted, function(log_data)
+    corrupted = mutate_step_log(log, function(log_data)
         log_data.nodes[1].log2_size = cartesi.HASH_TREE_LOG2_ROOT_SIZE
     end)
     _, err = pcall(machine.verify_send_cmio_response, machine, reason, data, hash_before, corrupted, CMIO_REVERT_HASH)
     check_error_find(err, "node address not aligned to its size")
-    os.remove(filename)
-    os.remove(corrupted)
 end)
 
 do_test("verify_send_cmio_response round-trips a single-byte sub-page write", function(machine)
@@ -1662,11 +1602,9 @@ do_test("verify_send_cmio_response round-trips a single-byte sub-page write", fu
     local reason = 1
     machine:write_reg("iflags_Y", 1)
     local hash_before = machine:get_root_hash()
-    local filename = tmpname_for_log()
-    machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH, filename)
+    local log = machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH)
     local hash_after = machine:get_root_hash()
-    assert(machine:verify_send_cmio_response(reason, data, hash_before, filename, CMIO_REVERT_HASH) == hash_after)
-    os.remove(filename)
+    assert(machine:verify_send_cmio_response(reason, data, hash_before, log, CMIO_REVERT_HASH) == hash_after)
 end)
 
 do_test("send_cmio_response of zero bytes", function(machine)
@@ -1684,11 +1622,9 @@ do_test("send_cmio_response of zero bytes", function(machine)
     -- log and verify
     machine:write_reg("iflags_Y", 1)
     local hash_before = machine:get_root_hash()
-    local filename = tmpname_for_log()
-    machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH, filename)
+    local log = machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH)
     local hash_after = machine:get_root_hash()
-    assert(machine:verify_send_cmio_response(reason, data, hash_before, filename, CMIO_REVERT_HASH) == hash_after)
-    os.remove(filename)
+    assert(machine:verify_send_cmio_response(reason, data, hash_before, log, CMIO_REVERT_HASH) == hash_after)
 end)
 
 local function test_cmio_buffers_backed_by_files()
@@ -1764,60 +1700,36 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
         "log_step sanity check",
         function(machine)
             local _, err
-            local filename = os.tmpname()
-            local deleter = {}
-            setmetatable(deleter, {
-                __gc = function()
-                    os.remove(filename)
-                end,
-            })
-
             machine:write_reg("mcycle", 0)
-            -- log_step rejects an already-existing target file
-            _, err = pcall(function()
-                machine:log_step(1, filename)
-            end)
-            check_error_find(err, "file already exists")
-            os.remove(filename)
-            assert(machine:read_reg("mcycle") == 0)
 
             -- happy round-trip: log_step then verify_step
             local root_hash_before = machine:get_root_hash()
             local mcycle_count = 10
-            local status = machine:log_step(mcycle_count, filename)
+            local log, status = machine:log_step(mcycle_count)
             assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
             assert(machine:read_reg("mcycle") == mcycle_count)
             local root_hash_after = machine:get_root_hash()
             assert(root_hash_before ~= root_hash_after)
             -- verify step should pass and return the obtained root hash
-            local obtained_root_hash = machine:verify_step(root_hash_before, filename, mcycle_count)
+            local obtained_root_hash = machine:verify_step(root_hash_before, log, mcycle_count)
             assert(obtained_root_hash == root_hash_after)
-            os.remove(filename)
 
             if hash_fn == "keccak256" then
                 -- log_step requires uarch to be reset
                 machine:run_uarch(1)
                 _, err = pcall(function()
-                    machine:log_step(1, filename)
+                    machine:log_step(1)
                 end)
                 check_error_find(err, "uarch is not reset")
                 machine:reset_uarch()
             end
-            status = machine:log_step(1, filename)
+            _, status = machine:log_step(1)
             assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
         end
     )
 end
 
 do_test("log_step from a rejected input state verifies against the revert root hash", function(machine)
-    local filename = os.tmpname()
-    os.remove(filename) -- log_step requires the file to not exist
-    local deleter = {}
-    setmetatable(deleter, {
-        __gc = function()
-            os.remove(filename)
-        end,
-    })
     local revert_hash = string.rep("\x5a", cartesi.HASH_SIZE)
     machine:write_revert_root_hash(revert_hash)
     machine:write_reg("iflags_Y", 1)
@@ -1826,13 +1738,13 @@ do_test("log_step from a rejected input state verifies against the revert root h
     machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
     local mcycle_before = machine:read_reg("mcycle")
     local root_hash_before = machine:get_root_hash()
-    machine:log_step(1, filename)
+    local log = machine:log_step(1)
     -- the machine does not advance while the manual yield is pending
     assert(machine:read_reg("mcycle") == mcycle_before, "mcycle should not have advanced")
     assert(machine:get_root_hash() == root_hash_before, "machine state should not have changed")
     -- the canonical root hash after the step is the revert root hash,
     -- not the machine's actual root hash
-    assert(machine:verify_step(root_hash_before, filename, 1) == revert_hash)
+    assert(machine:verify_step(root_hash_before, log, 1) == revert_hash)
     assert(revert_hash ~= root_hash_before)
 end)
 

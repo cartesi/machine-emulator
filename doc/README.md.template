@@ -2977,11 +2977,11 @@ Like `machine:run()`, `machine:run_uarch()` can return prematurely for a variety
 It returns a break reason explaining why control was returned to the caller, taken from the `cartesi.UARCH_BREAK_REASON_*` set.
 For example, `cartesi.UARCH_BREAK_REASON_UARCH_HALTED` if the uarch halted before reaching the target cycle.
 
-Once the target uarch cycle has been reached, use the `machine:log_step_uarch(<uarch_cycle_count>, <filename>)` function to advance `<uarch_cycle_count>` uarch cycles (one, in a dispute) and record the step into the binary log file `<filename>`.
-Alternatively, if the uarch is halted at that point, use `machine:log_reset_uarch(<filename>)` to record the log that reverts the state of the uarch to its pristine form.
+Once the target uarch cycle has been reached, use the `machine:log_step_uarch(<uarch_cycle_count>)` function to advance `<uarch_cycle_count>` uarch cycles (one, in a dispute) and return the binary log recording the step.
+Alternatively, if the uarch is halted at that point, use `machine:log_reset_uarch()` to obtain the log that reverts the state of the uarch to its pristine form.
 Note that the functions indeed perform the action, and therefore modify the uarch state, in addition to recording the log.
 
-The binary format of the step log file is as follows:
+The binary format of the step log is as follows:
 
 ```
 step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^sibling_count
@@ -3022,7 +3022,7 @@ A step log is therefore self-contained, and anyone can check one against a pair 
 
 #### Inspecting step logs
 
-The static method `cartesi.machine:dump_step_uarch(<filename>, <uarch_cycle_count>)` returns a user-friendly version of the uarch cycles recorded in a binary log file.
+The static method `cartesi.machine:dump_step_uarch(<log>, <uarch_cycle_count>)` returns a user-friendly version of the uarch cycles recorded in a binary step log.
 It replays the requested number of cycles against the state carried in the log (stopping early if the uarch halts) and describes every access performed, identifying what each address refers to (a register, a CSR, memory).
 Addresses and values are printed in hexadecimal and decimal.
 
@@ -3034,7 +3034,6 @@ with command:
 ```{.bash key=dump_uarch_step vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=dump_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/dump-uarch-step.lua" .
-rm -f uarch-step.log
 {
 # docs:begin cmd
 lua5.4 dump-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles"
@@ -3054,7 +3053,7 @@ The uarch step being executed is the ECALL micro-instruction that asks the emula
 
 #### Verifying state transitions
 
-The static method `machine:verify_step_uarch(<state_hash_before>, <filename>, <uarch_cycle_count>)` first checks that the log's contents reproduce `<state_hash_before>`, then replays the logged uarch step against them, exactly as a true Cartesi Machine uarch would execute it.
+The static method `machine:verify_step_uarch(<state_hash_before>, <log>, <uarch_cycle_count>)` first checks that the log's contents reproduce `<state_hash_before>`, then replays the logged uarch step against them, exactly as a true Cartesi Machine uarch would execute it.
 It returns the state hash the step provably advances to, for the caller to compare against the state hash under dispute.
 Note there is no need for a Cartesi Machine instance to verify a transition: all required state information is in the step log.
 
@@ -3067,7 +3066,6 @@ Running the script without arguments accepts the valid state transition:
 ```{.bash key=verify_uarch_step_run vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
-rm -f uarch-step.log
 {
 # docs:begin cmd
 lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles"
@@ -3082,7 +3080,6 @@ For example, flipping one bit inside the logged page data means the pages no lon
 ```{.bash key=verify_uarch_step_mess_page vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
-rm -f uarch-step.log
 {
 # docs:begin cmd
 lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" flip:200
@@ -3096,7 +3093,6 @@ Truncating the log fails the decoder's size accounting before any replay happens
 ```{.bash key=verify_uarch_step_mess_truncate vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
-rm -f uarch-step.log
 {
 # docs:begin cmd
 lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" truncate
@@ -3110,7 +3106,6 @@ Lying to the verifier about the state hash the step starts from fails the same c
 ```{.bash key=verify_uarch_step_mess_lie vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
-rm -f uarch-step.log
 {
 # docs:begin cmd
 lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" lie

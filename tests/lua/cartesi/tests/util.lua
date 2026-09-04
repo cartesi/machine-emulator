@@ -293,73 +293,98 @@ end
 
 -- Binary step log helpers. Layout: see step_log_header in src/step-log.hpp.
 
-function tests_util.read_step_log_file(filename)
+local function read_file(filename)
     local file <close> = assert(io.open(filename, "rb"))
-    local signature = file:read(8)
-    local hash_function = string.unpack("<I8", file:read(8))
-    local page_count = string.unpack("<I8", file:read(8))
-    local node_count = string.unpack("<I8", file:read(8))
-    local sibling_count = string.unpack("<I8", file:read(8))
-    local log = {
-        signature = signature,
-        hash_function = hash_function,
+    return file:read("a")
+end
+
+local function write_file(filename, data)
+    local file <close> = assert(io.open(filename, "wb"))
+    file:write(data)
+end
+
+-- Parse a binary step log into a table of header fields, pages, nodes, and siblings.
+function tests_util.parse_step_log(log)
+    local pos = 1
+    local function take(n)
+        local s = log:sub(pos, pos + n - 1)
+        assert(#s == n, "truncated step log")
+        pos = pos + n
+        return s
+    end
+    local function u64()
+        return (string.unpack("<I8", take(8)))
+    end
+    local parsed = {
+        signature = take(8),
+        hash_function = u64(),
         pages = {},
         nodes = {},
         siblings = {},
     }
+    local page_count = u64()
+    local node_count = u64()
+    local sibling_count = u64()
     for i = 1, page_count do
-        log.pages[i] = {
-            index = string.unpack("<I8", file:read(8)),
-            data = file:read(PAGE_SIZE),
-            scratch_hash = file:read(32),
+        parsed.pages[i] = {
+            index = u64(),
+            data = take(PAGE_SIZE),
+            scratch_hash = take(32),
         }
     end
     for i = 1, node_count do
-        log.nodes[i] = {
-            address = string.unpack("<I8", file:read(8)),
-            log2_size = string.unpack("<I8", file:read(8)),
-            hash = file:read(32),
+        parsed.nodes[i] = {
+            address = u64(),
+            log2_size = u64(),
+            hash = take(32),
         }
     end
     for i = 1, sibling_count do
-        log.siblings[i] = file:read(32)
+        parsed.siblings[i] = take(32)
     end
-    return log
+    return parsed
 end
 
+-- Serialize a parsed step log back into bytes.
 -- override_{page,node,sibling}_count lets a test fake a header count that
 -- diverges from the actual entry array length (to exercise overflow checks).
-function tests_util.write_step_log_file(logdata, filename)
-    local file <close> = assert(io.open(filename, "wb"))
-    local page_count = logdata.override_page_count or #logdata.pages
-    local node_count = logdata.override_node_count or #logdata.nodes
-    local sibling_count = logdata.override_sibling_count or #logdata.siblings
-    file:write(logdata.signature)
-    file:write(string.pack("<I8", logdata.hash_function))
-    file:write(string.pack("<I8", page_count))
-    file:write(string.pack("<I8", node_count))
-    file:write(string.pack("<I8", sibling_count))
+function tests_util.serialize_step_log(logdata)
+    local parts = {
+        logdata.signature,
+        string.pack("<I8", logdata.hash_function),
+        string.pack("<I8", logdata.override_page_count or #logdata.pages),
+        string.pack("<I8", logdata.override_node_count or #logdata.nodes),
+        string.pack("<I8", logdata.override_sibling_count or #logdata.siblings),
+    }
     for _, page in ipairs(logdata.pages) do
-        file:write(string.pack("<I8", page.index))
-        file:write(page.data)
-        file:write(page.scratch_hash)
+        parts[#parts + 1] = string.pack("<I8", page.index)
+        parts[#parts + 1] = page.data
+        parts[#parts + 1] = page.scratch_hash
     end
     for _, node in ipairs(logdata.nodes) do
-        file:write(string.pack("<I8", node.address))
-        file:write(string.pack("<I8", node.log2_size))
-        file:write(node.hash)
+        parts[#parts + 1] = string.pack("<I8", node.address)
+        parts[#parts + 1] = string.pack("<I8", node.log2_size)
+        parts[#parts + 1] = node.hash
     end
     for _, sibling in ipairs(logdata.siblings) do
-        file:write(sibling)
+        parts[#parts + 1] = sibling
     end
+    return table.concat(parts)
 end
 
--- Read a step log file, hand it to callback for mutation, write it to a new file.
-function tests_util.copy_step_log(original_filename, new_filename, callback)
-    local log_data = tests_util.read_step_log_file(original_filename)
+-- Parse a step log, hand it to callback for mutation, and serialize it back.
+function tests_util.mutate_step_log(log, callback)
+    local log_data = tests_util.parse_step_log(log)
     callback(log_data)
-    os.remove(new_filename)
-    tests_util.write_step_log_file(log_data, new_filename)
+    return tests_util.serialize_step_log(log_data)
+end
+
+function tests_util.read_step_log_file(filename)
+    return tests_util.parse_step_log(read_file(filename))
+end
+
+function tests_util.write_step_log_file(logdata, filename)
+    write_file(filename, tests_util.serialize_step_log(logdata))
 end
 
 -- Turn one sibling subtree into an unchanged node carrying the same hash. The pre-state

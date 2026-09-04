@@ -1003,41 +1003,48 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint
 // Logging
 // ------------------------------------
 
-/// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
+/// \brief Runs the machine for the given mcycle count and records a step log of accessed pages and proof data.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param mcycle_count Number of mcycles to run.
-/// \param log_filename Name of the log file to be generated.
+/// \param log Receives the binary step log, guaranteed to remain valid only until the next CM_API function is
+/// called from the same thread.
+/// \param log_length Receives the length of the binary step log.
 /// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details When the machine ends the step having rejected an input (a manual yield with reason rx-rejected is
-/// pending), the root hash after the step recorded in the log header is the recorded revert root hash instead of
-/// the machine root hash.
-CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
+/// pending), the root hash after the step is the recorded revert root hash instead of the machine root hash.
+CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const uint8_t **log, uint64_t *log_length,
     cm_break_reason *break_reason);
 
-/// \brief Runs the uarch for the given cycle count (or halt) writing a binary step log to a file.
+/// \brief Runs the uarch for the given cycle count (or halt) recording a binary step log.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param uarch_cycle_count Number of uarch cycles to advance; the run stops earlier on halt or overflow.
-/// \param log_filename Path where the binary step log will be saved.
+/// \param log Receives the binary step log, guaranteed to remain valid only until the next CM_API function is
+/// called from the same thread.
+/// \param log_length Receives the length of the binary step log.
 /// \param uarch_break_reason Receives the reason the step ended (can be NULL).
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_log_step_uarch(cm_machine *m, uint64_t uarch_cycle_count, const char *log_filename,
+CM_API cm_error cm_log_step_uarch(cm_machine *m, uint64_t uarch_cycle_count, const uint8_t **log, uint64_t *log_length,
     cm_uarch_break_reason *uarch_break_reason);
 
-/// \brief Resets the entire uarch state to pristine values writing a binary step log to a file.
+/// \brief Resets the entire uarch state to pristine values recording a binary step log.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param log_filename Path where the binary step log will be saved.
+/// \param log Receives the binary step log, guaranteed to remain valid only until the next CM_API function is
+/// called from the same thread.
+/// \param log_length Receives the length of the binary step log.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_log_reset_uarch(cm_machine *m, const char *log_filename);
+CM_API cm_error cm_log_reset_uarch(cm_machine *m, const uint8_t **log, uint64_t *log_length);
 
-/// \brief Sends a cmio response and writes a binary step log to a file.
+/// \brief Sends a cmio response and records a binary step log.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
 /// \param length Length of response data.
 /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
 /// Unlike cm_send_cmio_response, it is not checked against the machine root hash.
-/// \param log_filename Path where the binary step log will be saved.
+/// \param log Receives the binary step log, guaranteed to remain valid only until the next CM_API function is
+/// called from the same thread.
+/// \param log_length Receives the length of the binary step log.
 /// \returns 0 for success, non zero code for error.
 /// \details Only advance-state responses make sense here, since they are the responses whose state
 /// transitions are proved. The logged operation cannot fail, so the honest party can always prove
@@ -1046,39 +1053,42 @@ CM_API cm_error cm_log_reset_uarch(cm_machine *m, const char *log_filename);
 /// a reason other than rx-accepted (e.g., it rejected an input or threw an exception), or when the
 /// response data does not fit in the rx buffer.
 CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    const cm_hash *revert_root_hash, const char *log_filename);
+    const cm_hash *revert_root_hash, const uint8_t **log, uint64_t *log_length);
 
 // ------------------------------------
 // Verifying
 // ------------------------------------
 
-/// \brief Checks the validity of a step log file.
+/// \brief Checks the validity of a step log.
 /// \param root_hash_before State hash before step.
-/// \param log_filename Path to the step log file to be verified.
+/// \param log Binary step log to be verified.
+/// \param log_length Length of the binary step log.
 /// \param mcycle_count Number of mcycles in the step.
 /// \param obtained_root_hash Receives the state hash after step, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_verify_step(const cm_hash *root_hash_before, const char *log_filename, uint64_t mcycle_count,
-    cm_hash *obtained_root_hash);
+CM_API cm_error cm_verify_step(const cm_hash *root_hash_before, const uint8_t *log, uint64_t log_length,
+    uint64_t mcycle_count, cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_step_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before step.
-/// \param log_filename Path to the binary step log file to be verified.
+/// \param log Binary step log to be verified.
+/// \param log_length Length of the binary step log.
 /// \param uarch_cycle_count Number of uarch cycles the caller expects to have been advanced.
 /// \param obtained_root_hash Receives the state hash after step, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
-    uint64_t uarch_cycle_count, cm_hash *obtained_root_hash);
+CM_API cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const uint8_t *log,
+    uint64_t log_length, uint64_t uarch_cycle_count, cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_reset_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before reset.
-/// \param log_filename Path to the binary step log file to be verified.
+/// \param log Binary step log to be verified.
+/// \param log_length Length of the binary step log.
 /// \param obtained_root_hash Receives the state hash after reset, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
-    cm_hash *obtained_root_hash);
+CM_API cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_before, const uint8_t *log,
+    uint64_t log_length, cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_send_cmio_response.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
@@ -1086,12 +1096,13 @@ CM_API cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_h
 /// \param data The response sent when the log was generated.
 /// \param length Length of response.
 /// \param root_hash_before State hash before response.
-/// \param log_filename Path to the binary step log file to be verified.
+/// \param log Binary step log to be verified.
+/// \param log_length Length of the binary step log.
 /// \param revert_root_hash The revert root hash recorded when the log was generated.
 /// \param obtained_root_hash Receives the state hash after response, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    const cm_hash *root_hash_before, const char *log_filename, const cm_hash *revert_root_hash,
+    const cm_hash *root_hash_before, const uint8_t *log, uint64_t log_length, const cm_hash *revert_root_hash,
     cm_hash *obtained_root_hash);
 
 // ------------------------------------

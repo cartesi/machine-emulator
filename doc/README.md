@@ -5396,16 +5396,15 @@ set. For example, `cartesi.UARCH_BREAK_REASON_UARCH_HALTED` if the uarch
 halted before reaching the target cycle.
 
 Once the target uarch cycle has been reached, use the
-`machine:log_step_uarch(<uarch_cycle_count>, <filename>)` function to
-advance `<uarch_cycle_count>` uarch cycles (one, in a dispute) and
-record the step into the binary log file `<filename>`. Alternatively, if
-the uarch is halted at that point, use
-`machine:log_reset_uarch(<filename>)` to record the log that reverts the
-state of the uarch to its pristine form. Note that the functions indeed
-perform the action, and therefore modify the uarch state, in addition to
-recording the log.
+`machine:log_step_uarch(<uarch_cycle_count>)` function to advance
+`<uarch_cycle_count>` uarch cycles (one, in a dispute) and return the
+binary log recording the step. Alternatively, if the uarch is halted at
+that point, use `machine:log_reset_uarch()` to obtain the log that
+reverts the state of the uarch to its pristine form. Note that the
+functions indeed perform the action, and therefore modify the uarch
+state, in addition to recording the log.
 
-The binary format of the step log file is as follows:
+The binary format of the step log is as follows:
 
     step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^sibling_count
 
@@ -5451,13 +5450,12 @@ without instantiating a machine.
 #### Inspecting step logs
 
 The static method
-`cartesi.machine:dump_step_uarch(<filename>, <uarch_cycle_count>)`
-returns a user-friendly version of the uarch cycles recorded in a binary
-log file. It replays the requested number of cycles against the state
-carried in the log (stopping early if the uarch halts) and describes
-every access performed, identifying what each address refers to (a
-register, a CSR, memory). Addresses and values are printed in
-hexadecimal and decimal.
+`cartesi.machine:dump_step_uarch(<log>, <uarch_cycle_count>)` returns a
+user-friendly version of the uarch cycles recorded in a binary step log.
+It replays the requested number of cycles against the state carried in
+the log (stopping early if the uarch halts) and describes every access
+performed, identifying what each address refers to (a register, a CSR,
+memory). Addresses and values are printed in hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:
 
@@ -5477,10 +5475,10 @@ assert(machine:read_reg("mcycle") == mcycle, "machine halted or yielded early")
 machine:run_uarch(ucycle)
 assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 
--- Record the step into a binary log file and dump its printout to screen
-machine:log_step_uarch(1, "uarch-step.log")
+-- Record the step into a binary log and dump its printout to screen
+local log = machine:log_step_uarch(1)
 io.stderr:write(string.format("\nStep log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
-io.stderr:write(cartesi.machine:dump_step_uarch("uarch-step.log", 1))
+io.stderr:write(cartesi.machine:dump_step_uarch(log, 1))
 ```
 
 with command:
@@ -5527,7 +5525,7 @@ row `\    / CARTESI` in the splash screen.
 #### Verifying state transitions
 
 The static method
-`machine:verify_step_uarch(<state_hash_before>, <filename>, <uarch_cycle_count>)`
+`machine:verify_step_uarch(<state_hash_before>, <log>, <uarch_cycle_count>)`
 first checks that the log’s contents reproduce `<state_hash_before>`,
 then replays the logged uarch step against them, exactly as a true
 Cartesi Machine uarch would execute it. It returns the state hash the
@@ -5552,34 +5550,26 @@ local ucycle = assert(tonumber(arg[3]), "missing uarch_cycle")
 machine:run(mcycle)
 machine:run_uarch(ucycle)
 
--- Obtain state hash before the step and record the step into a binary log file
+-- Obtain state hash before the step and record the step into a binary log
 local hash_before = machine:get_root_hash()
-machine:log_step_uarch(1, "uarch-step.log")
+local log = machine:log_step_uarch(1)
 local hash_after = machine:get_root_hash()
 
--- Potentially provoke a verification failure. flip:<offset> flips one bit inside the log
--- file; truncate chops the log's last bytes; lie gives the verifier a false state hash
--- to start from.
+-- Potentially provoke a verification failure. flip:<offset> flips one bit inside the log;
+-- truncate chops the log's last bytes; lie gives the verifier a false state hash to start
+-- from.
 local offset = arg[4] and arg[4]:match("^flip:(%d+)$")
-if offset or arg[4] == "truncate" then
-    local f = assert(io.open("uarch-step.log", "rb"))
-    local log = f:read("a")
-    f:close()
-    if offset then
-        offset = tonumber(offset)
-        log = log:sub(1, offset - 1) .. string.char(log:byte(offset) ~ 1) .. log:sub(offset + 1)
-    else
-        log = log:sub(1, #log - 32)
-    end
-    f = assert(io.open("uarch-step.log", "wb"))
-    f:write(log)
-    f:close()
+if offset then
+    offset = tonumber(offset)
+    log = log:sub(1, offset - 1) .. string.char(log:byte(offset) ~ 1) .. log:sub(offset + 1)
+elseif arg[4] == "truncate" then
+    log = log:sub(1, #log - 32)
 elseif arg[4] == "lie" then
     hash_before = string.char(hash_before:byte(1) ~ 1) .. hash_before:sub(2)
 end
 
 -- Verify the uarch step log and check the hash it advances to
-assert(cartesi.machine:verify_step_uarch(hash_before, "uarch-step.log", 1) == hash_after, "state transition rejected")
+assert(cartesi.machine:verify_step_uarch(hash_before, log, 1) == hash_after, "state transition rejected")
 io.stderr:write("State transition accepted!\n")
 ```
 
@@ -5603,10 +5593,10 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" flip:200
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:41: root hash before does not match step log
+lua5.4: verify-uarch-step.lua:33: root hash before does not match step log
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:41: in main chunk
+	verify-uarch-step.lua:33: in main chunk
 	[C]: in ?
 ```
 
@@ -5618,10 +5608,10 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" truncate
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:41: sibling count does not match step log size
+lua5.4: verify-uarch-step.lua:33: sibling count does not match step log size
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:41: in main chunk
+	verify-uarch-step.lua:33: in main chunk
 	[C]: in ?
 ```
 
@@ -5634,10 +5624,10 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" lie
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:41: root hash before does not match step log
+lua5.4: verify-uarch-step.lua:33: root hash before does not match step log
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:41: in main chunk
+	verify-uarch-step.lua:33: in main chunk
 	[C]: in ?
 ```
 
@@ -8646,12 +8636,10 @@ local function verify_state_transition(uarch_cycle, state_hash_before, log, stat
     local machine = cartesi.machine
     local pass = pcall(function()
         eventf("Verifying uarch step log!")
-        write_file("posted-step.log", log.step_log)
-        local hash = machine:verify_step_uarch(state_hash_before, "posted-step.log", 1)
+        local hash = machine:verify_step_uarch(state_hash_before, log.step_log, 1)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
-            write_file("posted-reset.log", log.reset_log)
-            hash = machine:verify_reset_uarch(hash, "posted-reset.log")
+            hash = machine:verify_reset_uarch(hash, log.reset_log)
         end
         assert(hash == state_hash_after, "log does not reach the committed after-hash")
     end)
@@ -9014,33 +9002,22 @@ asks player 1 for the matching logs:
 
 ``` lua
 -- Both players run in the referee's directory, so each names its log files by its role.
-local step_log_name = arg[1] .. "-step.log"
-local reset_log_name = arg[1] .. "-reset.log"
-local cmio_log_name = arg[1] .. "-cmio.log"
-
 local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
-        os.remove(cmio_log_name)
-        agreed:log_send_cmio_response(
+        local send_cmio_log = agreed:log_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             player.boundary.data,
-            agreed:get_root_hash(),
-            cmio_log_name
+            agreed:get_root_hash()
         )
-        os.remove(step_log_name)
-        agreed:log_step_uarch(1, step_log_name)
-        return { send_cmio_log = read_file(cmio_log_name), step_log = read_file(step_log_name) }
+        return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch(1) }
     end
-    os.remove(step_log_name)
-    agreed:log_step_uarch(1, step_log_name)
+    local step_log = agreed:log_step_uarch(1)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        os.remove(reset_log_name)
-        agreed:log_reset_uarch(reset_log_name)
-        return { step_log = read_file(step_log_name), reset_log = read_file(reset_log_name) }
+        return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
     end
-    return { step_log = read_file(step_log_name) }
+    return { step_log = step_log }
 end
 ```
 
@@ -9067,16 +9044,13 @@ local function verify_state_transition(
         if mcycle_offset == 0 and uarch_cycle == 0 and data then
             eventf("Verifying input inclusion log!")
             local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
-            write_file("posted-cmio.log", log.send_cmio_log)
-            hash = machine:verify_send_cmio_response(reason, data, hash, "posted-cmio.log", hash)
+            hash = machine:verify_send_cmio_response(reason, data, hash, log.send_cmio_log, hash)
         end
         eventf("Verifying uarch step log!")
-        write_file("posted-step.log", log.step_log)
-        hash = machine:verify_step_uarch(hash, "posted-step.log", 1)
+        hash = machine:verify_step_uarch(hash, log.step_log, 1)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
-            write_file("posted-reset.log", log.reset_log)
-            hash = machine:verify_reset_uarch(hash, "posted-reset.log")
+            hash = machine:verify_reset_uarch(hash, log.reset_log)
         end
         assert(hash == state_hash_after, "log does not reach the committed after-hash")
     end)

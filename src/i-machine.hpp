@@ -19,8 +19,11 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "address-range-description.hpp"
 #include "back-merkle-tree.hpp"
@@ -126,14 +129,14 @@ public:
         do_sync_stored(dir);
     }
 
-    /// \brief  Runs the machine for the given mcycle count and generates a log file of accessed pages and proof data.
-    interpreter_break_reason log_step(uint64_t mcycle_count, const std::string &filename) {
-        return do_log_step(mcycle_count, filename);
+    /// \brief Runs the machine for the given mcycle count and records a step log of accessed pages and proof data.
+    std::pair<std::vector<unsigned char>, interpreter_break_reason> log_step(uint64_t mcycle_count) {
+        return do_log_step(mcycle_count);
     }
 
-    /// \brief Runs the uarch for the given cycle count (or halt) and writes a binary step log.
-    uarch_interpreter_break_reason log_step_uarch(uint64_t uarch_cycle_count, const std::string &filename) {
-        return do_log_step_uarch(uarch_cycle_count, filename);
+    /// \brief Runs the uarch for the given cycle count (or halt) and records a binary step log.
+    std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> log_step_uarch(uint64_t uarch_cycle_count) {
+        return do_log_step_uarch(uarch_cycle_count);
     }
 
     /// \brief Obtains the proof for a node in the hash tree.
@@ -272,9 +275,9 @@ public:
         do_reset_uarch();
     }
 
-    /// \brief Resets the uarch state to pristine value and writes a step log to \p filename.
-    void log_reset_uarch(const std::string &filename) {
-        do_log_reset_uarch(filename);
+    /// \brief Resets the uarch state to pristine value and records a binary step log.
+    std::vector<unsigned char> log_reset_uarch() {
+        return do_log_reset_uarch();
     }
 
     /// \brief Runs the uarch until the machine advances to the next mcycle or the current  micro cycle
@@ -310,10 +313,10 @@ public:
         do_send_cmio_response(reason, data, length, revert_root_hash);
     }
 
-    /// \brief Sends cmio response and writes a step log to \p filename.
-    void log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const_machine_hash_view revert_root_hash, const std::string &filename) {
-        do_log_send_cmio_response(reason, data, length, revert_root_hash, filename);
+    /// \brief Sends cmio response and records a binary step log.
+    std::vector<unsigned char> log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const_machine_hash_view revert_root_hash) {
+        return do_log_send_cmio_response(reason, data, length, revert_root_hash);
     }
 
     /// \brief Gets the address of any register
@@ -332,27 +335,28 @@ public:
     }
 
     /// \brief Checks the validity of a state transition caused by log_step.
-    machine_hash verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
+    machine_hash verify_step(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         uint64_t mcycle_count) const {
-        return do_verify_step(root_hash_before, log_filename, mcycle_count);
+        return do_verify_step(root_hash_before, log, mcycle_count);
     }
 
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
-    machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
+    machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         uint64_t uarch_cycle_count) const {
-        return do_verify_step_uarch(root_hash_before, filename, uarch_cycle_count);
+        return do_verify_step_uarch(root_hash_before, log, uarch_cycle_count);
     }
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
-    machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before, const std::string &filename) const {
-        return do_verify_reset_uarch(root_hash_before, filename);
+    machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before,
+        std::span<const unsigned char> log) const {
+        return do_verify_reset_uarch(root_hash_before, log);
     }
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
     machine_hash verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const_machine_hash_view root_hash_before, const std::string &filename,
+        const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         const_machine_hash_view revert_root_hash) const {
-        return do_verify_send_cmio_response(reason, data, length, root_hash_before, filename, revert_root_hash);
+        return do_verify_send_cmio_response(reason, data, length, root_hash_before, log, revert_root_hash);
     }
 
     /// \brief Checks if implementation is jsorpc-machine
@@ -375,9 +379,9 @@ private:
     virtual void do_rename_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
     virtual void do_remove_stored(const std::string &dir) const = 0;
     virtual void do_sync_stored(const std::string &dir) const = 0;
-    virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
-    virtual uarch_interpreter_break_reason do_log_step_uarch(uint64_t uarch_cycle_count,
-        const std::string &filename) = 0;
+    virtual std::pair<std::vector<unsigned char>, interpreter_break_reason> do_log_step(uint64_t mcycle_count) = 0;
+    virtual std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> do_log_step_uarch(
+        uint64_t uarch_cycle_count) = 0;
     virtual hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const = 0;
     virtual machine_hash do_get_root_hash() const = 0;
     virtual machine_hash do_read_revert_root_hash() const = 0;
@@ -401,7 +405,7 @@ private:
     virtual void do_set_runtime_config(const machine_runtime_config &r) = 0;
     virtual void do_destroy() = 0;
     virtual void do_reset_uarch() = 0;
-    virtual void do_log_reset_uarch(const std::string &filename) = 0;
+    virtual std::vector<unsigned char> do_log_reset_uarch() = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
     virtual uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
         int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) = 0;
@@ -409,19 +413,19 @@ private:
     virtual machine_cmio_request do_receive_cmio_request(std::span<uint8_t> data) const = 0;
     virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         std::optional<const_machine_hash_view> revert_root_hash) = 0;
-    virtual void do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const_machine_hash_view revert_root_hash, const std::string &filename) = 0;
+    virtual std::vector<unsigned char> do_log_send_cmio_response(uint16_t reason, const unsigned char *data,
+        uint64_t length, const_machine_hash_view revert_root_hash) = 0;
     virtual uint64_t do_get_reg_address(reg r) const = 0;
     virtual machine_config do_get_default_config() const = 0;
     virtual std::string do_get_address_name(uint64_t paddr) const = 0;
-    virtual machine_hash do_verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
+    virtual machine_hash do_verify_step(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         uint64_t mcycle_count) const = 0;
-    virtual machine_hash do_verify_step_uarch(const_machine_hash_view root_hash_before, const std::string &filename,
-        uint64_t uarch_cycle_count) const = 0;
+    virtual machine_hash do_verify_step_uarch(const_machine_hash_view root_hash_before,
+        std::span<const unsigned char> log, uint64_t uarch_cycle_count) const = 0;
     virtual machine_hash do_verify_reset_uarch(const_machine_hash_view root_hash_before,
-        const std::string &filename) const = 0;
+        std::span<const unsigned char> log) const = 0;
     virtual machine_hash do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const_machine_hash_view root_hash_before, const std::string &filename,
+        const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         const_machine_hash_view revert_root_hash) const = 0;
     virtual bool do_verify_hash_tree() const = 0;
     virtual bool do_is_jsonrpc_machine() const {

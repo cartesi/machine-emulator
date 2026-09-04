@@ -122,9 +122,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     const auto dir2 = tmpdir.sub("m2");
     const auto dir3 = tmpdir.sub("m3");
     const auto dir4 = tmpdir.sub("m4");
-    const auto log_file = tmpdir.sub("step.log");
-    const auto uarch_log_file = tmpdir.sub("step_uarch.log");
-    const auto reset_log_file = tmpdir.sub("reset_uarch.log");
 
     // Store machine state to disk so we can clone it
     if (cm_store(m0, store_dir.c_str(), CM_SHARING_ALL) != CM_ERROR_OK) {
@@ -177,14 +174,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             cm_hash hb{};
             cm_hash ha{};
             cm_get_root_hash(m3, &hb);
-            // log_step_uarch requires the target file to not exist
-            std::filesystem::remove(uarch_log_file);
-            if (cm_log_step_uarch(m3, 1, uarch_log_file.c_str(), nullptr) != CM_ERROR_OK) {
+            const uint8_t *log{};
+            uint64_t log_length{};
+            if (cm_log_step_uarch(m3, 1, &log, &log_length, nullptr) != CM_ERROR_OK) {
                 fuzz_abort("cm_log_step_uarch failed");
             }
+            // the C API's temporary log storage lasts only until the next call
+            const std::vector<uint8_t> uarch_log(log, log + log_length);
             cm_get_root_hash(m3, &ha);
             cm_hash obtained{};
-            if (cm_verify_step_uarch(m3, &hb, uarch_log_file.c_str(), 1, &obtained) != CM_ERROR_OK) {
+            if (cm_verify_step_uarch(m3, &hb, uarch_log.data(), uarch_log.size(), 1, &obtained) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_step_uarch failed");
             }
             if (memcmp(&obtained, &ha, sizeof(cm_hash)) != 0) {
@@ -206,13 +205,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             cm_hash hb{};
             cm_hash ha{};
             cm_get_root_hash(m3, &hb);
-            std::filesystem::remove(reset_log_file);
-            if (cm_log_reset_uarch(m3, reset_log_file.c_str()) != CM_ERROR_OK) {
+            const uint8_t *log{};
+            uint64_t log_length{};
+            if (cm_log_reset_uarch(m3, &log, &log_length) != CM_ERROR_OK) {
                 fuzz_abort("cm_log_reset_uarch failed");
             }
+            const std::vector<uint8_t> reset_log(log, log + log_length);
             cm_get_root_hash(m3, &ha);
             cm_hash obtained{};
-            if (cm_verify_reset_uarch(m3, &hb, reset_log_file.c_str(), &obtained) != CM_ERROR_OK) {
+            if (cm_verify_reset_uarch(m3, &hb, reset_log.data(), reset_log.size(), &obtained) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_reset_uarch failed");
             }
             if (memcmp(&obtained, &ha, sizeof(cm_hash)) != 0) {
@@ -226,19 +227,20 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             cm_hash ha{};
             cm_get_root_hash(m4, &hb);
             cm_break_reason br4{};
-            if (cm_log_step(m4, 1, log_file.c_str(), &br4) != CM_ERROR_OK) {
+            const uint8_t *log{};
+            uint64_t log_length{};
+            if (cm_log_step(m4, 1, &log, &log_length, &br4) != CM_ERROR_OK) {
                 fuzz_abort("cm_log_step failed");
             }
+            const std::vector<uint8_t> step_log(log, log + log_length);
             cm_get_root_hash(m4, &ha);
             cm_hash obtained{};
-            if (cm_verify_step(&hb, log_file.c_str(), 1, &obtained) != CM_ERROR_OK) {
+            if (cm_verify_step(&hb, step_log.data(), step_log.size(), 1, &obtained) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_step failed");
             }
             if (memcmp(&obtained, &ha, sizeof(cm_hash)) != 0) {
                 fuzz_abort("hash mismatch: cm_verify_step vs machine state");
             }
-            // Remove log file so the next iteration can create it
-            std::filesystem::remove(log_file);
         }
 
         // Compare root hashes across all 4 paths

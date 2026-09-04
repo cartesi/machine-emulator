@@ -263,10 +263,8 @@ private:
     }
 
     machine_hash do_read_revert_root_hash() const {
-        constexpr uint64_t paddr = AR_SHADOW_REVERT_ROOT_HASH_START;
-        const auto *page_log = m_context.log.find_page(paddr & ~PAGE_OFFSET_MASK);
         machine_hash hash{};
-        std::copy_n(page_log->data + (paddr & PAGE_OFFSET_MASK), hash.size(), hash.begin());
+        std::copy_n(m_context.log.find_data(AR_SHADOW_REVERT_ROOT_HASH_START), hash.size(), hash.begin());
         return hash;
     }
 
@@ -281,10 +279,7 @@ private:
     host_addr do_get_faddr(uint64_t paddr, uint64_t /* pma_index */ = 0) const {
         // This assumes the corresponding page has been touched
         // (replay_step_state_access makes sure of it for any address we try to convert)
-        const auto paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        auto *page_log = m_context.log.find_page(paddr_page);
-        const auto offset = paddr & PAGE_OFFSET_MASK;
-        return cast_ptr_to_host_addr(page_log->data) + offset;
+        return cast_ptr_to_host_addr(m_context.log.find_data(paddr));
     }
 
     // LCOV_EXCL_START
@@ -439,10 +434,7 @@ private:
         }
         if (write_length_log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
             // Supra-page: hash data + zero-pad via pristine-streaming into the logged node's slot.
-            auto *node = m_context.log.try_find_node(paddr);
-            if (node == nullptr || !std::cmp_equal(node->log2_size, write_length_log2_size)) {
-                THROW(std::runtime_error, "write_memory_with_padding node not found in log");
-            }
+            auto *node = m_context.log.find_node(paddr, write_length_log2_size);
             merkle_tree_hash_padded(m_context.log.hash_function, data, data_length, write_length_log2_size,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<hash_type>(&node->hash));

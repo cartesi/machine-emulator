@@ -39,6 +39,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <utility>
 
 #include "address-range-constants.hpp"
 #include "compiler-defines.hpp"
@@ -219,8 +220,8 @@ struct step_log {
         return log;
     }
 
-    /// \brief Try to find a witnessed page by its physical address.
-    /// \param paddr_page Page-aligned physical address.
+    /// \brief Try to find a witnessed page by physical address.
+    /// \param paddr_page Any physical address inside the page.
     /// \return Pointer to the page entry if witnessed, nullptr otherwise.
     page_entry *try_find_page(uint64_t paddr_page) const {
         const auto page_index = paddr_page >> AR_LOG2_PAGE_SIZE;
@@ -232,13 +233,18 @@ struct step_log {
         return nullptr;
     }
 
-    /// \brief Find a witnessed page by its physical address, or throw if absent.
+    /// \brief Find a witnessed page by any physical address inside it, or throw if absent.
     page_entry *find_page(uint64_t paddr_page) const {
         auto *page_log = try_find_page(paddr_page);
         if (page_log == nullptr) {
             THROW(std::runtime_error, "required page not found");
         }
         return page_log;
+    }
+
+    /// \brief Pointer into the witnessed page data at physical address \p paddr; throws if the page is absent.
+    unsigned char *find_data(uint64_t paddr) const {
+        return find_page(paddr)->data + (paddr & (AR_PAGE_SIZE - 1));
     }
 
     /// \brief Try to find a subtree-write node by its start address.
@@ -251,6 +257,15 @@ struct step_log {
             return &(*it);
         }
         return nullptr;
+    }
+
+    /// \brief Find the subtree-write node at \p address spanning 2^log2_size bytes, or throw if absent.
+    node_entry *find_node(uint64_t address, int log2_size) const {
+        auto *node = try_find_node(address);
+        if (node == nullptr || !std::cmp_equal(node->log2_size, log2_size)) {
+            THROW(std::runtime_error, "required node not found");
+        }
+        return node;
     }
 
     /// \brief Recompute the machine root hash from the witnessed tree's current state.

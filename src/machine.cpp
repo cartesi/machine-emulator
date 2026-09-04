@@ -75,6 +75,7 @@
 #include "shadow-tlb.hpp"
 #include "shadow-uarch-state.hpp"
 #include "state-access.hpp"
+#include "step-log-recorder.hpp"
 #include "strict-aliasing.hpp"
 #include "translate-virtual-address.hpp"
 #include "uarch-constants.hpp"
@@ -2023,12 +2024,12 @@ void machine::log_send_cmio_response(uint16_t reason, const unsigned char *data,
         throw std::invalid_argument{"CMIO response data length does not fit in 32 bits"};
     }
     const auto root_hash_before = get_root_hash();
-    record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
-    record_step_state_access a(context, *this);
+    step_log_recorder recorder(filename, m_c.hash_tree.hash_function, *this);
+    record_step_state_access a(recorder, *this);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
     // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
     const auto root_hash_after = get_root_hash();
-    a.finish();
+    recorder.finish();
     auto obtained_root_hash =
         verify_send_cmio_response(reason, data, length, root_hash_before, filename, revert_root_hash);
     if (!std::ranges::equal(obtained_root_hash, root_hash_after)) {
@@ -2076,15 +2077,15 @@ void machine::log_reset_uarch(const std::string &filename) {
         throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
     const auto root_hash_before = get_root_hash();
-    uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
-    uarch_record_step_state_access a(context, *this);
+    step_log_recorder recorder(filename, m_c.hash_tree.hash_function, *this);
+    uarch_record_step_state_access a(recorder, *this);
     uarch_reset_state(a);
     auto root_hash_after = get_root_hash();
     const state_access sa(*this);
     if (is_rejected_manual_yield(sa)) {
         root_hash_after = read_revert_root_hash();
     }
-    a.finish();
+    recorder.finish();
     // root_hash_after holds the revert root hash when the reset reverted the state
     if (!std::ranges::equal(verify_reset_uarch(root_hash_before, filename), root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
@@ -2109,12 +2110,12 @@ uarch_interpreter_break_reason machine::log_step_uarch(uint64_t uarch_cycle_coun
         throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
     const auto root_hash_before = get_root_hash();
-    uarch_record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
-    uarch_record_step_state_access a(context, *this);
+    step_log_recorder recorder(filename, m_c.hash_tree.hash_function, *this);
+    uarch_record_step_state_access a(recorder, *this);
     const uint64_t uarch_cycle_end = saturating_add(a.read_uarch_cycle(), uarch_cycle_count);
     const auto break_reason = uarch_interpret(a, uarch_cycle_end);
     const auto root_hash_after = get_root_hash();
-    a.finish();
+    recorder.finish();
     if (!std::ranges::equal(verify_step_uarch(root_hash_before, filename, uarch_cycle_count), root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
@@ -2192,8 +2193,8 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     }
     const auto root_hash_before = get_root_hash();
     init_hot_tlb_contents();
-    record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
-    record_step_state_access a(context, *this);
+    step_log_recorder recorder(filename, m_c.hash_tree.hash_function, *this);
+    record_step_state_access a(recorder, *this);
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), mcycle_count);
     const auto break_reason = interpret(a, mcycle_end);
     auto root_hash_after = get_root_hash();
@@ -2201,7 +2202,7 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     if (is_rejected_manual_yield(sa)) {
         root_hash_after = read_revert_root_hash();
     }
-    a.finish();
+    recorder.finish();
     if (!std::ranges::equal(verify_step(root_hash_before, filename, mcycle_count), root_hash_after)) {
         throw std::runtime_error("mismatch in root hash after replay");
     }

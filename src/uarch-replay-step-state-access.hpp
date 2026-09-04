@@ -95,10 +95,7 @@ public:
 
 private:
     host_addr paddr_to_haddr(uint64_t paddr) const {
-        const auto paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        auto *page_log = m_context.log.find_page(paddr_page);
-        const auto offset = paddr & PAGE_OFFSET_MASK;
-        return cast_ptr_to_host_addr(page_log->data) + offset;
+        return cast_ptr_to_host_addr(m_context.log.find_data(paddr));
     }
 
     /// Like paddr_to_haddr, but invalidates the page's scratch hash so the after-root pass rehashes it.
@@ -163,19 +160,14 @@ private:
     void do_reset_uarch() const {
         // The log must contain a node covering the full uarch state region; the reset
         // writes the well-known pristine uarch hash into its slot.
-        auto *node = m_context.log.try_find_node(UARCH_STATE_START_ADDRESS);
-        if (node == nullptr || node->log2_size != static_cast<uint64_t>(UARCH_STATE_LOG2_SIZE)) {
-            THROW(std::runtime_error, "reset uarch node not found in log");
-        }
-        node->hash = get_uarch_pristine_state_hash();
+        m_context.log.find_node(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE)->hash =
+            get_uarch_pristine_state_hash();
     }
 
     void do_revert_state() const {
         // The canonical post-state hash is the recorded revert root hash, read raw from its leaf in the
         // witnessed shadow page. finish() returns it instead of the recomputed tree root.
-        constexpr uint64_t paddr = AR_SHADOW_REVERT_ROOT_HASH_START;
-        const auto *page_log = m_context.log.find_page(paddr & ~PAGE_OFFSET_MASK);
-        std::copy_n(page_log->data + (paddr & PAGE_OFFSET_MASK), m_context.reverted_root_hash.size(),
+        std::copy_n(m_context.log.find_data(AR_SHADOW_REVERT_ROOT_HASH_START), m_context.reverted_root_hash.size(),
             m_context.reverted_root_hash.begin());
         m_context.reverted = true;
     }

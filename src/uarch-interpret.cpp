@@ -69,8 +69,8 @@ template uarch_interpreter_break_reason uarch_interpret(const collect_uarch_cycl
 template uarch_interpreter_break_reason uarch_interpret(const uarch_record_step_state_access a,
     uint64_t uarch_cycle_end);
 
-// Explicit instantiation for uarch_replay_step_state_access (replay/verify and the host printout)
-template uarch_interpreter_break_reason uarch_interpret(const uarch_replay_step_state_access<no_step_printout> a,
+// Explicit instantiation for uarch_replay_step_state_access (replay/verify and the host dump)
+template uarch_interpreter_break_reason uarch_interpret(const uarch_replay_step_state_access<no_step_dumper> a,
     uint64_t uarch_cycle_end);
 template uarch_interpreter_break_reason uarch_interpret(const uarch_replay_step_state_access<step_dumper> a,
     uint64_t uarch_cycle_end);

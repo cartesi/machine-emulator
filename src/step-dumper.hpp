@@ -28,20 +28,18 @@
 
 namespace cartesi {
 
-/// \brief Sink that formats a step replay as an indented, human-readable printout.
-/// \details Each instruction is bracketed by its mnemonic, with its reads and writes nested
-/// underneath. Host-only (it allocates).
+/// \brief Dump sink that formats a replayed uarch step as indented, human-readable text
 class step_dumper {
     std::ostringstream m_out;
     int m_indent{0};      ///< Current bracket nesting depth
-    uint64_t m_access{0}; ///< 1-based access counter across the whole printout
+    uint64_t m_access{0}; ///< 1-based access counter across the whole dump
 
     std::ostream &line() {
         return m_out << std::string(static_cast<size_t>(m_indent) * 2, ' ');
     }
 
 public:
-    /// \brief Returns the accumulated printout.
+    /// \brief Returns the accumulated dump
     std::string str() const {
         return m_out.str();
     }
@@ -71,12 +69,11 @@ public:
     }
 };
 
-/// \brief Replays a uarch step log and returns a human-readable printout.
-/// \param log Binary step log produced by machine::log_step_uarch.
-/// \param uarch_cycle_count Number of cycles to replay; stops early if the uarch halts.
-/// \details Replays the log purely to produce the printout; no caller belief is checked.
-/// Exported: the Lua binding is compiled into cartesi/jsonrpc.so as well, which resolves the
-/// symbol from cartesi.so at load time.
+/// \brief Replays a uarch step log and returns a human-readable dump
+/// \param log Binary step log produced by machine::log_step_uarch
+/// \param uarch_cycle_count Number of cycles to replay; stops early if the uarch halts
+/// \details No caller claim is checked. Exported because the Lua binding is compiled into
+/// cartesi/jsonrpc.so as well, which resolves the symbol from cartesi.so at load time.
 __attribute__((visibility("default"))) std::string dump_step_uarch(std::span<const unsigned char> log,
     uint64_t uarch_cycle_count);
 

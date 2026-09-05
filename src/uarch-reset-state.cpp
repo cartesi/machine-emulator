@@ -51,7 +51,7 @@ template void uarch_reset_state(uarch_state_access &a);
 template void uarch_reset_state(uarch_record_step_state_access &a);
 
 // Explicit instantiation for uarch_replay_step_state_access
-template void uarch_reset_state(uarch_replay_step_state_access<no_step_printout> &a);
+template void uarch_reset_state(uarch_replay_step_state_access<no_step_dumper> &a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

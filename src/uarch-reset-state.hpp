@@ -27,14 +27,14 @@ void uarch_reset_state(STATE_ACCESS &a);
 
 class uarch_state_access;
 class uarch_record_step_state_access;
-struct no_step_printout;
-template <typename Printer>
+struct no_step_dumper;
+template <typename Dumper>
 class uarch_replay_step_state_access;
 
 // Declaration of explicit instantiations in module uarch-reset-state.cpp
 extern template void uarch_reset_state(uarch_state_access &a);
 extern template void uarch_reset_state(uarch_record_step_state_access &a);
-extern template void uarch_reset_state(uarch_replay_step_state_access<no_step_printout> &a);
+extern template void uarch_reset_state(uarch_replay_step_state_access<no_step_dumper> &a);
 
 } // namespace cartesi
 

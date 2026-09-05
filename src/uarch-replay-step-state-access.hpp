@@ -43,8 +43,8 @@
 
 namespace cartesi {
 
-/// \brief No-op printout sink; keeps the replay free of host-only machinery for freestanding builds.
-struct no_step_printout {
+/// \brief No-op dump sink
+struct no_step_dumper {
     void begin_bracket(const char * /*text*/) const {}
     void end_bracket(const char * /*text*/) const {}
     void read(const char * /*name*/, uint64_t /*paddr*/, uint64_t /*val*/) const {}
@@ -52,20 +52,19 @@ struct no_step_printout {
 };
 
 /// \brief Provides machine state from a uarch step binary log
-/// \tparam Printer Printout sink for the replay. Defaults to no_step_printout, which compiles to
-/// nothing; the host selects step_dumper to obtain a human-readable dump of the replay.
-template <typename Printer = no_step_printout>
+/// \tparam Dumper Dump sink: no_step_dumper by default, step_dumper for dump_step_uarch
+template <typename Dumper = no_step_dumper>
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class uarch_replay_step_state_access :
-    public i_uarch_state_access<uarch_replay_step_state_access<Printer>>,
-    public i_accept_scoped_notes<uarch_replay_step_state_access<Printer>>,
-    public i_prefer_shadow_uarch_state<uarch_replay_step_state_access<Printer>> {
+    public i_uarch_state_access<uarch_replay_step_state_access<Dumper>>,
+    public i_accept_scoped_notes<uarch_replay_step_state_access<Dumper>>,
+    public i_prefer_shadow_uarch_state<uarch_replay_step_state_access<Dumper>> {
 public:
     struct context {
         step_log log;                      ///< Parsed step log (witnessed tree)
         bool reverted{false};              ///< Set when the reset reverted the state on a rejected input
         machine_hash reverted_root_hash{}; ///< Canonical post-state hash when reverted (the revert root hash)
-        Printer printer{};                 ///< Receives the printout; a no-op for the default no_step_printout
+        Dumper dumper{};                   ///< Receives the dump
     };
 
 private:
@@ -115,7 +114,7 @@ private:
     uint64_t do_read_shadow_uarch_state(shadow_uarch_state_what what) const {
         const auto paddr = static_cast<uint64_t>(what);
         const auto val = aliased_aligned_read<uint64_t>(paddr_to_haddr(paddr));
-        m_context.printer.read(shadow_uarch_state_get_what_name(what), paddr, val);
+        m_context.dumper.read(shadow_uarch_state_get_what_name(what), paddr, val);
         return val;
     }
 
@@ -123,7 +122,7 @@ private:
         const auto paddr = static_cast<uint64_t>(what);
         const auto haddr = paddr_to_haddr_for_write(paddr);
         const auto old_val = aliased_aligned_read<uint64_t>(haddr);
-        m_context.printer.write(shadow_uarch_state_get_what_name(what), paddr, old_val, val);
+        m_context.dumper.write(shadow_uarch_state_get_what_name(what), paddr, old_val, val);
         aliased_aligned_write<uint64_t>(haddr, val);
     }
 
@@ -134,14 +133,14 @@ private:
 
     uint64_t do_read_word(uint64_t paddr) const {
         const auto val = aliased_aligned_read<uint64_t>(paddr_to_haddr(paddr));
-        m_context.printer.read(nullptr, paddr, val);
+        m_context.dumper.read(nullptr, paddr, val);
         return val;
     }
 
     void do_write_word(uint64_t paddr, uint64_t val) const {
         const auto haddr = paddr_to_haddr_for_write(paddr);
         const auto old_val = aliased_aligned_read<uint64_t>(haddr);
-        m_context.printer.write(nullptr, paddr, old_val, val);
+        m_context.dumper.write(nullptr, paddr, old_val, val);
         aliased_aligned_write<uint64_t>(haddr, val);
     }
 
@@ -185,17 +184,17 @@ private:
     // -----
     friend i_accept_scoped_notes<uarch_replay_step_state_access>;
 
-    // A real scoped_note (not the no-op default) so per-instruction brackets reach the printer.
+    // A real scoped_note (not the no-op default) so per-instruction brackets reach the dumper.
     auto do_make_scoped_note(const char *text) const {
         return scoped_note{*this, text};
     }
 
     void do_push_begin_bracket(const char *text) const {
-        m_context.printer.begin_bracket(text);
+        m_context.dumper.begin_bracket(text);
     }
 
     void do_push_end_bracket(const char *text) const {
-        m_context.printer.end_bracket(text);
+        m_context.dumper.end_bracket(text);
     }
 };
 

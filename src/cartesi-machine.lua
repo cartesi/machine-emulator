@@ -1388,8 +1388,6 @@ local function handle_bash_completion()
     os.exit()
 end
 
--- List of supported options
--- Options are processed in order
 -- Payload encodings accepted by --log-send-cmio-response, named after the
 -- --hex-payload/--base64-payload/--utf8-payload options of rollup.cpp in
 -- machine-guest-tools. cartesi is only required later, so decode lazily.
@@ -1399,6 +1397,8 @@ local ENCODINGS = {
     utf8 = function(v) return v end,
 }
 
+-- List of supported options
+-- Options are processed in order
 -- For each option,
 --   first entry is the pattern to match
 --   second entry is a callback

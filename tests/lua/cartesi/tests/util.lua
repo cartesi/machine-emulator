@@ -15,6 +15,7 @@
 --
 
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local hash_tree = require("cartesi.hash-tree")
 
 local ROOT_LOG2_SIZE = 64
@@ -293,17 +294,6 @@ end
 
 -- Binary step log helpers. Layout: see step_log_header in src/step-log.hpp.
 
-local function read_file(filename)
-    local file <close> = assert(io.open(filename, "rb"))
-    return file:read("a")
-end
-
-local function write_file(filename, data)
-    local file <close> = assert(io.open(filename, "wb"))
-    file:write(data)
-end
-
--- Parse a binary step log into a table of header fields, pages, nodes, and siblings.
 function tests_util.parse_step_log(log)
     local pos = 1
     local function take(n)
@@ -345,7 +335,6 @@ function tests_util.parse_step_log(log)
     return parsed
 end
 
--- Serialize a parsed step log back into bytes.
 -- override_{page,node,sibling}_count lets a test fake a header count that
 -- diverges from the actual entry array length (to exercise overflow checks).
 function tests_util.serialize_step_log(logdata)
@@ -380,11 +369,11 @@ function tests_util.mutate_step_log(log, callback)
 end
 
 function tests_util.read_step_log_file(filename)
-    return tests_util.parse_step_log(read_file(filename))
+    return tests_util.parse_step_log(util.read_file(filename))
 end
 
 function tests_util.write_step_log_file(logdata, filename)
-    write_file(filename, tests_util.serialize_step_log(logdata))
+    util.write_file(tests_util.serialize_step_log(logdata), filename)
 end
 
 -- Turn one sibling subtree into an unchanged node carrying the same hash. The pre-state

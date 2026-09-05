@@ -3017,7 +3017,7 @@ The page entries record, as of first touch, every page of machine state the step
 The node entries record bulk writes that replace whole subtrees at once, as the uarch reset and the input-inclusion transitions do.
 A node is a subtree whose contents are not witnessed, only its hash.
 Combined with the hashes of the pages and nodes, the siblings reconstruct the machine's root hash.
-The log is only the witness, carrying no root hash claims and no cycle count: the root hash before is recomputed from the witnessed tree, the caller says how many cycles to replay, and the root hash after is whatever the replay produces, returned for the caller to compare.
+The root hash before is recomputed from the witnessed tree, the caller says how many cycles to replay, and the root hash after is whatever the replay produces, returned for the caller to compare.
 A step log is therefore self-contained, and anyone can check one against a pair of state hashes without instantiating a machine.
 
 #### Inspecting step logs

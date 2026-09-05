@@ -158,8 +158,6 @@ private:
     }
 
     void do_reset_uarch() const {
-        // The log must contain a node covering the full uarch state region; the reset
-        // writes the well-known pristine uarch hash into its slot.
         m_context.log.find_node(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE)->hash =
             get_uarch_pristine_state_hash();
     }

@@ -33,9 +33,8 @@ import {UArchStep} from "src/UArchStep.sol";
 ///
 /// Scope: verifyStep runs exactly one uarch step; the on-chain dispute granularity is a
 /// single uarch step. A multi-cycle log is a valid witness for its first cycle only:
-/// replaying one step of it returns that intermediate root, not the log's endpoint. It
-/// must still fit the witness-size caps StepLog.decode enforces; those bound the on-chain
-/// decode work and are sized for single-step logs, not for arbitrarily long recordings.
+/// replaying one step of it returns that intermediate root, not the log's endpoint, and it
+/// must still fit StepLog.decode's witness-size caps.
 library Verify {
     error RootHashBeforeMismatch(bytes32 expected, bytes32 fromLog);
     error CmioResponseTooLong(uint256 length);

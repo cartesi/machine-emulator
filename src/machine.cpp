@@ -2092,7 +2092,7 @@ std::vector<unsigned char> machine::log_reset_uarch() {
 }
 
 machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log) {
-    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
+    std::vector<unsigned char> image(log.begin(), log.end());
     uarch_replay_step_state_access<>::context context;
     uarch_replay_step_state_access<> a(context, image.data(), image.size());
     context.log.check_root_hash_before(root_hash_before);
@@ -2123,7 +2123,7 @@ std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> machine::l
 
 machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     uint64_t uarch_cycle_count) {
-    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
+    std::vector<unsigned char> image(log.begin(), log.end());
     uarch_replay_step_state_access<>::context context;
     uarch_replay_step_state_access<> a(context, image.data(), image.size());
     context.log.check_root_hash_before(root_hash_before);
@@ -2209,7 +2209,7 @@ std::pair<std::vector<unsigned char>, interpreter_break_reason> machine::log_ste
 
 machine_hash machine::verify_step(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     uint64_t mcycle_count) {
-    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
+    std::vector<unsigned char> image(log.begin(), log.end());
     replay_step_state_access::context context;
     replay_step_state_access a(context, image.data(), image.size());
     context.log.check_root_hash_before(root_hash_before);

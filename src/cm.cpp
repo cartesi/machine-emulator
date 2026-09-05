@@ -174,8 +174,8 @@ const char *cm_set_temp_string(const std::string &s) {
     return temp_string.c_str();
 }
 
-const uint8_t *cm_set_temp_data(std::vector<unsigned char> data) {
-    static THREAD_LOCAL std::vector<unsigned char> temp_data;
+const uint8_t *cm_set_temp_data(cartesi::step_log_data data) {
+    static THREAD_LOCAL cartesi::step_log_data temp_data;
     temp_data = std::move(data);
     return temp_data.data();
 }

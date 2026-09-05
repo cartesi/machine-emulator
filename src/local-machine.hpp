@@ -32,6 +32,7 @@
 #include "machine-hash.hpp"
 #include "machine-runtime-config.hpp"
 #include "mcycle-root-hashes.hpp"
+#include "step-log-data.hpp"
 #include "uarch-cycle-root-hashes.hpp"
 #include "uarch-interpret.hpp"
 
@@ -58,14 +59,13 @@ private:
     mcycle_root_hashes do_collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
         uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
         const std::optional<back_merkle_tree> &previous_partial_bundle) override;
-    std::pair<std::vector<unsigned char>, interpreter_break_reason> do_log_step(uint64_t mcycle_count) override;
+    log_step_result do_log_step(uint64_t mcycle_count) override;
     void do_store(const std::string &directory, sharing_mode sharing) const override;
     void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
     void do_rename_stored(const std::string &from_dir, const std::string &to_dir) const override;
     void do_remove_stored(const std::string &dir) const override;
     void do_sync_stored(const std::string &dir) const override;
-    std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> do_log_step_uarch(
-        uint64_t uarch_cycle_count) override;
+    log_step_uarch_result do_log_step_uarch(uint64_t uarch_cycle_count) override;
     hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const override;
     machine_hash do_get_root_hash() const override;
     machine_hash do_read_revert_root_hash() const override;
@@ -90,7 +90,7 @@ private:
     void do_set_runtime_config(const machine_runtime_config &r) override;
     void do_destroy() override;
     void do_reset_uarch() override;
-    std::vector<unsigned char> do_log_reset_uarch() override;
+    step_log_data do_log_reset_uarch() override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     uarch_cycle_root_hashes do_collect_uarch_cycle_root_hashes(uint64_t mcycle_end,
         int32_t log2_bundle_uarch_cycle_count, const machine_hashes &revert_uarch_tail) override;
@@ -98,7 +98,7 @@ private:
     machine_cmio_request do_receive_cmio_request(std::span<uint8_t> data) const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         std::optional<const_machine_hash_view> revert_root_hash) override;
-    std::vector<unsigned char> do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    step_log_data do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const_machine_hash_view revert_root_hash) override;
     uint64_t do_get_reg_address(reg r) const override;
     machine_config do_get_default_config() const override;

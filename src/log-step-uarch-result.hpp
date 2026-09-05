@@ -14,29 +14,20 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cstdint>
-#include <span>
-#include <string>
-#include <vector>
+#ifndef LOG_STEP_UARCH_RESULT_HPP
+#define LOG_STEP_UARCH_RESULT_HPP
 
-#include "step-dumper.hpp"
 #include "step-log-data.hpp"
-#include "uarch-replay-step-state-access.hpp"
-#include "uarch-step.hpp"
+#include "uarch-interpret.hpp"
 
 namespace cartesi {
 
-std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t uarch_cycle_count) {
-    step_log_data image(log.begin(), log.end());
-    uarch_replay_step_state_access<step_dumper>::context context;
-    const uarch_replay_step_state_access<step_dumper> a(context, image.data(), image.size());
-    // uarch_interpret's cycle-limit bookkeeping would open the printout with redundant uarch.cycle reads
-    for (uint64_t i = 0; i < uarch_cycle_count; ++i) {
-        if (uarch_step(a) != UArchStepStatus::Success) {
-            break;
-        }
-    }
-    return context.printer.str();
-}
+/// \brief Result of log_step_uarch
+struct log_step_uarch_result final {
+    step_log_data log;                             ///< Binary step log
+    uarch_interpreter_break_reason break_reason{}; ///< Reason why the run stopped
+};
 
 } // namespace cartesi
+
+#endif

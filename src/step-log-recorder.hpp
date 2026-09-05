@@ -33,6 +33,7 @@
 #include "hash-tree.hpp"
 #include "machine-hash.hpp"
 #include "machine.hpp"
+#include "step-log-data.hpp"
 #include "step-log.hpp"
 
 namespace cartesi {
@@ -128,7 +129,7 @@ public:
     }
 
     /// \brief Finish recording and return the binary step log
-    std::vector<unsigned char> finish() {
+    step_log_data finish() {
         auto sibling_hashes = get_sibling_hashes();
 
         const step_log_header header{
@@ -138,7 +139,7 @@ public:
             .node_count = m_touched_nodes.size(),
             .sibling_count = sibling_hashes.size(),
         };
-        std::vector<unsigned char> log;
+        step_log_data log;
         log.reserve(sizeof(header) + (m_touched_pages.size() * sizeof(page_entry)) +
             (m_touched_nodes.size() * sizeof(node_entry)) + (sibling_hashes.size() * sizeof(machine_hash)));
         const auto append = [&log](const void *data, size_t size) {

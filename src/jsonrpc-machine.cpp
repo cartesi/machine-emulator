@@ -75,8 +75,9 @@
 #include "json-util.hpp"
 #include "jsonrpc-cmio-request.hpp"
 #include "jsonrpc-fork-result.hpp"
-#include "jsonrpc-log-step-result.hpp"
 #include "jsonrpc-version.hpp"
+#include "log-step-result.hpp"
+#include "log-step-uarch-result.hpp"
 #include "machine-config.hpp"
 #include "machine-hash.hpp"
 #include "machine-runtime-config.hpp"
@@ -691,10 +692,10 @@ mcycle_root_hashes jsonrpc_machine::do_collect_mcycle_root_hashes(uint64_t mcycl
     return result;
 }
 
-std::pair<std::vector<unsigned char>, interpreter_break_reason> jsonrpc_machine::do_log_step(uint64_t mcycle_count) {
-    jsonrpc_log_step_result result;
+log_step_result jsonrpc_machine::do_log_step(uint64_t mcycle_count) {
+    log_step_result result;
     request("machine.log_step", std::tie(mcycle_count), result);
-    return {std::move(result.log), result.break_reason};
+    return result;
 }
 
 void jsonrpc_machine::do_store(const std::string &directory, sharing_mode sharing) const {
@@ -826,8 +827,8 @@ void jsonrpc_machine::do_reset_uarch() {
     request("machine.reset_uarch", std::tie(), result);
 }
 
-std::vector<unsigned char> jsonrpc_machine::do_log_reset_uarch() {
-    std::vector<unsigned char> result;
+step_log_data jsonrpc_machine::do_log_reset_uarch() {
+    step_log_data result;
     request("machine.log_reset_uarch", std::tie(), result);
     return result;
 }
@@ -870,11 +871,10 @@ void jsonrpc_machine::do_replace_memory_range(const memory_range_config &new_ran
     request("machine.replace_memory_range", std::tie(new_range), result);
 }
 
-std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> jsonrpc_machine::do_log_step_uarch(
-    uint64_t uarch_cycle_count) {
-    jsonrpc_log_step_uarch_result result;
+log_step_uarch_result jsonrpc_machine::do_log_step_uarch(uint64_t uarch_cycle_count) {
+    log_step_uarch_result result;
     request("machine.log_step_uarch", std::tie(uarch_cycle_count), result);
-    return {std::move(result.log), result.break_reason};
+    return result;
 }
 
 void jsonrpc_machine::do_destroy() {
@@ -960,9 +960,9 @@ void jsonrpc_machine::do_send_cmio_response(uint16_t reason, const unsigned char
     }
 }
 
-std::vector<unsigned char> jsonrpc_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data,
-    uint64_t length, const_machine_hash_view revert_root_hash) {
-    std::vector<unsigned char> result;
+step_log_data jsonrpc_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    const_machine_hash_view revert_root_hash) {
+    step_log_data result;
     std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     auto b64_revert_root_hash = encode_base64(revert_root_hash);
     request("machine.log_send_cmio_response", std::tie(reason, b64, b64_revert_root_hash), result);

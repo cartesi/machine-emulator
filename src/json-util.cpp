@@ -1920,7 +1920,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     jsonrpc_cmio_request &value, const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, jsonrpc_log_step_result &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, log_step_result &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
@@ -1930,29 +1930,28 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, jsonrpc_log_step_re
     ju_get_opt_field(jconfig, "break_reason"s, value.break_reason, new_path);
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, jsonrpc_log_step_result &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, log_step_result &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, log_step_result &value,
+    const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, log_step_uarch_result &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "log"s, value.log, new_path);
+    ju_get_opt_field(jconfig, "break_reason"s, value.break_reason, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, log_step_uarch_result &value,
     const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    jsonrpc_log_step_result &value, const std::string &path);
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, jsonrpc_log_step_uarch_result &value,
-    const std::string &path) {
-    if (!contains(j, key, path)) {
-        return;
-    }
-    const auto &jconfig = j[key];
-    const auto new_path = path + to_string(key) + "/";
-    ju_get_opt_field(jconfig, "log"s, value.log, new_path);
-    ju_get_opt_field(jconfig, "break_reason"s, value.break_reason, new_path);
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    jsonrpc_log_step_uarch_result &value, const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    jsonrpc_log_step_uarch_result &value, const std::string &path);
+    log_step_uarch_result &value, const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, mcycle_root_hashes &value, const std::string &path) {

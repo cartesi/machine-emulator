@@ -38,6 +38,8 @@
 #include "host-addr.hpp"
 #include "i-device-state-access-fwd.hpp"
 #include "interpret.hpp"
+#include "log-step-result.hpp"
+#include "log-step-uarch-result.hpp"
 #include "machine-address-ranges.hpp"
 #include "machine-cmio-request.hpp"
 #include "machine-config.hpp"
@@ -50,6 +52,7 @@
 #include "processor-state.hpp"
 #include "scope-remove.hpp"
 #include "shadow-tlb.hpp"
+#include "step-log-data.hpp"
 #include "uarch-cycle-root-hashes.hpp"
 #include "uarch-interpret.hpp"
 #include "uarch-processor-state.hpp"
@@ -274,7 +277,7 @@ public:
     /// \brief Runs the machine for the given mcycle count and records a step log of accessed pages and proof data.
     /// \param mcycle_count Number of mcycles to run the machine for.
     /// \returns The binary step log and the reason the machine was interrupted.
-    std::pair<std::vector<unsigned char>, interpreter_break_reason> log_step(uint64_t mcycle_count);
+    log_step_result log_step(uint64_t mcycle_count);
 
     /// \brief Checks the validity of a step log.
     /// \param root_hash_before Hash of the state before the step.
@@ -322,14 +325,14 @@ public:
     /// \brief Runs the uarch for the given cycle count (or halt) and records a binary step log.
     /// \param uarch_cycle_count Number of cycles to advance; the run stops earlier on halt or overflow.
     /// \returns The binary step log and the reason the uarch step ended.
-    std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> log_step_uarch(uint64_t uarch_cycle_count);
+    log_step_uarch_result log_step_uarch(uint64_t uarch_cycle_count);
 
     /// \brief Resets the entire uarch state to pristine values.
     void reset_uarch();
 
     /// \brief Resets the uarch state and records a binary step log.
     /// \returns The binary step log.
-    std::vector<unsigned char> log_reset_uarch();
+    step_log_data log_reset_uarch();
 
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
     /// \param root_hash_before State hash before step.
@@ -733,7 +736,7 @@ public:
     /// is not waiting on a manual yield, when an advance-state response finds the machine yielded with
     /// a reason other than rx-accepted (e.g., it rejected an input or threw an exception), or when the
     /// response data does not fit in the rx buffer.
-    std::vector<unsigned char> log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    step_log_data log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const_machine_hash_view revert_root_hash);
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.

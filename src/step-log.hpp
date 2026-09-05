@@ -28,8 +28,7 @@
 ///     machine_hash    siblings[header.sibling_count];
 ///
 /// All multi-byte integer fields use host (little-endian) byte order; there is no endian marker.
-/// Heap-free so it builds in the risc0 guest; the host and zkVM hash backends are selected by
-/// ZKARCHITECTURE.
+/// Heap-free so it builds in a zkVM guest.
 
 #include <algorithm>
 #include <array>
@@ -46,9 +45,9 @@
 #include "hash-tree-constants.hpp"
 #include "i-hasher.hpp"
 #include "machine-hash.hpp"
+#include "step-log-hash.hpp"
 #include "throw.hpp"
 #include "uint128.hpp"
-#include "variant-hasher.hpp"
 
 namespace cartesi {
 
@@ -95,45 +94,6 @@ struct PACKED node_entry {
     machine_hash hash;  ///< Subtree hash, kept current during replay
 };
 static_assert(sizeof(node_entry) == 48, "expected wire size of node_entry is 48 bytes");
-
-using hash_type = unsigned char (*)[MACHINE_HASH_SIZE];
-using const_hash_type = const unsigned char (*)[MACHINE_HASH_SIZE];
-
-#ifdef ZKARCHITECTURE
-
-extern "C" void zk_merkle_tree_hash(hash_function_type hash_function, const unsigned char *data, size_t size,
-    hash_type hash);
-
-extern "C" void zk_concat_hash(hash_function_type hash_function, const_hash_type left, const_hash_type right,
-    hash_type result);
-
-inline void merkle_tree_hash(hash_function_type hash_function, const unsigned char *data, size_t size, hash_type hash) {
-    zk_merkle_tree_hash(hash_function, data, size, hash);
-}
-
-inline void concat_hash(hash_function_type hash_function, const_hash_type left, const_hash_type right,
-    hash_type result) {
-    zk_concat_hash(hash_function, left, right, result);
-}
-
-#else
-
-inline void merkle_tree_hash(hash_function_type hash_function, const unsigned char *data, size_t size, hash_type hash) {
-    variant_hasher h{hash_function};
-    get_merkle_tree_hash(h, std::span<const unsigned char>{data, size}, HASH_TREE_WORD_SIZE,
-        machine_hash_view{*hash, MACHINE_HASH_SIZE});
-}
-
-inline void concat_hash(hash_function_type hash_function, const_hash_type left, const_hash_type right,
-    hash_type result) {
-    variant_hasher h{hash_function};
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-    get_concat_hash(h, *reinterpret_cast<const machine_hash *>(left), *reinterpret_cast<const machine_hash *>(right),
-        *reinterpret_cast<machine_hash *>(result));
-    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
-}
-
-#endif
 
 // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast,misc-no-recursion)
 

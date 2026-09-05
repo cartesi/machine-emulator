@@ -45,6 +45,7 @@
 #include "riscv-constants.hpp"
 #include "shadow-registers.hpp"
 #include "shadow-tlb.hpp"
+#include "step-log-hash.hpp"
 #include "step-log.hpp"
 #include "strict-aliasing.hpp"
 #include "throw.hpp"
@@ -58,7 +59,7 @@ namespace cartesi {
 /// precomputed pristine-zero hash for its level; a subtree entirely within falls
 /// through to merkle_tree_hash; only the boundary subtree at each level recurses.
 /// Mirrors HashTree.merkleSubtreeHashPadded in the Solidity replayer. Heap-free so it
-/// builds in the risc0 guest.
+/// builds in a zkVM guest.
 static machine_hash merkle_subtree_hash_padded(hash_function_type hash_function, const unsigned char *data,
     uint64_t data_length, uint64_t start, int log2_size, const machine_hash *pristine) {
     constexpr int word_log2 = HASH_TREE_LOG2_WORD_SIZE;

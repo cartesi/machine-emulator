@@ -2117,7 +2117,7 @@ log_step_uarch_result machine::log_step_uarch(uint64_t uarch_cycle_count) {
     if (!std::ranges::equal(verify_step_uarch(root_hash_before, log, uarch_cycle_count), root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
-    return {std::move(log), break_reason};
+    return {.log = std::move(log), .break_reason = break_reason};
 }
 
 machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
@@ -2203,7 +2203,7 @@ log_step_result machine::log_step(uint64_t mcycle_count) {
     if (!std::ranges::equal(verify_step(root_hash_before, log, mcycle_count), root_hash_after)) {
         throw std::runtime_error("mismatch in root hash after replay");
     }
-    return {std::move(log), break_reason};
+    return {.log = std::move(log), .break_reason = break_reason};
 }
 
 machine_hash machine::verify_step(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,

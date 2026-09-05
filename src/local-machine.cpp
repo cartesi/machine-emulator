@@ -108,12 +108,11 @@ machine_hashes local_machine::do_collect_mcycle_bundle(uint64_t bundle_offset, u
     return get_machine()->collect_mcycle_bundle(bundle_offset, log2_mcycle_period, log2_bundle_mcycle_count);
 }
 
-std::pair<std::vector<unsigned char>, interpreter_break_reason> local_machine::do_log_step(uint64_t mcycle_count) {
+log_step_result local_machine::do_log_step(uint64_t mcycle_count) {
     return m_machine->log_step(mcycle_count);
 }
 
-std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> local_machine::do_log_step_uarch(
-    uint64_t uarch_cycle_count) {
+log_step_uarch_result local_machine::do_log_step_uarch(uint64_t uarch_cycle_count) {
     return get_machine()->log_step_uarch(uarch_cycle_count);
 }
 
@@ -214,7 +213,7 @@ void local_machine::do_reset_uarch() {
     get_machine()->reset_uarch();
 }
 
-std::vector<unsigned char> local_machine::do_log_reset_uarch() {
+step_log_data local_machine::do_log_reset_uarch() {
     return get_machine()->log_reset_uarch();
 }
 
@@ -245,7 +244,7 @@ void local_machine::do_send_cmio_response(uint16_t reason, const unsigned char *
     get_machine()->send_cmio_response(reason, data, length, revert_root_hash);
 }
 
-std::vector<unsigned char> local_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data,
+step_log_data local_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data,
     uint32_t length, const_machine_hash_view revert_root_hash) {
     return get_machine()->log_send_cmio_response(reason, data, length, revert_root_hash);
 }

@@ -2006,7 +2006,7 @@ void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uin
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash.value_or(const_machine_hash_view{zero}));
 }
 
-std::vector<unsigned char> machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
+step_log_data machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     const_machine_hash_view revert_root_hash) {
     // Oversized responses do not consume the data buffer.
     if (data == nullptr && length > 0 && length <= AR_CMIO_RX_BUFFER_LENGTH) {
@@ -2043,7 +2043,7 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
     if (length > UINT32_MAX) {
         throw std::invalid_argument{"CMIO response data length does not fit in 32 bits"};
     }
-    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
+    step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
     replay_step_state_access::context context;
     // Keccak-256 only, mirroring recording: these logs exist for the on-chain verifier
     replay_step_state_access a(context, image.data(), image.size(), hash_function_type::keccak256);
@@ -2071,7 +2071,7 @@ void machine::reset_uarch() {
     }
 }
 
-std::vector<unsigned char> machine::log_reset_uarch() {
+step_log_data machine::log_reset_uarch() {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{"uarch can only be used with hash tree configured with Keccak-256 hash function"};
     }
@@ -2093,7 +2093,7 @@ std::vector<unsigned char> machine::log_reset_uarch() {
 }
 
 machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log) {
-    std::vector<unsigned char> image(log.begin(), log.end());
+    step_log_data image(log.begin(), log.end());
     uarch_replay_step_state_access<>::context context;
     uarch_replay_step_state_access<> a(context, image.data(), image.size());
     context.log.check_root_hash_before(root_hash_before);
@@ -2101,8 +2101,7 @@ machine_hash machine::verify_reset_uarch(const_machine_hash_view root_hash_befor
     return a.finish();
 }
 
-std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> machine::log_step_uarch(
-    uint64_t uarch_cycle_count) {
+log_step_uarch_result machine::log_step_uarch(uint64_t uarch_cycle_count) {
     if (is_unreproducible()) {
         throw std::runtime_error("uarch cannot be used with unreproducible machines");
     }
@@ -2124,7 +2123,7 @@ std::pair<std::vector<unsigned char>, uarch_interpreter_break_reason> machine::l
 
 machine_hash machine::verify_step_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     uint64_t uarch_cycle_count) {
-    std::vector<unsigned char> image(log.begin(), log.end());
+    step_log_data image(log.begin(), log.end());
     uarch_replay_step_state_access<>::context context;
     uarch_replay_step_state_access<> a(context, image.data(), image.size());
     context.log.check_root_hash_before(root_hash_before);
@@ -2195,7 +2194,7 @@ interpreter_break_reason machine::get_state_break_reason(interpreter_break_reaso
     return fallback;
 }
 
-std::pair<std::vector<unsigned char>, interpreter_break_reason> machine::log_step(uint64_t mcycle_count) {
+log_step_result machine::log_step(uint64_t mcycle_count) {
     if (read_reg(reg::uarch_cycle) != 0) {
         throw std::runtime_error{"uarch is not reset"};
     }
@@ -2219,7 +2218,7 @@ std::pair<std::vector<unsigned char>, interpreter_break_reason> machine::log_ste
 
 machine_hash machine::verify_step(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     uint64_t mcycle_count) {
-    std::vector<unsigned char> image(log.begin(), log.end());
+    step_log_data image(log.begin(), log.end());
     replay_step_state_access::context context;
     replay_step_state_access a(context, image.data(), image.size());
     context.log.check_root_hash_before(root_hash_before);

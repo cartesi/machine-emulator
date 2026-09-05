@@ -1125,8 +1125,8 @@ template UArchStepStatus uarch_step(const collect_uarch_cycle_hashes_state_acces
 // Explicit instantiation for uarch_record_step_state_access
 template UArchStepStatus uarch_step(const uarch_record_step_state_access a);
 
-// Explicit instantiation for uarch_replay_step_state_access (replay/verify and the host printout)
-template UArchStepStatus uarch_step(const uarch_replay_step_state_access<no_step_printout> a);
+// Explicit instantiation for uarch_replay_step_state_access (replay/verify and the host dump)
+template UArchStepStatus uarch_step(const uarch_replay_step_state_access<no_step_dumper> a);
 template UArchStepStatus uarch_step(const uarch_replay_step_state_access<step_dumper> a);
 
 } // namespace cartesi

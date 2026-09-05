@@ -121,8 +121,7 @@ local cases = {
     },
 }
 
--- The reject tests feed prove claimed roots, which the log does not carry, so they come
--- from the base fixture's row in the positive manifest.
+-- Claimed roots for the reject rows come from the base fixture's row in the positive manifest.
 local base_claims = manifest.read_claims(fixtures_dir .. "/cartesi-machine-tests", BASE_NAME)
 
 test_util.prepare_empty_output_dir(output_dir)

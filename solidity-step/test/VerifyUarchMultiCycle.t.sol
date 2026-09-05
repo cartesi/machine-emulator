@@ -20,16 +20,9 @@ import {Verify} from "src/Verify.sol";
 
 import {ManifestParser} from "./ManifestParser.sol";
 
-/// Pins that Verify.verifyStep runs exactly one uarch step.
-///
-/// 1. A dispute bisects down to one uarch step, then verifies that step on chain.
-/// 2. Running two would settle a different transition than the one under dispute.
-/// 3. The log is a pure witness: it declares no cycle count, so nothing constrains
-///    the verifier but the code itself.
-/// 4. Single-cycle logs cannot catch a verifier that loops -- for them one step is
-///    already the endpoint.
-/// 5. The two-cycle log witnesses enough for a second step, so a looping verifier
-///    reaches it and lands on a root this test rejects.
+/// Pins that Verify.verifyStep runs exactly one uarch step. A one-cycle log cannot catch a
+/// verifier that loops, so the two-cycle log (same starting state) is replayed and must land
+/// on the one-cycle log's root, not its own endpoint.
 contract VerifyUarchMultiCycleTest is ManifestParser {
     string constant DIR = "test/fixtures/uarch-multi-cycle";
     string constant MANIFEST = "test/fixtures/uarch-multi-cycle/_manifest.csv";
@@ -38,7 +31,7 @@ contract VerifyUarchMultiCycleTest is ManifestParser {
         Row memory one = findManifestRowByName(MANIFEST, Kind.Cycle, "one-cycle.log");
         Row memory two = findManifestRowByName(MANIFEST, Kind.Cycle, "two-cycle.log");
         assertEq(one.rootHashBefore, two.rootHashBefore, "both logs must share a starting state");
-        assertGt(two.requestedCycleCount, 1, "scope fixture must be multi-cycle");
+        assertGt(two.requestedCycleCount, 1, "two-cycle fixture must be multi-cycle");
         bytes memory log = vm.readFileBinary(string.concat(DIR, "/", two.name));
         assertEq(
             this.verifyStep(log, two.rootHashBefore),

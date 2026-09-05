@@ -41,9 +41,6 @@ extern "C" void risc0_replay_steps(
         mcycle_end = UINT64_MAX;
     }
     interpret<replay_step_state_access&>(a, mcycle_end);
-    // The journal carries the guest's inputs and results: the cycle count it was asked to run,
-    // the root hash before recomputed from the witnessed tree, and the root hash after
-    // obtained by the replay.
     const auto obtained_root_hash_after = a.finish();
     std::memcpy(out_root_hash_before, context.log.root_hash_before.data(), 32);
     std::memcpy(out_root_hash_after, obtained_root_hash_after.data(), 32);

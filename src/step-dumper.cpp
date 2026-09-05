@@ -26,7 +26,7 @@
 namespace cartesi {
 
 std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t uarch_cycle_count) {
-    std::vector<unsigned char> image(log.begin(), log.end()); // the replay mutates the image in place
+    std::vector<unsigned char> image(log.begin(), log.end());
     uarch_replay_step_state_access<step_dumper>::context context;
     const uarch_replay_step_state_access<step_dumper> a(context, image.data(), image.size());
     // uarch_interpret's cycle-limit bookkeeping would open the printout with redundant uarch.cycle reads

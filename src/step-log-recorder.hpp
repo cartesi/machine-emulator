@@ -38,8 +38,7 @@
 namespace cartesi {
 
 /// \class step_log_recorder
-/// \brief Collects the pages, nodes and sibling hashes a recorded step touches and writes them as a
-/// binary step log. The recording state accessors adapt their interface calls onto it.
+/// \brief Collects the pages, nodes and sibling hashes a recorded step touches into a binary step log.
 class step_log_recorder {
     using page_data_type = std::array<uint8_t, HASH_TREE_PAGE_SIZE>;
     using pages_type = std::map<uint64_t, page_data_type>;

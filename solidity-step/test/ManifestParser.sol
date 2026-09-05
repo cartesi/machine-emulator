@@ -109,7 +109,6 @@ abstract contract ManifestParser is Test {
         return out;
     }
 
-    /// First row of `path` matching `kind`; reverts if there are none.
     /// Returns the row of `kind` whose `name` column matches; reverts if there is no such row.
     function findManifestRowByName(string memory path, Kind kind, string memory name)
         internal
@@ -122,6 +121,7 @@ abstract contract ManifestParser is Test {
         revert("no manifest row with that name");
     }
 
+    /// First row of `path` matching `kind`; reverts if there are none.
     function firstRow(string memory path, Kind kind) internal returns (Row memory) {
         Row[] memory rows = readManifestRows(path, kind);
         require(rows.length > 0, "no manifest row for kind");

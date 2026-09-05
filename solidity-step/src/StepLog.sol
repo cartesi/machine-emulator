@@ -44,8 +44,7 @@ library StepLog {
     /// decode found bytes left over after the step log body.
     error TrailingBytes(uint256 consumed, uint256 length);
 
-    /// Decoded step log. rootHashBefore is recomputed from the witnessed tree at decode
-    /// time; the log is only the witness, carrying no root hash claims and no cycle count.
+    /// Decoded step log. rootHashBefore is recomputed from the witnessed tree at decode time.
     struct Context {
         bytes32 rootHashBefore;
         uint8 hashFunction;

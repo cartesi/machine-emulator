@@ -18,8 +18,8 @@
 -- Every row is a call recipe plus an expected outcome: the arguments to pass to
 -- the verifier and either success (blank expect_error) or the named rejection it
 -- must revert with. For valid rows the columns are recorded truth, captured from
--- the live recording machine; the log itself carries no root hash claims. For
--- reject rows they are deliberately wrong call arguments.
+-- the live recording machine. For reject rows they are deliberately wrong call
+-- arguments.
 --
 -- The cmio `data` column is the payload's repeat unit as plain ASCII: consumers
 -- cycle it and trim to dataLength (full payloads are the identity case). Safe
@@ -47,6 +47,7 @@ local COLUMNS = {
 
 M.HEADER = table.concat(COLUMNS, ",") .. "\n"
 
+-- Local twins of cartesi.tohex/fromhex: risc0/Makefile runs this file as a CLI with bare lua5.4.
 local function tohex(bytes)
     return "0x" .. (bytes:gsub(".", function(c)
         return string.format("%02x", c:byte())
@@ -59,7 +60,7 @@ local function fromhex(hex)
     end))
 end
 
--- Splits a row into fields keyed by column name. A plain comma split is enough:
+-- Splits a row into fields keyed by column name.
 local function parse_row(line)
     local fields = {}
     for field in (line .. ","):gmatch("([^,]*),") do
@@ -116,10 +117,8 @@ function M.write_row(out, ctx)
     out:write(M.format_row(ctx))
 end
 
--- Parallel recording: workers cannot append rows to a shared manifest without
--- interleaving, so each writes its row to its own file, named after its key; once
--- all workers are done, the main process concatenates the row files in caller
--- order into the final manifest and deletes them.
+-- Parallel recording: each worker writes its row to its own file; the main process
+-- concatenates the row files in caller order into the manifest.
 function M.row_file_path(dir, key)
     return dir .. "/" .. key .. "-manifest-row.csv"
 end

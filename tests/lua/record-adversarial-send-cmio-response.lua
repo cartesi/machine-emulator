@@ -15,13 +15,9 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
--- Generates the send_cmio_response reject fixtures (keccak256).
---
--- Run record-send-cmio-response.lua first: it writes the base logs this script reads from
--- --fixtures-dir. Here they are tampered and the copies written to --output-dir.
---
--- Each fixture is a manifest row: a log, the arguments to verify it with, and the rejection it must
--- produce. The Solidity verifier and the C++/Lua host both replay the rows and must reject alike.
+-- Generates the send_cmio_response reject fixtures (keccak256). Run record-send-cmio-response.lua
+-- first: it writes the base logs this script reads from --fixtures-dir, tampers, and writes to
+-- --output-dir.
 --
 -- Only faults in the log bytes become rows. A fault in the data argument has no log to tamper --
 -- an oversized response, or a length disagreeing with the log's node -- so each language tests

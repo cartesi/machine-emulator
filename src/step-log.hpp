@@ -57,9 +57,8 @@ namespace cartesi {
 constexpr std::array<char, 8> STEP_LOG_SIGNATURE = {'C', 'T', 'S', 'I', 3, 0, 0, 0};
 
 /// \brief Fixed-size prefix of a step log file.
-/// \details The log is only the witness: it carries no root hash claims and no cycle count.
-/// The root hash before is recomputed from the witnessed tree at decode time; the cycle count
-/// and the root hash after are the caller's, driving the replay and checking its result.
+/// \details The root hash before is recomputed from the witnessed tree at decode time; the cycle
+/// count and the root hash after are the caller's, driving the replay and checking its result.
 struct PACKED step_log_header {
     std::array<char, 8> signature; ///< STEP_LOG_SIGNATURE (magic + version + reserved)
     uint64_t hash_function;        ///< Value of hash_function_type used to hash the log

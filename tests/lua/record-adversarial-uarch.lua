@@ -15,21 +15,12 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
--- Generates the uarch reject fixtures (keccak256).
---
--- Run uarch-riscv-tests.lua and record-reset-uarch.lua first: they write the base logs this script
--- reads from --fixtures-dir. Here they are tampered, or replayed with deliberately wrong claimed
--- values, and the copies written to --output-dir.
---
--- Each fixture is a manifest row: a log, the arguments to verify it with, and the rejection it must
--- produce. The Solidity verifier and the C++/Lua host in keccak mode both replay the rows and must
--- reject alike. The expectError column carries a normalized tag each replayer maps to its own error
--- (C++ message pattern, Solidity selector, RISC0 reject).
---
--- The claimed before/after roots handed to the verifier come from the base fixtures' own manifests,
--- recorded from the live machine.
---
--- The big-machine (sha256) reject fixtures for RISC0 are a separate generator.
+-- Generates the uarch reject fixtures (keccak256). Run uarch-riscv-tests.lua and
+-- record-reset-uarch.lua first: they write the base logs this script reads from --fixtures-dir,
+-- tampers, or replays with deliberately wrong claimed values, and writes to --output-dir. The
+-- expectError column carries a normalized tag each replayer maps to its own error (C++ message
+-- pattern, Solidity selector, RISC0 reject). The sha256 reject fixtures for RISC0 are a separate
+-- generator.
 
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")

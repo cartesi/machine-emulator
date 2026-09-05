@@ -124,6 +124,7 @@ brew install cartesi-machine
 - Libslirp >= 4.6.0 (optional, required for networking support)
 - luaposix (optional, required for running the test suite; install into the same Lua tree, e.g. `luarocks install luaposix`)
 - Rust and RISC Zero toolchain (optional, required for building the RISC Zero prover)
+- Foundry (optional, required for the Solidity step library)
 
 ###### Debian Requirements
 
@@ -159,7 +160,9 @@ into the zkVM guest, so it is part of the reproducible Image ID
 (`risc0/cpp/Makefile` enforces the version and fails with instructions on
 mismatch).
 
-Then build with `make risc0`.
+Then build with `make risc0`. By default the guest binary is built inside Docker so every
+machine produces the same Image ID; set `RISC0_REPRODUCIBLE_BUILD=0` to build it natively
+when Docker is unavailable (the Image ID will then differ from the pinned one).
 
 ###### Foundry Requirements (optional, for the Solidity step library)
 

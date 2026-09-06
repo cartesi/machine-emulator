@@ -9558,12 +9558,14 @@ tournament queries. The mcycle build (`build_mcycle_claim` in
 bundle roots into the outer forest, padding each input’s span with the
 fixed point where its guest stopped, and offering the machine to a
 bounded cache after every hash-collection call. The default policy
-initially retains every offer, then progressively doubles their spacing
-and replaces obsolete snapshots one at a time. The refinement re-run
+initially retains every offer. Once full, it uses a circular replacement
+cursor to remove one neighboring checkpoint closer than the current gap
+whenever a sufficiently distant new offer arrives; after a complete pass
+finds no such neighbor, the gap doubles. The refinement re-run
 (`refine_mcycle_claim`) starts at the closest retained
-`(input_index, period_index)` and recovers one bundle’s samples the same
-way; a cache miss replays deterministically from the initial machine.
-The uarch build (`build_uarch_claim`) expands one period, instruction by
+`epoch_period_index` and recovers one bundle’s samples the same way; a
+cache miss replays deterministically from the initial machine. The uarch
+build (`build_uarch_claim`) expands one period, instruction by
 instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose
 stream already carries the halt repetitions compressed and the reset
 hashes marked.
@@ -9878,7 +9880,7 @@ fresh fork at the transition and logging it:
 function handlers.prove_state_transition(player, input_index, period_index, state_transition_offset)
     local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
-    local machine <close> = fork_input_boundary(player, input_index + 1)
+    local machine <close> = replay_to_input_boundary(player, input_index + 1)
     local data = player.inputs[input_index + 1]
     if state_transition_offset == 0 and period_index == 0 and data then
         local revert_state_hash = machine:get_root_hash()

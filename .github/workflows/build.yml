@@ -1026,8 +1026,10 @@ jobs:
           rzup install rust
           rzup show
 
+      # Do not add -t: it would merge the entrypoint's "Running as ..." stderr line into the
+      # redirected stdout.
       - name: Build interpret-jump-table.hpp
-        run: docker run --rm -v .:/this-dir -t ${{ github.repository_owner }}/machine-emulator:tests-builder /this-dir/tools/gen-interpret-jump-table.lua > src/interpret-jump-table.hpp
+        run: docker run --rm -v .:/this-dir ${{ github.repository_owner }}/machine-emulator:tests-builder /this-dir/tools/gen-interpret-jump-table.lua > src/interpret-jump-table.hpp
 
       - name: Install lua5.4
         run: sudo apt-get update && sudo apt-get install -y lua5.4

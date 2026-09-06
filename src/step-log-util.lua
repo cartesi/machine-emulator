@@ -16,13 +16,12 @@
 -- limitations under the License.
 --
 
+-- The cartesi module is optional: without it a log can still be inspected on a machine
+-- with no built emulator, minus the region names.
 local cartesi
-local cartesi_util
 do
     local ok, mod = pcall(require, "cartesi")
     if ok then cartesi = mod end
-    local ok_u, util = pcall(require, "cartesi.util")
-    if ok_u then cartesi_util = util end
 end
 
 local HASH_SIZE = cartesi and cartesi.HASH_SIZE or 32
@@ -43,10 +42,9 @@ local HASH_FUNCTION_NAMES = {
     [cartesi and cartesi.HASH_FUNCTION_SHA256 or 1] = "sha256",
 }
 
-local hexstring = (cartesi_util and cartesi_util.hexstring)
-    or function(s)
-        return (s:gsub(".", function(c) return string.format("%02x", string.byte(c)) end))
-    end
+local function hexstring(s)
+    return (s:gsub(".", function(c) return string.format("%02x", string.byte(c)) end))
+end
 
 local REGIONS
 if cartesi then

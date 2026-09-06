@@ -23,14 +23,9 @@ LUA_BIN          ?= lua5.4
 LUA              ?= $(LUA_BIN)
 CARTESI_RISC0_CLI := $(abspath rust/target/debug/cartesi-risc0-cli)
 EMULATOR_DIR     := $(abspath ..)
-# Restricts which machine tests are recorded (Lua pattern, full match); default = all.
-MACHINE_TEST     ?=
 
-NUM_JOBS ?= $(shell getconf _NPROCESSORS_ONLN)
-
-# Fixture dirs are absolute so they survive the cd into $(EMULATOR_DIR) in the recipe.
 FIXTURES_DIR     := test/fixtures
-MACHINE_FIXTURES_DIR := $(abspath $(FIXTURES_DIR)/cartesi-machine-tests)
+# Absolute so it survives the cd into rust/ in the proving recipes.
 ONE_MCYCLE_DIR   := $(abspath $(FIXTURES_DIR)/one-mcycle)
 STEP_LOG         := $(ONE_MCYCLE_DIR)/one-mcycle.log
 RECEIPT          := $(FIXTURES_DIR)/receipt.bin
@@ -110,10 +105,8 @@ coverage-pipeline: $(STEP_LOG)
 #   one-mcycle/             one 1-mcycle log for the prove->compress->Sepolia pipeline
 #   reject-machine/         structurally-invalid logs the guest must reject (tampers the above)
 fixtures:
-	@cd $(EMULATOR_DIR) && eval $$($(MAKE) env) && \
-	  RECORDERS_DIR=tests/lua MACHINE_TESTS_PATH=tests/build/machine \
-	  LUA='$(LUA)' JOBS=$(NUM_JOBS) MACHINE_TEST='$(MACHINE_TEST)' \
-	  tests/scripts/record-machine-step-fixtures.sh $(abspath $(FIXTURES_DIR))
+	@$(MAKE) -C $(EMULATOR_DIR) create-machine-step-fixtures \
+	  CARTESI_MACHINE_STEP_FIXTURES_PATH=$(abspath $(FIXTURES_DIR))
 
 $(STEP_LOG):
 	@echo "$(STEP_LOG) not found; run 'make fixtures' (needs a built emulator)" >&2

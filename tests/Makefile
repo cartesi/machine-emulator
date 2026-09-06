@@ -37,6 +37,9 @@ CARTESI_CMIO_PATH ?= $(abspath ./build/cmio)
 CARTESI_TESTS_PATH ?= $(abspath ./build/machine)
 CARTESI_TESTS_UARCH_PATH ?= $(abspath ./build/uarch)
 CARTESI_COMPUTATION_HASH_CORPUS_PATH ?= $(abspath ./build/computation-hash-corpus)
+# The solidity-step and risc0 suites override these to record into their own test/fixtures.
+CARTESI_UARCH_STEP_FIXTURES_PATH ?= $(abspath ./build/uarch-step-fixtures)
+CARTESI_MACHINE_STEP_FIXTURES_PATH ?= $(abspath ./build/machine-step-fixtures)
 
 export CARTESI_IMAGES_PATH
 export CARTESI_CMIO_PATH
@@ -297,6 +300,33 @@ verify-existing-computation-hash-corpus: | $(TEST_COMPUTATION_HASH_ORDER)
 	$(LUA_CLI) ./lua/test-computation-hash.lua
 
 
+# Restricts which uarch tests are recorded into fixtures. Default = the full rv64ui-uarch
+# suite (the uarch corpus has no -p-/-v- variants), so any instruction-handler or ECALL
+# transpilation regression is caught. Override for quick iteration, e.g.
+#   make UARCH_TEST_PATTERN='rv64ui%-uarch%-add.-%.bin' create-uarch-step-fixtures
+UARCH_TEST_PATTERN ?= rv64ui%-uarch%-.+%.bin
+# Restricts which machine tests are recorded (Lua pattern, full match); default = all.
+MACHINE_TEST ?=
+
+# The uarch recorders refuse a non-empty output dir, so start from a clean one.
+create-uarch-step-fixtures: clean-uarch-step-fixtures
+	RECORDERS_DIR=$(abspath ./lua) UARCH_TESTS_PATH=$(CARTESI_TESTS_UARCH_PATH) \
+		LUA='$(LUA_BIN)' UARCH_TEST_PATTERN='$(UARCH_TEST_PATTERN)' \
+		./scripts/record-uarch-step-fixtures.sh $(CARTESI_UARCH_STEP_FIXTURES_PATH)
+
+clean-uarch-step-fixtures:
+	@rm -rf $(CARTESI_UARCH_STEP_FIXTURES_PATH)
+
+# No clean twin here: the machine fixture dir also holds the risc0 receipt, seal and journal,
+# and re-recording must not force a re-prove. The recorder script clears what it must.
+create-machine-step-fixtures:
+	RECORDERS_DIR=$(abspath ./lua) MACHINE_TESTS_PATH=$(CARTESI_TESTS_PATH) \
+		LUA='$(LUA_BIN)' JOBS=$(NUM_JOBS) MACHINE_TEST='$(MACHINE_TEST)' \
+		./scripts/record-machine-step-fixtures.sh $(CARTESI_MACHINE_STEP_FIXTURES_PATH)
+
+clean-machine-step-fixtures:
+	@rm -rf $(CARTESI_MACHINE_STEP_FIXTURES_PATH)
+
 test-cmio: | $(CARTESI_CMIO_PATH)
 	@./scripts/test-cmio.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua'
 
@@ -483,3 +513,5 @@ check-lua:
 .PHONY: build-tests-computation-hash-fixtures build-computation-hash-corpus \
 	build-computation-hash-corpus-with-toolchain create-computation-hash-corpus archive-computation-hash-corpus \
 	test-computation-hash verify-existing-computation-hash-corpus clean-computation-hash-corpus
+.PHONY: create-uarch-step-fixtures clean-uarch-step-fixtures \
+	create-machine-step-fixtures clean-machine-step-fixtures

@@ -169,6 +169,8 @@ ADD_GENERATED_FILES_DIFF= add-generated-files.diff
 COMPUTATION_HASH_TARGETS= build-computation-hash-corpus build-computation-hash-corpus-with-toolchain \
 	create-computation-hash-corpus archive-computation-hash-corpus \
 	verify-existing-computation-hash-corpus clean-computation-hash-corpus
+STEP_FIXTURE_TARGETS= create-uarch-step-fixtures clean-uarch-step-fixtures \
+	create-machine-step-fixtures clean-machine-step-fixtures
 
 all: source-default
 
@@ -264,6 +266,9 @@ test% coverage% build-tests%:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
 $(COMPUTATION_HASH_TARGETS):
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
+
+$(STEP_FIXTURE_TARGETS):
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
 clean-coverage:

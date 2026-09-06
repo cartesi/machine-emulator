@@ -21,13 +21,6 @@ EMULATOR_DIR := $(abspath ..)
 LUA_BIN      ?= $(shell which lua5.4)
 FIXTURES_DIR := test/fixtures
 
-# Restricts which uarch tests are recorded into fixtures. Default = the full
-# rv64ui-uarch suite (the uarch corpus has no -p-/-v- variants), so any
-# instruction-handler or ECALL transpilation regression is caught. Override for
-# quick iteration, e.g.
-#   make UARCH_TEST_PATTERN='rv64ui%-uarch%-add.-%.bin' fixtures
-UARCH_TEST_PATTERN ?= rv64ui%-uarch%-.+%.bin
-
 .PHONY: all dep build test coverage format check-format fixtures fixtures-clean clean \
         gen-constants check-gen-constants \
         gen-transpiled check-gen-transpiled \
@@ -107,11 +100,9 @@ test-transpile:
 gen-all:       gen-constants gen-transpiled
 check-gen-all: check-gen-constants check-gen-transpiled test-transpile
 
-fixtures: fixtures-clean
-	@cd $(EMULATOR_DIR) && eval $$($(MAKE) env) && \
-	  RECORDERS_DIR=tests/lua UARCH_TESTS_PATH=tests/build/uarch \
-	  LUA='$(LUA_BIN)' UARCH_TEST_PATTERN='$(UARCH_TEST_PATTERN)' \
-	  tests/scripts/record-uarch-step-fixtures.sh $(abspath $(FIXTURES_DIR))
+fixtures:
+	@$(MAKE) -C $(EMULATOR_DIR) create-uarch-step-fixtures \
+	  CARTESI_UARCH_STEP_FIXTURES_PATH=$(abspath $(FIXTURES_DIR))
 
 fixtures-clean:
 	rm -rf $(FIXTURES_DIR)

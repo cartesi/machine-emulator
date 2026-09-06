@@ -22,7 +22,6 @@
 #include <vector>
 
 #include "cm.h"
-#include "step-log-data.hpp"
 
 /// \brief Helper function that returns error result from C api function
 CM_API cm_error cm_result_failure();
@@ -34,6 +33,6 @@ CM_API cm_error cm_result_success();
 CM_API const char *cm_set_temp_string(const std::string &s);
 
 /// \brief Helper function that stores binary data to a temporary thread local.
-CM_API const uint8_t *cm_set_temp_data(cartesi::step_log_data data);
+CM_API const uint8_t *cm_set_temp_data(std::vector<unsigned char> data);
 
 #endif // CM_INTERNAL_HPP

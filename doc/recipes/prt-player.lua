@@ -450,13 +450,17 @@ local function get_claim_tree(player, computation_hash)
 end
 
 -- A claim: the computation hash's two children and the standard proof of its final state,
--- the last leaf.
+-- the last leaf. Producing the proof explicitly opens the last stored bundle.
 local function make_claim(tree)
+    local final_state_index = (1 << tree.height) - 1
+    if tree.bundle_height > 0 then
+        tree:open_bundle(final_state_index >> tree.bundle_height)
+    end
     local computation_hash_left, computation_hash_right = tree:get_children(0, tree.height)
     return {
         computation_hash_left = computation_hash_left,
         computation_hash_right = computation_hash_right,
-        final_state_hash_proof = tree:prove((1 << tree.height) - 1),
+        final_state_hash_proof = tree:prove(final_state_index),
     }
 end
 
@@ -476,13 +480,21 @@ function handlers.commit_mcycle_claim(player)
 end
 
 -- Reveals the nodes the referee needs for one bisection advance: the claim's node at
--- (position, height), and the children of the node the walk descends into.
+-- (position, height), and the children of the node the walk descends into. Either node can
+-- cross into a stored bundle here because the claims alternate turns; crossing reconstructs
+-- and authenticates that complete bundle before the walk continues through it.
 function handlers.reveal_bisection(player, computation_hash, position, height, other_left_node)
     assert(height > 1)
     local tree = get_claim_tree(player, computation_hash)
+    if height == tree.bundle_height then
+        tree:open_bundle(position >> tree.bundle_height)
+    end
     local turn_left_node, turn_right_node = tree:get_children(position, height)
     local descend_left = turn_left_node ~= other_left_node
     local child_position = descend_left and position or position + (1 << (height - 1))
+    if height - 1 == tree.bundle_height then
+        tree:open_bundle(child_position >> tree.bundle_height)
+    end
     local turn_next_left_node, turn_next_right_node = tree:get_children(child_position, height - 1)
     return {
         turn_left_node = turn_left_node,
@@ -494,6 +506,7 @@ end
 
 -- Seals the leftmost divergence: exposes the final leaves and proves the agreed state
 -- immediately before them, except at state zero where the referee already knows that state.
+-- At the first leaf of a bundle, the proof explicitly opens the preceding bundle too.
 function handlers.seal_divergence(player, computation_hash, position, other_left_node)
     local tree = get_claim_tree(player, computation_hash)
     local turn_left_node, turn_right_node = tree:get_children(position, 1)
@@ -501,7 +514,11 @@ function handlers.seal_divergence(player, computation_hash, position, other_left
     local descend_left = turn_left_node ~= other_left_node
     local state_index = position + (descend_left and 0 or 1)
     if state_index ~= 0 then
-        response.agreed_state_hash_proof = tree:prove(state_index - 1)
+        local agreed_state_index = state_index - 1
+        if tree.bundle_height > 0 then
+            tree:open_bundle(agreed_state_index >> tree.bundle_height)
+        end
+        response.agreed_state_hash_proof = tree:prove(agreed_state_index)
         assert(
             descend_left or response.agreed_state_hash_proof.target_hash == turn_left_node,
             "right divergence has the wrong agreed state"
@@ -773,6 +790,12 @@ end
 
 function patched_meta.__index.get_root(tree)
     return tree.path[tree.height - tree.bundle_height]
+end
+
+function patched_meta.__index.open_bundle(tree, bundle)
+    if bundle ~= tree.patched_bundle then
+        tree.honest:open_bundle(bundle)
+    end
 end
 
 function patched_meta.__index.get_node(tree, position, height)

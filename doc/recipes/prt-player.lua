@@ -28,6 +28,7 @@ end
 
 local LOG2_MCYCLE_BUNDLE = 4
 local LOG2_UARCH_BUNDLE = 16
+local LOG2_HASHES_PER_CHUNK = 8
 local DEFAULT_MACHINE_CACHE_CAPACITY = 8
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 local WORD_MASK = WORD_SIZE - 1
@@ -50,12 +51,16 @@ local function is_at_fixed_point(break_reason)
         or break_reason == cartesi.BREAK_REASON_MCYCLE_OVERFLOW
 end
 
--- The root of a complete subtree whose leaves are all the same state hash.
-local function repeat_state_hash(state_hash, height)
-    for _ = 1, height do
-        state_hash = keccak(state_hash, state_hash)
+local function is_target_mcycle(break_reason)
+    return break_reason == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
+end
+
+local function mcycle_hashes_chunk_size(log2_period, log2_bundle)
+    local log2_chunk_size = log2_period + log2_bundle + LOG2_HASHES_PER_CHUNK
+    if log2_chunk_size >= 64 then
+        return cartesi.MCYCLE_MAX
     end
-    return state_hash
+    return 1 << log2_chunk_size
 end
 
 -- Forks a machine's server. The fork is shut down when the object holding it is closed or
@@ -361,73 +366,147 @@ end
 -- PRT appends to a frontier forest, which retains the nodes a later match walk needs, while
 -- cartesi-machine appends to a plain frontier.
 local function push_mcycle_collection(collection, collected)
-    local count = math.min(#collected.hashes, collection.capacity - collection.count)
-    hash_tree.frontier_forest_append(collection.forest, collected.hashes, 1, count)
+    local count = math.min(#collected.hashes, collection.input_entry_capacity - collection.input_entry_count)
+    hash_tree.frontier_forest_append(collection.frontier, collected.hashes, 1, count)
     if count > 0 then
         collection.last_bundle = collected.hashes[count]
     end
-    collection.count = collection.count + count
+    collection.input_entry_count = collection.input_entry_count + count
     if not is_at_fixed_point(collected.break_reason) then
         return
     end
     assert(#collected.hashes > 0, "fixed-point mcycle collection has no final bundle")
     collection.pad_bundle = collected.hashes[#collected.hashes]
-    hash_tree.frontier_forest_pad_back(collection.forest, collection.pad_bundle, collection.capacity - collection.count)
-    collection.count = collection.capacity
+    hash_tree.frontier_forest_pad_back(
+        collection.frontier,
+        collection.pad_bundle,
+        collection.input_entry_capacity - collection.input_entry_count
+    )
+    collection.input_entry_count = collection.input_entry_capacity
 end
 
-local function new_mcycle_collection(player, machine, forest, capacity, log2_bundle, input_index, input_base)
+-- Opens an epoch computation hash. Its frontier is a forest so the player can later descend to
+-- any retained bundle; otherwise this is the same lifecycle used by cartesi-machine.lua.
+local function mcycle_computation_hash_begin_epoch(claim)
+    claim.frontier = hash_tree.frontier_forest(claim.player.geometry.mcycle_height - claim.log2_bundle, "keccak256")
+    claim.input_entry_capacity = claim.player.bundles_per_input
+    claim.epoch_entry_count = 0
+    claim.pad_bundle = nil
+end
+
+-- Input delivery does not advance mcycle. Open at the virgin boundary, exclude that boundary from
+-- the samples, and limit collection to this input's mcycle budget.
+local function mcycle_computation_hash_begin_input(claim, input_index)
+    claim.input_index = input_index
+    claim.input_entry_count = 0
+    claim.mcycle_phase = 0
+    claim.partial_bundle = nil
+    claim.input_base = claim.machine:read_reg("mcycle")
+    claim.input_mcycle_end = claim.input_base + (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+end
+
+-- Offers the machine after every collect call. Only exact period boundaries are useful as
+-- checkpoints; an accepted yield is the next input's virgin period zero, while a rejected yield
+-- is deliberately not cached because its claim entries use the revert state.
+local function consider_mcycle_machine(claim, collected)
+    local input_index = claim.input_index
+    local period_index
+    if collected.break_reason ~= cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY and collected.mcycle_phase == 0 then
+        period_index = (claim.machine:read_reg("mcycle") - claim.input_base) >> claim.log2_period
+    end
+    if collected.break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
+        local reason = manual_yield(claim.machine)
+        if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+            input_index = input_index + 1
+            period_index = 0
+        elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+            period_index = nil
+        end
+    end
+    claim.player.machine_cache:consider(input_index, period_index, claim.machine)
+end
+
+-- Samples this input in the same bounded chunks as cartesi-machine.lua. The phase and partial
+-- bundle cross calls, so tamper points and automatic yields do not disturb the hash stream.
+local function mcycle_computation_hash_run(claim, mcycle_end)
+    mcycle_end = math.min(mcycle_end, claim.input_mcycle_end)
+    local collected = {
+        mcycle_phase = claim.mcycle_phase,
+        partial_bundle = claim.partial_bundle,
+    }
+    local chunk_end = claim.machine:read_reg("mcycle")
+    repeat
+        chunk_end = math.min(chunk_end + claim.chunk_size, mcycle_end)
+        collected = claim.machine:collect_mcycle_root_hashes(
+            chunk_end,
+            claim.log2_period,
+            collected.mcycle_phase,
+            claim.log2_bundle,
+            collected.partial_bundle
+        )
+        push_mcycle_collection(claim, collected)
+        consider_mcycle_machine(claim, collected)
+    until not is_target_mcycle(collected.break_reason) or chunk_end == mcycle_end
+    claim.mcycle_phase = collected.mcycle_phase
+    claim.partial_bundle = collected.partial_bundle
+    return collected.break_reason
+end
+
+local function mcycle_computation_hash_end_input(claim)
+    assert(claim.input_entry_count == claim.input_entry_capacity, "mcycle computation hash input is incomplete")
+    claim.epoch_entry_count = claim.epoch_entry_count + claim.input_entry_capacity
+    claim.input_entry_count = nil
+end
+
+-- Unprocessed inputs repeat the last fixed-point bundle, exactly as in cartesi-machine.lua. With
+-- no processed input, obtain that bundle directly from the initial fixed-point machine.
+local function mcycle_computation_hash_end_epoch(claim)
+    local pad_bundle = claim.pad_bundle
+    if not pad_bundle then
+        local collected = claim.machine:collect_mcycle_root_hashes(
+            claim.machine:read_reg("mcycle"),
+            claim.log2_period,
+            0,
+            claim.log2_bundle
+        )
+        assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash ended outside a fixed point")
+        pad_bundle = collected.hashes[#collected.hashes]
+        assert(pad_bundle, "fixed-point mcycle collection has no final bundle")
+    end
+    hash_tree.frontier_forest_pad_back(
+        claim.frontier,
+        pad_bundle,
+        claim.player.mcycle_bundles - claim.epoch_entry_count
+    )
+    return claim.frontier
+end
+
+local function new_mcycle_computation_hash(player, machine)
+    local log2_period = player.geometry.log2_mcycles_per_period
     return {
-        machine = machine,
-        forest = forest,
-        capacity = capacity,
-        count = 0,
-        mcycle_phase = 0,
-        log2_mcycles_per_period = player.geometry.log2_mcycles_per_period,
-        log2_bundle = log2_bundle,
         player = player,
-        input_index = input_index,
-        input_base = input_base,
+        machine = machine,
+        chunk_size = mcycle_hashes_chunk_size(log2_period, LOG2_MCYCLE_BUNDLE),
+        log2_period = log2_period,
+        log2_bundle = LOG2_MCYCLE_BUNDLE,
+        begin_epoch = mcycle_computation_hash_begin_epoch,
+        begin_input = mcycle_computation_hash_begin_input,
+        run = mcycle_computation_hash_run,
+        end_input = mcycle_computation_hash_end_input,
+        end_epoch = mcycle_computation_hash_end_epoch,
     }
 end
 
--- Collects into one claim segment up to mcycle_end. The phase and partial bundle live in the
--- segment, so a tamper split and automatic yields continue the same sampling stream.
-local function collect_mcycle_bundles(collection, mcycle_end)
-    local collected
-    repeat
-        collected = collection.machine:collect_mcycle_root_hashes(
-            mcycle_end,
-            collection.log2_mcycles_per_period,
-            collection.mcycle_phase,
-            collection.log2_bundle,
-            collection.partial_bundle
-        )
-        push_mcycle_collection(collection, collected)
-        collection.mcycle_phase = collected.mcycle_phase
-        collection.partial_bundle = collected.partial_bundle
-        if collected.break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
-            collection.machine:receive_cmio_request()
+-- Runs a computation-hash runner through automatic yields until it reaches the requested mcycle or
+-- a fixed point. The terminal manual yield remains available to the epoch driver.
+local function run_computation_hash_to_stop(claim, mcycle_end)
+    while true do
+        local break_reason = claim:run(mcycle_end)
+        if break_reason ~= cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
+            return break_reason
         end
-        local input_index = collection.input_index
-        local period_index
-        if collection.mcycle_phase == 0 then
-            period_index = (collection.machine:read_reg("mcycle") - collection.input_base)
-                >> collection.log2_mcycles_per_period
-        end
-        if collected.break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
-            local reason = manual_yield(collection.machine)
-            if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-                input_index = input_index + 1
-                period_index = 0
-            elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
-                period_index = nil
-            end
-        end
-        collection.player.machine_cache:consider(input_index, period_index, collection.machine)
-    until collected.break_reason ~= cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
-        or collection.count == collection.capacity
-    return collected.break_reason
+        claim.machine:receive_cmio_request()
+    end
 end
 
 -- Builds the mcycle claim's outer forest by advancing the epoch. Each input is fed and
@@ -440,35 +519,30 @@ end
 -- docs:begin build_mcycle_claim
 local function build_mcycle_claim(player)
     local machine <close> = load_remote_machine(player.initial_state_hash)
-    local outer = hash_tree.frontier_forest(player.geometry.mcycle_height - LOG2_MCYCLE_BUNDLE, "keccak256")
-    local filled = 0
-    local initial_state_hash = machine:get_root_hash()
-    local epoch_pad_bundle = repeat_state_hash(initial_state_hash, LOG2_MCYCLE_BUNDLE)
+    local claim = new_mcycle_computation_hash(player, machine)
+    claim:begin_epoch()
     for index, data in ipairs(player.inputs) do
         local boundary <close> = fork_server(machine)
+        claim:begin_input(index - 1)
         feed_input(machine, data)
-        local base = machine:read_reg("mcycle")
-        local collection =
-            new_mcycle_collection(player, machine, outer, player.bundles_per_input, LOG2_MCYCLE_BUNDLE, index - 1, base)
         local tamper = player.tamper
         if tamper and tamper.input == index then
-            local break_reason = collect_mcycle_bundles(collection, base + tamper_offset(player))
+            local break_reason = run_computation_hash_to_stop(claim, claim.input_base + tamper_offset(player))
             assert(not is_at_fixed_point(break_reason), "the machine stopped before the tamper point")
             tamper.apply(machine)
         end
-        collect_mcycle_bundles(collection, base + (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE))
-        assert(collection.count == collection.capacity, "mcycle computation hash input is incomplete")
-        epoch_pad_bundle = collection.pad_bundle or collection.last_bundle
-        filled = filled + player.bundles_per_input
-        if manual_yield(machine) == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+        run_computation_hash_to_stop(claim, claim.input_mcycle_end)
+        claim:end_input()
+        local yield_reason = manual_yield(machine)
+        if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             player.machine_cache:discard_input(index - 1)
             machine:shutdown_server()
             machine:swap(fork_server(boundary))
+        elseif yield_reason ~= cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+            break
         end
     end
-    -- the rest of the epoch repeats the last input's fixed point
-    hash_tree.frontier_forest_pad_back(outer, epoch_pad_bundle, player.mcycle_bundles - filled)
-    return outer
+    return claim:end_epoch()
 end
 -- docs:end build_mcycle_claim
 
@@ -503,9 +577,23 @@ local function refine_mcycle_claim(player, bundle)
     local machine <close> = fork_mcycle_position(player, input_index, bundle_period)
     local start = machine:read_reg("mcycle")
     local base = start - window_start
-    local collection = new_mcycle_collection(player, machine, bundle_forest, bundle_size, 0, input_index - 1, base)
-    collect_mcycle_bundles(collection, start + bundle_size * player.geometry.mcycles_per_period)
-    assert(collection.count == collection.capacity, "mcycle refinement did not fill its bundle")
+    local collection = {
+        player = player,
+        machine = machine,
+        frontier = bundle_forest,
+        chunk_size = mcycle_hashes_chunk_size(player.geometry.log2_mcycles_per_period, 0),
+        log2_period = player.geometry.log2_mcycles_per_period,
+        log2_bundle = 0,
+        input_index = input_index - 1,
+        input_base = base,
+        input_mcycle_end = start + bundle_size * player.geometry.mcycles_per_period,
+        input_entry_capacity = bundle_size,
+        input_entry_count = 0,
+        mcycle_phase = 0,
+        run = mcycle_computation_hash_run,
+    }
+    run_computation_hash_to_stop(collection, collection.input_mcycle_end)
+    assert(collection.input_entry_count == collection.input_entry_capacity, "mcycle refinement did not fill its bundle")
     return bundle_forest
 end
 -- docs:end refine_mcycle_claim

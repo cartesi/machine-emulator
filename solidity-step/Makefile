@@ -64,38 +64,42 @@ format:
 check-format:
 	forge fmt --check
 
+# Directory the generators write into; the check-* twins point it at a scratch dir and
+# diff the result against the committed files.
+GEN_SOL_DIR ?= src
+TRANSPILED_SOL = UArchStep.sol UArchReset.sol SendCmioResponse.sol
+
 # gen-constants reads the live cartesi Lua module, so it needs the emulator's
 # LUA_PATH_5_4 / LUA_CPATH_5_4 (a built cartesi.so); gen-transpiled needs only lpeg.
 gen-constants:
 	@eval $$($(MAKE) -sC $(EMULATOR_DIR) --no-print-directory env) && \
-	  $(LUA_BIN) tools/gen-emulator-constants.lua > src/EmulatorConstants.sol
-	@forge fmt src/EmulatorConstants.sol
-	@echo "Regenerated src/EmulatorConstants.sol"
+	  $(LUA_BIN) tools/gen-emulator-constants.lua > $(GEN_SOL_DIR)/EmulatorConstants.sol
+	@forge fmt $(GEN_SOL_DIR)/EmulatorConstants.sol
+	@echo "Wrote $(GEN_SOL_DIR)/EmulatorConstants.sol"
 
 check-gen-constants:
-	@eval $$($(MAKE) -sC $(EMULATOR_DIR) --no-print-directory env) && \
-	  $(LUA_BIN) tools/gen-emulator-constants.lua > /tmp/EmulatorConstants.gen.sol
-	@forge fmt /tmp/EmulatorConstants.gen.sol
-	@diff -u src/EmulatorConstants.sol /tmp/EmulatorConstants.gen.sol \
-	  || { echo "ERROR: src/EmulatorConstants.sol is stale. Run 'make gen-constants' and commit."; exit 1; }
-	@echo "src/EmulatorConstants.sol is in sync with the generator."
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	  $(MAKE) -s gen-constants GEN_SOL_DIR="$$tmp" && \
+	  if ! diff -u src/EmulatorConstants.sol "$$tmp/EmulatorConstants.sol"; then \
+	    echo "ERROR: src/EmulatorConstants.sol is stale. Run 'make gen-constants' and commit."; exit 1; \
+	  fi && \
+	  echo "src/EmulatorConstants.sol is in sync with the generator."
 
 gen-transpiled:
-	$(LUA_BIN) tools/transpile-uarch.lua $(EMULATOR_DIR)/src/uarch-step.cpp         src/UArchStep.sol         UArchStep         uarchStep
-	$(LUA_BIN) tools/transpile-uarch.lua $(EMULATOR_DIR)/src/uarch-reset-state.cpp  src/UArchReset.sol        UArchReset        uarchResetState
-	$(LUA_BIN) tools/transpile-uarch.lua $(EMULATOR_DIR)/src/send-cmio-response.cpp src/SendCmioResponse.sol  SendCmioResponse  sendCmioResponse
-	@forge fmt src/UArchStep.sol src/UArchReset.sol src/SendCmioResponse.sol
+	$(LUA_BIN) tools/transpile-uarch.lua $(EMULATOR_DIR)/src/uarch-step.cpp         $(GEN_SOL_DIR)/UArchStep.sol         UArchStep         uarchStep
+	$(LUA_BIN) tools/transpile-uarch.lua $(EMULATOR_DIR)/src/uarch-reset-state.cpp  $(GEN_SOL_DIR)/UArchReset.sol        UArchReset        uarchResetState
+	$(LUA_BIN) tools/transpile-uarch.lua $(EMULATOR_DIR)/src/send-cmio-response.cpp $(GEN_SOL_DIR)/SendCmioResponse.sol  SendCmioResponse  sendCmioResponse
+	@forge fmt $(addprefix $(GEN_SOL_DIR)/,$(TRANSPILED_SOL))
 
 check-gen-transpiled:
-	@$(LUA_BIN) tools/transpile-uarch.lua $(EMULATOR_DIR)/src/uarch-step.cpp         /tmp/UArchStep.gen.sol         UArchStep         uarchStep
-	@$(LUA_BIN) tools/transpile-uarch.lua $(EMULATOR_DIR)/src/uarch-reset-state.cpp  /tmp/UArchReset.gen.sol        UArchReset        uarchResetState
-	@$(LUA_BIN) tools/transpile-uarch.lua $(EMULATOR_DIR)/src/send-cmio-response.cpp /tmp/SendCmioResponse.gen.sol  SendCmioResponse  sendCmioResponse
-	@forge fmt /tmp/UArchStep.gen.sol /tmp/UArchReset.gen.sol /tmp/SendCmioResponse.gen.sol
-	@for f in UArchStep UArchReset SendCmioResponse; do \
-	  diff -u src/$$f.sol /tmp/$$f.gen.sol \
-	    || { echo "ERROR: src/$$f.sol is stale. Run 'make gen-transpiled' and commit."; exit 1; }; \
-	done
-	@echo "All transpiled .sol files are in sync with the C++ sources."
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	  $(MAKE) -s gen-transpiled GEN_SOL_DIR="$$tmp" && \
+	  for f in $(TRANSPILED_SOL); do \
+	    if ! diff -u src/$$f "$$tmp/$$f"; then \
+	      echo "ERROR: src/$$f is stale. Run 'make gen-transpiled' and commit."; exit 1; \
+	    fi; \
+	  done && \
+	  echo "All transpiled .sol files are in sync with the C++ sources."
 
 test-transpile:
 	$(LUA_BIN) tools/test-transpile-uarch.lua

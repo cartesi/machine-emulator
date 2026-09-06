@@ -1011,12 +1011,15 @@ jobs:
 
       - name: Generate risc0 fixtures
         # record-machine-step-fixtures.sh is the same recorder the risc0/Makefile fixtures target
-        # runs; its defaults target the installed emulator inside the tests image.
+        # runs; its defaults target the installed emulator inside the tests image. The container
+        # records into its own filesystem and docker cp brings the tree out, so the workspace
+        # needs no directory the container's fixed user would have to be granted write access to.
         run: |
-          mkdir -p risc0/test/fixtures/cartesi-machine-tests risc0/test/fixtures/one-mcycle
-          chmod -R 777 risc0/test/fixtures
-          docker run --rm -t -v ${{ github.workspace }}/risc0/test/fixtures:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
-            /usr/share/cartesi-machine/tests/scripts/record-machine-step-fixtures.sh /fixtures
+          mkdir -p risc0/test
+          docker run --name risc0-fixtures -t ${{ github.repository_owner }}/machine-emulator:tests \
+            /usr/share/cartesi-machine/tests/scripts/record-machine-step-fixtures.sh /tmp/fixtures
+          docker cp risc0-fixtures:/tmp/fixtures risc0/test/fixtures
+          docker rm risc0-fixtures
           ls -lR risc0/test/fixtures
 
       - name: Install Rust toolchain
@@ -1203,14 +1206,16 @@ jobs:
 
       - name: Generate solidity-step fixtures
         # record-uarch-step-fixtures.sh is the same recorder the solidity-step/Makefile fixtures
-        # target runs; its defaults target the installed emulator inside the tests image.
+        # target runs; its defaults target the installed emulator inside the tests image. The
+        # container records into its own filesystem and docker cp brings the tree out, so the
+        # workspace needs no directory the container's fixed user would have to be granted
+        # write access to.
         run: |
-          FIX=solidity-step/test/fixtures
-          mkdir -p $FIX
-          chmod -R 777 $FIX
-          docker run --rm -t -v ${{ github.workspace }}/$FIX:/fixtures ${{ github.repository_owner }}/machine-emulator:tests \
-            /usr/share/cartesi-machine/tests/scripts/record-uarch-step-fixtures.sh /fixtures
-          ls -lR $FIX
+          docker run --name solidity-step-fixtures -t ${{ github.repository_owner }}/machine-emulator:tests \
+            /usr/share/cartesi-machine/tests/scripts/record-uarch-step-fixtures.sh /tmp/fixtures
+          docker cp solidity-step-fixtures:/tmp/fixtures solidity-step/test/fixtures
+          docker rm solidity-step-fixtures
+          ls -lR solidity-step/test/fixtures
 
       - name: Run solidity-step tests
         run: make -C solidity-step test

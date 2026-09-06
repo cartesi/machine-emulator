@@ -26,12 +26,7 @@ EMULATOR_DIR     := $(abspath ..)
 # Restricts which machine tests are recorded (Lua pattern, full match); default = all.
 MACHINE_TEST     ?=
 
-TARGET_OS ?= $(shell uname -s)
-ifeq ($(TARGET_OS),Darwin)
-NUM_JOBS ?= $(shell sysctl -n hw.ncpu)
-else
-NUM_JOBS ?= $(shell nproc)
-endif
+NUM_JOBS ?= $(shell getconf _NPROCESSORS_ONLN)
 
 # Fixture dirs are absolute so they survive the cd into $(EMULATOR_DIR) in the recipe.
 FIXTURES_DIR     := test/fixtures

@@ -99,8 +99,9 @@ FUZZ_TARGETS = \
 	$(BUILDDIR)/fuzz-step-log
 
 .PHONY: all clean distclean run-fuzz \
-	run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config \
-	check-seed-corpus fuzz-seed-corpus fuzz-coverage fuzz-coverage-clean
+	run-fuzz-interpret run-fuzz-interpret-step run-fuzz-config run-fuzz-step-log \
+	check-seed-corpus fuzz-seed-corpus fuzz-step-log-seed-corpus \
+	fuzz-coverage fuzz-coverage-clean
 
 all: $(FUZZ_TARGETS)
 
@@ -159,25 +160,6 @@ run-fuzz-config: $(BUILDDIR)/fuzz-config
 	@mkdir -p $(CONFIG_CORPUS_DIR)
 	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-config $(CONFIG_CORPUS_DIR) $(FUZZ_CONFIG_ARGS)
 
-# Seeds are recorded fixture logs: mutating a valid image explores the validation
-# paths deeply instead of dying on the signature check. Sources are the logs the
-# solidity-step and risc0 test suites record.
-STEP_LOG_SEED_DIR = seed-corpus-step-log
-STEP_LOG_FIXTURE_DIRS = ../../solidity-step/test/fixtures ../../risc0/test/fixtures
-
-fuzz-step-log-seed-corpus:
-	@mkdir -p $(STEP_LOG_SEED_DIR)
-	@# Copy up to 40 small (<64k) recorded logs into the seed dir. Missing dirs are fine.
-	@find $(STEP_LOG_FIXTURE_DIRS) -name '*.log' -size -64k 2>/dev/null \
-		| head -40 \
-		| xargs -I{} cp {} $(STEP_LOG_SEED_DIR)/ \
-		|| true
-	@# A seeded run needs at least one fixture; warn (do not fail) if none were found.
-	@if [ -z "$$(ls -A $(STEP_LOG_SEED_DIR) 2>/dev/null)" ]; then \
-		echo "warning: no step-log fixtures found;" >&2; \
-		echo "  run 'make -C ../../solidity-step fixtures' first for a seeded run" >&2; \
-	fi
-
 run-fuzz-step-log: $(BUILDDIR)/fuzz-step-log fuzz-step-log-seed-corpus
 	@mkdir -p $(STEP_LOG_CORPUS_DIR)
 	ASAN_OPTIONS=detect_container_overflow=0 $(BUILDDIR)/fuzz-step-log $(STEP_LOG_CORPUS_DIR) $(STEP_LOG_SEED_DIR)/ $(FUZZ_STEP_LOG_ARGS)
@@ -200,6 +182,25 @@ fuzz-seed-corpus: $(SEED_DIR)/.stamp
 $(SEED_DIR)/.stamp: gen-seed-corpus.lua fuzz-common.h
 	lua5.4 gen-seed-corpus.lua $(SEED_DIR) --test-path=$(CARTESI_TESTS_PATH)
 	@touch $@
+
+# The step-log fuzzer seeds from recorded fixture logs instead: mutating a valid image
+# explores the validation paths deeply instead of dying on the signature check. Sources
+# are the logs the solidity-step and risc0 test suites record.
+STEP_LOG_SEED_DIR = seed-corpus-step-log
+STEP_LOG_FIXTURE_DIRS = ../../solidity-step/test/fixtures ../../risc0/test/fixtures
+
+fuzz-step-log-seed-corpus:
+	@mkdir -p $(STEP_LOG_SEED_DIR)
+	@# Copy up to 40 small (<64k) recorded logs into the seed dir. Missing dirs are fine.
+	@find $(STEP_LOG_FIXTURE_DIRS) -name '*.log' -size -64k 2>/dev/null \
+		| head -40 \
+		| xargs -I{} cp {} $(STEP_LOG_SEED_DIR)/ \
+		|| true
+	@# A seeded run needs at least one fixture; warn (do not fail) if none were found.
+	@if [ -z "$$(ls -A $(STEP_LOG_SEED_DIR) 2>/dev/null)" ]; then \
+		echo "warning: no step-log fixtures found;" >&2; \
+		echo "  run 'make -C ../../solidity-step fixtures' first for a seeded run" >&2; \
+	fi
 
 # -- Coverage report ----------------------------------------------------------
 #

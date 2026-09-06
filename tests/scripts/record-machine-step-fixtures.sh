@@ -35,7 +35,7 @@ fi
 lua=${LUA:-lua5.4}
 recorders_dir=${RECORDERS_DIR:-/usr/share/cartesi-machine/tests/lua}
 tests_path=${MACHINE_TESTS_PATH:-/usr/share/cartesi-machine/tests/data/machine}
-jobs=${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu)}
+jobs=${JOBS:-$(getconf _NPROCESSORS_ONLN)}
 
 mkdir -p "$fixtures_dir/cartesi-machine-tests"
 # The record-*.lua recorders require an empty output dir (they never delete); clear any stale

@@ -1834,12 +1834,13 @@ The one that actually triggers the host to emit a character is an `ecall` with `
 This happens when `uarch_cycle` is []{replace=cycles_uarch_putchar_ecall/stderr}.
 
 In the following command, the `--max-mcycle` and `--max-uarch-cycle` options tell `cartesi-machine` to stop just before the putchar `ecall`.
-The `--log-step-uarch` command-line option instructs `cartesi-machine` to then dump to screen a user-friendly version of the access log produced by a single uarch step:
+The `--log-step-uarch` command-line option instructs `cartesi-machine` to then record a single uarch step into a binary step log file.
+The `dump` flag also dumps a user-friendly version of the logged step to screen:
 ```{.bash key=rarely_log_uarch_putchar replace=source vars=cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr}
 cartesi-machine \
     --max-mcycle=$cycles \
     --max-uarch-cycle=$ucycles \
-    --log-step-uarch
+    --log-step-uarch=uarch-step.log,dump
 ```
 producing the log
 ```{replace=rarely_log_uarch_putchar/stderr}
@@ -2144,7 +2145,7 @@ Field `iyield` is a bitmask declaring whether the emulator honors automatic and 
 Defaults to both enabled.
 The `cartesi-machine` command-line options `--no-htif-yield-automatic` and `--no-htif-yield-manual` clear the corresponding bits.
 
-The `uarch` entry describes the microarchitecture state.
+The `uarch` entry describes the uarch state.
 The `uarch.processor` field controls the uarch processor.
 Like the main processor, it includes a `uarch.processor.registers` flat table with all registers.
 Register `uarch.processor.registers.halt` is non-zero when the uarch is halted.
@@ -2968,98 +2969,61 @@ Since the whole epoch runs in one process, resuming the outputs Merkle tree acro
 During verification, the blockchain mediates a [*verification game*](#verification-game) between the disputing parties.
 In brief, the parties agree on an initial state hash but claim different final state hashes.
 The game first narrows down the disagreement to the first main-processor instruction that deviates, and within it the first uarch instruction that deviates.
-After that, the honest party submits an access log, with Merkle-tree proofs for every value read from or written to the state, which the blockchain uses to identify the honest party.
+After that, the honest party submits a *step log* recording every piece of machine state the disputed step touched, plus the hashes tying that state into the machine's root hash, which the blockchain uses to identify the honest party.
 
-To obtain the access log for a specific uarch instruction in the execution of a Cartesi Machine instance, first advance to the last agreed `<mcycle>` using `machine:run(<mcycle>)`.
+To obtain the step log for a specific uarch instruction in the execution of a Cartesi Machine instance, first advance to the last agreed `<mcycle>` using `machine:run(<mcycle>)`.
 Then advance the uarch to the last agreed `<uarch_cycle>` using `machine:run_uarch(<uarch_cycle>)`.
 Like `machine:run()`, `machine:run_uarch()` can return prematurely for a variety of reasons.
 It returns a break reason explaining why control was returned to the caller, taken from the `cartesi.UARCH_BREAK_REASON_*` set.
 For example, `cartesi.UARCH_BREAK_REASON_UARCH_HALTED` if the uarch halted before reaching the target cycle.
 
-Once the target uarch cycle has been reached, use the `machine:log_step_uarch(<log_type>)` function to produce a log that advances to the next uarch cycle.
-Alternatively, if the uarch is halted at that point, use `machine:log_reset_uarch()` to produce the log that reverts the state of the uarch to its pristine form.
-Note that the function indeed performs the action, and therefore modifies the uarch state, in addition to collecting the access log.
-The `<log_type>` argument is an integer bitfield formed by OR-ing `cartesi.ACCESS_LOG_TYPE_ANNOTATIONS` (to include the notes and brackets metadata consumed by the pretty-printer `util.print_log`) and `cartesi.ACCESS_LOG_TYPE_LARGE_DATA` (to include the full raw payload of large accesses, not just their hashes).
-Merkle-tree proofs are always included in the log.
+Once the target uarch cycle has been reached, use the `machine:log_step_uarch(<uarch_cycle_count>)` function to advance `<uarch_cycle_count>` uarch cycles (one, in a dispute) and return the binary log recording the step.
+Alternatively, if the uarch is halted at that point, use `machine:log_reset_uarch()` to obtain the log that reverts the state of the uarch to its pristine form.
+Note that the functions indeed perform the action, and therefore modify the uarch state, in addition to recording the log.
 
-The format of the access log returned is as follows:
+The binary format of the step log is as follows:
 
-```lua
-access_log ::= {
-  log_type ::= {
-    annotations ::= boolean,
-    large_data  ::= boolean
-  },
-  accesses ::= {
-    [1] ::= access,
-    [2] ::= access,
-    ...
-    [n] ::= access
-  },
-  notes ::= {
-    [1] ::= string,
-    ...
-    [n] ::= string
-  },
-  brackets ::= {
-    [1] ::= bracket,
-    ...
-    [m] ::= bracket
-  }
+```
+step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^sibling_count
+
+header ::= {                        -- 40 bytes
+  signature     ::= "CTSI" 3 0 0 0, -- magic + version + reserved
+  hash_function ::= uint64,         -- hash function used (e.g. keccak256)
+  page_count    ::= uint64,
+  node_count    ::= uint64,
+  sibling_count ::= uint64
 }
 
-access ::= {
-  type         ::= "read" | "write",
-  address      ::= number,
-  log2_size    ::= number,
-  read_hash    ::= string,
-  read         ::= string,
-  written_hash ::= string,
-  written      ::= string,
-  proof        ::= proof
+page_entry ::= {                    -- 4136 bytes, strictly ascending by index
+  index ::= uint64,                 -- byte address >> log2 of the page size
+  data  ::= byte^4096,              -- page contents as of first touch
+  hash  ::= hash                    -- scratch slot, must be zero on the wire
 }
 
-proof ::= {
-  target_address   ::= number,
-  log2_target_size ::= number,
-  log2_root_size   ::= number,
-  target_hash      ::= string,
-  root_hash        ::= string,
-  sibling_hashes   ::= {
-    [1] ::= string,
-    ...
-    [k] ::= string
-  }
+node_entry ::= {                    -- 48 bytes: a bulk write spanning > 1 page
+  address   ::= uint64,             -- subtree start, aligned to 2^log2_size
+  log2_size ::= uint64,
+  hash      ::= hash                -- subtree hash before the bulk write; the replay
+                                    -- overwrites it with the hash of what it writes
 }
 
-bracket ::= {
-  type  ::= "begin" | "end",
-  where ::= number,
-  text  ::= string
-}
+sibling_entry ::= hash              -- hashes of the subtrees not covered by pages
+                                    -- or nodes, in the order a depth-first walk of
+                                    -- the state hash tree consumes them
 ```
 
-The `accesses` array records, in order, all accesses to the machine state performed during the execution of the uarch step.
-Accesses can be of `type` either `"read"` or `"write"`.
-The `address` field gives the physical address of the accessed region and `log2_size` gives its size as a power of two.
-The `read_hash` field contains the hash of the data as read before the access.
-For `"write"` accesses, `written_hash` contains the hash of the written data.
-The `read` and `written` fields carry the data itself.
-For accesses at or above the 32-byte hash-tree leaf granularity (`log2_size >= 5`), each field is exactly `2^log2_size` bytes long.
-For sub-leaf accesses (`log2_size < 5`, typically `log2_size = 3` for an 8-byte word), the field contains the entire enclosing aligned 32-byte tree leaf.
-The `proof` field is used when [verifying state transitions](#verifying-state-transitions).
+All integers are little-endian and every `hash` is 32 bytes.
+The page entries record, as of first touch, every page of machine state the step read or wrote.
+The node entries record bulk writes that replace whole subtrees at once, as the uarch reset and the input-inclusion transitions do.
+A node is a subtree whose contents are not witnessed, only its hash.
+Combined with the hashes of the pages and nodes, the siblings reconstruct the machine's root hash.
+The root hash before is recomputed from the witnessed tree, the caller says how many cycles to replay, and the root hash after is whatever the replay produces, returned for the caller to compare.
+A step log is therefore self-contained, and anyone can check one against a pair of state hashes without instantiating a machine.
 
-#### Inspecting access logs
+#### Inspecting step logs
 
-When `log_type` includes `cartesi.ACCESS_LOG_TYPE_ANNOTATIONS`, the access log includes annotations that help put each access into a larger context.
-
-The `notes` array contains a string corresponding to each entry in the `accesses` array, describing the word access.
-The `brackets` contain information that groups ranges of word accesses into *scopes*.
-Each bracket entry `type` field tells if the entry marks the `"begin"` or `"end"` of a scope.
-The `where` field gives the position in the `accesses` array where the bracket should be &ldquo;inserted&rdquo;.
-
-The `print_log(<log>, <out>)` function in the `cartesi.util` module uses these annotations to dump a detailed description of the access `<log>` into an open file object `<out>` (E.g., `io.stdout` or the return of `io.open()`).
-It indents each access according to the number of enclosing scopes and uses the notes to identify what each address refers to (a register, a CSR, memory).
+The static method `cartesi.machine:dump_step_uarch(<log>, <uarch_cycle_count>)` returns a user-friendly version of the uarch cycles recorded in a binary step log.
+It replays the requested number of cycles against the state carried in the log (stopping early if the uarch halts) and describes every access performed, identifying what each address refers to (a register, a CSR, memory).
 Addresses and values are printed in hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:
@@ -3089,14 +3053,9 @@ The uarch step being executed is the ECALL micro-instruction that asks the emula
 
 #### Verifying state transitions
 
-Each access carries a `proof` field.
-Using the known state hash before the access, it is possible to verify that the `read` value was indeed the value stored at `address` in the machine state.
-For a `"write"` access, the `sibling_hashes` in the proof can be used to compute the new state hash.
-Doing this for each access in sequence yields the state hash at the end of the step.
-
-The method `machine:verify_step_uarch(<state_hash_before>, <access_log>)` performs this verification, additionally checking that the accesses correspond to the operation of the Cartesi Machine uarch starting from `<state_hash_before>`.
-It returns the state hash at the end of the step, for the caller to compare against the state hash under dispute.
-Note there is no need for a Cartesi Machine instance to verify a transition: all required state information is in the access log.
+The static method `machine:verify_step_uarch(<state_hash_before>, <log>, <uarch_cycle_count>)` first checks that the log's contents reproduce `<state_hash_before>`, then replays the logged uarch step against them, exactly as a true Cartesi Machine uarch would execute it.
+It returns the state hash the step provably advances to, for the caller to compare against the state hash under dispute.
+Note there is no need for a Cartesi Machine instance to verify a transition: all required state information is in the step log.
 
 The following script illustrates the verification of a state transition.
 
@@ -3116,59 +3075,44 @@ lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles"
 ```{replace=verify_uarch_step_run/stderr}
 ```
 
-The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the access log before verification.
-For example, changing the address of access #7 (the write to `uarch.pc`) causes the program to reject the state transition proof:
-```{.bash key=verify_uarch_step_mess_address vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
+The script is much more interesting when the optional last argument is used to &ldquo;mess&rdquo; with the verification.
+For example, flipping one bit inside the logged page data means the pages no longer reproduce the agreed before-hash, so verification rejects the log:
+```{.bash key=verify_uarch_step_mess_page vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
 {
 # docs:begin cmd
-lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].address = 0x100'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" flip:200
 # docs:end cmd
 } || true
 ```
-```{replace=verify_uarch_step_mess_address/stderr}
+```{replace=verify_uarch_step_mess_page/stderr}
 ```
 
-Starting from `<state_hash_before>`, a true Cartesi Machine uarch would have written to `uarch.pc` at `0x400010` for the 7th access, not at `0x100` as our corrupt log claims.
-
-Changing the `written` data of the same access fails the access's internal consistency check, because `written` no longer hashes to `written_hash`:
-```{.bash key=verify_uarch_step_mess_written vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
+Truncating the log fails the decoder's size accounting before any replay happens:
+```{.bash key=verify_uarch_step_mess_truncate vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
 {
 # docs:begin cmd
-lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" truncate
 # docs:end cmd
 } || true
 ```
-```{replace=verify_uarch_step_mess_written/stderr}
+```{replace=verify_uarch_step_mess_truncate/stderr}
 ```
 
-Changing the `read` data of access #5 (the read of `uarch.x17`) fails the same consistency check on the read side, because `read` no longer hashes to `read_hash`:
-```{.bash key=verify_uarch_step_mess_read vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
+Lying to the verifier about the state hash the step starts from fails the same comparison from the other side: the claim no longer matches the root recomputed from the log.
+```{.bash key=verify_uarch_step_mess_lie vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
 {
 # docs:begin cmd
-lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" lie
 # docs:end cmd
 } || true
 ```
-```{replace=verify_uarch_step_mess_read/stderr}
-```
-
-Updating `read_hash` to match the tampered `read` passes the internal consistency check, but the verifier still combines `read_hash` with the proof's `sibling_hashes` to reconstruct the state hash before the access. That reconstruction no longer matches the expected root:
-```{.bash key=verify_uarch_step_mess_target_hash vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_uarch_step_source replace=source/cmd}
-ln -sf "$config" .
-ln -sf "$RECIPES_DIR/verify-uarch-step.lua" .
-{
-# docs:begin cmd
-lua5.4 verify-uarch-step.lua config-nothing-to-do "$cycles" "$ucycles" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
-# docs:end cmd
-} || true
-```
-```{replace=verify_uarch_step_mess_target_hash/stderr}
+```{replace=verify_uarch_step_mess_lie/stderr}
 ```
 
 In a nutshell, only valid state transitions are accepted by the `machine:verify_step_uarch()` method.
@@ -4256,8 +4200,8 @@ The uarch has its own private address ranges, which are not accessible to the ma
 
 | Physical address | Mapping |
 |------------------|---------|
-| []{replace=ar_table/uarch_shadow} | Microarchitecture shadow |
-| []{replace=ar_table/uarch_ram} | Microarchitecture RAM |
+| []{replace=ar_table/uarch_shadow} | Uarch shadow |
+| []{replace=ar_table/uarch_ram} | Uarch RAM |
 
 The uarch shadow holds the uarch processor state.
 The uarch RAM holds the uarch program that decodes and executes one main processor instruction per uarch run before halting.
@@ -4267,7 +4211,7 @@ The uarch RAM holds the uarch program that decodes and executes one main process
 Each address range visible to the main processor is described by an entry in the array of Physical Memory Attribute records (PMAs).
 The PMA array occupies []{replace=ar_table/pmas} and starts at address []{replace=ar_table/pmas_start} (exposed as `cartesi.AR_PMAS_START`).
 This is how the RISC-V interpreter discovers the available ranges at runtime, regardless of whether it is compiled to run directly on the host or inside a ZK prover.
-The microarchitecture's private ranges are not visible to the main processor and have no PMA entries, though a driver id is reserved for the uarch shadow state for consistency.
+The uarch's private ranges are not visible to the main processor and have no PMA entries, though a driver id is reserved for the uarch shadow state for consistency.
 
 Each PMA consists of 2 64-bit words.
 The first word gives the start of a range and the second word its length.
@@ -4739,7 +4683,7 @@ A midpoint past a halt simply repeats the final hash, and the disagreement is st
 
 ### Verifying the state transition
 
-Once a single `uarch_cycle` is in dispute, the referee asks the player on the disagreeing side for the access logs of the transition out of it, and verifies them without ever instantiating a machine.
+Once a single `uarch_cycle` is in dispute, the referee asks the player on the disagreeing side for the binary step logs of the transition out of it, and verifies them without ever instantiating a machine.
 This stands for a Cartesi contract that can verify such logs directly on the blockchain.
 The transition is either a single ordinary uarch step or, out of `cartesi.UARCH_CYCLE_MAX - 1` (when the uarch has long since halted), an additional uarch reset that prepares the next main processor instruction.
 Which form applies depends only on the agreed cycle, so the referee always checks the step with `verify_step_uarch`, chaining `verify_reset_uarch` after it for the transition that closes the instruction.
@@ -4947,7 +4891,7 @@ A fork that still stands at the boundary includes the input before running (at b
 Once the bisections converge, the mcycle offset and uarch cycle they agreed on determine the form of the disputed transition, and the referee asks player 1 for the matching logs:
 ```{.lua key=rvg_commit_log include=rolling-verification-game.lua/commit_log title="rolling-verification-game.lua (excerpt)"}
 ```
-A combined transition is committed as its two access logs.
+A combined transition is committed as its two step logs.
 
 The referee verifies the logs on their own, again without ever instantiating a machine, each verification starting from the hash the previous one returned:
 ```{.lua key=rvg_verify_transition include=rolling-verification-game.lua/verify_state_transition title="rolling-verification-game.lua (excerpt)"}
@@ -4959,7 +4903,7 @@ A dishonest player can post a valid log of a machine including some other input,
 When the contract holds no input at the disputed index (the epoch ended before it), there is nothing to include, and the transition out of the boundary is checked as an ordinary uarch step.
 
 For the transition that resets the uarch, `verify_reset_uarch` settles rejected inputs by itself.
-Replaying a reset from a state that has yielded manual with reject ends at the recorded revert state hash, rather than at the state with a pristine microarchitecture.
+Replaying a reset from a state that has yielded manual with reject ends at the recorded revert state hash, rather than at the state with a pristine uarch.
 The processing of a rejected input therefore ends at the boundary it started from, as the input bisection expects.
 Every other transition is a single uarch step, checked with `verify_step_uarch` as before.
 

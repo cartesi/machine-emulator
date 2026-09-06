@@ -38,12 +38,12 @@ local take_branch, bisect_level = vgu.take_branch, vgu.bisect_level
 local wait_for_any, wait_for_log, wait_for_commitments = vgu.wait_for_any, vgu.wait_for_log, vgu.wait_for_commitments
 
 -- The schemas this game adds to the shared dictionary.
--- The disputed transition's access logs. A combined transition carries two logs, an ordinary
--- step just the one.
+-- The disputed transition's binary step logs, as raw file bytes. A combined transition
+-- carries two logs, an ordinary step just the one.
 vgu.SCHEMA_DICT.LogCommitment = {
-    send_cmio_log = "AccessLog",
-    step_log = "AccessLog",
-    reset_log = "AccessLog",
+    send_cmio_log = "Base64",
+    step_log = "Base64",
+    reset_log = "Base64",
 }
 -- An output, its proof in the outputs Merkle tree, and the proof tying that tree's root hash
 -- into the final state hash.
@@ -191,7 +191,7 @@ end
 -- level advances whole inputs. The mcycle level runs to an offset from the disputed input's
 -- boundary, including the input first when the fork still stands there, and reverts a fork
 -- that finds the guest rejecting back to the boundary. The uarch_cycle level runs the
--- microarchitecture within the disputed instruction, again including the input first when that
+-- uarch within the disputed instruction, again including the input first when that
 -- instruction is the one that resumes the machine.
 -- docs:begin commit_bisection
 local function commit_bisection(player, branch, level, target)
@@ -240,23 +240,23 @@ end
 -- the reset, and every other is an ordinary step. A combined transition is committed as its two
 -- logs, each performing the action it records.
 -- docs:begin commit_log
+-- Both players run in the referee's directory, so each names its log files by its role.
 local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
-        local revert_root_hash = agreed:get_root_hash()
         local send_cmio_log = agreed:log_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             player.boundary.data,
-            revert_root_hash
+            agreed:get_root_hash()
         )
-        return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch() }
+        return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch(1) }
     end
+    local step_log = agreed:log_step_uarch(1)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        local step_log = agreed:log_step_uarch()
         return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
     end
-    return { step_log = agreed:log_step_uarch() }
+    return { step_log = step_log }
 end
 -- docs:end commit_log
 
@@ -346,7 +346,7 @@ local function verify_state_transition(
             hash = machine:verify_send_cmio_response(reason, data, hash, log.send_cmio_log, hash)
         end
         eventf("Verifying uarch step log!")
-        hash = machine:verify_step_uarch(hash, log.step_log)
+        hash = machine:verify_step_uarch(hash, log.step_log, 1)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
             hash = machine:verify_reset_uarch(hash, log.reset_log)

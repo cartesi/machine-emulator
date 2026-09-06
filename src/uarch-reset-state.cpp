@@ -23,8 +23,8 @@
 
 #include "htif-constants.hpp"
 #include "uarch-constants.hpp"
-#include "uarch-record-state-access.hpp" // IWYU pragma: keep
-#include "uarch-replay-state-access.hpp" // IWYU pragma: keep
+#include "uarch-record-step-state-access.hpp" // IWYU pragma: keep
+#include "uarch-replay-step-state-access.hpp" // IWYU pragma: keep
 #include "uarch-solidity-compat.hpp"
 #include "uarch-state-access.hpp" // IWYU pragma: keep
 
@@ -47,11 +47,11 @@ void uarch_reset_state(UarchState &a) {
 // Explicit instantiation for uarch_state_access
 template void uarch_reset_state(uarch_state_access &a);
 
-// Explicit instantiation for uarch_record_state_access
-template void uarch_reset_state(uarch_record_state_access &a);
+// Explicit instantiation for uarch_record_step_state_access
+template void uarch_reset_state(uarch_record_step_state_access &a);
 
-// Explicit instantiation for uarch_replay_state_access
-template void uarch_reset_state(uarch_replay_state_access &a);
+// Explicit instantiation for uarch_replay_step_state_access
+template void uarch_reset_state(uarch_replay_step_state_access<no_step_dumper> &a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

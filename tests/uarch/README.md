@@ -1,3 +1,3 @@
 # uarch
 
-Build tests for the Cartesi Machine microarchitecture
+Build tests for the Cartesi Machine uarch

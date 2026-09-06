@@ -479,22 +479,22 @@
     },
     {
       "name": "machine.log_step_uarch",
-      "summary": "Runs the small emulator for one cycle and return a log of state accesses",
+      "summary": "Runs the uarch for the given cycle count (or halt) and returns the binary step log",
       "params": [
         {
-          "name": "log_type",
-          "description": "The log type to generate",
+          "name": "uarch_cycle_count",
+          "description": "Number of uarch cycles to advance; the run stops earlier on halt or overflow",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLogType"
+            "$ref": "#/components/schemas/UnsignedInteger"
           }
         }
       ],
       "result": {
-        "name": "log",
-        "description": "Log of state accesses",
+        "name": "result",
+        "description": "Binary step log and reason the uarch step ended",
         "schema": {
-          "$ref": "#/components/schemas/AccessLog"
+          "$ref": "#/components/schemas/LogStepUarchResult"
         }
       }
     },
@@ -504,7 +504,7 @@
       "params": [
         {
           "name": "root_hash_before",
-          "description": "State hash before transition described by access log",
+          "description": "State hash before transition described by step log",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
@@ -512,16 +512,24 @@
         },
         {
           "name": "log",
-          "description": "Access log describing transition",
+          "description": "Binary step log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64String"
+          }
+        },
+        {
+          "name": "uarch_cycle_count",
+          "description": "Number of uarch cycles in step",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           }
         }
       ],
       "result": {
         "name": "hash",
-        "description": "State hash after transition described by access log",
+        "description": "State hash after transition described by step log",
         "schema": {
           "$ref": "#/components/schemas/Base64Hash"
         }
@@ -533,7 +541,7 @@
       "params": [
         {
           "name": "root_hash_before",
-          "description": "State hash before transition described by access log",
+          "description": "State hash before transition described by step log",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
@@ -541,16 +549,16 @@
         },
         {
           "name": "log",
-          "description": "Access log describing transition",
+          "description": "Binary step log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64String"
           }
         }
       ],
       "result": {
         "name": "hash",
-        "description": "State hash after transition described by access log",
+        "description": "State hash after transition described by step log",
         "schema": {
           "$ref": "#/components/schemas/Base64Hash"
         }
@@ -1037,22 +1045,13 @@
     },
     {
       "name": "machine.log_reset_uarch",
-      "summary": "Reset uarch to pristine state and return a log of state accesses",
-      "params": [
-        {
-          "name": "log_type",
-          "description": "The log type to generate",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/AccessLogType"
-          }
-        }
-      ],
+      "summary": "Reset uarch to pristine state and return the binary step log",
+      "params": [],
       "result": {
         "name": "log",
-        "description": "Log of state accesses",
+        "description": "Binary step log",
         "schema": {
-          "$ref": "#/components/schemas/AccessLog"
+          "$ref": "#/components/schemas/Base64String"
         }
       }
     },
@@ -1185,7 +1184,7 @@
     },
     {
       "name": "machine.log_send_cmio_response",
-      "summary": "Sends cmio response and returns an access log",
+      "summary": "Sends cmio response and returns the binary step log",
       "params": [
         {
           "name": "reason",
@@ -1210,21 +1209,13 @@
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
           }
-        },
-        {
-          "name": "log_type",
-          "description": "The log type to generate",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/AccessLogType"
-          }
         }
       ],
       "result": {
         "name": "log",
-        "description": "Log of state accesses",
+        "description": "Binary step log",
         "schema": {
-          "$ref": "#/components/schemas/AccessLog"
+          "$ref": "#/components/schemas/Base64String"
         }
       }
     },
@@ -1258,10 +1249,10 @@
         },
         {
           "name": "log",
-          "description": "State access log to be verified.",
+          "description": "Binary step log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64String"
           }
         },
         {
@@ -1283,7 +1274,7 @@
     },
     {
       "name": "machine.log_step",
-      "summary": "Logs a step of a given number of cycles",
+      "summary": "Logs a step of a given number of cycles and returns the binary step log",
       "params": [
         {
           "name": "mcycle_count",
@@ -1292,27 +1283,19 @@
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
-        },
-        {
-          "name": "filename",
-          "description": "Filename to store the log",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
         }
       ],
       "result": {
-        "name": "reason",
-        "description": "Reason call returned",
+        "name": "result",
+        "description": "Binary step log and reason call returned",
         "schema": {
-          "$ref": "#/components/schemas/InterpreterBreakReason"
+          "$ref": "#/components/schemas/LogStepResult"
         }
       }
     },
     {
       "name": "machine.verify_step",
-      "summary": "Checks the validity of a step log file.",
+      "summary": "Checks the validity of a step log.",
       "params": [
         {
           "name": "root_hash_before",
@@ -1323,11 +1306,11 @@
           }
         },
         {
-          "name": "filename",
-          "description": "Filename containing the log of the step",
+          "name": "log",
+          "description": "Binary step log",
           "required": true,
           "schema": {
-            "type": "string"
+            "$ref": "#/components/schemas/Base64String"
           }
         },
         {
@@ -1364,6 +1347,32 @@
           },
           "pid": {
             "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      },
+      "LogStepResult": {
+        "title": "LogStepResult",
+        "type": "object",
+        "required": ["log", "break_reason"],
+        "properties": {
+          "log": {
+            "$ref": "#/components/schemas/Base64String"
+          },
+          "break_reason": {
+            "$ref": "#/components/schemas/InterpreterBreakReason"
+          }
+        }
+      },
+      "LogStepUarchResult": {
+        "title": "LogStepUarchResult",
+        "type": "object",
+        "required": ["log", "break_reason"],
+        "properties": {
+          "log": {
+            "$ref": "#/components/schemas/Base64String"
+          },
+          "break_reason": {
+            "$ref": "#/components/schemas/UarchInterpreterBreakReason"
           }
         }
       },
@@ -2351,40 +2360,6 @@
           "$ref": "#/components/schemas/Base64Hash"
         }
       },
-      "NoteArray": {
-        "title": "NoteArray",
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-      "BracketArray": {
-        "title": "BracketArray",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/Bracket"
-        }
-      },
-      "BracketType": {
-        "title": "BracketType",
-        "enum": ["begin", "end"]
-      },
-      "Bracket": {
-        "title": "Bracket",
-        "type": "object",
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/BracketType"
-          },
-          "where": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": ["type", "where", "text"]
-      },
       "Proof": {
         "title": "Proof",
         "type": "object",
@@ -2416,80 +2391,6 @@
           "root_hash",
           "sibling_hashes"
         ]
-      },
-      "Access": {
-        "title": "Access",
-        "type": "object",
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/AccessType"
-          },
-          "address": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "log2_size": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "read_hash": {
-            "$ref": "#/components/schemas/Base64Hash"
-          },
-          "read": {
-            "$ref": "#/components/schemas/Base64String"
-          },
-          "written_hash": {
-            "$ref": "#/components/schemas/Base64Hash"
-          },
-          "written": {
-            "$ref": "#/components/schemas/Base64String"
-          },
-          "sibling_hashes": {
-            "$ref": "#/components/schemas/Base64HashArray"
-          }
-        },
-        "required": ["type", "address", "log2_size", "read_hash"]
-      },
-      "AccessArray": {
-        "title": "AccessArray",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/Access"
-        }
-      },
-      "AccessType": {
-        "title": "AccessType",
-        "enum": ["read", "write"]
-      },
-      "AccessLogType": {
-        "title": "AccessLogType",
-        "type": "object",
-        "properties": {
-          "has_annotations": {
-            "type": "boolean"
-          },
-          "has_large_data": {
-            "type": "boolean"
-          }
-        },
-        "required": ["has_annotations", "has_large_data"]
-      },
-      "AccessLog": {
-        "title": "AccessLog",
-        "type": "object",
-        "properties": {
-          "log_type": {
-            "$ref": "#/components/schemas/AccessLogType"
-          },
-          "accesses": {
-            "$ref": "#/components/schemas/AccessArray"
-          },
-          "notes": {
-            "$ref": "#/components/schemas/NoteArray"
-          },
-          "brackets": {
-            "$ref": "#/components/schemas/BracketArray"
-          }
-        },
-        "required": ["log_type", "accesses"]
       },
       "SharingMode": {
         "title": "SharingMode",

@@ -1792,25 +1792,29 @@ describe("cartesi-machine CLI", function()
         })
         expect.truthy(#filesystem.read_file(log_file) > 0)
 
-        -- --log-step-uarch
-        local _ <close>, su_cfg = scope_temp_pathname()
-        run_ok({
-            "--log-step-uarch",
-            "--store-config=" .. su_cfg,
+        -- --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump]
+        local _ <close>, su_log = scope_temp_pathname()
+        os.remove(su_log)
+        local _, su_stderr = run_ok({
+            "--log-step-uarch=" .. su_log .. ",count:1,dump",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
+        expect.truthy(#filesystem.read_file(su_log) > 0)
+        -- the dump key replays the log to stderr
+        expect.truthy(su_stderr:match("read uarch%.cycle@0x%x+: 0x%x+%(%d+%)"))
 
-        -- --log-reset-uarch
-        local _ <close>, ru_cfg = scope_temp_pathname()
+        -- --log-reset-uarch=<filename>
+        local _ <close>, ru_log = scope_temp_pathname()
+        os.remove(ru_log)
         run_ok({
-            "--log-reset-uarch",
-            "--store-config=" .. ru_cfg,
+            "--log-reset-uarch=" .. ru_log,
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
+        expect.truthy(#filesystem.read_file(ru_log) > 0)
 
         -- --max-uarch-cycle
         run_ok({ "--max-uarch-cycle=0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -1820,6 +1824,47 @@ describe("cartesi-machine CLI", function()
 
         -- --print-uarch-cycle-root-hashes=<count>,start:<n>
         run_ok({ "--print-uarch-cycle-root-hashes=1,start:0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- cmio response payload encodings (--log-send-cmio-response)
+    --
+    -- What: the payload can be given inline under three encodings or read from
+    --       a file as raw bytes. The encoding names match the --hex-payload /
+    --       --base64-payload / --utf8-payload options of rollup.cpp.
+    -- How:  log the same six bytes through every path and compare the resulting
+    --       step logs, which must be byte-identical.
+    -- -------------------------------------------------------------------------
+    it("cmio response payload encodings", function()
+        local function log_response(source)
+            local _ <close>, log_file = scope_temp_pathname()
+            os.remove(log_file)
+            run_ok({
+                "--log-send-cmio-response=" .. log_file .. ",reason:1," .. source,
+                "--max-mcycle=0",
+                "--no-init-splash",
+                "--quiet",
+            })
+            local contents = filesystem.read_file(log_file)
+            expect.truthy(#contents > 0)
+            return contents
+        end
+
+        local _ <close>, payload_file = scope_temp_pathname()
+        filesystem.write_file(payload_file, "hello!")
+
+        -- hex is the default encoding, so the first two must agree
+        local by_hex = log_response("data:0x68656c6c6f21")
+        expect.equal(log_response("data:0x68656c6c6f21,encoding:hex"), by_hex)
+        expect.equal(log_response("data:aGVsbG8h,encoding:base64"), by_hex)
+        expect.equal(log_response("data:hello!,encoding:utf8"), by_hex)
+        expect.equal(log_response("data-file:" .. payload_file), by_hex)
+
+        local log_arg = "--log-send-cmio-response=" .. payload_file .. ",reason:1,"
+        run_fail({ log_arg .. "data:0x00,data-file:" .. payload_file }, "exactly one of data:, data%-file:")
+        run_fail({ log_arg:sub(1, -2) }, "exactly one of data:, data%-file:")
+        run_fail({ log_arg .. "data:0x00,encoding:rot13" }, "encoding must be one of hex, base64, utf8")
+        run_fail({ log_arg .. "data-file:" .. payload_file .. ",encoding:hex" }, "does not apply to data%-file:")
     end)
 
     -- -------------------------------------------------------------------------
@@ -2871,7 +2916,7 @@ describe("cartesi-machine CLI", function()
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
         }, "uarch_cycle_computation_hash cannot be combined with mcycle_computation_hash")
-        -- The microarchitecture only runs with keccak256.
+        -- The uarch only runs with keccak256.
         run_fail({
             "--hash-tree=hash_function:sha256",
             "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"

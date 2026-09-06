@@ -869,11 +869,40 @@ where options are:
   --log-step=<filename>,count:<mcycle-count>
     log and save a step of <mcycle-count> mcycles to <filename>.
 
-  --log-step-uarch
-    advance one micro step and print access log.
+  --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump]
+    log <uarch-cycle-count> uarch cycles (default 1) to <filename>
+    as a binary step log. logging stops early at the uarch halt, so a count at
+    or above the per-mcycle uarch budget records one whole mcycle.
+    append ",dump" to also write a human-readable printout to stderr.
 
-  --log-reset-uarch
-    reset the microarchitecture state and print the access log.
+  --log-reset-uarch=<filename>
+    reset the uarch state and write a binary step log to <filename>.
+
+  --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...]
+    send a cmio response to the rx buffer and write a binary step log to a file.
+    runs after the machine has reached its terminal state. the machine should be
+    in a yielded state (iflags.Y == 1); otherwise the logged transition is a no-op.
+
+    <key>:<value> is one of
+        reason:<number>
+        filename:<path>
+        data:<text>
+        data-file:<path>
+        encoding:hex|base64|utf8
+
+        reason (required)
+        the cmio yield reason (e.g., a HTIF_YIELD_*_REASON_* constant).
+
+        filename (required)
+        path of the step log file to write.
+
+        data | data-file (exactly one required)
+        the response payload, given inline or read from a file.
+
+        encoding (optional, default hex)
+        how to read data: "hex" for a 0x-prefixed hex string, "base64", or
+        "utf8" for literal text. does not apply to data-file, which is
+        always read as raw bytes.
 
   --auto-reset-uarch
     reset uarch automatically after halt.
@@ -892,7 +921,7 @@ where options are:
     (.json/.lua), defaulting to Lua.
 
   --uarch-ram-image=<filename>
-    name of file containing microarchitecture RAM image.
+    name of file containing uarch RAM image.
 
   --dump-memory-ranges[=<dir>]
     dump all memory ranges to files under <dir>.
@@ -1082,9 +1111,7 @@ local cmdline = {
     dump_memory_ranges_dir = false,
     max_mcycle = nil,
     max_uarch_cycle = 0,
-    log_step_uarch = false,
     auto_reset_uarch = false,
-    log_reset_uarch = false,
     store_dir = nil,
     load_dir = nil,
     create_dir = nil,
@@ -1102,6 +1129,9 @@ local cmdline = {
     assert_rolling_template = false,
     log_step_mcycle_count = nil,
     log_step_filename = nil,
+    log_step_uarch = nil,
+    log_reset_uarch = nil,
+    log_send_cmio_response = nil,
 }
 -- Epoch geometry, assigned from the exported rollup constants after the requires, before any
 -- option is parsed.
@@ -1357,6 +1387,15 @@ local function handle_bash_completion()
     bash.dump_bash_completion(options, progs)
     os.exit()
 end
+
+-- Payload encodings accepted by --log-send-cmio-response, named after the
+-- --hex-payload/--base64-payload/--utf8-payload options of rollup.cpp in
+-- machine-guest-tools. cartesi is only required later, so decode lazily.
+local ENCODINGS = {
+    hex = function(v) return cartesi.fromhex(v) end,
+    base64 = function(v) return cartesi.frombase64(v) end,
+    utf8 = function(v) return v end,
+}
 
 -- List of supported options
 -- Options are processed in order
@@ -2124,18 +2163,58 @@ options = {
         },
     },
     {
-        "--log-step-uarch",
-        function()
-            cmdline.log_step_uarch = true
+        "--log-step-uarch=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.filename, "need filename in %s", all)
+            cmdline.log_step_uarch = { filename = o.filename, count = o.count or 1, dump = o.dump }
             return true
         end,
+        {
+            "filename",
+            filename = "file",
+            count = "number",
+            dump = "boolean",
+        },
     },
     {
-        "--log-reset-uarch",
-        function()
-            cmdline.log_reset_uarch = true
+        "--log-reset-uarch=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.filename, "need filename in %s", all)
+            cmdline.log_reset_uarch = { filename = o.filename }
             return true
         end,
+        {
+            "filename",
+            filename = "file",
+        },
+    },
+    {
+        "--log-send-cmio-response=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assert(o.reason, "missing reason for --log-send-cmio-response")
+            assert(o.filename, "missing filename for --log-send-cmio-response")
+            local sources = (o.data and 1 or 0) + (o["data-file"] and 1 or 0)
+            assert(sources == 1, "--log-send-cmio-response requires exactly one of data:, data-file:")
+            if o["data-file"] then
+                assert(not o.encoding, "--log-send-cmio-response encoding does not apply to data-file:")
+            else
+                o.encoding = o.encoding or "hex"
+                assert(ENCODINGS[o.encoding], "--log-send-cmio-response encoding must be one of hex, base64, utf8")
+            end
+            cmdline.log_send_cmio_response = o
+            return true
+        end,
+        {
+            "filename",
+            reason = "number",
+            filename = "file",
+            data = "string",
+            ["data-file"] = "file",
+            encoding = "string",
+        },
     },
     {
         "--max-mcycle=",
@@ -3117,7 +3196,7 @@ end
 if mcycle_root_hashes or computation_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
 end
--- The microarchitecture only runs in machines configured with keccak256.
+-- The uarch only runs in machines configured with keccak256.
 if cmdline.cmio_advance and cmdline.cmio_advance.uarch_cycle_computation_hash then
     assert(
         initial_config.hash_tree.hash_function == "keccak256",
@@ -4029,7 +4108,8 @@ end
 if cmdline.log_step_mcycle_count then
     stderr(string.format("Logging step of %d cycles to %s\n", cmdline.log_step_mcycle_count, cmdline.log_step_filename))
     print_root_hash(machine, stderr_unsilenceable)
-    machine:log_step(cmdline.log_step_mcycle_count, cmdline.log_step_filename)
+    local log = machine:log_step(cmdline.log_step_mcycle_count)
+    util.write_file(log, cmdline.log_step_filename)
     print_root_hash(machine, stderr_unsilenceable)
 end
 -- Advance micro cycles
@@ -4043,7 +4123,7 @@ if cmdline.max_uarch_cycle > 0 then
         report_mcycles(machine)
         report_uarch_cycles(machine)
     elseif break_reason == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
-        -- The microarchitecture halted after completing one main processor instruction.
+        -- The uarch halted after completing one main processor instruction.
         -- The mcycle counter was incremented unless the machine was already halted.
         local newly_halted = machine:read_reg("iflags_H") ~= 0 and not previously_halted
         if cmdline.auto_reset_uarch then machine:reset_uarch() end
@@ -4057,13 +4137,29 @@ if cmdline.max_uarch_cycle > 0 then
 end
 if gdb_stub then gdb_stub:close() end
 if cmdline.log_step_uarch then
-    assert(initial_config.processor.registers.iunrep == 0, "uarch step proof is meaningless in unreproducible mode")
-    stderr("Gathering uarch step log: please wait\n")
-    util.print_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
+    assert(initial_config.processor.registers.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
+    stderr("Gathering micro step log: please wait\n")
+    local log = machine:log_step_uarch(cmdline.log_step_uarch.count)
+    util.write_file(log, cmdline.log_step_uarch.filename)
+    if cmdline.log_step_uarch.dump then
+        io.stderr:write(cartesi.machine:dump_step_uarch(log, cmdline.log_step_uarch.count))
+    end
 end
 if cmdline.log_reset_uarch then
-    stderr("Resetting microarchitecture state: please wait\n")
-    util.print_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
+    stderr("Resetting uarch state: please wait\n")
+    util.write_file(machine:log_reset_uarch(), cmdline.log_reset_uarch.filename)
+end
+if cmdline.log_send_cmio_response then
+    local o = cmdline.log_send_cmio_response
+    local data
+    if o["data-file"] then
+        local f <close> = assert(io.open(o["data-file"], "rb"))
+        data = assert(f:read("*a"))
+    else
+        data = ENCODINGS[o.encoding](o.data)
+    end
+    stderr("Logging cmio response: please wait\n")
+    util.write_file(machine:log_send_cmio_response(o.reason, data, machine:get_root_hash()), o.filename)
 end
 if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_memory_ranges_dir) end
 if cmdline.final_hash then

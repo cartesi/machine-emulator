@@ -122,7 +122,9 @@ brew install cartesi-machine
 - Boost >= 1.83
 - Lua >= 5.4.6 (optional, required for scripting support and interactive terminal)
 - Libslirp >= 4.6.0 (optional, required for networking support)
+- luaposix (optional, required for running the test suite; install into the same Lua tree, e.g. `luarocks install luaposix`)
 - Rust and RISC Zero toolchain (optional, required for building the RISC Zero prover)
+- Foundry (optional, required for the Solidity step library)
 
 ###### Debian Requirements
 
@@ -149,17 +151,38 @@ If you want to build the RISC Zero prover, you'll need Rust and the RISC Zero to
 ```sh
 cargo install rzup
 rzup install rust
-rzup install cpp
-rzup install r0vm
+rzup install cpp 2024.1.5
+rzup install r0vm 3.0.5
 ```
 
-Then build with `make risc0`.
+The `cpp` toolchain version is pinned: it compiles the C++ replay object linked
+into the zkVM guest, so it is part of the reproducible Image ID
+(`risc0/cpp/Makefile` enforces the version and fails with instructions on
+mismatch).
 
-###### Foundry Requirements (optional, for Solidity tests only)
+Then build with `make risc0`. By default the guest binary is built inside Docker so every
+machine produces the same Image ID; set `RISC0_REPRODUCIBLE_BUILD=0` to build it natively
+when Docker is unavailable (the Image ID will then differ from the pinned one).
+
+###### Foundry Requirements (optional, for the Solidity step library)
+
+The in-tree `solidity-step/` library replays binary step logs on-chain for fraud-proof verification.
+It is optional and lateral to the core: the main `make` build needs neither Foundry nor Rust. To
+build and test it you'll need [Foundry](https://getfoundry.sh/), pinned to the version CI uses
+(`forge fmt` output is version-specific, and the transpiled Solidity is drift-checked against it):
 
 ```sh
 curl -L https://foundry.paradigm.xyz | bash
-foundryup
+foundryup --install v1.0.0
+```
+
+The library has its own `solidity-step/` Makefile; drive it directly (recording fixtures needs a
+built emulator and its uarch test programs):
+
+```sh
+make -C solidity-step build      # compile the contracts
+make -C solidity-step fixtures   # record step-log fixtures from the emulator
+make -C solidity-step test       # forge fmt --check + forge test
 ```
 
 #### Build
@@ -299,4 +322,5 @@ For a complete list of authors, see the [AUTHORS](AUTHORS) file.
 ## License
 
 The repository and all contributions to it are licensed under the [LGPL 3.0](https://www.gnu.org/licenses/lgpl-3.0.html), unless otherwise specified below or in subdirectory LICENSE / COPYING files.
+The on-chain verifier contracts are licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), as their own LICENSE files state: [solidity-step/](solidity-step/LICENSE) and [risc0/solidity/](risc0/solidity/LICENSE).
 Please review our [COPYING](COPYING) file for the LGPL 3.0 license and also [LICENSES](LICENSES.md) file for additional information on third-party software licenses.

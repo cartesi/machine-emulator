@@ -973,7 +973,7 @@ cartesi-machine \
 produces the output
 
 ``` text
-0: 0xc1eb21abbc268483d9d53571e04405b9cdb08aa2865a8cf5ad298a797b36277d
+0: 0x3a93d9cc2e72a352fb3ae0a7cd3ab2120cfa66a293dc2b8294e09bdb134e417b
 
          .
         / \
@@ -982,17 +982,17 @@ produces the output
  \       X       \
   \----/  \---/---\
        \    / CARTESI
-41536683: 0x6f3649d631225843a37aacb7af707f0e0e4cc62c046d83e2368cef494db9b2a9
+41536683: 0x625a3d25d48306f0ec0d5b444d7bb935b61ca74ec18302954e627ce42ad024a8
 ```
 
-The initial state hash `c1eb21ab…` is the Merkle tree root hash for the
+The initial state hash `3a93d9cc…` is the Merkle tree root hash for the
 initial Cartesi Machine state. Since Cartesi Machines are reproducible,
 the initial state hash also works as a *promise* on the result of the
 entire computation.
 
-In other words, the “final state hash” `6f3649d6…` is the “only”
+In other words, the “final state hash” `625a3d25…` is the “only”
 possible outcome for the `--final-hash` at cycle `41536683`, given the
-result of the `--initial-hash` operation was `c1eb21ab…`.
+result of the `--initial-hash` operation was `3a93d9cc…`.
 
 > [!NOTE]
 >
@@ -1022,7 +1022,7 @@ cartesi-machine \
 produces instead the output
 
 ``` text
-0: 0xc1eb21abbc268483d9d53571e04405b9cdb08aa2865a8cf5ad298a797b36277d
+0: 0x3a93d9cc2e72a352fb3ae0a7cd3ab2120cfa66a293dc2b8294e09bdb134e417b
 
          .
         / \
@@ -1038,15 +1038,15 @@ Nothing to do.
 
 Halted
 Cycles: 46121361
-46121361: 0xecdc6e986c0a5b32c2f79e7db4131ba46c629a06e078f37de0cd7f1419eb3a94
+46121361: 0x37b727e64f5033e4eb16777ad884aa9349367e62b0e63d8af9cae29d5152a698
 ```
 
 Naturally, the initial state hash is the same as before.
 
-However, the final state hash `ecdc6e98…` now pertains to cycle
+However, the final state hash `37b727e6…` now pertains to cycle
 `46121361`, where the machine is halted. This is the “only” possible
 state hash for a *halted* machine that started from state hash
-`c1eb21ab…`.
+`3a93d9cc…`.
 
 ### Persistent Cartesi Machines
 
@@ -1057,7 +1057,7 @@ command-line option `--store=<directory>`. (In `<directory>`, the `%h`
 escape will be replaced by the state hash in hex.) The machine is stored
 as it was right before `cartesi-machine` returns to the command line.
 For example, to store the machine corresponding to state hash
-`6f3649d6…`
+`625a3d25…`
 
 ``` bash
 cartesi-machine \
@@ -1065,7 +1065,7 @@ cartesi-machine \
     --store="machine-%8h"
 ```
 
-This command creates a directory `machine-0x6f3649`, containing a
+This command creates a directory `machine-0x625a3d`, containing a
 variety of files that allow the Cartesi Machine emulator to recreate a
 machine state. Every image file is copied into the directory, so no
 external dependencies remain.
@@ -1086,7 +1086,7 @@ the corresponding Cartesi Machine, use the command-line option
 
 ``` bash
 cartesi-machine \
-    --load="machine-0x6f3649" \
+    --load="machine-0x625a3d" \
     --initial-hash \
     --final-hash
 ```
@@ -1095,7 +1095,7 @@ produces the output
 
 ``` text
 Loading machine: please wait
-41536683: 0x6f3649d631225843a37aacb7af707f0e0e4cc62c046d83e2368cef494db9b2a9
+41536683: 0x625a3d25d48306f0ec0d5b444d7bb935b61ca74ec18302954e627ce42ad024a8
 
         \ /   MACHINE
          '
@@ -1104,16 +1104,16 @@ Nothing to do.
 
 Halted
 Cycles: 46121361
-46121361: 0xecdc6e986c0a5b32c2f79e7db4131ba46c629a06e078f37de0cd7f1419eb3a94
+46121361: 0x37b727e64f5033e4eb16777ad884aa9349367e62b0e63d8af9cae29d5152a698
 ```
 
 Note that, other than `--load`, no initialization command-line options
 were used. These initializations were used to define the machine before
 it was stored: their values are implicitly encoded in the stored state.
 The machine continues from where it left off, and reaches the same final
-state hash `ecdc6e98…`, as if it had never been interrupted.
+state hash `37b727e6…`, as if it had never been interrupted.
 
-Note also that the initial state hash `6f3649d6…` after `--load` matches
+Note also that the initial state hash `625a3d25…` after `--load` matches
 the final state hash before `--store`. After all, they are state hashes
 concerning the state of the same machine at the same cycle. `--load`
 verifies the archive format version recorded in the stored machine, and
@@ -1124,13 +1124,13 @@ The `cartesi-machine-stored-hash` command-line utility can be used to
 extract the state hash from a stored Cartesi Machine. The command
 
 ``` bash
-cartesi-machine-stored-hash machine-0x6f3649
+cartesi-machine-stored-hash machine-0x625a3d
 ```
 
 produces the output
 
 ``` text
-0x6f3649d631225843a37aacb7af707f0e0e4cc62c046d83e2368cef494db9b2a9
+0x625a3d25d48306f0ec0d5b444d7bb935b61ca74ec18302954e627ce42ad024a8
 ```
 
 A stored machine can also be cloned. The option
@@ -1168,7 +1168,7 @@ For example, the command
 ``` bash
 cartesi-machine \
     --revert-mode=none \
-    --load="cloned-machine,clone:machine-0x6f3649,sharing:all,sync" \
+    --load="cloned-machine,clone:machine-0x625a3d,sharing:all,sync" \
     --final-hash
 ```
 
@@ -1180,7 +1180,7 @@ Loading machine: please wait
 
 Halted
 Cycles: 46121361
-46121361: 0xecdc6e986c0a5b32c2f79e7db4131ba46c629a06e078f37de0cd7f1419eb3a94
+46121361: 0x37b727e64f5033e4eb16777ad884aa9349367e62b0e63d8af9cae29d5152a698
 Syncing machine: please wait
 ```
 
@@ -1188,18 +1188,18 @@ No `--store` was given, yet the finished machine is on disk. The command
 
 ``` bash
 cartesi-machine-stored-hash cloned-machine
-cartesi-machine-stored-hash machine-0x6f3649
+cartesi-machine-stored-hash machine-0x625a3d
 ```
 
 produces the output
 
 ``` text
-0xecdc6e986c0a5b32c2f79e7db4131ba46c629a06e078f37de0cd7f1419eb3a94
-0x6f3649d631225843a37aacb7af707f0e0e4cc62c046d83e2368cef494db9b2a9
+0x37b727e64f5033e4eb16777ad884aa9349367e62b0e63d8af9cae29d5152a698
+0x625a3d25d48306f0ec0d5b444d7bb935b61ca74ec18302954e627ce42ad024a8
 ```
 
-The clone advanced to the final state hash `ecdc6e98…`, while the source
-still holds the machine at the stored state hash `6f3649d6…`.
+The clone advanced to the final state hash `37b727e6…`, while the source
+still holds the machine at the stored state hash `625a3d25…`.
 
 ### Running as root
 
@@ -1388,7 +1388,7 @@ cartesi-machine \
 The result is as follows
 
 ``` text
-0: 0xede5ca97e3938147db026b863ee3656c36ed75a3f7f0d134b38958909b540ba2
+0: 0x46d759a867687c1bbbdf76cf18e4da29a611bde77d145549572ec85bfceaf2f7
 Storing machine: please wait
 ```
 
@@ -1402,10 +1402,10 @@ cartesi-machine-stored-hash calculator-template/
 we can see from the output
 
 ``` text
-0xede5ca97e3938147db026b863ee3656c36ed75a3f7f0d134b38958909b540ba2
+0x46d759a867687c1bbbdf76cf18e4da29a611bde77d145549572ec85bfceaf2f7
 ```
 
-that the stored template hash is `ede5ca97…`.
+that the stored template hash is `46d759a8…`.
 
 Templates are typically used by programs that control the emulator with
 the C++, Lua, or JSON-RPC interfaces.
@@ -1488,12 +1488,12 @@ The output of the command is
 
 ``` text
 Loading machine: please wait
-0: 0xede5ca97e3938147db026b863ee3656c36ed75a3f7f0d134b38958909b540ba2
+0: 0x46d759a867687c1bbbdf76cf18e4da29a611bde77d145549572ec85bfceaf2f7
 ```
 
 In addition, the `pristine-input-proof.lua` file now contains a Lua
 table with the requested proof. The value of field `root_hash` is the
-expected initial state hash `ede5ca97…` seen in the output of the
+expected initial state hash `46d759a8…` seen in the output of the
 `cartesi-machine` command. The `target_address` value `0xa0000000` is
 the start of the input NVRAM. The `log2_target_size` value `12` refers
 to the size of the 4KiB input NVRAM. The `target_hash` value `292c23a9…`
@@ -1563,14 +1563,14 @@ This produces the output
 
 ``` text
 Loading machine: please wait
-0: 0x856400a473c3c1fb8aa24806a3f583fc48ce2a7799decaf6566c25fb91b3c84e
+0: 0x91cc81445bf6a5b1de8d2646d8d1dee557aebf9237151f6dc5de79294cfefae3
 ```
 
 In addition, the `input-proof.lua` file now contains a Lua table with
 the requested proof, which is produced after the input NVRAM has been
 replaced. The `target_hash` value `d5ea32c1…` reflects the hash computed
-for the input. The `root_hash` value `856400a4…` differs from
-`ede5ca97…` obtained for the template, as expected, and matches the
+for the input. The `root_hash` value `91cc8144…` differs from
+`46d759a8…` obtained for the template, as expected, and matches the
 final hash printed by the utility. Moreover, the `sibling_hashes`
 entries in the template Cartesi Machine and in the instantiated Cartesi
 Machine remain the same, reflecting the fact that there were no other
@@ -1606,10 +1606,10 @@ Loading machine: please wait
 
 Halted
 Cycles: 69015695
-69015695: 0x083d12ed7f14763852492a3dda450be436e22a856d781f4f75ac25aab89872d1
+69015695: 0x87c38bf4035a3c6cd3965319375c49ae1eba86b9776eed608aa2bfc1fdca1644
 ```
 
-The `root_hash` field in the proof `083d12ed…` matches the final state
+The `root_hash` field in the proof `87c38bf4…` matches the final state
 hash output by the `cartesi-machine` command-line utility. The
 `target_hash` field `1beb375b…` is the hash of the `output.raw` NVRAM.
 To compute it independently, use the `cartesi-hash-tree-hash`
@@ -1646,11 +1646,11 @@ cartesi-machine --dump-constants
 to produce
 
 ``` text
-CARTESI_ACCESS_LOG_TYPE_ANNOTATIONS=1
-CARTESI_ACCESS_LOG_TYPE_LARGE_DATA=2
 CARTESI_AR_CLINT_LENGTH=786432
 CARTESI_AR_CLINT_START=33554432
 CARTESI_AR_CMIO_RX_BUFFER_LOG2_SIZE=21
+CARTESI_AR_CMIO_RX_BUFFER_START=1610612736
+CARTESI_AR_CMIO_TX_BUFFER_LOG2_SIZE=21
 ...
 CARTESI_VERSION_LABEL=''
 CARTESI_VERSION_MAJOR=0
@@ -2108,8 +2108,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 71346427
 
 Before input 0
-71346427: 0x4c266b9a963fdad455245d76ccf7fe32145eb4b34c426d0e3b31473a5966e2a6
-71346427: 0xb3451195a8bb9e77d1dcfd0948c6b3e87304f9547dfc85d8840e041ba4503239
+71346427: 0xf4aa4e6eef120137147529999c537a4d5ef609454f87cb4d6eabaf7738084528
+71346427: 0x3d1f288f482c10b7e1eabc4c353cd30ceda1592b6c4f02a9ec9f7e5e680dc50e
 
 Automatic yield tx-output (2) (0x000184 data)
 Cycles: 114676283
@@ -2121,8 +2121,8 @@ Storing input-0-outputs-merkle-root.bin
 Storing input-0-outputs-merkle-root-proof.lua
 
 Before input 1
-122043816: 0xf4018067a48e6b05b84594f8ebe00c769c2ae8b956164537adb34b0641a9821a
-122043816: 0x4687da27ddaf27b0829bf591606a10254296f6f9ed5057b79c48797fffb51e00
+122043816: 0x876e4d7ba87ceeee608465bede3e2f64794f42f9482adbaa6503eacbad25f02e
+122043816: 0xdb920e459dedd0e1b9b2dbfc3e6422da15e4bdc1ba5ccba4ec7d8a4743607189
 
 Automatic yield tx-output (2) (0x000044 data)
 Cycles: 162634510
@@ -2132,8 +2132,8 @@ Cycles: 167687664
 Storing rejected-output-1-input-1.bin
 
 Before input 2
-122043816: 0xf4018067a48e6b05b84594f8ebe00c769c2ae8b956164537adb34b0641a9821a
-122043816: 0x9ee1745df33c279a9366422178bbc044436e69f965c6faf348d26d9f0b3cc819
+122043816: 0x876e4d7ba87ceeee608465bede3e2f64794f42f9482adbaa6503eacbad25f02e
+122043816: 0x5f85ca82f5cbd7273a6ab8f779ee268f2b1def466498332923d1d796557c3497
 
 Automatic yield tx-output (2) (0x0002c4 data)
 Cycles: 164679073
@@ -2155,8 +2155,8 @@ transferring information in and out. The first
 the calculator attempted to obtain its first request.
 
 Upon receiving control back, the client prints input index 0 and the
-state hash `4c266b9a…`. It loads `input-0.bin` as the next request,
-prints the modified state hash `b3451195…`, and resumes the machine. The
+state hash `f4aa4e6e…`. It loads `input-0.bin` as the next request,
+prints the modified state hash `3d1f288f…`, and resumes the machine. The
 calculator evaluates `6*2^1024 + 3*2^512` and emits the result as a
 notice. That emission is an `automatic yield tx-output` at cycle
 `114676283`, which returns control to the client. The client collects
@@ -2177,7 +2177,7 @@ purposes, the client saves the notice contents as
 `rejected-output-1-input-1.bin`. The resulting
 `manual yield rx-rejected` at cycle `167687664` rolls the machine state
 back to what it was before the input was processed. The state hash
-before input 2, `f4018067…`, is identical to the hash after input 0 was
+before input 2, `876e4d7b…`, is identical to the hash after input 0 was
 accepted, which confirms the rejected input left no trace.
 
 Input index 2, with payload `2^2048`, is accepted like the first, so the
@@ -2234,8 +2234,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 171271795
 
 Before input 3
-171271795: 0x5d4ca486a943799b75423a1763daf881fa064e2115309f98ab22096cbcb3ec7c
-171271795: 0x3cca6fa82377b5e8192962b03eb3a1bd0c6efff30a19fbc7136e8f06b1fe13ae
+171271795: 0x4d44a7273937e8957df7c90289f77e2e97b975d421be35b24a9987281e0747dc
+171271795: 0x5c3af0ad9402e6e122ec75d9ea9648a8fc432dfbd1060f9b28340f71853d0d26
 
 Automatic yield tx-output (2) (0x0000e4 data)
 Cycles: 212114783
@@ -2247,8 +2247,8 @@ Storing input-3-outputs-merkle-root.bin
 Storing input-3-outputs-merkle-root-proof.lua
 
 Before input 4
-219218926: 0x88873f057ce48687ab4d3877da697e1abfd04f6003fbf31983f9a7c829ca475e
-219218926: 0x034ac361eb08157e1aa9719efdc4f31c6c7beceaf4c33863b2c624cb5ef79e2c
+219218926: 0xca5c485cfa6d945abca2ef777baaeb61c5611fa858647fcea6a468c0891460ff
+219218926: 0x55720cf03b3b0ae225b370595b56990c3755101360a315f2c3c29d8c2c236128
 
 Automatic yield tx-output (2) (0x0000a4 data)
 Cycles: 260942983
@@ -2260,8 +2260,8 @@ Storing input-4-outputs-merkle-root.bin
 Storing input-4-outputs-merkle-root-proof.lua
 
 Before input 5
-267395680: 0x8d9dd61f9c8c01dedb2d4bfaac5471b0d2af8d88ac3c9a97b1341857b3a6f08c
-267395680: 0xa2a58f584e24ebe1df55a3e2dca8d8ed67a7eb15914be594c81a1926a7d3dad1
+267395680: 0x9a2d9a6a5f529e1d5118be0b9e738f61e27d322081ec2a923032889e3f0e3463
+267395680: 0x1ff5c2e5c965a55b027185e4a64d1454074dc77b3ab2ec48712d3b21c9c011a0
 
 Automatic yield tx-output (2) (0x0000c4 data)
 Cycles: 308091475
@@ -2276,8 +2276,8 @@ Storing output-3-input-4-proof.lua
 Storing output-4-input-5-proof.lua
 
 Before query
-315201332: 0x3661352b0f9236d9c3803aa298b4e71b5c14c19522459b78d5fcdcd0f0118186
-315201332: 0xc85511cad78bbee7106fdbce802eee91f6edd7068663b4f2c3daa31d746b49c3
+315201332: 0x906a19b895192a14a97607e35add158613fb6ef981660312b7d7ca097ef5e5a6
+315201332: 0x716ddd57cb5710bb1f3e6abe17377a17946b30b37f6e0710081c45bf182919aa
 
 Automatic yield tx-report (4) (0x000048 data)
 Cycles: 356803117
@@ -2390,7 +2390,7 @@ is as follows
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 71346427
-71346427: 0x4c266b9a963fdad455245d76ccf7fe32145eb4b34c426d0e3b31473a5966e2a6
+71346427: 0xf4aa4e6eef120137147529999c537a4d5ef609454f87cb4d6eabaf7738084528
 Storing machine: please wait
 ```
 
@@ -2442,8 +2442,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 71346427
 
 Before input 0
-71346427: 0x4c266b9a963fdad455245d76ccf7fe32145eb4b34c426d0e3b31473a5966e2a6
-71346427: 0xb3451195a8bb9e77d1dcfd0948c6b3e87304f9547dfc85d8840e041ba4503239
+71346427: 0xf4aa4e6eef120137147529999c537a4d5ef609454f87cb4d6eabaf7738084528
+71346427: 0x3d1f288f482c10b7e1eabc4c353cd30ceda1592b6c4f02a9ec9f7e5e680dc50e
 
 Automatic yield tx-output (2) (0x000184 data)
 Cycles: 114676283
@@ -2510,8 +2510,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 71346427
 
 Before input 0
-71346427: 0x4c266b9a963fdad455245d76ccf7fe32145eb4b34c426d0e3b31473a5966e2a6
-71346427: 0xb3451195a8bb9e77d1dcfd0948c6b3e87304f9547dfc85d8840e041ba4503239
+71346427: 0xf4aa4e6eef120137147529999c537a4d5ef609454f87cb4d6eabaf7738084528
+71346427: 0x3d1f288f482c10b7e1eabc4c353cd30ceda1592b6c4f02a9ec9f7e5e680dc50e
 
 Automatic yield tx-output (2) (0x000184 data)
 Cycles: 114676283
@@ -2727,22 +2727,22 @@ The output is
 
 ``` text
 Loading machine: please wait
-0: 0x856400a473c3c1fb8aa24806a3f583fc48ce2a7799decaf6566c25fb91b3c84e
-69015685: 0xb7ff28a76420711ff13b13356f871766a6c1ae5b68981da0e86fe7228d813dcc
-69015686: 0x231d31b0d8f1a890cb07a46de2e495f13f094d2c9c5f84eb50df3bad39f00923
-69015687: 0x0e0c4255947f0b05b38945b39ecbf2d9e2db06ec551c67aea9683ececd66eb5f
-69015688: 0x004c4bf01777a7f1c283b8cba6fd4f35e343da7252bf6dd8c9f9de55aabd25cc
-69015689: 0x1fc3ac9e6aeacb28f8a9c50786440130a1832ef5a3b6a9d14d16b9fbbb3dea91
-69015690: 0xe7206f7eee610e4895bd7576f30d5db4777c3ad98eab3dc7dade30be3c11a939
-69015691: 0xe216584da74bb8d91e3dd7d17b1807cf09072f87592f8df375987acb6de8c00b
-69015692: 0x6167fbb27f00668587b4a6ce93b46ab1ea9451f9dd11b0dcb48879dcad635422
-69015693: 0xd594825074f72f5422fa6e6c1e8465baaf337348599fd8509fb37d65672d6347
-69015694: 0xbde893b7c98473097d065c945ddd1784c8ffb00116dcc697640fce139e0e1b33
-69015695: 0x083d12ed7f14763852492a3dda450be436e22a856d781f4f75ac25aab89872d1
+0: 0x91cc81445bf6a5b1de8d2646d8d1dee557aebf9237151f6dc5de79294cfefae3
+69015685: 0x4bdaa039adba80cfc17e8dcee738409acace963097e25457e32a0da9e86389db
+69015686: 0x8d6611594289c06c70878815b117e52e85c62b51ac434748735bcfaea0796be0
+69015687: 0x6a5fc903cae5f216711f4ec855b1b467a68ab0afaa629ac941f74251d95a443a
+69015688: 0x7c637f89e6766e5c043852262787180447f254ba54452f48536fa7c080e2d4c9
+69015689: 0x908d96b24ebb9132d56a3daea1b6f16305d056708860def30a894c25587d0a96
+69015690: 0x807d39d8c9cb2245b604a9371cdfea6b948d8b19aaa7dffa91e07ef73a3a3923
+69015691: 0x36d42cc6cc405a01724baa9639fd0f9197ab46c3aa2c4903e81e618aeeae46ca
+69015692: 0xecf7495000a5fa9a1baeabe15fc07015b481da24c7a3db095a528476c219d034
+69015693: 0x7cfd415217af512cd904dcd4fa816257ca435c25fb4243daa1664175c0e1b1e3
+69015694: 0xc863453451458f7c033da135d8f2d01671bece7d1b7bd7d1a58f0ce9bc7c3bea
+69015695: 0x87c38bf4035a3c6cd3965319375c49ae1eba86b9776eed608aa2bfc1fdca1644
 
 Halted
 Cycles: 69015695
-69015695: 0x083d12ed7f14763852492a3dda450be436e22a856d781f4f75ac25aab89872d1
+69015695: 0x87c38bf4035a3c6cd3965319375c49ae1eba86b9776eed608aa2bfc1fdca1644
 ```
 
 The command-line option `--dump-memory-ranges[=<dir>]` causes the
@@ -2805,38 +2805,37 @@ that issues a putchar command to the HTIF console device by writing it
 to the `htif.tohost` CSR. That single main processor instruction expands
 into many uarch instructions. The one that actually triggers the host to
 emit a character is an `ecall` with `a7 = UARCH_ECALL_FN_PUTCHAR` and
-`a0 = 0x0a`. This happens when `uarch_cycle` is `2249`.
+`a0 = 0x0a`. This happens when `uarch_cycle` is `2242`.
 
 In the following command, the `--max-mcycle` and `--max-uarch-cycle`
 options tell `cartesi-machine` to stop just before the putchar `ecall`.
 The `--log-step-uarch` command-line option instructs `cartesi-machine`
-to then dump to screen a user-friendly version of the access log
-produced by a single uarch step:
+to then record a single uarch step into a binary step log file. The
+`dump` flag also dumps a user-friendly version of the logged step to
+screen:
 
 ``` bash
 cartesi-machine \
     --max-mcycle=41536683 \
-    --max-uarch-cycle=2249 \
-    --log-step-uarch
+    --max-uarch-cycle=2242 \
+    --log-step-uarch=uarch-step.log,dump
 ```
 
 producing the log
 
 ``` text
-Gathering uarch step log: please wait
-begin step
-  1: read uarch.cycle@0x400008(4194312): 0x8c9(2249)
-  2: read uarch.halt@0x400000(4194304): 0x0(0)
-  3: read uarch.pc@0x400010(4194320): 0x600b38(6294328)
-  4: read uarch.ram@0x600b38(6294328): 0x806700000073(141179869986931)
-  begin ecall
-    5: read uarch.x17@0x4000a0(4194464): 0x2(2)
-    6: read uarch.x10@0x400068(4194408): 0xa(10)
-    7: write uarch.pc@0x400010(4194320): 0x600b38(6294328) -> 0x600b3c(6294332)
-  end ecall
-  8: write uarch.cycle@0x400008(4194312): 0x8c9(2249) -> 0x8ca(2250)
-  9: read uarch.halt@0x400000(4194304): 0x0(0)
-end step
+Gathering micro step log: please wait
+1: read uarch.cycle@0x400008: 0x8c2(2242)
+2: read uarch.halt@0x400000: 0x0(0)
+3: read uarch.pc@0x400010: 0x6021d0(6300112)
+4: read @0x6021d0: 0x51300000073(5579162517619)
+begin ecall
+  5: read uarch.x17@0x4000a0: 0x2(2)
+  6: read uarch.x10@0x400068: 0xa(10)
+  7: write uarch.pc@0x400010: 0x6021d0(6300112) -> 0x6021d4(6300116)
+end ecall
+8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
+9: read uarch.halt@0x400000: 0x0(0)
 ```
 
 Understanding these logs in detail is unnecessary for all but the most
@@ -3197,16 +3196,16 @@ commands. Defaults to both enabled. The `cartesi-machine` command-line
 options `--no-htif-yield-automatic` and `--no-htif-yield-manual` clear
 the corresponding bits.
 
-The `uarch` entry describes the microarchitecture state. The
-`uarch.processor` field controls the uarch processor. Like the main
-processor, it includes a `uarch.processor.registers` flat table with all
-registers. Register `uarch.processor.registers.halt` is non-zero when
-the uarch is halted. The `uarch.ram` field controls the uarch RAM.
-Unlike the main processor RAM, the uarch RAM is fixed in length.
-Moreover, the `uarch.ram.backing_store.data_filename` is typically left
-blank (other than in unit tests), as the emulator automatically fills
-the uarch RAM with an implementation of the main processor fetch-execute
-loop compiled to function within the uarch.
+The `uarch` entry describes the uarch state. The `uarch.processor` field
+controls the uarch processor. Like the main processor, it includes a
+`uarch.processor.registers` flat table with all registers. Register
+`uarch.processor.registers.halt` is non-zero when the uarch is halted.
+The `uarch.ram` field controls the uarch RAM. Unlike the main processor
+RAM, the uarch RAM is fixed in length. Moreover, the
+`uarch.ram.backing_store.data_filename` is typically left blank (other
+than in unit tests), as the emulator automatically fills the uarch RAM
+with an implementation of the main processor fetch-execute loop compiled
+to function within the uarch.
 
 The `pmas` entry describes the memory range containing one PMA (for
 *physical memory attributes*) entry for each address range that is
@@ -4266,7 +4265,7 @@ cartesi-machine \
 ```
 
 ``` text
-0: 0xc1eb21abbc268483d9d53571e04405b9cdb08aa2865a8cf5ad298a797b36277d
+0: 0x3a93d9cc2e72a352fb3ae0a7cd3ab2120cfa66a293dc2b8294e09bdb134e417b
 
          .
         / \
@@ -4282,7 +4281,7 @@ Nothing to do.
 
 Halted
 Cycles: 46121361
-46121361: 0xecdc6e986c0a5b32c2f79e7db4131ba46c629a06e078f37de0cd7f1419eb3a94
+46121361: 0x37b727e64f5033e4eb16777ad884aa9349367e62b0e63d8af9cae29d5152a698
 ```
 
 Note that the initial state hashes and the final state hashes match, as
@@ -5365,7 +5364,7 @@ scale=100; 355/113
 result is
 3.141592920353982300884955752212389380530973451327433628318584070796
 4601769911504424778761061946902654
-final state hash: 0x3661352b0f9236d9c3803aa298b4e71b5c14c19522459b78d5fcdcd0f0118186
+final state hash: 0x906a19b895192a14a97607e35add158613fb6ef981660312b7d7ca097ef5e5a6
 ```
 
 The final state hash matches the command-line stored-mode run, so both
@@ -5381,133 +5380,87 @@ game*](#verification-game) between the disputing parties. In brief, the
 parties agree on an initial state hash but claim different final state
 hashes. The game first narrows down the disagreement to the first
 main-processor instruction that deviates, and within it the first uarch
-instruction that deviates. After that, the honest party submits an
-access log, with Merkle-tree proofs for every value read from or written
-to the state, which the blockchain uses to identify the honest party.
+instruction that deviates. After that, the honest party submits a *step
+log* recording every piece of machine state the disputed step touched,
+plus the hashes tying that state into the machine’s root hash, which the
+blockchain uses to identify the honest party.
 
-To obtain the access log for a specific uarch instruction in the
-execution of a Cartesi Machine instance, first advance to the last
-agreed `<mcycle>` using `machine:run(<mcycle>)`. Then advance the uarch
-to the last agreed `<uarch_cycle>` using
-`machine:run_uarch(<uarch_cycle>)`. Like `machine:run()`,
-`machine:run_uarch()` can return prematurely for a variety of reasons.
-It returns a break reason explaining why control was returned to the
-caller, taken from the `cartesi.UARCH_BREAK_REASON_*` set. For example,
-`cartesi.UARCH_BREAK_REASON_UARCH_HALTED` if the uarch halted before
-reaching the target cycle.
+To obtain the step log for a specific uarch instruction in the execution
+of a Cartesi Machine instance, first advance to the last agreed
+`<mcycle>` using `machine:run(<mcycle>)`. Then advance the uarch to the
+last agreed `<uarch_cycle>` using `machine:run_uarch(<uarch_cycle>)`.
+Like `machine:run()`, `machine:run_uarch()` can return prematurely for a
+variety of reasons. It returns a break reason explaining why control was
+returned to the caller, taken from the `cartesi.UARCH_BREAK_REASON_*`
+set. For example, `cartesi.UARCH_BREAK_REASON_UARCH_HALTED` if the uarch
+halted before reaching the target cycle.
 
 Once the target uarch cycle has been reached, use the
-`machine:log_step_uarch(<log_type>)` function to produce a log that
-advances to the next uarch cycle. Alternatively, if the uarch is halted
-at that point, use `machine:log_reset_uarch()` to produce the log that
+`machine:log_step_uarch(<uarch_cycle_count>)` function to advance
+`<uarch_cycle_count>` uarch cycles (one, in a dispute) and return the
+binary log recording the step. Alternatively, if the uarch is halted at
+that point, use `machine:log_reset_uarch()` to obtain the log that
 reverts the state of the uarch to its pristine form. Note that the
-function indeed performs the action, and therefore modifies the uarch
-state, in addition to collecting the access log. The `<log_type>`
-argument is an integer bitfield formed by OR-ing
-`cartesi.ACCESS_LOG_TYPE_ANNOTATIONS` (to include the notes and brackets
-metadata consumed by the pretty-printer `util.print_log`) and
-`cartesi.ACCESS_LOG_TYPE_LARGE_DATA` (to include the full raw payload of
-large accesses, not just their hashes). Merkle-tree proofs are always
-included in the log.
+functions indeed perform the action, and therefore modify the uarch
+state, in addition to recording the log.
 
-The format of the access log returned is as follows:
+The binary format of the step log is as follows:
 
-``` lua
-access_log ::= {
-  log_type ::= {
-    annotations ::= boolean,
-    large_data  ::= boolean
-  },
-  accesses ::= {
-    [1] ::= access,
-    [2] ::= access,
-    ...
-    [n] ::= access
-  },
-  notes ::= {
-    [1] ::= string,
-    ...
-    [n] ::= string
-  },
-  brackets ::= {
-    [1] ::= bracket,
-    ...
-    [m] ::= bracket
-  }
-}
+    step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^sibling_count
 
-access ::= {
-  type         ::= "read" | "write",
-  address      ::= number,
-  log2_size    ::= number,
-  read_hash    ::= string,
-  read         ::= string,
-  written_hash ::= string,
-  written      ::= string,
-  proof        ::= proof
-}
+    header ::= {                        -- 40 bytes
+      signature     ::= "CTSI" 3 0 0 0, -- magic + version + reserved
+      hash_function ::= uint64,         -- hash function used (e.g. keccak256)
+      page_count    ::= uint64,
+      node_count    ::= uint64,
+      sibling_count ::= uint64
+    }
 
-proof ::= {
-  target_address   ::= number,
-  log2_target_size ::= number,
-  log2_root_size   ::= number,
-  target_hash      ::= string,
-  root_hash        ::= string,
-  sibling_hashes   ::= {
-    [1] ::= string,
-    ...
-    [k] ::= string
-  }
-}
+    page_entry ::= {                    -- 4136 bytes, strictly ascending by index
+      index ::= uint64,                 -- byte address >> log2 of the page size
+      data  ::= byte^4096,              -- page contents as of first touch
+      hash  ::= hash                    -- scratch slot, must be zero on the wire
+    }
 
-bracket ::= {
-  type  ::= "begin" | "end",
-  where ::= number,
-  text  ::= string
-}
-```
+    node_entry ::= {                    -- 48 bytes: a bulk write spanning > 1 page
+      address   ::= uint64,             -- subtree start, aligned to 2^log2_size
+      log2_size ::= uint64,
+      hash      ::= hash                -- subtree hash before the bulk write; the replay
+                                        -- overwrites it with the hash of what it writes
+    }
 
-The `accesses` array records, in order, all accesses to the machine
-state performed during the execution of the uarch step. Accesses can be
-of `type` either `"read"` or `"write"`. The `address` field gives the
-physical address of the accessed region and `log2_size` gives its size
-as a power of two. The `read_hash` field contains the hash of the data
-as read before the access. For `"write"` accesses, `written_hash`
-contains the hash of the written data. The `read` and `written` fields
-carry the data itself. For accesses at or above the 32-byte hash-tree
-leaf granularity (`log2_size >= 5`), each field is exactly `2^log2_size`
-bytes long. For sub-leaf accesses (`log2_size < 5`, typically
-`log2_size = 3` for an 8-byte word), the field contains the entire
-enclosing aligned 32-byte tree leaf. The `proof` field is used when
-[verifying state transitions](#verifying-state-transitions).
+    sibling_entry ::= hash              -- hashes of the subtrees not covered by pages
+                                        -- or nodes, in the order a depth-first walk of
+                                        -- the state hash tree consumes them
 
-#### Inspecting access logs
+All integers are little-endian and every `hash` is 32 bytes. The page
+entries record, as of first touch, every page of machine state the step
+read or wrote. The node entries record bulk writes that replace whole
+subtrees at once, as the uarch reset and the input-inclusion transitions
+do. A node is a subtree whose contents are not witnessed, only its hash.
+Combined with the hashes of the pages and nodes, the siblings
+reconstruct the machine’s root hash. The root hash before is recomputed
+from the witnessed tree, the caller says how many cycles to replay, and
+the root hash after is whatever the replay produces, returned for the
+caller to compare. A step log is therefore self-contained, and anyone
+can check one against a pair of state hashes without instantiating a
+machine.
 
-When `log_type` includes `cartesi.ACCESS_LOG_TYPE_ANNOTATIONS`, the
-access log includes annotations that help put each access into a larger
-context.
+#### Inspecting step logs
 
-The `notes` array contains a string corresponding to each entry in the
-`accesses` array, describing the word access. The `brackets` contain
-information that groups ranges of word accesses into *scopes*. Each
-bracket entry `type` field tells if the entry marks the `"begin"` or
-`"end"` of a scope. The `where` field gives the position in the
-`accesses` array where the bracket should be “inserted”.
-
-The `print_log(<log>, <out>)` function in the `cartesi.util` module uses
-these annotations to dump a detailed description of the access `<log>`
-into an open file object `<out>` (E.g., `io.stdout` or the return of
-`io.open()`). It indents each access according to the number of
-enclosing scopes and uses the notes to identify what each address refers
-to (a register, a CSR, memory). Addresses and values are printed in
-hexadecimal and decimal.
+The static method
+`cartesi.machine:dump_step_uarch(<log>, <uarch_cycle_count>)` returns a
+user-friendly version of the uarch cycles recorded in a binary step log.
+It replays the requested number of cycles against the state carried in
+the log (stopping early if the uarch halts) and describes every access
+performed, identifying what each address refers to (a register, a CSR,
+memory). Addresses and values are printed in hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:
 
 ``` lua
--- Load the Cartesi modules
+-- Load the Cartesi module
 local cartesi = require("cartesi")
-local util = require("cartesi.util")
 
 -- Instantiate machine from configuration
 local config = require(arg[1])
@@ -5521,16 +5474,16 @@ assert(machine:read_reg("mcycle") == mcycle, "machine halted or yielded early")
 machine:run_uarch(ucycle)
 assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 
--- Obtain access log and dump it to screen
-local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
-io.stderr:write(string.format("\nAccess log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
-util.print_log(log, io.stderr)
+-- Record the step into a binary log and dump its printout to screen
+local log = machine:log_step_uarch(1)
+io.stderr:write(string.format("\nStep log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
+io.stderr:write(cartesi.machine:dump_step_uarch(log, 1))
 ```
 
 with command:
 
 ``` bash
-lua5.4 dump-uarch-step.lua config-nothing-to-do "41536683" "2249"
+lua5.4 dump-uarch-step.lua config-nothing-to-do "41536683" "2242"
 ```
 
 produces the output:
@@ -5544,21 +5497,19 @@ produces the output:
  \       X       \
   \----/  \---/---\
        \    / CARTESI
-Access log of uarch step at mcycle=41536683 uarch_cycle=2249:
+Step log of uarch step at mcycle=41536683 uarch_cycle=2242:
 
-begin step
-  1: read uarch.cycle@0x400008(4194312): 0x8c9(2249)
-  2: read uarch.halt@0x400000(4194304): 0x0(0)
-  3: read uarch.pc@0x400010(4194320): 0x600b38(6294328)
-  4: read uarch.ram@0x600b38(6294328): 0x806700000073(141179869986931)
-  begin ecall
-    5: read uarch.x17@0x4000a0(4194464): 0x2(2)
-    6: read uarch.x10@0x400068(4194408): 0xa(10)
-    7: write uarch.pc@0x400010(4194320): 0x600b38(6294328) -> 0x600b3c(6294332)
-  end ecall
-  8: write uarch.cycle@0x400008(4194312): 0x8c9(2249) -> 0x8ca(2250)
-  9: read uarch.halt@0x400000(4194304): 0x0(0)
-end step
+1: read uarch.cycle@0x400008: 0x8c2(2242)
+2: read uarch.halt@0x400000: 0x0(0)
+3: read uarch.pc@0x400010: 0x6021d0(6300112)
+4: read @0x6021d0: 0x51300000073(5579162517619)
+begin ecall
+  5: read uarch.x17@0x4000a0: 0x2(2)
+  6: read uarch.x10@0x400068: 0xa(10)
+  7: write uarch.pc@0x400010: 0x6021d0(6300112) -> 0x6021d4(6300116)
+end ecall
+8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
+9: read uarch.halt@0x400000: 0x0(0)
 ```
 
 Understanding these logs in detail is unnecessary for all but the most
@@ -5572,26 +5523,20 @@ row `\    / CARTESI` in the splash screen.
 
 #### Verifying state transitions
 
-Each access carries a `proof` field. Using the known state hash before
-the access, it is possible to verify that the `read` value was indeed
-the value stored at `address` in the machine state. For a `"write"`
-access, the `sibling_hashes` in the proof can be used to compute the new
-state hash. Doing this for each access in sequence yields the state hash
-at the end of the step.
-
-The method
-`machine:verify_step_uarch(<state_hash_before>, <access_log>)` performs
-this verification, additionally checking that the accesses correspond to
-the operation of the Cartesi Machine uarch starting from
-`<state_hash_before>`. It returns the state hash at the end of the step,
-for the caller to compare against the state hash under dispute. Note
-there is no need for a Cartesi Machine instance to verify a transition:
-all required state information is in the access log.
+The static method
+`machine:verify_step_uarch(<state_hash_before>, <log>, <uarch_cycle_count>)`
+first checks that the log’s contents reproduce `<state_hash_before>`,
+then replays the logged uarch step against them, exactly as a true
+Cartesi Machine uarch would execute it. It returns the state hash the
+step provably advances to, for the caller to compare against the state
+hash under dispute. Note there is no need for a Cartesi Machine instance
+to verify a transition: all required state information is in the step
+log.
 
 The following script illustrates the verification of a state transition.
 
 ``` lua
--- Load the Cartesi modules
+-- Load the Cartesi module
 local cartesi = require("cartesi")
 
 -- Instantiate machine from configuration
@@ -5604,100 +5549,84 @@ local ucycle = assert(tonumber(arg[3]), "missing uarch_cycle")
 machine:run(mcycle)
 machine:run_uarch(ucycle)
 
--- Obtain state hash before step, access log, and state hash after step
+-- Obtain state hash before the step and record the step into a binary log
 local hash_before = machine:get_root_hash()
-local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+local log = machine:log_step_uarch(1)
 local hash_after = machine:get_root_hash()
 
--- Potentially mess with the access log to provoke a verification failure
-if arg[4] then
-    local env = { string = string, cartesi = cartesi, log = log }
-    local f = assert(load(arg[4], arg[4], "t", env))
-    f()
+-- Potentially provoke a verification failure. flip:<offset> flips one bit inside the log;
+-- truncate chops the log's last bytes; lie gives the verifier a false state hash to start
+-- from.
+local offset = arg[4] and arg[4]:match("^flip:(%d+)$")
+if offset then
+    offset = tonumber(offset)
+    log = log:sub(1, offset - 1) .. string.char(log:byte(offset) ~ 1) .. log:sub(offset + 1)
+elseif arg[4] == "truncate" then
+    log = log:sub(1, #log - 32)
+elseif arg[4] == "lie" then
+    hash_before = string.char(hash_before:byte(1) ~ 1) .. hash_before:sub(2)
 end
 
--- Verify the uarch step access log and check the hash it advances to
-assert(machine:verify_step_uarch(hash_before, log) == hash_after, "state transition rejected")
+-- Verify the uarch step log and check the hash it advances to
+assert(cartesi.machine:verify_step_uarch(hash_before, log, 1) == hash_after, "state transition rejected")
 io.stderr:write("State transition accepted!\n")
 ```
 
 Running the script without arguments accepts the valid state transition:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2249"
+lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242"
 ```
 
 ``` text
 State transition accepted!
 ```
 
-The script is much more interesting when the argument is used to “mess”
-with the access log before verification. For example, changing the
-address of access \#7 (the write to `uarch.pc`) causes the program to
-reject the state transition proof:
+The script is much more interesting when the optional last argument is
+used to “mess” with the verification. For example, flipping one bit
+inside the logged page data means the pages no longer reproduce the
+agreed before-hash, so verification rejects the log:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2249" 'log.accesses[7].address = 0x100'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" flip:200
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:27: expected 7th access to write uarch.pc at address 0x400010(4194320)
+lua5.4: verify-uarch-step.lua:33: root hash before does not match step log
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:27: in main chunk
+	verify-uarch-step.lua:33: in main chunk
 	[C]: in ?
 ```
 
-Starting from `<state_hash_before>`, a true Cartesi Machine uarch would
-have written to `uarch.pc` at `0x400010` for the 7th access, not at
-`0x100` as our corrupt log claims.
-
-Changing the `written` data of the same access fails the access’s
-internal consistency check, because `written` no longer hashes to
-`written_hash`:
+Truncating the log fails the decoder’s size accounting before any replay
+happens:
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2249" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" truncate
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:27: written data for uarch.pc does not match written hash in 7th access
+lua5.4: verify-uarch-step.lua:33: sibling count does not match step log size
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:27: in main chunk
+	verify-uarch-step.lua:33: in main chunk
 	[C]: in ?
 ```
 
-Changing the `read` data of access \#5 (the read of `uarch.x17`) fails
-the same consistency check on the read side, because `read` no longer
-hashes to `read_hash`:
+Lying to the verifier about the state hash the step starts from fails
+the same comparison from the other side: the claim no longer matches the
+root recomputed from the log.
 
 ``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2249" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2242" lie
 ```
 
 ``` text
-lua5.4: verify-uarch-step.lua:27: read data for uarch.x17 does not match read hash in 5th access
+lua5.4: verify-uarch-step.lua:33: root hash before does not match step log
 stack traceback:
 	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:27: in main chunk
-	[C]: in ?
-```
-
-Updating `read_hash` to match the tampered `read` passes the internal
-consistency check, but the verifier still combines `read_hash` with the
-proof’s `sibling_hashes` to reconstruct the state hash before the
-access. That reconstruction no longer matches the expected root:
-
-``` bash
-lua5.4 verify-uarch-step.lua config-nothing-to-do "41536683" "2249" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
-```
-
-``` text
-lua5.4: verify-uarch-step.lua:27: siblings and read hash do not match root hash before 5th access to uarch.x17
-stack traceback:
-	[C]: in method 'verify_step_uarch'
-	verify-uarch-step.lua:27: in main chunk
+	verify-uarch-step.lua:33: in main chunk
 	[C]: in ?
 ```
 
@@ -6641,8 +6570,8 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 53726870
 
 Before input 0
-53726870: 0x3aa2b974ebfe30caac1167198914d830d99a09ad7707ba89e086b9cdaad99cc2
-53726870: 0x441a5e3c3951ad60159ca4adc0bb0eff424a96176ca41774ab44298bba04b695
+53726870: 0x752430299c75501e9eff165168f643c076495ad436237fa423e3d4b6ee7164dc
+53726870: 0xf4fcd32b0d01f5677edd3d1c9d959fb22e1b2d6661dfe66c0308dbd3b0263265
 
 Automatic yield tx-output (2) (0x000064 data)
 Cycles: 53745044
@@ -6654,16 +6583,16 @@ Storing input-0-outputs-merkle-root.bin
 Storing input-0-outputs-merkle-root-proof.lua
 
 Before input 1
-55852635: 0x3356e5ee8310b9d41756840a7970ecaa148af72f797f5569c8458eced885abbf
-55852635: 0xba8fa1afcfe34808ebed614c3acd7f356d3001e66224f2d4e9b51dfd441527e6
+55852635: 0xcef0fb4e9e2caca3507e09e6ae1df57ca8bae4dc80f12030bcfe6fb831a11c41
+55852635: 0x756e8aff17ebac6cdd090d4ddb4d73a9889da2497fa7ef2d4b86dc47f2a42b5f
 
 Manual yield rx-rejected (2) (0x000000 data)
 Cycles: 55856586
 Storing output-0-input-0-proof.lua
 
 Before query
-55852635: 0x3356e5ee8310b9d41756840a7970ecaa148af72f797f5569c8458eced885abbf
-55852635: 0xc27f1de4c2bbb83192ecf6554b40039370845ebd0ea96bbd781da828df53aac2
+55852635: 0xcef0fb4e9e2caca3507e09e6ae1df57ca8bae4dc80f12030bcfe6fb831a11c41
+55852635: 0xa9566c950e6d432d67e1bddf704279d92bc92daa560f2792742180a67961a1b9
 
 Automatic yield tx-report (4) (0x000011 data)
 Cycles: 55853849
@@ -6673,7 +6602,7 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 55854941
 
 After query
-55852635: 0x3356e5ee8310b9d41756840a7970ecaa148af72f797f5569c8458eced885abbf
+55852635: 0xcef0fb4e9e2caca3507e09e6ae1df57ca8bae4dc80f12030bcfe6fb831a11c41
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8086'
 ```
 
@@ -7554,10 +7483,10 @@ via the `cartesi.AR_*` constants, and discoverable at runtime via the
 The uarch has its own private address ranges, which are not accessible
 to the main processor:
 
-| Physical address        | Mapping                  |
-|-------------------------|--------------------------|
-| `0x00400000-0x00400fff` | Microarchitecture shadow |
-| `0x00600000-0x007fffff` | Microarchitecture RAM    |
+| Physical address        | Mapping      |
+|-------------------------|--------------|
+| `0x00400000-0x00400fff` | Uarch shadow |
+| `0x00600000-0x007fffff` | Uarch RAM    |
 
 The uarch shadow holds the uarch processor state. The uarch RAM holds
 the uarch program that decodes and executes one main processor
@@ -7570,10 +7499,10 @@ entry in the array of Physical Memory Attribute records (PMAs). The PMA
 array occupies `0x00010000-0x00010fff` and starts at address `0x10000`
 (exposed as `cartesi.AR_PMAS_START`). This is how the RISC-V interpreter
 discovers the available ranges at runtime, regardless of whether it is
-compiled to run directly on the host or inside a ZK prover. The
-microarchitecture’s private ranges are not visible to the main processor
-and have no PMA entries, though a driver id is reserved for the uarch
-shadow state for consistency.
+compiled to run directly on the host or inside a ZK prover. The uarch’s
+private ranges are not visible to the main processor and have no PMA
+entries, though a driver id is reserved for the uarch shadow state for
+consistency.
 
 Each PMA consists of 2 64-bit words. The first word gives the start of a
 range and the second word its length. These words are readable both
@@ -8686,12 +8615,12 @@ the cycle where the two computations diverge.
 ### Verifying the state transition
 
 Once a single `uarch_cycle` is in dispute, the referee asks the player
-on the disagreeing side for the access logs of the transition out of it,
-and verifies them without ever instantiating a machine. This stands for
-a Cartesi contract that can verify such logs directly on the blockchain.
-The transition is either a single ordinary uarch step or, out of
-`cartesi.UARCH_CYCLE_MAX - 1` (when the uarch has long since halted), an
-additional uarch reset that prepares the next main processor
+on the disagreeing side for the binary step logs of the transition out
+of it, and verifies them without ever instantiating a machine. This
+stands for a Cartesi contract that can verify such logs directly on the
+blockchain. The transition is either a single ordinary uarch step or,
+out of `cartesi.UARCH_CYCLE_MAX - 1` (when the uarch has long since
+halted), an additional uarch reset that prepares the next main processor
 instruction. Which form applies depends only on the agreed cycle, so the
 referee always checks the step with `verify_step_uarch`, chaining
 `verify_reset_uarch` after it for the transition that closes the
@@ -8706,7 +8635,7 @@ local function verify_state_transition(uarch_cycle, state_hash_before, log, stat
     local machine = cartesi.machine
     local pass = pcall(function()
         eventf("Verifying uarch step log!")
-        local hash = machine:verify_step_uarch(state_hash_before, log.step_log)
+        local hash = machine:verify_step_uarch(state_hash_before, log.step_log, 1)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
             hash = machine:verify_reset_uarch(hash, log.reset_log)
@@ -8784,8 +8713,8 @@ lua5.4 verification-game.lua dishonest 127.0.0.1:8087 "6*2^1024 + 3*2^512" 25 7 
 The referee narrates the dispute from start to finish:
 
 ``` text
-Player 1 posted final state hash 0x083d12ed....
-Player 2 posted final state hash 0x714aecd3....
+Player 1 posted final state hash 0x87c38bf4....
+Player 2 posted final state hash 0xa0870ff6....
 mcycle bisection round 1, interval of disagreement is [0x0, 0x7fffffffffffffff]
 mcycle bisection round 2, interval of disagreement is [0x0, 0x3fffffffffffffff]
 mcycle bisection round 3, interval of disagreement is [0x0, 0x1fffffffffffffff]
@@ -8803,7 +8732,7 @@ uarch_cycle bisection round 20, interval of disagreement is [0x7, 0x8]
 Player 1 posted log
 Verifying uarch step log!
 Log is valid!
-Player 1 wins! Final state hash is 0x083d12ed....
+Player 1 wins! Final state hash is 0x87c38bf4....
 Result posted:
 4
 Rejected!
@@ -8846,7 +8775,7 @@ Player 1 posted log
 Verifying uarch step log!
 Verifying uarch reset log!
 Log is valid!
-Player 1 wins! Final state hash is 0x083d12ed....
+Player 1 wins! Final state hash is 0x87c38bf4....
 ```
 
 ## Rolling verification game
@@ -9071,27 +9000,27 @@ agreed on determine the form of the disputed transition, and the referee
 asks player 1 for the matching logs:
 
 ``` lua
+-- Both players run in the referee's directory, so each names its log files by its role.
 local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
     if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
-        local revert_root_hash = agreed:get_root_hash()
         local send_cmio_log = agreed:log_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             player.boundary.data,
-            revert_root_hash
+            agreed:get_root_hash()
         )
-        return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch() }
+        return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch(1) }
     end
+    local step_log = agreed:log_step_uarch(1)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        local step_log = agreed:log_step_uarch()
         return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
     end
-    return { step_log = agreed:log_step_uarch() }
+    return { step_log = step_log }
 end
 ```
 
-A combined transition is committed as its two access logs.
+A combined transition is committed as its two step logs.
 
 The referee verifies the logs on their own, again without ever
 instantiating a machine, each verification starting from the hash the
@@ -9117,7 +9046,7 @@ local function verify_state_transition(
             hash = machine:verify_send_cmio_response(reason, data, hash, log.send_cmio_log, hash)
         end
         eventf("Verifying uarch step log!")
-        hash = machine:verify_step_uarch(hash, log.step_log)
+        hash = machine:verify_step_uarch(hash, log.step_log, 1)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
             hash = machine:verify_reset_uarch(hash, log.reset_log)
@@ -9144,10 +9073,10 @@ boundary is checked as an ordinary uarch step.
 For the transition that resets the uarch, `verify_reset_uarch` settles
 rejected inputs by itself. Replaying a reset from a state that has
 yielded manual with reject ends at the recorded revert state hash,
-rather than at the state with a pristine microarchitecture. The
-processing of a rejected input therefore ends at the boundary it started
-from, as the input bisection expects. Every other transition is a single
-uarch step, checked with `verify_step_uarch` as before.
+rather than at the state with a pristine uarch. The processing of a
+rejected input therefore ends at the boundary it started from, as the
+input bisection expects. Every other transition is a single uarch step,
+checked with `verify_step_uarch` as before.
 
 ### Verifying an epoch result
 
@@ -9220,8 +9149,8 @@ lua5.4 rolling-verification-game.lua honest 127.0.0.1:8090 \
 The referee narrates the dispute from start to finish:
 
 ``` text
-Player 1 posted final state hash 0x3dc31afe....
-Player 2 posted final state hash 0x5d4ca486....
+Player 1 posted final state hash 0x9dded2dc....
+Player 2 posted final state hash 0x4d44a727....
 input bisection round 1, interval of disagreement is [0x0, 0x8000]
 input bisection round 2, interval of disagreement is [0x0, 0x4000]
 input bisection round 3, interval of disagreement is [0x0, 0x2000]
@@ -9245,8 +9174,9 @@ uarch_cycle bisection round 18, interval of disagreement is [0x0, 0x3]
 uarch_cycle bisection round 19, interval of disagreement is [0x0, 0x1]
 Player 1 posted logs
 Verifying input inclusion log!
+Verifying uarch step log!
 Log is invalid!
-Player 2 wins! Final state hash is 0x5d4ca486....
+Player 2 wins! Final state hash is 0x4d44a727....
 Result posted:
 179769313486231590772930519078902473361797697894230657273430081157732675805500963132708477322407536021120113879871393357658789768814416622492847430639474124377767893424865485276302219601246094119453082952085005768838150682342462881473913110540827237163350510684586298239947245938479716304835356329624224137216Rejected!
 Result posted:
@@ -9300,7 +9230,7 @@ Player 1 posted logs
 Verifying uarch step log!
 Verifying uarch reset log!
 Log is invalid!
-Player 2 wins! Final state hash is 0x5d4ca486....
+Player 2 wins! Final state hash is 0x4d44a727....
 ```
 
 The uarch step in player 1’s logs verifies, but the reset replays to the
@@ -9338,7 +9268,7 @@ uarch_cycle bisection round 20, interval of disagreement is [0x7, 0x8]
 Player 1 posted logs
 Verifying uarch step log!
 Log is invalid!
-Player 2 wins! Final state hash is 0x5d4ca486....
+Player 2 wins! Final state hash is 0x4d44a727....
 ```
 
 The last dishonest player claims the epoch received a fourth input, a
@@ -9365,7 +9295,7 @@ input bisection round 16, interval of disagreement is [0x3, 0x4]
 Player 1 posted logs
 Verifying uarch step log!
 Log is invalid!
-Player 2 wins! Final state hash is 0x5d4ca486....
+Player 2 wins! Final state hash is 0x4d44a727....
 ```
 
 The dishonest player posts the logs of including its extra input. The

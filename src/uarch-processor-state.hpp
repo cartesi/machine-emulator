@@ -18,7 +18,7 @@
 #define UARCH_PROCESSOR_STATE_HPP
 
 /// \file
-/// \brief Cartesi microarchitecture machine processor state structure definition.
+/// \brief Cartesi uarch machine processor state structure definition.
 
 #include <cstdint>
 

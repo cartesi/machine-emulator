@@ -19,31 +19,35 @@
 
 namespace cartesi {
 
-/// \brief Microarchitecture step execution status code
+/// \brief Uarch step execution status code
 enum class UArchStepStatus : int {
     Success,            // one micro instruction was executed successfully
     UArchCycleOverflow, // uarch cycle reached or was already at its maximum value
-    UArchHalted         // microarchitecture reached or was already at its halted fixed point
+    UArchHalted         // uarch reached or was already at its halted fixed point
 };
 
-/// \brief Advances the microarchitecture by one micro cycle
-/// \tparam Microarchitecture state accessor class
-/// \returns Returns a status code indicating whether and how the microarchitecture was advanced
-/// \details The microarchitecture will not advance if it is at a fixed point
+/// \brief Advances the uarch by one micro cycle
+/// \tparam Uarch state accessor class
+/// \returns Returns a status code indicating whether and how the uarch was advanced
+/// \details The uarch will not advance if it is at a fixed point
 template <typename STATE_ACCESS>
 UArchStepStatus uarch_step(STATE_ACCESS a);
 
 // Forward declarations
 class uarch_state_access;
 class collect_uarch_cycle_hashes_state_access;
-class uarch_record_state_access;
-class uarch_replay_state_access;
+class uarch_record_step_state_access;
+struct no_step_dumper;
+class step_dumper;
+template <typename Dumper>
+class uarch_replay_step_state_access;
 
 // Declaration of explicit instantiations in module uarch-step.cpp
 extern template UArchStepStatus uarch_step(uarch_state_access a);
 extern template UArchStepStatus uarch_step(collect_uarch_cycle_hashes_state_access a);
-extern template UArchStepStatus uarch_step(uarch_record_state_access a);
-extern template UArchStepStatus uarch_step(uarch_replay_state_access a);
+extern template UArchStepStatus uarch_step(uarch_record_step_state_access a);
+extern template UArchStepStatus uarch_step(uarch_replay_step_state_access<no_step_dumper> a);
+extern template UArchStepStatus uarch_step(uarch_replay_step_state_access<step_dumper> a);
 
 } // namespace cartesi
 

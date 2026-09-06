@@ -54,10 +54,10 @@ local config = {
 
 local machine = assert(cartesi.machine(config))
 
--- run microarchitecture
+-- run uarch
 machine:run_uarch()
 
--- extract test result signature from microarchitecture RAM
+-- extract test result signature from uarch RAM
 local mem = machine:read_memory(uarch_ram_start, cartesi.UARCH_RAM_LENGTH)
 local _, e1 = string.find(mem, "BEGIN_CTSI_SIGNATURE____")
 local s2, _ = string.find(mem, "END_CTSI_SIGNATURE______")

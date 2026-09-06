@@ -697,6 +697,7 @@ end
 if ... == "prt" then
     return {
         new_match = new_match,
+        new_geometry = new_geometry,
         validate_bisection_response = validate_bisection_response,
         advance_bisection = advance_bisection,
         validate_seal_response = validate_seal_response,

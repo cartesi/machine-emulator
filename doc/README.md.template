@@ -5330,8 +5330,9 @@ Only the bundles a dispute actually visits are ever opened, and each costs one m
 The builds themselves stream out of the emulator.
 They follow the same collection contract as `cartesi-machine`'s computation-hash builders: each input owns a fixed-capacity segment, collection state threads across yields, and the final repeatable group returned at a fixed point fills the segment's remaining positions.
 The only different sink is PRT's frontier forest, which retains the nodes needed to answer later tournament queries.
-The mcycle build (`build_mcycle_claim` in `prt-player.lua`) advances the whole epoch once, pushing each input's bundle roots into the outer forest, padding each input's span with the fixed point where its guest stopped, and keeping a fork at each input boundary to anchor every later re-run.
-The refinement re-run (`refine_mcycle_claim`) recovers one bundle's samples the same way.
+The mcycle build (`build_mcycle_claim` in `prt-player.lua`) advances the whole epoch once, pushing each input's bundle roots into the outer forest, padding each input's span with the fixed point where its guest stopped, and offering the machine to a bounded cache after every hash-collection call.
+The default policy initially retains every offer, then progressively doubles their spacing and replaces obsolete snapshots one at a time.
+The refinement re-run (`refine_mcycle_claim`) starts at the closest retained `(input_index, period_index)` and recovers one bundle's samples the same way; a cache miss replays deterministically from the initial machine.
 The uarch build (`build_uarch_claim`) expands one period, instruction by instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose stream already carries the halt repetitions compressed and the reset hashes marked.
 ```{.lua key=prt_build_mcycle_claim include=prt-player.lua replace=null}
 ```

@@ -11,10 +11,63 @@
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local socket = require("socket")
+local prt_player = require("prt-player")
 local prtu = require("prtu")
 local prt = require("prt")
 
 local keccak = cartesi.keccak256
+
+--------------------------------------------------------------------------------
+-- Machine checkpoint cache
+--------------------------------------------------------------------------------
+
+local function new_fake_machine(root_hash)
+    local machine = { root_hash = root_hash }
+    function machine:fork_server()
+        return new_fake_machine(self.root_hash)
+    end
+    function machine.set_cleanup_call() end
+    function machine:get_root_hash()
+        return self.root_hash
+    end
+    function machine:shutdown_server()
+        self.shutdown = true
+    end
+    return machine
+end
+
+do
+    local cache = prt_player.new_machine_cache("unused", 4)
+    for period_index = 1, 5 do
+        cache:consider(0, period_index, new_fake_machine(tostring(period_index)))
+    end
+    local retained = {}
+    for _, checkpoint in ipairs(cache.checkpoints) do
+        retained[checkpoint.period_index] = true
+    end
+    assert(retained[1] and retained[2] and retained[3] and retained[4], "cache replaced a snapshot too early")
+    cache:consider(0, 6, new_fake_machine("6"))
+    retained = {}
+    for _, checkpoint in ipairs(cache.checkpoints) do
+        retained[checkpoint.period_index] = true
+    end
+    assert(retained[2] and retained[3] and retained[4] and retained[6], "cache did not replace one odd offer")
+    cache:consider(0, 7, new_fake_machine("7"))
+    cache:consider(0, 8, new_fake_machine("8"))
+    local machine, input_index, period_index = cache:fork_closest(0, 8)
+    assert(machine:get_root_hash() == "8")
+    assert(input_index == 0 and period_index == 8)
+    machine:shutdown_server()
+    retained = {}
+    for _, checkpoint in ipairs(cache.checkpoints) do
+        retained[checkpoint.period_index] = true
+    end
+    assert(retained[2] and retained[4] and retained[6] and retained[8], "cache did not progressively thin offers")
+    assert(
+        not pcall(cache.consider, cache, 0, 8, new_fake_machine("different")),
+        "cache accepted different machine states at the same position"
+    )
+end
 
 local HEIGHT = 5
 local LEAVES = 1 << HEIGHT

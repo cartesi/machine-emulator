@@ -52,6 +52,9 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
         tree = prtu.new_tree(HEIGHT, 0, build_leaf_forest(0, HEIGHT), nil)
     end
     local computation_hash_left, computation_hash_right = tree:get_children(0, HEIGHT)
+    if tree.bundle_height > 0 then
+        tree:open_bundle((LEAVES - 1) >> tree.bundle_height)
+    end
     local proof = tree:prove(LEAVES - 1)
     hash_tree.verify_slice(proof)
     assert(
@@ -76,9 +79,15 @@ end
 local function make_bisection_response(match)
     assert(match.height > 1)
     local tree = match.claims[match.turn].tree
+    if match.height == tree.bundle_height then
+        tree:open_bundle(match.position >> tree.bundle_height)
+    end
     local turn_left_node, turn_right_node = tree:get_children(match.position, match.height)
     local descend_left = turn_left_node ~= match.other_left_node
     local child_position = descend_left and match.position or match.position + (1 << (match.height - 1))
+    if match.height - 1 == tree.bundle_height then
+        tree:open_bundle(child_position >> tree.bundle_height)
+    end
     local turn_next_left_node, turn_next_right_node = tree:get_children(child_position, match.height - 1)
     return {
         turn_left_node = turn_left_node,
@@ -97,7 +106,11 @@ local function make_seal_response(match)
     local descend_left = turn_left_node ~= match.other_left_node
     local state_index = match.position + (descend_left and 0 or 1)
     if state_index ~= 0 then
-        response.agreed_state_hash_proof = tree:prove(state_index - 1)
+        local agreed_state_index = state_index - 1
+        if tree.bundle_height > 0 then
+            tree:open_bundle(agreed_state_index >> tree.bundle_height)
+        end
+        response.agreed_state_hash_proof = tree:prove(agreed_state_index)
     end
     return response
 end
@@ -130,7 +143,14 @@ local function walk(claim1, claim2)
 end
 
 local base_state_hash, fake_state_hash = keccak("base"), keccak("fake")
-for _, lie in ipairs({ 0, 1, 6, 13, LEAVES - 1 }) do
+do
+    local claim = make_synthetic_claim(base_state_hash, nil, nil, true)
+    local unopened_index = 0
+    assert(not pcall(claim.tree.get_node, claim.tree, unopened_index, 0), "a node query implicitly opened its bundle")
+    claim.tree:open_bundle(unopened_index >> claim.tree.bundle_height)
+    assert(claim.tree:get_node(unopened_index, 0) == base_state_hash, "opened bundle has the wrong leaf")
+end
+for _, lie in ipairs({ 0, 1, 4, 6, 13, LEAVES - 1 }) do
     for _, bundled in ipairs({ false, true }) do
         local honest = make_synthetic_claim(base_state_hash, nil, nil, bundled)
         local liar = make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)

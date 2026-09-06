@@ -2025,7 +2025,8 @@ step_log_data machine::log_send_cmio_response(uint16_t reason, const unsigned ch
     step_log_recorder recorder(m_c.hash_tree.hash_function, *this);
     const record_step_state_access a(recorder, *this);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
-    // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
+    // No revert branch here: a rejected response no-ops, so this transition is the identity. The
+    // revert_root_hash argument is for a later step to revert to, not for this one.
     const auto root_hash_after = get_root_hash();
     auto log = recorder.finish();
     auto obtained_root_hash = verify_send_cmio_response(reason, data, length, root_hash_before, log, revert_root_hash);
@@ -2044,11 +2045,10 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
     }
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
     replay_step_state_access::context context;
-    // Keccak-256 only, mirroring recording: these logs exist for the on-chain verifier
+    // Pinned, unlike verify_step: these logs exist for the Keccak-256 on-chain verifier.
     replay_step_state_access a(context, image.data(), image.size(), hash_function_type::keccak256);
     context.log.check_root_hash_before(root_hash_before);
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash);
-    // send_cmio_response is not a step: a no-op on a rejected machine is the identity, never a revert
     return a.finish(false);
 }
 
@@ -2084,7 +2084,6 @@ step_log_data machine::log_reset_uarch() {
         root_hash_after = read_revert_root_hash();
     }
     auto log = recorder.finish();
-    // root_hash_after holds the revert root hash when the reset reverted the state
     if (!std::ranges::equal(verify_reset_uarch(root_hash_before, log), root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }

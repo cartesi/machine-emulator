@@ -86,8 +86,8 @@ end
 -- docs:end open_bundle
 
 -- The node at height whose first covered leaf is position. At or above bundle_height it is
--- a node of the outer forest. Below, it locates the one bundle standing over the node and
--- queries the forest that opens it.
+-- a node of the outer forest. Below, its bundle must have been opened explicitly before the
+-- query, so an innocent-looking tree read never hides a machine re-run.
 -- docs:begin get_tree_node
 function tree_meta.__index.get_node(tree, position, height)
     if height >= tree.bundle_height then
@@ -98,11 +98,8 @@ function tree_meta.__index.get_node(tree, position, height)
         )
     end
     local bundle = position >> tree.bundle_height
-    return hash_tree.frontier_forest_get_node(
-        tree:open_bundle(bundle),
-        position & ((1 << tree.bundle_height) - 1),
-        height
-    )
+    local bundle_forest = assert(tree.opened[bundle], "claim bundle has not been opened")
+    return hash_tree.frontier_forest_get_node(bundle_forest, position & ((1 << tree.bundle_height) - 1), height)
 end
 -- docs:end get_tree_node
 
@@ -123,7 +120,8 @@ end
 function tree_meta.__index.prove(tree, index)
     local siblings = {}
     if tree.bundle_height > 0 then
-        local bundle_forest = tree:open_bundle(index >> tree.bundle_height)
+        local bundle = index >> tree.bundle_height
+        local bundle_forest = assert(tree.opened[bundle], "claim bundle has not been opened")
         hash_tree.frontier_forest_get_siblings(bundle_forest, index & ((1 << tree.bundle_height) - 1), 0, siblings)
     end
     hash_tree.frontier_forest_get_siblings(tree.outer, index >> tree.bundle_height, 0, siblings)

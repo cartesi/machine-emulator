@@ -9556,10 +9556,14 @@ PRT’s frontier forest, which retains the nodes needed to answer later
 tournament queries. The mcycle build (`build_mcycle_claim` in
 `prt-player.lua`) advances the whole epoch once, pushing each input’s
 bundle roots into the outer forest, padding each input’s span with the
-fixed point where its guest stopped, and keeping a fork at each input
-boundary to anchor every later re-run. The refinement re-run
-(`refine_mcycle_claim`) recovers one bundle’s samples the same way. The
-uarch build (`build_uarch_claim`) expands one period, instruction by
+fixed point where its guest stopped, and offering the machine to a
+bounded cache after every hash-collection call. The default policy
+initially retains every offer, then progressively doubles their spacing
+and replaces obsolete snapshots one at a time. The refinement re-run
+(`refine_mcycle_claim`) starts at the closest retained
+`(input_index, period_index)` and recovers one bundle’s samples the same
+way; a cache miss replays deterministically from the initial machine.
+The uarch build (`build_uarch_claim`) expands one period, instruction by
 instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose
 stream already carries the halt repetitions compressed and the reset
 hashes marked.
@@ -10126,12 +10130,12 @@ Height 61: the claims first disagree within leaves [0x0, 0x1fffffffffffffff].
 Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
 Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
 ...
-A uarch tournament opens over input 0, period 1600, starting from 0x53805328....
-Claim 0x18226d60..., with final state 0x1c5dc695..., joined.
-Claim 0x31f1a82a..., with final state 0xa04dee27..., joined.
-Round 1, match 4.1, at the uarch level: claim 0x18226d60... against claim 0x31f1a82a....
-Match 4.1: claim 0x31f1a82a... wins.
-The uarch winner confirms 0xa04dee27.... Claim 0x4f4b4987... is eliminated.
+Height 8: the claims first disagree within leaves [0x600, 0x6ff].
+Height 7: the claims first disagree within leaves [0x600, 0x67f].
+Height 6: the claims first disagree within leaves [0x640, 0x67f].
+Height 5: the claims first disagree within leaves [0x640, 0x65f].
+Height 4: the claims first disagree within leaves [0x640, 0x64f].
+Nobody opened claim 0x4f4b4987.... Claim 0x923b6eb7... wins by default.
 ```
 
 ``` text

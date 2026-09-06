@@ -977,48 +977,28 @@ jobs:
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
-      - name: Build machine-emulator docker image
-        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
-        with:
-          file: Dockerfile
-          context: .
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:devel
-          push: false
-          load: true
-          build-args: |
-            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
-            GIT_COMMIT=${GITHUB_SHA}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Build machine-emulator "tests" docker image
+      # The tests-builder stage is the source tree with the emulator and test binaries
+      # already built, which is what the make targets below need.
+      - name: Build machine-emulator "tests-builder" docker image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
+          target: tests-builder
           platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:tests
+          tags: ${{ github.repository_owner }}/machine-emulator:tests-builder
           push: false
           load: true
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
-      - name: Simple boot inside the docker image
-        run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
-
       - name: Generate risc0 fixtures
-        # record-machine-step-fixtures.sh is the same recorder the risc0/Makefile fixtures target
-        # runs; its defaults target the installed emulator inside the tests image. The container
-        # records into its own filesystem and docker cp brings the tree out, so the workspace
-        # needs no directory the container's fixed user would have to be granted write access to.
         run: |
-          mkdir -p risc0/test
-          docker run --name risc0-fixtures -t ${{ github.repository_owner }}/machine-emulator:tests \
-            /usr/share/cartesi-machine/tests/scripts/record-machine-step-fixtures.sh /tmp/fixtures
-          docker cp risc0-fixtures:/tmp/fixtures risc0/test/fixtures
+          mkdir -p risc0/test        # not tracked, unlike solidity-step/test
+          docker run --name risc0-fixtures -t ${{ github.repository_owner }}/machine-emulator:tests-builder \
+            make -C risc0 fixtures
+          docker cp risc0-fixtures:/usr/src/emulator/risc0/test/fixtures risc0/test/fixtures
           docker rm risc0-fixtures
           ls -lR risc0/test/fixtures
 
@@ -1047,7 +1027,7 @@ jobs:
           rzup show
 
       - name: Build interpret-jump-table.hpp
-        run: docker run --rm -v .:/this-dir -t cartesi/machine-emulator:tests /this-dir/tools/gen-interpret-jump-table.lua > src/interpret-jump-table.hpp
+        run: docker run --rm -v .:/this-dir -t ${{ github.repository_owner }}/machine-emulator:tests-builder /this-dir/tools/gen-interpret-jump-table.lua > src/interpret-jump-table.hpp
 
       - name: Install lua5.4
         run: sudo apt-get update && sudo apt-get install -y lua5.4
@@ -1161,59 +1141,40 @@ jobs:
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
-      # tests/Dockerfile's runtime stage is FROM cartesi/machine-emulator:devel, so build it too.
-      - name: Build machine-emulator docker image
-        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
-        with:
-          file: Dockerfile
-          context: .
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:devel
-          push: false
-          load: true
-          build-args: |
-            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
-            GIT_COMMIT=${GITHUB_SHA}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Build machine-emulator "tests" docker image
+      # The tests-builder stage is the source tree with the emulator and test binaries
+      # already built, which is what the make targets below need.
+      - name: Build machine-emulator "tests-builder" docker image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           file: tests/Dockerfile
           context: .
+          target: tests-builder
           platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:tests
+          tags: ${{ github.repository_owner }}/machine-emulator:tests-builder
           push: false
           load: true
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
-      # check-gen-constants reads the live cartesi Lua module, so the generator runs INSIDE the tests
-      # image (no built emulator on the runner); forge fmt + the diff run on the runner. -t is omitted
-      # so the container's stdout redirects to the file uncorrupted, and forge fmt runs from
-      # solidity-step/ so it picks up that project's [fmt] config (matching how the file was generated).
+      # The generator needs the built cartesi Lua module, so it runs in the image; forge only
+      # exists on the runner, so fmt and the diff run there, from solidity-step/ so they pick up
+      # that project's [fmt] config. Do not add -t: it would corrupt the redirected stdout.
       - name: Check emulator constants are in sync with the C++ headers
         run: |
-          docker run --rm -v ${{ github.workspace }}:/work:ro -w /work ${{ github.repository_owner }}/machine-emulator:tests \
-            lua5.4 solidity-step/tools/gen-emulator-constants.lua > /tmp/EmulatorConstants.gen.sol
+          docker run --rm ${{ github.repository_owner }}/machine-emulator:tests-builder \
+            sh -c 'eval $(make -s --no-print-directory env) && lua5.4 solidity-step/tools/gen-emulator-constants.lua' \
+            > /tmp/EmulatorConstants.gen.sol
           cd solidity-step
           forge fmt /tmp/EmulatorConstants.gen.sol
           diff -u src/EmulatorConstants.sol /tmp/EmulatorConstants.gen.sol \
             || { echo "ERROR: src/EmulatorConstants.sol is stale. Run 'make -C solidity-step gen-constants' and commit."; exit 1; }
 
       - name: Generate solidity-step fixtures
-        # record-uarch-step-fixtures.sh is the same recorder the solidity-step/Makefile fixtures
-        # target runs; its defaults target the installed emulator inside the tests image. The
-        # container records into its own filesystem and docker cp brings the tree out, so the
-        # workspace needs no directory the container's fixed user would have to be granted
-        # write access to.
         run: |
-          docker run --name solidity-step-fixtures -t ${{ github.repository_owner }}/machine-emulator:tests \
-            /usr/share/cartesi-machine/tests/scripts/record-uarch-step-fixtures.sh /tmp/fixtures
-          docker cp solidity-step-fixtures:/tmp/fixtures solidity-step/test/fixtures
+          docker run --name solidity-step-fixtures -t ${{ github.repository_owner }}/machine-emulator:tests-builder \
+            make -C solidity-step fixtures
+          docker cp solidity-step-fixtures:/usr/src/emulator/solidity-step/test/fixtures solidity-step/test/fixtures
           docker rm solidity-step-fixtures
           ls -lR solidity-step/test/fixtures
 

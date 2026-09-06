@@ -10130,12 +10130,12 @@ Height 61: the claims first disagree within leaves [0x0, 0x1fffffffffffffff].
 Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
 Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
 ...
-Height 8: the claims first disagree within leaves [0x600, 0x6ff].
-Height 7: the claims first disagree within leaves [0x600, 0x67f].
-Height 6: the claims first disagree within leaves [0x640, 0x67f].
-Height 5: the claims first disagree within leaves [0x640, 0x65f].
-Height 4: the claims first disagree within leaves [0x640, 0x64f].
-Nobody opened claim 0x4f4b4987.... Claim 0x923b6eb7... wins by default.
+A uarch tournament opens over input 0, period 1600, starting from 0x53805328....
+Claim 0x18226d60..., with final state 0x1c5dc695..., joined.
+Claim 0x31f1a82a..., with final state 0xa04dee27..., joined.
+Round 1, match 4.1, at the uarch level: claim 0x18226d60... against claim 0x31f1a82a....
+Match 4.1: claim 0x31f1a82a... wins.
+The uarch winner confirms 0xa04dee27.... Claim 0x4f4b4987... is eliminated.
 ```
 
 ``` text

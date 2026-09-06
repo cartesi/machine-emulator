@@ -1,15 +1,13 @@
--- Checks the parts of the PRT game that need no machine. First the claim trees over frontier
--- forests, claim proofs, and the match walk: two synthetic claims that differ at one leaf are walked down
--- under every claim order, and the walk must isolate exactly that leaf, name what each claim
--- committed to there, and carry a proof of the agreed state before it in the final response.
--- Then the referee server, driven over loopback sockets by fake players living in the same
--- dispatcher: the tournament lifecycle, first-valid moves, rejected proofs that leave their
--- connection open, and claims eliminated once every holder answered without proof or closed.
--- The phase closer connects while the mcycle tournament is open and must not be asked to submit.
--- Runs in well under a second and exits nonzero on the first failure.
+-- Checks claim trees, proofs, and the referee with synthetic state, then, when given an initial
+-- machine hash and inputs, checks checkpoint replay against a real machine. The synthetic claims
+-- are walked under both claim orders. The loopback referee tests its tournament lifecycle,
+-- first-valid moves, rejected proofs that leave connections open, and claims eliminated once every
+-- holder answered without proof or closed. The real-machine cases cover tampering exactly at a
+-- cached period and refinement inside a rejected input. Exits nonzero on the first failure.
 
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
+local util = require("cartesi.util")
 local socket = require("socket")
 local prt_player = require("prt-player")
 local prtu = require("prtu")
@@ -38,35 +36,47 @@ end
 
 do
     local cache = prt_player.new_machine_cache("unused", 4)
-    for period_index = 1, 5 do
-        cache:consider(0, period_index, new_fake_machine(tostring(period_index)))
+    for epoch_period_index = 1, 5 do
+        cache:consider(epoch_period_index, new_fake_machine(tostring(epoch_period_index)))
     end
     local retained = {}
     for _, checkpoint in ipairs(cache.checkpoints) do
-        retained[checkpoint.period_index] = true
+        retained[checkpoint.epoch_period_index] = true
     end
-    assert(retained[1] and retained[2] and retained[3] and retained[4], "cache replaced a snapshot too early")
-    cache:consider(0, 6, new_fake_machine("6"))
+    assert(retained[1] and retained[2] and retained[3] and retained[4], "cache replaced a checkpoint too early")
+    cache:consider(6, new_fake_machine("6"))
     retained = {}
     for _, checkpoint in ipairs(cache.checkpoints) do
-        retained[checkpoint.period_index] = true
+        retained[checkpoint.epoch_period_index] = true
     end
     assert(retained[2] and retained[3] and retained[4] and retained[6], "cache did not replace one odd offer")
-    cache:consider(0, 7, new_fake_machine("7"))
-    cache:consider(0, 8, new_fake_machine("8"))
-    local machine, input_index, period_index = cache:fork_closest(0, 8)
-    assert(machine:get_root_hash() == "8")
-    assert(input_index == 0 and period_index == 8)
-    machine:shutdown_server()
+    cache:consider(7, new_fake_machine("7"))
+    cache:consider(8, new_fake_machine("8"))
     retained = {}
     for _, checkpoint in ipairs(cache.checkpoints) do
-        retained[checkpoint.period_index] = true
+        retained[checkpoint.epoch_period_index] = true
     end
-    assert(retained[2] and retained[4] and retained[6] and retained[8], "cache did not progressively thin offers")
+    assert(retained[2] and retained[4] and retained[6] and retained[8], "cache did not thin its checkpoints")
+    local machine, epoch_period_index = cache:fork_closest(7)
+    assert(machine:get_root_hash() == "6")
+    assert(epoch_period_index == 6)
+    machine:shutdown_server()
     assert(
-        not pcall(cache.consider, cache, 0, 8, new_fake_machine("different")),
+        not pcall(cache.consider, cache, 8, new_fake_machine("different")),
         "cache accepted different machine states at the same position"
     )
+end
+
+do
+    local cache = prt_player.new_machine_cache("unused", 4)
+    for _, epoch_period_index in ipairs({ 3, 6, 9, 12, 15, 18, 21, 24 }) do
+        cache:consider(epoch_period_index, new_fake_machine(tostring(epoch_period_index)))
+    end
+    local retained = {}
+    for _, checkpoint in ipairs(cache.checkpoints) do
+        retained[checkpoint.epoch_period_index] = true
+    end
+    assert(retained[6] and retained[12] and retained[18] and retained[24], "cache ignored checkpoint distances")
 end
 
 local HEIGHT = 5
@@ -553,4 +563,41 @@ ok, err = pcall(run_with_server, function(server, run_client, wait_connections)
     server:collect_claims({}, define_event("commit_mcycle_claim"), {})
 end)
 assert(not ok and err:find("the phase closer went away"), "phase-closer EOF did not fail the referee")
+
+--------------------------------------------------------------------------------
+-- Machine checkpoint replay
+--------------------------------------------------------------------------------
+
+if arg[1] then
+    local initial_state_hash = cartesi.fromhex(arg[1])
+    local inputs = {}
+    for i = 2, #arg do
+        inputs[#inputs + 1] = util.read_file(arg[i])
+    end
+    assert(#inputs >= 3, "machine checkpoint tests require three inputs")
+    local dapp_contract = {
+        initial_state_hash = initial_state_hash,
+        inputs = inputs,
+        geometry = prt.new_geometry(10),
+    }
+
+    -- A collection ending exactly where a tamperer changes its machine caches the pre-tamper
+    -- state. Replaying from that checkpoint must still apply the tamper before continuing.
+    local tamperer =
+        prt_player.new_tamperer(dapp_contract, 0, 100, prt_player.new_machine_cache(initial_state_hash, 64))
+    local tampered_tree = tamperer:make_mcycle_tree()
+    tampered_tree:open_bundle(99)
+    tampered_tree:open_bundle(100)
+
+    -- Refinement is a read of the committed claim. It must not replace build checkpoints with
+    -- speculative machines from an input whose committed suffix is its revert state.
+    local cache = prt_player.new_machine_cache(initial_state_hash, 1)
+    local honest = prt_player.new_honest(dapp_contract, cache)
+    local honest_tree = honest:make_mcycle_tree()
+    local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").epoch_period_index
+    honest_tree:open_bundle(honest.bundles_per_input)
+    assert(cache.checkpoints[1].epoch_period_index == checkpoint, "mcycle refinement changed the machine cache")
+    honest:make_uarch_tree(3, 0)
+end
+
 print("prt-test: ok")

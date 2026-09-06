@@ -5331,8 +5331,8 @@ The builds themselves stream out of the emulator.
 They follow the same collection contract as `cartesi-machine`'s computation-hash builders: each input owns a fixed-capacity segment, collection state threads across yields, and the final repeatable group returned at a fixed point fills the segment's remaining positions.
 The only different sink is PRT's frontier forest, which retains the nodes needed to answer later tournament queries.
 The mcycle build (`build_mcycle_claim` in `prt-player.lua`) advances the whole epoch once, pushing each input's bundle roots into the outer forest, padding each input's span with the fixed point where its guest stopped, and offering the machine to a bounded cache after every hash-collection call.
-The default policy initially retains every offer, then progressively doubles their spacing and replaces obsolete snapshots one at a time.
-The refinement re-run (`refine_mcycle_claim`) starts at the closest retained `(input_index, period_index)` and recovers one bundle's samples the same way; a cache miss replays deterministically from the initial machine.
+The default policy initially retains every offer. Once full, it uses a circular replacement cursor to remove one neighboring checkpoint closer than the current gap whenever a sufficiently distant new offer arrives; after a complete pass finds no such neighbor, the gap doubles.
+The refinement re-run (`refine_mcycle_claim`) starts at the closest retained `epoch_period_index` and recovers one bundle's samples the same way; a cache miss replays deterministically from the initial machine.
 The uarch build (`build_uarch_claim`) expands one period, instruction by instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose stream already carries the halt repetitions compressed and the reset hashes marked.
 ```{.lua key=prt_build_mcycle_claim include=prt-player.lua replace=null}
 ```
@@ -5454,8 +5454,13 @@ Two fabulists run, lying about different samples, so they dispute each other too
 To run the tournament, start the referee with the epoch's initial state hash and input files.
 ```{.lua key=prt_test_src include=prt-test.lua replace=null}
 ```
-```{.bash key=prt_test depends=prt_test_src,prt_runs_node replace=null}
-lua5.4 "$RECIPES_DIR/prt-test.lua"
+```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=prt_test_src,prt_runs_node replace=null}
+initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
+local machine <close> = cartesi.machine("'"$tmpl"'")
+io.write(cartesi.tohex(machine:get_root_hash()))')
+rm -f "$initial_state_hash"
+ln -sf "$tmpl" "$initial_state_hash"
+lua5.4 "$RECIPES_DIR/prt-test.lua" "$initial_state_hash" $rolling_calc_encode/input-[012].bin
 ```
 ```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,prt_test outputs=claims,posted,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_4_elided,match_4_1_elided,match_5_elided,match_5_1_elided replace=source/referee}
 # The chain publishes the initial state hash; a player finds its machine snapshot stored

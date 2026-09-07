@@ -30,6 +30,7 @@ local LOG2_MCYCLE_BUNDLE = 4
 local LOG2_UARCH_BUNDLE = 16
 local LOG2_HASHES_PER_CHUNK = 8
 local DEFAULT_MACHINE_CACHE_CAPACITY = 8
+local DEFAULT_MACHINE_CACHE_GAP = 1 << (LOG2_MCYCLE_BUNDLE + LOG2_HASHES_PER_CHUNK)
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 local WORD_MASK = WORD_SIZE - 1
 local IFLAGS_Y_ADDRESS = cartesi.machine:get_reg_address("iflags_Y")
@@ -91,127 +92,93 @@ end
 -- before delivery. This distinguishes inputs that begin at the same physical mcycle after earlier
 -- inputs reject and revert.
 --
--- The cache is only an optimization. A miss starts again from the content-addressed initial
--- machine, and replay from the returned position determines exactly the same state. Cached
--- machines are immutable: callers receive fresh forks, and the cache owns and eventually shuts
--- down the originals. Replacing this object with another policy changes only which checkpoints
--- survive.
+-- The cache is only an optimization. Its first checkpoint is the content-addressed initial
+-- machine at position zero. Cached machines are immutable: callers receive fresh forks, and the
+-- cache owns and eventually shuts down the originals. Replacing this object with another policy
+-- changes only which checkpoints survive.
 --------------------------------------------------------------------------------
 
 local machine_cache_meta = { __index = {} }
 
-local function begin_thinning(cache)
-    if cache.gap or #cache.checkpoints < cache.capacity then
+-- Only the forward claim build offers checkpoints, so the list remains ordered.
+-- Retains suitably spaced offers until the cache fills. It then doubles the gap and replaces the
+-- first checkpoint whose predecessor is too close whenever a new offer extends that spacing. Once
+-- no such checkpoint remains, the gap doubles again.
+function machine_cache_meta.__index:consider(epoch_period_index, machine)
+    local checkpoints = self.checkpoints
+    local latest = checkpoints[#checkpoints]
+    assert(epoch_period_index > latest.epoch_period_index, "machine checkpoints are not ordered")
+    -- Ignore offers that are not far enough from the previous checkpoint.
+    if epoch_period_index - latest.epoch_period_index < self.gap then
         return
     end
-    local previous = 0
-    for _, checkpoint in ipairs(cache.checkpoints) do
-        local distance = checkpoint.epoch_period_index - previous
-        if distance > 0 then
-            cache.gap = cache.gap and math.min(cache.gap, distance) or distance
-        end
-        previous = checkpoint.epoch_period_index
-    end
-    cache.gap = (cache.gap or 1) << 1
-end
-
--- Starting at the circular replacement cursor, finds the first checkpoint closer to its
--- predecessor than the current gap. Removing it can only increase the distance between neighbors.
-local function find_checkpoint_to_replace(cache)
-    for _ = 1, #cache.checkpoints do
-        local i = cache.replace_index
-        local previous = i == 1 and 0 or cache.checkpoints[i - 1].epoch_period_index
-        if cache.checkpoints[i].epoch_period_index - previous < cache.gap then
-            return i
-        end
-        cache.replace_index = i % #cache.checkpoints + 1
-    end
-end
-
--- Retains every offer until the cache fills. It then replaces one too-close checkpoint whenever a
--- new offer is at least the current gap past the latest one. A full circular pass with nothing to
--- replace doubles the gap, progressively spreading a fixed number of checkpoints over execution.
-function machine_cache_meta.__index.consider(cache, epoch_period_index, machine)
-    if epoch_period_index == nil or cache.capacity == 0 then
-        return
-    end
-    for _, checkpoint in ipairs(cache.checkpoints) do
-        if checkpoint.epoch_period_index == epoch_period_index then
-            assert(checkpoint.root_hash == machine:get_root_hash(), "machine replay reached a different checkpoint")
-            return
-        end
-    end
-    local replace = #cache.checkpoints + 1
-    if replace > cache.capacity then
-        replace = nil
-        while epoch_period_index - cache.checkpoints[#cache.checkpoints].epoch_period_index >= cache.gap do
-            replace = find_checkpoint_to_replace(cache)
-            if replace then
+    -- Evict the next checkpoint that is too close to its predecessor.
+    if #checkpoints == self.capacity then
+        local replace_index = self.replace_cursor
+        while replace_index <= #checkpoints do
+            local previous = checkpoints[replace_index - 1].epoch_period_index
+            if checkpoints[replace_index].epoch_period_index - previous < self.gap then
                 break
             end
-            cache.gap = cache.gap << 1
+            replace_index = replace_index + 1
         end
-        if not replace then
+        -- Every retained gap is large enough. Double the gap and restart the search.
+        if replace_index > #checkpoints then
+            self.gap = self.gap << 1
+            self.replace_cursor = 2
             return
         end
+        local replaced = table.remove(checkpoints, replace_index)
+        replaced.machine:shutdown_server()
+        self.replace_cursor = replace_index
     end
-    local checkpoint = {
+    -- Add the new checkpoint.
+    checkpoints[#checkpoints + 1] = {
         epoch_period_index = epoch_period_index,
         machine = fork_server(machine),
-        root_hash = machine:get_root_hash(),
     }
-    local replaced = cache.checkpoints[replace]
-    if replaced then
-        table.remove(cache.checkpoints, replace)
-        replaced.machine:shutdown_server()
-        cache.replace_index = replace <= #cache.checkpoints and replace or 1
-    end
-    cache.checkpoints[#cache.checkpoints + 1] = checkpoint
-    begin_thinning(cache)
 end
 
 -- Removes checkpoints produced while an input was executing. This is needed when the input later
 -- rejects: its computation-hash entries contain the revert state, not those speculative machines.
-function machine_cache_meta.__index.discard_input(cache, input_index, periods_per_input)
+function machine_cache_meta.__index:discard_input(input_index, periods_per_input)
     local first = input_index * periods_per_input
     local last = first + periods_per_input
-    for i = #cache.checkpoints, 1, -1 do
-        local checkpoint = cache.checkpoints[i]
+    for i = #self.checkpoints, 1, -1 do
+        local checkpoint = self.checkpoints[i]
         if checkpoint.epoch_period_index > first and checkpoint.epoch_period_index < last then
-            table.remove(cache.checkpoints, i)
+            table.remove(self.checkpoints, i)
             checkpoint.machine:shutdown_server()
         end
     end
-    cache.gap = nil
-    cache.replace_index = 1
-    begin_thinning(cache)
 end
 
--- Returns a working fork of the closest retained checkpoint not after target. With no such
--- checkpoint, loads the initial machine at the epoch's first virgin input boundary.
-function machine_cache_meta.__index.fork_closest(cache, epoch_period_index)
-    local closest
-    for _, checkpoint in ipairs(cache.checkpoints) do
-        if
-            checkpoint.epoch_period_index <= epoch_period_index
-            and (not closest or checkpoint.epoch_period_index > closest.epoch_period_index)
-        then
-            closest = checkpoint
+-- Returns a working fork of the closest retained checkpoint not after target.
+function machine_cache_meta.__index:fork_closest(epoch_period_index)
+    local closest = self.checkpoints[1]
+    for i = 2, #self.checkpoints do
+        if self.checkpoints[i].epoch_period_index > epoch_period_index then
+            break
         end
-    end
-    if not closest then
-        local machine = load_remote_machine(cache.initial_state_hash)
-        return machine, 0
+        closest = self.checkpoints[i]
     end
     return fork_server(closest.machine), closest.epoch_period_index
 end
 
-local function new_machine_cache(initial_state_hash, capacity)
+local function new_machine_cache(initial_state_hash, capacity, initial_gap, initial_machine)
+    capacity = capacity or DEFAULT_MACHINE_CACHE_CAPACITY
+    assert(capacity > 0, "machine cache capacity must include its initial checkpoint")
+    local gap = initial_gap or DEFAULT_MACHINE_CACHE_GAP
     return setmetatable({
-        initial_state_hash = initial_state_hash,
-        capacity = capacity or DEFAULT_MACHINE_CACHE_CAPACITY,
-        checkpoints = {},
-        replace_index = 1,
+        capacity = capacity,
+        checkpoints = {
+            {
+                epoch_period_index = 0,
+                machine = initial_machine or load_remote_machine(initial_state_hash),
+            },
+        },
+        gap = gap,
+        replace_cursor = 2,
     }, machine_cache_meta)
 end
 
@@ -402,14 +369,13 @@ end
 
 -- Input delivery does not advance mcycle. Open at the virgin boundary, exclude that boundary from
 -- the samples, and limit collection to this input's mcycle budget.
-local function mcycle_computation_hash_begin_input(claim, input_index, input_base, input_mcycle_end)
+local function mcycle_computation_hash_begin_input(claim, input_index)
     claim.input_index = input_index
     claim.input_entry_count = 0
     claim.mcycle_phase = 0
     claim.partial_bundle = nil
-    claim.input_base = input_base or claim.machine:read_reg("mcycle")
-    claim.input_mcycle_end = input_mcycle_end
-        or claim.input_base + (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+    claim.input_base = claim.machine:read_reg("mcycle")
+    claim.input_mcycle_end = claim.input_base + (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
 end
 
 -- Offers the machine after every collect call. Only exact period boundaries are useful as
@@ -433,7 +399,9 @@ local function consider_mcycle_machine(claim, collected)
             epoch_period_index = nil
         end
     end
-    claim.player.machine_cache:consider(epoch_period_index, claim.machine)
+    if epoch_period_index then
+        claim.player.machine_cache:consider(epoch_period_index, claim.machine)
+    end
 end
 
 -- Samples this input in the same bounded chunks as cartesi-machine.lua. The phase and partial
@@ -581,13 +549,11 @@ local function refine_mcycle_claim(player, bundle)
         hash_tree.frontier_forest_pad_back(bundle_forest, machine:get_root_hash(), bundle_size)
         return bundle_forest
     end
-    local window_start = bundle_period * player.geometry.mcycles_per_period
     local machine <close> = fork_mcycle_position(player, input_index, bundle_period)
     local start = machine:read_reg("mcycle")
-    local base = start - window_start
     local claim = new_mcycle_computation_hash(player, machine, bundle_forest, bundle_size, 0, false)
-    claim:begin_input(input_index - 1, base, start + bundle_size * player.geometry.mcycles_per_period)
-    run_computation_hash_to_stop(claim, claim.input_mcycle_end)
+    claim:begin_input(input_index - 1)
+    run_computation_hash_to_stop(claim, start + bundle_size * player.geometry.mcycles_per_period)
     assert(claim.input_entry_count == claim.input_entry_capacity, "mcycle refinement did not fill its bundle")
     return bundle_forest
 end

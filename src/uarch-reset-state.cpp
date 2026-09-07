@@ -15,7 +15,7 @@
 //
 
 /// \file
-/// \brief This file is be converted to Solidity by the machine-solidity-step.
+/// \brief Transpiled to Solidity by solidity-step/tools/transpile-uarch.lua.
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
 

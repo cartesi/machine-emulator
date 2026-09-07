@@ -278,7 +278,6 @@ The following projects have been using the emulator:
 The Cartesi Machine emulator is directly related to the following important projects that are also maintained by us:
 - [Cartesi Machine Guest Tools](https://github.com/cartesi/machine-guest-tools) - System utilities used inside guest machines, and the root filesystem image that includes them.
 - [Cartesi Linux](https://github.com/cartesi/linux) - Linux kernel image used by guest machines.
-- [Cartesi Machine Solidity Step](https://github.com/cartesi/machine-solidity-step) - Solidity smart contracts of machine microarchitecture step for on-chain fraud-proofs validation.
 
 ## Benchmarks
 

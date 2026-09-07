@@ -26,15 +26,23 @@
 
 namespace cartesi {
 
-std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t uarch_cycle_count) {
+std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t skip_count, uint64_t uarch_cycle_count) {
     step_log_data image(log.begin(), log.end());
     uarch_replay_step_state_access<step_dumper>::context context;
     const uarch_replay_step_state_access<step_dumper> a(context, image.data(), image.size());
     // uarch_interpret's cycle-limit bookkeeping would open the dump with redundant uarch.cycle reads
-    for (uint64_t i = 0; i < uarch_cycle_count; ++i) {
-        if (uarch_step(a) != UArchStepStatus::Success) {
-            break;
+    auto replay = [&](uint64_t count) {
+        for (uint64_t i = 0; i < count; ++i) {
+            if (uarch_step(a) != UArchStepStatus::Success) {
+                return false;
+            }
         }
+        return true;
+    };
+    context.dumper.set_muted(true);
+    if (replay(skip_count)) {
+        context.dumper.set_muted(false);
+        replay(uarch_cycle_count);
     }
     return context.dumper.str();
 }

@@ -31,6 +31,7 @@ namespace cartesi {
 /// \brief Dump sink that formats a replayed uarch step as indented, human-readable text
 class step_dumper {
     std::ostringstream m_out;
+    bool m_muted{false};  ///< Drops output while set; numbering and nesting still advance
     int m_indent{0};      ///< Current bracket nesting depth
     uint64_t m_access{0}; ///< 1-based access counter across the whole dump
 
@@ -44,26 +45,42 @@ public:
         return m_out.str();
     }
 
+    void set_muted(bool muted) {
+        m_muted = muted;
+    }
+
     void begin_bracket(const char *text) {
-        line() << "begin " << text << '\n';
+        if (!m_muted) {
+            line() << "begin " << text << '\n';
+        }
         ++m_indent;
     }
 
     void end_bracket(const char *text) {
         --m_indent;
-        line() << "end " << text << '\n';
+        if (!m_muted) {
+            line() << "end " << text << '\n';
+        }
     }
 
     /// \brief Emit a read. \p name is the register/field name, or nullptr for plain memory.
     /// \details Values print as hex(decimal), e.g. 0x7b(123).
     void read(const char *name, uint64_t paddr, uint64_t val) {
-        line() << std::dec << ++m_access << ": read " << (name != nullptr ? name : "") << "@0x" << std::hex << paddr
+        ++m_access;
+        if (m_muted) {
+            return;
+        }
+        line() << std::dec << m_access << ": read " << (name != nullptr ? name : "") << "@0x" << std::hex << paddr
                << ": 0x" << val << std::dec << '(' << val << ")\n";
     }
 
     /// \brief Emit a write, showing the value before and after. \p name and values as in read().
     void write(const char *name, uint64_t paddr, uint64_t old_val, uint64_t new_val) {
-        line() << std::dec << ++m_access << ": write " << (name != nullptr ? name : "") << "@0x" << std::hex << paddr
+        ++m_access;
+        if (m_muted) {
+            return;
+        }
+        line() << std::dec << m_access << ": write " << (name != nullptr ? name : "") << "@0x" << std::hex << paddr
                << ": 0x" << old_val << std::dec << '(' << old_val << ") -> 0x" << std::hex << new_val << std::dec << '('
                << new_val << ")\n";
     }
@@ -71,11 +88,11 @@ public:
 
 /// \brief Replays a uarch step log and returns a human-readable dump
 /// \param log Binary step log produced by machine::log_step_uarch
-/// \param uarch_cycle_count Number of cycles to replay; stops early if the uarch halts
-/// \details No caller claim is checked. Exported because the Lua binding is compiled into
-/// cartesi/jsonrpc.so as well, which resolves the symbol from cartesi.so at load time.
-__attribute__((visibility("default"))) std::string dump_step_uarch(std::span<const unsigned char> log,
-    uint64_t uarch_cycle_count);
+/// \param skip_count Number of cycles to replay silently first
+/// \param uarch_cycle_count Number of cycles to dump after those; stops early if the uarch halts
+/// \details No caller claim is checked. Access numbering counts from the first replayed cycle, so a
+/// dump with a skip is the matching slice of the dump without one.
+std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t skip_count, uint64_t uarch_cycle_count);
 
 } // namespace cartesi
 

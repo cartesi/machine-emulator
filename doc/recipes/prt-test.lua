@@ -587,7 +587,7 @@ if arg[1] then
     -- A collection ending exactly where a tamperer changes its machine caches the pre-tamper
     -- state. Replaying from that checkpoint must still apply the tamper before continuing.
     local tamperer =
-        prt_player.new_tamperer(dapp_contract, 0, 100, prt_player.new_machine_cache(initial_state_hash, 64))
+        prt_player.new_tamperer(dapp_contract, 0, 100, prt_player.new_machine_cache(initial_state_hash, 64, 1))
     local tampered_tree = tamperer:make_mcycle_tree()
     tampered_tree:open_bundle(99)
     tampered_tree:open_bundle(100)

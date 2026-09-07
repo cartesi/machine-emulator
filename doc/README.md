@@ -5449,10 +5449,11 @@ machine.
 #### Inspecting step logs
 
 The static method
-`cartesi.machine:dump_step_uarch(<log>, <uarch_cycle_count>)` returns a
-user-friendly version of the uarch cycles recorded in a binary step log.
-It replays the requested number of cycles against the state carried in
-the log (stopping early if the uarch halts) and describes every access
+`cartesi.machine:dump_step_uarch(<log>, <skip_count>, <uarch_cycle_count>)`
+returns a user-friendly version of the uarch cycles recorded in a binary
+step log. It replays the first `<skip_count>` cycles silently, then the
+requested number of cycles against the state carried in the log
+(stopping early if the uarch halts), and describes every access
 performed, identifying what each address refers to (a register, a CSR,
 memory). Addresses and values are printed in hexadecimal and decimal.
 
@@ -5477,7 +5478,7 @@ assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 -- Record the step into a binary log and dump its printout to screen
 local log = machine:log_step_uarch(1)
 io.stderr:write(string.format("\nStep log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
-io.stderr:write(cartesi.machine:dump_step_uarch(log, 1))
+io.stderr:write(cartesi.machine:dump_step_uarch(log, 0, 1))
 ```
 
 with command:

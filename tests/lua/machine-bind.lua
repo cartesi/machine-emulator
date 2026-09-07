@@ -830,7 +830,7 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
     -- The log records 2 cycles, but its pages carry full contents, so the third (halting) cycle
     -- of the default program ("li a0,123", "li a7,halt", "ecall") replays from the same witness.
     local log = machine:log_step_uarch(2)
-    local text = cartesi.machine:dump_step_uarch(log, 3)
+    local text = cartesi.machine:dump_step_uarch(log, 0, 3)
     -- Match the whole printout line by line; addresses and values are wildcarded so the expectation
     -- survives shadow-layout/cycle drift while order, numbering, names, and brackets stay pinned.
     local expected = {
@@ -880,11 +880,19 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
     end
 end)
 
+do_test("dump_step_uarch skip count mutes the first cycles", function(machine)
+    local log = machine:log_step_uarch(2)
+    local full = cartesi.machine:dump_step_uarch(log, 0, 3)
+    local rest = cartesi.machine:dump_step_uarch(log, 1, 2)
+    assert(rest:match("^9: read uarch%.cycle"), "access numbering should continue past the skipped cycle")
+    assert(cartesi.machine:dump_step_uarch(log, 0, 1) .. rest == full, "skipped dump should be a slice of the full one")
+end)
+
 do_test("dump_step_uarch raises on a malformed log", function(machine)
     local log = machine:log_step_uarch(2)
     -- Corrupt one byte of the header's signature so decode rejects the log.
     local corrupted = string.char((log:byte(1) + 1) % 256) .. log:sub(2)
-    local ok, err = pcall(cartesi.machine.dump_step_uarch, cartesi.machine, corrupted, 1)
+    local ok, err = pcall(cartesi.machine.dump_step_uarch, cartesi.machine, corrupted, 0, 1)
     assert(not ok, "expected error")
     check_error_find(err, "invalid step log signature")
 end)

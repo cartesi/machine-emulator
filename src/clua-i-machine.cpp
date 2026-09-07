@@ -40,7 +40,6 @@ extern "C" {
 #include "cm.h"
 #include "hash-tree-constants.hpp"
 #include "hex.hpp"
-#include "step-dumper.hpp"
 
 namespace cartesi {
 
@@ -1324,19 +1323,17 @@ static int machine_obj_index_verify_step_uarch(lua_State *L) {
 
 /// \brief This is the machine:dump_step_uarch() method implementation.
 /// \param L Lua state.
-/// \details Not part of the C API: an inspection helper, so the binding calls the C++
-/// implementation directly.
-static int machine_obj_index_dump_step_uarch(lua_State *L) try {
+static int machine_obj_index_dump_step_uarch(lua_State *L) {
+    lua_settop(L, 4);
     size_t log_length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *log = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &log_length));
-    lua_pushstring(L,
-        cartesi::dump_step_uarch(std::span<const unsigned char>{log, log_length}, luaL_checkinteger(L, 3)).c_str());
+    const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 2, &log_length));
+    const char *dump{};
+    if (cm_dump_step_uarch(log, log_length, luaL_checkinteger(L, 3), luaL_checkinteger(L, 4), &dump) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushstring(L, dump);
     return 1;
-} catch (const std::exception &e) {
-    return luaL_error(L, "%s", e.what());
-} catch (...) {
-    return luaL_error(L, "unknown error in dump_step_uarch");
 }
 
 /// \brief This is the machine:verify_reset_uarch() method implementation.

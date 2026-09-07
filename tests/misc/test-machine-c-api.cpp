@@ -2053,6 +2053,39 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash0_test, step_log_machi
     BOOST_CHECK_EQUAL(origin, result);
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(dump_step_uarch_null_log_test) {
+    const char *dump{};
+    const cm_error error_code = cm_dump_step_uarch(nullptr, 0, 0, 1, &dump);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string("invalid log"), std::string(cm_get_last_error_message()));
+    BOOST_CHECK(dump == nullptr);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(dump_step_uarch_null_output_test, step_log_machine_fixture) {
+    cm_error error_code{};
+    const auto log = log_step_uarch(error_code);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    error_code = cm_dump_step_uarch(log.data(), log.size(), 0, 1, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string("invalid dump output"), std::string(cm_get_last_error_message()));
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(dump_step_uarch_skip_count_test, step_log_machine_fixture) {
+    cm_error error_code{};
+    const auto log = log_step_uarch(error_code);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    // The log records one cycle, but its pages carry full contents, so a second cycle replays from the same witness
+    const char *dump{};
+    BOOST_REQUIRE_EQUAL(cm_dump_step_uarch(log.data(), log.size(), 0, 2, &dump), CM_ERROR_OK);
+    const std::string full{dump};
+    BOOST_REQUIRE_EQUAL(cm_dump_step_uarch(log.data(), log.size(), 0, 1, &dump), CM_ERROR_OK);
+    const std::string first{dump};
+    BOOST_REQUIRE_EQUAL(cm_dump_step_uarch(log.data(), log.size(), 1, 1, &dump), CM_ERROR_OK);
+    const std::string rest{dump};
+    BOOST_CHECK(!first.empty());
+    BOOST_CHECK_EQUAL(full, first + rest);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_obtained_hash_test, step_log_machine_fixture) {
     cm_hash hash0;
     cm_error error_code = cm_get_root_hash(_machine, &hash0);

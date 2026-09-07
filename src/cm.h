@@ -1106,6 +1106,22 @@ CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reaso
     cm_hash *obtained_root_hash);
 
 // ------------------------------------
+// Dumping
+// ------------------------------------
+
+/// \brief Replays a uarch step log into a human-readable dump of its accesses.
+/// \param log Binary step log produced by cm_log_step_uarch.
+/// \param log_length Length of the binary step log.
+/// \param skip_count Number of uarch cycles to replay silently first.
+/// \param uarch_cycle_count Number of uarch cycles to dump after those. The dump stops early at the uarch halt.
+/// \param dump Receives the dump as a string, guaranteed to remain valid only until the next CM_API function is
+/// called from the same thread. Set to NULL on failure.
+/// \returns 0 for success, non zero code for error.
+/// \details The dump is meant for people: its format is not part of the stable API.
+CM_API cm_error cm_dump_step_uarch(const uint8_t *log, uint64_t log_length, uint64_t skip_count,
+    uint64_t uarch_cycle_count, const char **dump);
+
+// ------------------------------------
 // Integrity checking
 // ------------------------------------
 

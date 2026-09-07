@@ -63,6 +63,7 @@
 #include "rtc-defines.h"
 #include "send-cmio-response.hpp"
 #include "sha-256-hasher.hpp"
+#include "step-dumper.hpp"
 #include "step-log.hpp"
 #include "uarch-defines.h"
 
@@ -1381,6 +1382,24 @@ cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, cons
     }
     return cm_result_success();
 } catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_dump_step_uarch(const uint8_t *log, uint64_t log_length, uint64_t skip_count, uint64_t uarch_cycle_count,
+    const char **dump) try {
+    if (dump == nullptr) {
+        throw std::invalid_argument("invalid dump output");
+    }
+    if (log == nullptr) {
+        throw std::invalid_argument("invalid log");
+    }
+    *dump = cm_set_temp_string(
+        cartesi::dump_step_uarch(std::span<const unsigned char>{log, log_length}, skip_count, uarch_cycle_count));
+    return cm_result_success();
+} catch (...) {
+    if (dump != nullptr) {
+        *dump = nullptr;
+    }
     return cm_result_failure();
 }
 

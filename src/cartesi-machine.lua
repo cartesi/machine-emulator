@@ -4142,7 +4142,7 @@ if cmdline.log_step_uarch then
     local log = machine:log_step_uarch(cmdline.log_step_uarch.count)
     util.write_file(log, cmdline.log_step_uarch.filename)
     if cmdline.log_step_uarch.dump then
-        io.stderr:write(cartesi.machine:dump_step_uarch(log, cmdline.log_step_uarch.count))
+        io.stderr:write(cartesi.machine:dump_step_uarch(log, 0, cmdline.log_step_uarch.count))
     end
 end
 if cmdline.log_reset_uarch then

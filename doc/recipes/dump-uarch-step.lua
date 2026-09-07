@@ -16,4 +16,4 @@ assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 -- Record the step into a binary log and dump its printout to screen
 local log = machine:log_step_uarch(1)
 io.stderr:write(string.format("\nStep log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
-io.stderr:write(cartesi.machine:dump_step_uarch(log, 1))
+io.stderr:write(cartesi.machine:dump_step_uarch(log, 0, 1))

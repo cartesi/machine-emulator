@@ -183,18 +183,19 @@ local function new_machine_cache(initial_state_hash, capacity, initial_gap, init
     }, machine_cache_meta)
 end
 
--- Runs a machine toward the target mcycle, resuming through automatic yields until it reaches
--- the target, yields manual, or halts. Each output an automatic yield carries is collected into
--- `sink` when one is given, and dropped otherwise.
-local function run_to(machine, target, sink)
+-- Advances through a runner's run(mcycle_end) method, returning the first non-automatic break
+-- reason. The runner is the machine itself for plain execution, or a computation-hash collector.
+-- Automatic yields are read from the machine and passed to the optional callback; without one,
+-- they are ignored. A terminal manual yield remains unread for the caller to handle.
+local function run_to_stop(machine, mcycle_end, runner, on_yield_automatic)
     while true do
-        local break_reason = machine:run(target)
+        local break_reason = runner:run(mcycle_end)
         if break_reason ~= cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
             return break_reason
         end
-        local _, request_reason, data = machine:receive_cmio_request()
-        if sink and request_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
-            sink[#sink + 1] = data
+        local _, yield_reason, data = machine:receive_cmio_request()
+        if on_yield_automatic then
+            on_yield_automatic(yield_reason, data)
         end
     end
 end
@@ -254,12 +255,12 @@ local function advance_fork(player, machine, index, offset)
     local base = machine:read_reg("mcycle")
     local tamper = player.tamper
     if tamper and tamper.input == index and offset >= tamper_offset(player) then
-        run_to(machine, base + tamper_offset(player))
+        run_to_stop(machine, base + tamper_offset(player), machine)
         if machine:read_reg("mcycle") == base + tamper_offset(player) then
             tamper.apply(machine)
         end
     end
-    run_to(machine, base + offset)
+    run_to_stop(machine, base + offset, machine)
     if manual_yield(machine) == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
         assert(boundary, "machine rejected outside a posted input")
         machine:shutdown_server()
@@ -281,14 +282,14 @@ local function advance_from_period(player, machine, input_index, period_index, t
     then
         local tamper_mcycle = machine:read_reg("mcycle")
             + (tamper_period - period_index) * player.geometry.mcycles_per_period
-        run_to(machine, tamper_mcycle)
+        run_to_stop(machine, tamper_mcycle, machine)
         if machine:read_reg("mcycle") ~= tamper_mcycle then
             return
         end
         tamper.apply(machine)
         period_count = target_period_index - tamper_period
     end
-    run_to(machine, machine:read_reg("mcycle") + period_count * player.geometry.mcycles_per_period)
+    run_to_stop(machine, machine:read_reg("mcycle") + period_count * player.geometry.mcycles_per_period, machine)
 end
 
 -- Forks the closest cached machine and deterministically replays to a virgin input boundary.
@@ -479,18 +480,6 @@ local function new_mcycle_computation_hash(player, machine, frontier, input_entr
     }
 end
 
--- Runs a computation-hash runner through automatic yields until it reaches the requested mcycle or
--- a fixed point. The terminal manual yield remains available to the epoch driver.
-local function run_computation_hash_to_stop(claim, mcycle_end)
-    while true do
-        local break_reason = claim:run(mcycle_end)
-        if break_reason ~= cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
-            return break_reason
-        end
-        claim.machine:receive_cmio_request()
-    end
-end
-
 -- Builds the mcycle claim's outer forest by advancing the epoch. Each input is fed and
 -- collected until its fixed point (splitting the collection at the player's tamper point,
 -- where the machine is corrupted mid-flight), then padded to its full span with its last
@@ -511,11 +500,11 @@ local function build_mcycle_claim(player)
         feed_input(machine, data)
         local tamper = player.tamper
         if tamper and tamper.input == index then
-            local break_reason = run_computation_hash_to_stop(claim, claim.input_base + tamper_offset(player))
+            local break_reason = run_to_stop(machine, claim.input_base + tamper_offset(player), claim)
             assert(not is_at_fixed_point(break_reason), "the machine stopped before the tamper point")
             tamper.apply(machine)
         end
-        run_computation_hash_to_stop(claim, claim.input_mcycle_end)
+        run_to_stop(machine, claim.input_mcycle_end, claim)
         claim:end_input()
         local yield_reason = manual_yield(machine)
         if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
@@ -554,7 +543,7 @@ local function refine_mcycle_claim(player, bundle)
     local start = machine:read_reg("mcycle")
     local claim = new_mcycle_computation_hash(player, machine, bundle_forest, bundle_size, 0, false)
     claim:begin_input(input_index - 1)
-    run_computation_hash_to_stop(claim, start + bundle_size * player.geometry.mcycles_per_period)
+    run_to_stop(machine, start + bundle_size * player.geometry.mcycles_per_period, claim)
     assert(claim.input_entry_count == claim.input_entry_capacity, "mcycle refinement did not fill its bundle")
     return bundle_forest
 end
@@ -865,7 +854,11 @@ local function compute_epoch_results(player)
         local snapshot = fork_server(machine)
         local sink = {}
         feed_input(machine, data)
-        run_to(machine, math.maxinteger, sink)
+        run_to_stop(machine, math.maxinteger, machine, function(yield_reason, output)
+            if yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
+                sink[#sink + 1] = output
+            end
+        end)
         local reason = manual_yield(machine)
         if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
             local _, _, reported_root = machine:receive_cmio_request()

@@ -9,11 +9,13 @@ local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local util = require("cartesi.util")
 local socket = require("socket")
-local prt_player = require("prt-player")
+local dishonest = require("prt-dishonest")
 local prtu = require("prtu")
 local prt = require("prt")
 
 local keccak = cartesi.keccak256
+local LOG2_MCYCLE_BUNDLE = prt.LOG2_MCYCLE_BUNDLE
+local LOG2_UARCH_BUNDLE = prt.LOG2_UARCH_BUNDLE
 
 --------------------------------------------------------------------------------
 -- Machine checkpoint cache
@@ -35,7 +37,7 @@ local function new_fake_machine(root_hash)
 end
 
 do
-    local cache = prt_player.new_machine_cache("unused", 5, 1, new_fake_machine("0"))
+    local cache = prt.new_machine_cache("unused", 5, 1, new_fake_machine("0"))
     for epoch_period_index = 1, 5 do
         cache:consider(epoch_period_index, new_fake_machine(tostring(epoch_period_index)))
     end
@@ -71,7 +73,7 @@ do
 end
 
 do
-    local cache = prt_player.new_machine_cache("unused", 5, 3, new_fake_machine("0"))
+    local cache = prt.new_machine_cache("unused", 5, 3, new_fake_machine("0"))
     for _, epoch_period_index in ipairs({ 3, 6, 9, 12, 15, 18, 21, 24 }) do
         cache:consider(epoch_period_index, new_fake_machine(tostring(epoch_period_index)))
     end
@@ -141,44 +143,26 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
     }
 end
 
--- The internal-node response a player holding the on-turn claim makes.
+-- Exercise the actual player responses against the referee's synthetic walk.
 local function make_bisection_response(match)
-    assert(match.height > 1)
     local tree = match.claims[match.turn].tree
-    if match.height == tree.bundle_height then
-        tree:open_bundle(match.position >> tree.bundle_height)
-    end
-    local turn_left_node, turn_right_node = tree:get_children(match.position, match.height)
-    local descend_left = turn_left_node ~= match.other_left_node
-    local child_position = descend_left and match.position or match.position + (1 << (match.height - 1))
-    if match.height - 1 == tree.bundle_height then
-        tree:open_bundle(child_position >> tree.bundle_height)
-    end
-    local turn_next_left_node, turn_next_right_node = tree:get_children(child_position, match.height - 1)
-    return {
-        turn_left_node = turn_left_node,
-        turn_right_node = turn_right_node,
-        turn_next_left_node = turn_next_left_node,
-        turn_next_right_node = turn_next_right_node,
-    }
+    return prt.player_handlers.reveal_bisection(
+        { mcycle_claim = tree },
+        tree:get_root(),
+        match.position,
+        match.height,
+        match.other_left_node
+    )
 end
 
--- The final response exposes the divergent leaves and proves the preceding agreed state.
 local function make_seal_response(match)
-    assert(match.height == 1)
     local tree = match.claims[match.turn].tree
-    local turn_left_node, turn_right_node = tree:get_children(match.position, 1)
-    local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
-    local descend_left = turn_left_node ~= match.other_left_node
-    local state_index = match.position + (descend_left and 0 or 1)
-    if state_index ~= 0 then
-        local agreed_state_index = state_index - 1
-        if tree.bundle_height > 0 then
-            tree:open_bundle(agreed_state_index >> tree.bundle_height)
-        end
-        response.agreed_state_hash_proof = tree:prove(agreed_state_index)
-    end
-    return response
+    return prt.player_handlers.seal_divergence(
+        { mcycle_claim = tree },
+        tree:get_root(),
+        match.position,
+        match.other_left_node
+    )
 end
 
 local function swap_turn_children(response)
@@ -574,7 +558,7 @@ assert(not ok and err:find("the phase closer went away"), "phase-closer EOF did 
 if arg[1] then
     local initial_state_hash = cartesi.fromhex(arg[1])
     local inputs = {}
-    for i = 2, #arg do
+    for i = 2, 4 do
         inputs[#inputs + 1] = util.read_file(arg[i])
     end
     assert(#inputs >= 3, "machine checkpoint tests require three inputs")
@@ -586,21 +570,153 @@ if arg[1] then
 
     -- A collection ending exactly where a tamperer changes its machine caches the pre-tamper
     -- state. Replaying from that checkpoint must still apply the tamper before continuing.
-    local tamperer =
-        prt_player.new_tamperer(dapp_contract, 0, 100, prt_player.new_machine_cache(initial_state_hash, 64, 1))
+    local tamperer = dishonest.new_tamperer(dapp_contract, 0, 100, { cache_capacity = 64, cache_gap = 1 })
     local tampered_tree = tamperer:make_mcycle_tree()
+    local found_tamper_point = false
+    for _, saved in ipairs(tamperer.machine_cache.checkpoints) do
+        if saved.epoch_period_index == 100 << LOG2_MCYCLE_BUNDLE then
+            found_tamper_point = true
+            assert(not saved.machine.context.tampered, "tamper-point checkpoint is already corrupted")
+        end
+    end
+    assert(found_tamper_point, "tamper-point checkpoint was not retained")
     tampered_tree:open_bundle(99)
     tampered_tree:open_bundle(100)
+    local uncached_tamperer = dishonest.new_tamperer(dapp_contract, 0, 100, { cache_capacity = 1 })
+    local uncached_tampered_tree = uncached_tamperer:make_mcycle_tree()
+    assert(uncached_tampered_tree:get_root() == tampered_tree:get_root(), "cache changed the tampered claim")
+    uncached_tampered_tree:open_bundle(100)
+    for leaf = 100 << LOG2_MCYCLE_BUNDLE, (100 << LOG2_MCYCLE_BUNDLE) + (1 << LOG2_MCYCLE_BUNDLE) - 1 do
+        assert(
+            uncached_tampered_tree:get_node(leaf, 0) == tampered_tree:get_node(leaf, 0),
+            "cache changed replay out of the tamper point"
+        )
+    end
 
     -- Refinement is a read of the committed claim. It must not replace build checkpoints with
     -- speculative machines from an input whose committed suffix is its revert state.
-    local cache = prt_player.new_machine_cache(initial_state_hash, 1)
-    local honest = prt_player.new_honest(dapp_contract, cache)
+    local honest = prt.new_honest(dapp_contract, { cache_capacity = 1 })
+    local cache = honest.machine_cache
     local honest_tree = honest:make_mcycle_tree()
     local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").epoch_period_index
     honest_tree:open_bundle(honest.bundles_per_input)
     assert(cache.checkpoints[1].epoch_period_index == checkpoint, "mcycle refinement changed the machine cache")
-    honest:make_uarch_tree(3, 0)
+    local cached = prt.new_honest(dapp_contract)
+    assert(cached.new_machine == prt.new_machine, "honest machine default changed")
+    assert(cached.new_mcycle_computation_hash == prt.new_mcycle_computation_hash)
+    assert(cached.new_uarch_computation_hash == prt.new_uarch_computation_hash)
+    local cached_tree = cached:make_mcycle_tree()
+    assert(cached_tree:get_root() == honest_tree:get_root(), "cache policy changed the mcycle root")
+    assert(honest_tree:get_root() == util.read_file(assert(arg[5])), "mcycle root differs from CLI")
+    for _, bundle in ipairs({
+        0,
+        99,
+        honest.bundles_per_input,
+        2 * honest.bundles_per_input,
+        (1 << (honest.geometry.mcycle_height - LOG2_MCYCLE_BUNDLE)) - 1,
+    }) do
+        honest_tree:open_bundle(bundle)
+        cached_tree:open_bundle(bundle)
+        for leaf = bundle << LOG2_MCYCLE_BUNDLE, (bundle << LOG2_MCYCLE_BUNDLE) + (1 << LOG2_MCYCLE_BUNDLE) - 1 do
+            assert(honest_tree:get_node(leaf, 0) == cached_tree:get_node(leaf, 0), "cache changed refinement")
+        end
+    end
+    local first_uarch = honest:make_uarch_tree(1, 0)
+    assert(first_uarch:get_root() == util.read_file(assert(arg[6])), "uarch root differs from CLI")
+    first_uarch:open_bundle(0)
+    first_uarch:open_bundle((1 << (honest.geometry.uarch_height - LOG2_UARCH_BUNDLE)) - 1)
+    local rejected_uarch = honest:make_uarch_tree(2, 60000)
+    rejected_uarch:open_bundle(0)
+    rejected_uarch:open_bundle((1 << (honest.geometry.uarch_height - LOG2_UARCH_BUNDLE)) - 1)
+    assert(
+        honest:make_uarch_tree(3, 0):get_root() == cached:make_uarch_tree(3, 0):get_root(),
+        "cache changed post-rejection uarch replay"
+    )
+
+    -- Result replay uses the same input lifecycle, and its proofs authenticate
+    -- against the final state of the sampled execution.
+    local result = honest:prove_outputs_merkle_root()
+    local final_leaf = (1 << honest.geometry.mcycle_height) - 1
+    assert(
+        result.iflags_y_proof.root_hash == honest_tree:get_node(final_leaf, 0),
+        "result replay differs from the claim's final state"
+    )
+    assert(honest:prove_output().output, "accepted output was lost during replay")
+
+    local forger = dishonest.new_forger(dapp_contract, 0, "forged")
+    assert(forger.inputs == dapp_contract.inputs, "forger replaced the contract's inputs")
+    local machine <close> = forger.new_machine(initial_state_hash)
+    machine:begin_input(0)
+    local fork <close> = machine:fork_server()
+    local read_reg = machine.read_reg
+    assert(read_reg == machine.read_reg and read_reg == fork.read_reg, "machine forwarders are not shared")
+    assert(machine.send_cmio_response == machine.overrides.send_cmio_response, "forwarder masked an override")
+    assert(read_reg(machine, "mcycle") == machine.remote:read_reg("mcycle"), "forwarder used the wrong receiver")
+    assert(read_reg(fork, "mcycle") == fork.remote:read_reg("mcycle"), "shared forwarder used the wrong receiver")
+    assert(
+        fork.overrides == machine.overrides and fork.context ~= machine.context,
+        "fork lost overrides or shared mutable input context"
+    )
+    fork.context.input_index = 1
+    machine:swap(fork)
+    assert(machine.context.input_index == 1 and fork.context.input_index == 0, "swap did not restore input context")
+
+    -- Terminal inputs and empty epochs must fill logical windows even when the
+    -- physical counter cannot advance (including the unsigned counter maximum).
+    for _, terminal in ipairs({ "halt", "exception", "overflow", "empty" }) do
+        local function terminal_machine(hash)
+            local m = prt.new_machine(hash)
+            if terminal == "halt" then
+                m:write_reg("iflags_Y", 0)
+                m:write_reg("iflags_H", 1)
+            elseif terminal == "exception" then
+                m:write_reg(
+                    "htif_tohost",
+                    (cartesi.HTIF_DEV_YIELD << 56)
+                        | (cartesi.HTIF_YIELD_CMD_MANUAL << 48)
+                        | (cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION << 32)
+                )
+            elseif terminal == "overflow" then
+                m:write_reg("iflags_Y", 0)
+                m:write_reg("mcycle", cartesi.MCYCLE_MAX)
+            end
+            return m
+        end
+        local contract = {
+            initial_state_hash = initial_state_hash,
+            geometry = dapp_contract.geometry,
+            inputs = terminal == "empty" and {} or inputs,
+        }
+        local counts = { outer = 0, refined = 0, uarch = 0 }
+        local player = prt.new_honest(contract, {
+            new_machine = terminal_machine,
+            new_mcycle_computation_hash = function(self, m, window)
+                local kind = window and "refined" or "outer"
+                counts[kind] = counts[kind] + 1
+                return prt.new_mcycle_computation_hash(self, m, window)
+            end,
+            new_uarch_computation_hash = function(self, m, window)
+                counts.uarch = counts.uarch + 1
+                return prt.new_uarch_computation_hash(self, m, window)
+            end,
+        })
+        local reference <close> = terminal_machine(initial_state_hash)
+        local expected = reference:get_root_hash()
+        for _ = 1, contract.geometry.mcycle_height do
+            expected = keccak(expected, expected)
+        end
+        local tree = player:make_mcycle_tree()
+        assert(tree:get_root() == expected, terminal .. " has the wrong fixed-point tail")
+        tree:open_bundle(0)
+        tree:open_bundle((1 << (contract.geometry.mcycle_height - LOG2_MCYCLE_BUNDLE)) - 1)
+        local uarch = player:make_uarch_tree(3, 60000)
+        uarch:open_bundle(0)
+        uarch:open_bundle((1 << (contract.geometry.uarch_height - LOG2_UARCH_BUNDLE)) - 1)
+        assert(
+            counts.outer == 1 and counts.refined == 2 and counts.uarch == 3,
+            "build or refinement bypassed the selected collector factory"
+        )
+    end
 end
 
 print("prt-test: ok")

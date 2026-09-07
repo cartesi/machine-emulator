@@ -9553,19 +9553,31 @@ each input owns a fixed-capacity segment, collection state threads
 across yields, and the final repeatable group returned at a fixed point
 fills the segment’s remaining positions. The only different sink is
 PRT’s frontier forest, which retains the nodes needed to answer later
-tournament queries. The mcycle build (`build_mcycle_claim` in
-`prt-player.lua`) advances the whole epoch once, pushing each input’s
-bundle roots into the outer forest, padding each input’s span with the
-fixed point where its guest stopped, and offering the machine to a
-bounded cache after every hash-collection call. The default policy keeps
-a bounded, progressively thinned set of checkpoints. The refinement
-re-run (`refine_mcycle_claim`) starts at the closest retained
+tournament queries. The mcycle build (`build_mcycle_claim` in `prt.lua`)
+advances the whole epoch once, pushing each input’s bundle roots into
+the outer forest, padding each input’s span with the fixed point where
+its guest stopped, and offering the machine to a bounded cache after
+every hash-collection call. The default policy keeps a bounded,
+progressively thinned set of checkpoints. The refinement re-run
+(`refine_mcycle_claim`) starts at the closest retained
 `epoch_period_index` and recovers one bundle’s samples the same way;
 position zero always retains the initial machine template. The uarch
 build (`build_uarch_claim`) expands one period, instruction by
 instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose
 stream already carries the halt repetitions compressed and the reset
-hashes marked.
+hashes marked. Both collectors implement `begin_epoch`, `begin_input`,
+`run`, `end_input`, and `end_epoch`. The shared driver owns input
+delivery, automatic yields, acceptance, and rollback; plain replay and
+output collection use that same driver with a collector that only runs
+the machine. The honest constructor is simply
+`prt.new_honest(dapp_contract)`. Optional machine and collector
+factories let the dishonest players use the same execution lifecycle,
+claim trees, and event handlers. Their deviations live in
+`prt-dishonest.lua`: the forger replaces input delivery and its log, the
+tamperer overrides execution and collection, and the fabulist replaces a
+sample as it enters a computation hash, including when that sample lies
+in repeated padding. Bundle refinement uses the selected factories too,
+and the ordinary claim tree authenticates every opened bundle.
 
 ### The tournament
 
@@ -9878,6 +9890,7 @@ function handlers.prove_state_transition(player, input_index, period_index, stat
     local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
     local machine <close> = replay_to_input_boundary(player, input_index + 1)
+    machine:begin_input(input_index)
     local data = player.inputs[input_index + 1]
     if state_transition_offset == 0 and period_index == 0 and data then
         local revert_state_hash = machine:get_root_hash()
@@ -9953,10 +9966,11 @@ made-up hash. Such a claim is cheap to commit to, it is one run, and its
 join proof is perfectly valid. The quitter then walks away, closing its
 connection right after submitting.
 
-The *forger* runs the honest code over a forged input list, claiming
-input 2 asked for `2+2048` rather than `2^2048`. Its claims are
-self-consistent everywhere, and it defends them faithfully, but no log
-of feeding the forged input replays against the input the referee holds.
+The *forger* runs the shared code with a machine that substitutes a
+forged input, claiming input 2 asked for `2+2048` rather than `2^2048`.
+Its claims are self-consistent everywhere, and it defends them
+faithfully, but no log of feeding the forged input replays against the
+input the referee holds.
 
 The *tamperer* corrupts its machine mid-computation, writing over a word
 of RAM the guest never reads, and honestly commits to the corrupted

@@ -30,6 +30,7 @@ local LOG2_MCYCLE_BUNDLE = 4
 local LOG2_UARCH_BUNDLE = 16
 local LOG2_HASHES_PER_CHUNK = 8
 local DEFAULT_MACHINE_CACHE_CAPACITY = 8
+-- The default gap is one mcycle hash-collection chunk measured in claim periods.
 local DEFAULT_MACHINE_CACHE_GAP = 1 << (LOG2_MCYCLE_BUNDLE + LOG2_HASHES_PER_CHUNK)
 local WORD_SIZE = 1 << cartesi.HASH_TREE_LOG2_WORD_SIZE
 local WORD_MASK = WORD_SIZE - 1
@@ -971,8 +972,8 @@ end
 
 -- The quitter posts a claim fabricated out of thin air, every leaf the same made-up state hash,
 -- and walks away: it closes its connection right after joining, so the first event about
--- its claim finds no holder and eliminates it. The claim is one repeated leaf, so it never
--- needs a machine, and it reads nothing off the contract but the geometry.
+-- its claim finds no holder and eliminates it. The claim is one repeated leaf and never runs
+-- the initial machine loaded by its cache. It reads nothing off the contract but the geometry.
 local function new_quitter(dapp_contract, machine_cache)
     local player = new_player("quitter", dapp_contract, machine_cache)
     player.make_mcycle_tree = function(self)

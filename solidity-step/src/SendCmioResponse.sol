@@ -27,7 +27,7 @@ library SendCmioResponse {
         StepLog.Context memory a,
         uint16 reason,
         bytes calldata data,
-        uint32 dataLength,
+        uint64 dataLength,
         bytes32 revertRootHash
     ) internal pure {
         // This function cannot fail. When a failure is detected, the operation is a no-op instead,
@@ -52,17 +52,22 @@ library SendCmioResponse {
         // A zero length data is a valid response. We just skip writing to the rx buffer.
         uint32 writeLengthLog2Size = 0;
         if (dataLength > 0) {
+            // A response with data that does not fit in the rx buffer is a no-op
+            if (
+                dataLength
+                    > StateAccess.uint64ShiftLeft(
+                        1, uint32(EmulatorConstants.AR_CMIO_RX_BUFFER_LOG2_SIZE)
+                    )
+            ) {
+                return;
+            }
             // Find the write length: the smallest power of 2 that is >= dataLength and >= tree leaf size
-            writeLengthLog2Size = StateAccess.uint32Log2(dataLength);
+            writeLengthLog2Size = StateAccess.uint32Log2(uint32(dataLength));
             if (writeLengthLog2Size < EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE) {
                 writeLengthLog2Size = EmulatorConstants.HASH_TREE_LOG2_WORD_SIZE; // minimum write size is the tree leaf size
             }
             if (StateAccess.uint32ShiftLeft(1, writeLengthLog2Size) < dataLength) {
                 writeLengthLog2Size += 1;
-            }
-            // A response with data that does not fit in the rx buffer is a no-op
-            if (writeLengthLog2Size > EmulatorConstants.AR_CMIO_RX_BUFFER_LOG2_SIZE) {
-                return;
             }
         }
         if (reason == EmulatorConstants.HTIF_YIELD_REASON_ADVANCE_STATE) {
@@ -84,8 +89,8 @@ library SendCmioResponse {
         // Write data length and reason to fromhost
         uint64 mask16 = StateAccess.uint64ShiftLeft(1, 16) - 1;
         uint64 mask32 = StateAccess.uint64ShiftLeft(1, 32) - 1;
-        uint64 yieldData = StateAccess.uint64ShiftLeft((uint64(reason) & mask16), 32)
-            | (uint64(dataLength) & mask32);
+        uint64 yieldData =
+            StateAccess.uint64ShiftLeft((uint64(reason) & mask16), 32) | (dataLength & mask32);
         StateAccess.writeHtifFromhost(a, yieldData);
         // Reset iflags.Y
         StateAccess.writeIflagsY(a, 0);

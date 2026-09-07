@@ -1477,6 +1477,43 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(receive_cmio_request_small_buffer_test, cmio_requ
     BOOST_CHECK_EQUAL_COLLECTIONS(data.begin(), data.end(), original_data.begin(), original_data.end());
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(log_send_cmio_response_oversized_data_noop_test, cmio_request_machine_fixture) {
+    cm_hash root_hash_before{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &root_hash_before), CM_ERROR_OK);
+    const std::vector<uint8_t> data(CM_AR_CMIO_RX_BUFFER_LENGTH + 1, 0x5a);
+    // The jsonrpc client sends the data itself, so a length the buffer cannot back is local-only
+    std::vector<uint64_t> lengths{data.size()};
+    if (g_server == nullptr) {
+        lengths.push_back(UINT64_C(1) << 33);
+    }
+    for (const auto length : lengths) {
+        const uint8_t *log{};
+        uint64_t log_length{};
+        BOOST_REQUIRE_EQUAL(cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, data.data(), length,
+                                &root_hash_before, &log, &log_length),
+            CM_ERROR_OK);
+        const std::vector<uint8_t> log_copy(log, log + log_length);
+        cm_hash root_hash_after{};
+        BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &root_hash_after), CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(0, memcmp(root_hash_before, root_hash_after, sizeof(cm_hash)));
+        cm_hash obtained_root_hash{};
+        BOOST_REQUIRE_EQUAL(cm_verify_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, data.data(),
+                                length, &root_hash_before, log_copy.data(), log_copy.size(), &root_hash_before,
+                                &obtained_root_hash),
+            CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(0, memcmp(root_hash_before, obtained_root_hash, sizeof(cm_hash)));
+    }
+    // A response that fits changes the state
+    const uint8_t *log{};
+    uint64_t log_length{};
+    BOOST_REQUIRE_EQUAL(cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, data.data(),
+                            _expected_data.size(), &root_hash_before, &log, &log_length),
+        CM_ERROR_OK);
+    cm_hash root_hash_after{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &root_hash_after), CM_ERROR_OK);
+    BOOST_CHECK_NE(0, memcmp(root_hash_before, root_hash_after, sizeof(cm_hash)));
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_machine_fixture) {
     uint64_t write_data = 0x0;
     cm_error error_code = cm_write_reg(_machine, CM_REG_HTIF_FROMHOST, write_data);

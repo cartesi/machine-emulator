@@ -83,12 +83,11 @@ library Verify {
             revert RootHashBeforeMismatch(rootHashBefore, ctx.rootHashBefore);
         }
 
-        // The shared core takes a uint32 length; refuse what would be silently narrowed, as the
-        // C++ verifier does.
-        if (data.length > type(uint32).max) {
+        // The shared core takes a uint64 length; refuse what would be silently narrowed.
+        if (data.length > type(uint64).max) {
             revert CmioResponseTooLong(data.length);
         }
-        SendCmioResponse.sendCmioResponse(ctx, reason, data, uint32(data.length), revertRootHash);
+        SendCmioResponse.sendCmioResponse(ctx, reason, data, uint64(data.length), revertRootHash);
 
         return StepLog.computeRootHash(ctx);
     }

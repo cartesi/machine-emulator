@@ -2015,12 +2015,6 @@ step_log_data machine::log_send_cmio_response(uint16_t reason, const unsigned ch
         throw std::runtime_error{
             "send cmio response logs can only be used with hash tree configured with Keccak-256 hash function"};
     }
-    // The shared send_cmio_response core takes a uint32 data length (it transpiles to Solidity), so a
-    // larger length would be silently narrowed and could log a transition that differs from these
-    // arguments. The host-facing send is bounded earlier by check_pending_cmio_request's rx-buffer check.
-    if (length > UINT32_MAX) {
-        throw std::invalid_argument{"CMIO response data length does not fit in 32 bits"};
-    }
     const auto root_hash_before = get_root_hash();
     step_log_recorder recorder(m_c.hash_tree.hash_function, *this);
     const record_step_state_access a(recorder, *this);
@@ -2039,10 +2033,6 @@ step_log_data machine::log_send_cmio_response(uint16_t reason, const unsigned ch
 machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
     const_machine_hash_view revert_root_hash) {
-    // See log_send_cmio_response: the core narrows length to uint32, so reject what would not fit.
-    if (length > UINT32_MAX) {
-        throw std::invalid_argument{"CMIO response data length does not fit in 32 bits"};
-    }
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
     replay_step_state_access::context context;
     // Pinned, unlike verify_step: these logs exist for the Keccak-256 on-chain verifier.

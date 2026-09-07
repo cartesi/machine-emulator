@@ -5454,7 +5454,7 @@ Two fabulists run, lying about different samples, so they dispute each other too
 To run the tournament, start the referee with the epoch's initial state hash and input files.
 ```{.lua key=prt_test_src include=prt-test.lua replace=null}
 ```
-```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=prt_test_src,prt_runs_node replace=null}
+```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=prt_test_src,prt_runs_node,prt_build_mcycle_claim replace=null}
 initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
 local machine <close> = cartesi.machine("'"$tmpl"'")
 io.write(cartesi.tohex(machine:get_root_hash()))')

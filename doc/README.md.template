@@ -5330,11 +5330,19 @@ Only the bundles a dispute actually visits are ever opened, and each costs one m
 The builds themselves stream out of the emulator.
 They follow the same collection contract as `cartesi-machine`'s computation-hash builders: each input owns a fixed-capacity segment, collection state threads across yields, and the final repeatable group returned at a fixed point fills the segment's remaining positions.
 The only different sink is PRT's frontier forest, which retains the nodes needed to answer later tournament queries.
-The mcycle build (`build_mcycle_claim` in `prt-player.lua`) advances the whole epoch once, pushing each input's bundle roots into the outer forest, padding each input's span with the fixed point where its guest stopped, and offering the machine to a bounded cache after every hash-collection call.
+The mcycle build (`build_mcycle_claim` in `prt.lua`) advances the whole epoch once, pushing each input's bundle roots into the outer forest, padding each input's span with the fixed point where its guest stopped, and offering the machine to a bounded cache after every hash-collection call.
 The default policy keeps a bounded, progressively thinned set of checkpoints.
 The refinement re-run (`refine_mcycle_claim`) starts at the closest retained `epoch_period_index` and recovers one bundle's samples the same way; position zero always retains the initial machine template.
 The uarch build (`build_uarch_claim`) expands one period, instruction by instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose stream already carries the halt repetitions compressed and the reset hashes marked.
-```{.lua key=prt_build_mcycle_claim include=prt-player.lua replace=null}
+Both collectors implement `begin_epoch`, `begin_input`, `run`, `end_input`, and `end_epoch`.
+The shared driver owns input delivery, automatic yields, acceptance, and rollback; plain replay and output collection use that same driver with a collector that only runs the machine.
+The honest constructor is simply `prt.new_honest(dapp_contract)`.
+Optional machine and collector factories let the dishonest players use the same execution lifecycle, claim trees, and event handlers.
+Their deviations live in `prt-dishonest.lua`: the forger replaces input delivery and its log, the tamperer overrides execution and collection, and the fabulist replaces a sample as it enters a computation hash, including when that sample lies in repeated padding.
+Bundle refinement uses the selected factories too, and the ordinary claim tree authenticates every opened bundle.
+```{.lua key=prt_build_mcycle_claim include=prt.lua replace=null}
+```
+```{.lua key=prt_dishonest_src include=prt-dishonest.lua replace=null}
 ```
 
 ### The tournament
@@ -5402,7 +5410,7 @@ A claim that committed to that true hash wins the match; a claim that committed 
 ```{.lua key=prt_settle_uarch_state_hash include=prt.lua/settle_uarch_state_hash title="prt.lua (excerpt)"}
 ```
 The logs come from a holder of either claim, produced by positioning a fresh fork at the transition and logging it:
-```{.lua key=prt_prove_state_transition include=prt-player.lua/prove_state_transition title="prt-player.lua (excerpt)"}
+```{.lua key=prt_prove_state_transition include=prt.lua/prove_state_transition title="prt.lua (excerpt)"}
 ```
 
 ### The referee server
@@ -5439,7 +5447,7 @@ The *quitter* fabricates a claim out of thin air, every leaf the same made-up ha
 Such a claim is cheap to commit to, it is one run, and its join proof is perfectly valid.
 The quitter then walks away, closing its connection right after submitting.
 
-The *forger* runs the honest code over a forged input list, claiming input 2 asked for `2+2048` rather than `2^2048`.
+The *forger* runs the shared code with a machine that substitutes a forged input, claiming input 2 asked for `2+2048` rather than `2^2048`.
 Its claims are self-consistent everywhere, and it defends them faithfully, but no log of feeding the forged input replays against the input the referee holds.
 
 The *tamperer* corrupts its machine mid-computation, writing over a word of RAM the guest never reads, and honestly commits to the corrupted history.
@@ -5454,15 +5462,20 @@ Two fabulists run, lying about different samples, so they dispute each other too
 To run the tournament, start the referee with the epoch's initial state hash and input files.
 ```{.lua key=prt_test_src include=prt-test.lua replace=null}
 ```
-```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode depends=prt_test_src,prt_runs_node,prt_build_mcycle_claim replace=null}
+```{.bash key=prt_uch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode outputs=uch.bin replace=null}
+ln -sf $rolling_calc_encode/input-[012].bin .
+cartesi-machine --no-init-splash --remote-address=127.0.0.1:0 --remote-spawn --remote-shutdown --load="$tmpl" \
+    --cmio-advance-state=input_index_begin:0,input_index_end:3,log2_mcycle_computation_hash_period:10,uarch_cycle_computation_hash:uch.bin,mcycle_period_index:0
+```
+```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,uch->prt_uch/uch.bin/path depends=prt_test_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
 initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
 local machine <close> = cartesi.machine("'"$tmpl"'")
 io.write(cartesi.tohex(machine:get_root_hash()))')
 rm -f "$initial_state_hash"
 ln -sf "$tmpl" "$initial_state_hash"
-lua5.4 "$RECIPES_DIR/prt-test.lua" "$initial_state_hash" $rolling_calc_encode/input-[012].bin
+lua5.4 "$RECIPES_DIR/prt-test.lua" "$initial_state_hash" $rolling_calc_encode/input-[012].bin "$mch" "$uch"
 ```
-```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,prt_test outputs=claims,posted,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_4_elided,match_4_1_elided,match_5_elided,match_5_1_elided replace=source/referee}
+```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_dishonest_src,prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,prt_test outputs=claims,posted,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_4_elided,match_4_1_elided,match_5_elided,match_5_1_elided replace=source/referee}
 # The chain publishes the initial state hash; a player finds its machine snapshot stored
 # under that name
 initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
@@ -5471,7 +5484,7 @@ io.write(cartesi.tohex(machine:get_root_hash()))')
 rm -f "$initial_state_hash"
 ln -sf "$tmpl" "$initial_state_hash"
 ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
+ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-dishonest.lua" "$RECIPES_DIR/prtu.lua" .
 cartesi-rollup-data.lua --utf8-payload encode advance > forged-input-2.bin <<EOF
 {
   "chain_id": 0,
@@ -5573,7 +5586,7 @@ io.write(cartesi.tohex(machine:get_root_hash()))')
 rm -f "$initial_state_hash"
 ln -sf "$tmpl" "$initial_state_hash"
 ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-player.lua" "$RECIPES_DIR/prtu.lua" .
+ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-dishonest.lua" "$RECIPES_DIR/prtu.lua" .
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8097\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
 lua5.4 prt.lua referee 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
 while ! netstat -ntl 2>&1 | grep '\<8097\>' > /dev/null; do sleep 1; done

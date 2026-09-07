@@ -9557,14 +9557,11 @@ tournament queries. The mcycle build (`build_mcycle_claim` in
 `prt-player.lua`) advances the whole epoch once, pushing each input’s
 bundle roots into the outer forest, padding each input’s span with the
 fixed point where its guest stopped, and offering the machine to a
-bounded cache after every hash-collection call. The default policy
-initially retains every offer. Once full, it uses a circular replacement
-cursor to remove one neighboring checkpoint closer than the current gap
-whenever a sufficiently distant new offer arrives; after a complete pass
-finds no such neighbor, the gap doubles. The refinement re-run
-(`refine_mcycle_claim`) starts at the closest retained
-`epoch_period_index` and recovers one bundle’s samples the same way; a
-cache miss replays deterministically from the initial machine. The uarch
+bounded cache after every hash-collection call. The default policy keeps
+a bounded, progressively thinned set of checkpoints. The refinement
+re-run (`refine_mcycle_claim`) starts at the closest retained
+`epoch_period_index` and recovers one bundle’s samples the same way;
+position zero always retains the initial machine template. The uarch
 build (`build_uarch_claim`) expands one period, instruction by
 instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose
 stream already carries the halt repetitions compressed and the reset

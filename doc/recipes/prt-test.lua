@@ -35,7 +35,7 @@ local function new_fake_machine(root_hash)
 end
 
 do
-    local cache = prt_player.new_machine_cache("unused", 4)
+    local cache = prt_player.new_machine_cache("unused", 5, 1, new_fake_machine("0"))
     for epoch_period_index = 1, 5 do
         cache:consider(epoch_period_index, new_fake_machine(tostring(epoch_period_index)))
     end
@@ -43,32 +43,35 @@ do
     for _, checkpoint in ipairs(cache.checkpoints) do
         retained[checkpoint.epoch_period_index] = true
     end
-    assert(retained[1] and retained[2] and retained[3] and retained[4], "cache replaced a checkpoint too early")
+    assert(retained[0] and retained[1] and retained[2] and retained[3] and retained[4], "cache filled incorrectly")
     cache:consider(6, new_fake_machine("6"))
     retained = {}
     for _, checkpoint in ipairs(cache.checkpoints) do
         retained[checkpoint.epoch_period_index] = true
     end
-    assert(retained[2] and retained[3] and retained[4] and retained[6], "cache did not replace one odd offer")
+    assert(
+        retained[0] and retained[2] and retained[3] and retained[4] and retained[6],
+        "cache replaced the wrong checkpoint"
+    )
     cache:consider(7, new_fake_machine("7"))
     cache:consider(8, new_fake_machine("8"))
     retained = {}
     for _, checkpoint in ipairs(cache.checkpoints) do
         retained[checkpoint.epoch_period_index] = true
     end
-    assert(retained[2] and retained[4] and retained[6] and retained[8], "cache did not thin its checkpoints")
+    assert(
+        retained[0] and retained[2] and retained[4] and retained[6] and retained[8],
+        "cache did not thin its checkpoints"
+    )
     local machine, epoch_period_index = cache:fork_closest(7)
     assert(machine:get_root_hash() == "6")
     assert(epoch_period_index == 6)
     machine:shutdown_server()
-    assert(
-        not pcall(cache.consider, cache, 8, new_fake_machine("different")),
-        "cache accepted different machine states at the same position"
-    )
+    assert(not pcall(cache.consider, cache, 8, new_fake_machine("8")), "cache accepted an out-of-order checkpoint")
 end
 
 do
-    local cache = prt_player.new_machine_cache("unused", 4)
+    local cache = prt_player.new_machine_cache("unused", 5, 3, new_fake_machine("0"))
     for _, epoch_period_index in ipairs({ 3, 6, 9, 12, 15, 18, 21, 24 }) do
         cache:consider(epoch_period_index, new_fake_machine(tostring(epoch_period_index)))
     end
@@ -76,7 +79,7 @@ do
     for _, checkpoint in ipairs(cache.checkpoints) do
         retained[checkpoint.epoch_period_index] = true
     end
-    assert(retained[6] and retained[12] and retained[18] and retained[24], "cache ignored checkpoint distances")
+    assert(retained[0] and retained[6] and retained[12] and retained[18] and retained[24], "cache ignored distances")
 end
 
 local HEIGHT = 5

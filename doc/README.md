@@ -9556,28 +9556,51 @@ PRT’s frontier forest, which retains the nodes needed to answer later
 tournament queries. The mcycle build (`build_mcycle_claim` in `prt.lua`)
 advances the whole epoch once, pushing each input’s bundle roots into
 the outer forest, padding each input’s span with the fixed point where
-its guest stopped, and offering the machine to a bounded cache after
-every hash-collection call. The default policy keeps a bounded,
-progressively thinned set of checkpoints. The refinement re-run
-(`refine_mcycle_claim`) starts at the closest retained
-`epoch_period_index` and recovers one bundle’s samples the same way;
-position zero always retains the initial machine template. The uarch
-build (`build_uarch_claim`) expands one period, instruction by
-instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose
-stream already carries the halt repetitions compressed and the reset
-hashes marked. Both collectors implement `begin_epoch`, `begin_input`,
-`run`, `end_input`, and `end_epoch`. The shared driver owns input
-delivery, automatic yields, acceptance, and rollback; plain replay and
-output collection use that same driver with a collector that only runs
-the machine. The honest constructor is simply
-`prt.new_honest(dapp_contract)`. Optional machine and collector
-factories let the dishonest players use the same execution lifecycle,
-claim trees, and event handlers. Their deviations live in
-`prt-dishonest.lua`: the forger replaces input delivery and its log, the
-tamperer overrides execution and collection, and the fabulist replaces a
-sample as it enters a computation hash, including when that sample lies
-in repeated padding. Bundle refinement uses the selected factories too,
-and the ordinary claim tree authenticates every opened bundle.
+its guest stopped, and offering each accepted input’s final machine to a
+bounded cache as the next input’s virgin boundary. The default policy
+keeps a bounded, progressively thinned set of these checkpoints, indexed
+by input; input zero always retains the initial machine template. The
+refinement re-run (`refine_mcycle_claim`) asks the cache for the target
+input’s boundary, then advances that input to recover one bundle’s
+samples. The cache’s `fork_input_boundary` selects and forks a
+checkpoint and uses `run_advance_state_epoch` to replay the intervening
+input range with the null collector. Uarch collection and transition
+proofs request their boundaries through the same cache operation;
+callers do not need to know which checkpoints were retained. Each input
+run saves its own pre-delivery boundary fork, which supplies the uarch
+padding tail and restores the running machine on rejection. Rejected
+inputs offer no checkpoint: replay runs each one in turn and rolls it
+back through the ordinary input driver, without rejection history or
+backward recovery lookups. The uarch build (`build_uarch_claim`) expands
+one period, instruction by instruction, through
+`machine:collect_uarch_cycle_root_hashes()`, whose stream already
+carries the halt repetitions compressed and the reset hashes marked.
+Both collectors implement `begin_epoch`, `begin_input`, `run`,
+`end_input`, and `end_epoch`. The shared `run_advance_state_epoch`
+driver follows the CLI’s naming and delegates each input’s delivery,
+automatic yields, acceptance, and rollback to `run_advance_state_input`;
+plain replay and output collection use that same input driver with a
+collector that only runs the machine. Both drivers use the CLI’s break-
+and yield-reason predicates, such as `is_yielded_manual` and
+`is_rx_accepted`. Each input begins by asserting that its boundary is a
+fixed point and reading the yield with `receive_cmio_request`, as the
+CLI does. `load_cmio_input` delivers the input only at an rx-accepted
+yield, with the pre-delivery `revert_root_hash`; at any other fixed
+point, or past the last posted input, delivery is the protocol’s no-op
+and the machine idles through the input’s span, so collectors pad it
+from the fixed-point tail and proofs still log the no-op delivery. The
+honest constructor is simply `prt.new_honest(dapp_contract)`. The honest
+player uses native machines and ordinary computation-hash objects
+directly; the driver passes the input’s cycle base and boundary fork to
+the collectors, without attaching execution context to either machine.
+The dishonest implementations in `prt-dishonest.lua` wrap those objects
+and maintain their own private bookkeeping, while sharing the execution
+lifecycle, claim trees, and event handlers. The forger replaces input
+delivery and its log, the tamperer overrides execution and collection,
+and the fabulist replaces a sample as it enters a computation hash,
+including when that sample lies in repeated padding. Bundle refinement
+uses the selected factories too, and the ordinary claim tree
+authenticates every opened bundle.
 
 ### The tournament
 
@@ -9889,16 +9912,21 @@ fresh fork at the transition and logging it:
 function handlers.prove_state_transition(player, input_index, period_index, state_transition_offset)
     local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
-    local machine <close> = replay_to_input_boundary(player, input_index + 1)
-    machine:begin_input(input_index)
+    local machine <close> = player.machine_cache:fork_input_boundary(input_index)
     local data = player.inputs[input_index + 1]
     if state_transition_offset == 0 and period_index == 0 and data then
-        local revert_state_hash = machine:get_root_hash()
+        local revert_root_hash = machine:get_root_hash()
         local send_cmio_log =
-            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_state_hash)
+            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
-    advance_fork(player, machine, input_index + 1, period_index * player.geometry.mcycles_per_period + mcycle_offset)
+    run_advance_state_input(
+        player,
+        machine,
+        input_index,
+        player.new_null_computation_hash(machine),
+        period_index * player.geometry.mcycles_per_period + mcycle_offset
+    )
     machine:run_uarch(uarch_cycle)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step_log = machine:log_step_uarch()
@@ -10003,22 +10031,22 @@ lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" \
 ```
 
 ``` bash
-lua5.4 prt.lua quitter 127.0.0.1:8096 "$initial_state_hash" \
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:8096 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 ```
 
 ``` bash
-lua5.4 prt.lua forger 127.0.0.1:8096 "$initial_state_hash" 2 forged-input-2.bin \
+lua5.4 prt-dishonest.lua forger 127.0.0.1:8096 "$initial_state_hash" 2 forged-input-2.bin \
     input-0.bin input-1.bin input-2.bin
 ```
 
 ``` bash
-lua5.4 prt.lua tamperer 127.0.0.1:8096 "$initial_state_hash" 0 100 \
+lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8096 "$initial_state_hash" 0 100 \
     input-0.bin input-1.bin input-2.bin
 ```
 
 ``` bash
-lua5.4 prt.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000 \
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000 \
     input-0.bin input-1.bin input-2.bin
 ```
 

@@ -5330,15 +5330,23 @@ Only the bundles a dispute actually visits are ever opened, and each costs one m
 The builds themselves stream out of the emulator.
 They follow the same collection contract as `cartesi-machine`'s computation-hash builders: each input owns a fixed-capacity segment, collection state threads across yields, and the final repeatable group returned at a fixed point fills the segment's remaining positions.
 The only different sink is PRT's frontier forest, which retains the nodes needed to answer later tournament queries.
-The mcycle build (`build_mcycle_claim` in `prt.lua`) advances the whole epoch once, pushing each input's bundle roots into the outer forest, padding each input's span with the fixed point where its guest stopped, and offering the machine to a bounded cache after every hash-collection call.
-The default policy keeps a bounded, progressively thinned set of checkpoints.
-The refinement re-run (`refine_mcycle_claim`) starts at the closest retained `epoch_period_index` and recovers one bundle's samples the same way; position zero always retains the initial machine template.
+The mcycle build (`build_mcycle_claim` in `prt.lua`) advances the whole epoch once, pushing each input's bundle roots into the outer forest, padding each input's span with the fixed point where its guest stopped, and offering each accepted input's final machine to a bounded cache as the next input's virgin boundary.
+The default policy keeps a bounded, progressively thinned set of these checkpoints, indexed by input; input zero always retains the initial machine template.
+The refinement re-run (`refine_mcycle_claim`) asks the cache for the target input's boundary, then advances that input to recover one bundle's samples.
+The cache's `fork_input_boundary` selects and forks a checkpoint and uses `run_advance_state_epoch` to replay the intervening input range with the null collector.
+Uarch collection and transition proofs request their boundaries through the same cache operation; callers do not need to know which checkpoints were retained.
+Each input run saves its own pre-delivery boundary fork, which supplies the uarch padding tail and restores the running machine on rejection.
+Rejected inputs offer no checkpoint: replay runs each one in turn and rolls it back through the ordinary input driver, without rejection history or backward recovery lookups.
 The uarch build (`build_uarch_claim`) expands one period, instruction by instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose stream already carries the halt repetitions compressed and the reset hashes marked.
 Both collectors implement `begin_epoch`, `begin_input`, `run`, `end_input`, and `end_epoch`.
-The shared driver owns input delivery, automatic yields, acceptance, and rollback; plain replay and output collection use that same driver with a collector that only runs the machine.
+The shared `run_advance_state_epoch` driver follows the CLI's naming and delegates each input's delivery, automatic yields, acceptance, and rollback to `run_advance_state_input`; plain replay and output collection use that same input driver with a collector that only runs the machine.
+Both drivers use the CLI's break- and yield-reason predicates, such as `is_yielded_manual` and `is_rx_accepted`.
+Each input begins by asserting that its boundary is a fixed point and reading the yield with `receive_cmio_request`, as the CLI does.
+`load_cmio_input` delivers the input only at an rx-accepted yield, with the pre-delivery `revert_root_hash`; at any other fixed point, or past the last posted input, delivery is the protocol's no-op and the machine idles through the input's span, so collectors pad it from the fixed-point tail and proofs still log the no-op delivery.
 The honest constructor is simply `prt.new_honest(dapp_contract)`.
-Optional machine and collector factories let the dishonest players use the same execution lifecycle, claim trees, and event handlers.
-Their deviations live in `prt-dishonest.lua`: the forger replaces input delivery and its log, the tamperer overrides execution and collection, and the fabulist replaces a sample as it enters a computation hash, including when that sample lies in repeated padding.
+The honest player uses native machines and ordinary computation-hash objects directly; the driver passes the input's cycle base and boundary fork to the collectors, without attaching execution context to either machine.
+The dishonest implementations in `prt-dishonest.lua` wrap those objects and maintain their own private bookkeeping, while sharing the execution lifecycle, claim trees, and event handlers.
+The forger replaces input delivery and its log, the tamperer overrides execution and collection, and the fabulist replaces a sample as it enters a computation hash, including when that sample lies in repeated padding.
 Bundle refinement uses the selected factories too, and the ordinary claim tree authenticates every opened bundle.
 ```{.lua key=prt_build_mcycle_claim include=prt.lua replace=null}
 ```
@@ -5519,28 +5527,28 @@ lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" \
 while ! players_in 1; do sleep 1; done
 {
 # docs:begin quitter
-lua5.4 prt.lua quitter 127.0.0.1:8096 "$initial_state_hash" \
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:8096 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 # docs:end quitter
 } > /dev/null 2> quitter.stderr &
 while ! players_in 2; do sleep 1; done
 {
 # docs:begin forger
-lua5.4 prt.lua forger 127.0.0.1:8096 "$initial_state_hash" 2 forged-input-2.bin \
+lua5.4 prt-dishonest.lua forger 127.0.0.1:8096 "$initial_state_hash" 2 forged-input-2.bin \
     input-0.bin input-1.bin input-2.bin
 # docs:end forger
 } > /dev/null 2> forger.stderr &
 while ! players_in 3; do sleep 1; done
 {
 # docs:begin tamperer
-lua5.4 prt.lua tamperer 127.0.0.1:8096 "$initial_state_hash" 0 100 \
+lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8096 "$initial_state_hash" 0 100 \
     input-0.bin input-1.bin input-2.bin
 # docs:end tamperer
 } > /dev/null 2> tamperer.stderr &
 while ! players_in 4; do sleep 1; done
 {
 # docs:begin fabulist
-lua5.4 prt.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000 \
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000 \
     input-0.bin input-1.bin input-2.bin
 # docs:end fabulist
 } > /dev/null 2> fabulist.stderr &
@@ -5548,7 +5556,7 @@ while ! players_in 5; do sleep 1; done
 {
 # A second fabulist lies about a sample after input 2 has reached its fixed point. Its
 # uarch claim therefore exercises fixed-point padding for the entire disputed span.
-lua5.4 prt.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 60000 \
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 60000 \
     input-0.bin input-1.bin input-2.bin
 } > /dev/null 2> fixed_fabulist.stderr &
 while ! players_in 6; do sleep 1; done
@@ -5590,15 +5598,15 @@ ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-dishonest.lua" "$RECIPES_DIR/prt
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8097\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
 lua5.4 prt.lua referee 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
 while ! netstat -ntl 2>&1 | grep '\<8097\>' > /dev/null; do sleep 1; done
-lua5.4 prt.lua fabulist 127.0.0.1:8097 "$initial_state_hash" 2 60000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fixed_fabulist.stderr &
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8097 "$initial_state_hash" 2 60000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fixed_fabulist.stderr &
 while ! players_in 1; do sleep 1; done
-lua5.4 prt.lua fabulist 127.0.0.1:8097 "$initial_state_hash" 2 2000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fabulist.stderr &
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8097 "$initial_state_hash" 2 2000 input-0.bin input-1.bin input-2.bin > /dev/null 2> fabulist.stderr &
 while ! players_in 2; do sleep 1; done
-lua5.4 prt.lua tamperer 127.0.0.1:8097 "$initial_state_hash" 0 100 input-0.bin input-1.bin input-2.bin > /dev/null 2> tamperer.stderr &
+lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8097 "$initial_state_hash" 0 100 input-0.bin input-1.bin input-2.bin > /dev/null 2> tamperer.stderr &
 while ! players_in 3; do sleep 1; done
-lua5.4 prt.lua forger 127.0.0.1:8097 "$initial_state_hash" 2 "$forged" input-0.bin input-1.bin input-2.bin > /dev/null 2> forger.stderr &
+lua5.4 prt-dishonest.lua forger 127.0.0.1:8097 "$initial_state_hash" 2 "$forged" input-0.bin input-1.bin input-2.bin > /dev/null 2> forger.stderr &
 while ! players_in 4; do sleep 1; done
-lua5.4 prt.lua quitter 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> quitter.stderr &
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> quitter.stderr &
 while ! players_in 5; do sleep 1; done
 lua5.4 prt.lua honest 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
 while ! players_in 6; do sleep 1; done

@@ -1782,7 +1782,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     -- Step-logging and uarch options
     --
-    -- What: --log-step, --log-step-uarch, --log-reset-uarch, --max-uarch-cycle,
+    -- What: --log-step, --log-step-uarch, --log-reset-uarch (with ,dump), --max-uarch-cycle,
     --       --auto-reset-uarch, and --print-uarch-cycle-root-hashes (positional count with
     --       a start: sub-key).
     -- How:  run_ok() each flag; for the logging options, verify the written log against
@@ -1826,7 +1826,7 @@ describe("cartesi-machine CLI", function()
         local _ <close>, ru_log = scope_temp_pathname()
         os.remove(ru_log)
         local _, ru_stderr = run_ok({
-            "--log-reset-uarch=" .. ru_log,
+            "--log-reset-uarch=" .. ru_log .. ",dump",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1835,6 +1835,8 @@ describe("cartesi-machine CLI", function()
         expect.truthy(#log > 0)
         before, after = root_hash_pair(ru_stderr)
         expect.equal(cartesi.machine:verify_reset_uarch(before, log), after)
+        -- the dump key replays the reset to stderr
+        expect.truthy(ru_stderr:find("begin uarch reset\n  write uarch.state@", 1, true))
 
         -- --max-uarch-cycle
         run_ok({ "--max-uarch-cycle=0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -1933,8 +1935,10 @@ describe("cartesi-machine CLI", function()
             hashes[#hashes + 1] = cartesi.fromhex(after)
         end
         expect.equal(#hashes, 8)
-        local step_hash_before, step_hash_after, uarch_hash_before, uarch_hash_after, reset_hash_before, reset_hash_after, cmio_hash_before, cmio_hash_after =
-            table.unpack(hashes)
+        local step_hash_before, step_hash_after = hashes[1], hashes[2]
+        local uarch_hash_before, uarch_hash_after = hashes[3], hashes[4]
+        local reset_hash_before, reset_hash_after = hashes[5], hashes[6]
+        local cmio_hash_before, cmio_hash_after = hashes[7], hashes[8]
 
         -- a yielded machine does not run, so the step log is the identity
         expect.equal(cartesi.machine:verify_step(step_hash_before, filesystem.read_file(step_log), 1), step_hash_after)

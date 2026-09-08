@@ -44,16 +44,19 @@
 namespace cartesi {
 
 /// \brief No-op dump sink
-struct no_step_dumper {
+struct no_step_log_dumper {
     void begin_bracket(const char * /*text*/) const {}
     void end_bracket(const char * /*text*/) const {}
     void read(const char * /*name*/, uint64_t /*paddr*/, uint64_t /*val*/) const {}
     void write(const char * /*name*/, uint64_t /*paddr*/, uint64_t /*old_val*/, uint64_t /*new_val*/) const {}
+    void write_hash(const char * /*name*/, uint64_t /*paddr*/, int /*log2_size*/, const_machine_hash_view /*old_hash*/,
+        const_machine_hash_view /*new_hash*/) const {}
+    void revert(const_machine_hash_view /*root_hash*/) const {}
 };
 
 /// \brief Provides machine state from a uarch step binary log
-/// \tparam Dumper Dump sink: no_step_dumper by default, step_dumper for dump_step_uarch
-template <typename Dumper = no_step_dumper>
+/// \tparam Dumper Dump sink: no_step_log_dumper by default, step_log_dumper for dump_step_uarch
+template <typename Dumper = no_step_log_dumper>
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class uarch_replay_step_state_access :
     public i_uarch_state_access<uarch_replay_step_state_access<Dumper>>,
@@ -157,8 +160,10 @@ private:
     }
 
     void do_reset_uarch() const {
-        m_context.log.find_node(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE)->hash =
-            get_uarch_pristine_state_hash();
+        auto *node = m_context.log.find_node(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE);
+        m_context.dumper.write_hash("uarch.state", UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, node->hash,
+            get_uarch_pristine_state_hash());
+        node->hash = get_uarch_pristine_state_hash();
     }
 
     void do_revert_state() const {
@@ -167,6 +172,7 @@ private:
         std::copy_n(m_context.log.find_data(AR_SHADOW_REVERT_ROOT_HASH_START), m_context.reverted_root_hash.size(),
             m_context.reverted_root_hash.begin());
         m_context.reverted = true;
+        m_context.dumper.revert(m_context.reverted_root_hash);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

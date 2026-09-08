@@ -2086,6 +2086,38 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_step_uarch_skip_count_test, step_log_machine
     BOOST_CHECK_EQUAL(full, first + rest);
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(dump_reset_uarch_null_log_test) {
+    const char *dump{};
+    const cm_error error_code = cm_dump_reset_uarch(nullptr, 0, &dump);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string("invalid log"), std::string(cm_get_last_error_message()));
+    BOOST_CHECK(dump == nullptr);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(dump_reset_uarch_null_output_test, step_log_machine_fixture) {
+    const uint8_t *log{};
+    uint64_t log_length{};
+    BOOST_REQUIRE_EQUAL(cm_log_reset_uarch(_machine, &log, &log_length), CM_ERROR_OK);
+    const std::vector<uint8_t> log_copy(log, log + log_length);
+    const cm_error error_code = cm_dump_reset_uarch(log_copy.data(), log_copy.size(), nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string("invalid dump output"), std::string(cm_get_last_error_message()));
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(dump_reset_uarch_basic_test, step_log_machine_fixture) {
+    const uint8_t *log{};
+    uint64_t log_length{};
+    BOOST_REQUIRE_EQUAL(cm_log_reset_uarch(_machine, &log, &log_length), CM_ERROR_OK);
+    const std::vector<uint8_t> log_copy(log, log + log_length);
+    const char *dump{};
+    BOOST_REQUIRE_EQUAL(cm_dump_reset_uarch(log_copy.data(), log_copy.size(), &dump), CM_ERROR_OK);
+    const std::string text{dump};
+    // the reset replaces the uarch state node hash and then checks for a rejected input
+    BOOST_CHECK(text.find("begin uarch reset\n  write uarch.state@") == 0);
+    BOOST_CHECK(text.find("\n  read iflags.Y@") != std::string::npos);
+    BOOST_CHECK(text.ends_with("\nend uarch reset\n"));
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_obtained_hash_test, step_log_machine_fixture) {
     cm_hash hash0;
     cm_error error_code = cm_get_root_hash(_machine, &hash0);

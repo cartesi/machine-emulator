@@ -878,9 +878,10 @@ where options are:
     prints the root hash before and after the step to stderr.
     append ",dump" to also write a human-readable printout to stderr.
 
-  --log-reset-uarch=<filename>
+  --log-reset-uarch=<filename>[,dump]
     reset the uarch state and write a binary step log to <filename>.
     prints the root hash before and after the reset to stderr.
+    append ",dump" to also write a human-readable printout to stderr.
 
   --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...]
     send a cmio response to the rx buffer and write a binary step log to a file.
@@ -2188,12 +2189,13 @@ options = {
         function(keys, all, opts)
             local o = util.parse_options(keys, all, opts)
             assertf(o.filename, "need filename in %s", all)
-            cmdline.log_reset_uarch = { filename = o.filename }
+            cmdline.log_reset_uarch = { filename = o.filename, dump = o.dump }
             return true
         end,
         {
             "filename",
             filename = "file",
+            dump = "boolean",
         },
     },
     {
@@ -4161,8 +4163,10 @@ end
 if cmdline.log_reset_uarch then
     stderr("Resetting uarch state: please wait\n")
     print_log_root_hash(machine, "before")
-    util.write_file(machine:log_reset_uarch(), cmdline.log_reset_uarch.filename)
+    local log = machine:log_reset_uarch()
+    util.write_file(log, cmdline.log_reset_uarch.filename)
     print_log_root_hash(machine, "after")
+    if cmdline.log_reset_uarch.dump then io.stderr:write(cartesi.machine:dump_reset_uarch(log)) end
 end
 if cmdline.log_send_cmio_response then
     local o = cmdline.log_send_cmio_response

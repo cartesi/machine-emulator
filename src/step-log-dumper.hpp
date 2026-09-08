@@ -14,11 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef STEP_DUMPER_HPP
-#define STEP_DUMPER_HPP
+#ifndef STEP_LOG_DUMPER_HPP
+#define STEP_LOG_DUMPER_HPP
 
 /// \file
-/// \brief Human-readable dump of a replayed uarch step log.
+/// \brief Human-readable dump of a replayed uarch step or reset log.
 
 #include <cstdint>
 #include <ostream>
@@ -26,10 +26,12 @@
 #include <sstream>
 #include <string>
 
+#include "machine-hash.hpp"
+
 namespace cartesi {
 
 /// \brief Dump sink that formats a replayed uarch step as indented, human-readable text
-class step_dumper {
+class step_log_dumper {
     std::ostringstream m_out;
     bool m_muted{false}; ///< Drops output while set; bracket nesting still advances
     int m_indent{0};     ///< Current bracket nesting depth
@@ -62,24 +64,19 @@ public:
         }
     }
 
-    /// \brief Emit a read. \p name is the register/field name, or nullptr for plain memory.
+    /// \brief Emit a read. \p name is the register/field name; nullptr resolves it from the address.
     /// \details Values print as hex(decimal), e.g. 0x7b(123).
-    void read(const char *name, uint64_t paddr, uint64_t val) {
-        if (m_muted) {
-            return;
-        }
-        line() << "read " << (name != nullptr ? name : "") << "@0x" << std::hex << paddr << ": 0x" << val << std::dec
-               << '(' << val << ")\n";
-    }
+    void read(const char *name, uint64_t paddr, uint64_t val);
 
     /// \brief Emit a write, showing the value before and after. \p name and values as in read().
-    void write(const char *name, uint64_t paddr, uint64_t old_val, uint64_t new_val) {
-        if (m_muted) {
-            return;
-        }
-        line() << "write " << (name != nullptr ? name : "") << "@0x" << std::hex << paddr << ": 0x" << old_val
-               << std::dec << '(' << old_val << ") -> 0x" << std::hex << new_val << std::dec << '(' << new_val << ")\n";
-    }
+    void write(const char *name, uint64_t paddr, uint64_t old_val, uint64_t new_val);
+
+    /// \brief Emit a bulk write witnessed only by its hash: the range's abbreviated hash before and after
+    void write_hash(const char *name, uint64_t paddr, int log2_size, const_machine_hash_view old_hash,
+        const_machine_hash_view new_hash);
+
+    /// \brief Emit a revert of the whole state to a recorded root hash
+    void revert(const_machine_hash_view root_hash);
 };
 
 /// \brief Replays a uarch step log and returns a human-readable dump
@@ -89,6 +86,10 @@ public:
 /// \details No caller claim is checked. Each replayed cycle is bracketed, and a dump with a skip is the
 /// matching slice of the dump without one.
 std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t skip_count, uint64_t uarch_cycle_count);
+
+/// \brief Replays a uarch reset log and returns a human-readable dump
+/// \param log Binary step log produced by machine::log_reset_uarch
+std::string dump_reset_uarch(std::span<const unsigned char> log);
 
 } // namespace cartesi
 

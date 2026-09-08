@@ -3025,6 +3025,7 @@ A step log is therefore self-contained, and anyone can check one against a pair 
 The static method `cartesi.machine:dump_step_uarch(<log>, <skip_count>, <uarch_cycle_count>)` returns a user-friendly version of the uarch cycles recorded in a binary step log.
 It replays the first `<skip_count>` cycles silently, then the requested number of cycles against the state carried in the log (stopping early if the uarch halts), and describes every access performed, identifying what each address refers to (a register, a CSR, memory).
 Each replayed cycle is bracketed.
+Likewise, `cartesi.machine:dump_reset_uarch(<log>)` describes a uarch reset log: the replacement of the uarch state, the check for a rejected input, and the revert when there is one.
 Addresses and values are printed in hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:

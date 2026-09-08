@@ -840,7 +840,7 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
         "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
-        "^  read @0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.ram@0x%x+: 0x%x+%(%d+%)$",
         "^  begin addi$",
         "^    read uarch%.x0@0x%x+: 0x%x+%(%d+%)$",
         "^    write uarch%.x10@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
@@ -852,7 +852,7 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
         "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
-        "^  read @0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.ram@0x%x+: 0x%x+%(%d+%)$",
         "^  begin addi$",
         "^    read uarch%.x0@0x%x+: 0x%x+%(%d+%)$",
         "^    write uarch%.x17@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
@@ -864,7 +864,7 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
         "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
-        "^  read @0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.ram@0x%x+: 0x%x+%(%d+%)$",
         "^  begin ecall$",
         "^    read uarch%.x17@0x%x+: 0x%x+%(%d+%)$",
         "^    write uarch%.halt@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
@@ -1199,6 +1199,52 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
         assert(machine:verify_reset_uarch(initial_hash, transformed) == revert_root_hash)
     end
 )
+
+tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    "dump_reset_uarch shows the state write and the rejected-input check",
+    function(machine)
+        local log = machine:log_reset_uarch()
+        local text = cartesi.machine:dump_reset_uarch(log)
+        local expected = {
+            "^begin uarch reset$",
+            -- the whole uarch state is one node: the dump shows its abbreviated hash before and after
+            '^  write uarch%.state@0x%x+: hash:"0x%x+"%(2%^'
+                .. cartesi.UARCH_STATE_LOG2_SIZE
+                .. ' bytes%) %-> hash:"'
+                .. cartesi.tohex(cartesi.UARCH_PRISTINE_STATE_HASH):sub(1, 10)
+                .. '"%(2%^'
+                .. cartesi.UARCH_STATE_LOG2_SIZE
+                .. " bytes%)$",
+            -- no input pending, so the reset stops at the iflags.Y check
+            "^  read iflags%.Y@0x%x+: 0x0%(0%)$",
+            "^end uarch reset$",
+        }
+        local lines = {}
+        for line in text:gmatch("(.-)\n") do
+            lines[#lines + 1] = line
+        end
+        assert(#lines == #expected, string.format("printout has %d lines, expected %d:\n%s", #lines, #expected, text))
+        for i, pat in ipairs(expected) do
+            assert(lines[i]:match(pat), string.format("printout line %d %q does not match %q", i, lines[i], pat))
+        end
+    end
+)
+
+do_test("dump_reset_uarch shows the revert on a rejected input", function(machine)
+    local revert_root_hash = string.rep("\171", 32)
+    local tohost_rx_rejected = (2 << 56) | (1 << 48) | (cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED << 32)
+    machine:write_reg("uarch_halt", 1)
+    machine:write_reg("iflags_Y", 1)
+    machine:write_reg("htif_tohost", tohost_rx_rejected)
+    machine:write_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, revert_root_hash)
+    local text = cartesi.machine:dump_reset_uarch(machine:log_reset_uarch())
+    assert(text:match("\n  read iflags%.Y@0x%x+: 0x1%(1%)\n"), text)
+    assert(text:match("\n  read htif%.tohost@0x%x+: 0x%x+%(%d+%)\n"), text)
+    assert(
+        text:match("\n  revert to root hash 0x" .. cartesi.tohex(revert_root_hash):sub(3) .. "\nend uarch reset\n$"),
+        text
+    )
+end)
 
 tests_util.make_do_test(build_machine, machine_type)(
     "collect root hashes reject an out-of-range bundle count",

@@ -2825,11 +2825,13 @@ producing the log
 
 ``` text
 Gathering uarch step log: please wait
+root hash before: 0x228ac2ac623ef787f9b79617b0495e263f9fdc00766e94c0c2e00b8a3d361e2b
+root hash after: 0x257271367fe13c9b44a2b14965c72806e00e01d7b1ada28fa25b72e02f874a7e
 begin uarch cycle
   read uarch.cycle@0x400008: 0x8c2(2242)
   read uarch.halt@0x400000: 0x0(0)
   read uarch.pc@0x400010: 0x6021d0(6300112)
-  read @0x6021d0: 0x51300000073(5579162517619)
+  read uarch.ram@0x6021d0: 0x51300000073(5579162517619)
   begin ecall
     read uarch.x17@0x4000a0: 0x2(2)
     read uarch.x10@0x400068: 0xa(10)
@@ -5457,7 +5459,11 @@ step log. It replays the first `<skip_count>` cycles silently, then the
 requested number of cycles against the state carried in the log
 (stopping early if the uarch halts), and describes every access
 performed, identifying what each address refers to (a register, a CSR,
-memory) Each replayed cycle is bracketed. Addresses and values are printed in hexadecimal and decimal.
+memory). Each replayed cycle is bracketed. Likewise,
+`cartesi.machine:dump_reset_uarch(<log>)` describes a uarch reset log:
+the replacement of the uarch state, the check for a rejected input, and
+the revert when there is one. Addresses and values are printed in
+hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:
 
@@ -5506,7 +5512,7 @@ begin uarch cycle
   read uarch.cycle@0x400008: 0x8c2(2242)
   read uarch.halt@0x400000: 0x0(0)
   read uarch.pc@0x400010: 0x6021d0(6300112)
-  read @0x6021d0: 0x51300000073(5579162517619)
+  read uarch.ram@0x6021d0: 0x51300000073(5579162517619)
   begin ecall
     read uarch.x17@0x4000a0: 0x2(2)
     read uarch.x10@0x400068: 0xa(10)

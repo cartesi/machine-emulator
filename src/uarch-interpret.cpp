@@ -19,7 +19,7 @@
 #include <cstdint>
 
 #include "collect-uarch-cycle-hashes-state-access.hpp" // IWYU pragma: keep
-#include "step-dumper.hpp"                             // IWYU pragma: keep
+#include "step-log-dumper.hpp"                         // IWYU pragma: keep
 #include "uarch-constants.hpp"
 #include "uarch-record-step-state-access.hpp" // IWYU pragma: keep
 #include "uarch-replay-step-state-access.hpp" // IWYU pragma: keep
@@ -70,9 +70,9 @@ template uarch_interpreter_break_reason uarch_interpret(const uarch_record_step_
     uint64_t uarch_cycle_end);
 
 // Explicit instantiation for uarch_replay_step_state_access (replay/verify and the host dump)
-template uarch_interpreter_break_reason uarch_interpret(const uarch_replay_step_state_access<no_step_dumper> a,
+template uarch_interpreter_break_reason uarch_interpret(const uarch_replay_step_state_access<no_step_log_dumper> a,
     uint64_t uarch_cycle_end);
-template uarch_interpreter_break_reason uarch_interpret(const uarch_replay_step_state_access<step_dumper> a,
+template uarch_interpreter_break_reason uarch_interpret(const uarch_replay_step_state_access<step_log_dumper> a,
     uint64_t uarch_cycle_end);
 
 } // namespace cartesi

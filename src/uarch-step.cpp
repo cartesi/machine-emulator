@@ -22,7 +22,7 @@
 #include "uarch-step.hpp"
 
 #include "collect-uarch-cycle-hashes-state-access.hpp" // IWYU pragma: keep
-#include "step-dumper.hpp"                             // IWYU pragma: keep
+#include "step-log-dumper.hpp"                         // IWYU pragma: keep
 #include "uarch-record-step-state-access.hpp"          // IWYU pragma: keep
 #include "uarch-replay-step-state-access.hpp"          // IWYU pragma: keep
 #include "uarch-state-access.hpp"                      // IWYU pragma: keep
@@ -1126,8 +1126,8 @@ template UArchStepStatus uarch_step(const collect_uarch_cycle_hashes_state_acces
 template UArchStepStatus uarch_step(const uarch_record_step_state_access a);
 
 // Explicit instantiation for uarch_replay_step_state_access (replay/verify and the host dump)
-template UArchStepStatus uarch_step(const uarch_replay_step_state_access<no_step_dumper> a);
-template UArchStepStatus uarch_step(const uarch_replay_step_state_access<step_dumper> a);
+template UArchStepStatus uarch_step(const uarch_replay_step_state_access<no_step_log_dumper> a);
+template UArchStepStatus uarch_step(const uarch_replay_step_state_access<step_log_dumper> a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,modernize-avoid-c-style-cast)

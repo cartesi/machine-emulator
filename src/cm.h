@@ -924,7 +924,7 @@ CM_API cm_error cm_collect_mcycle_bundle(cm_machine *m, uint64_t bundle_offset, 
 
 /// \brief Runs the machine uarch until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param uarch_cycle_end End micro cycle value.
+/// \param uarch_cycle_end End uarch cycle value.
 /// \param uarch_break_reason Receives reason for returning (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason);

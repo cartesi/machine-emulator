@@ -26,7 +26,7 @@
 ///   1. cm_run()           — fast interpreter (ground truth)
 ///   2. cm_run_uarch()     — uarch execution + reset
 ///   3. cm_log_step_uarch() + cm_verify_step_uarch() — uarch cycle-by-cycle
-///                           with fraud proof verification at each micro-step
+///                           with fraud proof verification at each uarch step
 ///   4. cm_log_step() + cm_verify_step() — page-based fraud proof
 ///
 /// The fuzz input format is identical to fuzz-interpret (see fuzz-common.h).
@@ -169,7 +169,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         cm_run_uarch(m2, CM_UARCH_CYCLE_MAX, &ubr2);
         cm_reset_uarch(m2);
 
-        // Path 3: uarch cycle-by-cycle with log + verify at each micro-step
+        // Path 3: uarch cycle-by-cycle with log + verify at each uarch step
         for (;;) {
             cm_hash hb{};
             cm_hash ha{};

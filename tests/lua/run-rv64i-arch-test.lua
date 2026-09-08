@@ -27,7 +27,7 @@ Usage:
 
 where:
   <uarch-ram-image>
-  name of file containing the image of microemulator RAM.
+  name of file containing the image of uarch RAM.
 
   <output-signature-file>
   name of file to write test signature results

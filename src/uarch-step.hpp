@@ -21,12 +21,12 @@ namespace cartesi {
 
 /// \brief Uarch step execution status code
 enum class UArchStepStatus : int {
-    Success,            // one micro instruction was executed successfully
+    Success,            // one uarch instruction was executed successfully
     UArchCycleOverflow, // uarch cycle reached or was already at its maximum value
     UArchHalted         // uarch reached or was already at its halted fixed point
 };
 
-/// \brief Advances the uarch by one micro cycle
+/// \brief Advances the uarch by one uarch cycle
 /// \tparam Uarch state accessor class
 /// \returns Returns a status code indicating whether and how the uarch was advanced
 /// \details The uarch will not advance if it is at a fixed point

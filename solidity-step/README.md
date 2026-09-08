@@ -9,7 +9,7 @@ without holding the full machine state.
 
 Three kinds of transition can be verified:
 
-- a single microarchitecture (uarch) step,
+- a single uarch step,
 - a uarch reset,
 - a `send_cmio_response`.
 

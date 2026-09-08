@@ -39,7 +39,7 @@ In particular, it can be scripted in Lua, for fast prototyping and testing.
   - **State Merkle tree computation**, for generating cryptographic proofs.
   - **State transition access logging**, enabling on-chain verification of state transitions.
   - **Cycle-level execution control**, for interactive fraud-proof bisection.
-  - **Microarchitecture-based emulation** of its interpreter for simplifying on-chain verification.
+  - **Microarchitecture (uarch) emulation** of its interpreter for simplifying on-chain verification.
   - **Generic I/O interface**, enabling handling of data input/output through state transitions.
 - **Portable**
   - **Cross-platform compatibility**, including Linux, macOS and Windows.

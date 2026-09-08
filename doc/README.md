@@ -2784,18 +2784,18 @@ loop. The first stage of the verification game therefore searches for
 the *step of disagreement*: the particular main processor cycle such
 that the parties agree on the state hash before the step, but disagree
 on the state hash after the step. When the uarch is in use, every main
-processor instruction can also be implemented by a sequence of
-micro-instructions in the uarch interpreter, and a single uarch step is
-one of those micro-instructions. So the search is refined to find the
-*uarch step of disagreement*: the particular uarch cycle such that the
-parties agree on the state hash before the uarch step, but disagree on
-the state hash after the uarch step. Once this uarch step of
-disagreement is identified, one of the parties sends to the blockchain a
-log of state accesses that happen along the uarch step, including
-Merkle-tree proofs for every value read from or written to the state.
-This log proves to the blockchain that the execution of the uarch step
-transitions the state in such a way that it reaches the state hash
-claimed by the submitting party.
+processor instruction can also be implemented by a sequence of uarch
+instructions in the uarch interpreter, and a single uarch step is one of
+those uarch instructions. So the search is refined to find the *uarch
+step of disagreement*: the particular uarch cycle such that the parties
+agree on the state hash before the uarch step, but disagree on the state
+hash after the uarch step. Once this uarch step of disagreement is
+identified, one of the parties sends to the blockchain a log of state
+accesses that happen along the uarch step, including Merkle-tree proofs
+for every value read from or written to the state. This log proves to
+the blockchain that the execution of the uarch step transitions the
+state in such a way that it reaches the state hash claimed by the
+submitting party.
 
 Consider again the example in which the Cartesi Machine was stopped
 while it drew the splash screen. Let’s assume that this is the step of
@@ -2824,7 +2824,7 @@ cartesi-machine \
 producing the log
 
 ``` text
-Gathering micro step log: please wait
+Gathering uarch step log: please wait
 begin uarch cycle
   read uarch.cycle@0x400008: 0x8c2(2242)
   read uarch.halt@0x400000: 0x0(0)
@@ -5522,7 +5522,7 @@ low-level internal development at Cartesi. It requires deep knowledge of
 not only RISC-V architecture, but also how Cartesi’s emulator implements
 it. The material is beyond the scope of this document. This particular
 example, however, was hand-picked for illustration purposes. The uarch
-step being executed is the ECALL micro-instruction that asks the
+step being executed is the ECALL uarch instruction that asks the
 emulator to print a line-feed (`0x0a`) to the console, completing the
 row `\    / CARTESI` in the splash screen.
 
@@ -6894,15 +6894,14 @@ interrupts, exceptions and traps, etc. Implementations are free to
 select the combination of extensions that better suit their needs.
 
 The Cartesi Machine architecture can be separated into a main processor,
-board, and a microarchitecture (uarch). The processor performs the
-computations, executing the traditional fetch-execute loop while
-maintaining a variety of registers. The board defines the surrounding
-environment with an assortment of memories (RAM, flash drives, NVRAMs,
-CMIO buffers etc) and a number of devices. The uarch includes its own
-smaller processor and memory, invisible to the main processor, with full
-access into its inner workings. It can drive the main processor at a
-finer granularity that is suitable for dispute resolution in the context
-of blockchains.
+board, and a uarch. The processor performs the computations, executing
+the traditional fetch-execute loop while maintaining a variety of
+registers. The board defines the surrounding environment with an
+assortment of memories (RAM, flash drives, NVRAMs, CMIO buffers etc) and
+a number of devices. The uarch includes its own smaller processor and
+memory, invisible to the main processor, with full access into its inner
+workings. It can drive the main processor at a finer granularity that is
+suitable for dispute resolution in the context of blockchains.
 
 The Cartesi Machine maps its entire state to the physical address space
 in a well-defined way. This includes the internal states of the main

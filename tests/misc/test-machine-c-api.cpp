@@ -2129,7 +2129,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, step_log_machine_fixtu
     uint64_t cycle{};
     uint64_t halt{1};
 
-    // at micro cycle 0
+    // at uarch cycle 0
     error_code = cm_read_reg(_machine, CM_REG_UARCH_CYCLE, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(cycle, 0);
@@ -2179,7 +2179,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, step_log_machine_fixtu
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(0, memcmp(obtained, hash4, sizeof(cm_hash)));
 
-    // at micro cycle 4
+    // at uarch cycle 4
     error_code = cm_read_reg(_machine, CM_REG_UARCH_CYCLE, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(cycle, 3);
@@ -2347,7 +2347,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, step_log_ma
     cm_get_root_hash(_machine, &initial_hash);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    // advance one micro cycle
+    // advance one uarch cycle
     auto status{CM_UARCH_BREAK_REASON_UARCH_HALTED};
     error_code = cm_run_uarch(_machine, 1, &status);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -2364,7 +2364,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, step_log_ma
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK(0 != memcmp(initial_hash, one_cycle_hash, sizeof(cm_hash)));
 
-    // advance more micro cycles past the point where the program halts (see hard-coded micro code in test fixture )
+    // advance more uarch cycles past the point where the program halts (see hard-coded uarch code in test fixture )
     error_code = cm_run_uarch(_machine, 100, &status);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));

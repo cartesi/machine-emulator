@@ -24,7 +24,7 @@ import {StepLog} from "src/StepLog.sol";
 
 library UArchStep {
     enum UArchStepStatus {
-        Success, // one micro instruction was executed successfully
+        Success, // one uarch instruction was executed successfully
         UArchCycleOverflow, // uarch cycle reached or was already at its maximum value
         UArchHalted // uarch reached or was already at its halted fixed point
 

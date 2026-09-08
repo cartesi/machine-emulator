@@ -283,7 +283,7 @@ public:
         return do_log_reset_uarch();
     }
 
-    /// \brief Runs the uarch until the machine advances to the next mcycle or the current  micro cycle
+    /// \brief Runs the uarch until the machine advances to the next mcycle or the current uarch cycle
     /// (uarch_cycle) reaches uarch_cycle_end \param uarch_cycle_end uarch_cycle limit
     uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end) {
         return do_run_uarch(uarch_cycle_end);

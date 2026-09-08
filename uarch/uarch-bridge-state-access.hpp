@@ -46,7 +46,7 @@ struct i_state_access_fast_addr<uarch_bridge_state_access> {
     using type = uint64_t;
 };
 
-// Provides access to the state of the big emulator from microcode
+// Provides access to the state of the big emulator from uarch code
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class uarch_bridge_state_access :
     public i_state_access<uarch_bridge_state_access>,

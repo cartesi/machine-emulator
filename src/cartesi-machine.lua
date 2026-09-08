@@ -610,7 +610,7 @@ where options are:
     stop at a given mcycle (default: 2^64-1).
 
   --max-uarch-cycle=<number>
-    stop at a given micro cycle.
+    stop at a given uarch cycle.
 
   --unreproducible
     run machine in unreproducible mode.
@@ -4123,9 +4123,9 @@ if cmdline.log_step_mcycle_count then
     util.write_file(log, cmdline.log_step_filename)
     print_log_root_hash(machine, "after")
 end
--- Advance micro cycles
+-- Advance uarch cycles
 if cmdline.max_uarch_cycle > 0 then
-    -- Save halt flag before micro cycles
+    -- Save halt flag before uarch cycles
     local previously_halted = machine:read_reg("iflags_H") ~= 0
     local break_reason = machine:run_uarch(cmdline.max_uarch_cycle)
     if break_reason == cartesi.UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW then
@@ -4148,8 +4148,8 @@ if cmdline.max_uarch_cycle > 0 then
 end
 if gdb_stub then gdb_stub:close() end
 if cmdline.log_step_uarch then
-    assert(initial_config.processor.registers.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
-    stderr("Gathering micro step log: please wait\n")
+    assert(initial_config.processor.registers.iunrep == 0, "uarch step proof is meaningless in unreproducible mode")
+    stderr("Gathering uarch step log: please wait\n")
     print_log_root_hash(machine, "before")
     local log = machine:log_step_uarch(cmdline.log_step_uarch.count)
     util.write_file(log, cmdline.log_step_uarch.filename)

@@ -44,6 +44,6 @@ extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
     interpret(a, mcycle_end);
     // Finished executing a whole mcycle: halt the uarch
     ua_halt_ECALL();
-    // The micro interpreter will never execute this line because the micro machine is halted
+    // The uarch interpreter will never execute this line because the uarch is halted
     __builtin_trap();
 }

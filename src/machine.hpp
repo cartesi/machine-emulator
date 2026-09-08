@@ -287,7 +287,7 @@ public:
     static machine_hash verify_step(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         uint64_t mcycle_count);
 
-    /// \brief Runs the machine in the uarch until the mcycles advances by one unit or the micro cycle
+    /// \brief Runs the machine in the uarch until the mcycles advances by one unit or the uarch cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
     /// \param uarch_cycle_end uarch_cycle limit
     uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end);

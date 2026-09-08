@@ -1891,6 +1891,82 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- -------------------------------------------------------------------------
+    -- Every logging option in one invocation
+    --
+    -- What: the CLI runs them in a fixed order after the machine stops: --log-step,
+    --       --max-uarch-cycle, --log-step-uarch, --log-reset-uarch,
+    --       --log-send-cmio-response. Each prints its own root hash pair.
+    -- How:  boot a guest that yields manual rx-accepted ("rollup accept"), so the cmio
+    --       response is a real one, log all four in one run, verify each log against its
+    --       pair in print order, and check the state hands off from one option to the next.
+    -- -------------------------------------------------------------------------
+    it("all logging options in one run", function()
+        local _ <close>, step_log = scope_temp_pathname()
+        local _ <close>, uarch_log = scope_temp_pathname()
+        local _ <close>, reset_log = scope_temp_pathname()
+        local _ <close>, cmio_log = scope_temp_pathname()
+        for _, path in ipairs({ step_log, uarch_log, reset_log, cmio_log }) do
+            os.remove(path)
+        end
+        -- No --max-mcycle: the machine runs until the guest's "rollup accept" yields manual
+        -- rx-accepted, which is the state the four logging options then act on
+        local _, stderr = run_ok({
+            "--no-init-splash",
+            "--quiet",
+            "--max-uarch-cycle=2",
+            "--log-step=" .. step_log .. ",count:1",
+            "--log-step-uarch=" .. uarch_log .. ",count:2",
+            "--log-reset-uarch=" .. reset_log,
+            "--log-send-cmio-response=" .. cmio_log .. ",reason:0,data:0x1234",
+            "--",
+            "rollup",
+            "accept",
+        })
+        -- Each logging option prints two lines to stderr around its log call:
+        --   root hash before: 0x<64 hex digits>
+        --   root hash after: 0x<64 hex digits>
+        -- Collect them in print order, which is the option order above. The verifiers below take
+        -- each hash before as the claim and compare the hash after with what the replay returns.
+        local hashes = {}
+        for before, after in stderr:gmatch("root hash before: (0x%x+)\nroot hash after: (0x%x+)") do
+            hashes[#hashes + 1] = cartesi.fromhex(before)
+            hashes[#hashes + 1] = cartesi.fromhex(after)
+        end
+        expect.equal(#hashes, 8)
+        local step_hash_before, step_hash_after, uarch_hash_before, uarch_hash_after, reset_hash_before, reset_hash_after, cmio_hash_before, cmio_hash_after =
+            table.unpack(hashes)
+
+        -- a yielded machine does not run, so the step log is the identity
+        expect.equal(cartesi.machine:verify_step(step_hash_before, filesystem.read_file(step_log), 1), step_hash_after)
+        expect.equal(step_hash_after, step_hash_before)
+        expect.equal(
+            cartesi.machine:verify_step_uarch(uarch_hash_before, filesystem.read_file(uarch_log), 2),
+            uarch_hash_after
+        )
+        expect.equal(
+            cartesi.machine:verify_reset_uarch(reset_hash_before, filesystem.read_file(reset_log)),
+            reset_hash_after
+        )
+        -- the CLI recorded the hash before as the revert root hash
+        local data = cartesi.fromhex("0x1234")
+        expect.equal(
+            cartesi.machine:verify_send_cmio_response(
+                0,
+                data,
+                cmio_hash_before,
+                filesystem.read_file(cmio_log),
+                cmio_hash_before
+            ),
+            cmio_hash_after
+        )
+        -- the state hands off between consecutive options; --max-uarch-cycle runs unlogged between
+        -- the step log and the uarch log, and the reset undoes those uarch cycles
+        expect.equal(reset_hash_before, uarch_hash_after)
+        expect.equal(cmio_hash_before, reset_hash_after)
+        expect.equal(reset_hash_after, step_hash_after)
+    end)
+
+    -- -------------------------------------------------------------------------
     -- Post-run uarch advance path (--max-uarch-cycle, --auto-reset-uarch)
     --
     -- What: --max-uarch-cycle and --auto-reset-uarch exercise the uarch advance

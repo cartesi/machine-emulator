@@ -33,7 +33,10 @@ std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t skip_co
     // uarch_interpret's cycle-limit bookkeeping would open the dump with redundant uarch.cycle reads
     auto replay = [&](uint64_t count) {
         for (uint64_t i = 0; i < count; ++i) {
-            if (uarch_step(a) != UArchStepStatus::Success) {
+            context.dumper.begin_bracket("uarch cycle");
+            const auto status = uarch_step(a);
+            context.dumper.end_bracket("uarch cycle");
+            if (status != UArchStepStatus::Success) {
                 return false;
             }
         }

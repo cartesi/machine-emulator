@@ -68,6 +68,14 @@ describe("cartesi-machine CLI", function()
         end), path
     end
 
+    -- Every logging option prints the root hashes a verifier needs, since the log carries none
+    local function root_hash_pair(stderr)
+        local before = stderr:match("root hash before: (0x%x+)")
+        local after = stderr:match("root hash after: (0x%x+)")
+        assert(before and after, "missing root hash pair in stderr:\n" .. stderr)
+        return cartesi.fromhex(before), cartesi.fromhex(after)
+    end
+
     local function scope_stored_dirname()
         local dir = filesystem.temp_pathname()
         return tests_util.scope_exit(function()
@@ -1777,44 +1785,56 @@ describe("cartesi-machine CLI", function()
     -- What: --log-step, --log-step-uarch, --log-reset-uarch, --max-uarch-cycle,
     --       --auto-reset-uarch, and --print-uarch-cycle-root-hashes (positional count with
     --       a start: sub-key).
-    -- How:  run_ok() each flag; for --log-step also open the output file and
-    --       assert it is non-empty to confirm the log was written.
+    -- How:  run_ok() each flag; for the logging options, verify the written log against
+    --       the root hash pair printed to stderr, so the pair is the one the log needs.
     -- -------------------------------------------------------------------------
     it("log step options", function()
         local _ <close>, log_file = scope_temp_pathname()
 
         -- --log-step=<file>,count:N
-        run_ok({
+        local _, ls_stderr = run_ok({
             "--log-step=" .. log_file .. ",count:1",
             "--max-mcycle=1",
             "--no-init-splash",
             "--quiet",
         })
-        expect.truthy(#filesystem.read_file(log_file) > 0)
+        local log = filesystem.read_file(log_file)
+        expect.truthy(#log > 0)
+        local before, after = root_hash_pair(ls_stderr)
+        expect.equal(cartesi.machine:verify_step(before, log, 1), after)
 
-        -- --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump]
+        -- --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump], after a uarch advance:
+        -- the pair brackets the log, not the whole run
         local _ <close>, su_log = scope_temp_pathname()
         os.remove(su_log)
         local _, su_stderr = run_ok({
-            "--log-step-uarch=" .. su_log .. ",count:1,dump",
+            "--log-step-uarch=" .. su_log .. ",count:2,dump",
+            "--max-uarch-cycle=2",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
-        expect.truthy(#filesystem.read_file(su_log) > 0)
-        -- the dump key replays the log to stderr
-        expect.truthy(su_stderr:match("read uarch%.cycle@0x%x+: 0x%x+%(%d+%)"))
+        log = filesystem.read_file(su_log)
+        expect.truthy(#log > 0)
+        before, after = root_hash_pair(su_stderr)
+        expect.equal(cartesi.machine:verify_step_uarch(before, log, 2), after)
+        -- the dump key replays the log to stderr, one bracket per uarch cycle
+        expect.truthy(su_stderr:match("begin uarch cycle\n  read uarch%.cycle@0x%x+: 0x2%(2%)"))
+        expect.truthy(su_stderr:match("begin uarch cycle\n  read uarch%.cycle@0x%x+: 0x3%(3%)"))
 
         -- --log-reset-uarch=<filename>
         local _ <close>, ru_log = scope_temp_pathname()
         os.remove(ru_log)
-        run_ok({
+        local _, ru_stderr = run_ok({
             "--log-reset-uarch=" .. ru_log,
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
-        expect.truthy(#filesystem.read_file(ru_log) > 0)
+        log = filesystem.read_file(ru_log)
+        expect.truthy(#log > 0)
+        before, after = root_hash_pair(ru_stderr)
+        expect.equal(cartesi.machine:verify_reset_uarch(before, log), after)
 
         -- --max-uarch-cycle
         run_ok({ "--max-uarch-cycle=0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -1839,7 +1859,7 @@ describe("cartesi-machine CLI", function()
         local function log_response(source)
             local _ <close>, log_file = scope_temp_pathname()
             os.remove(log_file)
-            run_ok({
+            local _, stderr = run_ok({
                 "--log-send-cmio-response=" .. log_file .. ",reason:1," .. source,
                 "--max-mcycle=0",
                 "--no-init-splash",
@@ -1847,6 +1867,9 @@ describe("cartesi-machine CLI", function()
             })
             local contents = filesystem.read_file(log_file)
             expect.truthy(#contents > 0)
+            -- the printed pair verifies the log; the hash before doubles as the revert root hash
+            local before, after = root_hash_pair(stderr)
+            expect.equal(cartesi.machine:verify_send_cmio_response(1, "hello!", before, contents, before), after)
             return contents
         end
 

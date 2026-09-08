@@ -868,20 +868,26 @@ where options are:
 
   --log-step=<filename>,count:<mcycle-count>
     log and save a step of <mcycle-count> mcycles to <filename>.
+    prints the root hash before and after the step to stderr; a verifier
+    needs both, since the log carries neither.
 
   --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump]
     log <uarch-cycle-count> uarch cycles (default 1) to <filename>
     as a binary step log. logging stops early at the uarch halt, so a count at
     or above the per-mcycle uarch budget records one whole mcycle.
+    prints the root hash before and after the step to stderr.
     append ",dump" to also write a human-readable printout to stderr.
 
   --log-reset-uarch=<filename>
     reset the uarch state and write a binary step log to <filename>.
+    prints the root hash before and after the reset to stderr.
 
   --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...]
     send a cmio response to the rx buffer and write a binary step log to a file.
     runs after the machine has reached its terminal state. the machine should be
     in a yielded state (iflags.Y == 1); otherwise the logged transition is a no-op.
+    prints the root hash before and after the response to stderr; the hash before
+    is also the revert root hash recorded in the log.
 
     <key>:<value> is one of
         reason:<number>
@@ -2692,6 +2698,11 @@ local function print_root_hash(machine, print)
     (print or stderr)("%u: %s\n", machine:read_reg("mcycle"), cartesi.tohex(machine:get_root_hash()))
 end
 
+-- The step log carries no root hashes, so every logging option prints the pair a verifier needs
+local function print_log_root_hash(machine, when)
+    stderr_unsilenceable("root hash %s: %s\n", when, cartesi.tohex(machine:get_root_hash()))
+end
+
 local function dump_value_proofs(machine, desired_proofs, config)
     if #desired_proofs > 0 then
         assert(config.processor.registers.iunrep == 0, "proofs are meaningless in unreproducible mode")
@@ -4107,10 +4118,10 @@ end
 -- log step
 if cmdline.log_step_mcycle_count then
     stderr(string.format("Logging step of %d cycles to %s\n", cmdline.log_step_mcycle_count, cmdline.log_step_filename))
-    print_root_hash(machine, stderr_unsilenceable)
+    print_log_root_hash(machine, "before")
     local log = machine:log_step(cmdline.log_step_mcycle_count)
     util.write_file(log, cmdline.log_step_filename)
-    print_root_hash(machine, stderr_unsilenceable)
+    print_log_root_hash(machine, "after")
 end
 -- Advance micro cycles
 if cmdline.max_uarch_cycle > 0 then
@@ -4139,15 +4150,19 @@ if gdb_stub then gdb_stub:close() end
 if cmdline.log_step_uarch then
     assert(initial_config.processor.registers.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")
+    print_log_root_hash(machine, "before")
     local log = machine:log_step_uarch(cmdline.log_step_uarch.count)
     util.write_file(log, cmdline.log_step_uarch.filename)
+    print_log_root_hash(machine, "after")
     if cmdline.log_step_uarch.dump then
         io.stderr:write(cartesi.machine:dump_step_uarch(log, 0, cmdline.log_step_uarch.count))
     end
 end
 if cmdline.log_reset_uarch then
     stderr("Resetting uarch state: please wait\n")
+    print_log_root_hash(machine, "before")
     util.write_file(machine:log_reset_uarch(), cmdline.log_reset_uarch.filename)
+    print_log_root_hash(machine, "after")
 end
 if cmdline.log_send_cmio_response then
     local o = cmdline.log_send_cmio_response
@@ -4159,7 +4174,9 @@ if cmdline.log_send_cmio_response then
         data = ENCODINGS[o.encoding](o.data)
     end
     stderr("Logging cmio response: please wait\n")
+    print_log_root_hash(machine, "before")
     util.write_file(machine:log_send_cmio_response(o.reason, data, machine:get_root_hash()), o.filename)
+    print_log_root_hash(machine, "after")
 end
 if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_memory_ranges_dir) end
 if cmdline.final_hash then

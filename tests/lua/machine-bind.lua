@@ -832,40 +832,46 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
     local log = machine:log_step_uarch(2)
     local text = cartesi.machine:dump_step_uarch(log, 0, 3)
     -- Match the whole printout line by line; addresses and values are wildcarded so the expectation
-    -- survives shadow-layout/cycle drift while order, numbering, names, and brackets stay pinned.
+    -- survives shadow-layout drift while order, names, and brackets stay pinned.
     local expected = {
         -- Every cycle has the same shape: uarch_step's cycle/halt/pc reads, the fetch,
         -- the bracketed instruction body, and the cycle increment.
-        "^1: read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
-        "^2: read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
-        "^3: read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
-        "^4: read @0x%x+: 0x%x+%(%d+%)$",
-        "^begin addi$",
-        "^  5: read uarch%.x0@0x%x+: 0x%x+%(%d+%)$",
-        "^  6: write uarch%.x10@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^  7: write uarch%.pc@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^end addi$",
-        "^8: write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^9: read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
-        "^10: read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
-        "^11: read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
-        "^12: read @0x%x+: 0x%x+%(%d+%)$",
-        "^begin addi$",
-        "^  13: read uarch%.x0@0x%x+: 0x%x+%(%d+%)$",
-        "^  14: write uarch%.x17@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^  15: write uarch%.pc@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^end addi$",
-        "^16: write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^17: read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
-        "^18: read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
-        "^19: read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
-        "^20: read @0x%x+: 0x%x+%(%d+%)$",
-        "^begin ecall$",
-        "^  21: read uarch%.x17@0x%x+: 0x%x+%(%d+%)$",
-        "^  22: write uarch%.halt@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^end ecall$",
-        "^23: write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^24: read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
+        "^begin uarch cycle$",
+        "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
+        "^  read @0x%x+: 0x%x+%(%d+%)$",
+        "^  begin addi$",
+        "^    read uarch%.x0@0x%x+: 0x%x+%(%d+%)$",
+        "^    write uarch%.x10@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^    write uarch%.pc@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^  end addi$",
+        "^  write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^end uarch cycle$",
+        "^begin uarch cycle$",
+        "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
+        "^  read @0x%x+: 0x%x+%(%d+%)$",
+        "^  begin addi$",
+        "^    read uarch%.x0@0x%x+: 0x%x+%(%d+%)$",
+        "^    write uarch%.x17@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^    write uarch%.pc@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^  end addi$",
+        "^  write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^end uarch cycle$",
+        "^begin uarch cycle$",
+        "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
+        "^  read @0x%x+: 0x%x+%(%d+%)$",
+        "^  begin ecall$",
+        "^    read uarch%.x17@0x%x+: 0x%x+%(%d+%)$",
+        "^    write uarch%.halt@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^  end ecall$",
+        "^  write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
+        "^end uarch cycle$",
     }
     local lines = {}
     for line in (text .. "\n"):gmatch("(.-)\n") do
@@ -884,7 +890,7 @@ do_test("dump_step_uarch skip count mutes the first cycles", function(machine)
     local log = machine:log_step_uarch(2)
     local full = cartesi.machine:dump_step_uarch(log, 0, 3)
     local rest = cartesi.machine:dump_step_uarch(log, 1, 2)
-    assert(rest:match("^9: read uarch%.cycle"), "access numbering should continue past the skipped cycle")
+    assert(rest:match("^begin uarch cycle\n  read uarch%.cycle@0x%x+: 0x1%(1%)"), "the dump should resume at cycle 1")
     assert(cartesi.machine:dump_step_uarch(log, 0, 1) .. rest == full, "skipped dump should be a slice of the full one")
 end)
 

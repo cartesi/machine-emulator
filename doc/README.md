@@ -2825,17 +2825,19 @@ producing the log
 
 ``` text
 Gathering micro step log: please wait
-1: read uarch.cycle@0x400008: 0x8c2(2242)
-2: read uarch.halt@0x400000: 0x0(0)
-3: read uarch.pc@0x400010: 0x6021d0(6300112)
-4: read @0x6021d0: 0x51300000073(5579162517619)
-begin ecall
-  5: read uarch.x17@0x4000a0: 0x2(2)
-  6: read uarch.x10@0x400068: 0xa(10)
-  7: write uarch.pc@0x400010: 0x6021d0(6300112) -> 0x6021d4(6300116)
-end ecall
-8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
-9: read uarch.halt@0x400000: 0x0(0)
+begin uarch cycle
+  read uarch.cycle@0x400008: 0x8c2(2242)
+  read uarch.halt@0x400000: 0x0(0)
+  read uarch.pc@0x400010: 0x6021d0(6300112)
+  read @0x6021d0: 0x51300000073(5579162517619)
+  begin ecall
+    read uarch.x17@0x4000a0: 0x2(2)
+    read uarch.x10@0x400068: 0xa(10)
+    write uarch.pc@0x400010: 0x6021d0(6300112) -> 0x6021d4(6300116)
+  end ecall
+  write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
+  read uarch.halt@0x400000: 0x0(0)
+end uarch cycle
 ```
 
 Understanding these logs in detail is unnecessary for all but the most
@@ -5455,7 +5457,7 @@ step log. It replays the first `<skip_count>` cycles silently, then the
 requested number of cycles against the state carried in the log
 (stopping early if the uarch halts), and describes every access
 performed, identifying what each address refers to (a register, a CSR,
-memory). Addresses and values are printed in hexadecimal and decimal.
+memory) Each replayed cycle is bracketed. Addresses and values are printed in hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:
 
@@ -5500,17 +5502,19 @@ produces the output:
        \    / CARTESI
 Step log of uarch step at mcycle=41536683 uarch_cycle=2242:
 
-1: read uarch.cycle@0x400008: 0x8c2(2242)
-2: read uarch.halt@0x400000: 0x0(0)
-3: read uarch.pc@0x400010: 0x6021d0(6300112)
-4: read @0x6021d0: 0x51300000073(5579162517619)
-begin ecall
-  5: read uarch.x17@0x4000a0: 0x2(2)
-  6: read uarch.x10@0x400068: 0xa(10)
-  7: write uarch.pc@0x400010: 0x6021d0(6300112) -> 0x6021d4(6300116)
-end ecall
-8: write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
-9: read uarch.halt@0x400000: 0x0(0)
+begin uarch cycle
+  read uarch.cycle@0x400008: 0x8c2(2242)
+  read uarch.halt@0x400000: 0x0(0)
+  read uarch.pc@0x400010: 0x6021d0(6300112)
+  read @0x6021d0: 0x51300000073(5579162517619)
+  begin ecall
+    read uarch.x17@0x4000a0: 0x2(2)
+    read uarch.x10@0x400068: 0xa(10)
+    write uarch.pc@0x400010: 0x6021d0(6300112) -> 0x6021d4(6300116)
+  end ecall
+  write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
+  read uarch.halt@0x400000: 0x0(0)
+end uarch cycle
 ```
 
 Understanding these logs in detail is unnecessary for all but the most

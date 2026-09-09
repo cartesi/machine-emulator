@@ -653,13 +653,16 @@ end
 -- geometry.
 -- docs:begin new_geometry
 local function new_geometry(log2_mcycles_per_period)
+    local mcycle_height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
+        + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+        - log2_mcycles_per_period
+    local uarch_height = log2_mcycles_per_period + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    assert(mcycle_height < 63 and uarch_height < 63, "claim leaf counts must fit in signed 64-bit integers")
     return {
         log2_mcycles_per_period = log2_mcycles_per_period,
         mcycles_per_period = 1 << log2_mcycles_per_period,
-        mcycle_height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
-            + cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
-            - log2_mcycles_per_period,
-        uarch_height = log2_mcycles_per_period + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
+        mcycle_height = mcycle_height,
+        uarch_height = uarch_height,
         periods_per_input = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period),
     }
 end
@@ -705,12 +708,12 @@ end
 -- uarch transitions, the same three coordinates as the rolling verification game. The mcycle
 -- claim samples the epoch every 2^LOG2_MCYCLES_PER_PERIOD mcycles. The uarch claim expands one mcycle
 -- period into its uarch transitions. Each claim is stored bundled: the machine delivers one
--- subtree root per 2^bundle leaves, so the stored tree is that much shallower, and queries
+-- subtree root per 2^bundle_height leaves, so the stored tree is that much shallower, and queries
 -- below a bundle are answered by refining it.
 ------------------------------------------------------------
 
-local LOG2_MCYCLE_BUNDLE = 4
-local LOG2_UARCH_BUNDLE = 16
+local LOG2_BUNDLE_MCYCLE_COUNT = 4
+local LOG2_BUNDLE_UARCH_CYCLE_COUNT = 16
 local LOG2_HASHES_PER_CHUNK = 8
 local LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE = 10 -- assume about 1024 uarch cycles per mcycle
 local MAX_MCYCLES_PER_ADVANCE_STATE = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
@@ -777,8 +780,8 @@ end
 
 -- Limits each collection call to the mcycle span of 2^LOG2_HASHES_PER_CHUNK bundle roots,
 -- bounding temporary hash storage. Caps the span at MCYCLE_MAX to avoid shift overflow.
-local function mcycle_hashes_chunk_size(log2_period, log2_bundle)
-    local log2_chunk_size = log2_period + log2_bundle + LOG2_HASHES_PER_CHUNK
+local function mcycle_hashes_chunk_size(log2_period, log2_bundle_mcycle_count)
+    local log2_chunk_size = log2_period + log2_bundle_mcycle_count + LOG2_HASHES_PER_CHUNK
     if log2_chunk_size >= 64 then
         return cartesi.MCYCLE_MAX
     end
@@ -979,7 +982,7 @@ end
 -- Mcycle computation hashes
 --
 -- The player advances the whole epoch once, collecting the machine state hash every period
--- as bundle roots, one per 2^LOG2_MCYCLE_BUNDLE samples. A machine stopped at a
+-- as bundle roots, one per 2^LOG2_BUNDLE_MCYCLE_COUNT samples. A machine stopped at a
 -- manual yield, halt, or mcycle overflow repeats its state hash to the end of its input's span, and
 -- the machine pads the stream accordingly, so each input contributes a short prefix of real bundles
 -- followed by one enormous repetition. A machine that halted, overflowed, or yielded with an
@@ -1005,14 +1008,14 @@ end
 -- Every insertion describes count copies of a subtree covering 2^height logical
 -- leaves. Forest values retain their descendants, including repeated uarch groups.
 local function computation_hash_append(claim, value, count, height)
-    hash_tree.frontier_forest_pad_back(claim.frontier, value, count, height - claim.log2_bundle)
+    hash_tree.frontier_forest_pad_back(claim.frontier, value, count, height - claim.bundle_height)
     claim.next_leaf = claim.next_leaf + (count << height)
 end
 
 local function mcycle_computation_hash_push_collected(claim, collected)
     local count = math.min(#collected.hashes, claim.input_entry_capacity - claim.input_entry_count)
     for i = 1, count do
-        claim:append(collected.hashes[i], 1, claim.log2_bundle)
+        claim:append(collected.hashes[i], 1, claim.bundle_height)
     end
     claim.input_entry_count = claim.input_entry_count + count
     if not is_at_fixed_point(collected.break_reason) then
@@ -1020,12 +1023,12 @@ local function mcycle_computation_hash_push_collected(claim, collected)
     end
     assert(#collected.hashes > 0, "fixed-point mcycle collection has no final bundle")
     claim.pad_bundle = collected.hashes[#collected.hashes]
-    claim:append(claim.pad_bundle, claim.input_entry_capacity - claim.input_entry_count, claim.log2_bundle)
+    claim:append(claim.pad_bundle, claim.input_entry_capacity - claim.input_entry_count, claim.bundle_height)
     claim.input_entry_count = claim.input_entry_capacity
 end
 
 local function mcycle_computation_hash_begin_epoch(claim)
-    claim.frontier = hash_tree.frontier_forest(claim.height - claim.log2_bundle, "keccak256")
+    claim.frontier = hash_tree.frontier_forest(claim.height - claim.bundle_height, "keccak256")
     claim.next_leaf = claim.window and claim.window.first_leaf or 0
     claim.input_entry_count = nil
     claim.pad_bundle = nil
@@ -1062,7 +1065,7 @@ local function mcycle_computation_hash_run(claim, mcycle_end)
             chunk_end,
             claim.log2_period,
             collected.mcycle_phase,
-            claim.log2_bundle,
+            claim.bundle_height,
             collected.partial_bundle
         )
         mcycle_computation_hash_push_collected(claim, collected)
@@ -1092,19 +1095,19 @@ local function mcycle_computation_hash_end_epoch(claim)
             claim.machine:read_reg("mcycle"),
             claim.log2_period,
             0,
-            claim.log2_bundle
+            claim.bundle_height
         )
         assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash ended outside a fixed point")
         claim.pad_bundle = assert(collected.hashes[#collected.hashes], "fixed point has no padding bundle")
     end
-    claim:append(claim.pad_bundle, (end_leaf - claim.next_leaf) >> claim.log2_bundle, claim.log2_bundle)
+    claim:append(claim.pad_bundle, (end_leaf - claim.next_leaf) >> claim.bundle_height, claim.bundle_height)
     return claim.frontier
 end
 
 -- A window is an aligned logical leaf range, independent of where its stopped
 -- machine physically stands. Omitting it selects the full epoch, bundled by default.
 local function new_mcycle_computation_hash(geometry, machine_cache, machine, window)
-    local log2_bundle = window and window.log2_bundle or LOG2_MCYCLE_BUNDLE
+    local log2_bundle_mcycle_count = window and window.log2_bundle_mcycle_count or LOG2_BUNDLE_MCYCLE_COUNT
     local height = window and window.log2_leaf_count or geometry.mcycle_height
     return {
         geometry = geometry,
@@ -1112,11 +1115,11 @@ local function new_mcycle_computation_hash(geometry, machine_cache, machine, win
         machine = machine,
         window = window,
         height = height,
-        log2_bundle = log2_bundle,
+        bundle_height = log2_bundle_mcycle_count,
         log2_period = geometry.log2_mcycles_per_period,
-        chunk_size = mcycle_hashes_chunk_size(geometry.log2_mcycles_per_period, log2_bundle),
-        input_entry_capacity = window and (1 << (height - log2_bundle))
-            or (geometry.periods_per_input >> LOG2_MCYCLE_BUNDLE),
+        chunk_size = mcycle_hashes_chunk_size(geometry.log2_mcycles_per_period, log2_bundle_mcycle_count),
+        input_entry_capacity = window and (1 << (height - log2_bundle_mcycle_count))
+            or (geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT),
         cache_machine = not window,
         append = computation_hash_append,
         begin_epoch = mcycle_computation_hash_begin_epoch,
@@ -1131,15 +1134,15 @@ end
 -- Uarch computation hashes
 ------------------------------------------------------------
 
-local function uarch_hashes_chunk_size(log2_bundle)
-    local cycle_bundle_count = log2_bundle < LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE
-            and (1 << (LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE - log2_bundle))
+local function uarch_hashes_chunk_size(log2_bundle_uarch_cycle_count)
+    local cycle_bundle_count = log2_bundle_uarch_cycle_count < LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE
+            and (1 << (LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE - log2_bundle_uarch_cycle_count))
         or 1
     return math.max(1, (1 << LOG2_HASHES_PER_CHUNK) // (cycle_bundle_count + 2))
 end
 
-local function uarch_mcycle_forest(hashes, first, last, log2_bundle)
-    local height = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - log2_bundle
+local function uarch_mcycle_forest(hashes, first, last, log2_bundle_uarch_cycle_count)
+    local height = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - log2_bundle_uarch_cycle_count
     local capacity = 1 << height
     local real = last - first - 1
     assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
@@ -1177,7 +1180,7 @@ local function uarch_computation_hash_begin_input(claim, input_index, input_base
     local mcycle_offset = claim.window.first_leaf >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     claim.target_start =
         usaturating_add(claim.input_base, claim.period_index * claim.geometry.mcycles_per_period + mcycle_offset)
-    local count = claim.window.log2_bundle == 0 and 1
+    local count = claim.window.log2_bundle_uarch_cycle_count == 0 and 1
         or (1 << (claim.window.log2_leaf_count - cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE))
     claim.target_end =
         usaturating_add(claim.target_start, count, usaturating_add(claim.input_base, MAX_MCYCLES_PER_ADVANCE_STATE))
@@ -1197,10 +1200,10 @@ local function uarch_computation_hash_run(claim, mcycle_end)
     local reason
     repeat
         local target = usaturating_add(machine:read_reg("mcycle"), claim.chunk_size, umin(mcycle_end, claim.target_end))
-        local collected = machine:collect_uarch_cycle_root_hashes(target, claim.log2_bundle, claim.revert_uarch_tail)
+        local collected = machine:collect_uarch_cycle_root_hashes(target, claim.bundle_height, claim.revert_uarch_tail)
         local offsets = collected.mcycle_hash_offsets
         local available = #offsets - 1
-        if claim.log2_bundle == 0 then
+        if claim.bundle_height == 0 then
             if available > 0 then
                 append_uarch_window(claim, collected.hashes, offsets[1], offsets[2] - 1)
             end
@@ -1211,7 +1214,7 @@ local function uarch_computation_hash_run(claim, mcycle_end)
             )
             local group
             for i = 1, wanted do
-                group = uarch_mcycle_forest(collected.hashes, offsets[i], offsets[i + 1] - 1, claim.log2_bundle)
+                group = uarch_mcycle_forest(collected.hashes, offsets[i], offsets[i + 1] - 1, claim.bundle_height)
                 claim:append(group, 1, cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)
             end
             if is_at_fixed_point(collected.break_reason) and claim.next_leaf < claim.end_leaf then
@@ -1242,7 +1245,7 @@ local function uarch_computation_hash_end_input(claim)
 end
 
 local function uarch_computation_hash_begin_epoch(claim)
-    claim.frontier = hash_tree.frontier_forest(claim.window.log2_leaf_count - claim.log2_bundle, "keccak256")
+    claim.frontier = hash_tree.frontier_forest(claim.window.log2_leaf_count - claim.bundle_height, "keccak256")
     claim.next_leaf = claim.window.first_leaf
 end
 
@@ -1253,8 +1256,8 @@ local function new_uarch_computation_hash(geometry, machine, window)
         window = window,
         period_index = window.epoch_period_index % geometry.periods_per_input,
         end_leaf = window.first_leaf + (1 << window.log2_leaf_count),
-        log2_bundle = window.log2_bundle,
-        chunk_size = uarch_hashes_chunk_size(window.log2_bundle),
+        bundle_height = window.log2_bundle_uarch_cycle_count,
+        chunk_size = uarch_hashes_chunk_size(window.log2_bundle_uarch_cycle_count),
         append = computation_hash_append,
         begin_epoch = uarch_computation_hash_begin_epoch,
         begin_input = uarch_computation_hash_begin_input,
@@ -1396,9 +1399,9 @@ end
 -- these operations capture their dependencies. Each replay still has its own machine.
 local function new_player(geometry, inputs, machine_cache, options)
     options = options or {}
-    local make_mcycle = options.new_mcycle_computation_hash or new_mcycle_computation_hash
-    local make_uarch = options.new_uarch_computation_hash or new_uarch_computation_hash
-    local make_null = options.new_null_computation_hash or new_null_computation_hash
+    options.new_mcycle_computation_hash = options.new_mcycle_computation_hash or new_mcycle_computation_hash
+    options.new_uarch_computation_hash = options.new_uarch_computation_hash or new_uarch_computation_hash
+    options.new_null_computation_hash = options.new_null_computation_hash or new_null_computation_hash
     local player = { label = options.label or "honest" }
     for name, handler in pairs(handlers) do
         player[name] = handler
@@ -1474,56 +1477,50 @@ local function new_player(geometry, inputs, machine_cache, options)
     end
 
     local function replay(machine, input_index_begin, input_index_end)
-        return run_advance_state_epoch(machine, make_null(machine), input_index_begin, input_index_end)
-    end
-
-    -- Returns an owned machine at the requested period, its cycle base, and whether padding remains.
-    local function clone_mcycle_position(input_index, period_index)
-        local machine, owner <close> = machine_cache:clone_at_input_boundary(input_index, replay)
-        local revert_root_hash = machine:get_root_hash()
-        local break_reason, _, base = run_advance_state_input(
-            machine,
-            input_index,
-            make_null(machine),
-            period_index * geometry.mcycles_per_period,
-            revert_root_hash
-        )
-        return machine, owner:move(), base, is_at_fixed_point(break_reason)
+        local claim = options.new_null_computation_hash(machine)
+        return run_advance_state_epoch(machine, claim, input_index_begin, input_index_end)
     end
 
     -- docs:begin build_mcycle_claim
     local function build_mcycle_claim()
         local machine, owner <close> = machine_cache:clone_at_input_boundary(0, replay) -- luacheck: ignore 211
-        return run_advance_state_epoch(machine, make_mcycle(geometry, machine_cache, machine), 0, #inputs)
+        local claim = options.new_mcycle_computation_hash(geometry, machine_cache, machine)
+        return run_advance_state_epoch(machine, claim, 0, #inputs)
     end
     -- docs:end build_mcycle_claim
 
-    local function collect_mcycle_window(first_leaf, log2_count)
+    -- docs:begin refine_mcycle_claim
+    local function refine_mcycle_claim(bundle_index)
+        local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
         local input_index = first_leaf // geometry.periods_per_input
         local period_index = first_leaf % geometry.periods_per_input
-        local machine, _ <close>, base, at_fixed_point = clone_mcycle_position(input_index, period_index)
-        local claim = make_mcycle(
+        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, replay)
+        local revert_root_hash = machine:get_root_hash()
+        local claim = options.new_null_computation_hash(machine)
+        local break_reason, _, base = run_advance_state_input(
+            machine,
+            input_index,
+            claim,
+            period_index * geometry.mcycles_per_period,
+            revert_root_hash
+        )
+        claim = options.new_mcycle_computation_hash(
             geometry,
             machine_cache,
             machine,
-            { first_leaf = first_leaf, log2_leaf_count = log2_count, log2_bundle = 0 }
+            { first_leaf = first_leaf, log2_leaf_count = LOG2_BUNDLE_MCYCLE_COUNT, log2_bundle_mcycle_count = 0 }
         )
         claim:begin_epoch()
-        if at_fixed_point then
+        if is_at_fixed_point(break_reason) then
             return claim:end_epoch()
         end
         claim:begin_input(input_index, base)
         run_to_stop(
             machine,
-            usaturating_add(base, (period_index + (1 << log2_count)) * geometry.mcycles_per_period),
+            usaturating_add(base, (period_index + (1 << LOG2_BUNDLE_MCYCLE_COUNT)) * geometry.mcycles_per_period),
             claim
         )
         return claim:end_epoch()
-    end
-
-    -- docs:begin refine_mcycle_claim
-    local function refine_mcycle_claim(bundle)
-        return collect_mcycle_window(bundle << LOG2_MCYCLE_BUNDLE, LOG2_MCYCLE_BUNDLE)
     end
     -- docs:end refine_mcycle_claim
 
@@ -1532,7 +1529,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         local period_index = window.epoch_period_index % geometry.periods_per_input
         local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, replay)
         local revert_root_hash = machine:get_root_hash()
-        local claim = make_uarch(geometry, machine, window)
+        local claim = options.new_uarch_computation_hash(geometry, machine, window)
         claim:begin_epoch()
         run_advance_state_input(
             machine,
@@ -1550,7 +1547,7 @@ local function new_player(geometry, inputs, machine_cache, options)
             epoch_period_index = (input_index - 1) * geometry.periods_per_input + period_index,
             first_leaf = 0,
             log2_leaf_count = geometry.uarch_height,
-            log2_bundle = LOG2_UARCH_BUNDLE,
+            log2_bundle_uarch_cycle_count = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
         })
     end
     -- docs:end build_uarch_claim
@@ -1560,16 +1557,16 @@ local function new_player(geometry, inputs, machine_cache, options)
             epoch_period_index = epoch_period_index,
             first_leaf = first_leaf,
             log2_leaf_count = log2_count,
-            log2_bundle = 0,
+            log2_bundle_uarch_cycle_count = 0,
         })
     end
 
     -- docs:begin refine_uarch_claim
-    local function refine_uarch_claim(input_index, period_index, bundle)
+    local function refine_uarch_claim(input_index, period_index, bundle_index)
         return collect_uarch_window(
             (input_index - 1) * geometry.periods_per_input + period_index,
-            bundle << LOG2_UARCH_BUNDLE,
-            LOG2_UARCH_BUNDLE
+            bundle_index << LOG2_BUNDLE_UARCH_CYCLE_COUNT,
+            LOG2_BUNDLE_UARCH_CYCLE_COUNT
         )
     end
     -- docs:end refine_uarch_claim
@@ -1591,10 +1588,11 @@ local function new_player(geometry, inputs, machine_cache, options)
                 machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
             return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
         end
+        local claim = options.new_null_computation_hash(machine)
         run_advance_state_input(
             machine,
             input_index,
-            make_null(machine),
+            claim,
             period_index * geometry.mcycles_per_period + mcycle_offset,
             revert_root_hash
         )
@@ -1628,7 +1626,8 @@ local function new_player(geometry, inputs, machine_cache, options)
         local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
         local frontier = hash_tree.frontier_copy(genesis_frontier)
         local outputs, leaves = {}, {}
-        run_advance_state_epoch(machine, make_null(machine), 0, #inputs, function(pending, reported_root)
+        local claim = options.new_null_computation_hash(machine)
+        run_advance_state_epoch(machine, claim, 0, #inputs, function(pending, reported_root)
             for _, output in ipairs(pending) do
                 outputs[#outputs + 1] = output
                 leaves[#leaves + 1] = keccak(output)
@@ -1676,25 +1675,30 @@ local function new_player(geometry, inputs, machine_cache, options)
     end
 
     function player.make_mcycle_tree()
-        return new_tree(geometry.mcycle_height, LOG2_MCYCLE_BUNDLE, build_mcycle_claim(), function(_, bundle)
-            return refine_mcycle_claim(bundle)
-        end)
+        return new_tree(
+            geometry.mcycle_height,
+            LOG2_BUNDLE_MCYCLE_COUNT,
+            build_mcycle_claim(),
+            function(_, bundle_index)
+                return refine_mcycle_claim(bundle_index)
+            end
+        )
     end
     function player.make_uarch_tree(_, input_index, period_index)
         return new_tree(
             geometry.uarch_height,
-            LOG2_UARCH_BUNDLE,
+            LOG2_BUNDLE_UARCH_CYCLE_COUNT,
             build_uarch_claim(input_index, period_index),
-            function(_, bundle)
-                return refine_uarch_claim(input_index, period_index, bundle)
+            function(_, bundle_index)
+                return refine_uarch_claim(input_index, period_index, bundle_index)
             end
         )
     end
-    function player.refine_mcycle_claim(_, bundle)
-        return refine_mcycle_claim(bundle)
+    function player.refine_mcycle_claim(_, bundle_index)
+        return refine_mcycle_claim(bundle_index)
     end
-    function player.refine_uarch_claim(_, input_index, period_index, bundle)
-        return refine_uarch_claim(input_index, period_index, bundle)
+    function player.refine_uarch_claim(_, input_index, period_index, bundle_index)
+        return refine_uarch_claim(input_index, period_index, bundle_index)
     end
     return player
 end
@@ -1702,8 +1706,8 @@ end
 -- Module loading exposes the shared implementation without starting a CLI role.
 if ... == "prt" then
     return {
-        LOG2_MCYCLE_BUNDLE = LOG2_MCYCLE_BUNDLE,
-        LOG2_UARCH_BUNDLE = LOG2_UARCH_BUNDLE,
+        LOG2_BUNDLE_MCYCLE_COUNT = LOG2_BUNDLE_MCYCLE_COUNT,
+        LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
         new_player = new_player,
         new_machine = new_machine,
         new_null_computation_hash = new_null_computation_hash,

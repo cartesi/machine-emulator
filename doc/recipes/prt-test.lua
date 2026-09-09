@@ -14,8 +14,8 @@ local prtu = require("prtu")
 local prt = require("prt")
 
 local keccak = cartesi.keccak256
-local LOG2_MCYCLE_BUNDLE = prt.LOG2_MCYCLE_BUNDLE
-local LOG2_UARCH_BUNDLE = prt.LOG2_UARCH_BUNDLE
+local LOG2_BUNDLE_MCYCLE_COUNT = prt.LOG2_BUNDLE_MCYCLE_COUNT
+local LOG2_BUNDLE_UARCH_CYCLE_COUNT = prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT
 
 --------------------------------------------------------------------------------
 -- Machine checkpoint cache
@@ -329,14 +329,14 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
     if bundled then
         local bundle_height = 2
         local outer = hash_tree.frontier_forest(HEIGHT - bundle_height, "keccak256")
-        for bundle = 0, (LEAVES >> bundle_height) - 1 do
+        for bundle_index = 0, (LEAVES >> bundle_height) - 1 do
             hash_tree.frontier_forest_push_back(
                 outer,
-                hash_tree.frontier_forest_get_root_hash(build_leaf_forest(bundle << bundle_height, bundle_height))
+                hash_tree.frontier_forest_get_root_hash(build_leaf_forest(bundle_index << bundle_height, bundle_height))
             )
         end
-        tree = prtu.new_tree(HEIGHT, bundle_height, outer, function(_, bundle)
-            return build_leaf_forest(bundle << bundle_height, bundle_height)
+        tree = prtu.new_tree(HEIGHT, bundle_height, outer, function(_, bundle_index)
+            return build_leaf_forest(bundle_index << bundle_height, bundle_height)
         end)
     else
         tree = prtu.new_tree(HEIGHT, 0, build_leaf_forest(0, HEIGHT), nil)
@@ -808,7 +808,8 @@ if arg[1] then
     local uncached_tampered_tree = uncached_tamperer:make_mcycle_tree()
     assert(uncached_tampered_tree:get_root() == tampered_tree:get_root(), "cache changed the tampered claim")
     uncached_tampered_tree:open_bundle(100)
-    for leaf = 100 << LOG2_MCYCLE_BUNDLE, (100 << LOG2_MCYCLE_BUNDLE) + (1 << LOG2_MCYCLE_BUNDLE) - 1 do
+    local tampered_first_leaf = 100 << LOG2_BUNDLE_MCYCLE_COUNT
+    for leaf = tampered_first_leaf, tampered_first_leaf + (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1 do
         assert(
             uncached_tampered_tree:get_node(leaf, 0) == tampered_tree:get_node(leaf, 0),
             "cache changed replay out of the tamper point"
@@ -858,7 +859,7 @@ if arg[1] then
         epoch_period_index = 0,
         first_leaf = 0,
         log2_leaf_count = dapp_contract.geometry.uarch_height,
-        log2_bundle = LOG2_UARCH_BUNDLE,
+        log2_bundle_uarch_cycle_count = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
     })
     assert(getmetatable(native_uarch) == nil and native_uarch.machine == native, "honest uarch collector is wrapped")
     assert(native_uarch.unbundle == nil, "honest uarch collector exposes strategy-only refinement")
@@ -869,7 +870,7 @@ if arg[1] then
 
     local honest_tree = honest:make_mcycle_tree()
     local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").input_index
-    honest_tree:open_bundle((dapp_contract.geometry.periods_per_input >> LOG2_MCYCLE_BUNDLE))
+    honest_tree:open_bundle((dapp_contract.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT))
     assert(cache.checkpoints[1].input_index == checkpoint, "mcycle refinement changed the machine cache")
     local cached_inputs, cached_cache <close> = new_test_cache(dapp_contract)
     local cached = prt.new_player(dapp_contract.geometry, cached_inputs, cached_cache)
@@ -879,26 +880,27 @@ if arg[1] then
     end
     assert(cached_tree:get_root() == honest_tree:get_root(), "cache policy changed the mcycle root")
     assert(honest_tree:get_root() == util.read_file(assert(arg[5])), "mcycle root differs from CLI")
-    for _, bundle in ipairs({
+    for _, bundle_index in ipairs({
         0,
         99,
-        (dapp_contract.geometry.periods_per_input >> LOG2_MCYCLE_BUNDLE),
-        2 * (dapp_contract.geometry.periods_per_input >> LOG2_MCYCLE_BUNDLE),
-        (1 << (dapp_contract.geometry.mcycle_height - LOG2_MCYCLE_BUNDLE)) - 1,
+        (dapp_contract.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT),
+        2 * (dapp_contract.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT),
+        (1 << (dapp_contract.geometry.mcycle_height - LOG2_BUNDLE_MCYCLE_COUNT)) - 1,
     }) do
-        honest_tree:open_bundle(bundle)
-        cached_tree:open_bundle(bundle)
-        for leaf = bundle << LOG2_MCYCLE_BUNDLE, (bundle << LOG2_MCYCLE_BUNDLE) + (1 << LOG2_MCYCLE_BUNDLE) - 1 do
+        honest_tree:open_bundle(bundle_index)
+        cached_tree:open_bundle(bundle_index)
+        local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
+        for leaf = first_leaf, first_leaf + (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1 do
             assert(honest_tree:get_node(leaf, 0) == cached_tree:get_node(leaf, 0), "cache changed refinement")
         end
     end
     local first_uarch = honest:make_uarch_tree(1, 0)
     assert(first_uarch:get_root() == util.read_file(assert(arg[6])), "uarch root differs from CLI")
     first_uarch:open_bundle(0)
-    first_uarch:open_bundle((1 << (dapp_contract.geometry.uarch_height - LOG2_UARCH_BUNDLE)) - 1)
+    first_uarch:open_bundle((1 << (dapp_contract.geometry.uarch_height - LOG2_BUNDLE_UARCH_CYCLE_COUNT)) - 1)
     local rejected_uarch = honest:make_uarch_tree(2, 60000)
     rejected_uarch:open_bundle(0)
-    rejected_uarch:open_bundle((1 << (dapp_contract.geometry.uarch_height - LOG2_UARCH_BUNDLE)) - 1)
+    rejected_uarch:open_bundle((1 << (dapp_contract.geometry.uarch_height - LOG2_BUNDLE_UARCH_CYCLE_COUNT)) - 1)
     assert(
         honest:make_uarch_tree(3, 0):get_root() == cached:make_uarch_tree(3, 0):get_root(),
         "cache changed post-rejection uarch replay"
@@ -925,11 +927,12 @@ if arg[1] then
         saved_checkpoints[i] = saved
     end
     for _, period_index in ipairs({ 16, 60000, dapp_contract.geometry.periods_per_input - 1 }) do
-        local bundle = (rejected_input_index * dapp_contract.geometry.periods_per_input + period_index)
-            >> LOG2_MCYCLE_BUNDLE
-        honest_tree:open_bundle(bundle)
-        dense_tree:open_bundle(bundle)
-        for leaf = bundle << LOG2_MCYCLE_BUNDLE, (bundle << LOG2_MCYCLE_BUNDLE) + (1 << LOG2_MCYCLE_BUNDLE) - 1 do
+        local bundle_index = (rejected_input_index * dapp_contract.geometry.periods_per_input + period_index)
+            >> LOG2_BUNDLE_MCYCLE_COUNT
+        honest_tree:open_bundle(bundle_index)
+        dense_tree:open_bundle(bundle_index)
+        local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
+        for leaf = first_leaf, first_leaf + (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1 do
             assert(
                 honest_tree:get_node(leaf, 0) == dense_tree:get_node(leaf, 0),
                 "dense cache changed refinement inside the rejected input"
@@ -953,14 +956,14 @@ if arg[1] then
         uarch:open_bundle(0)
         local logs = dense:prove_state_transition(1, period, 0)
         local preceding_leaf = dapp_contract.geometry.periods_per_input + period - 1
-        dense_tree:open_bundle(preceding_leaf >> LOG2_MCYCLE_BUNDLE)
+        dense_tree:open_bundle(preceding_leaf >> LOG2_BUNDLE_MCYCLE_COUNT)
         assert(
             cartesi.machine:verify_step_uarch(dense_tree:get_node(preceding_leaf, 0), logs.step_log)
                 == uarch:get_node(0, 0),
             "cached transition does not match the uarch claim"
         )
         local reset_offset = cartesi.UARCH_CYCLE_MAX
-        uarch:open_bundle(reset_offset >> LOG2_UARCH_BUNDLE)
+        uarch:open_bundle(reset_offset >> LOG2_BUNDLE_UARCH_CYCLE_COUNT)
         local reset_logs = dense:prove_state_transition(1, period, reset_offset)
         local after_step = cartesi.machine:verify_step_uarch(uarch:get_node(reset_offset - 1, 0), reset_logs.step_log)
         assert(
@@ -1039,8 +1042,8 @@ if arg[1] then
         return clone_at_input_boundary(self, target, replay)
     end
     local last_period = dapp_contract.geometry.periods_per_input - 1
-    local chain_bundle = (2 * dapp_contract.geometry.periods_per_input + last_period) >> LOG2_MCYCLE_BUNDLE
-    chain_tree:open_bundle(chain_bundle)
+    local chain_bundle_index = (2 * dapp_contract.geometry.periods_per_input + last_period) >> LOG2_BUNDLE_MCYCLE_COUNT
+    chain_tree:open_bundle(chain_bundle_index)
     assert(lookups == 1, "reverted-tail refinement performed multiple lookups")
     assert(replay_begins == 1 and replay_ends == 1, "cache replay bypassed the epoch driver's collector lifecycle")
     assert(
@@ -1230,10 +1233,10 @@ if arg[1] then
         local tree = player:make_mcycle_tree()
         assert(tree:get_root() == expected, terminal .. " has the wrong fixed-point tail")
         tree:open_bundle(0)
-        tree:open_bundle((1 << (contract.geometry.mcycle_height - LOG2_MCYCLE_BUNDLE)) - 1)
+        tree:open_bundle((1 << (contract.geometry.mcycle_height - LOG2_BUNDLE_MCYCLE_COUNT)) - 1)
         local uarch = player:make_uarch_tree(3, 60000)
         uarch:open_bundle(0)
-        uarch:open_bundle((1 << (contract.geometry.uarch_height - LOG2_UARCH_BUNDLE)) - 1)
+        uarch:open_bundle((1 << (contract.geometry.uarch_height - LOG2_BUNDLE_UARCH_CYCLE_COUNT)) - 1)
         assert(
             counts.outer == 1 and counts.refined == 2 and counts.uarch == 3,
             "build or refinement bypassed the selected collector factory"
@@ -1244,7 +1247,7 @@ if arg[1] then
             "terminal step does not authenticate against the claim"
         )
         local reset_offset = cartesi.UARCH_CYCLE_MAX
-        uarch:open_bundle(reset_offset >> LOG2_UARCH_BUNDLE)
+        uarch:open_bundle(reset_offset >> LOG2_BUNDLE_UARCH_CYCLE_COUNT)
         local reset_logs = player:prove_state_transition(2, 60000, reset_offset)
         local after_step = cartesi.machine:verify_step_uarch(uarch:get_node(reset_offset - 1, 0), reset_logs.step_log)
         assert(

@@ -131,7 +131,7 @@ end
 -- Corruption happens only when executing or collecting the transition out of it.
 -- Each execution has private strategy state, which the cache restores on rollback.
 local function new_tamperer(geometry, inputs, cache, input_index, bundle_offset, options)
-    local offset = bundle_offset << (prt.LOG2_MCYCLE_BUNDLE + geometry.log2_mcycles_per_period)
+    local offset = bundle_offset << (prt.LOG2_BUNDLE_MCYCLE_COUNT + geometry.log2_mcycles_per_period)
     local function tamper_point(machine)
         local context = machine.state
         if context.input_index ~= input_index or context.tampered then
@@ -207,14 +207,14 @@ local function lie_about_leaf(claim, leaf, fake_hash, unbundle)
         append(self, value, prefix, height)
         if height == 0 then
             append(self, fake_hash, 1, 0)
-        elseif height == self.log2_bundle then
+        elseif height == self.bundle_height then
             -- Unbundling uses the selected factory again, now with individual
             -- leaves. Its replacement is authenticated by the ordinary tree.
             local forest = self:unbundle(self.next_leaf, height)
             append(self, hash_tree.frontier_forest_get_root_hash(forest), 1, height)
         else
-            for i = 0, (1 << (height - self.log2_bundle)) - 1 do
-                self:append(hash_tree.frontier_forest_get_node(value, i, 0), 1, self.log2_bundle)
+            for i = 0, (1 << (height - self.bundle_height)) - 1 do
+                self:append(hash_tree.frontier_forest_get_node(value, i, 0), 1, self.bundle_height)
             end
         end
         append(self, value, count - prefix - 1, height)
@@ -231,7 +231,7 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
     options.new_mcycle_computation_hash = function(g, c, machine, window)
         local claim = make_mcycle(g, c, machine, window)
         return lie_about_leaf(claim, epoch_period_index, fake_hash, function(_, first_leaf)
-            return player:refine_mcycle_claim(first_leaf >> prt.LOG2_MCYCLE_BUNDLE)
+            return player:refine_mcycle_claim(first_leaf >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
         end)
     end
     local make_uarch = options.new_uarch_computation_hash or prt.new_uarch_computation_hash
@@ -239,7 +239,11 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
         local claim = make_uarch(g, machine, window)
         if window.epoch_period_index == epoch_period_index then
             return lie_about_leaf(claim, (1 << geometry.uarch_height) - 1, fake_hash, function(_, first_leaf)
-                return player:refine_uarch_claim(input_index + 1, leaf_offset, first_leaf >> prt.LOG2_UARCH_BUNDLE)
+                return player:refine_uarch_claim(
+                    input_index + 1,
+                    leaf_offset,
+                    first_leaf >> prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT
+                )
             end)
         end
         return claim

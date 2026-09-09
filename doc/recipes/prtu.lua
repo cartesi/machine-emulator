@@ -70,16 +70,16 @@ local tree_meta = { __index = {} }
 -- that forest against the committed bundle root, and caches it. Only the bundles a dispute
 -- actually visits are ever opened, and each costs one machine re-run.
 -- docs:begin open_bundle
-function tree_meta.__index.open_bundle(tree, bundle)
-    local bundle_forest = tree.opened[bundle]
+function tree_meta.__index.open_bundle(tree, bundle_index)
+    local bundle_forest = tree.opened[bundle_index]
     if not bundle_forest then
-        bundle_forest = tree:refine(bundle)
+        bundle_forest = tree:refine(bundle_index)
         assert(
             hash_tree.frontier_forest_get_root_hash(bundle_forest)
-                == hash_tree.frontier_forest_get_node(tree.outer, bundle, 0),
+                == hash_tree.frontier_forest_get_node(tree.outer, bundle_index, 0),
             "the opened bundle does not match its committed root"
         )
-        tree.opened[bundle] = bundle_forest
+        tree.opened[bundle_index] = bundle_forest
     end
     return bundle_forest
 end
@@ -97,8 +97,8 @@ function tree_meta.__index.get_node(tree, position, height)
             height - tree.bundle_height
         )
     end
-    local bundle = position >> tree.bundle_height
-    local bundle_forest = assert(tree.opened[bundle], "claim bundle has not been opened")
+    local bundle_index = position >> tree.bundle_height
+    local bundle_forest = assert(tree.opened[bundle_index], "claim bundle has not been opened")
     return hash_tree.frontier_forest_get_node(bundle_forest, position & ((1 << tree.bundle_height) - 1), height)
 end
 -- docs:end get_tree_node
@@ -120,8 +120,8 @@ end
 function tree_meta.__index.prove(tree, index)
     local siblings = {}
     if tree.bundle_height > 0 then
-        local bundle = index >> tree.bundle_height
-        local bundle_forest = assert(tree.opened[bundle], "claim bundle has not been opened")
+        local bundle_index = index >> tree.bundle_height
+        local bundle_forest = assert(tree.opened[bundle_index], "claim bundle has not been opened")
         hash_tree.frontier_forest_get_siblings(bundle_forest, index & ((1 << tree.bundle_height) - 1), 0, siblings)
     end
     hash_tree.frontier_forest_get_siblings(tree.outer, index >> tree.bundle_height, 0, siblings)

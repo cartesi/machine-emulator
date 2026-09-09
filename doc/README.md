@@ -9950,10 +9950,11 @@ fresh fork at the transition and logging it:
                 machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
             return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
         end
+        local claim = options.new_null_computation_hash(machine)
         run_advance_state_input(
             machine,
             input_index,
-            make_null(machine),
+            claim,
             period_index * geometry.mcycles_per_period + mcycle_offset,
             revert_root_hash
         )

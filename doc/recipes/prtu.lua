@@ -906,7 +906,7 @@ local function announce_player(self, connection)
     connection.is_player = true
     for _, entry in ipairs(self.open_phases) do
         if entry.subscription_hash and entry.open then
-            self:subscribe(entry.subscription_hash, connection)
+            self:subscribe_connection(entry.subscription_hash, connection)
         end
     end
 end
@@ -998,7 +998,7 @@ accept_connections = function(self)
 end
 
 -- Subscribes a connection to events routed by a state or computation hash.
-function server_meta.__index.subscribe(self, root, connection)
+function server_meta.__index.subscribe_connection(self, root, connection)
     local set = self.subscriptions[root]
     if not set then
         set = {}
@@ -1092,7 +1092,7 @@ function server_meta.__index.accept_subscribers(self, initial_state_hash)
     self.active[entry] = true
     self.open_phases[#self.open_phases + 1] = entry
     for _, connection in ipairs(self:get_players()) do
-        self:subscribe(initial_state_hash, connection)
+        self:subscribe_connection(initial_state_hash, connection)
     end
     queue_phase_close(self, entry)
     wait(self, entry)

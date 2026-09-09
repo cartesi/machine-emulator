@@ -2828,7 +2828,44 @@ describe("cartesi-machine CLI", function()
             "--quiet",
             "--",
             "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --reject=1",
-        }, "computation hash of a rejected input requires reverts")
+        }, "rollback did not restore the input boundary")
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Plain runs without reverts abort at the first rejection
+    --
+    -- What: --revert-mode=none exists for fast runs of inputs expected to be accepted. A
+    --       rejected input cannot be reverted, so the run must fail at the rejection whether
+    --       or not another input follows, instead of delivering later inputs to a machine
+    --       stuck at the rejected yield.
+    -- How:  Feed inputs where the second is rejected, with and without a third input.
+    -- -------------------------------------------------------------------------
+    it("plain run without reverts aborts at the first rejected input", function()
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = tests_util.scope_exit(function()
+            for i = 0, 2 do
+                os.remove(prefix .. "-pnr-" .. i .. ".bin")
+            end
+        end)
+        filesystem.write_file(prefix .. "-pnr-0.bin", encode_advance(0, "ok"))
+        filesystem.write_file(prefix .. "-pnr-1.bin", encode_advance(1, "reject-me"))
+        filesystem.write_file(prefix .. "-pnr-2.bin", encode_advance(2, "never-delivered"))
+        for _, input_index_end in ipairs({ 3, 2 }) do
+            run_fail({
+                "--cmio-advance-state=input:"
+                    .. prefix
+                    .. "-pnr-%i.bin,input_index_begin:0,input_index_end:"
+                    .. input_index_end
+                    .. ",output:,rejected_output:,output_proof:,report:,outputs_merkle_root:,"
+                    .. "outputs_merkle_root_proof:",
+                "--revert-mode=none",
+                "--max-mcycle=2000000000",
+                "--no-init-splash",
+                "--quiet",
+                "--",
+                "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --reject=1",
+            }, "rollback did not restore the input boundary")
+        end
     end)
 
     -- -------------------------------------------------------------------------
@@ -2974,7 +3011,7 @@ describe("cartesi-machine CLI", function()
             "--quiet",
             "--",
             "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --reject=1",
-        }, "computation hash of a rejected input requires reverts")
+        }, "rollback did not restore the input boundary")
     end)
 
     -- -------------------------------------------------------------------------
@@ -3297,51 +3334,33 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     -- --assert-rolling-template failure path
     --
-    -- What: When the last machine state after all inputs is RX_REJECTED,
-    --       --assert-rolling-template must cause the CLI to exit with rc == 2.
-    -- How:  Run a single input with ioctl-echo-loop --reject=0 so the only
-    --       advance is rejected; assert run() returns rc == 2.
+    -- What: When the last machine state after all inputs is not an rx-accepted
+    --       yield, --assert-rolling-template must cause the CLI to exit with rc == 2.
+    -- How:  Run a single input whose processing ends in a cmio exception, which
+    --       exits with rc == 1 on its own; with the flag, run() returns rc == 2.
     -- -------------------------------------------------------------------------
     it("rollup rolling template failure", function()
         local prefix = filesystem.temp_pathname()
         local _ <close> = tests_util.scope_exit(function()
-            for _, p in ipairs({
-                prefix .. "-inrt-0.bin",
-                prefix .. "-rt-0-0.bin",
-                prefix .. "-rt-0-1.bin",
-                prefix .. "-rtrp-0-0.bin",
-                prefix .. "-rth-0.bin",
-            }) do
-                os.remove(p)
-            end
+            os.remove(prefix .. "-inrt-0.bin")
         end)
-        filesystem.write_file(prefix .. "-inrt-0.bin", encode_advance(0, "rej"))
-
-        -- ioctl-echo-loop --reject=0 rejects the first (and only) input, so
-        -- the machine ends in RX_REJECTED; --assert-rolling-template then sets exit_code=2
-        local rc = run({
+        filesystem.write_file(prefix .. "-inrt-0.bin", encode_advance(0, "boom"))
+        local flags = {
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-inrt-%i.bin,"
                 .. "input_index_begin:0,input_index_end:1,"
-                .. "output:"
-                .. prefix
-                .. "-rt-%i-%o.bin,"
-                .. "report:"
-                .. prefix
-                .. "-rtrp-%i-%o.bin,"
-                .. "outputs_merkle_root:"
-                .. prefix
-                .. "-rth-%i.bin",
+                .. "output:,report:,outputs_merkle_root:",
             "--revert-mode=none",
-            "--assert-rolling-template",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
             "--",
-            "ioctl-echo-loop --reports=1 --reject=0",
-        })
-        expect.equal(rc, 2)
+            [[rollup accept; echo '{"payload":"0x03"}' | rollup exception]],
+        }
+        expect.equal((run(flags)), 1)
+        table.insert(flags, 2, "--assert-rolling-template")
+        expect.equal((run(flags)), 2)
     end)
 
     -- -------------------------------------------------------------------------

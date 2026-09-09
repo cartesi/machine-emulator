@@ -2794,7 +2794,7 @@ describe("cartesi-machine CLI", function()
             "--quiet",
             "--",
             "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --reject=1",
-        }, "computation hash of a rejected input requires reverts")
+        }, "rollback did not restore the input boundary")
     end)
 
     -- -------------------------------------------------------------------------
@@ -2905,7 +2905,7 @@ describe("cartesi-machine CLI", function()
             "--quiet",
             "--",
             "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --reject=1",
-        }, "computation hash of a rejected input requires reverts")
+        }, "rollback did not restore the input boundary")
     end)
 
     -- -------------------------------------------------------------------------

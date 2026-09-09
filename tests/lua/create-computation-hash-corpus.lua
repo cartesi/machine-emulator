@@ -696,15 +696,16 @@ add_uarch_case({
 })
 add_uarch_case({
     id = "uarch-near-limit-tail",
-    description = "Near-limit custom revert tail is captured, reset, and reused on rejection",
+    description = "Collector setup changes the custom uarch boundary and input delivery refuses it",
     comment = expected_hash_structure(
-        "four mcycle subtree roots advance the main processor to the rejected manual yield.",
-        "The captured near-limit revert uarch tail's subtree root fills the remaining positions."
+        "none. Capturing the custom tail resets the uarch PC and changes the expected input boundary.",
+        "A direct collector test checks tail capture and reuse on rejection separately."
     ),
     template = "near-limit-uarch-tail",
     commands = { { action = "reject", terminal_mcycle = window_start + 4 } },
-    category = "success-hash",
-    terminal_mcycle = window_start + 4,
+    category = "error-no-hash",
+    stderr_contains = "revert root hash does not match the machine root hash",
+    oracle = "near-limit-uarch-tail",
     remote = true,
 })
 add_uarch_case({

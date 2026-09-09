@@ -3466,6 +3466,11 @@ local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_b
     }
 end
 
+-- A rejected input contributes its restored boundary to the computation hash.
+local function computation_hash_check_revert(_, expected_root_hash, obtained_root_hash)
+    assert(obtained_root_hash == expected_root_hash, "rollback did not restore the input boundary")
+end
+
 -- The mcycle computation hash commits to an epoch's state history. Each input occupies
 -- 2^ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE mcycles, sampled every
 -- 2^log2_mcycle_computation_hash_period mcycles, and an epoch occupies
@@ -3587,6 +3592,7 @@ local function make_mcycle_computation_hash(m, advance, runner)
         run = mcycle_computation_hash_run,
         end_input = mcycle_computation_hash_end_input,
         end_epoch = mcycle_computation_hash_end_epoch,
+        check_revert = computation_hash_check_revert,
     }
 end
 
@@ -3760,13 +3766,12 @@ local function make_uarch_cycle_computation_hash(m, advance, runner)
         run = uarch_cycle_computation_hash_run,
         end_input = uarch_cycle_computation_hash_end_input,
         end_epoch = uarch_cycle_computation_hash_end_epoch,
+        check_revert = computation_hash_check_revert,
     }
 end
 
--- The do-nothing computation hash, for an epoch that does not compute one. Its lifecycle methods are
--- no-ops and its run just delegates to the given runner (the machine itself, or gdb), so
--- run_advance_state_epoch drives every epoch through the same calls without testing whether a
--- computation hash is wanted.
+-- An epoch that does not compute a hash delegates execution to the runner and skips collector
+-- bookkeeping and reversal checks.
 local function null_computation_hash_noop() end
 local function null_computation_hash_run(self, mcycle_end) return self.runner:run(mcycle_end) end
 local function make_null_computation_hash(runner)
@@ -3777,6 +3782,7 @@ local function make_null_computation_hash(runner)
         run = null_computation_hash_run,
         end_input = null_computation_hash_noop,
         end_epoch = null_computation_hash_noop,
+        check_revert = null_computation_hash_noop,
     }
 end
 
@@ -3918,15 +3924,12 @@ local function run_advance_state_epoch(m, runner)
     if is_yielded_manual(break_reason) then
         get_and_print_yield(m, htif)
         commit(m)
-        local revert_root_hash
+        local revert_root_hash = m:get_root_hash()
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
             stderr("\nBefore input %d\n", input_index)
-            -- the claim opens the input at its boundary, before it is fed (the uarch cycle claim
-            -- collects the boundary's revert uarch tail there). Capture and snapshot that boundary
-            -- so a rejection restores the same root hash the input records. Feeding does not
-            -- advance mcycle.
+            -- Open and snapshot the input boundary. Collector setup must preserve its expected
+            -- root, which delivery checks. A rejection must restore this same boundary.
             claim:begin_input(input_index)
-            revert_root_hash = m:get_root_hash()
             snapshot(m)
             if advance.print_input_state_hashes then print_root_hash(m) end
             load_cmio_input(m, advance, revert_root_hash)
@@ -3942,14 +3945,11 @@ local function run_advance_state_epoch(m, runner)
             if is_rx_accepted(yield_reason) then
                 flush_pending_outputs(m, advance, yield_reason, data)
                 commit(m)
+                revert_root_hash = m:get_root_hash()
             elseif is_rx_rejected(yield_reason) then
-                assert(
-                    cmdline.revert_mode ~= "none"
-                        or not (advance.mcycle_computation_hash or advance.uarch_cycle_computation_hash),
-                    "the computation hash of a rejected input requires reverts"
-                )
-                flush_pending_outputs(m, advance, yield_reason, data)
                 revert(m)
+                claim:check_revert(revert_root_hash, m:get_root_hash())
+                flush_pending_outputs(m, advance, yield_reason, data)
             elseif is_tx_exception(yield_reason) then
                 -- an exception is a fixed point like a halt: report it, flush the interrupted input's
                 -- outputs as rejected, and end the epoch, leaving the machine at the exception

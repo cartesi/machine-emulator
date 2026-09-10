@@ -7,7 +7,7 @@
 -- machine state hashes sampled along the whole computation, and the dispute walks down the
 -- two trees. Claims are what matter, not players: any player may answer any event concerning
 -- any claim, every answer carries its own proof, and the referee takes the first answer that
--- verifies. An event nobody answers eliminates the claim it concerned, never a player.
+-- verifies. Unanswered events remain pending until a timeout-win or eliminate call verifies.
 --
 -- The dispute has two levels, one per cycle counter. An mcycle claim commits to the machine
 -- state hash every 2^p mcycles across the epoch (the mcycle computation hash of
@@ -24,14 +24,14 @@
 -- referee is never told how many players to expect: it accepts subscribers until a
 -- phase-closer connection closes that phase, then emits the tournament event to those
 -- subscribers. The referee sorts the claims it gathers, so the bracket and the whole narration are a pure
--- function of the claim set, not of the order in which players connect.
+-- function of the claims and prescribed responses or skips, independent of connection order.
 --   prt.lua referee  <address> <initial-state-hash> <input> [<input> ...]
 --   prt.lua honest   <address> <initial-state-hash> <input> [<input> ...]
 --   prt.lua phase_closer <address>
 --
--- The phase-closer role stays connected and closes the initial subscription phase and every
--- tournament the referee opens. The recipe starts it once every player is in, so those players
--- form the mcycle tournament's audience, and every tournament then closes as soon as it opens.
+-- The phase closer closes initial subscriptions once every player is in, then disconnects.
+-- Root and child tournaments gather their fixed audiences in a logical block and close joining
+-- at the next block. Wall-clock computation speed does not consume a protocol allowance.
 --
 -- The referee, honest player, machines, and computation hashes live here. The shared
 -- protocol, claim trees, referee server, and hidden narration live in prtu.lua.
@@ -53,8 +53,8 @@ local HTIF_TOHOST_ADDRESS = cartesi.machine:get_reg_address("htif_tohost")
 local CMIO_TX_BUFFER_ADDRESS = cartesi.AR_CMIO_TX_BUFFER_START
 
 -- The phase closer carries no dispute. It closes the initial subscription phase once the last
--- player has connected, then the claim collection of every tournament as it opens. It needs
--- none of the game geometry.
+-- player has connected. Tournament joining then uses logical time. It needs none of the
+-- game geometry.
 if arg[1] == "phase_closer" then
     return prtu.run_client(prtu.new_phase_closer(), assert(arg[2], "missing referee address"))
 end
@@ -201,7 +201,12 @@ end
 
 -- Opens a tournament to a fixed audience and partitions its valid claims under its route.
 local function open_tournament(conns, event, event_arguments, validate_submitted_claim, route)
-    return partition_claims(server:collect_claims(conns, event, event_arguments), validate_submitted_claim, route)
+    local close_block = server:request_block() + 1
+    return partition_claims(
+        server:collect_claims(conns, event, event_arguments, close_block),
+        validate_submitted_claim,
+        route
+    )
 end
 
 -- Verifies the disputed transition's logs on their own, the way the Dave contracts verify
@@ -295,6 +300,36 @@ local function validate_seal_response(tournament, match, response)
 end
 -- docs:end validate_seal_response
 
+local function validate_claim_children(children, computation_hash)
+    assert(keccak(children.computation_hash_left, children.computation_hash_right) == computation_hash)
+end
+
+-- Schedule the waiting claim's timeout response and the later elimination response.
+local function schedule_match_timeout(tournament, match)
+    local deadline = server:request_block() + 1
+    local other_turn = get_other_turn(match.turn)
+    local other_claim = match.claims[other_turn]
+    server:schedule(
+        server:get_subscribers({ routing_hash(tournament.route, other_claim) }),
+        EVENTS.schedule_timeout_win,
+        { other_claim.computation_hash },
+        deadline,
+        function(response)
+            assert(server:get_time() >= deadline and server:get_time() < deadline + 1)
+            validate_claim_children(response, other_claim.computation_hash)
+            story.report_timeout_win(match)
+            return other_turn
+        end,
+        deadline + 1
+    )
+    server:schedule(server:get_players(), EVENTS.schedule_match_elimination, {}, deadline + 1, function(response)
+        assert(server:get_time() >= deadline + 1 and response == true)
+        story.report_match_eliminated(match)
+        return 0
+    end)
+    return deadline
+end
+
 -- Settles a uarch match once the walk isolates the divergent leaf. The referee emits the
 -- disputed transition to both claims' holders and takes the first answer that verifies
 -- against the agreed state hash. The transition out of the agreed state is unique, so any log
@@ -312,11 +347,17 @@ local function settle_uarch_state_hash(
         routing_hash(tournament.route, match.claims[1]),
         routing_hash(tournament.route, match.claims[2]),
     })
+    local deadline = server:request_block() + 1
+    server:schedule(server:get_players(), EVENTS.schedule_match_elimination, {}, deadline, function(response)
+        assert(server:get_time() >= deadline and response == true)
+        return 0
+    end)
     local obtained_state_hash = server:emit(
         conns,
         EVENTS.prove_state_transition,
         { tournament.input_index, tournament.period_index, state_transition_offset },
         function(response)
+            assert(server:get_time() < deadline)
             return verify_state_transition(
                 tournament.dapp_contract,
                 current_state_hash,
@@ -326,6 +367,9 @@ local function settle_uarch_state_hash(
             )
         end
     )
+    if obtained_state_hash == 0 then
+        obtained_state_hash = nil
+    end
     story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
 end
@@ -399,8 +443,34 @@ local function settle_mcycle_state_hash(
     local uarch_tournament =
         open_uarch_tournament(mcycle_tournament, mcycle_match, epoch_period_index, agreed_state_hash, next_state_hashes)
     local uarch_winner = run_tournament(uarch_tournament)
-    story.report_uarch_result(mcycle_match, uarch_winner, next_state_hashes)
-    return uarch_winner and uarch_winner.final_state_hash
+    local deadline = server:request_block() + 1
+    local parent_claim
+    for index, claim in ipairs(mcycle_match.claims) do
+        if uarch_winner and uarch_winner.final_state_hash == next_state_hashes[index] then
+            parent_claim = claim
+        end
+    end
+    server:schedule(server:get_players(), EVENTS.schedule_child_elimination, {}, deadline, function(response)
+        assert(server:get_time() >= deadline and response == true)
+        return 0
+    end)
+    local conns = parent_claim and server:get_subscribers({ routing_hash(mcycle_tournament.route, parent_claim) }) or {}
+    local settled_state_hash = server:emit(
+        conns,
+        EVENTS.propagate_child,
+        { parent_claim and parent_claim.computation_hash },
+        function(response)
+            assert(parent_claim and server:get_time() < deadline)
+            validate_claim_children(response, parent_claim.computation_hash)
+            return uarch_winner.final_state_hash
+        end
+    )
+    if settled_state_hash == 0 and uarch_winner then
+        story.report_uarch_result_consumed(mcycle_match, uarch_winner)
+    else
+        story.report_uarch_result(mcycle_match, uarch_winner, next_state_hashes)
+    end
+    return settled_state_hash ~= 0 and settled_state_hash or nil
 end
 -- docs:end settle_mcycle_state_hash
 
@@ -424,41 +494,41 @@ local function settle_match(tournament, match, divergence)
 end
 -- docs:end settle_match
 
--- Runs one match to its end and returns the winning claim index: one or two for a winner, zero
--- when both die. Each round
--- emits each bisection turn to the on-turn claim's holders, and the walk advances on the first
--- response that validates. A claim nobody opens loses by default.
+-- Runs one match to its end. One or two names a winner, zero eliminates both.
+-- A finished audience leaves an unanswered opening pending for scheduled calls.
 -- docs:begin run_match
 local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
+        local deadline = schedule_match_timeout(tournament, match)
         local response = server:emit(
             server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
+                assert(server:get_time() < deadline)
                 return validate_bisection_response(match, response)
             end
         )
-        if not response then
-            story.report_default_win(match)
-            return get_other_turn(match.turn)
+        if type(response) == "number" then
+            return response
         end
         advance_bisection(match, response)
         story.report_match_progress(match)
     end
     local turn_claim = match.claims[match.turn]
+    local deadline = schedule_match_timeout(tournament, match)
     local divergence = server:emit(
         server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
         EVENTS.seal_divergence,
         { turn_claim.computation_hash, match.position, match.other_left_node },
         function(response)
+            assert(server:get_time() < deadline)
             return validate_seal_response(tournament, match, response)
         end
     )
-    if not divergence then
-        story.report_default_win(match)
-        return get_other_turn(match.turn)
+    if type(divergence) == "number" then
+        return divergence
     end
     return settle_match(tournament, match, divergence)
 end
@@ -474,7 +544,9 @@ local function run_matches(tournament, matches)
         server.dispatcher:spawn(function()
             match.winner = run_match(tournament, match)
             unfinished_matches = unfinished_matches - 1
-            server.dispatcher:schedule(round_coroutine, "match_done")
+            if unfinished_matches == 0 then
+                server.dispatcher:schedule(round_coroutine, "matches_done")
+            end
         end)
     end
     while unfinished_matches > 0 do
@@ -1275,8 +1347,8 @@ end
 --
 -- The handlers below produce responses to events emitted by the referee. A player follows one
 -- claim lineage: its mcycle claim, and, while that claim's match is suspended in a uarch
--- tournament, the uarch claim it committed there. The referee emits an event only to holders
--- of the claim it concerns, so an event about any other claim is a bug, and the player dies on it.
+-- tournament, the uarch claim it committed there. Computation requests go to holders
+-- of the relevant claim. Eliminate instructions need no machine and go to every player.
 ------------------------------------------------------------
 
 local handlers = {}
@@ -1289,6 +1361,42 @@ local function get_claim_tree(player, computation_hash)
         end
     end
     error("event concerns a claim this player does not hold: " .. format_short_hash(computation_hash))
+end
+
+function handlers.get_claim_children(player, computation_hash)
+    local tree = get_claim_tree(player, computation_hash)
+    local left, right = tree:get_children(0, tree.height)
+    return { computation_hash_left = left, computation_hash_right = right }
+end
+
+function handlers.propagate_child(player, computation_hash)
+    return player:get_claim_children(computation_hash)
+end
+
+function handlers.schedule_timeout_win(player, computation_hash)
+    return function()
+        return player:get_claim_children(computation_hash)
+    end
+end
+
+function handlers.schedule_child_propagation(player, computation_hash)
+    return function()
+        return player:propagate_child(computation_hash)
+    end
+end
+
+function handlers.schedule_match_elimination(player)
+    return function()
+        write_stderr("%s: returning eliminate_match\n", player.label)
+        return true
+    end
+end
+
+function handlers.schedule_child_elimination(player)
+    return function()
+        write_stderr("%s: returning eliminate_child\n", player.label)
+        return true
+    end
 end
 
 -- A claim: the computation hash's two children and the standard proof of its final state,
@@ -1716,6 +1824,7 @@ if ... == "prt" then
         new_machine_cache = new_machine_cache,
         player_handlers = handlers,
         new_match = new_match,
+        new_referee = new_referee,
         new_geometry = new_geometry,
         validate_bisection_response = validate_bisection_response,
         advance_bisection = advance_bisection,

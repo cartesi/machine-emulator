@@ -304,30 +304,29 @@ local function validate_claim_children(children, computation_hash)
     assert(keccak(children.computation_hash_left, children.computation_hash_right) == computation_hash)
 end
 
--- Schedule the waiting claim's timeout response and the later elimination response.
-local function schedule_match_timeout(tournament, match)
-    local deadline = server:request_block() + 1
+-- Requests the waiting claim's response at the timeout block.
+local function emit_timeout_win(tournament, match, deadline)
     local other_turn = get_other_turn(match.turn)
     local other_claim = match.claims[other_turn]
-    server:schedule(
+    return server:emit(
         server:get_subscribers({ routing_hash(tournament.route, other_claim) }),
         EVENTS.schedule_timeout_win,
-        { other_claim.computation_hash },
-        deadline,
+        { deadline, other_claim.computation_hash },
         function(response)
             assert(server:get_time() >= deadline and server:get_time() < deadline + 1)
             validate_claim_children(response, other_claim.computation_hash)
             story.report_timeout_win(match)
             return other_turn
-        end,
-        deadline + 1
+        end
     )
-    server:schedule(server:get_players(), EVENTS.schedule_match_elimination, {}, deadline + 1, function(response)
-        assert(server:get_time() >= deadline + 1 and response == true)
+end
+
+local function emit_match_elimination(match, deadline)
+    return server:emit(server:get_players(), EVENTS.schedule_match_elimination, { deadline }, function(response)
+        assert(server:get_time() >= deadline and response == true)
         story.report_match_eliminated(match)
         return 0
     end)
-    return deadline
 end
 
 -- Settles a uarch match once the walk isolates the divergent leaf. The referee emits the
@@ -348,11 +347,16 @@ local function settle_uarch_state_hash(
         routing_hash(tournament.route, match.claims[2]),
     })
     local deadline = server:request_block() + 1
-    server:schedule(server:get_players(), EVENTS.schedule_match_elimination, {}, deadline, function(response)
-        assert(server:get_time() >= deadline and response == true)
-        return 0
-    end)
-    local obtained_state_hash = server:emit(
+    local elimination <close> = server:emit(
+        server:get_players(),
+        EVENTS.schedule_match_elimination,
+        { deadline },
+        function(response)
+            assert(server:get_time() >= deadline and response == true)
+            return true
+        end
+    )
+    local proof <close> = server:emit(
         conns,
         EVENTS.prove_state_transition,
         { tournament.input_index, tournament.period_index, state_transition_offset },
@@ -367,8 +371,9 @@ local function settle_uarch_state_hash(
             )
         end
     )
-    if obtained_state_hash == 0 then
-        obtained_state_hash = nil
+    local obtained_state_hash = proof:wait(deadline)
+    if not obtained_state_hash then
+        elimination:wait()
     end
     story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
@@ -428,6 +433,12 @@ local function open_uarch_tournament(
 end
 -- docs:end open_uarch_tournament
 
+-- The referee already has the child result. Dave would use an emit/wait pair here.
+local function propagate_child(mcycle_match, winner, next_state_hashes)
+    story.report_uarch_result(mcycle_match, winner, next_state_hashes)
+    return winner and winner.final_state_hash
+end
+
 -- Settles an mcycle match once the walk isolates the divergent leaf: the two claims part
 -- ways over what the state hash was after one period of one input. A uarch tournament opens
 -- over that period, its holders submit uarch claims, and the uarch winner's final state settles
@@ -443,34 +454,7 @@ local function settle_mcycle_state_hash(
     local uarch_tournament =
         open_uarch_tournament(mcycle_tournament, mcycle_match, epoch_period_index, agreed_state_hash, next_state_hashes)
     local uarch_winner = run_tournament(uarch_tournament)
-    local deadline = server:request_block() + 1
-    local parent_claim
-    for index, claim in ipairs(mcycle_match.claims) do
-        if uarch_winner and uarch_winner.final_state_hash == next_state_hashes[index] then
-            parent_claim = claim
-        end
-    end
-    server:schedule(server:get_players(), EVENTS.schedule_child_elimination, {}, deadline, function(response)
-        assert(server:get_time() >= deadline and response == true)
-        return 0
-    end)
-    local conns = parent_claim and server:get_subscribers({ routing_hash(mcycle_tournament.route, parent_claim) }) or {}
-    local settled_state_hash = server:emit(
-        conns,
-        EVENTS.propagate_child,
-        { parent_claim and parent_claim.computation_hash },
-        function(response)
-            assert(parent_claim and server:get_time() < deadline)
-            validate_claim_children(response, parent_claim.computation_hash)
-            return uarch_winner.final_state_hash
-        end
-    )
-    if settled_state_hash == 0 and uarch_winner then
-        story.report_uarch_result_consumed(mcycle_match, uarch_winner)
-    else
-        story.report_uarch_result(mcycle_match, uarch_winner, next_state_hashes)
-    end
-    return settled_state_hash ~= 0 and settled_state_hash or nil
+    return propagate_child(mcycle_match, uarch_winner, next_state_hashes)
 end
 -- docs:end settle_mcycle_state_hash
 
@@ -495,13 +479,15 @@ end
 -- docs:end settle_match
 
 -- Runs one match to its end. One or two names a winner, zero eliminates both.
--- A finished audience leaves an unanswered opening pending for scheduled calls.
+-- Each move has its own future, followed by explicit timeout and elimination waits.
 -- docs:begin run_match
 local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
-        local deadline = schedule_match_timeout(tournament, match)
-        local response = server:emit(
+        local deadline = server:request_block() + 1
+        local timeout <close> = emit_timeout_win(tournament, match, deadline)
+        local elimination <close> = emit_match_elimination(match, deadline + 1)
+        local reveal <close> = server:emit(
             server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
@@ -510,25 +496,32 @@ local function run_match(tournament, match)
                 return validate_bisection_response(match, response)
             end
         )
-        if type(response) == "number" then
-            return response
+        local response = reveal:wait(deadline)
+        if not response then
+            return timeout:wait(deadline + 1) or elimination:wait()
         end
         advance_bisection(match, response)
         story.report_match_progress(match)
     end
-    local turn_claim = match.claims[match.turn]
-    local deadline = schedule_match_timeout(tournament, match)
-    local divergence = server:emit(
-        server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
-        EVENTS.seal_divergence,
-        { turn_claim.computation_hash, match.position, match.other_left_node },
-        function(response)
-            assert(server:get_time() < deadline)
-            return validate_seal_response(tournament, match, response)
+    local divergence
+    do
+        local turn_claim = match.claims[match.turn]
+        local deadline = server:request_block() + 1
+        local timeout <close> = emit_timeout_win(tournament, match, deadline)
+        local elimination <close> = emit_match_elimination(match, deadline + 1)
+        local seal <close> = server:emit(
+            server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
+            EVENTS.seal_divergence,
+            { turn_claim.computation_hash, match.position, match.other_left_node },
+            function(response)
+                assert(server:get_time() < deadline)
+                return validate_seal_response(tournament, match, response)
+            end
+        )
+        divergence = seal:wait(deadline)
+        if not divergence then
+            return timeout:wait(deadline + 1) or elimination:wait()
         end
-    )
-    if type(divergence) == "number" then
-        return divergence
     end
     return settle_match(tournament, match, divergence)
 end
@@ -688,16 +681,17 @@ verify_output = util.protect(verify_output)
 -- docs:begin wait_for_result
 local function wait_for_result(tournament, winner)
     local conns = server:get_subscribers({ routing_hash(tournament.route, winner) })
-    local outputs_merkle_root = server:emit(conns, EVENTS.prove_outputs_merkle_root, {}, function(response)
+    local root_proof <close> = server:emit(conns, EVENTS.prove_outputs_merkle_root, {}, function(response)
         return verify_outputs_merkle_root(response, winner.final_state_hash)
     end)
+    local outputs_merkle_root = root_proof:wait(server:request_block() + 1)
     if not outputs_merkle_root then
         return story.report_result(nil)
     end
-    local result = server:emit(conns, EVENTS.prove_output, {}, function(response)
+    local output_proof <close> = server:emit(conns, EVENTS.prove_output, {}, function(response)
         return verify_output(response, outputs_merkle_root) and response
     end)
-    story.report_result(result)
+    story.report_result(output_proof:wait(server:request_block() + 1))
 end
 -- docs:end wait_for_result
 
@@ -1369,32 +1363,15 @@ function handlers.get_claim_children(player, computation_hash)
     return { computation_hash_left = left, computation_hash_right = right }
 end
 
-function handlers.propagate_child(player, computation_hash)
-    return player:get_claim_children(computation_hash)
-end
-
-function handlers.schedule_timeout_win(player, computation_hash)
+function handlers.schedule_timeout_win(player, _, computation_hash)
     return function()
         return player:get_claim_children(computation_hash)
-    end
-end
-
-function handlers.schedule_child_propagation(player, computation_hash)
-    return function()
-        return player:propagate_child(computation_hash)
     end
 end
 
 function handlers.schedule_match_elimination(player)
     return function()
         write_stderr("%s: returning eliminate_match\n", player.label)
-        return true
-    end
-end
-
-function handlers.schedule_child_elimination(player)
-    return function()
-        write_stderr("%s: returning eliminate_child\n", player.label)
         return true
     end
 end

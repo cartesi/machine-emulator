@@ -9790,7 +9790,7 @@ local function run_match(tournament, match)
         local timeout <close> = emit_timeout_win(tournament, match, deadline)
         local elimination <close> = emit_match_elimination(match, deadline + 1)
         local reveal <close> = server:emit(
-            server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
+            server:get_subscribers({ subscription_hash(tournament.id, turn_claim) }),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
@@ -9812,7 +9812,7 @@ local function run_match(tournament, match)
         local timeout <close> = emit_timeout_win(tournament, match, deadline)
         local elimination <close> = emit_match_elimination(match, deadline + 1)
         local seal <close> = server:emit(
-            server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
+            server:get_subscribers({ subscription_hash(tournament.id, turn_claim) }),
             EVENTS.seal_divergence,
             { turn_claim.computation_hash, match.position, match.other_left_node },
             function(response)
@@ -9928,8 +9928,8 @@ local function settle_uarch_state_hash(
     next_state_hashes
 )
     local conns = server:get_subscribers({
-        routing_hash(tournament.route, match.claims[1]),
-        routing_hash(tournament.route, match.claims[2]),
+        subscription_hash(tournament.id, match.claims[1]),
+        subscription_hash(tournament.id, match.claims[2]),
     })
     local deadline = server:request_block() + 1
     local elimination <close> = server:emit(

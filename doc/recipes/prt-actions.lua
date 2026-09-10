@@ -1,10 +1,10 @@
 -- Each player keeps callbacks for responses due on later blocks.
 local actions = { __index = {} }
 
-function actions.__index.schedule(self, id, block, expires, respond)
+function actions.__index.schedule(self, id, block, respond)
     assert(math.type(id) == "integer" and math.type(block) == "integer")
     self:cancel(id)
-    self.pending[#self.pending + 1] = { id = id, block = block, expires = expires, respond = respond }
+    self.pending[#self.pending + 1] = { id = id, block = block, respond = respond }
 end
 
 function actions.__index.cancel(self, id)
@@ -23,12 +23,6 @@ function actions.__index.advance(self, block)
         return a.block < b.block or (a.block == b.block and a.id < b.id)
     end)
     local responses = {}
-    for index = #self.pending, 1, -1 do
-        local pending = self.pending[index]
-        if pending.expires and block >= pending.expires then
-            table.remove(self.pending, index)
-        end
-    end
     while self.pending[1] and self.pending[1].block <= block do
         local pending = table.remove(self.pending, 1)
         responses[#responses + 1] = { id = pending.id, value = pending.respond() }

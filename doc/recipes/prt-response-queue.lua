@@ -1,13 +1,13 @@
 -- Each player keeps callbacks for responses due on later blocks.
-local actions = { __index = {} }
+local response_queue = { __index = {} }
 
-function actions.__index.schedule(self, id, block, respond)
+function response_queue.__index.schedule(self, id, block, respond)
     assert(math.type(id) == "integer" and math.type(block) == "integer")
     self:cancel(id)
     self.pending[#self.pending + 1] = { id = id, block = block, respond = respond }
 end
 
-function actions.__index.cancel(self, id)
+function response_queue.__index.cancel(self, id)
     for index, pending in ipairs(self.pending) do
         if pending.id == id then
             table.remove(self.pending, index)
@@ -16,7 +16,7 @@ function actions.__index.cancel(self, id)
     end
 end
 
-function actions.__index.advance(self, block)
+function response_queue.__index.advance(self, block)
     assert(math.type(block) == "integer" and block > self.block, "time must advance")
     self.block = block
     table.sort(self.pending, function(a, b)
@@ -31,5 +31,5 @@ function actions.__index.advance(self, block)
 end
 
 return function()
-    return setmetatable({ pending = {}, block = -1 }, actions)
+    return setmetatable({ pending = {}, block = -1 }, response_queue)
 end

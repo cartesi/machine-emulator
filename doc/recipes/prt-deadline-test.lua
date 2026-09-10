@@ -1,4 +1,4 @@
--- Deadline regressions exercise the real referee, player executor, and transport.
+-- Deadline regressions exercise the real referee, player handlers, and transport.
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
 local prt = require("prt")
@@ -50,7 +50,7 @@ return function(run_with_server)
             end
         end)
         assert(not ok and err:find("would block forever") and not resumed)
-        assert(next(server.active), "an unanswered obligation completed without a response")
+        assert(next(server.active), "an unanswered future completed without a response")
     end
 
     -- Route premature, expired, forged, and duplicate responses to independent waiters.
@@ -123,7 +123,7 @@ return function(run_with_server)
                 server.dispatcher:step()
             end
         end
-        assert(resumed[1] == 5 and resumed[2] == 6 and not next(server.active) and not next(server.routes))
+        assert(resumed[1] == 5 and resumed[2] == 6 and not next(server.active) and not next(server.scheduled_responses))
         local early, late = false, false
         for _, check in ipairs(checked) do
             early = early or check[2] == 1
@@ -207,7 +207,7 @@ return function(run_with_server)
             timeout:close()
             assert(not pcall(timeout.wait, timeout), "a closed future accepted a wait")
         end
-        assert(not next(server.active) and not next(server.routes), "closed futures retained pending work")
+        assert(not next(server.active) and not next(server.scheduled_responses), "closed futures retained pending work")
     end)
 
     -- A block waits for every audience before releasing any ordinary response.
@@ -398,12 +398,12 @@ return function(run_with_server)
     local function scenario(mode, reverse)
         reports = {}
         local schedules, cancellations, proof_checks, stale_checks = {}, {}, 0, 0
-        local opening_blocks, unrelated_calls = {}, 0
+        local opening_blocks, unrelated_responses = {}, 0
         local players = {}
         local finals = { after, keccak("false final") }
         if mode == "concurrent" then
             finals[3], finals[4] = keccak("third final"), keccak("fourth final")
-        elseif mode == "child_inactive" then
+        elseif mode == "uarch_inactive" then
             finals[3], finals[4] = after, after
         end
         for index, final in ipairs(finals) do
@@ -422,7 +422,7 @@ return function(run_with_server)
             end
             players[index] = player
         end
-        if mode == "child_inactive" then
+        if mode == "uarch_inactive" then
             local ordered = { players[1].make_mcycle_tree():get_root(), players[2].make_mcycle_tree():get_root() }
             table.sort(ordered, function(a, b)
                 return cartesi.tohex(a) < cartesi.tohex(b)
@@ -505,7 +505,7 @@ return function(run_with_server)
                     end
                     local proof_deadline = block + 1
                     -- Ordinary validators themselves reject at exact expiry,
-                    -- even when a call lies about its eligibility and timestamp.
+                    -- even when a response lies about its eligibility and timestamp.
                     local holder = request == "prove_state_transition" and players[1]
                     if request == "reveal_bisection" or request == "seal_divergence" then
                         for _, player in ipairs(players) do
@@ -560,40 +560,40 @@ return function(run_with_server)
                             or (mode == "timeout_seal" and opening and request == "seal_divergence")
                             or ((mode == "eliminate" or mode == "concurrent") and opening)
                             or (mode == "leaf_expiry" and request == "prove_state_transition")
-                            or (mode == "child_inactive" and index >= 3 and opening and player.uarch_claim)
+                            or (mode == "uarch_inactive" and index >= 3 and opening and player.uarch_claim)
                         then
                             return cartesi.tojson({ skip = true }, -1)
                         end
                         if
                             request == "commit_uarch_claim"
                             and (
-                                mode == "empty_child"
-                                or ((mode == "child" or mode == "child_without_holder") and index == 2)
+                                mode == "empty_uarch"
+                                or ((mode == "uarch" or mode == "uarch_without_holder") and index == 2)
                             )
                         then
                             return cartesi.tojson({ skip = true }, -1)
                         end
                     end
                     local encoded, done = prtu.answer_event(player, line)
-                    if mode == "child_without_holder" and index == 1 and event.operation == "commit_uarch_claim" then
+                    if mode == "uarch_without_holder" and index == 1 and event.operation == "commit_uarch_claim" then
                         return encoded, true
                     end
                     if event.operation == "advance_time" then
                         local response = cartesi.fromjson(encoded)
                         local kept = {}
                         for _, reply in ipairs(response.value) do
-                            local route = server.routes[reply.id]
-                            local timeout = route.event == prtu.EVENTS.schedule_timeout_win
+                            local future = server.scheduled_responses[reply.id]
+                            local timeout = future.event == prtu.EVENTS.schedule_timeout_win
                             local suppress = mode == "eliminate"
                                 or mode == "concurrent"
-                                or (mode == "child_inactive" and index >= 3)
+                                or (mode == "uarch_inactive" and index >= 3)
                             if not (suppress and timeout) then
                                 kept[#kept + 1] = reply
                                 if not timeout then
                                     kept[#kept + 1] = copy(reply)
                                 end
-                                if index == 1 and route.event == prtu.EVENTS.schedule_match_elimination then
-                                    unrelated_calls = unrelated_calls + 1
+                                if index == 1 and future.event == prtu.EVENTS.schedule_match_elimination then
+                                    unrelated_responses = unrelated_responses + 1
                                 end
                             end
                         end
@@ -612,7 +612,7 @@ return function(run_with_server)
                 return prtu.answer_event(prtu.new_phase_closer(), line)
             end, true)
             prt.new_referee({ geometry = geometry, initial_state_hash = initial, inputs = {} }):run(server)
-            assert(#server.open_phases == 0 and not next(server.routes))
+            assert(#server.open_phases == 0 and not next(server.scheduled_responses))
             assert(server.phase_closer.dead, "phase closer stayed necessary after subscriptions")
         end)
         local winner, timeouts, eliminated = nil, 0, 0
@@ -623,15 +623,15 @@ return function(run_with_server)
                 local previous = reports[index - 1]
                 assert(
                     previous[2].level == "uarch" and previous.block == report.block,
-                    "child propagation waited after the child finished"
+                    "uarch result propagation waited after the tournament finished"
                 )
             end
             if report[1] == "report_winner" then
                 winner = report[2]
             elseif report[1] == "report_timeout_win" then
                 timeouts = timeouts + 1
-            elseif report[1] == "report_uarch_result" and mode == "empty_child" then
-                assert(not report[3], "an empty child was reported as having a winner")
+            elseif report[1] == "report_uarch_result" and mode == "empty_uarch" then
+                assert(not report[3], "an empty uarch tournament was reported as having a winner")
             elseif report[1] == "report_match_eliminated" then
                 eliminated = eliminated + 1
             end
@@ -644,16 +644,16 @@ return function(run_with_server)
             if mode == "concurrent" then
                 assert(#opening_blocks == 2 and opening_blocks[1] == opening_blocks[2])
             end
-        elseif mode == "empty_child" or mode == "leaf_expiry" then
-            assert(not winner, "an unavailable child result propagated")
+        elseif mode == "empty_uarch" or mode == "leaf_expiry" then
+            assert(not winner, "an unavailable uarch result propagated")
         else
-            assert(winner and winner.final_state_hash == after, "wrong child winner propagated")
+            assert(winner and winner.final_state_hash == after, "wrong uarch winner propagated")
         end
-        if mode == "proof" or mode == "leaf_expiry" or mode == "child_inactive" then
+        if mode == "proof" or mode == "leaf_expiry" or mode == "uarch_inactive" then
             assert(proof_checks == 1 and stale_checks > 0)
         end
-        if mode == "child_inactive" then
-            assert(unrelated_calls == 1 and eliminated == 1, "honest lineage left an unrelated child match pending")
+        if mode == "uarch_inactive" then
+            assert(unrelated_responses == 1 and eliminated == 1, "honest lineage left an unrelated uarch match pending")
         end
         for id, count in pairs(schedules) do
             assert(cancellations[id] == count, "completion did not cancel each scheduled response exactly once")
@@ -667,10 +667,10 @@ return function(run_with_server)
         "timeout_seal",
         "eliminate",
         "concurrent",
-        "child_inactive",
-        "child",
-        "empty_child",
-        "child_without_holder",
+        "uarch_inactive",
+        "uarch",
+        "empty_uarch",
+        "uarch_without_holder",
         "proof",
         "leaf_expiry",
     }) do

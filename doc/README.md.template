@@ -5400,10 +5400,10 @@ At height 1 a separate sealing response exposes the divergent leaves and proves 
 ```
 These functions are pure, so the walk is checked on synthetic claim trees, differing at one chosen leaf, before any machine is involved.
 The match itself is the loop that asks the holders of the on-turn claim to open its node, takes the first response that validates, and hands the isolated divergence over.
-An unanswered opening waits for a valid timeout-win or eliminate call:
+An unanswered opening waits for a valid timeout-win or elimination response.
 ```{.lua key=prt_run_match include=prt.lua/run_match title="prt.lua (excerpt)"}
 ```
-The walk converges on the leftmost divergent leaf, which is what makes the leaf before it agreed by both. The final response must prove that state even when a right-leaf divergence also exposed it as the left leaf. A missing or invalid final response has the same timeout-win and eliminate windows as an earlier bisection response, so settlement always receives a proved agreed state.
+The walk converges on the leftmost divergent leaf, which is what makes the leaf before it agreed by both. The final response must prove that state even when a right-leaf divergence also exposed it as the left leaf. A missing or invalid final response has the same timeout-win and elimination windows as an earlier bisection response, so settlement always receives a proved agreed state.
 
 ### Settling a match
 
@@ -5411,7 +5411,7 @@ An mcycle match settles into a uarch tournament.
 The two claims part ways over what the state hash was after one period of one input, so each side must now defend a uarch claim over that period, whose final state is the mcycle leaf it committed to.
 The uarch tournament follows the same lifecycle as the mcycle one, open, submit, run, with two differences: its audience is the holders of the two disputed claims, and a claim may only join if its final state is one of the two contested values, the same restriction `validContestedFinalState` imposes on chain (`open_uarch_tournament`).
 The uarch winner's final state names the mcycle claim that survives.
-`propagate_child` applies that result directly, or eliminates both parent claims if the child has no winner.
+`propagate_uarch_result` applies that result directly, or eliminates both mcycle claims if the uarch tournament has no winner.
 Dave would use an emit/wait pair at this point to request the propagation transaction.
 The Lua referee already has the result and needs no further player response.
 ```{.lua key=prt_settle_mcycle_state_hash include=prt.lua/settle_mcycle_state_hash title="prt.lua (excerpt)"}
@@ -5464,13 +5464,13 @@ Each player receives one `advance_time` request per block.
 The returned responses are decoded with their original event schemas and routed to validators on pending events.
 An accepted response can resume only the coroutine waiting on its own future.
 A result accepted before that wait remains available in the future.
-A malformed current response or invalid proof finishes that player's request without satisfying the obligation.
+A malformed current response or invalid proof finishes that player's request without resolving its future.
 A valid JSON response arriving with no request in flight is ignored and leaves the connection open.
 It cannot close a phase or satisfy a later request. Malformed JSON closes the connection.
 A connected peer that never replies still stalls the barrier.
 
 The referee in `prt.lua` defines and enforces the windows.
-An opening requested in block b is valid during b, the waiting claim may call for a timeout win in [b + 1, b + 2), and anyone may eliminate both claims from b + 2.
+An opening requested in block b is valid during b, a holder of the waiting claim may respond to claim a timeout win in [b + 1, b + 2), and anyone may eliminate both claims from b + 2.
 A valid opening ends the scope of its timeout and elimination futures, cancelling their pending callbacks. The next opening emits new requests.
 At a sealed uarch leaf both sides share one block to prove the transition.
 At its deadline, anyone may eliminate both.
@@ -5478,16 +5478,16 @@ Every validator checks authoritative server time, arguments, and proofs.
 Scheduling a response does not make it valid, and expiry alone never eliminates a claim.
 Timeout winners supply the winning claim's root children from the player's local tree, which the referee verifies against that claim.
 
-An mcycle match has no local timeout while its child tournament runs.
-After joining closes and all child matches resolve, `propagate_child` immediately settles the parent from the child result.
-A child winner confirms the matching parent claim, even if its holder has disconnected.
-A child with no winner eliminates both parent claims.
-The Lua model has no propagation window or child-result elimination request.
+An mcycle match has no local timeout while its uarch tournament runs.
+After claim collection closes and all uarch matches resolve, `propagate_uarch_result` immediately settles the mcycle match from the uarch result.
+A uarch winner confirms the matching mcycle claim, even if its holder has disconnected.
+A uarch tournament with no winner eliminates both mcycle claims.
+The Lua model has no propagation window or uarch-result elimination request.
 Output-root verification and optional output offers retain their separate proof requests.
-Each waits through its ordinary response block, so missing output proofs end the demonstration without eliminating the root winner.
+Each waits through its ordinary response block, so missing output proofs end the demonstration without eliminating the mcycle winner.
 
 The phase closer only closes initial subscriptions, where an external signal is needed because players connect over wall-clock time.
-Root and nested tournaments gather claims from fixed audiences in their opening block and close joining at the next logical block.
+Mcycle and uarch tournaments gather claims from fixed audiences in their opening block and close claim collection at the next logical block.
 Empty blocks jump to the next supplied deadline, without sleeps or artificial waiting.
 This logical tick loop demonstrates delayed responses without putting contract-call instructions into the referee or player.
 A blockchain bridge will translate complete contract instructions into these named player events and assemble transactions from their responses.
@@ -5521,7 +5521,7 @@ Two fabulists run, lying about different samples, so they dispute each other too
 To run the tournament, start the referee with the epoch's initial state hash and input files.
 ```{.lua key=prt_test_src include=prt-test.lua replace=null}
 ```
-```{.lua key=prt_actions_src include=prt-actions.lua replace=null}
+```{.lua key=prt_response_queue_src include=prt-response-queue.lua replace=null}
 ```
 ```{.lua key=prt_clock_src include=prt-clock.lua replace=null}
 ```
@@ -5529,10 +5529,10 @@ To run the tournament, start the referee with the epoch's initial state hash and
 ```
 ```{.lua key=prt_deadline_test_src include=prt-deadline-test.lua replace=null}
 ```
-```{.lua key=prt_time_test depends=prt_time_test_src,prt_actions_src,prt_clock_src replace=null}
+```{.lua key=prt_time_test depends=prt_time_test_src,prt_response_queue_src,prt_clock_src replace=null}
 assert(require("prt-time-test"))
 ```
-```{.bash key=prt_protocol_test depends=prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_actions_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
+```{.bash key=prt_protocol_test depends=prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_response_queue_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
 lua5.4 "$RECIPES_DIR/prt-test.lua"
 ```
 ```{.bash key=prt_uch vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode outputs=uch.bin replace=null}
@@ -5540,7 +5540,7 @@ ln -sf $rolling_calc_encode/input-[012].bin .
 cartesi-machine --no-init-splash --remote-address=127.0.0.1:0 --remote-spawn --remote-shutdown --load="$tmpl" \
     --cmio-advance-state=input_index_begin:0,input_index_end:3,log2_mcycle_computation_hash_period:10,uarch_cycle_computation_hash:uch.bin,mcycle_period_index:0
 ```
-```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,uch->prt_uch/uch.bin/path depends=prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_actions_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
+```{.bash key=prt_test vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,uch->prt_uch/uch.bin/path depends=prt_test_src,prt_deadline_test_src,prt_time_test_src,prt_response_queue_src,prt_clock_src,prt_runs_node,prt_build_mcycle_claim,prt_dishonest_src replace=null}
 initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
 local machine <close> = cartesi.machine("'"$tmpl"'")
 io.write(cartesi.tohex(machine:get_root_hash()))')
@@ -5631,7 +5631,7 @@ while ! players_in 7; do sleep 1; done
 lua5.4 prt-dishonest.lua quitter 127.0.0.1:8096 "$initial_state_hash" --seed=quitter-420 \
     input-0.bin input-1.bin input-2.bin > /dev/null 2> quitter_ff.stderr &
 while ! players_in 8; do sleep 1; done
-# Every player is in. Close initial subscriptions; tournament joining uses logical blocks.
+# Every player is in. Close initial subscriptions. Claim collection uses logical blocks.
 {
 lua5.4 prt.lua phase_closer 127.0.0.1:8096
 } > /dev/null 2> phase_closer.stderr &
@@ -5653,9 +5653,9 @@ assert(#hashes == 8)
 assert(hashes[7] == "0xfea70cde9dcec33b555c3a44214ec4e36ed78f7efb9446a72ce1c71312209e9b")
 assert(hashes[8] == "0xffdd2c53cdde93fadac678986a7a845dfa488e14a5092e134a612f7ce97d914c")
 for i = 1, 6 do assert(hashes[i] < hashes[7]) end'
-# The honest player returns the unrelated pair's call; duplicates resolve it only once.
+# The honest player returns the unrelated pair's elimination response. Duplicates resolve it only once.
 grep -q "honest: returning eliminate_match" honest.stderr
-[ "$(grep -c 'An eliminate call removes both inactive claims' match_4)" -eq 1 ]
+[ "$(grep -c 'An elimination response removes both inactive claims' match_4)" -eq 1 ]
 # The referee narrates each match into its own file. Reduce each long walk to its ends.
 for m in 2 3 5 6; do
     { head -n 3 match_$m; echo ...; tail -n 6 match_$m; } > match_${m}_elided
@@ -5727,12 +5727,12 @@ The referee sorts the claims and reduces them round by round, the matches of a r
 ```
 
 The quitter's claim sorts first and meets the tamperer in match 1.
-The quitter has already closed its connection. Its opening goes unanswered, and the tamperer returns a timeout-win call at the next block:
+The quitter has already closed its connection. Its opening goes unanswered, and the tamperer returns a timeout-win response at the next block.
 ```{replace=prt_run/match_1}
 ```
 
 The two additional quitters meet in match 4.
-Both have left, so nobody claims a timeout win. At the eliminate deadline the honest player returns the permissionless call while defending its own claim in match 3.
+Both have left, so nobody claims a timeout win. At the elimination deadline the honest player returns the elimination response while defending its own claim in match 3.
 Duplicate attempts cannot resolve the match twice, and neither quitter survives into the next round:
 ```{replace=prt_run/match_4}
 ```
@@ -5762,8 +5762,8 @@ The second fabulist meets the honest player in the final, where its lie, a sampl
 ```
 ```{replace=prt_run/match_6_1_elided}
 ```
-The dishonest claims fell to timeout-win and eliminate calls, a uarch reset, an input inclusion, and an ordinary uarch step.
-The honest player defended its claim in two of the six mcycle matches and also returned the unrelated quitter pair's eliminate call.
+The dishonest claims fell to timeout-win and elimination responses, a uarch reset, an input inclusion, and an ordinary uarch step.
+The honest player defended its claim in two of the six mcycle matches and also returned the unrelated quitter pair's elimination response.
 Dishonest players settled the other contested computations by defending the truth where their own lies did not reach.
 
 The winning claim commits to the epoch's final state hash, which in turn commits to the outputs Merkle root.

@@ -749,7 +749,7 @@ local function new_server(address)
         dispatcher = new_dispatcher(),
         listener = address and assert(socket.bind(host, tonumber(port))),
         connections = {},
-        subscriptions = {}, -- routing hash -> set of connections interested in defending it
+        subscriptions = {}, -- subscription hash -> set of interested connections
         active = {}, -- set of events whose coroutines are waiting
         clock = new_clock(),
         ordinary = {}, -- requests for the next ordinary block
@@ -1003,21 +1003,21 @@ accept_connections = function(self)
     end)
 end
 
--- Subscribes a connection to events routed by a state or computation hash.
-function server_meta.__index.subscribe_connection(self, root, connection)
-    local set = self.subscriptions[root]
+-- Subscribes a connection under the given hash.
+function server_meta.__index.subscribe_connection(self, hash, connection)
+    local set = self.subscriptions[hash]
     if not set then
         set = {}
-        self.subscriptions[root] = set
+        self.subscriptions[hash] = set
     end
     set[connection] = true
 end
 
--- The live connections subscribed to any of the given routing hashes.
-function server_meta.__index.get_subscribers(self, roots)
+-- The live connections subscribed to any of the given subscription hashes.
+function server_meta.__index.get_subscribers(self, hashes)
     local seen, list = {}, {}
-    for _, root in ipairs(roots) do
-        local set = self.subscriptions[root]
+    for _, hash in ipairs(hashes) do
+        local set = self.subscriptions[hash]
         if set then
             for connection in pairs(set) do
                 if not connection.dead and not seen[connection] then
@@ -1335,6 +1335,7 @@ end
 function server_meta.__index.run(self, main)
     self.dispatcher:spawn(function()
         main()
+        assert(not next(self.active), "referee finished with pending requests")
         self:collect(nil, EVENTS.finish, {})
         self.done = true
     end)

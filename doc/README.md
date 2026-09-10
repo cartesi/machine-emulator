@@ -9786,8 +9786,10 @@ timeout-win or eliminate call:
 local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
-        local deadline = schedule_match_timeout(tournament, match)
-        local response = server:emit(
+        local deadline = server:request_block() + 1
+        local timeout <close> = emit_timeout_win(tournament, match, deadline)
+        local elimination <close> = emit_match_elimination(match, deadline + 1)
+        local reveal <close> = server:emit(
             server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
@@ -9796,25 +9798,32 @@ local function run_match(tournament, match)
                 return validate_bisection_response(match, response)
             end
         )
-        if type(response) == "number" then
-            return response
+        local response = reveal:wait(deadline)
+        if not response then
+            return timeout:wait(deadline + 1) or elimination:wait()
         end
         advance_bisection(match, response)
         story.report_match_progress(match)
     end
-    local turn_claim = match.claims[match.turn]
-    local deadline = schedule_match_timeout(tournament, match)
-    local divergence = server:emit(
-        server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
-        EVENTS.seal_divergence,
-        { turn_claim.computation_hash, match.position, match.other_left_node },
-        function(response)
-            assert(server:get_time() < deadline)
-            return validate_seal_response(tournament, match, response)
+    local divergence
+    do
+        local turn_claim = match.claims[match.turn]
+        local deadline = server:request_block() + 1
+        local timeout <close> = emit_timeout_win(tournament, match, deadline)
+        local elimination <close> = emit_match_elimination(match, deadline + 1)
+        local seal <close> = server:emit(
+            server:get_subscribers({ routing_hash(tournament.route, turn_claim) }),
+            EVENTS.seal_divergence,
+            { turn_claim.computation_hash, match.position, match.other_left_node },
+            function(response)
+                assert(server:get_time() < deadline)
+                return validate_seal_response(tournament, match, response)
+            end
+        )
+        divergence = seal:wait(deadline)
+        if not divergence then
+            return timeout:wait(deadline + 1) or elimination:wait()
         end
-    )
-    if type(divergence) == "number" then
-        return divergence
     end
     return settle_match(tournament, match, divergence)
 end
@@ -9838,7 +9847,11 @@ differences: its audience is the holders of the two disputed claims, and
 a claim may only join if its final state is one of the two contested
 values, the same restriction `validContestedFinalState` imposes on chain
 (`open_uarch_tournament`). The uarch winner’s final state names the
-mcycle claim that survives:
+mcycle claim that survives. `propagate_child` applies that result
+directly, or eliminates both parent claims if the child has no winner.
+Dave would use an emit/wait pair at this point to request the
+propagation transaction. The Lua referee already has the result and
+needs no further player response.
 
 ``` lua
 local function settle_mcycle_state_hash(
@@ -9851,34 +9864,7 @@ local function settle_mcycle_state_hash(
     local uarch_tournament =
         open_uarch_tournament(mcycle_tournament, mcycle_match, epoch_period_index, agreed_state_hash, next_state_hashes)
     local uarch_winner = run_tournament(uarch_tournament)
-    local deadline = server:request_block() + 1
-    local parent_claim
-    for index, claim in ipairs(mcycle_match.claims) do
-        if uarch_winner and uarch_winner.final_state_hash == next_state_hashes[index] then
-            parent_claim = claim
-        end
-    end
-    server:schedule(server:get_players(), EVENTS.schedule_child_elimination, {}, deadline, function(response)
-        assert(server:get_time() >= deadline and response == true)
-        return 0
-    end)
-    local conns = parent_claim and server:get_subscribers({ routing_hash(mcycle_tournament.route, parent_claim) }) or {}
-    local settled_state_hash = server:emit(
-        conns,
-        EVENTS.propagate_child,
-        { parent_claim and parent_claim.computation_hash },
-        function(response)
-            assert(parent_claim and server:get_time() < deadline)
-            validate_claim_children(response, parent_claim.computation_hash)
-            return uarch_winner.final_state_hash
-        end
-    )
-    if settled_state_hash == 0 and uarch_winner then
-        story.report_uarch_result_consumed(mcycle_match, uarch_winner)
-    else
-        story.report_uarch_result(mcycle_match, uarch_winner, next_state_hashes)
-    end
-    return settled_state_hash ~= 0 and settled_state_hash or nil
+    return propagate_child(mcycle_match, uarch_winner, next_state_hashes)
 end
 ```
 
@@ -9946,11 +9932,16 @@ local function settle_uarch_state_hash(
         routing_hash(tournament.route, match.claims[2]),
     })
     local deadline = server:request_block() + 1
-    server:schedule(server:get_players(), EVENTS.schedule_match_elimination, {}, deadline, function(response)
-        assert(server:get_time() >= deadline and response == true)
-        return 0
-    end)
-    local obtained_state_hash = server:emit(
+    local elimination <close> = server:emit(
+        server:get_players(),
+        EVENTS.schedule_match_elimination,
+        { deadline },
+        function(response)
+            assert(server:get_time() >= deadline and response == true)
+            return true
+        end
+    )
+    local proof <close> = server:emit(
         conns,
         EVENTS.prove_state_transition,
         { tournament.input_index, tournament.period_index, state_transition_offset },
@@ -9965,8 +9956,9 @@ local function settle_uarch_state_hash(
             )
         end
     )
-    if obtained_state_hash == 0 then
-        obtained_state_hash = nil
+    local obtained_state_hash = proof:wait(deadline)
+    if not obtained_state_hash then
+        elimination:wait()
     end
     story.report_state_transition(tournament, match, state_transition_offset, obtained_state_hash, next_state_hashes)
     return obtained_state_hash
@@ -10010,19 +10002,29 @@ fresh fork at the transition and logging it:
 Each player answers typed requests in a blocking loop (`run_client` in
 `prtu.lua`). It owns its machines and claims. Scheduling handlers return
 callbacks that produce responses on later blocks. The event table names
-each operation, including `reveal_bisection`, `seal_divergence`,
-`prove_state_transition`, and `propagate_child`. `schedule_timeout_win`,
-`schedule_match_elimination`, and `schedule_child_elimination` prepare
-the corresponding responses. `prtu.lua` keeps the callbacks in a private
-queue and invokes them when `advance_time` supplies a strictly newer
-block. It correlates their responses with the waiting referee and
-cancels remaining callbacks when that request resolves. Ordinary events
-pass computation arguments directly to the player and return typed
-responses to the waiting referee. Only computation requests go to
-holders of the relevant claim. Every player receives requests to
-eliminate inactive matches, including unrelated ones that could keep the
-tournament open. The referee never narrates who holds a claim. Each
-player announces its own claim on standard error.
+each operation, including `reveal_bisection`, `seal_divergence`, and
+`prove_state_transition`. `schedule_timeout_win` and
+`schedule_match_elimination` prepare the corresponding responses.
+`prtu.lua` keeps the callbacks in a private queue and invokes them when
+`advance_time` supplies a strictly newer block. The first argument of
+each scheduling event is the block when its callback is due. Ordinary
+events pass computation arguments directly to the player.
+
+`emit(conns, event, arguments, validator)` returns a future without
+suspending the referee. Each future decodes responses under that event’s
+schema and retains the first result accepted by its validator.
+`future:wait(deadline)` returns that result if accepted before the given
+block, or `nil` when the deadline is reached. The deadline belongs to
+the wait. A later wait can still obtain the result, and `future:wait()`
+has no deadline. A future declared with `<close>` cancels its pending
+callback when the scope ends, including on an error. The referee emits
+the reveal, timeout, and elimination requests before waiting for the
+reveal. If that wait expires, it waits for the timeout result until the
+elimination block, then waits for elimination without a deadline. Only
+computation requests go to holders of the relevant claim. Every player
+receives requests to eliminate inactive matches, including unrelated
+ones that could keep the tournament open. The referee never narrates who
+holds a claim. Each player announces its own claim on standard error.
 
 The referee server in `prtu.lua` runs logical blocks, with a barrier for
 each block’s ordinary requests. It gathers every audience member’s
@@ -10034,34 +10036,37 @@ outbox, and sends the next request only after consuming the current
 reply. Schedule and cancel requests drain before the next time request.
 Each player receives one `advance_time` request per block. The returned
 responses are decoded with their original event schemas and routed to
-validators on pending events. Accepted results resume their coroutines
-through the same `emit` mechanism. A malformed current response or
-invalid proof finishes that player’s request without satisfying the
-obligation. A valid JSON response arriving with no request in flight is
-ignored and leaves the connection open. It cannot close a phase or
-satisfy a later request. Malformed JSON closes the connection. A
-connected peer that never replies still stalls the barrier.
+validators on pending events. An accepted response can resume only the
+coroutine waiting on its own future. A result accepted before that wait
+remains available in the future. A malformed current response or invalid
+proof finishes that player’s request without satisfying the obligation.
+A valid JSON response arriving with no request in flight is ignored and
+leaves the connection open. It cannot close a phase or satisfy a later
+request. Malformed JSON closes the connection. A connected peer that
+never replies still stalls the barrier.
 
 The referee in `prt.lua` defines and enforces the windows. An opening
 requested in block b is valid during b, the waiting claim may call for a
 timeout win in \[b + 1, b + 2), and anyone may eliminate both claims
-from b + 2. A valid opening cancels its pending timeout and elimination
-responses. The next opening schedules its own deadlines. At a sealed
-uarch leaf both sides share one block to prove the transition. At its
-deadline, anyone may eliminate both. Every validator checks
-authoritative server time, arguments, and proofs. Scheduling a response
-does not make it valid, and expiry alone never eliminates a claim.
-Timeout winners and child propagation supply the winning claim’s root
-children from the player’s local tree, which the referee verifies
+from b + 2. A valid opening ends the scope of its timeout and
+elimination futures, cancelling their pending callbacks. The next
+opening emits new requests. At a sealed uarch leaf both sides share one
+block to prove the transition. At its deadline, anyone may eliminate
+both. Every validator checks authoritative server time, arguments, and
+proofs. Scheduling a response does not make it valid, and expiry alone
+never eliminates a claim. Timeout winners supply the winning claim’s
+root children from the player’s local tree, which the referee verifies
 against that claim.
 
 An mcycle match has no local timeout while its child tournament runs.
-After joining closes and all child matches resolve, a child winner gets
-one block to propagate its result to the parent. Anyone may eliminate
-the child result at the next block if propagation fails or there is no
-winner, eliminating both parent claims. Root winners do not expire this
-way. Output-root verification and optional output offers retain their
-separate proof requests.
+After joining closes and all child matches resolve, `propagate_child`
+immediately settles the parent from the child result. A child winner
+confirms the matching parent claim, even if its holder has disconnected.
+A child with no winner eliminates both parent claims. The Lua model has
+no propagation window or child-result elimination request. Output-root
+verification and optional output offers retain their separate proof
+requests. Each waits through its ordinary response block, so missing
+output proofs end the demonstration without eliminating the root winner.
 
 The phase closer only closes initial subscriptions, where an external
 signal is needed because players connect over wall-clock time. Root and

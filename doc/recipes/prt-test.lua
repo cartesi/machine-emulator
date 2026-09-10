@@ -594,20 +594,25 @@ run_with_server(function(server, run_client, wait_connections)
     run_client(nil, make_claimer("c", answer("valid")))
     wait_connections(4)
 
-    -- The first valid response wins; a rejected response leaves its connection open.
+    local function request(conns, event, arguments, accept)
+        local future <close> = server:emit(conns, event, arguments, accept)
+        return future:wait(server:request_block() + 1)
+    end
+
+    -- The first valid response wins and a rejected response leaves its connection open.
     assert(
-        server:emit(server:get_subscribers({ "x" }), define_event("answer"), {}, is_valid) == "valid",
+        request(server:get_subscribers({ "x" }), define_event("answer"), {}, is_valid) == "valid",
         "valid response not taken"
     )
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
 
     -- The acceptor's result, rather than the submitted value, is returned.
-    local mapped = server:emit({ a }, define_event("mapped"), {}, function(v)
+    local mapped = request({ a }, define_event("mapped"), {}, function(v)
         return is_valid(v) and "mapped"
     end)
-    assert(mapped == "mapped", "emit did not return the acceptor result")
+    assert(mapped == "mapped", "future did not return the acceptor result")
 
-    -- Without a valid response, the event waits for every holder, and resolves to nil only then.
+    -- Without a valid response, the wait reaches its deadline after every holder answers.
     local replies_seen = 0
     run_client(nil, function()
         replies_seen = replies_seen + 1
@@ -615,7 +620,7 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     wait_connections(5)
     local n = server.connections[5]
-    assert(server:emit({ n, b }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
+    assert(request({ n, b }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
     assert(replies_seen == 1, "the event resolved before every holder answered")
     assert(not n.dead and not b.dead, "an invalid response closed a connection")
 
@@ -624,8 +629,8 @@ run_with_server(function(server, run_client, wait_connections)
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
     assert(#server.open_phases == 0, "closed nested tournament was retained")
 
-    -- Every holder answers without proof: the event resolves to nil, connections stay open.
-    assert(server:emit({ b }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
+    -- Every holder answers without proof and the wait expires with connections open.
+    assert(request({ b }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
     assert(not b.dead, "an invalid response closed its connection")
 
     -- A holder that closes counts as answered. With every holder gone, the claim is unanswered.
@@ -637,7 +642,7 @@ run_with_server(function(server, run_client, wait_connections)
     local d = server.connections[6]
     assert(d.dead and #replies == 4, "the closing client was not dropped from the collection")
     assert(
-        server:emit({ d }, define_event("answer"), {}, is_valid) == nil,
+        request({ d }, define_event("answer"), {}, is_valid) == nil,
         "an event to a closed connection did not resolve"
     )
 
@@ -663,17 +668,17 @@ run_with_server(function(server, run_client, wait_connections)
     end
     local bad = run_typed_client({ l = 1, r = "not base64!" })
     assert(
-        server:emit({ bad }, define_event("typed", "PairResponse"), {}, is_well_typed) == nil,
+        request({ bad }, define_event("typed", "PairResponse"), {}, is_well_typed) == nil,
         "a schema-invalid value was taken"
     )
-    assert(not next(server.active), "emit left a resolved event active")
+    assert(not next(server.active), "closing a future left it active")
     assert(not bad.dead, "a schema-invalid reply closed its connection")
     -- Alongside a well-typed reply, whichever arrives first, the well-typed value is taken and
     -- both connections stay open.
     local good = run_typed_client({ l = "a", r = "b" }, "PairResponseEnvelope")
-    local taken = server:emit({ bad, good }, define_event("typed", "PairResponse"), {}, is_well_typed)
+    local taken = request({ bad, good }, define_event("typed", "PairResponse"), {}, is_well_typed)
     assert(taken and taken.l == "a", "the well-typed reply was not taken")
-    assert(not next(server.active), "emit left a resolved event active")
+    assert(not next(server.active), "closing a future left it active")
     assert(not bad.dead and not good.dead, "a schema-invalid reply closed a connection")
 
     -- An undecodable line closes its sender.

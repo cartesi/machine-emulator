@@ -5410,7 +5410,10 @@ The walk converges on the leftmost divergent leaf, which is what makes the leaf 
 An mcycle match settles into a uarch tournament.
 The two claims part ways over what the state hash was after one period of one input, so each side must now defend a uarch claim over that period, whose final state is the mcycle leaf it committed to.
 The uarch tournament follows the same lifecycle as the mcycle one, open, submit, run, with two differences: its audience is the holders of the two disputed claims, and a claim may only join if its final state is one of the two contested values, the same restriction `validContestedFinalState` imposes on chain (`open_uarch_tournament`).
-The uarch winner's final state names the mcycle claim that survives:
+The uarch winner's final state names the mcycle claim that survives.
+`propagate_child` applies that result directly, or eliminates both parent claims if the child has no winner.
+Dave would use an emit/wait pair at this point to request the propagation transaction.
+The Lua referee already has the result and needs no further player response.
 ```{.lua key=prt_settle_mcycle_state_hash include=prt.lua/settle_mcycle_state_hash title="prt.lua (excerpt)"}
 ```
 
@@ -5434,11 +5437,19 @@ The logs come from a holder of either claim, produced by positioning a fresh for
 
 Each player answers typed requests in a blocking loop (`run_client` in `prtu.lua`).
 It owns its machines and claims. Scheduling handlers return callbacks that produce responses on later blocks.
-The event table names each operation, including `reveal_bisection`, `seal_divergence`, `prove_state_transition`, and `propagate_child`.
-`schedule_timeout_win`, `schedule_match_elimination`, and `schedule_child_elimination` prepare the corresponding responses.
+The event table names each operation, including `reveal_bisection`, `seal_divergence`, and `prove_state_transition`.
+`schedule_timeout_win` and `schedule_match_elimination` prepare the corresponding responses.
 `prtu.lua` keeps the callbacks in a private queue and invokes them when `advance_time` supplies a strictly newer block.
-It correlates their responses with the waiting referee and cancels remaining callbacks when that request resolves.
-Ordinary events pass computation arguments directly to the player and return typed responses to the waiting referee.
+The first argument of each scheduling event is the block when its callback is due.
+Ordinary events pass computation arguments directly to the player.
+
+`emit(conns, event, arguments, validator)` returns a future without suspending the referee.
+Each future decodes responses under that event's schema and retains the first result accepted by its validator.
+`future:wait(deadline)` returns that result if accepted before the given block, or `nil` when the deadline is reached.
+The deadline belongs to the wait. A later wait can still obtain the result, and `future:wait()` has no deadline.
+A future declared with `<close>` cancels its pending callback when the scope ends, including on an error.
+The referee emits the reveal, timeout, and elimination requests before waiting for the reveal.
+If that wait expires, it waits for the timeout result until the elimination block, then waits for elimination without a deadline.
 Only computation requests go to holders of the relevant claim.
 Every player receives requests to eliminate inactive matches, including unrelated ones that could keep the tournament open.
 The referee never narrates who holds a claim.
@@ -5451,7 +5462,8 @@ Each connection has a FIFO of requests in addition to its byte outbox, and sends
 Schedule and cancel requests drain before the next time request.
 Each player receives one `advance_time` request per block.
 The returned responses are decoded with their original event schemas and routed to validators on pending events.
-Accepted results resume their coroutines through the same `emit` mechanism.
+An accepted response can resume only the coroutine waiting on its own future.
+A result accepted before that wait remains available in the future.
 A malformed current response or invalid proof finishes that player's request without satisfying the obligation.
 A valid JSON response arriving with no request in flight is ignored and leaves the connection open.
 It cannot close a phase or satisfy a later request. Malformed JSON closes the connection.
@@ -5459,18 +5471,20 @@ A connected peer that never replies still stalls the barrier.
 
 The referee in `prt.lua` defines and enforces the windows.
 An opening requested in block b is valid during b, the waiting claim may call for a timeout win in [b + 1, b + 2), and anyone may eliminate both claims from b + 2.
-A valid opening cancels its pending timeout and elimination responses. The next opening schedules its own deadlines.
+A valid opening ends the scope of its timeout and elimination futures, cancelling their pending callbacks. The next opening emits new requests.
 At a sealed uarch leaf both sides share one block to prove the transition.
 At its deadline, anyone may eliminate both.
 Every validator checks authoritative server time, arguments, and proofs.
 Scheduling a response does not make it valid, and expiry alone never eliminates a claim.
-Timeout winners and child propagation supply the winning claim's root children from the player's local tree, which the referee verifies against that claim.
+Timeout winners supply the winning claim's root children from the player's local tree, which the referee verifies against that claim.
 
 An mcycle match has no local timeout while its child tournament runs.
-After joining closes and all child matches resolve, a child winner gets one block to propagate its result to the parent.
-Anyone may eliminate the child result at the next block if propagation fails or there is no winner, eliminating both parent claims.
-Root winners do not expire this way.
+After joining closes and all child matches resolve, `propagate_child` immediately settles the parent from the child result.
+A child winner confirms the matching parent claim, even if its holder has disconnected.
+A child with no winner eliminates both parent claims.
+The Lua model has no propagation window or child-result elimination request.
 Output-root verification and optional output offers retain their separate proof requests.
+Each waits through its ordinary response block, so missing output proofs end the demonstration without eliminating the root winner.
 
 The phase closer only closes initial subscriptions, where an external signal is needed because players connect over wall-clock time.
 Root and nested tournaments gather claims from fixed audiences in their opening block and close joining at the next logical block.

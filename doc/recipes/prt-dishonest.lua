@@ -263,7 +263,7 @@ local function new_quitter(geometry, inputs, cache, options)
         return wrap_computation_hash(claim, {
             cache_machine = false,
             append = function(collector, _, count, height)
-                local fake_hash = keccak("quitter")
+                local fake_hash = keccak(options.seed or "quitter")
                 for _ = 1, height do
                     fake_hash = keccak(fake_hash, fake_hash)
                 end
@@ -303,7 +303,13 @@ local function take_argument(message)
 end
 local make_player
 if role == "quitter" then
-    make_player = new_quitter
+    local seed = arg[next_argument] and arg[next_argument]:match("^%-%-seed=(.+)$")
+    if seed then
+        next_argument = next_argument + 1
+    end
+    make_player = function(geometry, inputs, cache)
+        return new_quitter(geometry, inputs, cache, { seed = seed })
+    end
 elseif role == "forger" then
     local index = assert(tonumber(take_argument("missing forged input index")), "invalid forged input index")
     local data = util.read_file(take_argument("missing forged input file"))

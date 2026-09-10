@@ -1,8 +1,8 @@
 -- Checks claim trees, proofs, and the referee with synthetic state, then, when given an initial
 -- machine hash and inputs, checks checkpoint replay against a real machine. The synthetic claims
 -- are walked under both claim orders. The loopback referee tests its tournament lifecycle,
--- first-valid moves, rejected proofs that leave connections open, and claims eliminated once every
--- holder answered without proof or closed. The real-machine cases cover tampering during replay
+-- valid moves, rejected proofs that leave connections open, and logical-block barriers.
+-- The real-machine cases cover tampering during replay
 -- and refinement inside and past rejected inputs. Exits nonzero on the first failure.
 
 local cartesi = require("cartesi")
@@ -12,6 +12,7 @@ local socket = require("socket")
 local dishonest = require("prt-dishonest")
 local prtu = require("prtu")
 local prt = require("prt")
+assert(require("prt-time-test"))
 
 local keccak = cartesi.keccak256
 local LOG2_BUNDLE_MCYCLE_COUNT = prt.LOG2_BUNDLE_MCYCLE_COUNT
@@ -470,7 +471,7 @@ local function run_with_server(scenario)
     local server = prtu.new_server("127.0.0.1:0")
     local _, port = server.listener:getsockname()
     local dispatcher = server.dispatcher
-    local function run_client(hello, handler)
+    local function run_client(hello, handler, typed)
         dispatcher:spawn(function()
             local sock = assert(socket.connect("127.0.0.1", port))
             sock:settimeout(0)
@@ -484,7 +485,20 @@ local function run_with_server(scenario)
                     return
                 elseif line then
                     local wire_event = cartesi.fromjson(line)
-                    local reply = wire_event.operation == "finish" and { value = true } or handler(wire_event)
+                    local reply, done
+                    if typed then
+                        reply, done = handler(wire_event, line)
+                    elseif
+                        wire_event.operation == "finish"
+                        or (prtu.EVENTS[wire_event.operation] and prtu.EVENTS[wire_event.operation].scheduled_schema)
+                        or wire_event.operation == "cancel_response"
+                    then
+                        reply = { value = true }
+                    elseif wire_event.operation == "advance_time" then
+                        reply = { value = {} }
+                    else
+                        reply = handler(wire_event)
+                    end
                     if reply == "close" then
                         sock:close()
                         return
@@ -493,6 +507,10 @@ local function run_with_server(scenario)
                     end
                     if reply ~= nil then
                         assert(sock:send(reply .. "\n"))
+                    end
+                    if done then
+                        sock:close()
+                        return
                     end
                 end
             end
@@ -539,8 +557,8 @@ local function define_event(name, response_schema)
 end
 
 run_with_server(function(server, run_client, wait_connections)
-    -- Two players connect before the phase closer, one after it. The mcycle tournament must
-    -- gather exactly the first two, and must not resolve before the phase closer closes it.
+    -- Initial subscriptions require the phase closer. Root and nested joining
+    -- then close at supplied logical boundaries, using fixed audiences.
     local answered = {}
     local function answer(value)
         return function()
@@ -554,8 +572,12 @@ run_with_server(function(server, run_client, wait_connections)
         return { value = true }
     end)
     server:accept_subscribers("initial")
-    local responses =
-        server:collect_claims(server:get_subscribers({ "initial" }), define_event("commit_mcycle_claim"), {})
+    local responses = server:collect_claims(
+        server:get_subscribers({ "initial" }),
+        define_event("commit_mcycle_claim"),
+        {},
+        server:request_block() + 1
+    )
     assert(#server.open_phases == 0, "closed phases were retained")
     table.sort(responses, function(x, y)
         return x.value < y.value
@@ -585,49 +607,20 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     assert(mapped == "mapped", "emit did not return the acceptor result")
 
-    -- A valid response resolves the event while another holder still owes a reply. When that
-    -- holder is asked again, TCP delivers the old reply first; the referee drops it by count
-    -- and accepts the following reply for the current event.
-    local delayed = false
-    run_client(nil, function(wire_event)
-        if wire_event.operation == "early" then
-            delayed = true
-            return nil
-        elseif delayed then
-            delayed = false
-            return cartesi.tojson({ value = "invalid" }, -1) .. "\n" .. cartesi.tojson({ value = "valid" }, -1)
-        end
-        return { value = "valid" }
-    end)
-    wait_connections(5)
-    local delayed_connection = server.connections[5]
-    assert(
-        server:emit({ delayed_connection, a }, define_event("early"), {}, is_valid) == "valid",
-        "valid response not taken early"
-    )
-    assert(
-        server:emit({ delayed_connection }, define_event("after_early"), {}, is_valid) == "valid",
-        "stale reply was accepted"
-    )
-    assert(
-        delayed_connection.stale_replies_pending == 0 and not delayed_connection.current_event,
-        "stale reply was not consumed"
-    )
-    assert(not delayed_connection.dead, "a pending holder was closed")
     -- Without a valid response, the event waits for every holder, and resolves to nil only then.
     local replies_seen = 0
     run_client(nil, function()
         replies_seen = replies_seen + 1
         return { value = "invalid" }
     end)
-    wait_connections(6)
-    local n = server.connections[6]
+    wait_connections(5)
+    local n = server.connections[5]
     assert(server:emit({ n, b }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
     assert(replies_seen == 1, "the event resolved before every holder answered")
     assert(not n.dead and not b.dead, "an invalid response closed a connection")
 
     -- A nested tournament asks only its audience, and closes at once.
-    local nested = server:collect_claims({ a }, define_event("commit_mcycle_claim"), {})
+    local nested = server:collect_claims({ a }, define_event("commit_mcycle_claim"), {}, server:request_block() + 1)
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
     assert(#server.open_phases == 0, "closed nested tournament was retained")
 
@@ -639,10 +632,10 @@ run_with_server(function(server, run_client, wait_connections)
     run_client(nil, function()
         return "close"
     end)
-    wait_connections(7)
+    wait_connections(6)
     local replies = server:collect(nil, define_event("label"), {})
-    local d = server.connections[7]
-    assert(d.dead and #replies == 5, "the closing client was not dropped from the collection")
+    local d = server.connections[6]
+    assert(d.dead and #replies == 4, "the closing client was not dropped from the collection")
     assert(
         server:emit({ d }, define_event("answer"), {}, is_valid) == nil,
         "an event to a closed connection did not resolve"
@@ -687,7 +680,7 @@ run_with_server(function(server, run_client, wait_connections)
     run_client(nil, function()
         return "this is not json"
     end)
-    wait_connections(10)
+    wait_connections(9)
     server:collect(nil, define_event("label"), {})
     local dead = 0
     for _, connection in ipairs(server.connections) do
@@ -698,17 +691,16 @@ run_with_server(function(server, run_client, wait_connections)
     assert(dead == 2, "an undecodable line did not close its sender")
     assert(not a.dead and not b.dead, "a live player was closed")
 
-    -- Phase closing is connection-bound. An extra player reply cannot close a phase; the
-    -- tournament closes only on the phase closer's reply and includes the player's claim.
+    -- An unsolicited player reply cannot advance logical time or invent another claim.
     run_client(nil, function(wire_event)
         if wire_event.operation == "commit_mcycle_claim" then
             return cartesi.tojson({ value = "forger" }, -1) .. "\n" .. cartesi.tojson({ value = true }, -1)
         end
         return { value = "valid" }
     end)
-    wait_connections(11)
-    local f = server.connections[11]
-    local t2 = server:collect_claims({ f }, define_event("commit_mcycle_claim"), {})
+    wait_connections(10)
+    local f = server.connections[10]
+    local t2 = server:collect_claims({ f }, define_event("commit_mcycle_claim"), {}, server:request_block() + 1)
     assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged close was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
@@ -716,41 +708,17 @@ run_with_server(function(server, run_client, wait_connections)
     run_client({ role = "player" }, function()
         return { role = "player" }
     end)
-    wait_connections(12)
-    server:collect({ server.connections[12] }, define_event("again"), {})
-    assert(server.connections[12].dead, "a repeated role announcement was accepted")
+    wait_connections(11)
+    server:collect({ server.connections[11] }, define_event("again"), {})
+    assert(server.connections[11].dead, "a repeated role announcement was accepted")
     run_client({ role = "phase_closer" }, function()
         return "close"
     end)
-    wait_connections(13)
+    wait_connections(12)
     assert(
-        server.connections[13].dead and server.phase_closer == server.connections[3],
+        server.connections[12].dead and server.phase_closer == server.connections[3],
         "a second phase closer was accepted"
     )
-
-    -- A stale reply is still a protocol line: malformed JSON closes the connection before the
-    -- stale position is discarded.
-    local delayed_malformed = false
-    run_client(nil, function(wire_event)
-        if wire_event.operation == "malformed_early" then
-            delayed_malformed = true
-            return nil
-        elseif delayed_malformed then
-            return "not json\n" .. cartesi.tojson({ value = "valid" }, -1)
-        end
-        return { value = "valid" }
-    end)
-    wait_connections(14)
-    local malformed = server.connections[14]
-    assert(
-        server:emit({ malformed, a }, define_event("malformed_early"), {}, is_valid) == "valid",
-        "valid response did not resolve before the delayed malformed reply"
-    )
-    assert(
-        server:emit({ malformed }, define_event("after_malformed"), {}, is_valid) == nil,
-        "a malformed stale line produced a value"
-    )
-    assert(malformed.dead, "a malformed stale line did not close its sender")
 end)
 
 -- An invalid close response is a phase-closer bug and fails the referee.
@@ -759,19 +727,21 @@ local ok, err = pcall(run_with_server, function(server, run_client, wait_connect
         return { value = "other" }
     end)
     wait_connections(1)
-    server:collect_claims({}, define_event("commit_mcycle_claim"), {})
+    server:accept_subscribers("initial")
 end)
 assert(not ok and err:find("did not close the phase asked"), "an invalid phase close was accepted")
 
--- The phase closer going away fails the referee outright: a tournament could never close again.
+-- Losing the phase closer before the initial close fails the referee.
 ok, err = pcall(run_with_server, function(server, run_client, wait_connections)
     run_client({ role = "phase_closer" }, function()
         return "close"
     end)
     wait_connections(1)
-    server:collect_claims({}, define_event("commit_mcycle_claim"), {})
+    server:accept_subscribers("initial")
 end)
 assert(not ok and err:find("the phase closer went away"), "phase-closer EOF did not fail the referee")
+
+assert(require("prt-deadline-test"))(run_with_server)
 
 --------------------------------------------------------------------------------
 -- Machine checkpoint replay

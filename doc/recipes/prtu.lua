@@ -7,6 +7,8 @@ local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
 local hash_tree = require("cartesi.hash-tree")
 local socket = require("socket")
+local new_clock = require("prt-clock")
+local new_actions = require("prt-actions")
 
 --------------------------------------------------------------------------------
 -- Small utilities
@@ -183,6 +185,9 @@ end
 function story.report_claims(tournament)
     local stream = tournament.level == "mcycle" and "claims" or get_tournament_stream(tournament)
     for _, claim in ipairs(tournament.claims) do
+        if tournament.level == "mcycle" then
+            narrate("claim_hashes", "%s", cartesi.tohex(claim.computation_hash))
+        end
         narrate(
             stream,
             "Claim %s, with final state %s, joined.",
@@ -273,6 +278,14 @@ function story.report_uarch_result(mcycle_match, winner, next_state_hashes)
     )
 end
 
+function story.report_uarch_result_consumed(mcycle_match, winner)
+    narrate(
+        get_match_stream(mcycle_match),
+        "The uarch winner %s was not propagated before its deadline. An eliminate call removes both parent claims.",
+        format_short_hash(winner.final_state_hash)
+    )
+end
+
 function story.report_divergence(match, divergence)
     narrate(
         get_match_stream(match),
@@ -284,15 +297,19 @@ function story.report_divergence(match, divergence)
     )
 end
 
-function story.report_default_win(match)
+function story.report_timeout_win(match)
     local turn_claim = match.claims[match.turn]
     local other_claim = match.claims[get_other_turn(match.turn)]
     narrate(
         get_match_stream(match),
-        "Nobody opened claim %s. Claim %s wins by default.",
+        "Nobody opened claim %s. Claim %s claims a timeout win.",
         format_short_hash(turn_claim.computation_hash),
         format_short_hash(other_claim.computation_hash)
     )
+end
+
+function story.report_match_eliminated(match)
+    narrate(get_match_stream(match), "An eliminate call removes both inactive claims.")
 end
 
 function story.report_match_progress(match)
@@ -368,8 +385,8 @@ end
 --
 -- The referee mediates several matches at once, each written as ordinary sequential code
 -- inside its own coroutine. A coroutine that must wait (for a socket or an answer) yields to
--- the dispatcher, which resumes whichever coroutine's event arrives first. There are no
--- deadlines: the referee waits on connections, never on the clock.
+-- the dispatcher. Socket readiness drives transport. Block barriers separately
+-- release protocol continuations in creation order.
 --------------------------------------------------------------------------------
 
 local dispatcher_meta = { __index = {} }
@@ -465,9 +482,9 @@ end
 -- answers {label, value}, encoded under the event's response schema, so binary hashes,
 -- proofs, and access logs survive both directions. Schema names are local metadata, not wire
 -- fields.
--- The valid response for an event is unique, fixed by the claim's committed tree, so a claim
--- cannot be misrepresented and it never matters who responds: the referee takes the first
--- response that proves itself and ignores the rest. The label rides along only for tracing.
+-- Computation responses authenticate their values against the committed claim.
+-- Time requests return scheduled responses, each checked by its referee validator.
+-- The label rides along only for tracing.
 --------------------------------------------------------------------------------
 
 -- The schemas used by the PRT events and private transport lifecycle.
@@ -520,13 +537,24 @@ local SCHEMA_DICT = {
         output = "Base64",
         output_proof = "Proof",
     },
+    ClaimChildren = { computation_hash_left = "Base64", computation_hash_right = "Base64" },
+    GetClaimChildrenEvent = { items = { "Base64" } },
+    PropagateChildEvent = { items = "Base64" },
+    Responses = { items = "Default" },
+    CancelResponseEvent = { items = { "Default" } },
+    AdvanceTimeEvent = { items = { "Default" } },
 }
 
--- Describes one event once, for both ends of the wire. Referee calls pass the event followed
--- by its argument tuple; the event supplies the wire name and the schemas used to encode that
--- tuple and decode its response.
+-- Describes one event once, for both ends of the wire.
 local function define_event(name, event_schema, response_schema)
     return { name = name, event_schema = event_schema, response_schema = response_schema }
+end
+
+-- Scheduling events acknowledge a callback now and return its typed response later.
+local function define_schedule_event(name, event_schema, response_schema)
+    local event = define_event(name, event_schema, "Default")
+    event.scheduled_schema = response_schema
+    return event
 end
 
 local EVENTS = {
@@ -547,6 +575,18 @@ local EVENTS = {
         "ProveOutputsMerkleRootResponse"
     ),
     prove_output = define_event("prove_output", "ProveOutputEvent", "ProveOutputResponse"),
+    get_claim_children = define_event("get_claim_children", "GetClaimChildrenEvent", "ClaimChildren"),
+    propagate_child = define_event("propagate_child", "PropagateChildEvent", "ClaimChildren"),
+    schedule_child_propagation = define_schedule_event(
+        "schedule_child_propagation",
+        "GetClaimChildrenEvent",
+        "ClaimChildren"
+    ),
+    schedule_timeout_win = define_schedule_event("schedule_timeout_win", "GetClaimChildrenEvent", "ClaimChildren"),
+    schedule_match_elimination = define_schedule_event("schedule_match_elimination", "FinishEvent", "Default"),
+    schedule_child_elimination = define_schedule_event("schedule_child_elimination", "FinishEvent", "Default"),
+    cancel_response = define_event("cancel_response", "CancelResponseEvent", "Default"),
+    advance_time = define_event("advance_time", "AdvanceTimeEvent", "Responses"),
 }
 
 -- The envelope schema for events under a named argument schema, registered on first use.
@@ -616,13 +656,37 @@ end
 
 -- Dispatches one wire event. Finish is transport cleanup rather than a client handler, so it
 -- is handled here and kept out of the client-loop snippet.
+local client_queues = setmetatable({}, { __mode = "k" })
 local function answer_event(client, line)
     local envelope = cartesi.fromjson(line)
     local event = assert(EVENTS[envelope.operation], "unknown event")
     local wire_event = cartesi.fromjson(line, ensure_event_envelope_schema(event.event_schema), SCHEMA_DICT)
-    local handler = client[wire_event.operation]
-    local value = event == EVENTS.finish and true
-        or assert(handler, "missing event handler")(client, table.unpack(wire_event.arguments or {}))
+    local queue = client_queues[client]
+    if not queue then
+        queue = new_actions()
+        client_queues[client] = queue
+    end
+    local value
+    if event == EVENTS.finish then
+        value = true
+    elseif event == EVENTS.advance_time then
+        value = queue:advance(wire_event.arguments[1])
+    elseif event == EVENTS.cancel_response then
+        queue:cancel(wire_event.arguments[1])
+        value = true
+    else
+        local handler = assert(client[wire_event.operation], "missing event handler")
+        value = handler(client, table.unpack(wire_event.arguments or {}))
+        if event.scheduled_schema then
+            local respond = value
+            assert(type(respond) == "function", "scheduling handler must return a response callback")
+            queue:schedule(wire_event.id, wire_event.eligible, wire_event.expires, function()
+                -- Encode each response with its own event schema before batching.
+                return cartesi.fromjson(cartesi.tojson(respond(), -1, event.scheduled_schema, SCHEMA_DICT))
+            end)
+            value = true
+        end
+    end
     assert(value ~= nil, "the event handler produced no value")
     local response = { label = client.label, value = value }
     local encoded = cartesi.tojson(response, -1, ensure_response_envelope_schema(event.response_schema), SCHEMA_DICT)
@@ -630,11 +694,10 @@ local function answer_event(client, line)
 end
 
 -- The player side is a plain blocking loop: announce itself, then read an event, decode its
--- arguments under the event's schema, dispatch its handler, and answer with its value under the
--- response schema. The label is only for tracing. Every event sent to a player is routed to a
--- holder of the claim it concerns, so a missing handler or result is a bug in the client, and
--- the process dies with it: the
--- referee sees the connection close, and the claim loses its holder. The loop also ends when
+-- arguments under the event's schema, dispatch its handler, and answer under the response
+-- schema. The label is only for tracing. Computation requests go to interested holders.
+-- schedule, cancel, and time requests also deliver unrelated elimination work. A missing
+-- handler or result is a client bug. The referee sees EOF and loses that holder. The loop also ends when
 -- the referee goes away.
 -- docs:begin run_client
 local function run_client(client, server_address)
@@ -660,13 +723,13 @@ end
 -- docs:end run_client
 
 -- The phase closer is a separate transport role with one handler: closing the next phase.
--- The referee first asks it to close initial subscriptions, then every tournament's claim
--- collection by the same lifecycle at both levels.
+-- It closes initial subscriptions and may then disconnect. Claim collection uses logical time.
 local function new_phase_closer()
     local phase_closer = {
         label = "phase_closer",
         hello = cartesi.tojson({ role = "phase_closer" }, -1),
-        close_phase = function()
+        close_phase = function(self)
+            self.done = true
             return true
         end,
     }
@@ -676,47 +739,43 @@ end
 --------------------------------------------------------------------------------
 -- Referee server
 --
--- Every player connects to the referee server, which is the single event loop. Connections
--- arriving during the initial subscription phase subscribe to its initial hash. A tournament
--- then opens with a fixed audience, the connections asked for a claim, and its claim collection
--- closes once the phase closer closes it and every connection in the audience has answered
--- or closed. An emitted event asks the holders of a claim and takes the first reply that proves
--- itself. A reply that fails to prove itself, or does not even decode under the event's
--- schema, is rejected, as the blockchain rejects a bad transaction, and counts as that
--- connection's answer. Only a line that cannot be decoded enough to identify a message, or a
--- closed socket, ends a connection. A claim whose every holder answered without proof, or closed, is
--- eliminated at once. Nothing depends on the clock, and nothing depends on the order replies
--- arrive in, so the outcome is a pure function of the claims.
---
--- Claim events authenticate themselves by proof. Phase closing does not: it is the referee's
--- trusted orchestration, standing in for the clock the contracts use, and the transport
--- enforces that trust. A connection announces its role once, on its first line, and a
--- second announcement closes it. The phase closer is whichever connection first announced
--- itself as such, a close-phase event is bound to that connection, and its next reply closes the one
--- tournament currently assigned to it. The model therefore assumes a process announces its role
--- honestly. A phase closer that goes away fails the referee outright, since no tournament could
--- ever close again.
+-- Players answer one queued request at a time. Ordinary responses share a logical
+-- block barrier. Schedule/cancel controls drain before the next time request.
+-- The referee owns every window and validator. Only an accepted response
+-- completes an obligation, even when all its holders skip or disconnect.
+-- Initial subscriptions still need an external close because connections arrive
+-- over wall-clock time. Tournament joining closes at a supplied logical boundary.
+-- The phase closer is trusted orchestration. Its announced role is not authenticated.
 --------------------------------------------------------------------------------
 
 local server_meta = { __index = {} }
 local accept_connections
 
+-- Omitting the address builds a socket-free model for scheduler tests.
 local function new_server(address)
-    local host, port = address:match("^(.-):(%d+)$")
-    assert(host and port, "invalid server address")
+    local host, port = (address or ""):match("^(.-):(%d+)$")
+    assert(not address or (host and port), "invalid server address")
     local server = setmetatable({
         dispatcher = new_dispatcher(),
-        listener = assert(socket.bind(host, tonumber(port))),
+        listener = address and assert(socket.bind(host, tonumber(port))),
         connections = {},
         subscriptions = {}, -- routing hash -> set of connections interested in defending it
         active = {}, -- set of events whose coroutines are waiting
-        open_phases = {}, -- subscription and tournament phases in creation order
-        phase_close_queue = {}, -- phases waiting for the phase closer, in creation order
-        phase_close_active = nil, -- the one phase currently being sent to the phase closer
+        clock = new_clock(),
+        ordinary = {}, -- requests for the next ordinary block
+        controls = {}, -- schedule/cancel requests awaiting their replies
+        routes = {}, -- scheduled response ID -> validator and pending emit
+        scheduled = {}, -- coroutine -> responses belonging to its next emit
+        event_order = 0,
+        coroutine_order = setmetatable({}, { __mode = "k" }),
+        next_coroutine_order = 0,
+        open_phases = {}, -- the initial subscription phase, until its external close
         phase_closer = nil, -- the phase closer's connection, once it announces itself
         done = false,
     }, server_meta)
-    accept_connections(server)
+    if server.listener then
+        accept_connections(server)
+    end
     return server
 end
 
@@ -733,42 +792,29 @@ local function enqueue(self, connection, line)
     end
 end
 
--- Completes the event globally and hands the result to its coroutine. Individual connections
--- may still be unanswered and owe replies; send_event accounts for each such reply before
--- assigning that connection new work.
-local function complete_event(self, entry, result)
+local queue_control
+
+-- Completing a request cancels every scheduled response competing to satisfy it.
+local function complete_event(self, entry)
     entry.resolved = true
     self.active[entry] = nil
+    for _, route in ipairs(entry.scheduled or {}) do
+        self.routes[route.id] = nil
+        queue_control(self, route.conns, EVENTS.cancel_response, { route.id })
+    end
     if entry.cortn then
-        self.dispatcher:schedule(entry.cortn, result)
+        self.dispatcher:schedule(entry.cortn, entry)
     end
 end
 
--- Re-examines an event after a reply, a closed connection, or a phase close. An emitted event
--- resolves as soon as it has taken a valid value, and otherwise once every connection asked
--- has answered or closed, with nothing. A collection stays active while a connection is
--- still to answer, and a tournament's claim collection also until the phase closes, then resolves with
--- the replies gathered.
-local function advance_if_complete(self, entry)
-    if not self.active[entry] then
-        return
-    end
-    if entry.kind == "emit" then
-        if entry.value ~= nil or not next(entry.pending) then
-            complete_event(self, entry, { value = entry.value })
-        end
-    elseif not entry.open and not next(entry.pending) then
-        complete_event(self, entry, { replies = entry.replies })
-    end
-end
-
--- Closes and forgets a subscription or tournament phase once its trusted close arrives.
+-- Completes initial subscriptions once the trusted close arrives.
 local function close_phase(self, phase)
     phase.open = false
+    self.subscriptions_closed = true
     for index, open_phase in ipairs(self.open_phases) do
         if open_phase == phase then
             table.remove(self.open_phases, index)
-            advance_if_complete(self, phase)
+            complete_event(self, phase)
             return
         end
     end
@@ -780,8 +826,13 @@ local function forget_connection(self, connection)
     for entry in pairs(self.active) do
         if entry.pending[connection] then
             entry.pending[connection] = nil
-            advance_if_complete(self, entry)
         end
+    end
+    for _, entry in ipairs(self.controls) do
+        entry.pending[connection] = nil
+    end
+    for _, entry in ipairs(self.batch or {}) do
+        entry.pending[connection] = nil
     end
 end
 
@@ -792,71 +843,56 @@ local function close_connection(self, connection)
         connection.dead = true
         connection.sock:close()
         forget_connection(self, connection)
-        assert(connection ~= self.phase_closer, "the phase closer went away, no tournament can close again")
+        assert(connection ~= self.phase_closer or self.subscriptions_closed, "the phase closer went away")
     end
 end
 
 -- Encodes an event and its Lua argument tuple under its event schema.
-local function encode_event(event, arguments)
+local function encode_event(event, arguments, scheduled)
     local wire_event = { operation = event.name, arguments = arguments }
+    if scheduled then
+        wire_event.id, wire_event.eligible, wire_event.expires = scheduled.id, scheduled.eligible, scheduled.expires
+    end
     return cartesi.tojson(wire_event, -1, ensure_event_envelope_schema(event.event_schema), SCHEMA_DICT) .. "\n"
 end
 
--- Sends one event at a time over a connection. The referee preserves this invariant because
--- each process follows one claim lineage, each claim enters only one match in a round, and a
--- parent match is suspended during its uarch tournament. If another connection resolved the
--- previous event first, its reply is now stale; count it before replacing the current event.
--- TCP preserves reply order, so the reader can discard exactly that many replies before
--- accepting the reply to the new event. A player served by run_client() answers every event or
--- closes; an arbitrary silent peer can stall this demonstration.
-local function send_event(self, connection, entry, line)
-    if connection.dead then
+-- One request is in flight per connection. Byte writes and protocol requests
+-- have separate queues. The next request waits for the current reply or EOF.
+local function send_next_event(self, connection)
+    if connection.dead or connection.current_event then
         return
     end
-    if connection.current_event then
-        assert(connection.current_event.resolved, "a connection was assigned concurrent events")
-        connection.stale_replies_pending = connection.stale_replies_pending + 1
+    local queued = table.remove(connection.events, 1)
+    if queued then
+        connection.current_event = queued.entry
+        enqueue(self, connection, queued.line)
     end
-    connection.current_event = entry
-    enqueue(self, connection, line)
 end
 
-local emit_next_phase_close
+local function send_event(self, connection, entry, line)
+    if not connection.dead then
+        connection.events[#connection.events + 1] = { entry = entry, line = line }
+        send_next_event(self, connection)
+    end
+end
 
--- Queues a phase for the trusted phase closer. It is deliberately serialized: one event is
--- in flight, and its next reply necessarily belongs to that event.
+-- Only initial subscriptions need a wall-clock orchestration request.
 local function queue_phase_close(self, phase)
     if not self.phase_closer or phase.close_requested then
         return
     end
     phase.close_requested = true
-    self.phase_close_queue[#self.phase_close_queue + 1] = phase
-    emit_next_phase_close(self)
-end
-
-emit_next_phase_close = function(self)
-    if self.phase_close_active or not self.phase_closer or #self.phase_close_queue == 0 then
-        return
-    end
-    local phase = table.remove(self.phase_close_queue, 1)
     local entry = {
         kind = "close_phase",
         phase = phase,
         response_schema = "ClosePhaseResponse",
         pending = { [self.phase_closer] = true },
     }
-    self.phase_close_active = entry
     send_event(self, self.phase_closer, entry, encode_event(EVENTS.close_phase, {}))
 end
 
--- Files the next reply from a connection on its current event. A value that does not decode
--- under the event's response schema is an invalid response, not a malformed connection: it
--- counts as the connection's answer, is
--- rejected, and leaves the connection open, exactly like a value the acceptor rejects, so
--- the order replies arrive in cannot decide which connections stay open. An emitted event
--- takes the first truthy result its acceptor returns. A collection keeps every reply that
--- decodes. A successful close response from the phase closer closes the one phase assigned to
--- it; an invalid response is a failure of the referee's own orchestration.
+-- Decoding finishes this audience member's request. Protocol acceptance waits
+-- for the block barrier, so an early socket reply cannot resume a match.
 local function deliver(self, entry, connection, line)
     if not entry.pending[connection] then
         return
@@ -867,25 +903,16 @@ local function deliver(self, entry, connection, line)
     if entry.kind == "close_phase" then
         assert(ok and decoded.value == true, "the phase closer did not close the phase asked")
         entry.resolved = true
-        self.phase_close_active = nil
         close_phase(self, entry.phase)
-        emit_next_phase_close(self)
         return
     end
-    if ok and entry.kind == "collect" then
+    if ok and not decoded.skip then
         entry.replies[#entry.replies + 1] = { value = decoded.value, label = decoded.label, connection = connection }
-    elseif ok and entry.value == nil then
-        local succeeded, value = pcall(entry.accept_response, decoded.value)
-        if succeeded and value then
-            entry.value = value
-        end
     end
-    advance_if_complete(self, entry)
 end
 
 -- A connection announced itself as the phase closer. There is one, the first to announce,
--- and it is never part of a tournament's audience. Every phase already open, still waiting
--- for its close, is queued in creation order.
+-- and it is never part of a tournament's audience. It closes initial subscriptions only.
 local function announce_phase_closer(self, connection)
     if self.phase_closer then
         close_connection(self, connection)
@@ -925,13 +952,11 @@ local function announce(self, connection, message)
     end
 end
 
--- Adopts a new connection: spawns its writer, which drains the outbox, and its reader, which
--- assigns replies to events in TCP order. Replies left behind when another player resolved
--- an event are discarded by count before the current reply is delivered. The first line a
--- connection sends announces what it is, a player or the phase closer.
+-- Adopts a connection with a writer for bytes and a reader for its current
+-- request. The first line announces the player or initial phase-closer role.
 function server_meta.__index.adopt(self, sock)
     sock:settimeout(0)
-    local connection = { sock = sock, outbox = {}, stale_replies_pending = 0 }
+    local connection = { sock = sock, outbox = {}, events = {} }
     self.connections[#self.connections + 1] = connection
     self.dispatcher:spawn(function()
         while true do
@@ -961,18 +986,15 @@ function server_meta.__index.adopt(self, sock)
                 return
             end
             local announced = connection.is_player or connection.is_phase_closer
-            if connection.stale_replies_pending > 0 and announced then
-                connection.stale_replies_pending = connection.stale_replies_pending - 1
+            if message.role or not announced then
+                announce(self, connection, message)
             else
-                if message.role or not announced then
-                    announce(self, connection, message)
-                else
-                    local entry = connection.current_event
-                    connection.current_event = nil
-                    if entry and not entry.resolved then
-                        deliver(self, entry, connection, line)
-                    end
+                local entry = connection.current_event
+                connection.current_event = nil
+                if entry then
+                    deliver(self, entry, connection, line)
                 end
+                send_next_event(self, connection)
             end
             if connection.dead then
                 return
@@ -1035,13 +1057,40 @@ function server_meta.__index.get_players(self)
     return list
 end
 
--- Sends an event to the given connections. The set asked is frozen here, and a connection
--- already closed is not in it.
+-- Registers a fixed audience. Dispatch is deferred until its ordinary block.
 local function park(self, entry, conns, line)
     entry.cortn = coroutine.running()
-    entry.pending = {}
+    if not self.coroutine_order[entry.cortn] then
+        self.next_coroutine_order = self.next_coroutine_order + 1
+        self.coroutine_order[entry.cortn] = self.next_coroutine_order
+    end
+    self.event_order = self.event_order + 1
+    entry.order = self.event_order
+    entry.match_order = self.coroutine_order[entry.cortn]
+    entry.block = self:request_block()
+    entry.pending, entry.replies = {}, {}
     entry.line = line
     self.active[entry] = true
+    for _, connection in ipairs(conns) do
+        if not connection.dead then
+            entry.pending[connection] = true
+        end
+    end
+    self.ordinary[#self.ordinary + 1] = entry
+end
+
+function server_meta.__index.get_time(self)
+    return self.clock.block
+end
+
+function server_meta.__index.request_block(self)
+    return self.clock:request_block()
+end
+
+queue_control = function(self, conns, event, arguments, scheduled)
+    local entry = { pending = {}, replies = {}, response_schema = event.response_schema }
+    self.controls[#self.controls + 1] = entry
+    local line = encode_event(event, arguments, scheduled)
     for _, connection in ipairs(conns) do
         if not connection.dead then
             entry.pending[connection] = true
@@ -1050,32 +1099,49 @@ local function park(self, entry, conns, line)
     end
 end
 
--- Suspends the running coroutine until its event resolves.
-local function wait(self, entry)
-    advance_if_complete(self, entry)
-    return coroutine.yield()
+-- Scheduled responses compete with the next ordinary request from this coroutine.
+function server_meta.__index.schedule(self, conns, event, arguments, block, accept_response, expires)
+    assert(event.scheduled_schema, "expected a scheduling event")
+    assert(block > self:request_block(), "scheduled response must belong to a later block")
+    local cortn = coroutine.running()
+    local scheduled = self.scheduled[cortn] or {}
+    self.scheduled[cortn] = scheduled
+    self.event_order = self.event_order + 1
+    local route = {
+        id = self.event_order,
+        event = event,
+        conns = conns,
+        eligible = block,
+        expires = expires,
+        accept_response = accept_response,
+    }
+    self.routes[route.id] = route
+    scheduled[#scheduled + 1] = route
+    queue_control(self, conns, event, arguments, route)
+    return route.id
 end
 
--- Emits an event to the given connections and returns the first truthy value produced by
--- `accept_response`, or nil once every connection asked has answered without one or closed.
--- A claim nobody answers for is thereby eliminated at once.
 function server_meta.__index.emit(self, conns, event, event_arguments, accept_response)
+    local cortn = coroutine.running()
     local entry = {
         kind = "emit",
         response_schema = event.response_schema,
         accept_response = accept_response,
+        scheduled = self.scheduled[cortn],
     }
+    self.scheduled[cortn] = nil
+    for _, route in ipairs(entry.scheduled or {}) do
+        route.entry = entry
+    end
     park(self, entry, conns, encode_event(event, event_arguments))
-    return wait(self, entry).value
+    return (coroutine.yield()).value
 end
 
--- Emits an event to the given connections (every player, when nil) and returns the replies,
--- each with the label and connection that sent it, once every connection asked has replied or
--- closed.
+-- Optional outputs and other collections still complete after their audience.
 function server_meta.__index.collect(self, conns, event, event_arguments)
-    local entry = { kind = "collect", response_schema = event.response_schema, replies = {}, open = false }
+    local entry = { kind = "collect", response_schema = event.response_schema }
     park(self, entry, conns or self:get_players(), encode_event(event, event_arguments))
-    return wait(self, entry).replies
+    return (coroutine.yield()).replies
 end
 
 -- Accepts players subscribing to an initial hash until the phase closer closes the phase. A player
@@ -1095,25 +1161,153 @@ function server_meta.__index.accept_subscribers(self, initial_state_hash)
         self:subscribe_connection(initial_state_hash, connection)
     end
     queue_phase_close(self, entry)
-    wait(self, entry)
+    coroutine.yield()
 end
 
--- Collects claims from a fixed audience. This transport primitive hides how the demonstration
--- decides that claim collection is over.
+-- Claim gathering uses the referee-supplied closure, for root and child alike.
 -- docs:begin collect_claims
-function server_meta.__index.collect_claims(self, conns, event, event_arguments)
-    local entry = {
-        kind = "collect",
-        response_schema = event.response_schema,
-        replies = {},
-        open = true,
-    }
-    self.open_phases[#self.open_phases + 1] = entry
+function server_meta.__index.collect_claims(self, conns, event, event_arguments, close_block)
+    assert(close_block > self:request_block(), "joining must close after its opening block")
+    local entry = { kind = "collect", response_schema = event.response_schema, close_block = close_block }
     park(self, entry, conns, encode_event(event, event_arguments))
-    queue_phase_close(self, entry)
-    return wait(self, entry).replies
+    return (coroutine.yield()).replies
 end
 -- docs:end collect_claims
+
+local function entry_less(a, b)
+    return a.match_order < b.match_order or (a.match_order == b.match_order and a.order < b.order)
+end
+
+-- A response ID selects its original event schema and referee validator.
+local function route_response(self, response)
+    local route = self.routes[response.id]
+    if not route or not route.entry or route.entry.resolved or route.entry.value ~= nil then
+        return
+    end
+    local ok, decoded =
+        pcall(cartesi.fromjson, cartesi.tojson(response.value, -1), route.event.scheduled_schema, SCHEMA_DICT)
+    if not ok then
+        return
+    end
+    local accepted, value = pcall(route.accept_response, decoded)
+    if accepted and value then
+        route.entry.value = value
+    end
+end
+
+local function release_results(self)
+    local completed = {}
+    for entry in pairs(self.active) do
+        if not entry.subscription_hash and entry.answered then
+            if entry.kind == "emit" then
+                if entry.value ~= nil or not entry.scheduled then
+                    completed[#completed + 1] = entry
+                end
+            elseif not entry.close_block or self:get_time() >= entry.close_block then
+                completed[#completed + 1] = entry
+            end
+        end
+    end
+    table.sort(completed, entry_less)
+    for _, entry in ipairs(completed) do
+        complete_event(self, entry)
+    end
+end
+
+-- Runs only between dispatcher turns, after all ready continuations have yielded.
+-- A phase's whole audience must finish before its callbacks run or time advances.
+function server_meta.__index.step_time(self)
+    if not self.clock:barrier_ready(self.controls) then
+        return
+    end
+    self.controls = {}
+    if self.batch then
+        if not self.clock:barrier_ready(self.batch) then
+            return
+        end
+        if self.batch_kind == "time" then
+            local responses = {}
+            for _, entry in ipairs(self.batch) do
+                for _, reply in ipairs(entry.replies) do
+                    if type(reply.value) == "table" then
+                        for _, response in ipairs(reply.value) do
+                            if type(response) == "table" and math.type(response.id) == "integer" then
+                                responses[#responses + 1] = response
+                            end
+                        end
+                    end
+                end
+            end
+            table.sort(responses, function(a, b)
+                local ar, br = self.routes[a.id], self.routes[b.id]
+                local ae, be = ar and ar.eligible or 0, br and br.eligible or 0
+                return ae < be or (ae == be and a.id < b.id)
+            end)
+            for _, response in ipairs(responses) do
+                route_response(self, response)
+            end
+        else
+            table.sort(self.batch, entry_less)
+            for _, entry in ipairs(self.batch) do
+                entry.answered = true
+                if entry.kind == "emit" then
+                    for _, reply in ipairs(entry.replies) do
+                        if entry.value == nil then
+                            local ok, value = pcall(entry.accept_response, reply.value)
+                            if ok and value then
+                                entry.value = value
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        self.batch = nil
+        release_results(self)
+        return true
+    end
+    if self.clock.before_ordinary then
+        self.clock:begin_ordinary()
+        self.batch, self.ordinary = self.ordinary, {}
+        self.batch_kind = "ordinary"
+        for _, entry in ipairs(self.batch) do
+            assert(entry.block == self:get_time(), "ordinary request missed its block")
+            for connection in pairs(entry.pending) do
+                send_event(self, connection, entry, entry.line)
+            end
+        end
+        return true
+    end
+    local boundaries = {}
+    for _, entry in ipairs(self.ordinary) do
+        boundaries[#boundaries + 1] = entry.block
+    end
+    for entry in pairs(self.active) do
+        if entry.close_block then
+            boundaries[#boundaries + 1] = entry.close_block
+        end
+    end
+    for _, route in pairs(self.routes) do
+        if route.entry then
+            boundaries[#boundaries + 1] = route.eligible
+            if route.expires then
+                boundaries[#boundaries + 1] = route.expires
+            end
+        end
+    end
+    local block = self.clock:next_block(boundaries)
+    if block then
+        self.clock:advance(block)
+        local entry = { pending = {}, replies = {}, response_schema = "Responses" }
+        self.batch, self.batch_kind = { entry }, "time"
+        local line = encode_event(EVENTS.advance_time, { block })
+        for _, connection in ipairs(self:get_players()) do
+            entry.pending[connection] = true
+            send_event(self, connection, entry, line)
+        end
+        return true
+    end
+end
 
 -- Runs the referee: spawns its main logic, releases every remaining player when it is done,
 -- then closes the listener and connections. Socket closing remains the fallback for peers that
@@ -1125,9 +1319,17 @@ function server_meta.__index.run(self, main)
         self.done = true
     end)
     while not self.done do
-        self.dispatcher:step()
+        local progressed
+        if self.dispatcher.ready_first > self.dispatcher.ready_last then
+            progressed = self:step_time()
+        end
+        if not progressed then
+            self.dispatcher:step()
+        end
     end
-    self.listener:close()
+    if self.listener then
+        self.listener:close()
+    end
     for _, connection in ipairs(self.connections) do
         connection.sock:close()
     end
@@ -1152,6 +1354,7 @@ return {
     new_tree = new_tree,
     get_other_turn = get_other_turn,
     new_server = new_server, -- prt-test.lua exercises the transport primitives directly
+    answer_event = answer_event,
     run_server = run_server,
     run_client = run_client,
     new_phase_closer = new_phase_closer,

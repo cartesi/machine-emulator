@@ -8,7 +8,7 @@ local evmu = require("cartesi.evmu")
 local hash_tree = require("cartesi.hash-tree")
 local socket = require("socket")
 local new_clock = require("prt-clock")
-local new_actions = require("prt-actions")
+local new_response_queue = require("prt-response-queue")
 
 --------------------------------------------------------------------------------
 -- Small utilities
@@ -301,7 +301,7 @@ function story.report_timeout_win(match)
 end
 
 function story.report_match_eliminated(match)
-    narrate(get_match_stream(match), "An eliminate call removes both inactive claims.")
+    narrate(get_match_stream(match), "An elimination response removes both inactive claims.")
 end
 
 function story.report_match_progress(match)
@@ -653,7 +653,7 @@ local function answer_event(client, line)
     local wire_event = cartesi.fromjson(line, ensure_event_envelope_schema(event.event_schema), SCHEMA_DICT)
     local queue = client_queues[client]
     if not queue then
-        queue = new_actions()
+        queue = new_response_queue()
         client_queues[client] = queue
     end
     local value
@@ -732,9 +732,9 @@ end
 -- Players answer one queued request at a time. Ordinary responses share a logical
 -- block barrier. Schedule/cancel controls drain before the next time request.
 -- The referee owns every window and validator. Only an accepted response
--- completes an obligation, even when all its holders skip or disconnect.
+-- resolves a future, even when all its holders skip or disconnect.
 -- Initial subscriptions still need an external close because connections arrive
--- over wall-clock time. Tournament joining closes at a supplied logical boundary.
+-- over wall-clock time. Tournament claim collection closes at a supplied logical block.
 -- The phase closer is trusted orchestration. Its announced role is not authenticated.
 --------------------------------------------------------------------------------
 
@@ -754,7 +754,7 @@ local function new_server(address)
         clock = new_clock(),
         ordinary = {}, -- requests for the next ordinary block
         controls = {}, -- schedule/cancel requests awaiting their replies
-        routes = {}, -- scheduled response ID -> future
+        scheduled_responses = {}, -- scheduled response ID -> future
         event_order = 0,
         coroutine_order = setmetatable({}, { __mode = "k" }),
         next_coroutine_order = 0,
@@ -1090,7 +1090,7 @@ end
 
 local future_meta = { __index = {} }
 
--- Closing a future retires its route and cancels its callback on every holder.
+-- Closing a future removes its response ID and cancels its callback on every holder.
 function future_meta.__index:close()
     if self.closed then
         return
@@ -1099,7 +1099,7 @@ function future_meta.__index:close()
     local server = self.server
     server.active[self] = nil
     if self.id then
-        server.routes[self.id] = nil
+        server.scheduled_responses[self.id] = nil
         queue_control(server, self.conns, EVENTS.cancel_response, { self.id })
     end
     if self.cortn then
@@ -1139,7 +1139,7 @@ function server_meta.__index.emit(self, conns, event, event_arguments, accept_re
         local block = event_arguments[1]
         assert(math.type(block) == "integer" and block > self:get_time(), "callback must belong to a later block")
         future.id, future.eligible = future.order, block
-        self.routes[future.id] = future
+        self.scheduled_responses[future.id] = future
         queue_control(self, conns, event, event_arguments, future.id)
     else
         future.line = encode_event(event, event_arguments)
@@ -1175,10 +1175,10 @@ function server_meta.__index.accept_subscribers(self, initial_state_hash)
     coroutine.yield()
 end
 
--- Claim gathering uses the referee-supplied closure, for root and child alike.
+-- Mcycle and uarch claim collection closes at the block supplied by the referee.
 -- docs:begin collect_claims
 function server_meta.__index.collect_claims(self, conns, event, event_arguments, close_block)
-    assert(close_block > self:request_block(), "joining must close after its opening block")
+    assert(close_block > self:request_block(), "claim collection must close after its opening block")
     local entry = { kind = "collect", response_schema = event.response_schema, close_block = close_block }
     park(self, entry, conns, encode_event(event, event_arguments))
     return (coroutine.yield()).replies
@@ -1190,19 +1190,19 @@ local function entry_less(a, b)
 end
 
 -- A response ID selects its original event schema and referee validator.
-local function route_response(self, response)
-    local route = self.routes[response.id]
-    if not route or route.resolved or route.closed or route.value ~= nil then
+local function accept_scheduled_response(self, response)
+    local future = self.scheduled_responses[response.id]
+    if not future or future.resolved or future.closed or future.value ~= nil then
         return
     end
     local ok, decoded =
-        pcall(cartesi.fromjson, cartesi.tojson(response.value, -1), route.event.scheduled_schema, SCHEMA_DICT)
+        pcall(cartesi.fromjson, cartesi.tojson(response.value, -1), future.event.scheduled_schema, SCHEMA_DICT)
     if not ok then
         return
     end
-    local accepted, value = pcall(route.accept_response, decoded)
+    local accepted, value = pcall(future.accept_response, decoded)
     if accepted and value then
-        route.value, route.accepted_at = value, self:get_time()
+        future.value, future.accepted_at = value, self:get_time()
     end
 end
 
@@ -1255,12 +1255,12 @@ function server_meta.__index.step_time(self)
                 end
             end
             table.sort(responses, function(a, b)
-                local ar, br = self.routes[a.id], self.routes[b.id]
-                local ae, be = ar and ar.eligible or 0, br and br.eligible or 0
+                local af, bf = self.scheduled_responses[a.id], self.scheduled_responses[b.id]
+                local ae, be = af and af.eligible or 0, bf and bf.eligible or 0
                 return ae < be or (ae == be and a.id < b.id)
             end)
             for _, response in ipairs(responses) do
-                route_response(self, response)
+                accept_scheduled_response(self, response)
             end
         else
             table.sort(self.batch, entry_less)
@@ -1310,9 +1310,9 @@ function server_meta.__index.step_time(self)
             boundaries[#boundaries + 1] = entry.deadline
         end
     end
-    for _, route in pairs(self.routes) do
-        if not route.resolved then
-            boundaries[#boundaries + 1] = route.eligible
+    for _, future in pairs(self.scheduled_responses) do
+        if not future.resolved then
+            boundaries[#boundaries + 1] = future.eligible
         end
     end
     local block = self.clock:next_block(boundaries)

@@ -278,14 +278,6 @@ function story.report_uarch_result(mcycle_match, winner, next_state_hashes)
     )
 end
 
-function story.report_uarch_result_consumed(mcycle_match, winner)
-    narrate(
-        get_match_stream(mcycle_match),
-        "The uarch winner %s was not propagated before its deadline. An eliminate call removes both parent claims.",
-        format_short_hash(winner.final_state_hash)
-    )
-end
-
 function story.report_divergence(match, divergence)
     narrate(
         get_match_stream(match),
@@ -539,7 +531,8 @@ local SCHEMA_DICT = {
     },
     ClaimChildren = { computation_hash_left = "Base64", computation_hash_right = "Base64" },
     GetClaimChildrenEvent = { items = { "Base64" } },
-    PropagateChildEvent = { items = "Base64" },
+    ScheduleClaimChildrenEvent = { items = { "Default", "Base64" } },
+    ScheduleEliminationEvent = { items = { "Default" } },
     Responses = { items = "Default" },
     CancelResponseEvent = { items = { "Default" } },
     AdvanceTimeEvent = { items = { "Default" } },
@@ -576,15 +569,12 @@ local EVENTS = {
     ),
     prove_output = define_event("prove_output", "ProveOutputEvent", "ProveOutputResponse"),
     get_claim_children = define_event("get_claim_children", "GetClaimChildrenEvent", "ClaimChildren"),
-    propagate_child = define_event("propagate_child", "PropagateChildEvent", "ClaimChildren"),
-    schedule_child_propagation = define_schedule_event(
-        "schedule_child_propagation",
-        "GetClaimChildrenEvent",
-        "ClaimChildren"
+    schedule_timeout_win = define_schedule_event("schedule_timeout_win", "ScheduleClaimChildrenEvent", "ClaimChildren"),
+    schedule_match_elimination = define_schedule_event(
+        "schedule_match_elimination",
+        "ScheduleEliminationEvent",
+        "Default"
     ),
-    schedule_timeout_win = define_schedule_event("schedule_timeout_win", "GetClaimChildrenEvent", "ClaimChildren"),
-    schedule_match_elimination = define_schedule_event("schedule_match_elimination", "FinishEvent", "Default"),
-    schedule_child_elimination = define_schedule_event("schedule_child_elimination", "FinishEvent", "Default"),
     cancel_response = define_event("cancel_response", "CancelResponseEvent", "Default"),
     advance_time = define_event("advance_time", "AdvanceTimeEvent", "Responses"),
 }
@@ -680,7 +670,7 @@ local function answer_event(client, line)
         if event.scheduled_schema then
             local respond = value
             assert(type(respond) == "function", "scheduling handler must return a response callback")
-            queue:schedule(wire_event.id, wire_event.eligible, wire_event.expires, function()
+            queue:schedule(wire_event.id, wire_event.arguments[1], function()
                 -- Encode each response with its own event schema before batching.
                 return cartesi.fromjson(cartesi.tojson(respond(), -1, event.scheduled_schema, SCHEMA_DICT))
             end)
@@ -764,8 +754,7 @@ local function new_server(address)
         clock = new_clock(),
         ordinary = {}, -- requests for the next ordinary block
         controls = {}, -- schedule/cancel requests awaiting their replies
-        routes = {}, -- scheduled response ID -> validator and pending emit
-        scheduled = {}, -- coroutine -> responses belonging to its next emit
+        routes = {}, -- scheduled response ID -> future
         event_order = 0,
         coroutine_order = setmetatable({}, { __mode = "k" }),
         next_coroutine_order = 0,
@@ -794,16 +783,13 @@ end
 
 local queue_control
 
--- Completing a request cancels every scheduled response competing to satisfy it.
+-- Releases a completed collection or an accepted future.
 local function complete_event(self, entry)
     entry.resolved = true
     self.active[entry] = nil
-    for _, route in ipairs(entry.scheduled or {}) do
-        self.routes[route.id] = nil
-        queue_control(self, route.conns, EVENTS.cancel_response, { route.id })
-    end
     if entry.cortn then
         self.dispatcher:schedule(entry.cortn, entry)
+        entry.cortn = nil
     end
 end
 
@@ -848,11 +834,9 @@ local function close_connection(self, connection)
 end
 
 -- Encodes an event and its Lua argument tuple under its event schema.
-local function encode_event(event, arguments, scheduled)
+local function encode_event(event, arguments, id)
     local wire_event = { operation = event.name, arguments = arguments }
-    if scheduled then
-        wire_event.id, wire_event.eligible, wire_event.expires = scheduled.id, scheduled.eligible, scheduled.expires
-    end
+    wire_event.id = id
     return cartesi.tojson(wire_event, -1, ensure_event_envelope_schema(event.event_schema), SCHEMA_DICT) .. "\n"
 end
 
@@ -1057,25 +1041,30 @@ function server_meta.__index.get_players(self)
     return list
 end
 
--- Registers a fixed audience. Dispatch is deferred until its ordinary block.
-local function park(self, entry, conns, line)
-    entry.cortn = coroutine.running()
-    if not self.coroutine_order[entry.cortn] then
+-- Registers a fixed audience and stable order without suspending the caller.
+local function register_event(self, entry, conns)
+    local cortn = coroutine.running()
+    if not self.coroutine_order[cortn] then
         self.next_coroutine_order = self.next_coroutine_order + 1
-        self.coroutine_order[entry.cortn] = self.next_coroutine_order
+        self.coroutine_order[cortn] = self.next_coroutine_order
     end
     self.event_order = self.event_order + 1
     entry.order = self.event_order
-    entry.match_order = self.coroutine_order[entry.cortn]
+    entry.match_order = self.coroutine_order[cortn]
     entry.block = self:request_block()
     entry.pending, entry.replies = {}, {}
-    entry.line = line
     self.active[entry] = true
     for _, connection in ipairs(conns) do
         if not connection.dead then
             entry.pending[connection] = true
         end
     end
+end
+
+-- Collections suspend their caller until the ordinary audience finishes.
+local function park(self, entry, conns, line)
+    register_event(self, entry, conns)
+    entry.cortn, entry.line = coroutine.running(), line
     self.ordinary[#self.ordinary + 1] = entry
 end
 
@@ -1087,10 +1076,10 @@ function server_meta.__index.request_block(self)
     return self.clock:request_block()
 end
 
-queue_control = function(self, conns, event, arguments, scheduled)
+queue_control = function(self, conns, event, arguments, id)
     local entry = { pending = {}, replies = {}, response_schema = event.response_schema }
     self.controls[#self.controls + 1] = entry
-    local line = encode_event(event, arguments, scheduled)
+    local line = encode_event(event, arguments, id)
     for _, connection in ipairs(conns) do
         if not connection.dead then
             entry.pending[connection] = true
@@ -1099,42 +1088,64 @@ queue_control = function(self, conns, event, arguments, scheduled)
     end
 end
 
--- Scheduled responses compete with the next ordinary request from this coroutine.
-function server_meta.__index.schedule(self, conns, event, arguments, block, accept_response, expires)
-    assert(event.scheduled_schema, "expected a scheduling event")
-    assert(block > self:request_block(), "scheduled response must belong to a later block")
-    local cortn = coroutine.running()
-    local scheduled = self.scheduled[cortn] or {}
-    self.scheduled[cortn] = scheduled
-    self.event_order = self.event_order + 1
-    local route = {
-        id = self.event_order,
-        event = event,
-        conns = conns,
-        eligible = block,
-        expires = expires,
-        accept_response = accept_response,
-    }
-    self.routes[route.id] = route
-    scheduled[#scheduled + 1] = route
-    queue_control(self, conns, event, arguments, route)
-    return route.id
+local future_meta = { __index = {} }
+
+-- Closing a future retires its route and cancels its callback on every holder.
+function future_meta.__index:close()
+    if self.closed then
+        return
+    end
+    self.closed = true
+    local server = self.server
+    server.active[self] = nil
+    if self.id then
+        server.routes[self.id] = nil
+        queue_control(server, self.conns, EVENTS.cancel_response, { self.id })
+    end
+    if self.cortn then
+        server.dispatcher:schedule(self.cortn, self)
+        self.cortn = nil
+    end
+end
+future_meta.__close = future_meta.__index.close
+
+-- A deadline bounds this wait only. The future can still be waited on or closed.
+function future_meta.__index:wait(deadline)
+    assert(not self.closed, "future is closed")
+    assert(not deadline or math.type(deadline) == "integer", "deadline must be a block number")
+    assert(not self.cortn, "future already has a waiter")
+    if not self.resolved and (not deadline or self.server:get_time() < deadline) then
+        self.cortn, self.deadline = coroutine.running(), deadline
+        coroutine.yield()
+        self.deadline = nil
+    end
+    if not self.closed and self.resolved and (not deadline or self.accepted_at < deadline) then
+        return self.value
+    end
 end
 
+-- Emits one event without waiting. Its future owns only this event's responses.
 function server_meta.__index.emit(self, conns, event, event_arguments, accept_response)
-    local cortn = coroutine.running()
-    local entry = {
+    local future = setmetatable({
         kind = "emit",
+        server = self,
+        event = event,
+        conns = conns,
         response_schema = event.response_schema,
         accept_response = accept_response,
-        scheduled = self.scheduled[cortn],
-    }
-    self.scheduled[cortn] = nil
-    for _, route in ipairs(entry.scheduled or {}) do
-        route.entry = entry
+    }, future_meta)
+    register_event(self, future, conns)
+    if event.scheduled_schema then
+        local block = event_arguments[1]
+        assert(math.type(block) == "integer" and block > self:get_time(), "callback must belong to a later block")
+        future.id, future.eligible = future.order, block
+        self.routes[future.id] = future
+        queue_control(self, conns, event, event_arguments, future.id)
+    else
+        future.line = encode_event(event, event_arguments)
+        self.ordinary[#self.ordinary + 1] = future
     end
-    park(self, entry, conns, encode_event(event, event_arguments))
-    return (coroutine.yield()).value
+    return future
 end
 
 -- Optional outputs and other collections still complete after their audience.
@@ -1181,7 +1192,7 @@ end
 -- A response ID selects its original event schema and referee validator.
 local function route_response(self, response)
     local route = self.routes[response.id]
-    if not route or not route.entry or route.entry.resolved or route.entry.value ~= nil then
+    if not route or route.resolved or route.closed or route.value ~= nil then
         return
     end
     local ok, decoded =
@@ -1191,26 +1202,31 @@ local function route_response(self, response)
     end
     local accepted, value = pcall(route.accept_response, decoded)
     if accepted and value then
-        route.entry.value = value
+        route.value, route.accepted_at = value, self:get_time()
     end
 end
 
 local function release_results(self)
     local completed = {}
     for entry in pairs(self.active) do
-        if not entry.subscription_hash and entry.answered then
-            if entry.kind == "emit" then
-                if entry.value ~= nil or not entry.scheduled then
-                    completed[#completed + 1] = entry
-                end
-            elseif not entry.close_block or self:get_time() >= entry.close_block then
+        if entry.kind == "emit" then
+            if entry.value ~= nil or (entry.cortn and entry.deadline and self:get_time() >= entry.deadline) then
+                completed[#completed + 1] = entry
+            end
+        elseif not entry.subscription_hash and entry.answered then
+            if not entry.close_block or self:get_time() >= entry.close_block then
                 completed[#completed + 1] = entry
             end
         end
     end
     table.sort(completed, entry_less)
     for _, entry in ipairs(completed) do
-        complete_event(self, entry)
+        if entry.kind == "emit" and entry.value == nil then
+            self.dispatcher:schedule(entry.cortn, entry)
+            entry.cortn, entry.deadline = nil, nil
+        else
+            complete_event(self, entry)
+        end
     end
 end
 
@@ -1250,12 +1266,12 @@ function server_meta.__index.step_time(self)
             table.sort(self.batch, entry_less)
             for _, entry in ipairs(self.batch) do
                 entry.answered = true
-                if entry.kind == "emit" then
+                if entry.kind == "emit" and not entry.closed then
                     for _, reply in ipairs(entry.replies) do
                         if entry.value == nil then
                             local ok, value = pcall(entry.accept_response, reply.value)
                             if ok and value then
-                                entry.value = value
+                                entry.value, entry.accepted_at = value, self:get_time()
                             end
                         end
                     end
@@ -1272,8 +1288,12 @@ function server_meta.__index.step_time(self)
         self.batch_kind = "ordinary"
         for _, entry in ipairs(self.batch) do
             assert(entry.block == self:get_time(), "ordinary request missed its block")
-            for connection in pairs(entry.pending) do
-                send_event(self, connection, entry, entry.line)
+            if entry.closed then
+                entry.pending = {}
+            else
+                for connection in pairs(entry.pending) do
+                    send_event(self, connection, entry, entry.line)
+                end
             end
         end
         return true
@@ -1286,13 +1306,13 @@ function server_meta.__index.step_time(self)
         if entry.close_block then
             boundaries[#boundaries + 1] = entry.close_block
         end
+        if entry.deadline then
+            boundaries[#boundaries + 1] = entry.deadline
+        end
     end
     for _, route in pairs(self.routes) do
-        if route.entry then
+        if not route.resolved then
             boundaries[#boundaries + 1] = route.eligible
-            if route.expires then
-                boundaries[#boundaries + 1] = route.expires
-            end
         end
     end
     local block = self.clock:next_block(boundaries)

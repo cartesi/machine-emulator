@@ -7,7 +7,7 @@
 -- machine state hashes sampled along the whole computation, and the dispute walks down the
 -- two trees. Claims are what matter, not players: any player may answer any event concerning
 -- any claim, every answer carries its own proof, and the referee takes the first answer that
--- verifies. Unanswered events remain pending until a timeout-win or eliminate call verifies.
+-- verifies. Unanswered openings are followed by timeout-win and elimination requests.
 --
 -- The dispute has two levels, one per cycle counter. An mcycle claim commits to the machine
 -- state hash every 2^p mcycles across the epoch (the mcycle computation hash of
@@ -30,8 +30,9 @@
 --   prt.lua phase_closer <address>
 --
 -- The phase closer closes initial subscriptions once every player is in, then disconnects.
--- Root and child tournaments gather their fixed audiences in a logical block and close joining
--- at the next block. Wall-clock computation speed does not consume a protocol allowance.
+-- Mcycle and uarch tournaments gather claims from fixed audiences in a logical block.
+-- Claim collection closes at the next block. Wall-clock computation speed does not consume
+-- a protocol allowance.
 --
 -- The referee, honest player, machines, and computation hashes live here. The shared
 -- protocol, claim trees, referee server, and hidden narration live in prtu.lua.
@@ -53,8 +54,8 @@ local HTIF_TOHOST_ADDRESS = cartesi.machine:get_reg_address("htif_tohost")
 local CMIO_TX_BUFFER_ADDRESS = cartesi.AR_CMIO_TX_BUFFER_START
 
 -- The phase closer carries no dispute. It closes the initial subscription phase once the last
--- player has connected. Tournament joining then uses logical time. It needs none of the
--- game geometry.
+-- player has connected. Tournament claim collection then uses logical time. It needs none
+-- of the game geometry.
 if arg[1] == "phase_closer" then
     return prtu.run_client(prtu.new_phase_closer(), assert(arg[2], "missing referee address"))
 end
@@ -433,8 +434,38 @@ local function open_uarch_tournament(
 end
 -- docs:end open_uarch_tournament
 
--- The referee already has the child result. Dave would use an emit/wait pair here.
-local function propagate_child(mcycle_match, winner, next_state_hashes)
+-- Applies the uarch tournament result directly to the mcycle match.
+local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
+    -- With a winner, Dave's equivalent emit/wait flow would look like the sketch below.
+    -- mcycle_claim and conns identify the winning mcycle claim and its subscribers.
+    -- winner_expires_at comes from Dave's clocks, not a fresh propagation allowance.
+    -- These illustrative events are omitted from the Lua player protocol.
+    --[[
+    local elimination <close> = server:emit(
+        server:get_players(), EVENTS.schedule_uarch_result_elimination, { winner_expires_at },
+        function(response)
+            assert(server:get_time() >= winner_expires_at and response == true)
+            return true
+        end
+    )
+    local propagation <close> = server:emit(
+        conns, EVENTS.propagate_uarch_result, { mcycle_claim.computation_hash },
+        function(response)
+            assert(server:get_time() < winner_expires_at)
+            validate_claim_children(response, mcycle_claim.computation_hash)
+            return winner.final_state_hash
+        end
+    )
+    if not propagation:wait(winner_expires_at) then
+        elimination:wait()
+        -- Both mcycle claims are eliminated despite the uarch tournament having a winner.
+        -- Report this expiry separately from a uarch tournament that had no winner.
+        return nil
+    end
+    -- Leaving the scope cancels the remaining callbacks.
+    ]]
+    -- Without a uarch winner, Dave would request elimination immediately and wait for it.
+    -- The Lua referee already has the result and needs neither exchange.
     story.report_uarch_result(mcycle_match, winner, next_state_hashes)
     return winner and winner.final_state_hash
 end
@@ -454,7 +485,7 @@ local function settle_mcycle_state_hash(
     local uarch_tournament =
         open_uarch_tournament(mcycle_tournament, mcycle_match, epoch_period_index, agreed_state_hash, next_state_hashes)
     local uarch_winner = run_tournament(uarch_tournament)
-    return propagate_child(mcycle_match, uarch_winner, next_state_hashes)
+    return propagate_uarch_result(mcycle_match, uarch_winner, next_state_hashes)
 end
 -- docs:end settle_mcycle_state_hash
 

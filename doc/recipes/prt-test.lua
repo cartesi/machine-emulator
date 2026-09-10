@@ -557,8 +557,8 @@ local function define_event(name, response_schema)
 end
 
 run_with_server(function(server, run_client, wait_connections)
-    -- Initial subscriptions require the phase closer. Root and nested joining
-    -- then close at supplied logical boundaries, using fixed audiences.
+    -- Initial subscriptions require the phase closer. Mcycle and uarch claim collection
+    -- then closes at supplied logical blocks, using fixed audiences.
     local answered = {}
     local function answer(value)
         return function()

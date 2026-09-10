@@ -1,8 +1,8 @@
 -- Pure queue and logical-block checks, included by the documentation's PRT suite.
-local new_actions = require("prt-actions")
+local new_response_queue = require("prt-response-queue")
 local new_clock = require("prt-clock")
 
-local queue = new_actions()
+local queue = new_response_queue()
 local function schedule(id, block)
     queue:schedule(id, block, function()
         return id
@@ -16,8 +16,8 @@ assert(#queue:advance(1) == 0)
 schedule(2, 4)
 local responses = queue:advance(3)
 assert(#responses == 1 and responses[1].id == 1 and responses[1].value == 1)
-assert(not pcall(queue.advance, queue, 3), "duplicate head accepted")
-assert(not pcall(queue.advance, queue, 2), "old head accepted")
+assert(not pcall(queue.advance, queue, 3), "duplicate block update accepted")
+assert(not pcall(queue.advance, queue, 2), "old block update accepted")
 assert(queue:advance(4)[1].id == 2, "replacement was not retained")
 schedule(6, 5)
 schedule(5, 5)

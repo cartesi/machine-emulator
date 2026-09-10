@@ -25,6 +25,20 @@ local function repeated_tree(value, height)
 end
 
 return function(run_with_server)
+    -- Main must not leave an unanswered future behind, even after a timed wait.
+    for _, deadline in ipairs({ false, 1 }) do
+        local server = prtu.new_server()
+        local ok, err = pcall(server.run, server, function()
+            local future = server:emit({}, prtu.EVENTS.schedule_match_elimination, { 1 }, function(response)
+                return response
+            end)
+            if deadline then
+                assert(future:wait(deadline) == nil)
+            end
+        end)
+        assert(not ok and err:find("referee finished with pending requests"), "an unclosed future escaped detection")
+    end
+
     -- No scheduled acknowledgement means no elimination, even after the deadline.
     do
         local server = prtu.new_server()

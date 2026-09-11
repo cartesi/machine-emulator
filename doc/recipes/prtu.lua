@@ -739,7 +739,8 @@ end
 -- Players answer one queued request at a time. Ordinary responses share a logical
 -- block barrier. Schedule/cancel controls drain before the next time request.
 -- The referee owns every window and validator. Only an accepted response
--- resolves a future, even when all its holders skip or disconnect.
+-- resolves a first-valid future, even when all its holders skip or disconnect.
+-- Collections return all replies received before their wait's deadline.
 -- Initial subscriptions still need an external close because connections arrive
 -- over wall-clock time. Tournament claim collection closes at a supplied logical block.
 -- The phase closer is trusted orchestration. Its announced role is not authenticated.
@@ -757,7 +758,7 @@ local function new_server(address)
         listener = address and assert(socket.bind(host, tonumber(port))),
         connections = {},
         subscriptions = {}, -- subscription hash -> set of interested connections
-        active = {}, -- set of events whose coroutines are waiting
+        active = {}, -- set of pending requests and block waits
         clock = new_clock(),
         ordinary = {}, -- requests for the next ordinary block
         controls = {}, -- schedule/cancel requests awaiting their replies
@@ -790,7 +791,7 @@ end
 
 local queue_control
 
--- Releases a completed collection or an accepted future.
+-- Releases a completed request or block wait.
 local function complete_event(self, entry)
     entry.resolved = true
     self.active[entry] = nil
@@ -898,7 +899,12 @@ local function deliver(self, entry, connection, line)
         return
     end
     if ok and not decoded.skip then
-        entry.replies[#entry.replies + 1] = { value = decoded.value, label = decoded.label, connection = connection }
+        entry.replies[#entry.replies + 1] = {
+            value = decoded.value,
+            label = decoded.label,
+            connection = connection,
+            received_at = self:get_time(),
+        }
     end
 end
 
@@ -1020,10 +1026,13 @@ function server_meta.__index.subscribe_connection(self, hash, connection)
     set[connection] = true
 end
 
--- The live connections subscribed to any of the given subscriptions, or every live player.
+-- The live connections for one subscription, a list of subscriptions, or EVERYONE.
 function server_meta.__index.get_subscribers(self, subscriptions)
     if subscriptions == EVERYONE then
         return self:get_players()
+    end
+    if type(subscriptions) ~= "table" then
+        subscriptions = { subscriptions }
     end
     local seen, list = {}, {}
     for _, hash in ipairs(subscriptions) do
@@ -1071,13 +1080,6 @@ local function register_event(self, entry, conns)
     end
 end
 
--- Collections suspend their caller until the ordinary audience finishes.
-local function park(self, entry, conns, line)
-    register_event(self, entry, conns)
-    entry.cortn, entry.line = coroutine.running(), line
-    self.ordinary[#self.ordinary + 1] = entry
-end
-
 function server_meta.__index.get_time(self)
     return self.clock.block
 end
@@ -1119,7 +1121,9 @@ function future_meta.__index:close()
 end
 future_meta.__close = future_meta.__index.close
 
--- A deadline bounds this wait only. The future can still be waited on or closed.
+-- A deadline bounds this wait only. All-response requests return a snapshot of replies
+-- received before it; first-valid requests return nil if no result was accepted before it.
+-- The future can still be waited on or closed.
 function future_meta.__index:wait(deadline)
     assert(not self.closed, "future is closed")
     assert(not deadline or math.type(deadline) == "integer", "deadline must be a block number")
@@ -1132,18 +1136,24 @@ function future_meta.__index:wait(deadline)
     if not self.closed and self.resolved and (not deadline or self.accepted_at < deadline) then
         return self.value
     end
+    if not self.closed and self.kind == "request_all" then
+        local responses = {}
+        for _, reply in ipairs(self.replies) do
+            if not deadline or reply.received_at < deadline then
+                responses[#responses + 1] = reply
+            end
+        end
+        return responses
+    end
 end
 
--- Emits one event without waiting, resolving its subscriptions to a fixed audience.
+-- Requests the first valid response without waiting, resolving subscriptions to a fixed audience.
 -- Accepts one subscription, a list of subscriptions, or EVERYONE.
 -- Its future owns only this event's responses.
-function server_meta.__index.emit(self, subscriptions, event, event_arguments, accept_response)
-    if subscriptions ~= EVERYONE and type(subscriptions) ~= "table" then
-        subscriptions = { subscriptions }
-    end
+function server_meta.__index.request_first_valid(self, subscriptions, event, event_arguments, accept_response)
     local conns = self:get_subscribers(subscriptions)
     local future = setmetatable({
-        kind = "emit",
+        kind = "request_first_valid",
         server = self,
         event = event,
         conns = conns,
@@ -1164,18 +1174,37 @@ function server_meta.__index.emit(self, subscriptions, event, event_arguments, a
     return future
 end
 
--- Optional outputs and other collections still complete after their audience.
-function server_meta.__index.collect(self, conns, event, event_arguments)
-    local entry = { kind = "collect", response_schema = event.response_schema }
-    park(self, entry, conns or self:get_players(), encode_event(event, event_arguments))
-    return (coroutine.yield()).replies
+-- Requests every response to an ordinary event without waiting. The future resolves after
+-- the block's audience finishes; a timed wait returns the responses received before its deadline.
+function server_meta.__index.request_all(self, subscriptions, event, event_arguments)
+    assert(not event.scheduled_schema, "scheduled events require request_first_valid")
+    local future = setmetatable({
+        kind = "request_all",
+        server = self,
+        response_schema = event.response_schema,
+        line = encode_event(event, event_arguments),
+    }, future_meta)
+    register_event(self, future, self:get_subscribers(subscriptions))
+    self.ordinary[#self.ordinary + 1] = future
+    return future
+end
+
+-- Waits for a logical block's time barrier, or returns immediately if it has already been reached.
+function server_meta.__index.wait_until(self, block)
+    assert(math.type(block) == "integer" and block >= 0, "block must be a nonnegative block number")
+    if self:get_time() >= block then
+        return
+    end
+    local future <close> = setmetatable({ kind = "block", server = self, target_block = block }, future_meta)
+    register_event(self, future, {})
+    future:wait()
 end
 
 -- Accepts players subscribing to an initial hash until the phase closer closes the phase. A player
 -- connection itself expresses interest in the one computation served by this referee.
 function server_meta.__index.accept_subscribers(self, initial_state_hash)
     local entry = {
-        kind = "collect",
+        kind = "request_all",
         replies = {},
         pending = {},
         open = true,
@@ -1190,16 +1219,6 @@ function server_meta.__index.accept_subscribers(self, initial_state_hash)
     queue_phase_close(self, entry)
     coroutine.yield()
 end
-
--- Mcycle and uarch claim collection closes at the block supplied by the referee.
--- docs:begin collect_claims
-function server_meta.__index.collect_claims(self, subscriptions, event, event_arguments, close_block)
-    assert(close_block > self:request_block(), "claim collection must close after its opening block")
-    local entry = { kind = "collect", response_schema = event.response_schema, close_block = close_block }
-    park(self, entry, self:get_subscribers(subscriptions), encode_event(event, event_arguments))
-    return (coroutine.yield()).replies
-end
--- docs:end collect_claims
 
 local function entry_less(a, b)
     return a.match_order < b.match_order or (a.match_order == b.match_order and a.order < b.order)
@@ -1225,19 +1244,18 @@ end
 local function release_results(self)
     local completed = {}
     for entry in pairs(self.active) do
-        if entry.kind == "emit" then
-            if entry.value ~= nil or (entry.cortn and entry.deadline and self:get_time() >= entry.deadline) then
-                completed[#completed + 1] = entry
-            end
-        elseif not entry.subscription_hash and entry.answered then
-            if not entry.close_block or self:get_time() >= entry.close_block then
-                completed[#completed + 1] = entry
-            end
+        if entry.kind == "block" and self:get_time() >= entry.target_block then
+            entry.value, entry.accepted_at = true, self:get_time()
+        elseif entry.kind == "request_all" and not entry.subscription_hash and entry.answered then
+            entry.value, entry.accepted_at = entry.replies, self:get_time()
+        end
+        if entry.value ~= nil or (entry.cortn and entry.deadline and self:get_time() >= entry.deadline) then
+            completed[#completed + 1] = entry
         end
     end
     table.sort(completed, entry_less)
     for _, entry in ipairs(completed) do
-        if entry.kind == "emit" and entry.value == nil then
+        if entry.value == nil then
             self.dispatcher:schedule(entry.cortn, entry)
             entry.cortn, entry.deadline = nil, nil
         else
@@ -1282,7 +1300,7 @@ function server_meta.__index.step_time(self)
             table.sort(self.batch, entry_less)
             for _, entry in ipairs(self.batch) do
                 entry.answered = true
-                if entry.kind == "emit" and not entry.closed then
+                if entry.kind == "request_first_valid" and not entry.closed then
                     for _, reply in ipairs(entry.replies) do
                         if entry.value == nil then
                             local ok, value = pcall(entry.accept_response, reply.value)
@@ -1319,8 +1337,8 @@ function server_meta.__index.step_time(self)
         boundaries[#boundaries + 1] = entry.block
     end
     for entry in pairs(self.active) do
-        if entry.close_block then
-            boundaries[#boundaries + 1] = entry.close_block
+        if entry.target_block then
+            boundaries[#boundaries + 1] = entry.target_block
         end
         if entry.deadline then
             boundaries[#boundaries + 1] = entry.deadline
@@ -1352,7 +1370,8 @@ function server_meta.__index.run(self, main)
     self.dispatcher:spawn(function()
         main()
         assert(not next(self.active), "referee finished with pending requests")
-        self:collect(EVERYONE, EVENTS.finish, {})
+        local finished <close> = self:request_all(EVERYONE, EVENTS.finish, {})
+        finished:wait()
         self.done = true
     end)
     while not self.done do

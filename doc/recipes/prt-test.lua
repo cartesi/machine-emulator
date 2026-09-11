@@ -573,12 +573,10 @@ run_with_server(function(server, run_client, wait_connections)
         return { value = true }
     end)
     server:accept_subscribers("initial")
-    local responses = server:collect_claims(
-        { "initial" },
-        define_event("commit_mcycle_claim"),
-        {},
-        server:request_block() + 1
-    )
+    local close_block = server:request_block() + 1
+    local collection <close> = server:request_all("initial", define_event("commit_mcycle_claim"), {})
+    local responses = collection:wait(close_block)
+    server:wait_until(close_block)
     assert(#server.open_phases == 0, "closed phases were retained")
     table.sort(responses, function(x, y)
         return x.value < y.value
@@ -598,7 +596,7 @@ run_with_server(function(server, run_client, wait_connections)
     wait_connections(4)
 
     local function request(subscriptions, event, arguments, accept)
-        local future <close> = server:emit(subscriptions, event, arguments, accept)
+        local future <close> = server:request_first_valid(subscriptions, event, arguments, accept)
         return future:wait(server:request_block() + 1)
     end
 
@@ -614,7 +612,7 @@ run_with_server(function(server, run_client, wait_connections)
     -- Subscription changes affect the next event, not an event already emitted.
     server:subscribe_connection("snapshot", a)
     do
-        local future <close> = server:emit("snapshot", define_event("answer"), {}, function() end)
+        local future <close> = server:request_first_valid("snapshot", define_event("answer"), {}, function() end)
         server:subscribe_connection("snapshot", b)
         assert(future:wait(server:request_block() + 1) == nil)
         assert(#answered == 3, "an emitted event's audience changed with its subscriptions")
@@ -642,8 +640,11 @@ run_with_server(function(server, run_client, wait_connections)
     assert(replies_seen == 1, "the event resolved before every holder answered")
     assert(not n.dead and not b.dead, "an invalid response closed a connection")
 
-    -- A nested tournament asks only its audience, and closes at once.
-    local nested = server:collect_claims({ "a" }, define_event("commit_mcycle_claim"), {}, server:request_block() + 1)
+    -- A nested tournament asks only its audience, and closes at the next block.
+    local nested_close_block = server:request_block() + 1
+    local nested_collection <close> = server:request_all("a", define_event("commit_mcycle_claim"), {})
+    local nested = nested_collection:wait(nested_close_block)
+    server:wait_until(nested_close_block)
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
     assert(#server.open_phases == 0, "closed nested tournament was retained")
 
@@ -656,7 +657,8 @@ run_with_server(function(server, run_client, wait_connections)
         return "close"
     end)
     wait_connections(6)
-    local replies = server:collect(EVERYONE, define_event("label"), {})
+    local labels <close> = server:request_all(EVERYONE, define_event("label"), {})
+    local replies = labels:wait()
     local d = server.connections[6]
     server:subscribe_connection("d", d)
     assert(d.dead and #replies == 4, "the closing client was not dropped from the collection")
@@ -707,7 +709,8 @@ run_with_server(function(server, run_client, wait_connections)
         return "this is not json"
     end)
     wait_connections(9)
-    server:collect(EVERYONE, define_event("label"), {})
+    local malformed <close> = server:request_all(EVERYONE, define_event("label"), {})
+    malformed:wait()
     local dead = 0
     for _, connection in ipairs(server.connections) do
         if connection.dead then
@@ -727,7 +730,10 @@ run_with_server(function(server, run_client, wait_connections)
     wait_connections(10)
     local f = server.connections[10]
     server:subscribe_connection("f", f)
-    local t2 = server:collect_claims({ "f" }, define_event("commit_mcycle_claim"), {}, server:request_block() + 1)
+    local forged_close_block = server:request_block() + 1
+    local forged_collection <close> = server:request_all("f", define_event("commit_mcycle_claim"), {})
+    local t2 = forged_collection:wait(forged_close_block)
+    server:wait_until(forged_close_block)
     assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged close was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second
@@ -736,7 +742,9 @@ run_with_server(function(server, run_client, wait_connections)
         return { role = "player" }
     end)
     wait_connections(11)
-    server:collect({ server.connections[11] }, define_event("again"), {})
+    server:subscribe_connection("again", server.connections[11])
+    local repeated_hello <close> = server:request_all("again", define_event("again"), {})
+    repeated_hello:wait()
     assert(server.connections[11].dead, "a repeated role announcement was accepted")
     run_client({ role = "phase_closer" }, function()
         return "close"

@@ -5412,7 +5412,7 @@ The two claims part ways over what the state hash was after one period of one in
 The uarch tournament follows the same lifecycle as the mcycle one, open, submit, run, with two differences: its audience is the holders of the two disputed claims, and a claim may only join if its final state is one of the two contested values, the same restriction `validContestedFinalState` imposes on chain (`open_uarch_tournament`).
 The uarch winner's final state names the mcycle claim that survives.
 `propagate_uarch_result` applies that result directly, or eliminates both mcycle claims if the uarch tournament has no winner.
-Dave would use an emit/wait pair at this point to request the propagation transaction.
+Dave would use a request/wait pair at this point to request the propagation transaction.
 The Lua referee already has the result and needs no further player response.
 ```{.lua key=prt_settle_mcycle_state_hash include=prt.lua/settle_mcycle_state_hash title="prt.lua (excerpt)"}
 ```
@@ -5443,7 +5443,8 @@ The event table names each operation, including `reveal_bisection`, `seal_diverg
 The first argument of each scheduling event is the block when its callback is due.
 Ordinary events pass computation arguments directly to the player.
 
-`emit(conns, event, arguments, validator)` returns a future without suspending the referee.
+`request_first_valid(subscriptions, event, arguments, validator)` returns a future without suspending the referee.
+The audience is one subscription hash, a list of hashes, or `EVERYONE` for all live players.
 Each future decodes responses under that event's schema and retains the first result accepted by its validator.
 `future:wait(deadline)` returns that result if accepted before the given block, or `nil` when the deadline is reached.
 The deadline belongs to the wait. A later wait can still obtain the result, and `future:wait()` has no deadline.
@@ -5454,6 +5455,15 @@ Only computation requests go to holders of the relevant claim.
 Every player receives requests to eliminate inactive matches, including unrelated ones that could keep the tournament open.
 The referee never narrates who holds a claim.
 Each player announces its own claim on standard error.
+
+`request_all(subscriptions, event, arguments)` returns a future for all responses to an ordinary event.
+Its `wait(deadline)` returns the responses received before that block, including an empty list if nobody supplies a value.
+The list retains each response's sender and receipt block. A partial result is a snapshot: later replies do not change it.
+Without a deadline, the wait returns once the audience finishes. A deadline bounds only that wait, so another wait can obtain more responses.
+`server:wait_until(block)` suspends until that logical block's time barrier, or returns immediately if the block has already been reached.
+Tournament opening waits for responses with the closing block as its deadline, then calls `wait_until` before partitioning the claims.
+This also keeps the tournament from opening early when all responses arrive before the deadline.
+The server handles responses and logical time; the tournament determines when claim collection closes.
 
 The referee server in `prtu.lua` runs logical blocks, with a barrier for each block's ordinary requests.
 It gathers every audience member's response, explicit skip, or disconnect before validating replies and resuming protocol coroutines in match creation order.
@@ -5467,7 +5477,8 @@ A result accepted before that wait remains available in the future.
 A malformed current response or invalid proof finishes that player's request without resolving its future.
 A valid JSON response arriving with no request in flight is ignored and leaves the connection open.
 It cannot close a phase or satisfy a later request. Malformed JSON closes the connection.
-A connected peer that never replies still stalls the barrier.
+A connected peer that never replies still stalls the documentation barrier.
+This barrier synchronizes the scripted demonstration; a blockchain bridge follows chain block progress independently of missing player responses.
 
 The referee in `prt.lua` defines and enforces the windows.
 An opening requested in block b is valid during b, a holder of the waiting claim may respond to claim a timeout win in [b + 1, b + 2), and anyone may eliminate both claims from b + 2.

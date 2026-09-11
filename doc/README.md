@@ -9789,7 +9789,7 @@ local function run_match(tournament, match)
         local deadline = server:request_block() + 1
         local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
         local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
-        local reveal <close> = server:emit(
+        local reveal <close> = server:request_first_valid(
             subscription_hash(tournament.id, turn_claim),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
@@ -9811,7 +9811,7 @@ local function run_match(tournament, match)
         local deadline = server:request_block() + 1
         local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
         local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
-        local seal <close> = server:emit(
+        local seal <close> = server:request_first_valid(
             subscription_hash(tournament.id, turn_claim),
             EVENTS.seal_divergence,
             { turn_claim.computation_hash, match.position, match.other_left_node },
@@ -9849,8 +9849,8 @@ values, the same restriction `validContestedFinalState` imposes on chain
 (`open_uarch_tournament`). The uarch winner’s final state names the
 mcycle claim that survives. `propagate_uarch_result` applies that result
 directly, or eliminates both mcycle claims if the uarch tournament has
-no winner. Dave would use an emit/wait pair at this point to request the
-propagation transaction. The Lua referee already has the result and
+no winner. Dave would use a request/wait pair at this point to request
+the propagation transaction. The Lua referee already has the result and
 needs no further player response.
 
 ``` lua
@@ -9932,7 +9932,7 @@ local function settle_uarch_state_hash(
         subscription_hash(tournament.id, match.claims[2]),
     }
     local deadline = server:request_block() + 1
-    local elimination <close> = server:emit(
+    local elimination <close> = server:request_first_valid(
         EVERYONE,
         EVENTS.schedule_match_elimination,
         { deadline },
@@ -9941,7 +9941,7 @@ local function settle_uarch_state_hash(
             return true
         end
     )
-    local proof <close> = server:emit(
+    local proof <close> = server:request_first_valid(
         subscriptions,
         EVENTS.prove_state_transition,
         { tournament.input_index, tournament.period_index, state_transition_offset },
@@ -10010,21 +10010,38 @@ each operation, including `reveal_bisection`, `seal_divergence`, and
 each scheduling event is the block when its callback is due. Ordinary
 events pass computation arguments directly to the player.
 
-`emit(conns, event, arguments, validator)` returns a future without
-suspending the referee. Each future decodes responses under that event’s
-schema and retains the first result accepted by its validator.
-`future:wait(deadline)` returns that result if accepted before the given
-block, or `nil` when the deadline is reached. The deadline belongs to
-the wait. A later wait can still obtain the result, and `future:wait()`
-has no deadline. A future declared with `<close>` cancels its pending
-callback when the scope ends, including on an error. The referee emits
-the reveal, timeout, and elimination requests before waiting for the
-reveal. If that wait expires, it waits for the timeout result until the
-elimination block, then waits for elimination without a deadline. Only
-computation requests go to holders of the relevant claim. Every player
-receives requests to eliminate inactive matches, including unrelated
-ones that could keep the tournament open. The referee never narrates who
-holds a claim. Each player announces its own claim on standard error.
+`request_first_valid(subscriptions, event, arguments, validator)`
+returns a future without suspending the referee. The audience is one
+subscription hash, a list of hashes, or `EVERYONE` for all live players.
+Each future decodes responses under that event’s schema and retains the
+first result accepted by its validator. `future:wait(deadline)` returns
+that result if accepted before the given block, or `nil` when the
+deadline is reached. The deadline belongs to the wait. A later wait can
+still obtain the result, and `future:wait()` has no deadline. A future
+declared with `<close>` cancels its pending callback when the scope
+ends, including on an error. The referee emits the reveal, timeout, and
+elimination requests before waiting for the reveal. If that wait
+expires, it waits for the timeout result until the elimination block,
+then waits for elimination without a deadline. Only computation requests
+go to holders of the relevant claim. Every player receives requests to
+eliminate inactive matches, including unrelated ones that could keep the
+tournament open. The referee never narrates who holds a claim. Each
+player announces its own claim on standard error.
+
+`request_all(subscriptions, event, arguments)` returns a future for all
+responses to an ordinary event. Its `wait(deadline)` returns the
+responses received before that block, including an empty list if nobody
+supplies a value. The list retains each response’s sender and receipt
+block. A partial result is a snapshot: later replies do not change it.
+Without a deadline, the wait returns once the audience finishes. A
+deadline bounds only that wait, so another wait can obtain more
+responses. `server:wait_until(block)` suspends until that logical
+block’s time barrier, or returns immediately if the block has already
+been reached. Tournament opening waits for responses with the closing
+block as its deadline, then calls `wait_until` before partitioning the
+claims. This also keeps the tournament from opening early when all
+responses arrive before the deadline. The server handles responses and
+logical time; the tournament determines when claim collection closes.
 
 The referee server in `prtu.lua` runs logical blocks, with a barrier for
 each block’s ordinary requests. It gathers every audience member’s
@@ -10043,7 +10060,9 @@ proof finishes that player’s request without resolving its future. A
 valid JSON response arriving with no request in flight is ignored and
 leaves the connection open. It cannot close a phase or satisfy a later
 request. Malformed JSON closes the connection. A connected peer that
-never replies still stalls the barrier.
+never replies still stalls the documentation barrier. This barrier
+synchronizes the scripted demonstration; a blockchain bridge follows
+chain block progress independently of missing player responses.
 
 The referee in `prt.lua` defines and enforces the windows. An opening
 requested in block b is valid during b, a holder of the waiting claim

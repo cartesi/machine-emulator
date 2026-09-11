@@ -4,6 +4,7 @@ local hash_tree = require("cartesi.hash-tree")
 local prt = require("prt")
 local prtu = require("prtu")
 local keccak = cartesi.keccak256
+local EVERYONE = prtu.EVERYONE
 
 local function copy(value)
     if type(value) ~= "table" then
@@ -169,8 +170,8 @@ return function(run_with_server)
             local block = server:get_time()
             local marker = {}
             local timeout <close> = server:emit(
-                server:get_players(),
-                prtu.EVENTS.schedule_timeout_win,
+                EVERYONE,
+                prtu.EVENTS.schedule_match_timeout_win,
                 { block + 2, keccak(left, right) },
                 function(response)
                     assert(response.computation_hash_left == left and response.computation_hash_right == right)
@@ -186,7 +187,7 @@ return function(run_with_server)
                 end
             )
             local elimination <close> = server:emit(
-                server:get_players(),
+                EVERYONE,
                 prtu.EVENTS.schedule_match_elimination,
                 { block + 5 },
                 function(response)
@@ -197,13 +198,13 @@ return function(run_with_server)
             assert(server:get_time() == block, "emit suspended its caller")
             local ok, err = pcall(function()
                 local cancelled <close> = server:emit( -- luacheck: ignore 211
-                    server:get_players(),
+                    EVERYONE,
                     prtu.EVENTS.schedule_match_elimination,
                     { block + 4 },
                     function() end
                 )
                 local ordinary <close> = server:emit( -- luacheck: ignore 211
-                    server:get_players(),
+                    EVERYONE,
                     prtu.define_event("cancelled_probe"),
                     {},
                     function() end
@@ -243,16 +244,12 @@ return function(run_with_server)
         local parent, blocks = coroutine.running(), {}
         for index = 1, 2 do
             server.dispatcher:spawn(function()
+                server:subscribe_connection(index, server.connections[index])
                 blocks[index] = server:request_block()
-                local future <close> = server:emit(
-                    { server.connections[index] },
-                    prtu.define_event("probe"),
-                    {},
-                    function(v)
-                        assert(seen == 1 and server:get_time() == blocks[index])
-                        return v
-                    end
-                )
+                local future <close> = server:emit({ index }, prtu.define_event("probe"), {}, function(v)
+                    assert(seen == 1 and server:get_time() == blocks[index])
+                    return v
+                end)
                 local value = future:wait(blocks[index] + 1)
                 assert((index == 1 and value == true) or (index == 2 and value == nil))
                 resumed = resumed + 1
@@ -281,14 +278,15 @@ return function(run_with_server)
                 cancelled = true
             elseif event.operation == "probe" and not scheduled then
                 local connection = server.connections[1]
+                server:subscribe_connection("probe", connection)
                 server.dispatcher:spawn(function()
                     local elimination <close> = server:emit( -- luacheck: ignore 211
-                        { connection },
+                        { "probe" },
                         prtu.EVENTS.schedule_match_elimination,
                         { server:request_block() + 10 },
                         function() end
                     )
-                    local future <close> = server:emit({ connection }, probe, {}, function(v)
+                    local future <close> = server:emit({ "probe" }, probe, {}, function(v)
                         return v
                     end)
                     assert(future:wait())
@@ -302,7 +300,7 @@ return function(run_with_server)
             return { value = true }
         end, true)
         wait_connections(1)
-        local first <close> = server:emit(server:get_players(), probe, {}, function(v)
+        local first <close> = server:emit(EVERYONE, probe, {}, function(v)
             assert(scheduled, "scheduling did not drain before continuing")
             return v
         end)
@@ -310,7 +308,7 @@ return function(run_with_server)
         while not nested_done do
             coroutine.yield()
         end
-        local second <close> = server:emit(server:get_players(), probe, {}, function(v)
+        local second <close> = server:emit(EVERYONE, probe, {}, function(v)
             assert(cancelled, "closing the future did not cancel its pending response")
             return v
         end)
@@ -352,8 +350,8 @@ return function(run_with_server)
                 local block = server:request_block() + 1
                 if index == 1 then
                     local timeout <close> = server:emit(
-                        server:get_players(),
-                        prtu.EVENTS.schedule_timeout_win,
+                        EVERYONE,
+                        prtu.EVENTS.schedule_match_timeout_win,
                         { block, keccak(left, right) },
                         function(response)
                             assert(response.computation_hash_left == left and response.computation_hash_right == right)
@@ -365,7 +363,7 @@ return function(run_with_server)
                     assert(timeout:wait(block + 1))
                 else
                     local elimination <close> = server:emit(
-                        server:get_players(),
+                        EVERYONE,
                         prtu.EVENTS.schedule_match_elimination,
                         { block },
                         function(response)
@@ -472,11 +470,11 @@ return function(run_with_server)
             server.emit = function(self, conns, event, arguments, accept)
                 if event.scheduled_schema then
                     local block = arguments[1]
-                    local expires = event == prtu.EVENTS.schedule_timeout_win and block + 1 or nil
+                    local expires = event == prtu.EVENTS.schedule_match_timeout_win and block + 1 or nil
                     local delay = block - self:request_block()
                     assert(delay == 1 or (event == prtu.EVENTS.schedule_match_elimination and delay == 2))
                     local response = true
-                    if event == prtu.EVENTS.schedule_timeout_win then
+                    if event == prtu.EVENTS.schedule_match_timeout_win then
                         assert(expires == block + 1)
                         for _, player in ipairs(players) do
                             for _, tree in ipairs({ player.mcycle_claim, player.uarch_claim }) do
@@ -597,7 +595,7 @@ return function(run_with_server)
                         local kept = {}
                         for _, reply in ipairs(response.value) do
                             local future = server.scheduled_responses[reply.id]
-                            local timeout = future.event == prtu.EVENTS.schedule_timeout_win
+                            local timeout = future.event == prtu.EVENTS.schedule_match_timeout_win
                             local suppress = mode == "eliminate"
                                 or mode == "concurrent"
                                 or (mode == "uarch_inactive" and index >= 3)

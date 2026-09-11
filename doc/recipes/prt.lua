@@ -298,7 +298,7 @@ end
 local function emit_schedule_match_timeout_win(tournament, match, deadline)
     local other_turn = get_other_turn(match.turn)
     local other_claim = match.claims[other_turn]
-    return server:emit(
+    return server:request_first_valid(
         subscription_hash(tournament.id, other_claim),
         EVENTS.schedule_match_timeout_win,
         { deadline, other_claim.computation_hash },
@@ -312,7 +312,7 @@ local function emit_schedule_match_timeout_win(tournament, match, deadline)
 end
 
 local function emit_schedule_match_elimination(match, deadline)
-    return server:emit(EVERYONE, EVENTS.schedule_match_elimination, { deadline }, function(response)
+    return server:request_first_valid(EVERYONE, EVENTS.schedule_match_elimination, { deadline }, function(response)
         assert(server:get_time() >= deadline and response == true)
         story.report_match_eliminated(match)
         return 0
@@ -337,7 +337,7 @@ local function settle_uarch_state_hash(
         subscription_hash(tournament.id, match.claims[2]),
     }
     local deadline = server:request_block() + 1
-    local elimination <close> = server:emit(
+    local elimination <close> = server:request_first_valid(
         EVERYONE,
         EVENTS.schedule_match_elimination,
         { deadline },
@@ -346,7 +346,7 @@ local function settle_uarch_state_hash(
             return true
         end
     )
-    local proof <close> = server:emit(
+    local proof <close> = server:request_first_valid(
         subscriptions,
         EVENTS.prove_state_transition,
         { tournament.input_index, tournament.period_index, state_transition_offset },
@@ -396,10 +396,12 @@ local function open_uarch_tournament(
     local mcycle_tournament_id = mcycle_tournament.id
     local tournament_id = keccak(mcycle_match.claims[1].computation_hash, mcycle_match.claims[2].computation_hash)
     local close_block = server:request_block() + 1
-    local responses = server:collect_claims({
+    local collection <close> = server:request_all({
         subscription_hash(mcycle_tournament_id, mcycle_match.claims[1]),
         subscription_hash(mcycle_tournament_id, mcycle_match.claims[2]),
-    }, EVENTS.commit_uarch_claim, { input_index, period_index, next_state_hashes }, close_block)
+    }, EVENTS.commit_uarch_claim, { input_index, period_index, next_state_hashes })
+    local responses = collection:wait(close_block)
+    server:wait_until(close_block)
     local claims = partition_claims(responses, validate_uarch_claim, tournament_id)
     local tournament = {
         level = "uarch",
@@ -421,7 +423,7 @@ end
 
 -- Applies the uarch tournament result directly to the mcycle match.
 local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
-    -- With a winner, Dave's equivalent emit/wait flow would look like the sketch below.
+    -- With a winner, Dave's equivalent request/wait flow would look like the sketch below.
     -- It also takes the enclosing mcycle tournament and winner_expires_at from Dave's clocks,
     -- not a fresh propagation allowance. These illustrative events are omitted from the Lua protocol.
     --[[
@@ -429,14 +431,14 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
         local claim_index = winner.final_state_hash == next_state_hashes[1] and 1 or 2
         assert(winner.final_state_hash == next_state_hashes[claim_index])
         local mcycle_claim = mcycle_match.claims[claim_index]
-        local elimination <close> = server:emit(
+        local elimination <close> = server:request_first_valid(
             EVERYONE, EVENTS.schedule_uarch_result_elimination, { winner_expires_at },
             function(response)
                 assert(server:get_time() >= winner_expires_at and response == true)
                 return true
             end
         )
-        local propagation <close> = server:emit(
+        local propagation <close> = server:request_first_valid(
             subscription_hash(mcycle_tournament.id, mcycle_claim),
             EVENTS.propagate_uarch_result, { mcycle_claim.computation_hash },
             function(response)
@@ -509,7 +511,7 @@ local function run_match(tournament, match)
         local deadline = server:request_block() + 1
         local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
         local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
-        local reveal <close> = server:emit(
+        local reveal <close> = server:request_first_valid(
             subscription_hash(tournament.id, turn_claim),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
@@ -531,7 +533,7 @@ local function run_match(tournament, match)
         local deadline = server:request_block() + 1
         local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
         local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
-        local seal <close> = server:emit(
+        local seal <close> = server:request_first_valid(
             subscription_hash(tournament.id, turn_claim),
             EVENTS.seal_divergence,
             { turn_claim.computation_hash, match.position, match.other_left_node },
@@ -620,12 +622,9 @@ local function open_mcycle_tournament(dapp_contract)
     local geometry = dapp_contract.geometry
     local tournament_id = dapp_contract.initial_state_hash
     local close_block = server:request_block() + 1
-    local responses = server:collect_claims(
-        { dapp_contract.initial_state_hash },
-        EVENTS.commit_mcycle_claim,
-        {},
-        close_block
-    )
+    local collection <close> = server:request_all(dapp_contract.initial_state_hash, EVENTS.commit_mcycle_claim, {})
+    local responses = collection:wait(close_block)
+    server:wait_until(close_block)
     local claims = partition_claims(responses, function(submitted_claim)
         return validate_claim(submitted_claim, geometry.mcycle_height)
     end, tournament_id)
@@ -704,14 +703,19 @@ verify_output = util.protect(verify_output)
 -- docs:begin wait_for_result
 local function wait_for_result(tournament, winner)
     local subscription = subscription_hash(tournament.id, winner)
-    local root_proof <close> = server:emit(subscription, EVENTS.prove_outputs_merkle_root, {}, function(response)
-        return verify_outputs_merkle_root(response, winner.final_state_hash)
-    end)
+    local root_proof <close> = server:request_first_valid(
+        subscription,
+        EVENTS.prove_outputs_merkle_root,
+        {},
+        function(response)
+            return verify_outputs_merkle_root(response, winner.final_state_hash)
+        end
+    )
     local outputs_merkle_root = root_proof:wait(server:request_block() + 1)
     if not outputs_merkle_root then
         return story.report_result(nil)
     end
-    local output_proof <close> = server:emit(subscription, EVENTS.prove_output, {}, function(response)
+    local output_proof <close> = server:request_first_valid(subscription, EVENTS.prove_output, {}, function(response)
         return verify_output(response, outputs_merkle_root) and response
     end)
     story.report_result(output_proof:wait(server:request_block() + 1))

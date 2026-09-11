@@ -9724,15 +9724,15 @@ otherwise, and the turn passes to the other claim:
 ``` lua
 local function advance_bisection(match, response)
     assert(match.height > 1)
+    match.height = match.height - 1
     local descend_left = response.turn_left_node ~= match.other_left_node
     if descend_left then
         match.turn_parent_node = match.other_left_node
     else
         match.turn_parent_node = match.other_right_node
-        match.position = match.position + (1 << (match.height - 1))
+        match.position = match.position + (1 << match.height)
     end
     match.other_left_node, match.other_right_node = response.turn_next_left_node, response.turn_next_right_node
-    match.height = match.height - 1
     match.turn = get_other_turn(match.turn)
 end
 ```
@@ -9787,10 +9787,10 @@ local function run_match(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
         local deadline = server:request_block() + 1
-        local timeout <close> = emit_timeout_win(tournament, match, deadline)
-        local elimination <close> = emit_match_elimination(match, deadline + 1)
+        local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
+        local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
         local reveal <close> = server:emit(
-            server:get_subscribers({ subscription_hash(tournament.id, turn_claim) }),
+            subscription_hash(tournament.id, turn_claim),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
@@ -9809,10 +9809,10 @@ local function run_match(tournament, match)
     do
         local turn_claim = match.claims[match.turn]
         local deadline = server:request_block() + 1
-        local timeout <close> = emit_timeout_win(tournament, match, deadline)
-        local elimination <close> = emit_match_elimination(match, deadline + 1)
+        local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
+        local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
         local seal <close> = server:emit(
-            server:get_subscribers({ subscription_hash(tournament.id, turn_claim) }),
+            subscription_hash(tournament.id, turn_claim),
             EVENTS.seal_divergence,
             { turn_claim.computation_hash, match.position, match.other_left_node },
             function(response)
@@ -9927,13 +9927,13 @@ local function settle_uarch_state_hash(
     current_state_hash,
     next_state_hashes
 )
-    local conns = server:get_subscribers({
+    local subscriptions = {
         subscription_hash(tournament.id, match.claims[1]),
         subscription_hash(tournament.id, match.claims[2]),
-    })
+    }
     local deadline = server:request_block() + 1
     local elimination <close> = server:emit(
-        server:get_players(),
+        EVERYONE,
         EVENTS.schedule_match_elimination,
         { deadline },
         function(response)
@@ -9942,7 +9942,7 @@ local function settle_uarch_state_hash(
         end
     )
     local proof <close> = server:emit(
-        conns,
+        subscriptions,
         EVENTS.prove_state_transition,
         { tournament.input_index, tournament.period_index, state_transition_offset },
         function(response)
@@ -10003,7 +10003,7 @@ Each player answers typed requests in a blocking loop (`run_client` in
 `prtu.lua`). It owns its machines and claims. Scheduling handlers return
 callbacks that produce responses on later blocks. The event table names
 each operation, including `reveal_bisection`, `seal_divergence`, and
-`prove_state_transition`. `schedule_timeout_win` and
+`prove_state_transition`. `schedule_match_timeout_win` and
 `schedule_match_elimination` prepare the corresponding responses.
 `prtu.lua` keeps the callbacks in a private queue and invokes them when
 `advance_time` supplies a strictly newer block. The first argument of

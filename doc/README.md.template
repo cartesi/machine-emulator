@@ -5438,7 +5438,7 @@ The logs come from a holder of either claim, produced by positioning a fresh for
 Each player answers typed requests in a blocking loop (`run_client` in `prtu.lua`).
 It owns its machines and claims. Scheduling handlers return callbacks that produce responses on later blocks.
 The event table names each operation, including `reveal_bisection`, `seal_divergence`, and `prove_state_transition`.
-`schedule_timeout_win` and `schedule_match_elimination` prepare the corresponding responses.
+`schedule_match_timeout_win` and `schedule_match_elimination` prepare the corresponding responses.
 `prtu.lua` keeps the callbacks in a private queue and invokes them when `advance_time` supplies a strictly newer block.
 The first argument of each scheduling event is the block when its callback is due.
 Ordinary events pass computation arguments directly to the player.

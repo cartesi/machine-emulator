@@ -12,6 +12,7 @@ local socket = require("socket")
 local dishonest = require("prt-dishonest")
 local prtu = require("prtu")
 local prt = require("prt")
+local EVERYONE = prtu.EVERYONE
 assert(require("prt-time-test"))
 
 local keccak = cartesi.keccak256
@@ -573,7 +574,7 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     server:accept_subscribers("initial")
     local responses = server:collect_claims(
-        server:get_subscribers({ "initial" }),
+        { "initial" },
         define_event("commit_mcycle_claim"),
         {},
         server:request_block() + 1
@@ -590,27 +591,43 @@ run_with_server(function(server, run_client, wait_connections)
     local a, b = responses[1].connection, responses[2].connection
     server:subscribe_connection("x", a)
     server:subscribe_connection("x", b)
+    server:subscribe_connection("a", a)
+    server:subscribe_connection("b", b)
     -- A late joiner, after the phase closes, is not part of the mcycle tournament.
     run_client(nil, make_claimer("c", answer("valid")))
     wait_connections(4)
 
-    local function request(conns, event, arguments, accept)
-        local future <close> = server:emit(conns, event, arguments, accept)
+    local function request(subscriptions, event, arguments, accept)
+        local future <close> = server:emit(subscriptions, event, arguments, accept)
         return future:wait(server:request_block() + 1)
     end
 
     -- The first valid response wins and a rejected response leaves its connection open.
-    assert(
-        request(server:get_subscribers({ "x" }), define_event("answer"), {}, is_valid) == "valid",
-        "valid response not taken"
-    )
+    assert(request({ "x", "a" }, define_event("answer"), {}, is_valid) == "valid", "valid response not taken")
     assert(not a.dead and not b.dead, "a rejected proof closed a connection")
+    assert(#answered == 2, "overlapping subscriptions duplicated or broadened the audience")
 
-    -- The acceptor's result, rather than the submitted value, is returned.
-    local mapped = request({ a }, define_event("mapped"), {}, function(v)
+    -- An empty subscription list is distinct from EVERYONE.
+    assert(request({}, define_event("answer"), {}, is_valid) == nil)
+    assert(#answered == 2, "an empty subscription list broadcast the event")
+
+    -- Subscription changes affect the next event, not an event already emitted.
+    server:subscribe_connection("snapshot", a)
+    do
+        local future <close> = server:emit("snapshot", define_event("answer"), {}, function() end)
+        server:subscribe_connection("snapshot", b)
+        assert(future:wait(server:request_block() + 1) == nil)
+        assert(#answered == 3, "an emitted event's audience changed with its subscriptions")
+    end
+    assert(request({ "snapshot" }, define_event("answer"), {}, function() end) == nil)
+    assert(#answered == 5, "a new event reused an old subscription audience")
+
+    -- A single subscription selects its holders, and the acceptor's result is returned.
+    local mapped = request("a", define_event("mapped"), {}, function(v)
         return is_valid(v) and "mapped"
     end)
     assert(mapped == "mapped", "future did not return the acceptor result")
+    assert(#answered == 6, "a single subscription selected the wrong audience")
 
     -- Without a valid response, the wait reaches its deadline after every holder answers.
     local replies_seen = 0
@@ -620,17 +637,18 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     wait_connections(5)
     local n = server.connections[5]
-    assert(request({ n, b }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
+    server:subscribe_connection("n", n)
+    assert(request({ "n", "b" }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
     assert(replies_seen == 1, "the event resolved before every holder answered")
     assert(not n.dead and not b.dead, "an invalid response closed a connection")
 
     -- A nested tournament asks only its audience, and closes at once.
-    local nested = server:collect_claims({ a }, define_event("commit_mcycle_claim"), {}, server:request_block() + 1)
+    local nested = server:collect_claims({ "a" }, define_event("commit_mcycle_claim"), {}, server:request_block() + 1)
     assert(#nested == 1 and nested[1].value == "a", "nested tournament asked the wrong audience")
     assert(#server.open_phases == 0, "closed nested tournament was retained")
 
     -- Every holder answers without proof and the wait expires with connections open.
-    assert(request({ b }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
+    assert(request({ "b" }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
     assert(not b.dead, "an invalid response closed its connection")
 
     -- A holder that closes counts as answered. With every holder gone, the claim is unanswered.
@@ -638,11 +656,12 @@ run_with_server(function(server, run_client, wait_connections)
         return "close"
     end)
     wait_connections(6)
-    local replies = server:collect(nil, define_event("label"), {})
+    local replies = server:collect(EVERYONE, define_event("label"), {})
     local d = server.connections[6]
+    server:subscribe_connection("d", d)
     assert(d.dead and #replies == 4, "the closing client was not dropped from the collection")
     assert(
-        request({ d }, define_event("answer"), {}, is_valid) == nil,
+        request({ "d" }, define_event("answer"), {}, is_valid) == nil,
         "an event to a closed connection did not resolve"
     )
 
@@ -667,8 +686,9 @@ run_with_server(function(server, run_client, wait_connections)
         return v.l == "a" and v.r == "b" and v
     end
     local bad = run_typed_client({ l = 1, r = "not base64!" })
+    server:subscribe_connection("bad", bad)
     assert(
-        request({ bad }, define_event("typed", "PairResponse"), {}, is_well_typed) == nil,
+        request({ "bad" }, define_event("typed", "PairResponse"), {}, is_well_typed) == nil,
         "a schema-invalid value was taken"
     )
     assert(not next(server.active), "closing a future left it active")
@@ -676,7 +696,8 @@ run_with_server(function(server, run_client, wait_connections)
     -- Alongside a well-typed reply, whichever arrives first, the well-typed value is taken and
     -- both connections stay open.
     local good = run_typed_client({ l = "a", r = "b" }, "PairResponseEnvelope")
-    local taken = request({ bad, good }, define_event("typed", "PairResponse"), {}, is_well_typed)
+    server:subscribe_connection("good", good)
+    local taken = request({ "bad", "good" }, define_event("typed", "PairResponse"), {}, is_well_typed)
     assert(taken and taken.l == "a", "the well-typed reply was not taken")
     assert(not next(server.active), "closing a future left it active")
     assert(not bad.dead and not good.dead, "a schema-invalid reply closed a connection")
@@ -686,7 +707,7 @@ run_with_server(function(server, run_client, wait_connections)
         return "this is not json"
     end)
     wait_connections(9)
-    server:collect(nil, define_event("label"), {})
+    server:collect(EVERYONE, define_event("label"), {})
     local dead = 0
     for _, connection in ipairs(server.connections) do
         if connection.dead then
@@ -705,7 +726,8 @@ run_with_server(function(server, run_client, wait_connections)
     end)
     wait_connections(10)
     local f = server.connections[10]
-    local t2 = server:collect_claims({ f }, define_event("commit_mcycle_claim"), {}, server:request_block() + 1)
+    server:subscribe_connection("f", f)
+    local t2 = server:collect_claims({ "f" }, define_event("commit_mcycle_claim"), {}, server:request_block() + 1)
     assert(#t2 == 1 and t2[1].value == "forger" and not f.dead, "the forged close was not ignored")
 
     -- A connection announces its role once. Announcing again closes it, and so does a second

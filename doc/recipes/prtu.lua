@@ -10,6 +10,9 @@ local socket = require("socket")
 local new_clock = require("prt-clock")
 local new_response_queue = require("prt-response-queue")
 
+-- A nil subscription audience broadcasts to every live player; an empty list reaches nobody.
+local EVERYONE = nil
+
 --------------------------------------------------------------------------------
 -- Small utilities
 --------------------------------------------------------------------------------
@@ -569,7 +572,11 @@ local EVENTS = {
     ),
     prove_output = define_event("prove_output", "ProveOutputEvent", "ProveOutputResponse"),
     get_claim_children = define_event("get_claim_children", "GetClaimChildrenEvent", "ClaimChildren"),
-    schedule_timeout_win = define_schedule_event("schedule_timeout_win", "ScheduleClaimChildrenEvent", "ClaimChildren"),
+    schedule_match_timeout_win = define_schedule_event(
+        "schedule_match_timeout_win",
+        "ScheduleClaimChildrenEvent",
+        "ClaimChildren"
+    ),
     schedule_match_elimination = define_schedule_event(
         "schedule_match_elimination",
         "ScheduleEliminationEvent",
@@ -1013,10 +1020,13 @@ function server_meta.__index.subscribe_connection(self, hash, connection)
     set[connection] = true
 end
 
--- The live connections subscribed to any of the given subscription hashes.
-function server_meta.__index.get_subscribers(self, hashes)
+-- The live connections subscribed to any of the given subscriptions, or every live player.
+function server_meta.__index.get_subscribers(self, subscriptions)
+    if subscriptions == EVERYONE then
+        return self:get_players()
+    end
     local seen, list = {}, {}
-    for _, hash in ipairs(hashes) do
+    for _, hash in ipairs(subscriptions) do
         local set = self.subscriptions[hash]
         if set then
             for connection in pairs(set) do
@@ -1124,8 +1134,14 @@ function future_meta.__index:wait(deadline)
     end
 end
 
--- Emits one event without waiting. Its future owns only this event's responses.
-function server_meta.__index.emit(self, conns, event, event_arguments, accept_response)
+-- Emits one event without waiting, resolving its subscriptions to a fixed audience.
+-- Accepts one subscription, a list of subscriptions, or EVERYONE.
+-- Its future owns only this event's responses.
+function server_meta.__index.emit(self, subscriptions, event, event_arguments, accept_response)
+    if subscriptions ~= EVERYONE and type(subscriptions) ~= "table" then
+        subscriptions = { subscriptions }
+    end
+    local conns = self:get_subscribers(subscriptions)
     local future = setmetatable({
         kind = "emit",
         server = self,
@@ -1177,10 +1193,10 @@ end
 
 -- Mcycle and uarch claim collection closes at the block supplied by the referee.
 -- docs:begin collect_claims
-function server_meta.__index.collect_claims(self, conns, event, event_arguments, close_block)
+function server_meta.__index.collect_claims(self, subscriptions, event, event_arguments, close_block)
     assert(close_block > self:request_block(), "claim collection must close after its opening block")
     local entry = { kind = "collect", response_schema = event.response_schema, close_block = close_block }
-    park(self, entry, conns, encode_event(event, event_arguments))
+    park(self, entry, self:get_subscribers(subscriptions), encode_event(event, event_arguments))
     return (coroutine.yield()).replies
 end
 -- docs:end collect_claims
@@ -1336,7 +1352,7 @@ function server_meta.__index.run(self, main)
     self.dispatcher:spawn(function()
         main()
         assert(not next(self.active), "referee finished with pending requests")
-        self:collect(nil, EVENTS.finish, {})
+        self:collect(EVERYONE, EVENTS.finish, {})
         self.done = true
     end)
     while not self.done do
@@ -1366,6 +1382,7 @@ local function run_server(referee, server_address)
 end
 
 return {
+    EVERYONE = EVERYONE,
     SCHEMA_DICT = SCHEMA_DICT,
     define_event = define_event,
     EVENTS = EVENTS,

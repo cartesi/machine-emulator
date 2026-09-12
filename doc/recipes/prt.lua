@@ -1077,16 +1077,16 @@ end
 
 -- Advances through a runner's run(mcycle_end) method until a fixed point or the target mcycle,
 -- returning the break reason. The runner is the machine itself or a computation-hash collector.
--- Automatic yields are read from the machine and passed to the optional callback; without one,
+-- Automatic yields are read through the runner and passed to the optional callback; without one,
 -- they are ignored. A terminal manual yield remains unread for the caller to handle.
-local function run_to_stop(machine, mcycle_end, runner, on_yield_automatic)
+local function run_to_stop(runner, mcycle_end, on_yield_automatic)
     while true do
         local break_reason = runner:run(mcycle_end)
         if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
             return break_reason
         elseif is_yielded_automatic(break_reason) then
             if on_yield_automatic then
-                local yield_reason, data = receive_cmio_request(machine)
+                local yield_reason, data = receive_cmio_request(runner)
                 on_yield_automatic(yield_reason, data)
             end
         end
@@ -1112,18 +1112,23 @@ end
 -- virgin boundary. Later re-runs start from the closest input boundary its policy retained.
 ------------------------------------------------------------
 
+-- Collectors override execution and forward other machine methods, caching them on first use.
+local computation_hash_meta = {
+    __index = function(self, name)
+        return util.forward_method(self, self.machine, name)
+    end,
+}
+
 -- Plain replay has the same input lifecycle as a sampled run.
 local function noop() end
 local function new_null_computation_hash(machine)
-    return {
+    return setmetatable({
+        machine = machine,
         begin_epoch = noop,
         begin_input = noop,
         end_input = noop,
         end_epoch = noop,
-        run = function(_, mcycle_end)
-            return machine:run(mcycle_end)
-        end,
-    }
+    }, computation_hash_meta)
 end
 
 local function mcycle_computation_hash_push_collected(claim, collected)
@@ -1230,7 +1235,7 @@ local function new_mcycle_computation_hash(geometry, machine_cache, machine, bun
     local log2_bundle_mcycle_count = bundle_index ~= nil and 0 or LOG2_BUNDLE_MCYCLE_COUNT
     local height = bundle_index ~= nil and LOG2_BUNDLE_MCYCLE_COUNT or geometry.mcycle_height
     local first_leaf = bundle_index ~= nil and (bundle_index << LOG2_BUNDLE_MCYCLE_COUNT) or 0
-    return {
+    return setmetatable({
         geometry = geometry,
         machine_cache = machine_cache,
         machine = machine,
@@ -1249,7 +1254,7 @@ local function new_mcycle_computation_hash(geometry, machine_cache, machine, bun
         run = mcycle_computation_hash_run,
         end_input = mcycle_computation_hash_end_input,
         end_epoch = mcycle_computation_hash_end_epoch,
-    }
+    }, computation_hash_meta)
 end
 
 ------------------------------------------------------------
@@ -1387,7 +1392,7 @@ local function new_uarch_computation_hash(geometry, machine, epoch_period_index,
     local log2_bundle_uarch_cycle_count = bundle_index ~= nil and 0 or LOG2_BUNDLE_UARCH_CYCLE_COUNT
     local height = bundle_index ~= nil and LOG2_BUNDLE_UARCH_CYCLE_COUNT or geometry.uarch_height
     local first_leaf = bundle_index ~= nil and (bundle_index << LOG2_BUNDLE_UARCH_CYCLE_COUNT) or 0
-    return {
+    return setmetatable({
         geometry = geometry,
         machine = machine,
         bundle_index = bundle_index,
@@ -1405,7 +1410,7 @@ local function new_uarch_computation_hash(geometry, machine, epoch_period_index,
             self:end_input()
             return self.frontier
         end,
-    }
+    }, computation_hash_meta)
 end
 
 ------------------------------------------------------------
@@ -1572,7 +1577,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         local base = machine:read_reg("mcycle")
         claim:begin_input(input_index, base)
         machine_cache:snapshot(machine)
-        local break_reason = run_to_stop(machine, base, machine)
+        local break_reason = run_to_stop(machine, base)
         assert(is_at_fixed_point(break_reason), "input boundary is not at a fixed point")
         local data = inputs[input_index + 1]
         if data and is_yielded_manual(break_reason) then
@@ -1582,7 +1587,7 @@ local function new_player(geometry, inputs, machine_cache, options)
             end
         end
         local pending = {}
-        break_reason = run_to_stop(machine, usaturating_add(base, offset), claim, function(yield_reason, output)
+        break_reason = run_to_stop(claim, usaturating_add(base, offset), function(yield_reason, output)
             if on_accepted and is_tx_output(yield_reason) then
                 pending[#pending + 1] = output
             end
@@ -1668,9 +1673,8 @@ local function new_player(geometry, inputs, machine_cache, options)
         end
         claim:begin_input(input_index, base)
         run_to_stop(
-            machine,
-            usaturating_add(base, (period_index + (1 << LOG2_BUNDLE_MCYCLE_COUNT)) * geometry.mcycles_per_period),
-            claim
+            claim,
+            usaturating_add(base, (period_index + (1 << LOG2_BUNDLE_MCYCLE_COUNT)) * geometry.mcycles_per_period)
         )
         return claim:end_epoch()
     end

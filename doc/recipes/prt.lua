@@ -827,7 +827,7 @@ end
 -- uarch transitions, the same three coordinates as the rolling verification game. The mcycle
 -- claim samples the epoch every 2^LOG2_MCYCLES_PER_PERIOD mcycles. The uarch claim expands one mcycle
 -- period into its uarch transitions. Each claim is stored bundled: the machine delivers one
--- subtree root per 2^bundle_height leaves, so the stored tree is that much shallower, and queries
+-- subtree root per 2^bundle_height leaves, stored at its logical height, and queries
 -- below a bundle are answered by refining it.
 ------------------------------------------------------------
 
@@ -1126,7 +1126,7 @@ end
 
 local function mcycle_computation_hash_push_collected(claim, collected)
     local count = math.min(#collected.hashes, claim.input_entry_capacity - claim.input_entry_count)
-    hash_tree.frontier_forest_append(claim.frontier, collected.hashes, 1, count)
+    hash_tree.frontier_forest_append(claim.frontier, collected.hashes, 1, count, claim.bundle_height)
     claim.next_leaf = claim.next_leaf + (count << claim.bundle_height)
     claim.input_entry_count = claim.input_entry_count + count
     if not is_at_fixed_point(collected.break_reason) then
@@ -1135,13 +1135,13 @@ local function mcycle_computation_hash_push_collected(claim, collected)
     assert(#collected.hashes > 0, "fixed-point mcycle collection has no final bundle")
     claim.pad_bundle = collected.hashes[#collected.hashes]
     local pad_count = claim.input_entry_capacity - claim.input_entry_count
-    hash_tree.frontier_forest_pad_back(claim.frontier, claim.pad_bundle, pad_count)
+    hash_tree.frontier_forest_pad_back(claim.frontier, claim.pad_bundle, pad_count, claim.bundle_height)
     claim.next_leaf = claim.next_leaf + (pad_count << claim.bundle_height)
     claim.input_entry_count = claim.input_entry_capacity
 end
 
 local function mcycle_computation_hash_begin_epoch(claim)
-    claim.frontier = hash_tree.frontier_forest(claim.height - claim.bundle_height, "keccak256")
+    claim.frontier = hash_tree.frontier_forest(claim.height, "keccak256")
     claim.next_leaf = claim.first_leaf
     claim.input_entry_count = nil
     claim.pad_bundle = nil
@@ -1215,7 +1215,8 @@ local function mcycle_computation_hash_end_epoch(claim)
     hash_tree.frontier_forest_pad_back(
         claim.frontier,
         claim.pad_bundle,
-        (end_leaf - claim.next_leaf) >> claim.bundle_height
+        (end_leaf - claim.next_leaf) >> claim.bundle_height,
+        claim.bundle_height
     )
     claim.next_leaf = end_leaf
     return claim.frontier
@@ -1266,9 +1267,9 @@ local function uarch_computation_hash_push_mcycle(claim, frontier, hashes, first
     local capacity = 1 << height
     local real = last - first - 1
     assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
-    hash_tree.frontier_forest_append(frontier, hashes, first, last - 2)
-    hash_tree.frontier_forest_pad_back(frontier, hashes[last - 1], capacity - 1 - real)
-    hash_tree.frontier_forest_push_back(frontier, hashes[last])
+    hash_tree.frontier_forest_append(frontier, hashes, first, last - 2, claim.bundle_height)
+    hash_tree.frontier_forest_pad_back(frontier, hashes[last - 1], capacity - 1 - real, claim.bundle_height)
+    hash_tree.frontier_forest_push_back(frontier, hashes[last], claim.bundle_height)
 end
 
 -- The bundle being reconstructed intersects real cycles, halt repetitions, and the reset.
@@ -1310,7 +1311,7 @@ local function uarch_computation_hash_push_collected(claim, collected)
     claim.next_leaf = claim.next_leaf + (count << log2_cycles)
     if claim.next_leaf < claim.end_leaf and is_at_fixed_point(collected.break_reason) then
         assert(count > 0, "fixed-point collection has no padding period")
-        local pad_frontier = hash_tree.frontier_forest(log2_cycles - claim.bundle_height, "keccak256")
+        local pad_frontier = hash_tree.frontier_forest(log2_cycles, "keccak256")
         uarch_computation_hash_push_mcycle(
             claim,
             pad_frontier,
@@ -1374,7 +1375,7 @@ local function uarch_computation_hash_end_input(claim)
 end
 
 local function uarch_computation_hash_begin_epoch(claim)
-    claim.frontier = hash_tree.frontier_forest(claim.height - claim.bundle_height, "keccak256")
+    claim.frontier = hash_tree.frontier_forest(claim.height, "keccak256")
     claim.next_leaf = claim.first_leaf
 end
 

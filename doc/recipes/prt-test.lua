@@ -64,22 +64,22 @@ end
 
 local function noop() end
 
--- All collectors expose machine methods with the native receiver, but not machine data fields.
+-- All builders expose machine methods with the native receiver, but not machine data fields.
 do
     local machine = new_fake_machine("initial")
     local cache <close> = prt.new_machine_cache(machine)
     local geometry = prt.new_geometry(10)
-    for _, claim in ipairs({
+    for _, builder in ipairs({
         prt.new_null_computation_hash(machine),
         prt.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, cache, machine),
         prt.new_uarch_computation_hash(geometry.log2_mcycles_per_period, machine, 0),
     }) do
-        assert(claim:get_root_hash() == "initial", "collector did not forward to its machine")
-        assert(rawget(claim, "get_root_hash") == claim.get_root_hash, "collector did not cache its forwarded method")
+        assert(builder:get_root_hash() == "initial", "builder did not forward to its machine")
+        assert(rawget(builder, "get_root_hash") == builder.get_root_hash, "builder did not cache its forwarded method")
         machine.root_hash = "changed"
-        assert(claim:get_root_hash() == "changed", "forwarded method read stale state")
-        assert(claim.root_hash == nil and claim.counts == nil, "collector exposed machine data fields")
-        assert(claim.absent == nil, "collector invented a missing method")
+        assert(builder:get_root_hash() == "changed", "forwarded method read stale state")
+        assert(builder.root_hash == nil and builder.counts == nil, "builder exposed machine data fields")
+        assert(builder.absent == nil, "builder invented a missing method")
         machine.root_hash = "initial"
     end
 end
@@ -205,11 +205,11 @@ for _, phase in ipairs({ "factory", "begin_epoch", "begin_input", "run", "end_in
     local player = prt.new_player(prt.new_geometry(10), { "accepted" }, cache, {
         new_null_computation_hash = function(machine)
             assert(phase ~= "factory", "injected factory failure")
-            local claim = prt.new_null_computation_hash(machine)
-            claim[phase] = function()
+            local builder = prt.new_null_computation_hash(machine)
+            builder[phase] = function()
                 error("injected " .. phase .. " failure")
             end
-            return claim
+            return builder
         end,
     })
     local ok, err = pcall(player.make_uarch_tree, player, 2, 0)
@@ -221,7 +221,7 @@ for _, phase in ipairs({ "factory", "begin_epoch", "begin_input", "run", "end_in
     assert(#cache.checkpoints == 1 and initial.counts.live == 1, "failed clone changed retained checkpoints")
 end
 
--- The player uses the supplied cache, including when a collector throws inside the forward
+-- The player uses the supplied cache, including when a builder throws inside the forward
 -- claim build. The cache remains owned by the caller.
 for _, phase in ipairs({ "factory", "begin_input", "run", "end_input" }) do
     local initial = new_fake_machine("initial")
@@ -229,17 +229,17 @@ for _, phase in ipairs({ "factory", "begin_input", "run", "end_input" }) do
     local player = prt.new_player(prt.new_geometry(10), { "accepted" }, cache, {
         new_mcycle_computation_hash = function(_, _, machine)
             assert(phase ~= "factory", "injected factory failure")
-            local claim = prt.new_null_computation_hash(machine)
-            claim[phase] = function()
+            local builder = prt.new_null_computation_hash(machine)
+            builder[phase] = function()
                 error("injected " .. phase .. " failure")
             end
-            return claim
+            return builder
         end,
     })
     assert(player.inputs == nil and player.machine_cache == nil, "player exposes caller-owned resources")
     local ok, err = pcall(player.make_mcycle_tree, player)
-    assert(not ok and err:find("injected " .. phase .. " failure"), "collector failure was not propagated")
-    assert(initial.counts.live == 1, "collector failure leaked its execution scope")
+    assert(not ok and err:find("injected " .. phase .. " failure"), "builder failure was not propagated")
+    assert(initial.counts.live == 1, "builder failure leaked its execution scope")
 end
 
 -- Soft yields and console breaks must not end an input. Automatic yields are serviced, and
@@ -262,8 +262,8 @@ for _, terminal in ipairs({
     local runs, automatic_reads, manual_reads, ended_inputs = 0, 0, 0, 0
     local player = prt.new_player(prt.new_geometry(10), { "accepted" }, cache, {
         new_mcycle_computation_hash = function(_, _, machine)
-            local claim = prt.new_null_computation_hash(machine)
-            claim.run = function(_, mcycle_end)
+            local builder = prt.new_null_computation_hash(machine)
+            builder.run = function(_, mcycle_end)
                 assert(
                     mcycle_end == 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
                     "runner received the wrong cycle limit"
@@ -279,13 +279,13 @@ for _, terminal in ipairs({
                 manual_reads = manual_reads + 1
                 return cartesi.HTIF_YIELD_CMD_MANUAL, cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, ""
             end
-            claim.end_input = function()
+            builder.end_input = function()
                 ended_inputs = ended_inputs + 1
             end
-            claim.end_epoch = function()
+            builder.end_epoch = function()
                 error("epoch complete")
             end
-            return claim
+            return builder
         end,
     })
     local ok, err = pcall(player.make_mcycle_tree, player)
@@ -311,13 +311,13 @@ for _, phase in ipairs({ "begin_epoch", "begin_input", "snapshot" }) do
     end
     local player = prt.new_player(prt.new_geometry(10), { "accepted" }, cache, {
         new_mcycle_computation_hash = function(_, _, machine)
-            local claim = prt.new_null_computation_hash(machine)
+            local builder = prt.new_null_computation_hash(machine)
             if phase ~= "snapshot" then
-                claim[phase] = function()
+                builder[phase] = function()
                     machine.root_hash = "changed"
                 end
             end
-            return claim
+            return builder
         end,
     })
     local ok, err = pcall(player.make_mcycle_tree, player)
@@ -342,12 +342,12 @@ for _, corrupt in ipairs({ false, true }) do
     end
     local player = prt.new_player(prt.new_geometry(10), { "first", "second" }, cache, {
         new_null_computation_hash = function(machine)
-            local claim = prt.new_null_computation_hash(machine)
+            local builder = prt.new_null_computation_hash(machine)
             local input_index
-            claim.begin_input = function(_, index)
+            builder.begin_input = function(_, index)
                 input_index = index
             end
-            claim.run = function()
+            builder.run = function()
                 machine.root_hash = input_index == 0 and "accepted" or "rejected"
                 return cartesi.BREAK_REASON_YIELDED_MANUALLY
             end
@@ -356,7 +356,7 @@ for _, corrupt in ipairs({ false, true }) do
                     or cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
                 return cartesi.HTIF_YIELD_CMD_MANUAL, reason, ""
             end
-            return claim
+            return builder
         end,
         new_uarch_computation_hash = function()
             error("replay complete")
@@ -1221,18 +1221,20 @@ if arg[1] then
     local native <close> = prt.new_machine(initial_state_hash)
     assert(type(native) == "userdata", "honest machine is wrapped")
     assert(type(cache.checkpoints[1].machine) == "userdata", "honest checkpoint machine is wrapped")
-    local native_claim = prt.new_mcycle_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, cache, native)
-    assert(rawget(native_claim, "machine") == native, "honest computation hash is wrapped")
-    assert(native_claim.unbundle == nil, "honest collector exposes strategy-only refinement")
-    assert(native_claim.pad_back == nil, "honest collector exposes strategy-only insertion")
-    local native_uarch = prt.new_uarch_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, native, 0)
-    assert(rawget(native_uarch, "machine") == native, "honest uarch collector is wrapped")
-    assert(native_uarch.unbundle == nil, "honest uarch collector exposes strategy-only refinement")
-    assert(native_uarch.pad_back == nil, "honest uarch collector exposes strategy-only insertion")
+    local native_builder =
+        prt.new_mcycle_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, cache, native)
+    assert(rawget(native_builder, "machine") == native, "honest computation-hash builder is wrapped")
+    assert(native_builder.unbundle == nil, "honest builder exposes strategy-only refinement")
+    assert(native_builder.pad_back == nil, "honest builder exposes strategy-only insertion")
+    local native_uarch_builder =
+        prt.new_uarch_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, native, 0)
+    assert(rawget(native_uarch_builder, "machine") == native, "honest uarch builder is wrapped")
+    assert(native_uarch_builder.unbundle == nil, "honest uarch builder exposes strategy-only refinement")
+    assert(native_uarch_builder.pad_back == nil, "honest uarch builder exposes strategy-only insertion")
     local virgin_root = native:get_root_hash()
-    native_uarch:begin_input(0, native:read_reg("mcycle"))
+    native_uarch_builder:begin_input(0, native:read_reg("mcycle"))
     assert(native:get_root_hash() == virgin_root, "capturing the revert tail changed the virgin machine")
-    assert(rawget(prt.new_null_computation_hash(native), "machine") == native, "honest replay collector is wrapped")
+    assert(rawget(prt.new_null_computation_hash(native), "machine") == native, "honest replay builder is wrapped")
 
     local honest_tree = honest:make_mcycle_tree()
     local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").input_index
@@ -1368,17 +1370,17 @@ if arg[1] then
     local replay_begins, replay_ends = 0, 0
     local new_null = prt.new_null_computation_hash
     local function observe_replay(m)
-        local claim = new_null(m)
-        claim.begin_epoch = function()
+        local builder = new_null(m)
+        builder.begin_epoch = function()
             replay_begins = replay_begins + 1
         end
-        claim.end_epoch = function()
+        builder.end_epoch = function()
             replay_ends = replay_ends + 1
         end
-        claim.begin_input = function(_, index)
+        builder.begin_input = function(_, index)
             input_runs[index] = (input_runs[index] or 0) + 1
         end
-        return claim
+        return builder
     end
     local chain = prt.new_player(
         chain_contract.geometry,
@@ -1427,7 +1429,7 @@ if arg[1] then
     local chain_bundle_index = (2 * dapp_contract.geometry.periods_per_input + last_period) >> LOG2_BUNDLE_MCYCLE_COUNT
     chain_tree:open_bundle(chain_bundle_index)
     assert(lookups == 1, "reverted-tail refinement performed multiple lookups")
-    assert(replay_begins == 1 and replay_ends == 1, "cache replay bypassed the epoch driver's collector lifecycle")
+    assert(replay_begins == 1 and replay_ends == 1, "cache replay bypassed the epoch driver's builder lifecycle")
     assert(
         not input_runs[0] and input_runs[1] == 1 and input_runs[2] == 1,
         "reverted-tail refinement did not replay from the boundary before the chain"
@@ -1591,13 +1593,13 @@ if arg[1] then
             inputs = terminal == "empty" and {} or inputs,
         }
         local counts = { outer = 0, refined = 0, uarch = 0 }
-        local function observe_inputs(claim, m)
-            local run = claim.run
-            claim.run = function(self, target)
+        local function observe_inputs(builder, m)
+            local run = builder.run
+            builder.run = function(self, target)
                 stop_after_delivery(m)
                 return run(self, target)
             end
-            return claim
+            return builder
         end
         local terminal_inputs = { table.unpack(contract.inputs) }
         local terminal_cache <close> = prt.new_machine_cache(terminal_machine(initial_state_hash))
@@ -1631,7 +1633,7 @@ if arg[1] then
         local tree = player:make_mcycle_tree()
         assert(tree:get_root() == expected, terminal .. " has the wrong fixed-point tail")
         tree:open_bundle(0)
-        assert(counts.refined == 1, "first mcycle opening bypassed the selected collector factory")
+        assert(counts.refined == 1, "first mcycle opening bypassed the selected builder factory")
         -- Padding may share the first opening with the last bundle. Only an opaque
         -- bundle should call the factory again; both positions must remain queryable.
         local mcycle_last = (1 << contract.geometry.mcycle_height) - 1
@@ -1640,13 +1642,13 @@ if arg[1] then
         assert(tree:get_node(mcycle_last, 0) == terminal_root, "last mcycle bundle has the wrong state")
         local uarch = player:make_uarch_tree(3, 60000)
         uarch:open_bundle(0)
-        assert(counts.uarch == 2, "uarch build or first opening bypassed the selected collector factory")
+        assert(counts.uarch == 2, "uarch build or first opening bypassed the selected builder factory")
         local uarch_last = (1 << contract.geometry.uarch_height) - 1
         local uarch_open = pcall(uarch.get_node, uarch, uarch_last, 0)
         uarch:open_bundle(uarch_last >> LOG2_BUNDLE_UARCH_CYCLE_COUNT)
-        assert(counts.outer == 1, "mcycle build bypassed the selected collector factory")
-        assert(counts.refined == (mcycle_open and 1 or 2), "mcycle opening called the wrong number of collectors")
-        assert(counts.uarch == (uarch_open and 2 or 3), "uarch opening called the wrong number of collectors")
+        assert(counts.outer == 1, "mcycle build bypassed the selected builder factory")
+        assert(counts.refined == (mcycle_open and 1 or 2), "mcycle opening called the wrong number of builders")
+        assert(counts.uarch == (uarch_open and 2 or 3), "uarch opening called the wrong number of builders")
         local terminal_logs = player:prove_state_transition(2, 60000, 0)
         assert(
             cartesi.machine:verify_step_uarch(terminal_root, terminal_logs.step_log) == uarch:get_node(0, 0),

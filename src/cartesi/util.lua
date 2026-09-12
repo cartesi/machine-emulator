@@ -18,6 +18,18 @@ local cartesi = require("cartesi")
 
 local _M = {}
 
+-- Follows the explicit links of a runner chain to its terminal machine.
+function _M.get_runner_machine(runner)
+    while type(runner) == "table" do
+        runner = rawget(runner, "runner")
+    end
+    assert(
+        type(runner) == "userdata" and getmetatable(runner) == getmetatable(cartesi.machine),
+        "runner chain must end at a Cartesi machine"
+    )
+    return runner
+end
+
 -- Resolves an unknown method through the underlying object and caches a bound forwarding
 -- closure on the wrapper. Data fields are not forwarded. The underlying object and its
 -- resolved methods must remain valid for the lifetime of the wrapper.

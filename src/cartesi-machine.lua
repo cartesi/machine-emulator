@@ -3323,7 +3323,7 @@ end
 -- each result is printed. Outside that window the machine runs plainly, all in this same call, so a
 -- stop is only reported once we reach the real target.
 local function uarch_cycle_root_hashes_runner_run(self, mcycle_end)
-    local m = self.machine
+    local m = util.get_runner_machine(self.runner)
     -- Run plainly up to the window start (once), and print the hash the window starts from.
     if self.start then
         if math.ult(m:read_reg("mcycle"), self.start) then
@@ -3362,7 +3362,6 @@ local function uarch_cycle_root_hashes_runner_run(self, mcycle_end)
 end
 local function make_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
     return setmetatable({
-        machine = machine,
         runner = runner,
         start = start,
         count = count,
@@ -3411,7 +3410,7 @@ local function mcycle_hashes_chunk_size(log2_period, log2_bundle)
 end
 
 local function mcycle_root_hashes_runner_run(self, mcycle_end)
-    local m = self.machine
+    local m = util.get_runner_machine(self.runner)
     -- Delay sampling to a start mcycle by running plainly up to it (once), then collect from there
     -- in this same call, so a stop is only reported once we reach the real target.
     if self.start then
@@ -3458,7 +3457,6 @@ local function mcycle_root_hashes_runner_run(self, mcycle_end)
 end
 local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
     return setmetatable({
-        machine = machine,
         runner = runner,
         period = 1 << log2_period,
         chunk_size = mcycle_hashes_chunk_size(log2_period, log2_bundle),
@@ -3579,10 +3577,10 @@ local function mcycle_computation_hash_end_epoch(self)
     end
 end
 
-local function make_mcycle_computation_hash(m, advance, runner)
+local function make_mcycle_computation_hash(advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
     return setmetatable({
-        machine = m,
+        machine = util.get_runner_machine(runner),
         runner = runner,
         chunk_size = mcycle_hashes_chunk_size(log2_period, advance.log2_bundle_mcycle_count),
         log2_period = log2_period,
@@ -3746,11 +3744,11 @@ local function uarch_cycle_computation_hash_end_epoch(self)
     end
 end
 
-local function make_uarch_cycle_computation_hash(m, advance, runner)
+local function make_uarch_cycle_computation_hash(advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
     local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
     return setmetatable({
-        machine = m,
+        machine = util.get_runner_machine(runner),
         runner = runner,
         period = 1 << log2_period,
         chunk_size = uarch_hashes_chunk_size(advance.log2_bundle_uarch_cycle_count),
@@ -3773,9 +3771,9 @@ end
 -- An epoch that does not compute a hash delegates execution to the runner and skips collector
 -- bookkeeping and reversal checks.
 local function null_computation_hash_noop() end
-local function make_null_computation_hash(m, runner)
+local function make_null_computation_hash(runner)
     return setmetatable({
-        machine = m,
+        machine = util.get_runner_machine(runner),
         runner = runner,
         begin_epoch = null_computation_hash_noop,
         begin_input = null_computation_hash_noop,
@@ -4028,9 +4026,9 @@ end
 -- inspect-state query on its own, or otherwise just runs the machine to a stop.
 if cmdline.cmio_advance then
     local advance = cmdline.cmio_advance
-    local claim = advance.mcycle_computation_hash and make_mcycle_computation_hash(machine, advance, runner)
-        or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(machine, advance, runner)
-        or make_null_computation_hash(machine, runner)
+    local claim = advance.mcycle_computation_hash and make_mcycle_computation_hash(advance, runner)
+        or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(advance, runner)
+        or make_null_computation_hash(runner)
     run_advance_state_epoch(claim)
     -- an inspect query, if any, runs against the state the epoch left; it does nothing unless that
     -- is an accept yield (a completed epoch), so it is safe to always attempt

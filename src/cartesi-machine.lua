@@ -3259,7 +3259,7 @@ local backup_closer <close> = setmetatable({}, {
 -- run_to_stop resumes the machine through a "runner" that overrides execution methods and
 -- forwards other machine methods, caching them on first use. The machine
 -- itself is the plain runner; gdb_stub, the two hash-printing runners, and
--- the computation-hash object below are the others. The runner is the only thing that knows the
+-- the computation-hash builder below are the others. The runner is the only thing that knows the
 -- mode. The machine and gdb_stub also implement the two collect calls, and the hash-sampling
 -- runners advance through either, so hashes can be collected while GDB drives the machine.
 
@@ -3468,13 +3468,13 @@ local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_b
     }, runner_meta)
 end
 
--- Resolves the claim's machine on first use. Keep direct machine access behind this accessor;
--- the runner chain and its terminal machine remain the same throughout the claim's lifetime.
-local function get_claim_machine(claim)
-    local m = rawget(claim, "machine")
+-- Resolves the builder's machine on first use. Keep direct machine access behind this accessor;
+-- the runner chain and its terminal machine remain the same throughout the builder's lifetime.
+local function get_builder_machine(builder)
+    local m = rawget(builder, "machine")
     if not m then
-        m = util.get_runner_machine(claim.runner)
-        rawset(claim, "machine", m)
+        m = util.get_runner_machine(builder.runner)
+        rawset(builder, "machine", m)
     end
     return m
 end
@@ -3494,7 +3494,7 @@ end
 -- Bundles are interior nodes of the same tree, so they shorten the frontier without changing its
 -- root.
 --
--- The claim is a runner while an input executes. Its other methods delimit inputs and the epoch.
+-- The computation-hash builder is a runner while an input executes. Its other methods delimit inputs and the epoch.
 -- boot and inspect queries bypass it.
 
 -- Adds a collection's entries to the epoch-tree frontier. At a fixed point, the final returned
@@ -3526,14 +3526,14 @@ local function mcycle_computation_hash_begin_input(self, input_index)
     self.mcycle_phase = 0
     self.partial_bundle = nil
     self.input_mcycle_end =
-        usaturating_add(get_claim_machine(self):read_reg("mcycle"), 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+        usaturating_add(get_builder_machine(self):read_reg("mcycle"), 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
 end
 
 -- Samples the input's state hashes up to mcycle_end and adds each returned entry to the epoch-tree
 -- frontier. self.mcycle_phase and self.partial_bundle preserve the sampling period and partial
 -- bundle across calls.
 local function mcycle_computation_hash_run(self, mcycle_end)
-    local m = get_claim_machine(self)
+    local m = get_builder_machine(self)
     mcycle_end = umin(self.input_mcycle_end, mcycle_end)
     local collected = {
         mcycle_phase = self.mcycle_phase,
@@ -3570,7 +3570,7 @@ local function mcycle_computation_hash_end_epoch(self)
     self:end_input()
     local pad = self.pad_entry
     if not pad then
-        local m = get_claim_machine(self)
+        local m = get_builder_machine(self)
         local collected = m:collect_mcycle_root_hashes(m:read_reg("mcycle"), self.log2_period, 0, self.log2_bundle)
         assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash ended outside a fixed point")
         pad = collected.hashes[#collected.hashes]
@@ -3682,7 +3682,7 @@ end
 -- Other inputs need no uarch collection.
 local function uarch_cycle_computation_hash_begin_input(self, input_index)
     if input_index ~= self.target_input then return end
-    local m = get_claim_machine(self)
+    local m = get_builder_machine(self)
     local mcycle = m:read_reg("mcycle")
     self.input_mcycle_end = usaturating_add(mcycle, 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
     self.target_mcycle_start = usaturating_add(mcycle, self.target_offset * self.period, self.input_mcycle_end)
@@ -3693,7 +3693,7 @@ end
 -- Run plainly outside the target period and collect uarch state hashes within it.
 local function uarch_cycle_computation_hash_run(self, mcycle_end)
     if not self.target_mcycle_start then return self.runner:run(mcycle_end) end
-    local m = get_claim_machine(self)
+    local m = get_builder_machine(self)
     local mcycle = m:read_reg("mcycle")
     mcycle_end = umin(self.input_mcycle_end, mcycle_end)
     local break_reason
@@ -3731,7 +3731,7 @@ local function uarch_cycle_computation_hash_end_input(self)
     if not self.target_mcycle_start then return end
     self.target_mcycle_start, self.target_mcycle_end, self.revert_uarch_tail = nil, nil, nil
     if self.mcycle_count < self.period then
-        local m = get_claim_machine(self)
+        local m = get_builder_machine(self)
         uarch_cycle_computation_hash_push_collected(
             self,
             m:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle)
@@ -3744,7 +3744,7 @@ end
 local function uarch_cycle_computation_hash_end_epoch(self)
     self:end_input()
     if self.mcycle_count < self.period then
-        local m = get_claim_machine(self)
+        local m = get_builder_machine(self)
         uarch_cycle_computation_hash_push_collected(
             self,
             m:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle)
@@ -3775,7 +3775,7 @@ local function make_uarch_cycle_computation_hash(advance, runner)
     }, runner_meta)
 end
 
--- An epoch that does not compute a hash delegates execution to the runner and skips collector
+-- An epoch that does not compute a hash delegates execution to the runner and skips builder
 -- bookkeeping and reversal checks.
 local function null_computation_hash_noop() end
 local function make_null_computation_hash(runner)
@@ -3892,11 +3892,11 @@ local function run_inspect_state_query(m, runner)
     cmdline.cmio_inspect = nil
 end
 
--- Processes one advance-state input through its claim. Accepted outputs are published before
+-- Processes one advance-state input through its builder. Accepted outputs are published before
 -- commit; rejected outputs are written separately after rollback. Finalizes accepted or rejected inputs
 -- only after that decision, and returns the break reason and manual yield reason, if any.
-local function run_advance_state_input(claim, input_index, revert_root_hash)
-    local m = get_claim_machine(claim)
+local function run_advance_state_input(builder, input_index, revert_root_hash)
+    local m = get_builder_machine(builder)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
     -- outputs are buffered until the input is accepted or rejected, reports are saved at once
@@ -3909,48 +3909,48 @@ local function run_advance_state_input(claim, input_index, revert_root_hash)
         end
     end
     stderr("\nBefore input %d\n", input_index)
-    -- Open and snapshot the input boundary. Collector setup must preserve its expected
+    -- Open and snapshot the input boundary. Builder setup must preserve its expected
     -- root, which delivery checks. A rejection must restore this same boundary.
-    claim:begin_input(input_index)
+    builder:begin_input(input_index)
     snapshot(m)
-    if advance.print_input_state_hashes then print_root_hash(claim) end
-    load_cmio_input(claim, advance, revert_root_hash)
-    if advance.print_input_state_hashes then print_root_hash(claim) end
+    if advance.print_input_state_hashes then print_root_hash(builder) end
+    load_cmio_input(builder, advance, revert_root_hash)
+    if advance.print_input_state_hashes then print_root_hash(builder) end
     advance.report_index = 0
     -- labeling: from now the producing input is next_input_index - 1
     advance.next_input_index = input_index + 1
-    local break_reason = run_to_stop(claim, cmdline.max_mcycle, on_yield_automatic)
+    local break_reason = run_to_stop(builder, cmdline.max_mcycle, on_yield_automatic)
     -- The epoch handles halts, overflow, and the global cycle limit.
     if not is_yielded_manual(break_reason) then return break_reason end
-    local _, yield_reason, data = get_and_print_yield(claim, htif)
+    local _, yield_reason, data = get_and_print_yield(builder, htif)
     if is_rx_accepted(yield_reason) then
-        flush_pending_outputs(claim, advance, yield_reason, data)
+        flush_pending_outputs(builder, advance, yield_reason, data)
         commit(m)
     elseif is_rx_rejected(yield_reason) then
         revert(m)
-        claim:check_revert(revert_root_hash, claim:get_root_hash())
-        flush_pending_outputs(claim, advance, yield_reason, data)
+        builder:check_revert(revert_root_hash, builder:get_root_hash())
+        flush_pending_outputs(builder, advance, yield_reason, data)
     elseif is_tx_exception(yield_reason) then
         -- an exception is a fixed point like a halt: report it, flush the interrupted input's
         -- outputs as rejected, and end the epoch, leaving the machine at the exception
         -- yield (no revert). A following inspect query fails against this non-accept yield,
         -- which the CLI just reports.
         report_exception(data)
-        flush_pending_outputs(claim, advance, yield_reason, data)
+        flush_pending_outputs(builder, advance, yield_reason, data)
         commit(m)
         return break_reason, yield_reason
     else
         -- An unexpected manual yield is a protocol violation, but still a fixed point, and
         -- fixed points are sticky, so it ends the epoch the same way an exception does.
-        -- The claim is finalized so callers can dispute the computation that led here. In
-        -- particular, the uarch claim may still need to pad a selected period that
+        -- The builder is finalized so callers can dispute the computation that led here. In
+        -- particular, the uarch builder may still need to pad a selected period that
         -- execution never reached.
         report_unexpected_manual_yield(yield_reason)
-        flush_pending_outputs(claim, advance, yield_reason, data)
+        flush_pending_outputs(builder, advance, yield_reason, data)
         commit(m)
         return break_reason, yield_reason
     end
-    claim:end_input()
+    builder:end_input()
     return break_reason, yield_reason
 end
 
@@ -3965,46 +3965,46 @@ end
 -- full completion.
 -- Leaves the machine wherever the epoch stopped. A trailing inspect query, if any, runs against that
 -- state and does nothing unless it is an accept yield. Boot always runs the machine plainly. The
--- inputs run with the claim, which either collects a computation hash (advancing through the
+-- inputs run with the builder, which either builds a computation hash (advancing through the
 -- given runner) or delegates to the runner directly (the machine itself, or gdb).
-local function run_advance_state_epoch(claim)
-    local m = get_claim_machine(claim)
+local function run_advance_state_epoch(builder)
+    local m = get_builder_machine(builder)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
-    claim:begin_epoch()
+    builder:begin_epoch()
     -- boot plainly to the rolling template's first accept yield, then process each input in turn.
     -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
     local break_reason = run_to_stop(m, cmdline.max_mcycle, ignore_yield_automatic)
     if is_yielded_manual(break_reason) then
-        get_and_print_yield(claim, htif)
+        get_and_print_yield(builder, htif)
         commit(m)
         -- Keep the expected boundary across rejections. Only acceptance establishes a new one.
-        local revert_root_hash = claim:get_root_hash()
+        local revert_root_hash = builder:get_root_hash()
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
             local yield_reason
-            break_reason, yield_reason = run_advance_state_input(claim, input_index, revert_root_hash)
+            break_reason, yield_reason = run_advance_state_input(builder, input_index, revert_root_hash)
             if not is_yielded_manual(break_reason) then break end
             if is_rx_accepted(yield_reason) then
-                revert_root_hash = claim:get_root_hash()
+                revert_root_hash = builder:get_root_hash()
             elseif not is_rx_rejected(yield_reason) then
-                claim:end_epoch()
+                builder:end_epoch()
                 return
             end
         end
     end
     if is_halted(break_reason) then
-        report_halt(claim)
-        flush_pending_outputs(claim, advance)
+        report_halt(builder)
+        flush_pending_outputs(builder, advance)
         commit(m)
-        claim:end_epoch()
+        builder:end_epoch()
     elseif is_mcycle_overflow(break_reason) then
-        report_mcycle_overflow(claim)
-        flush_pending_outputs(claim, advance)
+        report_mcycle_overflow(builder)
+        flush_pending_outputs(builder, advance)
         commit(m)
-        claim:end_epoch()
+        builder:end_epoch()
     elseif is_yielded_manual(break_reason) then
         save_cmio_output_proofs(advance)
-        claim:end_epoch()
+        builder:end_epoch()
     end
 end
 
@@ -4034,10 +4034,10 @@ end
 -- inspect-state query on its own, or otherwise just runs the machine to a stop.
 if cmdline.cmio_advance then
     local advance = cmdline.cmio_advance
-    local claim = advance.mcycle_computation_hash and make_mcycle_computation_hash(advance, runner)
+    local builder = advance.mcycle_computation_hash and make_mcycle_computation_hash(advance, runner)
         or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(advance, runner)
         or make_null_computation_hash(runner)
-    run_advance_state_epoch(claim)
+    run_advance_state_epoch(builder)
     -- an inspect query, if any, runs against the state the epoch left; it does nothing unless that
     -- is an accept yield (a completed epoch), so it is safe to always attempt
     if cmdline.cmio_inspect then run_inspect_state_query(machine, runner) end

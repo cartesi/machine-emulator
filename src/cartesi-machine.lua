@@ -3256,12 +3256,16 @@ local backup_closer <close> = setmetatable({}, {
 })
 -- luacheck: pop
 
--- run_to_stop resumes the machine through a "runner": any object with a
--- run(self, mcycle_end) method returning the break reason, exactly like machine:run. The machine
--- itself is the plain runner; gdb_stub, the two hash-printing runners, and
--- the computation-hash object below are the others. The runner is the only thing that knows the
--- mode. The machine and gdb_stub also implement the two collect calls, and the hash-sampling
--- runners advance through either, so hashes can be collected while GDB drives the machine.
+-- run_to_stop resumes the machine through a "runner" that overrides execution methods and
+-- forwards other machine methods, caching them on first use. The machine
+-- itself is the plain runner. The others are gdb_stub and the two hash-printing runners below.
+-- The runner is the only thing that knows the mode. The machine and gdb_stub also implement
+-- the two collect calls, and the hash-sampling runners advance through either, so hashes can
+-- be collected while GDB drives the machine.
+
+local runner_meta = {
+    __index = function(self, name) return util.forward_method(self, self.runner, name) end,
+}
 
 -- Prints the hashes one uarch cycle collect call returned. Without bundling, each hash after a uarch
 -- cycle is printed as "<mcycle>,<uarch_cycle>: <hash>", and each hash after an implicit uarch reset
@@ -3319,7 +3323,7 @@ end
 -- each result is printed. Outside that window the machine runs plainly, all in this same call, so a
 -- stop is only reported once we reach the real target.
 local function uarch_cycle_root_hashes_runner_run(self, mcycle_end)
-    local m = self.machine
+    local m = util.get_runner_machine(self.runner)
     -- Run plainly up to the window start (once), and print the hash the window starts from.
     if self.start then
         if math.ult(m:read_reg("mcycle"), self.start) then
@@ -3357,15 +3361,14 @@ local function uarch_cycle_root_hashes_runner_run(self, mcycle_end)
     return self.runner:run(mcycle_end)
 end
 local function make_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
-    return {
-        machine = machine,
+    return setmetatable({
         runner = runner,
         start = start,
         count = count,
         chunk_size = uarch_hashes_chunk_size(log2_bundle),
         log2_bundle = log2_bundle,
         run = uarch_cycle_root_hashes_runner_run,
-    }
+    }, runner_meta)
 end
 
 -- Prints the hashes one collect call returned. Without bundling, each hash is a state hash printed as
@@ -3407,7 +3410,7 @@ local function mcycle_hashes_chunk_size(log2_period, log2_bundle)
 end
 
 local function mcycle_root_hashes_runner_run(self, mcycle_end)
-    local m = self.machine
+    local m = util.get_runner_machine(self.runner)
     -- Delay sampling to a start mcycle by running plainly up to it (once), then collect from there
     -- in this same call, so a stop is only reported once we reach the real target.
     if self.start then
@@ -3453,8 +3456,7 @@ local function mcycle_root_hashes_runner_run(self, mcycle_end)
     return collected.break_reason
 end
 local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
-    return {
-        machine = machine,
+    return setmetatable({
         runner = runner,
         period = 1 << log2_period,
         chunk_size = mcycle_hashes_chunk_size(log2_period, log2_bundle),
@@ -3463,7 +3465,7 @@ local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_b
         log2_bundle = log2_bundle,
         mcycle_phase = 0,
         run = mcycle_root_hashes_runner_run,
-    }
+    }, runner_meta)
 end
 
 -- A rejected input contributes its restored boundary to the computation hash.
@@ -3481,116 +3483,113 @@ end
 -- Bundles are interior nodes of the same tree, so they shorten the frontier without changing its
 -- root.
 --
--- The claim is a runner while an input executes. Its other methods delimit inputs and the epoch.
--- boot and inspect queries bypass it.
+-- Builders retain computation state and receive the selected runner for execution. Their other
+-- methods delimit inputs and the epoch. Boot and inspect queries use the null builder.
+-- Each collecting builder calls its on_full callback with the completed root.
 
 -- Adds a collection's entries to the epoch-tree frontier. At a fixed point, the final returned
 -- entry fills every unfilled position in the tree segment reserved for the current input.
-local function mcycle_computation_hash_push_collected(self, collected)
-    local count = umin(#collected.hashes, self.input_entry_capacity - self.input_entry_count)
-    hash_tree.frontier_append(self.frontier, collected.hashes, 1, count + 1)
-    self.input_entry_count = self.input_entry_count + count
-    if not is_at_fixed_point(collected.break_reason) then return end
-    assert(#collected.hashes > 0, "fixed-point mcycle collection has no final entry")
-    self.pad_entry = collected.hashes[#collected.hashes]
-    hash_tree.frontier_pad_back(self.frontier, self.pad_entry, self.input_entry_capacity - self.input_entry_count)
-    self.input_entry_count = self.input_entry_capacity
+local function mcycle_computation_hash_push_collected(builder, collected)
+    local count = #collected.hashes
+    local at_fixed_point = is_at_fixed_point(collected.break_reason)
+    if at_fixed_point then
+        assert(count > 0, "fixed-point mcycle collection has no final entry")
+        builder.pad_bundle = collected.hashes[count]
+        count = count - 1
+    end
+    assert(
+        count <= builder.max_bundles_per_input - builder.input_bundle_count,
+        "mcycle collection exceeds the input's capacity"
+    )
+    hash_tree.frontier_append(builder.frontier, collected.hashes, 1, count + 1)
+    builder.input_bundle_count = builder.input_bundle_count + count
+    if not at_fixed_point then return end
+    hash_tree.frontier_pad_back(
+        builder.frontier,
+        builder.pad_bundle,
+        builder.max_bundles_per_input - builder.input_bundle_count
+    )
+    builder.input_bundle_count = builder.max_bundles_per_input
 end
 
-local function mcycle_computation_hash_begin_epoch(self)
-    local log2_entries_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - self.log2_period - self.log2_bundle
-    self.frontier =
-        hash_tree.frontier(ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_entries_per_input, self.hash_type)
-    self.input_entry_capacity = 1 << log2_entries_per_input
-    self.pad_entry = nil
+local function mcycle_computation_hash_begin_epoch(builder, runner)
+    local log2_bundles_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+        - builder.log2_period
+        - builder.bundle_height
+    builder.frontier =
+        hash_tree.frontier(ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_bundles_per_input, builder.hash_type)
+    builder.max_bundles_per_input = 1 << log2_bundles_per_input
+    local collected =
+        runner:collect_mcycle_root_hashes(runner:read_reg("mcycle"), builder.log2_period, 0, builder.bundle_height)
+    assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash started outside a fixed point")
+    builder.pad_bundle = assert(collected.hashes[#collected.hashes], "fixed-point mcycle collection has no final entry")
 end
 
 -- Input delivery does not advance mcycle. Open at the pre-delivery boundary, exclude that boundary
 -- from the samples, and limit collection to one input's mcycle budget.
-local function mcycle_computation_hash_begin_input(self, input_index)
-    self.input_index = input_index
-    self.input_entry_count = 0
-    self.mcycle_phase = 0
-    self.partial_bundle = nil
-    self.input_mcycle_end =
-        usaturating_add(self.machine:read_reg("mcycle"), 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+local function mcycle_computation_hash_begin_input(builder, runner)
+    builder.input_bundle_count = 0
+    builder.mcycle_phase = 0
+    builder.partial_bundle = nil
+    builder.input_mcycle_end =
+        usaturating_add(runner:read_reg("mcycle"), 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
 end
 
 -- Samples the input's state hashes up to mcycle_end and adds each returned entry to the epoch-tree
--- frontier. self.mcycle_phase and self.partial_bundle preserve the sampling period and partial
+-- frontier. builder.mcycle_phase and builder.partial_bundle preserve the sampling period and partial
 -- bundle across calls.
-local function mcycle_computation_hash_run(self, mcycle_end)
-    local m = self.machine
-    mcycle_end = umin(self.input_mcycle_end, mcycle_end)
+local function mcycle_computation_hash_run(builder, runner, mcycle_end)
+    mcycle_end = umin(builder.input_mcycle_end, mcycle_end)
     local collected = {
-        mcycle_phase = self.mcycle_phase,
-        partial_bundle = self.partial_bundle,
+        mcycle_phase = builder.mcycle_phase,
+        partial_bundle = builder.partial_bundle,
     }
-    local chunk_end = m:read_reg("mcycle")
+    local chunk_end = runner:read_reg("mcycle")
     repeat
-        chunk_end = usaturating_add(chunk_end, self.chunk_size, mcycle_end)
-        collected = self.runner:collect_mcycle_root_hashes(
+        chunk_end = usaturating_add(chunk_end, builder.collection_chunk_size, mcycle_end)
+        collected = runner:collect_mcycle_root_hashes(
             chunk_end,
-            self.log2_period,
+            builder.log2_period,
             collected.mcycle_phase,
-            self.log2_bundle,
+            builder.bundle_height,
             collected.partial_bundle
         )
         if collected.console_io_error then stderr("Console I/O error: %s\n", collected.console_io_error) end
-        mcycle_computation_hash_push_collected(self, collected)
+        mcycle_computation_hash_push_collected(builder, collected)
     until not is_target_mcycle(collected.break_reason) or chunk_end == mcycle_end
-    self.mcycle_phase = collected.mcycle_phase
-    self.partial_bundle = collected.partial_bundle
+    builder.mcycle_phase = collected.mcycle_phase
+    builder.partial_bundle = collected.partial_bundle
     return collected.break_reason
 end
 
 -- A completed input must have filled every position in its reserved tree segment.
-local function mcycle_computation_hash_end_input(self)
-    if not self.input_entry_count then return end
-    assert(self.input_entry_count == self.input_entry_capacity, "mcycle computation hash input is incomplete")
-    self.input_entry_count = nil
+local function mcycle_computation_hash_end_input(builder)
+    if not builder.input_bundle_count then return end
+    assert(builder.input_bundle_count == builder.max_bundles_per_input, "mcycle computation hash input is incomplete")
+    builder.input_bundle_count = nil
 end
 
--- Fill the tree segments reserved for unprocessed inputs with the final fixed-point entry. If no
--- input ran, obtain that entry directly from the waiting, halted, or overflowed machine.
-local function mcycle_computation_hash_end_epoch(self)
-    self:end_input()
-    local pad = self.pad_entry
-    if not pad then
-        local collected = self.machine:collect_mcycle_root_hashes(
-            self.machine:read_reg("mcycle"),
-            self.log2_period,
-            0,
-            self.log2_bundle
-        )
-        assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash ended outside a fixed point")
-        pad = collected.hashes[#collected.hashes]
-        assert(pad, "fixed-point mcycle collection has no final entry")
-    end
-    local root = hash_tree.frontier_get_root_hash(self.frontier, pad)
-    stderr("\nMcycle computation hash: %s\n", cartesi.tohex(root))
-    if self.filename ~= "" then
-        stderr("Storing %s\n", self.filename)
-        util.write_file(root, self.filename)
-    end
+-- Fill the tree segments reserved for unprocessed inputs with the final fixed-point entry.
+-- An empty epoch uses the entry captured at its initial boundary.
+local function mcycle_computation_hash_end_epoch(builder)
+    builder:end_input()
+    builder.on_full(hash_tree.frontier_get_root_hash(builder.frontier, builder.pad_bundle))
 end
 
-local function make_mcycle_computation_hash(m, advance, runner)
+local function make_mcycle_computation_hash_builder(advance, on_full)
     local log2_period = advance.log2_mcycle_computation_hash_period
     return {
-        machine = m,
-        runner = runner,
-        chunk_size = mcycle_hashes_chunk_size(log2_period, advance.log2_bundle_mcycle_count),
+        collection_chunk_size = mcycle_hashes_chunk_size(log2_period, advance.log2_bundle_mcycle_count),
         log2_period = log2_period,
-        log2_bundle = advance.log2_bundle_mcycle_count,
+        bundle_height = advance.log2_bundle_mcycle_count,
         hash_type = initial_config.hash_tree.hash_function,
-        filename = advance.mcycle_computation_hash,
         begin_epoch = mcycle_computation_hash_begin_epoch,
         begin_input = mcycle_computation_hash_begin_input,
         run = mcycle_computation_hash_run,
         end_input = mcycle_computation_hash_end_input,
         end_epoch = mcycle_computation_hash_end_epoch,
         check_revert = computation_hash_check_revert,
+        on_full = on_full,
     }
 end
 
@@ -3610,190 +3609,212 @@ end
 -- The final two entries are the all-halted bundle and the bundle ending in the reset hash.
 -- Push the execution bundles, fill the remaining positions before the final one with copies of
 -- the all-halted bundle (possibly none), and close with the reset-ending bundle.
-local function uarch_cycle_computation_hash_push_mcycle(self, frontier, entries, mcycle_hashes_begin, mcycle_hashes_end)
-    local bundle_capacity = 1 << self.log2_bundles_per_mcycle
+local function uarch_cycle_computation_hash_push_mcycle(
+    builder,
+    frontier,
+    entries,
+    mcycle_hashes_begin,
+    mcycle_hashes_end
+)
+    local bundle_capacity = 1 << builder.log2_bundles_per_mcycle
     local execution_bundle_count = mcycle_hashes_end - mcycle_hashes_begin - 2
     hash_tree.frontier_append(frontier, entries, mcycle_hashes_begin, mcycle_hashes_end - 2)
     hash_tree.frontier_pad_back(frontier, entries[mcycle_hashes_end - 2], bundle_capacity - 1 - execution_bundle_count)
     hash_tree.frontier_push_back(frontier, entries[mcycle_hashes_end - 1])
 end
 
--- Adds each machine cycle's entries to the uarch computation-hash tree and emits its root when
+-- Adds each machine cycle's entries to the uarch computation-hash tree and calls on_full when
 -- complete.
 -- A collection ending at a fixed point includes one extra group that does not advance the main
 -- machine. Its subtree root fills every unfilled machine-cycle position in the selected period.
-local function uarch_cycle_computation_hash_push_collected(self, collected)
+local function uarch_cycle_computation_hash_push_collected(builder, collected)
     local mcycle_hash_offsets = collected.mcycle_hash_offsets
-    local count = umin(#mcycle_hash_offsets - 1, self.period - self.mcycle_count)
+    local available = #mcycle_hash_offsets - 1
+    local at_fixed_point = is_at_fixed_point(collected.break_reason)
+    local count = available
+    if at_fixed_point then
+        assert(count > 0, "fixed-point uarch collection has no final group")
+        count = count - 1
+    end
+    assert(count <= builder.mcycles_per_period - builder.mcycle_count, "uarch collection exceeds the period's capacity")
     for i = 1, count do
         uarch_cycle_computation_hash_push_mcycle(
-            self,
-            self.frontier,
+            builder,
+            builder.frontier,
             collected.hashes,
             mcycle_hash_offsets[i],
             mcycle_hash_offsets[i + 1]
         )
     end
-    self.mcycle_count = self.mcycle_count + count
+    builder.mcycle_count = builder.mcycle_count + count
 
-    if self.mcycle_count < self.period and is_at_fixed_point(collected.break_reason) then
-        local pad_frontier = hash_tree.frontier(self.log2_bundles_per_mcycle, self.hash_type)
+    if builder.mcycle_count < builder.mcycles_per_period and at_fixed_point then
+        local pad_frontier = hash_tree.frontier(builder.log2_bundles_per_mcycle, builder.hash_type)
         uarch_cycle_computation_hash_push_mcycle(
-            self,
+            builder,
             pad_frontier,
             collected.hashes,
-            mcycle_hash_offsets[count],
-            mcycle_hash_offsets[count + 1]
+            mcycle_hash_offsets[available],
+            mcycle_hash_offsets[available + 1]
         )
         local pad_mcycle_root = hash_tree.frontier_get_root_hash(pad_frontier)
         hash_tree.frontier_pad_back(
-            self.frontier,
+            builder.frontier,
             pad_mcycle_root,
-            self.period - self.mcycle_count,
-            self.log2_bundles_per_mcycle
+            builder.mcycles_per_period - builder.mcycle_count,
+            builder.log2_bundles_per_mcycle
         )
-        self.mcycle_count = self.period
+        builder.mcycle_count = builder.mcycles_per_period
     end
 
-    if self.mcycle_count < self.period then return end
-    local root = hash_tree.frontier_get_root_hash(self.frontier)
-    stderr("\nUarch cycle computation hash: %s\n", cartesi.tohex(root))
-    if self.filename ~= "" then
-        stderr("Storing %s\n", self.filename)
-        util.write_file(root, self.filename)
-    end
+    if builder.mcycle_count < builder.mcycles_per_period then return end
+    builder.on_full(hash_tree.frontier_get_root_hash(builder.frontier))
 end
 
-local function uarch_cycle_computation_hash_begin_epoch(self)
-    self.frontier = hash_tree.frontier(self.log2_period + self.log2_bundles_per_mcycle, self.hash_type)
-    self.mcycle_count = 0
+local function uarch_cycle_computation_hash_begin_epoch(builder)
+    builder.frontier = hash_tree.frontier(builder.log2_period + builder.log2_bundles_per_mcycle, builder.hash_type)
+    builder.mcycle_count = 0
 end
 
 -- Capture the target input's pre-delivery fixed-point uarch tail. Its final entry is the boundary
 -- root that delivery records as the revert root, allowing collection to model a later rejection.
 -- Other inputs need no uarch collection.
-local function uarch_cycle_computation_hash_begin_input(self, input_index)
-    if input_index ~= self.target_input then return end
-    local m = self.machine
-    local mcycle = m:read_reg("mcycle")
-    self.input_mcycle_end = usaturating_add(mcycle, 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
-    self.target_mcycle_start = usaturating_add(mcycle, self.target_offset * self.period, self.input_mcycle_end)
-    self.target_mcycle_end = usaturating_add(self.target_mcycle_start, self.period, self.input_mcycle_end)
-    self.revert_uarch_tail = m:collect_uarch_cycle_root_hashes(MCYCLE_MAX, 0).hashes
+local function uarch_cycle_computation_hash_begin_input(builder, runner, epoch_input_offset)
+    if epoch_input_offset ~= builder.target_epoch_input_offset then return end
+    local input_mcycle_boundary = runner:read_reg("mcycle")
+    builder.input_mcycle_end = usaturating_add(input_mcycle_boundary, 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+    builder.collection_mcycle_begin = usaturating_add(
+        input_mcycle_boundary,
+        builder.input_period_offset * builder.mcycles_per_period,
+        builder.input_mcycle_end
+    )
+    builder.collection_mcycle_end =
+        usaturating_add(builder.collection_mcycle_begin, builder.mcycles_per_period, builder.input_mcycle_end)
+    builder.revert_uarch_tail = runner:collect_uarch_cycle_root_hashes(MCYCLE_MAX, 0).hashes
 end
 
 -- Run plainly outside the target period and collect uarch state hashes within it.
-local function uarch_cycle_computation_hash_run(self, mcycle_end)
-    if not self.target_mcycle_start then return self.runner:run(mcycle_end) end
-    local m = self.machine
-    local mcycle = m:read_reg("mcycle")
-    mcycle_end = umin(self.input_mcycle_end, mcycle_end)
-    local break_reason
+-- Call on_full with the completed root before continuing past the period.
+local function uarch_cycle_computation_hash_run(builder, runner, mcycle_end)
+    if not builder.collection_mcycle_begin then return runner:run(mcycle_end) end
+    local mcycle = runner:read_reg("mcycle")
+    mcycle_end = umin(builder.input_mcycle_end, mcycle_end)
+    local break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
     -- Run plainly up to the target period, or to mcycle_end when it comes first. A stop short of
-    -- the wanted mcycle is reported to the caller, and so is a call that ends before the period.
-    if math.ult(mcycle, self.target_mcycle_start) then
-        local wanted_mcycle = umin(self.target_mcycle_start, mcycle_end)
-        break_reason = self.runner:run(wanted_mcycle)
-        if not is_target_mcycle(break_reason) or wanted_mcycle ~= self.target_mcycle_start then return break_reason end
-        mcycle = self.target_mcycle_start
+    -- the requested mcycle is reported to the caller, and so is a call that ends before the period.
+    if math.ult(mcycle, builder.collection_mcycle_begin) then
+        local wanted_mcycle = umin(builder.collection_mcycle_begin, mcycle_end)
+        break_reason = runner:run(wanted_mcycle)
+        if not is_target_mcycle(break_reason) or wanted_mcycle ~= builder.collection_mcycle_begin then
+            return break_reason
+        end
+        mcycle = builder.collection_mcycle_begin
     end
     -- Add the groups returned for machine cycles within the target period.
-    local collection_end = umin(self.target_mcycle_end, mcycle_end)
+    local collection_end = umin(builder.collection_mcycle_end, mcycle_end)
     while math.ult(mcycle, collection_end) do
-        local chunk_end = usaturating_add(mcycle, self.chunk_size, collection_end)
+        local chunk_end = usaturating_add(mcycle, builder.collection_chunk_size, collection_end)
         local collected =
-            self.runner:collect_uarch_cycle_root_hashes(chunk_end, self.log2_bundle, self.revert_uarch_tail)
+            runner:collect_uarch_cycle_root_hashes(chunk_end, builder.bundle_height, builder.revert_uarch_tail)
         break_reason = collected.break_reason
         -- At a fixed point, the final group does not represent a machine cycle that advanced the
         -- main processor.
-        uarch_cycle_computation_hash_push_collected(self, collected)
-        mcycle = m:read_reg("mcycle")
+        uarch_cycle_computation_hash_push_collected(builder, collected)
         if not is_target_mcycle(break_reason) then break end
+        mcycle = chunk_end
     end
     -- Past the target period, run plainly. A stop inside it is instead reported as is.
-    if (not break_reason or is_target_mcycle(break_reason)) and math.ult(m:read_reg("mcycle"), mcycle_end) then
-        break_reason = self.runner:run(mcycle_end)
-    end
+    if is_target_mcycle(break_reason) then break_reason = runner:run(mcycle_end) end
     return break_reason
 end
 
 -- If the input stopped before reaching the target period, collect one group of uarch state hashes
--- at the fixed point. Its subtree root fills every machine-cycle position in the period.
-local function uarch_cycle_computation_hash_end_input(self)
-    if not self.target_mcycle_start then return end
-    self.target_mcycle_start, self.target_mcycle_end, self.revert_uarch_tail = nil, nil, nil
-    if self.mcycle_count < self.period then
+-- at the fixed point, using the saved tail on rejection before rollback. Its subtree root fills
+-- every machine-cycle position in the period.
+local function uarch_cycle_computation_hash_end_input(builder, runner)
+    if not builder.collection_mcycle_begin then return end
+    if builder.mcycle_count < builder.mcycles_per_period then
         uarch_cycle_computation_hash_push_collected(
-            self,
-            self.machine:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle)
+            builder,
+            runner:collect_uarch_cycle_root_hashes(MCYCLE_MAX, builder.bundle_height, builder.revert_uarch_tail)
         )
     end
+    assert(builder.mcycle_count == builder.mcycles_per_period, "uarch computation hash is incomplete")
+    builder.collection_mcycle_begin, builder.collection_mcycle_end, builder.revert_uarch_tail = nil, nil, nil
 end
 
 -- If the epoch never processed the target input, collect one group of uarch state hashes at the
 -- epoch's final fixed point and use its subtree root for every machine-cycle position.
-local function uarch_cycle_computation_hash_end_epoch(self)
-    self:end_input()
-    if self.mcycle_count < self.period then
+local function uarch_cycle_computation_hash_end_epoch(builder, runner)
+    builder:end_input(runner)
+    if builder.mcycle_count < builder.mcycles_per_period then
         uarch_cycle_computation_hash_push_collected(
-            self,
-            self.machine:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle)
+            builder,
+            runner:collect_uarch_cycle_root_hashes(MCYCLE_MAX, builder.bundle_height)
         )
     end
 end
 
-local function make_uarch_cycle_computation_hash(m, advance, runner)
+local function make_uarch_cycle_computation_hash_builder(advance, on_full)
     local log2_period = advance.log2_mcycle_computation_hash_period
     local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
     return {
-        machine = m,
-        runner = runner,
-        period = 1 << log2_period,
-        chunk_size = uarch_hashes_chunk_size(advance.log2_bundle_uarch_cycle_count),
+        mcycles_per_period = 1 << log2_period,
+        collection_chunk_size = uarch_hashes_chunk_size(advance.log2_bundle_uarch_cycle_count),
         log2_period = log2_period,
-        log2_bundle = advance.log2_bundle_uarch_cycle_count,
+        bundle_height = advance.log2_bundle_uarch_cycle_count,
         hash_type = initial_config.hash_tree.hash_function,
         log2_bundles_per_mcycle = ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - advance.log2_bundle_uarch_cycle_count,
-        target_input = advance.mcycle_period_index >> log2_periods_per_input,
-        target_offset = advance.mcycle_period_index & ((1 << log2_periods_per_input) - 1),
-        filename = advance.uarch_cycle_computation_hash,
+        target_epoch_input_offset = advance.mcycle_period_index >> log2_periods_per_input,
+        input_period_offset = advance.mcycle_period_index & ((1 << log2_periods_per_input) - 1),
         begin_epoch = uarch_cycle_computation_hash_begin_epoch,
         begin_input = uarch_cycle_computation_hash_begin_input,
         run = uarch_cycle_computation_hash_run,
         end_input = uarch_cycle_computation_hash_end_input,
         end_epoch = uarch_cycle_computation_hash_end_epoch,
         check_revert = computation_hash_check_revert,
+        on_full = on_full,
     }
 end
 
--- An epoch that does not compute a hash delegates execution to the runner and skips collector
+-- An epoch that does not compute a hash delegates execution to the runner and skips builder
 -- bookkeeping and reversal checks.
 local function null_computation_hash_noop() end
-local function null_computation_hash_run(self, mcycle_end) return self.runner:run(mcycle_end) end
-local function make_null_computation_hash(runner)
+local function make_null_computation_hash_builder()
     return {
-        runner = runner,
+        run = function(_, runner, mcycle_end) return runner:run(mcycle_end) end,
         begin_epoch = null_computation_hash_noop,
         begin_input = null_computation_hash_noop,
-        run = null_computation_hash_run,
         end_input = null_computation_hash_noop,
         end_epoch = null_computation_hash_noop,
         check_revert = null_computation_hash_noop,
     }
 end
 
+-- Reports a completed computation hash. Uarch roots may be ready before the epoch ends.
+local function report_computation_hash(root)
+    local advance = cmdline.cmio_advance
+    local name = advance.mcycle_computation_hash and "Mcycle" or "Uarch cycle"
+    local filename = advance.mcycle_computation_hash or advance.uarch_cycle_computation_hash
+    stderr("\n%s computation hash: %s\n", name, cartesi.tohex(root))
+    if filename ~= "" then
+        stderr("Storing %s\n", filename)
+        util.write_file(root, filename)
+    end
+end
+
 -- Resumes the machine, running to each target cycle with the given runner (the machine itself for
 -- a plain run) and servicing each automatic yield through on_yield_automatic(yield_reason, data),
--- until it reaches a fixed point or max_mcycle, and returns the break reason it stopped for.
+-- until it reaches a fixed point or mcycle_end, and returns the break reason it stopped for.
 -- This is the host's inner loop. A terminal manual yield is left unread, for the caller to
--- service.
-local function run_to_stop(m, on_yield_automatic, runner)
+-- service. Builders report completed roots through on_full while execution continues.
+local function run_to_stop(builder, runner, mcycle_end, on_yield_automatic)
     while true do
-        local break_reason = runner:run(cmdline.max_mcycle)
+        local break_reason = builder:run(runner, mcycle_end)
         if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
             return break_reason
         elseif is_yielded_automatic(break_reason) then
-            local _, yield_reason, data = get_and_print_yield(m, initial_config.processor.registers.htif)
+            local _, yield_reason, data = get_and_print_yield(runner, initial_config.processor.registers.htif)
             on_yield_automatic(yield_reason, data)
         end
         -- any other reason (a soft yield or console output) just keeps going
@@ -3856,14 +3877,19 @@ local function ignore_yield_automatic() end
 local function run_inspect_state_query(m, runner)
     local htif = initial_config.processor.registers.htif
     local mcycle = m:read_reg("mcycle")
-    -- Boot always runs the machine plainly, and only the query itself runs with the runner. If the
-    -- machine did not stop at a manual yield (it halted, or ran out of mcycles), it is not at an
-    -- accept yield waiting for a request, so there is nothing to inspect.
-    local break_reason = run_to_stop(m, ignore_yield_automatic, m)
-    if not is_yielded_manual(break_reason) then return end
+    -- Boot always runs the machine plainly, and only the query itself runs with the runner. A query
+    -- needs a machine waiting for it on an rx-accepted manual yield. A halt, an overflow, an
+    -- exhausted cycle limit, or a reject or exception yield leaves nothing to inspect.
+    local break_reason =
+        run_to_stop(make_null_computation_hash_builder(), m, cmdline.max_mcycle, ignore_yield_automatic)
+    local waiting = is_yielded_manual(break_reason)
+    if waiting then
+        local cmd, yield_reason = m:receive_cmio_request()
+        waiting = cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(yield_reason)
+    end
+    assert(waiting, "inspect query needs a machine waiting on an rx-accepted manual yield")
     -- Announce the yield we advanced to reach (after an epoch it is the epoch's already-announced
-    -- accept yield, at the same mcycle, so skip it). load_cmio_query is the gate on the reason: it
-    -- fails unless the machine is at an rx-accepted manual yield, rejecting a reject or exception.
+    -- accept yield, at the same mcycle, so skip it).
     if m:read_reg("mcycle") ~= mcycle then get_and_print_yield(m, htif) end
     commit(m)
     stderr("\nBefore query\n")
@@ -3878,33 +3904,21 @@ local function run_inspect_state_query(m, runner)
             cmdline.cmio_inspect.report_index = cmdline.cmio_inspect.report_index + 1
         end
     end
-    break_reason = run_to_stop(m, on_yield_automatic, runner)
+    break_reason = run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, on_yield_automatic)
     report_stop(m, break_reason)
     stderr("\nAfter query\n")
     revert(m)
     cmdline.cmio_inspect = nil
 end
 
--- Drives an advance-state epoch actively, as the README host loop does. Boots to the rolling
--- template's first accept yield, then for each input snapshots, feeds, resumes until the input
--- is accepted or rejected, collecting outputs and reports, and commits or reverts. Every input
--- processed, a halt, an mcycle overflow, an exception, or an unexpected manual yield is a fixed
--- point that determines the values placed in all later tree positions reserved by the claim. Only
--- reaching max_mcycle leaves the computation hash undetermined. At any of these fixed points the
--- interrupted input's outputs are flushed as rejected and its snapshot is committed (a fixed
--- point is sticky, so there is no state worth restoring), and output proofs are written only on
--- full completion.
--- Leaves the machine wherever the epoch stopped. A trailing inspect query, if any, runs against that
--- state and does nothing unless it is an accept yield. Boot always runs the machine plainly. The
--- inputs run with the claim, which either collects a computation hash (advancing through the
--- given runner) or delegates to the runner directly (the machine itself, or gdb).
-local function run_advance_state_epoch(m, runner)
+-- Processes one advance-state input through its builder. Accepted outputs are published before
+-- commit; rejected outputs are written separately after rollback. Finalizes inputs at fixed points
+-- before rollback. A cycle-limit interruption leaves the input open and its snapshot outstanding,
+-- so the outputs requested at that cycle see the interrupted machine and the exit handler then
+-- rolls it back to the input boundary. Returns the break reason and manual yield reason, if any.
+local function run_advance_state_input(builder, runner, input_file_index, revert_root_hash)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
-    local claim = advance.mcycle_computation_hash and make_mcycle_computation_hash(m, advance, runner)
-        or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(m, advance, runner)
-        or make_null_computation_hash(runner)
-    claim:begin_epoch()
     -- outputs are buffered until the input is accepted or rejected, reports are saved at once
     local function on_yield_automatic(yield_reason, data)
         if is_tx_output(yield_reason) then
@@ -3914,76 +3928,109 @@ local function run_advance_state_epoch(m, runner)
             advance.report_index = advance.report_index + 1
         end
     end
-    -- boot plainly to the rolling template's first accept yield, then process each input in turn.
-    -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
-    local break_reason = run_to_stop(m, ignore_yield_automatic, m)
+    stderr("\nBefore input %d\n", input_file_index)
+    -- Open and snapshot the input boundary. Builder setup must preserve its expected
+    -- root, which delivery checks. A rejection must restore this same boundary.
+    local epoch_input_offset = input_file_index - advance.input_index_begin
+    builder:begin_input(runner, epoch_input_offset)
+    snapshot(runner)
+    if advance.print_input_state_hashes then print_root_hash(runner) end
+    load_cmio_input(runner, advance, revert_root_hash)
+    if advance.print_input_state_hashes then print_root_hash(runner) end
+    advance.report_index = 0
+    -- labeling: from now the producing input is next_input_index - 1
+    advance.next_input_index = input_file_index + 1
+    local break_reason = run_to_stop(builder, runner, cmdline.max_mcycle, on_yield_automatic)
+    local yield_reason, data
     if is_yielded_manual(break_reason) then
-        get_and_print_yield(m, htif)
-        commit(m)
-        local revert_root_hash = m:get_root_hash()
-        for input_index = advance.input_index_begin, advance.input_index_end - 1 do
-            stderr("\nBefore input %d\n", input_index)
-            -- Open and snapshot the input boundary. Collector setup must preserve its expected
-            -- root, which delivery checks. A rejection must restore this same boundary.
-            claim:begin_input(input_index)
-            snapshot(m)
-            if advance.print_input_state_hashes then print_root_hash(m) end
-            load_cmio_input(m, advance, revert_root_hash)
-            if advance.print_input_state_hashes then print_root_hash(m) end
-            advance.report_index = 0
-            -- labeling: from now the producing input is next_input_index - 1
-            advance.next_input_index = input_index + 1
-            break_reason = run_to_stop(m, on_yield_automatic, claim)
-            -- a halt, overflow, or max_mcycle before the accept or reject yield ends the epoch;
-            -- it closes below
+        yield_reason, data = select(2, get_and_print_yield(runner, htif))
+    end
+    if is_rx_rejected(yield_reason) then
+        builder:end_input(runner)
+        revert(runner)
+        builder:check_revert(revert_root_hash, runner:get_root_hash())
+        flush_pending_outputs(runner, advance, yield_reason, data)
+    elseif is_at_fixed_point(break_reason) then
+        builder:end_input(runner)
+        if is_tx_exception(yield_reason) then
+            report_exception(data)
+        elseif is_yielded_manual(break_reason) and not is_rx_accepted(yield_reason) then
+            report_unexpected_manual_yield(yield_reason)
+        end
+        flush_pending_outputs(runner, advance, yield_reason, data)
+        -- acceptance and sticky stops retain the running machine
+        commit(runner)
+    end
+    return break_reason, yield_reason
+end
+
+-- Drives an advance-state epoch actively, as the README host loop does. Boots to a fixed point.
+-- At an accept yield, snapshots and feeds each input, then resumes until it is accepted or rejected.
+-- Collects outputs and reports, then commits or reverts. Every input
+-- processed, a halt, an mcycle overflow, an exception, or an unexpected manual yield is a fixed
+-- point that determines the values placed in all later tree positions reserved by the claim. Only
+-- reaching max_mcycle leaves the computation hash undetermined. At any of these fixed points the
+-- interrupted input's outputs are flushed as rejected and its snapshot is committed (a fixed
+-- point is sticky, so there is no state worth restoring), and output proofs are written only on
+-- full completion.
+-- Leaves the machine wherever the epoch stopped. A trailing inspect query, if any, runs against that
+-- state and does nothing unless it is an accept yield. Boot uses the selected runner without
+-- collecting a computation hash. Inputs run with the builder, which either builds a computation
+-- hash through that runner or delegates to it directly (the machine itself, or gdb).
+local function run_advance_state_epoch(builder, runner)
+    local htif = initial_config.processor.registers.htif
+    local advance = cmdline.cmio_advance
+    -- Prepare the initial fixed point before initializing collection. A host cycle limit does
+    -- not determine the computation hash. A rejected boundary lacks the history needed to revert.
+    local break_reason =
+        run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
+    commit(runner)
+    if not is_at_fixed_point(break_reason) then return end
+    local initial_yield_reason, initial_yield_data
+    if is_yielded_manual(break_reason) then
+        initial_yield_reason, initial_yield_data = select(2, get_and_print_yield(runner, htif))
+        if advance.mcycle_computation_hash or advance.uarch_cycle_computation_hash then
+            assert(not is_rx_rejected(initial_yield_reason), "computation hash cannot start at an rx-rejected yield")
+        end
+    end
+    builder:begin_epoch(runner)
+    if
+        is_yielded_manual(break_reason)
+        and not is_rx_accepted(initial_yield_reason)
+        and (advance.mcycle_computation_hash or advance.uarch_cycle_computation_hash)
+    then
+        if is_tx_exception(initial_yield_reason) then
+            report_exception(initial_yield_data)
+        else
+            report_unexpected_manual_yield(initial_yield_reason)
+        end
+        builder:end_epoch(runner)
+        return
+    end
+    if is_yielded_manual(break_reason) then
+        -- Keep the expected boundary across rejections. Only acceptance establishes a new one.
+        local revert_root_hash = runner:get_root_hash()
+        for input_file_index = advance.input_index_begin, advance.input_index_end - 1 do
+            local yield_reason
+            break_reason, yield_reason = run_advance_state_input(builder, runner, input_file_index, revert_root_hash)
             if not is_yielded_manual(break_reason) then break end
-            local _, yield_reason, data = get_and_print_yield(m, htif)
             if is_rx_accepted(yield_reason) then
-                flush_pending_outputs(m, advance, yield_reason, data)
-                commit(m)
-                revert_root_hash = m:get_root_hash()
-            elseif is_rx_rejected(yield_reason) then
-                revert(m)
-                claim:check_revert(revert_root_hash, m:get_root_hash())
-                flush_pending_outputs(m, advance, yield_reason, data)
-            elseif is_tx_exception(yield_reason) then
-                -- an exception is a fixed point like a halt: report it, flush the interrupted input's
-                -- outputs as rejected, and end the epoch, leaving the machine at the exception
-                -- yield (no revert). A following inspect query fails against this non-accept yield,
-                -- which the CLI just reports.
-                report_exception(data)
-                flush_pending_outputs(m, advance, yield_reason, data)
-                commit(m)
-                claim:end_epoch()
-                return
-            else
-                -- An unexpected manual yield is a protocol violation, but still a fixed point, and
-                -- fixed points are sticky, so it ends the epoch the same way an exception does.
-                -- The claim is finalized so callers can dispute the computation that led here. In
-                -- particular, the uarch claim may still need to pad a selected period that
-                -- execution never reached.
-                report_unexpected_manual_yield(yield_reason)
-                flush_pending_outputs(m, advance, yield_reason, data)
-                commit(m)
-                claim:end_epoch()
+                revert_root_hash = runner:get_root_hash()
+            elseif not is_rx_rejected(yield_reason) then
+                builder:end_epoch(runner)
                 return
             end
-            claim:end_input()
         end
     end
     if is_halted(break_reason) then
-        report_halt(m)
-        flush_pending_outputs(m, advance)
-        commit(m)
-        claim:end_epoch()
+        report_halt(runner)
+        builder:end_epoch(runner)
     elseif is_mcycle_overflow(break_reason) then
-        report_mcycle_overflow(m)
-        flush_pending_outputs(m, advance)
-        commit(m)
-        claim:end_epoch()
+        report_mcycle_overflow(runner)
+        builder:end_epoch(runner)
     elseif is_yielded_manual(break_reason) then
         save_cmio_output_proofs(advance)
-        claim:end_epoch()
+        builder:end_epoch(runner)
     end
 end
 
@@ -4012,14 +4059,25 @@ end
 -- The host drives an advance-state epoch (which may end with an inspect query) actively, an
 -- inspect-state query on its own, or otherwise just runs the machine to a stop.
 if cmdline.cmio_advance then
-    run_advance_state_epoch(machine, runner)
-    -- an inspect query, if any, runs against the state the epoch left; it does nothing unless that
-    -- is an accept yield (a completed epoch), so it is safe to always attempt
-    if cmdline.cmio_inspect then run_inspect_state_query(machine, runner) end
-elseif cmdline.cmio_inspect then
+    local advance = cmdline.cmio_advance
+    local builder
+    if advance.mcycle_computation_hash then
+        builder = make_mcycle_computation_hash_builder(advance, report_computation_hash)
+    elseif advance.uarch_cycle_computation_hash then
+        builder = make_uarch_cycle_computation_hash_builder(advance, report_computation_hash)
+    else
+        builder = make_null_computation_hash_builder()
+    end
+    run_advance_state_epoch(builder, runner)
+end
+if cmdline.cmio_inspect then
+    -- After an advance epoch, the query uses the state it left and requires an accept yield.
     run_inspect_state_query(machine, runner)
-else
-    report_stop(machine, run_to_stop(machine, ignore_yield_automatic, runner))
+elseif not cmdline.cmio_advance then
+    report_stop(
+        machine,
+        run_to_stop(make_null_computation_hash_builder(), runner, cmdline.max_mcycle, ignore_yield_automatic)
+    )
 end
 -- log step
 if cmdline.log_step_mcycle_count then

@@ -15,6 +15,7 @@
 --
 
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 
 local GDBSTUB_DEBUG_PROTOCOL = false
 
@@ -26,7 +27,7 @@ local signals = {
 }
 
 local GDBStub = {}
-GDBStub.__index = GDBStub
+GDBStub.__index = function(self, name) return GDBStub[name] or util.forward_method(self, self.runner, name) end
 
 -- Returns x with the order of the bytes reversed.
 -- Used to convert 64 bit integers between little-endian and big-endian.
@@ -60,7 +61,7 @@ end
 -- target of an outer run or collect call instead suspends that call.
 function GDBStub.new(machine, max_mcycle)
     return setmetatable({
-        machine = machine,
+        runner = machine,
         max_mcycle = max_mcycle or cartesi.MCYCLE_MAX,
         breakpoints = {},
     }, GDBStub)
@@ -208,26 +209,26 @@ function GDBStub:_handle_query(_, query)
     elseif query:find("^qRcmd,") then -- custom command
         local payload = hex2str(query:sub(7))
         if payload:find("^stepc %d+$") then -- step a fixed number of cycles
-            self.mcycle_limit = self.machine:read_reg("mcycle") + tonumber(payload:match("^stepc (%d+)$"))
+            self.mcycle_limit = self.runner:read_reg("mcycle") + tonumber(payload:match("^stepc (%d+)$"))
             return self:_send_ok()
         elseif payload:find("^stepu %d+$") then -- step until a cycle number
-            self.mcycle_limit = math.max(self.machine:read_reg("mcycle"), tonumber(payload:match("^stepu (%d+)$")))
+            self.mcycle_limit = math.max(self.runner:read_reg("mcycle"), tonumber(payload:match("^stepu (%d+)$")))
             return self:_send_ok()
         elseif payload == "stepc_clear" then -- remove stepping breakpoint
             self.mcycle_limit = nil
             return self:_send_ok()
         elseif payload == "cycles" then -- print current cycle
-            self:_send_rcmd_reply(string.format("%u\n", self.machine:read_reg("mcycle")))
+            self:_send_rcmd_reply(string.format("%u\n", self.runner:read_reg("mcycle")))
             return self:_send_ok()
         elseif payload:find("^reg [%w_]+$") then -- read machine registers
             local reg_name = payload:match("^reg ([%w_]+)$")
             local read_method_name = "read_" .. reg_name
-            local read_method = self.machine[read_method_name]
+            local read_method = self.runner[read_method_name]
             local ok, res
             if read_method then
-                ok, res = pcall(read_method, self.machine)
+                ok, res = pcall(read_method, self.runner)
             else
-                ok, res = pcall(self.machine.read_reg, self.machine, reg_name)
+                ok, res = pcall(self.runner.read_reg, self.runner, reg_name)
             end
             if not ok or res == nil then return self:_send_unsupported() end
             if math.type(res) == "integer" then
@@ -240,18 +241,18 @@ function GDBStub:_handle_query(_, query)
             local reg_name, val = payload:match("^reg ([%w_]+)%=(.*)$")
             local write_method_name = "write_" .. reg_name
             local read_method_name = "read_" .. reg_name
-            local write_method = self.machine[write_method_name]
-            local read_method = self.machine[read_method_name]
+            local write_method = self.runner[write_method_name]
+            local read_method = self.runner[read_method_name]
             if not write_method or not read_method then return self:_send_unsupported() end
             val = tonumber(val)
             if not val or math.type(val) ~= "integer" then
                 self:_send_rcmd_reply("ERROR: malformed register integer\n")
                 return self:_send_ok()
             end
-            local write_ok = pcall(write_method, self.machine, val)
+            local write_ok = pcall(write_method, self.runner, val)
             if not write_ok then return self:_send_unsupported() end
             -- print the new register value
-            local ok, res = pcall(read_method, self.machine)
+            local ok, res = pcall(read_method, self.runner)
             if ok and res ~= nil then
                 if math.type(res) == "integer" then
                     self:_send_rcmd_reply(string.format("%s = 0x%x (%d)\n", reg_name, res, res))
@@ -266,14 +267,14 @@ function GDBStub:_handle_query(_, query)
                 self:_send_rcmd_reply("Performing first hash, this may take a while...\n")
                 self.performed_first_hash = true
             end
-            local hash = self.machine:get_root_hash()
-            self:_send_rcmd_reply(string.format("%u: %s\n", self.machine:read_reg("mcycle"), str2hex(hash)))
+            local hash = self.runner:get_root_hash()
+            self:_send_rcmd_reply(string.format("%u: %s\n", self.runner:read_reg("mcycle"), str2hex(hash)))
             return self:_send_ok()
         elseif payload:find("^store .*$") then -- store the machine state
             local store_dir = payload:match("^store (.*)$")
             self:_send_rcmd_reply("GDB may complain about packet errors due to command timeout, ignore them.\n")
             self:_send_rcmd_reply("Storing the machine, this may take a while...\n")
-            local ok, res = pcall(self.machine.store, self.machine, store_dir)
+            local ok, res = pcall(self.runner.store, self.runner, store_dir)
             if not ok then
                 self:_send_rcmd_reply(string.format("ERROR: machine store failed: %s\n", res))
             else
@@ -282,7 +283,7 @@ function GDBStub:_handle_query(_, query)
             return self:_send_ok()
         elseif payload:find([[^lua ["'].*["']$]]) then -- execute arbitrary lua code
             local source = payload:match([[^lua ["'](.*)["']$]])
-            local env = { machine = self.machine }
+            local env = { machine = self.runner }
             setmetatable(env, { __index = _ENV })
             local func, err = load(source, "@gdb_command_chunk", "t", env)
             if not func then
@@ -346,10 +347,10 @@ function GDBStub:_handle_write_reg(payload)
     if not (reg and val) then return end
     reg, val = hex2int(reg), hex2reg(val)
     if reg > 0 and reg < 32 then -- machine registers
-        self.machine:write_reg("x" .. reg, val)
+        self.runner:write_reg("x" .. reg, val)
         return self:_send_ok()
     elseif reg == 32 then -- machine program counter
-        self.machine:write_reg("pc", val)
+        self.runner:write_reg("pc", val)
         return self:_send_ok()
     end
 end
@@ -359,10 +360,10 @@ function GDBStub:_handle_read_all_regs()
     local res = {}
     -- read general purposes registers
     for i = 0, 31 do
-        table.insert(res, reg2hex(self.machine:read_reg("x" .. i)))
+        table.insert(res, reg2hex(self.runner:read_reg("x" .. i)))
     end
     -- read program counter
-    table.insert(res, reg2hex(self.machine:read_reg("pc")))
+    table.insert(res, reg2hex(self.runner:read_reg("pc")))
     return self:_send(table.concat(res))
 end
 
@@ -381,10 +382,10 @@ function GDBStub:_handle_write_all_regs(payload)
     end
     -- write general purposes registers
     for i = 1, 31 do
-        self.machine:write_reg("x" .. i, regs[i])
+        self.runner:write_reg("x" .. i, regs[i])
     end
     -- write program counter
-    self.machine:write_reg("pc", regs[32])
+    self.runner:write_reg("pc", regs[32])
     return self:_send_ok()
 end
 
@@ -394,7 +395,7 @@ function GDBStub:_handle_read_mem(payload)
     if not (address and length) then return end
     address, length = hex2int(address), hex2int(length)
     -- GDB may want to access invalid address ranges when debugging
-    local ok, mem = pcall(function() return self.machine:read_virtual_memory(address, length) end)
+    local ok, mem = pcall(function() return self.runner:read_virtual_memory(address, length) end)
     if not ok then return self:_send_error() end
     local hexmem = str2hex(mem)
     return self:_send(hexmem)
@@ -408,9 +409,15 @@ function GDBStub:_handle_write_mem(payload)
     local mem = hex2str(hexmem)
     assert(#mem == length)
     -- GDB may want to access invalid address ranges when debugging
-    local ok = pcall(function() self.machine:write_virtual_memory(address, mem) end)
+    local ok = pcall(function() self.runner:write_virtual_memory(address, mem) end)
     if ok then return self:_send_error() end
     return self:_send_ok()
+end
+
+local function is_at_fixed_point(break_reason)
+    return break_reason == cartesi.BREAK_REASON_HALTED
+        or break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY
+        or break_reason == cartesi.BREAK_REASON_MCYCLE_OVERFLOW
 end
 
 -- One advance function per outer call (run and the two collect calls). Each advances the machine
@@ -418,17 +425,20 @@ end
 -- call of one outer collect call aggregates into self.collect.
 local advance_modes = {}
 
-function advance_modes.run(self, mcycle_end) return self.machine:run(mcycle_end) end
+function advance_modes.run(self, mcycle_end) return self.runner:run(mcycle_end) end
 
 function advance_modes.collect_mcycle_root_hashes(self, mcycle_end)
     local collect = self.collect
-    local collected = self.machine:collect_mcycle_root_hashes(
+    local collected = self.runner:collect_mcycle_root_hashes(
         mcycle_end,
         collect.log2_mcycle_period,
         collect.mcycle_phase,
         collect.log2_bundle,
         collect.partial_bundle
     )
+    -- A previous fixed-point entry is padding, not another sample to aggregate.
+    if is_at_fixed_point(collect.break_reason) then collect.hashes[#collect.hashes] = nil end
+    collect.break_reason = collected.break_reason
     collect.mcycle_phase = collected.mcycle_phase
     collect.partial_bundle = collected.partial_bundle
     collect.console_io_error = collect.console_io_error or collected.console_io_error
@@ -439,10 +449,18 @@ end
 function advance_modes.collect_uarch_cycle_root_hashes(self, mcycle_end)
     local collect = self.collect
     local collected =
-        self.machine:collect_uarch_cycle_root_hashes(mcycle_end, collect.log2_bundle, collect.revert_uarch_tail)
+        self.runner:collect_uarch_cycle_root_hashes(mcycle_end, collect.log2_bundle, collect.revert_uarch_tail)
+    local mcycle_hash_offsets = collect.mcycle_hash_offsets
+    -- Keep just the final fixed-point group across repeated continues or detach.
+    if is_at_fixed_point(collect.break_reason) then
+        for i = mcycle_hash_offsets[#mcycle_hash_offsets - 1], #collect.hashes do
+            collect.hashes[i] = nil
+        end
+        mcycle_hash_offsets[#mcycle_hash_offsets] = nil
+    end
+    collect.break_reason = collected.break_reason
     local offset = #collect.hashes
     table.move(collected.hashes, 1, #collected.hashes, offset + 1, collect.hashes)
-    local mcycle_hash_offsets = collect.mcycle_hash_offsets
     for i = 2, #collected.mcycle_hash_offsets do
         mcycle_hash_offsets[#mcycle_hash_offsets + 1] = collected.mcycle_hash_offsets[i] + offset
     end
@@ -454,7 +472,7 @@ function GDBStub:_advance(mcycle_end) return advance_modes[self.mode](self, mcyc
 
 -- GDB is asking to let the machine continue.
 function GDBStub:_handle_continue()
-    local machine = self.machine
+    local machine = self.runner
     local mcycle = machine:read_reg("mcycle")
     local mcycle_end = self.mcycle_end
     local ult = math.ult -- localized to speed up Lua loop
@@ -636,14 +654,13 @@ function GDBStub:run(mcycle_end)
         if break_reason ~= nil then return break_reason end
     end
     -- no live GDB session: advance the machine, as machine:run would, and report its break reason
-    return self.machine:run(mcycle_end)
+    return self.runner:run(mcycle_end)
 end
 
 -- Like run, but collecting hashes, so hash-sampling runners can advance the machine through the
 -- debugger. Each continue issues one collect call, and the aggregate result, shaped like the
--- machine's,
--- is returned when the call suspends. When GDB never connected or detached mid-call, the
--- collection finishes against the machine, as run does.
+-- machine's, is returned when the call suspends. When GDB never connected or detached mid-call,
+-- the collection finishes against the machine, as run does.
 function GDBStub:collect_mcycle_root_hashes(
     mcycle_end,
     log2_mcycle_period,
@@ -651,6 +668,17 @@ function GDBStub:collect_mcycle_root_hashes(
     log2_bundle,
     previous_partial_bundle
 )
+    -- Fixed-point collection supplies padding without advancing mcycle or servicing GDB.
+    local break_reason = self.runner:run(self.runner:read_reg("mcycle"))
+    if is_at_fixed_point(break_reason) then
+        return self.runner:collect_mcycle_root_hashes(
+            mcycle_end,
+            log2_mcycle_period,
+            mcycle_phase,
+            log2_bundle,
+            previous_partial_bundle
+        )
+    end
     self.mode = "collect_mcycle_root_hashes"
     local collect = {
         hashes = {},
@@ -660,7 +688,7 @@ function GDBStub:collect_mcycle_root_hashes(
         partial_bundle = previous_partial_bundle,
     }
     self.collect = collect
-    local break_reason
+    break_reason = nil
     if self.conn then
         self.mcycle_end = mcycle_end
         break_reason = self:_pump_session()
@@ -680,6 +708,10 @@ function GDBStub:collect_mcycle_root_hashes(
 end
 
 function GDBStub:collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle, revert_uarch_tail)
+    local break_reason = self.runner:run(self.runner:read_reg("mcycle"))
+    if is_at_fixed_point(break_reason) then
+        return self.runner:collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle, revert_uarch_tail)
+    end
     self.mode = "collect_uarch_cycle_root_hashes"
     local collect = {
         hashes = {},
@@ -688,7 +720,7 @@ function GDBStub:collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle, revert
         revert_uarch_tail = revert_uarch_tail,
     }
     self.collect = collect
-    local break_reason
+    break_reason = nil
     if self.conn then
         self.mcycle_end = mcycle_end
         break_reason = self:_pump_session()

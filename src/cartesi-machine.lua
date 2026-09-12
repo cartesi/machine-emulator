@@ -3890,6 +3890,7 @@ end
 -- commit; rejected outputs are written separately after rollback. Finalizes accepted or rejected inputs
 -- only after that decision, and returns the break reason and manual yield reason, if any.
 local function run_advance_state_input(claim, input_index, revert_root_hash)
+    local m = claim.machine
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
     -- outputs are buffered until the input is accepted or rejected, reports are saved at once
@@ -3905,7 +3906,7 @@ local function run_advance_state_input(claim, input_index, revert_root_hash)
     -- Open and snapshot the input boundary. Collector setup must preserve its expected
     -- root, which delivery checks. A rejection must restore this same boundary.
     claim:begin_input(input_index)
-    snapshot(claim)
+    snapshot(m)
     if advance.print_input_state_hashes then print_root_hash(claim) end
     load_cmio_input(claim, advance, revert_root_hash)
     if advance.print_input_state_hashes then print_root_hash(claim) end
@@ -3918,9 +3919,9 @@ local function run_advance_state_input(claim, input_index, revert_root_hash)
     local _, yield_reason, data = get_and_print_yield(claim, htif)
     if is_rx_accepted(yield_reason) then
         flush_pending_outputs(claim, advance, yield_reason, data)
-        commit(claim)
+        commit(m)
     elseif is_rx_rejected(yield_reason) then
-        revert(claim)
+        revert(m)
         claim:check_revert(revert_root_hash, claim:get_root_hash())
         flush_pending_outputs(claim, advance, yield_reason, data)
     elseif is_tx_exception(yield_reason) then
@@ -3930,7 +3931,7 @@ local function run_advance_state_input(claim, input_index, revert_root_hash)
         -- which the CLI just reports.
         report_exception(data)
         flush_pending_outputs(claim, advance, yield_reason, data)
-        commit(claim)
+        commit(m)
         return break_reason, yield_reason
     else
         -- An unexpected manual yield is a protocol violation, but still a fixed point, and
@@ -3940,7 +3941,7 @@ local function run_advance_state_input(claim, input_index, revert_root_hash)
         -- execution never reached.
         report_unexpected_manual_yield(yield_reason)
         flush_pending_outputs(claim, advance, yield_reason, data)
-        commit(claim)
+        commit(m)
         return break_reason, yield_reason
     end
     claim:end_input()
@@ -3961,15 +3962,16 @@ end
 -- inputs run with the claim, which either collects a computation hash (advancing through the
 -- given runner) or delegates to the runner directly (the machine itself, or gdb).
 local function run_advance_state_epoch(claim)
+    local m = claim.machine
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
     claim:begin_epoch()
     -- boot plainly to the rolling template's first accept yield, then process each input in turn.
     -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
-    local break_reason = run_to_stop(claim.machine, cmdline.max_mcycle, ignore_yield_automatic)
+    local break_reason = run_to_stop(m, cmdline.max_mcycle, ignore_yield_automatic)
     if is_yielded_manual(break_reason) then
         get_and_print_yield(claim, htif)
-        commit(claim)
+        commit(m)
         -- Keep the expected boundary across rejections. Only acceptance establishes a new one.
         local revert_root_hash = claim:get_root_hash()
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
@@ -3987,12 +3989,12 @@ local function run_advance_state_epoch(claim)
     if is_halted(break_reason) then
         report_halt(claim)
         flush_pending_outputs(claim, advance)
-        commit(claim)
+        commit(m)
         claim:end_epoch()
     elseif is_mcycle_overflow(break_reason) then
         report_mcycle_overflow(claim)
         flush_pending_outputs(claim, advance)
-        commit(claim)
+        commit(m)
         claim:end_epoch()
     elseif is_yielded_manual(break_reason) then
         save_cmio_output_proofs(advance)

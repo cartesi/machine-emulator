@@ -924,7 +924,7 @@ if arg[1] then
         )
     end
 
-    -- Fabulist append can refine synchronously while the outer input is still running. Both
+    -- Fabulist pad_back can refine synchronously while the outer input is still running. Both
     -- executions have outstanding snapshots, even though this is a single player process.
     do
         local fabulist_inputs, fabulist_cache <close> = new_test_cache(dapp_contract)

@@ -194,32 +194,32 @@ local function new_tamperer(geometry, inputs, cache, input_index, bundle_offset,
     })
 end
 
--- Replace a sample as it enters the computation hash. The append contract also
+-- Replace a sample as it enters the computation hash. The pad_back contract also
 -- covers repeated padding and complete instruction forests. Only the affected
 -- group is split; its neighbors keep their compressed representation.
 local function lie_about_leaf(claim, leaf, fake_hash, unbundle)
-    local append = claim.append
-    local function append_lie(self, value, count, height)
+    local pad_back = claim.pad_back
+    local function pad_back_lie(self, value, count, height)
         if count == 0 or leaf < self.next_leaf or leaf >= self.next_leaf + (count << height) then
-            return append(self, value, count, height)
+            return pad_back(self, value, count, height)
         end
         local prefix = (leaf - self.next_leaf) >> height
-        append(self, value, prefix, height)
+        pad_back(self, value, prefix, height)
         if height == 0 then
-            append(self, fake_hash, 1, 0)
+            pad_back(self, fake_hash, 1, 0)
         elseif height == self.bundle_height then
             -- Unbundling uses the selected factory again, now with individual
             -- leaves. Its replacement is authenticated by the ordinary tree.
             local forest = self:unbundle(self.next_leaf, height)
-            append(self, hash_tree.frontier_forest_get_root_hash(forest), 1, height)
+            pad_back(self, hash_tree.frontier_forest_get_root_hash(forest), 1, height)
         else
             for i = 0, (1 << (height - self.bundle_height)) - 1 do
-                self:append(hash_tree.frontier_forest_get_node(value, i, 0), 1, self.bundle_height)
+                self:pad_back(hash_tree.frontier_forest_get_node(value, i, 0), 1, self.bundle_height)
             end
         end
-        append(self, value, count - prefix - 1, height)
+        pad_back(self, value, count - prefix - 1, height)
     end
-    return wrap_computation_hash(claim, { append = append_lie, unbundle = unbundle })
+    return wrap_computation_hash(claim, { pad_back = pad_back_lie, unbundle = unbundle })
 end
 
 local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, options)
@@ -262,12 +262,12 @@ local function new_quitter(geometry, inputs, cache, options)
         local claim = make(g, c, machine, window)
         return wrap_computation_hash(claim, {
             cache_machine = false,
-            append = function(collector, _, count, height)
+            pad_back = function(collector, _, count, height)
                 local fake_hash = keccak(options.seed or "quitter")
                 for _ = 1, height do
                     fake_hash = keccak(fake_hash, fake_hash)
                 end
-                return claim.append(collector, fake_hash, count, height)
+                return claim.pad_back(collector, fake_hash, count, height)
             end,
         })
     end

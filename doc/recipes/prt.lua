@@ -1108,7 +1108,7 @@ end
 
 -- Every insertion describes count copies of a subtree covering 2^height logical
 -- leaves. Forest values retain their descendants, including repeated uarch groups.
-local function computation_hash_append(claim, value, count, height)
+local function computation_hash_pad_back(claim, value, count, height)
     hash_tree.frontier_forest_pad_back(claim.frontier, value, count, height - claim.bundle_height)
     claim.next_leaf = claim.next_leaf + (count << height)
 end
@@ -1116,7 +1116,7 @@ end
 local function mcycle_computation_hash_push_collected(claim, collected)
     local count = math.min(#collected.hashes, claim.input_entry_capacity - claim.input_entry_count)
     for i = 1, count do
-        claim:append(collected.hashes[i], 1, claim.bundle_height)
+        claim:pad_back(collected.hashes[i], 1, claim.bundle_height)
     end
     claim.input_entry_count = claim.input_entry_count + count
     if not is_at_fixed_point(collected.break_reason) then
@@ -1124,7 +1124,7 @@ local function mcycle_computation_hash_push_collected(claim, collected)
     end
     assert(#collected.hashes > 0, "fixed-point mcycle collection has no final bundle")
     claim.pad_bundle = collected.hashes[#collected.hashes]
-    claim:append(claim.pad_bundle, claim.input_entry_capacity - claim.input_entry_count, claim.bundle_height)
+    claim:pad_back(claim.pad_bundle, claim.input_entry_capacity - claim.input_entry_count, claim.bundle_height)
     claim.input_entry_count = claim.input_entry_capacity
 end
 
@@ -1201,7 +1201,7 @@ local function mcycle_computation_hash_end_epoch(claim)
         assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash ended outside a fixed point")
         claim.pad_bundle = assert(collected.hashes[#collected.hashes], "fixed point has no padding bundle")
     end
-    claim:append(claim.pad_bundle, (end_leaf - claim.next_leaf) >> claim.bundle_height, claim.bundle_height)
+    claim:pad_back(claim.pad_bundle, (end_leaf - claim.next_leaf) >> claim.bundle_height, claim.bundle_height)
     return claim.frontier
 end
 
@@ -1222,7 +1222,7 @@ local function new_mcycle_computation_hash(geometry, machine_cache, machine, win
         input_entry_capacity = window and (1 << (height - log2_bundle_mcycle_count))
             or (geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT),
         cache_machine = not window,
-        append = computation_hash_append,
+        pad_back = computation_hash_pad_back,
         begin_epoch = mcycle_computation_hash_begin_epoch,
         begin_input = mcycle_computation_hash_begin_input,
         run = mcycle_computation_hash_run,
@@ -1255,7 +1255,7 @@ local function uarch_mcycle_forest(hashes, first, last, log2_bundle_uarch_cycle_
 end
 
 -- The unbundled window intersects real cycles, halt repetitions, and the reset.
--- Each part uses the same append operation as the outer computation hash.
+-- Each part uses the same pad_back operation as the outer computation hash.
 local function append_uarch_window(claim, hashes, first, last)
     local capacity = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local real = last - first - 1
@@ -1263,14 +1263,14 @@ local function append_uarch_window(claim, hashes, first, last)
     local start = claim.window.first_leaf & (capacity - 1)
     local stop = start + (1 << claim.window.log2_leaf_count)
     for i = start, math.min(stop, real) - 1 do
-        claim:append(hashes[first + i], 1, 0)
+        claim:pad_back(hashes[first + i], 1, 0)
     end
     local halt_start, halt_end = math.max(start, real), math.min(stop, capacity - 1)
     if halt_start < halt_end then
-        claim:append(hashes[last - 1], halt_end - halt_start, 0)
+        claim:pad_back(hashes[last - 1], halt_end - halt_start, 0)
     end
     if stop == capacity then
-        claim:append(hashes[last], 1, 0)
+        claim:pad_back(hashes[last], 1, 0)
     end
 end
 
@@ -1316,11 +1316,11 @@ local function uarch_computation_hash_run(claim, mcycle_end)
             local group
             for i = 1, wanted do
                 group = uarch_mcycle_forest(collected.hashes, offsets[i], offsets[i + 1] - 1, claim.bundle_height)
-                claim:append(group, 1, cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)
+                claim:pad_back(group, 1, cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)
             end
             if is_at_fixed_point(collected.break_reason) and claim.next_leaf < claim.end_leaf then
                 assert(group, "fixed-point collection has no padding period")
-                claim:append(
+                claim:pad_back(
                     group,
                     (claim.end_leaf - claim.next_leaf) >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
                     cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
@@ -1359,7 +1359,7 @@ local function new_uarch_computation_hash(geometry, machine, window)
         end_leaf = window.first_leaf + (1 << window.log2_leaf_count),
         bundle_height = window.log2_bundle_uarch_cycle_count,
         chunk_size = uarch_hashes_chunk_size(window.log2_bundle_uarch_cycle_count),
-        append = computation_hash_append,
+        pad_back = computation_hash_pad_back,
         begin_epoch = uarch_computation_hash_begin_epoch,
         begin_input = uarch_computation_hash_begin_input,
         run = uarch_computation_hash_run,

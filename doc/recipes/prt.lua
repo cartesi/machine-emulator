@@ -1075,20 +1075,22 @@ local function new_machine_cache(initial_machine, capacity, initial_input_gap)
     return cache
 end
 
--- Advances through a runner's run(mcycle_end) method, returning the first non-automatic break
--- reason. The runner is the machine itself for plain execution, or a computation-hash collector.
+-- Advances through a runner's run(mcycle_end) method until a fixed point or the target mcycle,
+-- returning the break reason. The runner is the machine itself or a computation-hash collector.
 -- Automatic yields are read from the machine and passed to the optional callback; without one,
 -- they are ignored. A terminal manual yield remains unread for the caller to handle.
 local function run_to_stop(machine, mcycle_end, runner, on_yield_automatic)
     while true do
         local break_reason = runner:run(mcycle_end)
-        if not is_yielded_automatic(break_reason) then
+        if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
             return break_reason
+        elseif is_yielded_automatic(break_reason) then
+            if on_yield_automatic then
+                local yield_reason, data = receive_cmio_request(machine)
+                on_yield_automatic(yield_reason, data)
+            end
         end
-        if on_yield_automatic then
-            local yield_reason, data = receive_cmio_request(machine)
-            on_yield_automatic(yield_reason, data)
-        end
+        -- Other reasons (soft yields or console breaks) just keep going.
     end
 end
 

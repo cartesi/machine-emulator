@@ -1045,7 +1045,7 @@ end
 
 -- Selection is private: callers always receive the requested virgin boundary, not merely the
 -- closest retained one. The owner closes the clone if replay fails before it can be returned.
-function machine_cache_meta.__index:clone_at_input_boundary(input_index, replay)
+function machine_cache_meta.__index:clone_at_input_boundary(input_index, run_to_input_boundary)
     assert(not self.closed, "machine cache is closed")
     local closest = self.checkpoints[1]
     for i = 2, #self.checkpoints do
@@ -1055,7 +1055,7 @@ function machine_cache_meta.__index:clone_at_input_boundary(input_index, replay)
         closest = self.checkpoints[i]
     end
     local machine, owner <close> = new_machine_owner(self, fork_server(closest.machine))
-    replay(machine, closest.input_index, input_index)
+    run_to_input_boundary(machine, closest.input_index, input_index)
     return machine, owner:move()
 end
 
@@ -1642,14 +1642,14 @@ local function new_player(geometry, inputs, machine_cache, options)
         return claim:end_epoch()
     end
 
-    local function replay(machine, input_index_begin, input_index_end)
+    local function run_to_input_boundary(machine, input_index_begin, input_index_end)
         local claim = options.new_null_computation_hash(machine)
         return run_advance_state_epoch(claim, input_index_begin, input_index_end)
     end
 
     -- docs:begin build_mcycle_claim
     local function build_mcycle_claim()
-        local machine, owner <close> = machine_cache:clone_at_input_boundary(0, replay) -- luacheck: ignore 211
+        local machine, _ <close> = machine_cache:clone_at_input_boundary(0, run_to_input_boundary)
         local claim = options.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, machine_cache, machine)
         return run_advance_state_epoch(claim, 0, #inputs)
     end
@@ -1660,7 +1660,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
         local input_index = first_leaf // geometry.periods_per_input
         local period_index = first_leaf % geometry.periods_per_input
-        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, replay)
+        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
         local revert_root_hash = machine:get_root_hash()
         local claim = options.new_null_computation_hash(machine)
         local break_reason, _, base =
@@ -1683,7 +1683,7 @@ local function new_player(geometry, inputs, machine_cache, options)
     local function run_uarch_claim(epoch_period_index, bundle_index)
         local input_index = epoch_period_index // geometry.periods_per_input
         local period_index = epoch_period_index % geometry.periods_per_input
-        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, replay)
+        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
         local revert_root_hash = machine:get_root_hash()
         local claim = options.new_uarch_computation_hash(
             geometry.log2_mcycles_per_period,
@@ -1717,7 +1717,7 @@ local function new_player(geometry, inputs, machine_cache, options)
     function player.prove_state_transition(_, input_index, period_index, state_transition_offset)
         local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
         local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
-        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, replay)
+        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
         local revert_root_hash = machine:get_root_hash()
         local data = inputs[input_index + 1]
         if state_transition_offset == 0 and period_index == 0 and data then
@@ -1758,7 +1758,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         if player.outputs_merkle_root_result then
             return
         end
-        local machine, owner <close> = machine_cache:clone_at_input_boundary(0, replay) -- luacheck: ignore 211
+        local machine, _ <close> = machine_cache:clone_at_input_boundary(0, run_to_input_boundary)
         local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
         local frontier = hash_tree.frontier_copy(genesis_frontier)
         local outputs, leaves = {}, {}

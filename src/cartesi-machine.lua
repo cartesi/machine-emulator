@@ -3889,7 +3889,7 @@ end
 
 -- Processes one advance-state input through its claim. Accepted outputs are published before
 -- commit; rejected outputs are written separately after rollback. Finalizes accepted or rejected inputs
--- only after that decision, and returns the stop reason and the next expected boundary root.
+-- only after that decision, and returns the break reason and manual yield reason, if any.
 local function run_advance_state_input(claim, input_index, revert_root_hash)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
@@ -3915,12 +3915,11 @@ local function run_advance_state_input(claim, input_index, revert_root_hash)
     advance.next_input_index = input_index + 1
     local break_reason = run_to_stop(claim, cmdline.max_mcycle, on_yield_automatic)
     -- The epoch handles halts, overflow, and the global cycle limit.
-    if not is_yielded_manual(break_reason) then return break_reason, nil, revert_root_hash end
+    if not is_yielded_manual(break_reason) then return break_reason end
     local _, yield_reason, data = get_and_print_yield(claim, htif)
     if is_rx_accepted(yield_reason) then
         flush_pending_outputs(claim, advance, yield_reason, data)
         commit(claim)
-        revert_root_hash = claim:get_root_hash()
     elseif is_rx_rejected(yield_reason) then
         revert(claim)
         claim:check_revert(revert_root_hash, claim:get_root_hash())
@@ -3933,7 +3932,7 @@ local function run_advance_state_input(claim, input_index, revert_root_hash)
         report_exception(data)
         flush_pending_outputs(claim, advance, yield_reason, data)
         commit(claim)
-        return break_reason, yield_reason, revert_root_hash
+        return break_reason, yield_reason
     else
         -- An unexpected manual yield is a protocol violation, but still a fixed point, and
         -- fixed points are sticky, so it ends the epoch the same way an exception does.
@@ -3943,10 +3942,10 @@ local function run_advance_state_input(claim, input_index, revert_root_hash)
         report_unexpected_manual_yield(yield_reason)
         flush_pending_outputs(claim, advance, yield_reason, data)
         commit(claim)
-        return break_reason, yield_reason, revert_root_hash
+        return break_reason, yield_reason
     end
     claim:end_input()
-    return break_reason, yield_reason, revert_root_hash
+    return break_reason, yield_reason
 end
 
 -- Drives an advance-state epoch actively, as the README host loop does. Boots to the rolling
@@ -3975,12 +3974,15 @@ local function run_advance_state_epoch(m, runner)
     if is_yielded_manual(break_reason) then
         get_and_print_yield(m, htif)
         commit(m)
+        -- Keep the expected boundary across rejections. Only acceptance establishes a new one.
         local revert_root_hash = m:get_root_hash()
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
             local yield_reason
-            break_reason, yield_reason, revert_root_hash = run_advance_state_input(claim, input_index, revert_root_hash)
+            break_reason, yield_reason = run_advance_state_input(claim, input_index, revert_root_hash)
             if not is_yielded_manual(break_reason) then break end
-            if not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason) then
+            if is_rx_accepted(yield_reason) then
+                revert_root_hash = claim:get_root_hash()
+            elseif not is_rx_rejected(yield_reason) then
                 claim:end_epoch()
                 return
             end

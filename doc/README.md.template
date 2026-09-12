@@ -5399,13 +5399,23 @@ At height 1 a separate sealing response exposes the divergent leaves and proves 
 ```{.lua key=prt_validate_seal_response include=prt.lua/validate_seal_response title="prt.lua (excerpt)"}
 ```
 These functions are pure, so the walk is checked on synthetic claim trees, differing at one chosen leaf, before any machine is involved.
-The match itself is the loop that asks the holders of the on-turn claim to open its node, takes the first response that validates, and hands the isolated divergence over.
+`reveal_divergence` asks the holders of the on-turn claim to open its node and takes the first response that validates, until the walk reaches the divergent leaves.
 An unanswered opening waits for a valid timeout-win or elimination response.
+```{.lua key=prt_reveal_divergence include=prt.lua/reveal_divergence title="prt.lua (excerpt)"}
+```
+`seal_divergence` then asks for the divergent leaves and a proof of the agreed state before them.
+```{.lua key=prt_seal_divergence include=prt.lua/seal_divergence title="prt.lua (excerpt)"}
+```
+`run_match` reveals, seals, and settles the divergence, returning early if either of the first two steps ends the match by timeout or elimination.
 ```{.lua key=prt_run_match include=prt.lua/run_match title="prt.lua (excerpt)"}
 ```
 The walk converges on the leftmost divergent leaf, which is what makes the leaf before it agreed by both. The final response must prove that state even when a right-leaf divergence also exposed it as the left leaf. A missing or invalid final response has the same timeout-win and elimination windows as an earlier bisection response, so settlement always receives a proved agreed state.
 
 ### Settling a match
+
+`settle_divergence` passes the sealed divergence to the tournament's state-hash settler and returns the surviving claim's index, or zero if neither claim survives.
+```{.lua key=prt_settle_divergence include=prt.lua/settle_divergence title="prt.lua (excerpt)"}
+```
 
 An mcycle match settles into a uarch tournament.
 The two claims part ways over what the state hash was after one period of one input, so each side must now defend a uarch claim over that period, whose final state is the mcycle leaf it committed to.
@@ -5456,7 +5466,9 @@ Every player receives requests to eliminate inactive matches, including unrelate
 The referee never narrates who holds a claim.
 Each player announces its own claim on standard error.
 
-`request_all(subscriptions, event, arguments)` returns a future for all responses to an ordinary event.
+`request_all(subscriptions, event, arguments, validator)` returns a future for all accepted responses to an ordinary event.
+The optional validator returns the value to retain. An error, `nil`, or `false` rejects the response, but its sender still counts as having answered.
+Tournament openings use this callback to validate claims before `partition_claims` groups them.
 Its `wait(deadline)` returns the responses received before that block, including an empty list if nobody supplies a value.
 The list retains each response's sender and receipt block. A partial result is a snapshot: later replies do not change it.
 Without a deadline, the wait returns once the audience finishes. A deadline bounds only that wait, so another wait can obtain more responses.

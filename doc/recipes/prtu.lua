@@ -1159,7 +1159,7 @@ function future_meta.__index:wait(deadline)
     end
     if not self.closed and self.kind == "request_all" then
         local responses = {}
-        for _, reply in ipairs(self.replies) do
+        for _, reply in ipairs(self.accepted_replies or self.replies) do
             if not deadline or reply.received_at < deadline then
                 responses[#responses + 1] = reply
             end
@@ -1197,13 +1197,17 @@ end
 
 -- Requests every response to an ordinary event without waiting. The future resolves after
 -- the block's audience finishes; a timed wait returns the responses received before its deadline.
-function server_meta.__index.request_all(self, subscriptions, event, event_arguments)
+-- An optional validator returns the accepted value. Errors, nil, and false reject a reply,
+-- but its sender still counts as answered for the block barrier.
+function server_meta.__index.request_all(self, subscriptions, event, event_arguments, accept_response)
     assert(not event.scheduled_schema, "scheduled events require request_first_valid")
     local future = setmetatable({
         kind = "request_all",
         server = self,
         response_schema = event.response_schema,
         line = encode_event(event, event_arguments),
+        accept_response = accept_response,
+        accepted_replies = accept_response and {},
     }, future_meta)
     register_event(self, future, self:get_subscribers(subscriptions))
     self.ordinary[#self.ordinary + 1] = future
@@ -1268,7 +1272,7 @@ local function release_results(self)
         if entry.kind == "block" and self:get_time() >= entry.target_block then
             entry.value, entry.accepted_at = true, self:get_time()
         elseif entry.kind == "request_all" and not entry.subscription_hash and entry.answered then
-            entry.value, entry.accepted_at = entry.replies, self:get_time()
+            entry.value, entry.accepted_at = entry.accepted_replies or entry.replies, self:get_time()
         end
         if entry.value ~= nil or (entry.cortn and entry.deadline and self:get_time() >= entry.deadline) then
             completed[#completed + 1] = entry
@@ -1328,6 +1332,18 @@ function server_meta.__index.step_time(self)
                             if ok and value then
                                 entry.value, entry.accepted_at = value, self:get_time()
                             end
+                        end
+                    end
+                elseif entry.kind == "request_all" and entry.accept_response and not entry.closed then
+                    for _, reply in ipairs(entry.replies) do
+                        local ok, value = pcall(entry.accept_response, reply.value)
+                        if ok and value then
+                            entry.accepted_replies[#entry.accepted_replies + 1] = {
+                                value = value,
+                                label = reply.label,
+                                connection = reply.connection,
+                                received_at = reply.received_at,
+                            }
                         end
                     end
                 end

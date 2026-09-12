@@ -6,6 +6,10 @@ local prt = require("prt")
 local prtu = require("prtu")
 local util = require("cartesi.util")
 local keccak = cartesi.keccak256
+local umin = prt.umin
+local usaturating_add = prt.usaturating_add
+local is_target_mcycle = prt.is_target_mcycle
+local is_at_fixed_point = prt.is_at_fixed_point
 
 -- Machine and computation-hash wrappers belong to the strategies, not the honest
 -- implementation. A native machine never carries this private input bookkeeping.
@@ -194,11 +198,14 @@ local function new_tamperer(geometry, inputs, cache, input_index, bundle_offset,
     })
 end
 
--- Replace a sample as it enters the computation hash. The pad_back contract also
--- covers repeated padding and complete instruction forests. Only the affected
--- group is split; its neighbors keep their compressed representation.
-local function lie_about_leaf(claim, leaf, fake_hash, unbundle)
-    local pad_back = claim.pad_back
+-- Private insertion helpers for the fabricated stream. Honest collectors use the forest API
+-- directly. Only the affected group is split, preserving its neighbors' compressed trees.
+local function pad_back(claim, value, count, height)
+    hash_tree.frontier_forest_pad_back(claim.frontier, value, count, height - claim.bundle_height)
+    claim.next_leaf = claim.next_leaf + (count << height)
+end
+
+local function lie_about_leaf(leaf, fake_hash, unbundle)
     local function pad_back_lie(self, value, count, height)
         if count == 0 or leaf < self.next_leaf or leaf >= self.next_leaf + (count << height) then
             return pad_back(self, value, count, height)
@@ -210,16 +217,139 @@ local function lie_about_leaf(claim, leaf, fake_hash, unbundle)
         elseif height == self.bundle_height then
             -- Unbundling uses the selected factory again, now with individual
             -- leaves. Its replacement is authenticated by the ordinary tree.
-            local forest = self:unbundle(self.next_leaf, height)
+            local forest = unbundle(self, self.next_leaf, height)
             pad_back(self, hash_tree.frontier_forest_get_root_hash(forest), 1, height)
         else
             for i = 0, (1 << (height - self.bundle_height)) - 1 do
-                self:pad_back(hash_tree.frontier_forest_get_node(value, i, 0), 1, self.bundle_height)
+                pad_back_lie(self, hash_tree.frontier_forest_get_node(value, i, 0), 1, self.bundle_height)
             end
         end
         pad_back(self, value, count - prefix - 1, height)
     end
-    return wrap_computation_hash(claim, { pad_back = pad_back_lie, unbundle = unbundle })
+    return pad_back_lie
+end
+
+-- Collect the same execution samples as the honest run, then assemble the fabricated stream.
+-- Final epoch padding needs its own override because a refinement at a fixed point may never run.
+local function new_mcycle_liar(claim, insert)
+    return wrap_computation_hash(claim, {
+        run = function(self, mcycle_end)
+            mcycle_end = umin(mcycle_end, self.input_mcycle_end)
+            local collected = { mcycle_phase = self.mcycle_phase, partial_bundle = self.partial_bundle }
+            repeat
+                local chunk_end = usaturating_add(self.machine:read_reg("mcycle"), self.chunk_size, mcycle_end)
+                collected = self.machine:collect_mcycle_root_hashes(
+                    chunk_end,
+                    self.log2_period,
+                    collected.mcycle_phase,
+                    self.bundle_height,
+                    collected.partial_bundle
+                )
+                local count = math.min(#collected.hashes, self.input_entry_capacity - self.input_entry_count)
+                for i = 1, count do
+                    insert(self, collected.hashes[i], 1, self.bundle_height)
+                end
+                self.input_entry_count = self.input_entry_count + count
+                if is_at_fixed_point(collected.break_reason) then
+                    self.pad_bundle = assert(collected.hashes[#collected.hashes], "fixed point has no padding bundle")
+                    insert(
+                        self,
+                        self.pad_bundle,
+                        self.input_entry_capacity - self.input_entry_count,
+                        self.bundle_height
+                    )
+                    self.input_entry_count = self.input_entry_capacity
+                end
+                prt.consider_mcycle_machine(self, collected)
+            until not is_target_mcycle(collected.break_reason) or self.machine:read_reg("mcycle") == mcycle_end
+            self.mcycle_phase, self.partial_bundle = collected.mcycle_phase, collected.partial_bundle
+            return collected.break_reason
+        end,
+        end_epoch = function(self)
+            self:end_input()
+            local end_leaf = self.window and self.window.first_leaf + (1 << self.window.log2_leaf_count)
+                or (1 << self.geometry.mcycle_height)
+            if self.next_leaf < end_leaf then
+                if not self.pad_bundle then
+                    local collected = self.machine:collect_mcycle_root_hashes(
+                        self.machine:read_reg("mcycle"),
+                        self.log2_period,
+                        0,
+                        self.bundle_height
+                    )
+                    assert(is_at_fixed_point(collected.break_reason), "epoch ended outside a fixed point")
+                    self.pad_bundle = assert(collected.hashes[#collected.hashes], "fixed point has no padding bundle")
+                end
+                insert(self, self.pad_bundle, (end_leaf - self.next_leaf) >> self.bundle_height, self.bundle_height)
+            end
+            return self.frontier
+        end,
+    })
+end
+
+-- The inherited end_input also calls this run for a window reached only through padding.
+local function new_uarch_liar(claim, insert)
+    return wrap_computation_hash(claim, {
+        run = function(self, mcycle_end)
+            local machine = self.machine
+            if math.ult(machine:read_reg("mcycle"), self.target_start) then
+                local reason = machine:run(umin(mcycle_end, self.target_start))
+                if not is_target_mcycle(reason) or math.ult(mcycle_end, self.target_start) then
+                    return reason
+                end
+            end
+            local reason
+            local log2_cycles = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+            local capacity = 1 << log2_cycles
+            repeat
+                local target =
+                    usaturating_add(machine:read_reg("mcycle"), self.chunk_size, umin(mcycle_end, self.target_end))
+                local collected =
+                    machine:collect_uarch_cycle_root_hashes(target, self.bundle_height, self.revert_uarch_tail)
+                local offsets = collected.mcycle_hash_offsets
+                local available = #offsets - 1
+                if self.bundle_height == 0 then
+                    if available > 0 then
+                        local first, last = offsets[1], offsets[2] - 1
+                        local real = last - first - 1
+                        assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
+                        local start = self.window.first_leaf & (capacity - 1)
+                        local stop = start + (1 << self.window.log2_leaf_count)
+                        for i = start, math.min(stop, real) - 1 do
+                            insert(self, collected.hashes[first + i], 1, 0)
+                        end
+                        local halt_start, halt_end = math.max(start, real), math.min(stop, capacity - 1)
+                        if halt_start < halt_end then
+                            insert(self, collected.hashes[last - 1], halt_end - halt_start, 0)
+                        end
+                        if stop == capacity then
+                            insert(self, collected.hashes[last], 1, 0)
+                        end
+                    end
+                else
+                    local wanted = math.min(available, (self.end_leaf - self.next_leaf) >> log2_cycles)
+                    local group
+                    for i = 1, wanted do
+                        group = prt.uarch_mcycle_forest(
+                            collected.hashes,
+                            offsets[i],
+                            offsets[i + 1] - 1,
+                            self.bundle_height
+                        )
+                        insert(self, group, 1, log2_cycles)
+                    end
+                    if is_at_fixed_point(collected.break_reason) and self.next_leaf < self.end_leaf then
+                        assert(group, "fixed-point collection has no padding period")
+                        insert(self, group, (self.end_leaf - self.next_leaf) >> log2_cycles, log2_cycles)
+                    end
+                end
+                reason = collected.break_reason
+            until not is_target_mcycle(reason)
+                or self.next_leaf == self.end_leaf
+                or machine:read_reg("mcycle") == mcycle_end
+            return reason
+        end,
+    })
 end
 
 local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, options)
@@ -230,21 +360,27 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
     local make_mcycle = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
     options.new_mcycle_computation_hash = function(g, c, machine, window)
         local claim = make_mcycle(g, c, machine, window)
-        return lie_about_leaf(claim, epoch_period_index, fake_hash, function(_, first_leaf)
-            return player:refine_mcycle_claim(first_leaf >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
-        end)
+        return new_mcycle_liar(
+            claim,
+            lie_about_leaf(epoch_period_index, fake_hash, function(_, first_leaf)
+                return player:refine_mcycle_claim(first_leaf >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
+            end)
+        )
     end
     local make_uarch = options.new_uarch_computation_hash or prt.new_uarch_computation_hash
     options.new_uarch_computation_hash = function(g, machine, window)
         local claim = make_uarch(g, machine, window)
         if window.epoch_period_index == epoch_period_index then
-            return lie_about_leaf(claim, (1 << geometry.uarch_height) - 1, fake_hash, function(_, first_leaf)
-                return player:refine_uarch_claim(
-                    input_index + 1,
-                    leaf_offset,
-                    first_leaf >> prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT
-                )
-            end)
+            return new_uarch_liar(
+                claim,
+                lie_about_leaf((1 << geometry.uarch_height) - 1, fake_hash, function(_, first_leaf)
+                    return player:refine_uarch_claim(
+                        input_index + 1,
+                        leaf_offset,
+                        first_leaf >> prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT
+                    )
+                end)
+            )
         end
         return claim
     end
@@ -260,16 +396,14 @@ local function new_quitter(geometry, inputs, cache, options)
     local make = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
     options.new_mcycle_computation_hash = function(g, c, machine, window)
         local claim = make(g, c, machine, window)
-        return wrap_computation_hash(claim, {
-            cache_machine = false,
-            pad_back = function(collector, _, count, height)
-                local fake_hash = keccak(options.seed or "quitter")
-                for _ = 1, height do
-                    fake_hash = keccak(fake_hash, fake_hash)
-                end
-                return claim.pad_back(collector, fake_hash, count, height)
-            end,
-        })
+        claim.cache_machine = false
+        return new_mcycle_liar(claim, function(collector, _, count, height)
+            local fake_hash = keccak(options.seed or "quitter")
+            for _ = 1, height do
+                fake_hash = keccak(fake_hash, fake_hash)
+            end
+            return pad_back(collector, fake_hash, count, height)
+        end)
     end
     local player = use_machine(geometry, inputs, cache, options, { send_cmio_response = function() end })
     local commit = player.commit_mcycle_claim

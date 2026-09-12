@@ -560,6 +560,50 @@ local function define_event(name, response_schema)
 end
 
 run_with_server(function(server, run_client, wait_connections)
+    for _, label in ipairs({ "a", "b", "nil", "false", "error" }) do
+        run_client(nil, function()
+            return { label = label, value = label }
+        end)
+    end
+    wait_connections(5)
+    local checked = 0
+    local collection <close> = server:request_all(EVERYONE, define_event("claim"), {}, function(response)
+        checked = checked + 1
+        assert(response ~= "error", "invalid claim")
+        if response == "nil" then
+            return nil
+        elseif response == "false" then
+            return false
+        end
+        return { claim = response }
+    end)
+    local block = server:request_block()
+    local early = collection:wait(block)
+    assert(#early == 0 and checked == 0, "an expired wait accepted unvalidated replies")
+    local responses = collection:wait(block + 1)
+    assert(checked == 5 and #responses == 2, "collection did not validate every reply")
+    assert(#early == 0, "later replies changed an earlier snapshot")
+    assert(server:get_time() == block, "rejected replies held up collection")
+    local labels = {}
+    for _, response in ipairs(responses) do
+        assert(response.value.claim == response.label, "collection lost its validator result or sender label")
+        assert(response.connection.is_player and not response.connection.dead, "collection lost its sender")
+        assert(response.received_at == block, "collection lost the receipt block")
+        labels[response.label] = true
+    end
+    assert(labels.a and labels.b, "collection lost an accepted claim")
+    assert(#collection:wait(block) == 0, "an expired wait included replies received at its deadline")
+    assert(#collection:wait() == 2 and checked == 5, "another wait revalidated replies")
+    local rejected <close> = server:request_all(EVERYONE, define_event("claim"), {}, function()
+        error("invalid claim")
+    end)
+    assert(#rejected:wait() == 0, "an all-invalid collection did not resolve empty")
+    for _, connection in ipairs(server:get_players()) do
+        assert(not connection.dead, "an invalid claim closed its sender")
+    end
+end)
+
+run_with_server(function(server, run_client, wait_connections)
     -- Initial subscriptions require the phase closer. Mcycle and uarch claim collection
     -- then closes at supplied logical blocks, using fixed audiences.
     local answered = {}
@@ -924,7 +968,7 @@ if arg[1] then
         )
     end
 
-    -- Fabulist pad_back can refine synchronously while the outer input is still running. Both
+    -- Fabulist run can refine synchronously while the outer input is still running. Both
     -- executions have outstanding snapshots, even though this is a single player process.
     do
         local fabulist_inputs, fabulist_cache <close> = new_test_cache(dapp_contract)
@@ -963,6 +1007,7 @@ if arg[1] then
     local native_claim = prt.new_mcycle_computation_hash(dapp_contract.geometry, cache, native)
     assert(getmetatable(native_claim) == nil and native_claim.machine == native, "honest computation hash is wrapped")
     assert(native_claim.unbundle == nil, "honest collector exposes strategy-only refinement")
+    assert(native_claim.pad_back == nil, "honest collector exposes strategy-only insertion")
     local native_uarch = prt.new_uarch_computation_hash(dapp_contract.geometry, native, {
         epoch_period_index = 0,
         first_leaf = 0,
@@ -971,6 +1016,7 @@ if arg[1] then
     })
     assert(getmetatable(native_uarch) == nil and native_uarch.machine == native, "honest uarch collector is wrapped")
     assert(native_uarch.unbundle == nil, "honest uarch collector exposes strategy-only refinement")
+    assert(native_uarch.pad_back == nil, "honest uarch collector exposes strategy-only insertion")
     local virgin_root = native:get_root_hash()
     native_uarch:begin_input(0, native:read_reg("mcycle"))
     assert(native:get_root_hash() == virgin_root, "capturing the revert tail changed the virgin machine")
@@ -988,6 +1034,22 @@ if arg[1] then
     end
     assert(cached_tree:get_root() == honest_tree:get_root(), "cache policy changed the mcycle root")
     assert(honest_tree:get_root() == util.read_file(assert(arg[5])), "mcycle root differs from CLI")
+    -- This fabricated leaf is beyond the last input, so end_epoch must insert it even when
+    -- refinement never calls run. Opening the bundle also authenticates that refinement.
+    do
+        local fabulist_inputs, fabulist_cache <close> = new_test_cache(dapp_contract)
+        local fabulist = dishonest.new_fabulist(dapp_contract.geometry, fabulist_inputs, fabulist_cache, #inputs, 16)
+        local tree = fabulist:make_mcycle_tree()
+        local leaf = #inputs * dapp_contract.geometry.periods_per_input + 16
+        local bundle = leaf >> LOG2_BUNDLE_MCYCLE_COUNT
+        tree:open_bundle(bundle)
+        honest_tree:open_bundle(bundle)
+        assert(tree:get_node(leaf, 0) == keccak("fabulist"), "epoch padding lost the fabricated leaf")
+        assert(
+            tree:get_node(leaf + 1, 0) == honest_tree:get_node(leaf + 1, 0),
+            "epoch padding changed a neighboring leaf"
+        )
+    end
     for _, bundle_index in ipairs({
         0,
         99,

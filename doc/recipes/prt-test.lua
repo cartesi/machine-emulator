@@ -1540,7 +1540,8 @@ if arg[1] then
         local machine, owner <close> = tamperer_cache:clone_at_input_boundary(0, no_replay) -- luacheck: ignore 211
         local other, other_owner <close> = tamperer_cache:clone_at_input_boundary(0, no_replay) -- luacheck: ignore 211
         local read_reg = machine.read_reg
-        assert(read_reg == other.read_reg, "machine forwarders are not shared")
+        assert(rawget(machine, "read_reg") == read_reg, "machine forwarder was not cached")
+        assert(read_reg ~= other.read_reg, "bound machine forwarders are shared across receivers")
         assert(machine.run == machine.overrides.run, "forwarder masked an override")
         assert(read_reg(machine, "mcycle") == machine.machine:read_reg("mcycle"), "forwarder used the wrong receiver")
         assert(machine.state ~= other.state, "clones share mutable strategy state")

@@ -59,57 +59,36 @@ end
 --------------------------------------------------------------------------------
 -- Claim trees
 --
--- A claim commits to 2^height leaves, the state hashes of a computation hash, delivered
--- bundled: the machine reports one bundle root per 2^bundle_height leaves, so the claim
--- stores an outer frontier forest that much shallower, holding bundle roots at its level
--- zero. A query that descends below a bundle opens it: refine(tree, bundle_index) builds
--- the complete forest of the leaves under that one bundle by re-running a machine through
--- the bundle's transitions, exactly as a machine produces the disputed transition's logs. The opened
--- forest is checked against the committed bundle root and cached, and nothing else of the
--- tree is ever materialized.
+-- A claim commits to 2^height leaves. The forest stores bundle roots at their logical
+-- heights. Opening a bundle reconstructs its individual state hashes and expands its
+-- opaque leaf after verifying the root. Implicit repetitions share the expanded subtree.
 --------------------------------------------------------------------------------
 
 local tree_meta = { __index = {} }
 
--- Opens one bundle: asks refine for the complete forest of the leaves under it, verifies
--- that forest against the committed bundle root, and caches it. Only the bundles a dispute
--- actually visits are ever opened, and each costs one machine re-run.
+-- Reconstruct an unopened bundle and install its authenticated subtree in the forest.
+-- A readable state leaf means the bundle was already opened, possibly through padding.
 -- docs:begin open_bundle
 function tree_meta.__index.open_bundle(tree, bundle_index)
-    local bundle_forest = tree.opened[bundle_index]
-    if not bundle_forest then
-        bundle_forest = tree:refine(bundle_index)
-        assert(
-            hash_tree.frontier_forest_get_root_hash(bundle_forest)
-                == hash_tree.frontier_forest_get_node(tree.outer, bundle_index, 0),
-            "the opened bundle does not match its committed root"
-        )
-        tree.opened[bundle_index] = bundle_forest
+    local position = bundle_index << tree.bundle_height
+    if pcall(hash_tree.frontier_forest_get_node, tree.forest, position, 0) then
+        return
     end
-    return bundle_forest
+    local bundle_forest = tree:refine(bundle_index)
+    assert(bundle_forest.height == tree.bundle_height, "the opened bundle has the wrong height")
+    hash_tree.frontier_forest_expand_leaf(tree.forest, position, bundle_forest)
 end
 -- docs:end open_bundle
 
--- The node at height whose first covered leaf is position. At or above bundle_height it is
--- a node of the outer forest. Below, its bundle must have been opened explicitly before the
--- query, so an innocent-looking tree read never hides a machine re-run.
+-- Queries never execute a machine. Reading below an unopened bundle fails.
 -- docs:begin get_tree_node
 function tree_meta.__index.get_node(tree, position, height)
-    if height >= tree.bundle_height then
-        return hash_tree.frontier_forest_get_node(
-            tree.outer,
-            position >> tree.bundle_height,
-            height - tree.bundle_height
-        )
-    end
-    local bundle_index = position >> tree.bundle_height
-    local bundle_forest = assert(tree.opened[bundle_index], "claim bundle has not been opened")
-    return hash_tree.frontier_forest_get_node(bundle_forest, position & ((1 << tree.bundle_height) - 1), height)
+    return hash_tree.frontier_forest_get_node(tree.forest, position, height)
 end
 -- docs:end get_tree_node
 
 function tree_meta.__index.get_root(tree)
-    return hash_tree.frontier_forest_get_root_hash(tree.outer)
+    return hash_tree.frontier_forest_get_root_hash(tree.forest)
 end
 
 -- The two children of the node at position and height.
@@ -118,38 +97,26 @@ function tree_meta.__index.get_children(tree, position, height)
     return tree:get_node(position, child_height), tree:get_node(position + (1 << child_height), child_height)
 end
 
--- The proof of a leaf index, in the standard cartesi.hash-tree representation. The bundle
--- forest appends its siblings first, then the outer forest appends the bundle siblings into
--- the same array. Claim-tree addresses are logical leaf indices, so their target size is
--- zero and their root size is the tree height.
+-- The proof of a state leaf, following a single path through the expanded forest.
 function tree_meta.__index.prove(tree, index)
-    local siblings = {}
-    if tree.bundle_height > 0 then
-        local bundle_index = index >> tree.bundle_height
-        local bundle_forest = assert(tree.opened[bundle_index], "claim bundle has not been opened")
-        hash_tree.frontier_forest_get_siblings(bundle_forest, index & ((1 << tree.bundle_height) - 1), 0, siblings)
-    end
-    hash_tree.frontier_forest_get_siblings(tree.outer, index >> tree.bundle_height, 0, siblings)
     return {
         target_address = index,
         log2_target_size = 0,
         target_hash = tree:get_node(index, 0),
         log2_root_size = tree.height,
         root_hash = tree:get_root(),
-        sibling_hashes = siblings,
+        sibling_hashes = hash_tree.frontier_forest_get_siblings(tree.forest, index, 0),
     }
 end
 
--- A claim tree of 2^height leaves over an outer forest of bundle roots, with
--- refine(tree, bundle_index) opening the complete forest under one bundle on demand.
-local function new_tree(height, bundle_height, outer, refine)
-    assert(outer.height == height - bundle_height, "the outer forest does not match the claim height")
+-- A claim tree of 2^height leaves, with refine reconstructing one bundle on demand.
+local function new_tree(height, bundle_height, forest, refine)
+    assert(forest.height == height, "the forest does not match the claim height")
     return setmetatable({
         height = height,
         bundle_height = bundle_height,
-        outer = outer,
+        forest = forest,
         refine = refine,
-        opened = {},
     }, tree_meta)
 end
 

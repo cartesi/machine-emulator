@@ -330,14 +330,12 @@ local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundl
     local tree
     if bundled then
         local bundle_height = 2
-        local outer = hash_tree.frontier_forest(HEIGHT - bundle_height, "keccak256")
+        local forest = hash_tree.frontier_forest(HEIGHT, "keccak256")
         for bundle_index = 0, (LEAVES >> bundle_height) - 1 do
-            hash_tree.frontier_forest_push_back(
-                outer,
-                hash_tree.frontier_forest_get_root_hash(build_leaf_forest(bundle_index << bundle_height, bundle_height))
-            )
+            local bundle = build_leaf_forest(bundle_index << bundle_height, bundle_height)
+            hash_tree.frontier_forest_push_back(forest, hash_tree.frontier_forest_get_root_hash(bundle), bundle_height)
         end
-        tree = prtu.new_tree(HEIGHT, bundle_height, outer, function(_, bundle_index)
+        tree = prtu.new_tree(HEIGHT, bundle_height, forest, function(_, bundle_index)
             return build_leaf_forest(bundle_index << bundle_height, bundle_height)
         end)
     else
@@ -424,6 +422,48 @@ do
     claim.tree:open_bundle(unopened_index >> claim.tree.bundle_height)
     assert(claim.tree:get_node(unopened_index, 0) == base_state_hash, "opened bundle has the wrong leaf")
 end
+-- Expanded padding serves all repeated bundles without replaying them separately.
+do
+    local bundle = hash_tree.frontier_forest(2, "keccak256")
+    hash_tree.frontier_forest_pad_back(bundle, base_state_hash, 4)
+    local forest = hash_tree.frontier_forest(HEIGHT, "keccak256")
+    hash_tree.frontier_forest_pad_back(forest, hash_tree.frontier_forest_get_root_hash(bundle), LEAVES >> 2, 2)
+    local calls = 0
+    local tree = prtu.new_tree(HEIGHT, 2, forest, function()
+        calls = calls + 1
+        return bundle
+    end)
+    local root = tree:get_root()
+    tree:open_bundle((LEAVES >> 2) - 1)
+    tree:open_bundle(0)
+    assert(calls == 1, "opening repeated bundles reran the machine")
+    assert(tree:get_root() == root, "opening a bundle changed the commitment")
+    for i = 0, LEAVES - 1 do
+        assert(tree:get_node(i, 0) == base_state_hash, "expanded padding has the wrong leaf")
+        hash_tree.verify_slice(tree:prove(i))
+    end
+end
+
+-- A failed reconstruction must leave the commitment opaque and allow a valid retry.
+do
+    local bundle = hash_tree.frontier_forest(2, "keccak256")
+    hash_tree.frontier_forest_pad_back(bundle, base_state_hash, 4)
+    local forest = hash_tree.frontier_forest(2, "keccak256")
+    hash_tree.frontier_forest_push_back(forest, hash_tree.frontier_forest_get_root_hash(bundle), 2)
+    local replacement = hash_tree.frontier_forest(2, "keccak256")
+    hash_tree.frontier_forest_pad_back(replacement, fake_state_hash, 4)
+    local tree = prtu.new_tree(2, 2, forest, function()
+        return replacement
+    end)
+    local root = tree:get_root()
+    assert(not pcall(tree.open_bundle, tree, 0), "a mismatched bundle was installed")
+    assert(not pcall(tree.get_node, tree, 0, 0), "a failed expansion exposed a leaf")
+    assert(tree:get_root() == root, "a failed expansion changed the commitment")
+    replacement = bundle
+    tree:open_bundle(0)
+    hash_tree.verify_slice(tree:prove(0))
+end
+
 for _, lie in ipairs({ 0, 1, 4, 6, 13, LEAVES - 1 }) do
     for _, bundled in ipairs({ false, true }) do
         local honest = make_synthetic_claim(base_state_hash, nil, nil, bundled)
@@ -1511,14 +1551,22 @@ if arg[1] then
         local tree = player:make_mcycle_tree()
         assert(tree:get_root() == expected, terminal .. " has the wrong fixed-point tail")
         tree:open_bundle(0)
-        tree:open_bundle((1 << (contract.geometry.mcycle_height - LOG2_BUNDLE_MCYCLE_COUNT)) - 1)
+        assert(counts.refined == 1, "first mcycle opening bypassed the selected collector factory")
+        -- Padding may share the first opening with the last bundle. Only an opaque
+        -- bundle should call the factory again; both positions must remain queryable.
+        local mcycle_last = (1 << contract.geometry.mcycle_height) - 1
+        local mcycle_open = pcall(tree.get_node, tree, mcycle_last, 0)
+        tree:open_bundle(mcycle_last >> LOG2_BUNDLE_MCYCLE_COUNT)
+        assert(tree:get_node(mcycle_last, 0) == terminal_root, "last mcycle bundle has the wrong state")
         local uarch = player:make_uarch_tree(3, 60000)
         uarch:open_bundle(0)
-        uarch:open_bundle((1 << (contract.geometry.uarch_height - LOG2_BUNDLE_UARCH_CYCLE_COUNT)) - 1)
-        assert(
-            counts.outer == 1 and counts.refined == 2 and counts.uarch == 3,
-            "build or refinement bypassed the selected collector factory"
-        )
+        assert(counts.uarch == 2, "uarch build or first opening bypassed the selected collector factory")
+        local uarch_last = (1 << contract.geometry.uarch_height) - 1
+        local uarch_open = pcall(uarch.get_node, uarch, uarch_last, 0)
+        uarch:open_bundle(uarch_last >> LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+        assert(counts.outer == 1, "mcycle build bypassed the selected collector factory")
+        assert(counts.refined == (mcycle_open and 1 or 2), "mcycle opening called the wrong number of collectors")
+        assert(counts.uarch == (uarch_open and 2 or 3), "uarch opening called the wrong number of collectors")
         local terminal_logs = player:prove_state_transition(2, 60000, 0)
         assert(
             cartesi.machine:verify_step_uarch(terminal_root, terminal_logs.step_log) == uarch:get_node(0, 0),

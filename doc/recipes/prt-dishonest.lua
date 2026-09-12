@@ -201,7 +201,7 @@ end
 -- Private insertion helpers for the fabricated stream. Honest collectors use the forest API
 -- directly. Only the affected group is split, preserving its neighbors' compressed trees.
 local function pad_back(claim, value, count, height)
-    hash_tree.frontier_forest_pad_back(claim.frontier, value, count, height - claim.bundle_height)
+    hash_tree.frontier_forest_pad_back(claim.frontier, value, count, height)
     claim.next_leaf = claim.next_leaf + (count << height)
 end
 
@@ -221,7 +221,12 @@ local function lie_about_leaf(leaf, fake_hash, unbundle)
             pad_back(self, hash_tree.frontier_forest_get_root_hash(forest), 1, height)
         else
             for i = 0, (1 << (height - self.bundle_height)) - 1 do
-                pad_back_lie(self, hash_tree.frontier_forest_get_node(value, i, 0), 1, self.bundle_height)
+                pad_back_lie(
+                    self,
+                    hash_tree.frontier_forest_get_node(value, i << self.bundle_height, self.bundle_height),
+                    1,
+                    self.bundle_height
+                )
             end
         end
         pad_back(self, value, count - prefix - 1, height)
@@ -329,7 +334,7 @@ local function new_uarch_liar(claim, insert)
                     local wanted = math.min(available, (self.end_leaf - self.next_leaf) >> log2_cycles)
                     local group
                     for i = 1, wanted do
-                        group = hash_tree.frontier_forest(log2_cycles - self.bundle_height, "keccak256")
+                        group = hash_tree.frontier_forest(log2_cycles, "keccak256")
                         prt.uarch_computation_hash_push_mcycle(
                             self,
                             group,

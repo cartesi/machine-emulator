@@ -3887,6 +3887,68 @@ local function run_inspect_state_query(m, runner)
     cmdline.cmio_inspect = nil
 end
 
+-- Processes one advance-state input through its claim. Accepted outputs are published before
+-- commit; rejected outputs are written separately after rollback. Finalizes accepted or rejected inputs
+-- only after that decision, and returns the stop reason and the next expected boundary root.
+local function run_advance_state_input(claim, input_index, revert_root_hash)
+    local htif = initial_config.processor.registers.htif
+    local advance = cmdline.cmio_advance
+    -- outputs are buffered until the input is accepted or rejected, reports are saved at once
+    local function on_yield_automatic(yield_reason, data)
+        if is_tx_output(yield_reason) then
+            advance.pending_outputs[#advance.pending_outputs + 1] = data
+        elseif is_tx_report(yield_reason) then
+            save_cmio_report(advance, data)
+            advance.report_index = advance.report_index + 1
+        end
+    end
+    stderr("\nBefore input %d\n", input_index)
+    -- Open and snapshot the input boundary. Collector setup must preserve its expected
+    -- root, which delivery checks. A rejection must restore this same boundary.
+    claim:begin_input(input_index)
+    snapshot(claim)
+    if advance.print_input_state_hashes then print_root_hash(claim) end
+    load_cmio_input(claim, advance, revert_root_hash)
+    if advance.print_input_state_hashes then print_root_hash(claim) end
+    advance.report_index = 0
+    -- labeling: from now the producing input is next_input_index - 1
+    advance.next_input_index = input_index + 1
+    local break_reason = run_to_stop(claim, cmdline.max_mcycle, on_yield_automatic)
+    -- The epoch handles halts, overflow, and the global cycle limit.
+    if not is_yielded_manual(break_reason) then return break_reason, nil, revert_root_hash end
+    local _, yield_reason, data = get_and_print_yield(claim, htif)
+    if is_rx_accepted(yield_reason) then
+        flush_pending_outputs(claim, advance, yield_reason, data)
+        commit(claim)
+        revert_root_hash = claim:get_root_hash()
+    elseif is_rx_rejected(yield_reason) then
+        revert(claim)
+        claim:check_revert(revert_root_hash, claim:get_root_hash())
+        flush_pending_outputs(claim, advance, yield_reason, data)
+    elseif is_tx_exception(yield_reason) then
+        -- an exception is a fixed point like a halt: report it, flush the interrupted input's
+        -- outputs as rejected, and end the epoch, leaving the machine at the exception
+        -- yield (no revert). A following inspect query fails against this non-accept yield,
+        -- which the CLI just reports.
+        report_exception(data)
+        flush_pending_outputs(claim, advance, yield_reason, data)
+        commit(claim)
+        return break_reason, yield_reason, revert_root_hash
+    else
+        -- An unexpected manual yield is a protocol violation, but still a fixed point, and
+        -- fixed points are sticky, so it ends the epoch the same way an exception does.
+        -- The claim is finalized so callers can dispute the computation that led here. In
+        -- particular, the uarch claim may still need to pad a selected period that
+        -- execution never reached.
+        report_unexpected_manual_yield(yield_reason)
+        flush_pending_outputs(claim, advance, yield_reason, data)
+        commit(claim)
+        return break_reason, yield_reason, revert_root_hash
+    end
+    claim:end_input()
+    return break_reason, yield_reason, revert_root_hash
+end
+
 -- Drives an advance-state epoch actively, as the README host loop does. Boots to the rolling
 -- template's first accept yield, then for each input snapshots, feeds, resumes until the input
 -- is accepted or rejected, collecting outputs and reports, and commits or reverts. Every input
@@ -3907,15 +3969,6 @@ local function run_advance_state_epoch(m, runner)
         or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(m, advance, runner)
         or make_null_computation_hash(runner)
     claim:begin_epoch()
-    -- outputs are buffered until the input is accepted or rejected, reports are saved at once
-    local function on_yield_automatic(yield_reason, data)
-        if is_tx_output(yield_reason) then
-            advance.pending_outputs[#advance.pending_outputs + 1] = data
-        elseif is_tx_report(yield_reason) then
-            save_cmio_report(advance, data)
-            advance.report_index = advance.report_index + 1
-        end
-    end
     -- boot plainly to the rolling template's first accept yield, then process each input in turn.
     -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
     local break_reason = run_to_stop(m, cmdline.max_mcycle, ignore_yield_automatic)
@@ -3924,53 +3977,13 @@ local function run_advance_state_epoch(m, runner)
         commit(m)
         local revert_root_hash = m:get_root_hash()
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
-            stderr("\nBefore input %d\n", input_index)
-            -- Open and snapshot the input boundary. Collector setup must preserve its expected
-            -- root, which delivery checks. A rejection must restore this same boundary.
-            claim:begin_input(input_index)
-            snapshot(m)
-            if advance.print_input_state_hashes then print_root_hash(m) end
-            load_cmio_input(m, advance, revert_root_hash)
-            if advance.print_input_state_hashes then print_root_hash(m) end
-            advance.report_index = 0
-            -- labeling: from now the producing input is next_input_index - 1
-            advance.next_input_index = input_index + 1
-            break_reason = run_to_stop(claim, cmdline.max_mcycle, on_yield_automatic)
-            -- a halt, overflow, or max_mcycle before the accept or reject yield ends the epoch;
-            -- it closes below
+            local yield_reason
+            break_reason, yield_reason, revert_root_hash = run_advance_state_input(claim, input_index, revert_root_hash)
             if not is_yielded_manual(break_reason) then break end
-            local _, yield_reason, data = get_and_print_yield(m, htif)
-            if is_rx_accepted(yield_reason) then
-                flush_pending_outputs(m, advance, yield_reason, data)
-                commit(m)
-                revert_root_hash = m:get_root_hash()
-            elseif is_rx_rejected(yield_reason) then
-                revert(m)
-                claim:check_revert(revert_root_hash, m:get_root_hash())
-                flush_pending_outputs(m, advance, yield_reason, data)
-            elseif is_tx_exception(yield_reason) then
-                -- an exception is a fixed point like a halt: report it, flush the interrupted input's
-                -- outputs as rejected, and end the epoch, leaving the machine at the exception
-                -- yield (no revert). A following inspect query fails against this non-accept yield,
-                -- which the CLI just reports.
-                report_exception(data)
-                flush_pending_outputs(m, advance, yield_reason, data)
-                commit(m)
-                claim:end_epoch()
-                return
-            else
-                -- An unexpected manual yield is a protocol violation, but still a fixed point, and
-                -- fixed points are sticky, so it ends the epoch the same way an exception does.
-                -- The claim is finalized so callers can dispute the computation that led here. In
-                -- particular, the uarch claim may still need to pad a selected period that
-                -- execution never reached.
-                report_unexpected_manual_yield(yield_reason)
-                flush_pending_outputs(m, advance, yield_reason, data)
-                commit(m)
+            if not is_rx_accepted(yield_reason) and not is_rx_rejected(yield_reason) then
                 claim:end_epoch()
                 return
             end
-            claim:end_input()
         end
     end
     if is_halted(break_reason) then

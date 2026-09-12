@@ -9541,11 +9541,12 @@ inputs of our epoch fit in about nine thousand stored mcycle bundles,
 and one uarch span in about three thousand. When a dispute descends
 below a stored bundle, the player opens it: a complete forest of the
 leaves under that one bundle, built by re-running a fork of the input’s
-boundary machine through the bundle’s window, exactly as a machine
+boundary machine through the bundle’s transitions, exactly as a machine
 produces the disputed transition’s logs. The claim tree checks the
-opened forest against the committed bundle root and caches it
-(`open_bundle` in `prtu.lua`). Only the bundles a dispute actually
-visits are ever opened, and each costs one machine re-run.
+opened forest against the committed bundle root and installs its subtree
+at that leaf (`open_bundle` in `prtu.lua`). Implicit repetitions share
+the expanded subtree, so opening one repeated bundle also makes its
+other occurrences readable.
 
 The builds themselves stream out of the emulator. They follow the same
 collection contract as `cartesi-machine`’s computation-hash builders:
@@ -9555,37 +9556,39 @@ fills the segment’s remaining positions. The only different sink is
 PRT’s frontier forest, which retains the nodes needed to answer later
 tournament queries. The mcycle build (`build_mcycle_claim` in `prt.lua`)
 advances the whole epoch once, pushing each input’s bundle roots into
-the outer forest, padding each input’s span with the fixed point where
-its guest stopped, and offering each accepted input’s final machine to a
-bounded cache as the next input’s virgin boundary. The default policy
-keeps a bounded, progressively thinned set of these checkpoints, indexed
-by input; input zero always retains the initial machine template. The
-refinement re-run (`refine_mcycle_claim`) asks the cache for the target
-input’s boundary, then advances that input to recover one bundle’s
-samples. The cache’s `clone_at_input_boundary(input_index, replay)`
-selects and clones a checkpoint, then calls the supplied replay function
-with the machine and the intervening input range. The player’s replay
-closure uses `run_advance_state_epoch` with the null collector. It
-returns an independent machine and a separate owner kept in a `<close>`
-local; closing the owner releases the working machine and any
-outstanding backup immediately, including on errors. Uarch collection
-and transition proofs request their boundaries through the same
-operation, and forward building and result collection start by cloning
-boundary zero; checkpoint selection stays private to the cache. The
-input driver calls the cache’s `snapshot(machine)`, `commit(machine)`,
-and `revert(machine)` operations, following the CLI: acceptance, sticky
-stops, and partial replay commit, while rejection reverts. Backups are
-keyed by working machine inside the cache, so nested refinement cannot
-replace the outer run’s snapshot. The uarch collector captures its
-rejection-padding tail from the running virgin machine before snapshot
-and delivery, without accessing the backup. Eviction releases the
-retained checkpoint’s owner. The caller keeps the cache in a `<close>`
-local for as long as the player and its claim trees can replay. Closing
-that cache releases all remaining owned machines without waiting for
-garbage collection. The caller creates the initial machine and passes it
-to `new_machine_cache(initial_machine, capacity, initial_input_gap)`,
-which takes ownership. The default cache uses forks. A caller can supply
-a different cache implementation without changing the player driver or
+the claim forest at their logical heights, padding each input’s span
+with the fixed point where its guest stopped, and offering each accepted
+input’s final machine to a bounded cache as the next input’s virgin
+boundary. The default policy keeps a bounded, progressively thinned set
+of these checkpoints, indexed by input; input zero always retains the
+initial machine template. The refinement re-run (`refine_mcycle_claim`)
+asks the cache for the target input’s boundary, then advances that input
+to recover one bundle’s samples. The cache’s
+`clone_at_input_boundary(input_index, run_to_input_boundary)` selects
+and clones a checkpoint, then calls `run_to_input_boundary` with the
+machine and the intervening input range. The player’s
+`run_to_input_boundary` closure uses `run_advance_state_epoch` with the
+null collector. It returns an independent machine and a separate owner
+kept in a `<close>` local; closing the owner releases the working
+machine and any outstanding backup immediately, including on errors.
+Uarch collection and transition proofs request their boundaries through
+the same operation, and forward building and result collection start by
+cloning boundary zero; checkpoint selection stays private to the cache.
+The input driver calls the cache’s `snapshot(machine)`,
+`commit(machine)`, and `revert(machine)` operations, following the CLI:
+acceptance, sticky stops, and partial replay commit, while rejection
+reverts. Backups are keyed by working machine inside the cache, so
+nested refinement cannot replace the outer run’s snapshot. The uarch
+collector captures its rejection-padding tail from the running virgin
+machine before snapshot and delivery, without accessing the backup.
+Eviction releases the retained checkpoint’s owner. The caller keeps the
+cache in a `<close>` local for as long as the player and its claim trees
+can replay. Closing that cache releases all remaining owned machines
+without waiting for garbage collection. The caller creates the initial
+machine and passes it to
+`new_machine_cache(initial_machine, capacity, initial_input_gap)`, which
+takes ownership. The default cache uses forks. A caller can supply a
+different cache implementation without changing the player driver or
 collectors. A disk-backed implementation is left for future work.
 Rejected inputs offer no checkpoint: replay runs each one in turn and
 rolls it back through the ordinary input driver, without rejection
@@ -10018,7 +10021,7 @@ fresh fork at the transition and logging it:
     function player.prove_state_transition(_, input_index, period_index, state_transition_offset)
         local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
         local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
-        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, replay)
+        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
         local revert_root_hash = machine:get_root_hash()
         local data = inputs[input_index + 1]
         if state_transition_offset == 0 and period_index == 0 and data then
@@ -10028,9 +10031,8 @@ fresh fork at the transition and logging it:
         end
         local claim = options.new_null_computation_hash(machine)
         run_advance_state_input(
-            machine,
-            input_index,
             claim,
+            input_index,
             period_index * geometry.mcycles_per_period + mcycle_offset,
             revert_root_hash
         )

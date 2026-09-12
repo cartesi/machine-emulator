@@ -3784,12 +3784,12 @@ end
 
 -- Resumes the machine, running to each target cycle with the given runner (the machine itself for
 -- a plain run) and servicing each automatic yield through on_yield_automatic(yield_reason, data),
--- until it reaches a fixed point or max_mcycle, and returns the break reason it stopped for.
+-- until it reaches a fixed point or mcycle_end, and returns the break reason it stopped for.
 -- This is the host's inner loop. A terminal manual yield is left unread, for the caller to
 -- service.
-local function run_to_stop(m, on_yield_automatic, runner)
+local function run_to_stop(m, mcycle_end, runner, on_yield_automatic)
     while true do
-        local break_reason = runner:run(cmdline.max_mcycle)
+        local break_reason = runner:run(mcycle_end)
         if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
             return break_reason
         elseif is_yielded_automatic(break_reason) then
@@ -3859,7 +3859,7 @@ local function run_inspect_state_query(m, runner)
     -- Boot always runs the machine plainly, and only the query itself runs with the runner. If the
     -- machine did not stop at a manual yield (it halted, or ran out of mcycles), it is not at an
     -- accept yield waiting for a request, so there is nothing to inspect.
-    local break_reason = run_to_stop(m, ignore_yield_automatic, m)
+    local break_reason = run_to_stop(m, cmdline.max_mcycle, m, ignore_yield_automatic)
     if not is_yielded_manual(break_reason) then return end
     -- Announce the yield we advanced to reach (after an epoch it is the epoch's already-announced
     -- accept yield, at the same mcycle, so skip it). load_cmio_query is the gate on the reason: it
@@ -3878,7 +3878,7 @@ local function run_inspect_state_query(m, runner)
             cmdline.cmio_inspect.report_index = cmdline.cmio_inspect.report_index + 1
         end
     end
-    break_reason = run_to_stop(m, on_yield_automatic, runner)
+    break_reason = run_to_stop(m, cmdline.max_mcycle, runner, on_yield_automatic)
     report_stop(m, break_reason)
     stderr("\nAfter query\n")
     revert(m)
@@ -3916,7 +3916,7 @@ local function run_advance_state_epoch(m, runner)
     end
     -- boot plainly to the rolling template's first accept yield, then process each input in turn.
     -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
-    local break_reason = run_to_stop(m, ignore_yield_automatic, m)
+    local break_reason = run_to_stop(m, cmdline.max_mcycle, m, ignore_yield_automatic)
     if is_yielded_manual(break_reason) then
         get_and_print_yield(m, htif)
         commit(m)
@@ -3933,7 +3933,7 @@ local function run_advance_state_epoch(m, runner)
             advance.report_index = 0
             -- labeling: from now the producing input is next_input_index - 1
             advance.next_input_index = input_index + 1
-            break_reason = run_to_stop(m, on_yield_automatic, claim)
+            break_reason = run_to_stop(m, cmdline.max_mcycle, claim, on_yield_automatic)
             -- a halt, overflow, or max_mcycle before the accept or reject yield ends the epoch;
             -- it closes below
             if not is_yielded_manual(break_reason) then break end
@@ -4019,7 +4019,7 @@ if cmdline.cmio_advance then
 elseif cmdline.cmio_inspect then
     run_inspect_state_query(machine, runner)
 else
-    report_stop(machine, run_to_stop(machine, ignore_yield_automatic, runner))
+    report_stop(machine, run_to_stop(machine, cmdline.max_mcycle, runner, ignore_yield_automatic))
 end
 -- log step
 if cmdline.log_step_mcycle_count then

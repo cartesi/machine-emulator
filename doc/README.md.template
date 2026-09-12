@@ -5323,7 +5323,7 @@ Second, the stored nodes need not be the leaves.
 The machine can deliver the sampled hashes in *bundles*, one subtree root per 2<sup>4</sup> mcycle samples (or per 2<sup>16</sup> uarch transitions), which divides the nodes a player stores and carries by that much.
 Bundle roots are interior nodes of the claim tree, so the root is unchanged.
 The three inputs of our epoch fit in about nine thousand stored mcycle bundles, and one uarch span in about three thousand.
-When a dispute descends below a stored bundle, the player opens it: a complete forest of the leaves under that one bundle, built by re-running a fork of the input's boundary machine through the bundle's window, exactly as a machine produces the disputed transition's logs.
+When a dispute descends below a stored bundle, the player opens it: a complete forest of the leaves under that one bundle, built by re-running a fork of the input's boundary machine through the bundle's transitions, exactly as a machine produces the disputed transition's logs.
 The claim tree checks the opened forest against the committed bundle root and caches it (`open_bundle` in `prtu.lua`).
 Only the bundles a dispute actually visits are ever opened, and each costs one machine re-run.
 

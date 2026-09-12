@@ -473,7 +473,8 @@ local function run_with_server(scenario)
     local _, port = server.listener:getsockname()
     local dispatcher = server.dispatcher
     local function run_client(hello, handler, typed)
-        dispatcher:spawn(function()
+        -- These clients are independent processes in the real example, not referee children.
+        local client = coroutine.create(function()
             local sock = assert(socket.connect("127.0.0.1", port))
             sock:settimeout(0)
             assert(sock:send(cartesi.tojson(hello or { role = "player" }, -1) .. "\n"))
@@ -516,6 +517,7 @@ local function run_with_server(scenario)
                 end
             end
         end)
+        dispatcher:schedule(client, "start")
     end
     -- Waits until n connections have announced themselves, or been closed for trying (clients
     -- connect asynchronously).
@@ -777,6 +779,107 @@ end)
 assert(not ok and err:find("the phase closer went away"), "phase-closer EOF did not fail the referee")
 
 assert(require("prt-deadline-test"))(run_with_server)
+
+-- A stop can arrive before a queued match coroutine has made its first request.
+do
+    local started = false
+    run_with_server(function(server)
+        server.dispatcher:spawn(function()
+            started = true
+        end)
+        server.stopping = true
+        coroutine.yield()
+        error("stopping resumed the referee")
+    end)
+    assert(not started, "a queued match started after the referee stopped")
+end
+
+-- The phase closer stops suspended proof waits through the server. The referee never
+-- receives a special return value, its resources close, and players still receive finish.
+for _, stop_during in ipairs({ "root", "output" }) do
+    local closed, finished, resumed = false, false, false
+    local pending, referee, stopped_server
+    run_with_server(function(server, run_client, wait_connections)
+        stopped_server = server
+        referee = coroutine.running()
+        local resource <close> = setmetatable({}, { -- luacheck: ignore 211
+            __close = function()
+                closed = true
+            end,
+        })
+        run_client(nil, function(event)
+            if event.operation == "finish" then
+                finished = true
+                return { value = true }, true
+            elseif event.operation == "advance_time" then
+                return { value = {} }
+            elseif event.operation == "stop_test_root" and stop_during == "output" then
+                return { value = "valid" }
+            end
+            assert(pending.cortn == referee, "proof wait was not suspended")
+            local closer = prtu.new_phase_closer("stop")
+            run_client(cartesi.fromjson(closer.hello), function(_, line)
+                return prtu.answer_event(closer, line)
+            end, true)
+            return { value = {} }
+        end, true)
+        wait_connections(1)
+        local root <close> = server:request_first_valid(EVERYONE, define_event("stop_test_root"), {}, is_valid)
+        pending = root
+        root:wait()
+        if stop_during == "root" then
+            resumed = true
+        end
+        local output <close> = server:request_first_valid(EVERYONE, define_event("stop_test_output"), {}, is_valid)
+        pending = output
+        output:wait()
+        resumed = true
+    end)
+    assert(closed and finished, "stopping skipped resource cleanup or finish delivery")
+    assert(not resumed and coroutine.status(referee) == "dead", "stopping resumed referee logic")
+    assert(pending.closed and not next(stopped_server.active), "stopping retained a proof request")
+end
+
+-- Several player-selected responses can be accepted before the phase closer stops the loop.
+-- Their indices deliberately do not follow numerical order.
+do
+    local accepted, finished = {}, false
+    run_with_server(function(server, run_client, wait_connections)
+        local offers, next_offer = { 7, 2, 5 }, 1
+        run_client(nil, function(event)
+            if event.operation == "finish" then
+                finished = true
+                return { value = true }, true
+            elseif event.operation == "advance_time" then
+                return { value = {} }
+            end
+            assert(not next(event.arguments), "output request supplied player selection or acceptance information")
+            local index = offers[next_offer]
+            next_offer = next_offer + 1
+            if index then
+                return { value = index }
+            end
+            local closer = prtu.new_phase_closer("stop")
+            run_client(cartesi.fromjson(closer.hello), function(_, line)
+                return prtu.answer_event(closer, line)
+            end, true)
+            return { value = {} }
+        end, true)
+        wait_connections(1)
+        while true do
+            local response <close> = server:request_first_valid(
+                EVERYONE,
+                define_event("stop_test_outputs"),
+                {},
+                function(value)
+                    return math.type(value) == "integer" and value
+                end
+            )
+            accepted[#accepted + 1] = response:wait()
+        end
+    end)
+    assert(finished and table.concat(accepted, ",") == "7,2,5", "output loop lost a player-selected response")
+end
 
 --------------------------------------------------------------------------------
 -- Machine checkpoint replay
@@ -1116,7 +1219,19 @@ if arg[1] then
         result.iflags_y_proof.root_hash == honest_tree:get_node(final_leaf, 0),
         "result replay differs from the claim's final state"
     )
-    assert(honest:prove_output().output, "accepted output was lost during replay")
+    local latest = honest:prove_output()
+    assert(latest.output and latest.output_index == 1, "accepted output was lost during replay")
+    assert(honest:prove_output() == latest, "the player's output choice changed between requests")
+    local other_player = prt.new_player(dapp_contract.geometry, honest_inputs, honest_cache, { output_index = 0 })
+    local earlier = other_player:prove_output()
+    assert(earlier.output and earlier.output_index == 0, "the player did not offer its chosen output")
+    for _, output in ipairs({ latest, earlier }) do
+        assert(output.output_proof.root_hash == result.tx_buffer_data, "output proof used the wrong root")
+        assert(output.output_proof.target_hash == keccak(output.output), "output proof used the wrong payload")
+        hash_tree.verify_slice(output.output_proof)
+    end
+    local absent_player = prt.new_player(dapp_contract.geometry, honest_inputs, honest_cache, { output_index = 2 })
+    assert(next(absent_player:prove_output()) == nil, "the player invented an output at a missing index")
 
     local forger_inputs, forger_cache <close> = new_test_cache(dapp_contract)
     local original_input = dapp_contract.inputs[1]

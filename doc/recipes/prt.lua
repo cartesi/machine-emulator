@@ -26,10 +26,11 @@
 -- subscribers. The referee sorts the claims it gathers, so the bracket and the whole narration are a pure
 -- function of the claims and prescribed responses or skips, independent of connection order.
 --   prt.lua referee  <address> <initial-state-hash> <input> [<input> ...]
---   prt.lua honest   <address> <initial-state-hash> <input> [<input> ...]
---   prt.lua phase_closer <address>
+--   prt.lua honest   <address> <initial-state-hash> <output-index> <input> [<input> ...]
+--   prt.lua phase_closer <address> [stop]
 --
 -- The phase closer closes initial subscriptions once every player is in, then disconnects.
+-- A later invocation with stop ends the example through the server, including pending proof waits.
 -- Mcycle and uarch tournaments gather claims from fixed audiences in a logical block.
 -- Claim collection closes at the next block. Wall-clock computation speed does not consume
 -- a protocol allowance.
@@ -57,7 +58,7 @@ local CMIO_TX_BUFFER_ADDRESS = cartesi.AR_CMIO_TX_BUFFER_START
 -- player has connected. Tournament claim collection then uses logical time. It needs none
 -- of the game geometry.
 if arg[1] == "phase_closer" then
-    return prtu.run_client(prtu.new_phase_closer(), assert(arg[2], "missing referee address"))
+    return prtu.run_client(prtu.new_phase_closer(arg[3]), assert(arg[2], "missing referee address"))
 end
 
 local EVERYONE = prtu.EVERYONE
@@ -682,26 +683,24 @@ local function verify_outputs_merkle_root(result, final_state_hash)
     verify_machine_word(result.tx_buffer_data, result.tx_buffer_proof, CMIO_TX_BUFFER_ADDRESS, final_state_hash)
     return result.tx_buffer_data
 end
-verify_outputs_merkle_root = util.protect(verify_outputs_merkle_root)
 
-local function verify_output(result, outputs_merkle_root)
-    local output_proof = result.output_proof
-    assert(result.output_index == output_proof.target_address)
+local function verify_output(output, outputs_merkle_root)
+    local output_proof = output.output_proof
+    assert(output.output_index == output_proof.target_address)
     assert(output_proof.log2_target_size == 0)
     assert(output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
     assert(output_proof.root_hash == outputs_merkle_root)
-    assert(keccak(result.output) == output_proof.target_hash)
+    assert(keccak(output.output) == output_proof.target_hash)
     hash_tree.verify_slice(output_proof)
     return true
 end
-verify_output = util.protect(verify_output)
 
 -- Waits on the settled claim, the one the tournament leaves standing. It first establishes the
--- outputs Merkle root committed by the winning final state, then asks separately for an output
--- and checks any offer against that root.
--- An epoch with no output therefore still settles its outputs root without inventing a result.
--- docs:begin wait_for_result
-local function wait_for_result(tournament, winner)
+-- outputs Merkle root committed by the winning final state, then repeatedly asks for an output
+-- and checks each offer against that root. The player chooses which output to offer.
+-- An epoch with no output therefore still settles its outputs root without inventing an output.
+-- docs:begin wait_for_outputs
+local function wait_for_outputs(tournament, winner)
     local subscription = subscription_hash(tournament.id, winner)
     local root_proof <close> = server:request_first_valid(
         subscription,
@@ -711,16 +710,25 @@ local function wait_for_result(tournament, winner)
             return verify_outputs_merkle_root(response, winner.final_state_hash)
         end
     )
-    local outputs_merkle_root = root_proof:wait(server:request_block() + 1)
-    if not outputs_merkle_root then
-        return story.report_result(nil)
+    local outputs_merkle_root = root_proof:wait()
+    local accepted_output_indices = {}
+    while true do
+        local output_proof <close> = server:request_first_valid(
+            subscription,
+            EVENTS.prove_output,
+            {},
+            function(response)
+                if not accepted_output_indices[response.output_index] then
+                    return verify_output(response, outputs_merkle_root) and response
+                end
+            end
+        )
+        local output = output_proof:wait()
+        accepted_output_indices[output.output_index] = true
+        story.report_output(output)
     end
-    local output_proof <close> = server:request_first_valid(subscription, EVENTS.prove_output, {}, function(response)
-        return verify_output(response, outputs_merkle_root) and response
-    end)
-    story.report_result(output_proof:wait(server:request_block() + 1))
 end
--- docs:end wait_for_result
+-- docs:end wait_for_outputs
 
 -- Seen from the referee, the whole game is short. It opens the mcycle tournament, reduces the
 -- claims it opened with, and, if one survives every match, settles the epoch on its result.
@@ -735,7 +743,7 @@ local function run_referee(dapp_contract)
     local winner = run_tournament(tournament)
     story.report_winner(winner)
     if winner then
-        wait_for_result(tournament, winner)
+        wait_for_outputs(tournament, winner)
     end
 end
 -- docs:end run_referee
@@ -1750,7 +1758,6 @@ local function new_player(geometry, inputs, machine_cache, options)
         local iflags_y_data, iflags_y_proof = get_machine_leaf(machine, IFLAGS_Y_ADDRESS)
         local htif_tohost_data, htif_tohost_proof = get_machine_leaf(machine, HTIF_TOHOST_ADDRESS)
         local tx_buffer_data, tx_buffer_proof = get_machine_leaf(machine, CMIO_TX_BUFFER_ADDRESS)
-        local output_index = #outputs - 1
         player.outputs_merkle_root_result = {
             iflags_y_data = iflags_y_data,
             iflags_y_proof = iflags_y_proof,
@@ -1759,10 +1766,11 @@ local function new_player(geometry, inputs, machine_cache, options)
             tx_buffer_data = tx_buffer_data,
             tx_buffer_proof = tx_buffer_proof,
         }
-        player.output_result = {
+        local output_index = options.output_index or #outputs - 1
+        player.output = {
             output_index = output_index >= 0 and output_index or nil,
-            output = outputs[#outputs],
-            output_proof = hash_tree.frontier_next_proofs(genesis_frontier, leaves)[#leaves],
+            output = outputs[output_index + 1],
+            output_proof = hash_tree.frontier_next_proofs(genesis_frontier, leaves)[output_index + 1],
         }
     end
 
@@ -1775,15 +1783,15 @@ local function new_player(geometry, inputs, machine_cache, options)
     end
     -- docs:end prove_outputs_merkle_root
 
-    -- Separately offers the last output, when there is one, after the referee has established the
-    -- outputs Merkle root from a winning final state. An empty table is no offer.
+    -- Offers the output chosen by this player, defaulting to the last output. The referee supplies
+    -- no index or acceptance information. An empty table is no offer when the output does not exist.
     function player.prove_output()
         compute_epoch_results()
-        local result = player.output_result
-        if not result.output then
+        local output = player.output
+        if not output.output then
             return {}
         end
-        return result
+        return output
     end
 
     function player.make_mcycle_tree()
@@ -1865,10 +1873,12 @@ if role == "referee" then
         prtu.run_server(new_referee(dapp_contract), server_address)
     end
 elseif role == "honest" then
+    local output_index = tonumber(take_argument("missing output index"))
+    assert(math.type(output_index) == "integer" and output_index >= 0, "invalid output index")
     run_role = function(dapp_contract)
         local inputs = { table.unpack(dapp_contract.inputs) }
         local cache <close> = new_machine_cache(new_machine(dapp_contract.initial_state_hash))
-        local player = new_player(dapp_contract.geometry, inputs, cache)
+        local player = new_player(dapp_contract.geometry, inputs, cache, { output_index = output_index })
         prtu.run_client(player, server_address)
     end
 else

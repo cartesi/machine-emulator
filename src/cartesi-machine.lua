@@ -3256,12 +3256,16 @@ local backup_closer <close> = setmetatable({}, {
 })
 -- luacheck: pop
 
--- run_to_stop resumes the machine through a "runner": any object with a
--- run(self, mcycle_end) method returning the break reason, exactly like machine:run. The machine
+-- run_to_stop resumes the machine through a "runner" that overrides execution methods and
+-- forwards other machine methods, caching them on first use. The machine
 -- itself is the plain runner; gdb_stub, the two hash-printing runners, and
 -- the computation-hash object below are the others. The runner is the only thing that knows the
 -- mode. The machine and gdb_stub also implement the two collect calls, and the hash-sampling
 -- runners advance through either, so hashes can be collected while GDB drives the machine.
+
+local runner_meta = {
+    __index = function(self, name) return util.forward_method(self, self.runner, name) end,
+}
 
 -- Prints the hashes one uarch cycle collect call returned. Without bundling, each hash after a uarch
 -- cycle is printed as "<mcycle>,<uarch_cycle>: <hash>", and each hash after an implicit uarch reset
@@ -3357,7 +3361,7 @@ local function uarch_cycle_root_hashes_runner_run(self, mcycle_end)
     return self.runner:run(mcycle_end)
 end
 local function make_uarch_cycle_root_hashes_runner(runner, start, count, log2_bundle)
-    return {
+    return setmetatable({
         machine = machine,
         runner = runner,
         start = start,
@@ -3365,7 +3369,7 @@ local function make_uarch_cycle_root_hashes_runner(runner, start, count, log2_bu
         chunk_size = uarch_hashes_chunk_size(log2_bundle),
         log2_bundle = log2_bundle,
         run = uarch_cycle_root_hashes_runner_run,
-    }
+    }, runner_meta)
 end
 
 -- Prints the hashes one collect call returned. Without bundling, each hash is a state hash printed as
@@ -3453,7 +3457,7 @@ local function mcycle_root_hashes_runner_run(self, mcycle_end)
     return collected.break_reason
 end
 local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_bundle)
-    return {
+    return setmetatable({
         machine = machine,
         runner = runner,
         period = 1 << log2_period,
@@ -3463,7 +3467,7 @@ local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_b
         log2_bundle = log2_bundle,
         mcycle_phase = 0,
         run = mcycle_root_hashes_runner_run,
-    }
+    }, runner_meta)
 end
 
 -- A rejected input contributes its restored boundary to the computation hash.
@@ -3577,7 +3581,7 @@ end
 
 local function make_mcycle_computation_hash(m, advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
-    return {
+    return setmetatable({
         machine = m,
         runner = runner,
         chunk_size = mcycle_hashes_chunk_size(log2_period, advance.log2_bundle_mcycle_count),
@@ -3591,7 +3595,7 @@ local function make_mcycle_computation_hash(m, advance, runner)
         end_input = mcycle_computation_hash_end_input,
         end_epoch = mcycle_computation_hash_end_epoch,
         check_revert = computation_hash_check_revert,
-    }
+    }, runner_meta)
 end
 
 -- The uarch cycle computation hash expands one period of the mcycle claim into the transitions a
@@ -3745,7 +3749,7 @@ end
 local function make_uarch_cycle_computation_hash(m, advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
     local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
-    return {
+    return setmetatable({
         machine = m,
         runner = runner,
         period = 1 << log2_period,
@@ -3763,23 +3767,21 @@ local function make_uarch_cycle_computation_hash(m, advance, runner)
         end_input = uarch_cycle_computation_hash_end_input,
         end_epoch = uarch_cycle_computation_hash_end_epoch,
         check_revert = computation_hash_check_revert,
-    }
+    }, runner_meta)
 end
 
 -- An epoch that does not compute a hash delegates execution to the runner and skips collector
 -- bookkeeping and reversal checks.
 local function null_computation_hash_noop() end
-local function null_computation_hash_run(self, mcycle_end) return self.runner:run(mcycle_end) end
 local function make_null_computation_hash(runner)
-    return {
+    return setmetatable({
         runner = runner,
         begin_epoch = null_computation_hash_noop,
         begin_input = null_computation_hash_noop,
-        run = null_computation_hash_run,
         end_input = null_computation_hash_noop,
         end_epoch = null_computation_hash_noop,
         check_revert = null_computation_hash_noop,
-    }
+    }, runner_meta)
 end
 
 -- Resumes the machine, running to each target cycle with the given runner (the machine itself for
@@ -3787,13 +3789,13 @@ end
 -- until it reaches a fixed point or mcycle_end, and returns the break reason it stopped for.
 -- This is the host's inner loop. A terminal manual yield is left unread, for the caller to
 -- service.
-local function run_to_stop(m, mcycle_end, runner, on_yield_automatic)
+local function run_to_stop(runner, mcycle_end, on_yield_automatic)
     while true do
         local break_reason = runner:run(mcycle_end)
         if is_at_fixed_point(break_reason) or is_target_mcycle(break_reason) then
             return break_reason
         elseif is_yielded_automatic(break_reason) then
-            local _, yield_reason, data = get_and_print_yield(m, initial_config.processor.registers.htif)
+            local _, yield_reason, data = get_and_print_yield(runner, initial_config.processor.registers.htif)
             on_yield_automatic(yield_reason, data)
         end
         -- any other reason (a soft yield or console output) just keeps going
@@ -3859,7 +3861,7 @@ local function run_inspect_state_query(m, runner)
     -- Boot always runs the machine plainly, and only the query itself runs with the runner. If the
     -- machine did not stop at a manual yield (it halted, or ran out of mcycles), it is not at an
     -- accept yield waiting for a request, so there is nothing to inspect.
-    local break_reason = run_to_stop(m, cmdline.max_mcycle, m, ignore_yield_automatic)
+    local break_reason = run_to_stop(m, cmdline.max_mcycle, ignore_yield_automatic)
     if not is_yielded_manual(break_reason) then return end
     -- Announce the yield we advanced to reach (after an epoch it is the epoch's already-announced
     -- accept yield, at the same mcycle, so skip it). load_cmio_query is the gate on the reason: it
@@ -3878,7 +3880,7 @@ local function run_inspect_state_query(m, runner)
             cmdline.cmio_inspect.report_index = cmdline.cmio_inspect.report_index + 1
         end
     end
-    break_reason = run_to_stop(m, cmdline.max_mcycle, runner, on_yield_automatic)
+    break_reason = run_to_stop(runner, cmdline.max_mcycle, on_yield_automatic)
     report_stop(m, break_reason)
     stderr("\nAfter query\n")
     revert(m)
@@ -3916,7 +3918,7 @@ local function run_advance_state_epoch(m, runner)
     end
     -- boot plainly to the rolling template's first accept yield, then process each input in turn.
     -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
-    local break_reason = run_to_stop(m, cmdline.max_mcycle, m, ignore_yield_automatic)
+    local break_reason = run_to_stop(m, cmdline.max_mcycle, ignore_yield_automatic)
     if is_yielded_manual(break_reason) then
         get_and_print_yield(m, htif)
         commit(m)
@@ -3933,7 +3935,7 @@ local function run_advance_state_epoch(m, runner)
             advance.report_index = 0
             -- labeling: from now the producing input is next_input_index - 1
             advance.next_input_index = input_index + 1
-            break_reason = run_to_stop(m, cmdline.max_mcycle, claim, on_yield_automatic)
+            break_reason = run_to_stop(claim, cmdline.max_mcycle, on_yield_automatic)
             -- a halt, overflow, or max_mcycle before the accept or reject yield ends the epoch;
             -- it closes below
             if not is_yielded_manual(break_reason) then break end
@@ -4019,7 +4021,7 @@ if cmdline.cmio_advance then
 elseif cmdline.cmio_inspect then
     run_inspect_state_query(machine, runner)
 else
-    report_stop(machine, run_to_stop(machine, cmdline.max_mcycle, runner, ignore_yield_automatic))
+    report_stop(machine, run_to_stop(runner, cmdline.max_mcycle, ignore_yield_automatic))
 end
 -- log step
 if cmdline.log_step_mcycle_count then

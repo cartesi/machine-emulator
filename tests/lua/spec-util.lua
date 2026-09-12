@@ -7,6 +7,61 @@ local util = require("cartesi.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
 describe("cartesi.util", function()
+    it("forwards methods through wrappers with the correct receiver and caches them", function()
+        local lookups = 0
+        local underlying = setmetatable({ value = 7 }, {
+            __index = function(self, name)
+                lookups = lookups + 1
+                if name == "read" then
+                    return function(receiver, ...)
+                        expect.equal(receiver, self)
+                        return self.value, ...
+                    end
+                end
+            end,
+        })
+        local function wrap(object)
+            return setmetatable({}, {
+                __index = function(self, name)
+                    return util.forward_method(self, object, name)
+                end,
+            })
+        end
+        local inner = wrap(underlying)
+        local outer = wrap(inner)
+        local results = table.pack(outer:read("argument", nil))
+        expect.equal(results.n, 3)
+        expect.equal(results[1], 7)
+        expect.equal(results[2], "argument")
+        expect.equal(results[3], nil)
+        expect.equal(lookups, 1)
+        expect.equal(rawget(outer, "read"), outer.read)
+        underlying.value = 9
+        expect.equal(outer:read(), 9)
+        expect.equal(lookups, 1)
+        expect.equal(outer.value, nil)
+        expect.equal(outer.absent, nil)
+        inner.read = function(self)
+            expect.equal(self, inner)
+            return "override"
+        end
+        expect.equal(wrap(inner):read(), "override")
+    end)
+
+    it("forwards machine methods through the GDB runner without exposing machine data", function()
+        local GDBStub = require("cartesi.gdbstub")
+        local machine = { mcycle = 12 }
+        function machine:read_reg(name)
+            expect.equal(self, machine)
+            expect.equal(name, "mcycle")
+            return self.mcycle
+        end
+        local runner = GDBStub.new(machine)
+        expect.equal(runner:read_reg("mcycle"), 12)
+        expect.equal(runner.mcycle, nil)
+        expect.equal(runner.run, GDBStub.run)
+    end)
+
     it("protects calls while preserving their results", function()
         local protected = util.protect(function(a, b)
             return a + b, nil, a * b

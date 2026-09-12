@@ -15,6 +15,7 @@
 --
 
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 
 local GDBSTUB_DEBUG_PROTOCOL = false
 
@@ -26,7 +27,7 @@ local signals = {
 }
 
 local GDBStub = {}
-GDBStub.__index = GDBStub
+GDBStub.__index = function(self, name) return GDBStub[name] or util.forward_method(self, self.machine, name) end
 
 -- Returns x with the order of the bytes reversed.
 -- Used to convert 64 bit integers between little-endian and big-endian.

@@ -3773,8 +3773,9 @@ end
 -- An epoch that does not compute a hash delegates execution to the runner and skips collector
 -- bookkeeping and reversal checks.
 local function null_computation_hash_noop() end
-local function make_null_computation_hash(runner)
+local function make_null_computation_hash(m, runner)
     return setmetatable({
+        machine = m,
         runner = runner,
         begin_epoch = null_computation_hash_noop,
         begin_input = null_computation_hash_noop,
@@ -3961,21 +3962,18 @@ end
 -- state and does nothing unless it is an accept yield. Boot always runs the machine plainly. The
 -- inputs run with the claim, which either collects a computation hash (advancing through the
 -- given runner) or delegates to the runner directly (the machine itself, or gdb).
-local function run_advance_state_epoch(m, runner)
+local function run_advance_state_epoch(claim)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
-    local claim = advance.mcycle_computation_hash and make_mcycle_computation_hash(m, advance, runner)
-        or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(m, advance, runner)
-        or make_null_computation_hash(runner)
     claim:begin_epoch()
     -- boot plainly to the rolling template's first accept yield, then process each input in turn.
     -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
-    local break_reason = run_to_stop(m, cmdline.max_mcycle, ignore_yield_automatic)
+    local break_reason = run_to_stop(claim.machine, cmdline.max_mcycle, ignore_yield_automatic)
     if is_yielded_manual(break_reason) then
-        get_and_print_yield(m, htif)
-        commit(m)
+        get_and_print_yield(claim, htif)
+        commit(claim)
         -- Keep the expected boundary across rejections. Only acceptance establishes a new one.
-        local revert_root_hash = m:get_root_hash()
+        local revert_root_hash = claim:get_root_hash()
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
             local yield_reason
             break_reason, yield_reason = run_advance_state_input(claim, input_index, revert_root_hash)
@@ -3989,14 +3987,14 @@ local function run_advance_state_epoch(m, runner)
         end
     end
     if is_halted(break_reason) then
-        report_halt(m)
-        flush_pending_outputs(m, advance)
-        commit(m)
+        report_halt(claim)
+        flush_pending_outputs(claim, advance)
+        commit(claim)
         claim:end_epoch()
     elseif is_mcycle_overflow(break_reason) then
-        report_mcycle_overflow(m)
-        flush_pending_outputs(m, advance)
-        commit(m)
+        report_mcycle_overflow(claim)
+        flush_pending_outputs(claim, advance)
+        commit(claim)
         claim:end_epoch()
     elseif is_yielded_manual(break_reason) then
         save_cmio_output_proofs(advance)
@@ -4029,7 +4027,11 @@ end
 -- The host drives an advance-state epoch (which may end with an inspect query) actively, an
 -- inspect-state query on its own, or otherwise just runs the machine to a stop.
 if cmdline.cmio_advance then
-    run_advance_state_epoch(machine, runner)
+    local advance = cmdline.cmio_advance
+    local claim = advance.mcycle_computation_hash and make_mcycle_computation_hash(machine, advance, runner)
+        or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(machine, advance, runner)
+        or make_null_computation_hash(machine, runner)
+    run_advance_state_epoch(claim)
     -- an inspect query, if any, runs against the state the epoch left; it does nothing unless that
     -- is an accept yield (a completed epoch), so it is safe to always attempt
     if cmdline.cmio_inspect then run_inspect_state_query(machine, runner) end

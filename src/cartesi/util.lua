@@ -18,6 +18,17 @@ local cartesi = require("cartesi")
 
 local _M = {}
 
+-- Resolves an unknown method through the underlying object and caches a bound forwarding
+-- closure on the wrapper. Data fields are not forwarded. The underlying object and its
+-- resolved methods must remain valid for the lifetime of the wrapper.
+function _M.forward_method(wrapper, underlying, name)
+    local method = underlying[name]
+    if type(method) ~= "function" then return nil end
+    local forwarded = function(_, ...) return method(underlying, ...) end
+    rawset(wrapper, name, forwarded)
+    return forwarded
+end
+
 -- Converts a function that raises on failure into one that returns nil and the error.
 -- pcall is yieldable in Lua 5.4, so the protected function may suspend a coroutine.
 function _M.protect(f)

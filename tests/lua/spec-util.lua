@@ -7,6 +7,29 @@ local util = require("cartesi.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
 describe("cartesi.util", function()
+    it("finds the machine at the end of a runner chain", function()
+        local machine = require("cartesi").machine
+        local GDBStub = require("cartesi.gdbstub")
+        local gdb = GDBStub.new(machine)
+        local runner = { runner = gdb }
+        expect.equal(util.get_runner_machine(machine), machine)
+        expect.equal(util.get_runner_machine(gdb), machine)
+        expect.equal(util.get_runner_machine({ runner = runner }), machine)
+        expect.equal(rawget(gdb, "runner"), machine)
+        expect.equal(rawget(gdb, "machine"), nil)
+    end)
+
+    it("rejects runner chains that do not end at a machine", function()
+        local file <close> = assert(io.tmpfile())
+        for _, terminal in ipairs({ false, 1, "machine", {}, file }) do
+            local ok, err = pcall(util.get_runner_machine, { runner = terminal })
+            expect.equal(ok, false)
+            expect.truthy(err:find("runner chain must end at a Cartesi machine", 1, true))
+        end
+        local ok = pcall(util.get_runner_machine, nil)
+        expect.equal(ok, false)
+    end)
+
     it("forwards methods through wrappers with the correct receiver and caches them", function()
         local lookups = 0
         local underlying = setmetatable({ value = 7 }, {

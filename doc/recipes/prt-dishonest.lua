@@ -28,19 +28,19 @@ local function wrap_machine(machine, overrides)
     return setmetatable({ machine = machine, overrides = overrides, state = {}, snapshot_state = false }, machine_meta)
 end
 
--- Call the original collector methods with the wrapper as self, so internal
--- calls pass through its overrides too. Collector state stays on the original.
-local function wrap_computation_hash(claim, overrides)
+-- Call the original builder methods with the wrapper as self, so internal
+-- calls pass through its overrides too. Builder state stays on the original.
+local function wrap_computation_hash(builder, overrides)
     return setmetatable({}, {
         __index = function(_, name)
             local value = overrides[name]
             if value ~= nil then
                 return value
             end
-            return claim[name]
+            return builder[name]
         end,
         __newindex = function(_, name, value)
-            claim[name] = value
+            builder[name] = value
         end,
     })
 end
@@ -51,11 +51,11 @@ local function begin_input(machine, input_index, input_base)
     end
 end
 
-local function observe_input(claim, machine)
-    return wrap_computation_hash(claim, {
+local function observe_input(builder, machine)
+    return wrap_computation_hash(builder, {
         begin_input = function(self, input_index, input_base)
             begin_input(machine, input_index, input_base)
-            return claim.begin_input(self, input_index, input_base)
+            return builder.begin_input(self, input_index, input_base)
         end,
     })
 end
@@ -191,11 +191,11 @@ local function new_tamperer(geometry, inputs, cache, input_index, bundle_offset,
     })
 end
 
--- Private insertion helpers for the fabricated stream. Honest collectors use the forest API
+-- Private insertion helpers for the fabricated stream. Honest builders use the forest API
 -- directly. Only the affected group is split, preserving its neighbors' compressed trees.
-local function pad_back(claim, value, count, height)
-    hash_tree.frontier_forest_pad_back(claim.frontier, value, count, height)
-    claim.next_leaf = claim.next_leaf + (count << height)
+local function pad_back(builder, value, count, height)
+    hash_tree.frontier_forest_pad_back(builder.frontier, value, count, height)
+    builder.next_leaf = builder.next_leaf + (count << height)
 end
 
 local function lie_about_leaf(leaf, fake_hash, unbundle)
@@ -229,8 +229,8 @@ end
 
 -- Collect the same execution samples as the honest run, then assemble the fabricated stream.
 -- Final epoch padding needs its own override because a refinement at a fixed point may never run.
-local function new_mcycle_liar(claim, insert)
-    return wrap_computation_hash(claim, {
+local function new_mcycle_liar(builder, insert)
+    return wrap_computation_hash(builder, {
         run = function(self, mcycle_end)
             mcycle_end = umin(mcycle_end, self.input_mcycle_end)
             local collected = { mcycle_phase = self.mcycle_phase, partial_bundle = self.partial_bundle }
@@ -285,8 +285,8 @@ local function new_mcycle_liar(claim, insert)
 end
 
 -- The inherited end_input also calls this run for leaves reached only through padding.
-local function new_uarch_liar(claim, insert)
-    return wrap_computation_hash(claim, {
+local function new_uarch_liar(builder, insert)
+    return wrap_computation_hash(builder, {
         run = function(self, mcycle_end)
             local machine = self.machine
             if math.ult(machine:read_reg("mcycle"), self.target_start) then
@@ -358,9 +358,9 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
     local fake_hash = keccak("fabulist")
     local make_mcycle = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
     options.new_mcycle_computation_hash = function(log2_period, c, machine, bundle_index)
-        local claim = make_mcycle(log2_period, c, machine, bundle_index)
+        local builder = make_mcycle(log2_period, c, machine, bundle_index)
         return new_mcycle_liar(
-            claim,
+            builder,
             lie_about_leaf(target_epoch_period_index, fake_hash, function(_, first_leaf)
                 return player:refine_mcycle_claim(first_leaf >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
             end)
@@ -368,10 +368,10 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
     end
     local make_uarch = options.new_uarch_computation_hash or prt.new_uarch_computation_hash
     options.new_uarch_computation_hash = function(log2_period, machine, epoch_period_index, bundle_index)
-        local claim = make_uarch(log2_period, machine, epoch_period_index, bundle_index)
+        local builder = make_uarch(log2_period, machine, epoch_period_index, bundle_index)
         if epoch_period_index == target_epoch_period_index then
             return new_uarch_liar(
-                claim,
+                builder,
                 lie_about_leaf((1 << geometry.uarch_height) - 1, fake_hash, function(_, first_leaf)
                     return player:refine_uarch_claim(
                         input_index + 1,
@@ -381,27 +381,27 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
                 end)
             )
         end
-        return claim
+        return builder
     end
     player = prt.new_player(geometry, inputs, cache, options)
     return player
 end
 
 -- The quitter never executes the guest. Its machine stays at the initial yield,
--- its collector substitutes a made-up state at every position, and it disconnects
+-- its builder substitutes a made-up state at every position, and it disconnects
 -- after posting that claim. The disconnect is its only protocol-level deviation.
 local function new_quitter(geometry, inputs, cache, options)
     options = role_options("quitter", options)
     local make = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
     options.new_mcycle_computation_hash = function(log2_period, c, machine, bundle_index)
-        local claim = make(log2_period, c, machine, bundle_index)
-        claim.cache_machine = false
-        return new_mcycle_liar(claim, function(collector, _, count, height)
+        local builder = make(log2_period, c, machine, bundle_index)
+        builder.cache_machine = false
+        return new_mcycle_liar(builder, function(self, _, count, height)
             local fake_hash = keccak(options.seed or "quitter")
             for _ = 1, height do
                 fake_hash = keccak(fake_hash, fake_hash)
             end
-            return pad_back(collector, fake_hash, count, height)
+            return pad_back(self, fake_hash, count, height)
         end)
     end
     local player = use_machine(geometry, inputs, cache, options, { send_cmio_response = function() end })

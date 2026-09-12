@@ -698,6 +698,14 @@ return function(run_with_server)
                         self.clock.block = saved
                     end
                 end
+                if event == prtu.EVENTS.prove_outputs_merkle_root then
+                    -- These fixtures settle matches, but have no valid epoch-output proof.
+                    -- End the example through its controller instead of a proof deadline.
+                    local closer = prtu.new_phase_closer("stop")
+                    run_client(cartesi.fromjson(closer.hello), function(_, line)
+                        return prtu.answer_event(closer, line)
+                    end, true)
+                end
                 return request_first_valid(self, subscriptions, event, arguments, accept)
             end
             for slot = 1, #players do
@@ -770,9 +778,9 @@ return function(run_with_server)
                 return prtu.answer_event(prtu.new_phase_closer(), line)
             end, true)
             prt.new_referee({ geometry = geometry, initial_state_hash = initial, inputs = {} }):run(server)
-            assert(#server.open_phases == 0 and not next(server.scheduled_responses))
-            assert(server.phase_closer.dead, "phase closer stayed necessary after subscriptions")
         end)
+        assert(#current_server.open_phases == 0 and not next(current_server.scheduled_responses))
+        assert(current_server.phase_closer.dead, "phase closer stayed necessary after subscriptions")
         local winner, timeouts, eliminated = nil, 0, 0
         local trace = {}
         for index, report in ipairs(reports) do

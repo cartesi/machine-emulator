@@ -5586,6 +5586,7 @@ EOF
 # Each player is launched only after the previous one has subscribed, so the phase closer closes
 # initial subscriptions once all are in. The quitter stays connected until it is later asked
 # to commit its claim, then closes immediately afterward.
+rm -f verdict
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8096\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
 {
 # docs:begin referee
@@ -5596,7 +5597,7 @@ lua5.4 prt.lua referee 127.0.0.1:8096 "$initial_state_hash" \
 while ! netstat -ntl 2>&1 | grep '\<8096\>' > /dev/null; do sleep 1; done
 {
 # docs:begin honest
-lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" \
+lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" 1 \
     input-0.bin input-1.bin input-2.bin
 # docs:end honest
 } > /dev/null 2> honest.stderr &
@@ -5646,6 +5647,9 @@ while ! players_in 8; do sleep 1; done
 {
 lua5.4 prt.lua phase_closer 127.0.0.1:8096
 } > /dev/null 2> phase_closer.stderr &
+# The player chose output 1. Once it is proved, stop the example's server.
+while ! grep -q 'Result proved against the final state:' verdict 2>/dev/null; do sleep 1; done
+lua5.4 prt.lua phase_closer 127.0.0.1:8096 stop > /dev/null 2>> phase_closer.stderr
 wait
 cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr quitter_fe.stderr quitter_ff.stderr phase_closer.stderr >&2
 # Each player announces the claim it posted, and the referee never says who holds what.
@@ -5686,6 +5690,7 @@ ln -sf "$tmpl" "$initial_state_hash"
 ln -sf $rolling_calc_encode/input-[012].bin .
 ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-dishonest.lua" "$RECIPES_DIR/prtu.lua" .
 players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8097\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
+rm -f verdict
 lua5.4 prt.lua referee 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
 while ! netstat -ntl 2>&1 | grep '\<8097\>' > /dev/null; do sleep 1; done
 lua5.4 prt-dishonest.lua quitter 127.0.0.1:8097 "$initial_state_hash" --seed=quitter-420 input-0.bin input-1.bin input-2.bin > /dev/null 2> quitter_ff.stderr &
@@ -5702,9 +5707,11 @@ lua5.4 prt-dishonest.lua forger 127.0.0.1:8097 "$initial_state_hash" 2 "$forged"
 while ! players_in 6; do sleep 1; done
 lua5.4 prt-dishonest.lua quitter 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> quitter.stderr &
 while ! players_in 7; do sleep 1; done
-lua5.4 prt.lua honest 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
+lua5.4 prt.lua honest 127.0.0.1:8097 "$initial_state_hash" 1 input-0.bin input-1.bin input-2.bin > /dev/null 2> honest.stderr &
 while ! players_in 8; do sleep 1; done
 lua5.4 prt.lua phase_closer 127.0.0.1:8097 > /dev/null 2> phase_closer.stderr &
+while ! grep -q 'Result proved against the final state:' verdict 2>/dev/null; do sleep 1; done
+lua5.4 prt.lua phase_closer 127.0.0.1:8097 stop > /dev/null 2>> phase_closer.stderr
 wait
 cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr quitter_fe.stderr quitter_ff.stderr phase_closer.stderr >&2
 grep -h "posted claim" honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr quitter_fe.stderr quitter_ff.stderr > posted
@@ -5778,15 +5785,17 @@ The honest player defended its claim in two of the six mcycle matches and also r
 Dishonest players settled the other contested computations by defending the truth where their own lies did not reach.
 
 The winning claim commits to the epoch's final state hash, which in turn commits to the outputs Merkle root.
-The referee first establishes that root from the same three machine-validity proofs Dave uses: they authenticate `iflags_Y`, `htif_tohost`, and the CMIO TX-buffer word against the winning final state, establish that the machine yielded manually with `RX_ACCEPTED`, and take the root from the TX-buffer data (`wait_for_result`).
-It then asks separately for an output, identified by its index and proved against the established root.
+The referee first establishes that root from the same three machine-validity proofs Dave uses: they authenticate `iflags_Y`, `htif_tohost`, and the CMIO TX-buffer word against the winning final state, establish that the machine yielded manually with `RX_ACCEPTED`, and take the root from the TX-buffer data (`wait_for_outputs`).
+It then repeatedly asks for output proofs against the established root. Players choose which output to offer.
+The referee keeps accepted output indices locally and ignores duplicates. Requests contain no selection or acceptance information.
 An epoch with no output therefore still settles its outputs root, and no player needs to invent an output for it.
+Both proof waits are indefinite. The example's script uses the phase closer to stop the server after the chosen output has been proved.
 
 The verdict settles the epoch:
 ```{replace=prt_run/verdict}
 ```
 The winner's computation hash is the mcycle computation hash `cartesi-machine` computed directly, checked by the script above, and the winning final state hash is the state the calculator's first epoch saved as `epoch-0-state-hash.bin`.
-The result proved against it is the calculator's answer for the epoch's last input.
+The player chose output 1 through its positional command-line argument, the calculator's answer for the epoch's last input.
 The tournament ends on the same state the direct run produced, however many liars stood in the way.
 The same tournament, run again with the players launched in the opposite order, narrates every file identically, which the recipe checks by diffing the two runs:
 ```{replace=prt_run_reversed/stdout}

@@ -9649,7 +9649,7 @@ local function run_referee(dapp_contract)
     local winner = run_tournament(tournament)
     story.report_winner(winner)
     if winner then
-        wait_for_result(tournament, winner)
+        wait_for_outputs(tournament, winner)
     end
 end
 ```
@@ -10149,7 +10149,7 @@ The players take the referee address, the initial state hash, and the
 inputs, and nothing that names their number or their order:
 
 ``` bash
-lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" \
+lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" 1 \
     input-0.bin input-1.bin input-2.bin
 ```
 
@@ -10364,10 +10364,14 @@ root from the same three machine-validity proofs Dave uses: they
 authenticate `iflags_Y`, `htif_tohost`, and the CMIO TX-buffer word
 against the winning final state, establish that the machine yielded
 manually with `RX_ACCEPTED`, and take the root from the TX-buffer data
-(`wait_for_result`). It then asks separately for an output, identified
-by its index and proved against the established root. An epoch with no
-output therefore still settles its outputs root, and no player needs to
-invent an output for it.
+(`wait_for_outputs`). It then repeatedly asks for output proofs against
+the established root. Players choose which output to offer. The referee
+keeps accepted output indices locally and ignores duplicates. Requests
+contain no selection or acceptance information. An epoch with no output
+therefore still settles its outputs root, and no player needs to invent
+an output for it. Both proof waits are indefinite. The example’s script
+uses the phase closer to stop the server after the chosen output has
+been proved.
 
 The verdict settles the epoch:
 
@@ -10382,12 +10386,12 @@ Result proved against the final state:
 The winner’s computation hash is the mcycle computation hash
 `cartesi-machine` computed directly, checked by the script above, and
 the winning final state hash is the state the calculator’s first epoch
-saved as `epoch-0-state-hash.bin`. The result proved against it is the
-calculator’s answer for the epoch’s last input. The tournament ends on
-the same state the direct run produced, however many liars stood in the
-way. The same tournament, run again with the players launched in the
-opposite order, narrates every file identically, which the recipe checks
-by diffing the two runs:
+saved as `epoch-0-state-hash.bin`. The player chose output 1 through its
+positional command-line argument, the calculator’s answer for the
+epoch’s last input. The tournament ends on the same state the direct run
+produced, however many liars stood in the way. The same tournament, run
+again with the players launched in the opposite order, narrates every
+file identically, which the recipe checks by diffing the two runs:
 
 ``` text
 The reversed run narrated every file identically.

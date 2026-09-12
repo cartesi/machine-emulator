@@ -366,11 +366,8 @@ function story.report_winner(winner)
     narrate("verdict", "Winner final state hash: %s", cartesi.tohex(winner.final_state_hash))
 end
 
-function story.report_result(result)
-    if not result then
-        return
-    end
-    local payload = evmu.decode_calldata(NOTICE, result.output, "raw").payload
+function story.report_output(output)
+    local payload = evmu.decode_calldata(NOTICE, output.output, "raw").payload
     narrate("verdict", "Result proved against the final state:\n%s", payload)
 end
 -- docs:end story
@@ -393,6 +390,7 @@ local function new_dispatcher()
         ready = {},
         ready_first = 1,
         ready_last = 0,
+        parents = setmetatable({}, { __mode = "k" }),
     }, dispatcher_meta)
 end
 
@@ -403,7 +401,9 @@ function dispatcher_meta.__index.schedule(self, cortn, value)
 end
 
 function dispatcher_meta.__index.spawn(self, f)
-    self:schedule(coroutine.create(f), "start")
+    local cortn = coroutine.create(f)
+    self.parents[cortn] = coroutine.running()
+    self:schedule(cortn, "start")
 end
 
 local function wait_on(list, sock)
@@ -719,12 +719,13 @@ local function run_client(client, server_address)
 end
 -- docs:end run_client
 
--- The phase closer is a separate transport role with one handler: closing the next phase.
--- It closes initial subscriptions and may then disconnect. Claim collection uses logical time.
-local function new_phase_closer()
+-- The phase closer closes initial subscriptions, or stops the server on a later connection.
+-- Both commands are acknowledged through close_phase. Claim collection uses logical time.
+local function new_phase_closer(command)
+    assert(command == nil or command == "stop", "unknown phase closer command")
     local phase_closer = {
         label = "phase_closer",
-        hello = cartesi.tojson({ role = "phase_closer" }, -1),
+        hello = cartesi.tojson({ role = "phase_closer", command = command }, -1),
         close_phase = function(self)
             self.done = true
             return true
@@ -837,7 +838,10 @@ local function close_connection(self, connection)
         connection.dead = true
         connection.sock:close()
         forget_connection(self, connection)
-        assert(connection ~= self.phase_closer or self.subscriptions_closed, "the phase closer went away")
+        assert(
+            connection ~= self.phase_closer or self.subscriptions_closed or self.stopping,
+            "the phase closer went away"
+        )
     end
 end
 
@@ -892,10 +896,14 @@ local function deliver(self, entry, connection, line)
     entry.pending[connection] = nil
     local ok, decoded =
         pcall(cartesi.fromjson, line, ensure_response_envelope_schema(entry.response_schema), SCHEMA_DICT)
-    if entry.kind == "close_phase" then
+    if entry.kind == "close_phase" or entry.kind == "stop" then
         assert(ok and decoded.value == true, "the phase closer did not close the phase asked")
         entry.resolved = true
-        close_phase(self, entry.phase)
+        if entry.kind == "stop" then
+            self.stopping = true
+        else
+            close_phase(self, entry.phase)
+        end
         return
     end
     if ok and not decoded.skip then
@@ -908,9 +916,22 @@ local function deliver(self, entry, connection, line)
     end
 end
 
--- A connection announced itself as the phase closer. There is one, the first to announce,
--- and it is never part of a tournament's audience. It closes initial subscriptions only.
-local function announce_phase_closer(self, connection)
+-- Only one connection closes initial subscriptions. A separate invocation can stop the server.
+-- Neither connection belongs to a tournament's audience.
+local function announce_phase_closer(self, connection, command)
+    if command == "stop" then
+        connection.is_phase_closer = true
+        local entry = {
+            kind = "stop",
+            response_schema = "ClosePhaseResponse",
+            pending = { [connection] = true },
+        }
+        send_event(self, connection, entry, encode_event(EVENTS.close_phase, {}))
+        return
+    elseif command ~= nil then
+        close_connection(self, connection)
+        return
+    end
     if self.phase_closer then
         close_connection(self, connection)
         return
@@ -941,7 +962,7 @@ local function announce(self, connection, message)
     if connection.is_player or connection.is_phase_closer then
         close_connection(self, connection)
     elseif message.role == "phase_closer" then
-        announce_phase_closer(self, connection)
+        announce_phase_closer(self, connection, message.command)
     elseif message.role == "player" then
         announce_player(self, connection)
     else
@@ -1363,18 +1384,54 @@ function server_meta.__index.step_time(self)
     end
 end
 
--- Runs the referee: spawns its main logic, releases every remaining player when it is done,
--- then closes the listener and connections. Socket closing remains the fallback for peers that
--- are not sent the finish event, including the phase closer.
+-- Stops game coroutines without resuming their waits. Closing them runs their <close> locals,
+-- including future cancellation. Transport coroutines remain alive to deliver finish.
+local function close_referee(self, main)
+    local coroutines = { main }
+    for cortn, parent in pairs(self.dispatcher.parents) do
+        while parent do
+            if parent == main then
+                coroutines[#coroutines + 1] = cortn
+                break
+            end
+            parent = self.dispatcher.parents[parent]
+        end
+    end
+    for _, cortn in ipairs(coroutines) do
+        assert(coroutine.close(cortn))
+    end
+    -- Initial subscriptions have no future owner. Also release any unowned request.
+    for entry in pairs(self.active) do
+        if entry.close then
+            entry:close()
+        else
+            self.active[entry] = nil
+        end
+    end
+end
+
+-- Runs the referee, then sends finish and closes the connections. A phase-closer stop takes
+-- the same cleanup path, closing the game coroutines while their proof waits are suspended.
 function server_meta.__index.run(self, main)
-    self.dispatcher:spawn(function()
+    local referee_done, finishing = false, false
+    local referee = coroutine.create(function()
         main()
         assert(not next(self.active), "referee finished with pending requests")
-        local finished <close> = self:request_all(EVERYONE, EVENTS.finish, {})
-        finished:wait()
-        self.done = true
+        referee_done = true
     end)
+    self.dispatcher:schedule(referee, "start")
     while not self.done do
+        if not finishing and (referee_done or self.stopping) then
+            finishing = true
+            if self.stopping then
+                close_referee(self, referee)
+            end
+            self.dispatcher:spawn(function()
+                local finished <close> = self:request_all(EVERYONE, EVENTS.finish, {})
+                finished:wait()
+                self.done = true
+            end)
+        end
         local progressed
         if self.dispatcher.ready_first > self.dispatcher.ready_last then
             progressed = self:step_time()

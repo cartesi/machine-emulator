@@ -180,18 +180,15 @@ end
 -- tournament ID. The sort makes the bracket a pure function of the claim set, not of
 -- connection order.
 -- docs:begin partition_claims
-local function partition_claims(responses, validate_submitted_claim, tournament_id)
+local function partition_claims(responses, tournament_id)
     local claims, by_hash = {}, {}
-    validate_submitted_claim = util.protect(validate_submitted_claim)
     for _, response in ipairs(responses) do
-        local claim = validate_submitted_claim(response.value)
-        if claim then
-            if not by_hash[claim.computation_hash] then
-                by_hash[claim.computation_hash] = claim
-                claims[#claims + 1] = claim
-            end
-            server:subscribe_connection(subscription_hash(tournament_id, claim), response.connection)
+        local claim = response.value
+        if not by_hash[claim.computation_hash] then
+            by_hash[claim.computation_hash] = claim
+            claims[#claims + 1] = claim
         end
+        server:subscribe_connection(subscription_hash(tournament_id, claim), response.connection)
     end
     table.sort(claims, function(a, b)
         return is_hash_less(a.computation_hash, b.computation_hash)
@@ -389,21 +386,25 @@ local function open_uarch_tournament(
     local geometry = mcycle_tournament.dapp_contract.geometry
     local input_index = epoch_period_index // geometry.periods_per_input
     local period_index = epoch_period_index % geometry.periods_per_input
-    local function validate_uarch_claim(submitted_claim)
-        local claim = validate_claim(submitted_claim, geometry.uarch_height)
-        assert(claim.final_state_hash == next_state_hashes[1] or claim.final_state_hash == next_state_hashes[2])
-        return claim
-    end
     local mcycle_tournament_id = mcycle_tournament.id
     local tournament_id = keccak(mcycle_match.claims[1].computation_hash, mcycle_match.claims[2].computation_hash)
     local close_block = server:request_block() + 1
-    local collection <close> = server:request_all({
-        subscription_hash(mcycle_tournament_id, mcycle_match.claims[1]),
-        subscription_hash(mcycle_tournament_id, mcycle_match.claims[2]),
-    }, EVENTS.commit_uarch_claim, { input_index, period_index, next_state_hashes })
+    local collection <close> = server:request_all(
+        {
+            subscription_hash(mcycle_tournament_id, mcycle_match.claims[1]),
+            subscription_hash(mcycle_tournament_id, mcycle_match.claims[2]),
+        },
+        EVENTS.commit_uarch_claim,
+        { input_index, period_index, next_state_hashes },
+        function(response)
+            local claim = validate_claim(response, geometry.uarch_height)
+            assert(claim.final_state_hash == next_state_hashes[1] or claim.final_state_hash == next_state_hashes[2])
+            return claim
+        end
+    )
     local responses = collection:wait(close_block)
     server:wait_until(close_block)
-    local claims = partition_claims(responses, validate_uarch_claim, tournament_id)
+    local claims = partition_claims(responses, tournament_id)
     local tournament = {
         level = "uarch",
         id = tournament_id,
@@ -485,8 +486,8 @@ end
 
 -- Settles a match from its sealed divergence, handing the agreed and contested state hashes
 -- to the tournament's level-specific settler.
--- docs:begin settle_match
-local function settle_match(tournament, match, divergence)
+-- docs:begin settle_divergence
+local function settle_divergence(tournament, match, divergence)
     story.report_divergence(match, divergence)
     local settled_state_hash = tournament:settle_state_hash(
         match,
@@ -501,12 +502,12 @@ local function settle_match(tournament, match, divergence)
     end
     return 0
 end
--- docs:end settle_match
+-- docs:end settle_divergence
 
--- Runs one match to its end. One or two names a winner, zero eliminates both.
--- Each move has its own future, followed by explicit timeout and elimination waits.
--- docs:begin run_match
-local function run_match(tournament, match)
+-- Reveals the path to the divergent leaves. Returns a winner or elimination on timeout,
+-- or nil when the match is ready to seal. Each move owns its futures until it completes.
+-- docs:begin reveal_divergence
+local function reveal_divergence(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
         local deadline = server:request_block() + 1
@@ -528,27 +529,47 @@ local function run_match(tournament, match)
         advance_bisection(match, response)
         story.report_match_progress(match)
     end
-    local divergence
-    do
-        local turn_claim = match.claims[match.turn]
-        local deadline = server:request_block() + 1
-        local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
-        local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
-        local seal <close> = server:request_first_valid(
-            subscription_hash(tournament.id, turn_claim),
-            EVENTS.seal_divergence,
-            { turn_claim.computation_hash, match.position, match.other_left_node },
-            function(response)
-                assert(server:get_time() < deadline)
-                return validate_seal_response(tournament, match, response)
-            end
-        )
-        divergence = seal:wait(deadline)
-        if not divergence then
-            return timeout:wait(deadline + 1) or elimination:wait()
+end
+-- docs:end reveal_divergence
+
+-- Proves the divergent leaves and the agreed state before them. Returns the sealed
+-- divergence, or nil and the winner or elimination if no valid seal arrives in time.
+-- docs:begin seal_divergence
+local function seal_divergence(tournament, match)
+    local turn_claim = match.claims[match.turn]
+    local deadline = server:request_block() + 1
+    local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
+    local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
+    local seal <close> = server:request_first_valid(
+        subscription_hash(tournament.id, turn_claim),
+        EVENTS.seal_divergence,
+        { turn_claim.computation_hash, match.position, match.other_left_node },
+        function(response)
+            assert(server:get_time() < deadline)
+            return validate_seal_response(tournament, match, response)
         end
+    )
+    local divergence = seal:wait(deadline)
+    if not divergence then
+        return nil, timeout:wait(deadline + 1) or elimination:wait()
     end
-    return settle_match(tournament, match, divergence)
+    return divergence
+end
+-- docs:end seal_divergence
+
+-- Runs one match to its end. One or two names a winner, zero eliminates both.
+-- docs:begin run_match
+local function run_match(tournament, match)
+    local winner = reveal_divergence(tournament, match)
+    if winner then
+        return winner
+    end
+    local divergence
+    divergence, winner = seal_divergence(tournament, match)
+    if winner then
+        return winner
+    end
+    return settle_divergence(tournament, match, divergence)
 end
 -- docs:end run_match
 
@@ -623,12 +644,17 @@ local function open_mcycle_tournament(dapp_contract)
     local geometry = dapp_contract.geometry
     local tournament_id = dapp_contract.initial_state_hash
     local close_block = server:request_block() + 1
-    local collection <close> = server:request_all(dapp_contract.initial_state_hash, EVENTS.commit_mcycle_claim, {})
+    local collection <close> = server:request_all(
+        dapp_contract.initial_state_hash,
+        EVENTS.commit_mcycle_claim,
+        {},
+        function(response)
+            return validate_claim(response, geometry.mcycle_height)
+        end
+    )
     local responses = collection:wait(close_block)
     server:wait_until(close_block)
-    local claims = partition_claims(responses, function(submitted_claim)
-        return validate_claim(submitted_claim, geometry.mcycle_height)
-    end, tournament_id)
+    local claims = partition_claims(responses, tournament_id)
     local tournament = {
         level = "mcycle",
         id = tournament_id,
@@ -1106,25 +1132,19 @@ local function new_null_computation_hash(machine)
     }
 end
 
--- Every insertion describes count copies of a subtree covering 2^height logical
--- leaves. Forest values retain their descendants, including repeated uarch groups.
-local function computation_hash_pad_back(claim, value, count, height)
-    hash_tree.frontier_forest_pad_back(claim.frontier, value, count, height - claim.bundle_height)
-    claim.next_leaf = claim.next_leaf + (count << height)
-end
-
 local function mcycle_computation_hash_push_collected(claim, collected)
     local count = math.min(#collected.hashes, claim.input_entry_capacity - claim.input_entry_count)
-    for i = 1, count do
-        claim:pad_back(collected.hashes[i], 1, claim.bundle_height)
-    end
+    hash_tree.frontier_forest_append(claim.frontier, collected.hashes, 1, count)
+    claim.next_leaf = claim.next_leaf + (count << claim.bundle_height)
     claim.input_entry_count = claim.input_entry_count + count
     if not is_at_fixed_point(collected.break_reason) then
         return
     end
     assert(#collected.hashes > 0, "fixed-point mcycle collection has no final bundle")
     claim.pad_bundle = collected.hashes[#collected.hashes]
-    claim:pad_back(claim.pad_bundle, claim.input_entry_capacity - claim.input_entry_count, claim.bundle_height)
+    local pad_count = claim.input_entry_capacity - claim.input_entry_count
+    hash_tree.frontier_forest_pad_back(claim.frontier, claim.pad_bundle, pad_count)
+    claim.next_leaf = claim.next_leaf + (pad_count << claim.bundle_height)
     claim.input_entry_count = claim.input_entry_capacity
 end
 
@@ -1201,7 +1221,12 @@ local function mcycle_computation_hash_end_epoch(claim)
         assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash ended outside a fixed point")
         claim.pad_bundle = assert(collected.hashes[#collected.hashes], "fixed point has no padding bundle")
     end
-    claim:pad_back(claim.pad_bundle, (end_leaf - claim.next_leaf) >> claim.bundle_height, claim.bundle_height)
+    hash_tree.frontier_forest_pad_back(
+        claim.frontier,
+        claim.pad_bundle,
+        (end_leaf - claim.next_leaf) >> claim.bundle_height
+    )
+    claim.next_leaf = end_leaf
     return claim.frontier
 end
 
@@ -1222,7 +1247,6 @@ local function new_mcycle_computation_hash(geometry, machine_cache, machine, win
         input_entry_capacity = window and (1 << (height - log2_bundle_mcycle_count))
             or (geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT),
         cache_machine = not window,
-        pad_back = computation_hash_pad_back,
         begin_epoch = mcycle_computation_hash_begin_epoch,
         begin_input = mcycle_computation_hash_begin_input,
         run = mcycle_computation_hash_run,
@@ -1255,23 +1279,23 @@ local function uarch_mcycle_forest(hashes, first, last, log2_bundle_uarch_cycle_
 end
 
 -- The unbundled window intersects real cycles, halt repetitions, and the reset.
--- Each part uses the same pad_back operation as the outer computation hash.
 local function append_uarch_window(claim, hashes, first, last)
     local capacity = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     local real = last - first - 1
     assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
     local start = claim.window.first_leaf & (capacity - 1)
     local stop = start + (1 << claim.window.log2_leaf_count)
-    for i = start, math.min(stop, real) - 1 do
-        claim:pad_back(hashes[first + i], 1, 0)
+    if start < math.min(stop, real) then
+        hash_tree.frontier_forest_append(claim.frontier, hashes, first + start, first + math.min(stop, real) - 1)
     end
     local halt_start, halt_end = math.max(start, real), math.min(stop, capacity - 1)
     if halt_start < halt_end then
-        claim:pad_back(hashes[last - 1], halt_end - halt_start, 0)
+        hash_tree.frontier_forest_pad_back(claim.frontier, hashes[last - 1], halt_end - halt_start)
     end
     if stop == capacity then
-        claim:pad_back(hashes[last], 1, 0)
+        hash_tree.frontier_forest_push_back(claim.frontier, hashes[last])
     end
+    claim.next_leaf = claim.end_leaf
 end
 
 local function uarch_computation_hash_begin_input(claim, input_index, input_base)
@@ -1316,15 +1340,17 @@ local function uarch_computation_hash_run(claim, mcycle_end)
             local group
             for i = 1, wanted do
                 group = uarch_mcycle_forest(collected.hashes, offsets[i], offsets[i + 1] - 1, claim.bundle_height)
-                claim:pad_back(group, 1, cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)
+                hash_tree.frontier_forest_push_back(claim.frontier, group)
+                claim.next_leaf = claim.next_leaf + (1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)
             end
             if is_at_fixed_point(collected.break_reason) and claim.next_leaf < claim.end_leaf then
                 assert(group, "fixed-point collection has no padding period")
-                claim:pad_back(
+                hash_tree.frontier_forest_pad_back(
+                    claim.frontier,
                     group,
-                    (claim.end_leaf - claim.next_leaf) >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
-                    cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+                    (claim.end_leaf - claim.next_leaf) >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
                 )
+                claim.next_leaf = claim.end_leaf
             end
         end
         reason = collected.break_reason
@@ -1359,7 +1385,6 @@ local function new_uarch_computation_hash(geometry, machine, window)
         end_leaf = window.first_leaf + (1 << window.log2_leaf_count),
         bundle_height = window.log2_bundle_uarch_cycle_count,
         chunk_size = uarch_hashes_chunk_size(window.log2_bundle_uarch_cycle_count),
-        pad_back = computation_hash_pad_back,
         begin_epoch = uarch_computation_hash_begin_epoch,
         begin_input = uarch_computation_hash_begin_input,
         run = uarch_computation_hash_run,
@@ -1833,6 +1858,12 @@ if ... == "prt" then
         new_null_computation_hash = new_null_computation_hash,
         new_mcycle_computation_hash = new_mcycle_computation_hash,
         new_uarch_computation_hash = new_uarch_computation_hash,
+        umin = umin,
+        usaturating_add = usaturating_add,
+        is_target_mcycle = is_target_mcycle,
+        is_at_fixed_point = is_at_fixed_point,
+        consider_mcycle_machine = consider_mcycle_machine,
+        uarch_mcycle_forest = uarch_mcycle_forest,
         new_machine_cache = new_machine_cache,
         player_handlers = handlers,
         new_match = new_match,

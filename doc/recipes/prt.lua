@@ -1263,6 +1263,9 @@ end
 -- Uarch computation hashes
 ------------------------------------------------------------
 
+-- Chooses an mcycle span targeting about 2^LOG2_HASHES_PER_CHUNK returned hashes.
+-- Each mcycle contributes an estimated number of execution bundles plus the all-halted
+-- and reset-ending bundles. Always collects at least one mcycle.
 local function uarch_hashes_chunk_size(log2_bundle_uarch_cycle_count)
     local cycle_bundle_count = log2_bundle_uarch_cycle_count < LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE
             and (1 << (LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE - log2_bundle_uarch_cycle_count))

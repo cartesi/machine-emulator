@@ -222,6 +222,62 @@ for _, phase in ipairs({ "factory", "begin_input", "run", "end_input" }) do
     assert(initial.counts.live == 1, "collector failure leaked its execution scope")
 end
 
+-- Soft yields and console breaks must not end an input. Automatic yields are serviced, and
+-- the terminal reason still determines whether the epoch can close at a fixed point.
+for _, terminal in ipairs({
+    cartesi.BREAK_REASON_YIELDED_MANUALLY,
+    cartesi.BREAK_REASON_HALTED,
+    cartesi.BREAK_REASON_MCYCLE_OVERFLOW,
+    cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+}) do
+    local initial = new_fake_machine("initial")
+    local cache <close> = prt.new_machine_cache(initial)
+    local reasons = {
+        cartesi.BREAK_REASON_YIELDED_SOFTLY,
+        cartesi.BREAK_REASON_CONSOLE_OUTPUT,
+        cartesi.BREAK_REASON_CONSOLE_INPUT,
+        cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY,
+        terminal,
+    }
+    local runs, automatic_reads, manual_reads, ended_inputs = 0, 0, 0, 0
+    local player = prt.new_player(prt.new_geometry(10), { "accepted" }, cache, {
+        new_mcycle_computation_hash = function(_, _, machine)
+            local claim = prt.new_null_computation_hash(machine)
+            claim.run = function(_, mcycle_end)
+                assert(
+                    mcycle_end == 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
+                    "runner received the wrong cycle limit"
+                )
+                runs = runs + 1
+                return assert(reasons[runs], "runner resumed past its terminal reason")
+            end
+            machine.receive_cmio_request = function()
+                if reasons[runs] == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
+                    automatic_reads = automatic_reads + 1
+                    return cartesi.HTIF_YIELD_CMD_AUTOMATIC, cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT, "output"
+                end
+                manual_reads = manual_reads + 1
+                return cartesi.HTIF_YIELD_CMD_MANUAL, cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, ""
+            end
+            claim.end_input = function()
+                ended_inputs = ended_inputs + 1
+            end
+            claim.end_epoch = function()
+                error("epoch complete")
+            end
+            return claim
+        end,
+    })
+    local ok, err = pcall(player.make_mcycle_tree, player)
+    local at_target = terminal == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
+    local expected = at_target and "input stopped outside a fixed point" or "epoch complete"
+    assert(not ok and err:find(expected, 1, true), "input did not stop for its terminal reason")
+    assert(runs == #reasons and automatic_reads == 1, "input did not resume through intermediate breaks")
+    assert(manual_reads == (terminal == cartesi.BREAK_REASON_YIELDED_MANUALLY and 2 or 1))
+    assert(ended_inputs == (at_target and 0 or 1), "input finalization did not respect the terminal reason")
+    assert(initial.counts.live == 1, "input execution leaked a working machine or backup")
+end
+
 -- Input delivery must use the saved boundary hash even if preparation changes the running machine.
 for _, phase in ipairs({ "begin_epoch", "begin_input", "snapshot" }) do
     local initial = new_fake_machine("initial")

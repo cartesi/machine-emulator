@@ -33,6 +33,7 @@ namespace cartesi {
 
 template <typename UarchState>
 void uarch_reset_state(UarchState &a) {
+    [[maybe_unused]] auto note = a.make_scoped_note("uarch_reset_state");
     resetState(a);
     // When the machine has rejected an input, the canonical state after the operation is
     // the one recorded in the revert root hash (which has a pristine uarch)

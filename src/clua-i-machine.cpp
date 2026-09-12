@@ -1351,6 +1351,27 @@ static int machine_obj_index_dump_reset_uarch(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:dump_send_cmio_response() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_dump_send_cmio_response(lua_State *L) {
+    lua_settop(L, 5);
+    const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    size_t length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *data = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 3, &length));
+    size_t log_length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *log = reinterpret_cast<const uint8_t *>(luaL_checklstring(L, 4, &log_length));
+    cm_hash revert_root_hash{};
+    clua_check_cm_hash(L, 5, &revert_root_hash);
+    const char *dump{};
+    if (cm_dump_send_cmio_response(reason, data, length, log, log_length, &revert_root_hash, &dump) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushstring(L, dump);
+    return 1;
+}
+
 /// \brief This is the machine:verify_reset_uarch() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_verify_reset_uarch(lua_State *L) {
@@ -1453,6 +1474,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {.name = "verify_step_uarch", .func = machine_obj_index_verify_step_uarch},
     {.name = "dump_step_uarch", .func = machine_obj_index_dump_step_uarch},
     {.name = "dump_reset_uarch", .func = machine_obj_index_dump_reset_uarch},
+    {.name = "dump_send_cmio_response", .func = machine_obj_index_dump_send_cmio_response},
     {.name = "write_console_input", .func = machine_obj_index_write_console_input},
     {.name = "write_memory", .func = machine_obj_index_write_memory},
     {.name = "write_reg", .func = machine_obj_index_write_reg},

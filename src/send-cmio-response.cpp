@@ -25,6 +25,7 @@
 #include "record-step-state-access.hpp" // IWYU pragma: keep
 #include "replay-step-state-access.hpp" // IWYU pragma: keep
 #include "state-access.hpp"             // IWYU pragma: keep
+#include "step-log-dumper.hpp"          // IWYU pragma: keep
 #include "uarch-solidity-compat.hpp"
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max,modernize-avoid-c-style-cast)
@@ -32,6 +33,7 @@ namespace cartesi {
 
 template <typename STATE_ACCESS>
 void send_cmio_response(STATE_ACCESS a, uint16 reason, bytes data, uint64 dataLength, bytes32 revertRootHash) {
+    [[maybe_unused]] auto note = a.make_scoped_note("send_cmio_response");
     // This function cannot fail. When a failure is detected, the operation is a no-op instead,
     // so the honest party can always log and prove the resulting state transition.
     // A response to a machine that is not waiting on a manual yield is a no-op.
@@ -93,8 +95,10 @@ template void send_cmio_response(record_step_state_access a, uint16_t reason, co
     bytes32 revertRootHash);
 
 // Explicit instantiation for replay_step_state_access
-template void send_cmio_response(replay_step_state_access a, uint16_t reason, const unsigned char *data, uint64 length,
-    bytes32 revertRootHash);
+template void send_cmio_response(replay_step_state_access<no_step_log_dumper> a, uint16_t reason,
+    const unsigned char *data, uint64 length, bytes32 revertRootHash);
+template void send_cmio_response(replay_step_state_access<step_log_dumper> a, uint16_t reason,
+    const unsigned char *data, uint64 length, bytes32 revertRootHash);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max,modernize-avoid-c-style-cast)

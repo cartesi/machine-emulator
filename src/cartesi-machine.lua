@@ -889,6 +889,7 @@ where options are:
     in a yielded state (iflags.Y == 1); otherwise the logged transition is a no-op.
     prints the root hash before and after the response to stderr; the hash before
     is also the revert root hash recorded in the log.
+    append ",dump" to also write a human-readable printout to stderr.
 
     <key>:<value> is one of
         reason:<number>
@@ -2222,6 +2223,7 @@ options = {
             data = "string",
             ["data-file"] = "file",
             encoding = "string",
+            dump = "boolean",
         },
     },
     {
@@ -4179,8 +4181,11 @@ if cmdline.log_send_cmio_response then
     end
     stderr("Logging cmio response: please wait\n")
     print_log_root_hash(machine, "before")
-    util.write_file(machine:log_send_cmio_response(o.reason, data, machine:get_root_hash()), o.filename)
+    local revert_root_hash = machine:get_root_hash()
+    local log = machine:log_send_cmio_response(o.reason, data, revert_root_hash)
+    util.write_file(log, o.filename)
     print_log_root_hash(machine, "after")
+    if o.dump then io.stderr:write(cartesi.machine:dump_send_cmio_response(o.reason, data, log, revert_root_hash)) end
 end
 if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_memory_ranges_dir) end
 if cmdline.final_hash then

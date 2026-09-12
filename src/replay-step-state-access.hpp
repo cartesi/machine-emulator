@@ -24,6 +24,7 @@
 #include <functional>
 #include <optional>
 #include <ranges>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -39,10 +40,12 @@
 #include "machine-hash.hpp"
 #include "machine-reg.hpp"
 #include "mock-address-range.hpp"
+#include "no-step-log-dumper.hpp"
 #include "pmas-constants.hpp"
 #include "pmas.hpp"
 #include "rejected-manual-yield.hpp"
 #include "riscv-constants.hpp"
+#include "scoped-note.hpp"
 #include "shadow-registers.hpp"
 #include "shadow-tlb.hpp"
 #include "step-log-hash.hpp"
@@ -60,7 +63,7 @@ namespace cartesi {
 /// through to merkle_tree_hash; only the boundary subtree at each level recurses.
 /// Mirrors HashTree.merkleSubtreeHashPadded in the Solidity replayer. Heap-free so it
 /// builds in a zkVM guest.
-static machine_hash merkle_subtree_hash_padded(hash_function_type hash_function, const unsigned char *data,
+inline machine_hash merkle_subtree_hash_padded(hash_function_type hash_function, const unsigned char *data,
     uint64_t data_length, uint64_t start, int log2_size, const machine_hash *pristine) {
     constexpr int word_log2 = HASH_TREE_LOG2_WORD_SIZE;
     constexpr uint64_t word_size = UINT64_C(1) << word_log2;
@@ -96,7 +99,7 @@ static machine_hash merkle_subtree_hash_padded(hash_function_type hash_function,
 }
 
 /// Merkle hash of `data` (data_length bytes) zero-padded to 2^write_length_log2_size.
-static void merkle_tree_hash_padded(hash_function_type hash_function, const unsigned char *data, uint64_t data_length,
+inline void merkle_tree_hash_padded(hash_function_type hash_function, const unsigned char *data, uint64_t data_length,
     int write_length_log2_size, hash_type hash) {
     if (write_length_log2_size <= HASH_TREE_LOG2_WORD_SIZE || write_length_log2_size >= HASH_TREE_LOG2_ROOT_SIZE) {
         THROW(std::invalid_argument, "write_length_log2_size out of range");
@@ -127,25 +130,30 @@ static void merkle_tree_hash_padded(hash_function_type hash_function, const unsi
 
 // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast,misc-no-recursion)
 
+template <typename Dumper>
 class replay_step_state_access;
 
 // Type trait that should return the fast_addr type for a state access class
-template <>
-struct i_state_access_fast_addr<replay_step_state_access> {
+template <typename Dumper>
+struct i_state_access_fast_addr<replay_step_state_access<Dumper>> {
     using type = host_addr;
 };
 
 // \brief Provides machine state from a step log file
+// \tparam Dumper Dump sink: no_step_log_dumper by default, step_log_dumper for dump_send_cmio_response.
+// Only the accesses send_cmio_response performs reach the sink; the interpreter's word accesses do not.
+template <typename Dumper = no_step_log_dumper>
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class replay_step_state_access :
-    public i_state_access<replay_step_state_access>,
-    public i_accept_scoped_notes<replay_step_state_access>,
-    public i_prefer_shadow_state<replay_step_state_access> {
+    public i_state_access<replay_step_state_access<Dumper>>,
+    public i_accept_scoped_notes<replay_step_state_access<Dumper>>,
+    public i_prefer_shadow_state<replay_step_state_access<Dumper>> {
 public:
     struct context {
-        step_log log;              ///< Parsed step log (witnessed tree)
-        mock_address_ranges ars{}; ///< Array of address ranges
-        hot_tlb_state tlb{};       ///< Hot TLB cache for validated entries
+        step_log log;                          ///< Parsed step log (witnessed tree)
+        mock_address_ranges ars{};             ///< Array of address ranges
+        hot_tlb_state tlb{};                   ///< Hot TLB cache for validated entries
+        [[no_unique_address]] Dumper dumper{}; ///< Receives the dump; the no-op sink takes no space
     };
 
 private:
@@ -182,7 +190,7 @@ public:
     // and its post-operation hash is the recomputed machine root hash.
     machine_hash finish(bool revert_on_rejected_yield = true) {
         if (revert_on_rejected_yield && is_rejected_manual_yield(*this)) {
-            return read_revert_root_hash();
+            return this->read_revert_root_hash();
         }
         return m_context.log.compute_root_hash();
     }
@@ -254,12 +262,15 @@ private:
     friend i_prefer_shadow_state<replay_step_state_access>;
 
     uint64_t do_read_shadow_register(shadow_registers_what what) const {
-        return aliased_aligned_read<uint64_t>(get_shadow_reg_host_addr(what));
+        const auto val = aliased_aligned_read<uint64_t>(get_shadow_reg_host_addr(what));
+        m_context.dumper.read(nullptr, static_cast<uint64_t>(what), val);
+        return val;
     }
 
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         const auto haddr = get_shadow_reg_host_addr(what);
         m_shadow_regs_page->hash = machine_hash{}; // written page: rehash on the after-root pass
+        m_context.dumper.write(nullptr, static_cast<uint64_t>(what), aliased_aligned_read<uint64_t>(haddr), val);
         aliased_aligned_write<uint64_t>(haddr, val);
     }
 
@@ -436,9 +447,12 @@ private:
         if (write_length_log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
             // Supra-page: hash data + zero-pad via pristine-streaming into the logged node's slot.
             auto *node = m_context.log.find_node(paddr, write_length_log2_size);
+            const machine_hash old_hash = node->hash;
             merkle_tree_hash_padded(m_context.log.hash_function, data, data_length, write_length_log2_size,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<hash_type>(&node->hash));
+            m_context.dumper.write_hash(nullptr, paddr, write_length_log2_size, old_hash, node->hash,
+                std::span<const unsigned char>{data, data_length});
             return;
         }
         // Sub-page: mutate the logged page in place so its new hash flows into root reconstruction.
@@ -446,6 +460,9 @@ private:
         auto *page_log = m_context.log.find_page(paddr_page);
         page_log->hash = machine_hash{};
         const uint64_t offset = paddr & PAGE_OFFSET_MASK;
+        m_context.dumper.write_bytes(nullptr, paddr, write_length_log2_size,
+            std::span<const unsigned char>{page_log->data + offset, write_length},
+            std::span<const unsigned char>{data, data_length});
         std::copy_n(data, data_length, page_log->data + offset);
         if (write_length > data_length) {
             std::fill_n(page_log->data + offset + data_length, write_length - data_length, 0);
@@ -455,6 +472,29 @@ private:
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
         return "replay_step_state_access";
+    }
+
+    // -----
+    // i_accept_scoped_notes interface implementation
+    // -----
+    friend i_accept_scoped_notes<replay_step_state_access>;
+
+    // A real scoped_note only when there is a dumper to receive the brackets: with the no-op sink the
+    // interpreter's notes must cost the zkVM guest nothing, as the default 0 does
+    auto do_make_scoped_note([[maybe_unused]] const char *text) const {
+        if constexpr (std::is_same_v<Dumper, no_step_log_dumper>) {
+            return 0;
+        } else {
+            return scoped_note{*this, text};
+        }
+    }
+
+    void do_push_begin_bracket(const char *text) const {
+        m_context.dumper.begin_bracket(text);
+    }
+
+    void do_push_end_bracket(const char *text) const {
+        m_context.dumper.end_bracket(text);
     }
 };
 

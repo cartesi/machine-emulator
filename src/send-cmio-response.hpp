@@ -38,6 +38,9 @@ void send_cmio_response(STATE_ACCESS a, uint16_t reason, const unsigned char *da
 
 class state_access;
 class record_step_state_access;
+struct no_step_log_dumper;
+class step_log_dumper;
+template <typename Dumper>
 class replay_step_state_access;
 
 // Declaration of explicit instantiations in module send-cmio-response.cpp
@@ -47,8 +50,11 @@ extern template void send_cmio_response(state_access a, uint16_t reason, const u
 extern template void send_cmio_response(record_step_state_access a, uint16_t reason, const unsigned char *data,
     uint64_t dataLength, const_machine_hash_view revertRootHash);
 
-extern template void send_cmio_response(replay_step_state_access a, uint16_t reason, const unsigned char *data,
-    uint64_t dataLength, const_machine_hash_view revertRootHash);
+extern template void send_cmio_response(replay_step_state_access<no_step_log_dumper> a, uint16_t reason,
+    const unsigned char *data, uint64_t dataLength, const_machine_hash_view revertRootHash);
+
+extern template void send_cmio_response(replay_step_state_access<step_log_dumper> a, uint16_t reason,
+    const unsigned char *data, uint64_t dataLength, const_machine_hash_view revertRootHash);
 
 } // namespace cartesi
 

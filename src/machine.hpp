@@ -350,6 +350,18 @@ public:
     static machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before,
         std::span<const unsigned char> log);
 
+    /// \brief Replays a uarch step log and returns a human-readable dump of its accesses.
+    /// \param log Binary step log produced by log_step_uarch.
+    /// \param skip_count Number of cycles to replay silently first.
+    /// \param uarch_cycle_count Number of cycles to dump after those; stops early if the uarch halts.
+    /// \details No caller claim is checked. The dump is for people: its format is not part of the API.
+    static std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t skip_count,
+        uint64_t uarch_cycle_count);
+
+    /// \brief Replays a uarch reset log and returns a human-readable dump of its accesses.
+    /// \param log Binary step log produced by log_reset_uarch.
+    static std::string dump_reset_uarch(std::span<const unsigned char> log);
+
     /// \brief Returns copy of default machine config
     static machine_config get_default_config();
 
@@ -750,6 +762,15 @@ public:
     static machine_hash verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         const_machine_hash_view revert_root_hash);
+
+    /// \brief Replays a cmio response log and returns a human-readable dump of its accesses.
+    /// \param reason Reason for sending the response.
+    /// \param data Response data.
+    /// \param length Length of response.
+    /// \param revert_root_hash The revert root hash recorded when the log was generated.
+    /// \param log Binary step log produced by log_send_cmio_response.
+    static std::string dump_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const_machine_hash_view revert_root_hash, std::span<const unsigned char> log);
 
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest

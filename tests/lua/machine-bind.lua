@@ -836,7 +836,7 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
     local expected = {
         -- Every cycle has the same shape: uarch_step's cycle/halt/pc reads, the fetch,
         -- the bracketed instruction body, and the cycle increment.
-        "^begin uarch cycle$",
+        "^begin uarch_step$",
         "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
@@ -847,8 +847,8 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
         "^    write uarch%.pc@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
         "^  end addi$",
         "^  write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^end uarch cycle$",
-        "^begin uarch cycle$",
+        "^end uarch_step$",
+        "^begin uarch_step$",
         "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
@@ -859,8 +859,8 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
         "^    write uarch%.pc@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
         "^  end addi$",
         "^  write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
-        "^end uarch cycle$",
-        "^begin uarch cycle$",
+        "^end uarch_step$",
+        "^begin uarch_step$",
         "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
         "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
@@ -871,7 +871,7 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
         "^  end ecall$",
         "^  write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
         "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
-        "^end uarch cycle$",
+        "^end uarch_step$",
     }
     local lines = {}
     for line in (text .. "\n"):gmatch("(.-)\n") do
@@ -890,7 +890,7 @@ do_test("dump_step_uarch skip count mutes the first cycles", function(machine)
     local log = machine:log_step_uarch(2)
     local full = cartesi.machine:dump_step_uarch(log, 0, 3)
     local rest = cartesi.machine:dump_step_uarch(log, 1, 2)
-    assert(rest:match("^begin uarch cycle\n  read uarch%.cycle@0x%x+: 0x1%(1%)"), "the dump should resume at cycle 1")
+    assert(rest:match("^begin uarch_step\n  read uarch%.cycle@0x%x+: 0x1%(1%)"), "the dump should resume at cycle 1")
     assert(cartesi.machine:dump_step_uarch(log, 0, 1) .. rest == full, "skipped dump should be a slice of the full one")
 end)
 
@@ -1206,7 +1206,7 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
         local log = machine:log_reset_uarch()
         local text = cartesi.machine:dump_reset_uarch(log)
         local expected = {
-            "^begin uarch reset$",
+            "^begin uarch_reset_state$",
             -- the whole uarch state is one node: the dump shows its abbreviated hash before and after
             '^  write uarch%.state@0x%x+: hash:"0x%x+"%(2%^'
                 .. cartesi.UARCH_STATE_LOG2_SIZE
@@ -1217,7 +1217,7 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
                 .. " bytes%)$",
             -- no input pending, so the reset stops at the iflags.Y check
             "^  read iflags%.Y@0x%x+: 0x0%(0%)$",
-            "^end uarch reset$",
+            "^end uarch_reset_state$",
         }
         local lines = {}
         for line in text:gmatch("(.-)\n") do
@@ -1241,7 +1241,9 @@ do_test("dump_reset_uarch shows the revert on a rejected input", function(machin
     assert(text:match("\n  read iflags%.Y@0x%x+: 0x1%(1%)\n"), text)
     assert(text:match("\n  read htif%.tohost@0x%x+: 0x%x+%(%d+%)\n"), text)
     assert(
-        text:match("\n  revert to root hash 0x" .. cartesi.tohex(revert_root_hash):sub(3) .. "\nend uarch reset\n$"),
+        text:match(
+            "\n  revert to root hash 0x" .. cartesi.tohex(revert_root_hash):sub(3) .. "\nend uarch_reset_state\n$"
+        ),
         text
     )
 end)
@@ -1424,6 +1426,64 @@ do_test("advance-state response to a rejected machine logs as a no-op", function
     assert(hash_after == hash_before)
     local obtained_hash = machine:verify_send_cmio_response(advance_reason, data, hash_before, log, hash_before)
     assert(obtained_hash == hash_after)
+end)
+
+do_test("dump_send_cmio_response shows an advance-state response", function(machine)
+    local advance_reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+    local data = "0123456789"
+    machine:write_reg("iflags_Y", 1)
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+    local revert_root_hash = machine:get_root_hash()
+    local log = machine:log_send_cmio_response(advance_reason, data, revert_root_hash)
+    local text = cartesi.machine:dump_send_cmio_response(advance_reason, data, log, revert_root_hash)
+    -- The 10-byte payload pads to a 32-byte write inside the rx buffer page, so both bulk writes
+    -- show bytes; a payload above a page would show the node hashes instead.
+    local expected = {
+        "^begin send_cmio_response$",
+        "^  read iflags%.Y@0x%x+: 0x1%(1%)$",
+        "^  read htif%.tohost@0x%x+: 0x%x+%(%d+%)$",
+        "^  read mcycle@0x%x+: 0x%x+%(%d+%)$",
+        "^  write imcyclemax@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^  write revert_root_hash@0x%x+: 0x%x+%.%.%.0x%x+%(2%^5 bytes%) %-> " .. cartesi.tohex(
+            revert_root_hash:sub(1, 3)
+        ) .. "%.%.%." .. cartesi.tohex(revert_root_hash:sub(-3)) .. "%(2%^5 bytes%)$",
+        "^  write cmio%.rx_buffer@0x%x+: 0x%x+%.%.%.0x%x+%(2%^5 bytes%) %-> "
+            .. cartesi.tohex(data:sub(1, 3))
+            .. "%.%.%."
+            .. cartesi.tohex(data:sub(-3))
+            .. "%(2%^5 bytes%)$",
+        "^  write htif%.fromhost@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^  write iflags%.Y@0x%x+: 0x1%(1%) %-> 0x0%(0%)$",
+        "^end send_cmio_response$",
+    }
+    local lines = {}
+    for line in text:gmatch("(.-)\n") do
+        lines[#lines + 1] = line
+    end
+    assert(#lines == #expected, string.format("printout has %d lines, expected %d:\n%s", #lines, #expected, text))
+    for i, pat in ipairs(expected) do
+        assert(lines[i]:match(pat), string.format("printout line %d %q does not match %q", i, lines[i], pat))
+    end
+end)
+
+do_test("dump_send_cmio_response shows a page-sized payload as a node hash", function(machine)
+    local reason = cartesi.HTIF_YIELD_REASON_INSPECT_STATE
+    local data = string.rep("x", 2 * (1 << cartesi.HASH_TREE_LOG2_PAGE_SIZE))
+    machine:write_reg("iflags_Y", 1)
+    local log = machine:log_send_cmio_response(reason, data, CMIO_REVERT_HASH)
+    local text = cartesi.machine:dump_send_cmio_response(reason, data, log, CMIO_REVERT_HASH)
+    local node_write = '\n  write cmio%.rx_buffer@0x%x+: hash:"0x%x+"%(2%^13 bytes%)'
+        .. ' %-> hash:"0x%x+" 0x787878%.%.%.0x787878%(2%^13 bytes%)\n'
+    assert(text:match(node_write), text)
+end)
+
+do_test("dump_send_cmio_response shows a no-op on a machine that is not yielded", function(machine)
+    local reason = cartesi.HTIF_YIELD_REASON_INSPECT_STATE
+    local log = machine:log_send_cmio_response(reason, "abc", CMIO_REVERT_HASH)
+    local text = cartesi.machine:dump_send_cmio_response(reason, "abc", log, CMIO_REVERT_HASH)
+    assert(text == "begin send_cmio_response\n  read iflags.Y@0x308: 0x0(0)\nend send_cmio_response\n", text)
 end)
 
 local function test_send_cmio_response_happy_path()

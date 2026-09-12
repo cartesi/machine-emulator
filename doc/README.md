@@ -2827,7 +2827,7 @@ producing the log
 Gathering uarch step log: please wait
 root hash before: 0x228ac2ac623ef787f9b79617b0495e263f9fdc00766e94c0c2e00b8a3d361e2b
 root hash after: 0x257271367fe13c9b44a2b14965c72806e00e01d7b1ada28fa25b72e02f874a7e
-begin uarch cycle
+begin uarch_step
   read uarch.cycle@0x400008: 0x8c2(2242)
   read uarch.halt@0x400000: 0x0(0)
   read uarch.pc@0x400010: 0x6021d0(6300112)
@@ -2839,7 +2839,7 @@ begin uarch cycle
   end ecall
   write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
   read uarch.halt@0x400000: 0x0(0)
-end uarch cycle
+end uarch_step
 ```
 
 Understanding these logs in detail is unnecessary for all but the most
@@ -5462,8 +5462,11 @@ performed, identifying what each address refers to (a register, a CSR,
 memory). Each replayed cycle is bracketed. Likewise,
 `cartesi.machine:dump_reset_uarch(<log>)` describes a uarch reset log:
 the replacement of the uarch state, the check for a rejected input, and
-the revert when there is one. Addresses and values are printed in
-hexadecimal and decimal.
+the revert when there is one.
+`cartesi.machine:dump_send_cmio_response(<reason>, <data>, <log>, <revert_root_hash>)`
+describes a cmio response log: the yield checks, the rx buffer write,
+and the registers the response updates, or the single check that made it
+a no-op. Addresses and values are printed in hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:
 
@@ -5508,7 +5511,7 @@ produces the output:
        \    / CARTESI
 Step log of uarch step at mcycle=41536683 uarch_cycle=2242:
 
-begin uarch cycle
+begin uarch_step
   read uarch.cycle@0x400008: 0x8c2(2242)
   read uarch.halt@0x400000: 0x0(0)
   read uarch.pc@0x400010: 0x6021d0(6300112)
@@ -5520,7 +5523,7 @@ begin uarch cycle
   end ecall
   write uarch.cycle@0x400008: 0x8c2(2242) -> 0x8c3(2243)
   read uarch.halt@0x400000: 0x0(0)
-end uarch cycle
+end uarch_step
 ```
 
 Understanding these logs in detail is unnecessary for all but the most

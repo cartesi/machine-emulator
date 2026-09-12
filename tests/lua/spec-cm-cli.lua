@@ -1819,8 +1819,8 @@ describe("cartesi-machine CLI", function()
         before, after = root_hash_pair(su_stderr)
         expect.equal(cartesi.machine:verify_step_uarch(before, log, 2), after)
         -- the dump key replays the log to stderr, one bracket per uarch cycle
-        expect.truthy(su_stderr:match("begin uarch cycle\n  read uarch%.cycle@0x%x+: 0x2%(2%)"))
-        expect.truthy(su_stderr:match("begin uarch cycle\n  read uarch%.cycle@0x%x+: 0x3%(3%)"))
+        expect.truthy(su_stderr:match("begin uarch_step\n  read uarch%.cycle@0x%x+: 0x2%(2%)"))
+        expect.truthy(su_stderr:match("begin uarch_step\n  read uarch%.cycle@0x%x+: 0x3%(3%)"))
 
         -- --log-reset-uarch=<filename>
         local _ <close>, ru_log = scope_temp_pathname()
@@ -1836,7 +1836,7 @@ describe("cartesi-machine CLI", function()
         before, after = root_hash_pair(ru_stderr)
         expect.equal(cartesi.machine:verify_reset_uarch(before, log), after)
         -- the dump key replays the reset to stderr
-        expect.truthy(ru_stderr:find("begin uarch reset\n  write uarch.state@", 1, true))
+        expect.truthy(ru_stderr:find("begin uarch_reset_state\n  write uarch.state@", 1, true))
 
         -- --max-uarch-cycle
         run_ok({ "--max-uarch-cycle=0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -1919,11 +1919,14 @@ describe("cartesi-machine CLI", function()
             "--log-step=" .. step_log .. ",count:1",
             "--log-step-uarch=" .. uarch_log .. ",count:2",
             "--log-reset-uarch=" .. reset_log,
-            "--log-send-cmio-response=" .. cmio_log .. ",reason:0,data:0x1234",
+            "--log-send-cmio-response=" .. cmio_log .. ",reason:0,data:0x1234,dump",
             "--",
             "rollup",
             "accept",
         })
+        -- the dump key replays the response to stderr: the payload lands in the rx buffer
+        expect.truthy(stderr:find("begin send_cmio_response\n  read iflags.Y@", 1, true))
+        expect.truthy(stderr:find(" -> 0x1234(2^5 bytes)\n", 1, true))
         -- Each logging option prints two lines to stderr around its log call:
         --   root hash before: 0x<64 hex digits>
         --   root hash after: 0x<64 hex digits>

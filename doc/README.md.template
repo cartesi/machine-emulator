@@ -3026,6 +3026,7 @@ The static method `cartesi.machine:dump_step_uarch(<log>, <skip_count>, <uarch_c
 It replays the first `<skip_count>` cycles silently, then the requested number of cycles against the state carried in the log (stopping early if the uarch halts), and describes every access performed, identifying what each address refers to (a register, a CSR, memory).
 Each replayed cycle is bracketed.
 Likewise, `cartesi.machine:dump_reset_uarch(<log>)` describes a uarch reset log: the replacement of the uarch state, the check for a rejected input, and the revert when there is one.
+`cartesi.machine:dump_send_cmio_response(<reason>, <data>, <log>, <revert_root_hash>)` describes a cmio response log: the yield checks, the rx buffer write, and the registers the response updates, or the single check that made it a no-op.
 Addresses and values are printed in hexadecimal and decimal.
 
 Running the `dump-uarch-step.lua` program:

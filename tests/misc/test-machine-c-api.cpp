@@ -2113,9 +2113,43 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_reset_uarch_basic_test, step_log_machine_fix
     BOOST_REQUIRE_EQUAL(cm_dump_reset_uarch(log_copy.data(), log_copy.size(), &dump), CM_ERROR_OK);
     const std::string text{dump};
     // the reset replaces the uarch state node hash and then checks for a rejected input
-    BOOST_CHECK(text.find("begin uarch reset\n  write uarch.state@") == 0);
+    BOOST_CHECK(text.find("begin uarch_reset_state\n  write uarch.state@") == 0);
     BOOST_CHECK(text.find("\n  read iflags.Y@") != std::string::npos);
-    BOOST_CHECK(text.ends_with("\nend uarch reset\n"));
+    BOOST_CHECK(text.ends_with("\nend uarch_reset_state\n"));
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(dump_send_cmio_response_null_log_test) {
+    const cm_hash revert_root_hash{};
+    const char *dump{};
+    const cm_error error_code = cm_dump_send_cmio_response(0, nullptr, 0, nullptr, 0, &revert_root_hash, &dump);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string("invalid log"), std::string(cm_get_last_error_message()));
+    BOOST_CHECK(dump == nullptr);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(dump_send_cmio_response_basic_test, cmio_request_machine_fixture) {
+    cm_hash revert_root_hash{};
+    BOOST_REQUIRE_EQUAL(cm_get_root_hash(_machine, &revert_root_hash), CM_ERROR_OK);
+    const std::array<uint8_t, 4> data{{0x11, 0x22, 0x33, 0x44}};
+    const uint8_t *log{};
+    uint64_t log_length{};
+    BOOST_REQUIRE_EQUAL(cm_log_send_cmio_response(_machine, CM_HTIF_YIELD_REASON_ADVANCE_STATE, data.data(),
+                            data.size(), &revert_root_hash, &log, &log_length),
+        CM_ERROR_OK);
+    const std::vector<uint8_t> log_copy(log, log + log_length);
+    BOOST_CHECK_EQUAL(cm_dump_send_cmio_response(CM_HTIF_YIELD_REASON_ADVANCE_STATE, data.data(), data.size(),
+                          log_copy.data(), log_copy.size(), &revert_root_hash, nullptr),
+        CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(std::string("invalid dump output"), std::string(cm_get_last_error_message()));
+    const char *dump{};
+    BOOST_REQUIRE_EQUAL(cm_dump_send_cmio_response(CM_HTIF_YIELD_REASON_ADVANCE_STATE, data.data(), data.size(),
+                            log_copy.data(), log_copy.size(), &revert_root_hash, &dump),
+        CM_ERROR_OK);
+    const std::string text{dump};
+    BOOST_CHECK(text.find("begin send_cmio_response\n  read iflags.Y@") == 0);
+    BOOST_CHECK(text.find("\n  write cmio.rx_buffer@") != std::string::npos);
+    BOOST_CHECK(text.find(" -> 0x11223344(2^5 bytes)\n") != std::string::npos);
+    BOOST_CHECK(text.ends_with("\nend send_cmio_response\n"));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_obtained_hash_test, step_log_machine_fixture) {

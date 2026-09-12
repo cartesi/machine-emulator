@@ -32,6 +32,7 @@
 #include "i-uarch-state-access.hpp"
 #include "machine-hash.hpp"
 #include "machine-reg.hpp"
+#include "no-step-log-dumper.hpp"
 #include "scoped-note.hpp"
 #include "shadow-tlb.hpp"
 #include "shadow-uarch-state.hpp"
@@ -43,17 +44,6 @@
 
 namespace cartesi {
 
-/// \brief No-op dump sink
-struct no_step_log_dumper {
-    void begin_bracket(const char * /*text*/) const {}
-    void end_bracket(const char * /*text*/) const {}
-    void read(const char * /*name*/, uint64_t /*paddr*/, uint64_t /*val*/) const {}
-    void write(const char * /*name*/, uint64_t /*paddr*/, uint64_t /*old_val*/, uint64_t /*new_val*/) const {}
-    void write_hash(const char * /*name*/, uint64_t /*paddr*/, int /*log2_size*/, const_machine_hash_view /*old_hash*/,
-        const_machine_hash_view /*new_hash*/) const {}
-    void revert(const_machine_hash_view /*root_hash*/) const {}
-};
-
 /// \brief Provides machine state from a uarch step binary log
 /// \tparam Dumper Dump sink: no_step_log_dumper by default, step_log_dumper for dump_step_uarch
 template <typename Dumper = no_step_log_dumper>
@@ -64,10 +54,10 @@ class uarch_replay_step_state_access :
     public i_prefer_shadow_uarch_state<uarch_replay_step_state_access<Dumper>> {
 public:
     struct context {
-        step_log log;                      ///< Parsed step log (witnessed tree)
-        bool reverted{false};              ///< Set when the reset reverted the state on a rejected input
-        machine_hash reverted_root_hash{}; ///< Canonical post-state hash when reverted (the revert root hash)
-        Dumper dumper{};                   ///< Receives the dump
+        step_log log;                          ///< Parsed step log (witnessed tree)
+        bool reverted{false};                  ///< Set when the reset reverted the state on a rejected input
+        machine_hash reverted_root_hash{};     ///< Canonical post-state hash when reverted (the revert root hash)
+        [[no_unique_address]] Dumper dumper{}; ///< Receives the dump; the no-op sink takes no space
     };
 
 private:

@@ -63,7 +63,6 @@
 #include "rtc-defines.h"
 #include "send-cmio-response.hpp"
 #include "sha-256-hasher.hpp"
-#include "step-log-dumper.hpp"
 #include "step-log.hpp"
 #include "uarch-defines.h"
 
@@ -1393,8 +1392,8 @@ cm_error cm_dump_step_uarch(const uint8_t *log, uint64_t log_length, uint64_t sk
     if (log == nullptr) {
         throw std::invalid_argument("invalid log");
     }
-    *dump = cm_set_temp_string(
-        cartesi::dump_step_uarch(std::span<const unsigned char>{log, log_length}, skip_count, uarch_cycle_count));
+    *dump = cm_set_temp_string(cartesi::machine::dump_step_uarch(std::span<const unsigned char>{log, log_length},
+        skip_count, uarch_cycle_count));
     return cm_result_success();
 } catch (...) {
     if (dump != nullptr) {
@@ -1410,7 +1409,26 @@ cm_error cm_dump_reset_uarch(const uint8_t *log, uint64_t log_length, const char
     if (log == nullptr) {
         throw std::invalid_argument("invalid log");
     }
-    *dump = cm_set_temp_string(cartesi::dump_reset_uarch(std::span<const unsigned char>{log, log_length}));
+    *dump = cm_set_temp_string(cartesi::machine::dump_reset_uarch(std::span<const unsigned char>{log, log_length}));
+    return cm_result_success();
+} catch (...) {
+    if (dump != nullptr) {
+        *dump = nullptr;
+    }
+    return cm_result_failure();
+}
+
+cm_error cm_dump_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length, const uint8_t *log,
+    uint64_t log_length, const cm_hash *revert_root_hash, const char **dump) try {
+    if (dump == nullptr) {
+        throw std::invalid_argument("invalid dump output");
+    }
+    if (log == nullptr) {
+        throw std::invalid_argument("invalid log");
+    }
+    const cartesi::machine_hash cpp_revert_root_hash = convert_from_c(revert_root_hash);
+    *dump = cm_set_temp_string(cartesi::machine::dump_send_cmio_response(reason, data, length, cpp_revert_root_hash,
+        std::span<const unsigned char>{log, log_length}));
     return cm_result_success();
 } catch (...) {
     if (dump != nullptr) {

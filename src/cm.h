@@ -1129,6 +1129,19 @@ CM_API cm_error cm_dump_step_uarch(const uint8_t *log, uint64_t log_length, uint
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_dump_reset_uarch(const uint8_t *log, uint64_t log_length, const char **dump);
 
+/// \brief Replays a cmio response log into a human-readable dump of its accesses.
+/// \param reason Reason for sending the response.
+/// \param data Response data.
+/// \param length Length of response data.
+/// \param log Binary step log produced by cm_log_send_cmio_response.
+/// \param log_length Length of the binary step log.
+/// \param revert_root_hash The revert root hash recorded when the log was generated.
+/// \param dump Receives the dump as a string, guaranteed to remain valid only until the next CM_API function is
+/// called from the same thread. Set to NULL on failure.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_dump_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length, const uint8_t *log,
+    uint64_t log_length, const cm_hash *revert_root_hash, const char **dump);
+
 // ------------------------------------
 // Integrity checking
 // ------------------------------------

@@ -32,15 +32,15 @@ extern "C" void risc0_replay_steps(
     unsigned char* out_root_hash_before,
     unsigned char* out_root_hash_after)
 {
-    replay_step_state_access::context context{};
-    replay_step_state_access a(context, step_log_image, step_log_image_size);
+    replay_step_state_access<>::context context{};
+    replay_step_state_access<> a(context, step_log_image, step_log_image_size);
     uint64_t mcycle_end{};
     // Saturate on overflow, matching machine::verify_step's saturating_add, so the RISC0
     // guest and the host replayer agree on the cycle target.
     if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {
         mcycle_end = UINT64_MAX;
     }
-    interpret<replay_step_state_access&>(a, mcycle_end);
+    interpret<replay_step_state_access<> &>(a, mcycle_end);
     const auto obtained_root_hash_after = a.finish();
     std::memcpy(out_root_hash_before, context.log.root_hash_before.data(), 32);
     std::memcpy(out_root_hash_after, obtained_root_hash_after.data(), 32);

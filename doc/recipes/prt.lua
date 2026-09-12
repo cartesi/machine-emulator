@@ -1577,17 +1577,18 @@ local function new_player(geometry, inputs, machine_cache, options)
     -- the same delivery and rollback rules. Only accepted inputs publish their outputs.
     -- Delivery is the protocol's no-op except at an rx-accepted yield, so a machine at any other
     -- fixed point, or an input beyond the posted ones, idles through the input's span.
-    local function run_advance_state_input(machine, input_index, claim, offset, revert_root_hash, on_accepted)
-        local base = machine:read_reg("mcycle")
+    local function run_advance_state_input(claim, input_index, offset, revert_root_hash, on_accepted)
+        local machine = claim.machine
+        local base = claim:read_reg("mcycle")
         claim:begin_input(input_index, base)
         machine_cache:snapshot(machine)
         local break_reason = run_to_stop(machine, base)
         assert(is_at_fixed_point(break_reason), "input boundary is not at a fixed point")
         local data = inputs[input_index + 1]
         if data and is_yielded_manual(break_reason) then
-            local yield_reason = receive_cmio_request(machine)
+            local yield_reason = receive_cmio_request(claim)
             if is_rx_accepted(yield_reason) then
-                load_cmio_input(machine, data, revert_root_hash)
+                load_cmio_input(claim, data, revert_root_hash)
             end
         end
         local pending = {}
@@ -1598,14 +1599,14 @@ local function new_player(geometry, inputs, machine_cache, options)
         end)
         local yield_reason, reported_root
         if is_yielded_manual(break_reason) then
-            yield_reason, reported_root = receive_cmio_request(machine)
+            yield_reason, reported_root = receive_cmio_request(claim)
         end
         if is_at_fixed_point(break_reason) then
             claim:end_input()
         end
         if is_rx_rejected(yield_reason) then
             machine_cache:revert(machine)
-            assert(machine:get_root_hash() == revert_root_hash, "rollback did not restore the input boundary")
+            assert(claim:get_root_hash() == revert_root_hash, "rollback did not restore the input boundary")
         else
             if is_rx_accepted(yield_reason) and on_accepted then
                 on_accepted(pending, reported_root)
@@ -1618,22 +1619,21 @@ local function new_player(geometry, inputs, machine_cache, options)
 
     -- Runs the explicit input range [input_index_begin, input_index_end), limited to posted inputs.
     -- A sticky fixed point ends the range early, since every later input idles.
-    local function run_advance_state_epoch(machine, claim, input_index_begin, input_index_end, on_accepted)
+    local function run_advance_state_epoch(claim, input_index_begin, input_index_end, on_accepted)
         input_index_end = math.min(input_index_end, #inputs)
         -- Keep the expected boundary across rejections. Only acceptance establishes a new one.
-        local revert_root_hash = machine:get_root_hash()
+        local revert_root_hash = claim:get_root_hash()
         claim:begin_epoch()
         for input_index = input_index_begin, input_index_end - 1 do
             local break_reason, yield_reason = run_advance_state_input(
-                machine,
-                input_index,
                 claim,
+                input_index,
                 MAX_MCYCLES_PER_ADVANCE_STATE,
                 revert_root_hash,
                 on_accepted
             )
             if is_rx_accepted(yield_reason) then
-                revert_root_hash = machine:get_root_hash()
+                revert_root_hash = claim:get_root_hash()
             elseif not is_rx_rejected(yield_reason) then
                 assert(is_at_fixed_point(break_reason), "input stopped outside a fixed point")
                 break
@@ -1644,14 +1644,14 @@ local function new_player(geometry, inputs, machine_cache, options)
 
     local function replay(machine, input_index_begin, input_index_end)
         local claim = options.new_null_computation_hash(machine)
-        return run_advance_state_epoch(machine, claim, input_index_begin, input_index_end)
+        return run_advance_state_epoch(claim, input_index_begin, input_index_end)
     end
 
     -- docs:begin build_mcycle_claim
     local function build_mcycle_claim()
         local machine, owner <close> = machine_cache:clone_at_input_boundary(0, replay) -- luacheck: ignore 211
         local claim = options.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, machine_cache, machine)
-        return run_advance_state_epoch(machine, claim, 0, #inputs)
+        return run_advance_state_epoch(claim, 0, #inputs)
     end
     -- docs:end build_mcycle_claim
 
@@ -1663,13 +1663,8 @@ local function new_player(geometry, inputs, machine_cache, options)
         local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, replay)
         local revert_root_hash = machine:get_root_hash()
         local claim = options.new_null_computation_hash(machine)
-        local break_reason, _, base = run_advance_state_input(
-            machine,
-            input_index,
-            claim,
-            period_index * geometry.mcycles_per_period,
-            revert_root_hash
-        )
+        local break_reason, _, base =
+            run_advance_state_input(claim, input_index, period_index * geometry.mcycles_per_period, revert_root_hash)
         claim =
             options.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, machine_cache, machine, bundle_index)
         claim:begin_epoch()
@@ -1697,13 +1692,7 @@ local function new_player(geometry, inputs, machine_cache, options)
             bundle_index
         )
         claim:begin_epoch()
-        run_advance_state_input(
-            machine,
-            input_index,
-            claim,
-            (period_index + 1) * geometry.mcycles_per_period,
-            revert_root_hash
-        )
+        run_advance_state_input(claim, input_index, (period_index + 1) * geometry.mcycles_per_period, revert_root_hash)
         return claim:end_epoch()
     end
 
@@ -1738,9 +1727,8 @@ local function new_player(geometry, inputs, machine_cache, options)
         end
         local claim = options.new_null_computation_hash(machine)
         run_advance_state_input(
-            machine,
-            input_index,
             claim,
+            input_index,
             period_index * geometry.mcycles_per_period + mcycle_offset,
             revert_root_hash
         )
@@ -1775,7 +1763,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         local frontier = hash_tree.frontier_copy(genesis_frontier)
         local outputs, leaves = {}, {}
         local claim = options.new_null_computation_hash(machine)
-        run_advance_state_epoch(machine, claim, 0, #inputs, function(pending, reported_root)
+        run_advance_state_epoch(claim, 0, #inputs, function(pending, reported_root)
             for _, output in ipairs(pending) do
                 outputs[#outputs + 1] = output
                 leaves[#leaves + 1] = keccak(output)

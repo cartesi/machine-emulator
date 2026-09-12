@@ -9776,14 +9776,14 @@ end
 ```
 
 These functions are pure, so the walk is checked on synthetic claim
-trees, differing at one chosen leaf, before any machine is involved. The
-match itself is the loop that asks the holders of the on-turn claim to
-open its node, takes the first response that validates, and hands the
-isolated divergence over. An unanswered opening waits for a valid
+trees, differing at one chosen leaf, before any machine is involved.
+`reveal_divergence` asks the holders of the on-turn claim to open its
+node and takes the first response that validates, until the walk reaches
+the divergent leaves. An unanswered opening waits for a valid
 timeout-win or elimination response.
 
 ``` lua
-local function run_match(tournament, match)
+local function reveal_divergence(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn]
         local deadline = server:request_block() + 1
@@ -9805,27 +9805,51 @@ local function run_match(tournament, match)
         advance_bisection(match, response)
         story.report_match_progress(match)
     end
-    local divergence
-    do
-        local turn_claim = match.claims[match.turn]
-        local deadline = server:request_block() + 1
-        local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
-        local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
-        local seal <close> = server:request_first_valid(
-            subscription_hash(tournament.id, turn_claim),
-            EVENTS.seal_divergence,
-            { turn_claim.computation_hash, match.position, match.other_left_node },
-            function(response)
-                assert(server:get_time() < deadline)
-                return validate_seal_response(tournament, match, response)
-            end
-        )
-        divergence = seal:wait(deadline)
-        if not divergence then
-            return timeout:wait(deadline + 1) or elimination:wait()
+end
+```
+
+`seal_divergence` then asks for the divergent leaves and a proof of the
+agreed state before them.
+
+``` lua
+local function seal_divergence(tournament, match)
+    local turn_claim = match.claims[match.turn]
+    local deadline = server:request_block() + 1
+    local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
+    local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
+    local seal <close> = server:request_first_valid(
+        subscription_hash(tournament.id, turn_claim),
+        EVENTS.seal_divergence,
+        { turn_claim.computation_hash, match.position, match.other_left_node },
+        function(response)
+            assert(server:get_time() < deadline)
+            return validate_seal_response(tournament, match, response)
         end
+    )
+    local divergence = seal:wait(deadline)
+    if not divergence then
+        return nil, timeout:wait(deadline + 1) or elimination:wait()
     end
-    return settle_match(tournament, match, divergence)
+    return divergence
+end
+```
+
+`run_match` reveals, seals, and settles the divergence, returning early
+if either of the first two steps ends the match by timeout or
+elimination.
+
+``` lua
+local function run_match(tournament, match)
+    local winner = reveal_divergence(tournament, match)
+    if winner then
+        return winner
+    end
+    local divergence
+    divergence, winner = seal_divergence(tournament, match)
+    if winner then
+        return winner
+    end
+    return settle_divergence(tournament, match, divergence)
 end
 ```
 
@@ -9837,6 +9861,28 @@ elimination windows as an earlier bisection response, so settlement
 always receives a proved agreed state.
 
 ### Settling a match
+
+`settle_divergence` passes the sealed divergence to the tournament’s
+state-hash settler and returns the surviving claim’s index, or zero if
+neither claim survives.
+
+``` lua
+local function settle_divergence(tournament, match, divergence)
+    story.report_divergence(match, divergence)
+    local settled_state_hash = tournament:settle_state_hash(
+        match,
+        divergence.state_index,
+        divergence.agreed_state_hash,
+        divergence.next_state_hashes
+    )
+    for claim_index = 1, 2 do
+        if settled_state_hash == divergence.next_state_hashes[claim_index] then
+            return claim_index
+        end
+    end
+    return 0
+end
+```
 
 An mcycle match settles into a uarch tournament. The two claims part
 ways over what the state hash was after one period of one input, so each
@@ -10028,8 +10074,12 @@ eliminate inactive matches, including unrelated ones that could keep the
 tournament open. The referee never narrates who holds a claim. Each
 player announces its own claim on standard error.
 
-`request_all(subscriptions, event, arguments)` returns a future for all
-responses to an ordinary event. Its `wait(deadline)` returns the
+`request_all(subscriptions, event, arguments, validator)` returns a
+future for all accepted responses to an ordinary event. The optional
+validator returns the value to retain. An error, `nil`, or `false`
+rejects the response, but its sender still counts as having answered.
+Tournament openings use this callback to validate claims before
+`partition_claims` groups them. Its `wait(deadline)` returns the
 responses received before that block, including an empty list if nobody
 supplies a value. The list retains each response’s sender and receipt
 block. A partial result is a snapshot: later replies do not change it.

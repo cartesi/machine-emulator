@@ -228,7 +228,7 @@ local function lie_about_leaf(leaf, fake_hash, unbundle)
 end
 
 -- Collect the same execution samples as the honest run, then assemble the fabricated stream.
--- Final epoch padding needs its own override because a refinement at a fixed point may never run.
+-- Final epoch padding needs its own override because bundle collection at a fixed point may never run.
 local function new_mcycle_liar(builder, insert)
     return wrap_computation_hash(builder, {
         run = function(self, mcycle_end)
@@ -362,7 +362,7 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
         return new_mcycle_liar(
             builder,
             lie_about_leaf(target_epoch_period_index, fake_hash, function(_, first_leaf)
-                return player:refine_mcycle_claim(first_leaf >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
+                return player:collect_mcycle_bundle(first_leaf >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
             end)
         )
     end
@@ -373,7 +373,7 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
             return new_uarch_liar(
                 builder,
                 lie_about_leaf((1 << geometry.uarch_height) - 1, fake_hash, function(_, first_leaf)
-                    return player:refine_uarch_claim(
+                    return player:collect_uarch_cycle_bundle(
                         input_index + 1,
                         leaf_offset,
                         first_leaf >> prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT

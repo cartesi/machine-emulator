@@ -5332,13 +5332,13 @@ They follow the same collection contract as `cartesi-machine`'s computation-hash
 The only different sink is PRT's frontier forest, which retains the nodes needed to answer later tournament queries.
 The mcycle build (`build_mcycle_claim` in `prt.lua`) advances the whole epoch once, pushing each input's bundle roots into the claim forest at their logical heights, padding each input's span with the fixed point where its guest stopped, and offering each accepted input's final machine to a bounded cache as the next input's virgin boundary.
 The default policy keeps a bounded, progressively thinned set of these checkpoints, indexed by input; input zero always retains the initial machine template.
-The refinement re-run (`refine_mcycle_claim`) asks the cache for the target input's boundary, then advances that input to recover one bundle's samples.
+Bundle collection (`collect_mcycle_bundle`) asks the cache for the target input's boundary, then advances that input to recover one bundle's samples.
 The cache's `clone_at_input_boundary(input_index, run_to_input_boundary)` selects and clones a checkpoint, then calls `run_to_input_boundary` with the machine and the intervening input range.
 The player's `run_to_input_boundary` closure uses `run_advance_state_epoch` with the null builder.
 It returns an independent machine and a separate owner kept in a `<close>` local; closing the owner releases the working machine and any outstanding backup immediately, including on errors.
 Uarch collection and transition proofs request their boundaries through the same operation, and forward building and result collection start by cloning boundary zero; checkpoint selection stays private to the cache.
 The input driver calls the cache's `snapshot(machine)`, `commit(machine)`, and `revert(machine)` operations, following the CLI: acceptance, sticky stops, and partial replay commit, while rejection reverts.
-Backups are keyed by working machine inside the cache, so nested refinement cannot replace the outer run's snapshot.
+Backups are keyed by working machine inside the cache, so nested bundle collection cannot replace the outer run's snapshot.
 The uarch builder captures its rejection-padding tail from the running virgin machine before snapshot and delivery, without accessing the backup.
 Eviction releases the retained checkpoint's owner. The caller keeps the cache in a `<close>` local for as long as the player and its claim trees can replay. Closing that cache releases all remaining owned machines without waiting for garbage collection.
 The caller creates the initial machine and passes it to `new_machine_cache(initial_machine, capacity, initial_input_gap)`, which takes ownership. The default cache uses forks. A caller can supply a different cache implementation without changing the player driver or builders. A disk-backed implementation is left for future work.
@@ -5352,11 +5352,11 @@ The epoch driver retains the expected boundary hash across rejection and updates
 `load_cmio_input` delivers the input only at an rx-accepted yield, with the pre-delivery `revert_root_hash`; at any other fixed point, or past the last posted input, delivery is the protocol's no-op and the machine idles through the input's span, so builders pad it from the fixed-point tail and proofs still log the no-op delivery.
 The player constructor is `prt.new_player(geometry, inputs, machine_cache, options)`.
 The caller supplies a private copy of the contract inputs and owns the cache. Strategy constructors configure those resources before the player's operations capture them in closures. Neither resource is stored in the player table.
-The execution drivers receive a builder tied to their machine, so nested refinement cannot replace another execution's machine. The epoch driver requires begin and end input indices, with the optional acceptance callback last.
+The execution drivers receive a builder tied to their machine, so nested bundle collection cannot replace another execution's machine. The epoch driver requires begin and end input indices, with the optional acceptance callback last.
 The honest player uses native machines and ordinary computation-hash builders directly; the driver passes the input index and cycle base to the builders, without attaching execution context or ownership to the machine.
 The dishonest implementations in `prt-dishonest.lua` wrap those objects and maintain their own private bookkeeping, while sharing the execution lifecycle, claim trees, and event handlers.
 The forger changes its private input list, while the referee continues to verify against the original contract inputs. The tamperer configures its cache to wrap execution clones and preserve private strategy state on rollback. Retained checkpoints remain native machines. The fabulist replaces a sample as it enters a computation hash, including when that sample lies in repeated padding.
-Bundle refinement uses the selected factories too, and the ordinary claim tree authenticates every opened bundle.
+Bundle collection uses the selected factories too, and the ordinary claim tree authenticates every opened bundle.
 ```{.lua key=prt_build_mcycle_claim include=prt.lua replace=null}
 ```
 ```{.lua key=prt_dishonest_src include=prt-dishonest.lua replace=null}

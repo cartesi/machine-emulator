@@ -74,7 +74,7 @@ function tree_meta.__index.open_bundle(tree, bundle_index)
     if pcall(hash_tree.frontier_forest_get_node, tree.forest, position, 0) then
         return
     end
-    local bundle_forest = tree:refine(bundle_index)
+    local bundle_forest = tree:collect_bundle(bundle_index)
     assert(bundle_forest.height == tree.bundle_height, "the opened bundle has the wrong height")
     hash_tree.frontier_forest_expand_leaf(tree.forest, position, bundle_forest)
 end
@@ -109,14 +109,14 @@ function tree_meta.__index.prove(tree, index)
     }
 end
 
--- A claim tree of 2^height leaves, with refine reconstructing one bundle on demand.
-local function new_tree(height, bundle_height, forest, refine)
+-- A claim tree of 2^height leaves, with collect_bundle reconstructing one bundle on demand.
+local function new_tree(height, bundle_height, forest, collect_bundle)
     assert(forest.height == height, "the forest does not match the claim height")
     return setmetatable({
         height = height,
         bundle_height = bundle_height,
         forest = forest,
-        refine = refine,
+        collect_bundle = collect_bundle,
     }, tree_meta)
 end
 

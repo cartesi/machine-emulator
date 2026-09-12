@@ -14,28 +14,18 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef BRACKET_NOTE_HPP
-#define BRACKET_NOTE_HPP
+#ifndef LOG_STEP_RESULT_HPP
+#define LOG_STEP_RESULT_HPP
 
-#include <cstdint>
-#include <string>
-
-/// \file
-/// \brief Bracket annotation for access log
+#include "interpret.hpp"
+#include "step-log-data.hpp"
 
 namespace cartesi {
 
-/// \brief Bracket type
-enum class bracket_type {
-    begin, ///< Start of scope
-    end    ///< End of scope
-};
-
-/// \brief Bracket note
-struct bracket_note {
-    bracket_type type{bracket_type::begin}; ///< Bracket type
-    uint64_t where{0};                      ///< Where it points to in the log
-    std::string text;                       ///< Note text
+/// \brief Result of log_step
+struct log_step_result final {
+    step_log_data log;                       ///< Binary step log
+    interpreter_break_reason break_reason{}; ///< Reason why the run stopped
 };
 
 } // namespace cartesi

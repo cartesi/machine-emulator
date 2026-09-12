@@ -17,7 +17,9 @@
 #ifndef CM_INTERNAL_HPP
 #define CM_INTERNAL_HPP
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "cm.h"
 
@@ -29,5 +31,8 @@ CM_API cm_error cm_result_success();
 
 /// \brief Helper function that stores a string to a temporary thread local.
 CM_API const char *cm_set_temp_string(const std::string &s);
+
+/// \brief Helper function that stores binary data to a temporary thread local.
+CM_API const uint8_t *cm_set_temp_data(std::vector<unsigned char> data);
 
 #endif // CM_INTERNAL_HPP

@@ -202,7 +202,7 @@ struct machine_config final {
     virtio_configs virtio;           ///< VirtIO devices config
     cmio_config cmio{};              ///< Cartesi Machine IO config
     pmas_config pmas{};              ///< Physical Memory Attributes config
-    uarch_config uarch{};            ///< Microarchitecture config
+    uarch_config uarch{};            ///< Uarch config
     hash_tree_config hash_tree{};    ///< Hash-tree config
 
     /// \brief Get the name where config will be stored in a directory

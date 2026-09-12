@@ -17,19 +17,41 @@
 #ifndef UARCH_ECALL_H
 #define UARCH_ECALL_H
 
-#ifdef __cplusplus
+#include "uarch-defines.h"
+
 #include <cstdint>
-extern "C" {
-#else
-#include <stdint.h>
-#endif
 
-void ua_halt_ECALL();
-void ua_putchar_ECALL(uint8_t c);
-void ua_write_tlb_ECALL(uint64_t use, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index);
+// Inline, register-pinned ecall wrappers. Keeping these in the header lets call
+// sites inline them, which matters for write_tlb: a TLB flush issues one call per
+// slot (3 sets x 256), so per-call argument marshalling multiplies into the
+// dominant uarch cycle cost of an SFENCE.VMA. The "memory" clobber orders the
+// ecall against shadow-state loads and stores around it.
+// The register variables must not be const: GCC const-propagates const-initialized
+// register-asm variables into the "r" operands, losing the register pinning.
+// NOLINTBEGIN(hicpp-no-assembler, misc-const-correctness): the ecall and its register pinning are the point
 
-#ifdef __cplusplus
+static inline void ua_halt_ECALL() {
+    register uint64_t a7 __asm__("a7") = UARCH_ECALL_FN_HALT_DEF;
+    __asm__ volatile("ecall" : : "r"(a7) : "memory");
 }
-#endif
+
+static inline void ua_putchar_ECALL(uint8_t c) {
+    register uint64_t a7 __asm__("a7") = UARCH_ECALL_FN_PUTCHAR_DEF;
+    register uint64_t a0 __asm__("a0") = c;
+    __asm__ volatile("ecall" : : "r"(a7), "r"(a0) : "memory");
+}
+
+static inline void ua_write_tlb_ECALL(uint64_t use, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+    uint64_t pma_index) {
+    register uint64_t a7 __asm__("a7") = UARCH_ECALL_FN_WRITE_TLB_DEF;
+    register uint64_t a0 __asm__("a0") = use;
+    register uint64_t a1 __asm__("a1") = slot_index;
+    register uint64_t a2 __asm__("a2") = vaddr_page;
+    register uint64_t a3 __asm__("a3") = vp_offset;
+    register uint64_t a4 __asm__("a4") = pma_index;
+    __asm__ volatile("ecall" : : "r"(a7), "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(a4) : "memory");
+}
+
+// NOLINTEND(hicpp-no-assembler, misc-const-correctness)
 
 #endif

@@ -169,20 +169,22 @@ ADD_GENERATED_FILES_DIFF= add-generated-files.diff
 COMPUTATION_HASH_TARGETS= build-computation-hash-corpus build-computation-hash-corpus-with-toolchain \
 	create-computation-hash-corpus archive-computation-hash-corpus \
 	verify-existing-computation-hash-corpus clean-computation-hash-corpus
+STEP_FIXTURE_TARGETS= create-uarch-step-fixtures clean-uarch-step-fixtures \
+	create-machine-step-fixtures clean-machine-step-fixtures
 
 all: source-default
 
 help:
 	@echo 'Main targets:'
 	@echo '* all                                 - Build the src/ code. To build from a clean clone, run: make submodules all'
-	@echo '  uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)'
-	@echo '  uarch-with-toolchain                - Build microarchitecture using the toolchain docker image'
+	@echo '  uarch                               - Build uarch (requires riscv64-cartesi-linux-gnu-* toolchain)'
+	@echo '  uarch-with-toolchain                - Build uarch using the toolchain docker image'
 	@echo '  risc0                               - Build risc0 (requires cargo'
 	@echo '  build-tests-all                     - Build all tests (machine, uarch and misc)'
 	@echo '  build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image'
-	@echo '  build-tests-uarch                   - Build microarchitecture rv64i instruction tests (requires rv64ima-lp64 riscv64-cartesi-linux-gnu-* toolchain)'
-	@echo '  build-tests-uarch-with-toolchain    - Build microarchitecture rv64i instruction tests using the rv64ima-lp64 toolchain docker image'
+	@echo '  build-tests-uarch                   - Build uarch rv64i instruction tests (requires rv64ima-lp64 riscv64-cartesi-linux-gnu-* toolchain)'
+	@echo '  build-tests-uarch-with-toolchain    - Build uarch rv64i instruction tests using the rv64ima-lp64 toolchain docker image'
 	@echo '  build-tests-misc                    - Build miscellaneous tests'
 	@echo '  build-tests-misc-with-builder-image - Build miscellaneous tests using the cartesi/machine-emulator:builder image'
 	@echo '  build-tests-fuzz                    - Build fuzz test targets (requires Clang with libFuzzer)'
@@ -216,6 +218,7 @@ $(SUBCLEAN): %.clean:
 
 clean: $(SUBCLEAN)
 	@$(MAKE) -C risc0 clean
+	@$(MAKE) -C solidity-step clean
 	@rm -rf machine-emulator*.deb
 	@rm -rf $(ADD_GENERATED_FILES_DIFF)
 
@@ -263,6 +266,9 @@ test% coverage% build-tests%:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
 $(COMPUTATION_HASH_TARGETS):
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
+
+$(STEP_FIXTURE_TARGETS):
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
 clean-coverage:

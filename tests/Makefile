@@ -34,14 +34,15 @@ TARGETS_WITH_TOOLCHAIN = $(addsuffix -with-toolchain,build-tests-machine build-t
 
 CARTESI_IMAGES_PATH ?= $(abspath ./build/images)
 CARTESI_CMIO_PATH ?= $(abspath ./build/cmio)
-CARTESI_STEP_LOGS_PATH ?= $(abspath ./build/step-logs)
 CARTESI_TESTS_PATH ?= $(abspath ./build/machine)
 CARTESI_TESTS_UARCH_PATH ?= $(abspath ./build/uarch)
 CARTESI_COMPUTATION_HASH_CORPUS_PATH ?= $(abspath ./build/computation-hash-corpus)
+# The solidity-step and risc0 suites override these to record into their own test/fixtures.
+CARTESI_UARCH_STEP_FIXTURES_PATH ?= $(abspath ./build/uarch-step-fixtures)
+CARTESI_MACHINE_STEP_FIXTURES_PATH ?= $(abspath ./build/machine-step-fixtures)
 
 export CARTESI_IMAGES_PATH
 export CARTESI_CMIO_PATH
-export CARTESI_STEP_LOGS_PATH
 export CARTESI_TESTS_PATH
 export CARTESI_TESTS_UARCH_PATH
 export CARTESI_COMPUTATION_HASH_CORPUS_PATH
@@ -299,12 +300,32 @@ verify-existing-computation-hash-corpus: | $(TEST_COMPUTATION_HASH_ORDER)
 	$(LUA_CLI) ./lua/test-computation-hash.lua
 
 
-create-step-logs $(CARTESI_STEP_LOGS_PATH): | $(CARTESI_IMAGES)
-	$(LUA) ./lua/create-step-logs.lua
-	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) --hash-function=sha256 --save-step-logs=$(CARTESI_STEP_LOGS_PATH) run_step
+# Restricts which uarch tests are recorded into fixtures. Default = the full rv64ui-uarch
+# suite (the uarch corpus has no -p-/-v- variants), so any instruction-handler or ECALL
+# transpilation regression is caught. Override for quick iteration, e.g.
+#   make UARCH_TEST_PATTERN='rv64ui%-uarch%-add.-%.bin' create-uarch-step-fixtures
+UARCH_TEST_PATTERN ?= rv64ui%-uarch%-.+%.bin
+# Restricts which machine tests are recorded (Lua pattern, full match); default = all.
+MACHINE_TEST ?=
 
-clean-step-logs:
-	@rm -rf $(CARTESI_STEP_LOGS_PATH)
+# The uarch recorders refuse a non-empty output dir, so start from a clean one.
+create-uarch-step-fixtures: clean-uarch-step-fixtures
+	RECORDERS_DIR=$(abspath ./lua) UARCH_TESTS_PATH=$(CARTESI_TESTS_UARCH_PATH) \
+		LUA='$(LUA_BIN)' UARCH_TEST_PATTERN='$(UARCH_TEST_PATTERN)' \
+		./scripts/record-uarch-step-fixtures.sh $(CARTESI_UARCH_STEP_FIXTURES_PATH)
+
+clean-uarch-step-fixtures:
+	@rm -rf $(CARTESI_UARCH_STEP_FIXTURES_PATH)
+
+# No clean twin here: the machine fixture dir also holds the risc0 receipt, seal and journal,
+# and re-recording must not force a re-prove. The recorder script clears what it must.
+create-machine-step-fixtures:
+	RECORDERS_DIR=$(abspath ./lua) MACHINE_TESTS_PATH=$(CARTESI_TESTS_PATH) \
+		LUA='$(LUA_BIN)' JOBS=$(NUM_JOBS) MACHINE_TEST='$(MACHINE_TEST)' \
+		./scripts/record-machine-step-fixtures.sh $(CARTESI_MACHINE_STEP_FIXTURES_PATH)
+
+clean-machine-step-fixtures:
+	@rm -rf $(CARTESI_MACHINE_STEP_FIXTURES_PATH)
 
 test-cmio: | $(CARTESI_CMIO_PATH)
 	@./scripts/test-cmio.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua'
@@ -324,6 +345,11 @@ test-uarch-compare:
 
 test-uarch-rv64ui:
 	$(LUA) ./lua/uarch-riscv-tests.lua --jobs=$(NUM_JOBS) run
+
+# Record each rv64ui-uarch program as a multi-cycle step log and verify it replays through
+# verify_step_uarch -- C++ record/replay coverage of the uarch step-proof path over the corpus.
+test-uarch-rv64ui-replay:
+	$(LUA) ./lua/uarch-riscv-tests.lua --jobs=$(NUM_JOBS) verify
 
 test-uarch-interpreter:
 	$(MAKE) -C ../third-party/riscv-arch-test verify XLEN=64 RISCV_TARGET=cartesi RISCV_ISA=rv64i RISCV_DEVICE=I WORK=$(BUILDDIR)/uarch-riscv-arch-test RUN_ARCH_TEST='$(RUN_ARCH_TEST)'
@@ -382,10 +408,6 @@ test-fuzz: build-tests-fuzz
 
 test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save
 
-test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
-	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs
-	tar -czf uarch-riscv-tests-json-logs.tar.gz -C $(BUILDDIR) uarch-riscv-tests-json-logs
-
 test-interactive:
 	echo uname -a | $(LUA) ../src/cartesi-machine.lua --quiet --no-init-splash -it sh | grep -q "riscv64 GNU/Linux"
 	echo uname -a | $(LUA) ../src/cartesi-machine.lua --quiet --no-init-splash -i sh | grep -q "riscv64 GNU/Linux"
@@ -409,8 +431,8 @@ test-coverage-uarch:
 # tail steps ordered below.
 PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
 	test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
-	test-uarch-rv64ui test-uarch-interpreter test-machine-with-log-step \
-	test-coverage-uarch test-computation-hash
+	test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter \
+	test-machine-with-log-step test-coverage-uarch test-computation-hash
 
 test-parallel: $(PARALLEL_TESTS)
 
@@ -471,7 +493,7 @@ coverage-all: | test-coverage-uarch-pcs
 	$(MAKE) coverage-report
 	$(MAKE) -C ../src swap-uarch-pristine-stock
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-rv64ui-replay test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step create-computation-hash-corpus
 
 lint format check-format:
 	@$(MAKE) -C misc $@
@@ -491,3 +513,5 @@ check-lua:
 .PHONY: build-tests-computation-hash-fixtures build-computation-hash-corpus \
 	build-computation-hash-corpus-with-toolchain create-computation-hash-corpus archive-computation-hash-corpus \
 	test-computation-hash verify-existing-computation-hash-corpus clean-computation-hash-corpus
+.PHONY: create-uarch-step-fixtures clean-uarch-step-fixtures \
+	create-machine-step-fixtures clean-machine-step-fixtures

@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Changed `log_step`, `log_step_uarch`, `log_reset_uarch` and `log_send_cmio_response` to return the binary step log, and `verify_step`, `verify_step_uarch`, `verify_reset_uarch`, `verify_send_cmio_response` and `dump_step_uarch` to take it, instead of going through a file; the command line still writes log files
+- Replaced the `file:`, `hex:` and `str:` payload keys of `--log-send-cmio-response` with `data:`, `data-file:` and `encoding:hex|base64|utf8`, matching `rollup.cpp` in machine-guest-tools
+- Reduced the binary step log to a pure witness: verifiers recompute the root hash before from the log, take the cycle count from the caller, and return the root hash after for the caller to compare
 
 ## [0.21.0] - 2026-08-04
 ### Added

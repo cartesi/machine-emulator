@@ -1,10 +1,15 @@
-# Only detect toolchain for non-clean targets (allows clean to work without rzup installed)
+# The cpp toolchain version is pinned: risc0-replay-steps.o is linked into the guest, so its
+# compiler is part of the Image ID. A different toolchain produces a different Image ID even
+# with the Docker (reproducible) guest build. Keep in sync with the CI pin.
+RISC0_CPP_TOOLCHAIN_VERSION := 2024.1.5
+
+# Only detect toolchain for non-clean targets (allows clean to work without it installed)
 ifeq ($(filter clean,$(MAKECMDGOALS)),)
 ifndef RISC0_CPP_TOOLCHAIN_DIR
-ifeq ($(shell command -v rzup 2>/dev/null),)
-  $(error "can't find rzup is not installed, I need it to find the risc0 cpp toolchain")
+RISC0_CPP_TOOLCHAIN_DIR := $(firstword $(wildcard $(HOME)/.risc0/toolchains/*$(RISC0_CPP_TOOLCHAIN_VERSION)-cpp-*))/riscv32im-*/bin
+ifeq ($(RISC0_CPP_TOOLCHAIN_DIR),/riscv32im-*/bin)
+  $(error risc0 cpp toolchain $(RISC0_CPP_TOOLCHAIN_VERSION) not found; install it with 'rzup install cpp $(RISC0_CPP_TOOLCHAIN_VERSION)')
 endif
-RISC0_CPP_TOOLCHAIN_DIR := $(shell rzup show 2>/dev/null | grep -A1 "cpp" | grep -E "^\s*\*" | sed 's/.*\*\s*//' | head -1 | xargs -I {} find ~/.risc0 -name "*{}-cpp-*" -type d 2>/dev/null | head -1)/riscv32im-*/bin
 endif
 RISC0_CPP_TOOLCHAIN_PREFIX = $(RISC0_CPP_TOOLCHAIN_DIR)/riscv32-unknown-elf-
 endif
@@ -12,21 +17,6 @@ endif
 EMULATOR_SRC_DIR = $(abspath ../../src)
 EMULATOR_TOOLS_DIR = $(abspath ../../tools)
 THIRD_PARTY_DIR ?= $(abspath ../../third-party)
-
-BOOST_INC_DIR = /usr/include/boost
-ifeq ($(UNAME),Darwin)
-HOST_CXX := clang++
-# Homebrew installation
-ifneq (,$(wildcard /usr/local/opt/boost/lib))
-BOOST_INC_DIR =/usr/local/opt/boost/include
-else # Macports installation
-BOOST_INC_DIR = /opt/local/include
-endif
-else
-HOST_CXX := g++
-endif
-
-HOST_CFLAGS := -I$(THIRD_PARTY_DIR)/tiny_sha3 -I$(EMULATOR_SRC_DIR)
 
 CC := $(RISC0_CPP_TOOLCHAIN_PREFIX)gcc
 LD := $(RISC0_CPP_TOOLCHAIN_PREFIX)ld
@@ -39,7 +29,7 @@ OPTFLAGS=-O2 -g0
 ifeq ($(dump),yes)
 DUMP_DEFS+=-DDUMP_INSN
 DUMP_DEFS+=-DDUMP_REGS
-DUMP_DEFS+=-DDUMP_HASH_TREE_STATSj
+DUMP_DEFS+=-DDUMP_HASH_TREE_STATS
 DUMP_DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
 DUMP_DEFS+=-DDUMP_EXCEPTIONS
 DUMP_DEFS+=-DDUMP_INTERRUPTS
@@ -54,7 +44,7 @@ endif
 # Flags to minimize undefined behavior
 UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks
 
-CFLAGS := -march=rv32im -mabi=ilp32 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
+CFLAGS := -march=rv32im -mabi=ilp32 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) -MMD -MP \
 	-DZKARCHITECTURE=1 \
 	-DNO_STD_VECTOR=1 \
 	$(DUMP_DEFS) \
@@ -68,8 +58,7 @@ CFLAGS := -march=rv32im -mabi=ilp32 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
 	-I. \
 	-I$(THIRD_PARTY_DIR)/llvm-flang-uint128 \
 	-I$(THIRD_PARTY_DIR) \
-	-I$(EMULATOR_SRC_DIR) \
-	-I$(BOOST_INC_DIR)
+	-I$(EMULATOR_SRC_DIR)
 
 CXXFLAGS := -std=c++23 -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit
 
@@ -121,5 +110,8 @@ $(EMULATOR_SRC_DIR)/interpret-jump-table.hpp: $(EMULATOR_TOOLS_DIR)/gen-interpre
 risc0-replay-steps.o: $(EMULATOR_SRC_DIR)/cm-version.h $(EMULATOR_SRC_DIR)/interpret-jump-table.hpp $(EMULATOR_OBJS) $(RISC0ARCH_OBJS) $(RISC0_THIRDPARTY_OBJS)
 	$(LD) -relocatable $(EMULATOR_OBJS) $(RISC0ARCH_OBJS) $(RISC0_THIRDPARTY_OBJS) -o $@
 
+# Rebuild objects when an included header (e.g. shared emulator sources) changes.
+-include $(wildcard *.d)
+
 clean:
-	@rm -f *.o
+	@rm -f *.o *.d

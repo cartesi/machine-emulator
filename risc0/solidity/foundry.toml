@@ -6,6 +6,9 @@ test = "test"
 
 fs_permissions = [{ access = "read", path = "../test/fixtures" }]
 
+ignored_warnings_from = ["lib"]
+ignored_error_codes = [4591]
+
 [fmt]
 line_length = 120
 tab_width = 4

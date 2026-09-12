@@ -6,7 +6,6 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
-local filesystem = require("cartesi.filesystem")
 local hash_tree = require("cartesi.hash-tree")
 local tabular = require("cartesi.tabular")
 local util = require("cartesi.util")
@@ -534,7 +533,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
+                local collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_HALTED)
@@ -590,7 +590,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
+                local collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:read_reg("mcycle"), mcycle_start)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
@@ -647,7 +648,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
+                local collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_HALTED)
                 expect.equal(#collected_uarch.mcycle_hash_offsets, 2)
@@ -673,7 +675,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), mcycle_end)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
 
-                local collected_uarch = machine:collect_uarch_cycle_root_hashes(mcycle_end)
+                local collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(mcycle_end, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_YIELDED_MANUALLY)
                 expect.equal(#collected_uarch.mcycle_hash_offsets, 2)
@@ -813,7 +816,8 @@ describe("collect hashes", function()
                 expect.equal(machine:read_reg("mcycle"), cartesi.MCYCLE_MAX)
                 expect.equal(machine:read_reg("iflags_H"), 0)
 
-                collected_uarch = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX)
+                collected_uarch =
+                    machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0, pristine_revert_uarch_tail)
                 expect.equal(machine:get_root_hash(), expected_root_hash)
                 expect.equal(collected_uarch.break_reason, cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
                 expect.equal(#collected_uarch.mcycle_hash_offsets, 2)
@@ -940,13 +944,10 @@ describe("collect hashes", function()
 
                     local log_machine <close> = make_case_machine(case)
                     root_hash = log_machine:get_root_hash()
-                    local log_filename = filesystem.temp_pathname()
-                    local _ <close> = tests_util.scope_exit(function()
-                        os.remove(log_filename)
-                    end)
-                    expect.equal(log_machine:log_step(0, log_filename), case.expected)
+                    local log, break_reason = log_machine:log_step(0)
+                    expect.equal(break_reason, case.expected)
                     expect.equal(log_machine:get_root_hash(), root_hash)
-                    expect.equal(log_machine:verify_step(root_hash, log_filename, 0), root_hash)
+                    expect.equal(log_machine:verify_step(root_hash, log, 0), root_hash)
 
                     local mcycle_machine <close> = make_case_machine(case)
                     root_hash = mcycle_machine:get_root_hash()
@@ -1531,22 +1532,22 @@ describe("collect hashes", function()
             }
 
             if hash_function == "keccak256" then
-                it("should fail when microarchitecture is not reset", function()
+                it("should fail when uarch is not reset", function()
                     local machine <close> = cartesi.machine(empty_machine_config)
                     machine:run_uarch(1)
                     expect.fail(function()
                         machine:collect_mcycle_root_hashes(0, log2_mcycle_period(32), 1)
-                    end, "microarchitecture is not reset")
+                    end, "uarch is not reset")
                     expect.fail(function()
                         machine:collect_uarch_cycle_root_hashes(1)
-                    end, "microarchitecture is not reset")
+                    end, "uarch is not reset")
                 end)
             else
                 it("should fail when collecting uarch cycles", function()
                     local machine <close> = cartesi.machine(empty_machine_config)
                     expect.fail(function()
                         machine:collect_uarch_cycle_root_hashes(1)
-                    end, "microarchitecture can only be used with hash tree")
+                    end, "uarch can only be used with hash tree")
                 end)
             end
 
@@ -1653,7 +1654,7 @@ describe("collect hashes", function()
                 it("should match dense uarch root hashes", function()
                     --[[
                     This test runs a big machine booting a full Linux kernel (without a root filesystem) until it halts,
-                    using microarchitecture stepping for the final mcycles only.
+                    using uarch stepping for the final mcycles only.
                     This verifies that collecting root hashes via uarch is correct for complete mcycles,
                     while minimizing test runtime by limiting uarch execution to a few mcycles.
                     ]]
@@ -1681,7 +1682,7 @@ describe("collect hashes", function()
                 it("should match dense uarch root hashes while yielding", function()
                     expect.truthy(yield_last_mcycle ~= nil and yield_last_root_hash ~= nil)
                     --[[
-                    This test verifies that collecting root hashes via microarchitecture stepping remains correct even
+                    This test verifies that collecting root hashes via uarch stepping remains correct even
                     when execution is interrupted by both manual and automatic yields at various points.
                     It ensures that root hash collection is robust and accurate across different yield scenarios.
                     ]]

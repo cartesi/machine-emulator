@@ -20,6 +20,25 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=RISC0_REPRODUCIBLE_BUILD");
 
+    // The guest build must be hermetic: risc0-build forwards the ambient RUSTFLAGS into the
+    // guest sub-invocation (even the Docker one), so host-side flags -- e.g. cargo-llvm-cov's
+    // -C instrument-coverage -- would change or break the rv32im guest and its Image ID.
+    std::env::remove_var("RUSTFLAGS");
+    std::env::remove_var("CARGO_ENCODED_RUSTFLAGS");
+
+    // embed_methods builds the guest in a sub-invocation, so this outer script must rerun (and
+    // re-embed REPLAY_STEP_ELF / REPLAY_STEP_ID) whenever a guest input changes -- otherwise a
+    // rebuilt C++ replay object or edited guest source leaves a stale embedded guest behind.
+    for input in [
+        "../../cpp/risc0-replay-steps.o",
+        "guest/Cargo.toml",
+        "guest/Cargo.lock",
+        "guest/build.rs",
+        "guest/src/main.rs",
+    ] {
+        println!("cargo:rerun-if-changed={input}");
+    }
+
     // Build the guest inside Docker by default to guarantee the same Image ID on every
     // platform. Set RISC0_REPRODUCIBLE_BUILD=0 for environments without Docker (e.g.,
     // GPU containers). Native builds produce a platform-specific Image ID.
@@ -46,9 +65,7 @@ fn main() {
             .build()
             .unwrap();
 
-        risc0_build::embed_methods_with_options(HashMap::from([
-            ("replay_step", guest_opts),
-        ]));
+        risc0_build::embed_methods_with_options(HashMap::from([("replay_step", guest_opts)]));
     } else {
         risc0_build::embed_methods_with_options(HashMap::new());
     }

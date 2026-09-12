@@ -68,6 +68,14 @@ describe("cartesi-machine CLI", function()
         end), path
     end
 
+    -- Every logging option prints the root hashes a verifier needs, since the log carries none
+    local function root_hash_pair(stderr)
+        local before = stderr:match("root hash before: (0x%x+)")
+        local after = stderr:match("root hash after: (0x%x+)")
+        assert(before and after, "missing root hash pair in stderr:\n" .. stderr)
+        return cartesi.fromhex(before), cartesi.fromhex(after)
+    end
+
     local function scope_stored_dirname()
         local dir = filesystem.temp_pathname()
         return tests_util.scope_exit(function()
@@ -1774,43 +1782,61 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     -- Step-logging and uarch options
     --
-    -- What: --log-step, --log-step-uarch, --log-reset-uarch, --max-uarch-cycle,
+    -- What: --log-step, --log-step-uarch, --log-reset-uarch (with ,dump), --max-uarch-cycle,
     --       --auto-reset-uarch, and --print-uarch-cycle-root-hashes (positional count with
     --       a start: sub-key).
-    -- How:  run_ok() each flag; for --log-step also open the output file and
-    --       assert it is non-empty to confirm the log was written.
+    -- How:  run_ok() each flag; for the logging options, verify the written log against
+    --       the root hash pair printed to stderr, so the pair is the one the log needs.
     -- -------------------------------------------------------------------------
     it("log step options", function()
         local _ <close>, log_file = scope_temp_pathname()
 
         -- --log-step=<file>,count:N
-        run_ok({
+        local _, ls_stderr = run_ok({
             "--log-step=" .. log_file .. ",count:1",
             "--max-mcycle=1",
             "--no-init-splash",
             "--quiet",
         })
-        expect.truthy(#filesystem.read_file(log_file) > 0)
+        local log = filesystem.read_file(log_file)
+        expect.truthy(#log > 0)
+        local before, after = root_hash_pair(ls_stderr)
+        expect.equal(cartesi.machine:verify_step(before, log, 1), after)
 
-        -- --log-step-uarch
-        local _ <close>, su_cfg = scope_temp_pathname()
-        run_ok({
-            "--log-step-uarch",
-            "--store-config=" .. su_cfg,
+        -- --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump], after a uarch advance:
+        -- the pair brackets the log, not the whole run
+        local _ <close>, su_log = scope_temp_pathname()
+        os.remove(su_log)
+        local _, su_stderr = run_ok({
+            "--log-step-uarch=" .. su_log .. ",count:2,dump",
+            "--max-uarch-cycle=2",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
+        log = filesystem.read_file(su_log)
+        expect.truthy(#log > 0)
+        before, after = root_hash_pair(su_stderr)
+        expect.equal(cartesi.machine:verify_step_uarch(before, log, 2), after)
+        -- the dump key replays the log to stderr, one bracket per uarch cycle
+        expect.truthy(su_stderr:match("begin uarch_step\n  read uarch%.cycle@0x%x+: 0x2%(2%)"))
+        expect.truthy(su_stderr:match("begin uarch_step\n  read uarch%.cycle@0x%x+: 0x3%(3%)"))
 
-        -- --log-reset-uarch
-        local _ <close>, ru_cfg = scope_temp_pathname()
-        run_ok({
-            "--log-reset-uarch",
-            "--store-config=" .. ru_cfg,
+        -- --log-reset-uarch=<filename>
+        local _ <close>, ru_log = scope_temp_pathname()
+        os.remove(ru_log)
+        local _, ru_stderr = run_ok({
+            "--log-reset-uarch=" .. ru_log .. ",dump",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
+        log = filesystem.read_file(ru_log)
+        expect.truthy(#log > 0)
+        before, after = root_hash_pair(ru_stderr)
+        expect.equal(cartesi.machine:verify_reset_uarch(before, log), after)
+        -- the dump key replays the reset to stderr
+        expect.truthy(ru_stderr:find("begin uarch_reset_state\n  write uarch.state@", 1, true))
 
         -- --max-uarch-cycle
         run_ok({ "--max-uarch-cycle=0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -1820,6 +1846,131 @@ describe("cartesi-machine CLI", function()
 
         -- --print-uarch-cycle-root-hashes=<count>,start:<n>
         run_ok({ "--print-uarch-cycle-root-hashes=1,start:0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- cmio response payload encodings (--log-send-cmio-response)
+    --
+    -- What: the payload can be given inline under three encodings or read from
+    --       a file as raw bytes. The encoding names match the --hex-payload /
+    --       --base64-payload / --utf8-payload options of rollup.cpp.
+    -- How:  log the same six bytes through every path and compare the resulting
+    --       step logs, which must be byte-identical.
+    -- -------------------------------------------------------------------------
+    it("cmio response payload encodings", function()
+        local function log_response(source)
+            local _ <close>, log_file = scope_temp_pathname()
+            os.remove(log_file)
+            local _, stderr = run_ok({
+                "--log-send-cmio-response=" .. log_file .. ",reason:1," .. source,
+                "--max-mcycle=0",
+                "--no-init-splash",
+                "--quiet",
+            })
+            local contents = filesystem.read_file(log_file)
+            expect.truthy(#contents > 0)
+            -- the printed pair verifies the log; the hash before doubles as the revert root hash
+            local before, after = root_hash_pair(stderr)
+            expect.equal(cartesi.machine:verify_send_cmio_response(1, "hello!", before, contents, before), after)
+            return contents
+        end
+
+        local _ <close>, payload_file = scope_temp_pathname()
+        filesystem.write_file(payload_file, "hello!")
+
+        -- hex is the default encoding, so the first two must agree
+        local by_hex = log_response("data:0x68656c6c6f21")
+        expect.equal(log_response("data:0x68656c6c6f21,encoding:hex"), by_hex)
+        expect.equal(log_response("data:aGVsbG8h,encoding:base64"), by_hex)
+        expect.equal(log_response("data:hello!,encoding:utf8"), by_hex)
+        expect.equal(log_response("data-file:" .. payload_file), by_hex)
+
+        local log_arg = "--log-send-cmio-response=" .. payload_file .. ",reason:1,"
+        run_fail({ log_arg .. "data:0x00,data-file:" .. payload_file }, "exactly one of data:, data%-file:")
+        run_fail({ log_arg:sub(1, -2) }, "exactly one of data:, data%-file:")
+        run_fail({ log_arg .. "data:0x00,encoding:rot13" }, "encoding must be one of hex, base64, utf8")
+        run_fail({ log_arg .. "data-file:" .. payload_file .. ",encoding:hex" }, "does not apply to data%-file:")
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Every logging option in one invocation
+    --
+    -- What: the CLI runs them in a fixed order after the machine stops: --log-step,
+    --       --max-uarch-cycle, --log-step-uarch, --log-reset-uarch,
+    --       --log-send-cmio-response. Each prints its own root hash pair.
+    -- How:  boot a guest that yields manual rx-accepted ("rollup accept"), so the cmio
+    --       response is a real one, log all four in one run, verify each log against its
+    --       pair in print order, and check the state hands off from one option to the next.
+    -- -------------------------------------------------------------------------
+    it("all logging options in one run", function()
+        local _ <close>, step_log = scope_temp_pathname()
+        local _ <close>, uarch_log = scope_temp_pathname()
+        local _ <close>, reset_log = scope_temp_pathname()
+        local _ <close>, cmio_log = scope_temp_pathname()
+        for _, path in ipairs({ step_log, uarch_log, reset_log, cmio_log }) do
+            os.remove(path)
+        end
+        -- No --max-mcycle: the machine runs until the guest's "rollup accept" yields manual
+        -- rx-accepted, which is the state the four logging options then act on
+        local _, stderr = run_ok({
+            "--no-init-splash",
+            "--quiet",
+            "--max-uarch-cycle=2",
+            "--log-step=" .. step_log .. ",count:1",
+            "--log-step-uarch=" .. uarch_log .. ",count:2",
+            "--log-reset-uarch=" .. reset_log,
+            "--log-send-cmio-response=" .. cmio_log .. ",reason:0,data:0x1234,dump",
+            "--",
+            "rollup",
+            "accept",
+        })
+        -- the dump key replays the response to stderr: the payload lands in the rx buffer
+        expect.truthy(stderr:find("begin send_cmio_response\n  read iflags.Y@", 1, true))
+        expect.truthy(stderr:find(" -> 0x1234(2^5 bytes)\n", 1, true))
+        -- Each logging option prints two lines to stderr around its log call:
+        --   root hash before: 0x<64 hex digits>
+        --   root hash after: 0x<64 hex digits>
+        -- Collect them in print order, which is the option order above. The verifiers below take
+        -- each hash before as the claim and compare the hash after with what the replay returns.
+        local hashes = {}
+        for before, after in stderr:gmatch("root hash before: (0x%x+)\nroot hash after: (0x%x+)") do
+            hashes[#hashes + 1] = cartesi.fromhex(before)
+            hashes[#hashes + 1] = cartesi.fromhex(after)
+        end
+        expect.equal(#hashes, 8)
+        local step_hash_before, step_hash_after = hashes[1], hashes[2]
+        local uarch_hash_before, uarch_hash_after = hashes[3], hashes[4]
+        local reset_hash_before, reset_hash_after = hashes[5], hashes[6]
+        local cmio_hash_before, cmio_hash_after = hashes[7], hashes[8]
+
+        -- a yielded machine does not run, so the step log is the identity
+        expect.equal(cartesi.machine:verify_step(step_hash_before, filesystem.read_file(step_log), 1), step_hash_after)
+        expect.equal(step_hash_after, step_hash_before)
+        expect.equal(
+            cartesi.machine:verify_step_uarch(uarch_hash_before, filesystem.read_file(uarch_log), 2),
+            uarch_hash_after
+        )
+        expect.equal(
+            cartesi.machine:verify_reset_uarch(reset_hash_before, filesystem.read_file(reset_log)),
+            reset_hash_after
+        )
+        -- the CLI recorded the hash before as the revert root hash
+        local data = cartesi.fromhex("0x1234")
+        expect.equal(
+            cartesi.machine:verify_send_cmio_response(
+                0,
+                data,
+                cmio_hash_before,
+                filesystem.read_file(cmio_log),
+                cmio_hash_before
+            ),
+            cmio_hash_after
+        )
+        -- the state hands off between consecutive options; --max-uarch-cycle runs unlogged between
+        -- the step log and the uarch log, and the reset undoes those uarch cycles
+        expect.equal(reset_hash_before, uarch_hash_after)
+        expect.equal(cmio_hash_before, reset_hash_after)
+        expect.equal(reset_hash_after, step_hash_after)
     end)
 
     -- -------------------------------------------------------------------------
@@ -2871,7 +3022,7 @@ describe("cartesi-machine CLI", function()
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
         }, "uarch_cycle_computation_hash cannot be combined with mcycle_computation_hash")
-        -- The microarchitecture only runs with keccak256.
+        -- The uarch only runs with keccak256.
         run_fail({
             "--hash-tree=hash_function:sha256",
             "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"

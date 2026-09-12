@@ -1,0 +1,21 @@
+[profile.default]
+src = "src"
+out = "out"
+test = "test"
+solc_version = "0.8.30"
+evm_version = "prague"
+optimizer = true
+via_ir = true
+fs_permissions = [{ access = "read", path = "test/fixtures" }]
+# Per-cycle replay walks every cycle of every program in one outer test frame,
+# accumulating bytes allocations across thousands of vm.readFileBinary calls.
+# 1 GiB is comfortable headroom for the full 54-program uarch suite.
+memory_limit = 1073741824
+# The same walk measures gas per verified step, so metering stays on and the frame
+# must outlive the whole corpus. Default 2^30 covers only a fraction of it.
+block_gas_limit = 1099511627776
+
+[fmt]
+line_length = 100
+tab_width = 4
+sort_imports = true

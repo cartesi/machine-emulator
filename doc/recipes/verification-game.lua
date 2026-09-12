@@ -37,11 +37,11 @@ vgu.SCHEMA_DICT.StateValueProof = {
     target_value = "Base64",
     proof = "Proof",
 }
--- The disputed transition's access logs. The transition that closes an instruction carries a
--- step and a reset log, an ordinary step just the one.
+-- The disputed transition's binary step logs, as raw file bytes. The transition that
+-- closes an instruction carries a step and a reset log, an ordinary step just the one.
 vgu.SCHEMA_DICT.LogCommitment = {
-    step_log = "AccessLog",
-    reset_log = "AccessLog",
+    step_log = "Base64",
+    reset_log = "Base64",
 }
 
 local TEMPLATE = "calculator-template"
@@ -111,14 +111,15 @@ end
 -- then a fixed point, and the reset, committed as two logs, every other an ordinary step,
 -- decided by the cycle the referee names rather than the machine's own uarch_cycle, which sits
 -- at the halt.
+-- Both players run in the referee's directory, so each names its log files by its role.
 local function commit_log(player, branch, _mcycle, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine
+    local step_log = agreed:log_step_uarch(1)
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        local step_log = agreed:log_step_uarch()
         return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
     end
-    return { step_log = agreed:log_step_uarch() }
+    return { step_log = step_log }
 end
 
 -- The output captured during commit_final_hash, the result bytes and the output drive's subtree
@@ -179,7 +180,7 @@ local function verify_state_transition(uarch_cycle, state_hash_before, log, stat
     local machine = cartesi.machine
     local pass = pcall(function()
         eventf("Verifying uarch step log!")
-        local hash = machine:verify_step_uarch(state_hash_before, log.step_log)
+        local hash = machine:verify_step_uarch(state_hash_before, log.step_log, 1)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
             eventf("Verifying uarch reset log!")
             hash = machine:verify_reset_uarch(hash, log.reset_log)

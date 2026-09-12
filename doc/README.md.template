@@ -5477,6 +5477,13 @@ Tournament opening waits for responses with the closing block as its deadline, t
 This also keeps the tournament from opening early when all responses arrive before the deadline.
 The server handles responses and logical time; the tournament determines when claim collection closes.
 
+`server:run_all(functions)` starts a list of closures concurrently and returns a future.
+Its `wait()` returns `true` once every closure finishes, immediately for an empty list.
+A timed wait returns `nil` on expiry and leaves the closures running for a later wait.
+Closing the future cancels unfinished closures and their descendants, running their `<close>` cleanup.
+Errors in a closure still fail the referee.
+`run_matches` uses this method to record each match's winner and wait for the whole round.
+
 The referee server in `prtu.lua` runs logical blocks, with a barrier for each block's ordinary requests.
 It gathers every audience member's response, explicit skip, or disconnect before validating replies and resuming protocol coroutines in match creation order.
 Each continuation runs to its next yield, and new ordinary requests form the next block's batch.

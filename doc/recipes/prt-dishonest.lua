@@ -94,12 +94,12 @@ local function use_machine(geometry, inputs, cache, options, overrides)
         machine.state, machine.snapshot_state = state, false
     end
     local make_mcycle = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
-    options.new_mcycle_computation_hash = function(g, c, machine, bundle_index)
-        return observe_input(make_mcycle(g, c, machine, bundle_index), machine)
+    options.new_mcycle_computation_hash = function(log2_period, c, machine, bundle_index)
+        return observe_input(make_mcycle(log2_period, c, machine, bundle_index), machine)
     end
     local make_uarch = options.new_uarch_computation_hash or prt.new_uarch_computation_hash
-    options.new_uarch_computation_hash = function(g, machine, epoch_period_index, bundle_index)
-        return observe_input(make_uarch(g, machine, epoch_period_index, bundle_index), machine)
+    options.new_uarch_computation_hash = function(log2_period, machine, epoch_period_index, bundle_index)
+        return observe_input(make_uarch(log2_period, machine, epoch_period_index, bundle_index), machine)
     end
     local make_null = options.new_null_computation_hash or prt.new_null_computation_hash
     options.new_null_computation_hash = function(machine)
@@ -357,8 +357,8 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
     local target_epoch_period_index = input_index * geometry.periods_per_input + leaf_offset
     local fake_hash = keccak("fabulist")
     local make_mcycle = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
-    options.new_mcycle_computation_hash = function(g, c, machine, bundle_index)
-        local claim = make_mcycle(g, c, machine, bundle_index)
+    options.new_mcycle_computation_hash = function(log2_period, c, machine, bundle_index)
+        local claim = make_mcycle(log2_period, c, machine, bundle_index)
         return new_mcycle_liar(
             claim,
             lie_about_leaf(target_epoch_period_index, fake_hash, function(_, first_leaf)
@@ -367,8 +367,8 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
         )
     end
     local make_uarch = options.new_uarch_computation_hash or prt.new_uarch_computation_hash
-    options.new_uarch_computation_hash = function(g, machine, epoch_period_index, bundle_index)
-        local claim = make_uarch(g, machine, epoch_period_index, bundle_index)
+    options.new_uarch_computation_hash = function(log2_period, machine, epoch_period_index, bundle_index)
+        local claim = make_uarch(log2_period, machine, epoch_period_index, bundle_index)
         if epoch_period_index == target_epoch_period_index then
             return new_uarch_liar(
                 claim,
@@ -393,8 +393,8 @@ end
 local function new_quitter(geometry, inputs, cache, options)
     options = role_options("quitter", options)
     local make = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
-    options.new_mcycle_computation_hash = function(g, c, machine, bundle_index)
-        local claim = make(g, c, machine, bundle_index)
+    options.new_mcycle_computation_hash = function(log2_period, c, machine, bundle_index)
+        local claim = make(log2_period, c, machine, bundle_index)
         claim.cache_machine = false
         return new_mcycle_liar(claim, function(collector, _, count, height)
             local fake_hash = keccak(options.seed or "quitter")

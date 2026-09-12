@@ -1156,7 +1156,7 @@ end
 
 local function mcycle_computation_hash_begin_input(claim, input_index, input_base)
     claim.input_index = input_index
-    claim.next_leaf = claim.bundle_index ~= nil and claim.first_leaf or input_index * claim.geometry.periods_per_input
+    claim.next_leaf = claim.bundle_index ~= nil and claim.first_leaf or input_index * claim.periods_per_input
     claim.input_entry_count = 0
     claim.mcycle_phase = 0
     claim.partial_bundle = nil
@@ -1231,12 +1231,14 @@ end
 
 -- Omitting bundle_index collects the full epoch as bundle roots. Providing it reconstructs
 -- that bundle as individual state hashes. Leaf positions are logical, even at a fixed point.
-local function new_mcycle_computation_hash(geometry, machine_cache, machine, bundle_index)
+local function new_mcycle_computation_hash(log2_mcycles_per_period, machine_cache, machine, bundle_index)
+    local log2_periods_per_input = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period
     local log2_bundle_mcycle_count = bundle_index ~= nil and 0 or LOG2_BUNDLE_MCYCLE_COUNT
-    local height = bundle_index ~= nil and LOG2_BUNDLE_MCYCLE_COUNT or geometry.mcycle_height
+    local height = bundle_index ~= nil and LOG2_BUNDLE_MCYCLE_COUNT
+        or (cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_periods_per_input)
     local first_leaf = bundle_index ~= nil and (bundle_index << LOG2_BUNDLE_MCYCLE_COUNT) or 0
     return setmetatable({
-        geometry = geometry,
+        periods_per_input = 1 << log2_periods_per_input,
         machine_cache = machine_cache,
         machine = machine,
         bundle_index = bundle_index,
@@ -1244,10 +1246,10 @@ local function new_mcycle_computation_hash(geometry, machine_cache, machine, bun
         end_leaf = first_leaf + (1 << height),
         height = height,
         bundle_height = log2_bundle_mcycle_count,
-        log2_period = geometry.log2_mcycles_per_period,
-        chunk_size = mcycle_hashes_chunk_size(geometry.log2_mcycles_per_period, log2_bundle_mcycle_count),
+        log2_period = log2_mcycles_per_period,
+        chunk_size = mcycle_hashes_chunk_size(log2_mcycles_per_period, log2_bundle_mcycle_count),
         input_entry_capacity = bundle_index ~= nil and (1 << (height - log2_bundle_mcycle_count))
-            or (geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT),
+            or ((1 << log2_periods_per_input) >> LOG2_BUNDLE_MCYCLE_COUNT),
         cache_machine = bundle_index == nil,
         begin_epoch = mcycle_computation_hash_begin_epoch,
         begin_input = mcycle_computation_hash_begin_input,
@@ -1341,8 +1343,8 @@ local function uarch_computation_hash_begin_input(claim, input_index, input_base
     claim.revert_uarch_tail = claim.machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0).hashes
     local mcycle_offset = claim.first_leaf >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
     claim.target_start =
-        usaturating_add(claim.input_base, claim.period_index * claim.geometry.mcycles_per_period + mcycle_offset)
-    local count = claim.bundle_index ~= nil and 1 or claim.geometry.mcycles_per_period
+        usaturating_add(claim.input_base, claim.period_index * claim.mcycles_per_period + mcycle_offset)
+    local count = claim.bundle_index ~= nil and 1 or claim.mcycles_per_period
     claim.target_end =
         usaturating_add(claim.target_start, count, usaturating_add(claim.input_base, MAX_MCYCLES_PER_ADVANCE_STATE))
 end
@@ -1388,17 +1390,19 @@ end
 
 -- Omitting bundle_index collects the full period identified by epoch_period_index as bundle roots.
 -- Providing it reconstructs that period's selected bundle as individual state hashes.
-local function new_uarch_computation_hash(geometry, machine, epoch_period_index, bundle_index)
+local function new_uarch_computation_hash(log2_mcycles_per_period, machine, epoch_period_index, bundle_index)
+    local periods_per_input = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period)
     local log2_bundle_uarch_cycle_count = bundle_index ~= nil and 0 or LOG2_BUNDLE_UARCH_CYCLE_COUNT
-    local height = bundle_index ~= nil and LOG2_BUNDLE_UARCH_CYCLE_COUNT or geometry.uarch_height
+    local height = bundle_index ~= nil and LOG2_BUNDLE_UARCH_CYCLE_COUNT
+        or (log2_mcycles_per_period + cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE)
     local first_leaf = bundle_index ~= nil and (bundle_index << LOG2_BUNDLE_UARCH_CYCLE_COUNT) or 0
     return setmetatable({
-        geometry = geometry,
+        mcycles_per_period = 1 << log2_mcycles_per_period,
         machine = machine,
         bundle_index = bundle_index,
         height = height,
         first_leaf = first_leaf,
-        period_index = epoch_period_index % geometry.periods_per_input,
+        period_index = epoch_period_index % periods_per_input,
         end_leaf = first_leaf + (1 << height),
         bundle_height = log2_bundle_uarch_cycle_count,
         chunk_size = uarch_hashes_chunk_size(log2_bundle_uarch_cycle_count),
@@ -1646,7 +1650,7 @@ local function new_player(geometry, inputs, machine_cache, options)
     -- docs:begin build_mcycle_claim
     local function build_mcycle_claim()
         local machine, owner <close> = machine_cache:clone_at_input_boundary(0, replay) -- luacheck: ignore 211
-        local claim = options.new_mcycle_computation_hash(geometry, machine_cache, machine)
+        local claim = options.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, machine_cache, machine)
         return run_advance_state_epoch(machine, claim, 0, #inputs)
     end
     -- docs:end build_mcycle_claim
@@ -1666,7 +1670,8 @@ local function new_player(geometry, inputs, machine_cache, options)
             period_index * geometry.mcycles_per_period,
             revert_root_hash
         )
-        claim = options.new_mcycle_computation_hash(geometry, machine_cache, machine, bundle_index)
+        claim =
+            options.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, machine_cache, machine, bundle_index)
         claim:begin_epoch()
         if is_at_fixed_point(break_reason) then
             return claim:end_epoch()
@@ -1685,7 +1690,12 @@ local function new_player(geometry, inputs, machine_cache, options)
         local period_index = epoch_period_index % geometry.periods_per_input
         local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, replay)
         local revert_root_hash = machine:get_root_hash()
-        local claim = options.new_uarch_computation_hash(geometry, machine, epoch_period_index, bundle_index)
+        local claim = options.new_uarch_computation_hash(
+            geometry.log2_mcycles_per_period,
+            machine,
+            epoch_period_index,
+            bundle_index
+        )
         claim:begin_epoch()
         run_advance_state_input(
             machine,

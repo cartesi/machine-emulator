@@ -573,24 +573,16 @@ local function run_match(tournament, match)
 end
 -- docs:end run_match
 
--- Runs the matches concurrently, one coroutine each in the referee server's dispatcher, and
--- records their winners once every match has finished.
+-- Runs the matches concurrently and waits until all their winners have been recorded.
 local function run_matches(tournament, matches)
-    local round_coroutine = coroutine.running()
-    local unfinished_matches = 0
+    local functions = {}
     for _, match in ipairs(matches) do
-        unfinished_matches = unfinished_matches + 1
-        server.dispatcher:spawn(function()
+        functions[#functions + 1] = function()
             match.winner = run_match(tournament, match)
-            unfinished_matches = unfinished_matches - 1
-            if unfinished_matches == 0 then
-                server.dispatcher:schedule(round_coroutine, "matches_done")
-            end
-        end)
+        end
     end
-    while unfinished_matches > 0 do
-        server.dispatcher:wake_when_scheduled()
-    end
+    local completed <close> = server:run_all(functions)
+    completed:wait()
 end
 
 -- Pairs the surviving claims two by two into the matches of a round, in bracket order.

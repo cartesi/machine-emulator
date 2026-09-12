@@ -404,6 +404,25 @@ function dispatcher_meta.__index.spawn(self, f)
     local cortn = coroutine.create(f)
     self.parents[cortn] = coroutine.running()
     self:schedule(cortn, "start")
+    return cortn
+end
+
+-- Closing a coroutine and its descendants runs their scoped cleanup. Queued resumptions
+-- are harmless because step skips dead coroutines.
+function dispatcher_meta.__index.close(self, main)
+    local coroutines = { main }
+    for cortn, parent in pairs(self.parents) do
+        while parent do
+            if parent == main then
+                coroutines[#coroutines + 1] = cortn
+                break
+            end
+            parent = self.parents[parent]
+        end
+    end
+    for _, cortn in ipairs(coroutines) do
+        assert(coroutine.close(cortn))
+    end
 end
 
 local function wait_on(list, sock)
@@ -759,7 +778,7 @@ local function new_server(address)
         listener = address and assert(socket.bind(host, tonumber(port))),
         connections = {},
         subscriptions = {}, -- subscription hash -> set of interested connections
-        active = {}, -- set of pending requests and block waits
+        active = {}, -- set of pending requests, block waits, and closure groups
         clock = new_clock(),
         ordinary = {}, -- requests for the next ordinary block
         controls = {}, -- schedule/cancel requests awaiting their replies
@@ -1123,7 +1142,7 @@ end
 
 local future_meta = { __index = {} }
 
--- Closing a future removes its response ID and cancels its callback on every holder.
+-- Closing a future cancels its callback on every holder or closes its unfinished closures.
 function future_meta.__index:close()
     if self.closed then
         return
@@ -1134,6 +1153,11 @@ function future_meta.__index:close()
     if self.id then
         server.scheduled_responses[self.id] = nil
         queue_control(server, self.conns, EVENTS.cancel_response, { self.id })
+    end
+    if self.tasks then
+        for _, cortn in ipairs(self.tasks) do
+            server.dispatcher:close(cortn)
+        end
     end
     if self.cortn then
         server.dispatcher:schedule(self.cortn, self)
@@ -1166,6 +1190,32 @@ function future_meta.__index:wait(deadline)
         end
         return responses
     end
+end
+
+-- Starts the closures concurrently, in list order. The future resolves to true when all
+-- finish, including immediately for an empty list. Errors still fail the referee.
+function server_meta.__index.run_all(self, functions)
+    for _, f in ipairs(functions) do
+        assert(type(f) == "function", "run_all expects closures")
+    end
+    local future = setmetatable({ kind = "run_all", server = self, tasks = {} }, future_meta)
+    register_event(self, future, {})
+    local remaining = #functions
+    if remaining == 0 then
+        future.value, future.accepted_at = true, self:get_time()
+        complete_event(self, future)
+    end
+    for _, f in ipairs(functions) do
+        future.tasks[#future.tasks + 1] = self.dispatcher:spawn(function()
+            f()
+            remaining = remaining - 1
+            if remaining == 0 then
+                future.value, future.accepted_at = true, self:get_time()
+                complete_event(self, future)
+            end
+        end)
+    end
+    return future
 end
 
 -- Requests the first valid response without waiting, resolving subscriptions to a fixed audience.
@@ -1403,19 +1453,7 @@ end
 -- Stops game coroutines without resuming their waits. Closing them runs their <close> locals,
 -- including future cancellation. Transport coroutines remain alive to deliver finish.
 local function close_referee(self, main)
-    local coroutines = { main }
-    for cortn, parent in pairs(self.dispatcher.parents) do
-        while parent do
-            if parent == main then
-                coroutines[#coroutines + 1] = cortn
-                break
-            end
-            parent = self.dispatcher.parents[parent]
-        end
-    end
-    for _, cortn in ipairs(coroutines) do
-        assert(coroutine.close(cortn))
-    end
+    self.dispatcher:close(main)
     -- Initial subscriptions have no future owner. Also release any unowned request.
     for entry in pairs(self.active) do
         if entry.close then

@@ -101,12 +101,12 @@ local function use_machine(geometry, inputs, cache, options, overrides)
         machine.state, machine.snapshot_state = state, false
     end
     local make_mcycle = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
-    options.new_mcycle_computation_hash = function(g, c, machine, window)
-        return observe_input(make_mcycle(g, c, machine, window), machine)
+    options.new_mcycle_computation_hash = function(g, c, machine, bundle_index)
+        return observe_input(make_mcycle(g, c, machine, bundle_index), machine)
     end
     local make_uarch = options.new_uarch_computation_hash or prt.new_uarch_computation_hash
-    options.new_uarch_computation_hash = function(g, machine, window)
-        return observe_input(make_uarch(g, machine, window), machine)
+    options.new_uarch_computation_hash = function(g, machine, epoch_period_index, bundle_index)
+        return observe_input(make_uarch(g, machine, epoch_period_index, bundle_index), machine)
     end
     local make_null = options.new_null_computation_hash or prt.new_null_computation_hash
     options.new_null_computation_hash = function(machine)
@@ -267,8 +267,7 @@ local function new_mcycle_liar(claim, insert)
         end,
         end_epoch = function(self)
             self:end_input()
-            local end_leaf = self.window and self.window.first_leaf + (1 << self.window.log2_leaf_count)
-                or (1 << self.geometry.mcycle_height)
+            local end_leaf = self.end_leaf
             if self.next_leaf < end_leaf then
                 if not self.pad_bundle then
                     local collected = self.machine:collect_mcycle_root_hashes(
@@ -287,7 +286,7 @@ local function new_mcycle_liar(claim, insert)
     })
 end
 
--- The inherited end_input also calls this run for a window reached only through padding.
+-- The inherited end_input also calls this run for leaves reached only through padding.
 local function new_uarch_liar(claim, insert)
     return wrap_computation_hash(claim, {
         run = function(self, mcycle_end)
@@ -313,8 +312,8 @@ local function new_uarch_liar(claim, insert)
                         local first, last = offsets[1], offsets[2] - 1
                         local real = last - first - 1
                         assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
-                        local start = self.window.first_leaf & (capacity - 1)
-                        local stop = start + (1 << self.window.log2_leaf_count)
+                        local start = self.first_leaf & (capacity - 1)
+                        local stop = start + (1 << self.height)
                         for i = start, math.min(stop, real) - 1 do
                             insert(self, collected.hashes[first + i], 1, 0)
                         end
@@ -330,11 +329,13 @@ local function new_uarch_liar(claim, insert)
                     local wanted = math.min(available, (self.end_leaf - self.next_leaf) >> log2_cycles)
                     local group
                     for i = 1, wanted do
-                        group = prt.uarch_mcycle_forest(
+                        group = hash_tree.frontier_forest(log2_cycles - self.bundle_height, "keccak256")
+                        prt.uarch_computation_hash_push_mcycle(
+                            self,
+                            group,
                             collected.hashes,
                             offsets[i],
-                            offsets[i + 1] - 1,
-                            self.bundle_height
+                            offsets[i + 1] - 1
                         )
                         insert(self, group, 1, log2_cycles)
                     end
@@ -355,22 +356,22 @@ end
 local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, options)
     options = role_options("fabulist", options)
     local player
-    local epoch_period_index = input_index * geometry.periods_per_input + leaf_offset
+    local target_epoch_period_index = input_index * geometry.periods_per_input + leaf_offset
     local fake_hash = keccak("fabulist")
     local make_mcycle = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
-    options.new_mcycle_computation_hash = function(g, c, machine, window)
-        local claim = make_mcycle(g, c, machine, window)
+    options.new_mcycle_computation_hash = function(g, c, machine, bundle_index)
+        local claim = make_mcycle(g, c, machine, bundle_index)
         return new_mcycle_liar(
             claim,
-            lie_about_leaf(epoch_period_index, fake_hash, function(_, first_leaf)
+            lie_about_leaf(target_epoch_period_index, fake_hash, function(_, first_leaf)
                 return player:refine_mcycle_claim(first_leaf >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
             end)
         )
     end
     local make_uarch = options.new_uarch_computation_hash or prt.new_uarch_computation_hash
-    options.new_uarch_computation_hash = function(g, machine, window)
-        local claim = make_uarch(g, machine, window)
-        if window.epoch_period_index == epoch_period_index then
+    options.new_uarch_computation_hash = function(g, machine, epoch_period_index, bundle_index)
+        local claim = make_uarch(g, machine, epoch_period_index, bundle_index)
+        if epoch_period_index == target_epoch_period_index then
             return new_uarch_liar(
                 claim,
                 lie_about_leaf((1 << geometry.uarch_height) - 1, fake_hash, function(_, first_leaf)
@@ -394,8 +395,8 @@ end
 local function new_quitter(geometry, inputs, cache, options)
     options = role_options("quitter", options)
     local make = options.new_mcycle_computation_hash or prt.new_mcycle_computation_hash
-    options.new_mcycle_computation_hash = function(g, c, machine, window)
-        local claim = make(g, c, machine, window)
+    options.new_mcycle_computation_hash = function(g, c, machine, bundle_index)
+        local claim = make(g, c, machine, bundle_index)
         claim.cache_machine = false
         return new_mcycle_liar(claim, function(collector, _, count, height)
             local fake_hash = keccak(options.seed or "quitter")

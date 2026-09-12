@@ -64,7 +64,7 @@ end
 -- stores an outer frontier forest that much shallower, holding bundle roots at its level
 -- zero. A query that descends below a bundle opens it: refine(tree, bundle_index) builds
 -- the complete forest of the leaves under that one bundle by re-running a machine through
--- its window, exactly as a machine produces the disputed transition's logs. The opened
+-- the bundle's transitions, exactly as a machine produces the disputed transition's logs. The opened
 -- forest is checked against the committed bundle root and cached, and nothing else of the
 -- tree is ever materialized.
 --------------------------------------------------------------------------------

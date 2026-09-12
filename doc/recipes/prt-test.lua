@@ -1109,12 +1109,7 @@ if arg[1] then
     assert(getmetatable(native_claim) == nil and native_claim.machine == native, "honest computation hash is wrapped")
     assert(native_claim.unbundle == nil, "honest collector exposes strategy-only refinement")
     assert(native_claim.pad_back == nil, "honest collector exposes strategy-only insertion")
-    local native_uarch = prt.new_uarch_computation_hash(dapp_contract.geometry, native, {
-        epoch_period_index = 0,
-        first_leaf = 0,
-        log2_leaf_count = dapp_contract.geometry.uarch_height,
-        log2_bundle_uarch_cycle_count = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
-    })
+    local native_uarch = prt.new_uarch_computation_hash(dapp_contract.geometry, native, 0)
     assert(getmetatable(native_uarch) == nil and native_uarch.machine == native, "honest uarch collector is wrapped")
     assert(native_uarch.unbundle == nil, "honest uarch collector exposes strategy-only refinement")
     assert(native_uarch.pad_back == nil, "honest uarch collector exposes strategy-only insertion")
@@ -1446,7 +1441,7 @@ if arg[1] then
         assert(not machine.snapshot_state, "commit retained private strategy snapshot state")
     end
 
-    -- Terminal inputs and empty epochs must fill logical windows even when the
+    -- Terminal inputs and empty epochs must fill claims and reconstructed bundles even when the
     -- physical counter cannot advance (including the unsigned counter maximum).
     for _, terminal in ipairs({ "halt", "exception", "unexpected", "overflow", "empty", "halt_after_input" }) do
         local function terminal_machine(hash)
@@ -1490,14 +1485,14 @@ if arg[1] then
         local terminal_inputs = { table.unpack(contract.inputs) }
         local terminal_cache <close> = prt.new_machine_cache(terminal_machine(initial_state_hash))
         local player = prt.new_player(contract.geometry, terminal_inputs, terminal_cache, {
-            new_mcycle_computation_hash = function(geometry, machine_cache, m, window)
-                local kind = window and "refined" or "outer"
+            new_mcycle_computation_hash = function(geometry, machine_cache, m, bundle_index)
+                local kind = bundle_index ~= nil and "refined" or "outer"
                 counts[kind] = counts[kind] + 1
-                return observe_inputs(prt.new_mcycle_computation_hash(geometry, machine_cache, m, window), m)
+                return observe_inputs(prt.new_mcycle_computation_hash(geometry, machine_cache, m, bundle_index), m)
             end,
-            new_uarch_computation_hash = function(geometry, m, window)
+            new_uarch_computation_hash = function(geometry, m, epoch_period_index, bundle_index)
                 counts.uarch = counts.uarch + 1
-                return observe_inputs(prt.new_uarch_computation_hash(geometry, m, window), m)
+                return observe_inputs(prt.new_uarch_computation_hash(geometry, m, epoch_period_index, bundle_index), m)
             end,
             new_null_computation_hash = function(m)
                 return observe_inputs(prt.new_null_computation_hash(m), m)

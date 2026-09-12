@@ -18,7 +18,8 @@
 #define STEP_LOG_DUMPER_HPP
 
 /// \file
-/// \brief Human-readable dump of a replayed uarch step or reset log.
+/// \brief Dump sink that renders a replayed step log as indented, human-readable text.
+/// The replay accessors feed it through their Dumper parameter; machine::dump_* drive it.
 
 #include <cstdint>
 #include <ostream>
@@ -71,25 +72,18 @@ public:
     /// \brief Emit a write, showing the value before and after. \p name and values as in read().
     void write(const char *name, uint64_t paddr, uint64_t old_val, uint64_t new_val);
 
-    /// \brief Emit a bulk write witnessed only by its hash: the range's abbreviated hash before and after
+    /// \brief Emit a bulk write witnessed only by its hash: the range's abbreviated hash before and after,
+    /// plus a snippet of the written data when there is any
     void write_hash(const char *name, uint64_t paddr, int log2_size, const_machine_hash_view old_hash,
-        const_machine_hash_view new_hash);
+        const_machine_hash_view new_hash, std::span<const unsigned char> data = {});
+
+    /// \brief Emit a bulk write of bytes: a snippet of the range before and of the data written
+    void write_bytes(const char *name, uint64_t paddr, int log2_size, std::span<const unsigned char> old_bytes,
+        std::span<const unsigned char> new_bytes);
 
     /// \brief Emit a revert of the whole state to a recorded root hash
     void revert(const_machine_hash_view root_hash);
 };
-
-/// \brief Replays a uarch step log and returns a human-readable dump
-/// \param log Binary step log produced by machine::log_step_uarch
-/// \param skip_count Number of cycles to replay silently first
-/// \param uarch_cycle_count Number of cycles to dump after those; stops early if the uarch halts
-/// \details No caller claim is checked. Each replayed cycle is bracketed, and a dump with a skip is the
-/// matching slice of the dump without one.
-std::string dump_step_uarch(std::span<const unsigned char> log, uint64_t skip_count, uint64_t uarch_cycle_count);
-
-/// \brief Replays a uarch reset log and returns a human-readable dump
-/// \param log Binary step log produced by machine::log_reset_uarch
-std::string dump_reset_uarch(std::span<const unsigned char> log);
 
 } // namespace cartesi
 

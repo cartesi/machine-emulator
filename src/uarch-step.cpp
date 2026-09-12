@@ -1088,6 +1088,7 @@ static inline void executeInsn(const UarchState a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 UArchStepStatus uarch_step(const UarchState a) {
+    [[maybe_unused]] auto note = a.make_scoped_note("uarch_step");
     // Report the derived overflow fixed point before all other break reasons.
     uint64 cycle = readCycle(a);
     if (cycle >= UARCH_CYCLE_MAX) {

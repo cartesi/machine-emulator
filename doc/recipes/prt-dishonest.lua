@@ -20,14 +20,7 @@ local machine_meta = {
         local machine <close> = self.machine -- luacheck: ignore 211
     end,
     __index = function(self, name)
-        local method = self.overrides[name] or machine_methods[name]
-        if not method then
-            method = function(object, ...)
-                return object.machine[name](object.machine, ...)
-            end
-            machine_methods[name] = method
-        end
-        return method
+        return self.overrides[name] or machine_methods[name] or util.forward_method(self, self.machine, name)
     end,
 }
 

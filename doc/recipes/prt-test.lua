@@ -64,6 +64,26 @@ end
 
 local function no_replay() end
 
+-- All collectors expose machine methods with the native receiver, but not machine data fields.
+do
+    local machine = new_fake_machine("initial")
+    local cache <close> = prt.new_machine_cache(machine)
+    local geometry = prt.new_geometry(10)
+    for _, claim in ipairs({
+        prt.new_null_computation_hash(machine),
+        prt.new_mcycle_computation_hash(geometry, cache, machine),
+        prt.new_uarch_computation_hash(geometry, machine, 0),
+    }) do
+        assert(claim:get_root_hash() == "initial", "collector did not forward to its machine")
+        assert(rawget(claim, "get_root_hash") == claim.get_root_hash, "collector did not cache its forwarded method")
+        machine.root_hash = "changed"
+        assert(claim:get_root_hash() == "changed", "forwarded method read stale state")
+        assert(claim.root_hash == nil and claim.counts == nil, "collector exposed machine data fields")
+        assert(claim.absent == nil, "collector invented a missing method")
+        machine.root_hash = "initial"
+    end
+end
+
 do
     local cache <close> = prt.new_machine_cache(new_fake_machine("0"), 5, 1)
     for input_index = 1, 5 do
@@ -1202,17 +1222,17 @@ if arg[1] then
     assert(type(native) == "userdata", "honest machine is wrapped")
     assert(type(cache.checkpoints[1].machine) == "userdata", "honest checkpoint machine is wrapped")
     local native_claim = prt.new_mcycle_computation_hash(dapp_contract.geometry, cache, native)
-    assert(getmetatable(native_claim) == nil and native_claim.machine == native, "honest computation hash is wrapped")
+    assert(rawget(native_claim, "machine") == native, "honest computation hash is wrapped")
     assert(native_claim.unbundle == nil, "honest collector exposes strategy-only refinement")
     assert(native_claim.pad_back == nil, "honest collector exposes strategy-only insertion")
     local native_uarch = prt.new_uarch_computation_hash(dapp_contract.geometry, native, 0)
-    assert(getmetatable(native_uarch) == nil and native_uarch.machine == native, "honest uarch collector is wrapped")
+    assert(rawget(native_uarch, "machine") == native, "honest uarch collector is wrapped")
     assert(native_uarch.unbundle == nil, "honest uarch collector exposes strategy-only refinement")
     assert(native_uarch.pad_back == nil, "honest uarch collector exposes strategy-only insertion")
     local virgin_root = native:get_root_hash()
     native_uarch:begin_input(0, native:read_reg("mcycle"))
     assert(native:get_root_hash() == virgin_root, "capturing the revert tail changed the virgin machine")
-    assert(getmetatable(prt.new_null_computation_hash(native)) == nil, "honest replay collector is wrapped")
+    assert(rawget(prt.new_null_computation_hash(native), "machine") == native, "honest replay collector is wrapped")
 
     local honest_tree = honest:make_mcycle_tree()
     local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").input_index

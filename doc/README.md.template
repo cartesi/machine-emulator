@@ -5333,8 +5333,8 @@ The only different sink is PRT's frontier forest, which retains the nodes needed
 The mcycle build (`build_mcycle_claim` in `prt.lua`) advances the whole epoch once, pushing each input's bundle roots into the claim forest at their logical heights, padding each input's span with the fixed point where its guest stopped, and offering each accepted input's final machine to a bounded cache as the next input's virgin boundary.
 The default policy keeps a bounded, progressively thinned set of these checkpoints, indexed by input; input zero always retains the initial machine template.
 The refinement re-run (`refine_mcycle_claim`) asks the cache for the target input's boundary, then advances that input to recover one bundle's samples.
-The cache's `clone_at_input_boundary(input_index, replay)` selects and clones a checkpoint, then calls the supplied replay function with the machine and the intervening input range.
-The player's replay closure uses `run_advance_state_epoch` with the null collector.
+The cache's `clone_at_input_boundary(input_index, run_to_input_boundary)` selects and clones a checkpoint, then calls `run_to_input_boundary` with the machine and the intervening input range.
+The player's `run_to_input_boundary` closure uses `run_advance_state_epoch` with the null collector.
 It returns an independent machine and a separate owner kept in a `<close>` local; closing the owner releases the working machine and any outstanding backup immediately, including on errors.
 Uarch collection and transition proofs request their boundaries through the same operation, and forward building and result collection start by cloning boundary zero; checkpoint selection stays private to the cache.
 The input driver calls the cache's `snapshot(machine)`, `commit(machine)`, and `revert(machine)` operations, following the CLI: acceptance, sticky stops, and partial replay commit, while rejection reverts.

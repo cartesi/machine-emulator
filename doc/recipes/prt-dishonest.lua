@@ -64,11 +64,11 @@ end
 -- while the strategy keeps its private state alongside the borrowed execution machine.
 local function use_machine(geometry, inputs, cache, options, overrides)
     local clone = cache.clone_at_input_boundary
-    cache.clone_at_input_boundary = function(self, input_index, replay)
+    cache.clone_at_input_boundary = function(self, input_index, run_to_input_boundary)
         local wrapped
         local _, owner <close> = clone(self, input_index, function(machine, first, last)
             wrapped = wrap_machine(machine, overrides)
-            return replay(wrapped, first, last)
+            return run_to_input_boundary(wrapped, first, last)
         end)
         return wrapped, owner:move()
     end

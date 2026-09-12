@@ -62,7 +62,7 @@ local function new_fake_machine(root_hash, mcycle, counts)
     return setmetatable(machine, { __close = machine.shutdown_server })
 end
 
-local function no_replay() end
+local function noop() end
 
 -- All collectors expose machine methods with the native receiver, but not machine data fields.
 do
@@ -113,7 +113,7 @@ do
         retained[0] and retained[2] and retained[4] and retained[6] and retained[8],
         "cache did not thin its checkpoints"
     )
-    local machine, owner <close> = cache:clone_at_input_boundary(7, no_replay) -- luacheck: ignore 211
+    local machine, owner <close> = cache:clone_at_input_boundary(7, noop) -- luacheck: ignore 211
     assert(machine:get_root_hash() == "6")
     assert(not pcall(cache.consider, cache, 8, new_fake_machine("8")), "cache accepted an out-of-order checkpoint")
 end
@@ -138,7 +138,7 @@ do
     cache:consider(1, machine)
     local saved = cache.checkpoints[2]
     machine.root_hash = "changed"
-    local fork, owner <close> = cache:clone_at_input_boundary(1, no_replay)
+    local fork, owner <close> = cache:clone_at_input_boundary(1, noop)
     assert(fork:get_root_hash() == "boundary" and fork:read_reg("mcycle") == 100)
     fork.root_hash = "working"
     assert(saved.machine:get_root_hash() == "boundary", "working fork shares the saved machine")
@@ -156,13 +156,13 @@ do
     local initial = new_fake_machine("initial")
     local counts = initial.counts
     local cache <close> = prt.new_machine_cache(initial, 4, 1)
-    local outer, outer_owner <close> = cache:clone_at_input_boundary(0, no_replay)
+    local outer, outer_owner <close> = cache:clone_at_input_boundary(0, noop)
     cache:snapshot(outer)
     outer.root_hash = "outer"
     assert(counts.live == 3, "snapshot did not retain an independent backup")
     assert(not pcall(cache.snapshot, cache, outer), "second unresolved snapshot was accepted")
     do
-        local inner, inner_owner <close> = cache:clone_at_input_boundary(0, no_replay) -- luacheck: ignore 211
+        local inner, inner_owner <close> = cache:clone_at_input_boundary(0, noop) -- luacheck: ignore 211
         assert(inner.root_hash == "initial", "clone shared the outer working state")
         cache:snapshot(inner)
         inner.root_hash = "inner"
@@ -180,7 +180,7 @@ do
 
     local moved
     do
-        local machine, owner <close> = cache:clone_at_input_boundary(0, no_replay)
+        local machine, owner <close> = cache:clone_at_input_boundary(0, noop)
         cache:snapshot(machine)
         moved = owner:move()
     end
@@ -188,13 +188,13 @@ do
     moved:close()
     assert(counts.live == 1, "transferred owner leaked its snapshot")
 
-    local machine, owner = cache:clone_at_input_boundary(0, no_replay)
+    local machine, owner = cache:clone_at_input_boundary(0, noop)
     cache:snapshot(machine)
     cache:close()
     assert(counts.live == 0 and not next(cache.machines), "cache shutdown left owned machines alive")
     owner:close()
     cache:close()
-    assert(not pcall(cache.clone_at_input_boundary, cache, 0, no_replay), "closed cache allowed acquisition")
+    assert(not pcall(cache.clone_at_input_boundary, cache, 0, noop), "closed cache allowed acquisition")
 end
 
 -- Failed acquisition or replay must leave only the retained checkpoint alive, whether the
@@ -216,7 +216,7 @@ for _, phase in ipairs({ "factory", "begin_epoch", "begin_input", "run", "end_in
     assert(not ok and err:find("injected " .. phase .. " failure"), "replay did not propagate the original error")
     assert(initial.counts.live == 1, phase .. " failure leaked a working machine or backup")
     initial.fail_clone = true
-    assert(not pcall(cache.clone_at_input_boundary, cache, 0, no_replay), "failed clone was returned")
+    assert(not pcall(cache.clone_at_input_boundary, cache, 0, noop), "failed clone was returned")
     assert(not pcall(cache.consider, cache, 1, initial), "failed checkpoint clone was retained")
     assert(#cache.checkpoints == 1 and initial.counts.live == 1, "failed clone changed retained checkpoints")
 end
@@ -373,7 +373,7 @@ end
 do
     local cache <close> = prt.new_machine_cache(new_fake_machine("initial"))
     dishonest.new_tamperer(prt.new_geometry(10), { "accepted" }, cache, 0, 100)
-    local machine, owner <close> = cache:clone_at_input_boundary(0, no_replay) -- luacheck: ignore 211
+    local machine, owner <close> = cache:clone_at_input_boundary(0, noop) -- luacheck: ignore 211
     machine.state.input_index = 0
     cache:snapshot(machine)
     machine.state.input_index = 1
@@ -1401,8 +1401,8 @@ if arg[1] then
     local clone_boundary = chain_cache.clone_at_input_boundary
     for _, target in ipairs({ 0, 1, 3, 4, 5 }) do
         local observed = false
-        chain_cache.clone_at_input_boundary = function(self, index, replay)
-            local resolved, owner = clone_boundary(self, index, replay)
+        chain_cache.clone_at_input_boundary = function(self, index, run_to_input_boundary)
+            local resolved, owner = clone_boundary(self, index, run_to_input_boundary)
             local saved = chain_boundaries[target == 3 and 1 or math.min(target, 4)]
             assert(
                 index == target and resolved:get_root_hash() == saved.machine:get_root_hash(),
@@ -1419,9 +1419,9 @@ if arg[1] then
     input_runs = {}
     replay_begins, replay_ends = 0, 0
     local clone_at_input_boundary = chain_cache.clone_at_input_boundary
-    chain_cache.clone_at_input_boundary = function(self, target, replay)
+    chain_cache.clone_at_input_boundary = function(self, target, run_to_input_boundary)
         lookups = lookups + 1
-        return clone_at_input_boundary(self, target, replay)
+        return clone_at_input_boundary(self, target, run_to_input_boundary)
     end
     local last_period = dapp_contract.geometry.periods_per_input - 1
     local chain_bundle_index = (2 * dapp_contract.geometry.periods_per_input + last_period) >> LOG2_BUNDLE_MCYCLE_COUNT
@@ -1537,8 +1537,8 @@ if arg[1] then
     )
     assert(cartesi.machine:verify_step_uarch(forged_state, forged_logs.step_log), "forged execution proof is malformed")
     do
-        local machine, owner <close> = tamperer_cache:clone_at_input_boundary(0, no_replay) -- luacheck: ignore 211
-        local other, other_owner <close> = tamperer_cache:clone_at_input_boundary(0, no_replay) -- luacheck: ignore 211
+        local machine, owner <close> = tamperer_cache:clone_at_input_boundary(0, noop) -- luacheck: ignore 211
+        local other, other_owner <close> = tamperer_cache:clone_at_input_boundary(0, noop) -- luacheck: ignore 211
         local read_reg = machine.read_reg
         assert(rawget(machine, "read_reg") == read_reg, "machine forwarder was not cached")
         assert(read_reg ~= other.read_reg, "bound machine forwarders are shared across receivers")

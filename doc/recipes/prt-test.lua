@@ -559,6 +559,105 @@ local function define_event(name, response_schema)
     return prtu.define_event(name, nil, response_schema)
 end
 
+-- A group starts every closure before waiting, retains completion for later waits, and
+-- does not cancel work when only the wait's deadline expires.
+run_with_server(function(server)
+    local empty <close> = server:run_all({})
+    assert(empty.resolved and empty:wait(), "an empty group did not complete immediately")
+    local started, finished = {}, {}
+    local functions = {}
+    for i = 1, 2 do
+        functions[i] = function()
+            started[#started + 1] = i
+            server:wait_until(i == 1 and 6 or 4)
+            finished[#finished + 1] = i
+        end
+    end
+    local completed <close> = server:run_all(functions)
+    assert(#started == 0, "run_all suspended its caller")
+    assert(completed:wait(2) == nil, "a group completed before its closures")
+    assert(table.concat(started, ",") == "1,2" and #finished == 0, "closures did not start concurrently in list order")
+    assert(completed:wait() == true, "a timed wait cancelled unfinished closures")
+    assert(table.concat(finished, ",") == "2,1", "closures did not finish independently")
+    assert(completed:wait(6) == nil and completed:wait(7) == true, "completion did not retain its block")
+    assert(not next(server.active), "a completed group remained active")
+end)
+
+-- Cancellation before the first dispatcher turn prevents every closure from starting.
+run_with_server(function(server)
+    local completed <close> = server:run_all({
+        function()
+            error("a cancelled closure started")
+        end,
+    })
+    completed:close()
+    server:wait_until(1)
+    assert(not next(server.active), "a cancelled group remained active")
+end)
+
+-- Closing the outer group closes nested groups and their scoped resources, including
+-- suspended proof requests. Other groups keep running.
+run_with_server(function(server)
+    local started, closed, resumed = 0, 0, false
+    local pending = {}
+    local function wait_for_proof()
+        local resource <close> = setmetatable({}, { -- luacheck: ignore 211
+            __close = function()
+                closed = closed + 1
+            end,
+        })
+        local proof <close> = server:request_first_valid({}, define_event("group_proof"), {}, is_valid)
+        local elimination <close> = server:request_first_valid(
+            {},
+            prtu.EVENTS.schedule_match_elimination,
+            { server:request_block() + 10 },
+            function()
+                return 0
+            end
+        )
+        pending[#pending + 1] = proof
+        pending[#pending + 1] = elimination
+        started = started + 1
+        proof:wait()
+        resumed = true
+    end
+    local completed <close> = server:run_all({
+        wait_for_proof,
+        function()
+            local nested <close> = server:run_all({ wait_for_proof })
+            nested:wait()
+            resumed = true
+        end,
+    })
+    local other_finished = false
+    local other <close> = server:run_all({
+        function()
+            server:wait_until(4)
+            other_finished = true
+        end,
+    })
+    server:wait_until(3)
+    assert(started == 2, "nested closures did not reach their proof waits")
+    completed:close()
+    assert(closed == 2 and not resumed, "cancellation resumed a closure or skipped cleanup")
+    for _, proof in ipairs(pending) do
+        assert(proof.closed, "cancellation left a proof request open")
+    end
+    assert(not next(server.scheduled_responses), "cancellation left a scheduled response registered")
+    assert(other:wait() and other_finished, "cancellation stopped another group")
+    assert(not next(server.active), "cancellation left unfinished work")
+end)
+
+local group_ok, group_error = pcall(run_with_server, function(server)
+    local completed <close> = server:run_all({
+        function()
+            error("group closure failed")
+        end,
+    })
+    completed:wait()
+end)
+assert(not group_ok and group_error:find("group closure failed"), "a closure error did not fail the referee")
+
 run_with_server(function(server, run_client, wait_connections)
     for _, label in ipairs({ "a", "b", "nil", "false", "error" }) do
         run_client(nil, function()
@@ -828,9 +927,11 @@ assert(require("prt-deadline-test"))(run_with_server)
 do
     local started = false
     run_with_server(function(server)
-        server.dispatcher:spawn(function()
-            started = true
-        end)
+        local completed <close> = server:run_all({ -- luacheck: ignore 211
+            function()
+                started = true
+            end,
+        })
         server.stopping = true
         coroutine.yield()
         error("stopping resumed the referee")

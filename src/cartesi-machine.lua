@@ -3468,6 +3468,17 @@ local function make_mcycle_root_hashes_runner(runner, log2_period, start, log2_b
     }, runner_meta)
 end
 
+-- Resolves the claim's machine on first use. Keep direct machine access behind this accessor;
+-- the runner chain and its terminal machine remain the same throughout the claim's lifetime.
+local function get_claim_machine(claim)
+    local m = rawget(claim, "machine")
+    if not m then
+        m = util.get_runner_machine(claim.runner)
+        rawset(claim, "machine", m)
+    end
+    return m
+end
+
 -- A rejected input contributes its restored boundary to the computation hash.
 local function computation_hash_check_revert(_, expected_root_hash, obtained_root_hash)
     assert(obtained_root_hash == expected_root_hash, "rollback did not restore the input boundary")
@@ -3515,14 +3526,14 @@ local function mcycle_computation_hash_begin_input(self, input_index)
     self.mcycle_phase = 0
     self.partial_bundle = nil
     self.input_mcycle_end =
-        usaturating_add(self.machine:read_reg("mcycle"), 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
+        usaturating_add(get_claim_machine(self):read_reg("mcycle"), 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
 end
 
 -- Samples the input's state hashes up to mcycle_end and adds each returned entry to the epoch-tree
 -- frontier. self.mcycle_phase and self.partial_bundle preserve the sampling period and partial
 -- bundle across calls.
 local function mcycle_computation_hash_run(self, mcycle_end)
-    local m = self.machine
+    local m = get_claim_machine(self)
     mcycle_end = umin(self.input_mcycle_end, mcycle_end)
     local collected = {
         mcycle_phase = self.mcycle_phase,
@@ -3559,12 +3570,8 @@ local function mcycle_computation_hash_end_epoch(self)
     self:end_input()
     local pad = self.pad_entry
     if not pad then
-        local collected = self.machine:collect_mcycle_root_hashes(
-            self.machine:read_reg("mcycle"),
-            self.log2_period,
-            0,
-            self.log2_bundle
-        )
+        local m = get_claim_machine(self)
+        local collected = m:collect_mcycle_root_hashes(m:read_reg("mcycle"), self.log2_period, 0, self.log2_bundle)
         assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash ended outside a fixed point")
         pad = collected.hashes[#collected.hashes]
         assert(pad, "fixed-point mcycle collection has no final entry")
@@ -3580,7 +3587,6 @@ end
 local function make_mcycle_computation_hash(advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
     return setmetatable({
-        machine = util.get_runner_machine(runner),
         runner = runner,
         chunk_size = mcycle_hashes_chunk_size(log2_period, advance.log2_bundle_mcycle_count),
         log2_period = log2_period,
@@ -3676,7 +3682,7 @@ end
 -- Other inputs need no uarch collection.
 local function uarch_cycle_computation_hash_begin_input(self, input_index)
     if input_index ~= self.target_input then return end
-    local m = self.machine
+    local m = get_claim_machine(self)
     local mcycle = m:read_reg("mcycle")
     self.input_mcycle_end = usaturating_add(mcycle, 1 << ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE)
     self.target_mcycle_start = usaturating_add(mcycle, self.target_offset * self.period, self.input_mcycle_end)
@@ -3687,7 +3693,7 @@ end
 -- Run plainly outside the target period and collect uarch state hashes within it.
 local function uarch_cycle_computation_hash_run(self, mcycle_end)
     if not self.target_mcycle_start then return self.runner:run(mcycle_end) end
-    local m = self.machine
+    local m = get_claim_machine(self)
     local mcycle = m:read_reg("mcycle")
     mcycle_end = umin(self.input_mcycle_end, mcycle_end)
     local break_reason
@@ -3725,9 +3731,10 @@ local function uarch_cycle_computation_hash_end_input(self)
     if not self.target_mcycle_start then return end
     self.target_mcycle_start, self.target_mcycle_end, self.revert_uarch_tail = nil, nil, nil
     if self.mcycle_count < self.period then
+        local m = get_claim_machine(self)
         uarch_cycle_computation_hash_push_collected(
             self,
-            self.machine:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle)
+            m:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle)
         )
     end
 end
@@ -3737,9 +3744,10 @@ end
 local function uarch_cycle_computation_hash_end_epoch(self)
     self:end_input()
     if self.mcycle_count < self.period then
+        local m = get_claim_machine(self)
         uarch_cycle_computation_hash_push_collected(
             self,
-            self.machine:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle)
+            m:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle)
         )
     end
 end
@@ -3748,7 +3756,6 @@ local function make_uarch_cycle_computation_hash(advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
     local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
     return setmetatable({
-        machine = util.get_runner_machine(runner),
         runner = runner,
         period = 1 << log2_period,
         chunk_size = uarch_hashes_chunk_size(advance.log2_bundle_uarch_cycle_count),
@@ -3773,7 +3780,6 @@ end
 local function null_computation_hash_noop() end
 local function make_null_computation_hash(runner)
     return setmetatable({
-        machine = util.get_runner_machine(runner),
         runner = runner,
         begin_epoch = null_computation_hash_noop,
         begin_input = null_computation_hash_noop,
@@ -3890,7 +3896,7 @@ end
 -- commit; rejected outputs are written separately after rollback. Finalizes accepted or rejected inputs
 -- only after that decision, and returns the break reason and manual yield reason, if any.
 local function run_advance_state_input(claim, input_index, revert_root_hash)
-    local m = claim.machine
+    local m = get_claim_machine(claim)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
     -- outputs are buffered until the input is accepted or rejected, reports are saved at once
@@ -3962,7 +3968,7 @@ end
 -- inputs run with the claim, which either collects a computation hash (advancing through the
 -- given runner) or delegates to the runner directly (the machine itself, or gdb).
 local function run_advance_state_epoch(claim)
-    local m = claim.machine
+    local m = get_claim_machine(claim)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
     claim:begin_epoch()

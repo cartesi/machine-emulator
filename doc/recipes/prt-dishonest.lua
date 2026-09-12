@@ -13,21 +13,13 @@ local is_at_fixed_point = prt.is_at_fixed_point
 
 -- Machine and computation-hash wrappers belong to the strategies, not the honest
 -- implementation. A native machine never carries this private input bookkeeping.
-local machine_methods = {}
 local machine_meta = {
     __close = function(self)
         self.snapshot_state = false
         local machine <close> = self.machine -- luacheck: ignore 211
     end,
     __index = function(self, name)
-        local method = self.overrides[name] or machine_methods[name]
-        if not method then
-            method = function(object, ...)
-                return object.machine[name](object.machine, ...)
-            end
-            machine_methods[name] = method
-        end
-        return method
+        return self.overrides[name] or util.forward_method(self, self.machine, name)
     end,
 }
 

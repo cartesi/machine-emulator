@@ -691,6 +691,45 @@ local function frontier_forest_get_node(forest, position, height)
     return descend_tree(top, position, current_bit, stop_bit)
 end
 
+-- Expands an opaque leaf of a full forest using a completed forest of the same height and
+-- root hash. Position is a logical leaf address. Repeated entries share the expansion,
+-- including when the selected position lies in an implicit suffix. Coverage and cached
+-- ancestor hashes do not change. All checks precede the single mutation.
+local function frontier_forest_expand_leaf(forest, position, subtree)
+    local tree = assert(forest[forest.height + 1], "the forest is not full")
+    assert(is_forest(subtree), "the subtree is not a forest")
+    local replacement, height = normalize_forest_value(forest, subtree)
+    assert_valid_forest_node(forest, position, height)
+    -- Unwrap single-value trees. An opaque replacement exposes no descendants, and
+    -- accepting one could introduce a cycle when it references the leaf being expanded.
+    while replacement.kind == "dense" and replacement.base_height == replacement.height do
+        replacement = replacement[1][1]
+        assert(is_tree(replacement), "the replacement leaf is opaque")
+    end
+    while true do
+        if tree.kind == "mixed" then
+            local half = 1 << (tree.height - 1)
+            if position < half then
+                tree = tree.left
+            else
+                tree, position = tree.right, position - half
+            end
+        else
+            local values = tree[1]
+            local index = math.min((position >> tree.base_height) + 1, #values)
+            local value = values[index]
+            if type(value) == "string" then
+                assert(tree.base_height == height, "leaf height mismatch")
+                assert(value == replacement.hash, "leaf hash mismatch")
+                values[index] = replacement
+                return
+            end
+            position = position & ((1 << tree.base_height) - 1)
+            tree = value
+        end
+    end
+end
+
 -- Appends the proof siblings of the node at position and height, from that node upward,
 -- into the given array (a new one when omitted) and returns it, in a single descent,
 -- O(log2_max_leaves). Requires the forest to be full and position to be aligned to the
@@ -728,5 +767,6 @@ return {
     frontier_forest_pad_back = frontier_forest_pad_back,
     frontier_forest_get_root_hash = frontier_forest_get_root_hash,
     frontier_forest_get_node = frontier_forest_get_node,
+    frontier_forest_expand_leaf = frontier_forest_expand_leaf,
     frontier_forest_get_siblings = frontier_forest_get_siblings,
 }

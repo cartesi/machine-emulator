@@ -71,8 +71,8 @@ do
     local geometry = prt.new_geometry(10)
     for _, claim in ipairs({
         prt.new_null_computation_hash(machine),
-        prt.new_mcycle_computation_hash(geometry, cache, machine),
-        prt.new_uarch_computation_hash(geometry, machine, 0),
+        prt.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, cache, machine),
+        prt.new_uarch_computation_hash(geometry.log2_mcycles_per_period, machine, 0),
     }) do
         assert(claim:get_root_hash() == "initial", "collector did not forward to its machine")
         assert(rawget(claim, "get_root_hash") == claim.get_root_hash, "collector did not cache its forwarded method")
@@ -1221,11 +1221,11 @@ if arg[1] then
     local native <close> = prt.new_machine(initial_state_hash)
     assert(type(native) == "userdata", "honest machine is wrapped")
     assert(type(cache.checkpoints[1].machine) == "userdata", "honest checkpoint machine is wrapped")
-    local native_claim = prt.new_mcycle_computation_hash(dapp_contract.geometry, cache, native)
+    local native_claim = prt.new_mcycle_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, cache, native)
     assert(rawget(native_claim, "machine") == native, "honest computation hash is wrapped")
     assert(native_claim.unbundle == nil, "honest collector exposes strategy-only refinement")
     assert(native_claim.pad_back == nil, "honest collector exposes strategy-only insertion")
-    local native_uarch = prt.new_uarch_computation_hash(dapp_contract.geometry, native, 0)
+    local native_uarch = prt.new_uarch_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, native, 0)
     assert(rawget(native_uarch, "machine") == native, "honest uarch collector is wrapped")
     assert(native_uarch.unbundle == nil, "honest uarch collector exposes strategy-only refinement")
     assert(native_uarch.pad_back == nil, "honest uarch collector exposes strategy-only insertion")
@@ -1602,14 +1602,17 @@ if arg[1] then
         local terminal_inputs = { table.unpack(contract.inputs) }
         local terminal_cache <close> = prt.new_machine_cache(terminal_machine(initial_state_hash))
         local player = prt.new_player(contract.geometry, terminal_inputs, terminal_cache, {
-            new_mcycle_computation_hash = function(geometry, machine_cache, m, bundle_index)
+            new_mcycle_computation_hash = function(log2_period, machine_cache, m, bundle_index)
                 local kind = bundle_index ~= nil and "refined" or "outer"
                 counts[kind] = counts[kind] + 1
-                return observe_inputs(prt.new_mcycle_computation_hash(geometry, machine_cache, m, bundle_index), m)
+                return observe_inputs(prt.new_mcycle_computation_hash(log2_period, machine_cache, m, bundle_index), m)
             end,
-            new_uarch_computation_hash = function(geometry, m, epoch_period_index, bundle_index)
+            new_uarch_computation_hash = function(log2_period, m, epoch_period_index, bundle_index)
                 counts.uarch = counts.uarch + 1
-                return observe_inputs(prt.new_uarch_computation_hash(geometry, m, epoch_period_index, bundle_index), m)
+                return observe_inputs(
+                    prt.new_uarch_computation_hash(log2_period, m, epoch_period_index, bundle_index),
+                    m
+                )
             end,
             new_null_computation_hash = function(m)
                 return observe_inputs(prt.new_null_computation_hash(m), m)

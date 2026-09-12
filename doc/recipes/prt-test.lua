@@ -3,7 +3,7 @@
 -- are walked under both claim orders. The loopback referee tests its tournament lifecycle,
 -- valid moves, rejected proofs that leave connections open, and logical-block barriers.
 -- The real-machine cases cover tampering during replay
--- and refinement inside and past rejected inputs. Exits nonzero on the first failure.
+-- and bundle collection inside and past rejected inputs. Exits nonzero on the first failure.
 
 local cartesi = require("cartesi")
 local hash_tree = require("cartesi.hash-tree")
@@ -390,7 +390,7 @@ local INITIAL_STATE_HASH = keccak("initial")
 
 -- A claim over leaves that repeat `base_state_hash` except at `lie`, which holds
 -- `fake_state_hash`. Built either
--- flat or bundled 2^2 leaves per stored bundle, so the refine path is exercised too.
+-- flat or bundled 2^2 leaves per stored bundle, so the bundle collection path is exercised too.
 local function make_synthetic_claim(base_state_hash, lie, fake_state_hash, bundled)
     local leaves = {}
     for i = 0, LEAVES - 1 do
@@ -1165,7 +1165,7 @@ if arg[1] then
     }
 
     -- A tamperer corrupts its machine at a fixed point of the first input. Replay from a cached
-    -- boundary must apply the same corruption again, so refinement matches an uncached build.
+    -- boundary must apply the same corruption again, so bundle collection matches an uncached build.
     local tamperer_inputs, tamperer_cache <close> = new_test_cache(dapp_contract, 64, 1)
     local tamperer = dishonest.new_tamperer(dapp_contract.geometry, tamperer_inputs, tamperer_cache, 0, 100)
     local tampered_tree = tamperer:make_mcycle_tree()
@@ -1185,7 +1185,7 @@ if arg[1] then
         )
     end
 
-    -- Fabulist run can refine synchronously while the outer input is still running. Both
+    -- Fabulist run can collect a bundle synchronously while the outer input is still running. Both
     -- executions have outstanding snapshots, even though this is a single player process.
     do
         local fabulist_inputs, fabulist_cache <close> = new_test_cache(dapp_contract)
@@ -1204,16 +1204,16 @@ if arg[1] then
         local tree = fabulist:make_mcycle_tree()
         tree:open_bundle(1)
         assert(maximum >= 2, "fabulist did not exercise nested snapshots")
-        assert(tree:get_node(16, 0) == keccak("fabulist"), "nested refinement lost the fabricated leaf")
+        assert(tree:get_node(16, 0) == keccak("fabulist"), "nested bundle collection lost the fabricated leaf")
         local retained = 0
         for _, owner in pairs(cache.machines) do
-            assert(not owner.backup, "nested refinement leaked a snapshot")
+            assert(not owner.backup, "nested bundle collection leaked a snapshot")
             retained = retained + 1
         end
-        assert(retained == #cache.checkpoints, "nested refinement leaked an execution")
+        assert(retained == #cache.checkpoints, "nested bundle collection leaked an execution")
     end
 
-    -- Refinement is a read of the committed claim. It must not replace build checkpoints with
+    -- Bundle collection is a read of the committed claim. It must not replace build checkpoints with
     -- speculative machines from an input whose committed suffix is its revert state.
     local honest_inputs, honest_cache <close> = new_test_cache(dapp_contract, 1)
     local honest = prt.new_player(dapp_contract.geometry, honest_inputs, honest_cache)
@@ -1224,12 +1224,12 @@ if arg[1] then
     local native_builder =
         prt.new_mcycle_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, cache, native)
     assert(rawget(native_builder, "machine") == native, "honest computation-hash builder is wrapped")
-    assert(native_builder.unbundle == nil, "honest builder exposes strategy-only refinement")
+    assert(native_builder.unbundle == nil, "honest builder exposes strategy-only bundle collection")
     assert(native_builder.pad_back == nil, "honest builder exposes strategy-only insertion")
     local native_uarch_builder =
         prt.new_uarch_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, native, 0)
     assert(rawget(native_uarch_builder, "machine") == native, "honest uarch builder is wrapped")
-    assert(native_uarch_builder.unbundle == nil, "honest uarch builder exposes strategy-only refinement")
+    assert(native_uarch_builder.unbundle == nil, "honest uarch builder exposes strategy-only bundle collection")
     assert(native_uarch_builder.pad_back == nil, "honest uarch builder exposes strategy-only insertion")
     local virgin_root = native:get_root_hash()
     native_uarch_builder:begin_input(0, native:read_reg("mcycle"))
@@ -1239,7 +1239,7 @@ if arg[1] then
     local honest_tree = honest:make_mcycle_tree()
     local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").input_index
     honest_tree:open_bundle((dapp_contract.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT))
-    assert(cache.checkpoints[1].input_index == checkpoint, "mcycle refinement changed the machine cache")
+    assert(cache.checkpoints[1].input_index == checkpoint, "mcycle bundle collection changed the machine cache")
     local cached_inputs, cached_cache <close> = new_test_cache(dapp_contract)
     local cached = prt.new_player(dapp_contract.geometry, cached_inputs, cached_cache)
     local cached_tree = cached:make_mcycle_tree()
@@ -1249,7 +1249,7 @@ if arg[1] then
     assert(cached_tree:get_root() == honest_tree:get_root(), "cache policy changed the mcycle root")
     assert(honest_tree:get_root() == util.read_file(assert(arg[5])), "mcycle root differs from CLI")
     -- This fabricated leaf is beyond the last input, so end_epoch must insert it even when
-    -- refinement never calls run. Opening the bundle also authenticates that refinement.
+    -- bundle collection never calls run. Opening the bundle also authenticates the returned subtree.
     do
         local fabulist_inputs, fabulist_cache <close> = new_test_cache(dapp_contract)
         local fabulist = dishonest.new_fabulist(dapp_contract.geometry, fabulist_inputs, fabulist_cache, #inputs, 16)
@@ -1275,7 +1275,7 @@ if arg[1] then
         cached_tree:open_bundle(bundle_index)
         local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
         for leaf = first_leaf, first_leaf + (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1 do
-            assert(honest_tree:get_node(leaf, 0) == cached_tree:get_node(leaf, 0), "cache changed refinement")
+            assert(honest_tree:get_node(leaf, 0) == cached_tree:get_node(leaf, 0), "cache changed bundle collection")
         end
     end
     local first_uarch = honest:make_uarch_tree(1, 0)
@@ -1319,7 +1319,7 @@ if arg[1] then
         for leaf = first_leaf, first_leaf + (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1 do
             assert(
                 honest_tree:get_node(leaf, 0) == dense_tree:get_node(leaf, 0),
-                "dense cache changed refinement inside the rejected input"
+                "dense cache changed bundle collection inside the rejected input"
             )
         end
     end
@@ -1328,9 +1328,9 @@ if arg[1] then
             == dense:make_uarch_tree(rejected_input_index + 2, 0):get_root(),
         "dense cache changed replay past the rejected input"
     )
-    assert(#saved_checkpoints == #dense_cache.checkpoints, "refinement changed checkpoint count")
+    assert(#saved_checkpoints == #dense_cache.checkpoints, "bundle collection changed checkpoint count")
     for i, saved in ipairs(saved_checkpoints) do
-        assert(dense_cache.checkpoints[i] == saved, "refinement replaced a checkpoint")
+        assert(dense_cache.checkpoints[i] == saved, "bundle collection replaced a checkpoint")
     end
 
     -- Uarch collection and transition proofs replay from the rejected input's own boundary, both
@@ -1428,11 +1428,11 @@ if arg[1] then
     local last_period = dapp_contract.geometry.periods_per_input - 1
     local chain_bundle_index = (2 * dapp_contract.geometry.periods_per_input + last_period) >> LOG2_BUNDLE_MCYCLE_COUNT
     chain_tree:open_bundle(chain_bundle_index)
-    assert(lookups == 1, "reverted-tail refinement performed multiple lookups")
+    assert(lookups == 1, "reverted-tail bundle collection performed multiple lookups")
     assert(replay_begins == 1 and replay_ends == 1, "cache replay bypassed the epoch driver's builder lifecycle")
     assert(
         not input_runs[0] and input_runs[1] == 1 and input_runs[2] == 1,
-        "reverted-tail refinement did not replay from the boundary before the chain"
+        "reverted-tail bundle collection did not replay from the boundary before the chain"
     )
     local reference_leaf = 2 * dapp_contract.geometry.periods_per_input - 1
     assert(
@@ -1592,7 +1592,7 @@ if arg[1] then
             geometry = dapp_contract.geometry,
             inputs = terminal == "empty" and {} or inputs,
         }
-        local counts = { outer = 0, refined = 0, uarch = 0 }
+        local counts = { outer = 0, bundles = 0, uarch = 0 }
         local function observe_inputs(builder, m)
             local run = builder.run
             builder.run = function(self, target)
@@ -1605,7 +1605,7 @@ if arg[1] then
         local terminal_cache <close> = prt.new_machine_cache(terminal_machine(initial_state_hash))
         local player = prt.new_player(contract.geometry, terminal_inputs, terminal_cache, {
             new_mcycle_computation_hash = function(log2_period, machine_cache, m, bundle_index)
-                local kind = bundle_index ~= nil and "refined" or "outer"
+                local kind = bundle_index ~= nil and "bundles" or "outer"
                 counts[kind] = counts[kind] + 1
                 return observe_inputs(prt.new_mcycle_computation_hash(log2_period, machine_cache, m, bundle_index), m)
             end,
@@ -1633,7 +1633,7 @@ if arg[1] then
         local tree = player:make_mcycle_tree()
         assert(tree:get_root() == expected, terminal .. " has the wrong fixed-point tail")
         tree:open_bundle(0)
-        assert(counts.refined == 1, "first mcycle opening bypassed the selected builder factory")
+        assert(counts.bundles == 1, "first mcycle opening bypassed the selected builder factory")
         -- Padding may share the first opening with the last bundle. Only an opaque
         -- bundle should call the factory again; both positions must remain queryable.
         local mcycle_last = (1 << contract.geometry.mcycle_height) - 1
@@ -1647,7 +1647,7 @@ if arg[1] then
         local uarch_open = pcall(uarch.get_node, uarch, uarch_last, 0)
         uarch:open_bundle(uarch_last >> LOG2_BUNDLE_UARCH_CYCLE_COUNT)
         assert(counts.outer == 1, "mcycle build bypassed the selected builder factory")
-        assert(counts.refined == (mcycle_open and 1 or 2), "mcycle opening called the wrong number of builders")
+        assert(counts.bundles == (mcycle_open and 1 or 2), "mcycle opening called the wrong number of builders")
         assert(counts.uarch == (uarch_open and 2 or 3), "uarch opening called the wrong number of builders")
         local terminal_logs = player:prove_state_transition(2, 60000, 0)
         assert(

@@ -828,7 +828,7 @@ end
 -- claim samples the epoch every 2^LOG2_MCYCLES_PER_PERIOD mcycles. The uarch claim expands one mcycle
 -- period into its uarch transitions. Each claim is stored bundled: the machine delivers one
 -- subtree root per 2^bundle_height leaves, stored at its logical height, and queries
--- below a bundle are answered by refining it.
+-- below a bundle are answered by opening it.
 ------------------------------------------------------------
 
 local LOG2_BUNDLE_MCYCLE_COUNT = 4
@@ -998,7 +998,7 @@ function machine_cache_meta.__index:revert(machine)
     machine:swap(backup)
 end
 
--- Spreads a bounded number of checkpoints across the epoch to shorten replay when refining claims.
+-- Spreads a bounded number of checkpoints across the epoch to shorten replay when collecting bundles.
 -- As the epoch advances, doubles the input gap and replaces closely spaced checkpoints with later
 -- ones, preserving the initial machine so every input boundary remains reachable.
 -- Only the forward claim build offers checkpoints, so the list remains ordered.
@@ -1660,8 +1660,8 @@ local function new_player(geometry, inputs, machine_cache, options)
     end
     -- docs:end build_mcycle_claim
 
-    -- docs:begin refine_mcycle_claim
-    local function refine_mcycle_claim(bundle_index)
+    -- docs:begin collect_mcycle_bundle
+    local function collect_mcycle_bundle(bundle_index)
         local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
         local input_index = first_leaf // geometry.periods_per_input
         local period_index = first_leaf % geometry.periods_per_input
@@ -1683,7 +1683,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         )
         return builder:end_epoch()
     end
-    -- docs:end refine_mcycle_claim
+    -- docs:end collect_mcycle_bundle
 
     local function run_uarch_claim(epoch_period_index, bundle_index)
         local input_index = epoch_period_index // geometry.periods_per_input
@@ -1712,11 +1712,11 @@ local function new_player(geometry, inputs, machine_cache, options)
     end
     -- docs:end build_uarch_claim
 
-    -- docs:begin refine_uarch_claim
-    local function refine_uarch_claim(input_index, period_index, bundle_index)
+    -- docs:begin collect_uarch_cycle_bundle
+    local function collect_uarch_cycle_bundle(input_index, period_index, bundle_index)
         return run_uarch_claim((input_index - 1) * geometry.periods_per_input + period_index, bundle_index)
     end
-    -- docs:end refine_uarch_claim
+    -- docs:end collect_uarch_cycle_bundle
 
     -- The disputed transition's access logs, produced by positioning a fresh fork at the
     -- transition and logging it, whatever claim is under dispute. The transition out of an
@@ -1826,7 +1826,7 @@ local function new_player(geometry, inputs, machine_cache, options)
             LOG2_BUNDLE_MCYCLE_COUNT,
             build_mcycle_claim(),
             function(_, bundle_index)
-                return refine_mcycle_claim(bundle_index)
+                return collect_mcycle_bundle(bundle_index)
             end
         )
     end
@@ -1836,15 +1836,15 @@ local function new_player(geometry, inputs, machine_cache, options)
             LOG2_BUNDLE_UARCH_CYCLE_COUNT,
             build_uarch_claim(input_index, period_index),
             function(_, bundle_index)
-                return refine_uarch_claim(input_index, period_index, bundle_index)
+                return collect_uarch_cycle_bundle(input_index, period_index, bundle_index)
             end
         )
     end
-    function player.refine_mcycle_claim(_, bundle_index)
-        return refine_mcycle_claim(bundle_index)
+    function player.collect_mcycle_bundle(_, bundle_index)
+        return collect_mcycle_bundle(bundle_index)
     end
-    function player.refine_uarch_claim(_, input_index, period_index, bundle_index)
-        return refine_uarch_claim(input_index, period_index, bundle_index)
+    function player.collect_uarch_cycle_bundle(_, input_index, period_index, bundle_index)
+        return collect_uarch_cycle_bundle(input_index, period_index, bundle_index)
     end
     return player
 end

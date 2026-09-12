@@ -3488,9 +3488,7 @@ end
 -- entry fills every unfilled position in the tree segment reserved for the current input.
 local function mcycle_computation_hash_push_collected(self, collected)
     local count = umin(#collected.hashes, self.input_entry_capacity - self.input_entry_count)
-    for i = 1, count do
-        hash_tree.frontier_push_back(self.frontier, collected.hashes[i])
-    end
+    hash_tree.frontier_append(self.frontier, collected.hashes, 1, count)
     self.input_entry_count = self.input_entry_count + count
     if not is_at_fixed_point(collected.break_reason) then return end
     assert(#collected.hashes > 0, "fixed-point mcycle collection has no final entry")
@@ -3615,9 +3613,7 @@ end
 local function uarch_cycle_computation_hash_push_mcycle(self, frontier, entries, first, last)
     local bundle_capacity = 1 << self.log2_bundles_per_mcycle
     local execution_bundle_count = last - first - 1
-    for i = first, last - 2 do
-        hash_tree.frontier_push_back(frontier, entries[i])
-    end
+    hash_tree.frontier_append(frontier, entries, first, last - 2)
     hash_tree.frontier_pad_back(frontier, entries[last - 1], bundle_capacity - 1 - execution_bundle_count)
     hash_tree.frontier_push_back(frontier, entries[last])
 end

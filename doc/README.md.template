@@ -5324,13 +5324,13 @@ The machine can deliver the sampled hashes in *bundles*, one subtree root per 2<
 Bundle roots are interior nodes of the claim tree, so the root is unchanged.
 The three inputs of our epoch fit in about nine thousand stored mcycle bundles, and one uarch span in about three thousand.
 When a dispute descends below a stored bundle, the player opens it: a complete forest of the leaves under that one bundle, built by re-running a fork of the input's boundary machine through the bundle's transitions, exactly as a machine produces the disputed transition's logs.
-The claim tree checks the opened forest against the committed bundle root and caches it (`open_bundle` in `prtu.lua`).
-Only the bundles a dispute actually visits are ever opened, and each costs one machine re-run.
+The claim tree checks the opened forest against the committed bundle root and installs its subtree at that leaf (`open_bundle` in `prtu.lua`).
+Implicit repetitions share the expanded subtree, so opening one repeated bundle also makes its other occurrences readable.
 
 The builds themselves stream out of the emulator.
 They follow the same collection contract as `cartesi-machine`'s computation-hash builders: each input owns a fixed-capacity segment, collection state threads across yields, and the final repeatable group returned at a fixed point fills the segment's remaining positions.
 The only different sink is PRT's frontier forest, which retains the nodes needed to answer later tournament queries.
-The mcycle build (`build_mcycle_claim` in `prt.lua`) advances the whole epoch once, pushing each input's bundle roots into the outer forest, padding each input's span with the fixed point where its guest stopped, and offering each accepted input's final machine to a bounded cache as the next input's virgin boundary.
+The mcycle build (`build_mcycle_claim` in `prt.lua`) advances the whole epoch once, pushing each input's bundle roots into the claim forest at their logical heights, padding each input's span with the fixed point where its guest stopped, and offering each accepted input's final machine to a bounded cache as the next input's virgin boundary.
 The default policy keeps a bounded, progressively thinned set of these checkpoints, indexed by input; input zero always retains the initial machine template.
 The refinement re-run (`refine_mcycle_claim`) asks the cache for the target input's boundary, then advances that input to recover one bundle's samples.
 The cache's `clone_at_input_boundary(input_index, replay)` selects and clones a checkpoint, then calls the supplied replay function with the machine and the intervening input range.

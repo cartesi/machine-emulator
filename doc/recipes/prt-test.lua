@@ -70,9 +70,9 @@ do
     local cache <close> = prt.new_machine_cache(machine)
     local geometry = prt.new_geometry(10)
     for _, builder in ipairs({
-        prt.new_null_computation_hash(machine),
-        prt.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, cache, machine),
-        prt.new_uarch_computation_hash(geometry.log2_mcycles_per_period, machine, 0),
+        prt.make_null_computation_hash_builder(machine),
+        prt.make_mcycle_computation_hash_builder(geometry.log2_mcycles_per_period, cache, machine),
+        prt.make_uarch_cycle_computation_hash_builder(geometry.log2_mcycles_per_period, machine, 0),
     }) do
         assert(builder:get_root_hash() == "initial", "builder did not forward to its machine")
         assert(rawget(builder, "get_root_hash") == builder.get_root_hash, "builder did not cache its forwarded method")
@@ -203,9 +203,9 @@ for _, phase in ipairs({ "factory", "begin_epoch", "begin_input", "run", "end_in
     local initial = new_fake_machine("initial")
     local cache <close> = prt.new_machine_cache(initial, 2, 1)
     local player = prt.new_player(prt.new_geometry(10), { "accepted" }, cache, {
-        new_null_computation_hash = function(machine)
+        make_null_computation_hash_builder = function(machine)
             assert(phase ~= "factory", "injected factory failure")
-            local builder = prt.new_null_computation_hash(machine)
+            local builder = prt.make_null_computation_hash_builder(machine)
             builder[phase] = function()
                 error("injected " .. phase .. " failure")
             end
@@ -227,9 +227,9 @@ for _, phase in ipairs({ "factory", "begin_input", "run", "end_input" }) do
     local initial = new_fake_machine("initial")
     local cache <close> = prt.new_machine_cache(initial)
     local player = prt.new_player(prt.new_geometry(10), { "accepted" }, cache, {
-        new_mcycle_computation_hash = function(_, _, machine)
+        make_mcycle_computation_hash_builder = function(_, _, machine)
             assert(phase ~= "factory", "injected factory failure")
-            local builder = prt.new_null_computation_hash(machine)
+            local builder = prt.make_null_computation_hash_builder(machine)
             builder[phase] = function()
                 error("injected " .. phase .. " failure")
             end
@@ -261,8 +261,8 @@ for _, terminal in ipairs({
     }
     local runs, automatic_reads, manual_reads, ended_inputs = 0, 0, 0, 0
     local player = prt.new_player(prt.new_geometry(10), { "accepted" }, cache, {
-        new_mcycle_computation_hash = function(_, _, machine)
-            local builder = prt.new_null_computation_hash(machine)
+        make_mcycle_computation_hash_builder = function(_, _, machine)
+            local builder = prt.make_null_computation_hash_builder(machine)
             builder.run = function(_, mcycle_end)
                 assert(
                     mcycle_end == 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE,
@@ -310,8 +310,8 @@ for _, phase in ipairs({ "begin_epoch", "begin_input", "snapshot" }) do
         end
     end
     local player = prt.new_player(prt.new_geometry(10), { "accepted" }, cache, {
-        new_mcycle_computation_hash = function(_, _, machine)
-            local builder = prt.new_null_computation_hash(machine)
+        make_mcycle_computation_hash_builder = function(_, _, machine)
+            local builder = prt.make_null_computation_hash_builder(machine)
             if phase ~= "snapshot" then
                 builder[phase] = function()
                     machine.root_hash = "changed"
@@ -341,8 +341,8 @@ for _, corrupt in ipairs({ false, true }) do
         end
     end
     local player = prt.new_player(prt.new_geometry(10), { "first", "second" }, cache, {
-        new_null_computation_hash = function(machine)
-            local builder = prt.new_null_computation_hash(machine)
+        make_null_computation_hash_builder = function(machine)
+            local builder = prt.make_null_computation_hash_builder(machine)
             local input_index
             builder.begin_input = function(_, index)
                 input_index = index
@@ -358,7 +358,7 @@ for _, corrupt in ipairs({ false, true }) do
             end
             return builder
         end,
-        new_uarch_computation_hash = function()
+        make_uarch_cycle_computation_hash_builder = function()
             error("replay complete")
         end,
     })
@@ -1222,19 +1222,22 @@ if arg[1] then
     assert(type(native) == "userdata", "honest machine is wrapped")
     assert(type(cache.checkpoints[1].machine) == "userdata", "honest checkpoint machine is wrapped")
     local native_builder =
-        prt.new_mcycle_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, cache, native)
+        prt.make_mcycle_computation_hash_builder(dapp_contract.geometry.log2_mcycles_per_period, cache, native)
     assert(rawget(native_builder, "machine") == native, "honest computation-hash builder is wrapped")
     assert(native_builder.unbundle == nil, "honest builder exposes strategy-only bundle collection")
     assert(native_builder.pad_back == nil, "honest builder exposes strategy-only insertion")
     local native_uarch_builder =
-        prt.new_uarch_computation_hash(dapp_contract.geometry.log2_mcycles_per_period, native, 0)
+        prt.make_uarch_cycle_computation_hash_builder(dapp_contract.geometry.log2_mcycles_per_period, native, 0)
     assert(rawget(native_uarch_builder, "machine") == native, "honest uarch builder is wrapped")
     assert(native_uarch_builder.unbundle == nil, "honest uarch builder exposes strategy-only bundle collection")
     assert(native_uarch_builder.pad_back == nil, "honest uarch builder exposes strategy-only insertion")
     local virgin_root = native:get_root_hash()
     native_uarch_builder:begin_input(0, native:read_reg("mcycle"))
     assert(native:get_root_hash() == virgin_root, "capturing the revert tail changed the virgin machine")
-    assert(rawget(prt.new_null_computation_hash(native), "machine") == native, "honest replay builder is wrapped")
+    assert(
+        rawget(prt.make_null_computation_hash_builder(native), "machine") == native,
+        "honest replay builder is wrapped"
+    )
 
     local honest_tree = honest:make_mcycle_tree()
     local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").input_index
@@ -1368,7 +1371,7 @@ if arg[1] then
     local chain_inputs, chain_cache <close> = new_test_cache(chain_contract, 128, 1)
     local input_runs = {}
     local replay_begins, replay_ends = 0, 0
-    local new_null = prt.new_null_computation_hash
+    local new_null = prt.make_null_computation_hash_builder
     local function observe_replay(m)
         local builder = new_null(m)
         builder.begin_epoch = function()
@@ -1386,7 +1389,7 @@ if arg[1] then
         chain_contract.geometry,
         chain_inputs,
         chain_cache,
-        { new_null_computation_hash = observe_replay }
+        { make_null_computation_hash_builder = observe_replay }
     )
     local chain_tree = chain:make_mcycle_tree()
     local chain_reference_inputs, chain_reference_cache <close> = new_test_cache(chain_contract, 1)
@@ -1604,20 +1607,23 @@ if arg[1] then
         local terminal_inputs = { table.unpack(contract.inputs) }
         local terminal_cache <close> = prt.new_machine_cache(terminal_machine(initial_state_hash))
         local player = prt.new_player(contract.geometry, terminal_inputs, terminal_cache, {
-            new_mcycle_computation_hash = function(log2_period, machine_cache, m, bundle_index)
+            make_mcycle_computation_hash_builder = function(log2_period, machine_cache, m, bundle_index)
                 local kind = bundle_index ~= nil and "bundles" or "outer"
                 counts[kind] = counts[kind] + 1
-                return observe_inputs(prt.new_mcycle_computation_hash(log2_period, machine_cache, m, bundle_index), m)
-            end,
-            new_uarch_computation_hash = function(log2_period, m, epoch_period_index, bundle_index)
-                counts.uarch = counts.uarch + 1
                 return observe_inputs(
-                    prt.new_uarch_computation_hash(log2_period, m, epoch_period_index, bundle_index),
+                    prt.make_mcycle_computation_hash_builder(log2_period, machine_cache, m, bundle_index),
                     m
                 )
             end,
-            new_null_computation_hash = function(m)
-                return observe_inputs(prt.new_null_computation_hash(m), m)
+            make_uarch_cycle_computation_hash_builder = function(log2_period, m, epoch_period_index, bundle_index)
+                counts.uarch = counts.uarch + 1
+                return observe_inputs(
+                    prt.make_uarch_cycle_computation_hash_builder(log2_period, m, epoch_period_index, bundle_index),
+                    m
+                )
+            end,
+            make_null_computation_hash_builder = function(m)
+                return observe_inputs(prt.make_null_computation_hash_builder(m), m)
             end,
         })
         local reference <close> = terminal_machine(initial_state_hash)

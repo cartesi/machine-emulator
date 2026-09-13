@@ -1121,7 +1121,7 @@ local computation_hash_meta = {
 
 -- Plain replay has the same input lifecycle as a sampled run.
 local function noop() end
-local function new_null_computation_hash(machine)
+local function make_null_computation_hash_builder(machine)
     return setmetatable({
         machine = machine,
         begin_epoch = noop,
@@ -1231,7 +1231,7 @@ end
 
 -- Omitting bundle_index collects the full epoch as bundle roots. Providing it reconstructs
 -- that bundle as individual state hashes. Leaf positions are logical, even at a fixed point.
-local function new_mcycle_computation_hash(log2_mcycles_per_period, machine_cache, machine, bundle_index)
+local function make_mcycle_computation_hash_builder(log2_mcycles_per_period, machine_cache, machine, bundle_index)
     local log2_periods_per_input = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period
     local log2_bundle_mcycle_count = bundle_index ~= nil and 0 or LOG2_BUNDLE_MCYCLE_COUNT
     local height = bundle_index ~= nil and LOG2_BUNDLE_MCYCLE_COUNT
@@ -1395,7 +1395,12 @@ end
 
 -- Omitting bundle_index collects the full period identified by epoch_period_index as bundle roots.
 -- Providing it reconstructs that period's selected bundle as individual state hashes.
-local function new_uarch_computation_hash(log2_mcycles_per_period, machine, epoch_period_index, bundle_index)
+local function make_uarch_cycle_computation_hash_builder(
+    log2_mcycles_per_period,
+    machine,
+    epoch_period_index,
+    bundle_index
+)
     local periods_per_input = 1 << (cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period)
     local log2_bundle_uarch_cycle_count = bundle_index ~= nil and 0 or LOG2_BUNDLE_UARCH_CYCLE_COUNT
     local height = bundle_index ~= nil and LOG2_BUNDLE_UARCH_CYCLE_COUNT
@@ -1570,9 +1575,12 @@ end
 -- these operations capture their dependencies. Each replay still has its own machine.
 local function new_player(geometry, inputs, machine_cache, options)
     options = options or {}
-    options.new_mcycle_computation_hash = options.new_mcycle_computation_hash or new_mcycle_computation_hash
-    options.new_uarch_computation_hash = options.new_uarch_computation_hash or new_uarch_computation_hash
-    options.new_null_computation_hash = options.new_null_computation_hash or new_null_computation_hash
+    options.make_mcycle_computation_hash_builder = options.make_mcycle_computation_hash_builder
+        or make_mcycle_computation_hash_builder
+    options.make_uarch_cycle_computation_hash_builder = options.make_uarch_cycle_computation_hash_builder
+        or make_uarch_cycle_computation_hash_builder
+    options.make_null_computation_hash_builder = options.make_null_computation_hash_builder
+        or make_null_computation_hash_builder
     local player = { label = options.label or "honest" }
     for name, handler in pairs(handlers) do
         player[name] = handler
@@ -1648,14 +1656,15 @@ local function new_player(geometry, inputs, machine_cache, options)
     end
 
     local function run_to_input_boundary(machine, input_index_begin, input_index_end)
-        local builder = options.new_null_computation_hash(machine)
+        local builder = options.make_null_computation_hash_builder(machine)
         return run_advance_state_epoch(builder, input_index_begin, input_index_end)
     end
 
     -- docs:begin build_mcycle_claim
     local function build_mcycle_claim()
         local machine, _ <close> = machine_cache:clone_at_input_boundary(0, run_to_input_boundary)
-        local builder = options.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, machine_cache, machine)
+        local builder =
+            options.make_mcycle_computation_hash_builder(geometry.log2_mcycles_per_period, machine_cache, machine)
         return run_advance_state_epoch(builder, 0, #inputs)
     end
     -- docs:end build_mcycle_claim
@@ -1667,11 +1676,15 @@ local function new_player(geometry, inputs, machine_cache, options)
         local period_index = first_leaf % geometry.periods_per_input
         local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
         local revert_root_hash = machine:get_root_hash()
-        local builder = options.new_null_computation_hash(machine)
+        local builder = options.make_null_computation_hash_builder(machine)
         local break_reason, _, base =
             run_advance_state_input(builder, input_index, period_index * geometry.mcycles_per_period, revert_root_hash)
-        builder =
-            options.new_mcycle_computation_hash(geometry.log2_mcycles_per_period, machine_cache, machine, bundle_index)
+        builder = options.make_mcycle_computation_hash_builder(
+            geometry.log2_mcycles_per_period,
+            machine_cache,
+            machine,
+            bundle_index
+        )
         builder:begin_epoch()
         if is_at_fixed_point(break_reason) then
             return builder:end_epoch()
@@ -1690,7 +1703,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         local period_index = epoch_period_index % geometry.periods_per_input
         local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
         local revert_root_hash = machine:get_root_hash()
-        local builder = options.new_uarch_computation_hash(
+        local builder = options.make_uarch_cycle_computation_hash_builder(
             geometry.log2_mcycles_per_period,
             machine,
             epoch_period_index,
@@ -1735,7 +1748,7 @@ local function new_player(geometry, inputs, machine_cache, options)
                 machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
             return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
         end
-        local builder = options.new_null_computation_hash(machine)
+        local builder = options.make_null_computation_hash_builder(machine)
         run_advance_state_input(
             builder,
             input_index,
@@ -1772,7 +1785,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
         local frontier = hash_tree.frontier_copy(genesis_frontier)
         local outputs, leaves = {}, {}
-        local builder = options.new_null_computation_hash(machine)
+        local builder = options.make_null_computation_hash_builder(machine)
         run_advance_state_epoch(builder, 0, #inputs, function(pending, reported_root)
             for _, output in ipairs(pending) do
                 outputs[#outputs + 1] = output
@@ -1856,9 +1869,9 @@ if ... == "prt" then
         LOG2_BUNDLE_UARCH_CYCLE_COUNT = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
         new_player = new_player,
         new_machine = new_machine,
-        new_null_computation_hash = new_null_computation_hash,
-        new_mcycle_computation_hash = new_mcycle_computation_hash,
-        new_uarch_computation_hash = new_uarch_computation_hash,
+        make_null_computation_hash_builder = make_null_computation_hash_builder,
+        make_mcycle_computation_hash_builder = make_mcycle_computation_hash_builder,
+        make_uarch_cycle_computation_hash_builder = make_uarch_cycle_computation_hash_builder,
         umin = umin,
         usaturating_add = usaturating_add,
         is_target_mcycle = is_target_mcycle,

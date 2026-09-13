@@ -3584,7 +3584,7 @@ local function mcycle_computation_hash_end_epoch(self)
     end
 end
 
-local function make_mcycle_computation_hash(advance, runner)
+local function make_mcycle_computation_hash_builder(advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
     return setmetatable({
         runner = runner,
@@ -3752,7 +3752,7 @@ local function uarch_cycle_computation_hash_end_epoch(self)
     end
 end
 
-local function make_uarch_cycle_computation_hash(advance, runner)
+local function make_uarch_cycle_computation_hash_builder(advance, runner)
     local log2_period = advance.log2_mcycle_computation_hash_period
     local log2_periods_per_input = ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_period
     return setmetatable({
@@ -3778,7 +3778,7 @@ end
 -- An epoch that does not compute a hash delegates execution to the runner and skips builder
 -- bookkeeping and reversal checks.
 local function null_computation_hash_noop() end
-local function make_null_computation_hash(runner)
+local function make_null_computation_hash_builder(runner)
     return setmetatable({
         runner = runner,
         begin_epoch = null_computation_hash_noop,
@@ -4032,9 +4032,9 @@ end
 -- inspect-state query on its own, or otherwise just runs the machine to a stop.
 if cmdline.cmio_advance then
     local advance = cmdline.cmio_advance
-    local builder = advance.mcycle_computation_hash and make_mcycle_computation_hash(advance, runner)
-        or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash(advance, runner)
-        or make_null_computation_hash(runner)
+    local builder = advance.mcycle_computation_hash and make_mcycle_computation_hash_builder(advance, runner)
+        or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash_builder(advance, runner)
+        or make_null_computation_hash_builder(runner)
     run_advance_state_epoch(builder)
     -- an inspect query, if any, runs against the state the epoch left; it does nothing unless that
     -- is an accept yield (a completed epoch), so it is safe to always attempt

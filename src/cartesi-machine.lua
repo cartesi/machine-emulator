@@ -3864,14 +3864,18 @@ local function ignore_yield_automatic() end
 local function run_inspect_state_query(m, runner)
     local htif = initial_config.processor.registers.htif
     local mcycle = m:read_reg("mcycle")
-    -- Boot always runs the machine plainly, and only the query itself runs with the runner. If the
-    -- machine did not stop at a manual yield (it halted, or ran out of mcycles), it is not at an
-    -- accept yield waiting for a request, so there is nothing to inspect.
+    -- Boot always runs the machine plainly, and only the query itself runs with the runner. A query
+    -- needs a machine waiting for it on an rx-accepted manual yield. A halt, an overflow, an
+    -- exhausted cycle limit, or a reject or exception yield leaves nothing to inspect.
     local break_reason = run_to_stop(m, cmdline.max_mcycle, ignore_yield_automatic)
-    if not is_yielded_manual(break_reason) then return end
+    local waiting = is_yielded_manual(break_reason)
+    if waiting then
+        local cmd, yield_reason = m:receive_cmio_request()
+        waiting = cmd == cartesi.HTIF_YIELD_CMD_MANUAL and is_rx_accepted(yield_reason)
+    end
+    assert(waiting, "inspect query needs a machine waiting on an rx-accepted manual yield")
     -- Announce the yield we advanced to reach (after an epoch it is the epoch's already-announced
-    -- accept yield, at the same mcycle, so skip it). load_cmio_query is the gate on the reason: it
-    -- fails unless the machine is at an rx-accepted manual yield, rejecting a reject or exception.
+    -- accept yield, at the same mcycle, so skip it).
     if m:read_reg("mcycle") ~= mcycle then get_and_print_yield(m, htif) end
     commit(m)
     stderr("\nBefore query\n")
@@ -3895,8 +3899,9 @@ end
 
 -- Processes one advance-state input through its builder. Accepted outputs are published before
 -- commit; rejected outputs are written separately after rollback. Finalizes inputs at fixed points
--- before rollback, while a cycle-limit interruption retains the running state without finalizing.
--- Returns the break reason and manual yield reason, if any.
+-- before rollback. A cycle-limit interruption leaves the input open and its snapshot outstanding,
+-- so the outputs requested at that cycle see the interrupted machine and the exit handler then
+-- rolls it back to the input boundary. Returns the break reason and manual yield reason, if any.
 local function run_advance_state_input(builder, input_index, revert_root_hash)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
@@ -3925,19 +3930,20 @@ local function run_advance_state_input(builder, input_index, revert_root_hash)
     if is_yielded_manual(break_reason) then
         yield_reason, data = select(2, get_and_print_yield(builder, htif))
     end
-    if is_at_fixed_point(break_reason) then builder:end_input() end
     if is_rx_rejected(yield_reason) then
+        builder:end_input()
         revert(builder)
         builder:check_revert(revert_root_hash, builder:get_root_hash())
         flush_pending_outputs(builder, advance, yield_reason, data)
-    else
+    elseif is_at_fixed_point(break_reason) then
+        builder:end_input()
         if is_tx_exception(yield_reason) then
             report_exception(data)
         elseif is_yielded_manual(break_reason) and not is_rx_accepted(yield_reason) then
             report_unexpected_manual_yield(yield_reason)
         end
-        if is_at_fixed_point(break_reason) then flush_pending_outputs(builder, advance, yield_reason, data) end
-        -- Acceptance, sticky stops, and cycle-limit interruptions retain the running machine.
+        flush_pending_outputs(builder, advance, yield_reason, data)
+        -- acceptance and sticky stops retain the running machine
         commit(builder)
     end
     return break_reason, yield_reason
@@ -4022,8 +4028,8 @@ if cmdline.cmio_advance then
         or advance.uarch_cycle_computation_hash and make_uarch_cycle_computation_hash_builder(advance, runner)
         or make_null_computation_hash_builder(runner)
     run_advance_state_epoch(builder)
-    -- an inspect query, if any, runs against the state the epoch left; it does nothing unless that
-    -- is an accept yield (a completed epoch), so it is safe to always attempt
+    -- an inspect query, if any, runs against the state the epoch left, and fails unless that is
+    -- an accept yield (a completed epoch)
     if cmdline.cmio_inspect then run_inspect_state_query(machine, runner) end
 elseif cmdline.cmio_inspect then
     run_inspect_state_query(machine, runner)

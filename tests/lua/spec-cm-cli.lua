@@ -1526,23 +1526,24 @@ describe("cartesi-machine CLI", function()
             "--quiet",
         })
 
-        -- --cmio-inspect-state=<opts>
-        run_ok({
+        -- --cmio-inspect-state=<opts>: the option parses, and the query itself then fails because
+        -- a machine stopped at cycle 0 is not waiting for one
+        run_fail({
             "--cmio-inspect-state=query:q.bin,report:qrep-%o.bin,print_query_state_hashes",
             "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
-        })
+        }, "inspect query needs a machine waiting")
 
         -- bare --cmio-inspect-state (no arguments)
-        run_ok({
+        run_fail({
             "--cmio-inspect-state",
             "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
-        })
+        }, "inspect query needs a machine waiting")
     end)
 
     it("revert mode options", function()
@@ -2429,9 +2430,10 @@ describe("cartesi-machine CLI", function()
         expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
     end)
 
-    -- A cycle limit inside an input retains the partial state, without padding an unfinished
-    -- computation hash. Reload the stored machine after CLI cleanup to detect a late rollback.
-    it("advance state commits an input interrupted by the cycle limit", function()
+    -- A cycle limit inside an input leaves the interrupted machine to the outputs requested at
+    -- that cycle, the final hash and the exported machine, without padding the unfinished
+    -- computation hash. The exit handler then rolls the working directory back to the boundary.
+    it("advance state reverts an input interrupted by the cycle limit", function()
         local _ <close>, template_dir = scope_stored_dirname()
         local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "partial"))
         run_ok({
@@ -2444,14 +2446,16 @@ describe("cartesi-machine CLI", function()
             "ioctl-echo-loop",
         })
         local reference <close> = cartesi.machine(template_dir)
-        local target = reference:read_reg("mcycle") + 1
+        local boundary_mcycle = reference:read_reg("mcycle")
+        local boundary = reference:get_root_hash()
+        local target = boundary_mcycle + 1
         reference:send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             filesystem.read_file(input),
             reference:get_root_hash()
         )
         expect.equal(reference:run(target), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
-        local expected = reference:get_root_hash()
+        local interrupted = reference:get_root_hash()
         for _, hash_options in ipairs({
             "",
             ",log2_mcycle_computation_hash_period:19",
@@ -2461,19 +2465,63 @@ describe("cartesi-machine CLI", function()
             local _ <close> = tests_util.scope_exit(function()
                 pcall(cartesi.machine.remove_stored, cartesi.machine, machine_dir .. ".revert")
             end)
+            local _ <close>, store_dir = scope_stored_dirname()
+            local _ <close>, final_hash = scope_temp_pathname()
             local _, log = run_ok({
                 "--load=" .. machine_dir .. ",clone:" .. template_dir .. ",sharing:all",
                 "--revert-mode=stored",
                 "--cmio-advance-state=input:" .. input .. ",input_index_end:1" .. hash_options,
                 "--max-mcycle=" .. target,
+                "--final-hash=" .. final_hash,
+                "--store=" .. store_dir,
                 "--no-init-splash",
             })
             expect.falsy(log:find("computation hash:", 1, true))
-            local resumed <close> = cartesi.machine(machine_dir)
-            expect.equal(resumed:read_reg("mcycle"), target)
-            expect.equal(resumed:get_root_hash(), expected)
+            expect.equal(filesystem.read_file(final_hash), interrupted)
+            local exported <close> = cartesi.machine(store_dir)
+            expect.equal(exported:read_reg("mcycle"), target)
+            expect.equal(exported:get_root_hash(), interrupted)
+            local restored <close> = cartesi.machine(machine_dir)
+            expect.equal(restored:read_reg("mcycle"), boundary_mcycle)
+            expect.equal(restored:get_root_hash(), boundary)
             expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
         end
+    end)
+
+    -- An inspect query after an input the cycle limit interrupted has no completed input to
+    -- inspect, so it fails, and the exit handler still restores the boundary.
+    it("inspect query after an interrupted input fails", function()
+        local _ <close>, template_dir = scope_stored_dirname()
+        local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "partial"))
+        local _ <close>, query = filesystem.write_scope_temp_file("inspect")
+        run_ok({
+            "--store=" .. template_dir,
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop",
+        })
+        local reference <close> = cartesi.machine(template_dir)
+        local boundary_mcycle = reference:read_reg("mcycle")
+        local boundary = reference:get_root_hash()
+        local _ <close>, machine_dir = scope_stored_dirname()
+        local _ <close> = tests_util.scope_exit(function()
+            pcall(cartesi.machine.remove_stored, cartesi.machine, machine_dir .. ".revert")
+        end)
+        run_fail({
+            "--load=" .. machine_dir .. ",clone:" .. template_dir .. ",sharing:all",
+            "--revert-mode=stored",
+            "--cmio-advance-state=input:" .. input .. ",input_index_end:1",
+            "--cmio-inspect-state=query:" .. query,
+            "--max-mcycle=" .. (boundary_mcycle + 1),
+            "--no-init-splash",
+        }, "inspect query needs a machine waiting")
+        local restored <close> = cartesi.machine(machine_dir)
+        expect.equal(restored:read_reg("mcycle"), boundary_mcycle)
+        expect.equal(restored:get_root_hash(), boundary)
+        expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
     end)
 
     -- -------------------------------------------------------------------------

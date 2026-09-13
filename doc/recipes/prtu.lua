@@ -70,7 +70,15 @@ local tree_meta = { __index = {} }
 -- A readable state leaf means the bundle was already opened, possibly through padding.
 -- docs:begin open_bundle
 function tree_meta.__index.open_bundle(tree, bundle_index)
+    assert(
+        math.type(bundle_index) == "integer"
+            and bundle_index >= 0
+            and bundle_index < (1 << (tree.height - tree.bundle_height)),
+        "invalid bundle index"
+    )
     local position = bundle_index << tree.bundle_height
+    -- Validate the full forest and the bundle root before probing below an opaque hash.
+    hash_tree.frontier_forest_get_node(tree.forest, position, tree.bundle_height)
     if pcall(hash_tree.frontier_forest_get_node, tree.forest, position, 0) then
         return
     end

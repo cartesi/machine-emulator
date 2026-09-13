@@ -520,6 +520,24 @@ do
     end
 end
 
+-- Invalid openings must fail before invoking the bundle factory.
+do
+    local forest = hash_tree.frontier_forest(HEIGHT, "keccak256")
+    local calls = 0
+    local tree = prtu.new_tree(HEIGHT, 2, forest, function()
+        calls = calls + 1
+        error("invalid opening reached the bundle factory")
+    end)
+    assert(not pcall(tree.open_bundle, tree, 0), "an incomplete forest accepted an opening")
+    assert(calls == 0, "an incomplete forest invoked the bundle factory")
+    local bundle_root = keccak(keccak(base_state_hash, base_state_hash), keccak(base_state_hash, base_state_hash))
+    hash_tree.frontier_forest_pad_back(forest, bundle_root, LEAVES >> 2, 2)
+    for _, index in ipairs({ -1, LEAVES >> 2, 1 << 62, 0.5, "0" }) do
+        assert(not pcall(tree.open_bundle, tree, index), "an invalid bundle index accepted an opening")
+        assert(calls == 0, "an invalid bundle index invoked the bundle factory")
+    end
+end
+
 -- A failed reconstruction must leave the commitment opaque and allow a valid retry.
 do
     local bundle = hash_tree.frontier_forest(2, "keccak256")

@@ -9580,16 +9580,17 @@ the same operation, and forward building and result collection start by
 cloning boundary zero; checkpoint selection stays private to the cache.
 The input driver calls the cache’s `snapshot(machine)`,
 `commit(machine)`, and `revert(machine)` operations, following the CLI:
-acceptance, sticky stops, and partial replay commit, while rejection
-reverts. Backups are keyed by working machine inside the cache, so
-nested bundle collection cannot replace the outer run’s snapshot. The
-uarch builder captures its rejection-padding tail from the running
-virgin machine before snapshot and delivery, without accessing the
-backup. Eviction releases the retained checkpoint’s owner. The caller
-keeps the cache in a `<close>` local for as long as the player and its
-claim trees can replay. Closing that cache releases all remaining owned
-machines without waiting for garbage collection. The caller creates the
-initial machine and passes it to
+acceptance and sticky stops commit, rejection reverts, and a run that
+stops at a target inside the input keeps its snapshot until the owner
+releases the clone. Backups are keyed by working machine inside the
+cache, so nested bundle collection cannot replace the outer run’s
+snapshot. The uarch builder captures its rejection-padding tail from the
+running virgin machine before snapshot and delivery, without accessing
+the backup. Eviction releases the retained checkpoint’s owner. The
+caller keeps the cache in a `<close>` local for as long as the player
+and its claim trees can replay. Closing that cache releases all
+remaining owned machines without waiting for garbage collection. The
+caller creates the initial machine and passes it to
 `new_machine_cache(initial_machine, capacity, initial_input_gap)`, which
 takes ownership. The default cache uses forks. A caller can supply a
 different cache implementation without changing the player driver or

@@ -5339,7 +5339,7 @@ The cache's `clone_at_input_boundary(input_index, run_to_input_boundary)` select
 The player's `run_to_input_boundary` closure uses `run_advance_state_epoch` with the null builder.
 It returns an independent machine and a separate owner kept in a `<close>` local; closing the owner releases the working machine and any outstanding backup immediately, including on errors.
 Uarch collection and transition proofs request their boundaries through the same operation, and forward building and result collection start by cloning boundary zero; checkpoint selection stays private to the cache.
-The input driver calls the cache's `snapshot(machine)`, `commit(machine)`, and `revert(machine)` operations, following the CLI: acceptance, sticky stops, and partial replay commit, while rejection reverts.
+The input driver calls the cache's `snapshot(machine)`, `commit(machine)`, and `revert(machine)` operations, following the CLI: acceptance and sticky stops commit, rejection reverts, and a run that stops at a target inside the input keeps its snapshot until the owner releases the clone.
 Backups are keyed by working machine inside the cache, so nested bundle collection cannot replace the outer run's snapshot.
 The uarch builder captures its rejection-padding tail from the running virgin machine before snapshot and delivery, without accessing the backup.
 Eviction releases the retained checkpoint's owner. The caller keeps the cache in a `<close>` local for as long as the player and its claim trees can replay. Closing that cache releases all remaining owned machines without waiting for garbage collection.

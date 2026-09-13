@@ -5581,7 +5581,7 @@ rm -f "$initial_state_hash"
 ln -sf "$tmpl" "$initial_state_hash"
 lua5.4 "$RECIPES_DIR/prt-test.lua" "$initial_state_hash" $rolling_calc_encode/input-[012].bin "$mch" "$uch"
 ```
-```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_dishonest_src,prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,prt_test outputs=claims,claim_hashes,posted,match_4,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_5_elided,match_5_1_elided,match_6_elided,match_6_1_elided replace=source/referee}
+```{.bash key=prt_run vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,mch->prt_mch/mch.bin/path,epoch_hash->rolling_calc_run/epoch-0-state-hash.bin/path depends=prt_dishonest_src,prt_runs_node,prt_story,prt_build_mcycle_claim,prt_run_match,prt_test outputs=forged-input-2.bin,claims,claim_hashes,posted,match_4,tournament,verdict,match_1,match_2_elided,match_2_1_elided,match_3_elided,match_3_1_elided,match_5_elided,match_5_1_elided,match_6_elided,match_6_1_elided replace=source/referee}
 # The chain publishes the initial state hash; a player finds its machine snapshot stored
 # under that name
 initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")

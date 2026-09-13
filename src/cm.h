@@ -820,7 +820,7 @@ CM_API cm_error cm_write_console_input(cm_machine *m, const uint8_t *data, uint6
 /// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details You may want to receive cmio requests depending on the run break reason. The break reason precedence is
-/// cycle overflow, halt, manual yield, then reaching the target mcycle.
+/// halt, manual yield, cycle overflow, then reaching the target mcycle.
 CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
 /// \brief Collects state root hashes after every 2^\p log2_mcycle_period machine cycles
@@ -986,14 +986,15 @@ CM_API cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint1
 /// \param data Response data to send.
 /// \param length Length of response data.
 /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-/// Required for advance-state responses, and only then recorded in the machine state. It must be the
-/// root hash of the machine itself, and the machine must be waiting on an rx-accepted manual yield,
-/// both checked before any state changes. Other responses (inspect-state queries and GIO responses)
-/// refuse it, so it must be NULL.
+/// For advance-state responses, required to match the machine root hash when an rx-accepted manual
+/// yield is pending, and ignored otherwise. Other responses (inspect-state queries and GIO responses)
+/// require NULL. Validation happens before delivery, including when data exceeds the rx buffer;
+/// validation errors leave the machine unchanged. Recorded only for advance-state delivery.
 /// \returns 0 for success, non zero code for error.
-/// \details This method should only be called as a response to cmio requests with manual yield command,
-/// where the reason is either accepted or a GIO request, may fail otherwise.
-CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+/// \details After validation, the response is a no-op if no manual yield is pending, its data
+/// exceeds the rx buffer, or an advance-state response finds a yield other than rx-accepted.
+/// These no-ops match the logged transition and leave the machine state unchanged.
+CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint32_t length,
     const cm_hash *revert_root_hash);
 
 // ------------------------------------
@@ -1048,7 +1049,7 @@ CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char *
 /// is not waiting on a manual yield, when an advance-state response finds the machine yielded with
 /// a reason other than rx-accepted (e.g., it rejected an input or threw an exception), or when the
 /// response data does not fit in the rx buffer.
-CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint32_t length,
     const cm_hash *revert_root_hash, int32_t log_type, const char **log);
 
 // ------------------------------------
@@ -1092,7 +1093,7 @@ CM_API cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_h
 /// \param revert_root_hash The revert root hash recorded when the log was generated.
 /// \param obtained_root_hash Receives the state hash after response, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, const uint8_t *data, uint32_t length,
     const cm_hash *root_hash_before, const char *log, const cm_hash *revert_root_hash, cm_hash *obtained_root_hash);
 
 // ------------------------------------

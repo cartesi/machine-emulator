@@ -1168,7 +1168,7 @@
         },
         {
           "name": "revert_root_hash",
-          "description": "Machine root hash to revert to in case the response is eventually rejected. Required for advance-state responses, and refused for any other reason",
+          "description": "Machine root hash to revert to in case the response is eventually rejected. For advance-state responses, required to match the machine root hash when an rx-accepted manual yield is pending, and ignored otherwise. Refused for any other response reason. Validation happens before delivery, including when data exceeds the rx buffer; validation errors leave the machine unchanged",
           "required": false,
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"

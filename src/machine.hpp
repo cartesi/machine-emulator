@@ -127,16 +127,12 @@ private:
     /// \details The counter is key is the concatenation of \p domain with \p name.
     static std::string get_counter_key(const char *name, const char *domain = nullptr);
 
-    /// \brief Checks that the machine can receive a cmio response with the given revert root hash.
+    /// \brief Checks the revert root hash argument of a cmio response.
     /// \param reason Reason for sending the response.
-    /// \param length Length of response data.
     /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-    /// \details Throws when the machine is not waiting on a manual yield or when the response data
-    /// does not fit in the rx buffer. Advance-state responses throw when the machine is not waiting
-    /// on an rx-accepted manual yield, when \p revert_root_hash is absent, or when it differs from
-    /// the machine root hash. All other responses refuse \p revert_root_hash and throw when it is
-    /// present. Called by send_cmio_response before any state changes.
-    void check_pending_cmio_request(uint16_t reason, uint64_t length,
+    /// \details Advance-state responses require a matching hash only when an rx-accepted manual yield
+    /// is pending. All other response reasons refuse the hash. Called before any state changes.
+    void check_cmio_response_revert_root_hash(uint16_t reason,
         const std::optional<const_machine_hash_view> &revert_root_hash) const;
 
     /// \brief Checks if the machine has VirtIO devices.
@@ -239,7 +235,7 @@ public:
     /// \returns The reason the machine was interrupted.
     /// \details Several conditions can cause the function to break before mcycle reaches mcycle_end. The most
     ///  frequent scenario is when the program executes a WFI instruction. Another example is when the machine
-    ///  halts. The break reason precedence is cycle overflow, halt, manual yield, then reaching the target mcycle.
+    ///  halts. The break reason precedence is halt, manual yield, cycle overflow, then reaching the target mcycle.
     interpreter_break_reason run(uint64_t mcycle_end);
 
     /// \brief Collects state root hashes after every 2^\p log2_mcycle_period machine cycles until mcycle reaches
@@ -616,11 +612,13 @@ public:
     /// \param data Response data.
     /// \param length Length of response data.
     /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-    /// Required for advance-state responses, and only then recorded in the machine state. It must be the
-    /// root hash of the machine itself, and the machine must be waiting on an rx-accepted manual yield,
-    /// both checked before any state changes. Other responses (inspect-state queries and GIO responses)
-    /// refuse it.
-    void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    /// For advance-state responses, required to match the machine root hash when an rx-accepted manual
+    /// yield is pending, and ignored otherwise. Other responses (inspect-state queries and GIO responses)
+    /// refuse it. Validation happens before delivery, including when data exceeds the rx buffer;
+    /// validation errors leave the machine unchanged. Recorded only for advance-state delivery.
+    /// After validation, a response is a no-op if no manual yield is pending, its data exceeds the rx buffer, or an
+    /// advance-state response finds a yield other than rx-accepted, matching the logged transition.
+    void send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
         std::optional<const_machine_hash_view> revert_root_hash = {});
 
     /// \brief Converts from machine host address to target physical address
@@ -736,7 +734,7 @@ public:
     /// is not waiting on a manual yield, when an advance-state response finds the machine yielded with
     /// a reason other than rx-accepted (e.g., it rejected an input or threw an exception), or when the
     /// response data does not fit in the rx buffer.
-    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
         const_machine_hash_view revert_root_hash, const access_log::type &log_type);
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
@@ -747,7 +745,7 @@ public:
     /// \param log Log containing the state accesses performed by the load operation
     /// \param revert_root_hash The revert root hash recorded when the log was generated.
     /// \returns State hash after response was sent, for the caller to check.
-    static machine_hash verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    static machine_hash verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
         const_machine_hash_view root_hash_before, const access_log &log, const_machine_hash_view revert_root_hash);
 
     /// \brief Returns a description of what is at a given target physical address

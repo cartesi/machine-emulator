@@ -942,6 +942,40 @@ describe("cartesi-machine CLI", function()
         expect.truthy(err:find("Cycles: 18446744073709551615", 1, true))
     end)
 
+    -- A manual yield on the last cycle of the input budget is still a yield. Delivering the
+    -- response renews the budget, so an advance-state epoch continues past it instead of
+    -- stopping at the overflow.
+    it("manual yield on the last budget cycle is not an overflow", function()
+        local boot <close> =
+            cartesi.machine(config_for({ "ioctl-echo-loop" }), { console = { output_destination = "to_null" } })
+        expect.equal(boot:run(math.maxinteger), cartesi.BREAK_REASON_YIELDED_MANUALLY)
+        local yield_mcycle = boot:read_reg("mcycle")
+        local _ <close>, cfg_file = scope_temp_pathname()
+        run_ok({
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+            "--store-config=" .. cfg_file,
+            "--",
+            "ioctl-echo-loop",
+        })
+        local cfg_text, count =
+            filesystem.read_file(cfg_file):gsub("imcyclemax = 0x%x+", "imcyclemax = " .. yield_mcycle)
+        expect.equal(count, 1)
+        local _ <close>, yield_cfg_file = filesystem.write_scope_temp_file(cfg_text)
+        local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "budget"))
+        local _, log = run_ok({
+            "--load-config=" .. yield_cfg_file,
+            "--cmio-advance-state=input:" .. input .. ",input_index_end:1",
+            "--revert-mode=none",
+            "--console-io=output_destination:to_null",
+            "--no-init-splash",
+        })
+        expect.falsy(log:find("Mcycle overflow", 1, true))
+        expect.truthy(log:find("Cycles: " .. yield_mcycle .. "\n", 1, true))
+        expect.equal(select(2, log:gsub("Manual yield rx%-accepted", "")), 2)
+    end)
+
     -- -------------------------------------------------------------------------
     -- Hashing and proof options
     --
@@ -2795,6 +2829,41 @@ describe("cartesi-machine CLI", function()
             "--",
             "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --reject=1",
         }, "computation hash of a rejected input requires reverts")
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Oversized inputs are delivered as no-ops with a notice
+    --
+    -- What: send_cmio_response ignores data that does not fit the rx buffer, in the emulator
+    --       and in the EVM verifier alike. The CLI must follow that same transition, and say
+    --       so instead of logging the input as processed.
+    -- How:  Deliver an input one byte too large to a machine waiting on an rx-accepted yield
+    --       and match the notice. The run still succeeds.
+    -- -------------------------------------------------------------------------
+    it("oversized advance-state input is a no-op with a notice", function()
+        local _ <close>, stored = scope_stored_dirname()
+        local _ <close>, input = scope_temp_pathname()
+        local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+        machine:write_reg("htif_iyield", cartesi.HTIF_YIELD_CMD_MANUAL_MASK)
+        machine:write_reg("iflags_Y", 1)
+        machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+        machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+        machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+        -- The accept yield reports the empty outputs tree root in the tx buffer.
+        machine:write_reg("htif_tohost_data", cartesi.HASH_SIZE)
+        machine:write_memory(
+            cartesi.AR_CMIO_TX_BUFFER_START,
+            hash_tree.frontier_get_root_hash(hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"))
+        )
+        machine:store(stored)
+        filesystem.write_file(input, string.rep("x", (1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE) + 1))
+        local _, log = run_ok({
+            "--load=" .. stored,
+            "--revert-mode=none",
+            "--max-mcycle=0",
+            "--cmio-advance-state=input:" .. input .. ",input_index_end:1,output_proof:",
+        })
+        expect.truthy(log:find("Input " .. input .. " exceeds the rx buffer and its delivery is a no-op", 1, true))
     end)
 
     -- -------------------------------------------------------------------------

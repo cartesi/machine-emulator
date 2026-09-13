@@ -163,8 +163,23 @@ do
         encode_command({ action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX }),
         machine:get_root_hash()
     )
+    assert(machine:run(cartesi.MCYCLE_MAX) == cartesi.BREAK_REASON_YIELDED_MANUALLY)
+    assert(machine:read_reg("mcycle") == cartesi.MCYCLE_MAX)
+    assert(machine:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+end
+
+-- A terminal cycle of zero lies past the unsigned counter boundary for this guest's
+-- relative countdown. Execution overflows before it can reach the terminal yield.
+do
+    local machine <close> = cartesi.machine(artifact_dir .. "/templates/mcycle-boundary")
+    machine:send_cmio_response(
+        cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+        encode_command({ action = "accept", terminal_mcycle = 0 }),
+        machine:get_root_hash()
+    )
     assert(machine:run(cartesi.MCYCLE_MAX) == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
     assert(machine:read_reg("mcycle") == cartesi.MCYCLE_MAX)
+    assert(machine:read_reg("iflags_Y") == 0 and machine:read_reg("iflags_H") == 0)
 end
 
 -- Probe the calibrated exact-cycle tail before publishing any boundary cases.
@@ -464,13 +479,26 @@ local mcycle_cases = {
     },
     {
         id = "mcycle-at-input-maximum",
-        description = "Exact saturated input maximum with overflow precedence",
+        description = "Accepted yield at the exact saturated input maximum",
+        comment = expected_hash_structure(
+            "no periodic sampling point is reached.",
+            "The accepted state root hash at MCYCLE_MAX pads every reserved position; the yield takes precedence."
+        ),
+        template = "mcycle-boundary",
+        commands = { { action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX } },
+        category = "success-hash",
+        terminal_mcycle = "18446744073709551615",
+        max_mcycle = "0xffffffffffffffff",
+    },
+    {
+        id = "mcycle-overflow",
+        description = "Mcycle overflow before the terminal yield",
         comment = expected_hash_structure(
             "no periodic sampling point is reached.",
             "The mcycle-overflow fixed-point state root hash pads every reserved position."
         ),
         template = "mcycle-boundary",
-        commands = { { action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX } },
+        commands = { { action = "accept", terminal_mcycle = 0 } },
         category = "nonzero-hash",
         terminal_mcycle = "18446744073709551615",
         stderr_contains = "Mcycle overflow",
@@ -672,7 +700,7 @@ add_uarch_case({
         "mcycle-overflow fixed-point, reset-delimited mcycle subtree root."
     ),
     template = "mcycle-boundary",
-    commands = { { action = "accept", terminal_mcycle = cartesi.MCYCLE_MAX } },
+    commands = { { action = "accept", terminal_mcycle = 0 } },
     category = "nonzero-hash",
     terminal_mcycle = "18446744073709551615",
     period_index = 0,

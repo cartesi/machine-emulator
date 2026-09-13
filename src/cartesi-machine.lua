@@ -3055,7 +3055,13 @@ end
 
 local function load_cmio_input(machine, advance, revert_root_hash)
     local values = { i = advance.next_input_index }
-    local data = util.read_file(instantiate_filename(advance.input, values))
+    local filename = instantiate_filename(advance.input, values)
+    local data = util.read_file(filename)
+    -- Delivering data that does not fit the rx buffer is a no-op transition, as in the EVM
+    -- verifier. It is still delivered so the run follows the same transition.
+    if #data > 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE then
+        stderr("Input %s exceeds the rx buffer and its delivery is a no-op\n", filename)
+    end
     -- The pre-input root hash is recorded so the EVM verifier can prove a reject
     -- restores this state, regardless of how the host implements the revert.
     machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)

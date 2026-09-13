@@ -4733,13 +4733,19 @@ with responses (or exceptions) is obtained from the machine in the
 ranges directly. The call
 `machine:send_cmio_response(<reason>, <data>[, <revert_root_hash>])`
 writes `<data>` into `cmio.rx_buffer`, records the reason and length in
-`htif_fromhost`, and clears `iflags_Y` so the machine can resume. The
-optional last argument `<revert_root_hash>` is required exactly when
-`<reason>` is `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, and only then
-is it recorded in the machine state (all other reasons refuse it).
-Conversely, the *data* value returned by
-`machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at
-the yield.
+`htif_fromhost`, and clears `iflags_Y` so the machine can resume.
+For `<reason>` equal to `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, the
+optional last argument `<revert_root_hash>` is required to match the
+machine root hash when an rx-accepted manual yield is pending, and is
+ignored otherwise. All other response reasons refuse this argument. It is
+recorded in the machine state only for advance-state delivery. Validation
+happens before delivery, including when the input exceeds the receive
+buffer; validation errors leave the machine unchanged. After validation,
+sending is a no-op if no manual yield is pending, the input exceeds the
+receive buffer, or an advance-state response finds a yield other than
+rx-accepted, matching the logged transition. Conversely, the *data*
+value returned by `machine:receive_cmio_request()` is the contents of
+`cmio.tx_buffer` at the yield.
 
 Advance-state inputs are passed as ABI-encoded
 `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)`

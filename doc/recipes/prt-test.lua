@@ -1593,6 +1593,32 @@ if arg[1] then
         assert(not machine.snapshot_state, "commit retained private strategy snapshot state")
     end
 
+    -- Input delivery inspects no outgoing payload. A valid waiting template can have an
+    -- oversized outgoing length, which receive_cmio_request would refuse to read.
+    do
+        local template = prt.new_machine(initial_state_hash)
+        template:write_reg("htif_tohost_data", 0xffffffff)
+        local root = template:get_root_hash()
+        local payload_cache <close> = prt.new_machine_cache(template)
+        local player = prt.new_player(dapp_contract.geometry, { inputs[1] }, payload_cache)
+        local mcycle_tree = player:make_mcycle_tree()
+        mcycle_tree:open_bundle(0)
+        local uarch_tree = player:make_uarch_tree(1, 0)
+        uarch_tree:open_bundle(0)
+        local payload_logs = player:prove_state_transition(0, 0, 0)
+        local payload_after_send = cartesi.machine:verify_send_cmio_response(
+            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+            inputs[1],
+            root,
+            payload_logs.send_cmio_log,
+            root
+        )
+        assert(
+            cartesi.machine:verify_step_uarch(payload_after_send, payload_logs.step_log) == uarch_tree:get_node(0, 0),
+            "outgoing length changed the reconstructed input transition"
+        )
+    end
+
     -- Puts a machine in a terminal state. Halt leaves no yield pending, overflow closes the input
     -- budget at the current cycle, and the two manual yields carry a reason no delivery applies to.
     local function force_terminal(m, terminal)
@@ -1606,7 +1632,7 @@ if arg[1] then
                 "htif_tohost",
                 (cartesi.HTIF_DEV_YIELD << 56) | (cartesi.HTIF_YIELD_CMD_MANUAL << 48) | (reason << 32)
             )
-        elseif terminal == "overflow" then
+        elseif terminal == "overflow" or terminal == "counter_overflow" then
             m:write_reg("iflags_Y", 0)
             m:write_reg("imcyclemax", m:read_reg("mcycle"))
         end
@@ -1637,9 +1663,17 @@ if arg[1] then
         { terminal = "exception", bundles = 2 },
         { terminal = "unexpected", bundles = 2 },
         { terminal = "overflow", bundles = 2 },
+        { terminal = "counter_overflow", bundles = 2 },
         { terminal = "empty", bundles = 1 },
     }) do
         local terminal = case.terminal
+        local function make_terminal_template()
+            local machine = prt.new_machine(initial_state_hash)
+            if terminal == "counter_overflow" then
+                machine:write_reg("mcycle", cartesi.MCYCLE_MAX)
+            end
+            return machine
+        end
         local contract = {
             initial_state_hash = initial_state_hash,
             geometry = dapp_contract.geometry,
@@ -1655,7 +1689,7 @@ if arg[1] then
             return builder
         end
         local terminal_inputs = { table.unpack(contract.inputs) }
-        local terminal_cache <close> = prt.new_machine_cache(prt.new_machine(initial_state_hash))
+        local terminal_cache <close> = prt.new_machine_cache(make_terminal_template())
         local player = prt.new_player(contract.geometry, terminal_inputs, terminal_cache, {
             make_mcycle_computation_hash_builder = function(log2_period, machine_cache, m, bundle_index)
                 local kind = bundle_index ~= nil and "bundles" or "outer"
@@ -1676,7 +1710,7 @@ if arg[1] then
                 return observe_inputs(prt.make_null_computation_hash_builder(m), m)
             end,
         })
-        local reference <close> = prt.new_machine(initial_state_hash)
+        local reference <close> = make_terminal_template()
         if terminal ~= "empty" then
             reference:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, inputs[1], reference:get_root_hash())
             force_terminal(reference, terminal)

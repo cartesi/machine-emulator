@@ -1107,28 +1107,11 @@ local function flush_pending_outputs(pending, outputs, outputs_frontier, yield_r
     assert(hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root, "outputs Merkle root mismatch")
 end
 
--- Delivers an input, recording the root a rejection reverts to. The forward build uses this
--- loader as is. The emulator refuses a machine that is not waiting for the input, and that
--- failure must stay loud, since it means the driver reached a boundary it never should.
+-- Delivers a posted input, recording the root a rejection reverts to. The machine and
+-- logged transition both leave inapplicable deliveries unchanged.
 local function load_cmio_input(builder, data, revert_root_hash)
-    builder:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
-end
-
--- Whether the machine waits for an input on an rx-accepted manual yield, the only state the
--- transition function delivers to.
-local function is_waiting_for_input(machine)
-    if machine:read_reg("iflags_Y") == 0 then
-        return false
-    end
-    local yield_reason = receive_cmio_request(machine)
-    return is_rx_accepted(yield_reason)
-end
-
--- Disputes must reconstruct whatever the claim holds, so their loader delivers only where the
--- transition function would, and otherwise leaves the boundary alone.
-local function load_cmio_input_for_dispute(builder, data, revert_root_hash)
-    if data ~= nil and is_waiting_for_input(builder) then
-        load_cmio_input(builder, data, revert_root_hash)
+    if data ~= nil then
+        builder:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
     end
 end
 
@@ -1626,16 +1609,12 @@ local function new_player(geometry, inputs, machine_cache, options)
 
     -- Run one input from its virgin boundary. Both full epochs and partial replay use
     -- the same delivery and rollback rules. Only accepted inputs publish their outputs.
-    -- The caller supplies the loader. The forward build's delivers unconditionally, so a boundary
-    -- that cannot take its input fails loudly in the emulator. A dispute's delivers only where the
-    -- transition function would, and otherwise idles at the boundary, a fixed point the builder
-    -- pads from.
+    -- Input delivery has the same no-op semantics during forward execution and disputes.
     local function run_advance_state_input(
         builder,
         input_index,
         offset_end,
         revert_root_hash,
-        load_input,
         outputs,
         outputs_frontier
     )
@@ -1650,7 +1629,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         local mcycle_end = usaturating_add(mcycle_boundary, offset_end)
         builder:begin_input(input_index, mcycle_boundary)
         machine_cache:snapshot(machine)
-        load_input(builder, inputs[input_index + 1], revert_root_hash)
+        load_cmio_input(builder, inputs[input_index + 1], revert_root_hash)
         local break_reason = run_to_stop(builder, mcycle_end, on_yield_automatic)
         local yield_reason, outputs_merkle_root
         if is_yielded_manual(break_reason) then
@@ -1685,7 +1664,6 @@ local function new_player(geometry, inputs, machine_cache, options)
                 input_index,
                 MAX_MCYCLES_PER_ADVANCE_STATE,
                 revert_root_hash,
-                load_cmio_input,
                 outputs,
                 outputs_frontier
             )
@@ -1728,13 +1706,8 @@ local function new_player(geometry, inputs, machine_cache, options)
         local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
         local revert_root_hash = machine:get_root_hash()
         local builder = options.make_null_computation_hash_builder(machine)
-        local break_reason, _, mcycle_boundary = run_advance_state_input(
-            builder,
-            input_index,
-            period_index * geometry.mcycles_per_period,
-            revert_root_hash,
-            load_cmio_input_for_dispute
-        )
+        local break_reason, _, mcycle_boundary =
+            run_advance_state_input(builder, input_index, period_index * geometry.mcycles_per_period, revert_root_hash)
         builder = options.make_mcycle_computation_hash_builder(
             geometry.log2_mcycles_per_period,
             machine_cache,
@@ -1773,8 +1746,7 @@ local function new_player(geometry, inputs, machine_cache, options)
             builder,
             input_index,
             (period_index + 1) * geometry.mcycles_per_period,
-            revert_root_hash,
-            load_cmio_input_for_dispute
+            revert_root_hash
         )
         return builder:end_epoch()
     end
@@ -1814,8 +1786,7 @@ local function new_player(geometry, inputs, machine_cache, options)
             builder,
             input_index,
             period_index * geometry.mcycles_per_period + mcycle_offset,
-            revert_root_hash,
-            load_cmio_input_for_dispute
+            revert_root_hash
         )
         machine:run_uarch(uarch_cycle)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX then

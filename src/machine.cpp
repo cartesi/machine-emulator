@@ -1967,31 +1967,15 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
     ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
 }
 
-void machine::check_pending_cmio_request(uint16_t reason, uint64_t length,
+void machine::check_cmio_response_revert_root_hash(uint16_t reason,
     const std::optional<const_machine_hash_view> &revert_root_hash) const {
-    // The core send_cmio_response cannot fail. It turns detected failures into no-ops, so the
-    // honest party can always log and prove the resulting state transition. The host-facing
-    // send refuses these no-ops upfront instead. The checks run before any state changes, so
-    // a failed call leaves the machine unchanged.
-    if (read_reg(reg::iflags_Y) == 0) {
-        throw std::invalid_argument{"iflags.Y is not set"};
-    }
-    if (length > AR_CMIO_RX_BUFFER_LENGTH) {
-        throw std::invalid_argument{"CMIO response data is too large"};
-    }
-    // Only advance-state responses take a revert root hash and are checked further. They are
-    // the input boundary of the rollups flow, whose revert-on-reject scheme depends on the
-    // preconditions below. Inspect-state queries and GIO responses get no further checks.
+    // Validate the host's revert bookkeeping before executing even a no-op response.
+    // Boundary and buffer-size checks belong to the transition function and produce no-ops.
     if (reason != HTIF_YIELD_REASON_ADVANCE_STATE) {
         if (revert_root_hash.has_value()) {
             throw std::invalid_argument{"revert root hash is only accepted for advance-state responses"};
         }
         return;
-    }
-    // The machine must be waiting for an input on an rx-accepted manual yield.
-    if (read_reg(reg::htif_tohost_dev) != HTIF_DEV_YIELD || read_reg(reg::htif_tohost_cmd) != HTIF_YIELD_CMD_MANUAL ||
-        read_reg(reg::htif_tohost_reason) != HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED) {
-        throw std::invalid_argument{"machine is not waiting on an rx-accepted manual yield"};
     }
     if (!revert_root_hash.has_value()) {
         throw std::invalid_argument{"advance-state response requires a revert root hash"};
@@ -2003,9 +1987,9 @@ void machine::check_pending_cmio_request(uint16_t reason, uint64_t length,
     }
 }
 
-void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     std::optional<const_machine_hash_view> revert_root_hash) {
-    check_pending_cmio_request(reason, length, revert_root_hash);
+    check_cmio_response_revert_root_hash(reason, revert_root_hash);
     const state_access a(*this);
     // Non-advance responses carry no revert root hash. The core never records it for them,
     // so pass a zero hash it will ignore.
@@ -2013,7 +1997,7 @@ void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uin
     cartesi::send_cmio_response(a, reason, data, length, revert_root_hash.value_or(const_machine_hash_view{zero}));
 }
 
-access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     const_machine_hash_view revert_root_hash, const access_log::type &log_type) {
     if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
         throw std::runtime_error{
@@ -2035,7 +2019,7 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     return log;
 }
 
-machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint32_t length,
     const_machine_hash_view root_hash_before, const access_log &log, const_machine_hash_view revert_root_hash) {
     replay_send_cmio_state_access::context context{log, root_hash_before, hash_function_type::keccak256};
     // Verify all intermediate state transitions
@@ -2172,15 +2156,18 @@ static interpreter_break_reason interpret_with_console(STATE_ACCESS &a, machine_
     }
 }
 
+// Pending flags come first. A manual yield that lands on the last cycle of the input budget is
+// still a yield the transition function acts on, since delivering the response renews the
+// budget. Only a machine with neither flag set is stuck at the overflow.
 interpreter_break_reason machine::get_state_break_reason(interpreter_break_reason fallback) const {
-    if (read_reg(reg::mcycle) >= read_reg(reg::imcyclemax)) {
-        return interpreter_break_reason::mcycle_overflow;
-    }
     if (read_reg(reg::iflags_H) != 0) {
         return interpreter_break_reason::halted;
     }
     if (read_reg(reg::iflags_Y) != 0) {
         return interpreter_break_reason::yielded_manually;
+    }
+    if (read_reg(reg::mcycle) >= read_reg(reg::imcyclemax)) {
+        return interpreter_break_reason::mcycle_overflow;
     }
     return fallback;
 }
@@ -2203,7 +2190,7 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     if (!std::ranges::equal(verify_step(root_hash_before, filename, mcycle_count), root_hash_after)) {
         throw std::runtime_error("mismatch in root hash after replay");
     }
-    return break_reason;
+    return get_state_break_reason(break_reason);
 }
 
 machine_hash machine::verify_step(const_machine_hash_view root_hash_before, const std::string &filename,
@@ -2595,7 +2582,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     // consumes the tail.
     const state_access sa(*this);
     const bool start_at_mcycle_overflow = mcycle_start >= read_reg(reg::imcyclemax);
-    const bool start_rejected = !start_at_mcycle_overflow && is_rejected_manual_yield(sa);
+    const bool start_rejected = is_rejected_manual_yield(sa);
     const bool start_halted = read_reg(reg::iflags_H) != 0;
     const bool start_yielded_manual = read_reg(reg::iflags_Y) != 0;
     const bool start_at_fixed_point = start_halted || start_yielded_manual || start_at_mcycle_overflow;
@@ -2621,7 +2608,6 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
     // revert_uarch_tail and leave the current machine untouched
     if (start_rejected) {
         append_revert_uarch_tail_period(result, back_tree, log2_bundle_uarch_cycle_count, revert_uarch_tail);
-        result.break_reason = interpreter_break_reason::yielded_manually;
         assert(back_tree.empty());
         return result;
     }
@@ -2733,8 +2719,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
 
         // At an rx-rejected manual yield, use the recorded revert root hash instead of the current
         // state root hash after reset
-        const bool at_mcycle_overflow = mcycle_reached >= read_reg(reg::imcyclemax);
-        const bool rejected = !at_mcycle_overflow && is_rejected_manual_yield(sa);
+        const bool rejected = is_rejected_manual_yield(sa);
         const auto reset_root_hash = rejected ? read_revert_root_hash() : m_ht.get_root_hash();
 
         // Finish the period with the halted and reset state root hashes

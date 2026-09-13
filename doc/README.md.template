@@ -2749,6 +2749,8 @@ Conversely, the data associated with responses (or exceptions) is obtained from 
 The host does not need to access these ranges directly.
 The call `machine:send_cmio_response(<reason>, <data>[, <revert_root_hash>])` writes `<data>` into `cmio.rx_buffer`, records the reason and length in `htif_fromhost`, and clears `iflags_Y` so the machine can resume.
 The optional last argument `<revert_root_hash>` is required exactly when `<reason>` is `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, and only then is it recorded in the machine state (all other reasons refuse it).
+For advance-state responses, it must match the machine's current root hash, even when the response is a no-op.
+With valid arguments, sending is a no-op if no manual yield is pending, the input exceeds the receive buffer, or an advance-state response finds a yield other than rx-accepted, matching the logged transition.
 Conversely, the _data_ value returned by `machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at the yield.
 
 Advance-state inputs are passed as ABI-encoded `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)` calldata blobs.

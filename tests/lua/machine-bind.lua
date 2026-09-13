@@ -1388,16 +1388,15 @@ end)
 
 print("\n\ntesting send cmio response ")
 
-do_test("send_cmio_response fails if iflags.Y is not set", function(machine)
+do_test("send_cmio_response is a no-op if iflags.Y is not set", function(machine)
     local reason = 1
     local data = string.rep("a", 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
     machine:write_reg("iflags_Y", 0)
     assert(machine:read_reg("iflags_Y") == 0)
-    tests_util.assert_error("iflags.Y is not set", function()
-        machine:send_cmio_response(reason, data)
-    end)
-    -- the logged operation cannot fail, it is a no-op instead
     local root_hash_before = machine:get_root_hash()
+    machine:send_cmio_response(reason, data)
+    assert(machine:get_root_hash() == root_hash_before)
+    -- Ordinary execution and the logged operation have the same no-op transition.
     local revert_root_hash = root_hash_before
     local log = machine:log_send_cmio_response(reason, data, revert_root_hash)
     assert(#log.accesses == 1, "no-op log should have 1 access")
@@ -1405,15 +1404,14 @@ do_test("send_cmio_response fails if iflags.Y is not set", function(machine)
     assert(machine:verify_send_cmio_response(reason, data, root_hash_before, log, revert_root_hash) == root_hash_before)
 end)
 
-do_test("send_cmio_response fails if data is too big", function(machine)
+do_test("send_cmio_response is a no-op if data is too big", function(machine)
     local reason = 1
     local data_too_big = string.rep("a", 1 + (1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE))
     machine:write_reg("iflags_Y", 1)
-    tests_util.assert_error("CMIO response data is too large", function()
-        machine:send_cmio_response(reason, data_too_big)
-    end)
-    -- the logged operation cannot fail, it is a no-op instead
     local root_hash_before = machine:get_root_hash()
+    machine:send_cmio_response(reason, data_too_big)
+    assert(machine:get_root_hash() == root_hash_before)
+    -- Ordinary execution and the logged operation have the same no-op transition.
     local revert_root_hash = root_hash_before
     local log = machine:log_send_cmio_response(reason, data_too_big, revert_root_hash)
     assert(#log.accesses == 1, "no-op log should have 1 access")
@@ -1605,12 +1603,17 @@ do_test("send_cmio_response should check the machine state for advance-state res
     _, err = pcall(machine.send_cmio_response, machine, advance_reason, data)
     check_error_find(err, "advance-state response requires a revert root hash")
     assert(machine:get_root_hash() == root_hash_before)
-    -- a machine that is not waiting on an rx-accepted manual yield refuses the input
+    -- A machine that is not waiting on an rx-accepted manual yield ignores the input.
     machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
     root_hash_before = machine:get_root_hash()
     local revert_root_hash = root_hash_before
-    _, err = pcall(machine.send_cmio_response, machine, advance_reason, data, revert_root_hash)
-    check_error_find(err, "machine is not waiting on an rx-accepted manual yield")
+    machine:send_cmio_response(advance_reason, data, revert_root_hash)
+    assert(machine:get_root_hash() == root_hash_before)
+    -- No-op responses still enforce the revert-root contract before changing any state.
+    _, err = pcall(machine.send_cmio_response, machine, advance_reason, data, wrong_revert_root_hash)
+    check_error_find(err, "revert root hash does not match the machine root hash")
+    _, err = pcall(machine.send_cmio_response, machine, advance_reason, data)
+    check_error_find(err, "advance-state response requires a revert root hash")
     assert(machine:get_root_hash() == root_hash_before)
     -- Other response reasons refuse the revert root hash
     _, err = pcall(machine.send_cmio_response, machine, cartesi.HTIF_YIELD_REASON_INSPECT_STATE, data, revert_root_hash)
@@ -1643,7 +1646,7 @@ do_test("advance-state response sets a saturating mcycle limit", function(machin
     assert(machine:read_reg("imcyclemax") == cartesi.MCYCLE_MAX)
 end)
 
-do_test("advance-state response without an rx-accepted manual yield logs as a no-op", function(machine)
+do_test("advance-state response without an rx-accepted manual yield is a no-op", function(machine)
     local advance_reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
     local data = "0123456789"
     -- the machine yielded manual, but rejected the previous input
@@ -1653,6 +1656,8 @@ do_test("advance-state response without an rx-accepted manual yield logs as a no
     machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
     local root_hash_before = machine:get_root_hash()
     local revert_root_hash = root_hash_before
+    machine:send_cmio_response(advance_reason, data, revert_root_hash)
+    assert(machine:get_root_hash() == root_hash_before)
     local log = machine:log_send_cmio_response(advance_reason, data, revert_root_hash)
     -- the log contains only the reads that conclude the operation is a no-op
     assert(#log.accesses == 2, "no-op log should have 2 accesses")

@@ -2429,6 +2429,53 @@ describe("cartesi-machine CLI", function()
         expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
     end)
 
+    -- A cycle limit inside an input retains the partial state, without padding an unfinished
+    -- computation hash. Reload the stored machine after CLI cleanup to detect a late rollback.
+    it("advance state commits an input interrupted by the cycle limit", function()
+        local _ <close>, template_dir = scope_stored_dirname()
+        local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "partial"))
+        run_ok({
+            "--store=" .. template_dir,
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop",
+        })
+        local reference <close> = cartesi.machine(template_dir)
+        local target = reference:read_reg("mcycle") + 1
+        reference:send_cmio_response(
+            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+            filesystem.read_file(input),
+            reference:get_root_hash()
+        )
+        expect.equal(reference:run(target), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+        local expected = reference:get_root_hash()
+        for _, hash_options in ipairs({
+            "",
+            ",log2_mcycle_computation_hash_period:19",
+            ",log2_mcycle_computation_hash_period:19,mcycle_period_index:0",
+        }) do
+            local _ <close>, machine_dir = scope_stored_dirname()
+            local _ <close> = tests_util.scope_exit(function()
+                pcall(cartesi.machine.remove_stored, cartesi.machine, machine_dir .. ".revert")
+            end)
+            local _, log = run_ok({
+                "--load=" .. machine_dir .. ",clone:" .. template_dir .. ",sharing:all",
+                "--revert-mode=stored",
+                "--cmio-advance-state=input:" .. input .. ",input_index_end:1" .. hash_options,
+                "--max-mcycle=" .. target,
+                "--no-init-splash",
+            })
+            expect.falsy(log:find("computation hash:", 1, true))
+            local resumed <close> = cartesi.machine(machine_dir)
+            expect.equal(resumed:read_reg("mcycle"), target)
+            expect.equal(resumed:get_root_hash(), expected)
+            expect.falsy(os.rename(machine_dir .. ".revert", machine_dir .. ".revert"))
+        end
+    end)
+
     -- -------------------------------------------------------------------------
     -- Computation hash across an epoch with a reject
     --
@@ -3087,9 +3134,11 @@ describe("cartesi-machine CLI", function()
     --       the one where the uarch halts), reset the uarch, and construct one mcycle using the
     --       exported uarch span. Halt repetitions fill the middle and the reset hash closes it.
     --       Double its root up the target period tree.
-    --       Compare with the emitted file.
+    --       Compare with the emitted file, then check that rejecting before a selected period
+    --       produces the same padding root.
     -- -------------------------------------------------------------------------
     it("uarch cycle computation hash of an epoch with no inputs", function()
+        local entrypoint = "ioctl-echo-loop --reject=0"
         local prefix = filesystem.temp_pathname()
         local _ <close> = tests_util.scope_exit(function()
             os.remove(prefix .. "-uch0.bin")
@@ -3107,12 +3156,11 @@ describe("cartesi-machine CLI", function()
             "--no-init-splash",
             "--quiet",
             "--",
-            "ioctl-echo-loop",
+            entrypoint,
         })
 
         -- The same machine, stopped at the same first input boundary.
-        local m <close> =
-            cartesi.machine(config_for({ "ioctl-echo-loop" }), { console = { output_destination = "to_null" } })
+        local m <close> = cartesi.machine(config_for({ entrypoint }), { console = { output_destination = "to_null" } })
         expect.equal(m:run(math.maxinteger), cartesi.BREAK_REASON_YIELDED_MANUALLY)
         -- One no-op period, cycle by cycle: hashes after each uarch cycle, then after the reset.
         local tail = {}
@@ -3142,6 +3190,37 @@ describe("cartesi-machine CLI", function()
             root = cartesi.keccak256(root, root)
         end
         expect.equal(filesystem.read_file(prefix .. "-uch0.bin"), root)
+
+        -- Rejection before the selected period must pad from the same virgin boundary.
+        -- Select the last period of input zero, well beyond the guest's rejecting execution.
+        local jsonrpc = require("cartesi.jsonrpc")
+        local server <close>, address = jsonrpc.spawn_server()
+        server:set_cleanup_call(jsonrpc.NOTHING)
+        local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "reject"))
+        local _ <close>, rejected_hash = scope_temp_pathname()
+        local period_index = (1 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD))
+            - 1
+        run_ok({
+            "--remote-address=" .. address,
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=input:"
+                .. input
+                .. ",input_index_end:1,"
+                .. "output:,rejected_output:,output_proof:,report:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
+                .. "uarch_cycle_computation_hash:"
+                .. rejected_hash
+                .. ",mcycle_period_index:"
+                .. period_index
+                .. ",log2_mcycle_computation_hash_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            entrypoint,
+        })
+        expect.equal(filesystem.read_file(rejected_hash), root)
     end)
 
     -- -------------------------------------------------------------------------

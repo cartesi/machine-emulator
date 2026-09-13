@@ -3726,17 +3726,18 @@ local function uarch_cycle_computation_hash_run(self, mcycle_end)
 end
 
 -- If the input stopped before reaching the target period, collect one group of uarch state hashes
--- at the fixed point. Its subtree root fills every machine-cycle position in the period.
+-- at the fixed point, using the saved tail on rejection before rollback. Its subtree root fills
+-- every machine-cycle position in the period.
 local function uarch_cycle_computation_hash_end_input(self)
     if not self.target_mcycle_start then return end
-    self.target_mcycle_start, self.target_mcycle_end, self.revert_uarch_tail = nil, nil, nil
     if self.mcycle_count < self.period then
         local m = get_builder_machine(self)
         uarch_cycle_computation_hash_push_collected(
             self,
-            m:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle)
+            m:collect_uarch_cycle_root_hashes(MCYCLE_MAX, self.log2_bundle, self.revert_uarch_tail)
         )
     end
+    self.target_mcycle_start, self.target_mcycle_end, self.revert_uarch_tail = nil, nil, nil
 end
 
 -- If the epoch never processed the target input, collect one group of uarch state hashes at the
@@ -3893,8 +3894,9 @@ local function run_inspect_state_query(m, runner)
 end
 
 -- Processes one advance-state input through its builder. Accepted outputs are published before
--- commit; rejected outputs are written separately after rollback. Finalizes accepted or rejected inputs
--- only after that decision, and returns the break reason and manual yield reason, if any.
+-- commit; rejected outputs are written separately after rollback. Finalizes inputs at fixed points
+-- before rollback, while a cycle-limit interruption retains the running state without finalizing.
+-- Returns the break reason and manual yield reason, if any.
 local function run_advance_state_input(builder, input_index, revert_root_hash)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
@@ -3919,37 +3921,25 @@ local function run_advance_state_input(builder, input_index, revert_root_hash)
     -- labeling: from now the producing input is next_input_index - 1
     advance.next_input_index = input_index + 1
     local break_reason = run_to_stop(builder, cmdline.max_mcycle, on_yield_automatic)
-    -- The epoch handles halts, overflow, and the global cycle limit.
-    if not is_yielded_manual(break_reason) then return break_reason end
-    local _, yield_reason, data = get_and_print_yield(builder, htif)
-    if is_rx_accepted(yield_reason) then
-        flush_pending_outputs(builder, advance, yield_reason, data)
-        commit(builder)
-    elseif is_rx_rejected(yield_reason) then
+    local yield_reason, data
+    if is_yielded_manual(break_reason) then
+        yield_reason, data = select(2, get_and_print_yield(builder, htif))
+    end
+    if is_at_fixed_point(break_reason) then builder:end_input() end
+    if is_rx_rejected(yield_reason) then
         revert(builder)
         builder:check_revert(revert_root_hash, builder:get_root_hash())
         flush_pending_outputs(builder, advance, yield_reason, data)
-    elseif is_tx_exception(yield_reason) then
-        -- an exception is a fixed point like a halt: report it, flush the interrupted input's
-        -- outputs as rejected, and end the epoch, leaving the machine at the exception
-        -- yield (no revert). A following inspect query fails against this non-accept yield,
-        -- which the CLI just reports.
-        report_exception(data)
-        flush_pending_outputs(builder, advance, yield_reason, data)
-        commit(builder)
-        return break_reason, yield_reason
     else
-        -- An unexpected manual yield is a protocol violation, but still a fixed point, and
-        -- fixed points are sticky, so it ends the epoch the same way an exception does.
-        -- The builder is finalized so callers can dispute the computation that led here. In
-        -- particular, the uarch builder may still need to pad a selected period that
-        -- execution never reached.
-        report_unexpected_manual_yield(yield_reason)
-        flush_pending_outputs(builder, advance, yield_reason, data)
+        if is_tx_exception(yield_reason) then
+            report_exception(data)
+        elseif is_yielded_manual(break_reason) and not is_rx_accepted(yield_reason) then
+            report_unexpected_manual_yield(yield_reason)
+        end
+        if is_at_fixed_point(break_reason) then flush_pending_outputs(builder, advance, yield_reason, data) end
+        -- Acceptance, sticky stops, and cycle-limit interruptions retain the running machine.
         commit(builder)
-        return break_reason, yield_reason
     end
-    builder:end_input()
     return break_reason, yield_reason
 end
 
@@ -3973,9 +3963,9 @@ local function run_advance_state_epoch(builder)
     -- Boot through the runner to the rolling template's first accept yield, then process each input in turn.
     -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
     local break_reason = run_to_stop(builder.runner, cmdline.max_mcycle, ignore_yield_automatic)
+    commit(builder)
     if is_yielded_manual(break_reason) then
         get_and_print_yield(builder, htif)
-        commit(builder)
         -- Keep the expected boundary across rejections. Only acceptance establishes a new one.
         local revert_root_hash = builder:get_root_hash()
         for input_index = advance.input_index_begin, advance.input_index_end - 1 do
@@ -3992,13 +3982,9 @@ local function run_advance_state_epoch(builder)
     end
     if is_halted(break_reason) then
         report_halt(builder)
-        flush_pending_outputs(builder, advance)
-        commit(builder)
         builder:end_epoch()
     elseif is_mcycle_overflow(break_reason) then
         report_mcycle_overflow(builder)
-        flush_pending_outputs(builder, advance)
-        commit(builder)
         builder:end_epoch()
     elseif is_yielded_manual(break_reason) then
         save_cmio_output_proofs(advance)

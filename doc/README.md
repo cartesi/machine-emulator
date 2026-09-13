@@ -9603,16 +9603,22 @@ each input’s delivery, automatic yields, acceptance, and rollback to
 `run_advance_state_input`; plain replay and output collection use that
 same input driver with a builder that only runs the machine. Both
 drivers use the CLI’s break- and yield-reason predicates, such as
-`is_yielded_manual` and `is_rx_accepted`. Each input begins by asserting
-that its boundary is a fixed point and reading the yield with
-`receive_cmio_request`, as the CLI does. The epoch driver retains the
-expected boundary hash across rejection and updates it only after
-acceptance. Input delivery checks this expected hash, and rollback must
-restore it. `load_cmio_input` delivers the input only at an rx-accepted
-yield, with the pre-delivery `revert_root_hash`; at any other fixed
-point, or past the last posted input, delivery is the protocol’s no-op
-and the machine idles through the input’s span, so builders pad it from
-the fixed-point tail and proofs still log the no-op delivery. The player
+`is_yielded_manual` and `is_rx_accepted`. `load_cmio_input` only
+delivers the input, with the pre-delivery `revert_root_hash`. The
+forward build hands it to the input driver as is, and the emulator
+refuses a machine that is not waiting for its input, so a driver that
+reaches such a boundary fails loudly instead of building a wrong claim.
+The epoch driver retains the expected boundary hash across rejection and
+updates it only after acceptance. Input delivery checks this expected
+hash, and rollback must restore it. Disputes must reconstruct whatever
+the claim holds, so bundle collection and transition proofs hand the
+driver `load_cmio_input_for_dispute` instead, which delivers only where
+the transition function would, decided by `is_waiting_for_input` from
+the boundary machine alone, an rx-accepted manual yield and nothing
+else. Without a delivery the slot idles at its boundary and the builders
+pad it from there, and a transition proof at such a boundary with a
+posted input logs the delivery through `log_send_cmio_response`, which
+never fails and records the no-op the verifier expects. The player
 constructor is
 `prt.new_player(geometry, inputs, machine_cache, options)`. The caller
 supplies a private copy of the contract inputs and owns the cache.
@@ -10028,6 +10034,7 @@ fresh fork at the transition and logging it:
         local revert_root_hash = machine:get_root_hash()
         local data = inputs[input_index + 1]
         if state_transition_offset == 0 and period_index == 0 and data then
+            -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
             local send_cmio_log =
                 machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
             return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
@@ -10037,7 +10044,8 @@ fresh fork at the transition and logging it:
             builder,
             input_index,
             period_index * geometry.mcycles_per_period + mcycle_offset,
-            revert_root_hash
+            revert_root_hash,
+            load_cmio_input_for_dispute
         )
         machine:run_uarch(uarch_cycle)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX then

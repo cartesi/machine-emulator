@@ -942,6 +942,40 @@ describe("cartesi-machine CLI", function()
         expect.truthy(err:find("Cycles: 18446744073709551615", 1, true))
     end)
 
+    -- A manual yield on the last cycle of the input budget is still a yield. Delivering the
+    -- response renews the budget, so an advance-state epoch continues past it instead of
+    -- stopping at the overflow.
+    it("manual yield on the last budget cycle is not an overflow", function()
+        local boot <close> =
+            cartesi.machine(config_for({ "ioctl-echo-loop" }), { console = { output_destination = "to_null" } })
+        expect.equal(boot:run(math.maxinteger), cartesi.BREAK_REASON_YIELDED_MANUALLY)
+        local yield_mcycle = boot:read_reg("mcycle")
+        local _ <close>, cfg_file = scope_temp_pathname()
+        run_ok({
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+            "--store-config=" .. cfg_file,
+            "--",
+            "ioctl-echo-loop",
+        })
+        local cfg_text, count =
+            filesystem.read_file(cfg_file):gsub("imcyclemax = 0x%x+", "imcyclemax = " .. yield_mcycle)
+        expect.equal(count, 1)
+        local _ <close>, yield_cfg_file = filesystem.write_scope_temp_file(cfg_text)
+        local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "budget"))
+        local _, log = run_ok({
+            "--load-config=" .. yield_cfg_file,
+            "--cmio-advance-state=input:" .. input .. ",input_index_end:1",
+            "--revert-mode=none",
+            "--console-io=output_destination:to_null",
+            "--no-init-splash",
+        })
+        expect.falsy(log:find("Mcycle overflow", 1, true))
+        expect.truthy(log:find("Cycles: " .. yield_mcycle .. "\n", 1, true))
+        expect.equal(select(2, log:gsub("Manual yield rx%-accepted", "")), 2)
+    end)
+
     -- -------------------------------------------------------------------------
     -- Hashing and proof options
     --

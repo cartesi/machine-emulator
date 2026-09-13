@@ -1607,8 +1607,8 @@ local function new_player(geometry, inputs, machine_cache, options)
         player[name] = handler
     end
 
-    -- Run one input from its virgin boundary. Both full epochs and partial replay use
-    -- the same delivery and rollback rules. Only accepted inputs publish their outputs.
+    -- Run one input from its virgin boundary, or to a target inside it. Both use the same
+    -- delivery and rollback rules. Only accepted inputs publish their outputs.
     -- Input delivery has the same no-op semantics during forward execution and disputes.
     local function run_advance_state_input(
         builder,
@@ -1635,15 +1635,15 @@ local function new_player(geometry, inputs, machine_cache, options)
         if is_yielded_manual(break_reason) then
             yield_reason, outputs_merkle_root = receive_cmio_request(builder)
         end
-        if is_at_fixed_point(break_reason) then
-            builder:end_input()
-        end
         if is_rx_rejected(yield_reason) then
+            builder:end_input()
             machine_cache:revert(machine)
             assert(builder:get_root_hash() == revert_root_hash, "rollback did not restore the input boundary")
-        else
+        elseif is_at_fixed_point(break_reason) then
+            builder:end_input()
             flush_pending_outputs(pending, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
-            -- Acceptance, sticky stops, and partial replay all retain the running machine.
+            -- Acceptance and sticky stops retain the running machine. A run that stops at its
+            -- target keeps its snapshot, so the input can still be rolled back.
             machine_cache:commit(machine)
         end
         return break_reason, yield_reason, mcycle_boundary

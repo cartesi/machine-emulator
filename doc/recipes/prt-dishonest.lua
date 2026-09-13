@@ -44,17 +44,17 @@ local function wrap_computation_hash(builder, overrides)
     })
 end
 
-local function begin_input(machine, input_index, input_base)
-    if machine.state.input_index ~= input_index or machine.state.input_base ~= input_base then
-        machine.state = { input_index = input_index, input_base = input_base }
+local function begin_input(machine, input_index, input_mcycle_boundary)
+    if machine.state.input_index ~= input_index or machine.state.input_mcycle_boundary ~= input_mcycle_boundary then
+        machine.state = { input_index = input_index, input_mcycle_boundary = input_mcycle_boundary }
     end
 end
 
 local function observe_input(builder, machine)
     return wrap_computation_hash(builder, {
-        begin_input = function(self, input_index, input_base)
-            begin_input(machine, input_index, input_base)
-            return builder.begin_input(self, input_index, input_base)
+        begin_input = function(self, input_index, input_mcycle_boundary)
+            begin_input(machine, input_index, input_mcycle_boundary)
+            return builder.begin_input(self, input_index, input_mcycle_boundary)
         end,
     })
 end
@@ -134,10 +134,10 @@ local function new_tamperer(geometry, inputs, cache, input_index, bundle_offset,
         if context.input_index ~= input_index or context.tampered then
             return nil
         end
-        if math.ult(cartesi.MCYCLE_MAX - context.input_base, offset) then
+        if math.ult(cartesi.MCYCLE_MAX - context.input_mcycle_boundary, offset) then
             return nil
         end
-        return context.input_base + offset
+        return context.input_mcycle_boundary + offset
     end
     local function apply(machine)
         local point = tamper_point(machine)

@@ -32,7 +32,16 @@ local function new_fake_machine(root_hash, mcycle, counts)
         return new_fake_machine(self.root_hash, self.mcycle, counts)
     end
     function machine.set_cleanup_call() end
-    function machine:read_reg()
+    function machine:read_reg(name)
+        if name == "iflags_Y" then
+            return 1
+        elseif name == "htif_tohost_dev" then
+            return cartesi.HTIF_DEV_YIELD
+        elseif name == "htif_tohost_cmd" then
+            return cartesi.HTIF_YIELD_CMD_MANUAL
+        elseif name == "htif_tohost_reason" then
+            return cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
+        end
         return self.mcycle
     end
     function machine:get_root_hash()
@@ -293,7 +302,10 @@ for _, terminal in ipairs({
     local expected = at_target and "input stopped outside a fixed point" or "epoch complete"
     assert(not ok and err:find(expected, 1, true), "input did not stop for its terminal reason")
     assert(runs == #reasons and automatic_reads == 1, "input did not resume through intermediate breaks")
-    assert(manual_reads == (terminal == cartesi.BREAK_REASON_YIELDED_MANUALLY and 2 or 1))
+    assert(
+        manual_reads == (terminal == cartesi.BREAK_REASON_YIELDED_MANUALLY and 1 or 0),
+        "delivery read the boundary yield"
+    )
     assert(ended_inputs == (at_target and 0 or 1), "input finalization did not respect the terminal reason")
     assert(initial.counts.live == 1, "input execution leaked a working machine or backup")
 end
@@ -1581,41 +1593,53 @@ if arg[1] then
         assert(not machine.snapshot_state, "commit retained private strategy snapshot state")
     end
 
-    -- Terminal inputs and empty epochs must fill claims and reconstructed bundles even when the
-    -- physical counter cannot advance (including the unsigned counter maximum).
+    -- Puts a machine in a terminal state. Halt leaves no yield pending, overflow closes the input
+    -- budget at the current cycle, and the two manual yields carry a reason no delivery applies to.
+    local function force_terminal(m, terminal)
+        if terminal == "halt" then
+            m:write_reg("iflags_Y", 0)
+            m:write_reg("iflags_H", 1)
+        elseif terminal == "exception" or terminal == "unexpected" then
+            local reason = terminal == "exception" and cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION or 0xffff
+            m:write_reg("iflags_Y", 1)
+            m:write_reg(
+                "htif_tohost",
+                (cartesi.HTIF_DEV_YIELD << 56) | (cartesi.HTIF_YIELD_CMD_MANUAL << 48) | (reason << 32)
+            )
+        elseif terminal == "overflow" then
+            m:write_reg("iflags_Y", 0)
+            m:write_reg("imcyclemax", m:read_reg("mcycle"))
+        end
+    end
+
+    -- A template that is not waiting for an input is a deployment error. Check it once
+    -- before the forward build, independently of the sender's no-op transitions.
+    for _, terminal in ipairs({ "halt", "exception", "unexpected", "overflow" }) do
+        local template = prt.new_machine(initial_state_hash)
+        force_terminal(template, terminal)
+        local template_cache <close> = prt.new_machine_cache(template)
+        local player = prt.new_player(dapp_contract.geometry, { table.unpack(inputs) }, template_cache)
+        local built, failure = pcall(player.make_mcycle_tree, player)
+        local message = tostring(failure)
+        assert(not built, terminal .. " template built a claim")
+        assert(
+            message:find("initial machine is not waiting on an rx-accepted manual yield", 1, true),
+            terminal .. " template was refused for the wrong reason: " .. message
+        )
+    end
+
+    -- Terminal inputs and empty epochs must fill claims and reconstructed bundles from a state
+    -- the physical counter cannot leave. The terminal state is forced just after delivery,
+    -- identically for sampled execution and plain replay, so later logical inputs pad from it
+    -- without delivery.
     for _, case in ipairs({
         { terminal = "halt", bundles = 2 },
         { terminal = "exception", bundles = 2 },
         { terminal = "unexpected", bundles = 2 },
         { terminal = "overflow", bundles = 2 },
         { terminal = "empty", bundles = 1 },
-        { terminal = "halt_after_input", bundles = 2 },
     }) do
         local terminal = case.terminal
-        local function terminal_machine(hash)
-            local m = prt.new_machine(hash)
-            if terminal == "halt" then
-                m:write_reg("iflags_Y", 0)
-                m:write_reg("iflags_H", 1)
-            elseif terminal == "exception" or terminal == "unexpected" then
-                local reason = terminal == "exception" and cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION or 0xffff
-                m:write_reg(
-                    "htif_tohost",
-                    (cartesi.HTIF_DEV_YIELD << 56) | (cartesi.HTIF_YIELD_CMD_MANUAL << 48) | (reason << 32)
-                )
-            elseif terminal == "overflow" then
-                m:write_reg("iflags_Y", 0)
-                m:write_reg("mcycle", cartesi.MCYCLE_MAX)
-            end
-            return m
-        end
-        -- Force a halt just after delivery in this fixture, identically for sampled execution
-        -- and plain replay. Later logical inputs idle at the halt without delivery.
-        local function stop_after_delivery(m)
-            if terminal == "halt_after_input" then
-                m:write_reg("iflags_H", 1)
-            end
-        end
         local contract = {
             initial_state_hash = initial_state_hash,
             geometry = dapp_contract.geometry,
@@ -1625,13 +1649,13 @@ if arg[1] then
         local function observe_inputs(builder, m)
             local run = builder.run
             builder.run = function(self, target)
-                stop_after_delivery(m)
+                force_terminal(m, terminal)
                 return run(self, target)
             end
             return builder
         end
         local terminal_inputs = { table.unpack(contract.inputs) }
-        local terminal_cache <close> = prt.new_machine_cache(terminal_machine(initial_state_hash))
+        local terminal_cache <close> = prt.new_machine_cache(prt.new_machine(initial_state_hash))
         local player = prt.new_player(contract.geometry, terminal_inputs, terminal_cache, {
             make_mcycle_computation_hash_builder = function(log2_period, machine_cache, m, bundle_index)
                 local kind = bundle_index ~= nil and "bundles" or "outer"
@@ -1652,10 +1676,10 @@ if arg[1] then
                 return observe_inputs(prt.make_null_computation_hash_builder(m), m)
             end,
         })
-        local reference <close> = terminal_machine(initial_state_hash)
-        if terminal == "halt_after_input" then
+        local reference <close> = prt.new_machine(initial_state_hash)
+        if terminal ~= "empty" then
             reference:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, inputs[1], reference:get_root_hash())
-            stop_after_delivery(reference)
+            force_terminal(reference, terminal)
         end
         local terminal_root = reference:get_root_hash()
         local expected = terminal_root

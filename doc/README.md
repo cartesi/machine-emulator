@@ -4744,10 +4744,14 @@ writes `<data>` into `cmio.rx_buffer`, records the reason and length in
 `htif_fromhost`, and clears `iflags_Y` so the machine can resume. The
 optional last argument `<revert_root_hash>` is required exactly when
 `<reason>` is `cartesi.HTIF_YIELD_REASON_ADVANCE_STATE`, and only then
-is it recorded in the machine state (all other reasons refuse it).
-Conversely, the *data* value returned by
-`machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at
-the yield.
+is it recorded in the machine state (all other reasons refuse it). For
+advance-state responses, it must match the machine’s current root hash,
+even when the response is a no-op. With valid arguments, sending is a
+no-op if no manual yield is pending, the input exceeds the receive
+buffer, or an advance-state response finds a yield other than
+rx-accepted, matching the logged transition. Conversely, the *data*
+value returned by `machine:receive_cmio_request()` is the contents of
+`cmio.tx_buffer` at the yield.
 
 Advance-state inputs are passed as ABI-encoded
 `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)`
@@ -9603,22 +9607,18 @@ each input’s delivery, automatic yields, acceptance, and rollback to
 `run_advance_state_input`; plain replay and output collection use that
 same input driver with a builder that only runs the machine. Both
 drivers use the CLI’s break- and yield-reason predicates, such as
-`is_yielded_manual` and `is_rx_accepted`. `load_cmio_input` only
-delivers the input, with the pre-delivery `revert_root_hash`. The
-forward build hands it to the input driver as is, and the emulator
-refuses a machine that is not waiting for its input, so a driver that
-reaches such a boundary fails loudly instead of building a wrong claim.
-The epoch driver retains the expected boundary hash across rejection and
-updates it only after acceptance. Input delivery checks this expected
-hash, and rollback must restore it. Disputes must reconstruct whatever
-the claim holds, so bundle collection and transition proofs hand the
-driver `load_cmio_input_for_dispute` instead, which delivers only where
-the transition function would, decided by `is_waiting_for_input` from
-the boundary machine alone, an rx-accepted manual yield and nothing
-else. Without a delivery the slot idles at its boundary and the builders
-pad it from there, and a transition proof at such a boundary with a
-posted input logs the delivery through `log_send_cmio_response`, which
-never fails and records the no-op the verifier expects. The player
+`is_yielded_manual` and `is_rx_accepted`. Before building its initial
+claim, the player checks that the template is waiting on an rx-accepted
+manual yield, using the yield flag and header registers without reading
+an output payload. `load_cmio_input` skips absent inputs and otherwise
+sends the input with the pre-delivery `revert_root_hash`. Forward
+execution and disputes use the same loader. The epoch driver retains the
+expected boundary hash across rejection and updates it only after
+acceptance. Input delivery checks this expected hash, and rollback must
+restore it. The machine sender and logged transition both treat an
+inapplicable delivery as a no-op. At a terminal boundary the slot idles
+and the builders pad it from there; a transition proof with a posted
+input logs the same no-op through `log_send_cmio_response`. The player
 constructor is
 `prt.new_player(geometry, inputs, machine_cache, options)`. The caller
 supplies a private copy of the contract inputs and owns the cache.
@@ -10044,8 +10044,7 @@ fresh fork at the transition and logging it:
             builder,
             input_index,
             period_index * geometry.mcycles_per_period + mcycle_offset,
-            revert_root_hash,
-            load_cmio_input_for_dispute
+            revert_root_hash
         )
         machine:run_uarch(uarch_cycle)
         if uarch_cycle == cartesi.UARCH_CYCLE_MAX then

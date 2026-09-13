@@ -1565,7 +1565,15 @@ if arg[1] then
 
     -- Terminal inputs and empty epochs must fill claims and reconstructed bundles even when the
     -- physical counter cannot advance (including the unsigned counter maximum).
-    for _, terminal in ipairs({ "halt", "exception", "unexpected", "overflow", "empty", "halt_after_input" }) do
+    for _, case in ipairs({
+        { terminal = "halt", bundles = 2 },
+        { terminal = "exception", bundles = 2 },
+        { terminal = "unexpected", bundles = 2 },
+        { terminal = "overflow", bundles = 2 },
+        { terminal = "empty", bundles = 1 },
+        { terminal = "halt_after_input", bundles = 2 },
+    }) do
+        local terminal = case.terminal
         local function terminal_machine(hash)
             local m = prt.new_machine(hash)
             if terminal == "halt" then
@@ -1640,21 +1648,22 @@ if arg[1] then
         assert(tree:get_root() == expected, terminal .. " has the wrong fixed-point tail")
         tree:open_bundle(0)
         assert(counts.bundles == 1, "first mcycle opening bypassed the selected builder factory")
-        -- Padding may share the first opening with the last bundle. Only an opaque
-        -- bundle should call the factory again; both positions must remain queryable.
+        -- A terminal input stores its completed first bundle separately from its padding
+        -- bundle, even though their hashes match. An empty epoch stores only padding,
+        -- so opening its first bundle also opens its last one.
         local mcycle_last = (1 << contract.geometry.mcycle_height) - 1
-        local mcycle_open = pcall(tree.get_node, tree, mcycle_last, 0)
         tree:open_bundle(mcycle_last >> LOG2_BUNDLE_MCYCLE_COUNT)
         assert(tree:get_node(mcycle_last, 0) == terminal_root, "last mcycle bundle has the wrong state")
         local uarch = player:make_uarch_tree(3, 60000)
         uarch:open_bundle(0)
         assert(counts.uarch == 2, "uarch build or first opening bypassed the selected builder factory")
         local uarch_last = (1 << contract.geometry.uarch_height) - 1
-        local uarch_open = pcall(uarch.get_node, uarch, uarch_last, 0)
         uarch:open_bundle(uarch_last >> LOG2_BUNDLE_UARCH_CYCLE_COUNT)
         assert(counts.outer == 1, "mcycle build bypassed the selected builder factory")
-        assert(counts.bundles == (mcycle_open and 1 or 2), "mcycle opening called the wrong number of builders")
-        assert(counts.uarch == (uarch_open and 2 or 3), "uarch opening called the wrong number of builders")
+        assert(counts.bundles == case.bundles, terminal .. " opening called the wrong number of mcycle builders")
+        -- The first uarch bundle and the reset-ending bundle in the separate padding
+        -- subtree always need distinct openings, in addition to the initial tree build.
+        assert(counts.uarch == 3, terminal .. " opening called the wrong number of uarch builders")
         local terminal_logs = player:prove_state_transition(2, 60000, 0)
         assert(
             cartesi.machine:verify_step_uarch(terminal_root, terminal_logs.step_log) == uarch:get_node(0, 0),

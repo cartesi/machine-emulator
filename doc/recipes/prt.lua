@@ -1094,9 +1094,31 @@ local function run_to_stop(runner, mcycle_end, on_yield_automatic)
     end
 end
 
--- Delivers an input at an rx-accepted boundary, recording the root a rejection reverts to.
-local function load_cmio_input(machine, data, revert_root_hash)
-    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+-- Retain only accepted outputs and check their cumulative root. Pending outputs from other
+-- outcomes are discarded when the input driver returns.
+local function flush_pending_outputs(pending, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
+    if not outputs or not is_rx_accepted(yield_reason) then
+        return
+    end
+    for _, output in ipairs(pending) do
+        outputs[#outputs + 1] = output
+        hash_tree.frontier_push_back(outputs_frontier, keccak(output))
+    end
+    assert(hash_tree.frontier_get_root_hash(outputs_frontier) == outputs_merkle_root, "outputs Merkle root mismatch")
+end
+
+-- Delivers an existing input at an rx-accepted boundary, recording the root a rejection reverts to.
+-- Other fixed points and missing inputs need no delivery. Send failures still propagate.
+local function load_cmio_input(builder, data, revert_root_hash)
+    local break_reason = run_to_stop(builder.machine, builder:read_reg("mcycle"))
+    assert(is_at_fixed_point(break_reason), "input boundary is not at a fixed point")
+    if data == nil or not is_yielded_manual(break_reason) then
+        return
+    end
+    local yield_reason = receive_cmio_request(builder)
+    if is_rx_accepted(yield_reason) then
+        builder:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+    end
 end
 
 ------------------------------------------------------------
@@ -1154,14 +1176,14 @@ local function mcycle_computation_hash_begin_epoch(builder)
     builder.pad_bundle = nil
 end
 
-local function mcycle_computation_hash_begin_input(builder, input_index, input_base)
+local function mcycle_computation_hash_begin_input(builder, input_index, input_mcycle_boundary)
     builder.input_index = input_index
     builder.next_leaf = builder.bundle_index ~= nil and builder.first_leaf or input_index * builder.periods_per_input
     builder.input_entry_count = 0
     builder.mcycle_phase = 0
     builder.partial_bundle = nil
-    builder.input_base = input_base
-    builder.input_mcycle_end = usaturating_add(builder.input_base, MAX_MCYCLES_PER_ADVANCE_STATE)
+    builder.input_mcycle_boundary = input_mcycle_boundary
+    builder.input_mcycle_end = usaturating_add(builder.input_mcycle_boundary, MAX_MCYCLES_PER_ADVANCE_STATE)
 end
 
 -- Only the forward build offers checkpoints. An accepted yield is the next input's virgin
@@ -1340,16 +1362,21 @@ local function uarch_computation_hash_push_collected(builder, collected)
     end
 end
 
-local function uarch_computation_hash_begin_input(builder, input_index, input_base)
+local function uarch_computation_hash_begin_input(builder, input_index, input_mcycle_boundary)
     builder.input_index = input_index
-    builder.input_base = input_base
+    builder.input_mcycle_boundary = input_mcycle_boundary
     builder.revert_uarch_tail = builder.machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0).hashes
     local mcycle_offset = builder.first_leaf >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    builder.target_start =
-        usaturating_add(builder.input_base, builder.period_index * builder.mcycles_per_period + mcycle_offset)
+    builder.target_start = usaturating_add(
+        builder.input_mcycle_boundary,
+        builder.period_index * builder.mcycles_per_period + mcycle_offset
+    )
     local count = builder.bundle_index ~= nil and 1 or builder.mcycles_per_period
-    builder.target_end =
-        usaturating_add(builder.target_start, count, usaturating_add(builder.input_base, MAX_MCYCLES_PER_ADVANCE_STATE))
+    builder.target_end = usaturating_add(
+        builder.target_start,
+        count,
+        usaturating_add(builder.input_mcycle_boundary, MAX_MCYCLES_PER_ADVANCE_STATE)
+    )
 end
 
 local function uarch_computation_hash_run(builder, mcycle_end)
@@ -1590,29 +1617,30 @@ local function new_player(geometry, inputs, machine_cache, options)
     -- the same delivery and rollback rules. Only accepted inputs publish their outputs.
     -- Delivery is the protocol's no-op except at an rx-accepted yield, so a machine at any other
     -- fixed point, or an input beyond the posted ones, idles through the input's span.
-    local function run_advance_state_input(builder, input_index, offset, revert_root_hash, on_accepted)
+    local function run_advance_state_input(
+        builder,
+        input_index,
+        offset_end,
+        revert_root_hash,
+        outputs,
+        outputs_frontier
+    )
         local machine = builder.machine
-        local base = builder:read_reg("mcycle")
-        builder:begin_input(input_index, base)
-        machine_cache:snapshot(machine)
-        local break_reason = run_to_stop(machine, base)
-        assert(is_at_fixed_point(break_reason), "input boundary is not at a fixed point")
-        local data = inputs[input_index + 1]
-        if data and is_yielded_manual(break_reason) then
-            local yield_reason = receive_cmio_request(builder)
-            if is_rx_accepted(yield_reason) then
-                load_cmio_input(builder, data, revert_root_hash)
-            end
-        end
         local pending = {}
-        break_reason = run_to_stop(builder, usaturating_add(base, offset), function(yield_reason, output)
-            if on_accepted and is_tx_output(yield_reason) then
+        local function on_yield_automatic(yield_reason, output)
+            if outputs and is_tx_output(yield_reason) then
                 pending[#pending + 1] = output
             end
-        end)
-        local yield_reason, reported_root
+        end
+        local mcycle_boundary = builder:read_reg("mcycle")
+        local mcycle_end = usaturating_add(mcycle_boundary, offset_end)
+        builder:begin_input(input_index, mcycle_boundary)
+        machine_cache:snapshot(machine)
+        load_cmio_input(builder, inputs[input_index + 1], revert_root_hash)
+        local break_reason = run_to_stop(builder, mcycle_end, on_yield_automatic)
+        local yield_reason, outputs_merkle_root
         if is_yielded_manual(break_reason) then
-            yield_reason, reported_root = receive_cmio_request(builder)
+            yield_reason, outputs_merkle_root = receive_cmio_request(builder)
         end
         if is_at_fixed_point(break_reason) then
             builder:end_input()
@@ -1621,19 +1649,19 @@ local function new_player(geometry, inputs, machine_cache, options)
             machine_cache:revert(machine)
             assert(builder:get_root_hash() == revert_root_hash, "rollback did not restore the input boundary")
         else
-            if is_rx_accepted(yield_reason) and on_accepted then
-                on_accepted(pending, reported_root)
-            end
+            flush_pending_outputs(pending, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
             -- Acceptance, sticky stops, and partial replay all retain the running machine.
             machine_cache:commit(machine)
         end
-        return break_reason, yield_reason, base
+        return break_reason, yield_reason, mcycle_boundary
     end
 
     -- Runs the explicit input range [input_index_begin, input_index_end), limited to posted inputs.
     -- A sticky fixed point ends the range early, since every later input idles.
-    local function run_advance_state_epoch(builder, input_index_begin, input_index_end, on_accepted)
+    -- An optional outputs vector collects accepted outputs, checked against the cumulative frontier.
+    local function run_advance_state_epoch(builder, input_index_begin, input_index_end, outputs)
         input_index_end = math.min(input_index_end, #inputs)
+        local outputs_frontier = outputs and hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
         -- Keep the expected boundary across rejections. Only acceptance establishes a new one.
         local revert_root_hash = builder:get_root_hash()
         builder:begin_epoch()
@@ -1643,7 +1671,8 @@ local function new_player(geometry, inputs, machine_cache, options)
                 input_index,
                 MAX_MCYCLES_PER_ADVANCE_STATE,
                 revert_root_hash,
-                on_accepted
+                outputs,
+                outputs_frontier
             )
             if is_rx_accepted(yield_reason) then
                 revert_root_hash = builder:get_root_hash()
@@ -1677,7 +1706,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
         local revert_root_hash = machine:get_root_hash()
         local builder = options.make_null_computation_hash_builder(machine)
-        local break_reason, _, base =
+        local break_reason, _, mcycle_boundary =
             run_advance_state_input(builder, input_index, period_index * geometry.mcycles_per_period, revert_root_hash)
         builder = options.make_mcycle_computation_hash_builder(
             geometry.log2_mcycles_per_period,
@@ -1689,10 +1718,13 @@ local function new_player(geometry, inputs, machine_cache, options)
         if is_at_fixed_point(break_reason) then
             return builder:end_epoch()
         end
-        builder:begin_input(input_index, base)
+        builder:begin_input(input_index, mcycle_boundary)
         run_to_stop(
             builder,
-            usaturating_add(base, (period_index + (1 << LOG2_BUNDLE_MCYCLE_COUNT)) * geometry.mcycles_per_period)
+            usaturating_add(
+                mcycle_boundary,
+                (period_index + (1 << LOG2_BUNDLE_MCYCLE_COUNT)) * geometry.mcycles_per_period
+            )
         )
         return builder:end_epoch()
     end
@@ -1782,18 +1814,9 @@ local function new_player(geometry, inputs, machine_cache, options)
             return
         end
         local machine, _ <close> = machine_cache:clone_at_input_boundary(0, run_to_input_boundary)
-        local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
-        local frontier = hash_tree.frontier_copy(genesis_frontier)
-        local outputs, leaves = {}, {}
+        local outputs = {}
         local builder = options.make_null_computation_hash_builder(machine)
-        run_advance_state_epoch(builder, 0, #inputs, function(pending, reported_root)
-            for _, output in ipairs(pending) do
-                outputs[#outputs + 1] = output
-                leaves[#leaves + 1] = keccak(output)
-                hash_tree.frontier_push_back(frontier, leaves[#leaves])
-            end
-            assert(hash_tree.frontier_get_root_hash(frontier) == reported_root, "outputs Merkle root mismatch")
-        end)
+        run_advance_state_epoch(builder, 0, #inputs, outputs)
         local iflags_y_data, iflags_y_proof = get_machine_leaf(machine, IFLAGS_Y_ADDRESS)
         local htif_tohost_data, htif_tohost_proof = get_machine_leaf(machine, HTIF_TOHOST_ADDRESS)
         local tx_buffer_data, tx_buffer_proof = get_machine_leaf(machine, CMIO_TX_BUFFER_ADDRESS)
@@ -1805,6 +1828,11 @@ local function new_player(geometry, inputs, machine_cache, options)
             tx_buffer_data = tx_buffer_data,
             tx_buffer_proof = tx_buffer_proof,
         }
+        local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+        local leaves = {}
+        for i, output in ipairs(outputs) do
+            leaves[i] = keccak(output)
+        end
         local output_index = options.output_index or #outputs - 1
         player.output = {
             output_index = output_index >= 0 and output_index or nil,

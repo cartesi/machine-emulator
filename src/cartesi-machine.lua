@@ -3963,16 +3963,16 @@ end
 -- point is sticky, so there is no state worth restoring), and output proofs are written only on
 -- full completion.
 -- Leaves the machine wherever the epoch stopped. A trailing inspect query, if any, runs against that
--- state and does nothing unless it is an accept yield. Boot always runs the machine plainly. The
--- inputs run with the builder, which either builds a computation hash (advancing through the
--- given runner) or delegates to the runner directly (the machine itself, or gdb).
+-- state and does nothing unless it is an accept yield. Boot uses the selected runner without
+-- collecting a computation hash. Inputs run with the builder, which either builds a computation
+-- hash through that runner or delegates to it directly (the machine itself, or gdb).
 local function run_advance_state_epoch(builder)
     local htif = initial_config.processor.registers.htif
     local advance = cmdline.cmio_advance
     builder:begin_epoch()
-    -- boot plainly to the rolling template's first accept yield, then process each input in turn.
+    -- Boot through the runner to the rolling template's first accept yield, then process each input in turn.
     -- break_reason holds where the last resume stopped, and decides how the epoch closes below.
-    local break_reason = run_to_stop(get_builder_machine(builder), cmdline.max_mcycle, ignore_yield_automatic)
+    local break_reason = run_to_stop(builder.runner, cmdline.max_mcycle, ignore_yield_automatic)
     if is_yielded_manual(break_reason) then
         get_and_print_yield(builder, htif)
         commit(builder)

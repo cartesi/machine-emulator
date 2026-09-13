@@ -2690,6 +2690,19 @@ describe("cartesi-machine CLI", function()
         expect.equal(filesystem.read_file(prefix .. "-chhb.bin"), ch)
     end)
 
+    -- Advance-state boot can use GDB, but CMIO excludes both hash-printing runners.
+    it("advance-state rejects hash-printing runners", function()
+        for _, kind in ipairs({ "mcycle", "uarch-cycle" }) do
+            run_fail({
+                "--cmio-advance-state=input_index_end:0",
+                "--print-" .. kind .. "-root-hashes=1",
+                "--revert-mode=none",
+                "--max-mcycle=0",
+                "--no-init-splash",
+            }, "cmio cannot be combined with printing " .. kind:gsub("-", " ") .. " root hashes")
+        end
+    end)
+
     -- -------------------------------------------------------------------------
     -- Computation hash option validation
     --
@@ -3457,6 +3470,37 @@ describe("cartesi-machine CLI", function()
             expect.equal(gdb_command(conn, "D"), "OK")
         end)
         expect.truthy(log:find("GDB connected!", 1, true))
+    end)
+
+    -- Boot must reach GDB before the first input, for every computation hash builder.
+    -- Stop twice before the first yield and compare the final state with a plain boot.
+    it("GDB during advance-state boot", function()
+        for _, hash_options in ipairs({
+            "",
+            ",log2_mcycle_computation_hash_period:19",
+            ",log2_mcycle_computation_hash_period:19,mcycle_period_index:0",
+        }) do
+            local _ <close>, final_hash = scope_temp_pathname()
+            local flags = {
+                "--cmio-advance-state=input_index_end:0" .. hash_options,
+                "--revert-mode=none",
+                "--max-mcycle=1000",
+                "--final-hash=" .. final_hash,
+                "--no-init-splash",
+            }
+            run_ok(flags)
+            local expected = filesystem.read_file(final_hash)
+            os.remove(final_hash)
+            local log = run_under_gdb(flags, function(conn)
+                expect.equal(gdb_rcmd(conn, "stepc 375"), "OK")
+                expect.equal(gdb_command(conn, "c"), "S02")
+                expect.equal(gdb_rcmd(conn, "stepc_clear"), "OK")
+                expect.equal(gdb_command(conn, "c"), "S03")
+                expect.equal(gdb_command(conn, "D"), "OK")
+            end)
+            expect.equal(filesystem.read_file(final_hash), expected)
+            expect.falsy(log:find("computation hash:", 1, true))
+        end
     end)
 
     -- -------------------------------------------------------------------------

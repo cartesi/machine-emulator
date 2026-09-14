@@ -21,7 +21,7 @@ EMULATOR_DIR := $(abspath ..)
 LUA_BIN      ?= $(shell which lua5.4)
 FIXTURES_DIR := test/fixtures
 
-.PHONY: all dep build test coverage format check-format fixtures fixtures-clean clean \
+.PHONY: all dep build test coverage gas-report format check-format fixtures fixtures-clean clean \
         gen-constants check-gen-constants \
         gen-transpiled check-gen-transpiled \
         gen-all check-gen-all test-transpile

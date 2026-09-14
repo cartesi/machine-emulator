@@ -139,9 +139,9 @@ struct i_state_access_fast_addr<replay_step_state_access<Dumper>> {
     using type = host_addr;
 };
 
-// \brief Provides machine state from a step log file
-// \tparam Dumper Dump sink: no_step_log_dumper by default, step_log_dumper for dump_send_cmio_response.
-// Only the accesses send_cmio_response performs reach the sink; the interpreter's word accesses do not.
+/// \brief Provides machine state from a step log buffer
+/// \tparam Dumper Dump sink: no_step_log_dumper by default, step_log_dumper for dump_send_cmio_response.
+/// Only the accesses send_cmio_response performs reach the sink; the interpreter's word accesses do not.
 template <typename Dumper = no_step_log_dumper>
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class replay_step_state_access :
@@ -479,11 +479,12 @@ private:
     // -----
     friend i_accept_scoped_notes<replay_step_state_access>;
 
-    // A real scoped_note only when there is a dumper to receive the brackets: with the no-op sink the
-    // interpreter's notes must cost the zkVM guest nothing, as the default 0 does
-    auto do_make_scoped_note([[maybe_unused]] const char *text) const {
+    // A real scoped_note only when there is a dumper to receive the brackets. With the no-op sink the
+    // interpreter's notes must cost the zkVM guest nothing, which the base default guarantees (it still
+    // honors DUMP_SCOPED_NOTE builds)
+    auto do_make_scoped_note(const char *text) const {
         if constexpr (std::is_same_v<Dumper, no_step_log_dumper>) {
-            return 0;
+            return i_accept_scoped_notes<replay_step_state_access>::do_make_scoped_note(text);
         } else {
             return scoped_note{*this, text};
         }

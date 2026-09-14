@@ -18,13 +18,14 @@ local function reg_addr(name) return machine:get_reg_address(name) end
 local UARCH_X_REG_COUNT         = 32
 local SHADOW_TLB_SLOT_LOG2_SIZE = 5
 local TLB_SET_SIZE              = 256
+local TLB_SET_COUNT             = 3
 
 local SHADOW_TLB_SLOT_SIZE  = 1 << SHADOW_TLB_SLOT_LOG2_SIZE
 local SHADOW_TLB_SET_LENGTH = TLB_SET_SIZE * SHADOW_TLB_SLOT_SIZE
 
 assert(
-    cartesi.AR_SHADOW_TLB_LENGTH == 3 * SHADOW_TLB_SET_LENGTH,
-    "TLB layout drift: AR_SHADOW_TLB_LENGTH != 3 * SHADOW_TLB_SET_LENGTH"
+    cartesi.AR_SHADOW_TLB_LENGTH == TLB_SET_COUNT * SHADOW_TLB_SET_LENGTH,
+    "TLB layout drift: AR_SHADOW_TLB_LENGTH != TLB_SET_COUNT * SHADOW_TLB_SET_LENGTH"
 )
 
 -- Types default to uint64; these pin the narrower types Solidity consumers rely
@@ -99,6 +100,7 @@ local tail = {
 "    uint8  internal constant SHADOW_TLB_SLOT_LOG2_SIZE = " .. SHADOW_TLB_SLOT_LOG2_SIZE .. ";",
 "    uint64 internal constant SHADOW_TLB_SLOT_SIZE      = uint64(1) << SHADOW_TLB_SLOT_LOG2_SIZE;",
 "    uint64 internal constant TLB_SET_SIZE              = " .. TLB_SET_SIZE .. ";",
+"    uint64 internal constant TLB_SET_COUNT             = " .. TLB_SET_COUNT .. ";",
 "    uint64 internal constant SHADOW_TLB_SET_LENGTH     = TLB_SET_SIZE * SHADOW_TLB_SLOT_SIZE;",
 "",
 "    // Shadow register addresses (cartesi.machine:get_reg_address).",

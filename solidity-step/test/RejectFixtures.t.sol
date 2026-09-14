@@ -131,6 +131,8 @@ contract RejectFixturesTest is ManifestParser {
             expectRuntimeError("uarch aborted");
         } else if (t == keccak256("unsupported_ecall")) {
             expectRuntimeError("unsupported ecall function");
+        } else if (t == keccak256("tlb_index_out_of_range")) {
+            expectRuntimeError("TLB index out of range");
         } else {
             vm.expectPartialRevert(selectorFor(t));
         }

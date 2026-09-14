@@ -148,6 +148,7 @@ library EmulatorConstants {
     uint8 internal constant SHADOW_TLB_SLOT_LOG2_SIZE = 5;
     uint64 internal constant SHADOW_TLB_SLOT_SIZE = uint64(1) << SHADOW_TLB_SLOT_LOG2_SIZE;
     uint64 internal constant TLB_SET_SIZE = 256;
+    uint64 internal constant TLB_SET_COUNT = 3;
     uint64 internal constant SHADOW_TLB_SET_LENGTH = TLB_SET_SIZE * SHADOW_TLB_SLOT_SIZE;
 
     // Shadow register addresses (cartesi.machine:get_reg_address).

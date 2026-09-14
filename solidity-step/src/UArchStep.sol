@@ -803,6 +803,13 @@ library UArchStep {
             uint64 vaddr_page = StateAccess.readX(a, 12); // a2 contains vaddr_page to write
             uint64 vp_offset = StateAccess.readX(a, 13); // a3 contains vp_offset to write
             uint64 pma_index = StateAccess.readX(a, 14); // a4 contains index of PMA where page falls
+            // The slot address arithmetic must not wrap: every replayer refuses the same indices
+            if (
+                set_index >= EmulatorConstants.TLB_SET_COUNT
+                    || slot_index >= EmulatorConstants.TLB_SET_SIZE
+            ) {
+                StateAccess.throwRuntimeError(a, "TLB index out of range");
+            }
             StateAccess.writeTlbECALL(a, set_index, slot_index, vaddr_page, vp_offset, pma_index); // WARNING: This CANNOT be a NOOP in Solidity
             return advancePc(a, pc);
         }

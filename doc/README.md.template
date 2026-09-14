@@ -5347,8 +5347,8 @@ The caller creates the initial machine and passes it to `new_machine_cache(initi
 Rejected inputs offer no checkpoint: replay runs each one in turn and rolls it back through the ordinary input driver, without rejection history or backward recovery lookups.
 The uarch build (`build_uarch_claim`) expands one period, instruction by instruction, through `machine:collect_uarch_cycle_root_hashes()`, whose stream already carries the halt repetitions compressed and the reset hashes marked.
 Both computation-hash builders implement `begin_epoch`, `begin_input`, `run`, `end_input`, and `end_epoch`.
-Separate mcycle and uarch bundle builders reconstruct individual leaves. Their constructors initialize the forest, their `run` methods collect and pad it, and `end_epoch` returns it; the other lifecycle methods are no-ops.
-The mcycle bundle builder receives an already-positioned machine. The uarch bundle builder captures the rejection tail at the input boundary and replays to the selected mcycle in `run`, completing fixed-point collection before returning to the input driver's rollback handling.
+Bundle collection replays to the selected range with a null builder, then collects directly from the machine into a local forest. Mcycle bundle collection uses `run_to_stop` with a table containing only a `run` closure; uarch bundle collection needs a single collector call for its containing mcycle.
+Uarch bundle collection captures the rejection tail before input delivery. If replay rejects before the selected mcycle, the input driver restores the boundary machine before collection; if the collected instruction rejects, the machine collector uses the saved tail.
 The shared `run_advance_state_epoch` driver follows the CLI's naming and delegates each input's delivery, automatic yields, acceptance, and rollback to `run_advance_state_input`; plain replay and output collection use that same input driver with a builder that only runs the machine.
 Both drivers use the CLI's break- and yield-reason predicates, such as `is_yielded_manual` and `is_rx_accepted`.
 Before building its initial claim, the player checks that the template is waiting on an rx-accepted manual yield, using the yield flag and header registers without reading an output payload.
@@ -5364,7 +5364,7 @@ The epoch driver owns the cumulative outputs frontier; the input driver appends 
 The honest player uses native machines and ordinary computation-hash builders directly; the driver passes the input index and mcycle boundary to the builders, without attaching execution context or ownership to the machine.
 The dishonest implementations in `prt-dishonest.lua` wrap those objects and maintain their own private bookkeeping, while sharing the execution lifecycle, claim trees, and event handlers.
 The forger changes its private input list, while the referee continues to verify against the original contract inputs. The tamperer configures its cache to wrap execution clones and preserve private strategy state on rollback. Retained checkpoints remain native machines. The fabulist replaces a sample as it enters a computation hash, including when that sample lies in repeated padding.
-Bundle collection uses its own `make_mcycle_bundle_builder` and `make_uarch_bundle_builder` factory hooks, and the ordinary claim tree authenticates every opened bundle.
+Dishonest strategies can wrap the player's bundle-collection methods, and the ordinary claim tree authenticates every opened bundle.
 ```{.lua key=prt_build_mcycle_claim include=prt.lua replace=null}
 ```
 ```{.lua key=prt_dishonest_src include=prt-dishonest.lua replace=null}

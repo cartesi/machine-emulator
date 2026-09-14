@@ -308,7 +308,7 @@ local function new_uarch_liar(builder, insert)
         assert(count <= remaining, "uarch collection exceeds the claim's mcycle capacity")
         for i = 1, count do
             local group = hash_tree.frontier_forest(log2_cycles, "keccak256")
-            prt.uarch_computation_hash_push_mcycle(self, group, collected.hashes, offsets[i], offsets[i + 1] - 1)
+            prt.uarch_computation_hash_push_mcycle(self, group, collected.hashes, offsets[i], offsets[i + 1])
             insert(self, group, 1, log2_cycles)
         end
         if at_fixed_point then
@@ -318,7 +318,7 @@ local function new_uarch_liar(builder, insert)
                 pad_frontier,
                 collected.hashes,
                 offsets[available],
-                offsets[available + 1] - 1
+                offsets[available + 1]
             )
             insert(self, pad_frontier, remaining - count, log2_cycles)
         end

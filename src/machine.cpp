@@ -2044,7 +2044,7 @@ machine_hash machine::verify_send_cmio_response(uint16_t reason, const unsigned 
 }
 
 std::string machine::dump_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const_machine_hash_view revert_root_hash, std::span<const unsigned char> log) {
+    std::span<const unsigned char> log, const_machine_hash_view revert_root_hash) {
     step_log_data image(log.begin(), log.end()); // the replay mutates the image in place
     replay_step_state_access<step_log_dumper>::context context;
     // Pinned, unlike verify_step: these logs exist for the Keccak-256 on-chain verifier.

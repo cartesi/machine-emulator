@@ -337,7 +337,8 @@ public:
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
     /// \param root_hash_before State hash before step.
     /// \param log Binary step log produced by log_step_uarch.
-    /// \param uarch_cycle_count Number of cycles the caller expects to have been advanced.
+    /// \param uarch_cycle_count Requested number of uarch cycles; the replay stops early at a halt or
+    /// cycle overflow, so the caller must keep this count alongside the log and the hashes.
     /// \returns State hash after step, for the caller to check.
     static machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, std::span<const unsigned char> log,
         uint64_t uarch_cycle_count);
@@ -360,6 +361,7 @@ public:
 
     /// \brief Replays a uarch reset log and returns a human-readable dump of its accesses.
     /// \param log Binary step log produced by log_reset_uarch.
+    /// \details No caller claim is checked. The dump is for people: its format is not part of the API.
     static std::string dump_reset_uarch(std::span<const unsigned char> log);
 
     /// \brief Returns copy of default machine config
@@ -767,10 +769,11 @@ public:
     /// \param reason Reason for sending the response.
     /// \param data Response data.
     /// \param length Length of response.
-    /// \param revert_root_hash The revert root hash recorded when the log was generated.
     /// \param log Binary step log produced by log_send_cmio_response.
+    /// \param revert_root_hash The revert root hash recorded when the log was generated.
+    /// \details No caller claim is checked. The dump is for people: its format is not part of the API.
     static std::string dump_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const_machine_hash_view revert_root_hash, std::span<const unsigned char> log);
+        std::span<const unsigned char> log, const_machine_hash_view revert_root_hash);
 
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest

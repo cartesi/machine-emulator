@@ -1074,7 +1074,8 @@ CM_API cm_error cm_verify_step(const cm_hash *root_hash_before, const uint8_t *l
 /// \param root_hash_before State hash before step.
 /// \param log Binary step log to be verified.
 /// \param log_length Length of the binary step log.
-/// \param uarch_cycle_count Number of uarch cycles the caller expects to have been advanced.
+/// \param uarch_cycle_count Requested number of uarch cycles; the replay stops early at a halt or cycle overflow,
+/// so the caller must keep this count alongside the log and the hashes.
 /// \param obtained_root_hash Receives the state hash after step, for the caller to check (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const uint8_t *log,
@@ -1127,6 +1128,7 @@ CM_API cm_error cm_dump_step_uarch(const uint8_t *log, uint64_t log_length, uint
 /// \param dump Receives the dump as a string, guaranteed to remain valid only until the next CM_API function is
 /// called from the same thread. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
+/// \details No caller claim is checked. The dump is meant for people: its format is not part of the stable API.
 CM_API cm_error cm_dump_reset_uarch(const uint8_t *log, uint64_t log_length, const char **dump);
 
 /// \brief Replays a cmio response log into a human-readable dump of its accesses.
@@ -1139,6 +1141,7 @@ CM_API cm_error cm_dump_reset_uarch(const uint8_t *log, uint64_t log_length, con
 /// \param dump Receives the dump as a string, guaranteed to remain valid only until the next CM_API function is
 /// called from the same thread. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
+/// \details No caller claim is checked. The dump is meant for people: its format is not part of the stable API.
 CM_API cm_error cm_dump_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length, const uint8_t *log,
     uint64_t log_length, const cm_hash *revert_root_hash, const char **dump);
 

@@ -826,13 +826,24 @@ do_test("multi-cycle uarch step log should pass verification", function(machine)
     assert(machine:verify_step_uarch(initial_hash, log, 2) == final_hash)
 end)
 
+-- Match a dump line by line against Lua patterns; addresses and values are wildcarded by the
+-- callers so the expectations survive shadow-layout drift while order, names, and brackets stay pinned.
+local function assert_dump_lines(text, expected)
+    local lines = {}
+    for line in text:gmatch("(.-)\n") do
+        lines[#lines + 1] = line
+    end
+    assert(#lines == #expected, string.format("printout has %d lines, expected %d:\n%s", #lines, #expected, text))
+    for i, pat in ipairs(expected) do
+        assert(lines[i]:match(pat), string.format("printout line %d %q does not match %q", i, lines[i], pat))
+    end
+end
+
 do_test("dump_step_uarch writes a readable printout", function(machine)
     -- The log records 2 cycles, but its pages carry full contents, so the third (halting) cycle
     -- of the default program ("li a0,123", "li a7,halt", "ecall") replays from the same witness.
     local log = machine:log_step_uarch(2)
     local text = cartesi.machine:dump_step_uarch(log, 0, 3)
-    -- Match the whole printout line by line; addresses and values are wildcarded so the expectation
-    -- survives shadow-layout drift while order, names, and brackets stay pinned.
     local expected = {
         -- Every cycle has the same shape: uarch_step's cycle/halt/pc reads, the fetch,
         -- the bracketed instruction body, and the cycle increment.
@@ -873,17 +884,7 @@ do_test("dump_step_uarch writes a readable printout", function(machine)
         "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
         "^end uarch_step$",
     }
-    local lines = {}
-    for line in (text .. "\n"):gmatch("(.-)\n") do
-        lines[#lines + 1] = line
-    end
-    if lines[#lines] == "" then -- drop the trailing empty split element
-        lines[#lines] = nil
-    end
-    assert(#lines == #expected, string.format("printout has %d lines, expected %d:\n%s", #lines, #expected, text))
-    for i, pat in ipairs(expected) do
-        assert(lines[i]:match(pat), string.format("printout line %d %q does not match %q", i, lines[i], pat))
-    end
+    assert_dump_lines(text, expected)
 end)
 
 do_test("dump_step_uarch skip count mutes the first cycles", function(machine)
@@ -892,6 +893,58 @@ do_test("dump_step_uarch skip count mutes the first cycles", function(machine)
     local rest = cartesi.machine:dump_step_uarch(log, 1, 2)
     assert(rest:match("^begin uarch_step\n  read uarch%.cycle@0x%x+: 0x1%(1%)"), "the dump should resume at cycle 1")
     assert(cartesi.machine:dump_step_uarch(log, 0, 1) .. rest == full, "skipped dump should be a slice of the full one")
+end)
+
+-- Plant a write-TLB ecall at the uarch pc: x17 selects the function, x10..x14 are its arguments.
+local function plant_write_tlb_ecall(machine, set_index, slot_index)
+    machine:write_memory(machine:read_reg("uarch_pc"), string.pack("<I4", 0x00000073))
+    machine:write_reg("uarch_x17", cartesi.UARCH_ECALL_FN_WRITE_TLB)
+    machine:write_reg("uarch_x10", set_index)
+    machine:write_reg("uarch_x11", slot_index)
+    machine:write_reg("uarch_x12", 0x1000)
+    machine:write_reg("uarch_x13", 0x2000)
+    machine:write_reg("uarch_x14", 1)
+end
+
+do_test("dump_step_uarch shows the TLB slot a write-TLB ecall fills", function(machine)
+    plant_write_tlb_ecall(machine, 1, 3)
+    local text = cartesi.machine:dump_step_uarch(machine:log_step_uarch(1), 0, 1)
+    local expected = {
+        "^begin uarch_step$",
+        "^  read uarch%.cycle@0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.pc@0x%x+: 0x%x+%(%d+%)$",
+        "^  read uarch%.ram@0x%x+: 0x%x+%(%d+%)$",
+        "^  begin ecall$",
+        "^    read uarch%.x17@0x%x+: 0x4%(4%)$",
+        "^    read uarch%.x10@0x%x+: 0x1%(1%)$",
+        "^    read uarch%.x11@0x%x+: 0x3%(3%)$",
+        "^    read uarch%.x12@0x%x+: 0x1000%(4096%)$",
+        "^    read uarch%.x13@0x%x+: 0x2000%(8192%)$",
+        "^    read uarch%.x14@0x%x+: 0x1%(1%)$",
+        "^    write tlb%.slot%.vaddr_page@0x%x+: 0x%x+%(%d+%) %-> 0x1000%(4096%)$",
+        "^    write tlb%.slot%.vp_offset@0x%x+: 0x%x+%(%d+%) %-> 0x2000%(8192%)$",
+        "^    write tlb%.slot%.pma_index@0x%x+: 0x%x+%(%d+%) %-> 0x1%(1%)$",
+        "^    write tlb%.slot%.zero_padding_@0x%x+: 0x%x+%(%d+%) %-> 0x0%(0%)$",
+        "^    write uarch%.pc@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^  end ecall$",
+        "^  write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
+        "^  read uarch%.halt@0x%x+: 0x%x+%(%d+%)$",
+        "^end uarch_step$",
+    }
+    assert_dump_lines(text, expected)
+end)
+
+do_test("uarch_step refuses a write-TLB ecall with an out-of-range index", function(machine)
+    -- unchecked address arithmetic would wrap this set index onto set 0; the Solidity twin reverts,
+    -- so the C++ replayers must refuse it too (fixture tlb_index_out_of_range covers the on-chain side)
+    plant_write_tlb_ecall(machine, 1 << 51, 0)
+    local ok, err = pcall(machine.run_uarch, machine, 1)
+    assert(not ok, "expected error")
+    check_error_find(err, "TLB index out of range")
+    ok, err = pcall(machine.log_step_uarch, machine, 1)
+    assert(not ok, "expected error")
+    check_error_find(err, "TLB index out of range")
 end)
 
 do_test("dump_step_uarch raises on a malformed log", function(machine)
@@ -1219,14 +1272,7 @@ tests_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_
             "^  read iflags%.Y@0x%x+: 0x0%(0%)$",
             "^end uarch_reset_state$",
         }
-        local lines = {}
-        for line in text:gmatch("(.-)\n") do
-            lines[#lines + 1] = line
-        end
-        assert(#lines == #expected, string.format("printout has %d lines, expected %d:\n%s", #lines, #expected, text))
-        for i, pat in ipairs(expected) do
-            assert(lines[i]:match(pat), string.format("printout line %d %q does not match %q", i, lines[i], pat))
-        end
+        assert_dump_lines(text, expected)
     end
 )
 
@@ -1458,17 +1504,10 @@ do_test("dump_send_cmio_response shows an advance-state response", function(mach
         "^  write iflags%.Y@0x%x+: 0x1%(1%) %-> 0x0%(0%)$",
         "^end send_cmio_response$",
     }
-    local lines = {}
-    for line in text:gmatch("(.-)\n") do
-        lines[#lines + 1] = line
-    end
-    assert(#lines == #expected, string.format("printout has %d lines, expected %d:\n%s", #lines, #expected, text))
-    for i, pat in ipairs(expected) do
-        assert(lines[i]:match(pat), string.format("printout line %d %q does not match %q", i, lines[i], pat))
-    end
+    assert_dump_lines(text, expected)
 end)
 
-do_test("dump_send_cmio_response shows a page-sized payload as a node hash", function(machine)
+do_test("dump_send_cmio_response shows a two-page payload as a node hash", function(machine)
     local reason = cartesi.HTIF_YIELD_REASON_INSPECT_STATE
     local data = string.rep("x", 2 * (1 << cartesi.HASH_TREE_LOG2_PAGE_SIZE))
     machine:write_reg("iflags_Y", 1)

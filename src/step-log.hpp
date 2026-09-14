@@ -18,7 +18,7 @@
 #define STEP_LOG_HPP
 
 /// \file
-/// \brief On-disk layout and parsed form of a binary step log.
+/// \brief Binary layout and parsed form of a step log.
 ///
 /// A step log is a fixed-size header followed by three variable-length arrays:
 ///
@@ -60,7 +60,7 @@ constexpr std::array<char, 8> STEP_LOG_SIGNATURE = {'C', 'T', 'S', 'I', 3, 0, 0,
 /// count and the root hash after are the caller's, driving the replay and checking its result.
 struct PACKED step_log_header {
     std::array<char, 8> signature; ///< STEP_LOG_SIGNATURE (magic + version + reserved)
-    uint64_t hash_function;        ///< Value of hash_function_type used to hash the log
+    uint64_t hash_function;        ///< Value of hash_function_type used by the state tree
     uint64_t page_count;           ///< Number of entries in the pages array
     uint64_t node_count;           ///< Number of entries in the nodes array
     uint64_t sibling_count;        ///< Number of entries in the siblings array

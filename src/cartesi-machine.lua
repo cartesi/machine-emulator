@@ -869,7 +869,14 @@ where options are:
   --log-step=<filename>,count:<mcycle-count>
     log and save a step of <mcycle-count> mcycles to <filename>.
     prints the root hash before and after the step to stderr; a verifier
-    needs both, since the log carries neither.
+    needs both, since the log carries neither. when the step leaves the
+    machine paused on a rejected input, the hash after is the recorded
+    revert root hash, which is what the verifier returns.
+
+    the logging options run in a fixed order once the machine stops:
+    --log-step, then --max-uarch-cycle, then --log-step-uarch,
+    --log-reset-uarch and --log-send-cmio-response. each prints its own
+    pair of root hashes.
 
   --log-step-uarch=<filename>[,count:<uarch-cycle-count>][,dump]
     log <uarch-cycle-count> uarch cycles (default 1) to <filename>
@@ -880,7 +887,9 @@ where options are:
 
   --log-reset-uarch=<filename>[,dump]
     reset the uarch state and write a binary step log to <filename>.
-    prints the root hash before and after the reset to stderr.
+    prints the root hash before and after the reset to stderr; on a machine
+    paused on a rejected input the hash after is the recorded revert root
+    hash, which is what the verifier returns.
     append ",dump" to also write a human-readable printout to stderr.
 
   --log-send-cmio-response=<filename>,<key>:<value>[,<key>:<value>[,...]...]
@@ -2703,8 +2712,20 @@ local function print_root_hash(machine, print)
 end
 
 -- The step log carries no root hashes, so every logging option prints the pair a verifier needs
-local function print_log_root_hash(machine, when)
-    stderr_unsilenceable("root hash %s: %s\n", when, cartesi.tohex(machine:get_root_hash()))
+local function print_log_root_hash(when, hash) stderr_unsilenceable("root hash %s: %s\n", when, cartesi.tohex(hash)) end
+
+-- The root hash verify_step and verify_reset_uarch return: the recorded revert root hash when the
+-- machine is paused on a rejected input, the machine root hash otherwise
+local function log_root_hash_after(machine)
+    if
+        machine:read_reg("iflags_Y") ~= 0
+        and machine:read_reg("htif_tohost_dev") == cartesi.HTIF_DEV_YIELD
+        and machine:read_reg("htif_tohost_cmd") == cartesi.HTIF_YIELD_CMD_MANUAL
+        and machine:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+    then
+        return machine:read_memory(cartesi.AR_SHADOW_REVERT_ROOT_HASH_START, cartesi.HASH_SIZE)
+    end
+    return machine:get_root_hash()
 end
 
 local function dump_value_proofs(machine, desired_proofs, config)
@@ -4122,10 +4143,10 @@ end
 -- log step
 if cmdline.log_step_mcycle_count then
     stderr(string.format("Logging step of %d cycles to %s\n", cmdline.log_step_mcycle_count, cmdline.log_step_filename))
-    print_log_root_hash(machine, "before")
+    print_log_root_hash("before", machine:get_root_hash())
     local log = machine:log_step(cmdline.log_step_mcycle_count)
     util.write_file(log, cmdline.log_step_filename)
-    print_log_root_hash(machine, "after")
+    print_log_root_hash("after", log_root_hash_after(machine))
 end
 -- Advance uarch cycles
 if cmdline.max_uarch_cycle > 0 then
@@ -4154,37 +4175,36 @@ if gdb_stub then gdb_stub:close() end
 if cmdline.log_step_uarch then
     assert(initial_config.processor.registers.iunrep == 0, "uarch step proof is meaningless in unreproducible mode")
     stderr("Gathering uarch step log: please wait\n")
-    print_log_root_hash(machine, "before")
+    print_log_root_hash("before", machine:get_root_hash())
     local log = machine:log_step_uarch(cmdline.log_step_uarch.count)
     util.write_file(log, cmdline.log_step_uarch.filename)
-    print_log_root_hash(machine, "after")
+    print_log_root_hash("after", machine:get_root_hash())
     if cmdline.log_step_uarch.dump then
         io.stderr:write(cartesi.machine:dump_step_uarch(log, 0, cmdline.log_step_uarch.count))
     end
 end
 if cmdline.log_reset_uarch then
     stderr("Resetting uarch state: please wait\n")
-    print_log_root_hash(machine, "before")
+    print_log_root_hash("before", machine:get_root_hash())
     local log = machine:log_reset_uarch()
     util.write_file(log, cmdline.log_reset_uarch.filename)
-    print_log_root_hash(machine, "after")
+    print_log_root_hash("after", log_root_hash_after(machine))
     if cmdline.log_reset_uarch.dump then io.stderr:write(cartesi.machine:dump_reset_uarch(log)) end
 end
 if cmdline.log_send_cmio_response then
     local o = cmdline.log_send_cmio_response
     local data
     if o["data-file"] then
-        local f <close> = assert(io.open(o["data-file"], "rb"))
-        data = assert(f:read("*a"))
+        data = util.read_file(o["data-file"])
     else
         data = ENCODINGS[o.encoding](o.data)
     end
     stderr("Logging cmio response: please wait\n")
-    print_log_root_hash(machine, "before")
     local revert_root_hash = machine:get_root_hash()
+    print_log_root_hash("before", revert_root_hash)
     local log = machine:log_send_cmio_response(o.reason, data, revert_root_hash)
     util.write_file(log, o.filename)
-    print_log_root_hash(machine, "after")
+    print_log_root_hash("after", machine:get_root_hash())
     if o.dump then io.stderr:write(cartesi.machine:dump_send_cmio_response(o.reason, data, log, revert_root_hash)) end
 end
 if cmdline.dump_memory_ranges_dir then dump_memory_ranges(machine, cmdline.dump_memory_ranges_dir) end

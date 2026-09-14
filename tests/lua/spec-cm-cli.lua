@@ -1974,6 +1974,44 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- -------------------------------------------------------------------------
+    -- Logging on a machine that declined its input
+    --
+    -- What: after "rollup reject" the machine is paused on an rx-rejected manual yield. For
+    --       the step and the reset, the verifiers return the recorded revert root hash as
+    --       the hash after, not the machine root hash, and the CLI must print that one.
+    -- How:  log both, parse the printed pairs, and verify each log against them.
+    -- -------------------------------------------------------------------------
+    it("logging options on a rejected input", function()
+        local _ <close>, step_log = scope_temp_pathname()
+        local _ <close>, reset_log = scope_temp_pathname()
+        os.remove(step_log)
+        os.remove(reset_log)
+        local _, stderr = run_ok({
+            "--no-init-splash",
+            "--quiet",
+            "--max-uarch-cycle=2",
+            "--log-step=" .. step_log .. ",count:1",
+            "--log-reset-uarch=" .. reset_log,
+            "--",
+            "rollup",
+            "reject",
+        })
+        local hashes = {}
+        for before, after in stderr:gmatch("root hash before: (0x%x+)\nroot hash after: (0x%x+)") do
+            hashes[#hashes + 1] = cartesi.fromhex(before)
+            hashes[#hashes + 1] = cartesi.fromhex(after)
+        end
+        expect.equal(#hashes, 4)
+        local step_hash_before, step_hash_after = hashes[1], hashes[2]
+        local reset_hash_before, reset_hash_after = hashes[3], hashes[4]
+        expect.equal(cartesi.machine:verify_step(step_hash_before, filesystem.read_file(step_log), 1), step_hash_after)
+        expect.equal(
+            cartesi.machine:verify_reset_uarch(reset_hash_before, filesystem.read_file(reset_log)),
+            reset_hash_after
+        )
+    end)
+
+    -- -------------------------------------------------------------------------
     -- Post-run uarch advance path (--max-uarch-cycle, --auto-reset-uarch)
     --
     -- What: --max-uarch-cycle and --auto-reset-uarch exercise the uarch advance

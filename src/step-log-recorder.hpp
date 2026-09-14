@@ -85,7 +85,7 @@ public:
 
     /// \brief Record that the subtree at (address, log2_size) is being touched.
     /// \param address Subtree start address, must be aligned to 2^log2_size
-    /// \param log2_size Log2 of the subtree size. Must be > PAGE_SIZE and < ROOT_SIZE.
+    /// \param log2_size Log2 of the subtree size. Must be > HASH_TREE_LOG2_PAGE_SIZE and < HASH_TREE_LOG2_ROOT_SIZE.
     /// \details Captures the subtree's current hash.
     /// Rejects overlaps with existing nodes and enclosure of touched pages so
     /// the "pages and nodes are pairwise disjoint" invariant holds at replay.

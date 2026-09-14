@@ -65,6 +65,18 @@ local INSN_ECALL = 0x00000073 -- with pristine x17 (=0), an unknown ecall functi
 -- A 32-byte value distinct from any real root, for belief/claim mismatches.
 local BOGUS = string.rep("\186", 32)
 
+-- Overwrite a 64-bit word of the witnessed uarch shadow page (registers live there).
+local UARCH_SHADOW_PAGE = cartesi.UARCH_SHADOW_START_ADDRESS >> 12
+local function inject_uarch_register(log, off, value)
+    for _, page in ipairs(log.pages) do
+        if page.index == UARCH_SHADOW_PAGE then
+            page.data = page.data:sub(1, off) .. string.pack("<I8", value) .. page.data:sub(off + 9)
+            return
+        end
+    end
+    error(string.format("page 0x%x not found in base log", UARCH_SHADOW_PAGE))
+end
+
 -- Overwrite the 32-bit instruction fetched at PC_INIT.
 local function inject_uarch_instruction(log, insn)
     for _, page in ipairs(log.pages) do
@@ -88,10 +100,12 @@ end
 -- throwaway machine.
 local SHADOW_PAGE = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START >> 12
 local REVERT_OFF = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START & 0xfff
-local HTIF_TOHOST_OFF
+local HTIF_TOHOST_OFF, UARCH_X10_OFF, UARCH_X17_OFF
 do
     local m <close> = assert(cartesi.machine({ ram = { length = 0x20000 }, uarch = { ram = { backing_store = {} } } }))
     HTIF_TOHOST_OFF = m:get_reg_address("htif_tohost") & 0xfff
+    UARCH_X10_OFF = m:get_reg_address("uarch_x10") & 0xfff
+    UARCH_X17_OFF = m:get_reg_address("uarch_x17") & 0xfff
 end
 
 -- Flip a byte at `off` within the page at `page_idx`, so the recomputed pre-root no longer
@@ -244,6 +258,18 @@ local cases = {
         base = UARCH_BASE,
         mutate = function(log)
             inject_uarch_instruction(log, INSN_ECALL)
+            return { before = test_util.recompute_step_log_root(log, "keccak256") }
+        end,
+    },
+    -- A write-TLB ecall whose set index would wrap the slot address in unchecked arithmetic
+    {
+        tag = "tlb_index_out_of_range",
+        kind = "cycle",
+        base = UARCH_BASE,
+        mutate = function(log)
+            inject_uarch_instruction(log, INSN_ECALL)
+            inject_uarch_register(log, UARCH_X17_OFF, cartesi.UARCH_ECALL_FN_WRITE_TLB)
+            inject_uarch_register(log, UARCH_X10_OFF, 1 << 51)
             return { before = test_util.recompute_step_log_root(log, "keccak256") }
         end,
     },

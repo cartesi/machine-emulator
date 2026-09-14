@@ -27,7 +27,7 @@ enum class UArchStepStatus : int {
 };
 
 /// \brief Advances the uarch by one uarch cycle
-/// \tparam Uarch state accessor class
+/// \tparam STATE_ACCESS Uarch state accessor class
 /// \returns Returns a status code indicating whether and how the uarch was advanced
 /// \details The uarch will not advance if it is at a fixed point
 template <typename STATE_ACCESS>

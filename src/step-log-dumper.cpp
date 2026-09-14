@@ -50,8 +50,7 @@ void step_log_dumper::write(const char *name, uint64_t paddr, uint64_t old_val, 
            << ")\n";
 }
 
-// Same shapes the JSON access log printer used for big writes: abbreviated hashes, and the first and
-// last three bytes of data, followed by the size
+// Bulk writes print abbreviated hashes, and the first and last three bytes of data, followed by the size
 static std::string abbreviated(const_machine_hash_view hash) {
     return encode_hex(hash).substr(0, 10);
 }

@@ -520,7 +520,7 @@
         },
         {
           "name": "uarch_cycle_count",
-          "description": "Number of uarch cycles in step",
+          "description": "Requested number of uarch cycles; the replay stops early at a halt or cycle overflow",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"

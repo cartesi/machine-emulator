@@ -1818,8 +1818,9 @@ The state hash evolves as the machine executes steps in its fetch-execute loop.
 The first stage of the verification game therefore searches for the *step of disagreement*: the particular main processor cycle such that the parties agree on the state hash before the step, but disagree on the state hash after the step.
 When the uarch is in use, every main processor instruction can also be implemented by a sequence of uarch instructions in the uarch interpreter, and a single uarch step is one of those uarch instructions.
 So the search is refined to find the *uarch step of disagreement*: the particular uarch cycle such that the parties agree on the state hash before the uarch step, but disagree on the state hash after the uarch step.
-Once this uarch step of disagreement is identified, one of the parties sends to the blockchain a log of state accesses that happen along the uarch step, including Merkle-tree proofs for every value read from or written to the state.
-This log proves to the blockchain that the execution of the uarch step transitions the state in such a way that it reaches the state hash claimed by the submitting party.
+Once this uarch step of disagreement is identified, one of the parties sends to the blockchain a *step log* witnessing the uarch step: the pages of state it touched and the hashes of the subtrees it left untouched.
+From this witness the blockchain recomputes the state hash before the step, replays the step, and obtains the state hash after it.
+The pair shows whether the uarch step indeed transitions the state to the hash claimed by the submitting party.
 
 ```{.bash key=cycles_uarch_putchar_ecall vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar replace=null}
 ln -sf "$config" .
@@ -2988,7 +2989,7 @@ step_log ::= header page_entry^page_count node_entry^node_count sibling_entry^si
 
 header ::= {                        -- 40 bytes
   signature     ::= "CTSI" 3 0 0 0, -- magic + version + reserved
-  hash_function ::= uint64,         -- hash function used (e.g. keccak256)
+  hash_function ::= uint64,         -- 0 for Keccak-256, 1 for SHA-256
   page_count    ::= uint64,
   node_count    ::= uint64,
   sibling_count ::= uint64
@@ -3013,21 +3014,25 @@ sibling_entry ::= hash              -- hashes of the subtrees not covered by pag
 ```
 
 All integers are little-endian and every `hash` is 32 bytes.
+A verifier whose protocol fixes the hash function (the on-chain replayer is Keccak-256 only) rejects a log that declares the other.
 The page entries record, as of first touch, every page of machine state the step read or wrote.
 The node entries record bulk writes that replace whole subtrees at once, as the uarch reset and the input-inclusion transitions do.
-A node is a subtree whose contents are not witnessed, only its hash.
-Combined with the hashes of the pages and nodes, the siblings reconstruct the machine's root hash.
-The root hash before is recomputed from the witnessed tree, the caller says how many cycles to replay, and the root hash after is whatever the replay produces, returned for the caller to compare.
+A node is a subtree whose contents are not witnessed, only its hash: it spans more than a page and no more than the whole state, and its address is aligned to its size.
+Decoding rejects a log whose page scratch slots are not zero, or whose pages and nodes, read as a single address-ordered stream, are not strictly ascending and disjoint.
+Combined with the hashes of the pages and nodes, the siblings reconstruct the machine's root hash: the reconstruction walks the state hash tree depth first, left before right, and takes the next sibling hash whenever the subtree it reaches holds no page and no node.
+Decoding also rejects a log with too few siblings, or with any page, node, or sibling left unconsumed.
+The root hash before is recomputed from the witnessed tree and the root hash after is whatever the replay produces, returned for the caller to compare.
+Besides the log, `verify_step` and `verify_step_uarch` take the number of cycles to replay, `verify_reset_uarch` takes nothing, and `verify_send_cmio_response` takes the response reason and data and the revert root hash recorded with the log.
 A step log is therefore self-contained, and anyone can check one against a pair of state hashes without instantiating a machine.
 
 #### Inspecting step logs
 
 The static method `cartesi.machine:dump_step_uarch(<log>, <skip_count>, <uarch_cycle_count>)` returns a user-friendly version of the uarch cycles recorded in a binary step log.
 It replays the first `<skip_count>` cycles silently, then the requested number of cycles against the state carried in the log (stopping early if the uarch halts), and describes every access performed, identifying what each address refers to (a register, a CSR, memory).
-Each replayed cycle is bracketed.
-Likewise, `cartesi.machine:dump_reset_uarch(<log>)` describes a uarch reset log: the replacement of the uarch state, the check for a rejected input, and the revert when there is one.
-`cartesi.machine:dump_send_cmio_response(<reason>, <data>, <log>, <revert_root_hash>)` describes a cmio response log: the yield checks, the rx buffer write, and the registers the response updates, or the single check that made it a no-op.
-Addresses and values are printed in hexadecimal and decimal.
+Each replayed cycle is bracketed by `begin uarch_step` and `end uarch_step`, and the instruction it executes by its own mnemonic.
+Likewise, `cartesi.machine:dump_reset_uarch(<log>)` describes a uarch reset log, bracketed by `uarch_reset_state`: the replacement of the uarch state, the check for a rejected input, and the revert when there is one.
+`cartesi.machine:dump_send_cmio_response(<reason>, <data>, <log>, <revert_root_hash>)` describes a cmio response log, bracketed by `send_cmio_response`: the yield checks, the rx buffer write, and the registers the response updates, or the single check that made it a no-op.
+Addresses are printed in hexadecimal, values in hexadecimal with the decimal in parentheses, and bulk writes as abbreviated hashes or short byte snippets.
 
 Running the `dump-uarch-step.lua` program:
 

@@ -1427,8 +1427,8 @@ cm_error cm_dump_send_cmio_response(uint16_t reason, const uint8_t *data, uint64
         throw std::invalid_argument("invalid log");
     }
     const cartesi::machine_hash cpp_revert_root_hash = convert_from_c(revert_root_hash);
-    *dump = cm_set_temp_string(cartesi::machine::dump_send_cmio_response(reason, data, length, cpp_revert_root_hash,
-        std::span<const unsigned char>{log, log_length}));
+    *dump = cm_set_temp_string(cartesi::machine::dump_send_cmio_response(reason, data, length,
+        std::span<const unsigned char>{log, log_length}, cpp_revert_root_hash));
     return cm_result_success();
 } catch (...) {
     if (dump != nullptr) {

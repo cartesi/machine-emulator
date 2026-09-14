@@ -1118,7 +1118,7 @@ CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reaso
 /// \param dump Receives the dump as a string, guaranteed to remain valid only until the next CM_API function is
 /// called from the same thread. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
-/// \details The dump is meant for people: its format is not part of the stable API.
+/// \details No caller claim is checked. The dump is meant for people: its format is not part of the stable API.
 CM_API cm_error cm_dump_step_uarch(const uint8_t *log, uint64_t log_length, uint64_t skip_count,
     uint64_t uarch_cycle_count, const char **dump);
 

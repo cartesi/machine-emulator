@@ -59,7 +59,8 @@ for _, case in ipairs({
         hashes[#hashes + 1] = padding
         return { hashes = hashes, break_reason = cartesi.BREAK_REASON_MCYCLE_OVERFLOW, mcycle_phase = 0 }
     end
-    local builder = prt.make_mcycle_computation_hash_builder(case.log2_period, nil, machine)
+    local cache = { freeze = function() end }
+    local builder = prt.make_mcycle_computation_hash_builder(case.log2_period, cache, machine)
     builder:begin_epoch()
     builder:begin_input(0)
     local ok, reason = pcall(builder.run, builder, cartesi.MCYCLE_MAX)
@@ -355,6 +356,7 @@ do
         local inputs = { input_hash }
         local player = case.make(inputs, cache)
         local claim = player:commit_mcycle_claim()
+        assert(cache.frozen, player.label .. " did not freeze the epoch's cache")
         local proof = claim.final_state_hash_proof
         assert(proof.target_address == (1 << geometry.mcycle_height) - 1)
         assert(proof.target_hash == case.final_hash, player.label .. " claimed the wrong final state")
@@ -392,6 +394,13 @@ end
 
 do
     local cache <close> = prt.new_machine_cache(new_fake_machine("0"), 5, 1)
+    local rejected = new_fake_machine("rejected")
+    rejected.fail_clone = true
+    function rejected.receive_cmio_request()
+        return cartesi.HTIF_YIELD_CMD_MANUAL, cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED, ""
+    end
+    cache:consider(1, rejected)
+    assert(#cache.checkpoints == 1, "cache retained a rejected input")
     for input_index = 1, 5 do
         cache:consider(input_index, new_fake_machine(tostring(input_index)))
     end
@@ -422,6 +431,23 @@ do
     local machine, owner <close> = cache:clone_at_input_boundary(7, noop) -- luacheck: ignore 211
     assert(machine:get_root_hash() == "6")
     assert(not pcall(cache.consider, cache, 8, new_fake_machine("8")), "cache accepted an out-of-order checkpoint")
+    cache:freeze()
+    local checkpoints = { table.unpack(cache.checkpoints) }
+    local input_gap, replace_cursor = cache.input_gap, cache.replace_cursor
+    local ignored = new_fake_machine("ignored")
+    ignored.fail_clone = true
+    function ignored.receive_cmio_request()
+        error("frozen cache inspected an offered machine")
+    end
+    cache:consider(1, ignored)
+    cache:consider(9, ignored)
+    assert(#cache.checkpoints == #checkpoints, "frozen cache changed its checkpoint count")
+    for i, checkpoint in ipairs(checkpoints) do
+        assert(cache.checkpoints[i] == checkpoint, "frozen cache replaced a checkpoint")
+    end
+    assert(cache.input_gap == input_gap and cache.replace_cursor == replace_cursor, "frozen cache changed its policy")
+    local replay, replay_owner <close> = cache:clone_at_input_boundary(7, noop) -- luacheck: ignore 211
+    assert(replay:get_root_hash() == "6", "frozen cache cannot replay from a retained checkpoint")
 end
 
 do

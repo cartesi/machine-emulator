@@ -8,6 +8,7 @@ local util = require("cartesi.util")
 local keccak = cartesi.keccak256
 local usaturating_add = prt.usaturating_add
 local is_target_mcycle = prt.is_target_mcycle
+local is_yielded_manual = prt.is_yielded_manual
 local is_at_fixed_point = prt.is_at_fixed_point
 
 -- Machine and computation-hash wrappers belong to the strategies, not the honest
@@ -274,26 +275,19 @@ local function new_mcycle_liar(builder, insert)
                     )
                     self.input_bundle_count = self.max_bundles_per_input
                 end
-                prt.consider_input_boundary_machine(self, collected.break_reason)
+                if is_yielded_manual(collected.break_reason) then
+                    self.machine_cache:consider(self.input_index + 1, self.machine)
+                end
             until not is_target_mcycle(collected.break_reason) or self.machine:read_reg("mcycle") == mcycle_end
             self.mcycle_phase, self.partial_bundle = collected.mcycle_phase, collected.partial_bundle
             return collected.break_reason
         end,
         end_epoch = function(self)
-            self:end_input()
+            assert(self.input_bundle_count == 0, "mcycle computation hash input was not closed")
             if self.bundle_count < self.max_bundle_count then
-                if not self.pad_bundle then
-                    local collected = self.machine:collect_mcycle_root_hashes(
-                        self.machine:read_reg("mcycle"),
-                        self.log2_period,
-                        0,
-                        self.bundle_height
-                    )
-                    assert(is_at_fixed_point(collected.break_reason), "epoch ended outside a fixed point")
-                    self.pad_bundle = collected.hashes[#collected.hashes]
-                end
                 insert(self, self.pad_bundle, self.max_bundle_count - self.bundle_count, self.bundle_height)
             end
+            self.machine_cache:freeze()
             return self.frontier
         end,
     })
@@ -416,7 +410,6 @@ local function new_quitter(geometry, inputs, cache, options)
     local make = options.make_mcycle_computation_hash_builder or prt.make_mcycle_computation_hash_builder
     options.make_mcycle_computation_hash_builder = function(log2_period, c, machine)
         local builder = make(log2_period, c, machine)
-        builder.cache_machine = false
         return new_mcycle_liar(builder, function(self, _, count, height)
             local fake_hash = keccak(options.seed or "quitter")
             for _ = 1, height do

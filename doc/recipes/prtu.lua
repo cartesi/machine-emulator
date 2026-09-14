@@ -129,8 +129,8 @@ local function new_tree(height, bundle_height, forest, collect_bundle)
 end
 
 -- The other turn in a two-claim match.
-local function get_other_turn(turn)
-    return 3 - turn
+local function get_other_turn_index(turn_index)
+    return 3 - turn_index
 end
 
 --------------------------------------------------------------------------------
@@ -213,7 +213,7 @@ function story.report_state_transition(
         narrate(get_match_stream(match), "Neither claim committed to it. Both are eliminated.")
         return
     end
-    local losing_claim_index = get_other_turn(winning_claim_index)
+    local losing_claim_index = get_other_turn_index(winning_claim_index)
     local loser = match.claims[losing_claim_index]
     narrate(
         get_match_stream(match),
@@ -247,7 +247,7 @@ function story.report_uarch_result(mcycle_match, winner, next_state_hashes)
         end
     end
     assert(winning_claim_index, "uarch winner did not settle either mcycle claim")
-    local loser = mcycle_match.claims[get_other_turn(winning_claim_index)]
+    local loser = mcycle_match.claims[get_other_turn_index(winning_claim_index)]
     narrate(
         get_match_stream(mcycle_match),
         "The uarch winner confirms %s. Claim %s is eliminated.",
@@ -260,7 +260,7 @@ function story.report_divergence(match, divergence)
     narrate(
         get_match_stream(match),
         "The claims diverge at state %d: %s against %s, from the agreed state %s.",
-        divergence.state_index,
+        divergence.leaf_index,
         format_short_hash(divergence.next_state_hashes[1]),
         format_short_hash(divergence.next_state_hashes[2]),
         format_short_hash(divergence.agreed_state_hash)
@@ -268,8 +268,8 @@ function story.report_divergence(match, divergence)
 end
 
 function story.report_timeout_win(match)
-    local turn_claim = match.claims[match.turn]
-    local other_claim = match.claims[get_other_turn(match.turn)]
+    local turn_claim = match.claims[match.turn_index]
+    local other_claim = match.claims[get_other_turn_index(match.turn_index)]
     narrate(
         get_match_stream(match),
         "Nobody opened claim %s. Claim %s claims a timeout win.",
@@ -1495,7 +1495,7 @@ return {
     format_short_hash = format_short_hash,
     narrate = narrate,
     new_tree = new_tree,
-    get_other_turn = get_other_turn,
+    get_other_turn_index = get_other_turn_index,
     new_server = new_server, -- prt-test.lua exercises the transport primitives directly
     answer_event = answer_event,
     run_server = run_server,

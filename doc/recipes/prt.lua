@@ -1019,8 +1019,16 @@ end
 -- As the epoch advances, doubles the input gap and replaces closely spaced checkpoints with later
 -- ones, preserving the initial machine so every input boundary remains reachable.
 -- Only the forward claim build offers checkpoints, so the list remains ordered.
+-- Callers offer manual yields. Only an accepted yield is the next input's virgin boundary;
+-- rejection rolls back to the input's own boundary and offers no new checkpoint.
 function machine_cache_meta.__index:consider(input_index, machine)
     assert(not self.closed, "machine cache is closed")
+    if self.frozen then
+        return
+    end
+    if not is_rx_accepted(receive_cmio_request(machine)) then
+        return
+    end
     local checkpoints = self.checkpoints
     local latest = checkpoints[#checkpoints]
     assert(input_index > latest.input_index, "machine checkpoints are not ordered")
@@ -1058,6 +1066,12 @@ function machine_cache_meta.__index:consider(input_index, machine)
         machine = clone,
         owner = owner:move(),
     }
+end
+
+-- Keep the completed epoch's checkpoints available for replay without accepting new offers.
+function machine_cache_meta.__index:freeze()
+    assert(not self.closed, "machine cache is closed")
+    self.frozen = true
 end
 
 -- Selection is private: callers always receive the requested virgin boundary, not merely the
@@ -1180,20 +1194,26 @@ local function mcycle_computation_hash_push_collected(builder, collected)
     hash_tree.frontier_forest_append(builder.frontier, collected.hashes, 1, count, builder.bundle_height)
     builder.bundle_count = builder.bundle_count + count
     builder.input_bundle_count = builder.input_bundle_count + count
-    if not at_fixed_point then
-        return
+    if at_fixed_point then
+        local pad_count = builder.max_bundles_per_input - builder.input_bundle_count
+        hash_tree.frontier_forest_pad_back(builder.frontier, builder.pad_bundle, pad_count, builder.bundle_height)
+        builder.bundle_count = builder.bundle_count + pad_count
+        builder.input_bundle_count = builder.max_bundles_per_input
     end
-    local pad_count = builder.max_bundles_per_input - builder.input_bundle_count
-    hash_tree.frontier_forest_pad_back(builder.frontier, builder.pad_bundle, pad_count, builder.bundle_height)
-    builder.bundle_count = builder.bundle_count + pad_count
-    builder.input_bundle_count = builder.max_bundles_per_input
 end
 
 local function mcycle_computation_hash_begin_epoch(builder)
     builder.frontier = hash_tree.frontier_forest(builder.height, "keccak256")
     builder.bundle_count = 0
-    builder.input_bundle_count = nil
-    builder.pad_bundle = nil
+    builder.input_bundle_count = 0
+    local collected = builder.machine:collect_mcycle_root_hashes(
+        builder.machine:read_reg("mcycle"),
+        builder.log2_period,
+        0,
+        builder.bundle_height
+    )
+    assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash started outside a fixed point")
+    builder.pad_bundle = collected.hashes[#collected.hashes]
 end
 
 local function mcycle_computation_hash_begin_input(builder, input_index)
@@ -1205,18 +1225,6 @@ local function mcycle_computation_hash_begin_input(builder, input_index)
     builder.input_bundle_count = 0
     builder.mcycle_phase = 0
     builder.partial_bundle = nil
-end
-
--- Only the forward build offers checkpoints. An accepted yield is the next input's virgin
--- boundary. A rejected yield offers nothing, since the state after it is the input's own boundary.
-local function consider_input_boundary_machine(builder, break_reason)
-    if not builder.cache_machine or not is_yielded_manual(break_reason) then
-        return
-    end
-    local yield_reason = receive_cmio_request(builder.machine)
-    if is_rx_accepted(yield_reason) then
-        builder.machine_cache:consider(builder.input_index + 1, builder.machine)
-    end
 end
 
 local function mcycle_computation_hash_run(builder, mcycle_end)
@@ -1232,34 +1240,24 @@ local function mcycle_computation_hash_run(builder, mcycle_end)
             collected.partial_bundle
         )
         mcycle_computation_hash_push_collected(builder, collected)
-        consider_input_boundary_machine(builder, collected.break_reason)
+        if is_yielded_manual(collected.break_reason) then
+            builder.machine_cache:consider(builder.input_index + 1, builder.machine)
+        end
     until not is_target_mcycle(collected.break_reason) or builder.machine:read_reg("mcycle") == mcycle_end
     builder.mcycle_phase, builder.partial_bundle = collected.mcycle_phase, collected.partial_bundle
     return collected.break_reason
 end
 
 local function mcycle_computation_hash_end_input(builder)
-    if builder.input_bundle_count == nil then
-        return
-    end
     assert(builder.input_bundle_count == builder.max_bundles_per_input, "mcycle computation hash input is incomplete")
-    builder.input_bundle_count = nil
+    builder.input_bundle_count = 0
 end
 
 local function mcycle_computation_hash_end_epoch(builder)
-    builder:end_input()
+    assert(builder.input_bundle_count == 0, "mcycle computation hash input was not closed")
+    builder.machine_cache:freeze()
     if builder.bundle_count == builder.max_bundle_count then
         return builder.frontier
-    end
-    if not builder.pad_bundle then
-        local collected = builder.machine:collect_mcycle_root_hashes(
-            builder.machine:read_reg("mcycle"),
-            builder.log2_period,
-            0,
-            builder.bundle_height
-        )
-        assert(is_at_fixed_point(collected.break_reason), "mcycle computation hash ended outside a fixed point")
-        builder.pad_bundle = collected.hashes[#collected.hashes]
     end
     hash_tree.frontier_forest_pad_back(
         builder.frontier,
@@ -1287,7 +1285,6 @@ local function make_mcycle_computation_hash_builder(log2_mcycles_per_period, mac
         log2_period = log2_mcycles_per_period,
         collection_chunk_size = mcycle_hashes_collection_chunk_size(log2_mcycles_per_period, LOG2_BUNDLE_MCYCLE_COUNT),
         max_bundles_per_input = (1 << log2_periods_per_input) >> LOG2_BUNDLE_MCYCLE_COUNT,
-        cache_machine = true,
         begin_epoch = mcycle_computation_hash_begin_epoch,
         begin_input = mcycle_computation_hash_begin_input,
         run = mcycle_computation_hash_run,
@@ -1310,42 +1307,66 @@ local function uarch_hashes_collection_chunk_size(log2_bundle_uarch_cycle_count)
     return math.max(1, (1 << LOG2_HASHES_PER_COLLECTION) // (cycle_bundle_count + 2))
 end
 
--- Reconstruct the bundle at a zero-based index within one mcycle. The inclusive
--- hashes[first..last] range contains its execution hashes, halted hash, and reset hash.
-local function make_uarch_bundle(bundle_index, hashes, first, last)
+-- Reconstruct the bundle at a zero-based index within one mcycle. The inclusive range
+-- hashes[first_mcycle_hash_index..last_mcycle_hash_index] contains its execution hashes, halted hash, and reset hash.
+local function make_uarch_bundle(bundle_index, hashes, first_mcycle_hash_index, last_mcycle_hash_index)
     local forest = hash_tree.frontier_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, "keccak256")
-    local halt_hash, reset_hash = hashes[last - 1], hashes[last]
-    local cycles_per_mcycle = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    local bundle_start = bundle_index << LOG2_BUNDLE_UARCH_CYCLE_COUNT
+    local halt_hash, reset_hash = hashes[last_mcycle_hash_index - 1], hashes[last_mcycle_hash_index]
+    local uarch_cycles_per_mcycle = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+    local bundle_start = first_mcycle_hash_index + (bundle_index << LOG2_BUNDLE_UARCH_CYCLE_COUNT)
     local bundle_leaf_count = 1 << LOG2_BUNDLE_UARCH_CYCLE_COUNT
-    local reset_count = bundle_start + bundle_leaf_count == cycles_per_mcycle and 1 or 0
+    local reset_padding_count = bundle_start + bundle_leaf_count == first_mcycle_hash_index + uarch_cycles_per_mcycle
+            and 1
+        or 0
 
-    -- Copy the available array entries, including the first halted hash when it falls in this bundle.
-    local array_count = math.min(bundle_leaf_count - reset_count, math.max(0, last - first - bundle_start))
-    if array_count > 0 then
-        hash_tree.frontier_forest_append(forest, hashes, first + bundle_start, first + bundle_start + array_count - 1)
+    -- Copy the transient prefix, including the first halted hash when it falls in this bundle.
+    local transient_count_wanted = bundle_leaf_count - reset_padding_count
+    local transient_count_available = math.max(0, last_mcycle_hash_index - bundle_start)
+    local transient_count = math.min(transient_count_wanted, transient_count_available)
+    if transient_count > 0 then
+        hash_tree.frontier_forest_append(forest, hashes, bundle_start, bundle_start + transient_count - 1)
     end
 
     -- Add only the additional copies needed to fill the bundle before reset.
-    local padding_count = bundle_leaf_count - array_count - reset_count
-    if padding_count > 0 then
-        hash_tree.frontier_forest_pad_back(forest, halt_hash, padding_count)
+    local halt_padding_count = bundle_leaf_count - transient_count - reset_padding_count
+    if halt_padding_count > 0 then
+        hash_tree.frontier_forest_pad_back(forest, halt_hash, halt_padding_count)
     end
-    if reset_count > 0 then
+    if reset_padding_count > 0 then
         hash_tree.frontier_forest_push_back(forest, reset_hash)
     end
     return forest
 end
 
 -- Append execution bundles, halt repetitions, and the reset-ending bundle for one mcycle.
-local function uarch_computation_hash_push_mcycle(builder, frontier, hashes, first, last)
+local function uarch_computation_hash_push_mcycle(
+    builder,
+    frontier,
+    hashes,
+    first_mcycle_hash_index,
+    last_mcycle_hash_index
+)
     local height = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - builder.bundle_height
-    local capacity = 1 << height
-    local real = last - first - 1
-    assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
-    hash_tree.frontier_forest_append(frontier, hashes, first, last - 2, builder.bundle_height)
-    hash_tree.frontier_forest_pad_back(frontier, hashes[last - 1], capacity - 1 - real, builder.bundle_height)
-    hash_tree.frontier_forest_push_back(frontier, hashes[last], builder.bundle_height)
+    local bundles_per_mcycle = 1 << height
+    local transient_bundle_count = last_mcycle_hash_index - first_mcycle_hash_index - 1
+    assert(
+        transient_bundle_count >= 0 and transient_bundle_count <= bundles_per_mcycle - 1,
+        "too many uarch cycles in an instruction"
+    )
+    hash_tree.frontier_forest_append(
+        frontier,
+        hashes,
+        first_mcycle_hash_index,
+        last_mcycle_hash_index - 2,
+        builder.bundle_height
+    )
+    hash_tree.frontier_forest_pad_back(
+        frontier,
+        hashes[last_mcycle_hash_index - 1],
+        bundles_per_mcycle - 1 - transient_bundle_count,
+        builder.bundle_height
+    )
+    hash_tree.frontier_forest_push_back(frontier, hashes[last_mcycle_hash_index], builder.bundle_height)
 end
 
 -- Append the ordinary mcycle groups, then repeat the final group at a fixed point.
@@ -1930,8 +1951,8 @@ if ... == "prt" then
         umin = umin,
         usaturating_add = usaturating_add,
         is_target_mcycle = is_target_mcycle,
+        is_yielded_manual = is_yielded_manual,
         is_at_fixed_point = is_at_fixed_point,
-        consider_input_boundary_machine = consider_input_boundary_machine,
         uarch_computation_hash_push_mcycle = uarch_computation_hash_push_mcycle,
         new_machine_cache = new_machine_cache,
         player_handlers = handlers,

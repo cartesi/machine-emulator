@@ -72,7 +72,8 @@ for _, case in ipairs({
         builder:end_input()
         local forest = builder:end_epoch()
         for i = 0, builder.max_bundles_per_input - 1 do
-            local obtained = hash_tree.frontier_forest_get_node(forest, i << builder.bundle_height, builder.bundle_height)
+            local obtained =
+                hash_tree.frontier_forest_get_node(forest, i << builder.bundle_height, builder.bundle_height)
             assert(obtained == (i < case.ordinary and ordinary or padding), "fixed-point padding changed a bundle")
         end
         local last_leaf = (builder.max_bundle_count - 1) << builder.bundle_height
@@ -102,19 +103,20 @@ local function new_bundle_player(machine)
         end
         return cartesi.HTIF_YIELD_CMD_AUTOMATIC, cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT, ""
     end
-    machine.run = machine.run or function(self, target)
-        self.mcycle = target
-        return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
-    end
+    machine.run = machine.run
+        or function(self, target)
+            self.mcycle = target
+            return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
+        end
     local cache = {}
-    function cache:clone_at_input_boundary(input_index)
+    function cache.clone_at_input_boundary(_, input_index)
         assert(input_index == 0)
         return machine
     end
     function cache:snapshot()
         self.saved_mcycle, self.saved_root = machine.mcycle, machine.root_hash
     end
-    function cache:commit() end
+    function cache.commit() end
     function cache:revert()
         machine.mcycle, machine.root_hash = self.saved_mcycle, self.saved_root
         machine.rejected, machine.delivered, machine.rolled_back = false, false, true
@@ -126,7 +128,7 @@ end
 for _, count in ipairs({ 0, 3, 15, 17 }) do
     local ordinary, padding = keccak("ordinary sample"), keccak("padding sample")
     local machine = {}
-    function machine:collect_mcycle_root_hashes(target, log2_period, phase, height)
+    function machine.collect_mcycle_root_hashes(_, target, log2_period, phase, height)
         assert(target == 128 * 1024 and log2_period == 10 and phase == 0 and height == 0)
         local hashes = {}
         for i = 1, count do
@@ -291,10 +293,82 @@ local function new_fake_machine(root_hash, mcycle, counts)
         assert(revert_root_hash == self.root_hash, "revert root hash does not match the machine root hash")
         self.root_hash = data
     end
+    function machine:collect_mcycle_root_hashes(_, _, phase, bundle_height)
+        local hash = self.root_hash
+        for _ = 1, bundle_height do
+            hash = keccak(hash, hash)
+        end
+        return { hashes = { hash }, mcycle_phase = phase, break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY }
+    end
     return setmetatable(machine, { __close = machine.shutdown_server })
 end
 
 local function noop() end
+
+-- Construct actual strategy claims, including make_claim's opening of the final bundle.
+-- A fabricated claim must supply matching leaves before it can even be posted.
+do
+    local geometry = prt.new_geometry(10)
+    local input_hash, forged_hash = keccak("input"), keccak("forged")
+    local last_input = (1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) - 1
+    for _, case in ipairs({
+        {
+            make = function(inputs, cache)
+                return prt.new_player(geometry, inputs, cache)
+            end,
+            final_hash = input_hash,
+        },
+        {
+            make = function(inputs, cache)
+                return dishonest.new_forger(geometry, inputs, cache, 0, forged_hash)
+            end,
+            final_hash = forged_hash,
+        },
+        {
+            make = function(inputs, cache)
+                return dishonest.new_tamperer(geometry, inputs, cache, 0, 100)
+            end,
+            final_hash = input_hash,
+        },
+        {
+            make = function(inputs, cache)
+                return dishonest.new_fabulist(geometry, inputs, cache, last_input, geometry.periods_per_input - 1)
+            end,
+            final_hash = keccak("fabulist"),
+        },
+        {
+            make = function(inputs, cache)
+                return dishonest.new_quitter(geometry, inputs, cache)
+            end,
+            final_hash = keccak("quitter"),
+            quitter = true,
+        },
+        {
+            make = function(inputs, cache)
+                return dishonest.new_quitter(geometry, inputs, cache, { seed = "custom quitter" })
+            end,
+            final_hash = keccak("custom quitter"),
+            quitter = true,
+        },
+    }) do
+        local cache <close> = prt.new_machine_cache(new_fake_machine(keccak("initial")))
+        local inputs = { input_hash }
+        local player = case.make(inputs, cache)
+        local claim = player:commit_mcycle_claim()
+        local proof = claim.final_state_hash_proof
+        assert(proof.target_address == (1 << geometry.mcycle_height) - 1)
+        assert(proof.target_hash == case.final_hash, player.label .. " claimed the wrong final state")
+        assert(proof.root_hash == keccak(claim.computation_hash_left, claim.computation_hash_right))
+        hash_tree.verify_slice(proof)
+        if case.quitter then
+            local expected_root = case.final_hash
+            for _ = 1, geometry.mcycle_height do
+                expected_root = keccak(expected_root, expected_root)
+            end
+            assert(proof.root_hash == expected_root and player.done, "quitter did not post its fabricated claim")
+        end
+    end
+end
 
 -- All builders expose machine methods with the native receiver, but not machine data fields.
 do

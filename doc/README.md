@@ -9602,7 +9602,15 @@ one period, instruction by instruction, through
 `machine:collect_uarch_cycle_root_hashes()`, whose stream already
 carries the halt repetitions compressed and the reset hashes marked.
 Both computation-hash builders implement `begin_epoch`, `begin_input`,
-`run`, `end_input`, and `end_epoch`. The shared
+`run`, `end_input`, and `end_epoch`. Bundle collection replays to the
+selected range with a null builder, then collects directly from the
+machine into a local forest. Mcycle bundle collection uses `run_to_stop`
+with a table containing only a `run` closure; uarch bundle collection
+needs a single collector call for its containing mcycle. Uarch bundle
+collection captures the rejection tail before input delivery. If replay
+rejects before the selected mcycle, the input driver restores the
+boundary machine before collection; if the collected instruction
+rejects, the machine collector uses the saved tail. The shared
 `run_advance_state_epoch` driver follows the CLI’s naming and delegates
 each input’s delivery, automatic yields, acceptance, and rollback to
 `run_advance_state_input`; plain replay and output collection use that
@@ -9647,8 +9655,8 @@ contract inputs. The tamperer configures its cache to wrap execution
 clones and preserve private strategy state on rollback. Retained
 checkpoints remain native machines. The fabulist replaces a sample as it
 enters a computation hash, including when that sample lies in repeated
-padding. Bundle collection uses the selected factories too, and the
-ordinary claim tree authenticates every opened bundle.
+padding. Dishonest strategies can wrap the player’s bundle-collection
+methods, and the ordinary claim tree authenticates every opened bundle.
 
 ### The tournament
 

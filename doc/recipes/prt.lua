@@ -1191,7 +1191,7 @@ local function mcycle_computation_hash_push_collected(builder, collected)
         count <= builder.max_bundles_per_input - builder.input_bundle_count,
         "mcycle collection exceeds the input's bundle capacity"
     )
-    hash_tree.frontier_forest_append(builder.frontier, collected.hashes, 1, count, builder.bundle_height)
+    hash_tree.frontier_forest_append(builder.frontier, collected.hashes, 1, count + 1, builder.bundle_height)
     builder.bundle_count = builder.bundle_count + count
     builder.input_bundle_count = builder.input_bundle_count + count
     if at_fixed_point then
@@ -1307,24 +1307,23 @@ local function uarch_hashes_collection_chunk_size(log2_bundle_uarch_cycle_count)
     return math.max(1, (1 << LOG2_HASHES_PER_COLLECTION) // (cycle_bundle_count + 2))
 end
 
--- Reconstruct the bundle at a zero-based index within one mcycle. The inclusive range
--- hashes[first_mcycle_hash_index..last_mcycle_hash_index] contains its execution hashes, halted hash, and reset hash.
-local function make_uarch_bundle(bundle_index, hashes, first_mcycle_hash_index, last_mcycle_hash_index)
+-- Reconstruct the bundle at a zero-based index within one mcycle. The half-open range
+-- [mcycle_hashes_begin, mcycle_hashes_end) contains its execution hashes, halted hash, and reset hash.
+local function make_uarch_bundle(bundle_index, hashes, mcycle_hashes_begin, mcycle_hashes_end)
     local forest = hash_tree.frontier_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, "keccak256")
-    local halt_hash, reset_hash = hashes[last_mcycle_hash_index - 1], hashes[last_mcycle_hash_index]
+    local halt_hash, reset_hash = hashes[mcycle_hashes_end - 2], hashes[mcycle_hashes_end - 1]
     local uarch_cycles_per_mcycle = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    local bundle_start = first_mcycle_hash_index + (bundle_index << LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+    local bundle_start = mcycle_hashes_begin + (bundle_index << LOG2_BUNDLE_UARCH_CYCLE_COUNT)
     local bundle_leaf_count = 1 << LOG2_BUNDLE_UARCH_CYCLE_COUNT
-    local reset_padding_count = bundle_start + bundle_leaf_count == first_mcycle_hash_index + uarch_cycles_per_mcycle
-            and 1
+    local reset_padding_count = bundle_start + bundle_leaf_count == mcycle_hashes_begin + uarch_cycles_per_mcycle and 1
         or 0
 
     -- Copy the transient prefix, including the first halted hash when it falls in this bundle.
     local transient_count_wanted = bundle_leaf_count - reset_padding_count
-    local transient_count_available = math.max(0, last_mcycle_hash_index - bundle_start)
+    local transient_count_available = math.max(0, mcycle_hashes_end - 1 - bundle_start)
     local transient_count = math.min(transient_count_wanted, transient_count_available)
     if transient_count > 0 then
-        hash_tree.frontier_forest_append(forest, hashes, bundle_start, bundle_start + transient_count - 1)
+        hash_tree.frontier_forest_append(forest, hashes, bundle_start, bundle_start + transient_count)
     end
 
     -- Add only the additional copies needed to fill the bundle before reset.
@@ -1339,22 +1338,16 @@ local function make_uarch_bundle(bundle_index, hashes, first_mcycle_hash_index, 
 end
 
 -- Append execution bundles, halt repetitions, and the reset-ending bundle for one mcycle.
-local function uarch_computation_hash_push_mcycle(
-    builder,
-    frontier,
-    hashes,
-    first_mcycle_hash_index,
-    last_mcycle_hash_index
-)
-    local halt_hash, reset_hash = hashes[last_mcycle_hash_index - 1], hashes[last_mcycle_hash_index]
+local function uarch_computation_hash_push_mcycle(builder, frontier, hashes, mcycle_hashes_begin, mcycle_hashes_end)
+    local halt_hash, reset_hash = hashes[mcycle_hashes_end - 2], hashes[mcycle_hashes_end - 1]
     local height = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - builder.bundle_height
     local bundles_per_mcycle = 1 << height
-    local transient_bundle_count = last_mcycle_hash_index - first_mcycle_hash_index - 1
+    local transient_bundle_count = mcycle_hashes_end - mcycle_hashes_begin - 2
     hash_tree.frontier_forest_append(
         frontier,
         hashes,
-        first_mcycle_hash_index,
-        last_mcycle_hash_index - 2,
+        mcycle_hashes_begin,
+        mcycle_hashes_end - 2,
         builder.bundle_height
     )
     hash_tree.frontier_forest_pad_back(
@@ -1381,7 +1374,7 @@ local function uarch_computation_hash_push_collected(builder, collected)
     end
     assert(count <= remaining, "uarch collection exceeds the claim's mcycle capacity")
     for i = 1, count do
-        uarch_computation_hash_push_mcycle(builder, builder.frontier, collected.hashes, offsets[i], offsets[i + 1] - 1)
+        uarch_computation_hash_push_mcycle(builder, builder.frontier, collected.hashes, offsets[i], offsets[i + 1])
     end
     builder.bundle_count = builder.bundle_count + (count << log2_bundles_per_mcycle)
     if not at_fixed_point then
@@ -1393,7 +1386,7 @@ local function uarch_computation_hash_push_collected(builder, collected)
         pad_frontier,
         collected.hashes,
         offsets[available],
-        offsets[available + 1] - 1
+        offsets[available + 1]
     )
     hash_tree.frontier_forest_pad_back(builder.frontier, pad_frontier, remaining - count)
     builder.bundle_count = builder.max_bundle_count
@@ -1474,7 +1467,6 @@ local function make_uarch_cycle_computation_hash_builder(log2_mcycles_per_period
         push_collected = uarch_computation_hash_push_collected,
         end_input = uarch_computation_hash_end_input,
         end_epoch = function(self)
-            self:end_input()
             return self.frontier
         end,
     }, computation_hash_meta)
@@ -1758,7 +1750,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         end
         assert(count <= max_leaf_count, "mcycle collection exceeds the bundle's leaf capacity")
         local forest = hash_tree.frontier_forest(LOG2_BUNDLE_MCYCLE_COUNT, "keccak256")
-        hash_tree.frontier_forest_append(forest, hashes, 1, count)
+        hash_tree.frontier_forest_append(forest, hashes, 1, count + 1)
         if at_fixed_point then
             hash_tree.frontier_forest_pad_back(forest, hashes[#hashes], max_leaf_count - count)
         end
@@ -1810,7 +1802,7 @@ local function new_player(geometry, inputs, machine_cache, options)
             revert_uarch_tail
         )
         local offsets = collected.mcycle_hash_offsets
-        return make_uarch_bundle(bundle_index % bundles_per_mcycle, collected.hashes, offsets[1], offsets[2] - 1)
+        return make_uarch_bundle(bundle_index % bundles_per_mcycle, collected.hashes, offsets[1], offsets[2])
     end
     -- docs:end collect_uarch_cycle_bundle
 

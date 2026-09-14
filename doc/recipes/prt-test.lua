@@ -39,14 +39,10 @@ do
 end
 
 -- Collector results include a final padding root at a fixed point. It is not an extra
--- ordinary bundle when the requested coverage is already full. Test claims and reconstructed bundles.
+-- ordinary bundle when the requested coverage is already full.
 for _, case in ipairs({
     { log2_period = 44, ordinary = 1 }, -- one full input bundle, plus the unused padding descriptor
     { log2_period = 43, ordinary = 1 }, -- one completed bundle, followed by one padding bundle
-    { log2_period = 10, bundle_index = 7, ordinary = 15 }, -- final individual sample supplied by padding
-    { log2_period = 10, bundle_index = 7, ordinary = 3 }, -- fixed point inside the reconstructed bundle
-    { log2_period = 10, bundle_index = 7, ordinary = 0 }, -- replay already reached a fixed point
-    { log2_period = 10, bundle_index = 7, ordinary = 17, invalid = true },
     { log2_period = 44, ordinary = 2, invalid = true }, -- ordinary overcollection must fail
 }) do
     local ordinary, padding = keccak("ordinary bundle"), keccak("padding bundle")
@@ -63,98 +59,139 @@ for _, case in ipairs({
         hashes[#hashes + 1] = padding
         return { hashes = hashes, break_reason = cartesi.BREAK_REASON_MCYCLE_OVERFLOW, mcycle_phase = 0 }
     end
-    local builder, height, count, last_leaf
-    if case.bundle_index ~= nil then
-        builder = prt.make_mcycle_bundle_builder(case.log2_period, machine, case.bundle_index)
-        height, count, last_leaf = 0, 1 << LOG2_BUNDLE_MCYCLE_COUNT, (1 << LOG2_BUNDLE_MCYCLE_COUNT) - 1
-    else
-        builder = prt.make_mcycle_computation_hash_builder(case.log2_period, nil, machine)
-        height, count = builder.bundle_height, builder.max_bundles_per_input
-        last_leaf = (builder.max_bundle_count - 1) << height
-    end
+    local builder = prt.make_mcycle_computation_hash_builder(case.log2_period, nil, machine)
     builder:begin_epoch()
     builder:begin_input(0)
     local ok, reason = pcall(builder.run, builder, cartesi.MCYCLE_MAX)
     if case.invalid then
-        local expected = case.bundle_index ~= nil and "exceeds the bundle's leaf capacity"
-            or "exceeds the input's bundle capacity"
-        assert(not ok and tostring(reason):find(expected, 1, true))
-        assert((builder.leaf_count or builder.bundle_count) == 0, "overcollection changed the forest before failing")
+        assert(not ok and tostring(reason):find("exceeds the input's bundle capacity", 1, true))
+        assert(builder.bundle_count == 0, "overcollection changed the forest before failing")
     else
         assert(ok and reason == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
-        if case.bundle_index ~= nil then
-            assert(builder.leaf_count == count)
-        else
-            assert(builder.input_bundle_count == count)
-        end
+        assert(builder.input_bundle_count == builder.max_bundles_per_input)
         builder:end_input()
         local forest = builder:end_epoch()
-        for i = 0, count - 1 do
-            local obtained = hash_tree.frontier_forest_get_node(forest, i << height, height)
+        for i = 0, builder.max_bundles_per_input - 1 do
+            local obtained = hash_tree.frontier_forest_get_node(forest, i << builder.bundle_height, builder.bundle_height)
             assert(obtained == (i < case.ordinary and ordinary or padding), "fixed-point padding changed a bundle")
         end
+        local last_leaf = (builder.max_bundle_count - 1) << builder.bundle_height
         assert(
-            hash_tree.frontier_forest_get_node(forest, last_leaf, height) == padding,
+            hash_tree.frontier_forest_get_node(forest, last_leaf, builder.bundle_height) == padding,
             "fixed-point padding has the wrong final sample"
         )
     end
 end
 
--- A reconstructed mcycle bundle resumes across automatic yields and collector interruptions.
--- Input lifecycle calls must neither reset its phase nor discard already collected leaves.
-do
-    local first, middle, padding = keccak("first sample"), keccak("middle sample"), keccak("padding sample")
-    local machine = { mcycle = 0, calls = 0 }
+-- A minimal cache and input boundary for exercising the player's direct bundle collectors.
+local function new_bundle_player(machine)
+    machine.mcycle, machine.root_hash = 0, "virgin"
     function machine:read_reg(name)
         assert(name == "mcycle")
         return self.mcycle
     end
-    function machine:collect_mcycle_root_hashes(target, log2_period, phase, height)
-        assert(target == 32 and log2_period == 1 and height == 0)
-        self.calls = self.calls + 1
-        if self.calls == 1 then
-            assert(phase == 0)
-            self.mcycle = 3
-            return { hashes = { first }, mcycle_phase = 1, break_reason = cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY }
-        elseif self.calls == 2 then
-            assert(phase == 1)
-            self.mcycle = 6
-            return {
-                hashes = { middle, middle },
-                mcycle_phase = 0,
-                break_reason = cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
-            }
-        end
-        assert(self.calls == 3 and phase == 0)
-        self.mcycle = 7
-        return { hashes = { padding }, mcycle_phase = 0, break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY }
+    function machine:get_root_hash()
+        return self.root_hash
     end
-    local builder = prt.make_mcycle_bundle_builder(1, machine, 7)
-    assert(builder:run(32) == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY)
-    builder:begin_epoch()
-    builder:begin_input(0, 0)
-    builder:end_input()
-    assert(builder:run(32) == cartesi.BREAK_REASON_YIELDED_MANUALLY)
-    local forest = builder:end_epoch()
-    for i = 0, 15 do
-        local expected = i == 0 and first or (i < 3 and middle or padding)
-        assert(hash_tree.frontier_forest_get_node(forest, i, 0) == expected, "bundle collection lost its phase or samples")
+    function machine:send_cmio_response()
+        self.delivered, self.root_hash = true, "delivered"
+    end
+    function machine:receive_cmio_request()
+        if self.rejected then
+            return cartesi.HTIF_YIELD_CMD_MANUAL, cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED, ""
+        end
+        return cartesi.HTIF_YIELD_CMD_AUTOMATIC, cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT, ""
+    end
+    machine.run = machine.run or function(self, target)
+        self.mcycle = target
+        return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
+    end
+    local cache = {}
+    function cache:clone_at_input_boundary(input_index)
+        assert(input_index == 0)
+        return machine
+    end
+    function cache:snapshot()
+        self.saved_mcycle, self.saved_root = machine.mcycle, machine.root_hash
+    end
+    function cache:commit() end
+    function cache:revert()
+        machine.mcycle, machine.root_hash = self.saved_mcycle, self.saved_root
+        machine.rejected, machine.delivered, machine.rolled_back = false, false, true
+    end
+    return prt.new_player(prt.new_geometry(10), { "input" }, cache)
+end
+
+-- Direct mcycle collection pads both an already stopped machine and a partial bundle.
+for _, count in ipairs({ 0, 3, 15, 17 }) do
+    local ordinary, padding = keccak("ordinary sample"), keccak("padding sample")
+    local machine = {}
+    function machine:collect_mcycle_root_hashes(target, log2_period, phase, height)
+        assert(target == 128 * 1024 and log2_period == 10 and phase == 0 and height == 0)
+        local hashes = {}
+        for i = 1, count do
+            hashes[i] = ordinary
+        end
+        hashes[#hashes + 1] = padding
+        return { hashes = hashes, mcycle_phase = 0, break_reason = cartesi.BREAK_REASON_MCYCLE_OVERFLOW }
+    end
+    local player = new_bundle_player(machine)
+    local ok, forest = pcall(player.collect_mcycle_bundle, player, 7)
+    if count > 16 then
+        assert(not ok and tostring(forest):find("exceeds the bundle's leaf capacity", 1, true))
+    else
+        assert(ok, forest)
+        for i = 0, 15 do
+            local expected = i < count and ordinary or padding
+            assert(hash_tree.frontier_forest_get_node(forest, i, 0) == expected)
+        end
     end
 end
 
--- Uarch bundle collection must finish before end_input, even when replay rejects before
--- the selected mcycle. Exercise both the real prefix and the reset-ending bundle, and an
--- automatic yield during replay and at the end of collection.
+-- Preserve the mcycle phase across automatic yields and soft yields from a strategy.
+do
+    local first, middle, padding = keccak("first sample"), keccak("middle sample"), keccak("padding sample")
+    local machine = { calls = 0 }
+    function machine:collect_mcycle_root_hashes(target, log2_period, phase, height)
+        assert(target == 16384 and log2_period == 10 and height == 0)
+        self.calls = self.calls + 1
+        if self.calls == 1 then
+            assert(phase == 0)
+            self.mcycle = 1536
+            return { hashes = { first }, mcycle_phase = 512, break_reason = cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY }
+        elseif self.calls == 2 then
+            assert(phase == 512)
+            self.mcycle = 3072
+            return {
+                hashes = { middle, middle },
+                mcycle_phase = 0,
+                break_reason = cartesi.BREAK_REASON_YIELDED_SOFTLY,
+            }
+        end
+        assert(self.calls == 3 and phase == 0)
+        self.mcycle = 3584
+        return { hashes = { padding }, mcycle_phase = 0, break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY }
+    end
+    local forest = new_bundle_player(machine):collect_mcycle_bundle(0)
+    for i = 0, 15 do
+        local expected = i == 0 and first or (i < 3 and middle or padding)
+        assert(
+            hash_tree.frontier_forest_get_node(forest, i, 0) == expected,
+            "bundle collection lost its phase or samples"
+        )
+    end
+end
+
+-- Uarch replay uses the null input driver, including rollback before collection when
+-- rejection precedes the selected mcycle. Exercise the real prefix and reset-ending leaves,
+-- and automatic yields during replay and at the end of collection.
 for _, rejected in ipairs({ false, true }) do
     local bundles_per_mcycle = 1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
     for _, offset in ipairs({ 0, bundles_per_mcycle - 1 }) do
-        local first, second, halted, reset = keccak("uarch first"), keccak("uarch second"), keccak("halted"), keccak("reset")
+        local first, second, halted, reset =
+            keccak("uarch first"), keccak("uarch second"), keccak("halted"), keccak("reset")
         local tail = { first, second, halted, reset }
-        local machine = { mcycle = 0, replay_calls = 0, collection_calls = 0, delivered = false }
-        function machine:read_reg(name)
-            assert(name == "mcycle")
-            return self.mcycle
-        end
+        local machine = { replay_calls = 0, collection_calls = 0 }
         function machine:run(target)
             assert(self.delivered and target == 1026)
             self.replay_calls = self.replay_calls + 1
@@ -164,7 +201,7 @@ for _, rejected in ipairs({ false, true }) do
             end
             assert(self.replay_calls == 2)
             if rejected then
-                self.mcycle = 2
+                self.mcycle, self.rejected = 2, true
                 return cartesi.BREAK_REASON_YIELDED_MANUALLY
             end
             self.mcycle = target
@@ -172,22 +209,22 @@ for _, rejected in ipairs({ false, true }) do
         end
         function machine:collect_uarch_cycle_root_hashes(target, height, revert_tail)
             assert(height == 0)
-            if not self.delivered then
+            if not self.delivered and not self.rolled_back then
                 assert(target == cartesi.MCYCLE_MAX and revert_tail == nil)
                 return { hashes = tail }
             end
-            assert(target == 1027 and revert_tail == tail)
+            assert(revert_tail == tail)
             self.collection_calls = self.collection_calls + 1
             assert(self.collection_calls == 1, "completed bundle collected another mcycle")
             if rejected then
-                assert(self.mcycle == 2)
+                assert(self.rolled_back and self.mcycle == 0 and target == 1)
                 return {
                     hashes = tail,
                     mcycle_hash_offsets = { 1, 5 },
                     break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
                 }
             end
-            assert(self.mcycle == 1026)
+            assert(self.mcycle == 1026 and target == 1027)
             self.mcycle = target
             return {
                 hashes = tail,
@@ -195,26 +232,13 @@ for _, rejected in ipairs({ false, true }) do
                 break_reason = cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY,
             }
         end
-        local builder = prt.make_uarch_bundle_builder(10, machine, 1, 2 * bundles_per_mcycle + offset)
-        builder:begin_epoch()
-        builder:begin_input(0, 0)
-        machine.delivered = true
-        assert(builder:run(2048) == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY)
-        assert(machine.collection_calls == 0, "bundle collection ignored an automatic yield during replay")
-        local reason = builder:run(2048)
-        local expected_reason = rejected and cartesi.BREAK_REASON_YIELDED_MANUALLY
-            or cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
-        assert(reason == expected_reason)
-        local forest = builder:end_epoch()
+        local player = new_bundle_player(machine)
+        local forest = player:collect_uarch_cycle_bundle(0, 1, 2 * bundles_per_mcycle + offset)
         local last_leaf = (1 << LOG2_BUNDLE_UARCH_CYCLE_COUNT) - 1
         assert(hash_tree.frontier_forest_get_node(forest, 0, 0) == (offset == 0 and first or halted))
         assert(hash_tree.frontier_forest_get_node(forest, 1, 0) == (offset == 0 and second or halted))
         assert(hash_tree.frontier_forest_get_node(forest, last_leaf, 0) == (offset == 0 and halted or reset))
-        -- Rollback may happen immediately after end_input; neither finalization nor a
-        -- resumed run after the last automatic yield may touch the machine again.
-        builder:end_input()
-        assert(builder:run(2048) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
-        assert(builder:end_epoch() == forest and machine.collection_calls == 1)
+        assert(machine.replay_calls == 2 and machine.collection_calls == 1)
     end
 end
 
@@ -277,15 +301,10 @@ do
     local machine = new_fake_machine("initial")
     local cache <close> = prt.new_machine_cache(machine)
     local geometry = prt.new_geometry(10)
-    function machine.collect_uarch_cycle_root_hashes()
-        return { hashes = { keccak("halted"), keccak("reset") } }
-    end
     for _, builder in ipairs({
         prt.make_null_computation_hash_builder(machine),
         prt.make_mcycle_computation_hash_builder(geometry.log2_mcycles_per_period, cache, machine),
         prt.make_uarch_cycle_computation_hash_builder(geometry.log2_mcycles_per_period, machine, 0),
-        prt.make_mcycle_bundle_builder(geometry.log2_mcycles_per_period, machine, 0),
-        prt.make_uarch_bundle_builder(geometry.log2_mcycles_per_period, machine, 0, 0),
     }) do
         assert(builder:get_root_hash() == "initial", "builder did not forward to its machine")
         assert(rawget(builder, "get_root_hash") == builder.get_root_hash, "builder did not cache its forwarded method")
@@ -1891,10 +1910,6 @@ if arg[1] then
                 counts.outer = counts.outer + 1
                 return observe_inputs(prt.make_mcycle_computation_hash_builder(log2_period, machine_cache, m), m)
             end,
-            make_mcycle_bundle_builder = function(log2_period, m, bundle_index)
-                counts.bundles = counts.bundles + 1
-                return observe_inputs(prt.make_mcycle_bundle_builder(log2_period, m, bundle_index), m)
-            end,
             make_uarch_cycle_computation_hash_builder = function(log2_period, m, epoch_period_index)
                 counts.uarch = counts.uarch + 1
                 return observe_inputs(
@@ -1902,14 +1917,20 @@ if arg[1] then
                     m
                 )
             end,
-            make_uarch_bundle_builder = function(log2_period, m, epoch_period_index, bundle_index)
-                counts.uarch = counts.uarch + 1
-                return observe_inputs(prt.make_uarch_bundle_builder(log2_period, m, epoch_period_index, bundle_index), m)
-            end,
             make_null_computation_hash_builder = function(m)
                 return observe_inputs(prt.make_null_computation_hash_builder(m), m)
             end,
         })
+        local collect_mcycle_bundle = player.collect_mcycle_bundle
+        player.collect_mcycle_bundle = function(self, bundle_index)
+            counts.bundles = counts.bundles + 1
+            return collect_mcycle_bundle(self, bundle_index)
+        end
+        local collect_uarch_cycle_bundle = player.collect_uarch_cycle_bundle
+        player.collect_uarch_cycle_bundle = function(self, input_index, period_index, bundle_index)
+            counts.uarch = counts.uarch + 1
+            return collect_uarch_cycle_bundle(self, input_index, period_index, bundle_index)
+        end
         local reference <close> = make_terminal_template()
         if terminal ~= "empty" then
             reference:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, inputs[1], reference:get_root_hash())
@@ -1923,7 +1944,7 @@ if arg[1] then
         local tree = player:make_mcycle_tree()
         assert(tree:get_root() == expected, terminal .. " has the wrong fixed-point tail")
         tree:open_bundle(0)
-        assert(counts.bundles == 1, "first mcycle opening bypassed the selected builder factory")
+        assert(counts.bundles == 1, "first mcycle opening bypassed the player collector")
         -- Explicit padding shares the completed first bundle when their hashes match.
         -- For both terminal inputs and empty epochs, opening the first bundle opens
         -- the whole repeated tail without another machine replay.
@@ -1932,7 +1953,7 @@ if arg[1] then
         assert(tree:get_node(mcycle_last, 0) == terminal_root, "last mcycle bundle has the wrong state")
         local uarch = player:make_uarch_tree(2, 60000)
         uarch:open_bundle(0)
-        assert(counts.uarch == 2, "uarch build or first opening bypassed the selected builder factory")
+        assert(counts.uarch == 2, "uarch build or first opening bypassed the selected builder or collector")
         local uarch_last = (1 << contract.geometry.uarch_height) - 1
         uarch:open_bundle(uarch_last >> LOG2_BUNDLE_UARCH_CYCLE_COUNT)
         assert(counts.outer == 1, "mcycle build bypassed the selected builder factory")

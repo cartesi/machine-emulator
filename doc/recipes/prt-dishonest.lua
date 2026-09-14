@@ -6,7 +6,6 @@ local prt = require("prt")
 local prtu = require("prtu")
 local util = require("cartesi.util")
 local keccak = cartesi.keccak256
-local umin = prt.umin
 local usaturating_add = prt.usaturating_add
 local is_target_mcycle = prt.is_target_mcycle
 local is_at_fixed_point = prt.is_at_fixed_point
@@ -101,14 +100,6 @@ local function use_machine(geometry, inputs, cache, options, overrides)
     options.make_uarch_cycle_computation_hash_builder = function(log2_period, machine, epoch_period_index)
         return observe_input(make_uarch(log2_period, machine, epoch_period_index), machine)
     end
-    local make_mcycle_bundle = options.make_mcycle_bundle_builder or prt.make_mcycle_bundle_builder
-    options.make_mcycle_bundle_builder = function(log2_period, machine, bundle_index)
-        return observe_input(make_mcycle_bundle(log2_period, machine, bundle_index), machine)
-    end
-    local make_uarch_bundle = options.make_uarch_bundle_builder or prt.make_uarch_bundle_builder
-    options.make_uarch_bundle_builder = function(log2_period, machine, epoch_period_index, bundle_index)
-        return observe_input(make_uarch_bundle(log2_period, machine, epoch_period_index, bundle_index), machine)
-    end
     local make_null = options.make_null_computation_hash_builder or prt.make_null_computation_hash_builder
     options.make_null_computation_hash_builder = function(machine)
         return observe_input(make_null(machine), machine)
@@ -183,10 +174,21 @@ local function new_tamperer(geometry, inputs, cache, input_index, bundle_offset,
             return machine.machine:run(target)
         end,
         collect_mcycle_root_hashes = function(machine, target, ...)
-            return machine.machine:collect_mcycle_root_hashes(collection_target(machine, target), ...)
+            local collection_end = collection_target(machine, target)
+            local collected = machine.machine:collect_mcycle_root_hashes(collection_end, ...)
+            -- The strategy stopped early to tamper; the caller's target is still pending.
+            if collection_end ~= target and is_target_mcycle(collected.break_reason) then
+                collected.break_reason = cartesi.BREAK_REASON_YIELDED_SOFTLY
+            end
+            return collected
         end,
         collect_uarch_cycle_root_hashes = function(machine, target, ...)
-            return machine.machine:collect_uarch_cycle_root_hashes(collection_target(machine, target), ...)
+            local collection_end = collection_target(machine, target)
+            local collected = machine.machine:collect_uarch_cycle_root_hashes(collection_end, ...)
+            if collection_end ~= target and is_target_mcycle(collected.break_reason) then
+                collected.break_reason = cartesi.BREAK_REASON_YIELDED_SOFTLY
+            end
+            return collected
         end,
         run_uarch = function(machine, ...)
             apply(machine)
@@ -332,64 +334,25 @@ local function new_uarch_liar(builder, insert)
     })
 end
 
--- Bundle builders count leaves directly. Split only the repetition containing the lie.
-local function lie_about_bundle_leaf(leaf, fake_hash)
-    local function append(self, value, count)
-        hash_tree.frontier_forest_pad_back(self.frontier, value, count)
-        self.leaf_count = self.leaf_count + count
+-- Replace one leaf in a collected bundle, retaining compression of repeated hashes.
+-- The ordinary claim tree still authenticates this fabricated forest against its bundle root.
+local function falsify_bundle(forest, height, leaf, fake_hash)
+    local leaf_count = 1 << height
+    if leaf < 0 or leaf >= leaf_count then
+        return forest
     end
-    return function(self, value, count)
-        if leaf < self.leaf_count or leaf >= self.leaf_count + count then
-            return append(self, value, count)
+    local replacement = hash_tree.frontier_forest(height, "keccak256")
+    local previous, count = nil, 0
+    for i = 0, leaf_count - 1 do
+        local hash = i == leaf and fake_hash or hash_tree.frontier_forest_get_node(forest, i, 0)
+        if hash ~= previous then
+            hash_tree.frontier_forest_pad_back(replacement, previous, count)
+            previous, count = hash, 0
         end
-        local prefix = leaf - self.leaf_count
-        append(self, value, prefix)
-        append(self, fake_hash, 1)
-        append(self, value, count - prefix - 1)
+        count = count + 1
     end
-end
-
-local function new_mcycle_bundle_liar(builder, insert)
-    return wrap_computation_hash(builder, {
-        push_collected = function(self, collected)
-            local count = #collected.hashes
-            local at_fixed_point = is_at_fixed_point(collected.break_reason)
-            if at_fixed_point then
-                count = count - 1
-            end
-            assert(count <= self.max_leaf_count - self.leaf_count, "mcycle collection exceeds the bundle's leaf capacity")
-            for i = 1, count do
-                insert(self, collected.hashes[i], 1)
-            end
-            if at_fixed_point then
-                insert(self, collected.hashes[#collected.hashes], self.max_leaf_count - self.leaf_count)
-            end
-        end,
-    })
-end
-
-local function new_uarch_bundle_liar(builder, insert)
-    return wrap_computation_hash(builder, {
-        push_collected = function(self, collected)
-            local hashes, offsets = collected.hashes, collected.mcycle_hash_offsets
-            local first, last = offsets[1], offsets[2] - 1
-            local capacity = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-            local real = last - first - 1
-            assert(real >= 0 and real <= capacity - 1, "too many uarch cycles in an instruction")
-            local start = (self.bundle_index << prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT) & (capacity - 1)
-            local stop = start + self.max_leaf_count
-            for i = start, math.min(stop, real) - 1 do
-                insert(self, hashes[first + i], 1)
-            end
-            local halt_start, halt_end = math.max(start, real), math.min(stop, capacity - 1)
-            if halt_start < halt_end then
-                insert(self, hashes[last - 1], halt_end - halt_start)
-            end
-            if stop == capacity then
-                insert(self, hashes[last], 1)
-            end
-        end,
-    })
+    hash_tree.frontier_forest_pad_back(replacement, previous, count)
+    return replacement
 end
 
 local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, options)
@@ -426,22 +389,22 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
         end
         return builder
     end
-    local make_mcycle_bundle = options.make_mcycle_bundle_builder or prt.make_mcycle_bundle_builder
-    options.make_mcycle_bundle_builder = function(log2_period, machine, bundle_index)
-        local builder = make_mcycle_bundle(log2_period, machine, bundle_index)
-        local leaf = target_epoch_period_index - (bundle_index << prt.LOG2_BUNDLE_MCYCLE_COUNT)
-        return new_mcycle_bundle_liar(builder, lie_about_bundle_leaf(leaf, fake_hash))
-    end
-    local make_uarch_bundle = options.make_uarch_bundle_builder or prt.make_uarch_bundle_builder
-    options.make_uarch_bundle_builder = function(log2_period, machine, epoch_period_index, bundle_index)
-        local builder = make_uarch_bundle(log2_period, machine, epoch_period_index, bundle_index)
-        if epoch_period_index == target_epoch_period_index then
-            local leaf = (1 << geometry.uarch_height) - 1 - (bundle_index << prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT)
-            return new_uarch_bundle_liar(builder, lie_about_bundle_leaf(leaf, fake_hash))
-        end
-        return builder
-    end
     player = prt.new_player(geometry, inputs, cache, options)
+    local collect_mcycle_bundle = player.collect_mcycle_bundle
+    player.collect_mcycle_bundle = function(self, bundle_index)
+        local forest = collect_mcycle_bundle(self, bundle_index)
+        local leaf = target_epoch_period_index - (bundle_index << prt.LOG2_BUNDLE_MCYCLE_COUNT)
+        return falsify_bundle(forest, prt.LOG2_BUNDLE_MCYCLE_COUNT, leaf, fake_hash)
+    end
+    local collect_uarch_cycle_bundle = player.collect_uarch_cycle_bundle
+    player.collect_uarch_cycle_bundle = function(self, bundle_input_index, period_index, bundle_index)
+        local forest = collect_uarch_cycle_bundle(self, bundle_input_index, period_index, bundle_index)
+        if bundle_input_index == input_index and period_index == leaf_offset then
+            local leaf = (1 << geometry.uarch_height) - 1 - (bundle_index << prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+            return falsify_bundle(forest, prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT, leaf, fake_hash)
+        end
+        return forest
+    end
     return player
 end
 

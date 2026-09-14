@@ -4623,7 +4623,7 @@ In binary that clears a run of low set bits and sets the next one up, an ordinar
 The function mirrors the carry, combining the new leaf with the present low levels from the bottom up to the first empty one, clearing each, and storing the resulting hash at that first empty level.
 It is the root of the subtree covering exactly the leaves ending at the new output, the frontier entry the carry creates.
 A level is combined only once every 2<sup>*l*</sup> outputs, so a long run of outputs costs constant work each, amortized.
-The function `frontier_append` appends `hashes[first..last]` in order as maximal aligned complete subtrees, each hashed into one root and pushed back as one entry:
+The function `frontier_append` appends hashes in the half-open range `[begin_index, end_index)` in order as maximal aligned complete subtrees, each hashed into one root and pushed back as one entry. The bounds default to `1` and `#hashes + 1`; equal bounds select an empty range:
 ```{.lua replace=proof_module/source/frontier_append title="hash-tree.lua (excerpt)"}
 ```
 

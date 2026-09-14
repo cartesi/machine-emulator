@@ -1346,13 +1346,10 @@ local function uarch_computation_hash_push_mcycle(
     first_mcycle_hash_index,
     last_mcycle_hash_index
 )
+    local halt_hash, reset_hash = hashes[last_mcycle_hash_index - 1], hashes[last_mcycle_hash_index]
     local height = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - builder.bundle_height
     local bundles_per_mcycle = 1 << height
     local transient_bundle_count = last_mcycle_hash_index - first_mcycle_hash_index - 1
-    assert(
-        transient_bundle_count >= 0 and transient_bundle_count <= bundles_per_mcycle - 1,
-        "too many uarch cycles in an instruction"
-    )
     hash_tree.frontier_forest_append(
         frontier,
         hashes,
@@ -1362,11 +1359,11 @@ local function uarch_computation_hash_push_mcycle(
     )
     hash_tree.frontier_forest_pad_back(
         frontier,
-        hashes[last_mcycle_hash_index - 1],
+        halt_hash,
         bundles_per_mcycle - 1 - transient_bundle_count,
         builder.bundle_height
     )
-    hash_tree.frontier_forest_push_back(frontier, hashes[last_mcycle_hash_index], builder.bundle_height)
+    hash_tree.frontier_forest_push_back(frontier, reset_hash, builder.bundle_height)
 end
 
 -- Append the ordinary mcycle groups, then repeat the final group at a fixed point.

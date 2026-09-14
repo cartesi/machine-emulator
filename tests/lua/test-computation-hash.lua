@@ -250,17 +250,17 @@ end
 -- The frontier-forest counterpart of uarch_mcycle_root: one mcycle group assembled from the
 -- real bundles, the repeated halt bundle, and the reset-ending bundle, as a complete forest.
 local function forest_uarch_mcycle_group(collected, mcycle_index, log2_bundles_per_mcycle)
-    local first = collected.mcycle_hash_offsets[mcycle_index]
-    local last = collected.mcycle_hash_offsets[mcycle_index + 1] - 1
+    local mcycle_hashes_begin = collected.mcycle_hash_offsets[mcycle_index]
+    local mcycle_hashes_end = collected.mcycle_hash_offsets[mcycle_index + 1]
     local group = hash_tree.frontier_forest(log2_bundles_per_mcycle, "keccak256")
-    hash_tree.frontier_forest_append(group, collected.hashes, first, last - 2)
-    local execution_count = last - first - 1
+    hash_tree.frontier_forest_append(group, collected.hashes, mcycle_hashes_begin, mcycle_hashes_end - 2)
+    local execution_count = mcycle_hashes_end - mcycle_hashes_begin - 2
     hash_tree.frontier_forest_pad_back(
         group,
-        collected.hashes[last - 1],
+        collected.hashes[mcycle_hashes_end - 2],
         (1 << log2_bundles_per_mcycle) - 1 - execution_count
     )
-    hash_tree.frontier_forest_push_back(group, collected.hashes[last])
+    hash_tree.frontier_forest_push_back(group, collected.hashes[mcycle_hashes_end - 1])
     return group
 end
 

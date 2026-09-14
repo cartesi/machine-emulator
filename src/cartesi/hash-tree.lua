@@ -126,13 +126,13 @@ local function assert_aligned_below(levels, level, message)
     end
 end
 
--- Applies the defaults and validates an inclusive array range. first == last + 1
+-- Applies the defaults and validates a half-open array range. begin_index == end_index
 -- denotes an empty range.
-local function normalize_range(values, first, last)
-    first, last = first or 1, last or #values
-    assert(math.type(first) == "integer" and math.type(last) == "integer", "invalid range")
-    assert(first >= 1 and last <= #values and first <= last + 1, "invalid range")
-    return first, last
+local function normalize_range(values, begin_index, end_index)
+    begin_index, end_index = begin_index or 1, end_index or #values + 1
+    assert(math.type(begin_index) == "integer" and math.type(end_index) == "integer", "invalid range")
+    assert(begin_index >= 1 and end_index <= #values + 1 and begin_index <= end_index, "invalid range")
+    return begin_index, end_index
 end
 
 -- Whether count entries standing at first_level still fit, by binary carry over the level
@@ -173,26 +173,26 @@ local function frontier_push_back(frontier, hash, height)
 end
 -- docs:end frontier_push_back
 
--- Appends hashes[first..last] in order (first defaults to 1, last to #hashes, and
--- first == last + 1 is an empty range). The hashes are consumed as maximal aligned
+-- Appends hashes in [begin_index, end_index) in order (begin_index defaults to 1, end_index to #hashes + 1,
+-- and begin_index == end_index is an empty range). The hashes are consumed as maximal aligned
 -- complete subtrees, each the largest that still starts at the filled leaf count and fits
 -- the remaining range, hashed pairwise into one root and pushed back as one entry.
 -- Appending past the tree capacity fails before anything changes.
 -- docs:begin frontier_append
-local function frontier_append(frontier, hashes, first, last, height)
+local function frontier_append(frontier, hashes, begin_index, end_index, height)
     local hash_function = assert(frontier.hash_function)
-    first, last = normalize_range(hashes, first, last)
+    begin_index, end_index = normalize_range(hashes, begin_index, end_index)
     local first_level = (height or 0) + 1
     assert_aligned_below(frontier, first_level, "frontier is not aligned to the subtree size")
-    assert(frontier_padding_fits(frontier, last - first + 1, first_level), "too many leaves")
-    while first <= last do
+    assert(frontier_padding_fits(frontier, end_index - begin_index, first_level), "too many leaves")
+    while begin_index < end_index do
         local added_height = 0
         local subtree_count = 1
-        while not frontier[first_level + added_height] and subtree_count <= ((last - first + 1) >> 1) do
+        while not frontier[first_level + added_height] and subtree_count <= ((end_index - begin_index) >> 1) do
             added_height = added_height + 1
             subtree_count = subtree_count << 1
         end
-        local nodes = table.move(hashes, first, first + subtree_count - 1, 1, {})
+        local nodes = table.move(hashes, begin_index, begin_index + subtree_count - 1, 1, {})
         for _ = 1, added_height do
             local parents = {}
             for j = 1, #nodes, 2 do
@@ -201,7 +201,7 @@ local function frontier_append(frontier, hashes, first, last, height)
             nodes = parents
         end
         frontier_push_back(frontier, nodes[1], first_level + added_height - 1)
-        first = first + subtree_count
+        begin_index = begin_index + subtree_count
     end
 end
 -- docs:end frontier_append
@@ -543,15 +543,15 @@ local function normalize_forest_value(forest, value, value_height)
     return root, value.height
 end
 
--- Normalizes an inclusive array range and validates its raw hashes.
-local function normalize_hash_range(values, first, last)
-    first, last = normalize_range(values, first, last)
-    for i = first, last do
+-- Normalizes a half-open array range and validates its raw hashes.
+local function normalize_hash_range(values, begin_index, end_index)
+    begin_index, end_index = normalize_range(values, begin_index, end_index)
+    for i = begin_index, end_index - 1 do
         local value = values[i]
         assert(type(value) == "string", "a value is not a hash")
         assert(#value == cartesi.HASH_SIZE, "invalid hash size")
     end
-    return first, last
+    return begin_index, end_index
 end
 
 -- Materializes the pending values as maximal aligned complete subtrees, each the largest
@@ -611,16 +611,16 @@ local function should_flush_pending_value(pending, value, value_height)
         or (pending.pad_count > 0 and pending.values[#pending.values] ~= value)
 end
 
--- Appends raw hashes[first..last] to the pending partial array. Hashing happens when the
+-- Appends raw hashes in [begin_index, end_index) to the pending partial array. Hashing happens when the
 -- accumulated region is flushed. The complete operation is validated before mutation.
-local function frontier_forest_append(forest, hashes, first, last, hash_height)
-    first, last = normalize_hash_range(hashes, first, last)
-    local count = last - first + 1
+local function frontier_forest_append(forest, hashes, begin_index, end_index, hash_height)
+    begin_index, end_index = normalize_hash_range(hashes, begin_index, end_index)
+    local count = end_index - begin_index
     if count == 0 then return end
     hash_height = normalize_hash_height(hash_height)
     assert_forest_can_append(forest, hash_height, count)
     if should_flush_pending_hashes(forest.pending, hash_height) then forest_flush(forest, hash_height) end
-    table.move(hashes, first, last, #forest.pending.values + 1, forest.pending.values)
+    table.move(hashes, begin_index, end_index - 1, #forest.pending.values + 1, forest.pending.values)
     forest.leaf_count = forest.leaf_count + (count << hash_height)
     if forest.leaf_count == (1 << forest.height) then forest_flush(forest) end
 end

@@ -426,6 +426,11 @@ local function new_quitter(geometry, inputs, cache, options)
         end)
     end
     local player = use_machine(geometry, inputs, cache, options, { send_cmio_response = function() end })
+    player.collect_mcycle_bundle = function()
+        local forest = hash_tree.frontier_forest(prt.LOG2_BUNDLE_MCYCLE_COUNT, "keccak256")
+        hash_tree.frontier_forest_pad_back(forest, keccak(options.seed or "quitter"), 1 << prt.LOG2_BUNDLE_MCYCLE_COUNT)
+        return forest
+    end
     local commit = player.commit_mcycle_claim
     player.commit_mcycle_claim = function(self)
         self.done = true

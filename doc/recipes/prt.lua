@@ -1725,12 +1725,8 @@ local function new_player(geometry, inputs, machine_cache, options)
         local hashes, mcycle_phase = {}, 0
         local break_reason = run_to_stop({
             run = function(_, mcycle_end)
-                local collected = machine:collect_mcycle_root_hashes(
-                    mcycle_end,
-                    geometry.log2_mcycles_per_period,
-                    mcycle_phase,
-                    0
-                )
+                local collected =
+                    machine:collect_mcycle_root_hashes(mcycle_end, geometry.log2_mcycles_per_period, mcycle_phase, 0)
                 mcycle_phase = collected.mcycle_phase
                 table.move(collected.hashes, 1, #collected.hashes, #hashes + 1, hashes)
                 return collected.break_reason
@@ -1778,8 +1774,8 @@ local function new_player(geometry, inputs, machine_cache, options)
         local revert_root_hash = machine:get_root_hash()
         local tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0)
         local revert_uarch_tail = tail.hashes
-        local bundles_per_mcycle =
-            1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+        local bundles_per_mcycle = 1
+            << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
         local mcycle_offset = bundle_index // bundles_per_mcycle
         local builder = options.make_null_computation_hash_builder(machine)
         run_advance_state_input(
@@ -1796,12 +1792,7 @@ local function new_player(geometry, inputs, machine_cache, options)
             revert_uarch_tail
         )
         local offsets = collected.mcycle_hash_offsets
-        return make_uarch_bundle(
-            bundle_index % bundles_per_mcycle,
-            collected.hashes,
-            offsets[1],
-            offsets[2] - 1
-        )
+        return make_uarch_bundle(bundle_index % bundles_per_mcycle, collected.hashes, offsets[1], offsets[2] - 1)
     end
     -- docs:end collect_uarch_cycle_bundle
 

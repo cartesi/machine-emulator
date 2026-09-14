@@ -9628,22 +9628,27 @@ operations capture them in closures. Neither resource is stored in the
 player table. The execution drivers receive a builder tied to their
 machine, so nested bundle collection cannot replace another execution’s
 machine. The epoch driver requires begin and end input indices, with an
-optional outputs vector last. The epoch driver owns the cumulative
-outputs frontier; the input driver appends accepted outputs and checks
-the reported outputs Merkle root before committing. The honest player
-uses native machines and ordinary computation-hash builders directly;
-the driver passes the input index and mcycle boundary to the builders,
-without attaching execution context or ownership to the machine. The
-dishonest implementations in `prt-dishonest.lua` wrap those objects and
-maintain their own private bookkeeping, while sharing the execution
-lifecycle, claim trees, and event handlers. The forger changes its
-private input list, while the referee continues to verify against the
-original contract inputs. The tamperer configures its cache to wrap
-execution clones and preserve private strategy state on rollback.
-Retained checkpoints remain native machines. The fabulist replaces a
-sample as it enters a computation hash, including when that sample lies
-in repeated padding. Bundle collection uses the selected factories too,
-and the ordinary claim tree authenticates every opened bundle.
+optional outputs vector last. Input and period indices are zero-based
+throughout the player and referee; only Lua input-array lookups add one.
+The epoch period index combines the input index and its period index,
+while the separate transition offset splits into an mcycle offset and a
+uarch cycle. Keeping those coordinates separate avoids overflowing a
+64-bit integer. The epoch driver owns the cumulative outputs frontier;
+the input driver appends accepted outputs and checks the reported
+outputs Merkle root before committing. The honest player uses native
+machines and ordinary computation-hash builders directly; the driver
+passes the input index and mcycle boundary to the builders, without
+attaching execution context or ownership to the machine. The dishonest
+implementations in `prt-dishonest.lua` wrap those objects and maintain
+their own private bookkeeping, while sharing the execution lifecycle,
+claim trees, and event handlers. The forger changes its private input
+list, while the referee continues to verify against the original
+contract inputs. The tamperer configures its cache to wrap execution
+clones and preserve private strategy state on rollback. Retained
+checkpoints remain native machines. The fabulist replaces a sample as it
+enters a computation hash, including when that sample lies in repeated
+padding. Bundle collection uses the selected factories too, and the
+ordinary claim tree authenticates every opened bundle.
 
 ### The tournament
 
@@ -9680,11 +9685,11 @@ contains its computation hash’s two children and a standard `Proof` for
 the final state hash at the tree’s last leaf. The referee checks that
 the children join into the proof’s root and verifies the proof with
 `hash_tree.verify_slice()`, the same membership check `joinTournament`
-performs on chain (`validate_claim` in `prt.lua`). `partition_claims`
-groups identical claims by computation hash, subscribes every sender to
-its claim, and sorts the resulting claims by computation hash, so the
-bracket is a pure function of the claim set, not of the order in which
-players happened to connect.
+performs on chain (`validate_claim_response` in `prt.lua`).
+`partition_claims` groups identical claims by computation hash,
+subscribes every sender to its claim, and sorts the resulting claims by
+computation hash, so the bracket is a pure function of the claim set,
+not of the order in which players happened to connect.
 
 The tournament is that reduction: while more than one claim survives,
 run a round, which pairs the survivors, runs their matches at once, and
@@ -9746,13 +9751,13 @@ local function advance_bisection(match, response)
         match.position = match.position + (1 << match.height)
     end
     match.other_left_node, match.other_right_node = response.turn_next_left_node, response.turn_next_right_node
-    match.turn = get_other_turn(match.turn)
+    match.turn_index = get_other_turn_index(match.turn_index)
 end
 ```
 
 At height 1 a separate sealing response exposes the divergent leaves and
 proves the agreed state immediately before them against the on-turn
-claim, just as Dave’s `sealDivergence` does; at state zero, the referee
+claim, just as Dave’s `sealDivergence` does; at leaf zero, the referee
 already knows the tournament’s initial state:
 
 ``` lua
@@ -9760,15 +9765,15 @@ local function validate_seal_response(tournament, match, response)
     assert(match.height == 1)
     assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
     local descend_left = response.turn_left_node ~= match.other_left_node
-    local state_index = match.position + (descend_left and 0 or 1)
+    local leaf_index = match.position + (descend_left and 0 or 1)
     local agreed_state_hash
-    if state_index ~= 0 then
+    if leaf_index ~= 0 then
         local proof = response.agreed_state_hash_proof
-        assert(proof.target_address == state_index - 1)
+        assert(proof.target_address == leaf_index - 1)
         assert(proof.log2_target_size == 0)
         assert(proof.log2_root_size == tournament.height)
         assert(#proof.sibling_hashes == tournament.height)
-        assert(proof.root_hash == match.claims[match.turn].computation_hash)
+        assert(proof.root_hash == match.claims[match.turn_index].computation_hash)
         assert(descend_left or proof.target_hash == response.turn_left_node)
         hash_tree.verify_slice(proof)
         agreed_state_hash = proof.target_hash
@@ -9778,10 +9783,10 @@ local function validate_seal_response(tournament, match, response)
     local turn_state_hash = descend_left and response.turn_left_node or response.turn_right_node
     local other_state_hash = descend_left and match.other_left_node or match.other_right_node
     local next_state_hashes = {}
-    next_state_hashes[match.turn] = turn_state_hash
-    next_state_hashes[get_other_turn(match.turn)] = other_state_hash
+    next_state_hashes[match.turn_index] = turn_state_hash
+    next_state_hashes[get_other_turn_index(match.turn_index)] = other_state_hash
     return {
-        state_index = state_index,
+        leaf_index = leaf_index,
         agreed_state_hash = agreed_state_hash,
         next_state_hashes = next_state_hashes,
     }
@@ -9798,7 +9803,7 @@ timeout-win or elimination response.
 ``` lua
 local function reveal_divergence(tournament, match)
     while match.height > 1 do
-        local turn_claim = match.claims[match.turn]
+        local turn_claim = match.claims[match.turn_index]
         local deadline = server:request_block() + 1
         local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
         local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
@@ -9826,7 +9831,7 @@ agreed state before them.
 
 ``` lua
 local function seal_divergence(tournament, match)
-    local turn_claim = match.claims[match.turn]
+    local turn_claim = match.claims[match.turn_index]
     local deadline = server:request_block() + 1
     local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
     local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
@@ -9884,7 +9889,7 @@ local function settle_divergence(tournament, match, divergence)
     story.report_divergence(match, divergence)
     local settled_state_hash = tournament:settle_state_hash(
         match,
-        divergence.state_index,
+        divergence.leaf_index,
         divergence.agreed_state_hash,
         divergence.next_state_hashes
     )
@@ -9938,7 +9943,7 @@ which carries the revert when the instruction rejected an input. Every
 other transition is an ordinary uarch step:
 
 ``` lua
-local function verify_state_transition(
+local function validate_state_transition_response(
     dapp_contract,
     current_state_hash,
     epoch_period_index,
@@ -9946,9 +9951,8 @@ local function verify_state_transition(
     logs
 )
     local periods_per_input = dapp_contract.geometry.periods_per_input
-    local input_index = epoch_period_index // periods_per_input
-    local period_index = epoch_period_index % periods_per_input
-    local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
+    local input_index, period_index = split_epoch_period_index(periods_per_input, epoch_period_index)
+    local _, uarch_cycle = split_state_transition_offset(state_transition_offset)
     local obtained_state_hash = current_state_hash
     local data = dapp_contract.inputs[input_index + 1]
     if state_transition_offset == 0 and period_index == 0 and data then
@@ -9968,7 +9972,6 @@ local function verify_state_transition(
     end
     return obtained_state_hash
 end
-verify_state_transition = util.protect(verify_state_transition)
 ```
 
 The transition out of the agreed state is unique, so this is the heart
@@ -10006,7 +10009,7 @@ local function settle_uarch_state_hash(
         { tournament.input_index, tournament.period_index, state_transition_offset },
         function(response)
             assert(server:get_time() < deadline)
-            return verify_state_transition(
+            return validate_state_transition_response(
                 tournament.dapp_contract,
                 current_state_hash,
                 tournament.epoch_period_index,
@@ -10029,8 +10032,7 @@ fresh fork at the transition and logging it:
 
 ``` lua
     function player.prove_state_transition(_, input_index, period_index, state_transition_offset)
-        local mcycle_offset = state_transition_offset >> cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-        local uarch_cycle = state_transition_offset & cartesi.UARCH_CYCLE_MAX
+        local mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
         local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
         local revert_root_hash = machine:get_root_hash()
         local data = inputs[input_index + 1]
@@ -10044,7 +10046,7 @@ fresh fork at the transition and logging it:
         run_advance_state_input(
             builder,
             input_index,
-            period_index * geometry.mcycles_per_period + mcycle_offset,
+            combine_input_mcycle_offset(geometry.mcycles_per_period, period_index, mcycle_offset),
             revert_root_hash
         )
         machine:run_uarch(uarch_cycle)

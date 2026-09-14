@@ -538,6 +538,8 @@ return function(run_with_server)
     local logs = { step_log = machine:log_step_uarch() }
     local after = machine:get_root_hash()
     assert(cartesi.machine:verify_step_uarch(initial, logs.step_log) == after)
+    local invalid_logs = { step_log = machine:log_step_uarch() }
+    assert(not pcall(cartesi.machine.verify_step_uarch, cartesi.machine, initial, invalid_logs.step_log))
     local geometry = { mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }
 
     -- Narration remains outside the referee. Capture semantic reports so each
@@ -556,7 +558,7 @@ return function(run_with_server)
     local function scenario(mode, reverse)
         reports = {}
         local schedules, cancellations, proof_checks, stale_checks = {}, {}, 0, 0
-        local opening_blocks, unrelated_responses = {}, 0
+        local opening_blocks, unrelated_responses, invalid_proofs = {}, 0, 0
         local players = {}
         local finals = { after, keccak("false final") }
         if mode == "concurrent" then
@@ -692,7 +694,8 @@ return function(run_with_server)
                             proof_checks = proof_checks + 1
                             local invalid = {}
                             local valid, result = pcall(accept, invalid)
-                            assert(not valid or not result, "invalid transition proof accepted")
+                            assert(not valid, "invalid transition proof did not raise an error")
+                            assert(result, "invalid transition proof has no error")
                         end
                         probing = false
                         self.clock.block = saved
@@ -719,6 +722,17 @@ return function(run_with_server)
                         cancellations[id] = (cancellations[id] or 0) + 1
                     else
                         local request = event.operation
+                        if mode == "invalid_proof" and slot == 1 and request == "prove_state_transition" then
+                            -- The first reply has a well-formed log for the wrong before-state.
+                            -- The dispatcher must reject it and accept the other player's proof.
+                            invalid_proofs = invalid_proofs + 1
+                            return prtu.answer_event({
+                                label = player.label,
+                                prove_state_transition = function()
+                                    return invalid_logs
+                                end,
+                            }, line)
+                        end
                         local opening = request == "reveal_bisection" or request == "seal_divergence"
                         if
                             (mode == "timeout" and index == first and opening)
@@ -815,8 +829,11 @@ return function(run_with_server)
         else
             assert(winner and winner.final_state_hash == after, "wrong uarch winner propagated")
         end
-        if mode == "proof" or mode == "leaf_expiry" or mode == "uarch_inactive" then
+        if mode == "proof" or mode == "invalid_proof" or mode == "leaf_expiry" or mode == "uarch_inactive" then
             assert(proof_checks == 1 and stale_checks > 0)
+        end
+        if mode == "invalid_proof" then
+            assert(invalid_proofs == 1, "invalid-proof scenario did not submit its bad log")
         end
         if mode == "uarch_inactive" then
             assert(unrelated_responses == 1 and eliminated == 1, "honest lineage left an unrelated uarch match pending")
@@ -838,6 +855,7 @@ return function(run_with_server)
         "empty_uarch",
         "uarch_without_holder",
         "proof",
+        "invalid_proof",
         "leaf_expiry",
     }) do
         assert(scenario(mode, false) == scenario(mode, true), "connection order changed the protocol trace")

@@ -368,8 +368,8 @@ return function(run_with_server)
     run_with_server(function(server, run_client, wait_connections)
         local player = prt.new_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, {}, nil)
         local tree = repeated_tree(keccak("future leaf"), 3)
-        local left, right = tree:get_children(0, tree.height)
-        player.trees[tree:get_root()] = tree
+        local left, right = tree:get_child_hashes(0, tree.height)
+        player.trees[tree:get_root_hash()] = tree
         local scheduled_calls, reveal_calls = {}, 0
         player.schedule_match_elimination = function(self, block)
             return prtu.schedule_response(self, block, function()
@@ -539,8 +539,8 @@ return function(run_with_server)
     run_with_server(function(server, run_client, wait_connections)
         local player = prt.new_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, {}, nil)
         local tree = repeated_tree(keccak("leaf"), 3)
-        local left, right = tree:get_children(0, tree.height)
-        player.trees[tree:get_root()] = tree
+        local left, right = tree:get_child_hashes(0, tree.height)
+        player.trees[tree:get_root_hash()] = tree
         local accepted, malformed = 0, false
         run_client(nil, function(event, line)
             if event.operation == "probe" then
@@ -660,7 +660,8 @@ return function(run_with_server)
             players[index] = player
         end
         if mode == "uarch_inactive" then
-            local ordered = { players[1].make_mcycle_tree():get_root(), players[2].make_mcycle_tree():get_root() }
+            local ordered =
+                { players[1].make_mcycle_tree():get_root_hash(), players[2].make_mcycle_tree():get_root_hash() }
             table.sort(ordered, function(a, b)
                 return cartesi.tohex(a) < cartesi.tohex(b)
             end)
@@ -675,11 +676,11 @@ return function(run_with_server)
                         hash_tree.frontier_forest_push_back(forest, leaf == 1 and keccak("inactive" .. seed) or after)
                     end
                     tree = prt.new_tree(3, 0, forest)
-                until cartesi.tohex(tree:get_root()) > cartesi.tohex(ordered[2])
+                until cartesi.tohex(tree:get_root_hash()) > cartesi.tohex(ordered[2])
                 players[index].make_uarch_tree = function()
                     return tree
                 end
-                inactive[#inactive + 1] = tree:get_root()
+                inactive[#inactive + 1] = tree:get_root_hash()
             end
             table.sort(inactive, function(a, b)
                 return cartesi.tohex(a) < cartesi.tohex(b)
@@ -687,7 +688,7 @@ return function(run_with_server)
             assert(inactive[1] ~= inactive[2])
         end
         -- Determine the bracket without relying on connection order.
-        local roots = { players[1].make_mcycle_tree():get_root(), players[2].make_mcycle_tree():get_root() }
+        local roots = { players[1].make_mcycle_tree():get_root_hash(), players[2].make_mcycle_tree():get_root_hash() }
         local first = cartesi.tohex(roots[1]) < cartesi.tohex(roots[2]) and 1 or 2
         run_with_server(function(server, run_client, wait_connections)
             current_server = server
@@ -704,7 +705,7 @@ return function(run_with_server)
                         for _, player in ipairs(players) do
                             local tree = player.trees[arguments[2]]
                             if tree then
-                                local left, right = tree:get_children(0, tree.height)
+                                local left, right = tree:get_child_hashes(0, tree.height)
                                 response = { computation_hash_left = left, computation_hash_right = right }
                             end
                         end

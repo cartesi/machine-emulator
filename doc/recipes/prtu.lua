@@ -527,7 +527,6 @@ local SCHEMA_DICT = {
         output_proof = "Proof",
     },
     ClaimChildren = { computation_hash_left = "Base64", computation_hash_right = "Base64" },
-    GetClaimChildrenEvent = { items = { "Base64" } },
     ScheduleClaimChildrenEvent = { items = { "Default", "Base64" } },
     ScheduleEliminationEvent = { items = { "Default" } },
     Responses = { items = "Default" },
@@ -538,13 +537,6 @@ local SCHEMA_DICT = {
 -- Describes one event once, for both ends of the wire.
 local function define_event(name, event_schema, response_schema)
     return { name = name, event_schema = event_schema, response_schema = response_schema }
-end
-
--- Scheduling events acknowledge a callback now and return its typed response later.
-local function define_schedule_event(name, event_schema, response_schema)
-    local event = define_event(name, event_schema, "Default")
-    event.scheduled_schema = response_schema
-    return event
 end
 
 local EVENTS = {
@@ -565,17 +557,12 @@ local EVENTS = {
         "ProveOutputsMerkleRootResponse"
     ),
     prove_output = define_event("prove_output", "ProveOutputEvent", "ProveOutputResponse"),
-    get_claim_children = define_event("get_claim_children", "GetClaimChildrenEvent", "ClaimChildren"),
-    schedule_match_timeout_win = define_schedule_event(
+    schedule_match_timeout_win = define_event(
         "schedule_match_timeout_win",
         "ScheduleClaimChildrenEvent",
         "ClaimChildren"
     ),
-    schedule_match_elimination = define_schedule_event(
-        "schedule_match_elimination",
-        "ScheduleEliminationEvent",
-        "Default"
-    ),
+    schedule_match_elimination = define_event("schedule_match_elimination", "ScheduleEliminationEvent", "Default"),
     cancel_response = define_event("cancel_response", "CancelResponseEvent", "Default"),
     advance_time = define_event("advance_time", "AdvanceTimeEvent", "Responses"),
 }
@@ -645,9 +632,24 @@ end
 -- Players
 --------------------------------------------------------------------------------
 
+local client_queues = setmetatable({}, { __mode = "k" })
+local client_requests = setmetatable({}, { __mode = "k" })
+
+-- Schedules the current handler's response, retaining its routing and encoding inside
+-- the transport. The player supplies only the block and the response-producing callback.
+local function schedule_response(client, block, respond)
+    local request = assert(client_requests[client], "no request being handled for this player")
+    assert(request.id, "request does not support a delayed response")
+    assert(type(respond) == "function", "schedule expects a response callback")
+    client_queues[client]:schedule(request.id, block, function()
+        -- Encode each response with its own event schema before batching.
+        return cartesi.fromjson(cartesi.tojson(respond(), -1, request.response_schema, SCHEMA_DICT))
+    end)
+    return true
+end
+
 -- Dispatches one wire event. Finish is transport cleanup rather than a client handler, so it
 -- is handled here and kept out of the client-loop snippet.
-local client_queues = setmetatable({}, { __mode = "k" })
 local function answer_event(client, line)
     local envelope = cartesi.fromjson(line)
     local event = assert(EVENTS[envelope.operation], "unknown event")
@@ -667,20 +669,18 @@ local function answer_event(client, line)
         value = true
     else
         local handler = assert(client[wire_event.operation], "missing event handler")
-        value = handler(client, table.unpack(wire_event.arguments or {}))
-        if event.scheduled_schema then
-            local respond = value
-            assert(type(respond) == "function", "scheduling handler must return a response callback")
-            queue:schedule(wire_event.id, wire_event.arguments[1], function()
-                -- Encode each response with its own event schema before batching.
-                return cartesi.fromjson(cartesi.tojson(respond(), -1, event.scheduled_schema, SCHEMA_DICT))
-            end)
-            value = true
+        client_requests[client] = { id = wire_event.id, response_schema = event.response_schema }
+        local ok
+        ok, value = pcall(handler, client, table.unpack(wire_event.arguments or {}))
+        client_requests[client] = nil
+        if not ok then
+            error(value, 0)
         end
     end
     assert(value ~= nil, "the event handler produced no value")
     local response = { label = client.label, value = value }
-    local encoded = cartesi.tojson(response, -1, ensure_response_envelope_schema(event.response_schema), SCHEMA_DICT)
+    local response_schema = wire_event.id and "Default" or event.response_schema
+    local encoded = cartesi.tojson(response, -1, ensure_response_envelope_schema(response_schema), SCHEMA_DICT)
     return encoded, event == EVENTS.finish or client.done
 end
 
@@ -1104,7 +1104,7 @@ function server_meta.__index.request_block(self)
 end
 
 queue_control = function(self, conns, event, arguments, id)
-    local entry = { pending = {}, replies = {}, response_schema = event.response_schema }
+    local entry = { pending = {}, replies = {}, response_schema = id and "Default" or event.response_schema }
     self.controls[#self.controls + 1] = entry
     local line = encode_event(event, arguments, id)
     for _, connection in ipairs(conns) do
@@ -1196,7 +1196,20 @@ end
 -- Requests the first valid response without waiting, resolving subscriptions to a fixed audience.
 -- Accepts one subscription, a list of subscriptions, or EVERYONE.
 -- Its future owns only this event's responses.
-function server_meta.__index.request_first_valid(self, subscriptions, event, event_arguments, accept_response)
+-- An explicit response block sends the request as a control and registers a delayed
+-- response ID. It supplies a clock boundary, not a substitute for the referee's validator.
+function server_meta.__index.request_first_valid(
+    self,
+    subscriptions,
+    event,
+    event_arguments,
+    accept_response,
+    response_block
+)
+    assert(
+        not response_block or (math.type(response_block) == "integer" and response_block > self:get_time()),
+        "response block must be a later block"
+    )
     local conns = self:get_subscribers(subscriptions)
     local future = setmetatable({
         kind = "request_first_valid",
@@ -1207,10 +1220,8 @@ function server_meta.__index.request_first_valid(self, subscriptions, event, eve
         accept_response = accept_response,
     }, future_meta)
     register_event(self, future, conns)
-    if event.scheduled_schema then
-        local block = event_arguments[1]
-        assert(math.type(block) == "integer" and block > self:get_time(), "callback must belong to a later block")
-        future.id, future.eligible = future.order, block
+    if response_block then
+        future.id, future.eligible = future.order, response_block
         self.scheduled_responses[future.id] = future
         queue_control(self, conns, event, event_arguments, future.id)
     else
@@ -1225,7 +1236,6 @@ end
 -- An optional validator returns the accepted value. Errors, nil, and false reject a reply,
 -- but its sender still counts as answered for the block barrier.
 function server_meta.__index.request_all(self, subscriptions, event, event_arguments, accept_response)
-    assert(not event.scheduled_schema, "scheduled events require request_first_valid")
     local future = setmetatable({
         kind = "request_all",
         server = self,
@@ -1281,7 +1291,7 @@ local function accept_scheduled_response(self, response)
         return
     end
     local ok, decoded =
-        pcall(cartesi.fromjson, cartesi.tojson(response.value, -1), future.event.scheduled_schema, SCHEMA_DICT)
+        pcall(cartesi.fromjson, cartesi.tojson(response.value, -1), future.event.response_schema, SCHEMA_DICT)
     if not ok then
         return
     end
@@ -1498,6 +1508,7 @@ return {
     get_other_turn_index = get_other_turn_index,
     new_server = new_server, -- prt-test.lua exercises the transport primitives directly
     answer_event = answer_event,
+    schedule_response = schedule_response,
     run_server = run_server,
     run_client = run_client,
     new_phase_closer = new_phase_closer,

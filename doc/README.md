@@ -10006,10 +10006,11 @@ local function settle_uarch_state_hash(
         EVERYONE,
         EVENTS.schedule_match_elimination,
         { deadline },
-        function(response)
-            assert(server:get_time() >= deadline and response == true)
+        function()
+            assert(server:get_time() >= deadline)
             return true
-        end
+        end,
+        deadline
     )
     local proof <close> = server:request_first_valid(
         subscriptions,
@@ -10069,18 +10070,26 @@ fresh fork at the transition and logging it:
 ### The referee server
 
 Each player answers typed requests in a blocking loop (`run_client` in
-`prtu.lua`). It owns its machines and claims. Scheduling handlers return
-callbacks that produce responses on later blocks. The event table names
-each operation, including `reveal_bisection`, `seal_divergence`, and
-`prove_state_transition`. `schedule_match_timeout_win` and
-`schedule_match_elimination` prepare the corresponding responses.
-`prtu.lua` keeps the callbacks in a private queue and invokes them when
-`advance_time` supplies a strictly newer block. The first argument of
-each scheduling event is the block when its callback is due. Ordinary
-events pass computation arguments directly to the player.
+`prtu.lua`). It owns its machines and claims. Each handler receives only
+the event’s arguments. The event table names each operation, including
+`reveal_bisection`, `seal_divergence`, and `prove_state_transition`.
+`schedule_match_timeout_win` and `schedule_match_elimination` call
+`prtu.schedule_response(player, deadline, callback)` to produce their
+responses on later blocks. `prtu.lua` keeps the callbacks in a private
+queue and invokes them when `advance_time` supplies a strictly newer
+block. The handler passes its deadline to the scheduler explicitly; the
+transport does not interpret handler arguments or infer scheduling from
+event types. `prtu` retains the current request’s response ID and schema
+internally, and `schedule_response` returns the acknowledgement sent to
+the referee. The delayed elimination response is empty; its validator
+checks only that the deadline has been reached.
 
 `request_first_valid(subscriptions, event, arguments, validator)`
-returns a future without suspending the referee. The audience is one
+returns a future without suspending the referee. An optional fifth
+argument supplies the expected response block for a delayed response. It
+sends the request as a control and gives the logical clock a boundary to
+advance to. The player handler schedules the callback, and the referee’s
+validator still enforces the response window. The audience is one
 subscription hash, a list of hashes, or `EVERYONE` for all live players.
 Each future decodes responses under that event’s schema and retains the
 first result accepted by its validator. `future:wait(deadline)` returns

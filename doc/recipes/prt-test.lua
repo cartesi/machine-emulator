@@ -780,7 +780,7 @@ end
 local function make_bisection_response(match)
     local tree = match.claims[match.turn_index].tree
     return prt.player_handlers.reveal_bisection(
-        { mcycle_claim = tree },
+        { trees = { [tree:get_root()] = tree } },
         tree:get_root(),
         match.position,
         match.height,
@@ -791,7 +791,7 @@ end
 local function make_seal_response(match)
     local tree = match.claims[match.turn_index].tree
     return prt.player_handlers.seal_divergence(
-        { mcycle_claim = tree },
+        { trees = { [tree:get_root()] = tree } },
         tree:get_root(),
         match.position,
         match.other_left_node
@@ -961,7 +961,7 @@ local function run_with_server(scenario)
                         reply, done = handler(wire_event, line)
                     elseif
                         wire_event.operation == "finish"
-                        or (prtu.EVENTS[wire_event.operation] and prtu.EVENTS[wire_event.operation].scheduled_schema)
+                        or wire_event.id
                         or wire_event.operation == "cancel_response"
                     then
                         reply = { value = true }
@@ -1082,7 +1082,8 @@ run_with_server(function(server)
             { server:request_block() + 10 },
             function()
                 return 0
-            end
+            end,
+            server:request_block() + 10
         )
         pending[#pending + 1] = proof
         pending[#pending + 1] = elimination

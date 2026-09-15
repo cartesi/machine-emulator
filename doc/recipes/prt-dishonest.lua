@@ -226,7 +226,7 @@ local function lie_about_leaf(leaf, unbundle)
             for i = 0, (1 << (height - self.bundle_height)) - 1 do
                 pad_back_lie(
                     self,
-                    hash_tree.frontier_forest_get_node(value, i << self.bundle_height, self.bundle_height),
+                    hash_tree.frontier_forest_get_node_hash(value, i << self.bundle_height, self.bundle_height),
                     1,
                     self.bundle_height
                 )
@@ -338,7 +338,7 @@ local function falsify_bundle(forest, height, leaf, fake_hash)
     local replacement = hash_tree.frontier_forest(height, "keccak256")
     local previous, count = nil, 0
     for i = 0, leaf_count - 1 do
-        local hash = i == leaf and fake_hash or hash_tree.frontier_forest_get_node(forest, i, 0)
+        local hash = i == leaf and fake_hash or hash_tree.frontier_forest_get_node_hash(forest, i, 0)
         if hash ~= previous then
             hash_tree.frontier_forest_pad_back(replacement, previous, count)
             previous, count = hash, 0

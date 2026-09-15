@@ -78,8 +78,8 @@ function tree_meta.__index.open_bundle(tree, bundle_index)
     )
     local position = bundle_index << tree.bundle_height
     -- Validate the full forest and the bundle root before probing below an opaque hash.
-    hash_tree.frontier_forest_get_node(tree.forest, position, tree.bundle_height)
-    if pcall(hash_tree.frontier_forest_get_node, tree.forest, position, 0) then
+    hash_tree.frontier_forest_get_node_hash(tree.forest, position, tree.bundle_height)
+    if hash_tree.frontier_forest_get_node_hash(tree.forest, position, 0) then
         return
     end
     local bundle_forest = tree:collect_bundle(bundle_index)
@@ -91,7 +91,7 @@ end
 -- Queries never execute a machine. Reading below an unopened bundle fails.
 -- docs:begin get_tree_node
 function tree_meta.__index.get_node(tree, position, height)
-    return hash_tree.frontier_forest_get_node(tree.forest, position, height)
+    return assert(hash_tree.frontier_forest_get_node_hash(tree.forest, position, height))
 end
 -- docs:end get_tree_node
 

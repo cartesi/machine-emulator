@@ -9556,10 +9556,11 @@ tree invokes its collector and calls `frontier_forest_expand_leaf`. The
 forest checks the reconstructed subtree against the committed leaf
 before installing it. The tree then retries the sibling query and
 assembles the proof. Later proofs within that bundle use the installed
-subtree without replaying the machine. Child queries use the same proof
-path to open bundles when needed; raw node queries require their bundle
-to be open already. Implicit repetitions share the expanded subtree, so
-opening one repeated bundle also makes its other occurrences readable.
+subtree without replaying the machine. Node hash queries use the same
+query, open, and retry pattern. Child queries simply read the two child
+hashes with `get_node_hash`. Implicit repetitions share the expanded
+subtree, so opening one repeated bundle also makes its other occurrences
+readable.
 
 The builds themselves stream out of the emulator. They follow the same
 collection contract as `cartesi-machine`’s computation-hash builders:

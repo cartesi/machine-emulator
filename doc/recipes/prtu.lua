@@ -594,7 +594,7 @@ local function answer_event(client, line)
         queue:cancel(wire_event.arguments[1])
         value = true
     else
-        local handler = assert(client[wire_event.operation], "missing event handler")
+        local handler = assert(client.event_handler[wire_event.operation], "missing event handler")
         client_requests[client] = { id = wire_event.id, response_schema = event.response_schema }
         local ok
         ok, value = pcall(handler, client, table.unpack(wire_event.arguments or {}))
@@ -646,10 +646,12 @@ local function new_phase_closer(command)
     local phase_closer = {
         label = "phase_closer",
         hello = cartesi.tojson({ role = "phase_closer", command = command }, -1),
-        close_phase = function(self)
-            self.done = true
-            return true
-        end,
+        event_handler = {
+            close_phase = function(self)
+                self.done = true
+                return true
+            end,
+        },
     }
     return phase_closer
 end

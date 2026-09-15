@@ -61,7 +61,8 @@ end
 
 -- Wrap each execution before replay. The cache retains native checkpoints and owners,
 -- while the strategy keeps its private state alongside the borrowed execution machine.
-local function use_machine(geometry, inputs, cache, options, overrides)
+local function use_machine(player, overrides)
+    local cache = player.machine_cache
     local clone = cache.clone_at_input_boundary
     cache.clone_at_input_boundary = function(self, input_index, run_to_input_boundary)
         local wrapped
@@ -92,42 +93,32 @@ local function use_machine(geometry, inputs, cache, options, overrides)
         revert(self, machine.machine)
         machine.state, machine.snapshot_state = state, false
     end
-    local make_mcycle = options.make_mcycle_computation_hash_builder or prt.make_mcycle_computation_hash_builder
-    options.make_mcycle_computation_hash_builder = function(log2_period, c, machine)
-        return observe_input(make_mcycle(log2_period, c, machine), machine)
+    local make_mcycle = player.make_mcycle_computation_hash_builder
+    function player:make_mcycle_computation_hash_builder(machine)
+        return observe_input(make_mcycle(self, machine), machine)
     end
-    local make_uarch = options.make_uarch_cycle_computation_hash_builder
-        or prt.make_uarch_cycle_computation_hash_builder
-    options.make_uarch_cycle_computation_hash_builder = function(log2_period, machine, epoch_period_index)
-        return observe_input(make_uarch(log2_period, machine, epoch_period_index), machine)
+    local make_uarch = player.make_uarch_cycle_computation_hash_builder
+    function player:make_uarch_cycle_computation_hash_builder(machine, epoch_period_index)
+        return observe_input(make_uarch(self, machine, epoch_period_index), machine)
     end
-    local make_null = options.make_null_computation_hash_builder or prt.make_null_computation_hash_builder
-    options.make_null_computation_hash_builder = function(machine)
-        return observe_input(make_null(machine), machine)
+    local make_null = player.make_null_computation_hash_builder
+    function player:make_null_computation_hash_builder(machine)
+        return observe_input(make_null(self, machine), machine)
     end
-    return prt.new_player(geometry, inputs, cache, options)
-end
-
-local function role_options(label, options)
-    local result = {}
-    for key, value in pairs(options or {}) do
-        result[key] = value
-    end
-    result.label = label
-    return result
+    return player
 end
 
 -- Change only the caller's private input list. The referee still verifies input
 -- inclusion against the original contract inputs.
-local function new_forger(geometry, inputs, cache, input_index, forged_data, options)
+local function new_forger(geometry, inputs, cache, input_index, forged_data)
     inputs[input_index + 1] = forged_data
-    return prt.new_player(geometry, inputs, cache, role_options("forger", options))
+    return prt.new_player(geometry, inputs, cache, "forger")
 end
 
 -- A checkpoint exactly at the corruption point still holds the agreed state.
 -- Corruption happens only when executing or collecting the transition out of it.
 -- Each execution has private strategy state, which the cache restores on rollback.
-local function new_tamperer(geometry, inputs, cache, input_index, bundle_offset, options)
+local function new_tamperer(geometry, inputs, cache, input_index, bundle_offset)
     local offset = bundle_offset << (prt.LOG2_BUNDLE_MCYCLE_COUNT + geometry.log2_mcycles_per_period)
     local function tamper_point(machine)
         local context = machine.state
@@ -160,7 +151,7 @@ local function new_tamperer(geometry, inputs, cache, input_index, bundle_offset,
         end
         return target
     end
-    return use_machine(geometry, inputs, cache, role_options("tamperer", options), {
+    return use_machine(prt.new_player(geometry, inputs, cache, "tamperer"), {
         run = function(machine, target)
             local point = tamper_point(machine)
             if point and math.ult(machine:read_reg("mcycle"), point) and math.ult(point, target) then
@@ -349,15 +340,14 @@ local function falsify_bundle(forest, height, leaf, fake_hash)
     return replacement
 end
 
-local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, options)
-    options = role_options("fabulist", options)
-    local player
+local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset)
+    local player = prt.new_player(geometry, inputs, cache, "fabulist")
     local target_epoch_period_index =
         prt.combine_epoch_period_index(geometry.periods_per_input, input_index, leaf_offset)
     local fake_hash = keccak("fabulist")
-    local make_mcycle = options.make_mcycle_computation_hash_builder or prt.make_mcycle_computation_hash_builder
-    options.make_mcycle_computation_hash_builder = function(log2_period, c, machine)
-        local builder = make_mcycle(log2_period, c, machine)
+    local make_mcycle = player.make_mcycle_computation_hash_builder
+    function player:make_mcycle_computation_hash_builder(machine)
+        local builder = make_mcycle(self, machine)
         return new_mcycle_liar(
             builder,
             lie_about_leaf(target_epoch_period_index, function(_, first_leaf)
@@ -365,10 +355,9 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
             end)
         )
     end
-    local make_uarch = options.make_uarch_cycle_computation_hash_builder
-        or prt.make_uarch_cycle_computation_hash_builder
-    options.make_uarch_cycle_computation_hash_builder = function(log2_period, machine, epoch_period_index)
-        local builder = make_uarch(log2_period, machine, epoch_period_index)
+    local make_uarch = player.make_uarch_cycle_computation_hash_builder
+    function player:make_uarch_cycle_computation_hash_builder(machine, epoch_period_index)
+        local builder = make_uarch(self, machine, epoch_period_index)
         if epoch_period_index == target_epoch_period_index then
             return new_uarch_liar(
                 builder,
@@ -383,7 +372,6 @@ local function new_fabulist(geometry, inputs, cache, input_index, leaf_offset, o
         end
         return builder
     end
-    player = prt.new_player(geometry, inputs, cache, options)
     local collect_mcycle_bundle = player.collect_mcycle_bundle
     player.collect_mcycle_bundle = function(self, bundle_index)
         local forest = collect_mcycle_bundle(self, bundle_index)
@@ -405,27 +393,27 @@ end
 -- The quitter never executes the guest. Its machine stays at the initial yield,
 -- its builder substitutes a made-up state at every position, and it disconnects
 -- after posting that claim. The disconnect is its only protocol-level deviation.
-local function new_quitter(geometry, inputs, cache, options)
-    options = role_options("quitter", options)
-    local make = options.make_mcycle_computation_hash_builder or prt.make_mcycle_computation_hash_builder
-    options.make_mcycle_computation_hash_builder = function(log2_period, c, machine)
-        local builder = make(log2_period, c, machine)
-        return new_mcycle_liar(builder, function(self, _, count, height)
-            local fake_hash = keccak(options.seed or "quitter")
+local function new_quitter(geometry, inputs, cache, seed)
+    local player = prt.new_player(geometry, inputs, cache, "quitter")
+    local make = player.make_mcycle_computation_hash_builder
+    function player:make_mcycle_computation_hash_builder(machine)
+        local builder = make(self, machine)
+        return new_mcycle_liar(builder, function(liar, _, count, height)
+            local fake_hash = keccak(seed or "quitter")
             for _ = 1, height do
                 fake_hash = keccak(fake_hash, fake_hash)
             end
-            return pad_back(self, fake_hash, count, height)
+            return pad_back(liar, fake_hash, count, height)
         end)
     end
-    local player = use_machine(geometry, inputs, cache, options, { send_cmio_response = function() end })
+    use_machine(player, { send_cmio_response = function() end })
     player.collect_mcycle_bundle = function()
         local forest = hash_tree.frontier_forest(prt.LOG2_BUNDLE_MCYCLE_COUNT, "keccak256")
-        hash_tree.frontier_forest_pad_back(forest, keccak(options.seed or "quitter"), 1 << prt.LOG2_BUNDLE_MCYCLE_COUNT)
+        hash_tree.frontier_forest_pad_back(forest, keccak(seed or "quitter"), 1 << prt.LOG2_BUNDLE_MCYCLE_COUNT)
         return forest
     end
-    local commit = player.commit_mcycle_claim
-    player.commit_mcycle_claim = function(self)
+    local commit = player.event_handler.commit_mcycle_claim
+    player.event_handler.commit_mcycle_claim = function(self)
         self.done = true
         return commit(self)
     end
@@ -460,7 +448,7 @@ if role == "quitter" then
         next_argument = next_argument + 1
     end
     make_player = function(geometry, inputs, cache)
-        return new_quitter(geometry, inputs, cache, { seed = seed })
+        return new_quitter(geometry, inputs, cache, seed)
     end
 elseif role == "forger" then
     local index = assert(tonumber(take_argument("missing forged input index")), "invalid forged input index")

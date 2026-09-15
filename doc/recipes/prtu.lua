@@ -1,11 +1,9 @@
--- The parts of the PRT game shared by referee and players: geometry, event schemas, claim
--- trees (frontier forests of bundle roots, opened on demand), the referee's coroutine
--- dispatcher and server, and narration. The game script supplies the match walk,
--- machines, claim builds, tournament, and verification of the disputed transition.
+-- The parts of the PRT game shared by referee and players: geometry, event schemas,
+-- the referee's coroutine dispatcher and server, and narration. The game script supplies
+-- the match walk, machines, claim builds, tournament, and verification of the disputed transition.
 
 local cartesi = require("cartesi")
 local evmu = require("cartesi.evmu")
-local hash_tree = require("cartesi.hash-tree")
 local socket = require("socket")
 local new_clock = require("prt-clock")
 local new_response_queue = require("prt-response-queue")
@@ -54,78 +52,6 @@ local function narrate(tag, fmt, ...)
     end
     file:write(line, "\n")
     io.stdout:write(line, "\n")
-end
-
---------------------------------------------------------------------------------
--- Claim trees
---
--- A claim commits to 2^height leaves. The forest stores bundle roots at their logical
--- heights. Opening a bundle reconstructs its individual state hashes and expands its
--- opaque leaf after verifying the root. Implicit repetitions share the expanded subtree.
---------------------------------------------------------------------------------
-
-local tree_meta = { __index = {} }
-
--- Reconstruct an unopened bundle and install its authenticated subtree in the forest.
--- A readable state leaf means the bundle was already opened, possibly through padding.
--- docs:begin open_bundle
-function tree_meta.__index.open_bundle(tree, bundle_index)
-    assert(
-        math.type(bundle_index) == "integer"
-            and bundle_index >= 0
-            and bundle_index < (1 << (tree.height - tree.bundle_height)),
-        "invalid bundle index"
-    )
-    local position = bundle_index << tree.bundle_height
-    -- Validate the full forest and the bundle root before probing below an opaque hash.
-    hash_tree.frontier_forest_get_node_hash(tree.forest, position, tree.bundle_height)
-    if hash_tree.frontier_forest_get_node_hash(tree.forest, position, 0) then
-        return
-    end
-    local bundle_forest = tree:collect_bundle(bundle_index)
-    assert(bundle_forest.height == tree.bundle_height, "the opened bundle has the wrong height")
-    hash_tree.frontier_forest_expand_leaf(tree.forest, position, bundle_forest)
-end
--- docs:end open_bundle
-
--- Queries never execute a machine. Reading below an unopened bundle fails.
--- docs:begin get_tree_node
-function tree_meta.__index.get_node(tree, position, height)
-    return assert(hash_tree.frontier_forest_get_node_hash(tree.forest, position, height))
-end
--- docs:end get_tree_node
-
-function tree_meta.__index.get_root(tree)
-    return hash_tree.frontier_forest_get_root_hash(tree.forest)
-end
-
--- The two children of the node at position and height.
-function tree_meta.__index.get_children(tree, position, height)
-    local child_height = height - 1
-    return tree:get_node(position, child_height), tree:get_node(position + (1 << child_height), child_height)
-end
-
--- The proof of a state leaf, following a single path through the expanded forest.
-function tree_meta.__index.prove(tree, index)
-    return {
-        target_address = index,
-        log2_target_size = 0,
-        target_hash = tree:get_node(index, 0),
-        log2_root_size = tree.height,
-        root_hash = tree:get_root(),
-        sibling_hashes = hash_tree.frontier_forest_get_siblings(tree.forest, index, 0),
-    }
-end
-
--- A claim tree of 2^height leaves, with collect_bundle reconstructing one bundle on demand.
-local function new_tree(height, bundle_height, forest, collect_bundle)
-    assert(forest.height == height, "the forest does not match the claim height")
-    return setmetatable({
-        height = height,
-        bundle_height = bundle_height,
-        forest = forest,
-        collect_bundle = collect_bundle,
-    }, tree_meta)
 end
 
 -- The other turn in a two-claim match.
@@ -1504,7 +1430,6 @@ return {
     story = story,
     format_short_hash = format_short_hash,
     narrate = narrate,
-    new_tree = new_tree,
     get_other_turn_index = get_other_turn_index,
     new_server = new_server, -- prt-test.lua exercises the transport primitives directly
     answer_event = answer_event,

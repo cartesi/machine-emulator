@@ -9546,11 +9546,20 @@ and one uarch span in about three thousand. When a dispute descends
 below a stored bundle, the player opens it: a complete forest of the
 leaves under that one bundle, built by re-running a fork of the input’s
 boundary machine through the bundle’s transitions, exactly as a machine
-produces the disputed transition’s logs. The claim tree checks the
-opened forest against the committed bundle root and installs its subtree
-at that leaf (`open_bundle` in `prtu.lua`). Implicit repetitions share
-the expanded subtree, so opening one repeated bundle also makes its
-other occurrences readable.
+produces the disputed transition’s logs. The computation tree in
+`prt.lua` stores the forest and a bundle collector supplied by the
+player. For a uarch claim, that collector captures the input and period
+being disputed; the tree needs no mcycle/uarch dispatch. Its `get_proof`
+first asks `frontier_forest_get_siblings` for the path. If that returns
+`nil` and an error message because the path reaches an opaque hash, the
+tree invokes its collector and calls `frontier_forest_expand_leaf`. The
+forest checks the reconstructed subtree against the committed leaf
+before installing it. The tree then retries the sibling query and
+assembles the proof. Later proofs within that bundle use the installed
+subtree without replaying the machine. Child queries use the same proof
+path to open bundles when needed; raw node queries require their bundle
+to be open already. Implicit repetitions share the expanded subtree, so
+opening one repeated bundle also makes its other occurrences readable.
 
 The builds themselves stream out of the emulator. They follow the same
 collection contract as `cartesi-machine`’s computation-hash builders:

@@ -8350,24 +8350,26 @@ the root of the subtree covering exactly the leaves ending at the new
 output, the frontier entry the carry creates. A level is combined only
 once every 2<sup>*l*</sup> outputs, so a long run of outputs costs
 constant work each, amortized. The function `frontier_append` appends
-`hashes[first..last]` in order as maximal aligned complete subtrees,
-each hashed into one root and pushed back as one entry:
+hashes in the half-open range `[begin_index, end_index)` in order as
+maximal aligned complete subtrees, each hashed into one root and pushed
+back as one entry. The bounds default to `1` and `#hashes + 1`; equal
+bounds select an empty range:
 
 ``` lua
-local function frontier_append(frontier, hashes, first, last, height)
+local function frontier_append(frontier, hashes, begin_index, end_index, height)
     local hash_function = assert(frontier.hash_function)
-    first, last = normalize_range(hashes, first, last)
+    begin_index, end_index = normalize_range(hashes, begin_index, end_index)
     local first_level = (height or 0) + 1
     assert_aligned_below(frontier, first_level, "frontier is not aligned to the subtree size")
-    assert(frontier_padding_fits(frontier, last - first + 1, first_level), "too many leaves")
-    while first <= last do
+    assert(frontier_padding_fits(frontier, end_index - begin_index, first_level), "too many leaves")
+    while begin_index < end_index do
         local added_height = 0
         local subtree_count = 1
-        while not frontier[first_level + added_height] and subtree_count <= ((last - first + 1) >> 1) do
+        while not frontier[first_level + added_height] and subtree_count <= ((end_index - begin_index) >> 1) do
             added_height = added_height + 1
             subtree_count = subtree_count << 1
         end
-        local nodes = table.move(hashes, first, first + subtree_count - 1, 1, {})
+        local nodes = table.move(hashes, begin_index, begin_index + subtree_count - 1, 1, {})
         for _ = 1, added_height do
             local parents = {}
             for j = 1, #nodes, 2 do
@@ -8376,7 +8378,7 @@ local function frontier_append(frontier, hashes, first, last, height)
             nodes = parents
         end
         frontier_push_back(frontier, nodes[1], first_level + added_height - 1)
-        first = first + subtree_count
+        begin_index = begin_index + subtree_count
     end
 end
 ```
@@ -9638,35 +9640,40 @@ restore it. The machine sender and logged transition both treat an
 inapplicable delivery as a no-op. At a terminal boundary the slot idles
 and the builders pad it from there; a transition proof with a posted
 input logs the same no-op through `log_send_cmio_response`. The player
-constructor is
-`prt.new_player(geometry, inputs, machine_cache, options)`. The caller
-supplies a private copy of the contract inputs and owns the cache.
-Strategy constructors configure those resources before the player’s
-operations capture them in closures. Neither resource is stored in the
-player table. The execution drivers receive a builder tied to their
-machine, so nested bundle collection cannot replace another execution’s
-machine. The epoch driver requires begin and end input indices, with an
-optional outputs vector last. Input and period indices are zero-based
-throughout the player and referee; only Lua input-array lookups add one.
-The epoch period index combines the input index and its period index,
-while the separate transition offset splits into an mcycle offset and a
-uarch cycle. Keeping those coordinates separate avoids overflowing a
-64-bit integer. The epoch driver owns the cumulative outputs frontier;
-the input driver appends accepted outputs and checks the reported
-outputs Merkle root before committing. The honest player uses native
-machines and ordinary computation-hash builders directly; the driver
-passes the input index and mcycle boundary to the builders, without
-attaching execution context or ownership to the machine. The dishonest
-implementations in `prt-dishonest.lua` wrap those objects and maintain
-their own private bookkeeping, while sharing the execution lifecycle,
-claim trees, and event handlers. The forger changes its private input
-list, while the referee continues to verify against the original
-contract inputs. The tamperer configures its cache to wrap execution
-clones and preserve private strategy state on rollback. Retained
-checkpoints remain native machines. The fabulist replaces a sample as it
-enters a computation hash, including when that sample lies in repeated
-padding. Dishonest strategies can wrap the player’s bundle-collection
-methods, and the ordinary claim tree authenticates every opened bundle.
+constructor is `prt.new_player(geometry, inputs, machine_cache, label)`.
+The caller supplies a private copy of the contract inputs and owns the
+cache. The player stores its geometry, inputs, and cache as fields;
+shared methods in `player_meta.__index` access them through `self`. The
+label defaults to `honest`. Each player has its own `event_handler`
+table initialized with the default handlers. The transport calls
+`player.event_handler[event_name](player, ...)`; strategies can replace
+entries without changing other players. Strategies and tests override
+builder methods on individual players. The `output_index` field selects
+the output to prove, defaulting to the last output. The execution
+drivers receive a builder tied to their machine, so nested bundle
+collection cannot replace another execution’s machine. The epoch driver
+requires begin and end input indices, with an optional outputs vector
+last. Input and period indices are zero-based throughout the player and
+referee; only Lua input-array lookups add one. The epoch period index
+combines the input index and its period index, while the separate
+transition offset splits into an mcycle offset and a uarch cycle.
+Keeping those coordinates separate avoids overflowing a 64-bit integer.
+The epoch driver owns the cumulative outputs frontier; the input driver
+appends accepted outputs and checks the reported outputs Merkle root
+before committing. The honest player uses native machines and ordinary
+computation-hash builders directly; the driver passes the input index
+and mcycle boundary to the builders, without attaching execution context
+or ownership to the machine. The dishonest implementations in
+`prt-dishonest.lua` wrap those objects and maintain their own private
+bookkeeping, while sharing the execution lifecycle, claim trees, and
+event handlers. The forger changes its private input list, while the
+referee continues to verify against the original contract inputs. The
+tamperer configures its cache to wrap execution clones and preserve
+private strategy state on rollback. Retained checkpoints remain native
+machines. The fabulist replaces a sample as it enters a computation
+hash, including when that sample lies in repeated padding. Dishonest
+strategies can wrap the player’s bundle-collection methods, and the
+ordinary claim tree authenticates every opened bundle.
 
 ### The tournament
 
@@ -10050,31 +10057,31 @@ The logs come from a holder of either claim, produced by positioning a
 fresh fork at the transition and logging it:
 
 ``` lua
-    function player.prove_state_transition(_, input_index, period_index, state_transition_offset)
-        local mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
-        local machine, _ <close> = machine_cache:clone_at_input_boundary(input_index, run_to_input_boundary)
-        local revert_root_hash = machine:get_root_hash()
-        local data = inputs[input_index + 1]
-        if state_transition_offset == 0 and period_index == 0 and data then
-            -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
-            local send_cmio_log =
-                machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
-            return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
-        end
-        local builder = options.make_null_computation_hash_builder(machine)
-        run_advance_state_input(
-            builder,
-            input_index,
-            combine_input_mcycle_offset(geometry.mcycles_per_period, period_index, mcycle_offset),
-            revert_root_hash
-        )
-        machine:run_uarch(uarch_cycle)
-        if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
-            local step_log = machine:log_step_uarch()
-            return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }
-        end
-        return { step_log = machine:log_step_uarch() }
+function event_handler.prove_state_transition(self, input_index, period_index, state_transition_offset)
+    local mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
+    local machine, _ <close> = self:clone_at_input_boundary(input_index)
+    local revert_root_hash = machine:get_root_hash()
+    local data = self.inputs[input_index + 1]
+    if state_transition_offset == 0 and period_index == 0 and data then
+        -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
+        local send_cmio_log =
+            machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
+        return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
+    local builder = self:make_null_computation_hash_builder(machine)
+    self:run_advance_state_input(
+        builder,
+        input_index,
+        combine_input_mcycle_offset(self.geometry.mcycles_per_period, period_index, mcycle_offset),
+        revert_root_hash
+    )
+    machine:run_uarch(uarch_cycle)
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
+        local step_log = machine:log_step_uarch()
+        return { step_log = step_log, reset_uarch_log = machine:log_reset_uarch() }
+    end
+    return { step_log = machine:log_step_uarch() }
+end
 ```
 
 ### The referee server

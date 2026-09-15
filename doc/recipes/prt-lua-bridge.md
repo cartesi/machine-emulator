@@ -267,13 +267,14 @@ period_index, state_transition_offset). Its machine access logs and input bytes
 are encoded for the pinned proofs argument of winLeafMatch.
 
 Load [prt.lua](prt.lua) as a module and construct the player with
-new_player(geometry, inputs, machine_cache, options), using the validated
+new_player(geometry, inputs, machine_cache, label), using the validated
 geometry, verified epoch inputs, and a caller-owned cache from
-new_machine_cache. Call its
-commit_mcycle_claim, commit_uarch_claim, get_claim_children, reveal_bisection,
-seal_divergence, prove_state_transition, and prove_outputs_merkle_root methods
-directly. Coordinates passed to these methods are zero-based. The player's
-separate prove_output method and output selection are not needed for staging.
+new_machine_cache. Call its event_handler entries for commit_mcycle_claim,
+commit_uarch_claim, reveal_bisection, seal_divergence, prove_state_transition,
+and prove_outputs_merkle_root, passing the player as the first argument.
+Coordinates passed to these handlers are zero-based. Read claim children through
+player.trees[claim]:get_child_hashes(position, height). The prove_output handler
+and output selection are not needed for staging.
 
 Compute for an eligible job, then refresh the head and derive the action set
 again before using the result. Blocks continue advancing while a method runs,

@@ -5358,8 +5358,10 @@ Before building its initial claim, the player checks that the template is waitin
 `load_cmio_input` skips absent inputs and otherwise sends the input with the pre-delivery `revert_root_hash`. Forward execution and disputes use the same loader.
 The epoch driver retains the expected boundary hash across rejection and updates it only after acceptance. Input delivery checks this expected hash, and rollback must restore it.
 The machine sender and logged transition both treat an inapplicable delivery as a no-op. At a terminal boundary the slot idles and the builders pad it from there; a transition proof with a posted input logs the same no-op through `log_send_cmio_response`.
-The player constructor is `prt.new_player(geometry, inputs, machine_cache, options)`.
-The caller supplies a private copy of the contract inputs and owns the cache. Strategy constructors configure those resources before the player's operations capture them in closures. Neither resource is stored in the player table.
+The player constructor is `prt.new_player(geometry, inputs, machine_cache, label)`.
+The caller supplies a private copy of the contract inputs and owns the cache. The player stores its geometry, inputs, and cache as fields; shared methods in `player_meta.__index` access them through `self`. The label defaults to `honest`.
+Each player has its own `event_handler` table initialized with the default handlers. The transport calls `player.event_handler[event_name](player, ...)`; strategies can replace entries without changing other players.
+Strategies and tests override builder methods on individual players. The `output_index` field selects the output to prove, defaulting to the last output.
 The execution drivers receive a builder tied to their machine, so nested bundle collection cannot replace another execution's machine. The epoch driver requires begin and end input indices, with an optional outputs vector last.
 Input and period indices are zero-based throughout the player and referee; only Lua input-array lookups add one.
 The epoch period index combines the input index and its period index, while the separate transition offset splits into an mcycle offset and a uarch cycle. Keeping those coordinates separate avoids overflowing a 64-bit integer.

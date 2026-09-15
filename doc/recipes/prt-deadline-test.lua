@@ -26,6 +26,26 @@ local function repeated_tree(value, height)
 end
 
 return function(run_with_server)
+    -- Replacing one player's handler must leave the other player's defaults intact.
+    do
+        local first, second = prt.new_player(), prt.new_player()
+        local original = second.event_handler.prove_output
+        first.event_handler.prove_output = function(player)
+            assert(player == first, "dispatcher passed the handler table instead of the player")
+            return {}
+        end
+        assert(second.event_handler.prove_output == original, "handler override changed another player")
+        local event = cartesi.tojson({ operation = "prove_output" }, -1)
+        local encoded = prtu.answer_event(first, event)
+        assert(next(cartesi.fromjson(encoded).value) == nil, "dispatcher ignored the handler override")
+        second.event_handler.prove_output = nil
+        second.prove_output = function()
+            error("dispatcher called an ordinary player method")
+        end
+        local ok, err = pcall(prtu.answer_event, second, event)
+        assert(not ok and err:find("missing event handler"), "dispatcher fell back to an ordinary player method")
+    end
+
     -- One ordinary event can answer immediately or schedule explicitly. Its only wire
     -- argument names a claim, so the transport cannot derive a deadline from its position.
     run_with_server(function(server, run_client, wait_connections)
@@ -38,20 +58,22 @@ return function(run_with_server)
         local calls = 0
         local player = {
             label = "explicit",
-            probe = function(self, claim, ...)
-                assert(select("#", ...) == 0, "transport added arguments to the player handler")
-                assert(claim == "claim")
-                if acknowledge_only then
-                    return true
-                elseif not response_block then
-                    return children
-                end
-                return prtu.schedule_response(self, response_block, function()
-                    assert(server:get_time() == response_block, "callback ran outside its scheduled block")
-                    calls = calls + 1
-                    return children
-                end)
-            end,
+            event_handler = {
+                probe = function(self, claim, ...)
+                    assert(select("#", ...) == 0, "transport added arguments to the player handler")
+                    assert(claim == "claim")
+                    if acknowledge_only then
+                        return true
+                    elseif not response_block then
+                        return children
+                    end
+                    return prtu.schedule_response(self, response_block, function()
+                        assert(server:get_time() == response_block, "callback ran outside its scheduled block")
+                        calls = calls + 1
+                        return children
+                    end)
+                end,
+            },
         }
         run_client(nil, function(_, line)
             return prtu.answer_event(player, line)
@@ -87,9 +109,11 @@ return function(run_with_server)
     -- A failed handler must not leave its request available to later scheduling calls.
     do
         local player = {
-            schedule_match_elimination = function()
-                error("handler failed")
-            end,
+            event_handler = {
+                schedule_match_elimination = function()
+                    error("handler failed")
+                end,
+            },
         }
         local ok, err = pcall(
             prtu.answer_event,
@@ -371,7 +395,7 @@ return function(run_with_server)
         local left, right = tree:get_child_hashes(0, tree.height)
         player.trees[tree:get_root_hash()] = tree
         local scheduled_calls, reveal_calls = {}, 0
-        player.schedule_match_elimination = function(self, block)
+        player.event_handler.schedule_match_elimination = function(self, block)
             return prtu.schedule_response(self, block, function()
                 scheduled_calls[block] = (scheduled_calls[block] or 0) + 1
                 return {}
@@ -644,24 +668,24 @@ return function(run_with_server)
             finals[3], finals[4] = after, after
         end
         for index, final in ipairs(finals) do
-            local player = prt.new_player(geometry, {}, nil, { label = "fixture" .. index })
+            local player = prt.new_player(geometry, {}, nil, "fixture" .. index)
             player.make_mcycle_tree = function()
                 return repeated_tree(final, geometry.mcycle_height)
             end
             player.make_uarch_tree = function()
                 return repeated_tree(final, geometry.uarch_height)
             end
-            player.prove_state_transition = function()
+            player.event_handler.prove_state_transition = function()
                 return logs
             end
-            player.prove_outputs_merkle_root = function()
+            player.event_handler.prove_outputs_merkle_root = function()
                 return {}
             end
             players[index] = player
         end
         if mode == "uarch_inactive" then
             local ordered =
-                { players[1].make_mcycle_tree():get_root_hash(), players[2].make_mcycle_tree():get_root_hash() }
+                { players[1]:make_mcycle_tree():get_root_hash(), players[2]:make_mcycle_tree():get_root_hash() }
             table.sort(ordered, function(a, b)
                 return cartesi.tohex(a) < cartesi.tohex(b)
             end)
@@ -688,7 +712,7 @@ return function(run_with_server)
             assert(inactive[1] ~= inactive[2])
         end
         -- Determine the bracket without relying on connection order.
-        local roots = { players[1].make_mcycle_tree():get_root_hash(), players[2].make_mcycle_tree():get_root_hash() }
+        local roots = { players[1]:make_mcycle_tree():get_root_hash(), players[2]:make_mcycle_tree():get_root_hash() }
         local first = cartesi.tohex(roots[1]) < cartesi.tohex(roots[2]) and 1 or 2
         run_with_server(function(server, run_client, wait_connections)
             current_server = server
@@ -754,7 +778,7 @@ return function(run_with_server)
                         end
                     end
                     if holder then
-                        local response = holder[request](holder, table.unpack(arguments))
+                        local response = holder.event_handler[request](holder, table.unpack(arguments))
                         response.block, response.eligible, response.expires = 0, 0, math.maxinteger
                         local saved = self.clock.block
                         self.clock.block = proof_deadline
@@ -804,9 +828,11 @@ return function(run_with_server)
                             invalid_proofs = invalid_proofs + 1
                             return prtu.answer_event({
                                 label = player.label,
-                                prove_state_transition = function()
-                                    return invalid_logs
-                                end,
+                                event_handler = {
+                                    prove_state_transition = function()
+                                        return invalid_logs
+                                    end,
+                                },
                             }, line)
                         end
                         local opening = request == "reveal_bisection" or request == "seal_divergence"

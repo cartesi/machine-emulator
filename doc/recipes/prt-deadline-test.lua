@@ -22,7 +22,7 @@ local function repeated_tree(value, height)
     for _ = 1, 1 << height do
         hash_tree.frontier_forest_push_back(forest, value)
     end
-    return prtu.new_tree(height, 0, forest)
+    return prt.new_tree(height, 0, forest)
 end
 
 return function(run_with_server)
@@ -674,7 +674,7 @@ return function(run_with_server)
                     for leaf = 0, 7 do
                         hash_tree.frontier_forest_push_back(forest, leaf == 1 and keccak("inactive" .. seed) or after)
                     end
-                    tree = prtu.new_tree(3, 0, forest)
+                    tree = prt.new_tree(3, 0, forest)
                 until cartesi.tohex(tree:get_root()) > cartesi.tohex(ordered[2])
                 players[index].make_uarch_tree = function()
                     return tree

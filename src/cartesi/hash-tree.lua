@@ -493,7 +493,7 @@ local function descend_tree(tree, leaf_index, bit, stop_bit, siblings)
     end
 
     local value = get_or_last(tree[1], level_index)
-    assert(is_tree(value), "the node is below an opaque hash")
+    if not is_tree(value) then return nil, "the node is below an opaque hash" end
     return descend_tree(value, leaf_index, bit, stop_bit, siblings)
 end
 
@@ -682,8 +682,10 @@ end
 
 -- The node hash at height whose first covered leaf is position, following the machine API's
 -- position-first argument order. Requires the forest to be full and position to be aligned
--- to the node size. Does not mutate the forest. O(log2_max_leaves).
-local function frontier_forest_get_node(forest, position, height)
+-- to the node size. Returns nil and an error message below an opaque hash. Invalid
+-- arguments and incomplete forests still raise errors. Does not mutate the forest.
+-- O(log2_max_leaves).
+local function frontier_forest_get_node_hash(forest, position, height)
     local top = assert(forest[forest.height + 1], "the forest is not full")
     assert_valid_forest_node(forest, position, height)
     local current_bit = 1 << top.height
@@ -734,14 +736,17 @@ end
 -- into the given array (a new one when omitted) and returns it, in a single descent,
 -- O(log2_max_leaves). Requires the forest to be full and position to be aligned to the
 -- node size. Does not mutate the forest. A caller proves across two stacked forests by
--- appending the inner forest's siblings and then the outer forest's.
+-- appending the inner forest's siblings and then the outer forest's. Returns nil and an
+-- error message if the path reaches an opaque hash, leaving into unchanged. Invalid
+-- arguments and incomplete forests still raise errors.
 local function frontier_forest_get_siblings(forest, position, height, into)
     local top = assert(forest[forest.height + 1], "the forest is not full")
     assert_valid_forest_node(forest, position, height)
     local current_bit = 1 << top.height
     local stop_bit = 1 << height
     local siblings = {}
-    descend_tree(top, position, current_bit, stop_bit, siblings)
+    local node, err = descend_tree(top, position, current_bit, stop_bit, siblings)
+    if not node then return nil, err end
     into = into or {}
     for i = #siblings, 1, -1 do
         into[#into + 1] = siblings[i]
@@ -766,7 +771,7 @@ return {
     frontier_forest_append = frontier_forest_append,
     frontier_forest_pad_back = frontier_forest_pad_back,
     frontier_forest_get_root_hash = frontier_forest_get_root_hash,
-    frontier_forest_get_node = frontier_forest_get_node,
+    frontier_forest_get_node_hash = frontier_forest_get_node_hash,
     frontier_forest_expand_leaf = frontier_forest_expand_leaf,
     frontier_forest_get_siblings = frontier_forest_get_siblings,
 }

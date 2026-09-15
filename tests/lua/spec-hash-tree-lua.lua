@@ -493,7 +493,7 @@ describe("hash-tree.lua", function()
                 for index = 0, (MAX4 >> log2_size) - 1 do
                     local position = index << log2_size
                     local target_hash = levels[log2_size][index + 1]
-                    expect.equal(hash_tree.frontier_forest_get_node(forest, position, log2_size), target_hash)
+                    expect.equal(hash_tree.frontier_forest_get_node_hash(forest, position, log2_size), target_hash)
                     local siblings = hash_tree.frontier_forest_get_siblings(forest, position, log2_size)
                     expect.equal(#siblings, H4 - log2_size)
                     for sibling_height = log2_size, H4 - 1 do
@@ -558,22 +558,73 @@ describe("hash-tree.lua", function()
             local frontier = hash_tree.frontier(H4, "keccak256")
             hash_tree.frontier_append(frontier, roots, 1, 5, 2)
             expect.equal(hash_tree.frontier_forest_get_root_hash(forest), hash_tree.frontier_get_root_hash(frontier))
-            expect.equal(hash_tree.frontier_forest_get_node(forest, 4, 2), roots[2])
+            expect.equal(hash_tree.frontier_forest_get_node_hash(forest, 4, 2), roots[2])
+            local node_hash, node_err = hash_tree.frontier_forest_get_node_hash(forest, 0, 1)
+            expect.equal(node_hash, nil)
+            expect.equal(node_err, "the node is below an opaque hash")
             expect.fail(function()
-                hash_tree.frontier_forest_get_node(forest, 0, 1)
-            end, "below an opaque hash")
-            expect.fail(function()
-                hash_tree.frontier_forest_get_node(forest, 1, 2)
+                hash_tree.frontier_forest_get_node_hash(forest, 1, 2)
             end, "not aligned")
             expect.fail(function()
                 hash_tree.frontier_forest_get_siblings(forest, 1, 2)
             end, "not aligned")
             local into = { roots[1] }
-            expect.fail(function()
-                hash_tree.frontier_forest_get_siblings(forest, 0, 0, into)
-            end, "below an opaque hash")
+            local siblings, err = hash_tree.frontier_forest_get_siblings(forest, 0, 0, into)
+            expect.equal(siblings, nil)
+            expect.equal(err, "the node is below an opaque hash")
             expect.equal(#into, 1)
             expect.equal(into[1], roots[1])
+        end)
+
+        it("retries node and sibling queries after expanding an opaque bundle", function()
+            local bundle = hash_tree.frontier_forest(2, "keccak256")
+            hash_tree.frontier_forest_pad_back(bundle, keccak("state"), 4)
+            local forest = hash_tree.frontier_forest(H4, "keccak256")
+            hash_tree.frontier_forest_pad_back(forest, hash_tree.frontier_forest_get_root_hash(bundle), 4, 2)
+            local root = hash_tree.frontier_forest_get_root_hash(forest)
+            local node_hash, node_err = hash_tree.frontier_forest_get_node_hash(forest, 13, 0)
+            expect.equal(node_hash, nil)
+            expect.equal(node_err, "the node is below an opaque hash")
+            local siblings, err = hash_tree.frontier_forest_get_siblings(forest, 13, 0)
+            expect.equal(siblings, nil)
+            expect.equal(err, "the node is below an opaque hash")
+            hash_tree.frontier_forest_expand_leaf(forest, 12, bundle)
+            for _, position in ipairs({ 12, 13, 15, 0 }) do
+                siblings, err = hash_tree.frontier_forest_get_siblings(forest, position, 0)
+                expect.equal(err, nil)
+                node_hash, node_err = hash_tree.frontier_forest_get_node_hash(forest, position, 0)
+                expect.equal(node_hash, keccak("state"))
+                expect.equal(node_err, nil)
+                hash_tree.verify_slice({
+                    target_address = position,
+                    log2_target_size = 0,
+                    target_hash = hash_tree.frontier_forest_get_node_hash(forest, position, 0),
+                    log2_root_size = H4,
+                    root_hash = root,
+                    sibling_hashes = siblings,
+                })
+            end
+            expect.equal(#hash_tree.frontier_forest_get_siblings(forest, 0, H4), 0)
+            for _, position in ipairs({ -1, 1 << H4, 0.5, "0" }) do
+                expect.fail(function()
+                    hash_tree.frontier_forest_get_siblings(forest, position, 0)
+                end, "invalid node position")
+                expect.fail(function()
+                    hash_tree.frontier_forest_get_node_hash(forest, position, 0)
+                end, "invalid node position")
+            end
+            expect.fail(function()
+                hash_tree.frontier_forest_get_node_hash(forest, 0, -1)
+            end, "invalid node height")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_node_hash(hash_tree.frontier_forest(H4, "keccak256"), 0, 0)
+            end, "the forest is not full")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_siblings(forest, 0, -1)
+            end, "invalid node height")
+            expect.fail(function()
+                hash_tree.frontier_forest_get_siblings(hash_tree.frontier_forest(H4, "keccak256"), 0, 0)
+            end, "the forest is not full")
         end)
 
         it("queries inside completed forests, including repeated ones", function()
@@ -717,8 +768,8 @@ describe("hash-tree.lua", function()
                 level_pad = keccak(level_pad, level_pad)
             end
             expect.equal(hash_tree.frontier_forest_get_root_hash(forest), root)
-            expect.equal(hash_tree.frontier_forest_get_node(forest, 0, 0), first_leaf)
-            expect.equal(hash_tree.frontier_forest_get_node(forest, (1 << H62) - 1, 0), pad)
+            expect.equal(hash_tree.frontier_forest_get_node_hash(forest, 0, 0), first_leaf)
+            expect.equal(hash_tree.frontier_forest_get_node_hash(forest, (1 << H62) - 1, 0), pad)
             hash_tree.verify_slice({
                 target_address = (1 << H62) - 1,
                 log2_target_size = 0,
@@ -792,7 +843,7 @@ describe("hash-tree.lua", function()
             expect.equal(forest.leaf_count, 1 << 62)
             for _, position in ipairs({ 0, 1, (1 << 62) - 2, (1 << 62) - 1 }) do
                 local target = leaves[(position % 2) + 1]
-                expect.equal(hash_tree.frontier_forest_get_node(forest, position, 0), target)
+                expect.equal(hash_tree.frontier_forest_get_node_hash(forest, position, 0), target)
                 hash_tree.verify_slice({
                     target_address = position,
                     log2_target_size = 0,
@@ -833,9 +884,9 @@ describe("hash-tree.lua", function()
                 end)
                 expect.equal(hash_tree.frontier_forest_get_root_hash(forest), root)
                 expect.equal(forest.leaf_count, MAX4)
-                expect.fail(function()
-                    hash_tree.frontier_forest_get_node(forest, 0, 0)
-                end, "below an opaque hash")
+                local node_hash, err = hash_tree.frontier_forest_get_node_hash(forest, 0, 0)
+                expect.equal(node_hash, nil)
+                expect.equal(err, "the node is below an opaque hash")
             end
             expect.fail(function()
                 hash_tree.frontier_forest_expand_leaf(incomplete, 0, bundle)

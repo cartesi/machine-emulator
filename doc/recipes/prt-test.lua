@@ -74,12 +74,12 @@ for _, case in ipairs({
         local forest = builder:end_epoch()
         for i = 0, builder.max_bundles_per_input - 1 do
             local obtained =
-                hash_tree.frontier_forest_get_node(forest, i << builder.bundle_height, builder.bundle_height)
+                hash_tree.frontier_forest_get_node_hash(forest, i << builder.bundle_height, builder.bundle_height)
             assert(obtained == (i < case.ordinary and ordinary or padding), "fixed-point padding changed a bundle")
         end
         local last_leaf = (builder.max_bundle_count - 1) << builder.bundle_height
         assert(
-            hash_tree.frontier_forest_get_node(forest, last_leaf, builder.bundle_height) == padding,
+            hash_tree.frontier_forest_get_node_hash(forest, last_leaf, builder.bundle_height) == padding,
             "fixed-point padding has the wrong final sample"
         )
     end
@@ -146,7 +146,7 @@ for _, count in ipairs({ 0, 3, 15, 17 }) do
         assert(ok, forest)
         for i = 0, 15 do
             local expected = i < count and ordinary or padding
-            assert(hash_tree.frontier_forest_get_node(forest, i, 0) == expected)
+            assert(hash_tree.frontier_forest_get_node_hash(forest, i, 0) == expected)
         end
     end
 end
@@ -179,7 +179,7 @@ do
     for i = 0, 15 do
         local expected = i == 0 and first or (i < 3 and middle or padding)
         assert(
-            hash_tree.frontier_forest_get_node(forest, i, 0) == expected,
+            hash_tree.frontier_forest_get_node_hash(forest, i, 0) == expected,
             "bundle collection lost its phase or samples"
         )
     end
@@ -238,9 +238,9 @@ for _, rejected in ipairs({ false, true }) do
         local player = new_bundle_player(machine)
         local forest = player:collect_uarch_cycle_bundle(0, 1, 2 * bundles_per_mcycle + offset)
         local last_leaf = (1 << LOG2_BUNDLE_UARCH_CYCLE_COUNT) - 1
-        assert(hash_tree.frontier_forest_get_node(forest, 0, 0) == (offset == 0 and first or halted))
-        assert(hash_tree.frontier_forest_get_node(forest, 1, 0) == (offset == 0 and second or halted))
-        assert(hash_tree.frontier_forest_get_node(forest, last_leaf, 0) == (offset == 0 and halted or reset))
+        assert(hash_tree.frontier_forest_get_node_hash(forest, 0, 0) == (offset == 0 and first or halted))
+        assert(hash_tree.frontier_forest_get_node_hash(forest, 1, 0) == (offset == 0 and second or halted))
+        assert(hash_tree.frontier_forest_get_node_hash(forest, last_leaf, 0) == (offset == 0 and halted or reset))
         assert(machine.replay_calls == 2 and machine.collection_calls == 1)
     end
 end

@@ -1483,45 +1483,55 @@ end
 
 local tree_meta = { __index = {} }
 
--- Raw node lookups require the bundle to have been opened by a proof query.
--- docs:begin get_tree_node
-function tree_meta.__index.get_node(tree, position, height)
-    return assert(hash_tree.frontier_forest_get_node_hash(tree.forest, position, height))
+-- Called only after a forest query reports an opaque path at a valid position.
+local function open_bundle(tree, position)
+    local bundle_index = position >> tree.bundle_height
+    local bundle = tree:collect_bundle(bundle_index)
+    hash_tree.frontier_forest_expand_leaf(tree.forest, bundle_index << tree.bundle_height, bundle)
 end
--- docs:end get_tree_node
 
-function tree_meta.__index.get_root(tree)
-    return hash_tree.frontier_forest_get_root_hash(tree.forest)
+-- Node hash queries open their bundle only when its contents are needed.
+-- docs:begin get_tree_node_hash
+function tree_meta.__index:get_node_hash(position, height)
+    local hash = hash_tree.frontier_forest_get_node_hash(self.forest, position, height)
+    if not hash then
+        open_bundle(self, position)
+        hash = assert(hash_tree.frontier_forest_get_node_hash(self.forest, position, height))
+    end
+    return hash
+end
+-- docs:end get_tree_node_hash
+
+function tree_meta.__index:get_root_hash()
+    return hash_tree.frontier_forest_get_root_hash(self.forest)
 end
 
 -- A proof query opens its bundle only when the sibling path reaches an opaque hash.
 -- The forest authenticates the reconstructed subtree before installing it. Subsequent
 -- queries reuse that subtree, including its occurrences in implicit padding.
 -- docs:begin get_proof
-function tree_meta.__index.get_proof(tree, position, height)
+function tree_meta.__index:get_proof(position, height)
     height = height or 0
-    local siblings = hash_tree.frontier_forest_get_siblings(tree.forest, position, height)
+    local siblings = hash_tree.frontier_forest_get_siblings(self.forest, position, height)
     if not siblings then
-        local bundle_index = position >> tree.bundle_height
-        local bundle = tree:collect_bundle(bundle_index)
-        hash_tree.frontier_forest_expand_leaf(tree.forest, bundle_index << tree.bundle_height, bundle)
-        siblings = assert(hash_tree.frontier_forest_get_siblings(tree.forest, position, height))
+        open_bundle(self, position)
+        siblings = assert(hash_tree.frontier_forest_get_siblings(self.forest, position, height))
     end
     return {
         target_address = position,
         log2_target_size = height,
-        target_hash = tree:get_node(position, height),
-        log2_root_size = tree.height,
-        root_hash = tree:get_root(),
+        target_hash = self:get_node_hash(position, height),
+        log2_root_size = self.height,
+        root_hash = self:get_root_hash(),
         sibling_hashes = siblings,
     }
 end
 -- docs:end get_proof
 
--- The right child is the left child's first proof sibling.
-function tree_meta.__index.get_children(tree, position, height)
-    local proof = tree:get_proof(position, height - 1)
-    return proof.target_hash, proof.sibling_hashes[1]
+-- The two child hashes, opening a bundle only if a node query needs it.
+function tree_meta.__index:get_child_hashes(position, height)
+    local child_height = height - 1
+    return self:get_node_hash(position, child_height), self:get_node_hash(position + (1 << child_height), child_height)
 end
 
 -- A claim tree of 2^height leaves, with collect_bundle reconstructing one bundle on demand.
@@ -1549,7 +1559,7 @@ local handlers = {}
 function handlers.schedule_match_timeout_win(player, deadline, computation_hash)
     return prtu.schedule_response(player, deadline, function()
         local tree = assert(player.trees[computation_hash], "event concerns a claim this player does not hold")
-        local left, right = tree:get_children(0, tree.height)
+        local left, right = tree:get_child_hashes(0, tree.height)
         return { computation_hash_left = left, computation_hash_right = right }
     end)
 end
@@ -1565,7 +1575,7 @@ end
 -- the last leaf. The proof query opens the last stored bundle if needed.
 local function make_claim(tree)
     local final_leaf_index = (1 << tree.height) - 1
-    local computation_hash_left, computation_hash_right = tree:get_children(0, tree.height)
+    local computation_hash_left, computation_hash_right = tree:get_child_hashes(0, tree.height)
     local final_state_hash_proof = tree:get_proof(final_leaf_index)
     return {
         computation_hash_left = computation_hash_left,
@@ -1579,12 +1589,12 @@ end
 function handlers.commit_mcycle_claim(player)
     write_stderr("%s: building mcycle claim\n", player.label)
     local tree = player:make_mcycle_tree()
-    player.trees[tree:get_root()] = tree
+    player.trees[tree:get_root_hash()] = tree
     local claim = make_claim(tree)
     write_stderr(
         "%s: posted claim %s with final state %s\n",
         player.label,
-        format_short_hash(tree:get_root()),
+        format_short_hash(tree:get_root_hash()),
         format_short_hash(claim.final_state_hash_proof.target_hash)
     )
     return claim
@@ -1597,10 +1607,10 @@ end
 function handlers.reveal_bisection(player, computation_hash, position, height, other_left_node)
     assert(height > 1)
     local tree = assert(player.trees[computation_hash], "event concerns a claim this player does not hold")
-    local turn_left_node, turn_right_node = tree:get_children(position, height)
+    local turn_left_node, turn_right_node = tree:get_child_hashes(position, height)
     local descend_left = turn_left_node ~= other_left_node
     local child_position = descend_left and position or position + (1 << (height - 1))
-    local turn_next_left_node, turn_next_right_node = tree:get_children(child_position, height - 1)
+    local turn_next_left_node, turn_next_right_node = tree:get_child_hashes(child_position, height - 1)
     return {
         turn_left_node = turn_left_node,
         turn_right_node = turn_right_node,
@@ -1614,7 +1624,7 @@ end
 -- At the first leaf of a bundle, the proof explicitly opens the preceding bundle too.
 function handlers.seal_divergence(player, computation_hash, position, other_left_node)
     local tree = assert(player.trees[computation_hash], "event concerns a claim this player does not hold")
-    local turn_left_node, turn_right_node = tree:get_children(position, 1)
+    local turn_left_node, turn_right_node = tree:get_child_hashes(position, 1)
     local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
     local descend_left = turn_left_node ~= other_left_node
     local leaf_index = position + (descend_left and 0 or 1)
@@ -1639,7 +1649,7 @@ end
 function handlers.commit_uarch_claim(player, input_index, period_index, next_state_hashes)
     write_stderr("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
     local tree = player:make_uarch_tree(input_index, period_index)
-    player.trees[tree:get_root()] = tree
+    player.trees[tree:get_root_hash()] = tree
     local claim = make_claim(tree)
     local final_state_hash = claim.final_state_hash_proof.target_hash
     assert(

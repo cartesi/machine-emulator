@@ -322,16 +322,17 @@ local function emit_schedule_match_timeout_win(tournament, match, deadline)
             validate_timeout_win_response(response, other_claim.computation_hash)
             story.report_timeout_win(match)
             return other_turn_index
-        end
+        end,
+        deadline
     )
 end
 
 local function emit_schedule_match_elimination(match, deadline)
-    return server:request_first_valid(EVERYONE, EVENTS.schedule_match_elimination, { deadline }, function(response)
-        assert(server:get_time() >= deadline and response == true)
+    return server:request_first_valid(EVERYONE, EVENTS.schedule_match_elimination, { deadline }, function()
+        assert(server:get_time() >= deadline)
         story.report_match_eliminated(match)
         return 0
-    end)
+    end, deadline)
 end
 
 -- Settles a uarch match once the walk isolates the divergent leaf. The referee emits the
@@ -356,10 +357,11 @@ local function settle_uarch_state_hash(
         EVERYONE,
         EVENTS.schedule_match_elimination,
         { deadline },
-        function(response)
-            assert(server:get_time() >= deadline and response == true)
+        function()
+            assert(server:get_time() >= deadline)
             return true
-        end
+        end,
+        deadline
     )
     local proof <close> = server:request_first_valid(
         subscriptions,
@@ -451,10 +453,10 @@ local function propagate_uarch_result(mcycle_match, winner, next_state_hashes)
         local mcycle_claim = mcycle_match.claims[claim_index]
         local elimination <close> = server:request_first_valid(
             EVERYONE, EVENTS.schedule_uarch_result_elimination, { winner_expires_at },
-            function(response)
-                assert(server:get_time() >= winner_expires_at and response == true)
+            function()
+                assert(server:get_time() >= winner_expires_at)
                 return true
-            end
+            end, winner_expires_at
         )
         local propagation <close> = server:request_first_valid(
             subscription_hash(mcycle_tournament.id, mcycle_claim),
@@ -1483,33 +1485,19 @@ end
 
 local handlers = {}
 
--- The claim in the player's lineage with the given root.
-local function get_claim_tree(player, computation_hash)
-    for _, tree in ipairs({ player.mcycle_claim, player.uarch_claim }) do
-        if tree:get_root() == computation_hash then
-            return tree
-        end
-    end
-    error("event concerns a claim this player does not hold: " .. format_short_hash(computation_hash))
+function handlers.schedule_match_timeout_win(player, deadline, computation_hash)
+    return prtu.schedule_response(player, deadline, function()
+        local tree = assert(player.trees[computation_hash], "event concerns a claim this player does not hold")
+        local left, right = tree:get_children(0, tree.height)
+        return { computation_hash_left = left, computation_hash_right = right }
+    end)
 end
 
-function handlers.get_claim_children(player, computation_hash)
-    local tree = get_claim_tree(player, computation_hash)
-    local left, right = tree:get_children(0, tree.height)
-    return { computation_hash_left = left, computation_hash_right = right }
-end
-
-function handlers.schedule_match_timeout_win(player, _, computation_hash)
-    return function()
-        return player:get_claim_children(computation_hash)
-    end
-end
-
-function handlers.schedule_match_elimination(player)
-    return function()
+function handlers.schedule_match_elimination(player, deadline)
+    return prtu.schedule_response(player, deadline, function()
         write_stderr("%s: returning eliminate_match\n", player.label)
-        return true
-    end
+        return {}
+    end)
 end
 
 -- A claim: the computation hash's two children and the standard proof of its final state,
@@ -1531,12 +1519,13 @@ end
 -- read against the players, without the referee ever narrating who holds what.
 function handlers.commit_mcycle_claim(player)
     write_stderr("%s: building mcycle claim\n", player.label)
-    player.mcycle_claim = player:make_mcycle_tree()
-    local claim = make_claim(player.mcycle_claim)
+    local tree = player:make_mcycle_tree()
+    player.trees[tree:get_root()] = tree
+    local claim = make_claim(tree)
     write_stderr(
         "%s: posted claim %s with final state %s\n",
         player.label,
-        format_short_hash(player.mcycle_claim:get_root()),
+        format_short_hash(tree:get_root()),
         format_short_hash(claim.final_state_hash_proof.target_hash)
     )
     return claim
@@ -1548,7 +1537,7 @@ end
 -- and authenticates that complete bundle before the walk continues through it.
 function handlers.reveal_bisection(player, computation_hash, position, height, other_left_node)
     assert(height > 1)
-    local tree = get_claim_tree(player, computation_hash)
+    local tree = assert(player.trees[computation_hash], "event concerns a claim this player does not hold")
     if height == tree.bundle_height then
         tree:open_bundle(position >> tree.bundle_height)
     end
@@ -1571,7 +1560,7 @@ end
 -- immediately before them, except at leaf zero where the referee already knows that state.
 -- At the first leaf of a bundle, the proof explicitly opens the preceding bundle too.
 function handlers.seal_divergence(player, computation_hash, position, other_left_node)
-    local tree = get_claim_tree(player, computation_hash)
+    local tree = assert(player.trees[computation_hash], "event concerns a claim this player does not hold")
     local turn_left_node, turn_right_node = tree:get_children(position, 1)
     local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
     local descend_left = turn_left_node ~= other_left_node
@@ -1592,15 +1581,16 @@ end
 
 -- Joins the uarch tournament over one mcycle period that the player's mcycle claim is
 -- disputed in, with a uarch claim whose final state must be one of the two contested values.
--- The uarch claim becomes the nested claim of the player's lineage, replacing any earlier
--- one, since the parent match is suspended until the uarch tournament ends. The input index
+-- The player stores the uarch tree by its computation hash alongside its earlier claims.
+-- The parent match is suspended until the uarch tournament ends. The input index
 -- and the period index are 0-based, as the referee counts them. A holder whose uarch claim
 -- ends in neither contested value cannot defend its parent claim, and dies on the
 -- contradiction.
 function handlers.commit_uarch_claim(player, input_index, period_index, next_state_hashes)
     write_stderr("%s: building uarch claim for input %d, period %d\n", player.label, input_index, period_index)
-    player.uarch_claim = player:make_uarch_tree(input_index, period_index)
-    local claim = make_claim(player.uarch_claim)
+    local tree = player:make_uarch_tree(input_index, period_index)
+    player.trees[tree:get_root()] = tree
+    local claim = make_claim(tree)
     local final_state_hash = claim.final_state_hash_proof.target_hash
     assert(
         final_state_hash == next_state_hashes[1] or final_state_hash == next_state_hashes[2],
@@ -1626,7 +1616,7 @@ local function new_player(geometry, inputs, machine_cache, options)
         or make_uarch_cycle_computation_hash_builder
     options.make_null_computation_hash_builder = options.make_null_computation_hash_builder
         or make_null_computation_hash_builder
-    local player = { label = options.label or "honest" }
+    local player = { label = options.label or "honest", trees = {} }
     for name, handler in pairs(handlers) do
         player[name] = handler
     end

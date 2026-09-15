@@ -26,6 +26,80 @@ local function repeated_tree(value, height)
 end
 
 return function(run_with_server)
+    -- One ordinary event can answer immediately or schedule explicitly. Its only wire
+    -- argument names a claim, so the transport cannot derive a deadline from its position.
+    run_with_server(function(server, run_client, wait_connections)
+        local event = prtu.define_event("probe", nil, "ClaimChildren")
+        prtu.EVENTS.probe = event
+        local left, right = keccak("explicit left"), keccak("explicit right")
+        local root = keccak(left, right)
+        local children = { computation_hash_left = left, computation_hash_right = right }
+        local response_block, acknowledge_only
+        local calls = 0
+        local player = {
+            label = "explicit",
+            probe = function(self, claim, ...)
+                assert(select("#", ...) == 0, "transport added arguments to the player handler")
+                assert(claim == "claim")
+                if acknowledge_only then
+                    return true
+                elseif not response_block then
+                    return children
+                end
+                return prtu.schedule_response(self, response_block, function()
+                    assert(server:get_time() == response_block, "callback ran outside its scheduled block")
+                    calls = calls + 1
+                    return children
+                end)
+            end,
+        }
+        run_client(nil, function(_, line)
+            return prtu.answer_event(player, line)
+        end, true)
+        wait_connections(1)
+        local function validate(response)
+            assert(response.computation_hash_left == left and response.computation_hash_right == right)
+            return root
+        end
+        local immediate <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate)
+        assert(immediate:wait() == root and calls == 0)
+        response_block = server:request_block() + 2
+        local delayed <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
+        do
+            local cancelled <close> = -- luacheck: ignore 211
+                server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
+        end
+        server:wait_until(response_block - 1)
+        assert(calls == 0, "scheduling ran a callback immediately")
+        assert(delayed:wait(response_block) == nil, "wait accepted a response at its exclusive deadline")
+        assert(delayed:wait(response_block + 1) == root and calls == 1, "cancellation failed or response was lost")
+        acknowledge_only = true
+        response_block = server:request_block() + 1
+        local unscheduled <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
+        assert(unscheduled:wait(response_block + 1) == nil and calls == 1, "acknowledgement scheduled a callback")
+        assert(
+            not pcall(prtu.schedule_response, player, response_block, function() end),
+            "finished handler retained routing"
+        )
+        prtu.EVENTS.probe = nil
+    end)
+
+    -- A failed handler must not leave its request available to later scheduling calls.
+    do
+        local player = {
+            schedule_match_elimination = function()
+                error("handler failed")
+            end,
+        }
+        local ok, err = pcall(
+            prtu.answer_event,
+            player,
+            cartesi.tojson({ id = 1, operation = "schedule_match_elimination", arguments = { 3 } }, -1)
+        )
+        assert(not ok and err:find("handler failed"), "transport swallowed the handler error")
+        assert(not pcall(prtu.schedule_response, player, 3, function() end), "failed handler retained routing")
+    end
+
     -- Time waits advance to their requested block, but do not suspend or emit another
     -- time request when the requested block has already been reached.
     run_with_server(function(server, run_client, wait_connections)
@@ -172,7 +246,8 @@ return function(run_with_server)
                 { 1 },
                 function(response)
                     return response
-                end
+                end,
+                1
             )
             if deadline then
                 assert(future:wait(deadline) == nil)
@@ -190,10 +265,11 @@ return function(run_with_server)
                 {},
                 prtu.EVENTS.schedule_match_elimination,
                 { 3 },
-                function(response)
-                    assert(response == true)
+                function()
+                    assert(server:get_time() >= 3)
                     return 0
-                end
+                end,
+                3
             )
             elimination:wait()
             resumed = true
@@ -214,17 +290,12 @@ return function(run_with_server)
         local server = prtu.new_server()
         local resumed, checked, ids = {}, {}, {}
         local function schedule(name, block, expires)
-            local future = server:request_first_valid(
-                {},
-                prtu.EVENTS.schedule_match_elimination,
-                { block },
-                function(response)
-                    checked[#checked + 1] = { name, server:get_time() }
-                    assert(server:get_time() >= block and (not expires or server:get_time() < expires))
-                    assert(response == true)
-                    return 0
-                end
-            )
+            local future = server:request_first_valid({}, prtu.define_event("probe"), { block }, function(response)
+                checked[#checked + 1] = { name, server:get_time() }
+                assert(server:get_time() >= block and (not expires or server:get_time() < expires))
+                assert(response == true)
+                return 0
+            end, block)
             ids[name] = future.id
             return future
         end
@@ -296,16 +367,15 @@ return function(run_with_server)
     -- Results survive until their own wait, and a timed wait can be retried.
     run_with_server(function(server, run_client, wait_connections)
         local player = prt.new_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, {}, nil)
-        local left, right = keccak("future left"), keccak("future right")
+        local tree = repeated_tree(keccak("future leaf"), 3)
+        local left, right = tree:get_children(0, tree.height)
+        player.trees[tree:get_root()] = tree
         local scheduled_calls, reveal_calls = {}, 0
-        player.get_claim_children = function()
-            return { computation_hash_left = left, computation_hash_right = right }
-        end
-        player.schedule_match_elimination = function(_, block)
-            return function()
+        player.schedule_match_elimination = function(self, block)
+            return prtu.schedule_response(self, block, function()
                 scheduled_calls[block] = (scheduled_calls[block] or 0) + 1
-                return true
-            end
+                return {}
+            end)
         end
         run_client(nil, function(event, line)
             assert(event.operation ~= "cancelled_probe", "a closed ordinary future was dispatched")
@@ -322,7 +392,8 @@ return function(run_with_server)
                 function(response)
                     assert(response.computation_hash_left == left and response.computation_hash_right == right)
                     return marker
-                end
+                end,
+                block + 2
             )
             local reveal <close> = server:request_first_valid(
                 {},
@@ -336,10 +407,11 @@ return function(run_with_server)
                 EVERYONE,
                 prtu.EVENTS.schedule_match_elimination,
                 { block + 5 },
-                function(response)
-                    assert(response == true)
+                function()
+                    assert(server:get_time() >= block + 5)
                     return 0
-                end
+                end,
+                block + 5
             )
             assert(server:get_time() == block, "request_first_valid suspended its caller")
             local ok, err = pcall(function()
@@ -347,7 +419,8 @@ return function(run_with_server)
                     EVERYONE,
                     prtu.EVENTS.schedule_match_elimination,
                     { block + 4 },
-                    function() end
+                    function() end,
+                    block + 4
                 )
                 local ordinary <close> = server:request_first_valid( -- luacheck: ignore 211
                     EVERYONE,
@@ -430,7 +503,8 @@ return function(run_with_server)
                         { "probe" },
                         prtu.EVENTS.schedule_match_elimination,
                         { server:request_block() + 10 },
-                        function() end
+                        function() end,
+                        server:request_block() + 10
                     )
                     local future <close> = server:request_first_valid({ "probe" }, probe, {}, function(v)
                         return v
@@ -464,10 +538,9 @@ return function(run_with_server)
     -- Malformed computed values cannot discard other responses in the same batch.
     run_with_server(function(server, run_client, wait_connections)
         local player = prt.new_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, {}, nil)
-        local left, right = keccak("left"), keccak("right")
-        player.get_claim_children = function()
-            return { computation_hash_left = left, computation_hash_right = right, output = "!" }
-        end
+        local tree = repeated_tree(keccak("leaf"), 3)
+        local left, right = tree:get_children(0, tree.height)
+        player.trees[tree:get_root()] = tree
         local accepted, malformed = 0, false
         run_client(nil, function(event, line)
             if event.operation == "probe" then
@@ -479,7 +552,9 @@ return function(run_with_server)
                 if #response.value > 0 then
                     assert(#response.value == 2)
                     local valid = response.value[1]
-                    assert(valid.value.output == "!")
+                    valid.value.output = "!"
+                    local elimination = response.value[2].value
+                    assert(type(elimination) == "table" and not next(elimination), "elimination response is not empty")
                     valid.request = "prove_output"
                     local invalid = copy(valid)
                     invalid.value.computation_hash_left = "!"
@@ -504,7 +579,8 @@ return function(run_with_server)
                             assert(response.output == "!", "an unrelated response schema decoded the value")
                             accepted = accepted + 1
                             return true
-                        end
+                        end,
+                        block
                     )
                     assert(timeout:wait(block + 1))
                 else
@@ -512,11 +588,12 @@ return function(run_with_server)
                         EVERYONE,
                         prtu.EVENTS.schedule_match_elimination,
                         { block },
-                        function(response)
-                            assert(response == true)
+                        function()
+                            assert(server:get_time() >= block)
                             accepted = accepted + 1
                             return true
-                        end
+                        end,
+                        block
                     )
                     assert(elimination:wait())
                 end
@@ -615,20 +692,20 @@ return function(run_with_server)
         run_with_server(function(server, run_client, wait_connections)
             current_server = server
             local request_first_valid = server.request_first_valid
-            server.request_first_valid = function(self, subscriptions, event, arguments, accept)
-                if event.scheduled_schema then
-                    local block = arguments[1]
+            server.request_first_valid = function(self, subscriptions, event, arguments, accept, response_block)
+                if response_block then
+                    local block = response_block
                     local expires = event == prtu.EVENTS.schedule_match_timeout_win and block + 1 or nil
                     local delay = block - self:request_block()
                     assert(delay == 1 or (event == prtu.EVENTS.schedule_match_elimination and delay == 2))
-                    local response = true
+                    local response = {}
                     if event == prtu.EVENTS.schedule_match_timeout_win then
                         assert(expires == block + 1)
                         for _, player in ipairs(players) do
-                            for _, tree in ipairs({ player.mcycle_claim, player.uarch_claim }) do
-                                if tree:get_root() == arguments[2] then
-                                    response = player:get_claim_children(arguments[2])
-                                end
+                            local tree = player.trees[arguments[2]]
+                            if tree then
+                                local left, right = tree:get_children(0, tree.height)
+                                response = { computation_hash_left = left, computation_hash_right = right }
                             end
                         end
                         assert(type(response) == "table")
@@ -640,16 +717,16 @@ return function(run_with_server)
                     self.clock.block = block
                     local ok, value = pcall(accept, response)
                     assert(ok and value, "eligible scheduled response rejected")
-                    local invalid = type(response) == "table" and copy(response) or false
-                    if type(invalid) == "table" then
-                        invalid.computation_hash_left = keccak("wrong children")
-                    end
-                    assert(not pcall(accept, invalid), "invalid scheduled response accepted")
                     if expires then
+                        local invalid = copy(response)
+                        invalid.computation_hash_left = keccak("wrong children")
+                        assert(not pcall(accept, invalid), "invalid scheduled response accepted")
                         self.clock.block = expires
                         assert(not pcall(accept, response), "scheduled response accepted at expiry")
                         self.clock.block = expires + 1
                         assert(not pcall(accept, response), "scheduled response accepted after expiry")
+                    else
+                        assert(pcall(accept), "elimination required response data")
                     end
                     probing = false
                     self.clock.block = saved
@@ -670,10 +747,7 @@ return function(run_with_server)
                     if request == "reveal_bisection" or request == "seal_divergence" then
                         for _, player in ipairs(players) do
                             local root = arguments[1]
-                            if
-                                player.mcycle_claim:get_root() == root
-                                or (player.uarch_claim and player.uarch_claim:get_root() == root)
-                            then
+                            if player.trees[root] then
                                 holder = player
                             end
                         end
@@ -709,13 +783,14 @@ return function(run_with_server)
                         return prtu.answer_event(closer, line)
                     end, true)
                 end
-                return request_first_valid(self, subscriptions, event, arguments, accept)
+                return request_first_valid(self, subscriptions, event, arguments, accept, response_block)
             end
             for slot = 1, #players do
                 local index = reverse and #players + 1 - slot or slot
                 local player = players[index]
+                local committed_uarch = false
                 run_client(nil, function(event, line)
-                    if prtu.EVENTS[event.operation] and prtu.EVENTS[event.operation].scheduled_schema then
+                    if event.id then
                         schedules[event.id] = (schedules[event.id] or 0) + 1
                     elseif event.operation == "cancel_response" then
                         local id = event.arguments[1]
@@ -740,7 +815,7 @@ return function(run_with_server)
                             or (mode == "timeout_seal" and opening and request == "seal_divergence")
                             or ((mode == "eliminate" or mode == "concurrent") and opening)
                             or (mode == "leaf_expiry" and request == "prove_state_transition")
-                            or (mode == "uarch_inactive" and index >= 3 and opening and player.uarch_claim)
+                            or (mode == "uarch_inactive" and index >= 3 and opening and committed_uarch)
                         then
                             return cartesi.tojson({ skip = true }, -1)
                         end
@@ -755,6 +830,9 @@ return function(run_with_server)
                         end
                     end
                     local encoded, done = prtu.answer_event(player, line)
+                    if event.operation == "commit_uarch_claim" then
+                        committed_uarch = true
+                    end
                     if mode == "uarch_without_holder" and index == 1 and event.operation == "commit_uarch_claim" then
                         return encoded, true
                     end

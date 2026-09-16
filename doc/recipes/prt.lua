@@ -1149,7 +1149,6 @@ end
 
 -- Advances through a builder's run(machine, mcycle_end) method until a fixed point or the target mcycle,
 -- returning the break reason. A null builder delegates plain replay to the supplied machine.
--- Mcycle bundle collection supplies a table with only run and uses no yield callback.
 -- Automatic yields are read from the machine and passed to the optional callback; without one,
 -- they are ignored. A terminal manual yield remains unread for the caller to handle.
 local function run_to_stop(builder, machine, mcycle_end, on_yield_automatic)
@@ -1331,36 +1330,6 @@ local function uarch_hashes_collection_chunk_size(log2_bundle_uarch_cycle_count)
             and (1 << (LOG2_ESTIMATED_UARCH_CYCLES_PER_MCYCLE - log2_bundle_uarch_cycle_count))
         or 1
     return math.max(1, (1 << LOG2_HASHES_PER_COLLECTION) // (cycle_bundle_count + 2))
-end
-
--- Reconstruct the bundle at a zero-based index within one mcycle. The half-open range
--- [mcycle_hashes_begin, mcycle_hashes_end) contains its execution hashes, halted hash, and reset hash.
-local function make_uarch_bundle(bundle_index, hashes, mcycle_hashes_begin, mcycle_hashes_end)
-    local forest = hash_tree.frontier_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, "keccak256")
-    local halt_hash, reset_hash = hashes[mcycle_hashes_end - 2], hashes[mcycle_hashes_end - 1]
-    local uarch_cycles_per_mcycle = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    local bundle_start = mcycle_hashes_begin + (bundle_index << LOG2_BUNDLE_UARCH_CYCLE_COUNT)
-    local bundle_leaf_count = 1 << LOG2_BUNDLE_UARCH_CYCLE_COUNT
-    local reset_padding_count = bundle_start + bundle_leaf_count == mcycle_hashes_begin + uarch_cycles_per_mcycle and 1
-        or 0
-
-    -- Copy the transient prefix, including the first halted hash when it falls in this bundle.
-    local transient_count_wanted = bundle_leaf_count - reset_padding_count
-    local transient_count_available = math.max(0, mcycle_hashes_end - 1 - bundle_start)
-    local transient_count = math.min(transient_count_wanted, transient_count_available)
-    if transient_count > 0 then
-        hash_tree.frontier_forest_append(forest, hashes, bundle_start, bundle_start + transient_count)
-    end
-
-    -- Add only the additional copies needed to fill the bundle before reset.
-    local halt_padding_count = bundle_leaf_count - transient_count - reset_padding_count
-    if halt_padding_count > 0 then
-        hash_tree.frontier_forest_pad_back(forest, halt_hash, halt_padding_count)
-    end
-    if reset_padding_count > 0 then
-        hash_tree.frontier_forest_push_back(forest, reset_hash)
-    end
-    return forest
 end
 
 -- Append execution bundles, halt repetitions, and the reset-ending bundle for one mcycle.
@@ -1918,46 +1887,20 @@ function event_handler.epoch_sealed(self, input_count)
 end
 
 -- docs:begin collect_mcycle_bundle
-function player_meta.__index:collect_mcycle_bundle(bundle_index)
-    local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
-    local input_index, period_index = split_epoch_period_index(self.geometry.periods_per_input, first_leaf)
+function player_meta.__index:collect_mcycle_bundle(input_index, input_bundle_offset)
     local machine, _ <close> = self:clone_at_input_boundary(input_index)
     local revert_root_hash = machine:get_root_hash()
     local builder = self:make_null_computation_hash_builder()
-    local _, _, mcycle_boundary = self:run_advance_state_input(
-        builder,
-        machine,
-        input_index,
-        period_index * self.geometry.mcycles_per_period,
-        revert_root_hash
+    -- Deliver the input and stay at its boundary. The machine advances to the bundle and pads it
+    -- with its fixed-point state hash when the input stops early.
+    self:run_advance_state_input(builder, machine, input_index, 0, revert_root_hash)
+    local hashes = machine:collect_mcycle_bundle(
+        input_bundle_offset,
+        self.geometry.log2_mcycles_per_period,
+        LOG2_BUNDLE_MCYCLE_COUNT
     )
-    local max_leaf_count = 1 << LOG2_BUNDLE_MCYCLE_COUNT
-    local hashes, mcycle_phase = {}, 0
-    local break_reason = run_to_stop({
-        run = function(_, working_machine, mcycle_end)
-            local collected = working_machine:collect_mcycle_root_hashes(
-                mcycle_end,
-                self.geometry.log2_mcycles_per_period,
-                mcycle_phase,
-                0
-            )
-            mcycle_phase = collected.mcycle_phase
-            table.move(collected.hashes, 1, #collected.hashes, #hashes + 1, hashes)
-            return collected.break_reason
-        end,
-    }, machine, usaturating_add(mcycle_boundary, (period_index + max_leaf_count) * self.geometry.mcycles_per_period))
-    local count = #hashes
-    local at_fixed_point = is_at_fixed_point(break_reason)
-    if at_fixed_point then
-        -- Padding supplies this state's first required occurrence too.
-        count = count - 1
-    end
-    assert(count <= max_leaf_count, "mcycle collection exceeds the bundle's leaf capacity")
     local forest = hash_tree.frontier_forest(LOG2_BUNDLE_MCYCLE_COUNT, "keccak256")
-    hash_tree.frontier_forest_append(forest, hashes, 1, count + 1)
-    if at_fixed_point then
-        hash_tree.frontier_forest_pad_back(forest, hashes[#hashes], max_leaf_count - count)
-    end
+    hash_tree.frontier_forest_append(forest, hashes, 1, #hashes + 1)
     return forest
 end
 -- docs:end collect_mcycle_bundle
@@ -1982,13 +1925,14 @@ end
 -- docs:end build_uarch_claim
 
 -- docs:begin collect_uarch_cycle_bundle
-function player_meta.__index:collect_uarch_cycle_bundle(input_index, period_index, bundle_index)
+function player_meta.__index:collect_uarch_cycle_bundle(input_index, period_index, period_bundle_offset)
     local machine, _ <close> = self:clone_at_input_boundary(input_index)
     local revert_root_hash = machine:get_root_hash()
     local tail = machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, 0)
     local revert_uarch_tail = tail.hashes
     local bundles_per_mcycle = 1 << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - LOG2_BUNDLE_UARCH_CYCLE_COUNT)
-    local mcycle_offset = bundle_index // bundles_per_mcycle
+    local mcycle_offset, bundle_offset =
+        period_bundle_offset // bundles_per_mcycle, period_bundle_offset % bundles_per_mcycle
     local builder = self:make_null_computation_hash_builder()
     self:run_advance_state_input(
         builder,
@@ -1999,10 +1943,10 @@ function player_meta.__index:collect_uarch_cycle_bundle(input_index, period_inde
     )
     -- Replay may already have rolled back a rejected input. Its restored boundary
     -- supplies the same uarch history as the tail captured before delivery.
-    local collected =
-        machine:collect_uarch_cycle_root_hashes(usaturating_add(machine:read_reg("mcycle"), 1), 0, revert_uarch_tail)
-    local offsets = collected.mcycle_hash_offsets
-    return make_uarch_bundle(bundle_index % bundles_per_mcycle, collected.hashes, offsets[1], offsets[2])
+    local hashes = machine:collect_uarch_cycle_bundle(bundle_offset, LOG2_BUNDLE_UARCH_CYCLE_COUNT, revert_uarch_tail)
+    local forest = hash_tree.frontier_forest(LOG2_BUNDLE_UARCH_CYCLE_COUNT, "keccak256")
+    hash_tree.frontier_forest_append(forest, hashes, 1, #hashes + 1)
+    return forest
 end
 -- docs:end collect_uarch_cycle_bundle
 
@@ -2021,19 +1965,32 @@ function player_meta.__index:prove_output(output_index)
     }
 end
 
+-- A tree asks for bundles by their index under its root. The mcycle claim's root covers the
+-- whole epoch, so the collector splits that epoch-wide index into the input holding the bundle
+-- and the bundle's offset within that input.
 function player_meta.__index:make_mcycle_tree()
     assert(self.epoch_sealed, "epoch has not been sealed")
-    return new_tree(self.geometry.mcycle_height, LOG2_BUNDLE_MCYCLE_COUNT, self.mcycle_forest, function(_, bundle_index)
-        return self:collect_mcycle_bundle(bundle_index)
-    end)
+    return new_tree(
+        self.geometry.mcycle_height,
+        LOG2_BUNDLE_MCYCLE_COUNT,
+        self.mcycle_forest,
+        function(_, epoch_bundle_index)
+            local bundles_per_input = self.geometry.periods_per_input >> LOG2_BUNDLE_MCYCLE_COUNT
+            local input_index = epoch_bundle_index // bundles_per_input
+            local input_bundle_offset = epoch_bundle_index % bundles_per_input
+            return self:collect_mcycle_bundle(input_index, input_bundle_offset)
+        end
+    )
 end
+-- The uarch claim's root covers one period, so the tree's bundle index is already the offset
+-- within that period. The input and period come from the tree's construction.
 function player_meta.__index:make_uarch_tree(input_index, period_index)
     return new_tree(
         self.geometry.uarch_height,
         LOG2_BUNDLE_UARCH_CYCLE_COUNT,
         self:build_uarch_claim(input_index, period_index),
-        function(_, bundle_index)
-            return self:collect_uarch_cycle_bundle(input_index, period_index, bundle_index)
+        function(_, period_bundle_offset)
+            return self:collect_uarch_cycle_bundle(input_index, period_index, period_bundle_offset)
         end
     )
 end

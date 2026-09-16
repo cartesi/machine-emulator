@@ -80,6 +80,14 @@ local function new_fake_machine(root_hash, mcycle, counts)
         end
         return { hashes = { hash }, mcycle_phase = phase, break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY }
     end
+    function machine:collect_mcycle_bundle(_, _, log2_bundle_mcycle_count)
+        local hash = #self.root_hash == 32 and self.root_hash or keccak(self.root_hash)
+        local hashes = {}
+        for i = 1, 1 << log2_bundle_mcycle_count do
+            hashes[i] = hash
+        end
+        return hashes
+    end
     return setmetatable(machine, { __close = machine.shutdown_server })
 end
 
@@ -289,63 +297,21 @@ local function new_bundle_player(machine)
     return player
 end
 
--- Direct mcycle collection pads both an already stopped machine and a partial bundle.
-for _, count in ipairs({ 0, 3, 15, 17 }) do
-    local ordinary, padding = keccak("ordinary sample"), keccak("padding sample")
-    local machine = {}
-    function machine.collect_mcycle_root_hashes(_, target, log2_period, phase, height)
-        assert(target == 128 * 1024 and log2_period == 10 and phase == 0 and height == 0)
-        local hashes = {}
-        for i = 1, count do
-            hashes[i] = ordinary
-        end
-        hashes[#hashes + 1] = padding
-        return { hashes = hashes, mcycle_phase = 0, break_reason = cartesi.BREAK_REASON_MCYCLE_OVERFLOW }
-    end
-    local player = new_bundle_player(machine)
-    local ok, forest = pcall(player.collect_mcycle_bundle, player, 7)
-    if count > 16 then
-        assert(not ok and tostring(forest):find("exceeds the bundle's leaf capacity", 1, true))
-    else
-        assert(ok, forest)
-        for i = 0, 15 do
-            local expected = i < count and ordinary or padding
-            assert(hash_tree.frontier_forest_get_node_hash(forest, i, 0) == expected)
-        end
-    end
-end
-
--- Preserve the mcycle phase across automatic yields and soft yields from a strategy.
+-- Direct mcycle collection delivers the input, then stores the leaves the machine collects.
 do
-    local first, middle, padding = keccak("first sample"), keccak("middle sample"), keccak("padding sample")
-    local machine = { calls = 0 }
-    function machine:collect_mcycle_root_hashes(target, log2_period, phase, height)
-        assert(target == 16384 and log2_period == 10 and height == 0)
-        self.calls = self.calls + 1
-        if self.calls == 1 then
-            assert(phase == 0)
-            self.mcycle = 1536
-            return { hashes = { first }, mcycle_phase = 512, break_reason = cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY }
-        elseif self.calls == 2 then
-            assert(phase == 512)
-            self.mcycle = 3072
-            return {
-                hashes = { middle, middle },
-                mcycle_phase = 0,
-                break_reason = cartesi.BREAK_REASON_YIELDED_SOFTLY,
-            }
+    local machine = {}
+    function machine:collect_mcycle_bundle(bundle_offset, log2_period, height)
+        assert(self.delivered and self.mcycle == 0 and bundle_offset == 7 and log2_period == 10 and height == 4)
+        local hashes = {}
+        for i = 1, 16 do
+            hashes[i] = keccak("sample " .. i)
         end
-        assert(self.calls == 3 and phase == 0)
-        self.mcycle = 3584
-        return { hashes = { padding }, mcycle_phase = 0, break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY }
+        return hashes
     end
-    local forest = new_bundle_player(machine):collect_mcycle_bundle(0)
+    local forest = new_bundle_player(machine):collect_mcycle_bundle(0, 7)
     for i = 0, 15 do
-        local expected = i == 0 and first or (i < 3 and middle or padding)
-        assert(
-            hash_tree.frontier_forest_get_node_hash(forest, i, 0) == expected,
-            "bundle collection lost its phase or samples"
-        )
+        local expected = keccak("sample " .. (i + 1))
+        assert(hash_tree.frontier_forest_get_node_hash(forest, i, 0) == expected, "bundle collection lost a sample")
     end
 end
 
@@ -375,29 +341,30 @@ for _, rejected in ipairs({ false, true }) do
             return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
         end
         function machine:collect_uarch_cycle_root_hashes(target, height, revert_tail)
-            assert(height == 0)
-            if not self.delivered and not self.rolled_back then
-                assert(target == cartesi.MCYCLE_MAX and revert_tail == nil)
-                return { hashes = tail }
-            end
-            assert(revert_tail == tail)
+            assert(not self.delivered and not self.rolled_back)
+            assert(target == cartesi.MCYCLE_MAX and height == 0 and revert_tail == nil)
+            return { hashes = tail }
+        end
+        function machine:collect_uarch_cycle_bundle(bundle_offset, height, revert_tail)
+            assert(bundle_offset == offset and height == LOG2_BUNDLE_UARCH_CYCLE_COUNT and revert_tail == tail)
             self.collection_calls = self.collection_calls + 1
             assert(self.collection_calls == 1, "completed bundle collected another mcycle")
             if rejected then
-                assert(self.rolled_back and self.mcycle == 0 and target == 1)
-                return {
-                    hashes = tail,
-                    mcycle_hash_offsets = { 1, 5 },
-                    break_reason = cartesi.BREAK_REASON_YIELDED_MANUALLY,
-                }
+                assert(self.rolled_back and self.mcycle == 0)
+            else
+                assert(self.mcycle == 1026)
+                self.mcycle = 1027
             end
-            assert(self.mcycle == 1026 and target == 1027)
-            self.mcycle = target
-            return {
-                hashes = tail,
-                mcycle_hash_offsets = { 1, 5 },
-                break_reason = cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY,
-            }
+            local hashes = {}
+            for i = 1, 1 << LOG2_BUNDLE_UARCH_CYCLE_COUNT do
+                hashes[i] = halted
+            end
+            if offset == 0 then
+                hashes[1], hashes[2] = first, second
+            else
+                hashes[#hashes] = reset
+            end
+            return hashes
         end
         local player = new_bundle_player(machine)
         local forest = player:collect_uarch_cycle_bundle(0, 1, 2 * bundles_per_mcycle + offset)
@@ -2467,14 +2434,14 @@ if arg[1] then
             return observe_inputs(prt.make_null_computation_hash_builder())
         end
         local collect_mcycle_bundle = player.collect_mcycle_bundle
-        player.collect_mcycle_bundle = function(self, bundle_index)
+        player.collect_mcycle_bundle = function(self, input_index, input_bundle_offset)
             counts.bundles = counts.bundles + 1
-            return collect_mcycle_bundle(self, bundle_index)
+            return collect_mcycle_bundle(self, input_index, input_bundle_offset)
         end
         local collect_uarch_cycle_bundle = player.collect_uarch_cycle_bundle
-        player.collect_uarch_cycle_bundle = function(self, input_index, period_index, bundle_index)
+        player.collect_uarch_cycle_bundle = function(self, input_index, period_index, period_bundle_offset)
             counts.uarch = counts.uarch + 1
-            return collect_uarch_cycle_bundle(self, input_index, period_index, bundle_index)
+            return collect_uarch_cycle_bundle(self, input_index, period_index, period_bundle_offset)
         end
         local reference <close> = make_terminal_template()
         if terminal ~= "empty" then

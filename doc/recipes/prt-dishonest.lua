@@ -119,7 +119,7 @@ end
 -- Substitute an input filename as it arrives. Replay reads the forged file, while the
 -- referee still verifies input inclusion against the original contract inputs.
 local function new_forger(dapp_contract, input_index, forged_path)
-    local player = prt.new_player(dapp_contract, nil, "forger")
+    local player = prt.new_player(dapp_contract, "forger")
     clone_handlers(player)
     local input_added = player.event_handler.input_added
     player.event_handler.input_added = function(self, index, path)
@@ -165,7 +165,7 @@ local function new_tamperer(dapp_contract, input_index, bundle_offset)
         end
         return target
     end
-    return use_machine(prt.new_player(dapp_contract, nil, "tamperer"), {
+    return use_machine(prt.new_player(dapp_contract, "tamperer"), {
         run = function(machine, target)
             local point = tamper_point(machine)
             if point and math.ult(machine:read_reg("mcycle"), point) and math.ult(point, target) then
@@ -353,7 +353,7 @@ end
 
 local function new_fabulist(dapp_contract, input_index, leaf_offset)
     local geometry = dapp_contract.geometry
-    local player = prt.new_player(dapp_contract, nil, "fabulist")
+    local player = prt.new_player(dapp_contract, "fabulist")
     local target_epoch_period_index =
         prt.combine_epoch_period_index(geometry.periods_per_input, input_index, leaf_offset)
     local fake_hash = keccak("fabulist")
@@ -404,7 +404,7 @@ end
 -- its builder substitutes a made-up state at every position, and it disconnects
 -- after posting that claim. The disconnect is its only protocol-level deviation.
 local function new_quitter(dapp_contract, seed)
-    local player = prt.new_player(dapp_contract, nil, "quitter")
+    local player = prt.new_player(dapp_contract, "quitter")
     use_machine(player, { send_cmio_response = function() end })
     local function insert(liar, _, count, height)
         local fake_hash = keccak(seed or "quitter")

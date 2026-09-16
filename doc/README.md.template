@@ -5336,7 +5336,7 @@ The builds themselves stream out of the emulator.
 They follow the same collection contract as `cartesi-machine`'s computation-hash builders: each input owns a fixed-capacity segment, collection state threads across yields, and the final repeatable group returned at a fixed point fills the segment's remaining positions.
 The only different sink is PRT's frontier forest, which retains the nodes needed to answer later tournament queries.
 The referee emits `input_added(input_index, filename)` for each input in order, followed by `epoch_sealed(input_count)`. The player initializes its computation at construction using a temporary clone; the cache already owns boundary zero. Each input event acquires a scoped working clone of the latest boundary. Each input event reads the named file and advances that input immediately, pushing its bundle roots into the claim forest at their logical heights, padding its span with the fixed point where its guest stopped, and offering the completed input boundary to the cache after output checks and any rollback.
-At `epoch_sealed`, the player checks the input count, pads the unoccupied epoch suffix, freezes its checkpoints, captures the final-state and output proofs, and releases the working machine. `commit_mcycle_claim` uses the completed forest. Processing therefore begins while the epoch is still open.
+At `epoch_sealed`, the player checks the input count, pads the unoccupied epoch suffix, freezes its checkpoints, and builds inclusion proofs for all accepted outputs using `frontier_next_proofs`. The player retains every accepted output and its proof for later client requests. The `prove_outputs_merkle_root` handler obtains final-machine proofs from a scoped clone of the cached final boundary, without replay. `commit_mcycle_claim` uses the completed forest. Processing therefore begins while the epoch is still open.
 The default policy keeps a bounded, progressively thinned set of historical checkpoints, indexed by input; input zero always retains the initial machine template. A separate latest boundary is always retained, independently of thinning, so the next input needs no replay. This uses at most one additional retained machine. `consider(input_index, machine)` handles every completed boundary. It compares the state with the latest cached state: an unchanged state reuses that machine and advances only the logical input index. Changed states replace the latest snapshot. Every offer then runs the historical checkpoint policy, including when the state is unchanged. Latest and historical boundaries own independent snapshots, so either can be replaced or evicted without shared-ownership bookkeeping. Rejected inputs are offered after rollback; terminal inputs use the same cache operation.
 Bundle collection (`collect_mcycle_bundle`) asks the cache for the target input's boundary, then advances that input to recover one bundle's samples.
 The cache's `clone_at_input_boundary(input_index, run_to_input_boundary)` selects and clones the nearest eligible historical or latest boundary, then calls `run_to_input_boundary` with the machine and the intervening input range.
@@ -5359,9 +5359,9 @@ At construction, the player checks that the template is waiting on an rx-accepte
 `load_cmio_input` skips absent inputs and otherwise sends the input with the pre-delivery `revert_root_hash`. Forward execution and disputes use the same loader.
 The player retains the expected boundary hash between input events and across rejection and updates it only after acceptance. Input delivery checks this expected hash, and rollback must restore it.
 The machine sender and logged transition both treat an inapplicable delivery as a no-op. At a terminal boundary the slot idles and the builders pad it from there; a transition proof with a posted input logs the same no-op through `log_send_cmio_response`.
-The player constructor is `prt.new_player(dapp_contract, output_index, label)`.
+The player constructor is `prt.new_player(dapp_contract, label)`.
 The player retains the dapp contract, reads its geometry, and initializes its own empty `input_paths` table, machine cache, and open epoch computation. Input events populate the table with filenames. Input delivery and proof generation read the files when needed; the player does not retain their contents. Files must remain readable and unchanged throughout the player's lifetime, including disputes. Shared methods in `player_meta.__index` access the player's fields through `self`. The label defaults to `honest`.
-Players share the default `event_handler` table, treated as read-only. The transport calls `player.event_handler[event_name](player, ...)`. The optional `output_index` constructor argument selects the output to prove, defaulting to the last output.
+Players share the default `event_handler` table, treated as read-only. The transport calls `player.event_handler[event_name](player, ...)`. The `prove_output` event handler offers the last output. Clients can call `player:prove_output(output_index)` for any accepted output in the sealed epoch; this choice is independent of the referee.
 The execution drivers receive the builder followed by the working machine as separate arguments. Builder methods that use the machine receive it explicitly, as in `builder:run(machine, mcycle_end)`; builders retain no machine reference and forward no machine methods. Dispute replay takes begin and end input indices. The builder keeps its computation forest between input events. The expected boundary hash and cumulative outputs frontier also persist; the cache retains the latest machine.
 Input and period indices are zero-based throughout the player and referee; only Lua input-array lookups add one.
 The epoch period index combines the input index and its period index, while the separate transition offset splits into an mcycle offset and a uarch cycle. Keeping those coordinates separate avoids overflowing a 64-bit integer.
@@ -5635,7 +5635,7 @@ lua5.4 prt.lua referee 127.0.0.1:8096 "$initial_state_hash" \
 while ! netstat -ntl 2>&1 | grep '\<8096\>' > /dev/null; do sleep 1; done
 {
 # docs:begin honest
-lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" 1
+lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash"
 # docs:end honest
 } > /dev/null 2> honest.stderr &
 while ! players_in 1; do sleep 1; done
@@ -5737,7 +5737,7 @@ lua5.4 prt-dishonest.lua forger 127.0.0.1:8097 "$initial_state_hash" 2 "$forged"
 while ! players_in 6; do sleep 1; done
 lua5.4 prt-dishonest.lua quitter 127.0.0.1:8097 "$initial_state_hash" > /dev/null 2> quitter.stderr &
 while ! players_in 7; do sleep 1; done
-lua5.4 prt.lua honest 127.0.0.1:8097 "$initial_state_hash" 1 > /dev/null 2> honest.stderr &
+lua5.4 prt.lua honest 127.0.0.1:8097 "$initial_state_hash" > /dev/null 2> honest.stderr &
 while ! players_in 8; do sleep 1; done
 lua5.4 prt.lua phase_closer 127.0.0.1:8097 > /dev/null 2> phase_closer.stderr &
 while ! grep -q 'Result proved against the final state:' verdict 2>/dev/null; do sleep 1; done

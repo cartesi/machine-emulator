@@ -105,7 +105,7 @@ static UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
     const auto b = static_cast<ULONG>(bl);
     const ULONG quo = a / b;
 #if defined(MICROARCHITECTURE) || defined(ZKARCHITECTURE)
-    // on microarchitecture, it's faster to compute the remainder using the quotient
+    // on uarch, it's faster to compute the remainder using the quotient
     const ULONG rem = a - (b * quo);
 #else
     // on some architectures (e.g x86_64) a division followed by a remainder operation

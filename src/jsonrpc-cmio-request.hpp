@@ -19,8 +19,7 @@
 #define JSONRPC_CMIO_REQUEST_HPP
 
 #include <cstdint>
-
-#include "access-log.hpp"
+#include <vector>
 
 namespace cartesi {
 
@@ -28,7 +27,7 @@ struct jsonrpc_cmio_request final {
     uint8_t cmd{};
     uint16_t reason{};
     uint64_t available_length{};
-    access_data data;
+    std::vector<uint8_t> data;
 };
 
 } // namespace cartesi

@@ -21,7 +21,7 @@
 
 namespace cartesi {
 
-//?DD Poor man's rtti that works in microarchitecture
+//?DD Poor man's rtti that works in uarch
 template <typename T>
 struct poor_type_name {
     static constexpr const char *value = "unknown";

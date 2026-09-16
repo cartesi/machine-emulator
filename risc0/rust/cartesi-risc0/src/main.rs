@@ -36,15 +36,26 @@ Pipeline:
 
 */
 
-use std::{fs, env, error, path::Path};
-use risc0_zkvm::Receipt;
-use cartesi_risc0::{prove, compress, verify, verify_seal, guest_image_id, REPLAY_STEP_ELF, REPLAY_STEP_ID};
 use cartesi_risc0::MachineHash;
+use cartesi_risc0::{
+    compress, guest_image_id, prove, receipt_kind, verify, verify_seal, REPLAY_STEP_ELF,
+    REPLAY_STEP_ID,
+};
+use risc0_zkvm::Receipt;
+use std::{env, error, fs, path::Path};
 
 fn parse_hash(hex: &str) -> MachineHash {
-    let bytes = hex::decode(hex).expect("Invalid hex string");
-    let mut array = [0; 32];
-    array.copy_from_slice(&bytes);
+    let bytes = hex::decode(hex).unwrap_or_else(|e| {
+        eprintln!("Error: invalid hash {:?}: {}", hex, e);
+        std::process::exit(1);
+    });
+    let array: MachineHash = bytes.try_into().unwrap_or_else(|b: Vec<u8>| {
+        eprintln!(
+            "Error: hash must be 32 bytes (64 hex digits), got {}",
+            b.len()
+        );
+        std::process::exit(1);
+    });
     array
 }
 
@@ -59,7 +70,11 @@ fn image_id_to_hex(id: &[u32; 8]) -> String {
         .collect()
 }
 
-fn export_artifacts(guest_elf: &[u8], image_id: &[u32; 8], output_dir: &str) -> Result<(), Box<dyn error::Error>> {
+fn export_artifacts(
+    guest_elf: &[u8],
+    image_id: &[u32; 8],
+    output_dir: &str,
+) -> Result<(), Box<dyn error::Error>> {
     let output_path = Path::new(output_dir);
     fs::create_dir_all(output_path)?;
 
@@ -77,29 +92,70 @@ fn export_artifacts(guest_elf: &[u8], image_id: &[u32; 8], output_dir: &str) -> 
     Ok(())
 }
 
-fn prove_and_save_receipt(guest_elf: &[u8], root_hash_before: MachineHash, log_file_path: &str, mcycle_count: u64, root_hash_after: MachineHash, receipt_path: &str) -> Result<(), Box<dyn error::Error>> {
+fn prove_and_save_receipt(
+    guest_elf: &[u8],
+    root_hash_before: MachineHash,
+    log_file_path: &str,
+    mcycle_count: u64,
+    root_hash_after: MachineHash,
+    receipt_path: &str,
+) -> Result<(), Box<dyn error::Error>> {
     println!("Proving step log: {}", log_file_path);
-    let receipt = prove(guest_elf, &root_hash_before, log_file_path, mcycle_count, &root_hash_after);
+    let receipt = prove(
+        guest_elf,
+        &root_hash_before,
+        log_file_path,
+        mcycle_count,
+        &root_hash_after,
+    );
     fs::write(receipt_path, bincode::serialize(&receipt)?)?;
     println!("Receipt saved to: {}", receipt_path);
     Ok(())
 }
 
-fn compress_and_save(receipt_path: &str, seal_path: &str, journal_path: &str) -> Result<(), Box<dyn error::Error>> {
+fn compress_and_save(
+    receipt_path: &str,
+    seal_path: &str,
+    journal_path: &str,
+) -> Result<(), Box<dyn error::Error>> {
     println!("Compressing receipt to Groth16: {}", receipt_path);
     let receipt: Receipt = bincode::deserialize(&fs::read(receipt_path)?)?;
-    let (seal, journal) = compress(&receipt);
+    let (seal, journal) = compress(&receipt)?;
     fs::write(seal_path, &seal)?;
     println!("Seal saved to: {} ({} bytes)", seal_path, seal.len());
     fs::write(journal_path, &journal)?;
-    println!("Journal saved to: {} ({} bytes)", journal_path, journal.len());
+    println!(
+        "Journal saved to: {} ({} bytes)",
+        journal_path,
+        journal.len()
+    );
     Ok(())
 }
 
-fn verify_receipt(image_id: &[u32; 8], receipt_path: &str, root_hash_before: MachineHash, mcycle_count: u64, root_hash_after: MachineHash) -> Result<(), Box<dyn error::Error>> {
+fn verify_receipt(
+    image_id: &[u32; 8],
+    receipt_path: &str,
+    root_hash_before: MachineHash,
+    mcycle_count: u64,
+    root_hash_after: MachineHash,
+    allow_dev_mode: bool,
+) -> Result<(), Box<dyn error::Error>> {
     println!("Verifying receipt: {}", receipt_path);
     let receipt: Receipt = bincode::deserialize(&fs::read(receipt_path)?)?;
-    let (j_hash_before, j_mcycle, j_hash_after) = verify(image_id, &receipt, &root_hash_before, mcycle_count, &root_hash_after);
+    let kind = receipt_kind(&receipt);
+    println!("Receipt kind: {}", kind);
+    let (j_hash_before, j_mcycle, j_hash_after) = verify(
+        image_id,
+        &receipt,
+        &root_hash_before,
+        mcycle_count,
+        &root_hash_after,
+        allow_dev_mode,
+    );
+    if kind == "fake" {
+        println!("WARNING: dev-mode (fake) receipt: validates correctness only,");
+        println!("WARNING: this is NOT a cryptographic proof");
+    }
     println!("Verification successful");
     println!("Journal contents:");
     println!("  root_hash_before: {}", hash_to_hex(&j_hash_before));
@@ -108,11 +164,28 @@ fn verify_receipt(image_id: &[u32; 8], receipt_path: &str, root_hash_before: Mac
     Ok(())
 }
 
-fn verify_seal_and_journal(image_id: &[u32; 8], seal_path: &str, journal_path: &str, root_hash_before: MachineHash, mcycle_count: u64, root_hash_after: MachineHash) -> Result<(), Box<dyn error::Error>> {
-    println!("Verifying seal and journal: seal={}, journal={}", seal_path, journal_path);
+fn verify_seal_and_journal(
+    image_id: &[u32; 8],
+    seal_path: &str,
+    journal_path: &str,
+    root_hash_before: MachineHash,
+    mcycle_count: u64,
+    root_hash_after: MachineHash,
+) -> Result<(), Box<dyn error::Error>> {
+    println!(
+        "Verifying seal and journal: seal={}, journal={}",
+        seal_path, journal_path
+    );
     let seal = fs::read(seal_path)?;
     let journal_bytes = fs::read(journal_path)?;
-    let (j_hash_before, j_mcycle, j_hash_after) = verify_seal(image_id, &seal, &journal_bytes, &root_hash_before, mcycle_count, &root_hash_after);
+    let (j_hash_before, j_mcycle, j_hash_after) = verify_seal(
+        image_id,
+        &seal,
+        &journal_bytes,
+        &root_hash_before,
+        mcycle_count,
+        &root_hash_after,
+    );
     println!("Verification successful");
     println!("Journal contents:");
     println!("  root_hash_before: {}", hash_to_hex(&j_hash_before));
@@ -123,12 +196,15 @@ fn verify_seal_and_journal(image_id: &[u32; 8], seal_path: &str, journal_path: &
 
 fn usage() {
     eprintln!("Usage: cartesi-risc0-cli [options] <command> <args>");
-    eprintln!("");
+    eprintln!();
     eprintln!("Options:");
     eprintln!("  --guest-elf <path>  Use a precompiled guest binary (R0BF format) instead of");
     eprintln!("                      the embedded one. Enables canonical Image ID on machines");
     eprintln!("                      built without Docker.");
-    eprintln!("");
+    eprintln!("  --allow-dev-mode    Let `verify` accept a dev-mode (fake) receipt. Fake");
+    eprintln!("                      receipts carry no cryptographic proof; without this flag");
+    eprintln!("                      they are rejected even when RISC0_DEV_MODE is set.");
+    eprintln!();
     eprintln!("Commands:");
     eprintln!("  prove <root_hash_before> <log_file_path> <mcycle_count> <root_hash_after> <receipt-path>");
     eprintln!("  compress <receipt-path> <seal-path> <journal-path>");
@@ -142,6 +218,7 @@ fn main() {
     // Parse flags (can appear anywhere before or after the command)
     let all_args: Vec<String> = env::args().collect();
     let mut guest_elf_path: Option<String> = None;
+    let mut allow_dev_mode = false;
     let mut args: Vec<String> = Vec::new();
     let mut iter = all_args.into_iter();
     args.push(iter.next().unwrap()); // program name
@@ -151,6 +228,8 @@ fn main() {
                 eprintln!("Error: --guest-elf requires a path argument");
                 std::process::exit(1);
             }));
+        } else if arg == "--allow-dev-mode" {
+            allow_dev_mode = true;
         } else {
             args.push(arg);
         }
@@ -164,7 +243,11 @@ fn main() {
                 std::process::exit(1);
             });
             let id = guest_image_id(&elf);
-            eprintln!("Using guest ELF: {} (Image ID: {})", path, image_id_to_hex(&id));
+            eprintln!(
+                "Using guest ELF: {} (Image ID: {})",
+                path,
+                image_id_to_hex(&id)
+            );
             (elf, id)
         }
         None => (REPLAY_STEP_ELF.to_vec(), REPLAY_STEP_ID),
@@ -190,11 +273,22 @@ fn main() {
             let mcycle_count: u64 = args[4].parse().expect("Invalid mcycle count");
             let root_hash_after = parse_hash(&args[5]);
             let receipt_path = &args[6];
-            prove_and_save_receipt(&guest_elf, root_hash_before, log_file_path, mcycle_count, root_hash_after, receipt_path).expect("Proof generation failed");
+            prove_and_save_receipt(
+                &guest_elf,
+                root_hash_before,
+                log_file_path,
+                mcycle_count,
+                root_hash_after,
+                receipt_path,
+            )
+            .expect("Proof generation failed");
         }
         "compress" => {
             if args.len() != 5 {
-                eprintln!("Usage: {} compress <receipt-path> <seal-path> <journal-path>", args[0]);
+                eprintln!(
+                    "Usage: {} compress <receipt-path> <seal-path> <journal-path>",
+                    args[0]
+                );
                 std::process::exit(1);
             }
             let receipt_path = &args[2];
@@ -211,7 +305,15 @@ fn main() {
             let root_hash_before = parse_hash(&args[3]);
             let mcycle_count: u64 = args[4].parse().expect("Invalid mcycle count");
             let root_hash_after = parse_hash(&args[5]);
-            verify_receipt(&image_id, receipt_path, root_hash_before, mcycle_count, root_hash_after).expect("Verification failed");
+            verify_receipt(
+                &image_id,
+                receipt_path,
+                root_hash_before,
+                mcycle_count,
+                root_hash_after,
+                allow_dev_mode,
+            )
+            .expect("Verification failed");
         }
         "verify-seal" => {
             if args.len() != 7 {
@@ -223,7 +325,15 @@ fn main() {
             let root_hash_before = parse_hash(&args[4]);
             let mcycle_count: u64 = args[5].parse().expect("Invalid mcycle count");
             let root_hash_after = parse_hash(&args[6]);
-            verify_seal_and_journal(&image_id, seal_path, journal_path, root_hash_before, mcycle_count, root_hash_after).expect("Seal verification failed");
+            verify_seal_and_journal(
+                &image_id,
+                seal_path,
+                journal_path,
+                root_hash_before,
+                mcycle_count,
+                root_hash_after,
+            )
+            .expect("Seal verification failed");
         }
         "export-artifacts" => {
             if args.len() != 3 {

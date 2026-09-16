@@ -15,16 +15,17 @@
 //
 
 /// \file
-/// \brief This file is be converted to Solidity by the machine-solidity-step.
+/// \brief Transpiled to Solidity by solidity-step/tools/transpile-uarch.lua.
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
 
 #include "uarch-reset-state.hpp"
 
 #include "htif-constants.hpp"
+#include "step-log-dumper.hpp" // IWYU pragma: keep
 #include "uarch-constants.hpp"
-#include "uarch-record-state-access.hpp" // IWYU pragma: keep
-#include "uarch-replay-state-access.hpp" // IWYU pragma: keep
+#include "uarch-record-step-state-access.hpp" // IWYU pragma: keep
+#include "uarch-replay-step-state-access.hpp" // IWYU pragma: keep
 #include "uarch-solidity-compat.hpp"
 #include "uarch-state-access.hpp" // IWYU pragma: keep
 
@@ -32,6 +33,7 @@ namespace cartesi {
 
 template <typename UarchState>
 void uarch_reset_state(UarchState &a) {
+    [[maybe_unused]] auto note = a.make_scoped_note("uarch_reset_state");
     resetState(a);
     // When the machine has rejected an input, the canonical state after the operation is
     // the one recorded in the revert root hash (which has a pristine uarch)
@@ -47,11 +49,12 @@ void uarch_reset_state(UarchState &a) {
 // Explicit instantiation for uarch_state_access
 template void uarch_reset_state(uarch_state_access &a);
 
-// Explicit instantiation for uarch_record_state_access
-template void uarch_reset_state(uarch_record_state_access &a);
+// Explicit instantiation for uarch_record_step_state_access
+template void uarch_reset_state(uarch_record_step_state_access &a);
 
-// Explicit instantiation for uarch_replay_state_access
-template void uarch_reset_state(uarch_replay_state_access &a);
+// Explicit instantiation for uarch_replay_step_state_access
+template void uarch_reset_state(uarch_replay_step_state_access<no_step_log_dumper> &a);
+template void uarch_reset_state(uarch_replay_step_state_access<step_log_dumper> &a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

@@ -35,9 +35,9 @@ namespace cartesi {
 /// without marking the page, so it relies on this explicit call (and the eviction
 /// marking in the machine) to keep the dirty page tree complete; record_step_state_access
 /// records that same deferral. Every other context marks or hashes each page at the
-/// moment of the write: native write_word marks dirty, and the microarchitecture
-/// record path hashes on the spot. This is why the microarchitecture does not accept
-/// dirty pages. If a batched microarchitecture write path were ever added, that
+/// moment of the write: native write_word marks dirty, and the uarch
+/// record path hashes on the spot. This is why the uarch does not accept
+/// dirty pages. If a batched uarch write path were ever added, that
 /// assumption would no longer hold and this reasoning would need to be revisited.
 template <typename DERIVED>
 class i_accept_dirty_pages { // CRTP

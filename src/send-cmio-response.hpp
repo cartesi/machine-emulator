@@ -33,24 +33,28 @@ namespace cartesi {
 /// \param revertRootHash Machine root hash to revert to in case the response is eventually rejected.
 /// Recorded in the machine state only for advance-state responses, and ignored otherwise
 template <typename STATE_ACCESS>
-void send_cmio_response(STATE_ACCESS a, uint16_t reason, const unsigned char *data, uint32_t dataLength,
+void send_cmio_response(STATE_ACCESS a, uint16_t reason, const unsigned char *data, uint64_t dataLength,
     const_machine_hash_view revertRootHash);
 
 class state_access;
-class record_send_cmio_state_access;
-class replay_send_cmio_state_access;
+class record_step_state_access;
+struct no_step_log_dumper;
+class step_log_dumper;
+template <typename Dumper>
+class replay_step_state_access;
 
-// Declaration of explicit instantiation in module send_cmio_response.cpp
-extern template void send_cmio_response(state_access a, uint16_t reason, const unsigned char *data, uint32_t dataLength,
+// Declaration of explicit instantiations in module send-cmio-response.cpp
+extern template void send_cmio_response(state_access a, uint16_t reason, const unsigned char *data, uint64_t dataLength,
     const_machine_hash_view revertRootHash);
 
-// Declaration of explicit instantiation in module send_cmio_response.cpp
-extern template void send_cmio_response(record_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
-    uint32_t dataLength, const_machine_hash_view revertRootHash);
+extern template void send_cmio_response(record_step_state_access a, uint16_t reason, const unsigned char *data,
+    uint64_t dataLength, const_machine_hash_view revertRootHash);
 
-// Declaration of explicit instantiation in module send_cmio_response.cpp
-extern template void send_cmio_response(replay_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
-    uint32_t dataLength, const_machine_hash_view revertRootHash);
+extern template void send_cmio_response(replay_step_state_access<no_step_log_dumper> a, uint16_t reason,
+    const unsigned char *data, uint64_t dataLength, const_machine_hash_view revertRootHash);
+
+extern template void send_cmio_response(replay_step_state_access<step_log_dumper> a, uint16_t reason,
+    const unsigned char *data, uint64_t dataLength, const_machine_hash_view revertRootHash);
 
 } // namespace cartesi
 

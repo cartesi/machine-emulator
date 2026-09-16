@@ -311,7 +311,7 @@ MACHINE_TEST ?=
 # The uarch recorders refuse a non-empty output dir, so start from a clean one.
 create-uarch-step-fixtures: clean-uarch-step-fixtures
 	RECORDERS_DIR=$(abspath ./lua) UARCH_TESTS_PATH=$(CARTESI_TESTS_UARCH_PATH) \
-		LUA='$(LUA_BIN)' UARCH_TEST_PATTERN='$(UARCH_TEST_PATTERN)' \
+		LUA='$(LUA_BIN)' JOBS=$(NUM_JOBS) UARCH_TEST_PATTERN='$(UARCH_TEST_PATTERN)' \
 		./scripts/record-uarch-step-fixtures.sh $(CARTESI_UARCH_STEP_FIXTURES_PATH)
 
 clean-uarch-step-fixtures:

@@ -35,11 +35,12 @@ lua=${LUA:-lua5.4}
 recorders_dir=${RECORDERS_DIR:-/usr/share/cartesi-machine/tests/lua}
 tests_path=${UARCH_TESTS_PATH:-/usr/share/cartesi-machine/tests/data/uarch}
 pattern=${UARCH_TEST_PATTERN:-rv64ui%-uarch%-.+%.bin}
+jobs=${JOBS:-$(getconf _NPROCESSORS_ONLN)}
 
 mkdir -p "$fixtures_dir"
 
 # Per-cycle step logs over the uarch test corpus
-$lua "$recorders_dir/uarch-riscv-tests.lua" --test-path="$tests_path" --test="$pattern" \
+$lua "$recorders_dir/uarch-riscv-tests.lua" --test-path="$tests_path" --test="$pattern" --jobs="$jobs" \
     --per-cycle-logs --output-dir="$fixtures_dir/uarch-tests-per-cycle" record_uarch_tests
 # One- and two-cycle logs pinning the verifier to a single uarch step
 $lua "$recorders_dir/record-uarch-multi-cycle.lua" \

@@ -37,7 +37,7 @@ vgu.SCHEMA_DICT.StateValueProof = {
     target_value = "Base64",
     proof = "Proof",
 }
--- The disputed transition's binary step logs, as raw file bytes. The transition that
+-- The disputed transition's binary step logs, as raw bytes. The transition that
 -- closes an instruction carries a step and a reset log, an ordinary step just the one.
 vgu.SCHEMA_DICT.LogCommitment = {
     step_log = "Base64",
@@ -111,7 +111,6 @@ end
 -- then a fixed point, and the reset, committed as two logs, every other an ordinary step,
 -- decided by the cycle the referee names rather than the machine's own uarch_cycle, which sits
 -- at the halt.
--- Both players run in the referee's directory, so each names its log files by its role.
 local function commit_log(player, branch, _mcycle, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine

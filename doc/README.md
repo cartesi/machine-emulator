@@ -9029,7 +9029,6 @@ agreed on determine the form of the disputed transition, and the referee
 asks player 1 for the matching logs:
 
 ``` lua
--- Both players run in the referee's directory, so each names its log files by its role.
 local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine

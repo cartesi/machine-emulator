@@ -38,7 +38,7 @@ local take_branch, bisect_level = vgu.take_branch, vgu.bisect_level
 local wait_for_any, wait_for_log, wait_for_commitments = vgu.wait_for_any, vgu.wait_for_log, vgu.wait_for_commitments
 
 -- The schemas this game adds to the shared dictionary.
--- The disputed transition's binary step logs, as raw file bytes. A combined transition
+-- The disputed transition's binary step logs, as raw bytes. A combined transition
 -- carries two logs, an ordinary step just the one.
 vgu.SCHEMA_DICT.LogCommitment = {
     send_cmio_log = "Base64",
@@ -240,7 +240,6 @@ end
 -- the reset, and every other is an ordinary step. A combined transition is committed as its two
 -- logs, each performing the action it records.
 -- docs:begin commit_log
--- Both players run in the referee's directory, so each names its log files by its role.
 local function commit_log(player, branch, mcycle_offset, uarch_cycle)
     take_branch(player, branch)
     local agreed = player.agreed.machine

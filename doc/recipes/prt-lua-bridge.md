@@ -204,22 +204,25 @@ New claims are accepted only before that block. An expiry at block d means d
 is the first expired block, so the transaction must be included before d.
 The companion document defines the complete event fields and deadline rules.
 
-Each claim is identified by its computation hash. The player request
-get_claim_children returns the two child hashes that combine to produce that
-computation hash. Calls to claim a timeout win or propagate a child tournament's
-winner use these two hashes to identify and verify the winning claim.
+Each claim is identified by its computation hash. To read its root children,
+look up `tree = assert(player.trees[computation_hash], "event concerns a claim this player does not hold")`
+and call `tree:get_child_hashes(0, tree.height)`. The two returned hashes combine
+to produce that computation hash. The timeout, leaf-win, and propagation rows
+below use this lookup for the named claim; they require no simulator scheduling
+handler. Parent propagation reads the parent claim's root children, using that
+tree's height rather than the child tournament's height.
 
 | Event | Action-set changes | Player computation | Window |
 |---|---|---|---|
 | TournamentCreated(R, descriptor, bondValue) | Populate R's context with the emitted descriptor and bond, pending association with EpochSealed | None | Immediate |
 | InputAdded(app, index, input) | Verify and materialize the input for this application | input_added(index - lo, filename) on the open epoch player | As inputs arrive, before sealing |
 | EpochSealed(e, lo, hi, initialHash, R) | Record the root tournament and epoch association, watch R, install join with the descriptor and bond from TournamentCreated | Check initialHash and the processed input bounds, epoch_sealed(hi - lo), then commit_mcycle_claim | Before R's joining deadline |
-| MatchCreated(h, one, two, leftOfTwo, responderDeadline, eliminableAt) | Holder of one responds. Holder of two may win by timeout. Everyone installs elimination | Respond with reveal_bisection(one, 0, H, leftOfTwo), or seal_divergence(one, 0, leftOfTwo) for H = 1. Timeout uses get_claim_children(two). Elimination needs no computation | Respond before responderDeadline. Timeout in [responderDeadline, eliminableAt). Eliminate from eliminableAt |
-| MatchAdvanced(h, one, two, otherParent, leftNode, pos, currentHeight, responderDeadline, eliminableAt) | Replace all three match jobs. Responder r is one when H - currentHeight is even, otherwise two. Holder of r responds. Holder of the other side may win by timeout. Everyone installs elimination | reveal_bisection(r, pos, currentHeight, leftNode), or seal_divergence(r, pos, leftNode) at height 1. Timeout uses get_claim_children(other) | Same as MatchCreated |
-| LeafMatchSealed(h, one, two, agreeState, pos, f1, f2, d1, d2, eliminableAt) | Replace match jobs. Either holder proves. Holder of the longer clock may win by timeout. Everyone installs elimination | prove_state_transition at split(baseCycle + (pos << log2Stride)), plus get_claim_children(own) for winLeafMatch. Timeout uses get_claim_children(longer side) | Prove before min(d1, d2). Timeout in [min, max), absent when equal. Eliminate from max |
+| MatchCreated(h, one, two, leftOfTwo, responderDeadline, eliminableAt) | Holder of one responds. Holder of two may win by timeout. Everyone installs elimination | Respond with reveal_bisection(one, 0, H, leftOfTwo), or seal_divergence(one, 0, leftOfTwo) for H = 1. Timeout uses the root children of two. Elimination needs no computation | Respond before responderDeadline. Timeout in [responderDeadline, eliminableAt). Eliminate from eliminableAt |
+| MatchAdvanced(h, one, two, otherParent, leftNode, pos, currentHeight, responderDeadline, eliminableAt) | Replace all three match jobs. Responder r is one when H - currentHeight is even, otherwise two. Holder of r responds. Holder of the other side may win by timeout. Everyone installs elimination | reveal_bisection(r, pos, currentHeight, leftNode), or seal_divergence(r, pos, leftNode) at height 1. Timeout uses the root children of the other claim | Same as MatchCreated |
+| LeafMatchSealed(h, one, two, agreeState, pos, f1, f2, d1, d2, eliminableAt) | Replace match jobs. Either holder proves. Holder of the longer clock may win by timeout. Everyone installs elimination | prove_state_transition at split(baseCycle + (pos << log2Stride)), plus the held claim's root children for winLeafMatch. Timeout uses the root children of the longer-clock claim | Prove before min(d1, d2). Timeout in [min, max), absent when equal. Eliminate from max |
 | NewInnerTournament(h, C, one, two, f1, f2, descriptor, bondValue) | Cancel parent's three match jobs. Record C -> (emitter, h), populate C's context with the emitted descriptor and bond, watch C. Install initial parent.eliminateInnerTournament(C). Holders of one or two join C with its bond | commit_uarch_claim(input_index, period_index from C.baseCycle, {f1, f2}) | Join before C's joining deadline. Initial elimination from C's joining deadline |
 | MatchDeleted(h, one, two, reason, winner) | Cancel match jobs and linked child tournament's propagation/elimination. Preserve its bond recovery | None | Immediate |
-| StandingChanged(n, d, pc, resultAt, expiresAt), child tournament C of P | Replace C's result group. With n > 0 install no result work. With n = 0 and d nonzero, holder of pc propagates, everyone eliminates at expiry, claimer(d) recovers. With n = 0 and d zero, everyone eliminates at resultAt | Propagation uses get_claim_children(pc) for P.winInnerTournament(C, children). Elimination and recovery need no computation | Propagate in [resultAt, expiresAt). Eliminate from expiresAt, or resultAt with no candidate. Recover from resultAt |
+| StandingChanged(n, d, pc, resultAt, expiresAt), child tournament C of P | Replace C's result group. With n > 0 install no result work. With n = 0 and d nonzero, holder of pc propagates, everyone eliminates at expiry, claimer(d) recovers. With n = 0 and d zero, everyone eliminates at resultAt | Propagation uses the root children of pc for P.winInnerTournament(C, children). Elimination and recovery need no computation | Propagate in [resultAt, expiresAt). Eliminate from expiresAt, or resultAt with no candidate. Recover from resultAt |
 | StandingChanged(n, d, 0, resultAt, 0), root tournament R of epoch e | Replace R's result group. With n = 0, own(d) installs the stage job and claimer(d) installs the recover job, as separate jobs. Otherwise install no transaction jobs | prove_outputs_merkle_root for staging | From resultAt |
 | CommitmentJoined | Complete our matching join job, including when another submitter joined the same commitment | None | Immediate |
 | EpochStaged | Complete the named epoch's stage job, regardless of sender. Preserve recovery | None | Immediate |
@@ -268,7 +271,7 @@ period_index, state_transition_offset). Its machine access logs and input bytes
 are encoded for the pinned proofs argument of winLeafMatch.
 
 Load [prt.lua](prt.lua) as a module and construct the player with
-new_player(dapp_contract, output_index, label), using the contract context with
+new_player(dapp_contract, label), using the contract context with
 its validated geometry and initial state hash. The player loads the initial
 machine and owns its cache and initially empty filename table. Keep the player in a
 <close> local; its __close method releases the cache and any unfinished execution.
@@ -288,8 +291,11 @@ use this same operation.
 Builders retain computation state only. Their methods receive the working machine
 explicitly when needed; no machine is attached to a builder.
 At sealing, check the initial state and exact input bounds, then call
-epoch_sealed(input_count) to finalize padding and proofs. Call commit_mcycle_claim
+epoch_sealed(input_count) to finalize the computation and output proofs. Call commit_mcycle_claim
 only after epoch_sealed; do not defer input processing until EpochSealed.
+The player retains every accepted output and its proof, and answers client requests through
+player:prove_output(output_index). The demonstration offers the last output to the
+referee. Final-machine output-root proofs are generated from the cache on demand.
 
 There is no separate begin event. Each player and cache describe one epoch.
 At each seal, the bridge can spawn a player for the next epoch using the locally
@@ -315,11 +321,17 @@ state requires a different computation context.
 
 ### Claim restoration and successive opponents
 
-The current player's trees contain frontier forests of bundle roots.
-collect_mcycle_bundle and collect_uarch_cycle_bundle replay a machine to open
-an opaque bundle, and tree:open_bundle in prtu.lua authenticates the reconstructed
-subtree against its committed root. Saving a computation hash, commit response, or
-Lua object handle alone does not restore this ability.
+The player's trees in `prt.lua` contain frontier forests of bundle roots and
+bundle-collection callbacks. `tree:get_node_hash` and `tree:get_proof` open a
+bundle implicitly when the forest query reaches an opaque hash;
+`tree:get_child_hashes` uses two node-hash queries. The local `open_bundle` helper
+invokes the tree's collector, backed by `collect_mcycle_bundle` or
+`collect_uarch_cycle_bundle`, to reconstruct the bundle by machine replay.
+`hash_tree.frontier_forest_expand_leaf` checks the reconstructed subtree against
+the committed leaf hash before installing it. The query then retries, and later
+queries within that bundle reuse the installed subtree without machine replay.
+Saving a computation hash, commit response, or Lua object handle alone does not
+restore this ability.
 
 Persist a versioned claim record containing the forest, tree and bundle
 heights, expected computation root, root children, and final-state proof.
@@ -327,9 +339,11 @@ Bind it to the deployment, epoch initial hash, exact verified input payloads
 and bounds, geometry, and, for a child claim, input and period coordinates.
 Store immutable inputs and the initial machine snapshot locally, or references
 to durable content-addressed copies. On restart, recreate the player and its
-bundle-collection callbacks from this context, restore the forest through
-prtu.new_tree, and verify the root and saved proofs before use. Never deserialize
-callbacks or assume that saving their Lua handles preserves machine resources.
+bundle-collection callbacks from this context, wrap the restored forest with
+`prt.new_tree(height, bundle_height, forest, collect_bundle)`, and verify the
+root and saved proofs before storing it in `player.trees[computation_hash]`.
+Never deserialize callbacks or assume that saving their Lua handles preserves
+machine resources.
 The record format and restoration code are implementation work in this plan.
 
 Machine checkpoints and expanded bundles are optional accelerators. With only
@@ -338,22 +352,23 @@ claim. Validate both that equality and the time needed to answer after a cold
 restart. Checkpoint persistence is required for a deployment whose response
 windows cold replay cannot meet.
 
-The player currently holds one mcycle_claim and one uarch_claim, and
-commit_uarch_claim replaces the latter. Keep durable claim records separately
-from these active slots. Each new opponent can open a child tournament over a
-different period, requiring the corresponding child commitment and contested
-final-state check. Check the emitted geometry, coordinates, and contested final
+The player stores mcycle and uarch trees in `player.trees`, indexed by computation
+hash. The `commit_mcycle_claim` and `commit_uarch_claim` event handlers add their
+trees to that table; committing a different uarch claim retains earlier claims.
+Keep durable claim records bound to their computation context as described above.
+Each new opponent can open a child tournament over a different period, requiring
+the corresponding child commitment and contested final-state check. Check the emitted geometry, coordinates, and contested final
 states even when reusing a previously computed claim for the same period.
 Restore the tree for the selected job's context before
 calling a handler. Never resolve a claim solely by tournament address or by
-whichever uarch tree happens to be active.
+the most recently committed uarch claim.
 
 Retain claims for earlier children until the root settlement is finalized, so
 a reorg can make their dispute work current again. Recovery remains discoverable
 from those children's event streams until it succeeds and is finalized. It
 needs the tournament and winning-claim/claimer identities, not the old child's
 full tree. Parent propagation uses the parent claim's children. Pending recovery
-must neither retain an obsolete active slot nor prevent the next child claim.
+must not prevent the player from committing or answering for the next child claim.
 
 ## Tick, log discovery, and restarts
 

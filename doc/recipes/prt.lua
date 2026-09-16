@@ -26,7 +26,7 @@
 -- subscribers. The referee sorts the claims it gathers, so the bracket and the whole narration are a pure
 -- function of the claims and prescribed responses or skips, independent of connection order.
 --   prt.lua referee  <address> <initial-state-hash> <input> [<input> ...]
---   prt.lua honest   <address> <initial-state-hash> <output-index>
+--   prt.lua honest   <address> <initial-state-hash>
 --   prt.lua phase_closer <address> [stop]
 --
 -- The phase closer closes initial subscriptions once every player is in, then disconnects.
@@ -1723,22 +1723,38 @@ function event_handler.prove_state_transition(self, input_index, period_index, s
 end
 -- docs:end prove_state_transition
 
+-- A machine leaf proof includes the complete target data, separately from the standard proof
+-- that authenticates its hash. Machine registers may sit within a word, so the proof starts at
+-- the containing word boundary.
+local function get_machine_leaf(machine, address)
+    local target_address = address & ~WORD_MASK
+    return machine:read_memory(target_address, WORD_SIZE),
+        machine:get_proof(target_address, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+end
+
 -- Proves that the settled final state is yielded manually with RX_ACCEPTED and authenticates
 -- the word whose data is the outputs Merkle root.
 -- docs:begin prove_outputs_merkle_root
 function event_handler.prove_outputs_merkle_root(self)
-    return assert(self.outputs_merkle_root_result, "epoch has not been sealed")
+    assert(self.epoch_sealed, "epoch has not been sealed")
+    local machine, owner <close> = self:clone_at_input_boundary(#self.input_paths) -- luacheck: ignore 211
+    local iflags_y_data, iflags_y_proof = get_machine_leaf(machine, IFLAGS_Y_ADDRESS)
+    local htif_tohost_data, htif_tohost_proof = get_machine_leaf(machine, HTIF_TOHOST_ADDRESS)
+    local tx_buffer_data, tx_buffer_proof = get_machine_leaf(machine, CMIO_TX_BUFFER_ADDRESS)
+    return {
+        iflags_y_data = iflags_y_data,
+        iflags_y_proof = iflags_y_proof,
+        htif_tohost_data = htif_tohost_data,
+        htif_tohost_proof = htif_tohost_proof,
+        tx_buffer_data = tx_buffer_data,
+        tx_buffer_proof = tx_buffer_proof,
+    }
 end
 -- docs:end prove_outputs_merkle_root
 
--- Offers the output chosen by this player, defaulting to the last output. The referee supplies
--- no index or acceptance information. An empty table is no offer when the output does not exist.
+-- Offer the last output for this demonstration. The referee supplies no index.
 function event_handler.prove_output(self)
-    local output = assert(self.output, "epoch has not been sealed")
-    if not output.output then
-        return {}
-    end
-    return output
+    return self:prove_output(#self.outputs - 1)
 end
 
 local player_meta = { __index = {} }
@@ -1889,10 +1905,14 @@ function event_handler.epoch_sealed(self, input_count)
     assert(input_count == #self.input_paths, "epoch input count mismatch")
     local builder = self.epoch_builder
     self.epoch_builder = nil
-    local machine, owner <close> = self:clone_at_input_boundary(input_count) -- luacheck: ignore 211
     self.mcycle_forest = builder:end_epoch()
-    self:compute_epoch_results(machine, self.outputs)
-    self.outputs, self.outputs_frontier = nil, nil
+    local leaves = {}
+    for i, output in ipairs(self.outputs) do
+        leaves[i] = keccak(output)
+    end
+    local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    self.output_proofs = hash_tree.frontier_next_proofs(genesis_frontier, leaves)
+    self.outputs_frontier = nil
     self.epoch_sealed = true
     return true
 end
@@ -1986,39 +2006,18 @@ function player_meta.__index:collect_uarch_cycle_bundle(input_index, period_inde
 end
 -- docs:end collect_uarch_cycle_bundle
 
--- A machine leaf proof includes the complete target data, separately from the standard proof
--- that authenticates its hash. Machine registers may sit within a word, so the proof starts at
--- the containing word boundary.
-local function get_machine_leaf(machine, address)
-    local target_address = address & ~WORD_MASK
-    return machine:read_memory(target_address, WORD_SIZE),
-        machine:get_proof(target_address, cartesi.HASH_TREE_LOG2_WORD_SIZE)
-end
-
--- Capture the final-machine leaves and accepted outputs before releasing the forward machine.
--- No execution is needed when the tournament later asks for these proofs.
-function player_meta.__index:compute_epoch_results(machine, outputs)
-    local iflags_y_data, iflags_y_proof = get_machine_leaf(machine, IFLAGS_Y_ADDRESS)
-    local htif_tohost_data, htif_tohost_proof = get_machine_leaf(machine, HTIF_TOHOST_ADDRESS)
-    local tx_buffer_data, tx_buffer_proof = get_machine_leaf(machine, CMIO_TX_BUFFER_ADDRESS)
-    self.outputs_merkle_root_result = {
-        iflags_y_data = iflags_y_data,
-        iflags_y_proof = iflags_y_proof,
-        htif_tohost_data = htif_tohost_data,
-        htif_tohost_proof = htif_tohost_proof,
-        tx_buffer_data = tx_buffer_data,
-        tx_buffer_proof = tx_buffer_proof,
-    }
-    local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
-    local leaves = {}
-    for i, output in ipairs(outputs) do
-        leaves[i] = keccak(output)
+-- Clients may request any accepted output from the sealed epoch, independently of
+-- the output the demonstration offers to the referee. Missing indices are no offer.
+function player_meta.__index:prove_output(output_index)
+    assert(self.epoch_sealed, "epoch has not been sealed")
+    assert(math.type(output_index) == "integer", "invalid output index")
+    if output_index < 0 or output_index >= #self.outputs then
+        return {}
     end
-    local output_index = self.output_index or #outputs - 1
-    self.output = {
-        output_index = output_index >= 0 and output_index or nil,
-        output = outputs[output_index + 1],
-        output_proof = hash_tree.frontier_next_proofs(genesis_frontier, leaves)[output_index + 1],
+    return {
+        output_index = output_index,
+        output = self.outputs[output_index + 1],
+        output_proof = self.output_proofs[output_index + 1],
     }
 end
 
@@ -2043,14 +2042,13 @@ local prt
 
 -- Each player owns its input filenames, cache, and open epoch computation.
 -- Default event handlers are shared and treated as read-only.
-local function new_player(dapp_contract, output_index, label)
+local function new_player(dapp_contract, label)
     local self <close> = setmetatable({
         event_handler = event_handler,
         label = label or "honest",
         dapp_contract = dapp_contract,
         geometry = dapp_contract.geometry,
         input_paths = {},
-        output_index = output_index,
         trees = {},
     }, player_meta)
     self.machine_cache = prt.new_machine_cache(prt.new_machine(dapp_contract.initial_state_hash))
@@ -2128,10 +2126,8 @@ if role == "referee" then
         prtu.run_server(new_referee(dapp_contract), server_address)
     end
 elseif role == "honest" then
-    local output_index = tonumber(take_argument("missing output index"))
-    assert(math.type(output_index) == "integer" and output_index >= 0, "invalid output index")
     run_role = function(dapp_contract)
-        local player <close> = new_player(dapp_contract, output_index, "honest")
+        local player <close> = new_player(dapp_contract, "honest")
         prtu.run_client(player, server_address)
     end
     assert(next_argument > #arg, "only the referee takes input files")

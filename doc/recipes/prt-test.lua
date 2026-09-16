@@ -123,8 +123,8 @@ local function with_test_cache(cache, construct, geometry, ...)
     return player
 end
 
-local function new_test_player(geometry, cache, output_index, label)
-    return with_test_cache(cache, prt.new_player, geometry, output_index, label)
+local function new_test_player(geometry, cache, label)
+    return with_test_cache(cache, prt.new_player, geometry, label)
 end
 
 local dishonest = {}
@@ -534,11 +534,43 @@ do
         expected, padding = keccak(expected, padding), keccak(padding, padding)
     end
     assert(tree:get_root_hash() == expected, "streamed claim changed its input order or padding")
-    assert(player.output and player.outputs_merkle_root_result, "sealing did not retain output proofs")
+    assert(player.output_proofs and player.outputs, "sealing did not retain outputs and their proofs")
+    assert(next(handlers.prove_output(player)) == nil, "empty epoch invented an output")
+    assert(handlers.prove_outputs_merkle_root(player), "sealed epoch cannot prove its output root")
     assert(cache.frozen and not player.epoch_builder, "sealing retained a working builder")
     assert(initial.counts.live == (#cache.checkpoints + 1), "sealing leaked its execution")
     assert(not pcall(handlers.input_added, player, 2, path), "input arrived after epoch_sealed")
     assert(not pcall(handlers.epoch_sealed, player, 2), "epoch sealed twice")
+end
+
+-- One sealed epoch answers arbitrary client output requests without acquiring a machine.
+do
+    local player = new_test_player(nil, nil, "output fixture")
+    assert(player.label == "output fixture", "constructor lost the player label")
+    assert(not pcall(player.prove_output, player, 0), "open epoch produced an output proof")
+    assert(not pcall(player.event_handler.prove_outputs_merkle_root, player), "open epoch produced a root proof")
+    local outputs = { "first", "", "third" }
+    player.outputs = outputs
+    for _, output in ipairs(outputs) do
+        hash_tree.frontier_push_back(player.outputs_frontier, keccak(output))
+    end
+    local expected_root = hash_tree.frontier_get_root_hash(player.outputs_frontier)
+    local clone = player.clone_at_input_boundary
+    player.clone_at_input_boundary = function()
+        error("output proof acquired a machine")
+    end
+    player.event_handler.epoch_sealed(player, 0)
+    for _, index in ipairs({ 2, 0, 1, 2, 0 }) do
+        local response = player:prove_output(index)
+        assert(response.output_index == index and response.output == outputs[index + 1])
+        assert(response.output_proof.target_hash == keccak(response.output))
+        assert(response.output_proof.root_hash == expected_root, "output proof changed the epoch root")
+        hash_tree.verify_slice(response.output_proof)
+    end
+    assert(player.event_handler.prove_output(player).output_index == 2, "client request changed the offered output")
+    assert(next(player:prove_output(3)) == nil and next(player:prove_output(-1)) == nil)
+    assert(not pcall(player.prove_output, player, 0.5), "noninteger output index was accepted")
+    player.clone_at_input_boundary = clone
 end
 
 -- All completed inputs go through consider. Unchanged states reuse the latest machine,
@@ -2244,9 +2276,13 @@ if arg[1] then
     )
     chain_cache.checkpoints, chain_cache.latest = all_checkpoints, saved_latest
 
-    -- Result replay uses the same input lifecycle, and its proofs authenticate
-    -- against the final state of the sampled execution.
+    -- Final-machine proofs come from the retained boundary without replaying inputs.
+    local run_input = honest.run_advance_state_input
+    honest.run_advance_state_input = function()
+        error("final-machine proof replayed an input")
+    end
     local result = honest.event_handler.prove_outputs_merkle_root(honest)
+    honest.run_advance_state_input = run_input
     local final_leaf = (1 << dapp_contract.geometry.mcycle_height) - 1
     assert(
         result.iflags_y_proof.root_hash == honest_tree:get_node_hash(final_leaf, 0),
@@ -2254,26 +2290,19 @@ if arg[1] then
     )
     local latest = honest.event_handler.prove_output(honest)
     assert(latest.output and latest.output_index == 1, "accepted output was lost during replay")
-    assert(honest.event_handler.prove_output(honest) == latest, "the player's output choice changed between requests")
-    local _, other_cache <close> = new_test_cache(dapp_contract, 1)
-    local other_player = new_test_player(dapp_contract.geometry, other_cache, 0)
-    seed_input_paths(other_player, honest_inputs)
-    process_epoch(other_player)
-    local earlier = other_player.event_handler.prove_output(other_player)
-    assert(earlier.output and earlier.output_index == 0, "the player did not offer its chosen output")
-    for _, output in ipairs({ latest, earlier }) do
+    local earlier = honest:prove_output(0)
+    assert(earlier.output and earlier.output_index == 0, "the player cannot prove an earlier output")
+    local again = honest.event_handler.prove_output(honest)
+    assert(
+        again.output_index == latest.output_index and again.output == latest.output,
+        "client changed the offered output"
+    )
+    for _, output in ipairs({ latest, earlier, again }) do
         assert(output.output_proof.root_hash == result.tx_buffer_data, "output proof used the wrong root")
         assert(output.output_proof.target_hash == keccak(output.output), "output proof used the wrong payload")
         hash_tree.verify_slice(output.output_proof)
     end
-    local _, absent_cache <close> = new_test_cache(dapp_contract, 1)
-    local absent_player = new_test_player(dapp_contract.geometry, absent_cache, 2)
-    seed_input_paths(absent_player, honest_inputs)
-    process_epoch(absent_player)
-    assert(
-        next(absent_player.event_handler.prove_output(absent_player)) == nil,
-        "the player invented an output at a missing index"
-    )
+    assert(next(honest:prove_output(2)) == nil, "the player invented an output at a missing index")
 
     local forger_inputs, forger_cache <close> = new_test_cache(dapp_contract)
     local original_input = dapp_contract.inputs[1]

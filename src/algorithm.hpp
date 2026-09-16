@@ -53,6 +53,21 @@ static constexpr T saturating_add(T a, T b, T max = std::numeric_limits<T>::max(
     return a + b;
 }
 
+/// \brief Performs saturating multiplication of two unsigned integers
+/// \tparam T Unsigned integer type
+/// \param a First factor
+/// \param b Second factor
+/// \param max Maximum value of T (default: std::numeric_limits<T>::max())
+/// \returns The product of a and b, or the maximum value of T if overflow occurs
+template <typename T>
+    requires std::is_unsigned_v<T>
+static constexpr T saturating_mul(T a, T b, T max = std::numeric_limits<T>::max()) noexcept {
+    if (b != 0 && a > max / b) [[unlikely]] {
+        return max;
+    }
+    return a * b;
+}
+
 } // namespace cartesi
 
 #endif

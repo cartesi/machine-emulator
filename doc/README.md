@@ -9581,36 +9581,40 @@ logical heights, padding its span with the fixed point where its guest
 stopped, and offering the completed input boundary to the cache after
 output checks and any rollback. At `epoch_sealed`, the player checks the
 input count, pads the unoccupied epoch suffix, freezes its checkpoints,
-captures the final-state and output proofs, and releases the working
-machine. `commit_mcycle_claim` uses the completed forest. Processing
-therefore begins while the epoch is still open. The default policy keeps
-a bounded, progressively thinned set of historical checkpoints, indexed
-by input; input zero always retains the initial machine template. A
-separate latest boundary is always retained, independently of thinning,
-so the next input needs no replay. This uses at most one additional
-retained machine. `consider(input_index, machine)` handles every
-completed boundary. It compares the state with the latest cached state:
-an unchanged state reuses that machine and advances only the logical
-input index. Changed states replace the latest snapshot. Every offer
-then runs the historical checkpoint policy, including when the state is
-unchanged. Latest and historical boundaries own independent snapshots,
-so either can be replaced or evicted without shared-ownership
-bookkeeping. Rejected inputs are offered after rollback; terminal inputs
-use the same cache operation. Bundle collection
-(`collect_mcycle_bundle`) asks the cache for the target input’s
-boundary, then advances that input to recover one bundle’s samples. The
-cache’s `clone_at_input_boundary(input_index, run_to_input_boundary)`
-selects and clones the nearest eligible historical or latest boundary,
-then calls `run_to_input_boundary` with the machine and the intervening
-input range. The player’s `run_to_input_boundary` method replays only
-the intervening input range with the null builder. It returns an
-independent machine and a separate owner kept in a `<close>` local;
-closing the owner releases the working machine and any outstanding
-backup immediately, including on errors. Uarch collection and transition
-proofs request their boundaries through the same operation. Forward
-execution starts by cloning boundary zero and collects results along the
-way; checkpoint selection stays private to the cache. The input driver
-calls the cache’s `snapshot(machine)`, `commit(machine)`, and
+and builds inclusion proofs for all accepted outputs using
+`frontier_next_proofs`. The player retains every accepted output and its
+proof for later client requests. The `prove_outputs_merkle_root` handler
+obtains final-machine proofs from a scoped clone of the cached final
+boundary, without replay. `commit_mcycle_claim` uses the completed
+forest. Processing therefore begins while the epoch is still open. The
+default policy keeps a bounded, progressively thinned set of historical
+checkpoints, indexed by input; input zero always retains the initial
+machine template. A separate latest boundary is always retained,
+independently of thinning, so the next input needs no replay. This uses
+at most one additional retained machine.
+`consider(input_index, machine)` handles every completed boundary. It
+compares the state with the latest cached state: an unchanged state
+reuses that machine and advances only the logical input index. Changed
+states replace the latest snapshot. Every offer then runs the historical
+checkpoint policy, including when the state is unchanged. Latest and
+historical boundaries own independent snapshots, so either can be
+replaced or evicted without shared-ownership bookkeeping. Rejected
+inputs are offered after rollback; terminal inputs use the same cache
+operation. Bundle collection (`collect_mcycle_bundle`) asks the cache
+for the target input’s boundary, then advances that input to recover one
+bundle’s samples. The cache’s
+`clone_at_input_boundary(input_index, run_to_input_boundary)` selects
+and clones the nearest eligible historical or latest boundary, then
+calls `run_to_input_boundary` with the machine and the intervening input
+range. The player’s `run_to_input_boundary` method replays only the
+intervening input range with the null builder. It returns an independent
+machine and a separate owner kept in a `<close>` local; closing the
+owner releases the working machine and any outstanding backup
+immediately, including on errors. Uarch collection and transition proofs
+request their boundaries through the same operation. Forward execution
+starts by cloning boundary zero and collects results along the way;
+checkpoint selection stays private to the cache. The input driver calls
+the cache’s `snapshot(machine)`, `commit(machine)`, and
 `revert(machine)` operations, following the CLI: acceptance and sticky
 stops commit, rejection reverts, and a run that stops at a target inside
 the input keeps its snapshot until the owner releases the clone. Backups
@@ -9664,8 +9668,8 @@ sender and logged transition both treat an inapplicable delivery as a
 no-op. At a terminal boundary the slot idles and the builders pad it
 from there; a transition proof with a posted input logs the same no-op
 through `log_send_cmio_response`. The player constructor is
-`prt.new_player(dapp_contract, output_index, label)`. The player retains
-the dapp contract, reads its geometry, and initializes its own empty
+`prt.new_player(dapp_contract, label)`. The player retains the dapp
+contract, reads its geometry, and initializes its own empty
 `input_paths` table, machine cache, and open epoch computation. Input
 events populate the table with filenames. Input delivery and proof
 generation read the files when needed; the player does not retain their
@@ -9674,39 +9678,40 @@ player’s lifetime, including disputes. Shared methods in
 `player_meta.__index` access the player’s fields through `self`. The
 label defaults to `honest`. Players share the default `event_handler`
 table, treated as read-only. The transport calls
-`player.event_handler[event_name](player, ...)`. The optional
-`output_index` constructor argument selects the output to prove,
-defaulting to the last output. The execution drivers receive the builder
-followed by the working machine as separate arguments. Builder methods
-that use the machine receive it explicitly, as in
-`builder:run(machine, mcycle_end)`; builders retain no machine reference
-and forward no machine methods. Dispute replay takes begin and end input
-indices. The builder keeps its computation forest between input events.
-The expected boundary hash and cumulative outputs frontier also persist;
-the cache retains the latest machine. Input and period indices are
-zero-based throughout the player and referee; only Lua input-array
-lookups add one. The epoch period index combines the input index and its
-period index, while the separate transition offset splits into an mcycle
-offset and a uarch cycle. Keeping those coordinates separate avoids
-overflowing a 64-bit integer. The player owns the cumulative outputs
-frontier; the input driver appends accepted outputs and checks the
-reported outputs Merkle root before committing. The honest player uses
-native machines and ordinary computation-hash builders directly; the
-driver passes the input index and mcycle boundary to the builders,
-without attaching execution context or ownership to the machine. The
-dishonest constructors in `prt-dishonest.lua` wrap the initialized
-builder and the cache acquisition path used for forward execution and
-replay. They maintain their own private bookkeeping while sharing the
-execution lifecycle and claim trees. Before overriding event handlers,
-they clone the shared table. The forger substitutes its own filename for
-one input event, while the referee continues to verify against the
-original contract inputs. The tamperer configures its cache to wrap
-execution clones and preserve private strategy state on rollback.
-Retained checkpoints remain native machines. The fabulist replaces a
-sample as it enters a computation hash, including when that sample lies
-in repeated padding. Dishonest strategies can wrap the player’s
-bundle-collection methods, and the ordinary claim tree authenticates
-every opened bundle.
+`player.event_handler[event_name](player, ...)`. The `prove_output`
+event handler offers the last output. Clients can call
+`player:prove_output(output_index)` for any accepted output in the
+sealed epoch; this choice is independent of the referee. The execution
+drivers receive the builder followed by the working machine as separate
+arguments. Builder methods that use the machine receive it explicitly,
+as in `builder:run(machine, mcycle_end)`; builders retain no machine
+reference and forward no machine methods. Dispute replay takes begin and
+end input indices. The builder keeps its computation forest between
+input events. The expected boundary hash and cumulative outputs frontier
+also persist; the cache retains the latest machine. Input and period
+indices are zero-based throughout the player and referee; only Lua
+input-array lookups add one. The epoch period index combines the input
+index and its period index, while the separate transition offset splits
+into an mcycle offset and a uarch cycle. Keeping those coordinates
+separate avoids overflowing a 64-bit integer. The player owns the
+cumulative outputs frontier; the input driver appends accepted outputs
+and checks the reported outputs Merkle root before committing. The
+honest player uses native machines and ordinary computation-hash
+builders directly; the driver passes the input index and mcycle boundary
+to the builders, without attaching execution context or ownership to the
+machine. The dishonest constructors in `prt-dishonest.lua` wrap the
+initialized builder and the cache acquisition path used for forward
+execution and replay. They maintain their own private bookkeeping while
+sharing the execution lifecycle and claim trees. Before overriding event
+handlers, they clone the shared table. The forger substitutes its own
+filename for one input event, while the referee continues to verify
+against the original contract inputs. The tamperer configures its cache
+to wrap execution clones and preserve private strategy state on
+rollback. Retained checkpoints remain native machines. The fabulist
+replaces a sample as it enters a computation hash, including when that
+sample lies in repeated padding. Dishonest strategies can wrap the
+player’s bundle-collection methods, and the ordinary claim tree
+authenticates every opened bundle.
 
 ### The tournament
 
@@ -10304,7 +10309,7 @@ role arguments. Input filenames arrive from the referee, and no argument
 names the players’ number or order:
 
 ``` bash
-lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" 1
+lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash"
 ```
 
 ``` bash

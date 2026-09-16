@@ -680,7 +680,7 @@ return function(run_with_server, new_test_player)
             finals[3], finals[4] = after, after
         end
         for index, final in ipairs(finals) do
-            local player = new_test_player(geometry, nil, nil, "fixture" .. index)
+            local player = new_test_player(geometry, nil, "fixture" .. index)
             -- These clock fixtures supply synthetic claims independently of execution.
             clone_handlers(player)
             player.event_handler.epoch_sealed = function()

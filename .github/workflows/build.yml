@@ -334,7 +334,7 @@ jobs:
 
       - name: Record and replay rv64ui test suite on uarch
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests verify
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests --jobs=$(nproc) verify
 
       - name: Run test suite with Uarch
         run: |
@@ -501,7 +501,7 @@ jobs:
 
       - name: Record and replay rv64ui test suite on uarch
         run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests verify
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests --jobs=$(nproc) verify
 
       - name: Run test suite with Uarch
         run: |

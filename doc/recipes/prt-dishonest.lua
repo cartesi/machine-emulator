@@ -131,9 +131,9 @@ end
 -- A checkpoint exactly at the corruption point still holds the agreed state.
 -- Corruption happens only when executing or collecting the transition out of it.
 -- Each execution has private strategy state, which the cache restores on rollback.
-local function new_tamperer(dapp_contract, input_index, bundle_offset)
+local function new_tamperer(dapp_contract, input_index, tamper_bundle_offset)
     local geometry = dapp_contract.geometry
-    local offset = bundle_offset << (prt.LOG2_BUNDLE_MCYCLE_COUNT + geometry.log2_mcycles_per_period)
+    local offset = tamper_bundle_offset << (prt.LOG2_BUNDLE_MCYCLE_COUNT + geometry.log2_mcycles_per_period)
     local function tamper_point(machine)
         local context = machine.state
         if context.input_index ~= input_index or context.tampered then
@@ -195,6 +195,23 @@ local function new_tamperer(dapp_contract, input_index, bundle_offset)
                 collected.break_reason = cartesi.BREAK_REASON_YIELDED_SOFTLY
             end
             return collected
+        end,
+        collect_mcycle_bundle = function(machine, bundle_offset, log2_period, height)
+            -- The point is bundle aligned. Run to it through the strategy, then let the
+            -- machine collect the remaining bundles from there.
+            local point = tamper_point(machine)
+            local mcycle = machine:read_reg("mcycle")
+            local bundle_begin = usaturating_add(mcycle, bundle_offset << (log2_period + height))
+            if point and math.ult(mcycle, point) and not math.ult(bundle_begin, point) then
+                machine:run(point)
+                bundle_offset = (bundle_begin - point) >> (log2_period + height)
+            end
+            apply(machine)
+            return machine.machine:collect_mcycle_bundle(bundle_offset, log2_period, height)
+        end,
+        collect_uarch_cycle_bundle = function(machine, ...)
+            apply(machine)
+            return machine.machine:collect_uarch_cycle_bundle(...)
         end,
         run_uarch = function(machine, ...)
             apply(machine)
@@ -358,7 +375,8 @@ local function new_fabulist(dapp_contract, input_index, leaf_offset)
         prt.combine_epoch_period_index(geometry.periods_per_input, input_index, leaf_offset)
     local fake_hash = keccak("fabulist")
     local insert = lie_about_leaf(target_epoch_period_index, function(_, first_leaf)
-        return player:collect_mcycle_bundle(first_leaf >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
+        local bundle_input_index, period_index = prt.split_epoch_period_index(geometry.periods_per_input, first_leaf)
+        return player:collect_mcycle_bundle(bundle_input_index, period_index >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
     end)
     player.epoch_builder = new_mcycle_liar(player.epoch_builder, insert)
     local make_mcycle = player.make_mcycle_computation_hash_builder
@@ -383,16 +401,20 @@ local function new_fabulist(dapp_contract, input_index, leaf_offset)
         return builder
     end
     local collect_mcycle_bundle = player.collect_mcycle_bundle
-    player.collect_mcycle_bundle = function(self, bundle_index)
-        local forest = collect_mcycle_bundle(self, bundle_index)
-        local leaf = target_epoch_period_index - (bundle_index << prt.LOG2_BUNDLE_MCYCLE_COUNT)
-        return falsify_bundle(forest, prt.LOG2_BUNDLE_MCYCLE_COUNT, leaf, fake_hash)
+    player.collect_mcycle_bundle = function(self, bundle_input_index, input_bundle_offset)
+        local forest = collect_mcycle_bundle(self, bundle_input_index, input_bundle_offset)
+        local first_leaf = prt.combine_epoch_period_index(
+            geometry.periods_per_input,
+            bundle_input_index,
+            input_bundle_offset << prt.LOG2_BUNDLE_MCYCLE_COUNT
+        )
+        return falsify_bundle(forest, prt.LOG2_BUNDLE_MCYCLE_COUNT, target_epoch_period_index - first_leaf, fake_hash)
     end
     local collect_uarch_cycle_bundle = player.collect_uarch_cycle_bundle
-    player.collect_uarch_cycle_bundle = function(self, bundle_input_index, period_index, bundle_index)
-        local forest = collect_uarch_cycle_bundle(self, bundle_input_index, period_index, bundle_index)
+    player.collect_uarch_cycle_bundle = function(self, bundle_input_index, period_index, period_bundle_offset)
+        local forest = collect_uarch_cycle_bundle(self, bundle_input_index, period_index, period_bundle_offset)
         if bundle_input_index == input_index and period_index == leaf_offset then
-            local leaf = (1 << geometry.uarch_height) - 1 - (bundle_index << prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+            local leaf = (1 << geometry.uarch_height) - 1 - (period_bundle_offset << prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT)
             return falsify_bundle(forest, prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT, leaf, fake_hash)
         end
         return forest

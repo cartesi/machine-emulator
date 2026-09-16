@@ -9452,18 +9452,18 @@ deploys, and we use it to settle the same epoch the rolling verification
 game settled.
 
 The change everything else follows from is that players no longer answer
-bisection queries about a live machine. Each player opens by committing
-to a *computation hash*, the root of a Merkle tree whose leaves are the
-machine state hashes sampled along the whole computation, and the
-dispute walks down the committed trees instead. Claims can be compared
-in any order, so they pair up in a tournament of concurrent matches
-instead of a single game. A claim also does not belong to whoever posted
-it. Every event the referee emits concerns a claim, any player may
-answer, and an answer must prove itself against the claim, so it never
-matters who sent it. Claims are what matter, not players. Every honest
-player computes the same claims, and a claim survives as long as anyone
-at all defends it. An unanswered event eliminates a claim, never a
-player.
+bisection queries about a live machine. Each player opens the tournament
+by committing to a *computation hash*, the root of a Merkle tree whose
+leaves are the machine state hashes sampled along the whole computation,
+and the dispute walks down the committed trees instead. Claims can be
+compared in any order, so they pair up in a tournament of concurrent
+matches instead of a single game. A claim also does not belong to
+whoever posted it. Every dispute event the referee emits concerns a
+claim, any player may answer, and an answer must prove itself against
+the claim, so it never matters who sent it. Claims are what matter, not
+players. Every honest player computes the same claims, and a claim
+survives as long as anyone at all defends it. An unanswered event
+eliminates a claim, never a player.
 
 ### Computation hash claims
 
@@ -9570,45 +9570,69 @@ each input owns a fixed-capacity segment, collection state threads
 across yields, and the final repeatable group returned at a fixed point
 fills the segment’s remaining positions. The only different sink is
 PRT’s frontier forest, which retains the nodes needed to answer later
-tournament queries. The mcycle build (`build_mcycle_claim` in `prt.lua`)
-advances the whole epoch once, pushing each input’s bundle roots into
-the claim forest at their logical heights, padding each input’s span
-with the fixed point where its guest stopped, and offering each accepted
-input’s final machine to a bounded cache as the next input’s virgin
-boundary. The default policy keeps a bounded, progressively thinned set
-of these checkpoints, indexed by input; input zero always retains the
-initial machine template. Bundle collection (`collect_mcycle_bundle`)
-asks the cache for the target input’s boundary, then advances that input
-to recover one bundle’s samples. The cache’s
-`clone_at_input_boundary(input_index, run_to_input_boundary)` selects
-and clones a checkpoint, then calls `run_to_input_boundary` with the
-machine and the intervening input range. The player’s
-`run_to_input_boundary` closure uses `run_advance_state_epoch` with the
-null builder. It returns an independent machine and a separate owner
-kept in a `<close>` local; closing the owner releases the working
-machine and any outstanding backup immediately, including on errors.
-Uarch collection and transition proofs request their boundaries through
-the same operation, and forward building and result collection start by
-cloning boundary zero; checkpoint selection stays private to the cache.
-The input driver calls the cache’s `snapshot(machine)`,
-`commit(machine)`, and `revert(machine)` operations, following the CLI:
-acceptance and sticky stops commit, rejection reverts, and a run that
-stops at a target inside the input keeps its snapshot until the owner
-releases the clone. Backups are keyed by working machine inside the
-cache, so nested bundle collection cannot replace the outer run’s
-snapshot. The uarch builder captures its rejection-padding tail from the
-running virgin machine before snapshot and delivery, without accessing
-the backup. Eviction releases the retained checkpoint’s owner. The
-caller keeps the cache in a `<close>` local for as long as the player
-and its claim trees can replay. Closing that cache releases all
-remaining owned machines without waiting for garbage collection. The
-caller creates the initial machine and passes it to
+tournament queries. The referee emits
+`input_added(input_index, filename)` for each input in order, followed
+by `epoch_sealed(input_count)`. The player initializes its computation
+at construction using a temporary clone; the cache already owns boundary
+zero. Each input event acquires a scoped working clone of the latest
+boundary. Each input event reads the named file and advances that input
+immediately, pushing its bundle roots into the claim forest at their
+logical heights, padding its span with the fixed point where its guest
+stopped, and offering the completed input boundary to the cache after
+output checks and any rollback. At `epoch_sealed`, the player checks the
+input count, pads the unoccupied epoch suffix, freezes its checkpoints,
+captures the final-state and output proofs, and releases the working
+machine. `commit_mcycle_claim` uses the completed forest. Processing
+therefore begins while the epoch is still open. The default policy keeps
+a bounded, progressively thinned set of historical checkpoints, indexed
+by input; input zero always retains the initial machine template. A
+separate latest boundary is always retained, independently of thinning,
+so the next input needs no replay. This uses at most one additional
+retained machine. `consider(input_index, machine)` handles every
+completed boundary. It compares the state with the latest cached state:
+an unchanged state reuses that machine and advances only the logical
+input index. Changed states replace the latest snapshot. Every offer
+then runs the historical checkpoint policy, including when the state is
+unchanged. Latest and historical boundaries own independent snapshots,
+so either can be replaced or evicted without shared-ownership
+bookkeeping. Rejected inputs are offered after rollback; terminal inputs
+use the same cache operation. Bundle collection
+(`collect_mcycle_bundle`) asks the cache for the target input’s
+boundary, then advances that input to recover one bundle’s samples. The
+cache’s `clone_at_input_boundary(input_index, run_to_input_boundary)`
+selects and clones the nearest eligible historical or latest boundary,
+then calls `run_to_input_boundary` with the machine and the intervening
+input range. The player’s `run_to_input_boundary` method replays only
+the intervening input range with the null builder. It returns an
+independent machine and a separate owner kept in a `<close>` local;
+closing the owner releases the working machine and any outstanding
+backup immediately, including on errors. Uarch collection and transition
+proofs request their boundaries through the same operation. Forward
+execution starts by cloning boundary zero and collects results along the
+way; checkpoint selection stays private to the cache. The input driver
+calls the cache’s `snapshot(machine)`, `commit(machine)`, and
+`revert(machine)` operations, following the CLI: acceptance and sticky
+stops commit, rejection reverts, and a run that stops at a target inside
+the input keeps its snapshot until the owner releases the clone. Backups
+are keyed by working machine inside the cache, so nested bundle
+collection cannot replace the outer run’s snapshot. The uarch builder
+captures its rejection-padding tail from the running virgin machine
+before snapshot and delivery, without accessing the backup. Eviction
+releases the retained checkpoint’s owner. The caller keeps the player in
+a `<close>` local for as long as its claim trees can replay. The
+player’s `__close` method closes its cache, releasing all checkpoints,
+working machines, and rollback snapshots without waiting for garbage
+collection. The player loads the initial machine from the contract’s
+initial state hash and passes it to
 `new_machine_cache(initial_machine, capacity, initial_input_gap)`, which
-takes ownership. The default cache uses forks. A caller can supply a
-different cache implementation without changing the player driver or
-builders. A disk-backed implementation is left for future work. Rejected
-inputs offer no checkpoint: replay runs each one in turn and rolls it
-back through the ordinary input driver, without rejection history or
+takes ownership. The default cache uses forks. Tests can substitute the
+module’s machine and cache factories to exercise other cache policies
+without changing the player driver or builders. A disk-backed
+implementation is left for future work. After rejection, `consider`
+recognizes that the latest boundary already contains the restored state
+and reuses that machine. The historical checkpoint policy still runs at
+the new input index. Historical replay runs intervening rejections in
+turn through the ordinary input driver, without rejection history or
 backward recovery lookups. The uarch build (`build_uarch_claim`) expands
 one period, instruction by instruction, through
 `machine:collect_uarch_cycle_root_hashes()`, whose stream already
@@ -9622,58 +9646,67 @@ needs a single collector call for its containing mcycle. Uarch bundle
 collection captures the rejection tail before input delivery. If replay
 rejects before the selected mcycle, the input driver restores the
 boundary machine before collection; if the collected instruction
-rejects, the machine collector uses the saved tail. The shared
-`run_advance_state_epoch` driver follows the CLI’s naming and delegates
-each input’s delivery, automatic yields, acceptance, and rollback to
-`run_advance_state_input`; plain replay and output collection use that
-same input driver with a builder that only runs the machine. Both
-drivers use the CLI’s break- and yield-reason predicates, such as
-`is_yielded_manual` and `is_rx_accepted`. Before building its initial
-claim, the player checks that the template is waiting on an rx-accepted
-manual yield, using the yield flag and header registers without reading
-an output payload. `load_cmio_input` skips absent inputs and otherwise
-sends the input with the pre-delivery `revert_root_hash`. Forward
-execution and disputes use the same loader. The epoch driver retains the
-expected boundary hash across rejection and updates it only after
-acceptance. Input delivery checks this expected hash, and rollback must
-restore it. The machine sender and logged transition both treat an
-inapplicable delivery as a no-op. At a terminal boundary the slot idles
-and the builders pad it from there; a transition proof with a posted
-input logs the same no-op through `log_send_cmio_response`. The player
-constructor is `prt.new_player(geometry, inputs, machine_cache, label)`.
-The caller supplies a private copy of the contract inputs and owns the
-cache. The player stores its geometry, inputs, and cache as fields;
-shared methods in `player_meta.__index` access them through `self`. The
-label defaults to `honest`. Each player has its own `event_handler`
-table initialized with the default handlers. The transport calls
-`player.event_handler[event_name](player, ...)`; strategies can replace
-entries without changing other players. Strategies and tests override
-builder methods on individual players. The `output_index` field selects
-the output to prove, defaulting to the last output. The execution
-drivers receive a builder tied to their machine, so nested bundle
-collection cannot replace another execution’s machine. The epoch driver
-requires begin and end input indices, with an optional outputs vector
-last. Input and period indices are zero-based throughout the player and
-referee; only Lua input-array lookups add one. The epoch period index
-combines the input index and its period index, while the separate
-transition offset splits into an mcycle offset and a uarch cycle.
-Keeping those coordinates separate avoids overflowing a 64-bit integer.
-The epoch driver owns the cumulative outputs frontier; the input driver
-appends accepted outputs and checks the reported outputs Merkle root
-before committing. The honest player uses native machines and ordinary
-computation-hash builders directly; the driver passes the input index
-and mcycle boundary to the builders, without attaching execution context
-or ownership to the machine. The dishonest implementations in
-`prt-dishonest.lua` wrap those objects and maintain their own private
-bookkeeping, while sharing the execution lifecycle, claim trees, and
-event handlers. The forger changes its private input list, while the
-referee continues to verify against the original contract inputs. The
-tamperer configures its cache to wrap execution clones and preserve
-private strategy state on rollback. Retained checkpoints remain native
-machines. The fabulist replaces a sample as it enters a computation
-hash, including when that sample lies in repeated padding. Dishonest
-strategies can wrap the player’s bundle-collection methods, and the
-ordinary claim tree authenticates every opened bundle.
+rejects, the machine collector uses the saved tail. Both input events
+and dispute replay delegate delivery, automatic yields, acceptance, and
+rollback to `run_advance_state_input`. Forward execution collects
+computation hashes and accepted outputs together, avoiding a second
+epoch execution for output proofs. Both paths use the CLI’s break- and
+yield-reason predicates, such as `is_yielded_manual` and
+`is_rx_accepted`. At construction, the player checks that the template
+is waiting on an rx-accepted manual yield, using the yield flag and
+header registers without reading an output payload. `load_cmio_input`
+skips absent inputs and otherwise sends the input with the pre-delivery
+`revert_root_hash`. Forward execution and disputes use the same loader.
+The player retains the expected boundary hash between input events and
+across rejection and updates it only after acceptance. Input delivery
+checks this expected hash, and rollback must restore it. The machine
+sender and logged transition both treat an inapplicable delivery as a
+no-op. At a terminal boundary the slot idles and the builders pad it
+from there; a transition proof with a posted input logs the same no-op
+through `log_send_cmio_response`. The player constructor is
+`prt.new_player(dapp_contract, output_index, label)`. The player retains
+the dapp contract, reads its geometry, and initializes its own empty
+`input_paths` table, machine cache, and open epoch computation. Input
+events populate the table with filenames. Input delivery and proof
+generation read the files when needed; the player does not retain their
+contents. Files must remain readable and unchanged throughout the
+player’s lifetime, including disputes. Shared methods in
+`player_meta.__index` access the player’s fields through `self`. The
+label defaults to `honest`. Players share the default `event_handler`
+table, treated as read-only. The transport calls
+`player.event_handler[event_name](player, ...)`. The optional
+`output_index` constructor argument selects the output to prove,
+defaulting to the last output. The execution drivers receive the builder
+followed by the working machine as separate arguments. Builder methods
+that use the machine receive it explicitly, as in
+`builder:run(machine, mcycle_end)`; builders retain no machine reference
+and forward no machine methods. Dispute replay takes begin and end input
+indices. The builder keeps its computation forest between input events.
+The expected boundary hash and cumulative outputs frontier also persist;
+the cache retains the latest machine. Input and period indices are
+zero-based throughout the player and referee; only Lua input-array
+lookups add one. The epoch period index combines the input index and its
+period index, while the separate transition offset splits into an mcycle
+offset and a uarch cycle. Keeping those coordinates separate avoids
+overflowing a 64-bit integer. The player owns the cumulative outputs
+frontier; the input driver appends accepted outputs and checks the
+reported outputs Merkle root before committing. The honest player uses
+native machines and ordinary computation-hash builders directly; the
+driver passes the input index and mcycle boundary to the builders,
+without attaching execution context or ownership to the machine. The
+dishonest constructors in `prt-dishonest.lua` wrap the initialized
+builder and the cache acquisition path used for forward execution and
+replay. They maintain their own private bookkeeping while sharing the
+execution lifecycle and claim trees. Before overriding event handlers,
+they clone the shared table. The forger substitutes its own filename for
+one input event, while the referee continues to verify against the
+original contract inputs. The tamperer configures its cache to wrap
+execution clones and preserve private strategy state on rollback.
+Retained checkpoints remain native machines. The fabulist replaces a
+sample as it enters a computation hash, including when that sample lies
+in repeated padding. Dishonest strategies can wrap the player’s
+bundle-collection methods, and the ordinary claim tree authenticates
+every opened bundle.
 
 ### The tournament
 
@@ -9688,6 +9721,14 @@ coroutine scheduling, is hidden in the referee server:
 ``` lua
 local function run_referee(dapp_contract)
     server:accept_subscribers(dapp_contract.initial_state_hash)
+    for index, path in ipairs(dapp_contract.input_paths) do
+        local input <close> = server:request_all(EVERYONE, EVENTS.input_added, { index - 1, path })
+        input:wait()
+    end
+    do
+        local sealed <close> = server:request_all(EVERYONE, EVENTS.epoch_sealed, { #dapp_contract.inputs })
+        sealed:wait()
+    end
     local tournament = open_mcycle_tournament(dapp_contract)
     local winner = run_tournament(tournament)
     story.report_winner(winner)
@@ -10061,16 +10102,18 @@ function event_handler.prove_state_transition(self, input_index, period_index, s
     local mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
     local machine, _ <close> = self:clone_at_input_boundary(input_index)
     local revert_root_hash = machine:get_root_hash()
-    local data = self.inputs[input_index + 1]
-    if state_transition_offset == 0 and period_index == 0 and data then
+    local path = self.input_paths[input_index + 1]
+    if state_transition_offset == 0 and period_index == 0 and path then
+        local data = util.read_file(path)
         -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
         local send_cmio_log =
             machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, revert_root_hash)
         return { send_cmio_log = send_cmio_log, step_log = machine:log_step_uarch() }
     end
-    local builder = self:make_null_computation_hash_builder(machine)
+    local builder = self:make_null_computation_hash_builder()
     self:run_advance_state_input(
         builder,
+        machine,
         input_index,
         combine_input_mcycle_offset(self.geometry.mcycles_per_period, period_index, mcycle_offset),
         revert_root_hash
@@ -10246,39 +10289,38 @@ its lied-about period contradicts the leaf itself. Two fabulists run,
 lying about different samples, so they dispute each other too.
 
 To run the tournament, start the referee with the epoch’s initial state
-hash and input files.
+hash and input files. The referee sends the filenames to the players;
+these paths must be readable from each player’s working directory. The
+files must remain readable and unchanged while the example runs,
+including during disputes.
 
 ``` bash
 lua5.4 prt.lua referee 127.0.0.1:8096 "$initial_state_hash" \
     input-0.bin input-1.bin input-2.bin
 ```
 
-The players take the referee address, the initial state hash, and the
-inputs, and nothing that names their number or their order:
+The players take the referee address, the initial state hash, and their
+role arguments. Input filenames arrive from the referee, and no argument
+names the players’ number or order:
 
 ``` bash
-lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" 1 \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 prt.lua honest 127.0.0.1:8096 "$initial_state_hash" 1
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua quitter 127.0.0.1:8096 "$initial_state_hash" \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 prt-dishonest.lua quitter 127.0.0.1:8096 "$initial_state_hash"
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua forger 127.0.0.1:8096 "$initial_state_hash" 2 forged-input-2.bin \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 prt-dishonest.lua forger 127.0.0.1:8096 "$initial_state_hash" 2 forged-input-2.bin
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8096 "$initial_state_hash" 0 100 \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8096 "$initial_state_hash" 0 100
 ```
 
 ``` bash
-lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000 \
-    input-0.bin input-1.bin input-2.bin
+lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000
 ```
 
 The eight subscribers commit claims, which are admitted into the

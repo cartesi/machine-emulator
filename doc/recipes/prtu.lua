@@ -408,6 +408,8 @@ local SCHEMA_DICT = {
     ClosePhaseResponse = "Default",
     FinishEvent = { items = {} },
     FinishResponse = "Default",
+    InputAddedEvent = { items = { "Default", "Default" } },
+    EpochSealedEvent = { items = { "Default" } },
     Claim = {
         computation_hash_left = "Base64",
         computation_hash_right = "Base64",
@@ -468,6 +470,8 @@ end
 local EVENTS = {
     close_phase = define_event("close_phase", "ClosePhaseEvent", "ClosePhaseResponse"),
     finish = define_event("finish", "FinishEvent", "FinishResponse"),
+    input_added = define_event("input_added", "InputAddedEvent", "Default"),
+    epoch_sealed = define_event("epoch_sealed", "EpochSealedEvent", "Default"),
     commit_mcycle_claim = define_event("commit_mcycle_claim", "CommitMcycleClaimEvent", "CommitMcycleClaimResponse"),
     reveal_bisection = define_event("reveal_bisection", "RevealBisectionEvent", "RevealBisectionResponse"),
     seal_divergence = define_event("seal_divergence", "SealDivergenceEvent", "SealDivergenceResponse"),

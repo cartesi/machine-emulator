@@ -25,10 +25,21 @@ local function repeated_tree(value, height)
     return prt.new_tree(height, 0, forest)
 end
 
-return function(run_with_server)
+local function clone_handlers(player)
+    local handlers = {}
+    for name, handler in pairs(player.event_handler) do
+        handlers[name] = handler
+    end
+    player.event_handler = handlers
+end
+
+return function(run_with_server, new_test_player)
     -- Replacing one player's handler must leave the other player's defaults intact.
     do
-        local first, second = prt.new_player(), prt.new_player()
+        local first, second = new_test_player(), new_test_player()
+        assert(first.event_handler == second.event_handler, "default handlers are not shared")
+        clone_handlers(first)
+        clone_handlers(second)
         local original = second.event_handler.prove_output
         first.event_handler.prove_output = function(player)
             assert(player == first, "dispatcher passed the handler table instead of the player")
@@ -390,11 +401,12 @@ return function(run_with_server)
 
     -- Results survive until their own wait, and a timed wait can be retried.
     run_with_server(function(server, run_client, wait_connections)
-        local player = prt.new_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, {}, nil)
+        local player = new_test_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, nil)
         local tree = repeated_tree(keccak("future leaf"), 3)
         local left, right = tree:get_child_hashes(0, tree.height)
         player.trees[tree:get_root_hash()] = tree
         local scheduled_calls, reveal_calls = {}, 0
+        clone_handlers(player)
         player.event_handler.schedule_match_elimination = function(self, block)
             return prtu.schedule_response(self, block, function()
                 scheduled_calls[block] = (scheduled_calls[block] or 0) + 1
@@ -561,7 +573,7 @@ return function(run_with_server)
 
     -- Malformed computed values cannot discard other responses in the same batch.
     run_with_server(function(server, run_client, wait_connections)
-        local player = prt.new_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, {}, nil)
+        local player = new_test_player({ mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }, nil)
         local tree = repeated_tree(keccak("leaf"), 3)
         local left, right = tree:get_child_hashes(0, tree.height)
         player.trees[tree:get_root_hash()] = tree
@@ -668,7 +680,12 @@ return function(run_with_server)
             finals[3], finals[4] = after, after
         end
         for index, final in ipairs(finals) do
-            local player = prt.new_player(geometry, {}, nil, "fixture" .. index)
+            local player = new_test_player(geometry, nil, nil, "fixture" .. index)
+            -- These clock fixtures supply synthetic claims independently of execution.
+            clone_handlers(player)
+            player.event_handler.epoch_sealed = function()
+                return true
+            end
             player.make_mcycle_tree = function()
                 return repeated_tree(final, geometry.mcycle_height)
             end
@@ -896,7 +913,8 @@ return function(run_with_server)
             run_client({ role = "phase_closer" }, function(_, line)
                 return prtu.answer_event(prtu.new_phase_closer(), line)
             end, true)
-            prt.new_referee({ geometry = geometry, initial_state_hash = initial, inputs = {} }):run(server)
+            prt.new_referee({ geometry = geometry, initial_state_hash = initial, inputs = {}, input_paths = {} })
+                :run(server)
         end)
         assert(#current_server.open_phases == 0 and not next(current_server.scheduled_responses))
         assert(current_server.phase_closer.dead, "phase closer stayed necessary after subscriptions")

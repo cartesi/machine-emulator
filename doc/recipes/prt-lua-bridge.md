@@ -124,10 +124,10 @@ Contract fixtures must accept the player's proofs through CartesiStateTransition
 reject malformed proofs. The selected encoding and its fixtures must be settled
 before implementing the proof adapter.
 
-Provide the player with the initial machine and exact epoch input payloads.
+Provide the player with the contract's initial state hash and filenames containing the exact input payloads.
 The first harness may use pre-materialized input files checked against contract
-fixtures. Live ingestion must reconstruct and verify the input commitments for
-the EpochSealed input bounds before computing a claim.
+fixtures. Live ingestion must reconstruct and verify each input commitment before
+delivering its filename, then check the EpochSealed bounds before finalizing the claim.
 
 ## Actions and player computation
 
@@ -212,7 +212,8 @@ winner use these two hashes to identify and verify the winning claim.
 | Event | Action-set changes | Player computation | Window |
 |---|---|---|---|
 | TournamentCreated(R, descriptor, bondValue) | Populate R's context with the emitted descriptor and bond, pending association with EpochSealed | None | Immediate |
-| EpochSealed(e, lo, hi, initialHash, R) | Record the root tournament and epoch association, watch R, install join with the descriptor and bond from TournamentCreated | commit_mcycle_claim using the configured epoch inputs | Before R's joining deadline |
+| InputAdded(app, index, input) | Verify and materialize the input for this application | input_added(index - lo, filename) on the open epoch player | As inputs arrive, before sealing |
+| EpochSealed(e, lo, hi, initialHash, R) | Record the root tournament and epoch association, watch R, install join with the descriptor and bond from TournamentCreated | Check initialHash and the processed input bounds, epoch_sealed(hi - lo), then commit_mcycle_claim | Before R's joining deadline |
 | MatchCreated(h, one, two, leftOfTwo, responderDeadline, eliminableAt) | Holder of one responds. Holder of two may win by timeout. Everyone installs elimination | Respond with reveal_bisection(one, 0, H, leftOfTwo), or seal_divergence(one, 0, leftOfTwo) for H = 1. Timeout uses get_claim_children(two). Elimination needs no computation | Respond before responderDeadline. Timeout in [responderDeadline, eliminableAt). Eliminate from eliminableAt |
 | MatchAdvanced(h, one, two, otherParent, leftNode, pos, currentHeight, responderDeadline, eliminableAt) | Replace all three match jobs. Responder r is one when H - currentHeight is even, otherwise two. Holder of r responds. Holder of the other side may win by timeout. Everyone installs elimination | reveal_bisection(r, pos, currentHeight, leftNode), or seal_divergence(r, pos, leftNode) at height 1. Timeout uses get_claim_children(other) | Same as MatchCreated |
 | LeafMatchSealed(h, one, two, agreeState, pos, f1, f2, d1, d2, eliminableAt) | Replace match jobs. Either holder proves. Holder of the longer clock may win by timeout. Everyone installs elimination | prove_state_transition at split(baseCycle + (pos << log2Stride)), plus get_claim_children(own) for winLeafMatch. Timeout uses get_claim_children(longer side) | Prove before min(d1, d2). Timeout in [min, max), absent when equal. Eliminate from max |
@@ -267,10 +268,38 @@ period_index, state_transition_offset). Its machine access logs and input bytes
 are encoded for the pinned proofs argument of winLeafMatch.
 
 Load [prt.lua](prt.lua) as a module and construct the player with
-new_player(geometry, inputs, machine_cache, label), using the validated
-geometry, verified epoch inputs, and a caller-owned cache from
-new_machine_cache. Call its event_handler entries for commit_mcycle_claim,
-commit_uarch_claim, reveal_bisection, seal_divergence, prove_state_transition,
+new_player(dapp_contract, output_index, label), using the contract context with
+its validated geometry and initial state hash. The player loads the initial
+machine and owns its cache and initially empty filename table. Keep the player in a
+<close> local; its __close method releases the cache and any unfinished execution.
+Construction checks the initial machine and initializes the open epoch computation.
+As InputAdded events arrive, verify and materialize each input in a local file and
+call input_added(epoch_local_index, filename) in order. The player retains the
+filename and reads the file whenever delivery or proof generation needs its bytes.
+Files must remain readable and unchanged throughout the player's lifetime, including
+disputes. The player keeps its expected boundary hash, accumulated claim forest,
+and outputs between calls. Its cache retains the latest input boundary separately
+from the thinned historical checkpoints. Each input handler acquires a scoped clone
+and calls consider(next_input_index, machine) after execution and any rollback.
+The cache reuses its latest machine when the state is unchanged, advancing only
+its logical index. Every offer still runs the historical thinning policy. Latest
+and historical boundaries own separate snapshots. Rejected and terminal inputs
+use this same operation.
+Builders retain computation state only. Their methods receive the working machine
+explicitly when needed; no machine is attached to a builder.
+At sealing, check the initial state and exact input bounds, then call
+epoch_sealed(input_count) to finalize padding and proofs. Call commit_mcycle_claim
+only after epoch_sealed; do not defer input processing until EpochSealed.
+
+There is no separate begin event. Each player and cache describe one epoch.
+At each seal, the bridge can spawn a player for the next epoch using the locally
+computed final state of the epoch just sealed, and concurrently drive the dispute
+with the player spawned at the previous seal. The first player is bootstrapped
+from the deployment's initial state. EpochSealed's initial hash describes the
+sealed epoch, not the next one.
+
+Call the remaining event_handler entries for commit_uarch_claim,
+reveal_bisection, seal_divergence, prove_state_transition,
 and prove_outputs_merkle_root, passing the player as the first argument.
 Coordinates passed to these handlers are zero-based. Read claim children through
 player.trees[claim]:get_child_hashes(position, height). The prove_output handler

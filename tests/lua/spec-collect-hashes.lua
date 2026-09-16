@@ -124,6 +124,75 @@ local function expect_mcycle_root_hashes(machine, mcycle_end, mcycle_period, mcy
     }
 end
 
+-- Root hash of a complete bundle of leaves
+local function bundle_root_hash(hashes)
+    while #hashes > 1 do
+        local next_hashes = {}
+        for i = 1, #hashes, 2 do
+            next_hashes[#next_hashes + 1] = cartesi.keccak256(hashes[i], hashes[i + 1])
+        end
+        hashes = next_hashes
+    end
+    return hashes[1]
+end
+
+-- Runs the reference collector to a target, resuming after automatic yields
+local function expect_mcycle_root_hashes_to(machine, mcycle_target, mcycle_period)
+    local hashes = {}
+    local expected = { mcycle_phase = 0 }
+    repeat
+        expected = expect_mcycle_root_hashes(machine, mcycle_target, mcycle_period, expected.mcycle_phase, 0)
+        tabular.append(hashes, expected.hashes)
+    until expected.break_reason ~= cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
+    return hashes, expected.break_reason
+end
+
+-- Leaves of the bundle of periodic samples at a zero-based index from the current mcycle, padded
+-- with the fixed-point root hash when the machine stops before the bundle is complete
+local function expect_mcycle_bundle(machine, bundle_offset, mcycle_period, log2_bundle_mcycle_count)
+    local bundle_mcycle_count = 1 << log2_bundle_mcycle_count
+    local mcycle_begin = machine:read_reg("mcycle") + bundle_offset * mcycle_period * bundle_mcycle_count
+    local hashes, break_reason = {}, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
+    if machine:read_reg("mcycle") < mcycle_begin then
+        hashes, break_reason = expect_mcycle_root_hashes_to(machine, mcycle_begin, mcycle_period)
+    end
+    if break_reason == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
+        hashes, break_reason =
+            expect_mcycle_root_hashes_to(machine, mcycle_begin + mcycle_period * bundle_mcycle_count, mcycle_period)
+    else
+        -- the fixed point reached on the way supplies the whole bundle
+        hashes = { hashes[#hashes] }
+    end
+    if break_reason ~= cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE then
+        local fixed_point_root_hash = table.remove(hashes)
+        while #hashes < bundle_mcycle_count do
+            table.insert(hashes, fixed_point_root_hash)
+        end
+    end
+    assert(#hashes == bundle_mcycle_count)
+    return hashes
+end
+
+-- Leaves of one bundle of uarch cycles, given the unbundled entries of its mcycle, which end
+-- with the halted root hash and the reset root hash
+local function expect_uarch_cycle_bundle(mcycle_hashes, bundle_offset, log2_bundle_uarch_cycle_count)
+    local transient_count = #mcycle_hashes - 2
+    local halt_root_hash, reset_root_hash = mcycle_hashes[#mcycle_hashes - 1], mcycle_hashes[#mcycle_hashes]
+    local final_position = (1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) - 1
+    local first_position = bundle_offset << log2_bundle_uarch_cycle_count
+    local hashes = {}
+    for position = first_position, first_position + (1 << log2_bundle_uarch_cycle_count) - 1 do
+        if position < transient_count then
+            hashes[#hashes + 1] = mcycle_hashes[position + 1]
+        elseif position == final_position then
+            hashes[#hashes + 1] = reset_root_hash
+        else
+            hashes[#hashes + 1] = halt_root_hash
+        end
+    end
+    return hashes
+end
+
 local function expect_next_mcycle_uarch_root_hashes(
     machine,
     mcycle,
@@ -1540,6 +1609,289 @@ describe("collect hashes", function()
                 end
                 expect.equal(count_rejected_yields, 1)
             end)
+
+            it("should fail when collecting bundles with invalid arguments", function()
+                local machine <close> = create_machine({ ram = { length = 4096 } })
+                expect.fail(function()
+                    machine:collect_mcycle_bundle(0, 64, 0)
+                end, "log2_mcycle_period must be in")
+                expect.fail(function()
+                    machine:collect_mcycle_bundle(0, 5, -1)
+                end, "log2_bundle_mcycle_count must be non-negative")
+                expect.fail(function()
+                    machine:collect_mcycle_bundle(0, 60, 4)
+                end, "log2_mcycle_period + log2_bundle_mcycle_count must be in")
+                expect.fail(function()
+                    machine:collect_uarch_cycle_bundle(0, cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE + 1)
+                end, "log2_bundle_uarch_cycle_count must be in")
+                expect.fail(function()
+                    machine:collect_uarch_cycle_bundle(16, cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - 4)
+                end, "bundle_offset must be in")
+                expect.fail(function()
+                    machine:collect_uarch_cycle_bundle(0, 4)
+                end, "revert uarch tail is required")
+                expect.equal(machine:read_reg("mcycle"), 0)
+            end)
+
+            it("should collect mcycle bundles until halting", function()
+                local mcycle_period = 4
+                local log2_bundle_mcycle_count = 4
+                local bundle_mcycle_count = 1 << log2_bundle_mcycle_count
+                local machine <close> = create_machine(add_machine_config)
+                local compare_machine <close> = cartesi.machine(add_machine_config)
+                local bundled_machine <close> = cartesi.machine(add_machine_config)
+                machine:run(3)
+                compare_machine:run(3)
+                bundled_machine:run(3)
+                local bundles = {}
+                local bundle_count = 0
+                for _ = 1, 64 do
+                    local hashes =
+                        machine:collect_mcycle_bundle(0, log2_mcycle_period(mcycle_period), log2_bundle_mcycle_count)
+                    expect.equal(
+                        hashes,
+                        expect_mcycle_bundle(compare_machine, 0, mcycle_period, log2_bundle_mcycle_count)
+                    )
+                    bundles[#bundles + 1] = hashes
+                    expect.equal(machine:read_reg("mcycle"), compare_machine:read_reg("mcycle"))
+                    expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+                    -- the leaves hash up to the bundle root hash the bundling collector reports
+                    local bundled = bundled_machine:collect_mcycle_root_hashes(
+                        bundled_machine:read_reg("mcycle") + mcycle_period * bundle_mcycle_count,
+                        log2_mcycle_period(mcycle_period),
+                        0,
+                        log2_bundle_mcycle_count
+                    )
+                    expect.equal(bundle_root_hash(hashes), bundled.hashes[1])
+                    bundle_count = bundle_count + 1
+                    if machine:read_reg("iflags_H") ~= 0 then
+                        break
+                    end
+                end
+                expect.truthy(bundle_count > 1)
+                expect.equal(machine:read_reg("iflags_H"), 1)
+                -- a machine already at a fixed point returns copies of its root hash and remains unchanged
+                local mcycle = machine:read_reg("mcycle")
+                local halt_root_hash = machine:get_root_hash()
+                local hashes =
+                    machine:collect_mcycle_bundle(0, log2_mcycle_period(mcycle_period), log2_bundle_mcycle_count)
+                expect.equal(#hashes, bundle_mcycle_count)
+                for _, hash in ipairs(hashes) do
+                    expect.equal(hash, halt_root_hash)
+                end
+                expect.equal(machine:read_reg("mcycle"), mcycle)
+                expect.equal(machine:get_root_hash(), halt_root_hash)
+                -- a bundle index selects the same bundle directly from the starting mcycle, and any bundle
+                -- past the halt holds only the halt root hash
+                local bundle_mcycles = mcycle_period * bundle_mcycle_count
+                for _, bundle_offset in ipairs({ 0, 1, bundle_count - 1, bundle_count, bundle_count + 5 }) do
+                    local indexed_machine <close> = create_machine(add_machine_config)
+                    indexed_machine:run(3)
+                    expect.equal(
+                        indexed_machine:collect_mcycle_bundle(
+                            bundle_offset,
+                            log2_mcycle_period(mcycle_period),
+                            log2_bundle_mcycle_count
+                        ),
+                        bundles[bundle_offset + 1] or hashes
+                    )
+                    expect.equal(
+                        indexed_machine:read_reg("mcycle"),
+                        math.min(3 + (bundle_offset + 1) * bundle_mcycles, mcycle)
+                    )
+                end
+            end)
+
+            it("should collect mcycle bundles across manual, automatic, and rejected yields", function()
+                local mcycle_period = 4
+                local log2_bundle_mcycle_count = 4
+                local bundle_mcycle_count = 1 << log2_bundle_mcycle_count
+                local revert_root_hash = string.rep("\x5a", cartesi.HASH_SIZE)
+                local machine <close> = create_machine(yield_machine_config)
+                local compare_machine <close> = cartesi.machine(yield_machine_config)
+                machine:write_revert_root_hash(revert_root_hash)
+                compare_machine:write_revert_root_hash(revert_root_hash)
+                local count_rejected_yields = 0
+                for _ = 1, 64 do
+                    local hashes =
+                        machine:collect_mcycle_bundle(0, log2_mcycle_period(mcycle_period), log2_bundle_mcycle_count)
+                    expect.equal(
+                        hashes,
+                        expect_mcycle_bundle(compare_machine, 0, mcycle_period, log2_bundle_mcycle_count)
+                    )
+                    expect.equal(machine:read_reg("mcycle"), compare_machine:read_reg("mcycle"))
+                    expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+                    if machine:read_reg("iflags_H") ~= 0 then
+                        break
+                    end
+                    if machine:read_reg("iflags_Y") ~= 0 then
+                        -- a yielded machine repeats its canonical root hash and remains unchanged
+                        local fixed_point_root_hash = canonical_root_hash(machine)
+                        if is_rejected_manual_yield(machine) then
+                            expect.equal(fixed_point_root_hash, revert_root_hash)
+                            count_rejected_yields = count_rejected_yields + 1
+                        end
+                        local mcycle = machine:read_reg("mcycle")
+                        local repeated = machine:collect_mcycle_bundle(
+                            0,
+                            log2_mcycle_period(mcycle_period),
+                            log2_bundle_mcycle_count
+                        )
+                        expect.equal(#repeated, bundle_mcycle_count)
+                        for _, hash in ipairs(repeated) do
+                            expect.equal(hash, fixed_point_root_hash)
+                        end
+                        expect.equal(machine:read_reg("mcycle"), mcycle)
+                        machine:write_reg("iflags_Y", 0)
+                        compare_machine:write_reg("iflags_Y", 0)
+                    end
+                end
+                expect.truthy(count_rejected_yields > 0)
+                expect.equal(machine:read_reg("iflags_H"), 1)
+            end)
+
+            it("should collect uarch cycle bundles of a running machine", function()
+                local mcycle_start = 256
+                local compare_machine <close> = cartesi.machine(add_machine_config)
+                compare_machine:run(mcycle_start)
+                local expected = expect_uarch_cycle_root_hashes(compare_machine, mcycle_start + 1, 0)
+                expect.equal(#expected.mcycle_hash_offsets, 2)
+                local mcycle_hashes = expected.hashes
+                -- with more than two transient entries but fewer than a large bundle, the bundling collector
+                -- reports the first two bundles at every size below, and the final bundle last
+                local transient_count = #mcycle_hashes - 2
+                expect.truthy(transient_count > 2)
+                expect.truthy(transient_count < 1 << 16)
+                local log2_max = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+                for _, log2_bundle_uarch_cycle_count in ipairs({ 0, 1, 16 }) do
+                    local bundle_count = 1 << (log2_max - log2_bundle_uarch_cycle_count)
+                    local bundled_machine <close> = cartesi.machine(add_machine_config)
+                    bundled_machine:run(mcycle_start)
+                    local bundled = bundled_machine:collect_uarch_cycle_root_hashes(
+                        mcycle_start + 1,
+                        log2_bundle_uarch_cycle_count,
+                        pristine_revert_uarch_tail
+                    )
+                    local bundled_hashes = {}
+                    for i = bundled.mcycle_hash_offsets[1], bundled.mcycle_hash_offsets[2] - 1 do
+                        bundled_hashes[#bundled_hashes + 1] = bundled.hashes[i]
+                    end
+                    for _, bundle_offset in ipairs({ 0, 1, bundle_count - 1 }) do
+                        local machine <close> = create_machine(add_machine_config)
+                        machine:run(mcycle_start)
+                        local hashes = machine:collect_uarch_cycle_bundle(
+                            bundle_offset,
+                            log2_bundle_uarch_cycle_count,
+                            pristine_revert_uarch_tail
+                        )
+                        expect.equal(#hashes, 1 << log2_bundle_uarch_cycle_count)
+                        expect.equal(
+                            hashes,
+                            expect_uarch_cycle_bundle(mcycle_hashes, bundle_offset, log2_bundle_uarch_cycle_count)
+                        )
+                        expect.equal(machine:read_reg("mcycle"), mcycle_start + 1)
+                        expect.equal(machine:read_reg("uarch_cycle"), 0)
+                        expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+                        -- the leaves hash up to the bundle root hash the bundling collector reports
+                        local bundled_index = bundle_offset == bundle_count - 1 and #bundled_hashes or bundle_offset + 1
+                        expect.equal(bundle_root_hash(hashes), bundled_hashes[bundled_index])
+                    end
+                end
+            end)
+
+            it("should collect uarch cycle bundles of a halted machine", function()
+                local log2_bundle_uarch_cycle_count = 4
+                local bundle_count = 1
+                    << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - log2_bundle_uarch_cycle_count)
+                local compare_machine <close> = cartesi.machine({ ram = { length = 4096 } })
+                compare_machine:write_reg("iflags_H", 1)
+                local mcycle_hashes, mcycle_hash_offsets = {}, { 1 }
+                expect_next_mcycle_uarch_root_hashes(compare_machine, 0, mcycle_hashes, mcycle_hash_offsets, 0)
+                for _, bundle_offset in ipairs({ 0, bundle_count - 1 }) do
+                    local machine <close> = create_machine({ ram = { length = 4096 } })
+                    machine:write_reg("iflags_H", 1)
+                    local expected_root_hash = machine:get_root_hash()
+                    expect.equal(
+                        machine:collect_uarch_cycle_bundle(bundle_offset, log2_bundle_uarch_cycle_count),
+                        expect_uarch_cycle_bundle(mcycle_hashes, bundle_offset, log2_bundle_uarch_cycle_count)
+                    )
+                    expect.equal(machine:read_reg("mcycle"), 0)
+                    expect.equal(machine:get_root_hash(), expected_root_hash)
+                end
+            end)
+
+            it("should collect uarch cycle bundles of a rejected machine from the revert uarch tail", function()
+                local log2_bundle_uarch_cycle_count = 1
+                local bundle_count = 1
+                    << (cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - log2_bundle_uarch_cycle_count)
+                local revert_root_hash = string.rep("\x5a", cartesi.HASH_SIZE)
+                local revert_uarch_tail = {
+                    string.rep("\x01", cartesi.HASH_SIZE),
+                    string.rep("\x02", cartesi.HASH_SIZE),
+                    revert_root_hash,
+                }
+                local machine <close> = create_machine({ ram = { length = 4096 } })
+                machine:write_revert_root_hash(revert_root_hash)
+                machine:write_reg("iflags_Y", 1)
+                machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+                machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+                machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+                local expected_root_hash = machine:get_root_hash()
+                expect.fail(function()
+                    machine:collect_uarch_cycle_bundle(0, log2_bundle_uarch_cycle_count)
+                end, "revert uarch tail is required")
+                expect.equal(
+                    machine:collect_uarch_cycle_bundle(0, log2_bundle_uarch_cycle_count, revert_uarch_tail),
+                    { revert_uarch_tail[1], revert_uarch_tail[2] }
+                )
+                expect.equal(
+                    machine:collect_uarch_cycle_bundle(1, log2_bundle_uarch_cycle_count, revert_uarch_tail),
+                    { revert_uarch_tail[2], revert_uarch_tail[2] }
+                )
+                expect.equal(
+                    machine:collect_uarch_cycle_bundle(
+                        bundle_count - 1,
+                        log2_bundle_uarch_cycle_count,
+                        revert_uarch_tail
+                    ),
+                    { revert_uarch_tail[2], revert_root_hash }
+                )
+                expect.equal(machine:get_root_hash(), expected_root_hash)
+            end)
+
+            if has_posix and desc.name == "local" then
+                it("should collect an mcycle bundle while failing console output flush", function()
+                    local mcycle_period = 64
+                    local log2_bundle_mcycle_count = 6
+                    local out_r, out_w = assert(unistd.pipe())
+                    local _ <close> = tests_util.scope_exit(function()
+                        unistd.close(out_r)
+                        if out_w then
+                            unistd.close(out_w)
+                        end
+                    end)
+                    local runtime_config = {
+                        console = {
+                            output_flush_mode = "every_char",
+                            output_destination = "to_fd",
+                            output_fd = out_r, -- use the read end of the pipe to intentionally cause a write failure
+                        },
+                    }
+                    local machine <close> = create_machine(console_machine_config, runtime_config)
+                    unistd.close(out_w) -- close write end of the pipe
+                    out_w = nil
+                    local compare_machine <close> = cartesi.machine(console_machine_config)
+                    machine:run(1)
+                    compare_machine:run(1)
+                    -- console errors are ignored, the bundle is what matters
+                    expect.equal(
+                        machine:collect_mcycle_bundle(1, log2_mcycle_period(mcycle_period), log2_bundle_mcycle_count),
+                        expect_mcycle_bundle(compare_machine, 1, mcycle_period, log2_bundle_mcycle_count)
+                    )
+                    expect.equal(machine:read_reg("mcycle"), compare_machine:read_reg("mcycle"))
+                    expect.equal(machine:get_root_hash(), compare_machine:get_root_hash())
+                end)
+            end
         end) -- describe remote/local
     end -- for remote/local create
 

@@ -1250,6 +1250,22 @@ static int machine_obj_index_collect_mcycle_root_hashes(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:collect_mcycle_bundle() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_collect_mcycle_bundle(lua_State *L) {
+    lua_settop(L, 4);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint64_t bundle_offset = luaL_checkinteger(L, 2);
+    const uint64_t log2_mcycle_period = luaL_checkinteger(L, 3);
+    const auto log2_bundle_mcycle_count = static_cast<int32_t>(luaL_checkinteger(L, 4));
+    const char *result = nullptr;
+    if (cm_collect_mcycle_bundle(m.get(), bundle_offset, log2_mcycle_period, log2_bundle_mcycle_count, &result) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_fromjson(L, result, "Base64Array");
+    return 1;
+}
+
 /// \brief This is the machine:collect_uarch_cycle_root_hashes() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
@@ -1264,6 +1280,23 @@ static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_fromjson(L, result, "UarchCycleRootHashes");
+    return 1;
+}
+
+/// \brief This is the machine:collect_uarch_cycle_bundle() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_collect_uarch_cycle_bundle(lua_State *L) {
+    lua_settop(L, 4);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint64_t bundle_offset = luaL_checkinteger(L, 2);
+    const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_checkinteger(L, 3));
+    const char *revert_uarch_tail = !lua_isnil(L, 4) ? clua_tojson(L, 4, -1, "Base64Array") : nullptr;
+    const char *result = nullptr;
+    if (cm_collect_uarch_cycle_bundle(m.get(), bundle_offset, log2_bundle_uarch_cycle_count, revert_uarch_tail,
+            &result) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_fromjson(L, result, "Base64Array");
     return 1;
 }
 
@@ -1401,7 +1434,9 @@ static int machine_obj_index_swap(lua_State *L) {
 static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {.name = "create", .func = machine_obj_index_create},
     {.name = "collect_mcycle_root_hashes", .func = machine_obj_index_collect_mcycle_root_hashes},
+    {.name = "collect_mcycle_bundle", .func = machine_obj_index_collect_mcycle_bundle},
     {.name = "collect_uarch_cycle_root_hashes", .func = machine_obj_index_collect_uarch_cycle_root_hashes},
+    {.name = "collect_uarch_cycle_bundle", .func = machine_obj_index_collect_uarch_cycle_bundle},
     {.name = "destroy", .func = machine_obj_index_destroy},
     {.name = "get_default_config", .func = machine_obj_index_get_default_config},
     {.name = "get_initial_config", .func = machine_obj_index_get_initial_config},

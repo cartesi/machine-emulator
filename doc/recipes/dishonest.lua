@@ -163,15 +163,15 @@ end
 
 -- The log methods always report the second machine, rolled to the current position. self is
 -- always an ephemeral fork here, so rolling it forward in place is fine.
-function composite_meta.log_step_uarch(self, ...)
+function composite_meta.log_step_uarch(self, uarch_cycle_count)
     local data = self.data
     data.cheat_machine:run_uarch(data.active:read_reg("uarch_cycle"))
-    return data.cheat_machine:log_step_uarch(...)
+    return data.cheat_machine:log_step_uarch(uarch_cycle_count)
 end
-function composite_meta.log_reset_uarch(self, ...)
+function composite_meta.log_reset_uarch(self)
     local data = self.data
     data.cheat_machine:run_uarch(data.active:read_reg("uarch_cycle"))
-    return data.cheat_machine:log_reset_uarch(...)
+    return data.cheat_machine:log_reset_uarch()
 end
 
 return { new_composite_machine = new_composite_machine, new_rolling_composite_machine = new_rolling_composite_machine }

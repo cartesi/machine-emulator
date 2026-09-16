@@ -276,8 +276,27 @@ lint check-format format:
 check-format-lua check-lua format-lua:
 	@$(MAKE) $@-src $@-tests $@-doc
 
-lint-% check-format-% format-% check-format-lua-% check-lua-% format-lua-%:
-	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(if $(findstring -doc,$@),doc,$(if $(findstring -src,$@),src,tests)) $(subst -doc,,$(subst -src,,$(subst -tests,,$@)))
+# One pattern rule per target name. A pattern rule with several target patterns is a
+# grouped rule, so make would run the recipe once per stem and skip the remaining targets.
+PER_DIR_RECIPE = @eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(if $(findstring -doc,$@),doc,$(if $(findstring -src,$@),src,tests)) $(subst -doc,,$(subst -src,,$(subst -tests,,$@)))
+
+lint-%:
+	$(PER_DIR_RECIPE)
+
+check-format-%:
+	$(PER_DIR_RECIPE)
+
+format-%:
+	$(PER_DIR_RECIPE)
+
+check-format-lua-%:
+	$(PER_DIR_RECIPE)
+
+check-lua-%:
+	$(PER_DIR_RECIPE)
+
+format-lua-%:
+	$(PER_DIR_RECIPE)
 
 source-default:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)

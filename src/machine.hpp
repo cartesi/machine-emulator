@@ -267,6 +267,22 @@ public:
         uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
         const std::optional<back_merkle_tree> &previous_partial_bundle = {});
 
+    /// \brief Collects the state root hashes covered by one bundle of periodic samples taken from the current
+    /// mcycle.
+    /// \param bundle_offset Zero-based offset of the bundle among the consecutive bundles starting at the current
+    /// mcycle.
+    /// \param log2_mcycle_period Log base 2 of the number of machine cycles between sampling points.
+    /// \param log2_bundle_mcycle_count Log base 2 of the number of state root hashes covered by each bundle.
+    /// \returns The 2^\p log2_bundle_mcycle_count state root hashes covered by the bundle.
+    /// \details Each bundle spans 2^(\p log2_mcycle_period + \p log2_bundle_mcycle_count) machine cycles.
+    /// Execution first advances to the start of the bundle, then collects a state root hash after every
+    /// 2^\p log2_mcycle_period machine cycles. If execution reaches a fixed point before the bundle is complete, the
+    /// remaining positions are filled with copies of the fixed-point state root hash, as in
+    /// collect_mcycle_root_hashes(). A machine already at a fixed point returns copies of its state root hash and
+    /// remains unchanged. Execution continues through automatic yields and ignores console I/O errors.
+    machine_hashes collect_mcycle_bundle(uint64_t bundle_offset, uint64_t log2_mcycle_period,
+        int32_t log2_bundle_mcycle_count);
+
     /// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
     /// \param mcycle_count Number of mcycles to run the machine for.
     /// \param filename Name of the file to store the log.
@@ -314,6 +330,21 @@ public:
     /// root hash after reset is replaced by the recorded revert root hash, and one extra period from
     /// \p revert_uarch_tail is collected after it.
     uarch_cycle_root_hashes collect_uarch_cycle_root_hashes(uint64_t mcycle_end, int32_t log2_bundle_uarch_cycle_count,
+        const machine_hashes &revert_uarch_tail = {});
+
+    /// \brief Collects the state root hashes covered by one bundle of uarch cycles of the current mcycle.
+    /// \param bundle_offset Zero-based offset of the bundle among the 2^(ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE -
+    /// \p log2_bundle_uarch_cycle_count) bundles of the mcycle.
+    /// \param log2_bundle_uarch_cycle_count Log base 2 of the number of state root hashes covered by the bundle.
+    /// \param revert_uarch_tail Same as in collect_uarch_cycle_root_hashes().
+    /// \returns The 2^\p log2_bundle_uarch_cycle_count state root hashes covered by the bundle.
+    /// \details The mcycle expands to 2^ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE state root hashes, one after each
+    /// uarch cycle. Once the uarch halts, its state root hash repeats up to the final position, which holds the
+    /// state root hash after the uarch reset, as in collect_uarch_cycle_root_hashes() without bundling. The
+    /// bundle covers the positions starting at \p bundle_offset * 2^\p log2_bundle_uarch_cycle_count.
+    /// The machine is left as collect_uarch_cycle_root_hashes() leaves it with \p mcycle_end set to the mcycle
+    /// following the current one.
+    machine_hashes collect_uarch_cycle_bundle(uint64_t bundle_offset, int32_t log2_bundle_uarch_cycle_count,
         const machine_hashes &revert_uarch_tail = {});
 
     /// \brief Advances one micro step and returns a state access log.

@@ -2297,6 +2297,14 @@ void machine::write_counter(uint64_t val, const char *name, const char *domain) 
     m_counters[get_counter_key(name, domain)] = val;
 }
 
+/// \brief Checks whether a break reason identifies a fixed point, where the machine no longer advances on its own.
+/// \param break_reason Reason the interpreter returned.
+static bool is_at_fixed_point(interpreter_break_reason break_reason) {
+    return break_reason == interpreter_break_reason::halted ||
+        break_reason == interpreter_break_reason::yielded_manually ||
+        break_reason == interpreter_break_reason::mcycle_overflow;
+}
+
 mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint64_t log2_mcycle_period,
     uint64_t mcycle_phase, int32_t log2_bundle_mcycle_count,
     const std::optional<back_merkle_tree> &previous_partial_bundle) {
@@ -2361,9 +2369,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
     // but will not exceed mcycle_end if that limit is reached first
     uint64_t mcycle_target = saturating_add(mcycle_start, mcycle_period - mcycle_phase, mcycle_end);
     uint64_t mcycle_reached = read_reg(reg::mcycle);
-    bool at_fixed_point = result.break_reason == interpreter_break_reason::halted ||
-        result.break_reason == interpreter_break_reason::yielded_manually ||
-        result.break_reason == interpreter_break_reason::mcycle_overflow;
+    bool at_fixed_point = is_at_fixed_point(result.break_reason);
     machine_hash root_hash{};
 
     // Run until reaching the next mcycle target, or once when already at a fixed point so its
@@ -2402,9 +2408,7 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
         mcycle_reached = read_reg(reg::mcycle);
 
         // Check if we reached a fixed point
-        at_fixed_point = result.break_reason == interpreter_break_reason::halted ||
-            result.break_reason == interpreter_break_reason::yielded_manually ||
-            result.break_reason == interpreter_break_reason::mcycle_overflow;
+        at_fixed_point = is_at_fixed_point(result.break_reason);
 
         // Compute the new phase
         result.mcycle_phase = (((mcycle_reached - mcycle_start) % mcycle_period) + mcycle_phase) % mcycle_period;
@@ -2462,6 +2466,79 @@ mcycle_root_hashes machine::collect_mcycle_root_hashes(uint64_t mcycle_end, uint
 
     result.break_reason = get_state_break_reason(result.break_reason);
     return result;
+}
+
+machine_hashes machine::collect_mcycle_bundle(uint64_t bundle_offset, uint64_t log2_mcycle_period,
+    int32_t log2_bundle_mcycle_count) {
+    // Check preconditions, collect_mcycle_root_hashes checks the rest before executing
+    if (log2_mcycle_period >= 64) {
+        throw std::runtime_error{"log2_mcycle_period must be in {0, ..., 63}"};
+    }
+    if (log2_bundle_mcycle_count < 0) {
+        throw std::runtime_error{"log2_bundle_mcycle_count must be non-negative"};
+    }
+    const uint64_t log2_bundle_mcycles = log2_mcycle_period + static_cast<uint64_t>(log2_bundle_mcycle_count);
+    if (log2_bundle_mcycles >= 64) {
+        throw std::runtime_error{"log2_mcycle_period + log2_bundle_mcycle_count must be in {0, ..., 63}"};
+    }
+    const uint64_t bundle_mcycle_count = UINT64_C(1) << log2_bundle_mcycle_count;
+
+    // The bundle starts after bundle_offset bundle spans and ends one span later. Either bound that
+    // does not fit in mcycle saturates, so execution reaches the mcycle overflow fixed point instead
+    const uint64_t bundle_mcycles = UINT64_C(1) << log2_bundle_mcycles;
+    const uint64_t mcycle_begin = saturating_add(read_reg(reg::mcycle), saturating_mul(bundle_offset, bundle_mcycles));
+    const uint64_t mcycle_end = saturating_add(mcycle_begin, bundle_mcycles);
+
+    // Check the collection preconditions before running, so a machine that cannot collect is left unchanged
+    if (is_unreproducible()) {
+        throw std::runtime_error{"cannot collect hashes from unreproducible machines"};
+    }
+    if (m_r.soft_yield) {
+        throw std::runtime_error{"cannot collect hashes when soft yield is enabled"};
+    }
+    if (read_reg(reg::uarch_cycle) != 0) {
+        throw std::runtime_error{"microarchitecture is not reset"};
+    }
+
+    // Run to the start of the bundle without collecting, resuming after each automatic yield.
+    // Only the state root hashes matter here, so console I/O errors are ignored
+    interpreter_break_reason break_reason{};
+    while (true) {
+        try {
+            break_reason = run(mcycle_begin);
+        } catch (const machine_console_exception &) {
+            m_console.clear_output();
+            continue;
+        }
+        if (break_reason == interpreter_break_reason::reached_target_mcycle || is_at_fixed_point(break_reason)) {
+            break;
+        }
+    }
+
+    // Collect the bundle without bundling, resuming after each automatic yield. A fixed point
+    // reached on the way returns its state root hash here
+    machine_hashes hashes;
+    hashes.reserve(bundle_mcycle_count);
+    uint64_t mcycle_phase = 0;
+    do {
+        auto collected = collect_mcycle_root_hashes(mcycle_end, log2_mcycle_period, mcycle_phase, 0);
+        hashes.insert(hashes.end(), collected.hashes.begin(), collected.hashes.end());
+        mcycle_phase = collected.mcycle_phase;
+        break_reason = collected.break_reason;
+    } while (break_reason != interpreter_break_reason::reached_target_mcycle && !is_at_fixed_point(break_reason));
+
+    // At a fixed point, the final entry is the fixed-point state root hash, which occupies the
+    // remaining positions, including its own
+    if (is_at_fixed_point(break_reason)) {
+        assert(!hashes.empty() && hashes.size() <= bundle_mcycle_count);
+        const auto fixed_point_root_hash = hashes.back();
+        hashes.pop_back();
+        hashes.resize(bundle_mcycle_count, fixed_point_root_hash);
+    }
+    if (hashes.size() != bundle_mcycle_count) {
+        throw std::runtime_error{"collected an unexpected number of state root hashes"};
+    }
+    return hashes;
 }
 
 /// \brief Adds the state root hash after one uarch cycle to the current bundle.
@@ -2749,9 +2826,7 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
 
         // If the machine halted or yielded manually,
         // then we are at a fixed point and should always attempt to advance one more mcycle
-        at_fixed_point = result.break_reason == interpreter_break_reason::halted ||
-            result.break_reason == interpreter_break_reason::yielded_manually ||
-            result.break_reason == interpreter_break_reason::mcycle_overflow;
+        at_fixed_point = is_at_fixed_point(result.break_reason);
 
         if (!at_fixed_point) {
             // The next iteration will target the next mcycle successor,
@@ -2764,6 +2839,52 @@ uarch_cycle_root_hashes machine::collect_uarch_cycle_root_hashes(uint64_t mcycle
 
     result.break_reason = get_state_break_reason(result.break_reason);
     return result;
+}
+
+machine_hashes machine::collect_uarch_cycle_bundle(uint64_t bundle_offset, int32_t log2_bundle_uarch_cycle_count,
+    const machine_hashes &revert_uarch_tail) {
+    // Check preconditions, collect_uarch_cycle_root_hashes checks the rest before executing
+    if (log2_bundle_uarch_cycle_count < 0 ||
+        static_cast<uint64_t>(log2_bundle_uarch_cycle_count) > ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) {
+        throw std::runtime_error{"log2_bundle_uarch_cycle_count must be in {0, ..., " +
+            std::to_string(ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE) + "}"};
+    }
+    const uint64_t bundle_uarch_cycle_count = UINT64_C(1) << log2_bundle_uarch_cycle_count;
+    const uint64_t bundle_count = UINT64_C(1)
+        << (ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE - log2_bundle_uarch_cycle_count);
+    if (bundle_offset >= bundle_count) {
+        throw std::runtime_error{"bundle_offset must be in {0, ..., " + std::to_string(bundle_count - 1) + "}"};
+    }
+
+    // Collect the current mcycle without bundling. Its entries are the state root hashes after each
+    // uarch cycle until the uarch halted, then the halted state root hash, and finally the reset
+    // state root hash
+    const auto mcycle_end = saturating_add(read_reg(reg::mcycle), UINT64_C(1));
+    const auto collected = collect_uarch_cycle_root_hashes(mcycle_end, 0, revert_uarch_tail);
+    assert(collected.mcycle_hash_offsets.size() >= 2 && collected.mcycle_hash_offsets[1] >= 2);
+    const uint64_t reset_position = collected.mcycle_hash_offsets[1] - 1;
+    const uint64_t halt_position = reset_position - 1;
+    const auto &halt_root_hash = collected.hashes[halt_position];
+    const auto &reset_root_hash = collected.hashes[reset_position];
+
+    // Copy the state root hashes before the halt that fall in the bundle. The reset state root hash
+    // takes the final position of the mcycle, so the bundle that ends the mcycle wants one fewer
+    const uint64_t first_position = bundle_offset << log2_bundle_uarch_cycle_count;
+    const uint64_t reset_count = bundle_offset == bundle_count - 1 ? 1 : 0;
+    const uint64_t transient_count_wanted = bundle_uarch_cycle_count - reset_count;
+    const uint64_t transient_count_available = halt_position > first_position ? halt_position - first_position : 0;
+    const uint64_t transient_count = std::min(transient_count_wanted, transient_count_available);
+    const auto transient_first =
+        collected.hashes.begin() + static_cast<std::ptrdiff_t>(halt_position - transient_count_available);
+    machine_hashes hashes;
+    hashes.reserve(bundle_uarch_cycle_count);
+    hashes.insert(hashes.end(), transient_first, transient_first + static_cast<std::ptrdiff_t>(transient_count));
+
+    // Fill the remaining positions with copies of the halted state root hash before the reset
+    const uint64_t halt_count = bundle_uarch_cycle_count - transient_count - reset_count;
+    hashes.insert(hashes.end(), halt_count, halt_root_hash);
+    hashes.insert(hashes.end(), reset_count, reset_root_hash);
+    return hashes;
 }
 
 } // namespace cartesi

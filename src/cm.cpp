@@ -766,6 +766,22 @@ cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_end, uint6
     return cm_result_failure();
 }
 
+cm_error cm_collect_mcycle_bundle(cm_machine *m, uint64_t bundle_offset, uint64_t log2_mcycle_period,
+    int32_t log2_bundle_mcycle_count, const char **result) try {
+    if (result == nullptr) {
+        throw std::invalid_argument("invalid result output");
+    }
+    auto *cpp_m = convert_from_c(m);
+    const auto cpp_res = cpp_m->collect_mcycle_bundle(bundle_offset, log2_mcycle_period, log2_bundle_mcycle_count);
+    *result = cm_set_temp_string(cartesi::to_json(cartesi::base64_machine_hashes(cpp_res)).dump());
+    return cm_result_success();
+} catch (...) {
+    if (result != nullptr) {
+        *result = nullptr;
+    }
+    return cm_result_failure();
+}
+
 cm_error cm_collect_uarch_cycle_root_hashes(cm_machine *m, uint64_t mcycle_end, int32_t log2_bundle_uarch_cycle_count,
     const char *revert_uarch_tail, const char **result) try {
     if (result == nullptr) {
@@ -777,6 +793,25 @@ cm_error cm_collect_uarch_cycle_root_hashes(cm_machine *m, uint64_t mcycle_end, 
     const auto cpp_res =
         cpp_m->collect_uarch_cycle_root_hashes(mcycle_end, log2_bundle_uarch_cycle_count, cpp_revert_uarch_tail);
     *result = cm_set_temp_string(cartesi::to_json(cpp_res).dump());
+    return cm_result_success();
+} catch (...) {
+    if (result != nullptr) {
+        *result = nullptr;
+    }
+    return cm_result_failure();
+}
+
+cm_error cm_collect_uarch_cycle_bundle(cm_machine *m, uint64_t bundle_offset, int32_t log2_bundle_uarch_cycle_count,
+    const char *revert_uarch_tail, const char **result) try {
+    if (result == nullptr) {
+        throw std::invalid_argument("invalid result output");
+    }
+    auto *cpp_m = convert_from_c(m);
+    const auto cpp_revert_uarch_tail =
+        cartesi::from_json<cartesi::machine_hashes>(revert_uarch_tail, "revert_uarch_tail");
+    const auto cpp_res =
+        cpp_m->collect_uarch_cycle_bundle(bundle_offset, log2_bundle_uarch_cycle_count, cpp_revert_uarch_tail);
+    *result = cm_set_temp_string(cartesi::to_json(cartesi::base64_machine_hashes(cpp_res)).dump());
     return cm_result_success();
 } catch (...) {
     if (result != nullptr) {

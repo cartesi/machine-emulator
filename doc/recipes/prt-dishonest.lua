@@ -118,8 +118,8 @@ end
 
 -- Substitute an input filename as it arrives. Replay reads the forged file, while the
 -- referee still verifies input inclusion against the original contract inputs.
-local function new_forger(dapp_contract, input_index, forged_path)
-    local player = prt.new_player(dapp_contract, "forger")
+local function new_forger(dapp_contract, input_index, forged_path, label)
+    local player = prt.new_player(dapp_contract, label or "forger")
     clone_handlers(player)
     local input_added = player.event_handler.input_added
     player.event_handler.input_added = function(self, index, path)
@@ -131,7 +131,7 @@ end
 -- A checkpoint exactly at the corruption point still holds the agreed state.
 -- Corruption happens only when executing or collecting the transition out of it.
 -- Each execution has private strategy state, which the cache restores on rollback.
-local function new_tamperer(dapp_contract, input_index, tamper_bundle_offset)
+local function new_tamperer(dapp_contract, input_index, tamper_bundle_offset, label)
     local geometry = dapp_contract.geometry
     local offset = tamper_bundle_offset << (prt.LOG2_BUNDLE_MCYCLE_COUNT + geometry.log2_mcycles_per_period)
     local function tamper_point(machine)
@@ -165,7 +165,7 @@ local function new_tamperer(dapp_contract, input_index, tamper_bundle_offset)
         end
         return target
     end
-    return use_machine(prt.new_player(dapp_contract, "tamperer"), {
+    return use_machine(prt.new_player(dapp_contract, label or "tamperer"), {
         run = function(machine, target)
             local point = tamper_point(machine)
             if point and math.ult(machine:read_reg("mcycle"), point) and math.ult(point, target) then
@@ -368,9 +368,9 @@ local function falsify_bundle(forest, height, leaf, fake_hash)
     return replacement
 end
 
-local function new_fabulist(dapp_contract, input_index, leaf_offset)
+local function new_fabulist(dapp_contract, input_index, leaf_offset, label)
     local geometry = dapp_contract.geometry
-    local player = prt.new_player(dapp_contract, "fabulist")
+    local player = prt.new_player(dapp_contract, label or "fabulist")
     local target_epoch_period_index =
         prt.combine_epoch_period_index(geometry.periods_per_input, input_index, leaf_offset)
     local fake_hash = keccak("fabulist")
@@ -424,12 +424,14 @@ end
 
 -- The quitter never executes the guest. Its machine stays at the initial yield,
 -- its builder substitutes a made-up state at every position, and it disconnects
--- after posting that claim. The disconnect is its only protocol-level deviation.
-local function new_quitter(dapp_contract, seed)
-    local player = prt.new_player(dapp_contract, "quitter")
+-- after posting that claim. The disconnect is its only protocol-level deviation. The made-up
+-- state derives from the label, so quitters with different labels post different claims.
+local function new_quitter(dapp_contract, label)
+    label = label or "quitter"
+    local player = prt.new_player(dapp_contract, label)
     use_machine(player, { send_cmio_response = function() end })
     local function insert(liar, _, count, height)
-        local fake_hash = keccak(seed or "quitter")
+        local fake_hash = keccak(label)
         for _ = 1, height do
             fake_hash = keccak(fake_hash, fake_hash)
         end
@@ -442,7 +444,7 @@ local function new_quitter(dapp_contract, seed)
     end
     player.collect_mcycle_bundle = function()
         local forest = hash_tree.frontier_forest(prt.LOG2_BUNDLE_MCYCLE_COUNT, "keccak256")
-        hash_tree.frontier_forest_pad_back(forest, keccak(seed or "quitter"), 1 << prt.LOG2_BUNDLE_MCYCLE_COUNT)
+        hash_tree.frontier_forest_pad_back(forest, keccak(label), 1 << prt.LOG2_BUNDLE_MCYCLE_COUNT)
         return forest
     end
     clone_handlers(player)
@@ -463,44 +465,42 @@ if ... == "prt-dishonest" then
     }
 end
 
--- The dishonest demonstration roles have their own entry point.
--- prt-dishonest.lua <role> <address> <initial-state-hash> [role arguments]
+-- The dishonest demonstration roles have their own entry point. A player's label names it in
+-- the story and defaults to its role.
+-- prt-dishonest.lua <role> <address> <initial-state-hash> [role arguments] [<label>]
 local role = assert(arg[1], "missing role")
 local server_address = assert(arg[2], "missing referee address")
 local initial_state_hash = cartesi.fromhex(assert(arg[3], "missing initial state hash"))
 assert(#initial_state_hash == 32, "invalid initial state hash")
 local next_argument = 4
+-- Takes the next argument. It is required when a message says what is missing.
 local function take_argument(message)
-    local value = assert(arg[next_argument], message)
+    local value = arg[next_argument]
+    assert(value or not message, message)
     next_argument = next_argument + 1
     return value
 end
 local make_player
 if role == "quitter" then
-    local seed = arg[next_argument] and arg[next_argument]:match("^%-%-seed=(.+)$")
-    if seed then
-        next_argument = next_argument + 1
-    end
-    make_player = function(dapp_contract)
-        return new_quitter(dapp_contract, seed)
-    end
+    make_player = new_quitter
 elseif role == "forger" then
     local index = assert(tonumber(take_argument("missing forged input index")), "invalid forged input index")
     local path = take_argument("missing forged input file")
-    make_player = function(dapp_contract)
-        return new_forger(dapp_contract, index, path)
+    make_player = function(dapp_contract, label)
+        return new_forger(dapp_contract, index, path, label)
     end
 elseif role == "tamperer" or role == "fabulist" then
     local input_index = assert(tonumber(take_argument("missing input index")), "invalid input index")
     local offset = assert(tonumber(take_argument("missing offset")), "invalid offset")
     local make = role == "tamperer" and new_tamperer or new_fabulist
-    make_player = function(dapp_contract)
-        return make(dapp_contract, input_index, offset)
+    make_player = function(dapp_contract, label)
+        return make(dapp_contract, input_index, offset, label)
     end
 else
     error("unknown role: " .. role)
 end
+local label = take_argument()
 assert(next_argument > #arg, "only the referee takes input files")
 local dapp_contract = prt.make_dapp_contract(initial_state_hash, {})
-local player <close> = make_player(dapp_contract)
+local player <close> = make_player(dapp_contract, label)
 prtu.run_client(player, server_address)

@@ -99,17 +99,18 @@ return function(run_with_server, new_test_player)
         response_block = server:request_block() + 2
         local delayed <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
         do
-            local cancelled <close> = -- luacheck: ignore 211
+            -- The closed future's response still arrives on its block, stale, and is ignored.
+            local closed <close> = -- luacheck: ignore 211
                 server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
         end
         server:wait_until(response_block - 1)
         assert(calls == 0, "scheduling ran a callback immediately")
         assert(delayed:wait(response_block) == nil, "wait accepted a response at its exclusive deadline")
-        assert(delayed:wait(response_block + 1) == root and calls == 1, "cancellation failed or response was lost")
+        assert(delayed:wait(response_block + 1) == root and calls == 2, "a scheduled response was lost")
         acknowledge_only = true
         response_block = server:request_block() + 1
         local unscheduled <close> = server:request_first_valid(EVERYONE, event, { "claim" }, validate, response_block)
-        assert(unscheduled:wait(response_block + 1) == nil and calls == 1, "acknowledgement scheduled a callback")
+        assert(unscheduled:wait(response_block + 1) == nil and calls == 2, "acknowledgement scheduled a callback")
         assert(
             not pcall(prtu.schedule_response, player, response_block, function() end),
             "finished handler retained routing"
@@ -176,18 +177,18 @@ return function(run_with_server, new_test_player)
             return v
         end)
         server.clock:advance(1)
-        local first = { value = "first", received_at = server:get_time() }
+        local first = { value = "first", order = 1, received_at = server:get_time() }
         collection.replies[#collection.replies + 1] = first
         server.clock:advance(2)
         local snapshot = collection:wait(2)
         assert(#snapshot == 1 and snapshot[1] == first, "expiry discarded responses already received")
         assert(first_valid:wait(2) == nil, "first-valid expiry returned a collection")
-        local at_deadline = { value = "at deadline", received_at = server:get_time() }
+        local at_deadline = { value = "at deadline", order = 2, received_at = server:get_time() }
         collection.replies[#collection.replies + 1] = at_deadline
         assert(#snapshot == 1, "a late response changed an expired wait's snapshot")
         assert(#collection:wait(2) == 1, "a response at the deadline entered the collection")
         server.clock:advance(3)
-        collection.replies[#collection.replies + 1] = { value = "late", received_at = server:get_time() }
+        collection.replies[#collection.replies + 1] = { value = "late", order = 3, received_at = server:get_time() }
         local later = collection:wait(3)
         assert(#later == 2 and later[2] == at_deadline, "a later wait did not retain earlier replies")
         assert(#collection:wait(2) == 1, "a response after the deadline entered the collection")
@@ -384,7 +385,7 @@ return function(run_with_server, new_test_player)
                     offer("unrelated", true)
                     offer("unrelated", true)
                 end
-                server.batch[1].replies = { { value = responses } }
+                server.batch[1].replies = { { value = responses, order = 1 } }
             end
             if server.dispatcher.ready_first <= server.dispatcher.ready_last or not server:step_time() then
                 server.dispatcher:step()
@@ -451,7 +452,7 @@ return function(run_with_server, new_test_player)
             )
             assert(server:get_time() == block, "request_first_valid suspended its caller")
             local ok, err = pcall(function()
-                local cancelled <close> = server:request_first_valid( -- luacheck: ignore 211
+                local closed <close> = server:request_first_valid( -- luacheck: ignore 211
                     EVERYONE,
                     prtu.EVENTS.schedule_match_elimination,
                     { block + 4 },
@@ -472,7 +473,8 @@ return function(run_with_server, new_test_player)
             assert(timeout:wait(block + 3) == marker, "an earlier result was lost before its own wait")
             assert(elimination:wait(block + 4) == nil and server:get_time() == block + 4)
             assert(elimination:wait() == 0 and server:get_time() == block + 5)
-            assert(reveal_calls == 0 and not scheduled_calls[block + 4] and scheduled_calls[block + 5] == 1)
+            -- The closed future's callback still runs on its block. Its stale response is ignored.
+            assert(reveal_calls == 0 and scheduled_calls[block + 4] == 1 and scheduled_calls[block + 5] == 1)
             timeout:close()
             timeout:close()
             assert(not pcall(timeout.wait, timeout), "a closed future accepted a wait")
@@ -521,7 +523,7 @@ return function(run_with_server, new_test_player)
 
     -- A scheduling request waits behind an in-flight response on the same socket.
     run_with_server(function(server, run_client, wait_connections)
-        local nested_done, scheduled, cancelled = false, false, false
+        local nested_done, scheduled = false, false
         local parent = coroutine.running()
         local probe = prtu.define_event("probe")
         run_client(nil, function(event)
@@ -529,8 +531,6 @@ return function(run_with_server, new_test_player)
                 return { value = {} }
             elseif event.operation == "schedule_match_elimination" then
                 scheduled = true
-            elseif event.operation == "cancel_response" then
-                cancelled = true
             elseif event.operation == "probe" and not scheduled then
                 local connection = server.connections[1]
                 server:subscribe_connection("probe", connection)
@@ -564,11 +564,6 @@ return function(run_with_server, new_test_player)
         while not nested_done do
             coroutine.yield()
         end
-        local second <close> = server:request_first_valid(EVERYONE, probe, {}, function(v)
-            assert(cancelled, "closing the future did not cancel its pending response")
-            return v
-        end)
-        assert(second:wait())
     end)
 
     -- Malformed computed values cannot discard other responses in the same batch.
@@ -668,9 +663,9 @@ return function(run_with_server, new_test_player)
         end
     end
 
-    local function scenario(mode, reverse)
+    local function scenario(mode)
         reports = {}
-        local schedules, cancellations, proof_checks, stale_checks = {}, {}, 0, 0
+        local schedules, proof_checks, stale_checks = {}, 0, 0
         local opening_blocks, unrelated_responses, invalid_proofs = {}, 0, 0
         local players = {}
         local finals = { after, keccak("false final") }
@@ -701,23 +696,14 @@ return function(run_with_server, new_test_player)
             players[index] = player
         end
         if mode == "uarch_inactive" then
-            local ordered =
-                { players[1]:make_mcycle_tree():get_root_hash(), players[2]:make_mcycle_tree():get_root_hash() }
-            table.sort(ordered, function(a, b)
-                return cartesi.tohex(a) < cartesi.tohex(b)
-            end)
+            -- Slots 3 and 4 join after slots 1 and 2, so their uarch claims pair with each other.
             local inactive = {}
             for index = 3, 4 do
-                local seed = index * 100
-                local tree
-                repeat
-                    seed = seed + 1
-                    local forest = hash_tree.frontier_forest(3, "keccak256")
-                    for leaf = 0, 7 do
-                        hash_tree.frontier_forest_push_back(forest, leaf == 1 and keccak("inactive" .. seed) or after)
-                    end
-                    tree = prt.new_tree(3, 0, forest)
-                until cartesi.tohex(tree:get_root_hash()) > cartesi.tohex(ordered[2])
+                local forest = hash_tree.frontier_forest(3, "keccak256")
+                for leaf = 0, 7 do
+                    hash_tree.frontier_forest_push_back(forest, leaf == 1 and keccak("inactive" .. index) or after)
+                end
+                local tree = prt.new_tree(3, 0, forest)
                 players[index].make_uarch_tree = function()
                     return tree
                 end
@@ -730,7 +716,8 @@ return function(run_with_server, new_test_player)
         end
         -- Determine the bracket without relying on connection order.
         local roots = { players[1]:make_mcycle_tree():get_root_hash(), players[2]:make_mcycle_tree():get_root_hash() }
-        local first = cartesi.tohex(roots[1]) < cartesi.tohex(roots[2]) and 1 or 2
+        -- Claims pair in join order, and slot 1 connects first.
+        local first = 1
         run_with_server(function(server, run_client, wait_connections)
             current_server = server
             local request_first_valid = server.request_first_valid
@@ -828,15 +815,12 @@ return function(run_with_server, new_test_player)
                 return request_first_valid(self, subscriptions, event, arguments, accept, response_block)
             end
             for slot = 1, #players do
-                local index = reverse and #players + 1 - slot or slot
+                local index = slot
                 local player = players[index]
                 local committed_uarch = false
                 run_client(nil, function(event, line)
                     if event.id then
                         schedules[event.id] = (schedules[event.id] or 0) + 1
-                    elseif event.operation == "cancel_response" then
-                        local id = event.arguments[1]
-                        cancellations[id] = (cancellations[id] or 0) + 1
                     else
                         local request = event.operation
                         if mode == "invalid_proof" and slot == 1 and request == "prove_state_transition" then
@@ -885,23 +869,25 @@ return function(run_with_server, new_test_player)
                         local kept = {}
                         for _, reply in ipairs(response.value) do
                             local future = server.scheduled_responses[reply.id]
-                            local timeout = future.event == prtu.EVENTS.schedule_match_timeout_win
-                            local suppress = mode == "eliminate"
-                                or mode == "concurrent"
-                                or (mode == "uarch_inactive" and index >= 3)
-                            if not (suppress and timeout) then
+                            if not future then
+                                -- The future closed before this block. Its stale response must be ignored.
                                 kept[#kept + 1] = reply
-                                if not timeout then
-                                    kept[#kept + 1] = copy(reply)
-                                end
-                                if index == 1 and future.event == prtu.EVENTS.schedule_match_elimination then
-                                    unrelated_responses = unrelated_responses + 1
+                                stale_checks = stale_checks + 1
+                            else
+                                local timeout = future.event == prtu.EVENTS.schedule_match_timeout_win
+                                local suppress = mode == "eliminate"
+                                    or mode == "concurrent"
+                                    or (mode == "uarch_inactive" and index >= 3)
+                                if not (suppress and timeout) then
+                                    kept[#kept + 1] = reply
+                                    if not timeout then
+                                        kept[#kept + 1] = copy(reply)
+                                    end
+                                    if index == 1 and future.event == prtu.EVENTS.schedule_match_elimination then
+                                        unrelated_responses = unrelated_responses + 1
+                                    end
                                 end
                             end
-                        end
-                        for id in pairs(cancellations) do
-                            kept[#kept + 1] = { id = id, value = true }
-                            stale_checks = stale_checks + 1
                         end
                         response.value = kept
                         encoded = cartesi.tojson(response, -1)
@@ -961,9 +947,7 @@ return function(run_with_server, new_test_player)
         if mode == "uarch_inactive" then
             assert(unrelated_responses == 1 and eliminated == 1, "honest lineage left an unrelated uarch match pending")
         end
-        for id, count in pairs(schedules) do
-            assert(cancellations[id] == count, "completion did not cancel each scheduled response exactly once")
-        end
+        assert(next(schedules), "no response was scheduled")
         return table.concat(trace, ",")
     end
 
@@ -981,7 +965,7 @@ return function(run_with_server, new_test_player)
         "invalid_proof",
         "leaf_expiry",
     }) do
-        assert(scenario(mode, false) == scenario(mode, true), "connection order changed the protocol trace")
+        assert(scenario(mode) == scenario(mode), "the protocol trace was not reproducible")
     end
     for name, handler in pairs(original_story) do
         prtu.story[name] = handler

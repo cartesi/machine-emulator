@@ -1327,11 +1327,7 @@ local function run_with_server(scenario)
                     local reply, done
                     if typed then
                         reply, done = handler(wire_event, line)
-                    elseif
-                        wire_event.operation == "finish"
-                        or wire_event.id
-                        or wire_event.operation == "cancel_response"
-                    then
+                    elseif wire_event.operation == "finish" or wire_event.id then
                         reply = { value = true }
                     elseif wire_event.operation == "advance_time" then
                         reply = { value = {} }

@@ -23,12 +23,14 @@
 -- A machine-holding player finds its own initial snapshot stored under that hash name. The
 -- referee is never told how many players to expect: it accepts subscribers until a
 -- phase-closer connection closes that phase, then emits the tournament event to those
--- subscribers. The referee sorts the claims it gathers, so the bracket and the whole narration are a pure
--- function of the claims and prescribed responses or skips, independent of connection order.
+-- subscribers. The referee pairs claims in the order their posters joined, so the bracket and
+-- the whole narration are a function of the claims, the join order, and prescribed responses
+-- or skips.
 --   prt.lua referee  <address> <initial-state-hash> <input> [<input> ...]
---   prt.lua honest   <address> <initial-state-hash>
+--   prt.lua honest   <address> <initial-state-hash> [<label>]
 --   prt.lua phase_closer <address> [stop]
 --
+-- A player's label names it in the story and defaults to its role.
 -- The phase closer closes initial subscriptions once every player is in, then disconnects.
 -- A later invocation with stop ends the example through the server, including pending proof waits.
 -- Mcycle and uarch tournaments gather claims from fixed audiences in a logical block.
@@ -127,7 +129,7 @@ end
 -- open, and the turn passes.
 -- docs:begin advance_bisection
 local function advance_bisection(match, response)
-    assert(match.height > 1)
+    assert(match.height > 1, "match not bisecting")
     match.height = match.height - 1
     local descend_left = response.turn_left_node ~= match.other_left_node
     if descend_left then
@@ -147,8 +149,8 @@ end
 -- The referee holds only what the blockchain would: the agreed initial state hash, the
 -- deployed dapp contract with the epoch's inputs, and the geometry. During a match it
 -- tracks one node hash per claim as it walks the two trees down, so it stores nothing of
--- the claims but the path in dispute. It never narrates who holds a claim: the transcript
--- is about claims, and the players announce their own claims on their own stderr.
+-- the claims but the path in dispute. It narrates each claim with the labels that posted
+-- it, which never influence protocol state or ordering.
 -- =============================================================================
 
 -- The referee server and its coroutine dispatcher, built with the referee and shared by every
@@ -160,11 +162,11 @@ local server
 local function validate_claim_response(submitted_claim, height)
     local computation_hash = keccak(submitted_claim.computation_hash_left, submitted_claim.computation_hash_right)
     local final_state_hash_proof = submitted_claim.final_state_hash_proof
-    assert(final_state_hash_proof.target_address == (1 << height) - 1)
-    assert(final_state_hash_proof.log2_target_size == 0)
-    assert(final_state_hash_proof.log2_root_size == height)
-    assert(#final_state_hash_proof.sibling_hashes == height)
-    assert(final_state_hash_proof.root_hash == computation_hash)
+    assert(final_state_hash_proof.target_address == (1 << height) - 1, "final state proof not at last leaf")
+    assert(final_state_hash_proof.log2_target_size == 0, "final state proof target not a leaf")
+    assert(final_state_hash_proof.log2_root_size == height, "final state proof height mismatch")
+    assert(#final_state_hash_proof.sibling_hashes == height, "final state proof sibling count mismatch")
+    assert(final_state_hash_proof.root_hash == computation_hash, "final state proof root mismatch")
     hash_tree.verify_slice(final_state_hash_proof)
     return {
         computation_hash = computation_hash,
@@ -172,17 +174,6 @@ local function validate_claim_response(submitted_claim, height)
         computation_hash_right = submitted_claim.computation_hash_right,
         final_state_hash = final_state_hash_proof.target_hash,
     }
-end
-
--- Orders binary hashes by their bytes, independent of the process locale.
-local function is_hash_less(a, b)
-    for i = 1, math.min(#a, #b) do
-        local ai, bi = a:byte(i), b:byte(i)
-        if ai ~= bi then
-            return ai < bi
-        end
-    end
-    return #a < #b
 end
 
 -- A claim's subscription hash combines its computation hash with its tournament ID.
@@ -193,24 +184,26 @@ local function subscription_hash(tournament_id, claim)
     return keccak(tournament_id, claim.computation_hash)
 end
 
--- Partitions claim responses by computation hash, returning one claim per partition, sorted by
--- that hash. Each sender subscribes to events concerning its valid claim, under the given
--- tournament ID. The sort makes the bracket a pure function of the claim set, not of
--- connection order.
+-- Partitions claim responses by computation hash. The server delivers responses in the join
+-- order of their senders, so claims come out in the order their first posters joined, each
+-- carrying the labels that posted it, and each sender subscribes to events concerning its
+-- claim under the given tournament ID. Pairing in join order is what Dave's dangling slot does,
+-- and it makes the bracket a function of the claims and of the order the players joined, which
+-- the recipe fixes.
 -- docs:begin partition_claims
 local function partition_claims(responses, tournament_id)
     local claims, by_hash = {}, {}
     for _, response in ipairs(responses) do
-        local claim = response.value
-        if not by_hash[claim.computation_hash] then
+        local claim = by_hash[response.value.computation_hash]
+        if not claim then
+            claim = response.value
+            claim.labels = {}
             by_hash[claim.computation_hash] = claim
             claims[#claims + 1] = claim
         end
+        claim.labels[#claim.labels + 1] = response.label
         server:subscribe_connection(subscription_hash(tournament_id, claim), response.connection)
     end
-    table.sort(claims, function(a, b)
-        return is_hash_less(a.computation_hash, b.computation_hash)
-    end)
     return claims
 end
 -- docs:end partition_claims
@@ -259,11 +252,11 @@ end
 -- Validates an internal-node bisection response.
 -- docs:begin validate_bisection_response
 local function validate_bisection_response(match, response)
-    assert(match.height > 1)
-    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
+    assert(match.height > 1, "match not bisecting")
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node, "wrong children")
     local turn_child_node = (response.turn_left_node ~= match.other_left_node) and response.turn_left_node
         or response.turn_right_node
-    assert(keccak(response.turn_next_left_node, response.turn_next_right_node) == turn_child_node)
+    assert(keccak(response.turn_next_left_node, response.turn_next_right_node) == turn_child_node, "wrong next nodes")
     return response
 end
 -- docs:end validate_bisection_response
@@ -273,19 +266,19 @@ end
 -- otherwise the on-turn claim must prove the preceding state against its computation hash.
 -- docs:begin validate_seal_response
 local function validate_seal_response(tournament, match, response)
-    assert(match.height == 1)
-    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
+    assert(match.height == 1, "match not ready to seal")
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node, "wrong leaves")
     local descend_left = response.turn_left_node ~= match.other_left_node
     local leaf_index = match.position + (descend_left and 0 or 1)
     local agreed_state_hash
     if leaf_index ~= 0 then
         local proof = response.agreed_state_hash_proof
-        assert(proof.target_address == leaf_index - 1)
-        assert(proof.log2_target_size == 0)
-        assert(proof.log2_root_size == tournament.height)
-        assert(#proof.sibling_hashes == tournament.height)
-        assert(proof.root_hash == match.claims[match.turn_index].computation_hash)
-        assert(descend_left or proof.target_hash == response.turn_left_node)
+        assert(proof.target_address == leaf_index - 1, "agreed state proof not at leaf before divergence")
+        assert(proof.log2_target_size == 0, "agreed state proof target not a leaf")
+        assert(proof.log2_root_size == tournament.height, "agreed state proof height mismatch")
+        assert(#proof.sibling_hashes == tournament.height, "agreed state proof sibling count mismatch")
+        assert(proof.root_hash == match.claims[match.turn_index].computation_hash, "agreed state proof root mismatch")
+        assert(descend_left or proof.target_hash == response.turn_left_node, "wrong agreed state")
         hash_tree.verify_slice(proof)
         agreed_state_hash = proof.target_hash
     else
@@ -305,7 +298,8 @@ end
 -- docs:end validate_seal_response
 
 local function validate_timeout_win_response(children, computation_hash)
-    assert(keccak(children.computation_hash_left, children.computation_hash_right) == computation_hash)
+    local left, right = children.computation_hash_left, children.computation_hash_right
+    assert(keccak(left, right) == computation_hash, "wrong children")
 end
 
 -- Requests the waiting claim's response at the timeout block.
@@ -317,7 +311,7 @@ local function emit_schedule_match_timeout_win(tournament, match, deadline)
         EVENTS.schedule_match_timeout_win,
         { deadline, other_claim.computation_hash },
         function(response)
-            assert(server:get_time() >= deadline and server:get_time() < deadline + 1)
+            assert(server:get_time() >= deadline and server:get_time() < deadline + 1, "timeout win outside its block")
             validate_timeout_win_response(response, other_claim.computation_hash)
             story.report_timeout_win(match)
             return other_turn_index
@@ -327,9 +321,9 @@ local function emit_schedule_match_timeout_win(tournament, match, deadline)
 end
 
 local function emit_schedule_match_elimination(match, deadline)
-    return server:request_first_valid(EVERYONE, EVENTS.schedule_match_elimination, { deadline }, function()
-        assert(server:get_time() >= deadline)
-        story.report_match_eliminated(match)
+    return server:request_first_valid(EVERYONE, EVENTS.schedule_match_elimination, { deadline }, function(_, label)
+        assert(server:get_time() >= deadline, "early elimination")
+        story.report_match_eliminated(match, label)
         return 0
     end, deadline)
 end
@@ -357,7 +351,7 @@ local function settle_uarch_state_hash(
         EVENTS.schedule_match_elimination,
         { deadline },
         function()
-            assert(server:get_time() >= deadline)
+            assert(server:get_time() >= deadline, "early elimination")
             return true
         end,
         deadline
@@ -367,7 +361,7 @@ local function settle_uarch_state_hash(
         EVENTS.prove_state_transition,
         { tournament.input_index, tournament.period_index, state_transition_offset },
         function(response)
-            assert(server:get_time() < deadline)
+            assert(server:get_time() < deadline, "late state transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
                 current_state_hash,
@@ -415,7 +409,8 @@ local function open_uarch_tournament(
         { input_index, period_index, next_state_hashes },
         function(response)
             local claim = validate_claim_response(response, geometry.uarch_height)
-            assert(claim.final_state_hash == next_state_hashes[1] or claim.final_state_hash == next_state_hashes[2])
+            local final = claim.final_state_hash
+            assert(final == next_state_hashes[1] or final == next_state_hashes[2], "final state not contested")
             return claim
         end
     )
@@ -536,7 +531,7 @@ local function reveal_divergence(tournament, match)
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
-                assert(server:get_time() < deadline)
+                assert(server:get_time() < deadline, "late bisection")
                 return validate_bisection_response(match, response)
             end
         )
@@ -563,7 +558,7 @@ local function seal_divergence(tournament, match)
         EVENTS.seal_divergence,
         { turn_claim.computation_hash, match.position, match.other_left_node },
         function(response)
-            assert(server:get_time() < deadline)
+            assert(server:get_time() < deadline, "late seal")
             return validate_seal_response(tournament, match, response)
         end
     )
@@ -682,12 +677,12 @@ end
 -- Authenticates the complete data at one expected machine-tree location. Its size follows the
 -- proof, while this protocol requires every machine-validity target to be exactly one word.
 local function verify_machine_word(data, proof, address, final_state_hash)
-    assert(proof.root_hash == final_state_hash)
-    assert(proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE)
-    assert(proof.target_address == (address & ~WORD_MASK))
-    assert(proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE)
-    assert(#data == 1 << proof.log2_target_size)
-    assert(hash_tree.get_data_root_hash(data, proof.log2_target_size) == proof.target_hash)
+    assert(proof.root_hash == final_state_hash, "machine word proof root mismatch")
+    assert(proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "machine word proof not whole-machine")
+    assert(proof.target_address == (address & ~WORD_MASK), "machine word proof address mismatch")
+    assert(proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE, "machine word proof target not a word")
+    assert(#data == 1 << proof.log2_target_size, "machine word data not a word")
+    assert(hash_tree.get_data_root_hash(data, proof.log2_target_size) == proof.target_hash, "word data hash mismatch")
     hash_tree.verify_slice(proof)
 end
 
@@ -707,14 +702,14 @@ end
 -- outputs Merkle root authenticated at its tx-buffer word, matching Dave's machine validity proof.
 local function validate_outputs_merkle_root_response(result, final_state_hash)
     verify_machine_word(result.iflags_y_data, result.iflags_y_proof, IFLAGS_Y_ADDRESS, final_state_hash)
-    assert(get_uint64(result.iflags_y_data, IFLAGS_Y_ADDRESS & WORD_MASK) ~= 0)
+    assert(get_uint64(result.iflags_y_data, IFLAGS_Y_ADDRESS & WORD_MASK) ~= 0, "final state not yielded")
 
     verify_machine_word(result.htif_tohost_data, result.htif_tohost_proof, HTIF_TOHOST_ADDRESS, final_state_hash)
     local htif_tohost = get_uint64(result.htif_tohost_data, HTIF_TOHOST_ADDRESS & WORD_MASK)
     local dev, cmd, reason = split_tohost(htif_tohost)
-    assert(dev == cartesi.HTIF_DEV_YIELD)
-    assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL)
-    assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+    assert(dev == cartesi.HTIF_DEV_YIELD, "tohost not a yield")
+    assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL, "yield not manual")
+    assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "yield reason not rx-accepted")
 
     verify_machine_word(result.tx_buffer_data, result.tx_buffer_proof, CMIO_TX_BUFFER_ADDRESS, final_state_hash)
     return result.tx_buffer_data
@@ -722,11 +717,11 @@ end
 
 local function validate_output_response(output, outputs_merkle_root)
     local output_proof = output.output_proof
-    assert(output.output_index == output_proof.target_address)
-    assert(output_proof.log2_target_size == 0)
-    assert(output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT)
-    assert(output_proof.root_hash == outputs_merkle_root)
-    assert(keccak(output.output) == output_proof.target_hash)
+    assert(output.output_index == output_proof.target_address, "output proof index mismatch")
+    assert(output_proof.log2_target_size == 0, "output proof target not a leaf")
+    assert(output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "output proof height mismatch")
+    assert(output_proof.root_hash == outputs_merkle_root, "output proof root mismatch")
+    assert(keccak(output.output) == output_proof.target_hash, "output hash mismatch")
     hash_tree.verify_slice(output_proof)
     return true
 end
@@ -843,10 +838,6 @@ end
 -- =============================================================================
 -- Player
 -- =============================================================================
-
-local function write_stderr(fmt, ...)
-    io.stderr:write(string.format(fmt, ...))
-end
 
 ------------------------------------------------------------
 -- Geometry
@@ -1558,7 +1549,6 @@ end
 
 function event_handler.schedule_match_elimination(self, deadline)
     return prtu.schedule_response(self, deadline, function()
-        write_stderr("%s: returning eliminate_match\n", self.label)
         return {}
     end)
 end
@@ -1576,19 +1566,11 @@ local function make_claim(tree)
     }
 end
 
--- The player's opening mcycle claim. The player announces its root, so a transcript can be
--- read against the players, without the referee ever narrating who holds what.
+-- The player's opening mcycle claim.
 function event_handler.commit_mcycle_claim(self)
     local tree = self:make_mcycle_tree()
     self.trees[tree:get_root_hash()] = tree
-    local claim = make_claim(tree)
-    write_stderr(
-        "%s: posted claim %s with final state %s\n",
-        self.label,
-        format_short_hash(tree:get_root_hash()),
-        format_short_hash(claim.final_state_hash_proof.target_hash)
-    )
-    return claim
+    return make_claim(tree)
 end
 
 -- Reveals the nodes the referee needs for one bisection advance: the claim's node at
@@ -1596,7 +1578,7 @@ end
 -- cross into a stored bundle here because the claims alternate turns; crossing reconstructs
 -- and authenticates that complete bundle before the walk continues through it.
 function event_handler.reveal_bisection(self, computation_hash, position, height, other_left_node)
-    assert(height > 1)
+    assert(height > 1, "match not bisecting")
     local tree = assert(self.trees[computation_hash], "event concerns a claim this player does not hold")
     local turn_left_node, turn_right_node = tree:get_child_hashes(position, height)
     local descend_left = turn_left_node ~= other_left_node
@@ -1638,7 +1620,6 @@ end
 -- ends in neither contested value cannot defend its parent claim, and dies on the
 -- contradiction.
 function event_handler.commit_uarch_claim(self, input_index, period_index, next_state_hashes)
-    write_stderr("%s: building uarch claim for input %d, period %d\n", self.label, input_index, period_index)
     local tree = self:make_uarch_tree(input_index, period_index)
     self.trees[tree:get_root_hash()] = tree
     local claim = make_claim(tree)
@@ -1653,7 +1634,6 @@ function event_handler.commit_uarch_claim(self, input_index, period_index, next_
             format_short_hash(next_state_hashes[2])
         )
     )
-    write_stderr("%s: uarch claim ready\n", self.label)
     return claim
 end
 
@@ -2062,8 +2042,10 @@ local role = assert(arg[1], "missing role")
 local server_address = assert(arg[2], "missing referee address")
 local next_argument = 3
 
+-- Takes the next argument. It is required when a message says what is missing.
 local function take_argument(message)
-    local value = assert(arg[next_argument], message)
+    local value = arg[next_argument]
+    assert(value or not message, message)
     next_argument = next_argument + 1
     return value
 end
@@ -2083,8 +2065,9 @@ if role == "referee" then
         prtu.run_server(new_referee(dapp_contract), server_address)
     end
 elseif role == "honest" then
+    local label = take_argument()
     run_role = function(dapp_contract)
-        local player <close> = new_player(dapp_contract, "honest")
+        local player <close> = new_player(dapp_contract, label)
         prtu.run_client(player, server_address)
     end
     assert(next_argument > #arg, "only the referee takes input files")

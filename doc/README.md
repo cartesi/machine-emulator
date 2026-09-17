@@ -9643,10 +9643,13 @@ one period, instruction by instruction, through
 carries the halt repetitions compressed and the reset hashes marked.
 Both computation-hash builders implement `begin_epoch`, `begin_input`,
 `run`, `end_input`, and `end_epoch`. Bundle collection replays to the
-selected range with a null builder, then collects directly from the
-machine into a local forest. Mcycle bundle collection uses `run_to_stop`
-with a table containing only a `run` closure; uarch bundle collection
-needs a single collector call for its containing mcycle. Uarch bundle
+selected range with a null builder, then asks the machine for the
+bundle’s state hashes and stores them in a local forest.
+`machine:collect_mcycle_bundle()` advances from the input boundary to
+the selected bundle of periods and samples it, and
+`machine:collect_uarch_cycle_bundle()` expands the selected bundle of
+uarch cycles of the current mcycle. Both pad with the fixed-point state
+hash when the machine stops before the selected range. Uarch bundle
 collection captures the rejection tail before input delivery. If replay
 rejects before the selected mcycle, the input driver restores the
 boundary machine before collection; if the collected instruction
@@ -9744,8 +9747,7 @@ end
 ```
 
 Calls to `story` report semantic milestones; their formatting and all
-presentation-only calculations live in a hidden section of `prtu.lua`,
-outside the algorithm snippets.
+presentation-only calculations live outside the algorithm snippets.
 
 A tournament opens to a fixed audience, gathers claims, and runs on the
 valid claims it received. Before the mcycle tournament opens, the server
@@ -9758,9 +9760,10 @@ the children join into the proof’s root and verifies the proof with
 `hash_tree.verify_slice()`, the same membership check `joinTournament`
 performs on chain (`validate_claim_response` in `prt.lua`).
 `partition_claims` groups identical claims by computation hash,
-subscribes every sender to its claim, and sorts the resulting claims by
-computation hash, so the bracket is a pure function of the claim set,
-not of the order in which players happened to connect.
+subscribes every sender to its claim, and orders the resulting claims by
+the join order of their first posters, as Dave’s dangling slot pairs
+commitments as they join, so the bracket is a function of the claims and
+of the order the players joined.
 
 The tournament is that reduction: while more than one claim survives,
 run a round, which pairs the survivors, runs their matches at once, and
@@ -9797,11 +9800,11 @@ grandchildren join into the child the walk descends into:
 
 ``` lua
 local function validate_bisection_response(match, response)
-    assert(match.height > 1)
-    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
+    assert(match.height > 1, "match not bisecting")
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node, "wrong children")
     local turn_child_node = (response.turn_left_node ~= match.other_left_node) and response.turn_left_node
         or response.turn_right_node
-    assert(keccak(response.turn_next_left_node, response.turn_next_right_node) == turn_child_node)
+    assert(keccak(response.turn_next_left_node, response.turn_next_right_node) == turn_child_node, "wrong next nodes")
     return response
 end
 ```
@@ -9812,7 +9815,7 @@ otherwise, and the turn passes to the other claim:
 
 ``` lua
 local function advance_bisection(match, response)
-    assert(match.height > 1)
+    assert(match.height > 1, "match not bisecting")
     match.height = match.height - 1
     local descend_left = response.turn_left_node ~= match.other_left_node
     if descend_left then
@@ -9833,19 +9836,19 @@ already knows the tournament’s initial state:
 
 ``` lua
 local function validate_seal_response(tournament, match, response)
-    assert(match.height == 1)
-    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node)
+    assert(match.height == 1, "match not ready to seal")
+    assert(keccak(response.turn_left_node, response.turn_right_node) == match.turn_parent_node, "wrong leaves")
     local descend_left = response.turn_left_node ~= match.other_left_node
     local leaf_index = match.position + (descend_left and 0 or 1)
     local agreed_state_hash
     if leaf_index ~= 0 then
         local proof = response.agreed_state_hash_proof
-        assert(proof.target_address == leaf_index - 1)
-        assert(proof.log2_target_size == 0)
-        assert(proof.log2_root_size == tournament.height)
-        assert(#proof.sibling_hashes == tournament.height)
-        assert(proof.root_hash == match.claims[match.turn_index].computation_hash)
-        assert(descend_left or proof.target_hash == response.turn_left_node)
+        assert(proof.target_address == leaf_index - 1, "agreed state proof not at leaf before divergence")
+        assert(proof.log2_target_size == 0, "agreed state proof target not a leaf")
+        assert(proof.log2_root_size == tournament.height, "agreed state proof height mismatch")
+        assert(#proof.sibling_hashes == tournament.height, "agreed state proof sibling count mismatch")
+        assert(proof.root_hash == match.claims[match.turn_index].computation_hash, "agreed state proof root mismatch")
+        assert(descend_left or proof.target_hash == response.turn_left_node, "wrong agreed state")
         hash_tree.verify_slice(proof)
         agreed_state_hash = proof.target_hash
     else
@@ -9883,7 +9886,7 @@ local function reveal_divergence(tournament, match)
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
-                assert(server:get_time() < deadline)
+                assert(server:get_time() < deadline, "late bisection")
                 return validate_bisection_response(match, response)
             end
         )
@@ -9911,7 +9914,7 @@ local function seal_divergence(tournament, match)
         EVENTS.seal_divergence,
         { turn_claim.computation_hash, match.position, match.other_left_node },
         function(response)
-            assert(server:get_time() < deadline)
+            assert(server:get_time() < deadline, "late seal")
             return validate_seal_response(tournament, match, response)
         end
     )
@@ -10070,7 +10073,7 @@ local function settle_uarch_state_hash(
         EVENTS.schedule_match_elimination,
         { deadline },
         function()
-            assert(server:get_time() >= deadline)
+            assert(server:get_time() >= deadline, "early elimination")
             return true
         end,
         deadline
@@ -10080,7 +10083,7 @@ local function settle_uarch_state_hash(
         EVENTS.prove_state_transition,
         { tournament.input_index, tournament.period_index, state_transition_offset },
         function(response)
-            assert(server:get_time() < deadline)
+            assert(server:get_time() < deadline, "late state transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
                 current_state_hash,
@@ -10134,42 +10137,36 @@ end
 
 ### The referee server
 
-Each player answers typed requests in a blocking loop (`run_client` in
-`prtu.lua`). It owns its machines and claims. Each handler receives only
-the event’s arguments. The event table names each operation, including
-`reveal_bisection`, `seal_divergence`, and `prove_state_transition`.
-`schedule_match_timeout_win` and `schedule_match_elimination` call
-`prtu.schedule_response(player, deadline, callback)` to produce their
-responses on later blocks. `prtu.lua` keeps the callbacks in a private
-queue and invokes them when `advance_time` supplies a strictly newer
-block. The handler passes its deadline to the scheduler explicitly; the
-transport does not interpret handler arguments or infer scheduling from
-event types. `prtu` retains the current request’s response ID and schema
-internally, and `schedule_response` returns the acknowledgement sent to
-the referee. The delayed elimination response is empty; its validator
-checks only that the deadline has been reached.
+Each player answers typed requests, one at a time. It owns its machines
+and claims. Each handler receives only the event’s arguments. The event
+table names each operation, including `reveal_bisection`,
+`seal_divergence`, and `prove_state_transition`.
+`schedule_match_timeout_win` and `schedule_match_elimination` schedule
+their responses for the deadline they carry, so each reaches the referee
+on that later block. The delayed elimination response is empty; its
+validator checks only that the deadline has been reached.
 
 `request_first_valid(subscriptions, event, arguments, validator)`
 returns a future without suspending the referee. An optional fifth
-argument supplies the expected response block for a delayed response. It
-sends the request as a control and gives the logical clock a boundary to
-advance to. The player handler schedules the callback, and the referee’s
-validator still enforces the response window. The audience is one
-subscription hash, a list of hashes, or `EVERYONE` for all live players.
-Each future decodes responses under that event’s schema and retains the
-first result accepted by its validator. `future:wait(deadline)` returns
-that result if accepted before the given block, or `nil` when the
-deadline is reached. The deadline belongs to the wait. A later wait can
-still obtain the result, and `future:wait()` has no deadline. A future
-declared with `<close>` cancels its pending callback when the scope
-ends, including on an error. The referee emits the reveal, timeout, and
-elimination requests before waiting for the reveal. If that wait
-expires, it waits for the timeout result until the elimination block,
-then waits for elimination without a deadline. Only computation requests
-go to holders of the relevant claim. Every player receives requests to
-eliminate inactive matches, including unrelated ones that could keep the
-tournament open. The referee never narrates who holds a claim. Each
-player announces its own claim on standard error.
+argument names the block on which a delayed response is due. The player
+schedules its response for that block, and the referee’s validator still
+enforces the response window. The audience is one subscription hash, a
+list of hashes, or `EVERYONE` for all live players. Each future decodes
+responses under that event’s schema and retains the first result
+accepted by its validator. `future:wait(deadline)` returns that result
+if accepted before the given block, or `nil` when the deadline is
+reached. The deadline belongs to the wait. A later wait can still obtain
+the result, and `future:wait()` has no deadline. A future declared with
+`<close>` ends its request when the scope ends, including on an error,
+and a response that arrives for an ended request is ignored. The referee
+emits the reveal, timeout, and elimination requests before waiting for
+the reveal. If that wait expires, it waits for the timeout result until
+the elimination block, then waits for elimination without a deadline.
+Only computation requests go to holders of the relevant claim. Every
+player receives requests to eliminate inactive matches, including
+unrelated ones that could keep the tournament open. The referee narrates
+each claim with the labels of the players that posted it. Labels never
+influence protocol state or ordering.
 
 `request_all(subscriptions, event, arguments, validator)` returns a
 future for all accepted responses to an ordinary event. The optional
@@ -10199,32 +10196,18 @@ future cancels unfinished closures and their descendants, running their
 `run_matches` uses this method to record each match’s winner and wait
 for the whole round.
 
-The referee server in `prtu.lua` runs logical blocks, with a barrier for
-each block’s ordinary requests. It gathers every audience member’s
-response, explicit skip, or disconnect before validating replies and
-resuming protocol coroutines in match creation order. Each continuation
-runs to its next yield, and new ordinary requests form the next block’s
-batch. Each connection has a FIFO of requests in addition to its byte
-outbox, and sends the next request only after consuming the current
-reply. Schedule and cancel requests drain before the next time request.
-Each player receives one `advance_time` request per block. The returned
-responses are decoded with their original event schemas and routed to
-validators on pending events. An accepted response can resume only the
-coroutine waiting on its own future. A result accepted before that wait
-remains available in the future. A malformed current response or invalid
-proof finishes that player’s request without resolving its future. A
-valid JSON response arriving with no request in flight is ignored and
-leaves the connection open. It cannot close a phase or satisfy a later
-request. Malformed JSON closes the connection. A connected peer that
-never replies still stalls the documentation barrier. This barrier
-synchronizes the scripted demonstration; a blockchain bridge follows
-chain block progress independently of missing player responses.
+The referee server runs logical blocks. Every audience member of a
+block’s requests answers, skips, or disconnects before the block’s
+replies are validated and the protocol resumes, in match creation order,
+so the transcript never depends on reply order. A connected player that
+never replies stalls the demonstration, where a blockchain bridge
+follows chain time regardless.
 
 The referee in `prt.lua` defines and enforces the windows. An opening
 requested in block b is valid during b, a holder of the waiting claim
 may respond to claim a timeout win in \[b + 1, b + 2), and anyone may
 eliminate both claims from b + 2. A valid opening ends the scope of its
-timeout and elimination futures, cancelling their pending callbacks. The
+timeout and elimination futures, whose late responses are ignored. The
 next opening emits new requests. At a sealed uarch leaf both sides share
 one block to prove the transition. At its deadline, anyone may eliminate
 both. Every validator checks authoritative server time, arguments, and
@@ -10244,9 +10227,7 @@ optional output offers retain their separate proof requests. Each waits
 through its ordinary response block, so missing output proofs end the
 demonstration without eliminating the mcycle winner.
 
-The phase closer only closes initial subscriptions, where an external
-signal is needed because players connect over wall-clock time. Mcycle
-and uarch tournaments gather claims from fixed audiences in their
+Mcycle and uarch tournaments gather claims from fixed audiences in their
 opening block and close claim collection at the next logical block.
 Empty blocks jump to the next supplied deadline, without sleeps or
 artificial waiting. This logical tick loop demonstrates delayed
@@ -10257,9 +10238,9 @@ from their responses. Using wall-clock allowances here would make the
 narrative depend on computation speed. The fixed bracket, two levels,
 equal leaf allowances, and one-block windows simplify Dave’s accumulated
 allowances, discounts, and censorship accounting. The transcript depends
-on claims and prescribed response/skip behavior. The recipe reverses
-launch order while holding those behaviors fixed and requires identical
-narration.
+on claims and prescribed response/skip behavior. The recipe runs the
+tournament twice while holding those behaviors fixed and requires
+identical narration.
 
 ### Running the tournament
 
@@ -10269,10 +10250,8 @@ four dishonest strategies.
 The *quitter* fabricates a claim out of thin air, every leaf the same
 made-up hash. Such a claim is cheap to commit to, it is one run, and its
 join proof is perfectly valid. The quitter then walks away, closing its
-connection right after submitting. Two additional quitters use distinct
-pinned seeds whose computation hashes start with `0xfe` and `0xff`.
-Their full hashes must sort after the six original claims, preserving
-the earlier pairings and pairing the two new quitters together.
+connection right after submitting. Two additional quitters, `quitter 1`
+and `quitter 2`, join one after the other, so they meet each other.
 
 The *forger* runs the shared code with a machine that substitutes a
 forged input, claiming input 2 asked for `2+2048` rather than `2^2048`.
@@ -10329,46 +10308,30 @@ lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8096 "$initial_state_hash" 2 2000
 ```
 
 The eight subscribers commit claims, which are admitted into the
-tournament:
+tournament, each narrated with the label of the player that posted it:
 
 ``` text
-Claim 0x1a22b0c7..., with final state 0xdd2e60cd..., joined.
-Claim 0x4f4b4987..., with final state 0xf0fb49ec..., joined.
-Claim 0x56d98314..., with final state 0x5d4ca486..., joined.
-Claim 0x923b6eb7..., with final state 0x5d4ca486..., joined.
-Claim 0x98e1ce81..., with final state 0xbd6f4f4e..., joined.
-Claim 0xc75bbba2..., with final state 0x5d4ca486..., joined.
-Claim 0xfea70cde..., with final state 0x3f493207..., joined.
-Claim 0xffdd2c53..., with final state 0xdae03c15..., joined.
-```
-
-The referee narrates claims, never players. Each player announces the
-claim it posted on its own standard error, which is how the transcript
-reads against them (the two fabulists are listed in launch order, the
-one lying at period 2000 of input 2 first):
-
-``` text
-honest: posted claim 0xc75bbba2... with final state 0x5d4ca486...
-quitter: posted claim 0x1a22b0c7... with final state 0xdd2e60cd...
-forger: posted claim 0x98e1ce81... with final state 0xbd6f4f4e...
-tamperer: posted claim 0x4f4b4987... with final state 0xf0fb49ec...
-fabulist: posted claim 0x56d98314... with final state 0x5d4ca486...
-fabulist: posted claim 0x923b6eb7... with final state 0x5d4ca486...
-quitter: posted claim 0xfea70cde... with final state 0x3f493207...
-quitter: posted claim 0xffdd2c53... with final state 0xdae03c15...
+Claim 0x1a22b0c7..., with final state 0xdd2e60cd..., joined (posted by quitter).
+Claim 0x4f4b4987..., with final state 0xf0fb49ec..., joined (posted by tamperer).
+Claim 0x56d98314..., with final state 0x5d4ca486..., joined (posted by fabulist).
+Claim 0x923b6eb7..., with final state 0x5d4ca486..., joined (posted by fixed_fabulist).
+Claim 0x98e1ce81..., with final state 0xbd6f4f4e..., joined (posted by forger).
+Claim 0xc75bbba2..., with final state 0x5d4ca486..., joined (posted by honest).
+Claim 0x0e6cdf5f..., with final state 0x2743a118..., joined (posted by quitter 1).
+Claim 0x87f38778..., with final state 0x66eed701..., joined (posted by quitter 2).
 ```
 
 Honest and the two fabulists commit to the same final state (a fabulist
 lies only about an interior sample), but their claims differ, so they
-still dispute. The referee sorts the claims and reduces them round by
-round, the matches of a round running at once and the odd claim
-advancing unmatched, until one claim is left:
+still dispute. The referee pairs the claims in the order they were
+posted and reduces them round by round, the matches of a round running
+at once and the odd claim advancing unmatched, until one claim is left:
 
 ``` text
 Round 1, match 1, at the mcycle level: claim 0x1a22b0c7... against claim 0x4f4b4987....
 Round 1, match 2, at the mcycle level: claim 0x56d98314... against claim 0x923b6eb7....
 Round 1, match 3, at the mcycle level: claim 0x98e1ce81... against claim 0xc75bbba2....
-Round 1, match 4, at the mcycle level: claim 0xfea70cde... against claim 0xffdd2c53....
+Round 1, match 4, at the mcycle level: claim 0x0e6cdf5f... against claim 0x87f38778....
 Match 1: claim 0x4f4b4987... wins.
 Match 2: claim 0x923b6eb7... wins.
 Match 3: claim 0xc75bbba2... wins.
@@ -10380,9 +10343,9 @@ Round 3, match 6, at the mcycle level: claim 0xc75bbba2... against claim 0x923b6
 Match 6: claim 0xc75bbba2... wins.
 ```
 
-The quitter’s claim sorts first and meets the tamperer in match 1. The
-quitter has already closed its connection. Its opening goes unanswered,
-and the tamperer returns a timeout-win response at the next block.
+The quitter joined first and meets the tamperer in match 1. The quitter
+has already closed its connection. Its opening goes unanswered, and the
+tamperer returns a timeout-win response at the next block.
 
 ``` text
 Nobody opened claim 0x1a22b0c7.... Claim 0x4f4b4987... claims a timeout win.
@@ -10395,7 +10358,7 @@ returns the elimination response while defending its own claim in match
 quitter survives into the next round:
 
 ``` text
-An elimination response removes both inactive claims.
+An elimination response from tamperer removes both inactive claims.
 ```
 
 Match 2, between the two fabulists, shows the whole shape of a dispute.
@@ -10410,8 +10373,8 @@ Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
 Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
 ...
 A uarch tournament opens over input 2, period 2000, starting from 0xc83fc2fe....
-Claim 0x3c15fedb..., with final state 0x4953b2b7..., joined.
-Claim 0xa9744aa0..., with final state 0xcba0fec7..., joined.
+Claim 0x3c15fedb..., with final state 0x4953b2b7..., joined (posted by fabulist).
+Claim 0xa9744aa0..., with final state 0xcba0fec7..., joined (posted by fixed_fabulist).
 Round 1, match 2.1, at the uarch level: claim 0x3c15fedb... against claim 0xa9744aa0....
 Match 2.1: claim 0xa9744aa0... wins.
 The uarch winner confirms 0xcba0fec7.... Claim 0x56d98314... is eliminated.
@@ -10441,8 +10404,8 @@ Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
 Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
 ...
 A uarch tournament opens over input 2, period 0, starting from 0xf4018067....
-Claim 0xbc1636f3..., with final state 0xf8db3f42..., joined.
-Claim 0xfa41d4e9..., with final state 0x87004b64..., joined.
+Claim 0xbc1636f3..., with final state 0xf8db3f42..., joined (posted by forger).
+Claim 0xfa41d4e9..., with final state 0x87004b64..., joined (posted by honest).
 Round 1, match 3.1, at the uarch level: claim 0xbc1636f3... against claim 0xfa41d4e9....
 Match 3.1: claim 0xfa41d4e9... wins.
 The uarch winner confirms 0x87004b64.... Claim 0x98e1ce81... is eliminated.
@@ -10466,8 +10429,8 @@ Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
 Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
 ...
 A uarch tournament opens over input 0, period 1600, starting from 0x53805328....
-Claim 0x18226d60..., with final state 0x1c5dc695..., joined.
-Claim 0x31f1a82a..., with final state 0xa04dee27..., joined.
+Claim 0x18226d60..., with final state 0x1c5dc695..., joined (posted by tamperer).
+Claim 0x31f1a82a..., with final state 0xa04dee27..., joined (posted by fixed_fabulist).
 Round 1, match 5.1, at the uarch level: claim 0x18226d60... against claim 0x31f1a82a....
 Match 5.1: claim 0x31f1a82a... wins.
 The uarch winner confirms 0xa04dee27.... Claim 0x4f4b4987... is eliminated.
@@ -10491,16 +10454,16 @@ Height 60: the claims first disagree within leaves [0x0, 0xfffffffffffffff].
 Height 59: the claims first disagree within leaves [0x0, 0x7ffffffffffffff].
 ...
 A uarch tournament opens over input 2, period 60000, starting from 0x5d4ca486....
-Claim 0x0cd11aa6..., with final state 0x5d4ca486..., joined.
-Claim 0xace2aca3..., with final state 0x4953b2b7..., joined.
-Round 1, match 6.1, at the uarch level: claim 0x0cd11aa6... against claim 0xace2aca3....
+Claim 0xace2aca3..., with final state 0x4953b2b7..., joined (posted by fixed_fabulist).
+Claim 0x0cd11aa6..., with final state 0x5d4ca486..., joined (posted by honest).
+Round 1, match 6.1, at the uarch level: claim 0xace2aca3... against claim 0x0cd11aa6....
 Match 6.1: claim 0x0cd11aa6... wins.
 The uarch winner confirms 0x5d4ca486.... Claim 0x923b6eb7... is eliminated.
 ```
 
 ``` text
 Height 1: the claims first disagree within leaves [0x3ffffffe, 0x3fffffff].
-The claims diverge at state 1073741823: 0x5d4ca486... against 0x4953b2b7..., from the agreed state 0x9a3c0962....
+The claims diverge at state 1073741823: 0x4953b2b7... against 0x5d4ca486..., from the agreed state 0x9a3c0962....
 The disputed transition is a uarch step and the uarch reset closing an instruction.
 The disputed transition provably leads to 0x5d4ca486....
 Claim 0xace2aca3... committed to 0x4953b2b7... and is eliminated.
@@ -10524,9 +10487,8 @@ the established root. Players choose which output to offer. The referee
 keeps accepted output indices locally and ignores duplicates. Requests
 contain no selection or acceptance information. An epoch with no output
 therefore still settles its outputs root, and no player needs to invent
-an output for it. Both proof waits are indefinite. The example’s script
-uses the phase closer to stop the server after the chosen output has
-been proved.
+an output for it. Both proof waits are indefinite, so the example’s
+script stops the server once the chosen output has been proved.
 
 The verdict settles the epoch:
 
@@ -10545,11 +10507,11 @@ saved as `epoch-0-state-hash.bin`. The player chose output 1 through its
 positional command-line argument, the calculator’s answer for the
 epoch’s last input. The tournament ends on the same state the direct run
 produced, however many liars stood in the way. The same tournament, run
-again with the players launched in the opposite order, narrates every
-file identically, which the recipe checks by diffing the two runs:
+again, narrates every file identically, which the recipe checks by
+diffing the two runs:
 
 ``` text
-The reversed run narrated every file identically.
+The second run narrated every file identically.
 ```
 
 This model simplifies the PRT contracts in ways worth naming. The
@@ -10562,13 +10524,13 @@ tournament stays open for a fixed time allowance, and a claim may join
 while it lasts. In Dave, a dispute starts as soon as two claims exist.
 Each claim that joins is paired with the one waiting, a match winner is
 paired with the next to arrive, and a claim that joins late may meet one
-that has already won. The model instead gathers a tournament’s claims,
-sorts them, and runs the dispute in rounds, as a regular tournament
-bracket would, which is simpler to narrate and makes the bracket a pure
-function of the claim set. That is the only reason the demonstration
-needs to know when a tournament’s claims are all in, and it closes each
-claim collection as soon as the claims it awaits are in, rather than
-waiting the allowance out. For the real thing, see the [Dave
+that has already won. The model instead gathers a tournament’s claims
+and runs the dispute in rounds, pairing the claims in the order they
+were posted, as a regular tournament bracket would, which is simpler to
+narrate. That is the only reason the demonstration needs to know when a
+tournament’s claims are all in, and it closes each claim collection as
+soon as the claims it awaits are in, rather than waiting the allowance
+out. For the real thing, see the [Dave
 repository](https://github.com/cartesi/dave), the [Permissionless
 Refereed Tournaments](https://arxiv.org/abs/2212.12439) paper, and the
 [Dave](https://doi.org/10.1145/3734698) paper.

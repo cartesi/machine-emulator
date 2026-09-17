@@ -649,6 +649,11 @@ return function(run_with_server, new_test_player)
     local invalid_logs = { step_log = machine:log_step_uarch() }
     assert(not pcall(cartesi.machine.verify_step_uarch, cartesi.machine, initial, invalid_logs.step_log))
     local geometry = { mcycle_height = 3, uarch_height = 3, periods_per_input = 8 }
+    local max_allowance = 4
+    -- Every claim joins one block after its tournament opens, and a uarch tournament inherits
+    -- the remaining mcycle clock, so each level's clocks are one block shorter than the last.
+    local mcycle_clock = max_allowance - 1
+    local uarch_clock = mcycle_clock - 1
 
     -- Narration remains outside the referee. Capture semantic reports so each
     -- fixture can assert its outcome without writing walkthrough artifacts.
@@ -667,6 +672,7 @@ return function(run_with_server, new_test_player)
         reports = {}
         local schedules, proof_checks, stale_checks = {}, 0, 0
         local opening_blocks, unrelated_responses, invalid_proofs = {}, 0, 0
+        local pending_elimination_delay
         local players = {}
         local finals = { after, keccak("false final") }
         if mode == "concurrent" then
@@ -724,12 +730,27 @@ return function(run_with_server, new_test_player)
             server.request_first_valid = function(self, subscriptions, event, arguments, accept, response_block)
                 if response_block then
                     local block = response_block
-                    local expires = event == prtu.EVENTS.schedule_match_timeout_win and block + 1 or nil
-                    local delay = block - self:request_block()
-                    assert(delay == 1 or (event == prtu.EVENTS.schedule_match_elimination and delay == 2))
+                    local timeout_win = event == prtu.EVENTS.schedule_match_timeout_win
+                    local delay = block - self:get_time()
+                    local expires
+                    if timeout_win then
+                        -- The timeout win opens at the on-turn clock's deadline and lasts while the waiting
+                        -- clock, equal to it, runs out. The elimination emitted next waits for both.
+                        local clock = subscriptions == keccak(initial, arguments[2]) and mcycle_clock or uarch_clock
+                        assert(delay == clock, "timeout win not due at the on-turn clock's deadline")
+                        expires = block + clock
+                        pending_elimination_delay = 2 * clock
+                    else
+                        -- An elimination with no timeout win before it follows a seal, where both uarch
+                        -- clocks run together.
+                        assert(
+                            delay == (pending_elimination_delay or uarch_clock),
+                            "elimination not due when both clocks run out"
+                        )
+                        pending_elimination_delay = nil
+                    end
                     local response = {}
-                    if event == prtu.EVENTS.schedule_match_timeout_win then
-                        assert(expires == block + 1)
+                    if timeout_win then
                         for _, player in ipairs(players) do
                             local tree = player.trees[arguments[2]]
                             if tree then
@@ -769,7 +790,11 @@ return function(run_with_server, new_test_player)
                     if request == "reveal_bisection" and arguments[3] == 3 then
                         opening_blocks[#opening_blocks + 1] = block
                     end
-                    local proof_deadline = block + 1
+                    local clock = uarch_clock
+                    if request ~= "prove_state_transition" and subscriptions == keccak(initial, arguments[1]) then
+                        clock = mcycle_clock
+                    end
+                    local deadline = self:get_time() + clock
                     -- Ordinary validators themselves reject at exact expiry,
                     -- even when a response lies about its eligibility and timestamp.
                     local holder = request == "prove_state_transition" and players[1]
@@ -785,10 +810,10 @@ return function(run_with_server, new_test_player)
                         local response = holder.event_handler[request](holder, table.unpack(arguments))
                         response.block, response.eligible, response.expires = 0, 0, math.maxinteger
                         local saved = self.clock.block
-                        self.clock.block = proof_deadline
+                        self.clock.block = deadline
                         probing = true
                         assert(not pcall(accept, response), "ordinary response accepted at expiry")
-                        self.clock.block = proof_deadline + 1
+                        self.clock.block = deadline + 1
                         assert(not pcall(accept, response), "ordinary response accepted after expiry")
                         self.clock.block = block
                         local ok, value = pcall(accept, response)
@@ -899,8 +924,14 @@ return function(run_with_server, new_test_player)
             run_client({ role = "phase_closer" }, function(_, line)
                 return prtu.answer_event(prtu.new_phase_closer(), line)
             end, true)
-            prt.new_referee({ geometry = geometry, initial_state_hash = initial, inputs = {}, input_paths = {} })
-                :run(server)
+            prt.new_referee({
+                geometry = geometry,
+                initial_state_hash = initial,
+                inputs = {},
+                input_paths = {},
+                max_allowance = max_allowance,
+                response_budget = max_allowance,
+            }):run(server)
         end)
         assert(#current_server.open_phases == 0 and not next(current_server.scheduled_responses))
         assert(current_server.phase_closer.dead, "phase closer stayed necessary after subscriptions")

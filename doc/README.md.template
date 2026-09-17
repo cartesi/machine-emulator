@@ -5485,7 +5485,7 @@ Its `wait(deadline)` returns the responses received before that block, including
 The list retains each response's sender and receipt block. A partial result is a snapshot: later replies do not change it.
 Without a deadline, the wait returns once the audience finishes. A deadline bounds only that wait, so another wait can obtain more responses.
 `server:wait_until(block)` suspends until that logical block's time barrier, or returns immediately if the block has already been reached.
-Tournament opening waits for responses with the closing block as its deadline, then calls `wait_until` before partitioning the claims.
+Tournament opening waits for responses until the joining deadline, the opening block plus the allowance, then calls `wait_until` on it before partitioning the claims.
 This also keeps the tournament from opening early when all responses arrive before the deadline.
 The server handles responses and logical time; the tournament determines when claim collection closes.
 
@@ -5500,11 +5500,19 @@ The referee server runs logical blocks.
 Every audience member of a block's requests answers, skips, or disconnects before the block's replies are validated and the protocol resumes, in match creation order, so the transcript never depends on reply order.
 A connected player that never replies stalls the demonstration, where a blockchain bridge follows chain time regardless.
 
-The referee in `prt.lua` defines and enforces the windows.
-An opening requested in block b is valid during b, a holder of the waiting claim may respond to claim a timeout win in [b + 1, b + 2), and anyone may eliminate both claims from b + 2.
+The referee in `prt.lua` defines and enforces the windows with Dave's clock arithmetic.
+Each claim joins with the tournament's allowance less the blocks since the tournament opened as its clock.
+The dapp contract fixes the allowance at four blocks, a uarch tournament inherits the remaining mcycle clock, and every claim joins one block after its tournament opens, so mcycle claims start with three blocks and uarch claims with two.
+A deadline is the first block at which a clock has timed out, so two is the least that lets a claim see an event in one block and answer in the next.
+The on-turn claim's clock runs from the block b that gave it the turn.
+With c blocks on it and w on the waiting claim's clock, its opening is valid before b + c, a holder of the waiting claim may respond to claim a timeout win in [b + c, b + c + w), and anyone may eliminate both claims from b + c + w.
+The two clocks of a match are equal here, three blocks in an mcycle match and two in a uarch match.
+```{.lua key=prt_match_clocks include=prt.lua/match_clocks title="prt.lua (excerpt)"}
+```
 A valid opening ends the scope of its timeout and elimination futures, whose late responses are ignored. The next opening emits new requests.
-At a sealed uarch leaf both sides share one block to prove the transition.
-At its deadline, anyone may eliminate both.
+A valid response is charged the blocks it took beyond the response budget, which equals the allowance, so no clock ever runs down.
+At a sealed uarch leaf both clocks run from the seal, and either side may prove the transition before the earlier deadline.
+Equal allowances leave no timeout-win window, so anyone may eliminate both from that deadline.
 Every validator checks authoritative server time, arguments, and proofs.
 Scheduling a response does not make it valid, and expiry alone never eliminates a claim.
 Timeout winners supply the winning claim's root children from the player's local tree, which the referee verifies against that claim.
@@ -5517,12 +5525,13 @@ The Lua model has no propagation window or uarch-result elimination request.
 Output-root verification and optional output offers retain their separate proof requests.
 Each waits through its ordinary response block, so missing output proofs end the demonstration without eliminating the mcycle winner.
 
-Mcycle and uarch tournaments gather claims from fixed audiences in their opening block and close claim collection at the next logical block.
+Mcycle and uarch tournaments open at the block that creates them and gather claims from fixed audiences until their joining deadline, that block plus their allowance.
+A uarch tournament's allowance is the larger clock its mcycle match left, as in Dave.
 Empty blocks jump to the next supplied deadline, without sleeps or artificial waiting.
 This logical tick loop demonstrates delayed responses without putting contract-call instructions into the referee or player.
 A blockchain bridge will translate complete contract instructions into these named player events and assemble transactions from their responses.
 Using wall-clock allowances here would make the narrative depend on computation speed.
-The fixed bracket, two levels, equal leaf allowances, and one-block windows simplify Dave's accumulated allowances, discounts, and censorship accounting.
+The fixed bracket, two levels, equal clocks within a level, and a response budget that covers every window simplify Dave's accumulated allowances, discounts, and censorship accounting.
 The transcript depends on claims and prescribed response/skip behavior.
 The recipe runs the tournament twice while holding those behaviors fixed and requires identical narration.
 
@@ -5747,7 +5756,7 @@ The referee pairs the claims in the order they were posted and reduces them roun
 ```
 
 The quitter joined first and meets the tamperer in match 1.
-The quitter has already closed its connection. Its opening goes unanswered, and the tamperer returns a timeout-win response at the next block.
+The quitter has already closed its connection. Its opening goes unanswered, and the tamperer returns a timeout-win response at the quitter's deadline.
 ```{replace=prt_run/match_1}
 ```
 
@@ -5810,7 +5819,7 @@ At both the mcycle level and the uarch level, a Dave tournament stays open for a
 In Dave, a dispute starts as soon as two claims exist.
 Each claim that joins is paired with the one waiting, a match winner is paired with the next to arrive, and a claim that joins late may meet one that has already won.
 The model instead gathers a tournament's claims and runs the dispute in rounds, pairing the claims in the order they were posted, as a regular tournament bracket would, which is simpler to narrate.
-That is the only reason the demonstration needs to know when a tournament's claims are all in, and it closes each claim collection as soon as the claims it awaits are in, rather than waiting the allowance out.
+That is the only reason the demonstration needs to know when a tournament's claims are all in, which a fixed audience tells it, and waiting the allowance out costs no wall-clock time because empty blocks jump ahead.
 For the real thing, see the [Dave repository](https://github.com/cartesi/dave), the [Permissionless Refereed Tournaments](https://arxiv.org/abs/2212.12439) paper, and the [Dave](https://doi.org/10.1145/3734698) paper.
 
 [modeline]: # ( vim: set filetype=markdown spell spelllang=en: )

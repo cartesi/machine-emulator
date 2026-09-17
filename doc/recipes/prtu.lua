@@ -89,14 +89,12 @@ end
 function story.report_claims(tournament)
     local stream = tournament.level == "mcycle" and "claims" or get_tournament_stream(tournament)
     for _, claim in ipairs(tournament.claims) do
-        if tournament.level == "mcycle" then
-            narrate("claim_hashes", "%s", cartesi.tohex(claim.computation_hash))
-        end
         narrate(
             stream,
-            "Claim %s, with final state %s, joined.",
+            "Claim %s, with final state %s, joined (posted by %s).",
             format_short_hash(claim.computation_hash),
-            format_short_hash(claim.final_state_hash)
+            format_short_hash(claim.final_state_hash),
+            table.concat(claim.labels, ", ")
         )
     end
 end
@@ -204,8 +202,8 @@ function story.report_timeout_win(match)
     )
 end
 
-function story.report_match_eliminated(match)
-    narrate(get_match_stream(match), "An elimination response removes both inactive claims.")
+function story.report_match_eliminated(match, label)
+    narrate(get_match_stream(match), "An elimination response from %s removes both inactive claims.", label)
 end
 
 function story.report_match_progress(match)
@@ -399,7 +397,7 @@ end
 -- fields.
 -- Computation responses authenticate their values against the committed claim.
 -- Time requests return scheduled responses, each checked by its referee validator.
--- The label rides along only for tracing.
+-- The label names senders in the story, never protocol state.
 --------------------------------------------------------------------------------
 
 -- The schemas used by the PRT events and private transport lifecycle.
@@ -458,7 +456,6 @@ local SCHEMA_DICT = {
     ScheduleClaimChildrenEvent = { items = { "Default", "Base64" } },
     ScheduleEliminationEvent = { items = { "Default" } },
     Responses = { items = "Default" },
-    CancelResponseEvent = { items = { "Default" } },
     AdvanceTimeEvent = { items = { "Default" } },
 }
 
@@ -493,7 +490,6 @@ local EVENTS = {
         "ClaimChildren"
     ),
     schedule_match_elimination = define_event("schedule_match_elimination", "ScheduleEliminationEvent", "Default"),
-    cancel_response = define_event("cancel_response", "CancelResponseEvent", "Default"),
     advance_time = define_event("advance_time", "AdvanceTimeEvent", "Responses"),
 }
 
@@ -594,9 +590,6 @@ local function answer_event(client, line)
         value = true
     elseif event == EVENTS.advance_time then
         value = queue:advance(wire_event.arguments[1])
-    elseif event == EVENTS.cancel_response then
-        queue:cancel(wire_event.arguments[1])
-        value = true
     else
         local handler = assert(client.event_handler[wire_event.operation], "missing event handler")
         client_requests[client] = { id = wire_event.id, response_schema = event.response_schema }
@@ -616,8 +609,8 @@ end
 
 -- The player side is a plain blocking loop: announce itself, then read an event, decode its
 -- arguments under the event's schema, dispatch its handler, and answer under the response
--- schema. The label is only for tracing. Computation requests go to interested holders.
--- schedule, cancel, and time requests also deliver unrelated elimination work. A missing
+-- schema. The label names the player in the story. Computation requests go to interested holders.
+-- schedule and time requests also deliver unrelated elimination work. A missing
 -- handler or result is a client bug. The referee sees EOF and loses that holder. The loop also ends when
 -- the referee goes away.
 -- docs:begin run_client
@@ -664,7 +657,7 @@ end
 -- Referee server
 --
 -- Players answer one queued request at a time. Ordinary responses share a logical
--- block barrier. Schedule/cancel controls drain before the next time request.
+-- block barrier. Schedule controls drain before the next time request.
 -- The referee owns every window and validator. Only an accepted response
 -- resolves a first-valid future, even when all its holders skip or disconnect.
 -- Collections return all replies received before their wait's deadline.
@@ -688,7 +681,7 @@ local function new_server(address)
         active = {}, -- set of pending requests, block waits, and closure groups
         clock = new_clock(),
         ordinary = {}, -- requests for the next ordinary block
-        controls = {}, -- schedule/cancel requests awaiting their replies
+        controls = {}, -- schedule requests awaiting their replies
         scheduled_responses = {}, -- scheduled response ID -> future
         event_order = 0,
         coroutine_order = setmetatable({}, { __mode = "k" }),
@@ -837,6 +830,7 @@ local function deliver(self, entry, connection, line)
             value = decoded.value,
             label = decoded.label,
             connection = connection,
+            order = connection.order,
             received_at = self:get_time(),
         }
     end
@@ -900,7 +894,7 @@ end
 -- request. The first line announces the player or initial phase-closer role.
 function server_meta.__index.adopt(self, sock)
     sock:settimeout(0)
-    local connection = { sock = sock, outbox = {}, events = {} }
+    local connection = { sock = sock, outbox = {}, events = {}, order = #self.connections + 1 }
     self.connections[#self.connections + 1] = connection
     self.dispatcher:spawn(function()
         while true do
@@ -1047,9 +1041,16 @@ queue_control = function(self, conns, event, arguments, id)
     end
 end
 
+-- Replies to one request are taken in the join order of their senders, so the accepted reply,
+-- the order of a collection, and any story line naming a sender never depend on arrival order.
+local function reply_less(a, b)
+    return a.order < b.order
+end
+
 local future_meta = { __index = {} }
 
--- Closing a future cancels its callback on every holder or closes its unfinished closures.
+-- Closing a future forgets its scheduled response, so a later arrival is stale and ignored, or
+-- closes its unfinished closures.
 function future_meta.__index:close()
     if self.closed then
         return
@@ -1059,7 +1060,6 @@ function future_meta.__index:close()
     server.active[self] = nil
     if self.id then
         server.scheduled_responses[self.id] = nil
-        queue_control(server, self.conns, EVENTS.cancel_response, { self.id })
     end
     if self.tasks then
         for _, cortn in ipairs(self.tasks) do
@@ -1095,6 +1095,7 @@ function future_meta.__index:wait(deadline)
                 responses[#responses + 1] = reply
             end
         end
+        table.sort(responses, reply_less)
         return responses
     end
 end
@@ -1147,7 +1148,6 @@ function server_meta.__index.request_first_valid(
         kind = "request_first_valid",
         server = self,
         event = event,
-        conns = conns,
         response_schema = event.response_schema,
         accept_response = accept_response,
     }, future_meta)
@@ -1216,7 +1216,8 @@ local function entry_less(a, b)
     return a.match_order < b.match_order or (a.match_order == b.match_order and a.order < b.order)
 end
 
--- A response ID selects its original event schema and referee validator.
+-- A response ID selects its original event schema and referee validator. A response whose
+-- future has closed is stale and ignored.
 local function accept_scheduled_response(self, response)
     local future = self.scheduled_responses[response.id]
     if not future or future.resolved or future.closed or future.value ~= nil then
@@ -1227,7 +1228,7 @@ local function accept_scheduled_response(self, response)
     if not ok then
         return
     end
-    local accepted, value = pcall(future.accept_response, decoded)
+    local accepted, value = pcall(future.accept_response, decoded, response.label)
     if accepted and value then
         future.value, future.accepted_at = value, self:get_time()
     end
@@ -1274,7 +1275,12 @@ function server_meta.__index.step_time(self)
                     if type(reply.value) == "table" then
                         for _, response in ipairs(reply.value) do
                             if type(response) == "table" and math.type(response.id) == "integer" then
-                                responses[#responses + 1] = response
+                                responses[#responses + 1] = {
+                                    id = response.id,
+                                    value = response.value,
+                                    label = reply.label,
+                                    order = reply.order,
+                                }
                             end
                         end
                     end
@@ -1283,7 +1289,12 @@ function server_meta.__index.step_time(self)
             table.sort(responses, function(a, b)
                 local af, bf = self.scheduled_responses[a.id], self.scheduled_responses[b.id]
                 local ae, be = af and af.eligible or 0, bf and bf.eligible or 0
-                return ae < be or (ae == be and a.id < b.id)
+                if ae ~= be then
+                    return ae < be
+                elseif a.id ~= b.id then
+                    return a.id < b.id
+                end
+                return reply_less(a, b)
             end)
             for _, response in ipairs(responses) do
                 accept_scheduled_response(self, response)
@@ -1293,22 +1304,25 @@ function server_meta.__index.step_time(self)
             for _, entry in ipairs(self.batch) do
                 entry.answered = true
                 if entry.kind == "request_first_valid" and not entry.closed then
+                    table.sort(entry.replies, reply_less)
                     for _, reply in ipairs(entry.replies) do
                         if entry.value == nil then
-                            local ok, value = pcall(entry.accept_response, reply.value)
+                            local ok, value = pcall(entry.accept_response, reply.value, reply.label)
                             if ok and value then
                                 entry.value, entry.accepted_at = value, self:get_time()
                             end
                         end
                     end
                 elseif entry.kind == "request_all" and entry.accept_response and not entry.closed then
+                    table.sort(entry.replies, reply_less)
                     for _, reply in ipairs(entry.replies) do
-                        local ok, value = pcall(entry.accept_response, reply.value)
+                        local ok, value = pcall(entry.accept_response, reply.value, reply.label)
                         if ok and value then
                             entry.accepted_replies[#entry.accepted_replies + 1] = {
                                 value = value,
                                 label = reply.label,
                                 connection = reply.connection,
+                                order = reply.order,
                                 received_at = reply.received_at,
                             }
                         end
@@ -1368,7 +1382,7 @@ function server_meta.__index.step_time(self)
 end
 
 -- Stops game coroutines without resuming their waits. Closing them runs their <close> locals,
--- including future cancellation. Transport coroutines remain alive to deliver finish.
+-- including closing their futures. Transport coroutines remain alive to deliver finish.
 local function close_referee(self, main)
     self.dispatcher:close(main)
     -- Initial subscriptions have no future owner. Also release any unowned request.

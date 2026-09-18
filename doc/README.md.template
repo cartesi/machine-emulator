@@ -5806,7 +5806,7 @@ The verdict settles the epoch:
 ```{replace=prt_run/verdict}
 ```
 The winner's computation hash is the mcycle computation hash `cartesi-machine` computed directly, checked by the script above, and the winning final state hash is the state the calculator's first epoch saved as `epoch-0-state-hash.bin`.
-The player chose output 1 through its positional command-line argument, the calculator's answer for the epoch's last input.
+The player offered its last accepted output, output 1, the calculator's answer for the epoch's last input.
 The tournament ends on the same state the direct run produced, however many liars stood in the way.
 The same tournament, run again, narrates every file identically, which the recipe checks by diffing the two runs:
 ```{replace=prt_run_again/stdout}

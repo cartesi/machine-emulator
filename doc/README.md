@@ -9878,22 +9878,23 @@ timeout-win or elimination response.
 local function reveal_divergence(tournament, match)
     while match.height > 1 do
         local turn_claim = match.claims[match.turn_index]
-        local deadline = server:request_block() + 1
-        local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
-        local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
+        start_turn_clock(match)
+        local timeout <close> = emit_schedule_match_timeout_win(tournament, match)
+        local elimination <close> = emit_schedule_match_elimination(match)
         local reveal <close> = server:request_first_valid(
             subscription_hash(tournament.id, turn_claim),
             EVENTS.reveal_bisection,
             { turn_claim.computation_hash, match.position, match.height, match.other_left_node },
             function(response)
-                assert(server:get_time() < deadline, "late bisection")
+                assert(current_time() < match.responder_deadline, "late bisection")
                 return validate_bisection_response(match, response)
             end
         )
-        local response = reveal:wait(deadline)
+        local response = reveal:wait(match.responder_deadline)
         if not response then
-            return timeout:wait(deadline + 1) or elimination:wait()
+            return timeout:wait(match.eliminable_at) or elimination:wait()
         end
+        pause_turn_clock(tournament, match)
         advance_bisection(match, response)
         story.report_match_progress(match)
     end
@@ -9906,22 +9907,23 @@ agreed state before them.
 ``` lua
 local function seal_divergence(tournament, match)
     local turn_claim = match.claims[match.turn_index]
-    local deadline = server:request_block() + 1
-    local timeout <close> = emit_schedule_match_timeout_win(tournament, match, deadline)
-    local elimination <close> = emit_schedule_match_elimination(match, deadline + 1)
+    start_turn_clock(match)
+    local timeout <close> = emit_schedule_match_timeout_win(tournament, match)
+    local elimination <close> = emit_schedule_match_elimination(match)
     local seal <close> = server:request_first_valid(
         subscription_hash(tournament.id, turn_claim),
         EVENTS.seal_divergence,
         { turn_claim.computation_hash, match.position, match.other_left_node },
         function(response)
-            assert(server:get_time() < deadline, "late seal")
+            assert(current_time() < match.responder_deadline, "late seal")
             return validate_seal_response(tournament, match, response)
         end
     )
-    local divergence = seal:wait(deadline)
+    local divergence = seal:wait(match.responder_deadline)
     if not divergence then
-        return nil, timeout:wait(deadline + 1) or elimination:wait()
+        return nil, timeout:wait(match.eliminable_at) or elimination:wait()
     end
+    pause_turn_clock(tournament, match)
     return divergence
 end
 ```
@@ -10067,23 +10069,25 @@ local function settle_uarch_state_hash(
         subscription_hash(tournament.id, match.claims[1]),
         subscription_hash(tournament.id, match.claims[2]),
     }
-    local deadline = server:request_block() + 1
+    start_proof_clocks(match)
+    local proof_deadline = math.min(match.deadline_one, match.deadline_two)
+    local eliminable_at = match.eliminable_at
     local elimination <close> = server:request_first_valid(
         EVERYONE,
         EVENTS.schedule_match_elimination,
-        { deadline },
+        { eliminable_at },
         function()
-            assert(server:get_time() >= deadline, "early elimination")
+            assert(current_time() >= eliminable_at, "early elimination")
             return true
         end,
-        deadline
+        eliminable_at
     )
     local proof <close> = server:request_first_valid(
         subscriptions,
         EVENTS.prove_state_transition,
         { tournament.input_index, tournament.period_index, state_transition_offset },
         function(response)
-            assert(server:get_time() < deadline, "late state transition proof")
+            assert(current_time() < proof_deadline, "late state transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
                 current_state_hash,
@@ -10093,7 +10097,7 @@ local function settle_uarch_state_hash(
             )
         end
     )
-    local obtained_state_hash = proof:wait(deadline)
+    local obtained_state_hash = proof:wait(proof_deadline)
     if not obtained_state_hash then
         elimination:wait()
     end
@@ -10181,11 +10185,12 @@ Without a deadline, the wait returns once the audience finishes. A
 deadline bounds only that wait, so another wait can obtain more
 responses. `server:wait_until(block)` suspends until that logical
 block’s time barrier, or returns immediately if the block has already
-been reached. Tournament opening waits for responses with the closing
-block as its deadline, then calls `wait_until` before partitioning the
-claims. This also keeps the tournament from opening early when all
-responses arrive before the deadline. The server handles responses and
-logical time; the tournament determines when claim collection closes.
+been reached. Tournament opening waits for responses until the joining
+deadline, the opening block plus the allowance, then calls `wait_until`
+on it before partitioning the claims. This also keeps the tournament
+from opening early when all responses arrive before the deadline. The
+server handles responses and logical time; the tournament determines
+when claim collection closes.
 
 `server:run_all(functions)` starts a list of closures concurrently and
 returns a future. Its `wait()` returns `true` once every closure
@@ -10203,17 +10208,59 @@ so the transcript never depends on reply order. A connected player that
 never replies stalls the demonstration, where a blockchain bridge
 follows chain time regardless.
 
-The referee in `prt.lua` defines and enforces the windows. An opening
-requested in block b is valid during b, a holder of the waiting claim
-may respond to claim a timeout win in \[b + 1, b + 2), and anyone may
-eliminate both claims from b + 2. A valid opening ends the scope of its
-timeout and elimination futures, whose late responses are ignored. The
-next opening emits new requests. At a sealed uarch leaf both sides share
-one block to prove the transition. At its deadline, anyone may eliminate
-both. Every validator checks authoritative server time, arguments, and
-proofs. Scheduling a response does not make it valid, and expiry alone
-never eliminates a claim. Timeout winners supply the winning claim’s
-root children from the player’s local tree, which the referee verifies
+The referee in `prt.lua` defines and enforces the windows with Dave’s
+clock arithmetic. Each claim joins with the tournament’s allowance less
+the blocks since the tournament opened as its clock. The dapp contract
+fixes the allowance at four blocks, a uarch tournament inherits the
+remaining mcycle clock, and every claim joins one block after its
+tournament opens, so mcycle claims start with three blocks and uarch
+claims with two. A deadline is the first block at which a clock has
+timed out, so two is the least that lets a claim see an event in one
+block and answer in the next. The on-turn claim’s clock runs from the
+block b that gave it the turn. With c blocks on it and w on the waiting
+claim’s clock, its opening is valid before b + c, a holder of the
+waiting claim may respond to claim a timeout win in \[b + c, b + c + w),
+and anyone may eliminate both claims from b + c + w. The two clocks of a
+match are equal here, three blocks in an mcycle match and two in a uarch
+match.
+
+``` lua
+-- Starts the on-turn claim's clock. The match is eliminable once the waiting claim's clock runs out too.
+local function start_turn_clock(match)
+    local turn_claim = match.claims[match.turn_index]
+    local other_claim = match.claims[get_other_turn_index(match.turn_index)]
+    match.start_instant = current_time()
+    match.responder_deadline = match.start_instant + turn_claim.allowance
+    match.eliminable_at = match.responder_deadline + other_claim.allowance
+end
+
+-- Pauses the on-turn claim's clock after a valid response, charging the blocks beyond the response budget.
+local function pause_turn_clock(tournament, match)
+    local turn_claim = match.claims[match.turn_index]
+    local elapsed = current_time() - match.start_instant
+    turn_claim.allowance = turn_claim.allowance - math.max(elapsed - tournament.dapp_contract.response_budget, 0)
+end
+
+-- Starts both clocks at the seal for the proof. Equal allowances leave no timeout-win window.
+local function start_proof_clocks(match)
+    local start_instant = current_time()
+    match.deadline_one = start_instant + match.claims[1].allowance
+    match.deadline_two = start_instant + match.claims[2].allowance
+    match.eliminable_at = math.max(match.deadline_one, match.deadline_two)
+end
+```
+
+A valid opening ends the scope of its timeout and elimination futures,
+whose late responses are ignored. The next opening emits new requests. A
+valid response is charged the blocks it took beyond the response budget,
+which equals the allowance, so no clock ever runs down. At a sealed
+uarch leaf both clocks run from the seal, and either side may prove the
+transition before the earlier deadline. Equal allowances leave no
+timeout-win window, so anyone may eliminate both from that deadline.
+Every validator checks authoritative server time, arguments, and proofs.
+Scheduling a response does not make it valid, and expiry alone never
+eliminates a claim. Timeout winners supply the winning claim’s root
+children from the player’s local tree, which the referee verifies
 against that claim.
 
 An mcycle match has no local timeout while its uarch tournament runs.
@@ -10227,16 +10274,18 @@ optional output offers retain their separate proof requests. Each waits
 through its ordinary response block, so missing output proofs end the
 demonstration without eliminating the mcycle winner.
 
-Mcycle and uarch tournaments gather claims from fixed audiences in their
-opening block and close claim collection at the next logical block.
-Empty blocks jump to the next supplied deadline, without sleeps or
-artificial waiting. This logical tick loop demonstrates delayed
-responses without putting contract-call instructions into the referee or
-player. A blockchain bridge will translate complete contract
-instructions into these named player events and assemble transactions
-from their responses. Using wall-clock allowances here would make the
-narrative depend on computation speed. The fixed bracket, two levels,
-equal leaf allowances, and one-block windows simplify Dave’s accumulated
+Mcycle and uarch tournaments open at the block that creates them and
+gather claims from fixed audiences until their joining deadline, that
+block plus their allowance. A uarch tournament’s allowance is the larger
+clock its mcycle match left, as in Dave. Empty blocks jump to the next
+supplied deadline, without sleeps or artificial waiting. This logical
+tick loop demonstrates delayed responses without putting contract-call
+instructions into the referee or player. A blockchain bridge will
+translate complete contract instructions into these named player events
+and assemble transactions from their responses. Using wall-clock
+allowances here would make the narrative depend on computation speed.
+The fixed bracket, two levels, equal clocks within a level, and a
+response budget that covers every window simplify Dave’s accumulated
 allowances, discounts, and censorship accounting. The transcript depends
 on claims and prescribed response/skip behavior. The recipe runs the
 tournament twice while holding those behaviors fixed and requires
@@ -10345,7 +10394,7 @@ Match 6: claim 0xc75bbba2... wins.
 
 The quitter joined first and meets the tamperer in match 1. The quitter
 has already closed its connection. Its opening goes unanswered, and the
-tamperer returns a timeout-win response at the next block.
+tamperer returns a timeout-win response at the quitter’s deadline.
 
 ``` text
 Nobody opened claim 0x1a22b0c7.... Claim 0x4f4b4987... claims a timeout win.
@@ -10503,12 +10552,11 @@ Result proved against the final state:
 The winner’s computation hash is the mcycle computation hash
 `cartesi-machine` computed directly, checked by the script above, and
 the winning final state hash is the state the calculator’s first epoch
-saved as `epoch-0-state-hash.bin`. The player chose output 1 through its
-positional command-line argument, the calculator’s answer for the
-epoch’s last input. The tournament ends on the same state the direct run
-produced, however many liars stood in the way. The same tournament, run
-again, narrates every file identically, which the recipe checks by
-diffing the two runs:
+saved as `epoch-0-state-hash.bin`. The player offered its last accepted
+output, output 1, the calculator’s answer for the epoch’s last input.
+The tournament ends on the same state the direct run produced, however
+many liars stood in the way. The same tournament, run again, narrates
+every file identically, which the recipe checks by diffing the two runs:
 
 ``` text
 The second run narrated every file identically.
@@ -10528,9 +10576,9 @@ that has already won. The model instead gathers a tournament’s claims
 and runs the dispute in rounds, pairing the claims in the order they
 were posted, as a regular tournament bracket would, which is simpler to
 narrate. That is the only reason the demonstration needs to know when a
-tournament’s claims are all in, and it closes each claim collection as
-soon as the claims it awaits are in, rather than waiting the allowance
-out. For the real thing, see the [Dave
+tournament’s claims are all in, which a fixed audience tells it, and
+waiting the allowance out costs no wall-clock time because empty blocks
+jump ahead. For the real thing, see the [Dave
 repository](https://github.com/cartesi/dave), the [Permissionless
 Refereed Tournaments](https://arxiv.org/abs/2212.12439) paper, and the
 [Dave](https://doi.org/10.1145/3734698) paper.

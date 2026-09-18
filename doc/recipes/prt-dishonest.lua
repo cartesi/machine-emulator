@@ -203,8 +203,12 @@ local function new_tamperer(dapp_contract, input_index, tamper_bundle_offset, la
             local mcycle = machine:read_reg("mcycle")
             local bundle_begin = usaturating_add(mcycle, bundle_offset << (log2_period + height))
             if point and math.ult(mcycle, point) and not math.ult(bundle_begin, point) then
-                machine:run(point)
-                bundle_offset = (bundle_begin - point) >> (log2_period + height)
+                local break_reason
+                repeat
+                    break_reason = machine:run(point)
+                until is_target_mcycle(break_reason) or is_at_fixed_point(break_reason)
+                -- A fixed point before the corruption repeats the same hash at every offset.
+                bundle_offset = is_target_mcycle(break_reason) and (bundle_begin - point) >> (log2_period + height) or 0
             end
             apply(machine)
             return machine.machine:collect_mcycle_bundle(bundle_offset, log2_period, height)

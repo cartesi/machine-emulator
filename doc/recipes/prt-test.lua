@@ -315,6 +315,59 @@ do
     end
 end
 
+-- Tamperer bundle replay resumes intermediate yields before applying corruption. A fixed
+-- point reached before the tamper point instead supplies the unchanged padding state.
+for _, stop in ipairs({
+    cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE,
+    cartesi.BREAK_REASON_YIELDED_MANUALLY,
+    cartesi.BREAK_REASON_HALTED,
+    cartesi.BREAK_REASON_MCYCLE_OVERFLOW,
+}) do
+    for _, bundle_offset in ipairs({ 1, 2 }) do
+        local player = dishonest.new_tamperer(nil, nil, 0, 1)
+        local log2_period = player.geometry.log2_mcycles_per_period
+        local bundle_span = 1 << (log2_period + LOG2_BUNDLE_MCYCLE_COUNT)
+        local machine, owner <close> = player:clone_at_input_boundary(0) -- luacheck: ignore 211
+        player:make_null_computation_hash_builder():begin_input(machine, 0, 0)
+        local native = machine.machine
+        local reached = stop == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
+        local runs, writes, collections = 0, 0, 0
+        function native:read_reg(name)
+            return name == "mcycle" and self.mcycle or 0
+        end
+        function native:run(target)
+            assert(target == bundle_span, "replay changed the tamper point")
+            runs = runs + 1
+            assert(runs <= 3, "replay resumed a fixed point")
+            if runs < 3 then
+                self.mcycle = runs * (bundle_span // 4)
+                return runs == 1 and cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY or cartesi.BREAK_REASON_YIELDED_SOFTLY
+            end
+            self.mcycle = reached and target or 3 * (bundle_span // 4)
+            return stop
+        end
+        function native.get_initial_config()
+            return { ram = { length = 4096 } }
+        end
+        function native:write_memory(address, data)
+            assert(self.mcycle == bundle_span and address == cartesi.AR_RAM_START + 4096 - 8 and data == "CORRUPT!")
+            writes = writes + 1
+        end
+        function native:collect_mcycle_bundle(offset, period, height)
+            collections = collections + 1
+            assert(runs == 3, "bundle collection bypassed an intermediate yield")
+            assert(period == log2_period and height == LOG2_BUNDLE_MCYCLE_COUNT)
+            assert(writes == (reached and 1 or 0), "bundle collection lost or invented corruption")
+            if reached then
+                assert(self.mcycle + offset * bundle_span == bundle_offset * bundle_span, "replay shifted the bundle")
+            end
+            return { keccak("collected bundle") }
+        end
+        local hashes = machine:collect_mcycle_bundle(bundle_offset, log2_period, LOG2_BUNDLE_MCYCLE_COUNT)
+        assert(collections == 1 and hashes[1] == keccak("collected bundle"), "replay lost the collected hashes")
+    end
+end
+
 -- Uarch replay uses the null input driver, including rollback before collection when
 -- rejection precedes the selected mcycle. Exercise the real prefix and reset-ending leaves,
 -- and automatic yields during replay and at the end of collection.

@@ -51,17 +51,20 @@ local function clone_handlers(player)
     player.event_handler = handlers
 end
 
-local function begin_input(machine, input_index, input_mcycle_boundary)
-    if machine.state.input_index ~= input_index or machine.state.input_mcycle_boundary ~= input_mcycle_boundary then
-        machine.state = { input_index = input_index, input_mcycle_boundary = input_mcycle_boundary }
+local function begin_input(machine, epoch_input_offset, input_mcycle_boundary)
+    if
+        machine.state.epoch_input_offset ~= epoch_input_offset
+        or machine.state.input_mcycle_boundary ~= input_mcycle_boundary
+    then
+        machine.state = { epoch_input_offset = epoch_input_offset, input_mcycle_boundary = input_mcycle_boundary }
     end
 end
 
 local function observe_input(builder)
     return wrap_computation_hash(builder, {
-        begin_input = function(self, machine, input_index, input_mcycle_boundary)
-            begin_input(machine, input_index, input_mcycle_boundary)
-            return builder.begin_input(self, machine, input_index, input_mcycle_boundary)
+        begin_input = function(self, machine, epoch_input_offset, input_mcycle_boundary)
+            begin_input(machine, epoch_input_offset, input_mcycle_boundary)
+            return builder.begin_input(self, machine, epoch_input_offset, input_mcycle_boundary)
         end,
     })
 end
@@ -72,17 +75,17 @@ local function use_machine(player, overrides)
     player.epoch_builder = observe_input(player.epoch_builder)
     local cache = player.machine_cache
     local clone = cache.clone_at_input_boundary
-    cache.clone_at_input_boundary = function(self, input_index, run_to_input_boundary)
+    cache.clone_at_input_boundary = function(self, epoch_input_offset, run_to_input_boundary)
         local wrapped
-        local _, owner <close> = clone(self, input_index, function(machine, first, last)
+        local _, owner <close> = clone(self, epoch_input_offset, function(machine, first, last)
             wrapped = wrap_machine(machine, overrides)
             return run_to_input_boundary(wrapped, first, last)
         end)
         return wrapped, owner:move()
     end
     local consider, snapshot, commit, revert = cache.consider, cache.snapshot, cache.commit, cache.revert
-    cache.consider = function(self, input_index, machine)
-        return consider(self, input_index, machine.machine)
+    cache.consider = function(self, epoch_input_offset, machine)
+        return consider(self, epoch_input_offset, machine.machine)
     end
     cache.snapshot = function(self, machine)
         snapshot(self, machine.machine)
@@ -106,8 +109,8 @@ local function use_machine(player, overrides)
         return observe_input(make_mcycle(self))
     end
     local make_uarch = player.make_uarch_cycle_computation_hash_builder
-    function player:make_uarch_cycle_computation_hash_builder(epoch_period_index)
-        return observe_input(make_uarch(self, epoch_period_index))
+    function player:make_uarch_cycle_computation_hash_builder(epoch_period_offset)
+        return observe_input(make_uarch(self, epoch_period_offset))
     end
     local make_null = player.make_null_computation_hash_builder
     function player:make_null_computation_hash_builder()
@@ -118,12 +121,12 @@ end
 
 -- Substitute an input filename as it arrives. Replay reads the forged file, while the
 -- referee still verifies input inclusion against the original contract inputs.
-local function new_forger(dapp_contract, input_index, forged_path, label)
+local function new_forger(dapp_contract, epoch_input_offset, forged_path, label)
     local player = prt.new_player(dapp_contract, label or "forger")
     clone_handlers(player)
     local input_added = player.event_handler.input_added
     player.event_handler.input_added = function(self, index, path)
-        return input_added(self, index, index == input_index and forged_path or path)
+        return input_added(self, index, index == epoch_input_offset and forged_path or path)
     end
     return player
 end
@@ -131,12 +134,12 @@ end
 -- A checkpoint exactly at the corruption point still holds the agreed state.
 -- Corruption happens only when executing or collecting the transition out of it.
 -- Each execution has private strategy state, which the cache restores on rollback.
-local function new_tamperer(dapp_contract, input_index, tamper_bundle_offset, label)
+local function new_tamperer(dapp_contract, epoch_input_offset, tamper_bundle_offset, label)
     local geometry = dapp_contract.geometry
     local offset = tamper_bundle_offset << (prt.LOG2_BUNDLE_MCYCLE_COUNT + geometry.log2_mcycles_per_period)
     local function tamper_point(machine)
         local context = machine.state
-        if context.input_index ~= input_index or context.tampered then
+        if context.epoch_input_offset ~= epoch_input_offset or context.tampered then
             return nil
         end
         if math.ult(cartesi.MCYCLE_MAX - context.input_mcycle_boundary, offset) then
@@ -372,15 +375,19 @@ local function falsify_bundle(forest, height, leaf, fake_hash)
     return replacement
 end
 
-local function new_fabulist(dapp_contract, input_index, leaf_offset, label)
+local function new_fabulist(dapp_contract, epoch_input_offset, leaf_offset, label)
     local geometry = dapp_contract.geometry
     local player = prt.new_player(dapp_contract, label or "fabulist")
-    local target_epoch_period_index =
-        prt.combine_epoch_period_index(geometry.periods_per_input, input_index, leaf_offset)
+    local target_epoch_period_offset =
+        prt.combine_epoch_period_offset(geometry.periods_per_input, epoch_input_offset, leaf_offset)
     local fake_hash = keccak("fabulist")
-    local insert = lie_about_leaf(target_epoch_period_index, function(_, first_leaf)
-        local bundle_input_index, period_index = prt.split_epoch_period_index(geometry.periods_per_input, first_leaf)
-        return player:collect_mcycle_bundle(bundle_input_index, period_index >> prt.LOG2_BUNDLE_MCYCLE_COUNT)
+    local insert = lie_about_leaf(target_epoch_period_offset, function(_, first_leaf)
+        local bundle_epoch_input_offset, input_period_offset =
+            prt.split_epoch_period_offset(geometry.periods_per_input, first_leaf)
+        return player:collect_mcycle_bundle(
+            bundle_epoch_input_offset,
+            input_period_offset >> prt.LOG2_BUNDLE_MCYCLE_COUNT
+        )
     end)
     player.epoch_builder = new_mcycle_liar(player.epoch_builder, insert)
     local make_mcycle = player.make_mcycle_computation_hash_builder
@@ -388,14 +395,14 @@ local function new_fabulist(dapp_contract, input_index, leaf_offset, label)
         return new_mcycle_liar(make_mcycle(self), insert)
     end
     local make_uarch = player.make_uarch_cycle_computation_hash_builder
-    function player:make_uarch_cycle_computation_hash_builder(epoch_period_index)
-        local builder = make_uarch(self, epoch_period_index)
-        if epoch_period_index == target_epoch_period_index then
+    function player:make_uarch_cycle_computation_hash_builder(epoch_period_offset)
+        local builder = make_uarch(self, epoch_period_offset)
+        if epoch_period_offset == target_epoch_period_offset then
             return new_uarch_liar(
                 builder,
                 lie_about_leaf((1 << geometry.uarch_height) - 1, function(_, first_leaf)
                     return player:collect_uarch_cycle_bundle(
-                        input_index,
+                        epoch_input_offset,
                         leaf_offset,
                         first_leaf >> prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT
                     )
@@ -405,19 +412,25 @@ local function new_fabulist(dapp_contract, input_index, leaf_offset, label)
         return builder
     end
     local collect_mcycle_bundle = player.collect_mcycle_bundle
-    player.collect_mcycle_bundle = function(self, bundle_input_index, input_bundle_offset)
-        local forest = collect_mcycle_bundle(self, bundle_input_index, input_bundle_offset)
-        local first_leaf = prt.combine_epoch_period_index(
+    player.collect_mcycle_bundle = function(self, bundle_epoch_input_offset, input_bundle_offset)
+        local forest = collect_mcycle_bundle(self, bundle_epoch_input_offset, input_bundle_offset)
+        local first_leaf = prt.combine_epoch_period_offset(
             geometry.periods_per_input,
-            bundle_input_index,
+            bundle_epoch_input_offset,
             input_bundle_offset << prt.LOG2_BUNDLE_MCYCLE_COUNT
         )
-        return falsify_bundle(forest, prt.LOG2_BUNDLE_MCYCLE_COUNT, target_epoch_period_index - first_leaf, fake_hash)
+        return falsify_bundle(forest, prt.LOG2_BUNDLE_MCYCLE_COUNT, target_epoch_period_offset - first_leaf, fake_hash)
     end
     local collect_uarch_cycle_bundle = player.collect_uarch_cycle_bundle
-    player.collect_uarch_cycle_bundle = function(self, bundle_input_index, period_index, period_bundle_offset)
-        local forest = collect_uarch_cycle_bundle(self, bundle_input_index, period_index, period_bundle_offset)
-        if bundle_input_index == input_index and period_index == leaf_offset then
+    player.collect_uarch_cycle_bundle = function(
+        self,
+        bundle_epoch_input_offset,
+        input_period_offset,
+        period_bundle_offset
+    )
+        local forest =
+            collect_uarch_cycle_bundle(self, bundle_epoch_input_offset, input_period_offset, period_bundle_offset)
+        if bundle_epoch_input_offset == epoch_input_offset and input_period_offset == leaf_offset then
             local leaf = (1 << geometry.uarch_height) - 1 - (period_bundle_offset << prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT)
             return falsify_bundle(forest, prt.LOG2_BUNDLE_UARCH_CYCLE_COUNT, leaf, fake_hash)
         end
@@ -488,17 +501,19 @@ local make_player
 if role == "quitter" then
     make_player = new_quitter
 elseif role == "forger" then
-    local index = assert(tonumber(take_argument("missing forged input index")), "invalid forged input index")
+    local index =
+        assert(tonumber(take_argument("missing forged epoch input offset")), "invalid forged epoch input offset")
     local path = take_argument("missing forged input file")
     make_player = function(dapp_contract, label)
         return new_forger(dapp_contract, index, path, label)
     end
 elseif role == "tamperer" or role == "fabulist" then
-    local input_index = assert(tonumber(take_argument("missing input index")), "invalid input index")
+    local epoch_input_offset =
+        assert(tonumber(take_argument("missing epoch input offset")), "invalid epoch input offset")
     local offset = assert(tonumber(take_argument("missing offset")), "invalid offset")
     local make = role == "tamperer" and new_tamperer or new_fabulist
     make_player = function(dapp_contract, label)
-        return make(dapp_contract, input_index, offset, label)
+        return make(dapp_contract, epoch_input_offset, offset, label)
     end
 else
     error("unknown role: " .. role)

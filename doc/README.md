@@ -8934,7 +8934,7 @@ before. Just as the verification game limits each main processor
 instruction to 2<sup>20</sup> uarch cycles, the rolling verification
 game limits each input to 2<sup>48</sup> mcycles and each epoch to
 2<sup>24</sup> inputs. Every transition in the epoch is then identified
-by three coordinates: the input index, the mcycle offset within that
+by the input offset within the epoch, the mcycle offset within that
 input, and the uarch cycle within that instruction. Each bisection
 searches one of them.
 
@@ -8989,19 +8989,19 @@ boundary is a machine that has yielded manual with accept and is waiting
 for the next input. The emulator does not run a machine that has yielded
 manual, so input boundaries are fixed points.
 
-The bisection ranges over all 2<sup>16</sup> input indices, not just the
-inputs the epoch received. A real epoch can take up to 2<sup>24</sup>
-inputs. This demonstration uses a smaller limit to keep the bisection
-narration short. A boundary past the last input has no input to include,
-so the transition out of it is the first uarch step alone. The uarch
-runs only far enough to find the machine yielded manual and halts,
-leaving the main processor untouched, and the reset that ends the
-instruction returns the uarch to pristine. Every `mcycle` boundary past
-the last input therefore repeats the state in which the last input is
-done processing, the same way every `mcycle` past the halt repeated the
-final state in the verification game. This is also how the state
-transition Dave deploys behaves when the input index falls outside the
-epoch’s input box.
+The bisection ranges over all 2<sup>16</sup> epoch input offsets, not
+just the inputs the epoch received. A real epoch can take up to
+2<sup>24</sup> inputs. This demonstration uses a smaller limit to keep
+the bisection narration short. A boundary past the last input has no
+input to include, so the transition out of it is the first uarch step
+alone. The uarch runs only far enough to find the machine yielded manual
+and halts, leaving the main processor untouched, and the reset that ends
+the instruction returns the uarch to pristine. Every `mcycle` boundary
+past the last input therefore repeats the state in which the last input
+is done processing, the same way every `mcycle` past the halt repeated
+the final state in the verification game. This is also how the state
+transition Dave deploys behaves when the epoch input offset falls
+outside the epoch’s input box.
 
 Rejected inputs also end at input boundaries. Recall that
 `machine:send_cmio_response()` records a revert state hash, and rejects
@@ -9565,56 +9565,57 @@ subtree, so opening one repeated bundle also makes its other occurrences
 readable.
 
 The builds themselves stream out of the emulator. They follow the same
-collection contract as `cartesi-machine`’s computation-hash builders:
+collection contract as `cartesi-machine`‘s computation-hash builders:
 each input owns a fixed-capacity segment, collection state threads
 across yields, and the final repeatable group returned at a fixed point
 fills the segment’s remaining positions. The only different sink is
 PRT’s frontier forest, which retains the nodes needed to answer later
 tournament queries. The referee emits
-`input_added(input_index, filename)` for each input in order, followed
-by `epoch_sealed(input_count)`. The player initializes its computation
-at construction using a temporary clone; the cache already owns boundary
-zero. Each input event acquires a scoped working clone of the latest
-boundary. Each input event reads the named file and advances that input
-immediately, pushing its bundle roots into the claim forest at their
-logical heights, padding its span with the fixed point where its guest
-stopped, and offering the completed input boundary to the cache after
-output checks and any rollback. At `epoch_sealed`, the player checks the
-input count, pads the unoccupied epoch suffix, freezes its checkpoints,
-and builds inclusion proofs for all accepted outputs using
-`frontier_next_proofs`. The player retains every accepted output and its
-proof for later client requests. The `prove_outputs_merkle_root` handler
-obtains final-machine proofs from a scoped clone of the cached final
-boundary, without replay. `commit_mcycle_claim` uses the completed
+`input_added(epoch_input_offset, filename)` for each input in order,
+followed by `epoch_sealed(input_count)`. The player initializes its
+computation at construction using a temporary clone. The cache already
+owns boundary zero. Each input event acquires a scoped working clone of
+the latest boundary. Each input event reads the named file and advances
+that input immediately, pushing its bundle roots into the claim forest
+at their logical heights, padding its span with the fixed point where
+its guest stopped, and offering the completed input boundary to the
+cache after output checks and any rollback. At `epoch_sealed`, the
+player checks the input count, pads the unoccupied epoch suffix, freezes
+its checkpoints, and builds inclusion proofs for all accepted outputs
+using `frontier_next_proofs`. The player retains every accepted output
+and its proof for later client requests. The `prove_outputs_merkle_root`
+handler obtains final-machine proofs from a scoped clone of the cached
+final boundary, without replay. `commit_mcycle_claim` uses the completed
 forest. Processing therefore begins while the epoch is still open. The
 default policy keeps a bounded, progressively thinned set of historical
-checkpoints, indexed by input; input zero always retains the initial
-machine template. A separate latest boundary is always retained,
-independently of thinning, so the next input needs no replay. This uses
-at most one additional retained machine.
-`consider(input_index, machine)` handles every completed boundary. It
-compares the state with the latest cached state: an unchanged state
-reuses that machine and advances only the logical input index. Changed
-states replace the latest snapshot. Every offer then runs the historical
-checkpoint policy, including when the state is unchanged. Latest and
-historical boundaries own independent snapshots, so either can be
-replaced or evicted without shared-ownership bookkeeping. Rejected
-inputs are offered after rollback; terminal inputs use the same cache
-operation. Bundle collection (`collect_mcycle_bundle`) asks the cache
-for the target input’s boundary, then advances that input to recover one
-bundle’s samples. The cache’s
-`clone_at_input_boundary(input_index, run_to_input_boundary)` selects
-and clones the nearest eligible historical or latest boundary, then
-calls `run_to_input_boundary` with the machine and the intervening input
-range. The player’s `run_to_input_boundary` method replays only the
-intervening input range with the null builder. It returns an independent
-machine and a separate owner kept in a `<close>` local; closing the
-owner releases the working machine and any outstanding backup
-immediately, including on errors. Uarch collection and transition proofs
-request their boundaries through the same operation. Forward execution
-starts by cloning boundary zero and collects results along the way;
-checkpoint selection stays private to the cache. The input driver calls
-the cache’s `snapshot(machine)`, `commit(machine)`, and
+checkpoints, indexed by epoch input offset. Offset zero always retains
+the initial machine template. A separate latest boundary is always
+retained, independently of thinning, so the next input needs no replay.
+This uses at most one additional retained machine.
+`consider(epoch_input_offset, machine)` handles every completed
+boundary. It compares the state with the latest cached state. An
+unchanged state reuses that machine and advances only the epoch input
+offset. Changed states replace the latest snapshot. Every offer then
+runs the historical checkpoint policy, including when the state is
+unchanged. Latest and historical boundaries own independent snapshots,
+so either can be replaced or evicted without shared-ownership
+bookkeeping. Rejected inputs are offered after rollback. Terminal inputs
+use the same cache operation. Bundle collection
+(`collect_mcycle_bundle`) asks the cache for the target input’s
+boundary, then advances that input to recover one bundle’s samples. The
+cache’s
+`clone_at_input_boundary(epoch_input_offset, run_to_input_boundary)`
+selects and clones the nearest eligible historical or latest boundary,
+then calls `run_to_input_boundary` with the machine and the intervening
+input range. The player’s `run_to_input_boundary` method replays only
+the intervening input range with the null builder. It returns an
+independent machine and a separate owner kept in a `<close>` local;
+closing the owner releases the working machine and any outstanding
+backup immediately, including on errors. Uarch collection and transition
+proofs request their boundaries through the same operation. Forward
+execution starts by cloning boundary zero and collects results along the
+way; checkpoint selection stays private to the cache. The input driver
+calls the cache’s `snapshot(machine)`, `commit(machine)`, and
 `revert(machine)` operations, following the CLI: acceptance and sticky
 stops commit, rejection reverts, and a run that stops at a target inside
 the input keeps its snapshot until the owner releases the clone. Backups
@@ -9635,16 +9636,16 @@ without changing the player driver or builders. A disk-backed
 implementation is left for future work. After rejection, `consider`
 recognizes that the latest boundary already contains the restored state
 and reuses that machine. The historical checkpoint policy still runs at
-the new input index. Historical replay runs intervening rejections in
-turn through the ordinary input driver, without rejection history or
-backward recovery lookups. The uarch build (`build_uarch_claim`) expands
-one period, instruction by instruction, through
-`machine:collect_uarch_cycle_root_hashes()`, whose stream already
-carries the halt repetitions compressed and the reset hashes marked.
-Both computation-hash builders implement `begin_epoch`, `begin_input`,
-`run`, `end_input`, and `end_epoch`. Bundle collection replays to the
-selected range with a null builder, then asks the machine for the
-bundle’s state hashes and stores them in a local forest.
+the new epoch input offset. Historical replay runs intervening
+rejections in turn through the ordinary input driver, without rejection
+history or backward recovery lookups. The uarch build
+(`build_uarch_claim`) expands one period, instruction by instruction,
+through `machine:collect_uarch_cycle_root_hashes()`, whose stream
+already carries the halt repetitions compressed and the reset hashes
+marked. Both computation-hash builders implement `begin_epoch`,
+`begin_input`, `run`, `end_input`, and `end_epoch`. Bundle collection
+replays to the selected range with a null builder, then asks the machine
+for the bundle’s state hashes and stores them in a local forest.
 `machine:collect_mcycle_bundle()` advances from the input boundary to
 the selected bundle of periods and samples it, and
 `machine:collect_uarch_cycle_bundle()` expands the selected bundle of
@@ -9687,34 +9688,41 @@ event handler offers the last output. Clients can call
 sealed epoch; this choice is independent of the referee. The execution
 drivers receive the builder followed by the working machine as separate
 arguments. Builder methods that use the machine receive it explicitly,
-as in `builder:run(machine, mcycle_end)`; builders retain no machine
+as in `builder:run(machine, mcycle_end)`. Builders retain no machine
 reference and forward no machine methods. Dispute replay takes begin and
-end input indices. The builder keeps its computation forest between
-input events. The expected boundary hash and cumulative outputs frontier
-also persist; the cache retains the latest machine. Input and period
-indices are zero-based throughout the player and referee; only Lua
-input-array lookups add one. The epoch period index combines the input
-index and its period index, while the separate transition offset splits
-into an mcycle offset and a uarch cycle. Keeping those coordinates
-separate avoids overflowing a 64-bit integer. The player owns the
+end epoch input offsets. The builder keeps its computation forest
+between input events. The expected boundary hash and cumulative outputs
+frontier also persist. The cache retains the latest machine. The player
+and referee use zero-based offsets scoped to an epoch, input, or period.
+`epoch_input_offset` identifies an input within the epoch, while
+`input_period_offset` identifies a period within that input. These are
+distinct from the contracts’ global input index. Only Lua input-array
+lookups add one. `epoch_period_offset` combines the epoch input offset
+and the input period offset. The separate transition offset splits into
+`period_mcycle_offset` and a uarch cycle. Keeping those coordinates
+separate avoids overflowing a 64-bit integer. The builders use
+`input_mcycle_boundary`, `collection_mcycle_begin`, and
+`collection_mcycle_end` for absolute machine counter values. Relative
+offsets describe positions in the committed computation, including
+padding that does not advance the machine. The player owns the
 cumulative outputs frontier; the input driver appends accepted outputs
 and checks the reported outputs Merkle root before committing. The
 honest player uses native machines and ordinary computation-hash
-builders directly; the driver passes the input index and mcycle boundary
-to the builders, without attaching execution context or ownership to the
-machine. The dishonest constructors in `prt-dishonest.lua` wrap the
-initialized builder and the cache acquisition path used for forward
-execution and replay. They maintain their own private bookkeeping while
-sharing the execution lifecycle and claim trees. Before overriding event
-handlers, they clone the shared table. The forger substitutes its own
-filename for one input event, while the referee continues to verify
-against the original contract inputs. The tamperer configures its cache
-to wrap execution clones and preserve private strategy state on
-rollback. Retained checkpoints remain native machines. The fabulist
-replaces a sample as it enters a computation hash, including when that
-sample lies in repeated padding. Dishonest strategies can wrap the
-player’s bundle-collection methods, and the ordinary claim tree
-authenticates every opened bundle.
+builders directly. The driver passes the epoch input offset and machine
+mcycle boundary to the builders, without attaching execution context or
+ownership to the machine. The dishonest constructors in
+`prt-dishonest.lua` wrap the initialized builder and the cache
+acquisition path used for forward execution and replay. They maintain
+their own private bookkeeping while sharing the execution lifecycle and
+claim trees. Before overriding event handlers, they clone the shared
+table. The forger substitutes its own filename for one input event,
+while the referee continues to verify against the original contract
+inputs. The tamperer configures its cache to wrap execution clones and
+preserve private strategy state on rollback. Retained checkpoints remain
+native machines. The fabulist replaces a sample as it enters a
+computation hash, including when that sample lies in repeated padding.
+Dishonest strategies can wrap the player’s bundle-collection methods,
+and the ordinary claim tree authenticates every opened bundle.
 
 ### The tournament
 
@@ -9997,12 +10005,17 @@ needs no further player response.
 local function settle_mcycle_state_hash(
     mcycle_tournament,
     mcycle_match,
-    epoch_period_index,
+    epoch_period_offset,
     agreed_state_hash,
     next_state_hashes
 )
-    local uarch_tournament =
-        open_uarch_tournament(mcycle_tournament, mcycle_match, epoch_period_index, agreed_state_hash, next_state_hashes)
+    local uarch_tournament = open_uarch_tournament(
+        mcycle_tournament,
+        mcycle_match,
+        epoch_period_offset,
+        agreed_state_hash,
+        next_state_hashes
+    )
     local uarch_winner = run_tournament(uarch_tournament)
     return propagate_uarch_result(mcycle_match, uarch_winner, next_state_hashes)
 end
@@ -10022,16 +10035,16 @@ other transition is an ordinary uarch step:
 local function validate_state_transition_response(
     dapp_contract,
     current_state_hash,
-    epoch_period_index,
+    epoch_period_offset,
     state_transition_offset,
     logs
 )
     local periods_per_input = dapp_contract.geometry.periods_per_input
-    local input_index, period_index = split_epoch_period_index(periods_per_input, epoch_period_index)
+    local epoch_input_offset, input_period_offset = split_epoch_period_offset(periods_per_input, epoch_period_offset)
     local _, uarch_cycle = split_state_transition_offset(state_transition_offset)
     local obtained_state_hash = current_state_hash
-    local data = dapp_contract.inputs[input_index + 1]
-    if state_transition_offset == 0 and period_index == 0 and data then
+    local data = dapp_contract.inputs[epoch_input_offset + 1]
+    if state_transition_offset == 0 and input_period_offset == 0 and data then
         local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
         local revert_root_hash = current_state_hash
         obtained_state_hash = cartesi.machine:verify_send_cmio_response(
@@ -10085,13 +10098,13 @@ local function settle_uarch_state_hash(
     local proof <close> = server:request_first_valid(
         subscriptions,
         EVENTS.prove_state_transition,
-        { tournament.input_index, tournament.period_index, state_transition_offset },
+        { tournament.epoch_input_offset, tournament.input_period_offset, state_transition_offset },
         function(response)
             assert(current_time() < proof_deadline, "late state transition proof")
             return validate_state_transition_response(
                 tournament.dapp_contract,
                 current_state_hash,
-                tournament.epoch_period_index,
+                tournament.epoch_period_offset,
                 state_transition_offset,
                 response
             )
@@ -10110,12 +10123,12 @@ The logs come from a holder of either claim, produced by positioning a
 fresh fork at the transition and logging it:
 
 ``` lua
-function event_handler.prove_state_transition(self, input_index, period_index, state_transition_offset)
-    local mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
-    local machine, _ <close> = self:clone_at_input_boundary(input_index)
+function event_handler.prove_state_transition(self, epoch_input_offset, input_period_offset, state_transition_offset)
+    local period_mcycle_offset, uarch_cycle = split_state_transition_offset(state_transition_offset)
+    local machine, _ <close> = self:clone_at_input_boundary(epoch_input_offset)
     local revert_root_hash = machine:get_root_hash()
-    local path = self.input_paths[input_index + 1]
-    if state_transition_offset == 0 and period_index == 0 and path then
+    local path = self.input_paths[epoch_input_offset + 1]
+    if state_transition_offset == 0 and input_period_offset == 0 and path then
         local data = util.read_file(path)
         -- Logging never fails. A machine that is not waiting for the input logs the no-op delivery.
         local send_cmio_log =
@@ -10126,8 +10139,8 @@ function event_handler.prove_state_transition(self, input_index, period_index, s
     self:run_advance_state_input(
         builder,
         machine,
-        input_index,
-        combine_input_mcycle_offset(self.geometry.mcycles_per_period, period_index, mcycle_offset),
+        epoch_input_offset,
+        combine_input_mcycle_offset(self.geometry.mcycles_per_period, input_period_offset, period_mcycle_offset),
         revert_root_hash
     )
     machine:run_uarch(uarch_cycle)

@@ -109,10 +109,10 @@ function story.report_state_transition(
     local form = "an ordinary uarch step"
     if
         state_transition_offset == 0
-        and tournament.period_index == 0
-        and tournament.dapp_contract.inputs[tournament.input_index + 1]
+        and tournament.input_period_offset == 0
+        and tournament.dapp_contract.inputs[tournament.epoch_input_offset + 1]
     then
-        form = "the inclusion of input " .. tournament.input_index .. " and the first uarch step"
+        form = "the inclusion of input " .. tournament.epoch_input_offset .. " and the first uarch step"
     elseif state_transition_offset & cartesi.UARCH_CYCLE_MAX == cartesi.UARCH_CYCLE_MAX then
         form = "a uarch step and the uarch reset closing an instruction"
     end
@@ -152,8 +152,8 @@ function story.report_uarch_tournament(uarch_tournament, mcycle_match, agreed_st
     narrate(
         get_tournament_stream(uarch_tournament),
         "A uarch tournament opens over input %d, period %d, starting from %s.",
-        uarch_tournament.input_index,
-        uarch_tournament.period_index,
+        uarch_tournament.epoch_input_offset,
+        uarch_tournament.input_period_offset,
         format_short_hash(agreed_state_hash)
     )
 end

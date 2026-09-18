@@ -191,18 +191,21 @@ do
     local geometry = prt.new_geometry(10)
     local periods = geometry.periods_per_input
     for _, case in ipairs({ { 0, 0 }, { 0, periods - 1 }, { 1, 0 }, { (1 << 24) - 1, periods - 1 } }) do
-        local epoch_period = prt.combine_epoch_period_index(periods, case[1], case[2])
-        local input_index, period_index = prt.split_epoch_period_index(periods, epoch_period)
-        assert(input_index == case[1] and period_index == case[2], "epoch period conversion changed the coordinates")
+        local epoch_period = prt.combine_epoch_period_offset(periods, case[1], case[2])
+        local epoch_input_offset, input_period_offset = prt.split_epoch_period_offset(periods, epoch_period)
+        assert(
+            epoch_input_offset == case[1] and input_period_offset == case[2],
+            "epoch period conversion changed the coordinates"
+        )
     end
-    local mcycle_offset, uarch_cycle = prt.split_state_transition_offset((1 << geometry.uarch_height) - 1)
-    assert(mcycle_offset == geometry.mcycles_per_period - 1 and uarch_cycle == cartesi.UARCH_CYCLE_MAX)
+    local period_mcycle_offset, uarch_cycle = prt.split_state_transition_offset((1 << geometry.uarch_height) - 1)
+    assert(period_mcycle_offset == geometry.mcycles_per_period - 1 and uarch_cycle == cartesi.UARCH_CYCLE_MAX)
     assert(
-        prt.combine_input_mcycle_offset(geometry.mcycles_per_period, periods - 1, mcycle_offset)
+        prt.combine_input_mcycle_offset(geometry.mcycles_per_period, periods - 1, period_mcycle_offset)
             == (1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE) - 1
     )
-    mcycle_offset, uarch_cycle = prt.split_state_transition_offset(cartesi.UARCH_CYCLE_MAX + 1)
-    assert(mcycle_offset == 1 and uarch_cycle == 0, "transition split missed the next mcycle")
+    period_mcycle_offset, uarch_cycle = prt.split_state_transition_offset(cartesi.UARCH_CYCLE_MAX + 1)
+    assert(period_mcycle_offset == 1 and uarch_cycle == 0, "transition split missed the next mcycle")
 end
 
 -- Collector results include a final padding root at a fixed point. It is not an extra
@@ -277,8 +280,8 @@ local function new_bundle_player(machine)
             return cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE
         end
     local cache = {}
-    function cache.clone_at_input_boundary(_, input_index)
-        assert(input_index == 0)
+    function cache.clone_at_input_boundary(_, epoch_input_offset)
+        assert(epoch_input_offset == 0)
         return machine
     end
     function cache:snapshot()
@@ -630,7 +633,7 @@ do
         local previous = cache.latest.machine
         local previous_hash = previous:get_root_hash()
         player.event_handler.input_added(player, index - 1, fixture_input(data))
-        assert(cache.latest.input_index == index, "latest boundary has the wrong logical index")
+        assert(cache.latest.epoch_input_offset == index, "latest boundary has the wrong epoch input offset")
         assert(not player.epoch_builder.machine, "builder retained a working machine")
         assert(#cache.checkpoints == 1 and initial.counts.live == 2, "latest boundary bypassed the cache bound")
         if cache.latest.machine:get_root_hash() == previous_hash then
@@ -638,7 +641,7 @@ do
         elseif previous ~= initial then
             assert(previous.shutdown, "replacing the latest boundary leaked its predecessor")
         end
-        assert(cache.checkpoints[1].input_index == 0, "latest update changed the initial checkpoint's index")
+        assert(cache.checkpoints[1].epoch_input_offset == 0, "latest update changed the initial checkpoint's index")
     end
     assert(offers == 6 and acquisitions == 6, "an input bypassed ordinary boundary acquisition or consideration")
     assert(cache.latest.machine:get_root_hash() == terminal, "terminal boundary was lost")
@@ -766,16 +769,19 @@ do
     end
     for index = 1, 8 do
         cache:consider(index, restored)
-        assert(cache.latest.machine == latest and cache.latest.input_index == index, "unchanged latest was replaced")
+        assert(
+            cache.latest.machine == latest and cache.latest.epoch_input_offset == index,
+            "unchanged latest was replaced"
+        )
         for _, checkpoint in ipairs(cache.checkpoints) do
             assert(checkpoint.machine ~= latest, "historical checkpoint shares the latest machine")
         end
     end
     assert(cache.input_gap == 4, "unchanged state skipped thinning")
     assert(
-        cache.checkpoints[1].input_index == 0
-            and cache.checkpoints[2].input_index == 4
-            and cache.checkpoints[3].input_index == 8,
+        cache.checkpoints[1].epoch_input_offset == 0
+            and cache.checkpoints[2].epoch_input_offset == 4
+            and cache.checkpoints[3].epoch_input_offset == 8,
         "unchanged state used a different checkpoint policy"
     )
     local historical = cache.checkpoints[2].machine
@@ -786,18 +792,18 @@ end
 
 do
     local cache <close> = prt.new_machine_cache(new_fake_machine("0"), 5, 1)
-    for input_index = 1, 5 do
-        cache:consider(input_index, new_fake_machine(tostring(input_index)))
+    for epoch_input_offset = 1, 5 do
+        cache:consider(epoch_input_offset, new_fake_machine(tostring(epoch_input_offset)))
     end
     local retained = {}
     for _, checkpoint in ipairs(cache.checkpoints) do
-        retained[checkpoint.input_index] = true
+        retained[checkpoint.epoch_input_offset] = true
     end
     assert(retained[0] and retained[1] and retained[2] and retained[3] and retained[4], "cache filled incorrectly")
     cache:consider(6, new_fake_machine("6"))
     retained = {}
     for _, checkpoint in ipairs(cache.checkpoints) do
-        retained[checkpoint.input_index] = true
+        retained[checkpoint.epoch_input_offset] = true
     end
     assert(
         retained[0] and retained[2] and retained[3] and retained[4] and retained[6],
@@ -807,7 +813,7 @@ do
     cache:consider(8, new_fake_machine("8"))
     retained = {}
     for _, checkpoint in ipairs(cache.checkpoints) do
-        retained[checkpoint.input_index] = true
+        retained[checkpoint.epoch_input_offset] = true
     end
     assert(
         retained[0] and retained[2] and retained[4] and retained[6] and retained[8],
@@ -837,12 +843,12 @@ end
 
 do
     local cache <close> = prt.new_machine_cache(new_fake_machine("0"), 5, 3)
-    for _, input_index in ipairs({ 3, 6, 9, 12, 15, 18, 21, 24 }) do
-        cache:consider(input_index, new_fake_machine(tostring(input_index)))
+    for _, epoch_input_offset in ipairs({ 3, 6, 9, 12, 15, 18, 21, 24 }) do
+        cache:consider(epoch_input_offset, new_fake_machine(tostring(epoch_input_offset)))
     end
     local retained = {}
     for _, checkpoint in ipairs(cache.checkpoints) do
-        retained[checkpoint.input_index] = true
+        retained[checkpoint.epoch_input_offset] = true
     end
     assert(retained[0] and retained[6] and retained[12] and retained[18] and retained[24], "cache ignored distances")
 end
@@ -1073,9 +1079,9 @@ for _, corrupt in ipairs({ false, true }) do
     player.input_paths[2] = fixture_input("second")
     function player.make_null_computation_hash_builder()
         local builder = prt.make_null_computation_hash_builder()
-        local input_index
+        local epoch_input_offset
         builder.begin_input = function(_, machine, index)
-            input_index = index
+            epoch_input_offset = index
             machine.receive_cmio_request = function()
                 local reason = machine.root_hash == "rejected" and cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
                     or cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
@@ -1083,7 +1089,7 @@ for _, corrupt in ipairs({ false, true }) do
             end
         end
         builder.run = function(_, machine)
-            machine.root_hash = input_index == 0 and "accepted" or "rejected"
+            machine.root_hash = epoch_input_offset == 0 and "accepted" or "rejected"
             return cartesi.BREAK_REASON_YIELDED_MANUALLY
         end
         return builder
@@ -1103,11 +1109,14 @@ do
     local cache <close> = prt.new_machine_cache(new_fake_machine("initial"))
     dishonest.new_tamperer(prt.new_geometry(10), cache, 0, 100)
     local machine, owner <close> = cache:clone_at_input_boundary(0, noop) -- luacheck: ignore 211
-    machine.state.input_index = 0
+    machine.state.epoch_input_offset = 0
     cache:snapshot(machine)
-    machine.state.input_index = 1
+    machine.state.epoch_input_offset = 1
     cache:revert(machine)
-    assert(machine.state.input_index == 0 and not machine.snapshot_state, "private rollback state was not consumed")
+    assert(
+        machine.state.epoch_input_offset == 0 and not machine.snapshot_state,
+        "private rollback state was not consumed"
+    )
     cache:snapshot(machine)
     cache:commit(machine)
     assert(not machine.snapshot_state, "private commit state was not consumed")
@@ -2014,9 +2023,9 @@ if arg[1] then
     )
 
     local honest_tree = make_mcycle_tree(honest)
-    local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").input_index
+    local checkpoint = assert(cache.checkpoints[1], "claim build retained no machine checkpoint").epoch_input_offset
     honest_tree:get_proof(dapp_contract.geometry.periods_per_input)
-    assert(cache.checkpoints[1].input_index == checkpoint, "mcycle bundle collection changed the machine cache")
+    assert(cache.checkpoints[1].epoch_input_offset == checkpoint, "mcycle bundle collection changed the machine cache")
     local cached_inputs, cached_cache <close> = new_test_cache(dapp_contract)
     local cached = new_test_player(dapp_contract.geometry, cached_cache)
     seed_input_paths(cached, cached_inputs)
@@ -2083,24 +2092,25 @@ if arg[1] then
     local dense = new_test_player(dapp_contract.geometry, dense_cache)
     seed_input_paths(dense, dense_inputs)
     local dense_tree = make_mcycle_tree(dense)
-    local rejected_input_index = 1
+    local rejected_epoch_input_offset = 1
     local retained_boundaries = {}
     for _, saved in ipairs(dense_cache.checkpoints) do
-        retained_boundaries[saved.input_index] = true
+        retained_boundaries[saved.epoch_input_offset] = true
     end
     assert(
-        retained_boundaries[0] and retained_boundaries[rejected_input_index] and retained_boundaries[3],
+        retained_boundaries[0] and retained_boundaries[rejected_epoch_input_offset] and retained_boundaries[3],
         "dense cache lost an accepted input's boundary"
     )
-    assert(retained_boundaries[rejected_input_index + 1], "rejection bypassed the checkpoint policy")
+    assert(retained_boundaries[rejected_epoch_input_offset + 1], "rejection bypassed the checkpoint policy")
     assert(dense_tree:get_root_hash() == honest_tree:get_root_hash(), "dense cache changed the mcycle root")
     local saved_checkpoints = {}
     for i, saved in ipairs(dense_cache.checkpoints) do
         saved_checkpoints[i] = saved
     end
-    for _, period_index in ipairs({ 16, 60000, dapp_contract.geometry.periods_per_input - 1 }) do
-        local bundle_index = (rejected_input_index * dapp_contract.geometry.periods_per_input + period_index)
-            >> LOG2_BUNDLE_MCYCLE_COUNT
+    for _, input_period_offset in ipairs({ 16, 60000, dapp_contract.geometry.periods_per_input - 1 }) do
+        local bundle_index = (
+            rejected_epoch_input_offset * dapp_contract.geometry.periods_per_input + input_period_offset
+        ) >> LOG2_BUNDLE_MCYCLE_COUNT
         honest_tree:get_proof(bundle_index << honest_tree.bundle_height)
         dense_tree:get_proof(bundle_index << dense_tree.bundle_height)
         local first_leaf = bundle_index << LOG2_BUNDLE_MCYCLE_COUNT
@@ -2112,8 +2122,8 @@ if arg[1] then
         end
     end
     assert(
-        honest:make_uarch_tree(rejected_input_index + 1, 0):get_root_hash()
-            == dense:make_uarch_tree(rejected_input_index + 1, 0):get_root_hash(),
+        honest:make_uarch_tree(rejected_epoch_input_offset + 1, 0):get_root_hash()
+            == dense:make_uarch_tree(rejected_epoch_input_offset + 1, 0):get_root_hash(),
         "dense cache changed replay past the rejected input"
     )
     assert(#saved_checkpoints == #dense_cache.checkpoints, "bundle collection changed checkpoint count")
@@ -2186,7 +2196,7 @@ if arg[1] then
     )
     local chain_boundaries = {}
     for _, saved in ipairs(chain_cache.checkpoints) do
-        chain_boundaries[saved.input_index] = saved
+        chain_boundaries[saved.epoch_input_offset] = saved
     end
     assert(chain_boundaries[1] and chain_boundaries[4], "chain fixture lacks the boundaries around the chain")
     assert(chain_boundaries[2] and chain_boundaries[3], "rejection bypassed the checkpoint policy")
@@ -2366,12 +2376,12 @@ if arg[1] then
         assert(machine.run == machine.overrides.run, "forwarder masked an override")
         assert(read_reg(machine, "mcycle") == machine.machine:read_reg("mcycle"), "forwarder used the wrong receiver")
         assert(machine.state ~= other.state, "clones share mutable strategy state")
-        machine.state.input_index = 0
+        machine.state.epoch_input_offset = 0
         tamperer_cache:snapshot(machine)
-        machine.state.input_index = 7
+        machine.state.epoch_input_offset = 7
         tamperer_cache:revert(machine)
         assert(
-            machine.state.input_index == 0 and not machine.snapshot_state,
+            machine.state.epoch_input_offset == 0 and not machine.snapshot_state,
             "cache revert lost private strategy state"
         )
         tamperer_cache:snapshot(machine)
@@ -2473,24 +2483,32 @@ if arg[1] then
         seed_input_paths(player, terminal_inputs)
         counts.outer = counts.outer + 1
         player.epoch_builder = observe_inputs(player.epoch_builder)
-        function player:make_uarch_cycle_computation_hash_builder(epoch_period_index)
+        function player:make_uarch_cycle_computation_hash_builder(epoch_period_offset)
             counts.uarch = counts.uarch + 1
             return observe_inputs(
-                prt.make_uarch_cycle_computation_hash_builder(self.geometry.log2_mcycles_per_period, epoch_period_index)
+                prt.make_uarch_cycle_computation_hash_builder(
+                    self.geometry.log2_mcycles_per_period,
+                    epoch_period_offset
+                )
             )
         end
         function player.make_null_computation_hash_builder()
             return observe_inputs(prt.make_null_computation_hash_builder())
         end
         local collect_mcycle_bundle = player.collect_mcycle_bundle
-        player.collect_mcycle_bundle = function(self, input_index, input_bundle_offset)
+        player.collect_mcycle_bundle = function(self, epoch_input_offset, input_bundle_offset)
             counts.bundles = counts.bundles + 1
-            return collect_mcycle_bundle(self, input_index, input_bundle_offset)
+            return collect_mcycle_bundle(self, epoch_input_offset, input_bundle_offset)
         end
         local collect_uarch_cycle_bundle = player.collect_uarch_cycle_bundle
-        player.collect_uarch_cycle_bundle = function(self, input_index, period_index, period_bundle_offset)
+        player.collect_uarch_cycle_bundle = function(
+            self,
+            epoch_input_offset,
+            input_period_offset,
+            period_bundle_offset
+        )
             counts.uarch = counts.uarch + 1
-            return collect_uarch_cycle_bundle(self, input_index, period_index, period_bundle_offset)
+            return collect_uarch_cycle_bundle(self, epoch_input_offset, input_period_offset, period_bundle_offset)
         end
         local reference <close> = make_terminal_template()
         if terminal ~= "empty" then

@@ -2097,7 +2097,7 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
-    --cmio-advance-state=input_index_begin:0,input_index_end:3,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3,print_input_state_hashes \
     --final-hash=epoch-0-state-hash.bin \
     -- /mnt/calc/calc.sh
 ```
@@ -2209,7 +2209,7 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-create \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:3,input_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:3,input_file_index_end:6,last_output_proof:output-1-input-2-proof.lua,print_input_state_hashes \
     --cmio-inspect-state=query:query.bin,print_query_state_hashes
 ```
 
@@ -2230,8 +2230,9 @@ and `355/113` to 100 decimal places. Arbitrary-precision results like
 these are awkward to compute on the blockchain, whose native arithmetic
 works on fixed-width 256-bit integers and has no fractions. Their
 outputs continue the global output index, becoming outputs 2, 3, and 4.
-The run passes `--remote-shutdown` to stop the server once the epoch is
-done.
+The file range selects `input-3.bin` through `input-5.bin`, and `%i`
+uses those same indices in output, report, and proof filenames. The run
+passes `--remote-shutdown` to stop the server once the epoch is done.
 
 The client shell now shows
 
@@ -2435,7 +2436,7 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8083 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:6,output_proof:,print_input_state_hashes \
     --load="rolling-calculator-template"
 ```
 
@@ -2491,7 +2492,7 @@ Stored mode performs the whole epoch in one invocation without a server
 cartesi-machine \
     --revert-mode=stored \
     --load="machine,clone:rolling-calculator-template,sharing:all" \
-    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:6,output_proof:,print_input_state_hashes \
     --final-hash=final-hash.bin
 ```
 
@@ -6630,7 +6631,7 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8086 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:0,input_index_end:2,print_input_state_hashes \
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:2,print_input_state_hashes \
     --cmio-inspect-state=print_query_state_hashes \
     --final-hash \
     -- /home/dapp/puppet
@@ -9496,7 +9497,8 @@ cartesi-machine \
     --remote-address=127.0.0.1:8095 \
     --remote-shutdown \
     --load=rolling-calculator-template \
-    --cmio-advance-state=input_index_begin:0,input_index_end:3,log2_mcycle_computation_hash_period:10,mcycle_computation_hash:mch.bin
+    --cmio-advance-state=input_file_index_begin:0,input_file_index_end:3 \
+    --mcycle-computation-hash=log2_mcycle_period:10,filename:mch.bin
 ```
 
 ``` text
@@ -9508,6 +9510,16 @@ that the tournament settles on exactly it. The player computes it with
 the same machinery, `machine:collect_mcycle_root_hashes()`, which
 samples the state hash as the machine runs and reports where it stopped
 advancing.
+
+To build the CLI mcycle hash over several invocations, use
+`end_epoch:false` in `--cmio-advance-state` and supply `frontier` in
+`--mcycle-computation-hash`. Add `create_frontier` for the first
+invocation only, then reuse the frontier with the same period and bundle
+size and the matching machine. The final invocation uses
+`end_epoch:true`, which is the default. Supplied state files are updated
+after accepted or rejected inputs, and when the epoch ends. These writes
+are not an atomic transaction, so recovery after a process or host crash
+can require manual repair.
 
 The demonstration uses p = 10. The two levels pull the sampling period
 in opposite directions. Mcycle claims cost one hash per period, so they

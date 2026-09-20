@@ -1046,8 +1046,6 @@ jobs:
       - name: Run risc0 tests
         run: CARTESI_STEP_LOGS_PATH=${{ github.workspace }}/risc0/test/fixtures/cartesi-machine-tests make test-risc0
 
-      # Coverage is informational and re-proves the pipeline instrumented, so it never
-      # gates the job (mirrors the solidity-step coverage step).
       - name: RISC0 coverage report
         continue-on-error: true
         run: |
@@ -1159,9 +1157,9 @@ jobs:
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
-      # The generator needs the built cartesi Lua module, so it runs in the image; forge only
-      # exists on the runner, so fmt and the diff run there, from solidity-step/ so they pick up
-      # that project's [fmt] config. Do not add -t: it would corrupt the redirected stdout.
+      # check-gen-constants can't be used: the generator needs the cartesi Lua module (image
+      # only) and forge only exists on the runner. The diff runs from solidity-step/ for that
+      # project's [fmt] config. Do not add -t: it would corrupt the redirected stdout.
       - name: Check emulator constants are in sync with the C++ headers
         run: |
           docker run --rm ${{ github.repository_owner }}/machine-emulator:tests-builder \
@@ -1183,14 +1181,11 @@ jobs:
       - name: Run solidity-step tests
         run: make -C solidity-step test
 
-      # Gas report is informational: it prints gas per verified uarch step over the
-      # whole per-cycle corpus into the job summary, so cost regressions and
-      # improvements are visible per run. Never gates the job.
       - name: Solidity-step gas report
         continue-on-error: true
         run: make -C solidity-step gas-report | tee -a $GITHUB_STEP_SUMMARY
 
-      # Coverage is informational and forge's --ir-minimum pass is slow, so it never gates the job.
+      # forge's --ir-minimum pass is slow.
       - name: Solidity-step coverage report
         continue-on-error: true
         run: |

@@ -67,6 +67,23 @@ describe("hash-tree.lua", function()
             end, "hash type is required")
         end)
 
+        it("counts leaves and aligned subtrees, including tall frontiers", function()
+            local frontier = hash_tree.frontier(72, "keccak256")
+            expect.equal(hash_tree.frontier_leaf_count(frontier, 48), 0)
+            hash_tree.frontier_pad_back(frontier, leaf(1), 3 << 48)
+            expect.equal(hash_tree.frontier_leaf_count(frontier, 48), 3)
+            expect.equal(hash_tree.frontier_leaf_count(frontier), 3 << 48)
+            hash_tree.frontier_push_back(frontier, leaf(2))
+            expect.fail(function()
+                hash_tree.frontier_leaf_count(frontier, 48)
+            end, "frontier is not aligned to the subtree size")
+            hash_tree.frontier_pad_back(frontier, leaf(3))
+            expect.equal(hash_tree.frontier_leaf_count(frontier, 48), 1 << 24)
+            expect.fail(function()
+                hash_tree.frontier_leaf_count(frontier)
+            end, "frontier leaf count exceeds 64 bits")
+        end)
+
         it("produces proofs that verify and share the reference root", function()
             for _, n in ipairs(counts) do
                 local leaves = make_leaves(n)
@@ -202,6 +219,53 @@ describe("hash-tree.lua", function()
             expect.equal(hash_tree.frontier_get_root_hash(frontier), reference_padded_root(expected, pad, 0))
         end)
 
+        it("fills all remaining positions when count is omitted", function()
+            for _, pad_height in ipairs({ 0, 2 }) do
+                local pad_size = 1 << pad_height
+                local pad_root = pad
+                for _ = 1, pad_height do
+                    pad_root = cartesi.keccak256(pad_root, pad_root)
+                end
+                for n = 0, SMALL_MAX, pad_size do
+                    local leaves = make_leaves(n)
+                    local frontier = hash_tree.frontier(SMALL_H, "keccak256")
+                    hash_tree.frontier_append(frontier, leaves)
+                    hash_tree.frontier_pad_back(frontier, pad_root, nil, pad_height)
+                    local expected = reference_padded_root(leaves, pad, SMALL_MAX - n)
+                    expect.equal(frontier[SMALL_H + 1], expected)
+                    for level = 1, SMALL_H do
+                        expect.equal(frontier[level], false)
+                    end
+                    hash_tree.frontier_pad_back(frontier, pad_root, nil, pad_height)
+                    expect.equal(frontier[SMALL_H + 1], expected)
+                    expect.fail(function()
+                        hash_tree.frontier_push_back(frontier, pad)
+                    end, "too many leaves")
+                end
+            end
+        end)
+
+        it("fills to the root without a leaf count at integer boundaries", function()
+            for _, height in ipairs({ 0, 63, 64, 72 }) do
+                for _, count in ipairs({ 0, 1 }) do
+                    local frontier = hash_tree.frontier(height, "keccak256")
+                    hash_tree.frontier_pad_back(frontier, pad, count)
+                    hash_tree.frontier_pad_back(frontier, pad)
+                    local expected = pad
+                    for _ = 1, height do
+                        expected = cartesi.keccak256(expected, expected)
+                    end
+                    expect.equal(frontier[height + 1], expected)
+                    for level = 1, height do
+                        expect.equal(frontier[level], false)
+                    end
+                    expect.fail(function()
+                        hash_tree.frontier_pad_back(frontier, pad, 1)
+                    end, "too many leaves")
+                end
+            end
+        end)
+
         it("keeps the root of an exactly-full tree in the top entry", function()
             -- filled by padding
             local padded = hash_tree.frontier(SMALL_H, "keccak256")
@@ -270,6 +334,9 @@ describe("hash-tree.lua", function()
             hash_tree.frontier_push_back(frontier, leaf(1))
             expect.fail(function()
                 hash_tree.frontier_pad_back(frontier, pad, 1, 2)
+            end, "frontier is not aligned to the pad size")
+            expect.fail(function()
+                hash_tree.frontier_pad_back(frontier, pad, nil, 2)
             end, "frontier is not aligned to the pad size")
         end)
 

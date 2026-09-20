@@ -966,7 +966,7 @@ describe("cartesi-machine CLI", function()
         local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "budget"))
         local _, log = run_ok({
             "--load-config=" .. yield_cfg_file,
-            "--cmio-advance-state=input:" .. input .. ",input_index_end:1",
+            "--cmio-advance-state=input:" .. input .. ",input_file_index_end:1",
             "--revert-mode=none",
             "--console-io=output_destination:to_null",
             "--no-init-splash",
@@ -974,6 +974,16 @@ describe("cartesi-machine CLI", function()
         expect.falsy(log:find("Mcycle overflow", 1, true))
         expect.truthy(log:find("Cycles: " .. yield_mcycle .. "\n", 1, true))
         expect.equal(select(2, log:gsub("Manual yield rx%-accepted", "")), 2)
+    end)
+
+    it("yield rejects an unexpected command", function()
+        local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+        machine:write_reg("iflags_Y", 1)
+        machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+        machine:write_reg("htif_tohost_cmd", 0xff)
+        local _ <close>, stored = scope_stored_dirname()
+        machine:store(stored)
+        run_fail({ "--load=" .. stored, "--max-mcycle=0" }, "unexpected yield command")
     end)
 
     -- -------------------------------------------------------------------------
@@ -1512,19 +1522,25 @@ describe("cartesi-machine CLI", function()
     --
     -- What: --cmio-advance-state and --cmio-inspect-state option-string parsing,
     --       including both the key:value form and the bare --cmio-inspect-state.
-    -- How:  run_ok() with --revert-mode=none and --max-mcycle=0 so the option parser
-    --       and HTIF config check run but the guest is never booted.
+    -- How:  Use --revert-mode=none and --max-mcycle=0 so the option parser and HTIF
+    --       config check run, then initialization fails before the guest boots.
     -- -------------------------------------------------------------------------
     it("cmio advance/inspect options", function()
+        for _, range in ipairs({
+            "input_file_index_begin:0xffffffffffffffff,input_file_index_end:0",
+            "input_file_index_begin:2,input_file_index_end:1",
+        }) do
+            run_fail({ "--cmio-advance-state=" .. range }, "invalid input file range")
+        end
         -- --cmio-advance-state: option parses and machine runs through check_cmio_htif_config
-        run_ok({
-            "--cmio-advance-state=input:inp-%i.bin,input_index_begin:0,input_index_end:0,"
+        run_fail({
+            "--cmio-advance-state=input:inp-%i.bin,input_file_index_begin:0,input_file_index_end:0,"
                 .. "report:rep-%i-%o.bin,output:out-%i-%o.bin,print_input_state_hashes",
             "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
-        })
+        }, "epoch initialization did not reach a fixed point")
 
         -- --cmio-inspect-state=<opts>: the option parses, and the query itself then fails because
         -- a machine stopped at cycle 0 is not waiting for one
@@ -1992,7 +2008,7 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-input-%i.bin,"
-                .. "input_index_begin:0,input_index_end:2,"
+                .. "input_file_index_begin:0,input_file_index_end:2,"
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
@@ -2079,7 +2095,7 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-input-%i.bin,"
-                .. "input_index_begin:0,input_index_end:1,"
+                .. "input_file_index_begin:0,input_file_index_end:1,"
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
@@ -2108,7 +2124,7 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-input-%i.bin,"
-                .. "input_index_begin:0,input_index_end:1,"
+                .. "input_file_index_begin:0,input_file_index_end:1,"
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
@@ -2131,6 +2147,39 @@ describe("cartesi-machine CLI", function()
         local json_proof = cartesi.fromjson(json_text, "Proof")
         expect.equal(json_proof.target_address, 0)
         hash_tree.verify_slice(json_proof)
+    end)
+
+    it("SHA-256 outputs Merkle root proof", function()
+        local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "sha256"))
+        local _ <close>, output = scope_temp_pathname()
+        local _ <close>, root = scope_temp_pathname()
+        local _ <close>, root_proof = scope_temp_pathname()
+        local _ <close>, output_proof = scope_temp_pathname()
+        run_ok({
+            "--hash-tree=hash_function:sha256",
+            "--revert-mode=none",
+            "--max-mcycle=2000000000",
+            "--cmio-advance-state=input:"
+                .. input
+                .. ",input_file_index_end:1,report:,rejected_output:,"
+                .. "format:json,output:"
+                .. output
+                .. ",outputs_merkle_root:"
+                .. root
+                .. ",outputs_merkle_root_proof:"
+                .. root_proof
+                .. ",output_proof:"
+                .. output_proof,
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0",
+        })
+        local proof = cartesi.fromjson(filesystem.read_file(root_proof), "Proof")
+        expect.equal(proof.target_hash, cartesi.sha256(filesystem.read_file(root)))
+        hash_tree.verify_slice(proof, "sha256")
+        proof = cartesi.fromjson(filesystem.read_file(output_proof), "Proof")
+        expect.equal(proof.target_hash, cartesi.keccak256(filesystem.read_file(output)))
+        expect.equal(proof.root_hash, filesystem.read_file(root))
+        hash_tree.verify_slice(proof, "keccak256")
     end)
 
     -- -------------------------------------------------------------------------
@@ -2175,7 +2224,7 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-input-%i.bin,"
-                .. "input_index_begin:0,input_index_end:2,"
+                .. "input_file_index_begin:0,input_file_index_end:2,"
                 .. "output:"
                 .. prefix
                 .. "-out-%o-%i.bin,"
@@ -2251,7 +2300,7 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-inpr-%i.bin,"
-                .. "input_index_begin:0,input_index_end:3,"
+                .. "input_file_index_begin:0,input_file_index_end:3,"
                 .. "output:"
                 .. prefix
                 .. "-rbo-%i-%o.bin,"
@@ -2327,7 +2376,7 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-st-%i.bin,"
-                .. "input_index_begin:0,input_index_end:1,"
+                .. "input_file_index_begin:0,input_file_index_end:1,"
                 .. "output:,rejected_output:,output_proof:,report:,"
                 .. "outputs_merkle_root:,outputs_merkle_root_proof:",
             "--revert-mode=none",
@@ -2384,7 +2433,7 @@ describe("cartesi-machine CLI", function()
             "--revert-mode=stored",
             "--cmio-advance-state=input:"
                 .. prefix
-                .. "-input-%i.bin,input_index_begin:0,input_index_end:3,output:"
+                .. "-input-%i.bin,input_file_index_begin:0,input_file_index_end:3,output:"
                 .. prefix
                 .. "-output-%o-%i.bin,rejected_output:"
                 .. prefix
@@ -2457,9 +2506,9 @@ describe("cartesi-machine CLI", function()
         expect.equal(reference:run(target), cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
         local interrupted = reference:get_root_hash()
         for _, hash_options in ipairs({
-            "",
-            ",log2_mcycle_computation_hash_period:19",
-            ",log2_mcycle_computation_hash_period:19,mcycle_period_index:0",
+            false,
+            "--mcycle-computation-hash=log2_mcycle_period:19",
+            "--uarch-cycle-computation-hash=log2_mcycle_period:19,mcycle_period_index:0",
         }) do
             local _ <close>, machine_dir = scope_stored_dirname()
             local _ <close> = tests_util.scope_exit(function()
@@ -2467,15 +2516,19 @@ describe("cartesi-machine CLI", function()
             end)
             local _ <close>, store_dir = scope_stored_dirname()
             local _ <close>, final_hash = scope_temp_pathname()
-            local _, log = run_ok({
+            local flags = {
                 "--load=" .. machine_dir .. ",clone:" .. template_dir .. ",sharing:all",
                 "--revert-mode=stored",
-                "--cmio-advance-state=input:" .. input .. ",input_index_end:1" .. hash_options,
+                "--cmio-advance-state=input:" .. input .. ",input_file_index_end:1",
                 "--max-mcycle=" .. target,
                 "--final-hash=" .. final_hash,
                 "--store=" .. store_dir,
                 "--no-init-splash",
-            })
+            }
+            if hash_options then
+                flags[#flags + 1] = hash_options
+            end
+            local _, log = run_ok(flags)
             expect.falsy(log:find("computation hash:", 1, true))
             expect.equal(filesystem.read_file(final_hash), interrupted)
             local exported <close> = cartesi.machine(store_dir)
@@ -2513,7 +2566,7 @@ describe("cartesi-machine CLI", function()
         run_fail({
             "--load=" .. machine_dir .. ",clone:" .. template_dir .. ",sharing:all",
             "--revert-mode=stored",
-            "--cmio-advance-state=input:" .. input .. ",input_index_end:1",
+            "--cmio-advance-state=input:" .. input .. ",input_file_index_end:1",
             "--cmio-inspect-state=query:" .. query,
             "--max-mcycle=" .. (boundary_mcycle + 1),
             "--no-init-splash",
@@ -2528,7 +2581,7 @@ describe("cartesi-machine CLI", function()
     -- Computation hash across an epoch with a reject
     --
     -- What: mcycle_computation_hash commits to the epoch's history: a Merkle tree over
-    --       the state hashes sampled every 2^log2_mcycle_computation_hash_period mcycles,
+    --       the state hashes sampled every 2^log2_mcycle_period mcycles,
     --       each input owning the number of mcycles specified by
     --       ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE, counted from the state that received it,
     --       positions past a stop repeating the stopped state's hash (the
@@ -2586,16 +2639,13 @@ describe("cartesi-machine CLI", function()
             "--console-io=output_destination:to_null",
             "--cmio-advance-state=input:"
                 .. prefix
-                .. "-chin-%i.bin,"
-                .. "input_index_begin:0,input_index_end:3,"
-                .. "output:,rejected_output:,output_proof:,report:,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "mcycle_computation_hash:"
+                .. "-chin-%i.bin,input_file_index_begin:0,input_file_index_end:3,output:,"
+                .. "rejected_output:,output_proof:,report:,outputs_merkle_root:,"
+                .. "outputs_merkle_root_proof:,print_input_state_hashes",
+            "--mcycle-computation-hash=filename:"
                 .. prefix
-                .. "-ch.bin,"
-                .. "log2_mcycle_computation_hash_period:"
-                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
-                .. ",print_input_state_hashes",
+                .. "-ch.bin,log2_mcycle_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--final-hash=" .. prefix .. "-final.bin",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -2625,14 +2675,11 @@ describe("cartesi-machine CLI", function()
             "--console-io=output_destination:to_null",
             "--cmio-advance-state=input:"
                 .. prefix
-                .. "-chin-%i.bin,"
-                .. "input_index_begin:0,input_index_end:3,"
-                .. "output:,rejected_output:,output_proof:,report:,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "mcycle_computation_hash:"
+                .. "-chin-%i.bin,input_file_index_begin:0,input_file_index_end:3,output:,"
+                .. "rejected_output:,output_proof:,report:,outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--mcycle-computation-hash=filename:"
                 .. prefix
-                .. "-chb.bin,"
-                .. "log2_mcycle_computation_hash_period:"
+                .. "-chb.bin,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                 .. ",log2_bundle_mcycle_count:2",
             "--max-mcycle=2000000000",
@@ -2650,7 +2697,7 @@ describe("cartesi-machine CLI", function()
     -- What: An epoch that receives no inputs repeats the hash of the machine
     --       waiting at its first input boundary over the whole epoch, so the
     --       computation hash is that hash squared once per tree level.
-    -- How:  Run with input_index_end:0 and --final-hash into a file (the final
+    -- How:  Run with input_file_index_end:0 and --final-hash into a file (the final
     --       state is the waiting boundary), then square it up the tree height
     --       and compare with the mcycle_computation_hash file.
     -- -------------------------------------------------------------------------
@@ -2661,12 +2708,10 @@ describe("cartesi-machine CLI", function()
             os.remove(prefix .. "-final.bin")
         end)
         run_ok({
-            "--cmio-advance-state=input_index_end:0,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "mcycle_computation_hash:"
+            "--cmio-advance-state=input_file_index_end:0,outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--mcycle-computation-hash=filename:"
                 .. prefix
-                .. "-ch0.bin,"
-                .. "log2_mcycle_computation_hash_period:"
+                .. "-ch0.bin,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--final-hash=" .. prefix .. "-final.bin",
             "--revert-mode=none",
@@ -2710,11 +2755,12 @@ describe("cartesi-machine CLI", function()
                     local flags = {
                         "--load=" .. stored,
                         "--revert-mode=none",
-                        "--cmio-advance-state=input_index_end:1,outputs_merkle_root:,outputs_merkle_root_proof:,"
-                            .. kind
-                            .. "_computation_hash:"
+                        "--cmio-advance-state=input_file_index_end:1,outputs_merkle_root:,outputs_merkle_root_proof:",
+                        "--"
+                            .. kind:gsub("_", "-")
+                            .. "-computation-hash=filename:"
                             .. output
-                            .. ",log2_mcycle_computation_hash_period:"
+                            .. ",log2_mcycle_period:"
                             .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                             .. ",log2_bundle_"
                             .. kind
@@ -2723,7 +2769,7 @@ describe("cartesi-machine CLI", function()
                             .. (kind == "uarch_cycle" and ",mcycle_period_index:0" or ""),
                     }
                     if state == "reject" then
-                        run_fail(flags, "computation hash cannot start at an rx%-rejected yield")
+                        run_fail(flags, "epoch initialization failed on rx%-rejected manual yield")
                         expect.falsy(io.open(output, "rb"))
                     else
                         local rc, _, log = run(flags)
@@ -2758,11 +2804,10 @@ describe("cartesi-machine CLI", function()
         local function run_sha256(filename, log2_bundle)
             run_ok({
                 "--hash-tree=hash_function:sha256",
-                "--cmio-advance-state=input_index_end:0,"
-                    .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                    .. "mcycle_computation_hash:"
+                "--cmio-advance-state=input_file_index_end:0,outputs_merkle_root:,outputs_merkle_root_proof:",
+                "--mcycle-computation-hash=filename:"
                     .. filename
-                    .. ",log2_mcycle_computation_hash_period:"
+                    .. ",log2_mcycle_period:"
                     .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                     .. ",log2_bundle_mcycle_count:"
                     .. log2_bundle,
@@ -2808,13 +2853,11 @@ describe("cartesi-machine CLI", function()
             "--console-io=output_destination:to_null",
             "--cmio-advance-state=input:"
                 .. prefix
-                .. "-chh-%i.bin,"
-                .. "input_index_begin:0,input_index_end:1,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "mcycle_computation_hash:"
+                .. "-chh-%i.bin,input_file_index_begin:0,input_file_index_end:1,outputs_merkle_root:,"
+                .. "outputs_merkle_root_proof:",
+            "--mcycle-computation-hash=filename:"
                 .. prefix
-                .. "-chh.bin,"
-                .. "log2_mcycle_computation_hash_period:"
+                .. "-chh.bin,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--revert-mode=none",
             "--max-mcycle=2000000000",
@@ -2831,13 +2874,11 @@ describe("cartesi-machine CLI", function()
             "--console-io=output_destination:to_null",
             "--cmio-advance-state=input:"
                 .. prefix
-                .. "-chh-%i.bin,"
-                .. "input_index_begin:0,input_index_end:1,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "mcycle_computation_hash:"
+                .. "-chh-%i.bin,input_file_index_begin:0,input_file_index_end:1,outputs_merkle_root:,"
+                .. "outputs_merkle_root_proof:",
+            "--mcycle-computation-hash=filename:"
                 .. prefix
-                .. "-chhb.bin,"
-                .. "log2_mcycle_computation_hash_period:"
+                .. "-chhb.bin,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                 .. ",log2_bundle_mcycle_count:2",
             "--revert-mode=none",
@@ -2854,7 +2895,7 @@ describe("cartesi-machine CLI", function()
     it("advance-state rejects hash-printing runners", function()
         for _, kind in ipairs({ "mcycle", "uarch-cycle" }) do
             run_fail({
-                "--cmio-advance-state=input_index_end:0",
+                "--cmio-advance-state=input_file_index_end:0",
                 "--print-" .. kind .. "-root-hashes=1",
                 "--revert-mode=none",
                 "--max-mcycle=0",
@@ -2875,18 +2916,34 @@ describe("cartesi-machine CLI", function()
     --       max_mcycle inside the boot and assert no computation hash is emitted.
     -- -------------------------------------------------------------------------
     it("computation hash option validation", function()
-        -- sub-key validation, before any machine is built
-        run_fail(
-            { "--cmio-advance-state=mcycle_computation_hash:x.bin", "--max-mcycle=0" },
-            "need log2_mcycle_computation_hash_period"
-        )
+        for _, option in ipairs({
+            "--mcycle-computation-hash=log2_mcycle_period:19",
+            "--uarch-cycle-computation-hash=log2_mcycle_period:19,mcycle_period_index:0",
+        }) do
+            run_fail({ option, "--max-mcycle=0" }, "requires %-%-cmio%-advance%-state")
+        end
+        for _, option in ipairs({
+            "--mcycle-computation-hash=log2_mcycle_period:19,mcycle_period_index:0",
+            "--uarch-cycle-computation-hash=log2_mcycle_period:19,mcycle_period_index:0,frontier:unused",
+            "--uarch-cycle-computation-hash=log2_mcycle_period:19,mcycle_period_index:0,next_input_offset:1",
+        }) do
+            run_fail({ "--cmio-advance-state=input_file_index_end:0", option, "--max-mcycle=0" }, "unknown option")
+        end
+        -- Validate computation settings before execution.
         run_fail({
-            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
+            "--cmio-advance-state=input_file_index_end:0",
+            "--mcycle-computation-hash=filename:x.bin",
+            "--max-mcycle=0",
+        }, "need log2_mcycle_period")
+        run_fail({
+            "--cmio-advance-state=input_file_index_end:0",
+            "--mcycle-computation-hash=filename:,log2_mcycle_period:"
                 .. (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE + 1),
             "--max-mcycle=0",
-        }, "log2_mcycle_computation_hash_period cannot exceed the mcycles of an input")
+        }, "log2_mcycle_period must be between")
         run_fail({
-            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
+            "--cmio-advance-state=input_file_index_end:0",
+            "--mcycle-computation-hash=filename:,log2_mcycle_period:"
                 .. ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
                 .. ",log2_bundle_mcycle_count:1",
             "--max-mcycle=0",
@@ -2894,13 +2951,16 @@ describe("cartesi-machine CLI", function()
         -- The computation-hash frontier represents the epoch tree structurally, including when
         -- its height exceeds the width of a Lua integer. The warning is not suppressed by --quiet,
         -- regardless of option order.
-        local _, tall_tree_log = run_ok({
+        local tall_tree_rc, _, tall_tree_log = run({
             "--quiet",
-            "--cmio-advance-state=log2_mcycle_computation_hash_period:0",
+            "--cmio-advance-state=input_file_index_end:0",
+            "--mcycle-computation-hash=filename:,log2_mcycle_period:0",
             "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
         })
+        expect.equal(tall_tree_rc, 1)
+        expect.truthy(tall_tree_log:find("epoch initialization did not reach a fixed point", 1, true))
         expect.truthy(
             tall_tree_log:find(
                 string.format(
@@ -2912,59 +2972,64 @@ describe("cartesi-machine CLI", function()
             )
         )
         run_fail({
-            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
-                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
-                .. ",input_index_begin:1,input_index_end:2",
+            "--cmio-advance-state=input_file_index_begin:1,input_file_index_end:2",
+            "--mcycle-computation-hash=filename:,log2_mcycle_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
-        }, "computation hash requires input_index_begin 0")
+            "--revert-mode=none",
+        }, "epoch initialization did not reach a fixed point")
         run_fail({
-            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
-                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
-                .. ",input_index_end:"
-                .. ((1 << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) + 1),
+            "--cmio-advance-state=input_file_index_end:" .. ((1 << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) + 1),
+            "--mcycle-computation-hash=filename:,log2_mcycle_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
-        }, "input_index_end past the inputs of an epoch")
+        }, "input count exceeds the remaining inputs of an epoch")
         -- advance state runs plainly or collects the computation hash, so --print-mcycle-root-hashes is refused
         run_fail({
-            "--cmio-advance-state=log2_mcycle_computation_hash_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--cmio-advance-state=input_file_index_end:0",
+            "--mcycle-computation-hash=filename:,log2_mcycle_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--print-mcycle-root-hashes=" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         }, "cannot be combined with printing mcycle root hashes")
-        -- Runs truncated by --max-mcycle do not finalize or store either claim. Use scoped
+        -- Boot truncated by --max-mcycle fails without finalizing or storing either claim. Use scoped
         -- input/result files so these local lifecycle checks stay out of the portable corpus.
         local _ <close>, truncated_input = filesystem.write_scope_temp_file(encode_advance(0, "truncated"))
         local _ <close>, truncated_result = scope_temp_pathname()
-        local _, log = run_ok({
-            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
-                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
-                .. ",mcycle_computation_hash:"
-                .. truncated_result
-                .. ",input:"
+        local rc, _, log = run({
+            "--cmio-advance-state=input:"
                 .. truncated_input
-                .. ",input_index_begin:0,input_index_end:1,outputs_merkle_root:,outputs_merkle_root_proof:",
+                .. ",input_file_index_begin:0,input_file_index_end:1,outputs_merkle_root:,"
+                .. "outputs_merkle_root_proof:",
+            "--mcycle-computation-hash=log2_mcycle_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",filename:"
+                .. truncated_result,
             "--revert-mode=none",
             "--max-mcycle=1000",
             "--no-init-splash",
         })
+        expect.equal(rc, 1)
+        expect.truthy(log:find("epoch initialization did not reach a fixed point", 1, true))
         expect.falsy(log:find("Mcycle computation hash:", 1, true))
         expect.falsy(io.open(truncated_result, "rb"))
 
         local _ <close>, uarch_truncated_result = scope_temp_pathname()
-        local _, uarch_log = run_ok({
-            "--cmio-advance-state=log2_mcycle_computation_hash_period:"
-                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
-                .. ",mcycle_period_index:0,uarch_cycle_computation_hash:"
-                .. uarch_truncated_result
-                .. ",input:"
+        local uarch_rc, _, uarch_log = run({
+            "--cmio-advance-state=input:"
                 .. truncated_input
-                .. ",input_index_begin:0,input_index_end:1,outputs_merkle_root:,outputs_merkle_root_proof:",
+                .. ",input_file_index_begin:0,input_file_index_end:1,outputs_merkle_root:,"
+                .. "outputs_merkle_root_proof:",
+            "--uarch-cycle-computation-hash=log2_mcycle_period:"
+                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
+                .. ",mcycle_period_index:0,filename:"
+                .. uarch_truncated_result,
             "--revert-mode=none",
             "--max-mcycle=1000",
             "--no-init-splash",
         })
+        expect.equal(uarch_rc, 1)
+        expect.truthy(uarch_log:find("epoch initialization did not reach a fixed point", 1, true))
         expect.falsy(uarch_log:find("Uarch cycle computation hash:", 1, true))
         expect.falsy(io.open(uarch_truncated_result, "rb"))
     end)
@@ -2989,12 +3054,9 @@ describe("cartesi-machine CLI", function()
         run_fail({
             "--cmio-advance-state=input:"
                 .. prefix
-                .. "-chr-%i.bin,"
-                .. "input_index_begin:0,input_index_end:2,"
-                .. "output:,rejected_output:,output_proof:,report:,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "log2_mcycle_computation_hash_period:"
-                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+                .. "-chr-%i.bin,input_file_index_begin:0,input_file_index_end:2,output:,rejected_output:,"
+                .. "output_proof:,report:,outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--mcycle-computation-hash=filename:,log2_mcycle_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--revert-mode=none",
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -3016,72 +3078,83 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("uarch cycle computation hash option validation", function()
         run_fail({
-            "--cmio-advance-state=uarch_cycle_computation_hash:x.bin,mcycle_period_index:0",
+            "--cmio-advance-state=input_file_index_end:0",
+            "--uarch-cycle-computation-hash=filename:x.bin,mcycle_period_index:0",
             "--max-mcycle=0",
-        }, "need log2_mcycle_computation_hash_period")
+        }, "need log2_mcycle_period")
         run_fail({
-            "--cmio-advance-state=uarch_cycle_computation_hash:x.bin,log2_mcycle_computation_hash_period:"
-                .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--cmio-advance-state=input_file_index_end:0",
+            "--uarch-cycle-computation-hash=filename:x.bin,log2_mcycle_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
         }, "need mcycle_period_index")
         -- At 2^64 or more periods, every 64-bit index is within the epoch.
-        run_ok({
-            "--cmio-advance-state=mcycle_period_index:0xffffffffffffffff," .. "log2_mcycle_computation_hash_period:0",
+        run_fail({
+            "--cmio-advance-state=input_file_index_end:0",
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:0xffffffffffffffff,log2_mcycle_period:0",
             "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
-        })
+        }, "epoch initialization did not reach a fixed point")
         run_fail({
-            "--cmio-advance-state=mcycle_period_index:9223372036854775808," .. "log2_mcycle_computation_hash_period:0",
+            "--cmio-advance-state=input_file_index_end:0",
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:9223372036854775808,"
+                .. "log2_mcycle_period:0",
             "--max-mcycle=0",
         }, 'invalid number for option "mcycle_period_index"')
         run_fail({
-            "--cmio-advance-state=mcycle_period_index:0x10000000000000000," .. "log2_mcycle_computation_hash_period:0",
+            "--cmio-advance-state=input_file_index_end:0",
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:0x10000000000000000,"
+                .. "log2_mcycle_period:0",
             "--max-mcycle=0",
         }, 'invalid number for option "mcycle_period_index"')
         -- Use the index immediately past all periods in the epoch.
         run_fail({
-            "--cmio-advance-state=mcycle_period_index:"
+            "--cmio-advance-state=input_file_index_end:0",
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:"
                 .. (1 << LOG2_EPOCH_LEAF_COUNT)
-                .. ",log2_mcycle_computation_hash_period:"
+                .. ",log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
         }, "mcycle_period_index past the periods of an epoch")
-        run_ok({
+        run_fail({
             "--cmio-advance-state=output:,rejected_output:,output_proof:,report:,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "mcycle_period_index:0,log2_mcycle_computation_hash_period:"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:0,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                 .. ",log2_bundle_uarch_cycle_count:0",
             "--revert-mode=none",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
-        })
+        }, "epoch initialization did not reach a fixed point")
         run_fail({
-            "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"
+            "--cmio-advance-state=input_file_index_end:0",
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:0,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                 .. ",log2_bundle_uarch_cycle_count:-1",
             "--max-mcycle=0",
         }, 'invalid number for option "log2_bundle_uarch_cycle_count"')
         run_fail({
-            "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"
+            "--cmio-advance-state=input_file_index_end:0",
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:0,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD
                 .. ",log2_bundle_uarch_cycle_count:"
                 .. ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE,
             "--max-mcycle=0",
         }, "log2_bundle_uarch_cycle_count must be in")
         run_fail({
-            "--cmio-advance-state=mcycle_period_index:0,mcycle_computation_hash:x.bin,"
-                .. "log2_mcycle_computation_hash_period:"
+            "--cmio-advance-state=input_file_index_end:0",
+            "--mcycle-computation-hash=filename:x.bin,log2_mcycle_period:" .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:0,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=0",
-        }, "uarch_cycle_computation_hash cannot be combined with mcycle_computation_hash")
+        }, "%-%-uarch%-cycle%-computation%-hash cannot be combined with %-%-mcycle%-computation%-hash")
         -- The microarchitecture only runs with keccak256.
         run_fail({
             "--hash-tree=hash_function:sha256",
-            "--cmio-advance-state=mcycle_period_index:0,log2_mcycle_computation_hash_period:"
+            "--cmio-advance-state=input_file_index_end:0",
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:0,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--revert-mode=none",
             "--max-mcycle=0",
@@ -3098,13 +3171,11 @@ describe("cartesi-machine CLI", function()
         run_fail({
             "--cmio-advance-state=input:"
                 .. prefix
-                .. "-uchr-%i.bin,"
-                .. "input_index_begin:0,input_index_end:2,"
-                .. "output:,rejected_output:,output_proof:,report:,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "mcycle_period_index:"
+                .. "-uchr-%i.bin,input_file_index_begin:0,input_file_index_end:2,output:,"
+                .. "rejected_output:,output_proof:,report:,outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--uarch-cycle-computation-hash=filename:,mcycle_period_index:"
                 .. (3 << (ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - LOG2_MCYCLE_COMPUTATION_HASH_PERIOD))
-                .. ",log2_mcycle_computation_hash_period:"
+                .. ",log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--revert-mode=none",
             "--max-mcycle=2000000000",
@@ -3143,6 +3214,9 @@ describe("cartesi-machine CLI", function()
                 prefix .. "-uin-0.bin",
                 prefix .. "-uin-1.bin",
                 prefix .. "-uin-2.bin",
+                prefix .. "-uin-7.bin",
+                prefix .. "-uin-8.bin",
+                prefix .. "-uin-9.bin",
                 prefix .. "-uch-16.bin",
                 prefix .. "-uch-8.bin",
                 prefix .. "-uch-full.bin",
@@ -3154,12 +3228,18 @@ describe("cartesi-machine CLI", function()
         filesystem.write_file(prefix .. "-uin-0.bin", encode_advance(0, "ok"))
         filesystem.write_file(prefix .. "-uin-1.bin", encode_advance(1, "reject-me"))
         filesystem.write_file(prefix .. "-uin-2.bin", encode_advance(2, "also-ok"))
+        for i = 0, 2 do
+            filesystem.write_file(
+                prefix .. "-uin-" .. (i + 7) .. ".bin",
+                filesystem.read_file(prefix .. "-uin-" .. i .. ".bin")
+            )
+        end
         local common = "input:"
             .. prefix
             .. "-uin-%i.bin,"
-            .. "input_index_begin:0,input_index_end:3,"
+            .. "input_file_index_begin:0,input_file_index_end:3,"
             .. "output:,rejected_output:,output_proof:,report:,"
-            .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
+            .. "outputs_merkle_root:,outputs_merkle_root_proof:"
         local entrypoint = "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1"
 
         -- Locate the period of input 1's reject: its boundary mcycle is the label of the
@@ -3168,7 +3248,7 @@ describe("cartesi-machine CLI", function()
         local _, log = run_ok({
             "--remote-address=" .. address,
             "--console-io=output_destination:to_null",
-            "--cmio-advance-state=" .. common .. "print_input_state_hashes",
+            "--cmio-advance-state=" .. common .. ",print_input_state_hashes",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--",
@@ -3188,16 +3268,13 @@ describe("cartesi-machine CLI", function()
                 "--console-io=output_destination:to_null",
                 "--cmio-advance-state="
                     .. common
-                    .. "uarch_cycle_computation_hash:"
+                    .. (log2_bundle == 8 and ",input_file_index_begin:7,input_file_index_end:10" or ""),
+                "--uarch-cycle-computation-hash=log2_mcycle_period:10,filename:"
                     .. filename
-                    .. ","
-                    .. (
-                        "mcycle_period_index:"
-                        .. index
-                        .. ",log2_bundle_uarch_cycle_count:"
-                        .. log2_bundle
-                        .. ",log2_mcycle_computation_hash_period:10"
-                    ),
+                    .. ",mcycle_period_index:"
+                    .. index
+                    .. ",log2_bundle_uarch_cycle_count:"
+                    .. log2_bundle,
                 "--max-mcycle=2000000000",
                 "--no-init-splash",
                 "--",
@@ -3219,12 +3296,8 @@ describe("cartesi-machine CLI", function()
             local _, err = run_ok({
                 "--remote-address=" .. address,
                 "--console-io=output_destination:to_null",
-                "--cmio-advance-state="
-                    .. common
-                    .. "uarch_cycle_computation_hash:"
-                    .. case.filename
-                    .. ","
-                    .. "mcycle_period_index:0,log2_mcycle_computation_hash_period:10",
+                "--cmio-advance-state=" .. common,
+                "--uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:0,filename:" .. case.filename,
                 "--max-mcycle=" .. case.max_mcycle,
                 "--no-init-splash",
                 "--",
@@ -3241,7 +3314,7 @@ describe("cartesi-machine CLI", function()
     -- What: An epoch that receives no inputs repeats the no-op uarch period of
     --       the machine waiting at its first input boundary over the whole
     --       target period, whatever index it has.
-    -- How:  Run with input_index_end:0, then rebuild the expected hash from
+    -- How:  Run with input_file_index_end:0, then rebuild the expected hash from
     --       scratch with a local machine stopped at the same boundary: walk one
     --       no-op period cycle by cycle through run_uarch (the last cycle being
     --       the one where the uarch halts), reset the uarch, and construct one mcycle using the
@@ -3257,12 +3330,10 @@ describe("cartesi-machine CLI", function()
             os.remove(prefix .. "-uch0.bin")
         end)
         run_ok({
-            "--cmio-advance-state=input_index_end:0,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "uarch_cycle_computation_hash:"
+            "--cmio-advance-state=input_file_index_end:0,outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--uarch-cycle-computation-hash=filename:"
                 .. prefix
-                .. "-uch0.bin,"
-                .. "mcycle_period_index:7,log2_mcycle_computation_hash_period:"
+                .. "-uch0.bin,mcycle_period_index:7,log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--revert-mode=none",
             "--max-mcycle=2000000000",
@@ -3318,14 +3389,13 @@ describe("cartesi-machine CLI", function()
             "--console-io=output_destination:to_null",
             "--cmio-advance-state=input:"
                 .. input
-                .. ",input_index_end:1,"
-                .. "output:,rejected_output:,output_proof:,report:,"
-                .. "outputs_merkle_root:,outputs_merkle_root_proof:,"
-                .. "uarch_cycle_computation_hash:"
+                .. ",input_file_index_end:1,output:,rejected_output:,output_proof:,report:,"
+                .. "outputs_merkle_root:,outputs_merkle_root_proof:",
+            "--uarch-cycle-computation-hash=filename:"
                 .. rejected_hash
                 .. ",mcycle_period_index:"
                 .. period_index
-                .. ",log2_mcycle_computation_hash_period:"
+                .. ",log2_mcycle_period:"
                 .. LOG2_MCYCLE_COMPUTATION_HASH_PERIOD,
             "--max-mcycle=2000000000",
             "--no-init-splash",
@@ -3378,8 +3448,17 @@ describe("cartesi-machine CLI", function()
             prefix .. "-e2proof-5-2.json",
             prefix .. "-e2proof-6-4.json",
             prefix .. "-e2proof-7-4.json",
-            prefix .. "-e2oh-2.bin",
-            prefix .. "-e2oh-4.bin",
+            prefix .. "-eoh-0.bin",
+            prefix .. "-eoh-1.bin",
+            prefix .. "-eoh-2.bin",
+            prefix .. "-eoh-4.bin",
+            prefix .. "-erootproof-0.json",
+            prefix .. "-erootproof-1.json",
+            prefix .. "-erootproof-2.json",
+            prefix .. "-erootproof-4.json",
+            prefix .. "-e2report-2-0.bin",
+            prefix .. "-e2report-3-0.bin",
+            prefix .. "-e2report-4-0.bin",
         }
         local _ <close> = tests_util.scope_exit(function()
             for _, p in ipairs(files) do
@@ -3391,8 +3470,8 @@ describe("cartesi-machine CLI", function()
             filesystem.write_file(prefix .. "-ein-" .. i .. ".bin", encode_advance(i, "epoch-input-" .. i))
         end
 
-        -- Epoch 1: inputs 0 and 1 against a freshly created machine, left alive on the server. Only
-        -- the proofs are kept, since epoch 2 is seeded from the last one (output 3, from input 1).
+        -- Epoch 1: inputs 0 and 1 against a freshly created machine, left alive on the server.
+        -- Epoch 2 is seeded from its last output proof (output 3, from input 1).
         -- The entrypoint is fixed here, so --reject=3 is set now even though input 3 arrives later.
         run_ok({
             "--remote-address=" .. address,
@@ -3401,8 +3480,12 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-ein-%i.bin,"
-                .. "input_index_begin:0,input_index_end:2,"
-                .. "output:,rejected_output:,report:,outputs_merkle_root:,outputs_merkle_root_proof:,"
+                .. "input_file_index_begin:0,input_file_index_end:2,"
+                .. "output:,rejected_output:,report:,outputs_merkle_root:"
+                .. prefix
+                .. "-eoh-%i.bin,outputs_merkle_root_proof:"
+                .. prefix
+                .. "-erootproof-%i.json,"
                 .. "output_proof:"
                 .. prefix
                 .. "-e1proof-%o-%i.json",
@@ -3413,6 +3496,12 @@ describe("cartesi-machine CLI", function()
             "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=3",
         })
 
+        local first_roots, first_root_proofs = {}, {}
+        for i = 0, 1 do
+            first_roots[i] = filesystem.read_file(prefix .. "-eoh-" .. i .. ".bin")
+            first_root_proofs[i] = filesystem.read_file(prefix .. "-erootproof-" .. i .. ".json")
+        end
+
         -- Epoch 2: reuse the same live machine (no new entrypoint), seeded with epoch 1's last output
         -- proof. Input 3 is rejected, so the guest rolls its outputs Merkle tree back. The default outputs
         -- Merkle root check still holds because the host frontier rolls back in step.
@@ -3422,8 +3511,10 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-ein-%i.bin,"
-                .. "input_index_begin:2,input_index_end:5,"
-                .. "report:,"
+                .. "input_file_index_begin:2,input_file_index_end:5,"
+                .. "report:"
+                .. prefix
+                .. "-e2report-%i-%o.bin,"
                 .. "output:"
                 .. prefix
                 .. "-e2o-%o-%i.bin,"
@@ -3438,15 +3529,30 @@ describe("cartesi-machine CLI", function()
                 .. "-e2proof-%o-%i.json,"
                 .. "outputs_merkle_root:"
                 .. prefix
-                .. "-e2oh-%i.bin,outputs_merkle_root_proof:",
+                .. "-eoh-%i.bin,outputs_merkle_root_proof:"
+                .. prefix
+                .. "-erootproof-%i.json",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
         })
 
-        -- Accepted epoch 2 outputs continue the global index over inputs 2 and 4 (4..7) and verify
+        for i = 0, 1 do
+            expect.equal(filesystem.read_file(prefix .. "-eoh-" .. i .. ".bin"), first_roots[i])
+            expect.equal(filesystem.read_file(prefix .. "-erootproof-" .. i .. ".json"), first_root_proofs[i])
+        end
+        for i = 2, 4 do
+            expect.truthy(filesystem.read_file(prefix .. "-e2report-" .. i .. "-0.bin"))
+        end
+        for _, i in ipairs({ 2, 4 }) do
+            local proof = cartesi.fromjson(filesystem.read_file(prefix .. "-erootproof-" .. i .. ".json"), "Proof")
+            expect.equal(proof.target_hash, cartesi.keccak256(filesystem.read_file(prefix .. "-eoh-" .. i .. ".bin")))
+            hash_tree.verify_slice(proof)
+        end
+
+        -- Epoch 2 outputs use input file indices 2 and 4 and global output indices 4..7, and verify
         -- against epoch 2's final root. Rejected input 3 advanced nothing.
-        local final_root = filesystem.read_file(prefix .. "-e2oh-4.bin")
+        local final_root = filesystem.read_file(prefix .. "-eoh-4.bin")
         for _, p in ipairs({ { o = 4, i = 2 }, { o = 5, i = 2 }, { o = 6, i = 4 }, { o = 7, i = 4 } }) do
             local proof = cartesi.fromjson(
                 filesystem.read_file(string.format("%s-e2proof-%d-%d.json", prefix, p.o, p.i)),
@@ -3461,7 +3567,991 @@ describe("cartesi-machine CLI", function()
         assert(io.open(prefix .. "-e2rej-6-3.bin", "r"), "no rejected voucher for input 3")
         assert(io.open(prefix .. "-e2rej-7-3.bin", "r"), "no rejected notice for input 3")
         assert(not io.open(prefix .. "-e2o-6-3.bin", "r"), "rejected output leaked into accepted outputs")
-        assert(not io.open(prefix .. "-e2oh-3.bin", "r"), "rejected input wrote an outputs Merkle root")
+        assert(not io.open(prefix .. "-eoh-3.bin", "r"), "rejected input wrote an outputs Merkle root")
+    end)
+
+    -- Each batch must extend the same history, including rejects, and final proofs must
+    -- cover outputs from earlier calls. Exercise both persistence mechanisms and a prior epoch.
+    for _, scenario in ipairs({
+        { name = "remote", bundle = 0 },
+        { name = "stored", bundle = 2, seeded = true },
+        { name = "outputs only", seeded = true },
+        { name = "SHA-256 zero outputs", bundle = 2, hash_type = "sha256", no_outputs = true },
+    }) do
+        it("incremental explicit frontiers " .. scenario.name, function()
+            local jsonrpc = require("cartesi.jsonrpc")
+            local server <close>, address = jsonrpc.spawn_server()
+            server:set_cleanup_call(jsonrpc.NOTHING)
+            local _ <close> = tests_util.scope_exit(function()
+                local connection <close> = jsonrpc.connect_server(address)
+                connection:shutdown_server()
+            end)
+            local _ <close>, template = scope_stored_dirname()
+            local _ <close>, stored = scope_stored_dirname()
+            local prefix = filesystem.temp_pathname()
+            local files = {}
+            local function path(suffix)
+                local filename = prefix .. suffix
+                files[#files + 1] = filename
+                return filename
+            end
+            local _ <close> = tests_util.scope_exit(function()
+                for _, filename in ipairs(files) do
+                    os.remove(filename)
+                end
+                pcall(cartesi.machine.remove_stored, cartesi.machine, stored .. ".revert")
+            end)
+            local outputs_frontier_file = path("-outputs-frontier.json")
+            local computation_frontier_file = path("-computation-frontier.json")
+            local state_hash_file = path("-state-hash.bin")
+            local output_hashes_file = path("-output-hashes.bin")
+            local output_input_indices_file = path("-output-input-indices.bin")
+            local prior_proof = path("-prior.json")
+            local prior_input = path("-prior.bin")
+            filesystem.write_file(prior_input, encode_advance(9, "previous epoch"))
+            local begin_index = 7
+            for i = begin_index, begin_index + 2 do
+                filesystem.write_file(path("-input-" .. i .. ".bin"), encode_advance(i - begin_index, "input-" .. i))
+            end
+            local disabled = "output:,rejected_output:,report:,outputs_merkle_root:,outputs_merkle_root_proof:"
+            local initial = {
+                "--store=" .. template,
+                "--revert-mode=none",
+                "--hash-tree=hash_function:" .. (scenario.hash_type or "keccak256"),
+                "--cmio-advance-state="
+                    .. disabled
+                    .. ",input:"
+                    .. prior_input
+                    .. ",input_file_index_end:"
+                    .. (scenario.seeded and 1 or 0)
+                    .. ",output_proof:"
+                    .. (scenario.seeded and prior_proof or ""),
+                "--max-mcycle=2000000000",
+                "--no-init-splash",
+                "--quiet",
+                "--",
+                "ioctl-echo-loop --vouchers="
+                    .. (scenario.no_outputs and 0 or 1)
+                    .. " --notices="
+                    .. (scenario.no_outputs and 0 or 1)
+                    .. " --reports=0 --reject=1",
+            }
+            run_ok(initial)
+            local function options(label)
+                return "input:"
+                    .. prefix
+                    .. "-input-%i.bin,report:,outputs_merkle_root:,outputs_merkle_root_proof:,"
+                    .. "output:"
+                    .. prefix
+                    .. "-"
+                    .. label
+                    .. "-output-%o-%i.bin,"
+                    .. "rejected_output:"
+                    .. prefix
+                    .. "-"
+                    .. label
+                    .. "-rejected-%o-%i.bin,"
+                    .. "output_proof:"
+                    .. prefix
+                    .. "-"
+                    .. label
+                    .. "-proof-%o-%i.json"
+            end
+            local config = scenario.bundle
+                    and "--mcycle-computation-hash=log2_mcycle_period:10,log2_bundle_mcycle_count:" .. scenario.bundle
+                or nil
+            local seed = scenario.seeded and ",last_output_proof:" .. prior_proof or ""
+            local function flags(cmio, extra)
+                local result = {
+                    "--remote-address=" .. address,
+                    "--no-remote-destroy",
+                    "--cmio-advance-state=" .. cmio,
+                    "--max-mcycle=2000000000",
+                    "--no-init-splash",
+                }
+                for _, flag in ipairs(extra or {}) do
+                    result[#result + 1] = flag
+                end
+                return result
+            end
+            local baseline_hash = path("-baseline-hash.bin")
+            local split_hash = path("-split-hash.bin")
+            local baseline_root = path("-baseline-root.bin")
+            local split_root = path("-split-root.bin")
+            -- Find the first accepted boundary, then interrupt the next input in the same call.
+            run_ok(
+                flags(
+                    disabled
+                        .. ",output_proof:,input:"
+                        .. prefix
+                        .. "-input-%i.bin"
+                        .. seed
+                        .. ",input_file_index_begin:7,input_file_index_end:8",
+                    { "--load=" .. template }
+                )
+            )
+            local first_boundary = server:get_root_hash()
+            local interrupted_mcycle = server:read_reg("mcycle") + (1 << 12)
+            server:destroy()
+            local _ <close>, interrupted_store = scope_stored_dirname()
+            local interrupted_root = path("-interrupted-root.bin")
+            local outputs_per_input = scenario.no_outputs and 0 or 2
+            local output_begin = scenario.seeded and outputs_per_input or 0
+            for _, label in ipairs({ "baseline", "split", "continued" }) do
+                for _, kind in ipairs({ "output", "rejected", "proof" }) do
+                    for i = begin_index, begin_index + 2 do
+                        for o = output_begin, output_begin + 2 * outputs_per_input - 1 do
+                            path(
+                                "-"
+                                    .. label
+                                    .. "-"
+                                    .. kind
+                                    .. "-"
+                                    .. o
+                                    .. "-"
+                                    .. i
+                                    .. (kind == "proof" and ".json" or ".bin")
+                            )
+                        end
+                    end
+                end
+            end
+            local baseline_flags = { "--load=" .. template, "--final-hash=" .. baseline_root }
+            if config then
+                baseline_flags[#baseline_flags + 1] = config .. ",filename:" .. baseline_hash
+            end
+            run_ok(
+                flags(
+                    options("baseline")
+                        .. seed
+                        .. ",input_file_index_begin:"
+                        .. begin_index
+                        .. ",input_file_index_end:"
+                        .. (begin_index + 3),
+                    baseline_flags
+                )
+            )
+            do
+                local connection <close> = jsonrpc.connect_server(address)
+                connection:destroy()
+            end
+
+            local is_stored = scenario.name == "stored"
+            local function resume_flags(cmio, first, extra)
+                local result = flags(cmio .. ",resumable:true,begin_epoch:" .. tostring(not not first), extra)
+                if config then
+                    result[#result + 1] = config
+                        .. ",filename:"
+                        .. split_hash
+                        .. ",frontier:"
+                        .. computation_frontier_file
+                end
+                if is_stored then
+                    -- Local stored reverts; remove the remote connection flags.
+                    table.remove(result, 1)
+                    table.remove(result, 1)
+                    result[#result + 1] = "--load="
+                        .. stored
+                        .. (first and ",clone:" .. template or "")
+                        .. ",sharing:all,sync"
+                    result[#result + 1] = "--revert-mode=stored"
+                else
+                    result[#result + 1] = first and "--load=" .. template or "--no-remote-create"
+                end
+                return result
+            end
+            local artifacts = ",outputs_frontier:"
+                .. outputs_frontier_file
+                .. ",output_hashes:"
+                .. output_hashes_file
+                .. ",output_input_indices:"
+                .. output_input_indices_file
+                .. ",state_hash:"
+                .. state_hash_file
+            local function split_options()
+                return options("split") .. seed .. artifacts
+            end
+            local function frontier(filename)
+                return cartesi.fromjson(filesystem.read_file(filename), "Base64Array")
+            end
+            local function contents(filename)
+                local f <close> = io.open(filename, "rb")
+                return f and f:read("a") or ""
+            end
+            run_ok(resume_flags(split_options() .. ",end_epoch:false", true))
+            expect.equal(hash_tree.frontier_leaf_count(frontier(outputs_frontier_file)), output_begin)
+            expect.equal(contents(output_hashes_file), "")
+            expect.equal(contents(output_input_indices_file), "")
+            if scenario.bundle then
+                expect.equal(
+                    hash_tree.frontier_leaf_count(frontier(computation_frontier_file), 48 - 10 - scenario.bundle),
+                    0
+                )
+            end
+
+            -- Protect histories from eager reads. Only proof generation may load their contents.
+            local original_cli = CLI
+            local _ <close> = tests_util.scope_exit(function()
+                CLI = original_cli
+            end)
+            local guarded_cli = path("-no-history-read.lua")
+            filesystem.write_file(
+                guarded_cli,
+                string.format(
+                    [[
+local protected = {}
+local hashes_filename, indices_filename = %q, %q
+io.tmpfile = function() error("output history must stay in memory") end
+local open = io.open
+io.open = function(filename, mode)
+    local file, err, code = open(filename, mode)
+    if file and (filename:sub(1, #hashes_filename) == hashes_filename
+        or filename:sub(1, #indices_filename) == indices_filename) then protected[file] = true end
+    return file, err, code
+end
+local methods = getmetatable(io.stdout).__index
+local read = methods.read
+methods.read = function(file, ...)
+    assert(not protected[file], "output history read before proof generation")
+    return read(file, ...)
+end
+dofile(%q)
+]],
+                    output_hashes_file,
+                    output_input_indices_file,
+                    original_cli
+                )
+            )
+            for index = 0, 2 do
+                local interrupted = index == 0
+                CLI = guarded_cli
+                local _, log = run_ok(
+                    resume_flags(
+                        split_options()
+                            .. ",end_epoch:false,input_file_index_begin:"
+                            .. (7 + index)
+                            .. ",input_file_index_end:"
+                            .. (interrupted and 9 or 8 + index),
+                        false,
+                        interrupted
+                                and {
+                                    "--max-mcycle=" .. interrupted_mcycle,
+                                    "--store=" .. interrupted_store,
+                                    "--final-hash=" .. interrupted_root,
+                                }
+                            or nil
+                    )
+                )
+                CLI = original_cli
+                expect.falsy(log:find("computation hash:", 1, true))
+                expect.falsy(io.open(split_hash, "rb"))
+                expect.falsy(io.open(prefix .. "-split-proof-" .. output_begin .. "-7.json", "rb"))
+                if scenario.bundle then
+                    expect.equal(
+                        hash_tree.frontier_leaf_count(frontier(computation_frontier_file), 48 - 10 - scenario.bundle),
+                        index + 1
+                    )
+                end
+                local output_count = outputs_per_input * (index == 2 and 2 or 1)
+                expect.equal(
+                    hash_tree.frontier_leaf_count(frontier(outputs_frontier_file)),
+                    output_begin + output_count
+                )
+                expect.equal(#contents(output_hashes_file), output_count * 32)
+                expect.equal(#contents(output_input_indices_file), output_count * 8)
+                local hashes, indices = {}, {}
+                for _, epoch_input in ipairs({ 0, 2 }) do
+                    if epoch_input <= index then
+                        for output = 0, outputs_per_input - 1 do
+                            local o = output_begin + (epoch_input == 0 and 0 or outputs_per_input) + output
+                            hashes[#hashes + 1] = cartesi.keccak256(
+                                filesystem.read_file(
+                                    prefix .. "-baseline-output-" .. o .. "-" .. (begin_index + epoch_input) .. ".bin"
+                                )
+                            )
+                            indices[#indices + 1] = string.pack("<I8", begin_index + epoch_input)
+                        end
+                    end
+                end
+                expect.equal(contents(output_hashes_file), table.concat(hashes))
+                expect.equal(contents(output_input_indices_file), table.concat(indices))
+                if interrupted then
+                    local exported <close> = cartesi.machine(interrupted_store)
+                    expect.equal(exported:get_root_hash(), first_boundary)
+                    expect.equal(contents(state_hash_file), first_boundary)
+                    expect.truthy(contents(interrupted_root) ~= first_boundary)
+                    expect.truthy(log:find("Before input 8", 1, true))
+                    local saved = {}
+                    for _, file in ipairs({
+                        outputs_frontier_file,
+                        computation_frontier_file,
+                        state_hash_file,
+                        output_hashes_file,
+                        output_input_indices_file,
+                    }) do
+                        saved[file] = contents(file)
+                    end
+                    local copy_count = 0
+                    local function continued_flags(cmio, extra)
+                        local copies = {}
+                        local uarch = extra and extra:find("^%-%-uarch%-cycle%-computation%-hash=")
+                        -- Uarch computation hashes can use the originals because they never update state files.
+                        if not uarch then
+                            copy_count = copy_count + 1
+                            for file in pairs(saved) do
+                                local copy = file .. "-diagnostic-" .. copy_count
+                                files[#files + 1] = copy
+                                copies[file] = copy
+                                local input <close> = io.open(file, "rb")
+                                if input then
+                                    filesystem.write_file(copy, input:read("a"))
+                                end
+                            end
+                        end
+                        local function use_copies(argument)
+                            return (
+                                argument:gsub("([%w_]+):([^,]+)", function(key, value)
+                                    return key .. ":" .. (copies[value] or value)
+                                end)
+                            )
+                        end
+                        local result = {
+                            "--remote-address=127.0.0.1:0",
+                            "--remote-spawn",
+                            "--remote-shutdown",
+                            "--load=" .. interrupted_store,
+                            "--cmio-advance-state=" .. use_copies(cmio) .. ",begin_epoch:false,resumable:" .. tostring(
+                                not uarch
+                            ),
+                            "--max-mcycle=2000000000",
+                            "--no-init-splash",
+                        }
+                        if extra then
+                            result[#result + 1] = use_copies(extra)
+                        end
+                        return result
+                    end
+                    local continued = options("continued")
+                        .. seed
+                        .. artifacts
+                        .. ",input_file_index_begin:8,input_file_index_end:10"
+                    -- Output continuation needs no computation options or epoch input offset.
+                    CLI = guarded_cli
+                    local _, continued_log = run_ok(continued_flags(continued .. ",output_proof:"))
+                    CLI = original_cli
+                    expect.falsy(continued_log:find("computation hash:", 1, true))
+                    -- Resumable proofs require the earlier histories and output frontier.
+                    run_fail(
+                        continued_flags(continued .. ",output_hashes:,output_input_indices:"),
+                        "resumable output proofs require output_hashes and output_input_indices"
+                    )
+                    run_fail(
+                        continued_flags(continued .. ",outputs_frontier:"),
+                        "resumable:true requires state_hash and outputs_frontier"
+                    )
+                    if scenario.name == "remote" then
+                        -- Default file indices follow the epoch offset, while history keeps earlier overrides.
+                        for i = 1, 2 do
+                            filesystem.write_file(
+                                path("-input-" .. i .. ".bin"),
+                                filesystem.read_file(prefix .. "-input-" .. (begin_index + i) .. ".bin")
+                            )
+                            for output = 0, outputs_per_input - 1 do
+                                local o = output_begin + outputs_per_input + output
+                                for _, kind in ipairs({ "output", "rejected", "proof" }) do
+                                    path(
+                                        "-continued-"
+                                            .. kind
+                                            .. "-"
+                                            .. o
+                                            .. "-"
+                                            .. i
+                                            .. (kind == "proof" and ".json" or ".bin")
+                                    )
+                                end
+                            end
+                        end
+                        local defaults = continued:gsub(",input_file_index_begin:8", "") .. ",input_file_index_end:3"
+                        for _, computation in ipairs({
+                            config .. ",frontier:" .. computation_frontier_file,
+                            "--uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:"
+                                .. (2 << (48 - 10)),
+                        }) do
+                            local _, default_log =
+                                run_ok(continued_flags(defaults .. ",next_input_offset:1", computation))
+                            expect.truthy(default_log:find("Before input 1", 1, true))
+                            expect.falsy(default_log:find("Before input 0", 1, true))
+                            for output = 0, outputs_per_input - 1 do
+                                local o = output_begin + outputs_per_input + output
+                                expect.equal(
+                                    contents(prefix .. "-continued-proof-" .. o .. "-2.json"),
+                                    contents(prefix .. "-baseline-proof-" .. o .. "-9.json")
+                                )
+                            end
+                            expect.equal(
+                                contents(prefix .. "-continued-proof-" .. output_begin .. "-7.json"),
+                                contents(prefix .. "-baseline-proof-" .. output_begin .. "-7.json")
+                            )
+                        end
+                        local mcycle = config .. ",frontier:" .. computation_frontier_file
+                        local _, default_log = run_ok(continued_flags(defaults, mcycle))
+                        expect.truthy(default_log:find("Before input 1", 1, true))
+                        for _, offset in ipairs({ 0, 2 }) do
+                            run_fail(
+                                continued_flags(defaults .. ",next_input_offset:" .. offset, mcycle),
+                                "next_input_offset does not match computation frontier"
+                            )
+                        end
+                    end
+                    filesystem.write_file(state_hash_file, zeros(32))
+                    run_fail(continued_flags(continued), "machine root does not match state_hash")
+                    filesystem.write_file(state_hash_file, saved[state_hash_file])
+                    if scenario.bundle and scenario.hash_type ~= "sha256" then
+                        local baseline_uarch = path("-baseline-uarch.bin")
+                        local continued_uarch = path("-continued-uarch.bin")
+                        local period = 2 << (48 - 10)
+                        local uarch = "--uarch-cycle-computation-hash=log2_mcycle_period:10,"
+                            .. "log2_bundle_uarch_cycle_count:16,mcycle_period_index:"
+                            .. period
+                        local baseline_uarch_flags = continued_flags(
+                            options("continued") .. seed .. ",input_file_index_begin:7,input_file_index_end:10",
+                            uarch .. ",filename:" .. baseline_uarch
+                        )
+                        baseline_uarch_flags[4] = "--load=" .. template
+                        run_ok(baseline_uarch_flags)
+                        local resumed_uarch = uarch .. ",filename:" .. continued_uarch
+                        local resumed_cmio = continued .. ",next_input_offset:1"
+                        run_ok(continued_flags(resumed_cmio, resumed_uarch))
+                        expect.equal(contents(continued_uarch), contents(baseline_uarch))
+                        run_fail(
+                            continued_flags(resumed_cmio, resumed_uarch .. ",mcycle_period_index:0"),
+                            "uarch target period precedes next_input_offset"
+                        )
+                        -- Uarch computation hashes leave all supplied state files unchanged.
+                        run_ok(continued_flags(resumed_cmio, resumed_uarch))
+                        expect.equal(contents(outputs_frontier_file), saved[outputs_frontier_file])
+                        expect.equal(contents(computation_frontier_file), saved[computation_frontier_file])
+                        expect.equal(contents(output_hashes_file), saved[output_hashes_file])
+                        expect.equal(contents(output_input_indices_file), saved[output_input_indices_file])
+                        expect.equal(contents(state_hash_file), saved[state_hash_file])
+                    end
+                    for file, data in pairs(saved) do
+                        expect.equal(contents(file), data)
+                    end
+                elseif index == 1 then
+                    -- Rejection consumes an input position, but restores the preceding accepted state.
+                    expect.equal(contents(state_hash_file), first_boundary)
+                end
+            end
+            if scenario.name == "remote" then
+                local final_options = split_options()
+                for _, file in ipairs({ output_hashes_file, output_input_indices_file }) do
+                    local data = contents(file)
+                    filesystem.write_file(file, data .. "x")
+                    run_fail(resume_flags(final_options), "output file size does not match record size")
+                    filesystem.write_file(file, data)
+                end
+                local data = contents(output_input_indices_file)
+                filesystem.write_file(output_input_indices_file, data .. string.pack("<I8", 0))
+                run_fail(resume_flags(final_options), "output history count does not match outputs frontier")
+                filesystem.write_file(output_input_indices_file, data)
+                local old_hashes, old_indices = contents(output_hashes_file), contents(output_input_indices_file)
+                filesystem.write_file(output_hashes_file, old_hashes:sub(33))
+                filesystem.write_file(output_input_indices_file, old_indices:sub(9))
+                run_fail(resume_flags(final_options), "output history count does not match outputs frontier")
+                filesystem.write_file(output_hashes_file, old_hashes)
+                filesystem.write_file(output_input_indices_file, old_indices)
+                local hashes = contents(output_hashes_file)
+                filesystem.write_file(output_hashes_file, zeros(#hashes))
+                CLI = guarded_cli
+                run_ok(resume_flags(final_options .. ",end_epoch:false"))
+                CLI = original_cli
+                run_fail(resume_flags(final_options), "output hashes do not match the epoch outputs Merkle root")
+                filesystem.write_file(output_hashes_file, hashes)
+                local query = path("-query.bin")
+                filesystem.write_file(query, "inspect between batches")
+                local before_query = contents(state_hash_file)
+                run_ok(
+                    resume_flags(
+                        split_options() .. ",end_epoch:false",
+                        false,
+                        { "--cmio-inspect-state=query:" .. query .. ",report:" }
+                    )
+                )
+                expect.equal(contents(state_hash_file), before_query)
+            end
+            -- Mcycle continuation derives its position from the computation frontier.
+            local final_options = options("split") .. seed .. artifacts
+            run_ok(resume_flags(final_options, false, { "--final-hash=" .. split_root }))
+            expect.equal(contents(split_root), contents(baseline_root))
+            if scenario.bundle then
+                expect.equal(contents(split_hash), contents(baseline_hash))
+                local complete = frontier(computation_frontier_file)
+                expect.equal(complete[#complete], contents(split_hash))
+                run_fail(
+                    resume_flags(final_options .. ",input_file_index_begin:0,input_file_index_end:1"),
+                    "input count exceeds the remaining inputs"
+                )
+            end
+            if not scenario.no_outputs then
+                for offset, i in ipairs({ 7, 9 }) do
+                    for output = 0, outputs_per_input - 1 do
+                        local suffix = "-" .. (output_begin + (offset - 1) * outputs_per_input + output) .. "-" .. i
+                        expect.equal(
+                            filesystem.read_file(prefix .. "-split-output" .. suffix .. ".bin"),
+                            filesystem.read_file(prefix .. "-baseline-output" .. suffix .. ".bin")
+                        )
+                        local proof = cartesi.fromjson(
+                            filesystem.read_file(prefix .. "-split-proof" .. suffix .. ".json"),
+                            "Proof"
+                        )
+                        expect.equal(
+                            proof,
+                            cartesi.fromjson(
+                                filesystem.read_file(prefix .. "-baseline-proof" .. suffix .. ".json"),
+                                "Proof"
+                            )
+                        )
+                        hash_tree.verify_slice(proof)
+                    end
+                end
+                for output = 0, outputs_per_input - 1 do
+                    local suffix = "-" .. (output_begin + outputs_per_input + output) .. "-8.bin"
+                    expect.equal(
+                        filesystem.read_file(prefix .. "-split-rejected" .. suffix),
+                        filesystem.read_file(prefix .. "-baseline-rejected" .. suffix)
+                    )
+                end
+            end
+        end)
+    end
+
+    for _, hashing in ipairs({ false, true }) do
+        it("epoch lifecycle" .. (hashing and " with mcycle computation hash" or " with outputs only"), function()
+            local _ <close>, stored = scope_stored_dirname()
+            local _ <close>, frontier_file = scope_temp_pathname()
+            local _ <close>, outputs = scope_temp_pathname()
+            local _ <close>, state_hash = scope_temp_pathname()
+            local _ <close>, hashes = scope_temp_pathname()
+            local _ <close>, indices = scope_temp_pathname()
+            local _ <close>, result = scope_temp_pathname()
+            local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+            machine:write_reg("htif_iyield", cartesi.HTIF_YIELD_CMD_MANUAL_MASK)
+            machine:write_reg("iflags_Y", 1)
+            machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+            machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+            machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+            machine:store(stored)
+            local checkpoint = "resumable:true,state_hash:"
+                .. state_hash
+                .. ",outputs_frontier:"
+                .. outputs
+                .. ",output_hashes:"
+                .. hashes
+                .. ",output_input_indices:"
+                .. indices
+            local function flags(advance, persistent)
+                local args = {
+                    "--load=" .. stored,
+                    "--revert-mode=none",
+                    "--max-mcycle=0",
+                    "--cmio-advance-state=output_proof:" .. (advance and "," .. advance or ""),
+                }
+                if hashing then
+                    args[#args + 1] = "--mcycle-computation-hash=log2_mcycle_period:19,filename:"
+                        .. result
+                        .. (persistent and ",frontier:" .. frontier_file or "")
+                end
+                return args
+            end
+            -- The default is an entire epoch with no checkpoint files.
+            run_ok(flags())
+            local expected = hashing and filesystem.read_file(result)
+            expect.falsy(io.open(state_hash, "rb"))
+            expect.falsy(io.open(outputs, "rb"))
+            expect.falsy(io.open(frontier_file, "rb"))
+            run_fail(flags(checkpoint .. ",begin_epoch:false", true), "cannot resume epoch: cannot read")
+            expect.falsy(io.open(state_hash, "rb"))
+            -- A fresh resumable epoch accepts missing or empty files.
+            filesystem.write_file(outputs, "")
+            run_ok(flags(checkpoint .. ",end_epoch:false", true))
+            local saved = {}
+            for _, filename in ipairs({ state_hash, outputs, hashes, indices }) do
+                saved[filename] = filesystem.read_file(filename)
+            end
+            if hashing then
+                saved[frontier_file] = filesystem.read_file(frontier_file)
+            end
+            expect.equal(saved[state_hash], machine:get_root_hash())
+            expect.equal(saved[hashes], "")
+            expect.equal(saved[indices], "")
+            run_fail(flags(checkpoint, true), "state file is not empty")
+            -- Missing files must not turn a resume into a fresh epoch.
+            for filename, data in pairs(saved) do
+                assert(os.remove(filename))
+                run_fail(flags(checkpoint .. ",begin_epoch:false", true), "cannot resume epoch: cannot read")
+                expect.falsy(io.open(filename, "rb"))
+                filesystem.write_file(filename, data)
+                if #data > 0 then
+                    filesystem.write_file(filename, "")
+                    run_fail(
+                        flags(checkpoint .. ",begin_epoch:false", true),
+                        "cannot resume epoch: .* is empty %(use begin_epoch:true"
+                    )
+                    filesystem.write_file(filename, data)
+                end
+            end
+            -- An intermediate batch leaves the epoch open. The final batch seals it.
+            run_ok(flags(checkpoint .. ",begin_epoch:false,end_epoch:false", true))
+            for filename, data in pairs(saved) do
+                expect.equal(filesystem.read_file(filename), data)
+            end
+            run_ok(flags(checkpoint .. ",begin_epoch:false", true))
+            if hashing then
+                expect.equal(filesystem.read_file(result), expected)
+                local frontier = cartesi.fromjson(filesystem.read_file(frontier_file), "Base64Array")
+                expect.equal(frontier[#frontier], expected)
+            end
+            -- Checkpointing is also available for an entire epoch in one invocation.
+            for filename in pairs(saved) do
+                assert(os.remove(filename))
+            end
+            run_ok(flags(checkpoint, true))
+            expect.equal(filesystem.read_file(state_hash), machine:get_root_hash())
+            if hashing then
+                expect.equal(filesystem.read_file(result), expected)
+            end
+        end)
+    end
+
+    it("explicit frontiers empty tall trees and terminal stops", function()
+        local _ <close>, stored = scope_stored_dirname()
+        local _ <close>, frontier_file = scope_temp_pathname()
+        local _ <close>, state_hash = scope_temp_pathname()
+        local _ <close>, outputs = scope_temp_pathname()
+        local _ <close>, result = scope_temp_pathname()
+        local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+        machine:write_reg("htif_iyield", cartesi.HTIF_YIELD_CMD_MANUAL_MASK | cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK)
+        machine:write_reg("iflags_Y", 1)
+        machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+        machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+        machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+        machine:store(stored)
+        local function flags(extra, begin_epoch)
+            return {
+                "--load=" .. stored,
+                "--revert-mode=none",
+                "--cmio-advance-state=resumable:true,output_proof:,state_hash:"
+                    .. state_hash
+                    .. ",outputs_frontier:"
+                    .. outputs
+                    .. ",begin_epoch:"
+                    .. tostring(not not begin_epoch)
+                    .. (extra or ""),
+                "--mcycle-computation-hash=log2_mcycle_period:0,filename:" .. result .. ",frontier:" .. frontier_file,
+            }
+        end
+        local _, log = run_ok(flags(",end_epoch:false", true))
+        expect.falsy(log:find("computation hash:", 1, true))
+        expect.falsy(io.open(result, "rb"))
+        local frontier = cartesi.fromjson(filesystem.read_file(frontier_file), "Base64Array")
+        expect.equal(#frontier, 73)
+        expect.equal(filesystem.read_file(state_hash), machine:get_root_hash())
+        run_ok(flags())
+        local expected = machine:get_root_hash()
+        for _ = 1, 72 do
+            expected = cartesi.keccak256(expected, expected)
+        end
+        expect.equal(filesystem.read_file(result), expected)
+        frontier = cartesi.fromjson(filesystem.read_file(frontier_file), "Base64Array")
+        expect.equal(frontier[73], expected)
+        run_fail(flags(",input_file_index_begin:0,input_file_index_end:1"), "input count exceeds the remaining inputs")
+        -- Terminal fixed points finish the computation but leave the new state-hash file empty.
+        os.remove(frontier_file)
+        os.remove(state_hash)
+        os.remove(outputs)
+        machine:remove_stored(stored)
+        machine:write_reg("iflags_Y", 0)
+        machine:write_reg("iflags_H", 1)
+        machine:store(stored)
+        run_ok(flags(",end_epoch:false", true))
+        frontier = cartesi.fromjson(filesystem.read_file(frontier_file), "Base64Array")
+        expect.truthy(frontier[#frontier])
+        expect.equal(filesystem.read_file(state_hash), "")
+    end)
+
+    it("explicit frontiers stop at a boot-time exception or unexpected manual yield", function()
+        for _, reason in ipairs({ cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION, 0xffff }) do
+            for _, hashing in ipairs({ false, true }) do
+                local _ <close>, stored = scope_stored_dirname()
+                local _ <close>, state_hash = scope_temp_pathname()
+                local _ <close>, outputs = scope_temp_pathname()
+                local _ <close>, hashes = scope_temp_pathname()
+                local _ <close>, indices = scope_temp_pathname()
+                local _ <close>, computation = scope_temp_pathname()
+                local _ <close>, proof = scope_temp_pathname()
+                local _ <close>, missing_input = scope_temp_pathname()
+                local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+                machine:write_reg("htif_iyield", cartesi.HTIF_YIELD_CMD_MANUAL_MASK)
+                machine:write_reg("iflags_Y", 1)
+                machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+                machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+                machine:write_reg("htif_tohost_reason", reason)
+                machine:store(stored)
+                local flags = {
+                    "--load=" .. stored,
+                    "--revert-mode=none",
+                    "--cmio-advance-state=input:"
+                        .. missing_input
+                        .. ",input_file_index_end:1,end_epoch:false,resumable:true,state_hash:"
+                        .. state_hash
+                        .. ",outputs_frontier:"
+                        .. outputs
+                        .. ",output_hashes:"
+                        .. hashes
+                        .. ",output_input_indices:"
+                        .. indices
+                        .. ",output_proof:"
+                        .. proof,
+                }
+                if hashing then
+                    flags[#flags + 1] = "--mcycle-computation-hash=log2_mcycle_period:19,frontier:" .. computation
+                end
+                local rc, _, log = run(flags)
+                expect.equal(rc, 1)
+                expect.truthy(log:find(reason == 0xffff and "Unexpected manual yield" or "cmio exception", 1, true))
+                expect.equal(filesystem.read_file(state_hash), "")
+                expect.falsy(io.open(proof, "rb"))
+            end
+        end
+    end)
+
+    for _, terminal in ipairs({ "halt", "exception" }) do
+        for _, hashing in ipairs({ false, true }) do
+            it("explicit frontiers terminal " .. terminal .. (hashing and " with computation hash" or ""), function()
+                local _ <close>, boundary = scope_stored_dirname()
+                local _ <close>, state_hash = scope_temp_pathname()
+                local _ <close>, outputs = scope_temp_pathname()
+                local _ <close>, hashes = scope_temp_pathname()
+                local _ <close>, indices = scope_temp_pathname()
+                local _ <close>, computation = scope_temp_pathname()
+                local _ <close>, input = filesystem.write_scope_temp_file(encode_advance(0, "input"))
+                local _ <close>, proof = scope_temp_pathname()
+                local computation_options
+                if hashing then
+                    computation_options = "--mcycle-computation-hash=log2_mcycle_period:19,frontier:" .. computation
+                end
+                local options = "input:"
+                    .. input
+                    .. ",output:,rejected_output:,report:,outputs_merkle_root:,"
+                    .. "outputs_merkle_root_proof:,output_proof:"
+                    .. proof
+                    .. ",end_epoch:false,resumable:true,state_hash:"
+                    .. state_hash
+                    .. ",outputs_frontier:"
+                    .. outputs
+                    .. ",output_hashes:"
+                    .. hashes
+                    .. ",output_input_indices:"
+                    .. indices
+                local stop = terminal == "halt" and "exit 0" or [[echo '{"payload":"0x03"}' | rollup exception]]
+                local first_flags = {
+                    "--store=" .. boundary,
+                    "--revert-mode=none",
+                    "--max-mcycle=2000000000",
+                    "--cmio-advance-state=" .. options .. ",input_file_index_end:1",
+                    "--",
+                    [[rollup accept; echo '{"payload":"0x01"}' | rollup notice; rollup accept; ]]
+                        .. [[echo '{"payload":"0x02"}' | rollup notice; ]]
+                        .. stop,
+                }
+                if computation_options then
+                    table.insert(first_flags, 5, computation_options)
+                end
+                run_ok(first_flags)
+                local accepted_hash = filesystem.read_file(state_hash)
+                local accepted_outputs = filesystem.read_file(outputs)
+                expect.falsy(io.open(proof, "rb"))
+                local last_flags = {
+                    "--load=" .. boundary,
+                    "--revert-mode=none",
+                    "--max-mcycle=2000000000",
+                    "--cmio-advance-state="
+                        .. options
+                        .. ",begin_epoch:false,input_file_index_begin:0,input_file_index_end:1",
+                }
+                if computation_options then
+                    last_flags[#last_flags + 1] = computation_options
+                end
+                local rc, _, log = run(last_flags)
+                expect.equal(rc, terminal == "halt" and 0 or 1)
+                expect.truthy(log:find(terminal == "halt" and "Halted" or "cmio exception", 1, true))
+                expect.equal(filesystem.read_file(state_hash), accepted_hash)
+                expect.equal(filesystem.read_file(outputs), accepted_outputs)
+                expect.falsy(io.open(proof, "rb"))
+                if hashing then
+                    local frontier = cartesi.fromjson(filesystem.read_file(computation), "Base64Array")
+                    expect.truthy(frontier[#frontier])
+                end
+            end)
+        end
+    end
+
+    it("explicit frontiers reject malformed state before execution", function()
+        local _ <close>, filename = scope_temp_pathname()
+        local _ <close>, stored = scope_stored_dirname()
+        local _ <close>, state_hash = scope_temp_pathname()
+        local _ <close>, outputs_file = scope_temp_pathname()
+        local machine <close> = cartesi.machine({ ram = { length = 4096 } })
+        machine:store(stored)
+        filesystem.write_file(state_hash, machine:get_root_hash())
+        local initial_outputs = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+        initial_outputs.hash_function = nil
+        filesystem.write_file(outputs_file, cartesi.tojson(initial_outputs, 2, "Base64Array"))
+        local function flags(options)
+            return {
+                "--max-mcycle=0",
+                "--load=" .. stored,
+                "--cmio-advance-state=begin_epoch:false,resumable:true,output_proof:,state_hash:"
+                    .. state_hash
+                    .. ",outputs_frontier:"
+                    .. outputs_file
+                    .. (options ~= "" and "," .. options or ""),
+            }
+        end
+        filesystem.write_file(filename, "short")
+        run_fail(flags("state_hash:" .. filename), "invalid state_hash size")
+        local computation = "--mcycle-computation-hash=log2_mcycle_period:10,frontier:" .. filename
+        local function invalid(change, message)
+            local frontier = hash_tree.frontier(62, "keccak256")
+            frontier.hash_function = nil
+            change(frontier)
+            filesystem.write_file(filename, cartesi.tojson(frontier, 2, "Base64Array"))
+            local args = flags("")
+            args[#args + 1] = computation
+            run_fail(args, message)
+        end
+        invalid(function(f)
+            f[63] = nil
+        end, "frontier height does not match")
+        invalid(function(f)
+            f[1] = "short"
+        end, "invalid frontier entry")
+        invalid(function(f)
+            f[1] = zeros(32)
+        end, "frontier is not aligned")
+        invalid(function(f)
+            f[63], f[1] = zeros(32), zeros(32)
+        end, "invalid complete frontier")
+        for _, offset in ipairs({
+            "0xffffffffffffffff",
+            tostring((1 << ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH) + 1),
+        }) do
+            run_fail({
+                "--cmio-advance-state=input_file_index_end:0,next_input_offset:" .. offset,
+                "--max-mcycle=0",
+            }, "invalid next_input_offset in %-%-cmio%-advance%-state")
+        end
+        -- Each supplied history file must have the expected size, even without its companion.
+        local _ <close>, hashes_file = filesystem.write_scope_temp_file(zeros(32))
+        local _ <close>, indices_file = filesystem.write_scope_temp_file(string.pack("<I8", 0))
+        local outputs = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+        hash_tree.frontier_push_back(outputs, zeros(32), 1)
+        outputs.hash_function = nil
+        filesystem.write_file(filename, cartesi.tojson(outputs, 2, "Base64Array"))
+        for _, option in ipairs({ "output_hashes:" .. hashes_file, "output_input_indices:" .. indices_file }) do
+            run_fail(
+                flags("outputs_frontier:" .. filename .. "," .. option),
+                "output history count does not match outputs frontier"
+            )
+        end
+        expect.equal(filesystem.read_file(hashes_file), zeros(32))
+        expect.equal(filesystem.read_file(indices_file), string.pack("<I8", 0))
+        -- Resuming requires history files to exist, even if they would be empty.
+        local _ <close>, missing_history = scope_temp_pathname()
+        run_fail(
+            flags("outputs_frontier:" .. filename .. ",output_hashes:" .. missing_history),
+            "cannot resume epoch: cannot read history"
+        )
+        expect.falsy(io.open(missing_history, "rb"))
+    end)
+
+    it("epoch lifecycle option validation", function()
+        local _ <close>, stored = scope_stored_dirname()
+        local _ <close>, state_hash = scope_temp_pathname()
+        local _ <close>, outputs = scope_temp_pathname()
+        local checkpoint = "resumable:true,output_proof:,state_hash:" .. state_hash .. ",outputs_frontier:" .. outputs
+        for _, computation in ipairs({
+            "",
+            "--mcycle-computation-hash=log2_mcycle_period:10",
+            "--uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:" .. (5 << (48 - 10)),
+        }) do
+            for _, begin_epoch in ipairs({ "", "begin_epoch:true," }) do
+                local args = { "--cmio-advance-state=" .. begin_epoch .. "next_input_offset:5", "--max-mcycle=0" }
+                if computation ~= "" then
+                    args[#args + 1] = computation
+                end
+                run_fail(args, "begin_epoch:true requires next_input_offset:0")
+            end
+        end
+        for _, option in ipairs({ "begin_epoch:false", "end_epoch:false" }) do
+            run_fail(
+                { "--cmio-advance-state=" .. option },
+                "begin_epoch:false or end_epoch:false requires resumable:true"
+            )
+        end
+        run_fail({ "--cmio-advance-state=resumable:true" }, "resumable:true requires state_hash and outputs_frontier")
+        run_fail({ "--cmio-advance-state=state_hash:" .. state_hash }, "epoch files require resumable:true")
+        run_fail(
+            { "--cmio-advance-state=" .. checkpoint .. ",output_proof:proof-%o" },
+            "resumable output proofs require output_hashes and output_input_indices"
+        )
+        run_fail({
+            "--cmio-advance-state=" .. checkpoint,
+            "--mcycle-computation-hash=log2_mcycle_period:10",
+        }, "resumable mcycle computation hashes require frontier")
+        run_fail({
+            "--cmio-advance-state=resumable:true",
+            "--uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:0",
+        }, "uarch computation hashes cannot be resumable")
+        run_fail({
+            "--cmio-advance-state=state_hash:" .. state_hash,
+            "--uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:0",
+        }, "reading epoch files requires begin_epoch:false")
+        for _, option in ipairs({ "create_epoch_files", "update_epoch_state:false" }) do
+            run_fail({ "--cmio-advance-state=" .. option }, "unknown option")
+        end
+        run_fail({ "--mcycle-computation-hash=log2_mcycle_period:10,create_frontier" }, "unknown option")
+        expect.falsy(io.open(state_hash, "rb"))
+        expect.falsy(io.open(outputs, "rb"))
+        run_fail(
+            {
+                "--store=" .. stored,
+                "--cmio-advance-state=" .. checkpoint,
+                "--cmio-inspect-state=query:unused",
+                "--revert-mode=none",
+            },
+            "options that modify epoch files with %-%-cmio%-inspect%-state"
+                .. " require %-%-revert%-mode=fork or %-%-revert%-mode=stored"
+        )
+        expect.falsy(io.open(stored .. "/config.json", "rb"))
+        expect.falsy(io.open(state_hash, "rb"))
+        run_fail(
+            { "--cmio-advance-state=state_hash:", "--revert-mode=none", "--max-mcycle=0" },
+            "epoch initialization did not reach a fixed point"
+        )
+        run_fail({ "--cmio-advance-state=input_file_index_begin:2,input_file_index_end:1" }, "invalid input file range")
+        run_fail({
+            "--cmio-advance-state=begin_epoch:false,output_proof:,next_input_offset:1",
+            "--max-mcycle=0",
+            "--revert-mode=none",
+            "--uarch-cycle-computation-hash=log2_mcycle_period:10,mcycle_period_index:" .. (1 << (48 - 10)),
+        }, "epoch initialization did not reach a fixed point")
+        run_fail(
+            { "--cmio-advance-state=" .. checkpoint, "--max-uarch-cycle=1" },
+            "options that modify epoch files cannot be combined with options that modify the machine"
+                .. " after the last advance state input"
+        )
     end)
 
     -- -------------------------------------------------------------------------
@@ -3493,7 +4583,7 @@ describe("cartesi-machine CLI", function()
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-inrt-%i.bin,"
-                .. "input_index_begin:0,input_index_end:1,"
+                .. "input_file_index_begin:0,input_file_index_end:1,"
                 .. "output:"
                 .. prefix
                 .. "-rt-%i-%o.bin,"
@@ -3665,24 +4755,26 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- Boot must reach GDB before the first input, for every computation hash builder.
-    -- Stop twice before the first yield and compare the final state with a plain boot.
+    -- Stop twice before the first yield and require the same initialization failure as a plain boot.
     it("GDB during advance-state boot", function()
         for _, hash_options in ipairs({
-            "",
-            ",log2_mcycle_computation_hash_period:19",
-            ",log2_mcycle_computation_hash_period:19,mcycle_period_index:0",
+            false,
+            "--mcycle-computation-hash=log2_mcycle_period:19",
+            "--uarch-cycle-computation-hash=log2_mcycle_period:19,mcycle_period_index:0",
         }) do
             local _ <close>, final_hash = scope_temp_pathname()
             local flags = {
-                "--cmio-advance-state=input_index_end:0" .. hash_options,
+                "--cmio-advance-state=input_file_index_end:0",
                 "--revert-mode=none",
                 "--max-mcycle=1000",
                 "--final-hash=" .. final_hash,
                 "--no-init-splash",
             }
-            run_ok(flags)
-            local expected = filesystem.read_file(final_hash)
-            os.remove(final_hash)
+            if hash_options then
+                flags[#flags + 1] = hash_options
+            end
+            run_fail(flags, "epoch initialization did not reach a fixed point")
+            expect.falsy(io.open(final_hash, "rb"))
             local log = run_under_gdb(flags, function(conn)
                 expect.equal(gdb_rcmd(conn, "stepc 375"), "OK")
                 expect.equal(gdb_command(conn, "c"), "S02")
@@ -3690,7 +4782,8 @@ describe("cartesi-machine CLI", function()
                 expect.equal(gdb_command(conn, "c"), "S03")
                 expect.equal(gdb_command(conn, "D"), "OK")
             end)
-            expect.equal(filesystem.read_file(final_hash), expected)
+            expect.truthy(log:find("epoch initialization did not reach a fixed point", 1, true))
+            expect.falsy(io.open(final_hash, "rb"))
             expect.falsy(log:find("computation hash:", 1, true))
         end
     end)

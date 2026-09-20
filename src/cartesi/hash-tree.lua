@@ -87,20 +87,6 @@ end
 -- pristine subtrees double on demand inside each loop (keccak256(pristine, pristine)).
 local pristine_leaf = string.rep("\0", cartesi.HASH_SIZE)
 
--- The leaf count standing under a frontier: a level is filled exactly when its bit of the count is
--- set, so summing those bit values over the filled levels recovers it.
-local function frontier_leaf_count(frontier)
-    local leaf_count = 0
-    for level = 1, #frontier do
-        local bit = level - 1
-        if frontier[level] then
-            assert(bit < 64, "frontier leaf count exceeds 64 bits")
-            leaf_count = leaf_count | (1 << bit)
-        end
-    end
-    return leaf_count
-end
-
 -- The hash of node "index" at one level, given that level's frontier entry (the complete left
 -- subtree to the left, or false) and pristine entry (the all-pristine subtree to the right). The
 -- three regions read left-to-right as they sit in the tree: the frontier, the active region
@@ -124,6 +110,23 @@ local function assert_aligned_below(levels, level, message)
     for below = 1, level - 1 do
         assert(not levels[below], message)
     end
+end
+
+-- The leaf count standing under a frontier: a level is filled exactly when its bit of the count is
+-- set, so summing those bit values over the filled levels recovers it. With height,
+-- count complete subtrees of that height instead, requiring alignment below it.
+local function frontier_leaf_count(frontier, height)
+    height = height or 0
+    assert_aligned_below(frontier, height + 1, "frontier is not aligned to the subtree size")
+    local leaf_count = 0
+    for level = height + 1, #frontier do
+        local bit = level - height - 1
+        if frontier[level] then
+            assert(bit < 64, "frontier leaf count exceeds 64 bits")
+            leaf_count = leaf_count | (1 << bit)
+        end
+    end
+    return leaf_count
 end
 
 -- Applies the defaults and validates a half-open array range. begin_index == end_index
@@ -240,13 +243,21 @@ end
 -- remaining count land each pad subtree directly in its own empty level. The level cursor only
 -- moves forward across both phases, so each level is hashed at most once: O(log2_max_leaves)
 -- hashes. Mutates the frontier in place. Padding to exactly full leaves the root in the top
--- entry.
+-- entry. Omitting count pads to the root, including for trees taller than a Lua integer.
 local function frontier_pad_back(frontier, hash, count, pad_height)
     local hash_function = assert(frontier.hash_function)
     pad_height = pad_height or 0
     local first_level = pad_height + 1
     local top = #frontier
     assert_aligned_below(frontier, first_level, "frontier is not aligned to the pad size")
+    if count == nil then
+        local root = frontier_get_root_hash(frontier, hash, pad_height)
+        for level = 1, top - 1 do
+            frontier[level] = false
+        end
+        frontier[top] = root
+        return
+    end
     assert(frontier_padding_fits(frontier, count, first_level), "too many leaves")
     if count == 0 then return end
     -- pad_hashes[level] is the root of the complete subtree whose 2^(level-first_level) entries
@@ -761,6 +772,7 @@ return {
     get_data_root_hash = get_data_root_hash,
     frontier = frontier,
     frontier_copy = frontier_copy,
+    frontier_leaf_count = frontier_leaf_count,
     frontier_push_back = frontier_push_back,
     frontier_append = frontier_append,
     frontier_pad_back = frontier_pad_back,

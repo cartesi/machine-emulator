@@ -214,8 +214,8 @@ local function add_case(case)
 
     local hash_path = "results/" .. case.id .. ".bin"
     local advance = {
-        "input_index_begin:0",
-        "input_index_end:" .. #input_paths,
+        "input_file_index_begin:0",
+        "input_file_index_end:" .. #input_paths,
         "output:",
         "rejected_output:",
         "output_proof:",
@@ -223,25 +223,31 @@ local function add_case(case)
         "outputs_merkle_root:",
         "outputs_merkle_root_proof:",
         "check_outputs_merkle_root:false",
-        "log2_mcycle_computation_hash_period:" .. case.log2_period,
     }
     if #input_paths > 0 then
         advance[#advance + 1] = "input:inputs/" .. case.id .. "-%i.bin"
     end
+    local computation = {
+        "filename:" .. hash_path,
+        "log2_mcycle_period:" .. case.log2_period,
+    }
     if case.level == "mcycle" then
-        advance[#advance + 1] = "mcycle_computation_hash:" .. hash_path
-        advance[#advance + 1] = "log2_bundle_mcycle_count:" .. (case.log2_bundle_mcycle or 0)
+        computation[#computation + 1] = "log2_bundle_mcycle_count:" .. (case.log2_bundle_mcycle or 0)
     else
-        advance[#advance + 1] = "uarch_cycle_computation_hash:" .. hash_path
-        advance[#advance + 1] = "mcycle_period_index:" .. case.period_index
-        advance[#advance + 1] = "log2_bundle_uarch_cycle_count:" .. (case.log2_bundle_uarch or 16)
+        computation[#computation + 1] = "mcycle_period_index:" .. case.period_index
+        computation[#computation + 1] = "log2_bundle_uarch_cycle_count:" .. (case.log2_bundle_uarch or 16)
     end
 
     local argv = {
         "cartesi-machine.lua",
         "--load=templates/" .. case.template,
         "--cmio-advance-state=" .. table.concat(advance, ","),
+        "--" .. (case.level == "mcycle" and "mcycle" or "uarch-cycle") .. "-computation-hash=" .. table.concat(
+            computation,
+            ","
+        ),
     }
+
     if case.remote then
         argv[#argv + 1] = "--remote-spawn"
         argv[#argv + 1] = "--remote-address=127.0.0.1:0"

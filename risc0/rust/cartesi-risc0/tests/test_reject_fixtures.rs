@@ -69,17 +69,11 @@ fn test_guest_rejects_forged_logs() {
             .unwrap_or_else(|_| panic!("bad cycle: {:?}", cols[4]));
         let before = parse_hash(cols[5]);
         let after = parse_hash(cols[6]);
-        let path = dir.join(name);
+        let log = fs::read(dir.join(name)).expect("could not read step log");
 
         eprintln!("Rejecting {name} (expect: {tag})");
-        let err = try_prove(
-            REPLAY_STEP_ELF,
-            &before,
-            path.to_str().unwrap(),
-            cycle,
-            &after,
-        )
-        .expect_err(&format!("guest ACCEPTED forged log {name} (tag {tag})"));
+        let err = try_prove(REPLAY_STEP_ELF, &before, &log, cycle, &after)
+            .expect_err(&format!("guest ACCEPTED forged log {name} (tag {tag})"));
         let want = expected_message(tag);
         assert!(
             err.contains(want),
@@ -114,13 +108,12 @@ fn test_host_rejects_wrong_belief() {
             }
         })
         .expect("a machine row in the positive manifest");
-    let path = dir.join(&name);
-    let p = path.to_str().unwrap();
+    let log = fs::read(dir.join(&name)).expect("could not read step log");
 
     let mut bad = before;
     bad[0] ^= 0xff;
-    let e =
-        try_prove(REPLAY_STEP_ELF, &bad, p, cycle, &after).expect_err("wrong root_before accepted");
+    let e = try_prove(REPLAY_STEP_ELF, &bad, &log, cycle, &after)
+        .expect_err("wrong root_before accepted");
     assert!(e.contains("root_hash_before mismatch"), "{e:?}");
 
     // A wrong cycle count replays a different transition. Probe with fewer cycles: the
@@ -131,13 +124,13 @@ fn test_host_rejects_wrong_belief() {
         cycle > 1,
         "need a multi-cycle fixture to probe a wrong count"
     );
-    let e = try_prove(REPLAY_STEP_ELF, &before, p, cycle - 1, &after)
+    let e = try_prove(REPLAY_STEP_ELF, &before, &log, cycle - 1, &after)
         .expect_err("wrong cycle accepted");
     assert!(e.contains("root_hash_after mismatch"), "{e:?}");
 
     let mut bad = after;
     bad[0] ^= 0xff;
-    let e =
-        try_prove(REPLAY_STEP_ELF, &before, p, cycle, &bad).expect_err("wrong root_after accepted");
+    let e = try_prove(REPLAY_STEP_ELF, &before, &log, cycle, &bad)
+        .expect_err("wrong root_after accepted");
     assert!(e.contains("root_hash_after mismatch"), "{e:?}");
 }

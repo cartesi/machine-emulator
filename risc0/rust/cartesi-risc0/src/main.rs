@@ -101,10 +101,11 @@ fn prove_and_save_receipt(
     receipt_path: &str,
 ) -> Result<(), Box<dyn error::Error>> {
     println!("Proving step log: {}", log_file_path);
+    let log = fs::read(log_file_path)?;
     let receipt = prove(
         guest_elf,
         &root_hash_before,
-        log_file_path,
+        &log,
         mcycle_count,
         &root_hash_after,
     );

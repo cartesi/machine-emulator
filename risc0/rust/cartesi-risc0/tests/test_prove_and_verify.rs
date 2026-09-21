@@ -70,10 +70,11 @@ fn test_prove_and_verify() {
         }
         let path = dir.join(&row.name);
         eprintln!("Verifying {} (cycles={})", row.name, row.cycle_count);
+        let log = fs::read(&path).expect("could not read step log");
         let receipt = prove(
             REPLAY_STEP_ELF,
             &row.root_before,
-            path.to_str().unwrap(),
+            &log,
             row.cycle_count,
             &row.root_after,
         );
@@ -104,11 +105,11 @@ fn test_verify_rejects_fake_receipt_without_opt_in() {
         .into_iter()
         .find(|r| r.kind == "machine")
         .expect("no machine step-log rows in manifest");
-    let path = dir.join(&row.name);
+    let log = fs::read(dir.join(&row.name)).expect("could not read step log");
     let receipt = prove(
         REPLAY_STEP_ELF,
         &row.root_before,
-        path.to_str().unwrap(),
+        &log,
         row.cycle_count,
         &row.root_after,
     );

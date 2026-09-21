@@ -14,8 +14,6 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-use std::fs;
-
 pub type MachineHash = [u8; 32];
 use risc0_zkvm::{
     default_prover,
@@ -60,14 +58,14 @@ pub fn guest_image_id(guest_elf: &[u8]) -> [u32; 8] {
 pub fn prove(
     guest_elf: &[u8],
     root_hash_before: &MachineHash,
-    log_file_path: &str,
+    log: &[u8],
     mcycle_count: u64,
     root_hash_after: &MachineHash,
 ) -> Receipt {
     try_prove(
         guest_elf,
         root_hash_before,
-        log_file_path,
+        log,
         mcycle_count,
         root_hash_after,
     )
@@ -81,15 +79,14 @@ pub fn prove(
 pub fn try_prove(
     guest_elf: &[u8],
     root_hash_before: &MachineHash,
-    log_file_path: &str,
+    log: &[u8],
     mcycle_count: u64,
     root_hash_after: &MachineHash,
 ) -> Result<Receipt, String> {
-    let log_data = fs::read(log_file_path).map_err(|e| format!("could not read log file: {e}"))?;
     // Guest input: the cycle count to run, then the log bytes (see methods/guest main.rs).
     let env = ExecutorEnv::builder()
         .write_slice(&mcycle_count.to_le_bytes())
-        .write_slice(&log_data)
+        .write_slice(log)
         .build()
         .map_err(|e| format!("could not build executor env: {e}"))?;
 

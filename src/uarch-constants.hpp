@@ -27,7 +27,7 @@
 
 namespace cartesi {
 
-/// \brief Initial values for the microarchitecture
+/// \brief Initial values for the uarch
 enum UARCH_init : uint64_t {
     UARCH_HALT_INIT = EXPAND_UINT64_C(UARCH_HALT_INIT_DEF),
     UARCH_X_INIT = EXPAND_UINT64_C(UARCH_X_INIT_DEF),

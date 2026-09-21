@@ -6416,14 +6416,14 @@ interpreter_break_reason interpret(const STATE_ACCESS a, uint64_t mcycle_end) {
 template interpreter_break_reason interpret(uarch_bridge_state_access a, uint64_t mcycle_end);
 #elif defined(ZKARCHITECTURE)
 // Explicit instantiation for replay_step_state_access (by reference)
-template interpreter_break_reason interpret(replay_step_state_access &a, uint64_t mcycle_end);
+template interpreter_break_reason interpret(replay_step_state_access<no_step_log_dumper> &a, uint64_t mcycle_end);
 #else
 // Explicit instantiation for state_access
 template interpreter_break_reason interpret(state_access a, uint64_t mcycle_end);
 // Explicit instantiation for record_step_state_access
 template interpreter_break_reason interpret(record_step_state_access a, uint64_t mcycle_end);
 // Explicit instantiation for replay_step_state_access
-template interpreter_break_reason interpret(replay_step_state_access a, uint64_t mcycle_end);
+template interpreter_break_reason interpret(replay_step_state_access<no_step_log_dumper> a, uint64_t mcycle_end);
 // Explicit instantiation for collect_mcycle_hashes_state_access
 template interpreter_break_reason interpret(collect_mcycle_hashes_state_access a, uint64_t mcycle_end);
 #endif // MICROARCHITECTURE

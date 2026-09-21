@@ -12,6 +12,10 @@
 build
 tests/fuzz/seed-corpus
 tests/fuzz/corpus
+tests/fuzz/fuzz-config
+tests/fuzz/fuzz-interpret
+tests/fuzz/fuzz-interpret-step
+tests/fuzz/*.dSYM
 pkg
 third-party/downloads
 src/cartesi-jsonrpc-machine
@@ -35,3 +39,4 @@ doc/recipes/cache
 *.dtb
 .DS_Store
 .claude/
+sp1/

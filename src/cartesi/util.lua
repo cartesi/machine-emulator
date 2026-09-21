@@ -14,8 +14,6 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
-local cartesi = require("cartesi")
-
 local _M = {}
 
 local function indentout(f, indent, fmt, ...) f:write(string.rep("  ", indent), string.format(fmt, ...)) end
@@ -178,81 +176,6 @@ function _M.parse_options(keys, all, opts)
         end
     end)
     return options
-end
-
-local function abbreviated_hash(hash) return string.sub(cartesi.tohex(hash), 1, 10) end
-
-local function accessdatastring(data, data_hash, data_log2_size, address)
-    local data_size = 1 << data_log2_size
-    if data_log2_size == 3 then
-        if not data then return "???(no written data)" end
-        if data_size < #data then
-            -- access data is  smaller than the tree leaf size
-            -- the logged data is the entire tree leaf, but we only need the data that was accessed
-            local leaf_aligned_address = (address >> cartesi.HASH_TREE_LOG2_WORD_SIZE)
-                << cartesi.HASH_TREE_LOG2_WORD_SIZE
-            local word_offset = address - leaf_aligned_address
-            data = data:sub(word_offset + 1, word_offset + data_size)
-        end
-        data = string.unpack("<I8", data)
-        return string.format("0x%x(%u)", data, data)
-    else
-        local data_snippet = ""
-        if data_hash ~= nil then data_snippet = string.format('hash:"%s"', abbreviated_hash(data_hash)) end
-        if data ~= nil then
-            if data_snippet ~= "" then data_snippet = data_snippet .. " " end
-            data_snippet = data_snippet
-                .. string.format("%s...%s", cartesi.tohex(data:sub(1, 3)), cartesi.tohex(data:sub(-3, -1)))
-        end
-        return string.format("%s(2^%d bytes)", data_snippet, data_log2_size)
-    end
-end
-
-function _M.print_log(log, out)
-    local indent = 0
-    local j = 1 -- Bracket index
-    local i = 1 -- Access index
-    local brackets = log.brackets or {}
-    local notes = log.notes or {}
-    local accesses = log.accesses
-    -- Loop until accesses and brackets are exhausted
-    while true do
-        local bj = brackets[j]
-        local ai = accesses[i]
-        if not bj and not ai then break end
-        -- If bracket points before current access, output bracket
-        if bj and bj.where <= i then
-            if bj.type == "begin" then
-                indentout(out, indent, "begin %s\n", bj.text)
-                indent = indent + 1 -- Increase indentation before bracket
-            elseif bj.type == "end" then
-                indent = indent - 1 -- Decrease indentation after bracket
-                indentout(out, indent, "end %s\n", bj.text)
-            end
-            j = j + 1
-        -- Otherwise, output access
-        elseif ai then
-            local read = accessdatastring(ai.read, ai.read_hash, ai.log2_size, ai.address)
-            if ai.type == "read" then
-                indentout(out, indent, "%d: read %s@0x%x(%u): %s\n", i, notes[i] or "", ai.address, ai.address, read)
-            else
-                assert(ai.type == "write", "unknown access type")
-                local written = accessdatastring(ai.written, ai.written_hash, ai.log2_size, ai.address)
-                indentout(
-                    out,
-                    indent,
-                    "%d: write %s@0x%x(%u): %s -> %s\n",
-                    i,
-                    notes[i] or "",
-                    ai.address,
-                    ai.address,
-                    read,
-                    written
-                )
-            end
-            i = i + 1
-        end
-    end
 end
 
 function _M.ilog2(n)

@@ -16,6 +16,7 @@
 
 #include "machine-config.hpp"
 
+#include <bit>
 #include <cstdint>
 #include <exception>
 #include <iomanip>

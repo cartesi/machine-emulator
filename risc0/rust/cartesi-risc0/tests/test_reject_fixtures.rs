@@ -1,23 +1,14 @@
-use cartesi_risc0::MachineHash;
 use cartesi_risc0::{try_prove, REPLAY_STEP_ELF};
 use std::fs;
 use std::path::Path;
+
+mod common;
+use common::machine_rows;
 
 // The big-machine (sha256) reject fixtures (tests/lua/record-adversarial-machine.lua) are
 // structurally invalid logs. The guest must abort on each -- via zk_abort_with_msg, which
 // carries the same message the C++ host throws -- rather than produce a valid receipt. This
 // is the soundness statement: a malicious prover cannot get a proof for a forged log.
-
-fn parse_hash(s: &str) -> MachineHash {
-    let hex = s.strip_prefix("0x").unwrap_or(s);
-    assert_eq!(hex.len(), 64, "expected 32-byte hex hash, got {:?}", s);
-    let mut out = [0u8; 32];
-    for (i, byte) in out.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16)
-            .unwrap_or_else(|_| panic!("invalid hex in hash: {:?}", s));
-    }
-    out
-}
 
 /// The substring the guest abort message must contain for each reject tag (the C++ throw
 /// message, surfaced through zk_abort_with_msg).
@@ -48,40 +39,32 @@ fn test_guest_rejects_forged_logs() {
         dir.display()
     );
 
-    let text = fs::read_to_string(dir.join("_manifest.csv"))
-        .unwrap_or_else(|e| panic!("failed to read reject manifest: {e}"));
+    let rows = machine_rows(&dir);
+    assert!(
+        !rows.is_empty(),
+        "no machine reject rows in {}",
+        dir.display()
+    );
 
-    let mut checked = 0;
-    for line in text.lines().skip(1) {
-        if line.is_empty() {
-            continue;
-        }
-        // Schema: kind,name,expectError,hashFunction,cycle,before,after,reason,dataLength,data,revertRootHash
-        let cols: Vec<&str> = line.split(',').collect();
-        assert!(cols.len() >= 7, "malformed reject row: {line:?}");
-        if cols[0] != "machine" {
-            continue;
-        }
-        let name = cols[1];
-        let tag = cols[2];
-        let cycle: u64 = cols[4]
-            .parse()
-            .unwrap_or_else(|_| panic!("bad cycle: {:?}", cols[4]));
-        let before = parse_hash(cols[5]);
-        let after = parse_hash(cols[6]);
+    for row in &rows {
+        let (name, tag) = (&row.name, &row.expect_error);
         let log = fs::read(dir.join(name)).expect("could not read step log");
 
         eprintln!("Rejecting {name} (expect: {tag})");
-        let err = try_prove(REPLAY_STEP_ELF, &before, &log, cycle, &after)
-            .expect_err(&format!("guest ACCEPTED forged log {name} (tag {tag})"));
+        let err = try_prove(
+            REPLAY_STEP_ELF,
+            &row.root_before,
+            &log,
+            row.cycle_count,
+            &row.root_after,
+        )
+        .expect_err(&format!("guest ACCEPTED forged log {name} (tag {tag})"));
         let want = expected_message(tag);
         assert!(
             err.contains(want),
             "rejected {name} but message {err:?} lacks {want:?}"
         );
-        checked += 1;
     }
-    assert!(checked > 0, "no machine reject rows in {}", dir.display());
 }
 
 /// A valid log proven against a claim that disagrees with the journal must be
@@ -89,26 +72,12 @@ fn test_guest_rejects_forged_logs() {
 #[test]
 fn test_host_rejects_wrong_belief() {
     let dir = Path::new(env!("CARTESI_STEP_LOGS_PATH"));
-    let text = fs::read_to_string(dir.join("_manifest.csv"))
-        .unwrap_or_else(|e| panic!("failed to read manifest: {e}"));
-    let (name, cycle, before, after) = text
-        .lines()
-        .skip(1)
-        .find_map(|line| {
-            let c: Vec<&str> = line.split(',').collect();
-            if c.len() >= 7 && c[0] == "machine" {
-                Some((
-                    c[1].to_string(),
-                    c[4].parse::<u64>().unwrap(),
-                    parse_hash(c[5]),
-                    parse_hash(c[6]),
-                ))
-            } else {
-                None
-            }
-        })
+    let row = machine_rows(dir)
+        .into_iter()
+        .next()
         .expect("a machine row in the positive manifest");
-    let log = fs::read(dir.join(&name)).expect("could not read step log");
+    let (cycle, before, after) = (row.cycle_count, row.root_before, row.root_after);
+    let log = fs::read(dir.join(&row.name)).expect("could not read step log");
 
     let mut bad = before;
     bad[0] ^= 0xff;

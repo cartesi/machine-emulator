@@ -5303,10 +5303,35 @@ grep "computation hash" client > mch_line
 The honest player's mcycle claim must equal this hash, and we will check that the tournament settles on exactly it.
 The player computes it with the same machinery, `machine:collect_mcycle_root_hashes()`, which samples the state hash as the machine runs and reports where it stopped advancing.
 
-To build the CLI mcycle hash over several invocations, use `end_epoch:false` in `--cmio-advance-state` and supply `frontier` in `--mcycle-computation-hash`.
-Add `create_frontier` for the first invocation only, then reuse the frontier with the same period and bundle size and the matching machine.
-The final invocation uses `end_epoch:true`, which is the default.
-Supplied state files are updated after accepted or rejected inputs, and when the epoch ends. These writes are not an atomic transaction, so recovery after a process or host crash can require manual repair.
+The CLI separates starting an epoch, finishing it, and saving epoch files so it can be resumed.
+`begin_epoch:true,end_epoch:true,resumable:false` is the default and processes an entire epoch with intermediate bookkeeping in memory.
+For a resumable run, supply `state_hash` and `outputs_frontier` in `--cmio-advance-state`, and `frontier` in `--mcycle-computation-hash` when computing an mcycle computation hash.
+Output proofs across batches also require `output_hashes` and `output_input_indices`.
+
+For example, use `--cmio-advance-state=resumable:true,state_hash:epoch-state.bin,outputs_frontier:outputs.json,output_hashes:hashes.bin,output_input_indices:indices.bin` together with `--mcycle-computation-hash=log2_mcycle_period:10,frontier:computation.json,filename:mch.bin`.
+Add the following batch options to `--cmio-advance-state`:
+
+| Invocation | Batch options |
+| --- | --- |
+| First batch | `begin_epoch:true,end_epoch:false,input_file_index_begin:0,input_file_index_end:1` |
+| Intermediate batch | `begin_epoch:false,end_epoch:false,input_file_index_begin:1,input_file_index_end:2` |
+| Final batch | `begin_epoch:false,end_epoch:true,input_file_index_begin:2,input_file_index_end:3` |
+| Entire epoch with saved epoch files | `begin_epoch:true,end_epoch:true,input_file_index_begin:0,input_file_index_end:3` |
+
+A new resumable epoch requires missing or empty epoch files and refuses to replace nonempty files.
+It starts an empty computation frontier and initializes the outputs Merkle tree from `last_output_proof`, or starts it empty at genesis.
+A continuation requires valid existing epoch files and a machine matching `state_hash`.
+Retain that machine with store/load or a remote server, and reuse the same epoch filenames, hash period, bundle size, and `last_output_proof` across batches.
+Uarch computation hashes can read existing epoch files with `begin_epoch:false`, but cannot use `resumable:true` or modify the files.
+Use `next_input_offset` in `--cmio-advance-state` to identify the zero-based epoch offset of the machine's next input, including rejected inputs.
+With `begin_epoch:true`, `next_input_offset` must be zero.
+For uarch computation hashes, use `begin_epoch:false` with a nonzero offset to start from a later input without saved epoch files.
+For mcycle computation hashes, the offset is derived from the computation frontier, and an explicitly supplied value must agree.
+
+Resumable runs save completed input boundaries even when `end_epoch:true` requests the entire epoch in one invocation.
+The final invocation seals the computation frontier and writes the requested output proofs.
+Initialization can leave empty files if a later check fails.
+Epoch file writes are not an atomic transaction, so recovery after a process or host crash can require manual repair.
 
 The demonstration uses p = 10.
 The two levels pull the sampling period in opposite directions.

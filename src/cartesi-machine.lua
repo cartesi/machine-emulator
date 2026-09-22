@@ -3060,6 +3060,12 @@ local progress_terminator = "\r"
 if (initial_config.processor.registers.htif.iconsole & cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK) ~= 0 then
     progress_terminator = "\n"
 end
+for _, device in ipairs(initial_config.virtio) do
+    if device.type == "console" then
+        progress_terminator = "\n"
+        break
+    end
+end
 
 for _, r in ipairs(cmdline.memory_range_replace) do
     set_empty_omitted_filenames(r)

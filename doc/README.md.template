@@ -5323,7 +5323,7 @@ It starts an empty computation frontier and initializes the outputs Merkle tree 
 A continuation requires valid existing epoch files and a machine matching `state_hash`.
 Retain that machine with store/load or a remote server, and reuse the same epoch filenames, hash period, bundle size, and `last_output_proof` across batches.
 Uarch computation hashes can read existing epoch files with `begin_epoch:false`, but cannot use `resumable:true` or modify the files.
-Use `next_input_offset` in `--cmio-advance-state` to identify the zero-based epoch offset of the machine's next input, including rejected inputs.
+Use `next_input_offset` in `--cmio-advance-state` to identify the zero-based epoch offset of the next input for the machine, including rejected inputs.
 With `begin_epoch:true`, `next_input_offset` must be zero.
 For uarch computation hashes, use `begin_epoch:false` with a nonzero offset to start from a later input without saved epoch files.
 For mcycle computation hashes, the offset is derived from the computation frontier, and an explicitly supplied value must agree.

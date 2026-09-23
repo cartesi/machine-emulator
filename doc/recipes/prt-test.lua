@@ -476,6 +476,50 @@ for _, rejected in ipairs({ false, true }) do
     end
 end
 
+-- An input ending before the selected period supplies its fixed-point uarch history
+-- after commit or rollback, without re-entering the execution loop or using the old tail.
+for _, outcome in ipairs({ "accepted", "rejected", "halted" }) do
+    local halted, reset = keccak("fixed halt"), keccak("fixed reset")
+    local break_reason = outcome == "halted" and cartesi.BREAK_REASON_HALTED or cartesi.BREAK_REASON_YIELDED_MANUALLY
+    local machine = { collections = 0 }
+    function machine:run(target)
+        assert(self.delivered and target == 1024)
+        self.mcycle, self.rejected = 2, outcome == "rejected"
+        return break_reason
+    end
+    local player = new_bundle_player(machine)
+    function machine.receive_cmio_request()
+        return cartesi.HTIF_YIELD_CMD_MANUAL,
+            outcome == "rejected" and cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+                or cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED,
+            ""
+    end
+    function player.machine_cache.commit()
+        machine.committed = true
+    end
+    function machine:collect_uarch_cycle_root_hashes(target, height, revert_tail)
+        assert(target == cartesi.MCYCLE_MAX and revert_tail == nil)
+        if height == 0 then
+            assert(not self.delivered and self.collections == 0)
+            return { hashes = { keccak("virgin tail") } }
+        end
+        assert(height == LOG2_BUNDLE_UARCH_CYCLE_COUNT)
+        assert(self.collections == 0, "fixed-point collection repeated")
+        if outcome == "rejected" then
+            assert(self.rolled_back and self.mcycle == 0 and self.root_hash == "virgin")
+        else
+            assert(self.committed and self.mcycle == 2 and self.root_hash == "delivered")
+        end
+        self.collections = self.collections + 1
+        return { hashes = { halted, reset }, mcycle_hash_offsets = { 1, 3 }, break_reason = break_reason }
+    end
+    local forest = player:build_uarch_claim(0, 1)
+    local height = LOG2_BUNDLE_UARCH_CYCLE_COUNT
+    assert(machine.collections == 1)
+    assert(hash_tree.frontier_forest_get_node_hash(forest, 0, height) == halted)
+    assert(hash_tree.frontier_forest_get_node_hash(forest, (1 << forest.height) - (1 << height), height) == reset)
+end
+
 --------------------------------------------------------------------------------
 -- Machine checkpoint cache
 --------------------------------------------------------------------------------

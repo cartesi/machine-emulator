@@ -1493,11 +1493,9 @@ end
 
 local function uarch_computation_hash_end_input(builder, machine)
     if builder.mcycle_count < builder.mcycles_per_period then
-        -- A yield before the selected leaves is now a fixed point. On rejection,
-        -- collection uses the pre-delivery tail to reproduce the reverted state.
-        builder.collection_mcycle_begin = machine:read_reg("mcycle")
-        builder.collection_mcycle_end = cartesi.MCYCLE_MAX
-        builder:run(machine, cartesi.MCYCLE_MAX)
+        -- An input stopped before the selected period contributes its fixed-point history.
+        -- Rejection has already restored the pre-delivery boundary.
+        builder:push_collected(machine:collect_uarch_cycle_root_hashes(cartesi.MCYCLE_MAX, builder.bundle_height))
     end
     assert(builder.mcycle_count == builder.mcycles_per_period, "uarch computation hash is incomplete")
 end
@@ -1849,21 +1847,23 @@ function player_meta.__index:run_advance_state_input(
     local path = self.input_paths[epoch_input_offset + 1]
     load_cmio_input(machine, path and util.read_file(path), revert_root_hash)
     local break_reason = run_to_stop(builder, machine, mcycle_end, on_yield_automatic)
+    if not is_at_fixed_point(break_reason) then
+        -- A run stopped at its target keeps the snapshot so the input can still be rolled back.
+        return break_reason, nil, input_mcycle_boundary
+    end
     local yield_reason, outputs_merkle_root
     if is_yielded_manual(break_reason) then
         yield_reason, outputs_merkle_root = receive_cmio_request(machine)
     end
     if is_rx_rejected(yield_reason) then
-        builder:end_input(machine)
         self.machine_cache:revert(machine)
         assert(machine:get_root_hash() == revert_root_hash, "rollback did not restore the input boundary")
-    elseif is_at_fixed_point(break_reason) then
-        builder:end_input(machine)
+    else
         flush_pending_outputs(pending, outputs, outputs_frontier, yield_reason, outputs_merkle_root)
-        -- Acceptance and sticky stops retain the running machine. A run that stops at its
-        -- target keeps its snapshot, so the input can still be rolled back.
+        -- Acceptance and sticky stops retain the running machine.
         self.machine_cache:commit(machine)
     end
+    builder:end_input(machine)
     return break_reason, yield_reason, input_mcycle_boundary
 end
 

@@ -255,6 +255,50 @@ for _, case in ipairs({
     end
 end
 
+-- Uarch fixed-point groups describe padding, even when ordinary mcycles already fill
+-- the period. Reject excess ordinary groups before changing the claim's forest.
+for ordinary = 0, 3 do
+    local builder = prt.make_uarch_cycle_computation_hash_builder(1, 0)
+    builder:begin_epoch()
+    local halted, reset, pad_halted, pad_reset =
+        keccak("halted"), keccak("reset"), keccak("pad halt"), keccak("pad reset")
+    local hashes, offsets = {}, { 1 }
+    for _ = 1, ordinary do
+        hashes[#hashes + 1], hashes[#hashes + 2] = halted, reset
+        offsets[#offsets + 1] = #hashes + 1
+    end
+    hashes[#hashes + 1], hashes[#hashes + 2] = pad_halted, pad_reset
+    offsets[#offsets + 1] = #hashes + 1
+    local ok, err = pcall(builder.push_collected, builder, {
+        hashes = hashes,
+        mcycle_hash_offsets = offsets,
+        break_reason = cartesi.BREAK_REASON_HALTED,
+    })
+    if ordinary > 2 then
+        assert(not ok and tostring(err):find("exceeds the claim's mcycle capacity", 1, true))
+        assert(builder.frontier.leaf_count == 0, "overcollection changed the forest before failing")
+    else
+        assert(ok, err)
+        assert(builder.mcycle_count == 2, "fixed-point padding did not complete the period")
+        local forest = builder:end_epoch()
+        local mcycle_span = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+        local bundle_span = 1 << builder.bundle_height
+        for mcycle = 0, 1 do
+            assert(
+                hash_tree.frontier_forest_get_node_hash(forest, mcycle * mcycle_span, builder.bundle_height)
+                    == (mcycle < ordinary and halted or pad_halted)
+            )
+            assert(
+                hash_tree.frontier_forest_get_node_hash(
+                    forest,
+                    (mcycle + 1) * mcycle_span - bundle_span,
+                    builder.bundle_height
+                ) == (mcycle < ordinary and reset or pad_reset)
+            )
+        end
+    end
+end
+
 -- A minimal cache and input boundary for exercising the player's direct bundle collectors.
 local function new_bundle_player(machine)
     machine.mcycle, machine.root_hash = 0, "virgin"

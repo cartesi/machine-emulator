@@ -1428,8 +1428,7 @@ local function uarch_computation_hash_push_collected(builder, collected)
     local offsets = collected.mcycle_hash_offsets
     local available = #offsets - 1
     local log2_cycles = cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
-    local log2_bundles_per_mcycle = log2_cycles - builder.bundle_height
-    local remaining = (builder.max_bundle_count - builder.bundle_count) >> log2_bundles_per_mcycle
+    local remaining = builder.mcycles_per_period - builder.mcycle_count
     local count = available
     local at_fixed_point = is_at_fixed_point(collected.break_reason)
     if at_fixed_point then
@@ -1439,7 +1438,7 @@ local function uarch_computation_hash_push_collected(builder, collected)
     for i = 1, count do
         uarch_computation_hash_push_mcycle(builder, builder.frontier, collected.hashes, offsets[i], offsets[i + 1])
     end
-    builder.bundle_count = builder.bundle_count + (count << log2_bundles_per_mcycle)
+    builder.mcycle_count = builder.mcycle_count + count
     if not at_fixed_point then
         return
     end
@@ -1452,7 +1451,7 @@ local function uarch_computation_hash_push_collected(builder, collected)
         offsets[available + 1]
     )
     hash_tree.frontier_forest_pad_back(builder.frontier, pad_frontier, remaining - count)
-    builder.bundle_count = builder.max_bundle_count
+    builder.mcycle_count = builder.mcycles_per_period
 end
 
 local function uarch_computation_hash_begin_input(builder, machine, epoch_input_offset, input_mcycle_boundary)
@@ -1493,19 +1492,19 @@ local function uarch_computation_hash_run(builder, machine, mcycle_end)
 end
 
 local function uarch_computation_hash_end_input(builder, machine)
-    if builder.bundle_count < builder.max_bundle_count then
+    if builder.mcycle_count < builder.mcycles_per_period then
         -- A yield before the selected leaves is now a fixed point. On rejection,
         -- collection uses the pre-delivery tail to reproduce the reverted state.
         builder.collection_mcycle_begin = machine:read_reg("mcycle")
         builder.collection_mcycle_end = cartesi.MCYCLE_MAX
         builder:run(machine, cartesi.MCYCLE_MAX)
     end
-    assert(builder.bundle_count == builder.max_bundle_count, "uarch computation hash is incomplete")
+    assert(builder.mcycle_count == builder.mcycles_per_period, "uarch computation hash is incomplete")
 end
 
 local function uarch_computation_hash_begin_epoch(builder)
     builder.frontier = hash_tree.frontier_forest(builder.height, "keccak256")
-    builder.bundle_count = 0
+    builder.mcycle_count = 0
 end
 
 -- Before delivery at the selected input's virgin boundary,
@@ -1520,7 +1519,6 @@ local function make_uarch_cycle_computation_hash_builder(log2_mcycles_per_period
         mcycles_per_period = 1 << log2_mcycles_per_period,
         height = height,
         input_period_offset = input_period_offset,
-        max_bundle_count = 1 << (height - LOG2_BUNDLE_UARCH_CYCLE_COUNT),
         bundle_height = LOG2_BUNDLE_UARCH_CYCLE_COUNT,
         collection_chunk_size = uarch_hashes_collection_chunk_size(LOG2_BUNDLE_UARCH_CYCLE_COUNT),
         begin_epoch = uarch_computation_hash_begin_epoch,

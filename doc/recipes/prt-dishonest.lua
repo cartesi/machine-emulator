@@ -235,12 +235,11 @@ end
 -- directly. Only the affected group is split, preserving its neighbors' compressed trees.
 local function pad_back(builder, value, count, height)
     hash_tree.frontier_forest_pad_back(builder.frontier, value, count, height)
-    builder.bundle_count = builder.bundle_count + (count << (height - builder.bundle_height))
 end
 
 local function lie_about_leaf(leaf, unbundle)
     local function pad_back_lie(self, value, count, height)
-        local next_leaf = self.bundle_count << self.bundle_height
+        local next_leaf = self.frontier.leaf_count
         if count == 0 or leaf < next_leaf or leaf >= next_leaf + (count << height) then
             return pad_back(self, value, count, height)
         end
@@ -249,7 +248,7 @@ local function lie_about_leaf(leaf, unbundle)
         if height == self.bundle_height then
             -- The selected bundle factory reconstructs the fabricated leaves.
             -- Its replacement is authenticated by the ordinary tree.
-            local forest = unbundle(self, self.bundle_count << self.bundle_height, height)
+            local forest = unbundle(self, self.frontier.leaf_count, height)
             pad_back(self, hash_tree.frontier_forest_get_root_hash(forest), 1, height)
         else
             for i = 0, (1 << (height - self.bundle_height)) - 1 do
@@ -294,6 +293,7 @@ local function new_mcycle_liar(builder, insert)
                 for i = 1, count do
                     insert(self, collected.hashes[i], 1, self.bundle_height)
                 end
+                self.bundle_count = self.bundle_count + count
                 self.input_bundle_count = self.input_bundle_count + count
                 if is_at_fixed_point(collected.break_reason) then
                     insert(
@@ -302,6 +302,7 @@ local function new_mcycle_liar(builder, insert)
                         self.max_bundles_per_input - self.input_bundle_count,
                         self.bundle_height
                     )
+                    self.bundle_count = self.bundle_count + self.max_bundles_per_input - self.input_bundle_count
                     self.input_bundle_count = self.max_bundles_per_input
                 end
             until not is_target_mcycle(collected.break_reason) or machine:read_reg("mcycle") == mcycle_end
@@ -312,6 +313,7 @@ local function new_mcycle_liar(builder, insert)
             assert(self.input_bundle_count == 0, "mcycle computation hash input was not closed")
             if self.bundle_count < self.max_bundle_count then
                 insert(self, self.pad_bundle, self.max_bundle_count - self.bundle_count, self.bundle_height)
+                self.bundle_count = self.max_bundle_count
             end
             self.machine_cache:freeze()
             return self.frontier
@@ -325,7 +327,7 @@ local function new_uarch_liar(builder, insert)
     local function push_mcycles(self, collected)
         local offsets = collected.mcycle_hash_offsets
         local available = #offsets - 1
-        local remaining = (self.max_bundle_count - self.bundle_count) >> (log2_cycles - self.bundle_height)
+        local remaining = self.mcycles_per_period - self.mcycle_count
         local count = available
         local at_fixed_point = is_at_fixed_point(collected.break_reason)
         if at_fixed_point then
@@ -337,6 +339,7 @@ local function new_uarch_liar(builder, insert)
             prt.uarch_computation_hash_push_mcycle(self, group, collected.hashes, offsets[i], offsets[i + 1])
             insert(self, group, 1, log2_cycles)
         end
+        self.mcycle_count = self.mcycle_count + count
         if at_fixed_point then
             local pad_frontier = hash_tree.frontier_forest(log2_cycles, "keccak256")
             prt.uarch_computation_hash_push_mcycle(
@@ -347,6 +350,7 @@ local function new_uarch_liar(builder, insert)
                 offsets[available + 1]
             )
             insert(self, pad_frontier, remaining - count, log2_cycles)
+            self.mcycle_count = self.mcycles_per_period
         end
     end
     return wrap_computation_hash(builder, {

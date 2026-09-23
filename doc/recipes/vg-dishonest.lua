@@ -28,7 +28,7 @@ local function corrupt(self, entry)
 end
 local function run_tampered(self, entry, target, sink)
     if entry.input_index == self.tampered_index and not entry.strategy.tampered then
-        local point = vg.usaturating_add(entry.input_mcycle, self.tampered_offset)
+        local point = vg.usaturating_add(entry.input_mcycle_boundary, self.tampered_offset)
         if math.ult(point, target) then
             vg.player_methods.run_to(self, entry, point, sink)
             if entry.machine:read_reg("mcycle") == point then
@@ -39,7 +39,7 @@ local function run_tampered(self, entry, target, sink)
     return vg.player_methods.run_to(self, entry, target, sink)
 end
 local function run_tampered_uarch(self, entry, target)
-    if entry.offset == self.tampered_offset and target > 0 then
+    if entry.input_mcycle_offset == self.tampered_offset and target > 0 then
         corrupt(self, entry)
     end
     return vg.player_methods.run_uarch(self, entry, target)

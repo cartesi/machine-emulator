@@ -88,7 +88,8 @@ function player_methods.take_branch(self, branch)
     self.tentative = nil
 end
 
-local function run_to(machine, target, sink)
+function player_methods.run_to(_self, entry, target, sink)
+    local machine = entry.machine
     while true do
         local reason = machine:run(target)
         if reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
@@ -102,21 +103,17 @@ local function run_to(machine, target, sink)
     end
 end
 
-function player_methods.run_to(_self, entry, target, sink)
-    return run_to(entry.machine, target, sink)
-end
-
 function player_methods.run_uarch(_self, entry, target)
     entry.machine:run_uarch(target)
 end
 
 -- The same delivery and settlement operations drive forward execution and replay.
--- `offset == nil` means no input has been delivered at this boundary.
+-- `input_mcycle_offset == nil` means no input has been delivered at this boundary.
 function player_methods.deliver_input(self, entry, boundary)
-    if entry.offset ~= nil then
+    if entry.input_mcycle_offset ~= nil then
         return
     end
-    entry.input_mcycle = boundary.machine:read_reg("mcycle")
+    entry.input_mcycle_boundary = boundary.machine:read_reg("mcycle")
     local data = self.inputs[entry.input_index + 1]
     if data then
         entry.machine:send_cmio_response(
@@ -125,7 +122,7 @@ function player_methods.deliver_input(self, entry, boundary)
             boundary.machine:get_root_hash()
         )
     end
-    entry.offset = 0
+    entry.input_mcycle_offset = 0
 end
 
 function player_methods.revert_if_rejected(_self, entry, boundary)
@@ -141,15 +138,23 @@ function player_methods.revert_if_rejected(_self, entry, boundary)
     return reason, data
 end
 
+-- Run or replay a prefix of the current input, settling rejection the same way
+-- at every mcycle target. The offset is relative to the input's virgin boundary.
+function player_methods.run_input_to(self, entry, boundary, input_mcycle_offset, sink)
+    self:deliver_input(entry, boundary)
+    self:run_to(entry, usaturating_add(entry.input_mcycle_boundary, input_mcycle_offset), sink)
+    local reason, data = self:revert_if_rejected(entry, boundary)
+    entry.input_mcycle_offset = input_mcycle_offset
+    return reason, data
+end
+
 function player_methods.advance(self, entry, sink)
     if not self.inputs[entry.input_index + 1] then
         return
     end
     local boundary <close> = fork_entry(entry)
-    self:deliver_input(entry, boundary)
-    self:run_to(entry, usaturating_add(boundary.machine:read_reg("mcycle"), MCYCLES_PER_INPUT), sink)
-    local reason, data = self:revert_if_rejected(entry, boundary)
-    entry.input_index, entry.offset = entry.input_index + 1, nil
+    local reason, data = self:run_input_to(entry, boundary, MCYCLES_PER_INPUT, sink)
+    entry.input_index, entry.input_mcycle_offset = entry.input_index + 1, nil
     return reason, data
 end
 
@@ -170,10 +175,15 @@ function event_handler.input_added(self, index, filename)
     local pending = {}
     local reason, root = self:advance(self.forward, pending)
     if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-        for _, output in ipairs(pending) do
+        for output_index, output in ipairs(pending) do
+            local hash = cartesi.keccak256(output)
+            -- This demo offers only the last output. Retain its proof, replacing
+            -- the previous offer only when an accepted input produces a new one.
+            if output_index == #pending then
+                self.output_proof = hash_tree.frontier_next_proofs(self.outputs_frontier, { hash })[1]
+            end
             self.outputs[#self.outputs + 1] = output
-            self.leaves[#self.leaves + 1] = cartesi.keccak256(output)
-            hash_tree.frontier_push_back(self.outputs_frontier, self.leaves[#self.leaves])
+            hash_tree.frontier_push_back(self.outputs_frontier, hash)
         end
         assert(hash_tree.frontier_get_root_hash(self.outputs_frontier) == root, "outputs Merkle root mismatch")
     end
@@ -209,13 +219,11 @@ function event_handler.commit_bisection(self, arguments)
         if not self.boundary then
             self.boundary = fork_entry(agreed)
         end
-        self:deliver_input(tentative, self.boundary)
         if level == "mcycle" then
-            self:run_to(tentative, usaturating_add(self.boundary.machine:read_reg("mcycle"), target))
-            self:revert_if_rejected(tentative, self.boundary)
-            tentative.offset = target
+            self:run_input_to(tentative, self.boundary, target)
         else
             assert(level == "uarch_cycle", "unknown bisection level")
+            self:deliver_input(tentative, self.boundary)
             self:run_uarch(tentative, target)
         end
     end
@@ -265,11 +273,10 @@ function event_handler.prove_output(self)
     if #self.outputs == 0 then
         return {}
     end
-    local genesis = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     return {
         output_index = #self.outputs - 1,
         output = self.outputs[#self.outputs],
-        output_proof = hash_tree.frontier_next_proofs(genesis, self.leaves)[#self.leaves],
+        output_proof = self.output_proof,
     }
 end
 
@@ -282,7 +289,6 @@ local function new_player(initial_hash, label, machine)
         initial = initial,
         inputs = {},
         outputs = {},
-        leaves = {},
         event_handler = event_handler,
         outputs_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"),
     }, player_meta)
@@ -333,31 +339,36 @@ end
 
 -- Each request starts its own clock. Sequential waits do not charge a player for
 -- an opponent's delay because the transport records when each answer was accepted.
-local function start_move(server, player, event, arguments, accept)
-    return {
-        future = server:request_owner(player.connection, event, arguments, accept),
-        started_at = server:get_time(),
-        player = player,
-    }
+local move_meta = { __index = {} }
+function move_meta.__close(self)
+    self.future:close()
 end
-local function finish_move(move)
-    local player = move.player
-    local future <close> = move.future
-    local deadline = move.started_at + RESPONSE_BUDGET + player.allowance
+function move_meta.__index.wait(self)
+    local player, future = self.player, self.future
+    local deadline = self.started_at + RESPONSE_BUDGET + player.allowance
     local value = future:wait(deadline)
     local ended_at = value and future.accepted_at or deadline
-    player.allowance = math.max(0, player.allowance - math.max(0, ended_at - move.started_at - RESPONSE_BUDGET))
+    player.allowance = math.max(0, player.allowance - math.max(0, ended_at - self.started_at - RESPONSE_BUDGET))
     if not value then
         player.forfeited = true
     end
     return value
 end
+local function start_move(server, player, event, arguments, accept)
+    return setmetatable({
+        future = server:request_owner(player.connection, event, arguments, accept),
+        started_at = server:get_time(),
+        player = player,
+    }, move_meta)
+end
+local function request_move(server, player, event, arguments, accept)
+    local move <close> = start_move(server, player, event, arguments, accept)
+    return move:wait()
+end
 local function request_pair(server, players, event, arguments)
-    local first = start_move(server, players[1], event, arguments, accept_hash)
-    local first_future <close> = first.future -- luacheck: ignore 211
-    local second = start_move(server, players[2], event, arguments, accept_hash)
-    local second_future <close> = second.future -- luacheck: ignore 211
-    return { finish_move(first), finish_move(second) }
+    local first <close> = start_move(server, players[1], event, arguments, accept_hash)
+    local second <close> = start_move(server, players[2], event, arguments, accept_hash)
+    return { first:wait(), second:wait() }
 end
 local function timeout_winner(players)
     if players[1].forfeited then
@@ -407,14 +418,12 @@ local function settle_dispute(referee, server, players)
     if not uarch_cycle then
         return timeout_winner(players)
     end
-    local log = finish_move(
-        start_move(
-            server,
-            players[1],
-            EVENTS.commit_log,
-            { { branch = state.branch, mcycle = mcycle, uarch_cycle = uarch_cycle } },
-            accept_table
-        )
+    local log = request_move(
+        server,
+        players[1],
+        EVENTS.commit_log,
+        { { branch = state.branch, mcycle = mcycle, uarch_cycle = uarch_cycle } },
+        accept_table
     )
     local valid = log and verify_state_transition(referee, input, mcycle, uarch_cycle, state.before, log, state.after)
     referee.transition = { input = input, mcycle = mcycle, uarch_cycle = uarch_cycle, valid = not not valid }
@@ -463,21 +472,21 @@ function referee_meta.__index.run(self, server)
     end
     self.final_hash = winner.final_hash
     eventf("Player %d wins. Final state hash: %s", winner.index, cartesi.tohex(winner.final_hash))
-    local root = finish_move(start_move(server, winner, EVENTS.prove_outputs_merkle_root, {}, function(response)
+    local root = request_move(server, winner, EVENTS.prove_outputs_merkle_root, {}, function(response)
         return output_verifier.validate_outputs_merkle_root_response(response, winner.final_hash)
-    end))
+    end)
     if not root then
         eventf("No valid outputs root offered.")
         return
     end
     self.outputs_root = root
-    local output = finish_move(start_move(server, winner, EVENTS.prove_output, {}, function(response)
+    local output = request_move(server, winner, EVENTS.prove_output, {}, function(response)
         if next(response) == nil then
             return response
         end
         output_verifier.validate_output_response(response, root)
         return response
-    end))
+    end)
     if not output or not output.output then
         eventf("No output offered.")
         return
@@ -506,8 +515,6 @@ local vg = {
     fork_entry = fork_entry,
     usaturating_add = usaturating_add,
     verify_state_transition = verify_state_transition,
-    start_move = start_move,
-    finish_move = finish_move,
     request_pair = request_pair,
 }
 if ... == "rolling-verification-game" then

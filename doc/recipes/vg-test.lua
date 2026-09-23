@@ -107,12 +107,12 @@ do
     verify(included.machine, 0, 1)
     local rejected <close> = vg.fork_entry(player.initial)
     player:deliver_input(rejected, player.initial)
-    player:run_to(rejected, vg.usaturating_add(rejected.input_mcycle, 1 << 48))
+    player:run_to(rejected, vg.usaturating_add(rejected.input_mcycle_boundary, 1 << 48))
     -- Replay to the instruction that performs the rejecting yield, before its reset.
-    local offset = rejected.machine:read_reg("mcycle") - rejected.input_mcycle - 1
+    local offset = rejected.machine:read_reg("mcycle") - rejected.input_mcycle_boundary - 1
     local boundary <close> = vg.fork_entry(player.initial)
     player:deliver_input(boundary, player.initial)
-    player:run_to(boundary, vg.usaturating_add(boundary.input_mcycle, offset))
+    player:run_to(boundary, vg.usaturating_add(boundary.input_mcycle_boundary, offset))
     boundary.machine:run_uarch(cartesi.UARCH_CYCLE_MAX)
     verify(boundary.machine, offset, cartesi.UARCH_CYCLE_MAX, nil, initial_hash)
     player:revert_if_rejected(boundary, player.initial)
@@ -133,6 +133,45 @@ do
             absent.machine:get_root_hash()
         )
     )
+end
+
+-- Multiple outputs in one input, followed by empty and rejected batches, must
+-- leave a proof of the last accepted output against the cumulative output root.
+do
+    local hash_tree = require("cartesi.hash-tree")
+    local batches = {
+        { accepted = true, "first", "second" },
+        { accepted = true },
+        { accepted = false, "discarded" },
+        { accepted = true, "third", "last" },
+        { accepted = true },
+    }
+    local expected = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    local player = setmetatable({
+        started = true,
+        inputs = {},
+        outputs = {},
+        outputs_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"),
+        advance = function(self, _, sink)
+            local batch = batches[#self.inputs]
+            for _, output in ipairs(batch) do
+                sink[#sink + 1] = output
+                if batch.accepted then
+                    hash_tree.frontier_push_back(expected, cartesi.keccak256(output))
+                end
+            end
+            return batch.accepted and cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
+                or cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED,
+                hash_tree.frontier_get_root_hash(expected)
+        end,
+    }, { __index = vg.player_methods })
+    for index = 1, #batches do
+        vg.event_handler.input_added(player, index - 1, paths[1])
+    end
+    player.sealed = true
+    local offer = vg.event_handler.prove_output(player)
+    assert(offer.output == "last" and offer.output_index == 3 and #player.outputs == 4)
+    assert(require("game-output").validate_output_response(offer, hash_tree.frontier_get_root_hash(expected)))
 end
 
 -- Malformed final-state and output offers cannot pass the shared proof checks.

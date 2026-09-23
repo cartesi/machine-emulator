@@ -10621,12 +10621,7 @@ the winning final state hash is the state the calculator’s first epoch
 saved as `epoch-0-state-hash.bin`. The player offered its last accepted
 output, output 1, the calculator’s answer for the epoch’s last input.
 The tournament ends on the same state the direct run produced, however
-many liars stood in the way. The same tournament, run again, narrates
-every file identically, which the recipe checks by diffing the two runs:
-
-``` text
-The second run narrated every file identically.
-```
+many liars stood in the way.
 
 This model simplifies the PRT contracts in ways worth naming. The
 referee is one trusted process, where Dave is a family of contracts the

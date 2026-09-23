@@ -31,7 +31,7 @@ export LUA_PATH := $(CURDIR)/?.lua;$(RECIPES_DIR)/?.lua;$(LUA_PATH);;
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --respect-ignores
 
-.PHONY: build-docs-image prepare-readme clean format-lua check-format-lua check-lua
+.PHONY: build-docs-image prepare-readme clean format-lua check-format-lua check-lua test-prt-repeat
 .DELETE_ON_ERROR:
 
 # Lua linting/formatting for the recipe snippets and pandoc filters. The
@@ -229,6 +229,12 @@ ifeq (,$(filter clean,$(MAKECMDGOALS)))
 -include template.d
 endif
 
+# Optional replay-and-diff test. The README build runs the tournament only once.
+test-prt-repeat: $(REPLACE_CACHE_DIR)/prt_run/both
+	bash $(RECIPES_DIR)/prt-repeat-test.sh \
+	    $(REPLACE_CACHE_DIR)/rolling_calc_template/rolling-calculator-template \
+	    $(REPLACE_CACHE_DIR)/rolling_calc_encode $(REPLACE_CACHE_DIR)/prt_run
+
 # Diagrams rendered from committed sources under images/. Generated into the same
 # dir and committed, like README.md itself. Regenerated only when a source changes.
 # Order-only prereq of README.md below: a render always brings them up to date,
@@ -286,6 +292,9 @@ else
 README.md: | prepare-readme
 	@jobs=$(if $(JOBS),$(JOBS),$$(docker run --rm $(DOCS_IMAGE):$(TAG) nproc)); \
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="rm -f template.d && make -j$$jobs README.md DEV_ENV_HAS_DOCGEN=yes"
+
+test-prt-repeat: | prepare-readme
+	$(MAKE) docs-image-exec CONTAINER_COMMAND="make test-prt-repeat DEV_ENV_HAS_DOCGEN=yes"
 
 # Inside, README.html depends on README.md, so one container invocation builds
 # both. Splitting them across two invocations lets the bind mount's attribute

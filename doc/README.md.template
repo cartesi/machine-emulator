@@ -5730,49 +5730,6 @@ for m in 2 3 5 6; do
     tail -n 5 match_${m}_1 > match_${m}_1_elided
 done
 ```
-```{.bash key=prt_run_again vars=tmpl->rolling_calc_template/rolling-calculator-template/path,rolling_calc_encode,forged->prt_run/forged-input-2.bin/path,prt_run depends=prt_run replace=null}
-# The same tournament, run again on another port. Every narration file must come out
-# identical to the run above.
-# The chain publishes the initial state hash; a player finds its machine snapshot stored
-# under that name
-initial_state_hash=$(lua5.4 -e 'local cartesi = require("cartesi")
-local machine <close> = cartesi.machine("'"$tmpl"'")
-io.write(cartesi.tohex(machine:get_root_hash()))')
-rm -f "$initial_state_hash"
-ln -sf "$tmpl" "$initial_state_hash"
-ln -sf $rolling_calc_encode/input-[012].bin .
-ln -sf "$RECIPES_DIR/prt.lua" "$RECIPES_DIR/prt-dishonest.lua" "$RECIPES_DIR/prtu.lua" .
-players_in() { [ "$(($(netstat -nt 2>&1 | grep '\<8097\>' | grep -c ESTABLISHED) / 2))" -ge "$1" ]; }
-rm -f verdict
-lua5.4 prt.lua referee 127.0.0.1:8097 "$initial_state_hash" input-0.bin input-1.bin input-2.bin > /dev/null 2> referee.stderr &
-while ! netstat -ntl 2>&1 | grep '\<8097\>' > /dev/null; do sleep 1; done
-lua5.4 prt-dishonest.lua quitter 127.0.0.1:8097 "$initial_state_hash" > /dev/null 2> quitter.stderr &
-while ! players_in 1; do sleep 1; done
-lua5.4 prt-dishonest.lua tamperer 127.0.0.1:8097 "$initial_state_hash" 0 100 > /dev/null 2> tamperer.stderr &
-while ! players_in 2; do sleep 1; done
-lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8097 "$initial_state_hash" 2 2000 > /dev/null 2> fabulist.stderr &
-while ! players_in 3; do sleep 1; done
-lua5.4 prt-dishonest.lua fabulist 127.0.0.1:8097 "$initial_state_hash" 2 60000 fixed_fabulist > /dev/null 2> fixed_fabulist.stderr &
-while ! players_in 4; do sleep 1; done
-lua5.4 prt-dishonest.lua forger 127.0.0.1:8097 "$initial_state_hash" 2 "$forged" > /dev/null 2> forger.stderr &
-while ! players_in 5; do sleep 1; done
-lua5.4 prt.lua honest 127.0.0.1:8097 "$initial_state_hash" > /dev/null 2> honest.stderr &
-while ! players_in 6; do sleep 1; done
-lua5.4 prt-dishonest.lua quitter 127.0.0.1:8097 "$initial_state_hash" "quitter 1" > /dev/null 2> quitter_1.stderr &
-while ! players_in 7; do sleep 1; done
-lua5.4 prt-dishonest.lua quitter 127.0.0.1:8097 "$initial_state_hash" "quitter 2" > /dev/null 2> quitter_2.stderr &
-while ! players_in 8; do sleep 1; done
-lua5.4 prt.lua phase_closer 127.0.0.1:8097 > /dev/null 2> phase_closer.stderr &
-while ! grep -q 'Result proved against the final state:' verdict 2>/dev/null; do sleep 1; done
-lua5.4 prt.lua phase_closer 127.0.0.1:8097 stop > /dev/null 2>> phase_closer.stderr
-wait
-cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr quitter_1.stderr quitter_2.stderr phase_closer.stderr >&2
-for f in claims tournament verdict match_*; do
-    case $f in *_elided) continue;; esac
-    diff "$f" "$prt_run/$f"
-done
-echo "The second run narrated every file identically."
-```
 The players take the referee address, the initial state hash, and their role arguments. Input filenames arrive from the referee, and no argument names the players' number or order:
 ```{.bash replace=prt_run/source/honest}
 ```
@@ -5845,9 +5802,6 @@ The verdict settles the epoch:
 The winner's computation hash is the mcycle computation hash `cartesi-machine` computed directly, checked by the script above, and the winning final state hash is the state the calculator's first epoch saved as `epoch-0-state-hash.bin`.
 The player offered its last accepted output, output 1, the calculator's answer for the epoch's last input.
 The tournament ends on the same state the direct run produced, however many liars stood in the way.
-The same tournament, run again, narrates every file identically, which the recipe checks by diffing the two runs:
-```{replace=prt_run_again/stdout}
-```
 
 This model simplifies the PRT contracts in ways worth naming.
 The referee is one trusted process, where Dave is a family of contracts the blockchain executes.

@@ -1314,7 +1314,7 @@ end
 local function mcycle_computation_hash_begin_input(builder, _, epoch_input_offset)
     builder.epoch_input_offset = epoch_input_offset
     assert(
-        builder.frontier.leaf_count == epoch_input_offset * builder.periods_per_input,
+        hash_tree.frontier_forest_get_leaf_count(builder.frontier) == epoch_input_offset * builder.periods_per_input,
         "mcycle computation hash input is out of order"
     )
     builder.input_bundle_count = 0
@@ -1353,7 +1353,8 @@ local function mcycle_computation_hash_end_epoch(builder)
 end
 
 -- Collect the full epoch as roots of bundles of 2^LOG2_BUNDLE_MCYCLE_COUNT period samples.
--- Per-input counts measure bundles at bundle_height; the forest owns total coverage.
+-- Per-input counts measure bundles at bundle_height.
+-- The forest owns total coverage.
 local function make_mcycle_computation_hash_builder(log2_mcycles_per_period, machine_cache)
     local log2_periods_per_input = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period
     local height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_periods_per_input

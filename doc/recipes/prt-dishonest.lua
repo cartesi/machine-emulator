@@ -235,7 +235,7 @@ end
 -- directly. Only the affected group is split, preserving its neighbors' compressed trees.
 local function lie_about_leaf(leaf, unbundle)
     local function pad_back_lie(self, value, count, height)
-        local next_leaf = self.frontier.leaf_count
+        local next_leaf = hash_tree.frontier_forest_get_leaf_count(self.frontier)
         count = count or (((1 << self.frontier.height) - next_leaf) >> height)
         if count == 0 or leaf < next_leaf or leaf >= next_leaf + (count << height) then
             return hash_tree.frontier_forest_pad_back(self.frontier, value, count, height)
@@ -245,7 +245,7 @@ local function lie_about_leaf(leaf, unbundle)
         if height == self.bundle_height then
             -- The selected bundle factory reconstructs the fabricated leaves.
             -- Its replacement is authenticated by the ordinary tree.
-            local forest = unbundle(self, self.frontier.leaf_count, height)
+            local forest = unbundle(self, hash_tree.frontier_forest_get_leaf_count(self.frontier), height)
             hash_tree.frontier_forest_pad_back(
                 self.frontier,
                 hash_tree.frontier_forest_get_root_hash(forest),

@@ -236,7 +236,10 @@ for _, case in ipairs({
     local ok, reason = pcall(builder.run, builder, machine, cartesi.MCYCLE_MAX)
     if case.invalid then
         assert(not ok and tostring(reason):find("exceeds the input's bundle capacity", 1, true))
-        assert(builder.frontier.leaf_count == 0, "overcollection changed the forest before failing")
+        assert(
+            hash_tree.frontier_forest_get_leaf_count(builder.frontier) == 0,
+            "overcollection changed the forest before failing"
+        )
     else
         assert(ok and reason == cartesi.BREAK_REASON_MCYCLE_OVERFLOW)
         assert(builder.input_bundle_count == builder.max_bundles_per_input)
@@ -276,7 +279,10 @@ for ordinary = 0, 3 do
     })
     if ordinary > 2 then
         assert(not ok and tostring(err):find("exceeds the claim's mcycle capacity", 1, true))
-        assert(builder.frontier.leaf_count == 0, "overcollection changed the forest before failing")
+        assert(
+            hash_tree.frontier_forest_get_leaf_count(builder.frontier) == 0,
+            "overcollection changed the forest before failing"
+        )
     else
         assert(ok, err)
         assert(builder.mcycle_count == 2, "fixed-point padding did not complete the period")
@@ -611,14 +617,20 @@ do
     local path, _ <close> = new_input_file(first)
     local handlers = player.event_handler
     assert(player.epoch_builder and not player.epoch_builder.machine, "constructor retained a working machine")
-    assert(player.epoch_builder.frontier.leaf_count == 0, "constructor processed an input")
+    assert(
+        hash_tree.frontier_forest_get_leaf_count(player.epoch_builder.frontier) == 0,
+        "constructor processed an input"
+    )
     assert(not pcall(handlers.input_added, player, 1, path), "input gap was accepted")
     local encoded = prtu.answer_event(player, cartesi.tojson({ operation = "input_added", arguments = { 0, path } }))
     assert(cartesi.fromjson(encoded).value == true, "filename event was not acknowledged")
     assert(player.input_paths[1] == path, "input event did not retain the filename")
     local builder = player.epoch_builder
     assert(cache.latest.machine:get_root_hash() == first, "input was deferred until sealing")
-    assert(builder.frontier.leaf_count == builder.periods_per_input, "first input was not collected immediately")
+    assert(
+        hash_tree.frontier_forest_get_leaf_count(builder.frontier) == builder.periods_per_input,
+        "first input was not collected immediately"
+    )
     assert(not cache.frozen and not player.epoch_sealed, "input event closed the epoch")
     assert(not pcall(player.make_mcycle_tree, player), "open epoch produced a claim")
     assert(not pcall(handlers.input_added, player, 0, path), "duplicate input was accepted")

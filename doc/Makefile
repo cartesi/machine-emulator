@@ -208,6 +208,18 @@ prepare-readme:
 $(REPLACE_CACHE_DIR):
 	mkdir -p $@
 
+# Standalone recipe tests never read template.d or render the documentation.
+RECIPE_TEST_ENV ?= no
+.PHONY: test-prt-protocol
+ifeq ($(RECIPE_TEST_ENV),yes)
+test-prt-protocol:
+	@work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
+	    cd "$$work" && lua5.4 $(RECIPES_DIR)/prt-test.lua
+else
+test-prt-protocol:
+	$(MAKE) docs-image-exec CONTAINER_COMMAND="make test-prt-protocol RECIPE_TEST_ENV=yes"
+endif
+
 ifeq ($(DEV_ENV_HAS_DOCGEN),yes)
 
 ifeq ($(DOCS_IMAGE_ID),)

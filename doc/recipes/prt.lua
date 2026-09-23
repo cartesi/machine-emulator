@@ -1294,19 +1294,16 @@ local function mcycle_computation_hash_push_collected(builder, collected)
         "mcycle collection exceeds the input's bundle capacity"
     )
     hash_tree.frontier_forest_append(builder.frontier, collected.hashes, 1, count + 1, builder.bundle_height)
-    builder.bundle_count = builder.bundle_count + count
     builder.input_bundle_count = builder.input_bundle_count + count
     if at_fixed_point then
         local pad_count = builder.max_bundles_per_input - builder.input_bundle_count
         hash_tree.frontier_forest_pad_back(builder.frontier, builder.pad_bundle, pad_count, builder.bundle_height)
-        builder.bundle_count = builder.bundle_count + pad_count
         builder.input_bundle_count = builder.max_bundles_per_input
     end
 end
 
 local function mcycle_computation_hash_begin_epoch(builder, machine)
     builder.frontier = hash_tree.frontier_forest(builder.height, "keccak256")
-    builder.bundle_count = 0
     builder.input_bundle_count = 0
     local collected =
         machine:collect_mcycle_root_hashes(machine:read_reg("mcycle"), builder.log2_period, 0, builder.bundle_height)
@@ -1317,7 +1314,7 @@ end
 local function mcycle_computation_hash_begin_input(builder, _, epoch_input_offset)
     builder.epoch_input_offset = epoch_input_offset
     assert(
-        (builder.bundle_count << builder.bundle_height) == epoch_input_offset * builder.periods_per_input,
+        builder.frontier.leaf_count == epoch_input_offset * builder.periods_per_input,
         "mcycle computation hash input is out of order"
     )
     builder.input_bundle_count = 0
@@ -1351,28 +1348,18 @@ end
 local function mcycle_computation_hash_end_epoch(builder)
     assert(builder.input_bundle_count == 0, "mcycle computation hash input was not closed")
     builder.machine_cache:freeze()
-    if builder.bundle_count == builder.max_bundle_count then
-        return builder.frontier
-    end
-    hash_tree.frontier_forest_pad_back(
-        builder.frontier,
-        builder.pad_bundle,
-        builder.max_bundle_count - builder.bundle_count,
-        builder.bundle_height
-    )
-    builder.bundle_count = builder.max_bundle_count
+    hash_tree.frontier_forest_pad_back(builder.frontier, builder.pad_bundle, nil, builder.bundle_height)
     return builder.frontier
 end
 
 -- Collect the full epoch as roots of bundles of 2^LOG2_BUNDLE_MCYCLE_COUNT period samples.
--- Counts measure bundles at bundle_height.
+-- Per-input counts measure bundles at bundle_height; the forest owns total coverage.
 local function make_mcycle_computation_hash_builder(log2_mcycles_per_period, machine_cache)
     local log2_periods_per_input = cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE - log2_mcycles_per_period
     local height = cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH + log2_periods_per_input
     return {
         periods_per_input = 1 << log2_periods_per_input,
         machine_cache = machine_cache,
-        max_bundle_count = 1 << (height - LOG2_BUNDLE_MCYCLE_COUNT),
         height = height,
         bundle_height = LOG2_BUNDLE_MCYCLE_COUNT,
         log2_period = log2_mcycles_per_period,
@@ -1439,7 +1426,7 @@ local function uarch_computation_hash_push_collected(builder, collected)
         uarch_computation_hash_push_mcycle(builder, builder.frontier, collected.hashes, offsets[i], offsets[i + 1])
     end
     builder.mcycle_count = builder.mcycle_count + count
-    if not at_fixed_point then
+    if not at_fixed_point or builder.mcycle_count == builder.mcycles_per_period then
         return
     end
     local pad_frontier = hash_tree.frontier_forest(log2_cycles, "keccak256")
@@ -1450,7 +1437,7 @@ local function uarch_computation_hash_push_collected(builder, collected)
         offsets[available],
         offsets[available + 1]
     )
-    hash_tree.frontier_forest_pad_back(builder.frontier, pad_frontier, remaining - count)
+    hash_tree.frontier_forest_pad_back(builder.frontier, pad_frontier)
     builder.mcycle_count = builder.mcycles_per_period
 end
 

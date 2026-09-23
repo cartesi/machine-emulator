@@ -233,23 +233,25 @@ end
 
 -- Private insertion helpers for the fabricated stream. Honest builders use the forest API
 -- directly. Only the affected group is split, preserving its neighbors' compressed trees.
-local function pad_back(builder, value, count, height)
-    hash_tree.frontier_forest_pad_back(builder.frontier, value, count, height)
-end
-
 local function lie_about_leaf(leaf, unbundle)
     local function pad_back_lie(self, value, count, height)
         local next_leaf = self.frontier.leaf_count
+        count = count or (((1 << self.frontier.height) - next_leaf) >> height)
         if count == 0 or leaf < next_leaf or leaf >= next_leaf + (count << height) then
-            return pad_back(self, value, count, height)
+            return hash_tree.frontier_forest_pad_back(self.frontier, value, count, height)
         end
         local prefix = (leaf - next_leaf) >> height
-        pad_back(self, value, prefix, height)
+        hash_tree.frontier_forest_pad_back(self.frontier, value, prefix, height)
         if height == self.bundle_height then
             -- The selected bundle factory reconstructs the fabricated leaves.
             -- Its replacement is authenticated by the ordinary tree.
             local forest = unbundle(self, self.frontier.leaf_count, height)
-            pad_back(self, hash_tree.frontier_forest_get_root_hash(forest), 1, height)
+            hash_tree.frontier_forest_pad_back(
+                self.frontier,
+                hash_tree.frontier_forest_get_root_hash(forest),
+                1,
+                height
+            )
         else
             for i = 0, (1 << (height - self.bundle_height)) - 1 do
                 pad_back_lie(
@@ -260,7 +262,7 @@ local function lie_about_leaf(leaf, unbundle)
                 )
             end
         end
-        pad_back(self, value, count - prefix - 1, height)
+        hash_tree.frontier_forest_pad_back(self.frontier, value, count - prefix - 1, height)
     end
     return pad_back_lie
 end
@@ -293,7 +295,6 @@ local function new_mcycle_liar(builder, insert)
                 for i = 1, count do
                     insert(self, collected.hashes[i], 1, self.bundle_height)
                 end
-                self.bundle_count = self.bundle_count + count
                 self.input_bundle_count = self.input_bundle_count + count
                 if is_at_fixed_point(collected.break_reason) then
                     insert(
@@ -302,7 +303,6 @@ local function new_mcycle_liar(builder, insert)
                         self.max_bundles_per_input - self.input_bundle_count,
                         self.bundle_height
                     )
-                    self.bundle_count = self.bundle_count + self.max_bundles_per_input - self.input_bundle_count
                     self.input_bundle_count = self.max_bundles_per_input
                 end
             until not is_target_mcycle(collected.break_reason) or machine:read_reg("mcycle") == mcycle_end
@@ -311,10 +311,7 @@ local function new_mcycle_liar(builder, insert)
         end,
         end_epoch = function(self)
             assert(self.input_bundle_count == 0, "mcycle computation hash input was not closed")
-            if self.bundle_count < self.max_bundle_count then
-                insert(self, self.pad_bundle, self.max_bundle_count - self.bundle_count, self.bundle_height)
-                self.bundle_count = self.max_bundle_count
-            end
+            insert(self, self.pad_bundle, nil, self.bundle_height)
             self.machine_cache:freeze()
             return self.frontier
         end,
@@ -340,7 +337,7 @@ local function new_uarch_liar(builder, insert)
             insert(self, group, 1, log2_cycles)
         end
         self.mcycle_count = self.mcycle_count + count
-        if at_fixed_point then
+        if at_fixed_point and self.mcycle_count < self.mcycles_per_period then
             local pad_frontier = hash_tree.frontier_forest(log2_cycles, "keccak256")
             prt.uarch_computation_hash_push_mcycle(
                 self,
@@ -456,7 +453,7 @@ local function new_quitter(dapp_contract, label)
         for _ = 1, height do
             fake_hash = keccak(fake_hash, fake_hash)
         end
-        return pad_back(liar, fake_hash, count, height)
+        return hash_tree.frontier_forest_pad_back(liar.frontier, fake_hash, count, height)
     end
     player.epoch_builder = new_mcycle_liar(player.epoch_builder, insert)
     local make = player.make_mcycle_computation_hash_builder

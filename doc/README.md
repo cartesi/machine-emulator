@@ -9621,7 +9621,9 @@ each input owns a fixed-capacity segment, collection state threads
 across yields, and the final repeatable group returned at a fixed point
 fills the segment’s remaining positions. The only different sink is
 PRT’s frontier forest, which retains the nodes needed to answer later
-tournament queries. The referee emits
+tournament queries. The forest owns the total leaf count. Omitting the
+count in `frontier_forest_pad_back` fills its remaining capacity,
+preserving the descendants of any repeated subtree. The referee emits
 `input_added(epoch_input_offset, filename)` for each input in order,
 followed by `epoch_sealed(input_count)`. The player initializes its
 computation at construction using a temporary clone. The cache already

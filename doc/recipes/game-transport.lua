@@ -559,7 +559,7 @@ end
 local function announce(self, connection, message)
     if connection.is_player or connection.is_phase_closer then
         close_connection(self, connection)
-    elseif message.role == "phase_closer" and not self.admission and not self.admitted then
+    elseif message.role == "phase_closer" and not self.player_limit then
         announce_phase_closer(self, connection, message.command)
     elseif message.role == "player" then
         announce_player(self, connection)
@@ -607,11 +607,18 @@ function server_meta.__index.adopt(self, sock)
                 announce(self, connection, message)
             else
                 local entry = connection.current_event
-                connection.current_event = nil
-                if entry then
-                    deliver(self, entry, connection, line)
+                if entry and entry.future and math.type(message.id) ~= "integer" then
+                    close_connection(self, connection)
+                    return
                 end
-                send_next_event(self, connection)
+                -- An old owner reply must not consume a newer request on the same socket.
+                if not entry or not entry.future or message.id == entry.future.id then
+                    connection.current_event = nil
+                    if entry then
+                        deliver(self, entry, connection, line)
+                    end
+                    send_next_event(self, connection)
+                end
             end
             if connection.dead then
                 return
@@ -683,6 +690,7 @@ end
 -- VG admits exactly two stable connections. Labels and claim hashes do not confer ownership.
 function server_meta.__index.accept_players(self, count)
     assert(not self.admitted, "players already admitted")
+    self.player_limit = count
     local players, index = {}, 1
     while #players < count do
         local connection = self.connections[index]

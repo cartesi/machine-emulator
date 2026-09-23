@@ -92,3 +92,48 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     assert(server.connections[3].dead)
 end)
 print("game-transport-test: ok")
+
+-- Referee errors unwind its suspended resources and close all transport handles.
+do
+    local server, future, closed
+    local ok, err = pcall(run_with_server, protocol, function(s)
+        server = s
+        -- luacheck: push ignore 211
+        local resource <close> = setmetatable({}, {
+            __close = function()
+                closed = true
+            end,
+        }) -- luacheck: ignore 211
+        -- luacheck: pop
+        future = s:request_first_valid({}, event, {}, accept, 3)
+        error("deliberate referee error")
+    end)
+    assert(not ok and err:find("deliberate referee error", 1, true))
+    assert(closed and future.closed and not next(server.active))
+    assert(not server.listener:getsockname())
+end
+
+-- A stale or duplicate immediate reply on the owner's socket must not consume
+-- the next request. Send all three lines together to exercise stream framing.
+run_with_server(protocol, function(server, run_client, wait_connections)
+    local client = { event_handler = {
+        move = function()
+            return hash
+        end,
+    } }
+    local previous
+    run_client(nil, function(wire, line)
+        local reply, done = transport.answer_event(client, line, protocol)
+        if wire.operation == "move" then
+            local result = (previous and previous .. "\n" or "") .. reply .. "\n" .. reply
+            previous = reply
+            return result, done
+        end
+        return reply, done
+    end, true)
+    wait_connections(1)
+    for _ = 1, 2 do
+        local future <close> = server:request_owner(server:get_players()[1], event, {}, accept)
+        assert(future:wait(server:get_time() + 5) == hash)
+    end
+end)

@@ -266,9 +266,15 @@ end
 -- handler or result is a client bug. The referee sees EOF and loses that holder. The loop also ends when
 -- the referee goes away.
 -- docs:begin run_client
+local socket_guard = {
+    __close = function(self)
+        self.sock:close()
+    end,
+}
 local function run_client(client, server_address, protocol)
     local host, port = server_address:match("^(.-):(%d+)$")
     client.connection = assert(socket.connect(host, tonumber(port)))
+    local connection <close> = setmetatable({ sock = client.connection }, socket_guard) -- luacheck: ignore 211
     local hello = client.hello or cartesi.tojson({ role = "player", label = client.label }, -1)
     assert(client.connection:send(hello .. "\n"))
     while true do
@@ -284,7 +290,6 @@ local function run_client(client, server_address, protocol)
             break
         end
     end
-    client.connection:close()
 end
 -- docs:end run_client
 
@@ -1146,9 +1151,36 @@ local function close_referee(self, main)
     end
 end
 
+-- Cleanup also runs when a referee or transport coroutine raises an error.
+function server_meta.__index.close(self)
+    if self.referee then
+        pcall(self.dispatcher.close, self.dispatcher, self.referee)
+    end
+    for cortn in pairs(self.dispatcher.parents) do
+        if coroutine.status(cortn) ~= "running" then
+            pcall(coroutine.close, cortn)
+        end
+    end
+    for entry in pairs(self.active) do
+        if entry.close then
+            entry:close()
+        else
+            self.active[entry] = nil
+        end
+    end
+    for _, connection in ipairs(self.connections) do
+        connection.sock:close()
+    end
+    if self.listener then
+        self.listener:close()
+    end
+end
+server_meta.__close = server_meta.__index.close
+
 -- Runs the referee, then sends finish and closes the connections. A phase-closer stop takes
 -- the same cleanup path, closing the game coroutines while their proof waits are suspended.
 function server_meta.__index.run(self, main)
+    local cleanup <close> = self -- luacheck: ignore 211
     local protocol = self.protocol
     local referee_done, finishing = false, false
     local referee = coroutine.create(function()
@@ -1156,6 +1188,7 @@ function server_meta.__index.run(self, main)
         assert(not next(self.active), "referee finished with pending requests")
         referee_done = true
     end)
+    self.referee = referee
     self.dispatcher:schedule(referee, "start")
     while not self.done do
         if not finishing and (referee_done or self.stopping) then
@@ -1176,12 +1209,6 @@ function server_meta.__index.run(self, main)
         if not progressed then
             self.dispatcher:step()
         end
-    end
-    if self.listener then
-        self.listener:close()
-    end
-    for _, connection in ipairs(self.connections) do
-        connection.sock:close()
     end
 end
 

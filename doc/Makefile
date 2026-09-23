@@ -214,7 +214,8 @@ RECIPE_TEST_ENV ?= no
 ifeq ($(RECIPE_TEST_ENV),yes)
 test-prt-protocol:
 	@work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
-	    cd "$$work" && lua5.4 $(RECIPES_DIR)/prt-test.lua
+	    cd "$$work" && lua5.4 $(RECIPES_DIR)/prt-test.lua && \
+	    lua5.4 $(RECIPES_DIR)/game-transport-test.lua
 else
 test-prt-protocol:
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="make test-prt-protocol RECIPE_TEST_ENV=yes"

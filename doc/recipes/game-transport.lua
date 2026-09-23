@@ -213,7 +213,7 @@ local function schedule_response(client, block, respond)
         -- Encode each response with its own event schema before batching.
         return cartesi.fromjson(cartesi.tojson(respond(), -1, request.response_schema, request.protocol.schemas))
     end)
-    return true
+    return request.owner and { scheduled_at = block } or true
 end
 
 -- Dispatches one wire event. Finish is transport cleanup rather than a client handler, so it
@@ -235,7 +235,12 @@ local function answer_event(client, line, protocol)
         value = queue:advance(wire_event.arguments[1])
     else
         local handler = assert(client.event_handler[wire_event.operation], "missing event handler")
-        client_requests[client] = { id = wire_event.id, response_schema = event.response_schema, protocol = protocol }
+        client_requests[client] = {
+            id = wire_event.id,
+            response_schema = event.response_schema,
+            protocol = protocol,
+            owner = wire_event.owner,
+        }
         local ok
         ok, value = pcall(handler, client, table.unpack(wire_event.arguments or {}))
         client_requests[client] = nil
@@ -244,7 +249,10 @@ local function answer_event(client, line, protocol)
         end
     end
     assert(value ~= nil, "the event handler produced no value")
-    local response = { label = client.label, value = value }
+    if wire_event.owner and not (type(value) == "table" and value.scheduled_at) then
+        value = { answer = cartesi.fromjson(cartesi.tojson(value, -1, event.response_schema, protocol.schemas)) }
+    end
+    local response = { label = client.label, value = value, id = wire_event.id }
     local response_schema = wire_event.id and "Default" or event.response_schema
     local encoded =
         cartesi.tojson(response, -1, ensure_response_envelope_schema(protocol, response_schema), protocol.schemas)
@@ -402,6 +410,10 @@ local function close_connection(self, connection)
         connection.dead = true
         connection.sock:close()
         forget_connection(self, connection)
+        if self.admission then
+            self.dispatcher:schedule(self.admission, "closed")
+            self.admission = nil
+        end
         assert(
             connection ~= self.phase_closer or self.subscriptions_closed or self.stopping,
             "the phase closer went away"
@@ -410,9 +422,9 @@ local function close_connection(self, connection)
 end
 
 -- Encodes an event and its Lua argument tuple under its event schema.
-local function encode_event(protocol, event, arguments, id)
+local function encode_event(protocol, event, arguments, id, owner)
     local wire_event = { operation = event.name, arguments = arguments }
-    wire_event.id = id
+    wire_event.id, wire_event.owner = id, owner
     return cartesi.tojson(wire_event, -1, ensure_event_envelope_schema(protocol, event.event_schema), protocol.schemas)
         .. "\n"
 end
@@ -484,6 +496,7 @@ local function deliver(self, entry, connection, line)
             connection = connection,
             order = connection.order,
             received_at = self:get_time(),
+            id = decoded.id,
         }
     end
 end
@@ -522,6 +535,13 @@ end
 -- connecting subscribes it to the initial hash that phase advertises.
 local function announce_player(self, connection)
     connection.is_player = true
+    if self.admission then
+        self.dispatcher:schedule(self.admission, "player")
+        self.admission = nil
+    elseif self.admitted then
+        close_connection(self, connection)
+        return
+    end
     for _, entry in ipairs(self.open_phases) do
         if entry.subscription_hash and entry.open then
             self:subscribe_connection(entry.subscription_hash, connection)
@@ -534,7 +554,7 @@ end
 local function announce(self, connection, message)
     if connection.is_player or connection.is_phase_closer then
         close_connection(self, connection)
-    elseif message.role == "phase_closer" then
+    elseif message.role == "phase_closer" and not self.admission and not self.admitted then
         announce_phase_closer(self, connection, message.command)
     elseif message.role == "player" then
         announce_player(self, connection)
@@ -655,6 +675,29 @@ function server_meta.__index.get_players(self)
     return list
 end
 
+-- VG admits exactly two stable connections. Labels and claim hashes do not confer ownership.
+function server_meta.__index.accept_players(self, count)
+    assert(not self.admitted, "players already admitted")
+    local players, index = {}, 1
+    while #players < count do
+        local connection = self.connections[index]
+        if connection and (connection.is_player or connection.dead) then
+            if connection.is_player and not connection.dead then
+                players[#players + 1] = connection
+            end
+            index = index + 1
+        else
+            self.admission = coroutine.running()
+            coroutine.yield()
+        end
+    end
+    self.admitted = players
+    for extra = index, #self.connections do
+        close_connection(self, self.connections[extra])
+    end
+    return players
+end
+
 -- Registers a fixed audience and stable order without suspending the caller.
 local function register_event(self, entry, conns)
     local cortn = coroutine.running()
@@ -683,10 +726,11 @@ function server_meta.__index.request_block(self)
     return self.clock:request_block()
 end
 
-queue_control = function(self, conns, event, arguments, id)
+queue_control = function(self, conns, event, arguments, id, future)
     local entry = { pending = {}, replies = {}, response_schema = id and "Default" or event.response_schema }
     self.controls[#self.controls + 1] = entry
-    local line = encode_event(self.protocol, event, arguments, id)
+    entry.future = future
+    local line = encode_event(self.protocol, event, arguments, id, future and true)
     for _, connection in ipairs(conns) do
         if not connection.dead then
             entry.pending[connection] = true
@@ -817,6 +861,24 @@ function server_meta.__index.request_first_valid(
     return future
 end
 
+-- A VG move belongs to one admitted connection. Its ID also protects later
+-- controls from stale replies on that same connection. Correctness is the game's concern.
+function server_meta.__index.request_owner(self, owner, event, arguments, accept_response)
+    local future = setmetatable({
+        kind = "request_first_valid",
+        server = self,
+        owner = owner,
+        event = event,
+        response_schema = event.response_schema,
+        accept_response = accept_response,
+    }, future_meta)
+    register_event(self, future, {})
+    future.id = future.order
+    self.scheduled_responses[future.id] = future
+    queue_control(self, { owner }, event, arguments, future.id, future)
+    return future
+end
+
 -- Requests every response to an ordinary event without waiting. The future resolves after
 -- the block's audience finishes; a timed wait returns the responses received before its deadline.
 -- An optional validator returns the accepted value. Errors, nil, and false reject a reply,
@@ -875,7 +937,13 @@ end
 local function accept_scheduled_response(self, response)
     local protocol = self.protocol
     local future = self.scheduled_responses[response.id]
-    if not future or future.resolved or future.closed or future.value ~= nil then
+    if
+        not future
+        or future.resolved
+        or future.closed
+        or future.value ~= nil
+        or (future.owner and response.connection ~= future.owner)
+    then
         return
     end
     local ok, decoded =
@@ -919,7 +987,33 @@ function server_meta.__index.step_time(self)
     if not self.clock:barrier_ready(self.controls) then
         return
     end
+    local had_owner_reply = false
+    for _, control in ipairs(self.controls) do
+        local future = control.future
+        if future and not future.closed then
+            for _, reply in ipairs(control.replies) do
+                if reply.connection == future.owner and reply.id == future.id and type(reply.value) == "table" then
+                    local block = reply.value.scheduled_at
+                    if math.type(block) == "integer" and block > self:get_time() then
+                        future.eligible = block
+                    elseif reply.value.answer ~= nil then
+                        accept_scheduled_response(self, {
+                            id = future.id,
+                            value = reply.value.answer,
+                            connection = reply.connection,
+                            label = reply.label,
+                        })
+                        had_owner_reply = true
+                    end
+                end
+            end
+        end
+    end
     self.controls = {}
+    if had_owner_reply then
+        release_results(self)
+        return true
+    end
     if self.batch then
         if not self.clock:barrier_ready(self.batch) then
             return
@@ -936,6 +1030,7 @@ function server_meta.__index.step_time(self)
                                     value = response.value,
                                     label = reply.label,
                                     order = reply.order,
+                                    connection = reply.connection,
                                 }
                             end
                         end
@@ -1019,7 +1114,7 @@ function server_meta.__index.step_time(self)
         end
     end
     for _, future in pairs(self.scheduled_responses) do
-        if not future.resolved then
+        if not future.resolved and future.eligible then
             boundaries[#boundaries + 1] = future.eligible
         end
     end

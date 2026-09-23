@@ -210,15 +210,35 @@ $(REPLACE_CACHE_DIR):
 
 # Standalone recipe tests never read template.d or render the documentation.
 RECIPE_TEST_ENV ?= no
-.PHONY: test-prt-protocol
+GAME_TEST_DIR := $(REPLACE_CACHE_DIR)/game-tests
+.PHONY: test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat
 ifeq ($(RECIPE_TEST_ENV),yes)
 test-prt-protocol:
 	@work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
 	    cd "$$work" && lua5.4 $(RECIPES_DIR)/prt-test.lua && \
-	    lua5.4 $(RECIPES_DIR)/game-transport-test.lua
+	    lua5.4 $(RECIPES_DIR)/game-transport-test.lua && \
+	    lua5.4 $(RECIPES_DIR)/vg-clock-test.lua
+
+$(GAME_TEST_DIR)/initial-hash: $(RECIPES_DIR)/game-test-fixtures.sh $(RECIPES_DIR)/calc.sh
+	mkdir -p $(GAME_TEST_DIR)
+	cd $(GAME_TEST_DIR) && bash $(RECIPES_DIR)/game-test-fixtures.sh
+
+test-vg: $(GAME_TEST_DIR)/initial-hash
+	cd $(GAME_TEST_DIR) && lua5.4 $(RECIPES_DIR)/game-transport-test.lua && \
+	    lua5.4 $(RECIPES_DIR)/vg-clock-test.lua && lua5.4 $(RECIPES_DIR)/vg-test.lua
+test-vg-execution: $(GAME_TEST_DIR)/initial-hash
+	cd $(GAME_TEST_DIR) && lua5.4 $(RECIPES_DIR)/vg-test.lua execution
+
+test-prt-game: $(GAME_TEST_DIR)/initial-hash
+	mkdir -p $(GAME_TEST_DIR)/prt-machine
+	cd $(GAME_TEST_DIR)/prt-machine && bash $(RECIPES_DIR)/prt-machine-test.sh $(GAME_TEST_DIR)
+
+test-prt-repeat: test-prt-game
+	bash $(RECIPES_DIR)/prt-repeat-test.sh $(GAME_TEST_DIR)/rolling-calculator-template \
+	    $(GAME_TEST_DIR) $(GAME_TEST_DIR)/prt-run
 else
-test-prt-protocol:
-	$(MAKE) docs-image-exec CONTAINER_COMMAND="make test-prt-protocol RECIPE_TEST_ENV=yes"
+test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat:
+	$(MAKE) docs-image-exec CONTAINER_COMMAND="make $@ RECIPE_TEST_ENV=yes"
 endif
 
 ifeq ($(DEV_ENV_HAS_DOCGEN),yes)
@@ -238,15 +258,9 @@ template.d: README.md.template replace.lua | $(REPLACE_CACHE_DIR)
 	    -M docs_image_id="$(DOCS_IMAGE_ID)" \
 	    --lua-filter replace.lua README.md.template -o $@
 
-ifeq (,$(filter clean,$(MAKECMDGOALS)))
+ifeq (,$(filter clean test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat,$(MAKECMDGOALS)))
 -include template.d
 endif
-
-# Optional replay-and-diff test. The README build runs the tournament only once.
-test-prt-repeat: $(REPLACE_CACHE_DIR)/prt_run/both
-	bash $(RECIPES_DIR)/prt-repeat-test.sh \
-	    $(REPLACE_CACHE_DIR)/rolling_calc_template/rolling-calculator-template \
-	    $(REPLACE_CACHE_DIR)/rolling_calc_encode $(REPLACE_CACHE_DIR)/prt_run
 
 # Diagrams rendered from committed sources under images/. Generated into the same
 # dir and committed, like README.md itself. Regenerated only when a source changes.
@@ -305,9 +319,6 @@ else
 README.md: | prepare-readme
 	@jobs=$(if $(JOBS),$(JOBS),$$(docker run --rm $(DOCS_IMAGE):$(TAG) nproc)); \
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="rm -f template.d && make -j$$jobs README.md DEV_ENV_HAS_DOCGEN=yes"
-
-test-prt-repeat: | prepare-readme
-	$(MAKE) docs-image-exec CONTAINER_COMMAND="make test-prt-repeat DEV_ENV_HAS_DOCGEN=yes"
 
 # Inside, README.html depends on README.md, so one container invocation builds
 # both. Splitting them across two invocations lets the bind mount's attribute

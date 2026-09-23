@@ -1,10 +1,11 @@
 #!/bin/bash
-# Run occasionally with make -C doc test-prt-repeat.
+# Standalone tournament. Record once with test-prt-game, repeat with test-prt-repeat.
 set -euo pipefail
 : "${RECIPES_DIR:?}"
 tmpl=${1:?missing machine template}
 rolling_calc_encode=${2:?missing encoded inputs directory}
 prt_run=${3:?missing reference tournament directory}
+mode=${4:-compare}
 forged="$prt_run/forged-input-2.bin"
 test_dir=$(mktemp -d)
 cleanup() {
@@ -46,6 +47,15 @@ while ! grep -q 'Result proved against the final state:' verdict 2>/dev/null; do
 lua5.4 prt.lua phase_closer 127.0.0.1:8097 stop > /dev/null 2>> phase_closer.stderr
 wait
 cat referee.stderr honest.stderr quitter.stderr forger.stderr tamperer.stderr fabulist.stderr fixed_fabulist.stderr quitter_1.stderr quitter_2.stderr phase_closer.stderr >&2
+grep -q "A uarch tournament opens over input 2, period 60000" match_[0-9]*
+grep -q "claims a timeout win" match_1
+[ "$(wc -l < claims)" -eq 8 ]
+[ "$(grep -c 'An elimination response from .* removes both inactive claims' match_4)" -eq 1 ]
+if [ "$mode" = record ]; then
+    cp claims tournament verdict match_* "$prt_run/"
+    echo "The standalone PRT tournament completed."
+    exit 0
+fi
 for f in claims tournament verdict match_*; do
     case $f in *_elided) continue;; esac
     diff "$f" "$prt_run/$f"

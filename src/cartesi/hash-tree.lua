@@ -89,7 +89,7 @@ local pristine_leaf = string.rep("\0", cartesi.HASH_SIZE)
 
 -- The leaf count standing under a frontier: a level is filled exactly when its bit of the count is
 -- set, so summing those bit values over the filled levels recovers it.
-local function frontier_leaf_count(frontier)
+local function frontier_get_leaf_count(frontier)
     local leaf_count = 0
     for level = 1, #frontier do
         local bit = level - 1
@@ -300,7 +300,7 @@ local function frontier_next_proofs(frontier, next_output_hashes)
     local log2_max_leaves = #frontier - 1
     local next_output_count = #next_output_hashes
     if next_output_count == 0 then return {} end
-    local leaf_count = frontier_leaf_count(frontier)
+    local leaf_count = frontier_get_leaf_count(frontier)
     -- Allocate each proof's sibling array.
     local siblings = {}
     for i = 1, next_output_count do
@@ -522,6 +522,9 @@ local function frontier_forest(log2_max_leaves, hash_type)
     return forest
 end
 
+-- Returns the number of leaves covered by the forest, including its pending entries.
+local function frontier_forest_get_leaf_count(forest) return forest.leaf_count end
+
 -- Validates a declared raw-hash height and applies its leaf default.
 local function normalize_hash_height(hash_height)
     assert(hash_height == nil or (math.type(hash_height) == "integer" and hash_height >= 0), "invalid value height")
@@ -639,17 +642,20 @@ local function frontier_forest_push_back(forest, value, value_height)
     if forest.leaf_count == (1 << forest.height) then forest_flush(forest) end
 end
 
--- Appends count copies of one raw hash or completed forest. Mutates the forest in place. Only
--- validates, appends the base to the pending partial array when its last value is not
--- already that base, and records the additional implicit copies in pad_count. The
+-- Appends count copies of one raw hash or completed forest.
+-- Omitting count fills the forest.
+-- Mutates the forest in place: validates, appends the base to the pending partial array when
+-- its last value is not already that base, and records the additional implicit copies in pad_count. The
 -- last-entry rule of dense trees represents the repetitions. The whole range is validated
 -- and reserved here, not when it is flushed. A raw hash and a tree never merge, even with
 -- equal roots, since that would discard the tree's descendants.
 local function frontier_forest_pad_back(forest, value, count, value_height)
-    assert(math.type(count) == "integer" and count >= 0, "invalid pad count")
+    assert(count == nil or (math.type(count) == "integer" and count >= 0), "invalid pad count")
     if count == 0 then return end
     value, value_height = normalize_forest_value(forest, value, value_height)
-    assert_forest_can_append(forest, value_height, count)
+    assert_forest_can_append(forest, value_height, count or 0)
+    count = count or (((1 << forest.height) - forest.leaf_count) >> value_height)
+    if count == 0 then return end
     if should_flush_pending_value(forest.pending, value, value_height) then forest_flush(forest, value_height) end
     if forest.pending.pad_count > 0 then
         forest.pending.pad_count = forest.pending.pad_count + count
@@ -761,12 +767,14 @@ return {
     get_data_root_hash = get_data_root_hash,
     frontier = frontier,
     frontier_copy = frontier_copy,
+    frontier_get_leaf_count = frontier_get_leaf_count,
     frontier_push_back = frontier_push_back,
     frontier_append = frontier_append,
     frontier_pad_back = frontier_pad_back,
     frontier_get_root_hash = frontier_get_root_hash,
     frontier_next_proofs = frontier_next_proofs,
     frontier_forest = frontier_forest,
+    frontier_forest_get_leaf_count = frontier_forest_get_leaf_count,
     frontier_forest_push_back = frontier_forest_push_back,
     frontier_forest_append = frontier_forest_append,
     frontier_forest_pad_back = frontier_forest_pad_back,

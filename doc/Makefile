@@ -229,11 +229,20 @@ test-vg: $(GAME_TEST_DIR)/initial-hash
 test-vg-execution: $(GAME_TEST_DIR)/initial-hash
 	cd $(GAME_TEST_DIR) && lua5.4 $(RECIPES_DIR)/vg-test.lua execution
 
-test-prt-game: $(GAME_TEST_DIR)/initial-hash
-	mkdir -p $(GAME_TEST_DIR)/prt-machine
-	cd $(GAME_TEST_DIR)/prt-machine && bash $(RECIPES_DIR)/prt-machine-test.sh $(GAME_TEST_DIR)
+# The machine-backed PRT suite also records the reference tournament. test-prt-game always
+# runs it. test-prt-repeat records only when no recording exists, then compares a fresh run.
+define record-prt-tournament
+mkdir -p $(GAME_TEST_DIR)/prt-machine
+cd $(GAME_TEST_DIR)/prt-machine && bash $(RECIPES_DIR)/prt-machine-test.sh $(GAME_TEST_DIR)
+endef
 
-test-prt-repeat: test-prt-game
+test-prt-game: $(GAME_TEST_DIR)/initial-hash
+	$(record-prt-tournament)
+
+$(GAME_TEST_DIR)/prt-run/verdict: $(GAME_TEST_DIR)/initial-hash
+	$(record-prt-tournament)
+
+test-prt-repeat: $(GAME_TEST_DIR)/prt-run/verdict
 	bash $(RECIPES_DIR)/prt-repeat-test.sh $(GAME_TEST_DIR)/rolling-calculator-template \
 	    $(GAME_TEST_DIR) $(GAME_TEST_DIR)/prt-run
 else

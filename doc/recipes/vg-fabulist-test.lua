@@ -63,12 +63,17 @@ local function run(initial_hash, paths, delegate)
         assert(outsider.dead, "the outsider was admitted as a third claimant")
     end)
     vgu.close_narration()
+    -- Keep each run's narration apart, so the counterfactual can be quoted from generated output.
+    for _, name in ipairs({ "claims", "bisect_input", "bisect_mcycle", "bisect_uarch_cycle", "verdict" }) do
+        assert(os.rename(name, string.format("fabulist-%s-%s", delegate and "delegated" or "protected", name)))
+    end
     assert(referee.players[1].final_hash == honest.final_hash)
     assert(referee.players[2].final_hash == opponent.final_hash)
     assert(referee.winner.index == (delegate and 2 or 1))
     return referee
 end
 
+-- Leaves fabulist-protected-* and fabulist-delegated-* narration files and a labeled summary.
 return function(initial_hash, paths)
     local protected = run(initial_hash, paths, false)
     local delegated = run(initial_hash, paths, true)

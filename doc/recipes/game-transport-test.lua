@@ -91,20 +91,17 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     assert(admitted[1] == server.connections[1] and admitted[2] == server.connections[2])
     assert(server.connections[3].dead)
 end)
-print("game-transport-test: ok")
 
 -- Referee errors unwind its suspended resources and close all transport handles.
 do
     local server, future, closed
     local ok, err = pcall(run_with_server, protocol, function(s)
         server = s
-        -- luacheck: push ignore 211
-        local resource <close> = setmetatable({}, {
+        local resource <close> = setmetatable({}, { -- luacheck: ignore 211
             __close = function()
                 closed = true
             end,
-        }) -- luacheck: ignore 211
-        -- luacheck: pop
+        })
         future = s:request_first_valid({}, event, {}, accept, 3)
         error("deliberate referee error")
     end)
@@ -137,3 +134,4 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         assert(future:wait(server:get_time() + 5) == hash)
     end
 end)
+print("game-transport-test: ok")

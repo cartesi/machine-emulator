@@ -1,4 +1,9 @@
--- Loopback clients driven by the same dispatcher as the referee.
+-- Runs `scenario` as the referee's main logic against a fresh server on a loopback port,
+-- speaking the given protocol. The scenario gets the server, a client constructor, and a
+-- connection wait. Each client is a coroutine of the same dispatcher that connects, announces
+-- itself (as a player unless told otherwise), and answers every event line with what `handler`
+-- returns for it: a reply table (encoded as is), "close" to hang up, a raw line to send
+-- verbatim, or nil to delay its answer. A typed client handles every line itself.
 local cartesi = require("cartesi")
 local socket = require("socket")
 local transport = require("game-transport")

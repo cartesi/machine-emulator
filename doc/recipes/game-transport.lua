@@ -1,5 +1,7 @@
--- Coroutine transport shared by the demonstration games. Game schemas, reply validity,
--- sender permissions, and narration remain outside the socket dispatcher.
+-- Coroutine transport shared by the demonstration games. It owns the socket dispatcher, the
+-- logical block barrier, and the one permission it can judge on its own, that a reply to an
+-- owner request came over the owner's connection. Game schemas, reply validity, and narration
+-- remain with each game.
 local cartesi = require("cartesi")
 local socket = require("socket")
 local new_clock = require("prt-clock")
@@ -607,6 +609,8 @@ function server_meta.__index.adopt(self, sock)
                 announce(self, connection, message)
             else
                 local entry = connection.current_event
+                -- Every reply to an owner request names the request, a skip included. A reply
+                -- that does not is malformed and forfeits the connection.
                 if entry and entry.future and math.type(message.id) ~= "integer" then
                     close_connection(self, connection)
                     return

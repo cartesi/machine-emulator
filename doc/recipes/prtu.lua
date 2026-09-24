@@ -366,6 +366,7 @@ local function run_server(referee, address)
 end
 return {
     EVERYONE = EVERYONE,
+    protocol = protocol,
     SCHEMA_DICT = SCHEMA_DICT,
     define_event = define_event,
     EVENTS = EVENTS,

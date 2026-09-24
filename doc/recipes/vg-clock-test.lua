@@ -6,6 +6,10 @@ local hash = cartesi.keccak256("clock fixture")
 
 -- The immediate player never pays for the other player's delay. The delayed
 -- player carries its spent allowance into every subsequent requested move.
+-- A move charges the blocks it took beyond the one-block response budget, and its
+-- deadline is the block at which that charge would exhaust the allowance, so a fresh
+-- player with four blocks must answer before the fifth block after the request.
+-- Rounds below: delays 3, 2, 0, 2 leave 2, 1, 1, then expire at the deadline.
 run_with_server(vgu.protocol, function(server, run_client, wait_connections)
     local players = {}
     for index = 1, 2 do

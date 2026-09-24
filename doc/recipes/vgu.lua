@@ -1,6 +1,8 @@
 -- VG event schemas, transport bindings, and narration.
 local cartesi = require("cartesi")
 local transport = require("game-transport")
+-- A nil audience broadcasts to every admitted player.
+local EVERYONE = nil
 -- The referee narrates the game, kept apart from the wire trace on stderr so the run reads as a
 -- story whether or not tracing is on. A hash is shown by its first four bytes.
 local function short_hash(hash)
@@ -76,6 +78,7 @@ local function close_narration()
     narration = io.stdout
 end
 return {
+    EVERYONE = EVERYONE,
     protocol = protocol,
     EVENTS = events,
     new_server = new_server,

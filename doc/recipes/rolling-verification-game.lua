@@ -11,7 +11,7 @@ local util = require("cartesi.util")
 local evmu = require("cartesi.evmu")
 local vgu = require("vgu")
 local output_verifier = require("game-output")
-local EVENTS = vgu.EVENTS
+local EVENTS, EVERYONE = vgu.EVENTS, vgu.EVERYONE
 local phase, eventf, short_hash = vgu.phase, vgu.eventf, vgu.short_hash
 local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
 local INPUTS_PER_EPOCH = 1 << 16
@@ -440,7 +440,7 @@ function referee_meta.__index.run(self, server)
         players[index] = { connection = connection, index = index, allowance = ALLOWANCE }
     end
     local function announce(event, arguments)
-        local responses <close> = server:request_all(nil, event, arguments)
+        local responses <close> = server:request_all(EVERYONE, event, arguments)
         responses:wait()
     end
     announce(EVENTS.initial_state, { self.initial_hash })

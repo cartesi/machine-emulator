@@ -75,10 +75,10 @@ for _, late_providers in ipairs({ false, true }) do
                 end
                 return index == 1 and {} or { invalid = true }
             end
-            function client.event_handler.prove_outputs_merkle_root(self, target)
+            function client.event_handler:prove_outputs_merkle_root(target)
                 return offer(self, target, "prove_outputs_merkle_root")
             end
-            function client.event_handler.prove_output(self, target)
+            function client.event_handler:prove_output(target)
                 return offer(self, target, "prove_output")
             end
             run_client(nil, function(_, line)

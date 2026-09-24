@@ -13,7 +13,7 @@ run_with_server(vgu.protocol, function(server, run_client, wait_connections)
     local players = {}
     for index = 1, 2 do
         local client = { label = "same label", block = 0, delay = 0, event_handler = {} }
-        function client.event_handler.commit_final_hash(self)
+        function client.event_handler:commit_final_hash()
             if self.delay == 0 then
                 return hash
             end
@@ -112,10 +112,10 @@ for _, failed_turn in ipairs({ 1, 2, 84, 85, 86 }) do
                 end
                 return { agree = false, midpoint_hash = claims[index] }
             end
-            function client.event_handler.commit_bisection(self, arguments)
+            function client.event_handler:commit_bisection(arguments)
                 return answer(self, arguments, false)
             end
-            function client.event_handler.commit_log(self, arguments)
+            function client.event_handler:commit_log(arguments)
                 return answer(self, arguments, true)
             end
             run_client(nil, function(_, line)

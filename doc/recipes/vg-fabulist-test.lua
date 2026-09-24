@@ -48,7 +48,7 @@ local function run(initial_hash, paths, delegate)
         wait_connections(3)
         outsider = server.connections[3]
         local request_owner = server.request_owner
-        function server.request_owner(self, connection, event, arguments, accept)
+        function server:request_owner(connection, event, arguments, accept)
             local future = request_owner(self, connection, event, arguments, accept)
             if connection == owner and (event == vgu.EVENTS.commit_bisection or event == vgu.EVENTS.commit_log) then
                 pending = { future = future, control = self.controls[#self.controls] }

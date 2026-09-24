@@ -111,7 +111,7 @@ end
 -- lasts until the input reaches a fixed point; bisection owns its replay checkpoint.
 local advancing_pair_meta = { __index = {} }
 local advancing_pair_methods = advancing_pair_meta.__index
-function advancing_pair_methods.close(self)
+function advancing_pair_methods:close()
     for _, key in ipairs({ "machine", "backup" }) do
         if self[key] then
             self[key]:shutdown_server()
@@ -121,7 +121,7 @@ function advancing_pair_methods.close(self)
 end
 advancing_pair_meta.__close = advancing_pair_methods.close
 
-function advancing_pair_methods.move(self)
+function advancing_pair_methods:move()
     local pair = setmetatable({}, advancing_pair_meta)
     for key, value in pairs(self) do
         pair[key] = value
@@ -132,7 +132,7 @@ function advancing_pair_methods.move(self)
     return pair
 end
 
-function advancing_pair_methods.fork(self)
+function advancing_pair_methods:fork()
     local clone <close> = setmetatable({}, advancing_pair_meta)
     for key, value in pairs(self) do
         if key ~= "machine" and key ~= "backup" then
@@ -148,18 +148,18 @@ end
 
 -- These operations settle input execution only. Bisection snapshots the entire
 -- pair independently, including a pending input snapshot.
-function advancing_pair_methods.snapshot(self)
+function advancing_pair_methods:snapshot()
     assert(not self.backup, "input already has a snapshot")
     self.backup = fork_machine(self.machine)
 end
 
-function advancing_pair_methods.commit(self)
+function advancing_pair_methods:commit()
     assert(self.backup, "input has no snapshot")
     self.backup:shutdown_server()
     self.backup = nil
 end
 
-function advancing_pair_methods.revert(self)
+function advancing_pair_methods:revert()
     assert(self.backup, "input has no snapshot")
     self.machine:swap(self.backup)
     self:commit()
@@ -182,7 +182,7 @@ end
 local player_meta = { __index = {} }
 local player_methods = player_meta.__index
 
-function player_methods.close(self)
+function player_methods:close()
     for _, key in ipairs({ "latest", "agreed", "tentative", "input_boundary" }) do
         if self[key] then
             self[key]:close()
@@ -193,7 +193,7 @@ end
 player_meta.__close = player_methods.close
 
 -- Transfer construction state out of a <close> local without closing its resources.
-function player_methods.move(self)
+function player_methods:move()
     local player = setmetatable({}, player_meta)
     for name, value in pairs(self) do
         player[name] = value
@@ -205,25 +205,25 @@ function player_methods.move(self)
 end
 
 -- Bisection keeps or discards a whole advancing pair, never an input snapshot.
-function player_methods.snapshot(self, source)
+function player_methods:snapshot(source)
     assert(not self.tentative, "previous midpoint has not been resolved")
     self.tentative = (source or self.agreed):fork()
     return self.tentative
 end
 
-function player_methods.commit(self)
+function player_methods:commit()
     assert(self.tentative, "no bisection snapshot")
     self.agreed:close()
     self.agreed, self.tentative = self.tentative, nil
 end
 
-function player_methods.revert(self)
+function player_methods:revert()
     assert(self.tentative, "no bisection snapshot")
     self.tentative:close()
     self.tentative = nil
 end
 
-function player_methods.take_branch(self, branch)
+function player_methods:take_branch(branch)
     if branch == "agree" then
         self:commit()
     elseif branch == "disagree" then
@@ -232,7 +232,7 @@ function player_methods.take_branch(self, branch)
 end
 
 -- Automatic yields go to the optional callback. The caller handles manual yields.
-function player_methods.run_to_stop(_self, pair, _epoch_input_offset, mcycle_end, on_yield_automatic)
+function player_methods:run_to_stop(pair, _epoch_input_offset, mcycle_end, on_yield_automatic) -- luacheck: ignore 212 self
     local machine = pair.machine
     while true do
         local break_reason = machine:run(mcycle_end)
@@ -257,7 +257,7 @@ local function load_cmio_input(pair, data)
     end
 end
 
-function player_methods.run_uarch(self, pair, epoch_input_offset, input_mcycle_offset, target)
+function player_methods:run_uarch(pair, epoch_input_offset, input_mcycle_offset, target)
     if input_mcycle_offset == 0 and pair.machine:read_reg("uarch_cycle") == 0 and target > 0 then
         load_cmio_input(pair, self.inputs[epoch_input_offset + 1])
     end
@@ -279,8 +279,7 @@ end
 -- Run one input from its virgin boundary to the requested offset, as in PRT.
 -- A cycle target keeps the execution snapshot. A fixed point settles it:
 -- rejection reverts, while acceptance and other terminal stops commit.
-function player_methods.run_advance_state_input(
-    self,
+function player_methods:run_advance_state_input(
     pair,
     epoch_input_offset,
     input_mcycle_offset_end,
@@ -321,19 +320,19 @@ end
 
 -- Replay to an input boundary without collecting outputs. Unposted inputs
 -- repeat the final state and need no execution.
-function player_methods.run_to_input_boundary(self, pair, epoch_input_offset_begin, epoch_input_offset_end)
+function player_methods:run_to_input_boundary(pair, epoch_input_offset_begin, epoch_input_offset_end)
     for epoch_input_offset = epoch_input_offset_begin, math.min(epoch_input_offset_end, #self.inputs) - 1 do
         self:run_advance_state_input(pair, epoch_input_offset, MCYCLES_PER_INPUT)
     end
 end
 
-function player_methods.read_input(_self, _index, filename)
+function player_methods:read_input(_index, filename) -- luacheck: ignore 212 self
     return util.read_file(filename)
 end
 
 -- Mcycle bisection replays from a separately owned input boundary. Settling an
 -- execution snapshot must not release that checkpoint or change the agreed state.
-function player_methods.propose_midpoint(self, interval)
+function player_methods:propose_midpoint(interval)
     local level, target = interval.level, midpoint(interval)
     local source = self.agreed
     if level == "input" and target >= #self.inputs then
@@ -359,7 +358,7 @@ end
 
 -- Resolve our previous proposal, then compare the opponent's proposal locally.
 -- The response's agreement and next proposal belong to this one connection.
-function player_methods.answer_midpoint(self, arguments)
+function player_methods:answer_midpoint(arguments)
     self:take_branch(arguments.branch)
     local interval, agree = arguments.interval
     if arguments.midpoint_hash then
@@ -381,12 +380,12 @@ local event_handler = {}
 
 function event_handler.initial_state() end
 
-function event_handler.input_added(self, epoch_input_offset, filename)
+function event_handler:input_added(epoch_input_offset, filename)
     self.inputs[epoch_input_offset + 1] = self:read_input(epoch_input_offset, filename)
     self:run_advance_state_input(self.latest, epoch_input_offset, MCYCLES_PER_INPUT, self.outputs, self.outputs_frontier)
 end
 
-function event_handler.epoch_sealed(self)
+function event_handler:epoch_sealed()
     self.final_hash = self.latest.machine:get_root_hash()
     local leaves = {}
     for i, output in ipairs(self.outputs) do
@@ -397,16 +396,16 @@ function event_handler.epoch_sealed(self)
     self.outputs_frontier = nil
 end
 
-function event_handler.commit_final_hash(self)
+function event_handler:commit_final_hash()
     return self.final_hash
 end
 
-function event_handler.commit_bisection(self, arguments)
+function event_handler:commit_bisection(arguments)
     local interval, agree = self:answer_midpoint(arguments)
     return { agree = agree, midpoint_hash = self:propose_midpoint(interval) }
 end
 
-function event_handler.commit_log(self, arguments)
+function event_handler:commit_log(arguments)
     local interval, agree = self:answer_midpoint(arguments)
     local pair <close> = self.agreed:fork()
     local machine = pair.machine
@@ -425,7 +424,7 @@ function event_handler.commit_log(self, arguments)
     return { agree = agree, log = log }
 end
 
-function event_handler.prove_outputs_merkle_root(self)
+function event_handler:prove_outputs_merkle_root()
     local machine = self.latest.machine
     local y, yp = get_machine_word(machine, cartesi.machine:get_reg_address("iflags_Y"))
     local tohost, tp = get_machine_word(machine, cartesi.machine:get_reg_address("htif_tohost"))
@@ -440,7 +439,7 @@ function event_handler.prove_outputs_merkle_root(self)
     }
 end
 
-function event_handler.prove_output(self)
+function event_handler:prove_output()
     if #self.outputs == 0 then
         return {}
     end
@@ -605,7 +604,7 @@ local function request_output_proof(server, event, arguments, accept)
 end
 
 local referee_meta = { __index = {} }
-function referee_meta.__index.run(self, server)
+function referee_meta.__index:run(server)
     local connections = server:accept_players(2)
     local players = {}
     self.players = players

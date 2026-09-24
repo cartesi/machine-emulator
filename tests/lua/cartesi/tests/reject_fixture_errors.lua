@@ -116,6 +116,11 @@ M.errors = {
         solidity_signature = "RuntimeError(string)",
         solidity_message = "unsupported ecall function",
     },
+    tlb_batch_index = {
+        cpp_pattern = "TLB batch index out of range or unaligned",
+        solidity_signature = "RuntimeError(string)",
+        solidity_message = "TLB batch index out of range or unaligned",
+    },
     tlb_index_out_of_range = {
         cpp_pattern = "TLB index out of range",
         solidity_signature = "RuntimeError(string)",

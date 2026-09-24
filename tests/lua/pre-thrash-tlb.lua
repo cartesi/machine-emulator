@@ -57,27 +57,27 @@ local function build_corrupted_tlb(tlb_data, num_pmas)
     for _, _ in ipairs(TLB_SETS) do
         for slot = 0, TLB_SET_SIZE - 1 do
             local offset = 1 + #parts * TLB_SLOT_BYTES
-            local vaddr_page, vp_offset, pma_index, generation = string.unpack("<I8I8I8I8", tlb_data, offset)
+            local vaddr_page, vp_offset, pma_index = string.unpack("<I8I8I8", tlb_data, offset)
             local new_data
             local ct = slot % 6
             if ct == 0 then
-                -- stale generation
-                new_data = string.pack("<I8I8I8I8", vaddr_page, vp_offset, pma_index, generation ~ 1)
+                -- zero_padding != 0
+                new_data = string.pack("<I8I8I8I8", vaddr_page, vp_offset, pma_index, 1)
             elseif ct == 1 then
                 -- vaddr_page not page-aligned
-                new_data = string.pack("<I8I8I8I8", vaddr_page | 1, vp_offset, pma_index, generation)
+                new_data = string.pack("<I8I8I8I8", vaddr_page | 1, vp_offset, pma_index, 0)
             elseif ct == 2 then
                 -- paddr_page not page-aligned
-                new_data = string.pack("<I8I8I8I8", vaddr_page, vp_offset | 1, pma_index, generation)
+                new_data = string.pack("<I8I8I8I8", vaddr_page, vp_offset | 1, pma_index, 0)
             elseif ct == 3 then
                 -- pma_index one past valid range (sentinel, not memory)
-                new_data = string.pack("<I8I8I8I8", vaddr_page, vp_offset, num_pmas, generation)
+                new_data = string.pack("<I8I8I8I8", vaddr_page, vp_offset, num_pmas, 0)
             elseif ct == 4 then
                 -- paddr_page above PMA end
-                new_data = string.pack("<I8I8I8I8", 0x90000000, 0, pma_index, generation)
+                new_data = string.pack("<I8I8I8I8", 0x90000000, 0, pma_index, 0)
             else
                 -- paddr_page below PMA start
-                new_data = string.pack("<I8I8I8I8", 0x70000000, 0, pma_index, generation)
+                new_data = string.pack("<I8I8I8I8", 0x70000000, 0, pma_index, 0)
             end
             parts[#parts + 1] = new_data
         end

@@ -206,15 +206,14 @@ library StateAccess {
     ///   offset  0: vaddr_page (uint64)
     ///   offset  8: vp_offset  (uint64)
     ///   offset 16: pma_index  (uint64)
-    ///   offset 24: generation (uint64)
+    ///   offset 24: zero_padding_ (always 0)
     function writeTlbECALL(
         StepLog.Context memory ctx,
         uint64 setIndex,
         uint64 slotIndex,
         uint64 vaddrPage,
         uint64 vpOffset,
-        uint64 pmaIndex,
-        uint64 generation
+        uint64 pmaIndex
     ) internal pure {
         uint64 slotAddr = EmulatorConstants.AR_SHADOW_TLB_START
             + setIndex * EmulatorConstants.SHADOW_TLB_SET_LENGTH
@@ -223,7 +222,7 @@ library StateAccess {
         writeWord(ctx, slotAddr + 0, vaddrPage);
         writeWord(ctx, slotAddr + 8, vpOffset);
         writeWord(ctx, slotAddr + 16, pmaIndex);
-        writeWord(ctx, slotAddr + 24, generation);
+        writeWord(ctx, slotAddr + 24, 0); // zero_padding_
     }
 
     function throwRuntimeError(StepLog.Context memory, string memory message) internal pure {

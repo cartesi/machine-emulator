@@ -137,10 +137,7 @@ enum class machine_reg : uint64_t {
     htif_iconsole = static_cast<uint64_t>(shadow_registers_what::htif_iconsole),
     htif_iyield = static_cast<uint64_t>(shadow_registers_what::htif_iyield),
     first_ = x0,
-    tlb_generation_code = static_cast<uint64_t>(shadow_registers_what::tlb_generation_code),
-    tlb_generation_read = static_cast<uint64_t>(shadow_registers_what::tlb_generation_read),
-    tlb_generation_write = static_cast<uint64_t>(shadow_registers_what::tlb_generation_write),
-    last_ = tlb_generation_write,
+    last_ = htif_iyield,
 
     uarch_halt = static_cast<uint64_t>(shadow_uarch_state_what::uarch_halt),
     uarch_cycle = static_cast<uint64_t>(shadow_uarch_state_what::uarch_cycle),

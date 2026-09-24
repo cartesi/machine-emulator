@@ -186,9 +186,6 @@ local function get_cpu_reg_test_values()
         ilrsc = 0x2e0,
         iunrep = 0x0,
         imcyclemax = cartesi.MCYCLE_MAX,
-        tlb_generation_code = 3,
-        tlb_generation_read = 5,
-        tlb_generation_write = 7,
     }
     for i = 0, 31 do
         reg_values["x" .. i] = i * 8
@@ -399,7 +396,7 @@ do_test("should return address value for registers", function(machine)
         assert(machine:read_reg(k) == machine:read_word(machine:get_reg_address(k)), "invalid return for " .. v)
     end
     assert(machine:get_reg_address("first_") == machine:get_reg_address("x0"))
-    assert(machine:get_reg_address("last_") == machine:get_reg_address("tlb_generation_write"))
+    assert(machine:get_reg_address("last_") == machine:get_reg_address("htif_iyield"))
     assert(machine:get_reg_address("uarch_first_") == machine:get_reg_address("uarch_halt"))
     assert(machine:get_reg_address("uarch_last_") == machine:get_reg_address("uarch_x31"))
 end)
@@ -910,7 +907,6 @@ local function plant_write_tlb_ecall(machine, set_index, slot_index)
 end
 
 do_test("dump_step_uarch shows the TLB slot a write-TLB ecall fills", function(machine)
-    machine:write_reg("tlb_generation_read", 7)
     plant_write_tlb_ecall(machine, 1, 3)
     local text = cartesi.machine:dump_step_uarch(machine:log_step_uarch(1), 0, 1)
     local expected = {
@@ -926,11 +922,10 @@ do_test("dump_step_uarch shows the TLB slot a write-TLB ecall fills", function(m
         "^    read uarch%.x12@0x%x+: 0x1000%(4096%)$",
         "^    read uarch%.x13@0x%x+: 0x2000%(8192%)$",
         "^    read uarch%.x14@0x%x+: 0x1%(1%)$",
-        "^    read tlb_generation_read@0x%x+: 0x7%(7%)$",
         "^    write tlb%.slot%.vaddr_page@0x%x+: 0x%x+%(%d+%) %-> 0x1000%(4096%)$",
         "^    write tlb%.slot%.vp_offset@0x%x+: 0x%x+%(%d+%) %-> 0x2000%(8192%)$",
         "^    write tlb%.slot%.pma_index@0x%x+: 0x%x+%(%d+%) %-> 0x1%(1%)$",
-        "^    write tlb%.slot%.generation@0x%x+: 0x%x+%(%d+%) %-> 0x7%(7%)$",
+        "^    write tlb%.slot%.zero_padding_@0x%x+: 0x%x+%(%d+%) %-> 0x0%(0%)$",
         "^    write uarch%.pc@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",
         "^  end ecall$",
         "^  write uarch%.cycle@0x%x+: 0x%x+%(%d+%) %-> 0x%x+%(%d+%)$",

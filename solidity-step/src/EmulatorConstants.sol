@@ -107,6 +107,7 @@ library EmulatorConstants {
     uint64 internal constant UARCH_BREAK_REASON_UARCH_CYCLE_OVERFLOW = 0x2;
     uint64 internal constant UARCH_BREAK_REASON_UARCH_HALTED = 0x1;
     uint64 internal constant UARCH_CYCLE_MAX = 0xfffff;
+    uint64 internal constant UARCH_ECALL_FN_FLUSH_TLB_BATCH = 0x5;
     uint64 internal constant UARCH_ECALL_FN_HALT = 0x1;
     uint64 internal constant UARCH_ECALL_FN_PUTCHAR = 0x2;
     uint64 internal constant UARCH_ECALL_FN_WRITE_TLB = 0x4;
@@ -116,6 +117,7 @@ library EmulatorConstants {
     uint64 internal constant UARCH_SHADOW_START_ADDRESS = 0x400000;
     uint8 internal constant UARCH_STATE_LOG2_SIZE = 0x16;
     uint64 internal constant UARCH_STATE_START_ADDRESS = 0x400000;
+    uint64 internal constant UARCH_TLB_FLUSH_BATCH_SIZE = 0x80;
     uint64 internal constant VERSION_MAJOR = 0x0;
     uint64 internal constant VERSION_MINOR = 0x15;
     uint64 internal constant VERSION_NUM = 0x5208;
@@ -137,7 +139,7 @@ library EmulatorConstants {
 
     // Root hash of the pristine uarch state (cartesi.UARCH_PRISTINE_STATE_HASH).
     bytes32 internal constant UARCH_PRISTINE_STATE_HASH =
-        0x3969207f3bd322500b56f9f9a7bdcd7950ebe150480c3119f0e43ea9d8d19dbc;
+        0x23e3ef95ce56e4a1f5a5d920ddcf7c20ceb7de05ffabc5b9fdaa65488ee8fcb2;
 
     // Page geometry (derived).
     uint256 internal constant PAGE_SIZE = 1 << HASH_TREE_LOG2_PAGE_SIZE;
@@ -152,7 +154,6 @@ library EmulatorConstants {
     uint64 internal constant SHADOW_TLB_SET_LENGTH = TLB_SET_SIZE * SHADOW_TLB_SLOT_SIZE;
 
     // Shadow register addresses (cartesi.machine:get_reg_address).
-    uint64 internal constant TLB_GENERATION_START = 0x358;
     uint64 internal constant IFLAGS_Y_ADDRESS = 0x308;
     uint64 internal constant HTIF_TOHOST_ADDRESS = 0x330;
     uint64 internal constant HTIF_FROMHOST_ADDR = 0x338;

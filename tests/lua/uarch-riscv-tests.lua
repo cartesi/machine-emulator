@@ -78,6 +78,7 @@ local riscv_tests = {
     { "rv64ui-uarch-fence.bin", 12 },
     { "rv64ui-uarch-ecall-putchar.bin", 14 },
     { "rv64ui-uarch-ecall-write-tlb.bin", 46 },
+    { "rv64ui-uarch-ecall-flush-tlb-batch.bin", 1439 },
     { "rv64ui-uarch-ecall-unsupported.bin", 1, "unsupported ecall function" },
     { "rv64ui-uarch-ecall-removed-mark-page-dirty.bin", 1, "unsupported ecall function" },
     { "rv64ui-uarch-ebreak.bin", 1, "uarch aborted" },

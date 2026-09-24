@@ -104,7 +104,6 @@ local tail = {
 "    uint64 internal constant SHADOW_TLB_SET_LENGTH     = TLB_SET_SIZE * SHADOW_TLB_SLOT_SIZE;",
 "",
 "    // Shadow register addresses (cartesi.machine:get_reg_address).",
-"    uint64 internal constant TLB_GENERATION_START = " .. hex(reg_addr("tlb_generation_code")) .. ";",
 "    uint64 internal constant IFLAGS_Y_ADDRESS    = " .. hex(reg_addr("iflags_Y"))      .. ";",
 "    uint64 internal constant HTIF_TOHOST_ADDRESS = " .. hex(reg_addr("htif_tohost"))   .. ";",
 "    uint64 internal constant HTIF_FROMHOST_ADDR  = " .. hex(reg_addr("htif_fromhost")) .. ";",

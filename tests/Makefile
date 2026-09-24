@@ -360,7 +360,7 @@ test-jsonrpc:
 
 # Plain lua test programs, each run as its own process with the "local" machine type.
 LUA_PROGRAMS = htif-console htif-cmio htif-yield log-with-mtime-transition \
-	machine-bind machine-test mcycle-overflow mtime-interrupt tlb-generation
+	machine-bind machine-test mcycle-overflow mtime-interrupt tlb-flush
 
 # Lester spec suites, each run as its own process so they parallelize. cm-cli and
 # evmu are excluded here because they need the luacov-aware rules below.

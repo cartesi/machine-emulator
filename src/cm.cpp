@@ -396,12 +396,6 @@ static constexpr cartesi::machine_reg convert_from_c(cm_reg r) {
             return reg::iflags_H;
         case CM_REG_IUNREP:
             return reg::iunrep;
-        case CM_REG_TLB_GENERATION_CODE:
-            return reg::tlb_generation_code;
-        case CM_REG_TLB_GENERATION_READ:
-            return reg::tlb_generation_read;
-        case CM_REG_TLB_GENERATION_WRITE:
-            return reg::tlb_generation_write;
         case CM_REG_IMCYCLEMAX:
             return reg::imcyclemax;
         case CM_REG_CLINT_MTIMECMP:

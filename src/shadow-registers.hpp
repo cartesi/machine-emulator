@@ -102,18 +102,17 @@ struct registers_state final {
     uint64_t iunrep{IUNREP_INIT};               ///< Unreproducible mode.
     uint64_t imcyclemax{IMCYCLEMAX_INIT};       ///< Maximum mcycle for the current advance-state input.
 
-    iflags_state iflags;          ///< Internal flags (Cartesi specific).
-    clint_state clint;            ///< CLINT registers.
-    plic_state plic;              ///< PLIC registers.
-    htif_state htif;              ///< HTIF registers.
-    uint64_t tlb_generation[3]{}; ///< Generations of the code, read, and write TLB sets.
+    iflags_state iflags; ///< Internal flags (Cartesi specific).
+    clint_state clint;   ///< CLINT registers.
+    plic_state plic;     ///< PLIC registers.
+    htif_state htif;     ///< HTIF registers.
 };
 
 /// \brief Shadow memory layout
 using shadow_registers_state = registers_state;
 
 // We need strong guarantees that shadow_state has fixed size and alignment across platforms.
-static_assert(sizeof(shadow_registers_state) == 110 * sizeof(uint64_t), "unexpected registers state size");
+static_assert(sizeof(shadow_registers_state) == 107 * sizeof(uint64_t), "unexpected registers state size");
 static_assert(alignof(shadow_registers_state) == sizeof(uint64_t), "unexpected registers state alignment");
 
 enum class shadow_registers_what : uint64_t {
@@ -224,9 +223,6 @@ enum class shadow_registers_what : uint64_t {
     htif_ihalt = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, htif.ihalt),
     htif_iconsole = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, htif.iconsole),
     htif_iyield = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, htif.iyield),
-    tlb_generation_code = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, tlb_generation[0]),
-    tlb_generation_read = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, tlb_generation[1]),
-    tlb_generation_write = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, tlb_generation[2]),
     unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
 };
 
@@ -463,12 +459,6 @@ static constexpr const char *shadow_registers_get_what_name(shadow_registers_wha
             return "htif.ihalt";
         case reg::htif_iconsole:
             return "htif.iconsole";
-        case reg::tlb_generation_code:
-            return "tlb_generation_code";
-        case reg::tlb_generation_read:
-            return "tlb_generation_read";
-        case reg::tlb_generation_write:
-            return "tlb_generation_write";
         case reg::htif_iyield:
             return "htif.iyield";
         case reg::unknown_:

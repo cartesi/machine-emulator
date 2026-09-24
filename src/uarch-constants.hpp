@@ -23,6 +23,7 @@
 #include "address-range-defines.h"
 #include "cm.h"
 #include "shadow-registers.hpp"
+#include "shadow-tlb.hpp"
 #include "uarch-defines.h"
 
 namespace cartesi {
@@ -84,10 +85,15 @@ enum uarch_machine_state_addresses : uint64_t {
 
 /// \brief ecall function codes
 enum uarch_ecall_functions : uint64_t {
-    UARCH_ECALL_FN_HALT = EXPAND_UINT64_C(UARCH_ECALL_FN_HALT_DEF),           ///< halt uarch execution
-    UARCH_ECALL_FN_PUTCHAR = EXPAND_UINT64_C(UARCH_ECALL_FN_PUTCHAR_DEF),     ///< putchar
-    UARCH_ECALL_FN_WRITE_TLB = EXPAND_UINT64_C(UARCH_ECALL_FN_WRITE_TLB_DEF), ///< write_tlb
+    UARCH_ECALL_FN_HALT = EXPAND_UINT64_C(UARCH_ECALL_FN_HALT_DEF),                       ///< halt uarch execution
+    UARCH_ECALL_FN_PUTCHAR = EXPAND_UINT64_C(UARCH_ECALL_FN_PUTCHAR_DEF),                 ///< putchar
+    UARCH_ECALL_FN_WRITE_TLB = EXPAND_UINT64_C(UARCH_ECALL_FN_WRITE_TLB_DEF),             ///< write_tlb
+    UARCH_ECALL_FN_FLUSH_TLB_BATCH = EXPAND_UINT64_C(UARCH_ECALL_FN_FLUSH_TLB_BATCH_DEF), ///< flush_tlb_batch
 };
+
+constexpr uint64_t UARCH_TLB_FLUSH_BATCH_SIZE = EXPAND_UINT64_C(UARCH_TLB_FLUSH_BATCH_SIZE_DEF);
+static_assert(UARCH_TLB_FLUSH_BATCH_SIZE > 0 && TLB_SET_SIZE % UARCH_TLB_FLUSH_BATCH_SIZE == 0);
+static_assert(AR_PAGE_SIZE % (UARCH_TLB_FLUSH_BATCH_SIZE * SHADOW_TLB_SLOT_SIZE) == 0);
 
 } // namespace cartesi
 

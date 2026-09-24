@@ -26,7 +26,7 @@ RISCV_OBJDUMP ?= $(RISCV_PREFIX)objdump --disassemble-all --disassemble-zeroes -
 RISCV_OBJCOPY ?= $(RISCV_PREFIX)objcopy -S -O binary
 
 # Tests provided by us
-TESTS = fence ebreak ecall-putchar ecall-unsupported ecall-removed-mark-page-dirty ecall-write-tlb \
+TESTS = fence ebreak ecall-putchar ecall-unsupported ecall-removed-mark-page-dirty ecall-write-tlb ecall-flush-tlb-batch \
 	computation-hash-near-limit computation-hash-overflow
 SRC_DIR = $(abspath .)
 BUILDDIR ?= $(abspath ./build)

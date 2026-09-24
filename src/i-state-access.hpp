@@ -395,17 +395,6 @@ public:
             pma_index, static_cast<uint64_t>(val), static_cast<uint64_t>(val));
     }
 
-    template <TLB_set_index SET>
-    uint64_t read_tlb_generation() const {
-        return derived().template do_read_tlb_generation<SET>();
-    }
-
-    template <TLB_set_index SET>
-    void flush_tlb_set() const {
-        const auto generation = read_tlb_generation<SET>();
-        derived().template do_write_tlb_generation<SET>(generation + (generation != TLB_GENERATION_DISABLED));
-    }
-
     /// \brief Reads TLB's vaddr_page
     /// \tparam SET TLB set
     /// \param slot_index Slot index

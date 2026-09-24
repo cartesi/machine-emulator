@@ -102,9 +102,9 @@ private:
     }
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index, uint64_t generation) const {
+        uint64_t pma_index) const {
         // Forward to machine
-        m_m.write_unverified_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index, generation);
+        m_m.write_unverified_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
     }
 
     void do_reset_uarch() const {

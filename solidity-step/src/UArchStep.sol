@@ -810,11 +810,26 @@ library UArchStep {
             ) {
                 StateAccess.throwRuntimeError(a, "TLB index out of range");
             }
-            uint64 generation =
-                StateAccess.readWord(a, EmulatorConstants.TLB_GENERATION_START + (set_index * 8));
-            StateAccess.writeTlbECALL(
-                a, set_index, slot_index, vaddr_page, vp_offset, pma_index, generation
-            ); // WARNING: This CANNOT be a NOOP in Solidity
+            StateAccess.writeTlbECALL(a, set_index, slot_index, vaddr_page, vp_offset, pma_index); // WARNING: This CANNOT be a NOOP in Solidity
+            return advancePc(a, pc);
+        }
+        if (fn == EmulatorConstants.UARCH_ECALL_FN_FLUSH_TLB_BATCH) {
+            uint64 set_index = StateAccess.readX(a, 10);
+            uint64 slot_index = StateAccess.readX(a, 11);
+            if (
+                set_index >= EmulatorConstants.TLB_SET_COUNT
+                    || slot_index
+                        > EmulatorConstants.TLB_SET_SIZE - EmulatorConstants.UARCH_TLB_FLUSH_BATCH_SIZE
+                    || slot_index % EmulatorConstants.UARCH_TLB_FLUSH_BATCH_SIZE != 0
+            ) {
+                StateAccess.throwRuntimeError(a, "TLB batch index out of range or unaligned");
+            }
+            uint64 end = slot_index + EmulatorConstants.UARCH_TLB_FLUSH_BATCH_SIZE;
+            for (; slot_index < end; ++slot_index) {
+                StateAccess.writeTlbECALL(
+                    a, set_index, slot_index, type(uint64).max, 0, type(uint64).max
+                );
+            }
             return advancePc(a, pc);
         }
         StateAccess.throwRuntimeError(a, "unsupported ecall function");

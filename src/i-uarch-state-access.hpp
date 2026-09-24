@@ -160,8 +160,8 @@ public:
     }
 
     void write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index, uint64_t generation) const {
-        derived().do_write_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index, generation);
+        uint64_t pma_index) const {
+        derived().do_write_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
     }
 
     constexpr const char *get_name() const {

@@ -46,9 +46,11 @@
 
 // uarch ecall function codes
 // function code 3 was mark_dirty_page, now removed, and the gap is intentional
-#define UARCH_ECALL_FN_HALT_DEF 1      // halt uarch
-#define UARCH_ECALL_FN_PUTCHAR_DEF 2   // putchar
-#define UARCH_ECALL_FN_WRITE_TLB_DEF 4 // write_tlb
+#define UARCH_ECALL_FN_HALT_DEF 1            // halt uarch
+#define UARCH_ECALL_FN_PUTCHAR_DEF 2         // putchar
+#define UARCH_ECALL_FN_WRITE_TLB_DEF 4       // write_tlb
+#define UARCH_ECALL_FN_FLUSH_TLB_BATCH_DEF 5 // flush_tlb_batch
+#define UARCH_TLB_FLUSH_BATCH_SIZE_DEF 128
 
 // helper for using UINT64_C with defines
 #ifndef EXPAND_UINT64_C

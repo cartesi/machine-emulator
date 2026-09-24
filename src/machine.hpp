@@ -696,17 +696,6 @@ public:
         ar.get_dirty_page_tree().mark_dirty_page_and_up(paddr - ar.get_start());
     }
 
-    void write_tlb_generation(TLB_set_index set_index, uint64_t generation) {
-        if (set_index == TLB_WRITE) {
-            mark_write_tlb_dirty_pages();
-        }
-        for (auto &slot : m_s->penumbra.tlb[set_index]) {
-            slot.vaddr_page = TLB_UNVERIFIED_PAGE;
-            slot.vh_offset = host_addr{0};
-        }
-        m_s->shadow.registers.tlb_generation[set_index] = generation;
-    }
-
     /// \brief Updates a TLB slot in the shadow and populates the hot entry
     /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
     /// \param slot_index Index of slot to update
@@ -719,12 +708,7 @@ public:
         if (set_index == TLB_WRITE) {
             mark_write_tlb_dirty_page(slot_index);
         }
-        const auto generation = m_s->shadow.registers.tlb_generation[set_index];
-        if (generation == TLB_GENERATION_DISABLED && set_index == TLB_WRITE && vaddr_page != TLB_INVALID_PAGE) {
-            mark_dirty_page(get_paddr(vaddr_page + vh_offset, pma_index), pma_index);
-        }
-        m_s->penumbra.tlb[set_index][slot_index].vaddr_page =
-            generation == TLB_GENERATION_DISABLED ? TLB_INVALID_PAGE : vaddr_page;
+        m_s->penumbra.tlb[set_index][slot_index].vaddr_page = vaddr_page;
         m_s->penumbra.tlb[set_index][slot_index].vh_offset = vh_offset;
         m_s->shadow.tlb[set_index][slot_index].vaddr_page = vaddr_page;
         if (vaddr_page != TLB_INVALID_PAGE) [[likely]] {
@@ -733,7 +717,7 @@ public:
             m_s->shadow.tlb[set_index][slot_index].vp_offset = static_cast<uint64_t>(vh_offset);
         }
         m_s->shadow.tlb[set_index][slot_index].pma_index = pma_index;
-        m_s->shadow.tlb[set_index][slot_index].generation = generation;
+        m_s->shadow.tlb[set_index][slot_index].zero_padding_ = 0;
     }
 
     /// \brief Updates a TLB slot in the shadow and marks the hot entry as unverified
@@ -743,7 +727,7 @@ public:
     /// \param vp_offset Offset from target virtual addresses to target physical addresses within page
     /// \param pma_index Index of PMA where address falls
     void write_unverified_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index, uint64_t generation) {
+        uint64_t pma_index) {
         if (slot_index >= TLB_SET_SIZE) {
             throw std::out_of_range{"TLB slot index out of bounds"};
         }
@@ -756,7 +740,7 @@ public:
         m_s->shadow.tlb[set_index][slot_index].vaddr_page = vaddr_page;
         m_s->shadow.tlb[set_index][slot_index].vp_offset = vp_offset;
         m_s->shadow.tlb[set_index][slot_index].pma_index = pma_index;
-        m_s->shadow.tlb[set_index][slot_index].generation = generation;
+        m_s->shadow.tlb[set_index][slot_index].zero_padding_ = 0;
     }
 
     /// \brief Validates a shadow TLB slot and promotes it to a hot entry
@@ -778,8 +762,8 @@ public:
                 return m_s->shadow.tlb[set_index][slot_index].vp_offset;
             case shadow_tlb_what::pma_index:
                 return m_s->shadow.tlb[set_index][slot_index].pma_index;
-            case shadow_tlb_what::generation:
-                return m_s->shadow.tlb[set_index][slot_index].generation;
+            case shadow_tlb_what::zero_padding_:
+                return m_s->shadow.tlb[set_index][slot_index].zero_padding_;
             default:
                 throw std::domain_error{"unknown shadow TLB register"};
         }

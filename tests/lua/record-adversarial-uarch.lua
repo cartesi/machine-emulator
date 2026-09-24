@@ -101,11 +101,12 @@ end
 -- throwaway machine.
 local SHADOW_PAGE = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START >> 12
 local REVERT_OFF = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START & 0xfff
-local HTIF_TOHOST_OFF, UARCH_X10_OFF, UARCH_X17_OFF
+local HTIF_TOHOST_OFF, UARCH_X10_OFF, UARCH_X11_OFF, UARCH_X17_OFF
 do
     local m <close> = assert(cartesi.machine({ ram = { length = 0x20000 }, uarch = { ram = { backing_store = {} } } }))
     HTIF_TOHOST_OFF = m:get_reg_address("htif_tohost") & 0xfff
     UARCH_X10_OFF = m:get_reg_address("uarch_x10") & 0xfff
+    UARCH_X11_OFF = m:get_reg_address("uarch_x11") & 0xfff
     UARCH_X17_OFF = m:get_reg_address("uarch_x17") & 0xfff
 end
 
@@ -455,6 +456,29 @@ local cases = {
     },
 }
 
+for _, args in ipairs({
+    { "set", 3, 0 },
+    { "wrap", 1 << 51, 0 },
+    { "slot", 0, 256 },
+    { "unaligned", 0, 1 },
+    { "end", 0, 255 },
+    { "overflow", 0, -1 },
+}) do
+    cases[#cases + 1] = {
+        tag = "tlb_batch_index",
+        name = "tlb_batch_" .. args[1],
+        kind = "cycle",
+        base = UARCH_BASE,
+        mutate = function(log)
+            inject_uarch_instruction(log, INSN_ECALL)
+            inject_uarch_register(log, UARCH_X17_OFF, cartesi.UARCH_ECALL_FN_FLUSH_TLB_BATCH)
+            inject_uarch_register(log, UARCH_X10_OFF, args[2])
+            inject_uarch_register(log, UARCH_X11_OFF, args[3])
+            return { before = test_util.recompute_step_log_root(log, "keccak256") }
+        end,
+    }
+end
+
 test_util.prepare_empty_output_dir(output_dir)
 reject_errors.write(output_dir)
 local out <close> = assert(io.open(output_dir .. "/" .. manifest.MANIFEST_NAME, "w"))
@@ -465,6 +489,16 @@ for _, case in ipairs(cases) do
     local log = test_util.read_step_log_file(case.base)
     local claims = base_claims(case.base)
     local claim = case.mutate(log) or {}
+    if case.tag == "tlb_batch_index" then
+        local ok, err = pcall(
+            cartesi.machine.verify_step_uarch,
+            cartesi.machine,
+            claim.before,
+            test_util.serialize_step_log(log),
+            1
+        )
+        assert(not ok and tostring(err):find("TLB batch index out of range or unaligned", 1, true))
+    end
     -- Distinct filename when several cases share a tag (same rejection on different entrypoints).
     local name = (case.name or case.tag) .. ".log"
     test_util.write_step_log_file(log, output_dir .. "/" .. name)

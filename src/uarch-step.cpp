@@ -891,9 +891,21 @@ static inline void executeECALL(const UarchState a, uint32 insn, uint64 pc) {
         if (set_index >= TLB_SET_COUNT || slot_index >= TLB_SET_SIZE) {
             throwRuntimeError(a, "TLB index out of range");
         }
-        uint64 generation = readWord(a, TLB_GENERATION_START + (set_index * 8));
-        writeTlbECALL(a, set_index, slot_index, vaddr_page, vp_offset, pma_index,
-            generation); // WARNING: This CANNOT be a NOOP in Solidity
+        writeTlbECALL(a, set_index, slot_index, vaddr_page, vp_offset,
+            pma_index); // WARNING: This CANNOT be a NOOP in Solidity
+        return advancePc(a, pc);
+    }
+    if (fn == UARCH_ECALL_FN_FLUSH_TLB_BATCH) {
+        uint64 set_index = readX(a, 10);
+        uint64 slot_index = readX(a, 11);
+        if (set_index >= TLB_SET_COUNT || slot_index > TLB_SET_SIZE - UARCH_TLB_FLUSH_BATCH_SIZE ||
+            slot_index % UARCH_TLB_FLUSH_BATCH_SIZE != 0) {
+            throwRuntimeError(a, "TLB batch index out of range or unaligned");
+        }
+        uint64 end = slot_index + UARCH_TLB_FLUSH_BATCH_SIZE;
+        for (; slot_index < end; ++slot_index) {
+            writeTlbECALL(a, set_index, slot_index, UINT64_MAX, 0, UINT64_MAX);
+        }
         return advancePc(a, pc);
     }
     throwRuntimeError(a, "unsupported ecall function");

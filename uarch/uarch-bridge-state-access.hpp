@@ -64,6 +64,13 @@ public:
     uarch_bridge_state_access &operator=(uarch_bridge_state_access &&other) = delete;
     ~uarch_bridge_state_access() = default;
 
+    template <TLB_set_index SET>
+    void flush_tlb_set() const {
+        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; slot_index += UARCH_TLB_FLUSH_BATCH_SIZE_DEF) {
+            ua_flush_tlb_batch_ECALL(SET, slot_index);
+        }
+    }
+
 private:
     static uint64_t bridge_read_reg(machine_reg reg) {
         return ua_aliased_aligned_read<uint64_t>(machine_reg_address(reg));
@@ -156,22 +163,7 @@ private:
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_generation() const {
-        return do_read_shadow_register(shadow_tlb_generation_what(SET));
-    }
-
-    template <TLB_set_index SET>
-    void do_write_tlb_generation(uint64_t generation) const {
-        do_write_shadow_register(shadow_tlb_generation_what(SET), generation);
-    }
-
-    template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
-        const auto generation = do_read_tlb_generation<SET>();
-        if (generation == TLB_GENERATION_DISABLED ||
-            bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::generation) != generation) {
-            return TLB_INVALID_PAGE;
-        }
         return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
     }
 
@@ -187,7 +179,8 @@ private:
 
     template <TLB_set_index SET>
     uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
-        return do_read_tlb_vaddr_page<SET>(slot_index);
+        // No hot TLB -- just return the shadow vaddr_page
+        return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
     }
 
     template <TLB_set_index SET>
@@ -195,10 +188,9 @@ private:
         const auto vaddr_page = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
         const auto vp_offset = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
         const auto pma_index = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
-        const auto generation = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::generation);
+        const auto zero_padding = bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::zero_padding_);
         const auto &ar = do_read_pma(pma_index);
-        return shadow_tlb_verify_slot(SET, vaddr_page, vp_offset, generation, do_read_tlb_generation<SET>(), ar) !=
-            TLB_INVALID_PAGE;
+        return shadow_tlb_verify_slot(SET, vaddr_page, vp_offset, zero_padding, ar) != TLB_INVALID_PAGE;
     }
 
     template <TLB_set_index SET>

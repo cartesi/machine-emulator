@@ -21,11 +21,8 @@
 
 #include <cstdint>
 
-// Inline, register-pinned ecall wrappers. Keeping these in the header lets call
-// sites inline them, which matters for write_tlb: a TLB flush issues one call per
-// slot (3 sets x 256), so per-call argument marshalling multiplies into the
-// dominant uarch cycle cost of an SFENCE.VMA. The "memory" clobber orders the
-// ecall against shadow-state loads and stores around it.
+// Inline, register-pinned ecall wrappers avoid call-site argument marshalling.
+// The "memory" clobber orders the ecall against shadow-state loads and stores.
 // The register variables must not be const: GCC const-propagates const-initialized
 // register-asm variables into the "r" operands, losing the register pinning.
 // NOLINTBEGIN(hicpp-no-assembler, misc-const-correctness): the ecall and its register pinning are the point
@@ -50,6 +47,13 @@ static inline void ua_write_tlb_ECALL(uint64_t use, uint64_t slot_index, uint64_
     register uint64_t a3 __asm__("a3") = vp_offset;
     register uint64_t a4 __asm__("a4") = pma_index;
     __asm__ volatile("ecall" : : "r"(a7), "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(a4) : "memory");
+}
+
+static inline void ua_flush_tlb_batch_ECALL(uint64_t set_index, uint64_t slot_index) {
+    register uint64_t a7 __asm__("a7") = UARCH_ECALL_FN_FLUSH_TLB_BATCH_DEF;
+    register uint64_t a0 __asm__("a0") = set_index;
+    register uint64_t a1 __asm__("a1") = slot_index;
+    __asm__ volatile("ecall" : : "r"(a7), "r"(a0), "r"(a1) : "memory");
 }
 
 // NOLINTEND(hicpp-no-assembler, misc-const-correctness)

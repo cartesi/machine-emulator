@@ -38,6 +38,19 @@ using mock_address_range =
 
 using mock_address_ranges = std::array<mock_address_range, PMA_MAX>;
 
+/// A valid, nonmatching memory PMA needs no mock object during a range search.
+/// Devices and malformed entries must go through the factory's full validation.
+static constexpr bool can_skip_mock_memory_range(uint64_t istart, uint64_t ilength, uint64_t paddr, uint64_t size) {
+    if ((istart & PMA_ISTART_M_MASK) == 0 || ilength == 0 || (ilength & ~PMA_ISTART_START_MASK) != 0) {
+        return false;
+    }
+    const uint64_t start = istart & PMA_ISTART_START_MASK;
+    if (start >= UINT64_MAX - ilength) {
+        return false;
+    }
+    return paddr < start || size > ilength || paddr - start > ilength - size;
+}
+
 template <typename AR, typename ABRT>
 static inline mock_address_range check_mock_address_range(AR &&ar, uint64_t start, uint64_t length,
     const pmas_flags &flags, ABRT abrt)

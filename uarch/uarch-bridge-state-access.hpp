@@ -71,6 +71,23 @@ public:
         }
     }
 
+    template <typename T>
+    address_range &find_pma(uint64_t paddr, uint64_t &index) const {
+        for (index = 0; index < PMA_MAX; ++index) {
+            const uint64_t istart = bridge_read_pma_istart(index);
+            const uint64_t ilength = bridge_read_pma_ilength(index);
+            if (std::holds_alternative<std::monostate>(m_ars[index]) &&
+                can_skip_mock_memory_range(istart, ilength, paddr, sizeof(T))) {
+                continue;
+            }
+            auto &ar = read_pma_from_entry(index, istart, ilength);
+            if (ar.is_empty() || ar.contains_absolute(paddr, sizeof(T))) {
+                return ar;
+            }
+        }
+        return do_read_pma(index);
+    }
+
 private:
     static uint64_t bridge_read_reg(machine_reg reg) {
         return ua_aliased_aligned_read<uint64_t>(machine_reg_address(reg));
@@ -143,12 +160,16 @@ private:
             static address_range sentinel{"sentinel"};
             return sentinel;
         }
+        const uint64_t istart = bridge_read_pma_istart(index);
+        const uint64_t ilength = bridge_read_pma_ilength(index);
+        return read_pma_from_entry(index, istart, ilength);
+    }
+
+    address_range &read_pma_from_entry(uint64_t index, uint64_t istart, uint64_t ilength) const {
         constexpr const auto throw_abort = [](const char * /*err*/) {
             assert(false && "read_address_range() failed");
             abort();
         };
-        const uint64_t istart = bridge_read_pma_istart(index);
-        const uint64_t ilength = bridge_read_pma_ilength(index);
         const auto i = static_cast<size_t>(index);
         if (std::holds_alternative<std::monostate>(m_ars[i])) {
             make_mock_address_range(m_ars[i], istart, ilength, throw_abort);

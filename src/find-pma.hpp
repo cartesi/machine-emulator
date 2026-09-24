@@ -33,19 +33,23 @@ namespace cartesi {
 template <typename T, typename STATE_ACCESS>
 address_range &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
     [[maybe_unused]] auto note = a.make_scoped_note("find_pma");
-    index = 0;
-    while (true) {
-        auto &ar = a.read_pma(index);
-        // The pmas array always contain a sentinel.
-        // It is an entry with zero length.
-        // If we hit it, return it
-        if (ar.is_empty()) [[unlikely]] {
-            return ar;
+    if constexpr (requires { a.template find_pma<T>(paddr, index); }) {
+        return a.template find_pma<T>(paddr, index);
+    } else {
+        index = 0;
+        while (true) {
+            auto &ar = a.read_pma(index);
+            // The pmas array always contain a sentinel.
+            // It is an entry with zero length.
+            // If we hit it, return it
+            if (ar.is_empty()) [[unlikely]] {
+                return ar;
+            }
+            if (ar.contains_absolute(paddr, sizeof(T))) {
+                return ar;
+            }
+            ++index;
         }
-        if (ar.contains_absolute(paddr, sizeof(T))) {
-            return ar;
-        }
-        ++index;
     }
 }
 

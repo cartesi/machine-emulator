@@ -2,10 +2,50 @@ local cartesi = require("cartesi")
 local transport = require("game-transport")
 local run_with_server = require("game-test-server")
 local event = transport.define_event("move", "Move", "Base64")
-local protocol = transport.new_protocol({ move = event }, { Move = { items = {} } })
+local notification = transport.define_event("notice", "Notice")
+local protocol = transport.new_protocol(
+    { move = event, notice = notification },
+    { Move = { items = {} }, Notice = { items = { "Default" } } }
+)
 local hash = string.rep("\255", 32)
 local function accept(value)
     return type(value) == "string" and #value == 32 and value
+end
+
+-- A notification handler returns nothing. Its completion still participates in
+-- the referee's barrier, while a request must produce its declared result.
+run_with_server(protocol, function(server, run_client, wait_connections)
+    local received = {}
+    for index = 1, 2 do
+        local client = { event_handler = {} }
+        function client.event_handler.notice(_, value)
+            received[index] = value
+        end
+        run_client(nil, function(_, line)
+            return transport.answer_event(client, line, protocol)
+        end, true)
+        wait_connections(index)
+    end
+    local replies <close> = server:request_all(nil, notification, { 42 })
+    local acknowledgements = replies:wait()
+    assert(received[1] == 42 and received[2] == 42)
+    assert(#acknowledgements == 2)
+    for _, reply in ipairs(acknowledgements) do
+        assert(reply.value == true)
+    end
+end)
+
+do
+    local client = { event_handler = {
+        move = function() end,
+        notice = function()
+            error("notification failed")
+        end,
+    } }
+    local ok, err = pcall(transport.answer_event, client, cartesi.tojson({ operation = "move", arguments = {} }), protocol)
+    assert(not ok and err:find("the event handler produced no value", 1, true))
+    ok, err = pcall(transport.answer_event, client, cartesi.tojson({ operation = "notice", arguments = { 42 } }), protocol)
+    assert(not ok and err:find("notification failed", 1, true))
 end
 
 for _, delay in ipairs({ 0, 2, 5, 6 }) do

@@ -317,7 +317,8 @@ local SCHEMA_DICT = {
     AdvanceTimeEvent = { items = { "Default" } },
 }
 
--- Describes one event once, for both ends of the wire.
+-- Describes one event once, for both ends of the wire. An omitted response schema
+-- declares a notification with no return value; the transport acknowledges it.
 local function define_event(name, event_schema, response_schema)
     return { name = name, event_schema = event_schema, response_schema = response_schema }
 end
@@ -325,8 +326,8 @@ end
 local EVENTS = {
     close_phase = define_event("close_phase", "ClosePhaseEvent", "ClosePhaseResponse"),
     finish = define_event("finish", "FinishEvent", "FinishResponse"),
-    input_added = define_event("input_added", "InputAddedEvent", "Default"),
-    epoch_sealed = define_event("epoch_sealed", "EpochSealedEvent", "Default"),
+    input_added = define_event("input_added", "InputAddedEvent"),
+    epoch_sealed = define_event("epoch_sealed", "EpochSealedEvent"),
     commit_mcycle_claim = define_event("commit_mcycle_claim", "CommitMcycleClaimEvent", "CommitMcycleClaimResponse"),
     reveal_bisection = define_event("reveal_bisection", "RevealBisectionEvent", "RevealBisectionResponse"),
     seal_divergence = define_event("seal_divergence", "SealDivergenceEvent", "SealDivergenceResponse"),

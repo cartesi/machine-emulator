@@ -11,10 +11,18 @@ local run_with_server = require("game-test-server")
 local function run(initial_hash, paths, delegate)
     local honest <close> = vg.new_player(initial_hash)
     local opponent <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
+    local fabulist <close> = roles.new_forger(initial_hash, 2, "forged-input-2.bin")
     local referee = vg.new_referee(initial_hash, paths)
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         local pending, outsider
-        run_client(nil, function(_, line)
+        run_client(nil, function(wire, line)
+            if
+                wire.operation == "initial_state"
+                or wire.operation == "input_added"
+                or wire.operation == "epoch_sealed"
+            then
+                vgu.answer_event(fabulist, line)
+            end
             return vgu.answer_event(honest, line)
         end, true)
         wait_connections(1)
@@ -30,14 +38,8 @@ local function run(initial_hash, paths, delegate)
                 value = { answer = value },
             })
         end
-        run_client(nil, function(wire, line)
-            local reply, done = vgu.answer_event(opponent, line)
-            if wire.operation == "commit_bisection" then
-                -- The fabulist agrees with the forger at every midpoint, conceding
-                -- the honest player's real defense without altering its claim.
-                inject(cartesi.fromjson(reply).value.answer)
-            end
-            return reply, done
+        run_client(nil, function(_, line)
+            return vgu.answer_event(opponent, line)
         end, true)
         wait_connections(2)
         run_client(nil, function()
@@ -53,9 +55,11 @@ local function run(initial_hash, paths, delegate)
                 if delegate then
                     future.owner = outsider
                 end
-                if event == vgu.EVENTS.commit_log then
-                    inject({})
-                end
+                -- The outsider follows the forger's history on the honest player's
+                -- turns, then deliberately fails the combined leaf response.
+                local response = event == vgu.EVENTS.commit_log and { agree = true, log = {} }
+                    or fabulist.event_handler.commit_bisection(fabulist, table.unpack(arguments))
+                inject(cartesi.fromjson(cartesi.tojson(response, -1, event.response_schema, vgu.protocol.schemas)))
             end
             return future
         end

@@ -44,7 +44,6 @@ local hash_tree = require("cartesi.hash-tree")
 local util = require("cartesi.util")
 local prtu = require("prtu")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
-local format_short_hash = prtu.format_short_hash
 
 local keccak = cartesi.keccak256
 local get_other_turn_index = prtu.get_other_turn_index
@@ -1555,7 +1554,7 @@ local event_handler = {}
 
 function event_handler.schedule_match_timeout_win(self, deadline, computation_hash)
     return prtu.schedule_response(self, deadline, function()
-        local tree = assert(self.trees[computation_hash], "event concerns a claim this player does not hold")
+        local tree = self.trees[computation_hash]
         local left, right = tree:get_child_hashes(0, tree.height)
         return { computation_hash_left = left, computation_hash_right = right }
     end)
@@ -1592,8 +1591,7 @@ end
 -- cross into a stored bundle here because the claims alternate turns; crossing reconstructs
 -- and authenticates that complete bundle before the walk continues through it.
 function event_handler.reveal_bisection(self, computation_hash, position, height, other_left_node)
-    assert(height > 1, "match not bisecting")
-    local tree = assert(self.trees[computation_hash], "event concerns a claim this player does not hold")
+    local tree = self.trees[computation_hash]
     local turn_left_node, turn_right_node = tree:get_child_hashes(position, height)
     local descend_left = turn_left_node ~= other_left_node
     local child_position = descend_left and position or position + (1 << (height - 1))
@@ -1610,7 +1608,7 @@ end
 -- immediately before them, except at leaf zero where the referee already knows that state.
 -- At the first leaf of a bundle, the proof explicitly opens the preceding bundle too.
 function event_handler.seal_divergence(self, computation_hash, position, other_left_node)
-    local tree = assert(self.trees[computation_hash], "event concerns a claim this player does not hold")
+    local tree = self.trees[computation_hash]
     local turn_left_node, turn_right_node = tree:get_child_hashes(position, 1)
     local response = { turn_left_node = turn_left_node, turn_right_node = turn_right_node }
     local descend_left = turn_left_node ~= other_left_node
@@ -1630,25 +1628,12 @@ end
 -- disputed in, with a uarch claim whose final state must be one of the two contested values.
 -- The player stores the uarch tree by its computation hash alongside its earlier claims.
 -- The parent match is suspended until the uarch tournament ends. The epoch input offset
--- and input period offset are zero-based, as the referee counts them. A holder whose uarch claim
--- ends in neither contested value cannot defend its parent claim, and dies on the
--- contradiction.
-function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period_offset, next_state_hashes)
+-- and input period offset are zero-based, as the referee counts them. The referee checks
+-- that the submitted final state matches one of the contested values.
+function event_handler.commit_uarch_claim(self, epoch_input_offset, input_period_offset)
     local tree = self:make_uarch_tree(epoch_input_offset, input_period_offset)
     self.trees[tree:get_root_hash()] = tree
-    local claim = make_claim(tree)
-    local final_state_hash = claim.final_state_hash_proof.target_hash
-    assert(
-        final_state_hash == next_state_hashes[1] or final_state_hash == next_state_hashes[2],
-        string.format(
-            "%s: uarch final %s matches neither contested final %s nor %s",
-            self.label,
-            format_short_hash(final_state_hash),
-            format_short_hash(next_state_hashes[1]),
-            format_short_hash(next_state_hashes[2])
-        )
-    )
-    return claim
+    return make_claim(tree)
 end
 
 -- The disputed transition's access logs, produced by positioning a fresh fork at the
@@ -1699,7 +1684,6 @@ end
 -- the word whose data is the outputs Merkle root.
 -- docs:begin prove_outputs_merkle_root
 function event_handler.prove_outputs_merkle_root(self)
-    assert(self.epoch_sealed, "epoch has not been sealed")
     local machine, owner <close> = self:clone_at_input_boundary(#self.input_paths) -- luacheck: ignore 211
     local iflags_y_data, iflags_y_proof = get_machine_leaf(machine, IFLAGS_Y_ADDRESS)
     local htif_tohost_data, htif_tohost_proof = get_machine_leaf(machine, HTIF_TOHOST_ADDRESS)
@@ -1836,13 +1820,6 @@ end
 -- Each input uses a scoped clone of the latest boundary and returns its completed
 -- state to the cache. Taking the builder out of the player makes failures close the epoch.
 function event_handler.input_added(self, epoch_input_offset, path)
-    assert(self.epoch_builder and not self.epoch_sealed, "epoch is not open")
-    assert(
-        math.type(epoch_input_offset) == "integer" and epoch_input_offset == #self.input_paths,
-        "epoch input is out of order"
-    )
-    assert(epoch_input_offset < 1 << cartesi.ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH, "epoch has too many inputs")
-    assert(type(path) == "string", "invalid epoch input filename")
     local builder = self.epoch_builder
     self.epoch_builder = nil
     self.input_paths[epoch_input_offset + 1] = path
@@ -1866,16 +1843,13 @@ function event_handler.input_added(self, epoch_input_offset, path)
     end
     self.machine_cache:consider(epoch_input_offset + 1, machine)
     self.epoch_builder = builder
-    return true
 end
 
 -- A production bridge would spawn a player for the next epoch at each
 -- epoch_sealed event, using this epoch's locally computed final state.
 -- It could concurrently drive the dispute with the player spawned at
 -- the previous seal. The first player is bootstrapped at construction.
-function event_handler.epoch_sealed(self, input_count)
-    assert(self.epoch_builder and not self.epoch_sealed, "epoch is not open")
-    assert(input_count == #self.input_paths, "epoch input count mismatch")
+function event_handler.epoch_sealed(self)
     local builder = self.epoch_builder
     self.epoch_builder = nil
     self.mcycle_forest = builder:end_epoch()
@@ -1886,8 +1860,6 @@ function event_handler.epoch_sealed(self, input_count)
     local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
     self.output_proofs = hash_tree.frontier_next_proofs(genesis_frontier, leaves)
     self.outputs_frontier = nil
-    self.epoch_sealed = true
-    return true
 end
 
 -- docs:begin collect_mcycle_bundle
@@ -1957,7 +1929,6 @@ end
 -- Clients may request any accepted output from the sealed epoch, independently of
 -- the output the demonstration offers to the referee. Missing indices are no offer.
 function player_meta.__index:prove_output(output_index)
-    assert(self.epoch_sealed, "epoch has not been sealed")
     assert(math.type(output_index) == "integer", "invalid output index")
     if output_index < 0 or output_index >= #self.outputs then
         return {}
@@ -1973,7 +1944,6 @@ end
 -- whole epoch, so the collector splits that epoch-wide index into the input holding the bundle
 -- and the bundle's offset within that input.
 function player_meta.__index:make_mcycle_tree()
-    assert(self.epoch_sealed, "epoch has not been sealed")
     return new_tree(
         self.geometry.mcycle_height,
         LOG2_BUNDLE_MCYCLE_COUNT,

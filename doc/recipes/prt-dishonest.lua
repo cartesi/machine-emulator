@@ -126,7 +126,7 @@ local function new_forger(dapp_contract, epoch_input_offset, forged_path, label)
     clone_handlers(player)
     local input_added = player.event_handler.input_added
     player.event_handler.input_added = function(self, index, path)
-        return input_added(self, index, index == epoch_input_offset and forged_path or path)
+        input_added(self, index, index == epoch_input_offset and forged_path or path)
     end
     return player
 end

@@ -14,6 +14,8 @@ local function trace_wire(protocol, direction, name, line)
     end
 end
 
+-- Omitting the response schema declares a notification with no return value.
+-- The transport acknowledges completion; Default declares an unstructured result.
 local function define_event(name, event_schema, response_schema)
     return { name = name, event_schema = event_schema, response_schema = response_schema }
 end
@@ -209,6 +211,7 @@ local client_requests = setmetatable({}, { __mode = "k" })
 -- the transport. The player supplies only the block and the response-producing callback.
 local function schedule_response(client, block, respond)
     local request = assert(client_requests[client], "no request being handled for this player")
+    assert(request.response_schema, "notification has no response to schedule")
     assert(request.id, "request does not support a delayed response")
     assert(type(respond) == "function", "schedule expects a response callback")
     client_queues[client]:schedule(request.id, block, function()
@@ -250,7 +253,11 @@ local function answer_event(client, line, protocol)
             error(value, 0)
         end
     end
-    assert(value ~= nil, "the event handler produced no value")
+    if event.response_schema then
+        assert(value ~= nil, "the event handler produced no value")
+    else
+        value = true -- Transport acknowledgement, not a handler result.
+    end
     if wire_event.owner and not (type(value) == "table" and value.scheduled_at) then
         value = { answer = cartesi.fromjson(cartesi.tojson(value, -1, event.response_schema, protocol.schemas)) }
     end
@@ -266,7 +273,7 @@ end
 -- arguments under the event's schema, dispatch its handler, and answer under the response
 -- schema. The label names the player in the story. Computation requests go to interested holders.
 -- schedule and time requests also deliver unrelated elimination work. A missing
--- handler or result is a client bug. Deliberate departure is announced with the last
+-- handler or required result is a client bug. Deliberate departure is announced with the last
 -- response; an unannounced EOF or failed I/O is a transport bug on either side.
 -- docs:begin run_client
 local socket_guard = {
@@ -543,7 +550,7 @@ local function announce_player(self, connection)
     if self.admission then
         self.dispatcher:schedule(self.admission, "player")
         self.admission = nil
-    elseif self.admitted then
+    elseif self.admitted and self.player_limit then
         close_connection(self, connection)
         return
     end
@@ -559,7 +566,7 @@ end
 local function announce(self, connection, message)
     if connection.is_player or connection.is_phase_closer then
         close_connection(self, connection)
-    elseif message.role == "phase_closer" and not self.player_limit then
+    elseif message.role == "phase_closer" and not self.player_limit and not self.admitted then
         announce_phase_closer(self, connection, message.command)
     elseif message.role == "player" then
         announce_player(self, connection)
@@ -709,6 +716,13 @@ function server_meta.__index.accept_players(self, count)
         close_connection(self, self.connections[extra])
     end
     return players
+end
+
+-- Settlement ends fixed-player admission. The original claimant connections stay
+-- stable; additional connections can now offer independently verifiable proofs.
+function server_meta.__index.open_players(self)
+    assert(self.admitted, "no fixed players were admitted")
+    self.player_limit = nil
 end
 
 -- Registers a fixed audience and stable order without suspending the caller.

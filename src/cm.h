@@ -383,6 +383,10 @@ typedef enum cm_reg {
     CM_REG_LAST_,
     CM_REG_UARCH_FIRST_,
     CM_REG_UARCH_LAST_,
+    // TLB generation registers
+    CM_REG_TLB_GENERATION_CODE,
+    CM_REG_TLB_GENERATION_READ,
+    CM_REG_TLB_GENERATION_WRITE,
 } cm_reg;
 
 /// \brief Hash function types.

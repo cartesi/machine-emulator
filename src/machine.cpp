@@ -170,6 +170,9 @@ void machine::init_processor(const processor_config &p, const machine_runtime_co
         write_reg(reg::iflags_H, p.registers.iflags.H);
         write_reg(reg::iunrep, p.registers.iunrep);
         write_reg(reg::imcyclemax, p.registers.imcyclemax);
+        write_reg(reg::tlb_generation_code, p.registers.tlb_generation[0]);
+        write_reg(reg::tlb_generation_read, p.registers.tlb_generation[1]);
+        write_reg(reg::tlb_generation_write, p.registers.tlb_generation[2]);
 
         // HTIF registers
         write_reg(reg::htif_tohost, p.registers.htif.tohost);
@@ -267,9 +270,10 @@ uint64_t machine::init_hot_tlb_slot(TLB_set_index set_index, uint64_t slot_index
     const auto vaddr_page = shadow_slot.vaddr_page;
     const auto vp_offset = shadow_slot.vp_offset;
     const auto pma_index = shadow_slot.pma_index;
-    const auto zero_padding = shadow_slot.zero_padding_;
+    const auto generation = shadow_slot.generation;
     const auto &ar = read_pma(pma_index);
-    if (shadow_tlb_verify_slot(set_index, vaddr_page, vp_offset, zero_padding, ar) == TLB_INVALID_PAGE) {
+    if (shadow_tlb_verify_slot(set_index, vaddr_page, vp_offset, generation, m_s->shadow.registers.tlb_generation[set_index],
+            ar) == TLB_INVALID_PAGE) {
         hot_slot.vaddr_page = TLB_INVALID_PAGE;
         return TLB_INVALID_PAGE;
     }
@@ -940,6 +944,12 @@ uint64_t machine::read_reg(reg r) const {
             return m_s->shadow.registers.iflags.H;
         case reg::iunrep:
             return m_s->shadow.registers.iunrep;
+        case reg::tlb_generation_code:
+            return m_s->shadow.registers.tlb_generation[0];
+        case reg::tlb_generation_read:
+            return m_s->shadow.registers.tlb_generation[1];
+        case reg::tlb_generation_write:
+            return m_s->shadow.registers.tlb_generation[2];
         case reg::imcyclemax:
             return m_s->shadow.registers.imcyclemax;
         case reg::clint_mtimecmp:
@@ -1341,6 +1351,15 @@ void machine::write_reg(reg w, uint64_t value) {
             break;
         case reg::iunrep:
             m_s->shadow.registers.iunrep = value;
+            break;
+        case reg::tlb_generation_code:
+            write_tlb_generation(TLB_CODE, value);
+            break;
+        case reg::tlb_generation_read:
+            write_tlb_generation(TLB_READ, value);
+            break;
+        case reg::tlb_generation_write:
+            write_tlb_generation(TLB_WRITE, value);
             break;
         case reg::imcyclemax:
             m_s->shadow.registers.imcyclemax = value;

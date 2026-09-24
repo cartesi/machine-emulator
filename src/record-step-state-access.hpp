@@ -149,6 +149,16 @@ private:
     }
 
     template <TLB_set_index SET>
+    uint64_t do_read_tlb_generation() const {
+        return do_read_shadow_register(shadow_tlb_generation_what(SET));
+    }
+
+    template <TLB_set_index SET>
+    void do_write_tlb_generation(uint64_t generation) const {
+        do_write_shadow_register(shadow_tlb_generation_what(SET), generation);
+    }
+
+    template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
         // Must read from the hot TLB (not shadow) so that TLB_UNVERIFIED_PAGE sentinels
         // set by init_hot_tlb_contents() are visible and force init_hot_tlb_slot() to run,
@@ -163,6 +173,7 @@ private:
 
     template <TLB_set_index SET>
     host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
+        m_recorder.touch_page(static_cast<uint64_t>(shadow_tlb_generation_what(SET)));
         // Touch the shadow page so replay has the TLB slot data
         m_recorder.touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
         // Return the vh_offset from the hot entry
@@ -171,6 +182,7 @@ private:
 
     template <TLB_set_index SET>
     uint64_t do_init_hot_tlb_slot(uint64_t slot_index) const {
+        m_recorder.touch_page(static_cast<uint64_t>(shadow_tlb_generation_what(SET)));
         // Touch the shadow page so replay has the TLB slot data
         m_recorder.touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
         // Touch PMA page so replay's do_read_pma can validate the entry (even if corrupt)
@@ -196,6 +208,7 @@ private:
     //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
+        m_recorder.touch_page(static_cast<uint64_t>(shadow_tlb_generation_what(SET)));
         // replay_step_state_access needs the TLB slot page and the target page data
         // vaddr_page, vp_offset, and pma_index are on the same page, so we only need touch one of them.
         m_recorder.touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));

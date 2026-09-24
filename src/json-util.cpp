@@ -172,6 +172,9 @@ static auto reg_from_name(const std::string &name) {
         {"iflags_H", reg::iflags_H},
         {"iunrep", reg::iunrep},
         {"imcyclemax", reg::imcyclemax},
+        {"tlb_generation_code", reg::tlb_generation_code},
+        {"tlb_generation_read", reg::tlb_generation_read},
+        {"tlb_generation_write", reg::tlb_generation_write},
         {"clint_mtimecmp", reg::clint_mtimecmp},
         {"plic_girqpend", reg::plic_girqpend},
         {"plic_girqsrvd", reg::plic_girqsrvd},
@@ -455,6 +458,12 @@ static auto reg_to_name(machine_reg r) {
             return "iflags_H";
         case reg::iunrep:
             return "iunrep";
+        case reg::tlb_generation_code:
+            return "tlb_generation_code";
+        case reg::tlb_generation_read:
+            return "tlb_generation_read";
+        case reg::tlb_generation_write:
+            return "tlb_generation_write";
         case reg::imcyclemax:
             return "imcyclemax";
         case reg::clint_mtimecmp:
@@ -1369,6 +1378,9 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, registers_state &va
     ju_get_opt_field(jconfig, "iflags"s, value.iflags, new_path);
     ju_get_opt_field(jconfig, "iunrep"s, value.iunrep, new_path);
     ju_get_opt_field(jconfig, "imcyclemax"s, value.imcyclemax, new_path);
+    ju_get_opt_field(jconfig, "tlb_generation_code"s, value.tlb_generation[0], new_path);
+    ju_get_opt_field(jconfig, "tlb_generation_read"s, value.tlb_generation[1], new_path);
+    ju_get_opt_field(jconfig, "tlb_generation_write"s, value.tlb_generation[2], new_path);
     ju_get_opt_field(jconfig, "clint"s, value.clint, new_path);
     ju_get_opt_field(jconfig, "plic"s, value.plic, new_path);
     ju_get_opt_field(jconfig, "htif"s, value.htif, new_path);
@@ -2106,7 +2118,8 @@ void to_json(nlohmann::json &j, const registers_state &config) {
         {"scause", config.scause}, {"stval", config.stval}, {"satp", config.satp}, {"scounteren", config.scounteren},
         {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc}, {"iprv", config.iprv}, {"iflags", config.iflags},
         {"iunrep", config.iunrep}, {"imcyclemax", config.imcyclemax}, {"clint", config.clint}, {"plic", config.plic},
-        {"htif", config.htif}};
+        {"htif", config.htif}, {"tlb_generation_code", config.tlb_generation[0]},
+        {"tlb_generation_read", config.tlb_generation[1]}, {"tlb_generation_write", config.tlb_generation[2]}};
 }
 
 void to_json(nlohmann::json &j, const processor_config &config) {

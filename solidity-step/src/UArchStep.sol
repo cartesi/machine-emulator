@@ -810,7 +810,11 @@ library UArchStep {
             ) {
                 StateAccess.throwRuntimeError(a, "TLB index out of range");
             }
-            StateAccess.writeTlbECALL(a, set_index, slot_index, vaddr_page, vp_offset, pma_index); // WARNING: This CANNOT be a NOOP in Solidity
+            uint64 generation =
+                StateAccess.readWord(a, EmulatorConstants.TLB_GENERATION_START + (set_index * 8));
+            StateAccess.writeTlbECALL(
+                a, set_index, slot_index, vaddr_page, vp_offset, pma_index, generation
+            ); // WARNING: This CANNOT be a NOOP in Solidity
             return advancePc(a, pc);
         }
         StateAccess.throwRuntimeError(a, "unsupported ecall function");

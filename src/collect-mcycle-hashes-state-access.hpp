@@ -467,6 +467,17 @@ private:
     }
 
     template <TLB_set_index SET>
+    uint64_t do_read_tlb_generation() const {
+        return m_s.shadow.registers.tlb_generation[SET];
+    }
+
+    template <TLB_set_index SET>
+    void do_write_tlb_generation(uint64_t generation) const {
+        mark_dirty_word(static_cast<uint64_t>(shadow_tlb_generation_what(SET)));
+        m_m.write_tlb_generation(SET, generation);
+    }
+
+    template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
         return m_s.penumbra.tlb[SET][slot_index].vaddr_page;
     }

@@ -27,6 +27,7 @@
 
 #include "address-range-constants.hpp"
 #include "riscv-constants.hpp"
+#include "shadow-registers.hpp"
 
 namespace cartesi {
 
@@ -36,9 +37,16 @@ enum TLB_set_index : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE, TLB_LAST_ = TLB_W
 /// \brief Number of TLB sets, spelled for the transpiled uarch code (shared with EmulatorConstants.sol)
 constexpr uint64_t TLB_SET_COUNT = TLB_NUM_SETS_;
 
+constexpr uint64_t TLB_GENERATION_START = static_cast<uint64_t>(shadow_registers_what::tlb_generation_code);
+
+static constexpr shadow_registers_what shadow_tlb_generation_what(TLB_set_index set_index) {
+    return shadow_registers_get_what(shadow_registers_what::tlb_generation_code, static_cast<int>(set_index));
+}
+
 /// \brief TLB constants.
 enum TLB_constants : uint64_t {
     TLB_SET_SIZE = 256,
+    TLB_GENERATION_DISABLED = UINT64_MAX,
     TLB_INVALID_PAGE = UINT64_C(-1),
     TLB_UNVERIFIED_PAGE = UINT64_C(-2),
     TLB_INVALID_PMA_INDEX = UINT64_C(-1),
@@ -76,12 +84,11 @@ constexpr uint64_t tlb_addr_page(uint64_t addr) {
 /// Writes to TLB slots have to be atomic.
 /// We can only do /aligned/ atomic writes.
 /// Therefore, TLB slot cannot be misaligned.
-/// To complete the power-of-two size, we include a zero_padding_ entry.
 struct shadow_tlb_slot final {
     uint64_t vaddr_page{TLB_INVALID_PAGE}; ///< Target virtual address of start of page
     uint64_t vp_offset{0}; ///< Offset from target virtual address to target physical address within page
     uint64_t pma_index{TLB_INVALID_PMA_INDEX}; ///< Index of PMA where physical page falls and host addresses
-    uint64_t zero_padding_{0};                 ///< Padding to make sure the sizeof(shadow_tlb_slot) is a power of 2
+    uint64_t generation{0};                    ///< Set generation when this slot was filled
 };
 
 constexpr uint64_t SHADOW_TLB_SLOT_SIZE = sizeof(shadow_tlb_slot);
@@ -102,7 +109,7 @@ enum class shadow_tlb_what : uint64_t {
     vaddr_page = offsetof(shadow_tlb_slot, vaddr_page),
     vp_offset = offsetof(shadow_tlb_slot, vp_offset),
     pma_index = offsetof(shadow_tlb_slot, pma_index),
-    zero_padding_ = offsetof(shadow_tlb_slot, zero_padding_),
+    generation = offsetof(shadow_tlb_slot, generation),
     unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
 };
 
@@ -138,8 +145,8 @@ static constexpr const char *shadow_tlb_get_what_name(shadow_tlb_what what) {
             return "tlb.slot.vp_offset";
         case reg::pma_index:
             return "tlb.slot.pma_index";
-        case reg::zero_padding_:
-            return "tlb.slot.zero_padding_";
+        case reg::generation:
+            return "tlb.slot.generation";
         case reg::unknown_:
             return "tlb.unknown_";
     }
@@ -150,18 +157,19 @@ static constexpr const char *shadow_tlb_get_what_name(shadow_tlb_what what) {
 /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
 /// \param vaddr_page Virtual address of page start
 /// \param vp_offset Offset from virtual to physical address
-/// \param zero_padding Padding field (must be zero)
+/// \param generation Slot generation
+/// \param set_generation Current set generation
 /// \param ar Address range for the PMA where physical page falls
 /// \returns vaddr_page if valid, TLB_INVALID_PAGE otherwise
 template <typename ADDRESS_RANGE>
-[[maybe_unused]] static uint64_t shadow_tlb_verify_slot(TLB_set_index set_index, uint64_t vaddr_page,
-    uint64_t vp_offset, uint64_t zero_padding, const ADDRESS_RANGE &ar) {
+[[maybe_unused]] static uint64_t shadow_tlb_verify_slot(TLB_set_index set_index, uint64_t vaddr_page, uint64_t vp_offset, uint64_t generation,
+    uint64_t set_generation, const ADDRESS_RANGE &ar) {
     // Invalid entry
     if (vaddr_page == TLB_INVALID_PAGE) {
         return TLB_INVALID_PAGE;
     }
-    // Stored TLB is corrupt: inconsistent padding
-    if (zero_padding != 0) {
+    // Stale and disabled entries cannot be promoted.
+    if (generation != set_generation || set_generation == TLB_GENERATION_DISABLED) {
         return TLB_INVALID_PAGE;
     }
     // Stored TLB is corrupt: vaddr_page is not aligned
@@ -191,11 +199,11 @@ template <typename ADDRESS_RANGE>
 }
 
 [[maybe_unused]] static void shadow_tlb_fill_slot(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index,
-    shadow_tlb_slot &slot) {
+    uint64_t generation, shadow_tlb_slot &slot) {
     slot.vaddr_page = vaddr_page;
     slot.vp_offset = vp_offset;
     slot.pma_index = pma_index;
-    slot.zero_padding_ = 0;
+    slot.generation = generation;
 }
 
 } // namespace cartesi

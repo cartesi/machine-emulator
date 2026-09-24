@@ -138,14 +138,14 @@ private:
     }
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index) const {
+        uint64_t pma_index, uint64_t generation) const {
         const auto write_field = [this, set_index, slot_index](shadow_tlb_what what, uint64_t val) {
             do_write_word(shadow_tlb_get_abs_addr(set_index, slot_index, what), val);
         };
         write_field(shadow_tlb_what::vaddr_page, vaddr_page);
         write_field(shadow_tlb_what::vp_offset, vp_offset);
         write_field(shadow_tlb_what::pma_index, pma_index);
-        write_field(shadow_tlb_what::zero_padding_, UINT64_C(0));
+        write_field(shadow_tlb_what::generation, generation);
     }
 
     void do_reset_uarch() const {

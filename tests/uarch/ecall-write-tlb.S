@@ -65,7 +65,7 @@ RVTEST_CODE_BEGIN
   li t3, pma_index
   bne t2, t3, test_fail
 
-  // check padding is zero
+  // Check generation is initially zero
   ld t2, 24(t0)
   bnez t2, test_fail
 
@@ -100,7 +100,7 @@ RVTEST_CODE_BEGIN
   li t3, pma_index
   bne t2, t3, test_fail
 
-  // check padding is zero
+  // Check generation is initially zero
   ld t2, 24(t0)
   beqz t2, test_pass
   j test_fail

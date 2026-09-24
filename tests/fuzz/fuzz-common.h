@@ -380,10 +380,12 @@ static void fuzz_fill_tlb(fuzz_reader &r, const cartesi::registers_state &regs,
     }
 
     // Fill remaining empty slots with fuzz-driven entries of varying validity
-    for (auto &set : tlb) {
+    for (size_t set_index = 0; set_index < tlb.size(); ++set_index) {
+        auto &set = tlb[set_index];
         for (uint64_t i = 0; i < set.size(); i++) {
             auto &slot = set[i];
             if (slot.vaddr_page != cartesi::TLB_INVALID_PAGE) {
+                slot.generation = regs.tlb_generation[set_index];
                 continue; // already populated by a targeted entry
             }
 
@@ -395,6 +397,7 @@ static void fuzz_fill_tlb(fuzz_reader &r, const cartesi::registers_state &regs,
                 // Valid memory-backed entry
                 const auto *pma = mem_pmas[selector % mem_pmas.size()];
                 slot = fuzz_craft_valid_tlb_slot(i, vaddr_bits, page_select, *pma);
+                slot.generation = regs.tlb_generation[set_index];
             } else if (selector < 0xD0 && !dev_pmas.empty()) {
                 // Device PMA entry (should fail TLB verification)
                 const auto *pma = dev_pmas[selector % dev_pmas.size()];
@@ -402,20 +405,20 @@ static void fuzz_fill_tlb(fuzz_reader &r, const cartesi::registers_state &regs,
                 slot.vaddr_page = vaddr_page;
                 slot.vp_offset = pma->start - vaddr_page;
                 slot.pma_index = pma->index;
-                slot.zero_padding_ = 0;
+                slot.generation = regs.tlb_generation[set_index];
             } else if (selector < 0xE0) {
                 // Out-of-bounds pma_index
                 const uint64_t vaddr_page = ((vaddr_bits >> 20) << 20) | (i << LOG2_PAGE_SIZE);
                 slot.vaddr_page = vaddr_page;
                 slot.vp_offset = page_select;
                 slot.pma_index = 0xFF + selector;
-                slot.zero_padding_ = 0;
+                slot.generation = regs.tlb_generation[set_index];
             } else {
                 // Raw fuzz bytes (various validation failures)
                 slot.vaddr_page = vaddr_bits;
                 slot.vp_offset = page_select;
                 slot.pma_index = selector;
-                slot.zero_padding_ = vaddr_bits & 0xFF;
+                slot.generation = vaddr_bits & 0xFF;
             }
         }
     }

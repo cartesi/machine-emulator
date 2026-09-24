@@ -897,9 +897,7 @@ static void flush_tlb_slot(const STATE_ACCESS a, uint64_t slot_index) {
 /// \param a Machine state accessor object.
 template <TLB_set_index SET, typename STATE_ACCESS>
 static void flush_tlb_set(const STATE_ACCESS a) {
-    for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-        flush_tlb_slot<SET>(a, slot_index);
-    }
+    a.template flush_tlb_set<SET>();
 }
 
 /// \brief Flushes out the entire TLB

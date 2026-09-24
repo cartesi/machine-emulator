@@ -350,6 +350,20 @@ private:
     }
 
     template <TLB_set_index SET>
+    uint64_t do_read_tlb_generation() const {
+        return do_read_shadow_register(shadow_tlb_generation_what(SET));
+    }
+
+    template <TLB_set_index SET>
+    void do_write_tlb_generation(uint64_t generation) const {
+        for (auto &slot : m_context.tlb[SET]) {
+            slot.vaddr_page = TLB_UNVERIFIED_PAGE;
+            slot.vh_offset = host_addr{0};
+        }
+        do_write_shadow_register(shadow_tlb_generation_what(SET), generation);
+    }
+
+    template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
         return m_context.tlb[SET][slot_index].vaddr_page;
     }
@@ -382,9 +396,10 @@ private:
         const auto vaddr_page = read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::vaddr_page);
         const auto vp_offset = read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::vp_offset);
         const auto pma_index = read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
-        const auto zero_padding = read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::zero_padding_);
+        const auto generation = read_tlb_field<uint64_t>(SET, slot_index, shadow_tlb_what::generation);
         const auto &ar = do_read_pma(pma_index);
-        if (shadow_tlb_verify_slot(SET, vaddr_page, vp_offset, zero_padding, ar) == TLB_INVALID_PAGE) {
+        if (shadow_tlb_verify_slot(SET, vaddr_page, vp_offset, generation, do_read_tlb_generation<SET>(), ar) ==
+            TLB_INVALID_PAGE) {
             hot_slot.vaddr_page = TLB_INVALID_PAGE;
             return TLB_INVALID_PAGE;
         }
@@ -415,7 +430,7 @@ private:
             write_tlb_field(SET, slot_index, shadow_tlb_what::vp_offset, static_cast<uint64_t>(vh_offset));
         }
         write_tlb_field(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
-        write_tlb_field(SET, slot_index, shadow_tlb_what::zero_padding_, UINT64_C(0));
+        write_tlb_field(SET, slot_index, shadow_tlb_what::generation, do_read_tlb_generation<SET>());
         // Mark hot entry as unverified so next access re-validates from the log
         m_context.tlb[SET][slot_index].vaddr_page = TLB_UNVERIFIED_PAGE;
         m_context.tlb[SET][slot_index].vh_offset = host_addr{0};

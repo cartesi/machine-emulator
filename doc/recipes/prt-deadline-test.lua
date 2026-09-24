@@ -197,7 +197,7 @@ return function(run_with_server, new_test_player)
     end
 
     -- Collection and time waits can happen in either order. Both obey
-    -- the response barriers, including delayed skips, disconnects, and time acknowledgements.
+    -- the response barriers, including delayed skips, explicit departures, and time acknowledgements.
     for _, block_first in ipairs({ false, true }) do
         run_with_server(function(server, run_client, wait_connections)
             local collected, closed = false, false
@@ -231,7 +231,7 @@ return function(run_with_server, new_test_player)
             end, true)
             run_client(nil, function(event)
                 assert(event.operation == "probe", "a cancelled collection was dispatched")
-                return "close"
+                return { skip = true, done = true }, true
             end)
             wait_connections(3)
             for _, connection in ipairs(server:get_players()) do
@@ -882,12 +882,12 @@ return function(run_with_server, new_test_player)
                             return cartesi.tojson({ skip = true }, -1)
                         end
                     end
+                    if mode == "uarch_without_holder" and index == 1 and event.operation == "commit_uarch_claim" then
+                        player.done = true
+                    end
                     local encoded, done = prtu.answer_event(player, line)
                     if event.operation == "commit_uarch_claim" then
                         committed_uarch = true
-                    end
-                    if mode == "uarch_without_holder" and index == 1 and event.operation == "commit_uarch_claim" then
-                        return encoded, true
                     end
                     if event.operation == "advance_time" then
                         local response = cartesi.fromjson(encoded)

@@ -254,19 +254,20 @@ local function answer_event(client, line, protocol)
     if wire_event.owner and not (type(value) == "table" and value.scheduled_at) then
         value = { answer = cartesi.fromjson(cartesi.tojson(value, -1, event.response_schema, protocol.schemas)) }
     end
-    local response = { label = client.label, value = value, id = wire_event.id }
+    local done = event == protocol.events.finish or client.done
+    local response = { label = client.label, value = value, id = wire_event.id, done = done or nil }
     local response_schema = wire_event.id and "Default" or event.response_schema
     local encoded =
         cartesi.tojson(response, -1, ensure_response_envelope_schema(protocol, response_schema), protocol.schemas)
-    return encoded, event == protocol.events.finish or client.done
+    return encoded, done
 end
 
 -- The player side is a plain blocking loop: announce itself, then read an event, decode its
 -- arguments under the event's schema, dispatch its handler, and answer under the response
 -- schema. The label names the player in the story. Computation requests go to interested holders.
 -- schedule and time requests also deliver unrelated elimination work. A missing
--- handler or result is a client bug. The referee sees EOF and loses that holder. The loop also ends when
--- the referee goes away.
+-- handler or result is a client bug. Deliberate departure is announced with the last
+-- response; an unannounced EOF or failed I/O is a transport bug on either side.
 -- docs:begin run_client
 local socket_guard = {
     __close = function(self)
@@ -280,10 +281,7 @@ local function run_client(client, server_address, protocol)
     local hello = client.hello or cartesi.tojson({ role = "player", label = client.label }, -1)
     assert(client.connection:send(hello .. "\n"))
     while true do
-        local line = client.connection:receive("*l")
-        if not line then
-            break
-        end
+        local line = assert(client.connection:receive("*l"))
         trace_wire(protocol, "from referee", client.label, line)
         local encoded, done = answer_event(client, line, protocol)
         trace_wire(protocol, "to referee", client.label, encoded)
@@ -318,7 +316,7 @@ end
 -- Players answer one queued request at a time. Ordinary responses share a logical
 -- block barrier. Schedule controls drain before the next time request.
 -- The referee owns every window and validator. Only an accepted response
--- resolves a first-valid future, even when all its holders skip or disconnect.
+-- resolves a first-valid future, even when all its holders skip or announce departure.
 -- Collections return all replies received before their wait's deadline.
 -- Initial subscriptions still need an external close because connections arrive
 -- over wall-clock time. Tournament claim collection closes at a supplied logical block.
@@ -410,7 +408,7 @@ local function forget_connection(self, connection)
     end
 end
 
--- Closes a connection (its socket closed, or it sent a line the referee cannot decode). A dead
+-- Closes a connection after an announced departure or a rejected envelope. A dead
 -- connection is skipped by every notify and holder lookup thereafter.
 local function close_connection(self, connection)
     if not connection.dead then
@@ -437,7 +435,7 @@ local function encode_event(protocol, event, arguments, id, owner)
 end
 
 -- One request is in flight per connection. Byte writes and protocol requests
--- have separate queues. The next request waits for the current reply or EOF.
+-- have separate queues. The next request waits for the current reply.
 local function send_next_event(self, connection)
     if connection.dead or connection.current_event then
         return
@@ -581,10 +579,7 @@ function server_meta.__index.adopt(self, sock)
         while true do
             local line = table.remove(connection.outbox, 1)
             if line then
-                if not send_line(self.dispatcher, connection, line) then
-                    close_connection(self, connection)
-                    return
-                end
+                assert(send_line(self.dispatcher, connection, line))
             else
                 connection.parked_writer = coroutine.running()
                 coroutine.yield()
@@ -593,11 +588,8 @@ function server_meta.__index.adopt(self, sock)
     end)
     self.dispatcher:spawn(function()
         while true do
-            local line = receive_line(self.dispatcher, connection)
-            if not line then
-                close_connection(self, connection)
-                return
-            end
+            local line, err = receive_line(self.dispatcher, connection)
+            assert(line, "unexpected connection loss: " .. tostring(err))
             trace_wire(protocol, "from player", nil, line)
             local ok, message = pcall(cartesi.fromjson, line)
             if not ok or type(message) ~= "table" then
@@ -620,6 +612,10 @@ function server_meta.__index.adopt(self, sock)
                     connection.current_event = nil
                     if entry then
                         deliver(self, entry, connection, line)
+                        if message.done == true then
+                            close_connection(self, connection)
+                            return
+                        end
                     end
                     send_next_event(self, connection)
                 end

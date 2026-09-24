@@ -1724,9 +1724,9 @@ run_with_server(function(server, run_client, wait_connections)
     assert(request({ "b" }, define_event("answer"), {}, is_valid) == nil, "an invalid response was taken")
     assert(not b.dead, "an invalid response closed its connection")
 
-    -- A holder that closes counts as answered. With every holder gone, the claim is unanswered.
+    -- A holder that explicitly quits counts as answered. Its claim remains unanswered.
     run_client(nil, function()
-        return "close"
+        return { skip = true, done = true }, true
     end)
     wait_connections(6)
     local labels <close> = server:request_all(EVERYONE, define_event("label"), {})
@@ -1846,7 +1846,7 @@ ok, err = pcall(run_with_server, function(server, run_client, wait_connections)
     wait_connections(1)
     server:accept_subscribers("initial")
 end)
-assert(not ok and err:find("the phase closer went away"), "phase-closer EOF did not fail the referee")
+assert(not ok and err:find("unexpected connection loss"), "phase-closer EOF did not fail the referee")
 
 assert(require("prt-deadline-test"))(run_with_server, new_test_player)
 

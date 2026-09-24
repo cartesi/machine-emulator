@@ -214,6 +214,7 @@ GAME_TEST_DIR := $(REPLACE_CACHE_DIR)/game-tests
 .PHONY: test-prt-protocol test-vg test-vg-execution test-prt-game test-prt-repeat
 ifeq ($(RECIPE_TEST_ENV),yes)
 test-prt-protocol:
+	bash $(RECIPES_DIR)/game-runner-test.sh
 	@work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; \
 	    cd "$$work" && lua5.4 $(RECIPES_DIR)/prt-test.lua && \
 	    lua5.4 $(RECIPES_DIR)/game-transport-test.lua && \

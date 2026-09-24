@@ -345,12 +345,12 @@ function move_meta.__close(self)
 end
 function move_meta.__index.wait(self)
     local player, future = self.player, self.future
-    local deadline = self.started_at + RESPONSE_BUDGET + player.allowance
+    local deadline = self.started_at + player.allowance
     local value = future:wait(deadline)
-    local ended_at = value and future.accepted_at or deadline
-    player.allowance = math.max(0, player.allowance - math.max(0, ended_at - self.started_at - RESPONSE_BUDGET))
-    if not value then
-        player.forfeited = true
+    if value then
+        player.allowance = player.allowance - math.max(0, future.accepted_at - self.started_at - RESPONSE_BUDGET)
+    else
+        player.allowance, player.forfeited = 0, true
     end
     return value
 end

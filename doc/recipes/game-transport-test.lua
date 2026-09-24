@@ -134,4 +134,23 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         assert(future:wait(server:get_time() + 5) == hash)
     end
 end)
+-- An unannounced EOF is a failed simulation, not a player's timeout. Both an
+-- ordinary barrier and an owner control must fail immediately and unwind resources.
+for _, owned in ipairs({ false, true }) do
+    local server, future
+    local ok, err = pcall(run_with_server, protocol, function(s, run_client, wait_connections)
+        server = s
+        run_client(nil, function()
+            return "close"
+        end, true)
+        wait_connections(1)
+        local pending <close> = owned and s:request_owner(s:get_players()[1], event, {}, accept)
+            or s:request_first_valid(nil, event, {}, accept)
+        future = pending
+        pending:wait(5)
+        error("connection loss was treated as a timeout")
+    end)
+    assert(not ok and err:find("unexpected connection loss", 1, true))
+    assert(future.closed and not next(server.active) and not server.listener:getsockname())
+end
 print("game-transport-test: ok")

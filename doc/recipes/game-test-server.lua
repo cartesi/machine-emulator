@@ -29,17 +29,20 @@ local function run_with_server(protocol, scenario)
                     local reply, done
                     if typed then
                         reply, done = handler(wire_event, line)
-                    elseif wire_event.operation == "finish" or wire_event.id then
+                    elseif wire_event.operation == "finish" then
+                        reply, done = { value = true }, true
+                    elseif wire_event.id then
                         reply = { value = true }
                     elseif wire_event.operation == "advance_time" then
                         reply = { value = {} }
                     else
-                        reply = handler(wire_event)
+                        reply, done = handler(wire_event)
                     end
                     if reply == "close" then
                         sock:close()
                         return
                     elseif type(reply) == "table" then
+                        reply.done = done or reply.done
                         reply = cartesi.tojson(reply, -1)
                     end
                     if reply ~= nil then

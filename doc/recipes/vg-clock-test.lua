@@ -6,10 +6,9 @@ local hash = cartesi.keccak256("clock fixture")
 
 -- The immediate player never pays for the other player's delay. The delayed
 -- player carries its spent allowance into every subsequent requested move.
--- A move charges the blocks it took beyond the one-block response budget, and its
--- deadline is the block at which that charge would exhaust the allowance, so a fresh
--- player with four blocks must answer before the fifth block after the request.
--- Rounds below: delays 3, 2, 0, 2 leave 2, 1, 1, then expire at the deadline.
+-- Like PRT, the deadline is start + allowance. The response budget discounts the
+-- charge for an accepted answer, never extends its deadline. Expiry forfeits the
+-- remaining allowance. Delays 2, 2, 0, 2 leave 3, 2, 2, then expire at the deadline.
 run_with_server(vgu.protocol, function(server, run_client, wait_connections)
     local players = {}
     for index = 1, 2 do
@@ -31,22 +30,22 @@ run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         wait_connections(index)
         players[index] = { client = client, connection = server:get_players()[index], allowance = 4 }
     end
-    for round, delay in ipairs({ 3, 2, 0, 2 }) do
+    for round, delay in ipairs({ 2, 2, 0, 2 }) do
         players[1].client.delay = delay
         local replies = vg.request_pair(server, players, vgu.EVENTS.commit_final_hash, {})
         assert(replies[2] == hash and players[2].allowance == 4, "opponent delay charged immediate player")
-        assert(players[1].allowance == ({ 2, 1, 1, 0 })[round])
+        assert(players[1].allowance == ({ 3, 2, 2, 0 })[round])
         assert((replies[1] ~= nil) == (round < 4), "deadline is not exclusive")
     end
 end)
 
-for _, behavior in ipairs({ "skip", "disconnect", "malformed" }) do
+for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         for index = 1, 2 do
             run_client(nil, function(wire)
                 if wire.operation == "commit_final_hash" then
-                    if behavior == "disconnect" then
-                        return "close"
+                    if behavior == "quit" then
+                        return { skip = true, id = wire.id, done = true }, true
                     end
                     if behavior == "skip" then
                         return { skip = true, id = wire.id }

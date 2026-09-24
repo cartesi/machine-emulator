@@ -5,6 +5,8 @@ test = "test"
 solc_version = "0.8.30"
 evm_version = "prague"
 optimizer = true
+# Favor execution cost: one machine cycle replays thousands of uarch instructions.
+optimizer_runs = 100000
 via_ir = true
 fs_permissions = [{ access = "read", path = "test/fixtures" }]
 # Per-cycle replay walks every cycle of every program in one outer test frame,

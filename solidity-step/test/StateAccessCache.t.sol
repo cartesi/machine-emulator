@@ -8,6 +8,49 @@ import {StateAccess} from "src/StateAccess.sol";
 import {StepLog} from "src/StepLog.sol";
 
 contract StateAccessCacheTest is Test {
+    function testFuzzByteSwap(uint64 value) public pure {
+        uint64 expected;
+        for (uint256 i; i < 8; ++i) {
+            expected = (expected << 8) | uint8(value >> (i * 8));
+        }
+        assertEq(StepLog.swapBytes64(value), expected);
+        assertEq(StepLog.swapBytes64(expected), value);
+    }
+
+    function testFuzzWordSerializationPreservesNeighbors(uint64 value, uint16 slot) public pure {
+        StepLog.Context memory ctx = collidingPages();
+        uint256 offset = uint256(slot % 512) * 8;
+        for (uint256 i; i < 32; ++i) {
+            ctx.pageData[(offset & ~uint256(31)) + i] = bytes1(uint8(i + 1));
+        }
+        bytes memory expected = abi.encodePacked(ctx.pageData);
+        for (uint256 i; i < 8; ++i) {
+            expected[offset + i] = bytes1(uint8(value >> (i * 8)));
+        }
+        StateAccess.writeWord(ctx, uint64(offset), value);
+        assertEq(StateAccess.readWord(ctx, uint64(offset)), value);
+        assertEq(keccak256(ctx.pageData), keccak256(expected));
+    }
+
+    function testCacheLastPositionAndMaximumPhysicalPage() public pure {
+        StepLog.Context memory ctx;
+        ctx.pageIndices = new uint64[](64);
+        ctx.pageData = new bytes(64 * 4096);
+        ctx.pageHashes = new bytes32[](64);
+        for (uint64 i; i < 63; ++i) {
+            ctx.pageIndices[i] = i;
+        }
+        ctx.pageIndices[63] = type(uint64).max >> 12;
+        for (uint64 i; i < 64; ++i) {
+            uint64 paddr = (ctx.pageIndices[i] << 12) | 4088;
+            StateAccess.writeWord(ctx, paddr, 100 + i);
+            assertEq(StateAccess.readWord(ctx, paddr), 100 + i);
+        }
+        for (uint64 i; i < 64; ++i) {
+            assertEq(StateAccess.readWord(ctx, (ctx.pageIndices[i] << 12) | 4088), 100 + i);
+        }
+    }
+
     function registerContext() private pure returns (StepLog.Context memory ctx) {
         ctx.pageIndices = new uint64[](1);
         ctx.pageIndices[0] = EmulatorConstants.UARCH_HALT_ADDR >> 12;

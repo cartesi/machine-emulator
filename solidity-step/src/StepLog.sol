@@ -55,8 +55,8 @@ library StepLog {
         bytes32[] siblings; // hash values for subtrees not covered by pages or nodes; left-to-right order
         bool reverted; // set when uarch reset reverted the state on a rejected input; see Verify.verifyReset
         bytes32 revertedRootHash; // canonical post-state hash when reverted (the recorded revert root hash)
-        uint256[61] pageLookupCache; // page position + 1; zero means uncached
-        uint64[] uarchRegisters;
+        uint256[61] pageLookupCache; // page index above 7 bits of (position + 1); zero means uncached
+        uint64[35] uarchRegisters; // halt, cycle, PC, and 32 integer registers
         uint256 uarchShadowPtr; // zero when the register cache needs loading
         uint256 uarchShadowPageIndex;
         bool uarchRegistersDirty;
@@ -387,7 +387,8 @@ library StepLog {
         if (ctx.uarchShadowPtr != 0) return;
         (ctx.uarchShadowPtr, ctx.uarchShadowPageIndex) =
             locatePage(ctx, EmulatorConstants.UARCH_HALT_ADDR);
-        ctx.uarchRegisters = new uint64[](UARCH_REGISTER_WORD_COUNT);
+        // Check the fixed length against the generated register layout.
+        assert(ctx.uarchRegisters.length == UARCH_REGISTER_WORD_COUNT);
         for (uint256 i; i < UARCH_REGISTER_WORD_COUNT; ++i) {
             uint256 ptr = ctx.uarchShadowPtr + i * 8;
             uint64 value;
@@ -430,8 +431,8 @@ library StepLog {
         uint256 cacheSlot = uint256(idx) % ctx.pageLookupCache.length;
         uint256 cached = ctx.pageLookupCache[cacheSlot];
         uint256 lo;
-        if (cached != 0 && ctx.pageIndices[cached - 1] == idx) {
-            lo = cached - 1;
+        if (cached != 0 && cached >> 7 == idx) {
+            lo = (cached & 0x7f) - 1;
         } else {
             uint256 hi = ctx.pageIndices.length;
             while (lo < hi) {
@@ -445,7 +446,8 @@ library StepLog {
             if (lo >= ctx.pageIndices.length || ctx.pageIndices[lo] != idx) {
                 revert RequiredPageNotFound(idx);
             }
-            ctx.pageLookupCache[cacheSlot] = lo + 1;
+            // decode caps page count at 64, so position + 1 fits in seven bits.
+            ctx.pageLookupCache[cacheSlot] = (uint256(idx) << 7) | (lo + 1);
         }
         pageIdx = lo;
         uint256 byteOff = lo * EmulatorConstants.PAGE_SIZE
@@ -482,9 +484,9 @@ library StepLog {
     }
 
     function swapBytes64(uint64 v) internal pure returns (uint64) {
-        return ((v & 0x00000000000000ff) << 56) | ((v & 0x000000000000ff00) << 40)
-            | ((v & 0x0000000000ff0000) << 24) | ((v & 0x00000000ff000000) << 8)
-            | ((v & 0x000000ff00000000) >> 8) | ((v & 0x0000ff0000000000) >> 24)
-            | ((v & 0x00ff000000000000) >> 40) | ((v & 0xff00000000000000) >> 56);
+        // Reverse adjacent bytes, then 16-bit pairs, then the 32-bit halves.
+        v = ((v & 0x00ff00ff00ff00ff) << 8) | ((v >> 8) & 0x00ff00ff00ff00ff);
+        v = ((v & 0x0000ffff0000ffff) << 16) | ((v >> 16) & 0x0000ffff0000ffff);
+        return (v << 32) | (v >> 32);
     }
 }

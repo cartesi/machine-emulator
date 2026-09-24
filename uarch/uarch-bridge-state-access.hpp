@@ -151,7 +151,7 @@ private:
         const uint64_t ilength = bridge_read_pma_ilength(index);
         const auto i = static_cast<size_t>(index);
         if (std::holds_alternative<std::monostate>(m_ars[i])) {
-            m_ars[i] = make_mock_address_range(istart, ilength, throw_abort);
+            make_mock_address_range(m_ars[i], istart, ilength, throw_abort);
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         return get_mock_address_range(m_ars[i], throw_abort);

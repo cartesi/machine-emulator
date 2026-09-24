@@ -134,13 +134,34 @@ static UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
     return static_cast<UINT>(quo);
 }
 
-/// \brief Compute sqrt(a) with a = ah*2^UINT_SIZE+al and a < 2^(UINT_SIZE - 2).
+/// \brief Compute floor(sqrt(a)) with a = ah*2^UINT_SIZE+al.
 /// \param pr is used to store the result.
 /// \returns true if not an exact square.
 template <typename UINT>
 static bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
     using ULONG = make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
+#if defined(MICROARCHITECTURE)
+    // With one spare root bit, the trial divisor and resulting remainder fit one word.
+    if ((ah >> (UINT_SIZE - 2)) == 0) {
+        UINT root = 0;
+        UINT rem = 0;
+        for (int i = 0; i < UINT_SIZE; ++i) {
+            const bool carry = (rem >> (UINT_SIZE - 2)) != 0;
+            rem = (rem << 2) | (ah >> (UINT_SIZE - 2));
+            ah = (ah << 2) | (al >> (UINT_SIZE - 2));
+            al <<= 2;
+            const UINT trial = (root << 2) | 1;
+            root <<= 1;
+            if (carry || rem >= trial) {
+                rem -= trial;
+                root |= 1;
+            }
+        }
+        *pr = root;
+        return rem != 0;
+    }
+#endif
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
 
     // Perform "digit‐by‐digit" square root extraction in base 2.

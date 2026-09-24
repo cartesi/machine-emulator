@@ -99,6 +99,38 @@ address_range &get_mock_address_range(mock_address_range &mock, ABRT abrt) {
     static_assert(std::variant_size_v<mock_address_range> == 5);
 }
 
+/// Construct directly in the cache, avoiding temporary variants and address-range copies.
+template <typename ABRT>
+static inline void make_mock_address_range(mock_address_range &mock, uint64_t istart, uint64_t ilength, ABRT abrt) {
+    uint64_t start{};
+    const auto flags = pmas_unpack_istart(istart, start);
+    if (flags.M) {
+        mock.emplace<address_range>(pmas_get_DID_name(flags.DID), start, ilength, flags, abrt);
+    } else if (ilength == 0) {
+        mock.emplace<address_range>("empty");
+    } else {
+        switch (flags.DID) {
+            case PMA_ISTART_DID::CLINT:
+                mock.emplace<clint_address_range>(abrt);
+                break;
+            case PMA_ISTART_DID::PLIC:
+                mock.emplace<plic_address_range>(abrt);
+                break;
+            case PMA_ISTART_DID::HTIF:
+                mock.emplace<htif_address_range>(abrt);
+                break;
+            default:
+                abrt("unhandled mock address range");
+                __builtin_trap();
+        }
+    }
+    const auto &ar = get_mock_address_range(mock, abrt);
+    if (ar.get_flags() != flags || start != ar.get_start() || ilength != ar.get_length()) {
+        abrt("incompatible mock address range");
+        __builtin_trap();
+    }
+}
+
 } // namespace cartesi
 
 #endif

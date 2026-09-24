@@ -1,5 +1,5 @@
 -- A two-player verification game over an epoch of a Rolling Cartesi Machine.
--- Only the referee receives input filenames. Players find their initial snapshot under
+-- Only the referee receives input paths. Players find their initial snapshot under
 -- its state hash and receive inputs in events. A claim belongs to its submitting connection.
 --   rolling-verification-game.lua referee <address> <initial-state-hash> [<input> ...]
 --   rolling-verification-game.lua honest <address> <initial-state-hash> [<label>]
@@ -13,7 +13,9 @@ local vgu = require("vgu")
 local output_verifier = require("game-output")
 local EVENTS, EVERYONE = vgu.EVENTS, vgu.EVERYONE
 local phase, eventf, short_hash = vgu.phase, vgu.eventf, vgu.short_hash
+local get_other_turn_index = vgu.get_other_turn_index
 local MCYCLES_PER_INPUT = 1 << cartesi.ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+local UARCH_CYCLES_PER_MCYCLE = 1 << cartesi.ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
 local INPUTS_PER_EPOCH = 1 << 16
 local RESPONSE_BUDGET, ALLOWANCE = 1, 4
 local OUTPUT_WINDOW = 4
@@ -94,7 +96,7 @@ local function advance_interval(interval, agree)
             next_interval.level, next_interval.lo, next_interval.hi = "mcycle", 0, MCYCLES_PER_INPUT
         elseif interval.level == "mcycle" then
             next_interval.mcycle = lo
-            next_interval.level, next_interval.lo, next_interval.hi = "uarch_cycle", 0, cartesi.UARCH_CYCLE_MAX + 1
+            next_interval.level, next_interval.lo, next_interval.hi = "uarch_cycle", 0, UARCH_CYCLES_PER_MCYCLE
         end
     end
     return next_interval
@@ -326,8 +328,8 @@ function player_methods:run_to_input_boundary(pair, epoch_input_offset_begin, ep
     end
 end
 
-function player_methods:read_input(_index, filename) -- luacheck: ignore 212 self
-    return util.read_file(filename)
+function player_methods:read_input(_index, path) -- luacheck: ignore 212 self
+    return util.read_file(path)
 end
 
 -- Mcycle bisection replays from a separately owned input boundary. Settling an
@@ -358,11 +360,11 @@ end
 
 -- Resolve our previous proposal, then compare the opponent's proposal locally.
 -- The response's agreement and next proposal belong to this one connection.
-function player_methods:answer_midpoint(arguments)
-    self:take_branch(arguments.branch)
-    local interval, agree = arguments.interval
-    if arguments.midpoint_hash then
-        agree = self:propose_midpoint(interval) == arguments.midpoint_hash
+function player_methods:answer_midpoint(branch, interval, midpoint_hash)
+    self:take_branch(branch)
+    local agree
+    if midpoint_hash then
+        agree = self:propose_midpoint(interval) == midpoint_hash
         self:take_branch(agree and "agree" or "disagree")
         interval = advance_interval(interval, agree)
     end
@@ -378,10 +380,12 @@ end
 -- The transport passes the receiving player as self.
 local event_handler = {}
 
-function event_handler.initial_state() end
+function event_handler:initial_state(initial_hash)
+    assert(self.agreed.machine:get_root_hash() == initial_hash, "initial machine does not match referee's state hash")
+end
 
-function event_handler:input_added(epoch_input_offset, filename)
-    self.inputs[epoch_input_offset + 1] = self:read_input(epoch_input_offset, filename)
+function event_handler:input_added(epoch_input_offset, path)
+    self.inputs[epoch_input_offset + 1] = self:read_input(epoch_input_offset, path)
     self:run_advance_state_input(self.latest, epoch_input_offset, MCYCLES_PER_INPUT, self.outputs, self.outputs_frontier)
 end
 
@@ -391,22 +395,23 @@ function event_handler:epoch_sealed()
     for i, output in ipairs(self.outputs) do
         leaves[i] = cartesi.keccak256(output)
     end
-    local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
-    self.output_proofs = hash_tree.frontier_next_proofs(genesis_frontier, leaves)
-    self.outputs_frontier = nil
+    self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
+    self.previous_outputs_frontier, self.outputs_frontier = self.outputs_frontier, nil
 end
 
 function event_handler:commit_final_hash()
     return self.final_hash
 end
 
-function event_handler:commit_bisection(arguments)
-    local interval, agree = self:answer_midpoint(arguments)
+function event_handler:commit_bisection(branch, interval, midpoint_hash)
+    local agree
+    interval, agree = self:answer_midpoint(branch, interval, midpoint_hash)
     return { agree = agree, midpoint_hash = self:propose_midpoint(interval) }
 end
 
-function event_handler:commit_log(arguments)
-    local interval, agree = self:answer_midpoint(arguments)
+function event_handler:commit_log(branch, interval, midpoint_hash)
+    local agree
+    interval, agree = self:answer_midpoint(branch, interval, midpoint_hash)
     local pair <close> = self.agreed:fork()
     local machine = pair.machine
     local input = self.inputs[interval.input + 1]
@@ -444,13 +449,14 @@ function event_handler:prove_output()
         return {}
     end
     return {
-        output_index = #self.outputs - 1,
+        output_index = self.output_proofs[#self.outputs].target_address,
         output = self.outputs[#self.outputs],
         output_proof = self.output_proofs[#self.outputs],
     }
 end
 
-local function new_player(initial_hash, label, machine)
+-- The optional proof bootstraps output history after a previous epoch.
+local function new_player(initial_hash, label, last_output_proof, machine)
     local agreed = setmetatable({ machine = machine or new_machine(initial_hash) }, advancing_pair_meta)
     local self <close> = setmetatable({
         label = label or "honest",
@@ -458,7 +464,6 @@ local function new_player(initial_hash, label, machine)
         inputs = {},
         outputs = {},
         event_handler = event_handler,
-        outputs_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"),
     }, player_meta)
     machine = agreed.machine
     assert(machine:get_root_hash() == initial_hash, "initial machine snapshot hash mismatch")
@@ -467,10 +472,21 @@ local function new_player(initial_hash, label, machine)
     local yield_reason = receive_cmio_request(machine)
     assert(is_rx_accepted(yield_reason), "initial machine did not accept")
     self.latest = self.agreed:fork()
+    if last_output_proof then
+        assert(
+            last_output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
+                and last_output_proof.log2_target_size == 0,
+            "last_output_proof is not an outputs proof"
+        )
+    end
+    self.previous_outputs_frontier =
+        hash_tree.frontier(last_output_proof or cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    self.outputs_frontier = hash_tree.frontier_copy(self.previous_outputs_frontier)
     return self:move()
 end
 
 -- The referee trusts its own input bytes and verifies the log without a machine.
+-- Invalid logs raise an error, which the request's protected validator rejects.
 local function verify_state_transition(referee, input, mcycle, uarch_cycle, before, log)
     local data = referee.inputs[input + 1]
     if mcycle == 0 and uarch_cycle == 0 and data then
@@ -488,7 +504,6 @@ local function verify_state_transition(referee, input, mcycle, uarch_cycle, befo
     end
     return before
 end
-verify_state_transition = util.protect(verify_state_transition)
 
 local function accept_hash(hash)
     return type(hash) == "string" and #hash == 32 and hash
@@ -516,76 +531,100 @@ local function timeout_winner(players)
     end
 end
 
--- One response chooses a half and supplies the following midpoint. At the last
--- split it supplies a log instead. The upper endpoint keeps its original owner;
--- a verified transition may confirm that hash or contradict it.
-local function settle_dispute(referee, server, players)
-    local interval = { level = "input", lo = 0, hi = INPUTS_PER_EPOCH }
-    local before, after, after_index = referee.initial_hash, players[1].final_hash, 1
-    local turn, proposed, branch = 1, nil, "start"
-    phase("bisect_input")
-    while true do
-        local other = 3 - turn
-        local terminal = interval.level == "uarch_cycle" and interval.hi - interval.lo == 2
+-- Bisect one coordinate. The response that selects its last half already
+-- proposes the first midpoint of the next coordinate. Keep that pending turn
+-- and the endpoint hashes in the shared bisection state.
+-- The final uarch response supplies a transition log instead of a midpoint.
+local function bisect_level(referee, server, players, level, hi, bisection, input, mcycle)
+    phase("bisect_" .. level)
+    local lo = 0
+    while hi - lo > 1 do
+        local interval = { level = level, lo = lo, hi = hi, input = input, mcycle = mcycle }
+        local mid = midpoint(interval)
+        local other = get_other_turn_index(bisection.turn)
+        local terminal = level == "uarch_cycle" and hi - lo == 2
         local response = request_move(
             server,
-            players[turn],
+            players[bisection.turn],
             terminal and EVENTS.commit_log or EVENTS.commit_bisection,
-            { { branch = branch, interval = interval, midpoint_hash = proposed } },
+            { bisection.branch, interval, bisection.midpoint_hash },
             function(value)
-                if type(value) ~= "table" or (proposed and type(value.agree) ~= "boolean") then
+                if type(value) ~= "table" or (bisection.midpoint_hash and type(value.agree) ~= "boolean") then
                     return
                 end
-                if terminal or accept_hash(value.midpoint_hash) then
+                if terminal then
+                    return {
+                        agree = value.agree,
+                        obtained_state_hash = verify_state_transition(
+                            referee,
+                            input,
+                            mcycle,
+                            value.agree and mid or lo,
+                            value.agree and bisection.midpoint_hash or bisection.last_agreed_hash,
+                            value.log
+                        ),
+                    }
+                end
+                if accept_hash(value.midpoint_hash) then
                     return value
                 end
             end
         )
         if not response then
-            return players[other]
+            return nil, players[other]
         end
-        if proposed then
+        if bisection.midpoint_hash then
             if response.agree then
-                before = proposed
+                lo, bisection.last_agreed_hash = mid, bisection.midpoint_hash
             else
-                after, after_index = proposed, other
+                hi, bisection.hash_after, bisection.hash_after_proponent = mid, bisection.midpoint_hash, other
             end
-            branch = response.agree and "agree" or "disagree"
-            local lo = response.agree and midpoint(interval) or interval.lo
-            local hi = response.agree and interval.hi or midpoint(interval)
+            bisection.branch = response.agree and "agree" or "disagree"
             eventf(
                 "Player %d %s. %s interval of disagreement is [0x%x, 0x%x].",
-                turn,
+                bisection.turn,
                 response.agree and "agrees" or "disagrees",
-                interval.level,
+                level,
                 lo,
                 hi
             )
-            local selected = advance_interval(interval, response.agree)
-            if selected.level ~= interval.level then
-                phase("bisect_" .. selected.level)
-            end
-            interval = selected
         end
         if terminal then
-            local obtained =
-                verify_state_transition(referee, interval.input, interval.mcycle, interval.lo, before, response.log)
-            referee.transition = {
-                input = interval.input,
-                mcycle = interval.mcycle,
-                uarch_cycle = interval.lo,
-                player = turn,
-                valid = not not obtained,
-                after_hash = obtained,
-            }
-            eventf("Player %d's transition proof is %s.", turn, obtained and "valid" or "invalid")
-            if not obtained then
-                return players[other]
-            end
-            return players[obtained == after and after_index or 3 - after_index]
+            bisection.obtained_state_hash = response.obtained_state_hash
+            break
         end
-        proposed, turn = response.midpoint_hash, other
+        bisection.midpoint_hash, bisection.turn = response.midpoint_hash, other
     end
+    return lo
+end
+
+local function settle_dispute(referee, server, players)
+    local bisection = {
+        last_agreed_hash = referee.initial_hash,
+        hash_after = players[1].final_hash,
+        hash_after_proponent = 1,
+        branch = "start",
+    }
+    bisection.turn = get_other_turn_index(bisection.hash_after_proponent)
+    local input, winner_input = bisect_level(referee, server, players, "input", INPUTS_PER_EPOCH, bisection)
+    if not input then
+        return winner_input
+    end
+    local mcycle, winner_mcycle = bisect_level(referee, server, players, "mcycle", MCYCLES_PER_INPUT, bisection, input)
+    if not mcycle then
+        return winner_mcycle
+    end
+    -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
+    local uarch_cycle, winner_uarch_cycle =
+        bisect_level(referee, server, players, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection, input, mcycle)
+    if not uarch_cycle then
+        return winner_uarch_cycle
+    end
+    eventf("Player %d's transition proof is valid.", bisection.turn)
+    if bisection.obtained_state_hash == bisection.hash_after then
+        return players[bisection.hash_after_proponent]
+    end
+    return players[get_other_turn_index(bisection.hash_after_proponent)]
 end
 
 -- Output offers are permissionless and have their own bounded demonstration
@@ -616,8 +655,8 @@ function referee_meta.__index:run(server)
         responses:wait()
     end
     announce(EVENTS.initial_state, { self.initial_hash })
-    for index, filename in ipairs(self.input_paths) do
-        announce(EVENTS.input_added, { index - 1, filename })
+    for index, path in ipairs(self.input_paths) do
+        announce(EVENTS.input_added, { index - 1, path })
     end
     announce(EVENTS.epoch_sealed, { #self.inputs })
     phase("claims")

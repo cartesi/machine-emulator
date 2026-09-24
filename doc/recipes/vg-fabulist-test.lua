@@ -1,6 +1,6 @@
 -- A counterfactual at the reply-delivery boundary. Production admission already
 -- excludes outsiders. Inject replies here in both runs to isolate move ownership.
--- Only the second run delegates player 1's pending moves to the outsider. It
+-- Only the second run delegates player 2's pending moves to the outsider. It
 -- preserves both original claims, the referee, and all transition proof checks.
 local cartesi = require("cartesi")
 local vg = require("rolling-verification-game")
@@ -15,6 +15,10 @@ local function run(initial_hash, paths, delegate)
     local referee = vg.new_referee(initial_hash, paths)
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         local pending, outsider
+        run_client(nil, function(_, line)
+            return vgu.answer_event(opponent, line)
+        end, true)
+        wait_connections(1)
         run_client(nil, function(wire, line)
             if
                 wire.operation == "initial_state"
@@ -25,8 +29,8 @@ local function run(initial_hash, paths, delegate)
             end
             return vgu.answer_event(honest, line)
         end, true)
-        wait_connections(1)
-        local owner = server.connections[1]
+        wait_connections(2)
+        local owner = server.connections[2]
         local function inject(value)
             assert(pending)
             local control = pending.control
@@ -38,10 +42,6 @@ local function run(initial_hash, paths, delegate)
                 value = { answer = value },
             })
         end
-        run_client(nil, function(_, line)
-            return vgu.answer_event(opponent, line)
-        end, true)
-        wait_connections(2)
         run_client(nil, function()
             return { value = true }
         end)
@@ -71,9 +71,9 @@ local function run(initial_hash, paths, delegate)
     for _, name in ipairs({ "claims", "bisect_input", "bisect_mcycle", "bisect_uarch_cycle", "verdict" }) do
         assert(os.rename(name, string.format("fabulist-%s-%s", delegate and "delegated" or "protected", name)))
     end
-    assert(referee.players[1].final_hash == honest.final_hash)
-    assert(referee.players[2].final_hash == opponent.final_hash)
-    assert(referee.winner.index == (delegate and 2 or 1))
+    assert(referee.players[2].final_hash == honest.final_hash)
+    assert(referee.players[1].final_hash == opponent.final_hash)
+    assert(referee.winner.index == (delegate and 1 or 2))
     return referee
 end
 
@@ -84,18 +84,17 @@ return function(initial_hash, paths)
     for index = 1, 2 do
         assert(protected.players[index].final_hash == delegated.players[index].final_hash, "original claim changed")
     end
-    assert(protected.transition.valid and not delegated.transition.valid)
     local transcript <close> = assert(io.open("fabulist-transcript", "w"))
     transcript:write(
         string.format(
             "Honest original claim: %s\nDishonest original claim: %s\n"
-                .. "Ownership enforced: outsider replies rejected, player 1's proof verifies, honest claim wins.\n"
-                .. "Broken assumption: an outsider may defend player 1's claim.\n"
+                .. "Ownership enforced: outsider replies rejected, player 2's proof verifies, honest claim wins.\n"
+                .. "Broken assumption: an outsider may defend player 2's claim.\n"
                 .. "The fabulist agrees with the forger's midpoints and submits a failing terminal proof.\n"
-                .. "Proof verification rejects it, player 2's dishonest original claim wins.\n"
+                .. "Proof verification rejects it; after the deadline, player 1's dishonest original claim wins.\n"
                 .. "Both runs retain the same original claims and transition verifier.\n",
-            cartesi.tohex(protected.players[1].final_hash),
-            cartesi.tohex(protected.players[2].final_hash)
+            cartesi.tohex(protected.players[2].final_hash),
+            cartesi.tohex(protected.players[1].final_hash)
         )
     )
     print("vg-fabulist-test: both outcomes ok")

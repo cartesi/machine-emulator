@@ -8,12 +8,12 @@ local util = require("cartesi.util")
 local vg = require("rolling-verification-game")
 local vgu = require("vgu")
 
-local function read_forged_input(self, index, filename)
-    return util.read_file(index == self.forged_index and self.private_filename or filename)
+local function read_forged_input(self, index, path)
+    return util.read_file(index == self.forged_index and self.private_path or path)
 end
-local function new_forger(initial_hash, input_index, private_filename)
+local function new_forger(initial_hash, input_index, private_path)
     local player = vg.new_player(initial_hash, "forger")
-    player.forged_index, player.private_filename = input_index, private_filename
+    player.forged_index, player.private_path = input_index, private_path
     player.read_input = read_forged_input
     return player
 end

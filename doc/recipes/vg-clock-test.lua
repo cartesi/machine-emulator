@@ -1,6 +1,7 @@
 local cartesi = require("cartesi")
 local vg = require("rolling-verification-game")
 local vgu = require("vgu")
+local get_other_turn_index = vgu.get_other_turn_index
 local run_with_server = require("game-test-server")
 local hash = cartesi.keccak256("clock fixture")
 
@@ -79,7 +80,7 @@ local empty_handlers = {
         return empty_response
     end,
 }
-for _, failed_turn in ipairs({ 1, 2, 84, 85, 86 }) do
+for _, failed_turn in ipairs({ 1, 2, 16, 17, 18, 64, 65, 66, 84, 85, 86 }) do
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         local turns, interval = 0, { level = "input", lo = 0, hi = 1 << 16 }
         local claims = { hash, cartesi.keccak256("other claim") }
@@ -88,16 +89,18 @@ for _, failed_turn in ipairs({ 1, 2, 84, 85, 86 }) do
             function client.event_handler.commit_final_hash()
                 return claims[index]
             end
-            local function answer(_, arguments, terminal)
+            local function answer(_, branch, received_interval, midpoint_hash, terminal)
                 turns = turns + 1
-                assert(index == 2 - turns % 2, "turns did not alternate")
+                assert(index == 1 + turns % 2, "turns did not alternate")
+                local level = turns <= 17 and "input" or turns <= 65 and "mcycle" or "uarch_cycle"
+                assert(received_interval.level == level, "wrong bisection handoff")
                 for key, value in pairs(interval) do
-                    assert(arguments.interval[key] == value, "wrong bisection coordinate")
+                    assert(received_interval[key] == value, "wrong bisection coordinate")
                 end
-                assert(arguments.branch == (turns <= 2 and "start" or "disagree"))
+                assert(branch == (turns <= 2 and "start" or "disagree"))
                 assert(
-                    (turns == 1 and arguments.midpoint_hash == nil)
-                        or (turns > 1 and arguments.midpoint_hash == claims[3 - index])
+                    (turns == 1 and midpoint_hash == nil)
+                        or (turns > 1 and midpoint_hash == claims[get_other_turn_index(index)])
                 )
                 assert(terminal == (turns == 85), "wrong terminal request")
                 if turns > 1 then
@@ -108,15 +111,15 @@ for _, failed_turn in ipairs({ 1, 2, 84, 85, 86 }) do
                 end
                 if terminal then
                     assert(interval.level == "uarch_cycle" and interval.hi - interval.lo == 1)
-                    return { agree = false, log = {} } -- Invalid proof loses this turn too.
+                    return { agree = false, log = {} } -- Rejected; no valid proof arrives before the deadline.
                 end
                 return { agree = false, midpoint_hash = claims[index] }
             end
-            function client.event_handler:commit_bisection(arguments)
-                return answer(self, arguments, false)
+            function client.event_handler:commit_bisection(branch, received_interval, midpoint_hash)
+                return answer(self, branch, received_interval, midpoint_hash, false)
             end
-            function client.event_handler:commit_log(arguments)
-                return answer(self, arguments, true)
+            function client.event_handler:commit_log(branch, received_interval, midpoint_hash)
+                return answer(self, branch, received_interval, midpoint_hash, true)
             end
             run_client(nil, function(_, line)
                 return vgu.answer_event(client, line)
@@ -126,15 +129,12 @@ for _, failed_turn in ipairs({ 1, 2, 84, 85, 86 }) do
         local referee = vg.new_referee(hash, {})
         referee:run(server)
         local last = math.min(failed_turn, 85)
-        local loser = 2 - last % 2
+        local loser = 1 + last % 2
+        local winner = get_other_turn_index(loser)
         assert(turns == last, "requested another turn after settlement")
-        assert(referee.winner.index == 3 - loser and referee.final_hash == claims[3 - loser])
-        assert(referee.players[3 - loser].allowance == 4, "charged the inactive player")
-        assert(referee.players[loser].allowance == (failed_turn == 86 and 4 or 0))
-        assert((referee.transition ~= nil) == (failed_turn == 86))
-        if referee.transition then
-            assert(not referee.transition.valid)
-        end
+        assert(referee.winner.index == winner and referee.final_hash == claims[winner])
+        assert(referee.players[winner].allowance == 4, "charged the inactive player")
+        assert(referee.players[loser].allowance == 0)
     end)
 end
 vgu.close_narration()

@@ -1701,7 +1701,7 @@ end
 
 -- Offer the last output for this demonstration. The referee supplies no index.
 function event_handler.prove_output(self)
-    return self:prove_output(#self.outputs - 1)
+    return self:prove_output(hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier) - 1)
 end
 
 local player_meta = { __index = {} }
@@ -1857,9 +1857,8 @@ function event_handler.epoch_sealed(self)
     for i, output in ipairs(self.outputs) do
         leaves[i] = keccak(output)
     end
-    local genesis_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
-    self.output_proofs = hash_tree.frontier_next_proofs(genesis_frontier, leaves)
-    self.outputs_frontier = nil
+    self.output_proofs = hash_tree.frontier_next_proofs(self.previous_outputs_frontier, leaves)
+    self.previous_outputs_frontier, self.outputs_frontier = self.outputs_frontier, nil
 end
 
 -- docs:begin collect_mcycle_bundle
@@ -1926,17 +1925,18 @@ function player_meta.__index:collect_uarch_cycle_bundle(epoch_input_offset, inpu
 end
 -- docs:end collect_uarch_cycle_bundle
 
--- Clients may request any accepted output from the sealed epoch, independently of
+-- Clients may request any accepted output from the sealed epoch by its global index, independently of
 -- the output the demonstration offers to the referee. Missing indices are no offer.
 function player_meta.__index:prove_output(output_index)
     assert(math.type(output_index) == "integer", "invalid output index")
-    if output_index < 0 or output_index >= #self.outputs then
+    local index = output_index - hash_tree.frontier_get_leaf_count(self.previous_outputs_frontier) + #self.outputs + 1
+    if index < 1 or index > #self.outputs then
         return {}
     end
     return {
         output_index = output_index,
-        output = self.outputs[output_index + 1],
-        output_proof = self.output_proofs[output_index + 1],
+        output = self.outputs[index],
+        output_proof = self.output_proofs[index],
     }
 end
 
@@ -1973,7 +1973,8 @@ local prt
 
 -- Each player owns its input filenames, cache, and open epoch computation.
 -- Default event handlers are shared and treated as read-only.
-local function new_player(dapp_contract, label)
+-- The optional proof bootstraps output history after a previous epoch.
+local function new_player(dapp_contract, label, last_output_proof)
     local self <close> = setmetatable({
         event_handler = event_handler,
         label = label or "honest",
@@ -1990,7 +1991,16 @@ local function new_player(dapp_contract, label)
     self.epoch_builder = self:make_mcycle_computation_hash_builder()
     self.epoch_builder:begin_epoch(machine)
     self.outputs = {}
-    self.outputs_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    if last_output_proof then
+        assert(
+            last_output_proof.log2_root_size == cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT
+                and last_output_proof.log2_target_size == 0,
+            "last_output_proof is not an outputs proof"
+        )
+    end
+    self.previous_outputs_frontier =
+        hash_tree.frontier(last_output_proof or cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    self.outputs_frontier = hash_tree.frontier_copy(self.previous_outputs_frontier)
     return self:move()
 end
 

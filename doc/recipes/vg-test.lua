@@ -24,7 +24,7 @@ local first <close> = vg.new_player(initial_hash)
 local second <close> = vg.new_player(initial_hash)
 local referee = run_game({ first, second })
 assert(referee.winner.index == 1 and referee.final_hash == first.final_hash)
-assert(referee.output and not referee.transition)
+assert(referee.output)
 print("vg-test: equal claims ok")
 
 -- The losing connection can prove outputs after exhausting its clock. Providers
@@ -101,7 +101,7 @@ for _, confirms in ipairs({ false, true }) do
     local pair <close> = first.agreed:fork()
     local log = { step_log = pair.machine:log_step_uarch() }
     local after = pair.machine:get_root_hash()
-    local claims = { cartesi.keccak256("first endpoint"), confirms and after or cartesi.keccak256("second endpoint") }
+    local claims = { confirms and after or cartesi.keccak256("first endpoint"), cartesi.keccak256("second endpoint") }
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         for index = 1, 2 do
             local client = { event_handler = setmetatable({}, empty_handlers) }
@@ -121,8 +121,7 @@ for _, confirms in ipairs({ false, true }) do
         end
         local settled = vg.new_referee(initial_hash, {})
         settled:run(server)
-        assert(settled.transition.valid and settled.transition.after_hash == after)
-        assert(settled.transition.player == 1 and settled.winner.index == (confirms and 2 or 1))
+        assert(settled.winner.index == (confirms and 1 or 2))
         assert(settled.final_hash == claims[settled.winner.index])
     end)
     vgu.close_narration()
@@ -149,7 +148,15 @@ if arg[1] ~= "execution" then
 end
 
 -- A loaded machine must match its content-addressed snapshot.
-assert(not pcall(vg.new_player, string.rep("\0", 32), "mismatch", first.agreed.machine:fork_server()))
+assert(not pcall(vg.new_player, string.rep("\0", 32), "mismatch", nil, first.agreed.machine:fork_server()))
+
+-- The referee's initial hash must also match the player's own snapshot.
+do
+    local player <close> = vg.new_player(initial_hash)
+    assert(not pcall(vg.event_handler.initial_state, player, string.rep("\0", 32)))
+    vg.event_handler.initial_state(player, initial_hash)
+end
+
 assert(vg.usaturating_add(cartesi.MCYCLE_MAX - 2, 3) == cartesi.MCYCLE_MAX)
 assert(vg.usaturating_add(math.maxinteger, 2) == math.mininteger + 1)
 
@@ -162,7 +169,7 @@ for _, invalid in ipairs({ "halt", "rejected" }) do
     else
         machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
     end
-    assert(not pcall(vg.new_player, machine:get_root_hash(), invalid, machine))
+    assert(not pcall(vg.new_player, machine:get_root_hash(), invalid, nil, machine))
     assert(not pcall(machine.read_reg, machine, "mcycle"), "failed constructor left its machine running")
 end
 
@@ -194,7 +201,7 @@ do
             error("injected fork failure")
         end,
     }
-    local ok, err = pcall(vg.new_player, initial_hash, "fork failure", initial)
+    local ok, err = pcall(vg.new_player, initial_hash, "fork failure", nil, initial)
     assert(not ok and tostring(err):find("injected fork failure", 1, true))
     assert(closed[initial])
 end
@@ -302,7 +309,7 @@ do
             vg.verify_state_transition(contract, 0, mcycle, cycle, before, logs)
                 == (expected or machine:get_root_hash())
         )
-        assert(not vg.verify_state_transition(contract, 0, mcycle, cycle, before, {}))
+        assert(not pcall(vg.verify_state_transition, contract, 0, mcycle, cycle, before, {}))
     end
     local included <close> = player.agreed:fork()
     local prefix <close> = player.agreed:fork()
@@ -333,6 +340,40 @@ do
         vg.verify_state_transition({ inputs = {} }, 0, 0, 0, before, { step_log = step })
             == absent.machine:get_root_hash()
     )
+end
+
+-- A previous epoch's last-output proof supplies the prefix for new output proofs.
+for _, output_count in ipairs({ 0, 2 }) do
+    local hash_tree = require("cartesi.hash-tree")
+    local genesis = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    local previous_hashes = {
+        cartesi.keccak256("previous first"),
+        cartesi.keccak256("previous second"),
+        cartesi.keccak256("previous last"),
+    }
+    local last_output_proof = hash_tree.frontier_next_proofs(genesis, previous_hashes)[#previous_hashes]
+    local player <close> = vg.new_player(initial_hash, "output fixture", last_output_proof)
+    assert(player.outputs_frontier ~= player.previous_outputs_frontier)
+    assert(hash_tree.frontier_get_leaf_count(player.outputs_frontier) == #previous_hashes)
+    vg.event_handler.initial_state(player, initial_hash)
+    for index = 1, output_count do
+        local output = "new output " .. index
+        player.outputs[index] = output
+        hash_tree.frontier_push_back(player.outputs_frontier, cartesi.keccak256(output))
+    end
+    assert(hash_tree.frontier_get_leaf_count(player.previous_outputs_frontier) == #previous_hashes)
+    assert(hash_tree.frontier_get_leaf_count(player.outputs_frontier) == #previous_hashes + output_count)
+    local root = hash_tree.frontier_get_root_hash(player.outputs_frontier)
+    local completed_frontier = player.outputs_frontier
+    vg.event_handler.epoch_sealed(player)
+    assert(player.previous_outputs_frontier == completed_frontier and not player.outputs_frontier)
+    local offer = vg.event_handler.prove_output(player)
+    if output_count == 0 then
+        assert(next(offer) == nil and #player.output_proofs == 0)
+    else
+        assert(offer.output_index == #previous_hashes + output_count - 1)
+        assert(require("game-output").validate_output_response(offer, root))
+    end
 end
 
 -- Multiple outputs in one input, followed by empty and rejected batches, must
@@ -396,6 +437,7 @@ do
         inputs = {},
         latest = new_pair(),
         outputs = {},
+        previous_outputs_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"),
         outputs_frontier = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256"),
         run_to_stop = function(_self, pair, epoch_input_offset, _, on_yield_automatic)
             local batch = batches[epoch_input_offset + 1]
@@ -411,8 +453,9 @@ do
     end
     local root = hash_tree.frontier_get_root_hash(player.outputs_frontier)
     assert(not player.output_proofs)
+    local completed_frontier = player.outputs_frontier
     vg.event_handler.epoch_sealed(player)
-    assert(not player.outputs_frontier)
+    assert(player.previous_outputs_frontier == completed_frontier and not player.outputs_frontier)
     local offer = vg.event_handler.prove_output(player)
     assert(offer.output == "last" and offer.output_index == 3 and #player.outputs == 4)
     assert(require("game-output").validate_output_response(offer, hash_tree.frontier_get_root_hash(expected)))
@@ -475,7 +518,7 @@ for _, cheat in ipairs({ "no-rollback", "extra-input", "composite" }) do
             util.read_file("forged-input-2.bin")
         )
     end
-    local opponent <close> = vg.new_player(initial_hash, cheat, machine)
+    local opponent <close> = vg.new_player(initial_hash, cheat, nil, machine)
     if cheat == "no-rollback" then
         for _, pair in ipairs({ opponent.latest, opponent.agreed }) do
             pair.revert = ignore_rollback

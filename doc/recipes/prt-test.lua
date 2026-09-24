@@ -131,8 +131,8 @@ local function with_test_cache(cache, construct, geometry, ...)
     return player
 end
 
-local function new_test_player(geometry, cache, label)
-    return with_test_cache(cache, prt.new_player, geometry, label)
+local function new_test_player(geometry, cache, label, last_output_proof)
+    return with_test_cache(cache, prt.new_player, geometry, label, last_output_proof)
 end
 
 local dishonest = {}
@@ -657,29 +657,39 @@ do
 end
 
 -- One sealed epoch answers arbitrary client output requests without acquiring a machine.
-do
-    local player = new_test_player(nil, nil, "output fixture")
+for _, previous_count in ipairs({ 0, 3 }) do
+    local genesis = hash_tree.frontier(cartesi.ROLLUP_LOG2_MAX_OUTPUT_COUNT, "keccak256")
+    local previous_hashes = { keccak("previous first"), keccak("previous second"), keccak("previous last") }
+    local last_output_proof = hash_tree.frontier_next_proofs(genesis, previous_hashes)[previous_count]
+    local player = new_test_player(nil, nil, "output fixture", last_output_proof)
     assert(player.label == "output fixture", "constructor lost the player label")
     local outputs = { "first", "", "third" }
     player.outputs = outputs
     for _, output in ipairs(outputs) do
         hash_tree.frontier_push_back(player.outputs_frontier, keccak(output))
     end
+    assert(hash_tree.frontier_get_leaf_count(player.previous_outputs_frontier) == previous_count)
+    assert(hash_tree.frontier_get_leaf_count(player.outputs_frontier) == previous_count + #outputs)
     local expected_root = hash_tree.frontier_get_root_hash(player.outputs_frontier)
+    local completed_frontier = player.outputs_frontier
     local clone = player.clone_at_input_boundary
     player.clone_at_input_boundary = function()
         error("output proof acquired a machine")
     end
     player.event_handler.epoch_sealed(player, 0)
+    assert(player.previous_outputs_frontier == completed_frontier and not player.outputs_frontier)
     for _, index in ipairs({ 2, 0, 1, 2, 0 }) do
-        local response = player:prove_output(index)
-        assert(response.output_index == index and response.output == outputs[index + 1])
+        local response = player:prove_output(previous_count + index)
+        assert(response.output_index == previous_count + index and response.output == outputs[index + 1])
         assert(response.output_proof.target_hash == keccak(response.output))
         assert(response.output_proof.root_hash == expected_root, "output proof changed the epoch root")
         hash_tree.verify_slice(response.output_proof)
     end
-    assert(player.event_handler.prove_output(player).output_index == 2, "client request changed the offered output")
-    assert(next(player:prove_output(3)) == nil and next(player:prove_output(-1)) == nil)
+    assert(
+        player.event_handler.prove_output(player).output_index == previous_count + 2,
+        "client request changed the offered output"
+    )
+    assert(next(player:prove_output(previous_count + 3)) == nil and next(player:prove_output(previous_count - 1)) == nil)
     assert(not pcall(player.prove_output, player, 0.5), "noninteger output index was accepted")
     player.clone_at_input_boundary = clone
 end

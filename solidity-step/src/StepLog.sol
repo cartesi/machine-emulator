@@ -49,13 +49,22 @@ library StepLog {
         bytes32 rootHashBefore;
         uint8 hashFunction;
         uint64[] pageIndices; // strictly ascending
-        bytes pageData; // pageCount * PAGE_SIZE bytes; page i at offset i * PAGE_SIZE
+        bytes pageData; // page i at i * PAGE_SIZE; register writes materialize before hashing/raw access
         bytes32[] pageHashes; // filled by computeRootHash
         NodeEntry[] nodes; // internal nodes covering regions > PAGE_SIZE; strictly ascending by addr, no overlaps with pages
         bytes32[] siblings; // hash values for subtrees not covered by pages or nodes; left-to-right order
         bool reverted; // set when uarch reset reverted the state on a rejected input; see Verify.verifyReset
         bytes32 revertedRootHash; // canonical post-state hash when reverted (the recorded revert root hash)
+        uint256[61] pageLookupCache; // page position + 1; zero means uncached
+        uint64[] uarchRegisters;
+        uint256 uarchShadowPtr; // zero when the register cache needs loading
+        uint256 uarchShadowPageIndex;
+        bool uarchRegistersDirty;
     }
+
+    uint256 internal constant UARCH_REGISTER_WORD_COUNT = (
+        EmulatorConstants.UARCH_X_BASE_ADDR - EmulatorConstants.UARCH_HALT_ADDR
+    ) / 8 + EmulatorConstants.UARCH_X_REG_COUNT;
 
     uint256 internal constant HASH_SIZE = 32;
     uint256 internal constant U64_SIZE = 8;
@@ -244,10 +253,11 @@ library StepLog {
 
     /// Hashes each page lazily into ctx.pageHashes, then folds the tree over its current state.
     /// A zero pageHashes slot means "needs hashing": slots start zero, and every write zeroes the
-    /// written page's slot (findPageForWrite). So the decode-time call hashes all pages and the
+    /// written page's slot (findPageForWrite or writeUarchWord). So decode hashes all pages and the
     /// post-state call rehashes only the pages the operation wrote. Node slots are used as they
     /// stand; replayed bulk writes keep them current.
     function computeRootHash(Context memory ctx) internal pure returns (bytes32) {
+        flushUarchRegisters(ctx);
         uint256 pageCnt = ctx.pageIndices.length;
         for (uint256 i = 0; i < pageCnt; i++) {
             if (ctx.pageHashes[i] == bytes32(0)) {
@@ -335,20 +345,80 @@ library StepLog {
     /// immediately in an assembly block; safe because `bytes memory` never moves. Read paths use this;
     /// write paths use findPageForWrite so the page is rehashed on the post-state root.
     function findPage(Context memory ctx, uint64 paddr) internal pure returns (uint256 memPtr) {
+        if (isUarchShadowPage(paddr)) flushUarchRegisters(ctx);
         (memPtr,) = locatePage(ctx, paddr);
     }
 
     /// Like findPage, but invalidates the page's cached hash (zeroes its pageHashes slot) so
-    /// computeRootHash rehashes it on the post-state pass. Every path that mutates pageData resolves
-    /// through here.
+    /// computeRootHash rehashes it on the post-state pass. A raw write also invalidates cached
+    /// registers on this page, so subsequent register reads observe the written bytes.
     function findPageForWrite(Context memory ctx, uint64 paddr)
         internal
         pure
         returns (uint256 memPtr)
     {
+        if (isUarchShadowPage(paddr)) {
+            flushUarchRegisters(ctx);
+            ctx.uarchShadowPtr = 0;
+        }
         uint256 pageIdx;
         (memPtr, pageIdx) = locatePage(ctx, paddr);
         ctx.pageHashes[pageIdx] = bytes32(0);
+    }
+
+    function isUarchShadowPage(uint64 paddr) private pure returns (bool) {
+        return (paddr & ~EmulatorConstants.PAGE_OFFSET_MASK)
+            == EmulatorConstants.AR_SHADOW_UARCH_STATE_START;
+    }
+
+    function readUarchWord(Context memory ctx, uint256 wordIndex) internal pure returns (uint64) {
+        loadUarchRegisters(ctx);
+        return ctx.uarchRegisters[wordIndex];
+    }
+
+    function writeUarchWord(Context memory ctx, uint256 wordIndex, uint64 value) internal pure {
+        loadUarchRegisters(ctx);
+        ctx.uarchRegisters[wordIndex] = value;
+        ctx.uarchRegistersDirty = true;
+        ctx.pageHashes[ctx.uarchShadowPageIndex] = bytes32(0);
+    }
+
+    function loadUarchRegisters(Context memory ctx) private pure {
+        if (ctx.uarchShadowPtr != 0) return;
+        (ctx.uarchShadowPtr, ctx.uarchShadowPageIndex) =
+            locatePage(ctx, EmulatorConstants.UARCH_HALT_ADDR);
+        ctx.uarchRegisters = new uint64[](UARCH_REGISTER_WORD_COUNT);
+        for (uint256 i; i < UARCH_REGISTER_WORD_COUNT; ++i) {
+            uint256 ptr = ctx.uarchShadowPtr + i * 8;
+            uint64 value;
+            assembly ("memory-safe") {
+                value := shr(192, mload(ptr))
+            }
+            ctx.uarchRegisters[i] = swapBytes64(value);
+        }
+    }
+
+    /// Materialize pending register writes before hashing or exposing the page bytes.
+    function flushUarchRegisters(Context memory ctx) private pure {
+        if (!ctx.uarchRegistersDirty) return;
+        for (uint256 i; i < UARCH_REGISTER_WORD_COUNT; ++i) {
+            writeLE64Memory(ctx.uarchShadowPtr + i * 8, ctx.uarchRegisters[i]);
+        }
+        ctx.uarchRegistersDirty = false;
+    }
+
+    function writeLE64Memory(uint256 ptr, uint64 val) internal pure {
+        // Callers provide eight witnessed bytes and invalidate their page hash before writing.
+        assembly ("memory-safe") {
+            mstore8(ptr, and(val, 0xff))
+            mstore8(add(ptr, 1), and(shr(8, val), 0xff))
+            mstore8(add(ptr, 2), and(shr(16, val), 0xff))
+            mstore8(add(ptr, 3), and(shr(24, val), 0xff))
+            mstore8(add(ptr, 4), and(shr(32, val), 0xff))
+            mstore8(add(ptr, 5), and(shr(40, val), 0xff))
+            mstore8(add(ptr, 6), and(shr(48, val), 0xff))
+            mstore8(add(ptr, 7), and(shr(56, val), 0xff))
+        }
     }
 
     function locatePage(Context memory ctx, uint64 paddr)
@@ -357,18 +427,25 @@ library StepLog {
         returns (uint256 memPtr, uint256 pageIdx)
     {
         uint64 idx = paddr >> EmulatorConstants.HASH_TREE_LOG2_PAGE_SIZE;
-        uint256 lo = 0;
-        uint256 hi = ctx.pageIndices.length;
-        while (lo < hi) {
-            uint256 mid = (lo + hi) >> 1;
-            if (ctx.pageIndices[mid] < idx) {
-                lo = mid + 1;
-            } else {
-                hi = mid;
+        uint256 cacheSlot = uint256(idx) % ctx.pageLookupCache.length;
+        uint256 cached = ctx.pageLookupCache[cacheSlot];
+        uint256 lo;
+        if (cached != 0 && ctx.pageIndices[cached - 1] == idx) {
+            lo = cached - 1;
+        } else {
+            uint256 hi = ctx.pageIndices.length;
+            while (lo < hi) {
+                uint256 mid = (lo + hi) >> 1;
+                if (ctx.pageIndices[mid] < idx) {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
             }
-        }
-        if (lo >= ctx.pageIndices.length || ctx.pageIndices[lo] != idx) {
-            revert RequiredPageNotFound(idx);
+            if (lo >= ctx.pageIndices.length || ctx.pageIndices[lo] != idx) {
+                revert RequiredPageNotFound(idx);
+            }
+            ctx.pageLookupCache[cacheSlot] = lo + 1;
         }
         pageIdx = lo;
         uint256 byteOff = lo * EmulatorConstants.PAGE_SIZE

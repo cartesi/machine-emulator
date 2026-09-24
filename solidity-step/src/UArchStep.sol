@@ -887,161 +887,181 @@ library UArchStep {
     // Decode and execute one instruction
 
     function executeInsn(StepLog.Context memory a, uint32 insn, uint64 pc) private pure {
-        if (insnMatchOpcodeFunct3(insn, 0x13, 0x0)) {
-            return executeADDI(a, insn, pc);
+        if (insnMatchOpcode(insn, 0x13)) {
+            if (insnMatchOpcodeFunct3(insn, 0x13, 0x0)) {
+                return executeADDI(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x13, 0x7)) {
+                return executeANDI(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x1, 0x0)) {
+                return executeSLLI(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x5, 0x0)) {
+                return executeSRLI(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x5, 0x10)) {
+                return executeSRAI(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x13, 0x4)) {
+                return executeXORI(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x13, 0x6)) {
+                return executeORI(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x13, 0x3)) {
+                return executeSLTIU(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x13, 0x2)) {
+                return executeSLTI(a, insn, pc);
+            }
         }
-        if (insnMatchOpcodeFunct3(insn, 0x3, 0x3)) {
-            return executeLD(a, insn, pc);
+        if (insnMatchOpcode(insn, 0x3)) {
+            if (insnMatchOpcodeFunct3(insn, 0x3, 0x3)) {
+                return executeLD(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x3, 0x2)) {
+                return executeLW(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x3, 0x4)) {
+                return executeLBU(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x3, 0x5)) {
+                return executeLHU(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x3, 0x6)) {
+                return executeLWU(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x3, 0x0)) {
+                return executeLB(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x3, 0x1)) {
+                return executeLH(a, insn, pc);
+            }
         }
-        if (insnMatchOpcodeFunct3(insn, 0x63, 0x6)) {
-            return executeBLTU(a, insn, pc);
+        if (insnMatchOpcode(insn, 0x63)) {
+            if (insnMatchOpcodeFunct3(insn, 0x63, 0x6)) {
+                return executeBLTU(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x63, 0x0)) {
+                return executeBEQ(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x63, 0x1)) {
+                return executeBNE(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x63, 0x7)) {
+                return executeBGEU(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x63, 0x5)) {
+                return executeBGE(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x63, 0x4)) {
+                return executeBLT(a, insn, pc);
+            }
         }
-        if (insnMatchOpcodeFunct3(insn, 0x63, 0x0)) {
-            return executeBEQ(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x13, 0x7)) {
-            return executeANDI(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x0, 0x0)) {
-            return executeADD(a, insn, pc);
+        if (insnMatchOpcode(insn, 0x33)) {
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x0, 0x0)) {
+                return executeADD(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x7, 0x0)) {
+                return executeAND(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x6, 0x0)) {
+                return executeOR(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x0, 0x20)) {
+                return executeSUB(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x5, 0x0)) {
+                return executeSRL(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x4, 0x0)) {
+                return executeXOR(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x1, 0x0)) {
+                return executeSLL(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x5, 0x20)) {
+                return executeSRA(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x3, 0x0)) {
+                return executeSLTU(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x2, 0x0)) {
+                return executeSLT(a, insn, pc);
+            }
         }
         if (insnMatchOpcode(insn, 0x6f)) {
             return executeJAL(a, insn, pc);
         }
-        if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x1, 0x0)) {
-            return executeSLLI(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x7, 0x0)) {
-            return executeAND(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x23, 0x3)) {
-            return executeSD(a, insn, pc);
+        if (insnMatchOpcode(insn, 0x23)) {
+            if (insnMatchOpcodeFunct3(insn, 0x23, 0x3)) {
+                return executeSD(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x23, 0x2)) {
+                return executeSW(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x23, 0x0)) {
+                return executeSB(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3(insn, 0x23, 0x1)) {
+                return executeSH(a, insn, pc);
+            }
         }
         if (insnMatchOpcode(insn, 0x37)) {
             return executeLUI(a, insn, pc);
         }
-        if (insnMatchOpcodeFunct3(insn, 0x67, 0x0)) {
-            return executeJALR(a, insn, pc);
+        if (insnMatchOpcode(insn, 0x67)) {
+            if (insnMatchOpcodeFunct3(insn, 0x67, 0x0)) {
+                return executeJALR(a, insn, pc);
+            }
         }
-        if (insnMatchOpcodeFunct3(insn, 0x1b, 0x0)) {
-            return executeADDIW(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x5, 0x0)) {
-            return executeSRLI(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x5, 0x0)) {
-            return executeSRLIW(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x63, 0x1)) {
-            return executeBNE(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x3, 0x2)) {
-            return executeLW(a, insn, pc);
+        if (insnMatchOpcode(insn, 0x1b)) {
+            if (insnMatchOpcodeFunct3(insn, 0x1b, 0x0)) {
+                return executeADDIW(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x5, 0x0)) {
+                return executeSRLIW(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x5, 0x20)) {
+                return executeSRAIW(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x1, 0x0)) {
+                return executeSLLIW(a, insn, pc);
+            }
         }
         if (insnMatchOpcode(insn, 0x17)) {
             return executeAUIPC(a, insn, pc);
         }
-        if (insnMatchOpcodeFunct3(insn, 0x63, 0x7)) {
-            return executeBGEU(a, insn, pc);
+        if (insnMatchOpcode(insn, 0x3b)) {
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x0, 0x0)) {
+                return executeADDW(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x0, 0x20)) {
+                return executeSUBW(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x5, 0x0)) {
+                return executeSRLW(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x1, 0x0)) {
+                return executeSLLW(a, insn, pc);
+            }
+            if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x5, 0x20)) {
+                return executeSRAW(a, insn, pc);
+            }
         }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x0, 0x0)) {
-            return executeADDW(a, insn, pc);
+        if (insnMatchOpcode(insn, 0xf)) {
+            if (insnMatchOpcodeFunct3(insn, 0xf, 0x0)) {
+                return executeFENCE(a, insn, pc);
+            }
         }
-        if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x5, 0x10)) {
-            return executeSRAI(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x6, 0x0)) {
-            return executeOR(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x5, 0x20)) {
-            return executeSRAIW(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x63, 0x5)) {
-            return executeBGE(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x0, 0x20)) {
-            return executeSUB(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x3, 0x4)) {
-            return executeLBU(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x1, 0x0)) {
-            return executeSLLIW(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x5, 0x0)) {
-            return executeSRL(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x4, 0x0)) {
-            return executeXOR(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x23, 0x2)) {
-            return executeSW(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x1, 0x0)) {
-            return executeSLL(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x63, 0x4)) {
-            return executeBLT(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x23, 0x0)) {
-            return executeSB(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x0, 0x20)) {
-            return executeSUBW(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x13, 0x4)) {
-            return executeXORI(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x5, 0x20)) {
-            return executeSRA(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x3, 0x5)) {
-            return executeLHU(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x23, 0x1)) {
-            return executeSH(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x5, 0x0)) {
-            return executeSRLW(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x3, 0x6)) {
-            return executeLWU(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x1, 0x0)) {
-            return executeSLLW(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x3, 0x0)) {
-            return executeLB(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x3, 0x0)) {
-            return executeSLTU(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x5, 0x20)) {
-            return executeSRAW(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x3, 0x1)) {
-            return executeLH(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x13, 0x6)) {
-            return executeORI(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x13, 0x3)) {
-            return executeSLTIU(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x2, 0x0)) {
-            return executeSLT(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0x13, 0x2)) {
-            return executeSLTI(a, insn, pc);
-        }
-        if (insnMatchOpcodeFunct3(insn, 0xf, 0x0)) {
-            return executeFENCE(a, insn, pc);
-        }
-        if (insn == uint32(0x73)) {
-            return executeECALL(a, insn, pc);
-        }
-        if (insn == uint32(0x100073)) {
-            return executeEBREAK(a, insn, pc);
+        if (insnMatchOpcode(insn, 0x73)) {
+            if (insn == uint32(0x73)) {
+                return executeECALL(a, insn, pc);
+            }
+            if (insn == uint32(0x100073)) {
+                return executeEBREAK(a, insn, pc);
+            }
         }
         StateAccess.throwRuntimeError(a, "illegal instruction");
     }

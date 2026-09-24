@@ -101,6 +101,24 @@ template <typename UINT>
 static UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
     using ULONG = make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
+#if defined(MICROARCHITECTURE)
+    // When the quotient fits one word, divide with a one-word remainder.
+    if (ah < bl) {
+        UINT rem = ah;
+        UINT quo = al;
+        for (int i = 0; i < UINT_SIZE; ++i) {
+            const bool carry = (rem >> (UINT_SIZE - 1)) != 0;
+            rem = (rem << 1) | (quo >> (UINT_SIZE - 1));
+            quo <<= 1;
+            if (carry || rem >= bl) {
+                rem -= bl;
+                quo |= 1;
+            }
+        }
+        *pr = rem;
+        return quo;
+    }
+#endif
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
     const auto b = static_cast<ULONG>(bl);
     const ULONG quo = a / b;

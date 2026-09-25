@@ -88,14 +88,14 @@ local function advance_interval(interval, agree)
         lo = lo,
         hi = hi,
         input = interval.input,
-        mcycle = interval.mcycle,
+        mcycle_offset = interval.mcycle_offset,
     }
     if hi - lo == 1 then
         if interval.level == "input" then
             next_interval.input = lo
             next_interval.level, next_interval.lo, next_interval.hi = "mcycle", 0, MCYCLES_PER_INPUT
         elseif interval.level == "mcycle" then
-            next_interval.mcycle = lo
+            next_interval.mcycle_offset = lo
             next_interval.level, next_interval.lo, next_interval.hi = "uarch_cycle", 0, UARCH_CYCLES_PER_MCYCLE
         end
     end
@@ -353,7 +353,7 @@ function player_methods:propose_midpoint(interval)
     elseif level == "mcycle" then
         self:run_advance_state_input(tentative, interval.input, target)
     else
-        self:run_uarch(tentative, interval.input, interval.mcycle, target)
+        self:run_uarch(tentative, interval.input, interval.mcycle_offset, target)
     end
     return tentative.machine:get_root_hash()
 end
@@ -406,27 +406,25 @@ end
 function event_handler:commit_bisection(branch, interval, midpoint_hash)
     local agree
     interval, agree = self:answer_midpoint(branch, interval, midpoint_hash)
-    return { agree = agree, midpoint_hash = self:propose_midpoint(interval) }
+    return { agree = agree, midpoint_hash = interval.hi - interval.lo > 1 and self:propose_midpoint(interval) or nil }
 end
 
-function event_handler:commit_log(branch, interval, midpoint_hash)
-    local agree
-    interval, agree = self:answer_midpoint(branch, interval, midpoint_hash)
-    local pair <close> = self.agreed:fork()
-    local machine = pair.machine
-    local input = self.inputs[interval.input + 1]
+function event_handler:commit_log(input, mcycle_offset, uarch_cycle)
+    self:run_uarch(self.agreed, input, mcycle_offset, uarch_cycle)
+    local machine = self.agreed.machine
+    local data = self.inputs[input + 1]
     local log
-    if interval.mcycle == 0 and interval.lo == 0 and input then
+    if mcycle_offset == 0 and uarch_cycle == 0 and data then
         local before = machine:get_root_hash()
-        local send = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, input, before)
+        local send = machine:log_send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data, before)
         log = { send_cmio_log = send, step_log = machine:log_step_uarch() }
-    elseif interval.lo == cartesi.UARCH_CYCLE_MAX then
+    elseif uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         local step = machine:log_step_uarch()
         log = { step_log = step, reset_uarch_log = machine:log_reset_uarch() }
     else
         log = { step_log = machine:log_step_uarch() }
     end
-    return { agree = agree, log = log }
+    return log
 end
 
 function event_handler:prove_outputs_merkle_root()
@@ -487,9 +485,9 @@ end
 
 -- The referee trusts its own input bytes and verifies the log without a machine.
 -- Invalid logs raise an error, which the request's protected validator rejects.
-local function verify_state_transition(referee, input, mcycle, uarch_cycle, before, log)
+local function verify_state_transition(referee, input, mcycle_offset, uarch_cycle, before, log, after)
     local data = referee.inputs[input + 1]
-    if mcycle == 0 and uarch_cycle == 0 and data then
+    if mcycle_offset == 0 and uarch_cycle == 0 and data then
         before = cartesi.machine:verify_send_cmio_response(
             cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
             data,
@@ -502,7 +500,8 @@ local function verify_state_transition(referee, input, mcycle, uarch_cycle, befo
     if uarch_cycle == cartesi.UARCH_CYCLE_MAX then
         before = cartesi.machine:verify_reset_uarch(before, log.reset_uarch_log)
     end
-    return before
+    assert(before == after, "log does not reach the committed after-hash")
+    return true
 end
 
 local function accept_hash(hash)
@@ -512,7 +511,7 @@ end
 -- response's charge, but does not extend its exclusive deadline.
 local function request_move(server, player, event, arguments, accept)
     local started_at = server:get_time()
-    local future <close> = server:request_owner(player.connection, event, arguments, accept)
+    local future <close> = server:request_from_player(player.connection, event, arguments, accept)
     local deadline = started_at + player.allowance
     local value = future:wait(deadline)
     if value then
@@ -534,40 +533,33 @@ end
 -- Bisect one coordinate. The response that selects its last half already
 -- proposes the first midpoint of the next coordinate. Keep that pending turn
 -- and the endpoint hashes in the shared bisection state.
--- The final uarch response supplies a transition log instead of a midpoint.
-local function bisect_level(referee, server, players, level, hi, bisection, input, mcycle)
+-- The final uarch response only resolves the last midpoint.
+local function bisect_level(server, players, level, hi, bisection)
     phase("bisect_" .. level)
     local lo = 0
     while hi - lo > 1 do
-        local interval = { level = level, lo = lo, hi = hi, input = input, mcycle = mcycle }
+        local interval = {
+            level = level,
+            lo = lo,
+            hi = hi,
+            input = bisection.input,
+            mcycle_offset = bisection.mcycle_offset,
+        }
         local mid = midpoint(interval)
         local other = get_other_turn_index(bisection.turn)
-        local terminal = level == "uarch_cycle" and hi - lo == 2
         local response = request_move(
             server,
             players[bisection.turn],
-            terminal and EVENTS.commit_log or EVENTS.commit_bisection,
+            EVENTS.commit_bisection,
             { bisection.branch, interval, bisection.midpoint_hash },
             function(value)
-                if type(value) ~= "table" or (bisection.midpoint_hash and type(value.agree) ~= "boolean") then
-                    return
+                if bisection.midpoint_hash then
+                    assert(type(value.agree) == "boolean", "missing midpoint agreement")
                 end
-                if terminal then
-                    return {
-                        agree = value.agree,
-                        obtained_state_hash = verify_state_transition(
-                            referee,
-                            input,
-                            mcycle,
-                            value.agree and mid or lo,
-                            value.agree and bisection.midpoint_hash or bisection.last_agreed_hash,
-                            value.log
-                        ),
-                    }
+                if level ~= "uarch_cycle" or hi - lo > 2 then
+                    assert(accept_hash(value.midpoint_hash), "invalid midpoint hash")
                 end
-                if accept_hash(value.midpoint_hash) then
-                    return value
-                end
+                return value
             end
         )
         if not response then
@@ -589,10 +581,6 @@ local function bisect_level(referee, server, players, level, hi, bisection, inpu
                 hi
             )
         end
-        if terminal then
-            bisection.obtained_state_hash = response.obtained_state_hash
-            break
-        end
         bisection.midpoint_hash, bisection.turn = response.midpoint_hash, other
     end
     return lo
@@ -606,25 +594,41 @@ local function settle_dispute(referee, server, players)
         branch = "start",
     }
     bisection.turn = get_other_turn_index(bisection.hash_after_proponent)
-    local input, winner_input = bisect_level(referee, server, players, "input", INPUTS_PER_EPOCH, bisection)
+    local input, winner_input = bisect_level(server, players, "input", INPUTS_PER_EPOCH, bisection)
     if not input then
         return winner_input
     end
-    local mcycle, winner_mcycle = bisect_level(referee, server, players, "mcycle", MCYCLES_PER_INPUT, bisection, input)
-    if not mcycle then
+    bisection.input = input
+    local mcycle_offset, winner_mcycle = bisect_level(server, players, "mcycle", MCYCLES_PER_INPUT, bisection)
+    if not mcycle_offset then
         return winner_mcycle
     end
+    bisection.mcycle_offset = mcycle_offset
     -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
     local uarch_cycle, winner_uarch_cycle =
-        bisect_level(referee, server, players, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection, input, mcycle)
+        bisect_level(server, players, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
     if not uarch_cycle then
         return winner_uarch_cycle
     end
-    eventf("Player %d's transition proof is valid.", bisection.turn)
-    if bisection.obtained_state_hash == bisection.hash_after then
-        return players[bisection.hash_after_proponent]
-    end
-    return players[get_other_turn_index(bisection.hash_after_proponent)]
+    local valid = request_move(
+        server,
+        players[bisection.hash_after_proponent],
+        EVENTS.commit_log,
+        { input, mcycle_offset, uarch_cycle },
+        function(log)
+            return verify_state_transition(
+                referee,
+                input,
+                mcycle_offset,
+                uarch_cycle,
+                bisection.last_agreed_hash,
+                log,
+                bisection.hash_after
+            )
+        end
+    )
+    eventf("Player %d's transition proof is %s.", bisection.hash_after_proponent, valid and "valid" or "missing or invalid")
+    return players[valid and bisection.hash_after_proponent or get_other_turn_index(bisection.hash_after_proponent)]
 end
 
 -- Output offers are permissionless and have their own bounded demonstration

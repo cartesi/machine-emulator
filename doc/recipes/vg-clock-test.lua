@@ -71,7 +71,7 @@ end
 
 -- Once both claims exist, the first missed turn settles the game even if both
 -- players stop answering. Alternation continues across coordinate boundaries;
--- the last response replaces the next midpoint with a transition proof.
+-- the final agreement is followed by a proof request to the endpoint's proponent.
 local function empty_response()
     return {}
 end
@@ -80,7 +80,7 @@ local empty_handlers = {
         return empty_response
     end,
 }
-for _, failed_turn in ipairs({ 1, 2, 16, 17, 18, 64, 65, 66, 84, 85, 86 }) do
+for _, failed_turn in ipairs({ 1, 2, 16, 17, 18, 64, 65, 66, 84, 85, 86, 87 }) do
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         local turns, interval = 0, { level = "input", lo = 0, hi = 1 << 16 }
         local claims = { hash, cartesi.keccak256("other claim") }
@@ -89,8 +89,9 @@ for _, failed_turn in ipairs({ 1, 2, 16, 17, 18, 64, 65, 66, 84, 85, 86 }) do
             function client.event_handler.commit_final_hash()
                 return claims[index]
             end
-            local function answer(_, branch, received_interval, midpoint_hash, terminal)
+            function client.event_handler:commit_bisection(branch, received_interval, midpoint_hash)
                 turns = turns + 1
+                assert(turns <= 85, "bisection continued past the leaf")
                 assert(index == 1 + turns % 2, "turns did not alternate")
                 local level = turns <= 17 and "input" or turns <= 65 and "mcycle" or "uarch_cycle"
                 assert(received_interval.level == level, "wrong bisection handoff")
@@ -102,24 +103,26 @@ for _, failed_turn in ipairs({ 1, 2, 16, 17, 18, 64, 65, 66, 84, 85, 86 }) do
                     (turns == 1 and midpoint_hash == nil)
                         or (turns > 1 and midpoint_hash == claims[get_other_turn_index(index)])
                 )
-                assert(terminal == (turns == 85), "wrong terminal request")
                 if turns > 1 then
                     interval = vg.advance_interval(interval, false)
                 end
                 if turns >= failed_turn then
-                    return vgu.schedule_response(client, math.maxinteger, empty_response)
+                    return vgu.schedule_response(self, math.maxinteger, empty_response)
                 end
-                if terminal then
+                if turns == 85 then
                     assert(interval.level == "uarch_cycle" and interval.hi - interval.lo == 1)
-                    return { agree = false, log = {} } -- Rejected; no valid proof arrives before the deadline.
+                    return { agree = false }
                 end
                 return { agree = false, midpoint_hash = claims[index] }
             end
-            function client.event_handler:commit_bisection(branch, received_interval, midpoint_hash)
-                return answer(self, branch, received_interval, midpoint_hash, false)
-            end
-            function client.event_handler:commit_log(branch, received_interval, midpoint_hash)
-                return answer(self, branch, received_interval, midpoint_hash, true)
+            function client.event_handler:commit_log(input, mcycle_offset, uarch_cycle)
+                turns = turns + 1
+                assert(turns == 86 and index == 1, "proof was not requested from the endpoint's proponent")
+                assert(input == 0 and mcycle_offset == 0 and uarch_cycle == 0, "wrong transition coordinates")
+                if turns >= failed_turn then
+                    return vgu.schedule_response(self, math.maxinteger, empty_response)
+                end
+                return {} -- Rejected; no valid proof arrives before the deadline.
             end
             run_client(nil, function(_, line)
                 return vgu.answer_event(client, line)
@@ -128,8 +131,8 @@ for _, failed_turn in ipairs({ 1, 2, 16, 17, 18, 64, 65, 66, 84, 85, 86 }) do
         end
         local referee = vg.new_referee(hash, {})
         referee:run(server)
-        local last = math.min(failed_turn, 85)
-        local loser = 1 + last % 2
+        local last = math.min(failed_turn, 86)
+        local loser = last == 86 and 1 or 1 + last % 2
         local winner = get_other_turn_index(loser)
         assert(turns == last, "requested another turn after settlement")
         assert(referee.winner.index == winner and referee.final_hash == claims[winner])

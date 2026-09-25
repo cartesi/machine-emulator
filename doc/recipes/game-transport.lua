@@ -890,7 +890,7 @@ end
 
 -- A VG move belongs to one admitted connection. Its ID also protects later
 -- controls from stale replies on that same connection. Correctness is the game's concern.
-function server_meta.__index.request_owner(self, owner, event, arguments, accept_response)
+function server_meta.__index.request_from_player(self, owner, event, arguments, accept_response)
     local future = setmetatable({
         kind = "request_first_valid",
         server = self,

@@ -47,18 +47,17 @@ local function run(initial_hash, paths, delegate)
         end)
         wait_connections(3)
         outsider = server.connections[3]
-        local request_owner = server.request_owner
-        function server:request_owner(connection, event, arguments, accept)
-            local future = request_owner(self, connection, event, arguments, accept)
+        local request_from_player = server.request_from_player
+        function server:request_from_player(connection, event, arguments, accept)
+            local future = request_from_player(self, connection, event, arguments, accept)
             if connection == owner and (event == vgu.EVENTS.commit_bisection or event == vgu.EVENTS.commit_log) then
                 pending = { future = future, control = self.controls[#self.controls] }
                 if delegate then
                     future.owner = outsider
                 end
-                -- The outsider follows the forger's history on the honest player's
-                -- turns, then deliberately fails the combined leaf response.
-                local response = event == vgu.EVENTS.commit_log and { agree = true, log = {} }
-                    or fabulist.event_handler.commit_bisection(fabulist, table.unpack(arguments))
+                -- The outsider answers the honest player's requests using the
+                -- forger's history, including any requested transition proof.
+                local response = fabulist.event_handler[event.name](fabulist, table.unpack(arguments))
                 inject(cartesi.fromjson(cartesi.tojson(response, -1, event.response_schema, vgu.protocol.schemas)))
             end
             return future
@@ -88,10 +87,10 @@ return function(initial_hash, paths)
     transcript:write(
         string.format(
             "Honest original claim: %s\nDishonest original claim: %s\n"
-                .. "Ownership enforced: outsider replies rejected, player 2's proof verifies, honest claim wins.\n"
+                .. "Ownership enforced: outsider replies rejected, honest claim wins.\n"
                 .. "Broken assumption: an outsider may defend player 2's claim.\n"
-                .. "The fabulist agrees with the forger's midpoints and submits a failing terminal proof.\n"
-                .. "Proof verification rejects it; after the deadline, player 1's dishonest original claim wins.\n"
+                .. "The fabulist agrees with the forger's midpoints on the honest player's turns.\n"
+                .. "The forger proves a transition within that agreed history; its dishonest original claim wins.\n"
                 .. "Both runs retain the same original claims and transition verifier.\n",
             cartesi.tohex(protected.players[2].final_hash),
             cartesi.tohex(protected.players[1].final_hash)

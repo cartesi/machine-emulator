@@ -95,24 +95,40 @@ for _, late_providers in ipairs({ false, true }) do
 end
 print("vg-test: permissionless output providers ok")
 
--- A valid terminal log derives the next hash. It can confirm the opponent's
--- disputed endpoint or contradict it; validity alone does not award its sender.
-for _, confirms in ipairs({ false, true }) do
+-- The endpoint's proponent must prove its committed hash. A valid log reaching
+-- a different hash is rejected, and the proponent loses on timeout.
+for _, case in ipairs({
+    { agree = false, confirms = false },
+    { agree = false, confirms = true },
+    { agree = true, confirms = false },
+    { agree = true, confirms = true },
+}) do
     local pair <close> = first.agreed:fork()
+    if case.agree then
+        pair.machine:log_step_uarch()
+    end
+    local before = pair.machine:get_root_hash()
     local log = { step_log = pair.machine:log_step_uarch() }
     local after = pair.machine:get_root_hash()
-    local claims = { confirms and after or cartesi.keccak256("first endpoint"), cartesi.keccak256("second endpoint") }
+    local proponent = case.agree and 2 or 1
+    local claims = { before, cartesi.keccak256("second endpoint") }
+    claims[proponent] = case.confirms and after or cartesi.keccak256("wrong endpoint")
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         for index = 1, 2 do
             local client = { event_handler = setmetatable({}, empty_handlers) }
             function client.event_handler.commit_final_hash()
                 return claims[index]
             end
-            function client.event_handler.commit_bisection()
+            function client.event_handler:commit_bisection(_branch, interval) -- luacheck: ignore 212 self
+                if interval.level == "uarch_cycle" and interval.hi - interval.lo == 2 then
+                    return { agree = case.agree }
+                end
                 return { agree = false, midpoint_hash = claims[index] }
             end
-            function client.event_handler.commit_log()
-                return { agree = false, log = log }
+            function client.event_handler:commit_log(input, mcycle_offset, uarch_cycle) -- luacheck: ignore 212 self
+                assert(index == proponent)
+                assert(input == 0 and mcycle_offset == 0 and uarch_cycle == (case.agree and 1 or 0))
+                return log
             end
             run_client(nil, function(_, line)
                 return vgu.answer_event(client, line)
@@ -121,8 +137,9 @@ for _, confirms in ipairs({ false, true }) do
         end
         local settled = vg.new_referee(initial_hash, {})
         settled:run(server)
-        assert(settled.winner.index == (confirms and 1 or 2))
+        assert(settled.winner.index == (case.confirms and proponent or vgu.get_other_turn_index(proponent)))
         assert(settled.final_hash == claims[settled.winner.index])
+        assert(settled.players[proponent].allowance == (case.confirms and 4 or 0))
     end)
     vgu.close_narration()
 end
@@ -295,7 +312,7 @@ do
     vg.event_handler.input_added(player, 0, paths[2])
     vg.event_handler.epoch_sealed(player, 1)
     local contract = { inputs = { util.read_file(paths[2]) } }
-    local function verify(machine, mcycle, cycle, input, expected)
+    local function verify(machine, mcycle_offset, cycle, input, expected)
         local before = machine:get_root_hash()
         local logs = {}
         if input then
@@ -305,11 +322,9 @@ do
         if cycle == cartesi.UARCH_CYCLE_MAX then
             logs.reset_uarch_log = machine:log_reset_uarch()
         end
-        assert(
-            vg.verify_state_transition(contract, 0, mcycle, cycle, before, logs)
-                == (expected or machine:get_root_hash())
-        )
-        assert(not pcall(vg.verify_state_transition, contract, 0, mcycle, cycle, before, {}))
+        local after = expected or machine:get_root_hash()
+        assert(vg.verify_state_transition(contract, 0, mcycle_offset, cycle, before, logs, after))
+        assert(not pcall(vg.verify_state_transition, contract, 0, mcycle_offset, cycle, before, {}, after))
     end
     local included <close> = player.agreed:fork()
     local prefix <close> = player.agreed:fork()
@@ -337,8 +352,7 @@ do
     local before = absent.machine:get_root_hash()
     local step = absent.machine:log_step_uarch()
     assert(
-        vg.verify_state_transition({ inputs = {} }, 0, 0, 0, before, { step_log = step })
-            == absent.machine:get_root_hash()
+        vg.verify_state_transition({ inputs = {} }, 0, 0, 0, before, { step_log = step }, absent.machine:get_root_hash())
     )
 end
 

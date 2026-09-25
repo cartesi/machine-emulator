@@ -64,7 +64,7 @@ for _, delay in ipairs({ 0, 2, 5, 6 }) do
         end, true)
         wait_connections(1)
         local owner = server:get_players()[1]
-        local future <close> = server:request_owner(owner, event, {}, accept)
+        local future <close> = server:request_from_player(owner, event, {}, accept)
         local result = future:wait(5)
         assert(result == (delay < 5 and hash or nil))
         if delay < 5 then
@@ -90,7 +90,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     end, true)
     wait_connections(1)
     local owner = server:get_players()[1]
-    local future <close> = server:request_owner(owner, event, {}, accept)
+    local future <close> = server:request_from_player(owner, event, {}, accept)
     run_client(nil, function(wire)
         if wire.operation == "advance_time" then
             return {
@@ -114,7 +114,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     assert(future.value == nil, "outsider answered the owner's move")
     assert(future:wait(5) == hash and future.accepted_at == 3)
     future:close()
-    local later <close> = server:request_owner(owner, event, {}, accept)
+    local later <close> = server:request_from_player(owner, event, {}, accept)
     assert(later.id ~= future.id)
     -- The owner schedules at an already visited block. It cannot resolve this request.
     assert(later:wait(5) == nil)
@@ -170,7 +170,7 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     end, true)
     wait_connections(1)
     for _ = 1, 2 do
-        local future <close> = server:request_owner(server:get_players()[1], event, {}, accept)
+        local future <close> = server:request_from_player(server:get_players()[1], event, {}, accept)
         assert(future:wait(server:get_time() + 5) == hash)
     end
 end)
@@ -184,7 +184,7 @@ for _, owned in ipairs({ false, true }) do
             return "close"
         end, true)
         wait_connections(1)
-        local pending <close> = owned and s:request_owner(s:get_players()[1], event, {}, accept)
+        local pending <close> = owned and s:request_from_player(s:get_players()[1], event, {}, accept)
             or s:request_first_valid(nil, event, {}, accept)
         future = pending
         pending:wait(5)

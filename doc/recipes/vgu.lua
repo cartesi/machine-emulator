@@ -43,7 +43,7 @@ local schemas = {
     Bisection = { items = { "Default", "Default", "Base64" } },
     Midpoint = { midpoint_hash = "Base64" },
     Log = { send_cmio_log = "AccessLog", step_log = "AccessLog", reset_uarch_log = "AccessLog" },
-    Transition = { log = "Log" },
+    Transition = { items = { "Default", "Default", "Default" } },
     Hash = { items = { "Base64" } },
     OutputsRoot = {
         iflags_y_data = "Base64",
@@ -62,7 +62,7 @@ local events = {
     epoch_sealed = define_event("epoch_sealed", "EpochSealed"),
     commit_final_hash = define_event("commit_final_hash", "Empty", "Base64"),
     commit_bisection = define_event("commit_bisection", "Bisection", "Midpoint"),
-    commit_log = define_event("commit_log", "Bisection", "Transition"),
+    commit_log = define_event("commit_log", "Transition", "Log"),
     prove_outputs_merkle_root = define_event("prove_outputs_merkle_root", "Hash", "OutputsRoot"),
     prove_output = define_event("prove_output", "Hash", "Output"),
 }

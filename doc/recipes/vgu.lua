@@ -3,10 +3,6 @@ local cartesi = require("cartesi")
 local transport = require("game-transport")
 -- A nil audience broadcasts to every admitted player.
 local EVERYONE = nil
--- The other turn in a two-claim match.
-local function get_other_turn_index(turn_index)
-    return 3 - turn_index
-end
 
 -- The referee narrates the game, kept apart from the wire trace on stderr so the run reads as a
 -- story whether or not tracing is on. A hash is shown by its first four bytes.
@@ -40,8 +36,7 @@ local schemas = {
     InitialState = { items = { "Base64" } },
     InputAdded = { items = { "Default", "Default" } },
     EpochSealed = { items = { "Default" } },
-    Bisection = { items = { "Default", "Default", "Base64" } },
-    Midpoint = { midpoint_hash = "Base64" },
+    Bisection = { items = { "Default" } },
     Log = { send_cmio_log = "AccessLog", step_log = "AccessLog", reset_uarch_log = "AccessLog" },
     Transition = { items = { "Default", "Default", "Default" } },
     Hash = { items = { "Base64" } },
@@ -61,7 +56,7 @@ local events = {
     input_added = define_event("input_added", "InputAdded"),
     epoch_sealed = define_event("epoch_sealed", "EpochSealed"),
     commit_final_hash = define_event("commit_final_hash", "Empty", "Base64"),
-    commit_bisection = define_event("commit_bisection", "Bisection", "Midpoint"),
+    commit_bisection = define_event("commit_bisection", "Bisection", "Base64"),
     commit_log = define_event("commit_log", "Transition", "Log"),
     prove_outputs_merkle_root = define_event("prove_outputs_merkle_root", "Hash", "OutputsRoot"),
     prove_output = define_event("prove_output", "Hash", "Output"),
@@ -87,7 +82,6 @@ local function close_narration()
 end
 return {
     EVERYONE = EVERYONE,
-    get_other_turn_index = get_other_turn_index,
     protocol = protocol,
     EVENTS = events,
     new_server = new_server,

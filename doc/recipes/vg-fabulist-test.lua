@@ -89,7 +89,7 @@ return function(initial_hash, paths)
             "Honest original claim: %s\nDishonest original claim: %s\n"
                 .. "Ownership enforced: outsider replies rejected, honest claim wins.\n"
                 .. "Broken assumption: an outsider may defend player 2's claim.\n"
-                .. "The fabulist agrees with the forger's midpoints on the honest player's turns.\n"
+                .. "The fabulist submits matching midpoint hashes on behalf of the honest player.\n"
                 .. "The forger proves a transition within that agreed history; its dishonest original claim wins.\n"
                 .. "Both runs retain the same original claims and transition verifier.\n",
             cartesi.tohex(protected.players[2].final_hash),

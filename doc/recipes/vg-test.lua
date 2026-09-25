@@ -50,6 +50,9 @@ for _, late_providers in ipairs({ false, true }) do
             function client.event_handler.commit_final_hash()
                 return index == 1 and cartesi.keccak256("losing claim") or first.final_hash
             end
+            function client.event_handler.commit_bisection()
+                return index == 2 and first.final_hash or "malformed"
+            end
             local function offer(_, target, operation)
                 assert(settled.winner.index == 2 and settled.final_hash == first.final_hash)
                 assert(settled.players[1].allowance == 0)
@@ -110,23 +113,24 @@ for _, case in ipairs({
     local before = pair.machine:get_root_hash()
     local log = { step_log = pair.machine:log_step_uarch() }
     local after = pair.machine:get_root_hash()
-    local proponent = case.agree and 2 or 1
-    local claims = { before, cartesi.keccak256("second endpoint") }
-    claims[proponent] = case.confirms and after or cartesi.keccak256("wrong endpoint")
+    local claims = {
+        case.confirms and after or cartesi.keccak256("wrong endpoint"),
+        cartesi.keccak256("second endpoint"),
+    }
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
         for index = 1, 2 do
             local client = { event_handler = setmetatable({}, empty_handlers) }
             function client.event_handler.commit_final_hash()
                 return claims[index]
             end
-            function client.event_handler:commit_bisection(_branch, interval) -- luacheck: ignore 212 self
-                if interval.level == "uarch_cycle" and interval.hi - interval.lo == 2 then
-                    return { agree = case.agree }
+            function client.event_handler:commit_bisection(interval) -- luacheck: ignore 212 self
+                if case.agree and interval.level == "uarch_cycle" and interval.hi - interval.lo == 2 then
+                    return before
                 end
-                return { agree = false, midpoint_hash = claims[index] }
+                return claims[index]
             end
             function client.event_handler:commit_log(input, mcycle_offset, uarch_cycle) -- luacheck: ignore 212 self
-                assert(index == proponent)
+                assert(index == 1)
                 assert(input == 0 and mcycle_offset == 0 and uarch_cycle == (case.agree and 1 or 0))
                 return log
             end
@@ -137,9 +141,9 @@ for _, case in ipairs({
         end
         local settled = vg.new_referee(initial_hash, {})
         settled:run(server)
-        assert(settled.winner.index == (case.confirms and proponent or vgu.get_other_turn_index(proponent)))
+        assert(settled.winner.index == (case.confirms and 1 or 2))
         assert(settled.final_hash == claims[settled.winner.index])
-        assert(settled.players[proponent].allowance == (case.confirms and 4 or 0))
+        assert(settled.players[1].allowance == (case.confirms and 4 or 0))
     end)
     vgu.close_narration()
 end

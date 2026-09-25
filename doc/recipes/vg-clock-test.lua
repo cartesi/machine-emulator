@@ -1,7 +1,6 @@
 local cartesi = require("cartesi")
 local vg = require("rolling-verification-game")
 local vgu = require("vgu")
-local get_other_turn_index = vgu.get_other_turn_index
 local run_with_server = require("game-test-server")
 local hash = cartesi.keccak256("clock fixture")
 
@@ -10,40 +9,43 @@ local hash = cartesi.keccak256("clock fixture")
 -- Like PRT, the deadline is start + allowance. The response budget discounts the
 -- charge for an accepted answer, never extends its deadline. Expiry forfeits the
 -- remaining allowance. Delays 2, 2, 0, 2 leave 3, 2, 2, then expire at the deadline.
-run_with_server(vgu.protocol, function(server, run_client, wait_connections)
-    local players = {}
-    for index = 1, 2 do
-        local client = { label = "same label", block = 0, delay = 0, event_handler = {} }
-        function client.event_handler:commit_final_hash()
-            if self.delay == 0 then
-                return hash
+for delayed_index = 1, 2 do
+    run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+        local players = {}
+        for index = 1, 2 do
+            local client = { label = "same label", block = 0, delay = 0, event_handler = {} }
+            function client.event_handler:commit_final_hash()
+                self.requested_at = self.block
+                if self.delay == 0 then
+                    return hash
+                end
+                return vgu.schedule_response(self, self.block + self.delay, function()
+                    return hash
+                end)
             end
-            return vgu.schedule_response(self, self.block + self.delay, function()
-                return hash
-            end)
+            run_client(nil, function(wire, line)
+                if wire.operation == "advance_time" then
+                    client.block = wire.arguments[1]
+                end
+                return vgu.answer_event(client, line)
+            end, true)
+            wait_connections(index)
+            players[index] = { client = client, connection = server:get_players()[index], allowance = 4 }
         end
-        run_client(nil, function(wire, line)
-            if wire.operation == "advance_time" then
-                client.block = wire.arguments[1]
-            end
-            return vgu.answer_event(client, line)
-        end, true)
-        wait_connections(index)
-        players[index] = { client = client, connection = server:get_players()[index], allowance = 4 }
-    end
-    for round, delay in ipairs({ 2, 2, 0, 2 }) do
-        players[1].client.delay = delay
-        local replies = {}
-        for index, player in ipairs(players) do
-            replies[index] = vg.request_move(server, player, vgu.EVENTS.commit_final_hash, {}, function(value)
-                return value == hash and value
-            end)
+        local delayed, immediate = players[delayed_index], players[3 - delayed_index]
+        for round, delay in ipairs({ 2, 2, 0, 2 }) do
+            delayed.client.delay = delay
+            local replies = vg.request_hashes(server, players, vgu.EVENTS.commit_final_hash, {})
+            assert(delayed.client.requested_at == immediate.client.requested_at, "hash requests were serialized")
+            assert(
+                replies[3 - delayed_index] == hash and immediate.allowance == 4,
+                "opponent delay charged immediate player"
+            )
+            assert(delayed.allowance == ({ 3, 2, 2, 0 })[round])
+            assert((replies[delayed_index] ~= nil) == (round < 4), "deadline is not exclusive")
         end
-        assert(replies[2] == hash and players[2].allowance == 4, "opponent delay charged immediate player")
-        assert(players[1].allowance == ({ 3, 2, 2, 0 })[round])
-        assert((replies[1] ~= nil) == (round < 4), "deadline is not exclusive")
-    end
-end)
+    end)
+end
 
 for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
@@ -69,9 +71,8 @@ for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
     end)
 end
 
--- Once both claims exist, the first missed turn settles the game even if both
--- players stop answering. Alternation continues across coordinate boundaries;
--- the final agreement is followed by a proof request to the endpoint's proponent.
+-- Both players receive every midpoint request, including the last midpoint of
+-- each coordinate. One or both may forfeit; the final proof belongs to player 1.
 local function empty_response()
     return {}
 end
@@ -80,65 +81,61 @@ local empty_handlers = {
         return empty_response
     end,
 }
-for _, failed_turn in ipairs({ 1, 2, 16, 17, 18, 64, 65, 66, 84, 85, 86, 87 }) do
-    run_with_server(vgu.protocol, function(server, run_client, wait_connections)
-        local turns, interval = 0, { level = "input", lo = 0, hi = 1 << 16 }
-        local claims = { hash, cartesi.keccak256("other claim") }
-        for index = 1, 2 do
-            local client = { event_handler = setmetatable({}, empty_handlers) }
-            function client.event_handler.commit_final_hash()
-                return claims[index]
+for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
+    for failed_player = 0, (failed_round <= 84 and 2 or 0) do
+        run_with_server(vgu.protocol, function(server, run_client, wait_connections)
+            local rounds, proofs = { 0, 0 }, 0
+            local claims = { hash, cartesi.keccak256("other claim") }
+            for index = 1, 2 do
+                local client = { event_handler = setmetatable({}, empty_handlers) }
+                function client.event_handler.commit_final_hash()
+                    return claims[index]
+                end
+                function client.event_handler:commit_bisection(interval)
+                    rounds[index] = rounds[index] + 1
+                    local round = rounds[index]
+                    assert(round <= 84, "bisection continued past the leaf")
+                    local level = round <= 16 and "input" or round <= 64 and "mcycle" or "uarch_cycle"
+                    local remaining = (round <= 16 and 16 or round <= 64 and 64 or 84) - round + 1
+                    assert(interval.level == level and interval.lo == 0 and interval.hi == (1 << remaining))
+                    assert(interval.input == (round > 16 and 0 or nil))
+                    assert(interval.mcycle_offset == (round > 64 and 0 or nil))
+                    if round == failed_round and (failed_player == 0 or failed_player == index) then
+                        return vgu.schedule_response(self, math.maxinteger, empty_response)
+                    end
+                    return claims[index]
+                end
+                function client.event_handler:commit_log(input, mcycle_offset, uarch_cycle)
+                    proofs = proofs + 1
+                    assert(rounds[1] == 84 and rounds[2] == 84 and index == 1)
+                    assert(input == 0 and mcycle_offset == 0 and uarch_cycle == 0, "wrong transition coordinates")
+                    if failed_round == 85 then
+                        return vgu.schedule_response(self, math.maxinteger, empty_response)
+                    end
+                    return {} -- Rejected; no valid proof arrives before the deadline.
+                end
+                run_client(nil, function(_, line)
+                    return vgu.answer_event(client, line)
+                end, true)
+                wait_connections(index)
             end
-            function client.event_handler:commit_bisection(branch, received_interval, midpoint_hash)
-                turns = turns + 1
-                assert(turns <= 85, "bisection continued past the leaf")
-                assert(index == 1 + turns % 2, "turns did not alternate")
-                local level = turns <= 17 and "input" or turns <= 65 and "mcycle" or "uarch_cycle"
-                assert(received_interval.level == level, "wrong bisection handoff")
-                for key, value in pairs(interval) do
-                    assert(received_interval[key] == value, "wrong bisection coordinate")
-                end
-                assert(branch == (turns <= 2 and "start" or "disagree"))
-                assert(
-                    (turns == 1 and midpoint_hash == nil)
-                        or (turns > 1 and midpoint_hash == claims[get_other_turn_index(index)])
-                )
-                if turns > 1 then
-                    interval = vg.advance_interval(interval, false)
-                end
-                if turns >= failed_turn then
-                    return vgu.schedule_response(self, math.maxinteger, empty_response)
-                end
-                if turns == 85 then
-                    assert(interval.level == "uarch_cycle" and interval.hi - interval.lo == 1)
-                    return { agree = false }
-                end
-                return { agree = false, midpoint_hash = claims[index] }
+            local referee = vg.new_referee(hash, {})
+            referee:run(server)
+            local last = math.min(failed_round, 84)
+            assert(rounds[1] == last and rounds[2] == last, "requested another midpoint after settlement")
+            assert(proofs == (failed_round > 84 and 1 or 0))
+            if failed_player == 0 and failed_round <= 84 then
+                assert(not referee.winner and not referee.final_hash)
+                assert(referee.players[1].allowance == 0 and referee.players[2].allowance == 0)
+            else
+                local loser = failed_round > 84 and 1 or failed_player
+                local winner = 3 - loser
+                assert(referee.winner.index == winner and referee.final_hash == claims[winner])
+                assert(referee.players[winner].allowance == 4, "charged the immediate player")
+                assert(referee.players[loser].allowance == 0)
             end
-            function client.event_handler:commit_log(input, mcycle_offset, uarch_cycle)
-                turns = turns + 1
-                assert(turns == 86 and index == 1, "proof was not requested from the endpoint's proponent")
-                assert(input == 0 and mcycle_offset == 0 and uarch_cycle == 0, "wrong transition coordinates")
-                if turns >= failed_turn then
-                    return vgu.schedule_response(self, math.maxinteger, empty_response)
-                end
-                return {} -- Rejected; no valid proof arrives before the deadline.
-            end
-            run_client(nil, function(_, line)
-                return vgu.answer_event(client, line)
-            end, true)
-            wait_connections(index)
-        end
-        local referee = vg.new_referee(hash, {})
-        referee:run(server)
-        local last = math.min(failed_turn, 86)
-        local loser = last == 86 and 1 or 1 + last % 2
-        local winner = get_other_turn_index(loser)
-        assert(turns == last, "requested another turn after settlement")
-        assert(referee.winner.index == winner and referee.final_hash == claims[winner])
-        assert(referee.players[winner].allowance == 4, "charged the inactive player")
-        assert(referee.players[loser].allowance == 0)
-    end)
+        end)
+    end
 end
 vgu.close_narration()
 print("vg-clock-test: ok")

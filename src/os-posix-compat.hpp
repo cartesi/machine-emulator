@@ -195,4 +195,8 @@
 #define O_BINARY 0 // NOLINT(cppcoreguidelines-macro-usage)
 #endif
 
+#if defined(_WIN32) && !defined(O_CLOEXEC)
+#define O_CLOEXEC _O_NOINHERIT // NOLINT(cppcoreguidelines-macro-usage)
+#endif
+
 #endif // OS_POSIX_COMPAT_HPP

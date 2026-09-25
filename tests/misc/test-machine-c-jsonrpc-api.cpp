@@ -39,12 +39,18 @@
 
 #include <chrono>
 #include <cstring>
+#include <filesystem>
+#include <functional>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include <cm-jsonrpc.h>
 #include <cm.h>
+#include <scope-exit.hpp>
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)
 
@@ -151,6 +157,60 @@ struct spawned_server_fixture {
     std::string bound_address;
     uint32_t pid{};
 };
+
+using machine_ptr = std::unique_ptr<cm_machine, decltype(&cm_delete)>;
+
+// Keep the servers alive until the caller has finished loading its snapshots.
+// Report errors after joining: Boost.Test assertions must stay on the test thread.
+static void spawn_servers(std::stop_token stop, std::vector<machine_ptr> &servers, std::string &error) {
+    try {
+        for (int i = 0; i < 16 && !stop.stop_requested(); ++i) {
+            cm_machine *server{};
+            const auto err = cm_jsonrpc_spawn_server("127.0.0.1:0", 5000, &server, nullptr, nullptr);
+            machine_ptr owner{server, cm_delete};
+            if (err != CM_ERROR_OK) {
+                error = cm_get_last_error_message();
+                return;
+            }
+            servers.push_back(std::move(owner));
+        }
+    } catch (const std::exception &e) {
+        error = e.what();
+    }
+}
+
+// What: spawning a server must not keep a completed local store's file locks alive.
+// How:  repeatedly store and reload a machine while another thread spawns servers.
+//       Keep all servers alive through the reloads, including their startup fork descendants.
+BOOST_AUTO_TEST_CASE_NOLINT(spawn_during_store_test) {
+    auto base = (std::filesystem::temp_directory_path() / "cartesi-spawn-store-XXXXXX").string();
+    BOOST_REQUIRE(mkdtemp(base.data()) != nullptr);
+    const auto cleanup = cartesi::scope_exit([&base] { std::filesystem::remove_all(base); });
+    const auto dir = base + "/machine";
+
+    cm_machine *machine{};
+    const auto err = cm_create_new(R"({"ram":{"length":134217728}})", nullptr, nullptr, &machine);
+    const machine_ptr owner{machine, cm_delete};
+    BOOST_REQUIRE_EQUAL(err, CM_ERROR_OK);
+
+    std::vector<machine_ptr> servers;
+    std::string spawn_error;
+    std::jthread spawner{spawn_servers, std::ref(servers), std::ref(spawn_error)};
+    for (int i = 0; i < 10; ++i) {
+        BOOST_REQUIRE_EQUAL(cm_store(machine, dir.c_str(), CM_SHARING_ALL), CM_ERROR_OK);
+        cm_machine *loaded{};
+        const auto load_err = cm_load_new(dir.c_str(), nullptr, CM_SHARING_ALL, &loaded);
+        machine_ptr loaded_owner{loaded, cm_delete};
+        BOOST_REQUIRE_MESSAGE(load_err == CM_ERROR_OK, cm_get_last_error_message());
+        // Close the loaded machine before removing its backing files.
+        loaded_owner.reset();
+        std::filesystem::remove_all(dir);
+    }
+    spawner.request_stop();
+    spawner.join();
+    BOOST_CHECK_MESSAGE(spawn_error.empty(), spawn_error);
+    BOOST_CHECK(!servers.empty());
+}
 
 // ---------------------------------------------------------------------------
 // Group A: argument-validation errors (no running server required)

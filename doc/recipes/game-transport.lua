@@ -780,19 +780,20 @@ local function reply_less(a, b)
     return a.order < b.order
 end
 
--- Project a collection's receipt records into its public array of results.
+-- Return results keyed by sender, with the senders in deterministic admission order.
 local function response_values(replies, deadline)
-    local responses = {}
+    local responses, order = {}, {}
     for _, reply in ipairs(replies) do
         if (not deadline or reply.received_at < deadline) and reply.value ~= nil then
-            responses[#responses + 1] = reply
+            order[#order + 1] = reply
         end
     end
-    table.sort(responses, reply_less)
-    for index, reply in ipairs(responses) do
-        responses[index] = reply.value
+    table.sort(order, reply_less)
+    for index, reply in ipairs(order) do
+        responses[reply.connection] = reply.value
+        order[index] = reply.connection
     end
-    return responses
+    return responses, order
 end
 
 local future_meta = { __index = {} }
@@ -821,8 +822,9 @@ function future_meta.__index:close()
 end
 future_meta.__close = future_meta.__index.close
 
--- A deadline bounds this wait only. All-response requests return a snapshot of replies
--- received before it; first-valid requests return nil if no result was accepted before it.
+-- A deadline bounds this wait only. All-response requests return a sender-keyed map
+-- and an ordered sender array for replies received before it; first-valid requests
+-- return nil if no result was accepted before it.
 -- The future can still be waited on or closed.
 function future_meta.__index:wait(deadline)
     assert(not self.closed, "future is closed")
@@ -834,6 +836,9 @@ function future_meta.__index:wait(deadline)
         self.deadline = nil
     end
     if not self.closed and self.resolved and (not deadline or self.accepted_at < deadline) then
+        if self.kind == "request_all" then
+            return self.value, self.response_order
+        end
         return self.value
     end
     if not self.closed and self.kind == "request_all" then
@@ -926,8 +931,9 @@ end
 -- Collect replies from subscriptions, or from an explicit list of connections.
 -- Subscription requests finish at the ordinary block barrier. Connection requests
 -- accept one valid reply per sender, immediately or scheduled, until the wait deadline.
--- Validators receive (value, label, connection, received_at). Wait returns an array
--- of validator results (or reply values without a validator), in sender join order.
+-- Validators receive (value, label, connection, received_at). Wait returns a map
+-- keyed by sender of validator results (or reply values without a validator),
+-- followed by an array of the accepted senders in admission order.
 function server_meta.__index.request_all(self, subscriptions, event, event_arguments, accept_response)
     local direct = type(subscriptions) == "table" and type(subscriptions[1]) == "table" and event.response_schema
     local conns = self:get_subscribers(subscriptions)
@@ -1015,6 +1021,7 @@ local function accept_scheduled_response(self, response)
         if future.kind == "request_all" then
             future.accepted_replies[#future.accepted_replies + 1] = {
                 value = value,
+                connection = response.connection,
                 order = response.connection.order,
                 received_at = received_at,
             }
@@ -1032,9 +1039,11 @@ local function release_results(self)
             entry.value, entry.accepted_at = true, self:get_time()
         elseif entry.kind == "request_all" and not entry.subscription_hash then
             if entry.id and not next(entry.pending) then
-                entry.value, entry.accepted_at = response_values(entry.accepted_replies), self:get_time()
+                entry.value, entry.response_order = response_values(entry.accepted_replies)
+                entry.accepted_at = self:get_time()
             elseif entry.answered then
-                entry.value, entry.accepted_at = response_values(entry.accepted_replies or entry.replies), self:get_time()
+                entry.value, entry.response_order = response_values(entry.accepted_replies or entry.replies)
+                entry.accepted_at = self:get_time()
             end
         end
         if entry.value ~= nil or (entry.cortn and entry.deadline and self:get_time() >= entry.deadline) then
@@ -1153,16 +1162,12 @@ function server_meta.__index.step_time(self)
                 elseif entry.kind == "request_all" and entry.accept_response and not entry.closed then
                     table.sort(entry.replies, reply_less)
                     for _, reply in ipairs(entry.replies) do
-                        local ok, value = pcall(
-                            entry.accept_response,
-                            reply.value,
-                            reply.label,
-                            reply.connection,
-                            reply.received_at
-                        )
+                        local ok, value =
+                            pcall(entry.accept_response, reply.value, reply.label, reply.connection, reply.received_at)
                         if ok and value then
                             entry.accepted_replies[#entry.accepted_replies + 1] = {
                                 value = value,
+                                connection = reply.connection,
                                 order = reply.order,
                                 received_at = reply.received_at,
                             }

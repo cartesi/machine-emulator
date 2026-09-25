@@ -177,23 +177,56 @@ return function(run_with_server, new_test_player)
             return v
         end)
         server.clock:advance(1)
-        local first = { value = "first", order = 1, received_at = server:get_time() }
+        local senders = { {}, {}, {} }
+        local first = { value = "first", connection = senders[1], order = 1, received_at = server:get_time() }
         collection.replies[#collection.replies + 1] = first
         server.clock:advance(2)
-        local snapshot = collection:wait(2)
-        assert(#snapshot == 1 and snapshot[1] == first.value, "expiry discarded responses already received")
+        local snapshot, snapshot_order = collection:wait(2)
+        assert(
+            #snapshot_order == 1 and snapshot_order[1] == senders[1] and snapshot[senders[1]] == first.value,
+            "expiry discarded responses already received"
+        )
         assert(first_valid:wait(2) == nil, "first-valid expiry returned a collection")
-        local at_deadline = { value = "at deadline", order = 2, received_at = server:get_time() }
+        local at_deadline =
+            { value = "at deadline", connection = senders[2], order = 2, received_at = server:get_time() }
         collection.replies[#collection.replies + 1] = at_deadline
-        assert(#snapshot == 1, "a late response changed an expired wait's snapshot")
-        assert(#collection:wait(2) == 1, "a response at the deadline entered the collection")
+        assert(
+            #snapshot_order == 1 and snapshot[senders[2]] == nil,
+            "a late response changed an expired wait's snapshot"
+        )
+        local at_close, at_close_order = collection:wait(2)
+        assert(
+            #at_close_order == 1 and at_close[senders[2]] == nil,
+            "a response at the deadline entered the collection"
+        )
         server.clock:advance(3)
-        collection.replies[#collection.replies + 1] = { value = "late", order = 3, received_at = server:get_time() }
-        local later = collection:wait(3)
-        assert(#later == 2 and later[2] == at_deadline.value, "a later wait did not retain earlier replies")
-        assert(#collection:wait(2) == 1, "a response after the deadline entered the collection")
+        collection.replies[#collection.replies + 1] = {
+            value = "late",
+            connection = senders[3],
+            order = 3,
+            received_at = server:get_time(),
+        }
+        local later, later_order = collection:wait(3)
+        assert(
+            #later_order == 2
+                and later_order[1] == senders[1]
+                and later_order[2] == senders[2]
+                and later[senders[1]] == first.value
+                and later[senders[2]] == at_deadline.value
+                and later[senders[3]] == nil,
+            "a later wait did not retain earlier replies"
+        )
+        at_close, at_close_order = collection:wait(2)
+        assert(
+            #at_close_order == 1 and at_close[senders[2]] == nil and at_close[senders[3]] == nil,
+            "a response after the deadline entered the collection"
+        )
         local empty <close> = server:request_all({}, prtu.define_event("probe"), {})
-        assert(#empty:wait(3) == 0, "expiry without responses did not return an empty list")
+        local missing, missing_order = empty:wait(3)
+        assert(
+            not next(missing) and #missing_order == 0,
+            "expiry without responses did not return an empty map and order"
+        )
     end
 
     -- Collection and time waits can happen in either order. Both obey
@@ -260,10 +293,10 @@ return function(run_with_server, new_test_player)
                 server:wait_until(close_block)
                 closed = true
             end
-            local responses = collection:wait(close_block)
+            local responses, order = collection:wait(close_block)
             collected = true
             assert(
-                responses and #responses == 1 and responses[1] == "answer",
+                #order == 1 and order[1] == server.connections[1] and responses[order[1]] == "answer",
                 "collection lost, duplicated, or broadened its responses"
             )
             if not block_first then
@@ -272,10 +305,15 @@ return function(run_with_server, new_test_player)
                 closed = true
             end
             assert(server:get_time() == close_block)
-            assert(collection:wait() == responses, "a collected result was not retained")
+            local again, again_order = collection:wait()
+            assert(again == responses and again_order == order, "a collected result was not retained")
             local empty <close> = server:request_all({}, prtu.define_event("probe"), {})
-            assert(#empty:wait(close_block) == 0)
-            assert(#empty:wait() == 0, "an empty collection did not resolve to an empty list")
+            assert(not next((empty:wait(close_block))))
+            local missing, missing_order = empty:wait()
+            assert(
+                not next(missing) and #missing_order == 0,
+                "an empty collection did not resolve to an empty map and order"
+            )
         end)
     end
 

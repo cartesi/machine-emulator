@@ -41,14 +41,6 @@ local function map(values, transform)
     return result
 end
 
-local function select_keys(values, keys)
-    local result = {}
-    for _, key in ipairs(keys) do
-        result[key] = values[key]
-    end
-    return result
-end
-
 local function fold(values, initial, combine)
     local result = initial
     for key, value in pairs(values) do
@@ -250,7 +242,7 @@ function player_methods:commit()
 end
 
 -- Advance a loaded input, settling its checkpoint when it reaches a fixed point.
-function player_methods:run_to_stop(pair, _epoch_input_offset, mcycle_end, on_yield_automatic) -- luacheck: ignore 212 self
+function player_methods:run_to_stop(pair, _epoch_input_offset, mcycle_end, on_yield_automatic) -- luacheck: ignore self
     local machine = pair.machine
     while true do
         local break_reason = machine:run(mcycle_end)
@@ -367,7 +359,13 @@ end
 
 function event_handler:input_added(epoch_input_offset, path)
     self.inputs[epoch_input_offset + 1] = self:read_input(epoch_input_offset, path)
-    self:run_advance_state_input(self.latest, epoch_input_offset, MCYCLES_PER_INPUT, self.outputs, self.outputs_frontier)
+    self:run_advance_state_input(
+        self.latest,
+        epoch_input_offset,
+        MCYCLES_PER_INPUT,
+        self.outputs,
+        self.outputs_frontier
+    )
 end
 
 function event_handler:epoch_sealed()
@@ -519,6 +517,10 @@ local function single_claim_remains(players)
     return first
 end
 
+local function no_claim_remains(players)
+    return not next(players)
+end
+
 local function hashes_disagree(hashes)
     local first
     for _, hash in pairs(hashes) do
@@ -558,12 +560,12 @@ local function bisect_level(referee, server, level, count, bisection)
                 local elapsed = received_at - started_at
                 player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
                 player.midpoint_hash = hash
-                return sender
+                return player
             end
         )
-        players = select_keys(players, survivors:wait(deadline))
+        players = survivors:wait(deadline)
         referee.players = players
-        if not next(players) then
+        if no_claim_remains(players) then
             return nil
         end
         local winner = single_claim_remains(players)
@@ -610,14 +612,14 @@ local function request_transition_proofs(referee, server, input, mcycle_offset, 
             local elapsed = received_at - started_at
             player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
             eventf("Player %s's transition proof is valid.", player.label or player.index)
-            return sender
+            return player
         end
     )
-    return select_keys(players, survivors:wait(deadline))
+    return survivors:wait(deadline)
 end
 
 local function settle_dispute(referee, server)
-    while next(referee.players) do
+    while not no_claim_remains(referee.players) do
         local winner = single_claim_remains(referee.players)
         if winner then
             return winner
@@ -719,13 +721,13 @@ function referee_meta.__index:run(server)
                 local elapsed = received_at - started_at
                 player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
                 player.label, player.final_hash = label, hash
-                return sender
+                return player
             end
         )
-        players = select_keys(players, survivors:wait(deadline))
+        players = survivors:wait(deadline)
         self.players = players
     end
-    if not next(players) then
+    if no_claim_remains(players) then
         phase("verdict")
         eventf("No players remain.")
         return

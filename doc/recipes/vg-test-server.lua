@@ -16,8 +16,10 @@ return function(protocol, scenario)
                 for future in pairs(self.active) do
                     if
                         future.answered
-                        and (future.event == vgu.EVENTS.prove_outputs_merkle_root
-                            or future.event == vgu.EVENTS.prove_output)
+                        and (
+                            future.event == vgu.EVENTS.prove_outputs_merkle_root
+                            or future.event == vgu.EVENTS.prove_output
+                        )
                     then
                         assert(future.cortn and not future.deadline, "output wait is not indefinite")
                         stop_requested = true

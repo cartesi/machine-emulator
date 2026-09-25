@@ -190,7 +190,7 @@ local function subscription_hash(tournament_id, claim)
     return keccak(tournament_id, claim.computation_hash)
 end
 
--- Partitions claim responses by computation hash. The server delivers responses in the join
+-- Partitions claim responses by computation hash. The server supplies the join
 -- order of their senders, so claims come out in the order their first posters joined, each
 -- carrying the labels that posted it, and each sender subscribes to events concerning its
 -- claim under the given tournament ID. Pairing in join order is what Dave's dangling slot does,
@@ -198,9 +198,10 @@ end
 -- the recipe fixes. Each claim's clock starts as the tournament's allowance less the blocks
 -- since the tournament opened.
 -- docs:begin partition_claims
-local function partition_claims(responses, tournament_id, start_instant, allowance)
+local function partition_claims(responses, order, tournament_id, start_instant, allowance)
     local claims, by_hash = {}, {}
-    for _, response in ipairs(responses) do
+    for _, sender in ipairs(order) do
+        local response = responses[sender]
         local claim = by_hash[response.claim.computation_hash]
         if not claim then
             claim = response.claim
@@ -468,9 +469,9 @@ local function open_uarch_tournament(
             return { claim = claim, label = label, connection = connection, received_at = received_at }
         end
     )
-    local responses = collection:wait(joining_deadline)
+    local responses, order = collection:wait(joining_deadline)
     server:wait_until(joining_deadline)
-    local claims = partition_claims(responses, tournament_id, start_instant, allowance)
+    local claims = partition_claims(responses, order, tournament_id, start_instant, allowance)
     local tournament = {
         level = "uarch",
         id = tournament_id,
@@ -725,9 +726,9 @@ local function open_mcycle_tournament(dapp_contract)
             }
         end
     )
-    local responses = collection:wait(joining_deadline)
+    local responses, order = collection:wait(joining_deadline)
     server:wait_until(joining_deadline)
-    local claims = partition_claims(responses, tournament_id, start_instant, max_allowance)
+    local claims = partition_claims(responses, order, tournament_id, start_instant, max_allowance)
     local tournament = {
         level = "mcycle",
         id = tournament_id,

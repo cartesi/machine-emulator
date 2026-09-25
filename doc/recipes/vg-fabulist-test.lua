@@ -1,7 +1,8 @@
 -- A counterfactual at the reply-delivery boundary. Production admission already
 -- excludes outsiders. Inject replies here in both runs to isolate move ownership.
--- Only the second run delegates player 2's pending moves to the outsider. It
--- preserves both original claims, the referee, and all transition proof checks.
+-- Only the second run attributes the outsider's moves to player 2 and suppresses
+-- player 2's own midpoint replies. Both runs preserve the original claims, the
+-- referee, and all transition proof checks.
 local cartesi = require("cartesi")
 local vg = require("rolling-verification-game")
 local vgu = require("vgu")
@@ -28,7 +29,11 @@ local function run(initial_hash, paths, delegate)
             then
                 vgu.answer_event(fabulist, line)
             end
-            return vgu.answer_event(honest, line)
+            local response = vgu.answer_event(honest, line)
+            if delegate and wire.operation == "commit_bisection" then
+                return { id = wire.id, skip = true }
+            end
+            return response
         end, true)
         wait_connections(2)
         local owner = server.connections[2]
@@ -36,9 +41,9 @@ local function run(initial_hash, paths, delegate)
             assert(pending)
             local control = pending.control
             table.insert(control.replies, 1, {
-                connection = outsider,
+                connection = delegate and owner or outsider,
                 label = honest.label,
-                order = outsider.order,
+                order = delegate and owner.order or outsider.order,
                 id = pending.future.id,
                 value = { answer = value },
             })
@@ -48,14 +53,11 @@ local function run(initial_hash, paths, delegate)
         end)
         wait_connections(3)
         outsider = server.connections[3]
-        local request_from_player = server.request_from_player
-        function server:request_from_player(connection, event, arguments, accept)
-            local future = request_from_player(self, connection, event, arguments, accept)
-            if connection == owner and event == vgu.EVENTS.commit_bisection then
+        local request_all = server.request_all
+        function server:request_all(connections, event, arguments, accept)
+            local future = request_all(self, connections, event, arguments, accept)
+            if event == vgu.EVENTS.commit_bisection and future.pending[owner] then
                 pending = { future = future, control = self.controls[#self.controls] }
-                if delegate then
-                    future.owner = outsider
-                end
                 -- The outsider answers the honest player's midpoint requests
                 -- using the forger's history.
                 local response = fabulist.event_handler[event.name](fabulist, table.unpack(arguments))
@@ -64,6 +66,7 @@ local function run(initial_hash, paths, delegate)
             return future
         end
         referee:run(server)
+        assert(not owner.dead, "the honest player disconnected during the counterfactual")
     end)
     assert(outsider.dead, "the outsider was admitted as a third claimant")
     vgu.close_narration()

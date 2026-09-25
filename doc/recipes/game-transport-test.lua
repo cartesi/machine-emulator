@@ -27,24 +27,28 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         wait_connections(index)
     end
     local replies <close> = server:request_all(nil, notification, { 42 })
-    local acknowledgements = replies:wait()
+    local acknowledgements, order = replies:wait()
     assert(received[1] == 42 and received[2] == 42)
-    assert(#acknowledgements == 2)
-    for _, reply in ipairs(acknowledgements) do
-        assert(reply == true)
+    assert(#order == 2)
+    for index, sender in ipairs(order) do
+        assert(sender == server:get_players()[index] and acknowledgements[sender] == true)
     end
 end)
 
 do
-    local client = { event_handler = {
-        move = function() end,
-        notice = function()
-            error("notification failed")
-        end,
-    } }
-    local ok, err = pcall(transport.answer_event, client, cartesi.tojson({ operation = "move", arguments = {} }), protocol)
+    local client = {
+        event_handler = {
+            move = function() end,
+            notice = function()
+                error("notification failed")
+            end,
+        },
+    }
+    local ok, err =
+        pcall(transport.answer_event, client, cartesi.tojson({ operation = "move", arguments = {} }), protocol)
     assert(not ok and err:find("the event handler produced no value", 1, true))
-    ok, err = pcall(transport.answer_event, client, cartesi.tojson({ operation = "notice", arguments = { 42 } }), protocol)
+    ok, err =
+        pcall(transport.answer_event, client, cartesi.tojson({ operation = "notice", arguments = { 42 } }), protocol)
     assert(not ok and err:find("notification failed", 1, true))
 end
 
@@ -104,7 +108,7 @@ for _, kind in ipairs({ "first", "all", "owner", "scheduled" }) do
             or kind == "scheduled" and server:request_first_valid(nil, event, {}, validate, 3)
             or server:request_from_player(connection, event, {}, validate)
         local result = future:wait(5)
-        assert((kind == "all" and result[1] or result) == hash)
+        assert((kind == "all" and result[connection] or result) == hash)
     end)
 end
 
@@ -116,7 +120,9 @@ run_with_server(protocol, function(server, run_client, wait_connections)
     for index = 1, 4 do
         local client = { label = "same label", event_handler = {} }
         function client.event_handler.move(self)
-            return transport.schedule_response(self, delays[index], function() return hash end)
+            return transport.schedule_response(self, delays[index], function()
+                return hash
+            end)
         end
         run_client(nil, function(_, line)
             return transport.answer_event(client, line, protocol)
@@ -151,8 +157,13 @@ run_with_server(protocol, function(server, run_client, wait_connections)
         value = { answer = encoded_hash },
         order = 5,
     }
-    local replies = future:wait(5)
-    assert(#replies == 2 and replies[1] == 1 and replies[2] == 3)
+    local early, early_order = future:wait(2)
+    assert(#early_order == 1 and early_order[1] == connections[3] and early[connections[3]] == 3)
+    local replies, order = future:wait(5)
+    assert(#order == 2 and order[1] == connections[1] and order[2] == connections[3])
+    assert(replies[connections[1]] == 1 and replies[connections[3]] == 3)
+    assert(not replies[connections[2]] and not replies[connections[4]] and not replies[server:get_players()[5]])
+    assert(#early_order == 1 and not early[connections[1]], "later replies changed an earlier snapshot")
     assert(received[1] == 3 and received[3] == 1)
     assert(received[2] == 2 and received[4] == 5, "deadlines were not checked by the validator")
 end)
@@ -162,24 +173,37 @@ end)
 run_with_server(protocol, function(server, run_client, wait_connections)
     local client = { event_handler = {} }
     function client.event_handler.move(self)
-        transport.schedule_response(self, 1, function() return "invalid" end)
-        transport.schedule_response(self, 2, function() return hash end)
-        return transport.schedule_response(self, 3, function() return hash end)
+        transport.schedule_response(self, 1, function()
+            return "invalid"
+        end)
+        transport.schedule_response(self, 2, function()
+            return hash
+        end)
+        return transport.schedule_response(self, 3, function()
+            return hash
+        end)
     end
     run_client(nil, function(_, line)
         return transport.answer_event(client, line, protocol)
     end, true)
     wait_connections(1)
     local calls = 0
-    local future <close> = server:request_all(server:get_players(), event, {}, function(value, _, connection, received_at)
-        assert(connection == server:get_players()[1] and received_at == server:get_time())
-        calls = calls + 1
-        return accept(value)
-    end)
-    assert(#future:wait(1) == 0)
-    assert(#future:wait(2) == 0, "collection deadline is not exclusive")
-    local replies = future:wait(5)
-    assert(#replies == 1 and replies[1] == hash)
+    local future <close> = server:request_all(
+        server:get_players(),
+        event,
+        {},
+        function(value, _, connection, received_at)
+            assert(connection == server:get_players()[1] and received_at == server:get_time())
+            calls = calls + 1
+            return accept(value)
+        end
+    )
+    assert(not next((future:wait(1))))
+    assert(not next((future:wait(2))), "collection deadline is not exclusive")
+    local replies, order = future:wait(5)
+    assert(#order == 1 and order[1] == server:get_players()[1] and replies[order[1]] == hash)
+    local again, again_order = future:wait()
+    assert(again == replies and again_order == order, "a resolved future did not retain both results")
     server:wait_until(3)
     assert(calls == 2, "duplicate reply reached the validator")
 end)

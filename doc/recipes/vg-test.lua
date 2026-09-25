@@ -438,8 +438,10 @@ for uarch_cycle = 0, 1 do
     uarch.machine:log_step_uarch()
     local after_uarch = uarch.machine:get_root_hash()
     assert(
-        vg.event_handler.commit_bisection(player, { level = "uarch_cycle", input = 0, mcycle_offset = 0, lo = 0, hi = 1 })
-            == after_uarch
+        vg.event_handler.commit_bisection(
+            player,
+            { level = "uarch_cycle", input = 0, mcycle_offset = 0, lo = 0, hi = 1 }
+        ) == after_uarch
     )
     local before = initial_hash
     if uarch_cycle == 1 then
@@ -522,7 +524,15 @@ do
     local before = absent.machine:get_root_hash()
     local step = absent.machine:log_step_uarch()
     assert(
-        vg.verify_state_transition({ inputs = {} }, 0, 0, 0, before, { step_log = step }, absent.machine:get_root_hash())
+        vg.verify_state_transition(
+            { inputs = {} },
+            0,
+            0,
+            0,
+            before,
+            { step_log = step },
+            absent.machine:get_root_hash()
+        )
     )
 end
 

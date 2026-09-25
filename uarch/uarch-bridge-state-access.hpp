@@ -20,7 +20,6 @@
 #include "uarch-runtime.hpp" // must be included first, because of assert
 
 #include <array>
-#include <variant>
 
 #include "compiler-defines.hpp"
 #include "i-accept-scoped-notes.hpp"
@@ -31,6 +30,7 @@
 #include "pmas.hpp"
 #include "riscv-constants.hpp"
 #include "shadow-tlb.hpp"
+#include "uarch-address-range.hpp"
 #include "uarch-constants.hpp"
 #include "uarch-defines.h"
 #include "uarch-ecall.h"
@@ -54,10 +54,10 @@ class uarch_bridge_state_access :
     public i_prefer_shadow_state<uarch_bridge_state_access> {
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
-    mock_address_ranges &m_ars;
+    uarch_address_ranges &m_ars;
 
 public:
-    explicit uarch_bridge_state_access(std::array<mock_address_range, PMA_MAX> &ars) : m_ars(ars) {}
+    explicit uarch_bridge_state_access(uarch_address_ranges &ars) : m_ars(ars) {}
     uarch_bridge_state_access(const uarch_bridge_state_access &other) = default;
     uarch_bridge_state_access(uarch_bridge_state_access &&other) = default;
     uarch_bridge_state_access &operator=(const uarch_bridge_state_access &other) = delete;
@@ -72,12 +72,11 @@ public:
     }
 
     template <typename T>
-    address_range &find_pma(uint64_t paddr, uint64_t &index) const {
+    uarch_address_range &find_pma(uint64_t paddr, uint64_t &index) const {
         for (index = 0; index < PMA_MAX; ++index) {
             const uint64_t istart = bridge_read_pma_istart(index);
             const uint64_t ilength = bridge_read_pma_ilength(index);
-            if (std::holds_alternative<std::monostate>(m_ars[index]) &&
-                can_skip_mock_memory_range(istart, ilength, paddr, sizeof(T))) {
+            if (!m_ars[index].is_initialized() && can_skip_mock_memory_range(istart, ilength, paddr, sizeof(T))) {
                 continue;
             }
             auto &ar = read_pma_from_entry(index, istart, ilength);
@@ -155,9 +154,9 @@ private:
         return false;
     }
 
-    address_range &do_read_pma(uint64_t index) const {
+    uarch_address_range &do_read_pma(uint64_t index) const {
         if (index >= PMA_MAX) [[unlikely]] {
-            static address_range sentinel{"sentinel"};
+            static uarch_address_range sentinel;
             return sentinel;
         }
         const uint64_t istart = bridge_read_pma_istart(index);
@@ -165,17 +164,14 @@ private:
         return read_pma_from_entry(index, istart, ilength);
     }
 
-    address_range &read_pma_from_entry(uint64_t index, uint64_t istart, uint64_t ilength) const {
+    uarch_address_range &read_pma_from_entry(uint64_t index, uint64_t istart, uint64_t ilength) const {
         constexpr const auto throw_abort = [](const char * /*err*/) {
             assert(false && "read_address_range() failed");
             abort();
         };
         const auto i = static_cast<size_t>(index);
-        if (std::holds_alternative<std::monostate>(m_ars[i])) {
-            make_mock_address_range(m_ars[i], istart, ilength, throw_abort);
-        }
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return get_mock_address_range(m_ars[i], throw_abort);
+        m_ars[i].initialize(istart, ilength, throw_abort);
+        return m_ars[i];
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

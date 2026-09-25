@@ -31,7 +31,7 @@ namespace cartesi {
 /// \param index Receives index where PMA entry was found.
 /// \returns PMA entry where word falls, or empty sentinel.
 template <typename T, typename STATE_ACCESS>
-address_range &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
+auto &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
     [[maybe_unused]] auto note = a.make_scoped_note("find_pma");
     if constexpr (requires { a.template find_pma<T>(paddr, index); }) {
         return a.template find_pma<T>(paddr, index);

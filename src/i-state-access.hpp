@@ -303,7 +303,7 @@ public:
 
     /// \brief Reads PMA entry at a given index.
     /// \param index Index of PMA
-    address_range &read_pma(uint64_t index) const {
+    auto &read_pma(uint64_t index) const {
         auto &ar = derived().do_read_pma(index);
         dsa_printf("%s::read_address_range(%" PRIu64 ") = {%s, 0x%" PRIx64 ", 0x%" PRIx64 "}\n", get_name(), index,
             pmas_get_DID_name(ar.get_driver_id()), ar.get_start(), ar.get_length());

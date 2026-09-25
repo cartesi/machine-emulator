@@ -97,3 +97,37 @@ for _, length in ipairs({ 4096, 0, 4095, 4097, -4096 }) do
     end
 end
 print(string.format("PMA scan: %d malformed native/uarch replay witnesses rejected", rejected))
+
+-- Compact guest PMAs must keep the original device callbacks and access widths.
+local device_cases = 0
+for _, address in ipairs({
+    cartesi.AR_CLINT_START,
+    cartesi.AR_CLINT_START + 0x4000,
+    cartesi.AR_PLIC_START + 0x200004,
+    cartesi.AR_HTIF_START + 8,
+}) do
+    for funct3 = 0, 3 do
+        for _, store in ipairs({ false, true }) do
+            local device_native <close> = cartesi.machine({ ram = { length = 1 << 20 } })
+            local device_uarch <close> = cartesi.machine({ ram = { length = 1 << 20 } })
+            local instruction = (store and 0x00208023 or 0x00008103) | (funct3 << 12)
+            for _, machine in ipairs({ device_native, device_uarch }) do
+                machine:write_memory(cartesi.AR_RAM_START, string.pack("<I4", instruction))
+                machine:write_reg("pc", cartesi.AR_RAM_START)
+                machine:write_reg("x1", address)
+                machine:write_reg("x2", 1)
+                machine:write_reg("plic_girqpend", 2)
+            end
+            local before = device_native:get_root_hash()
+            local device_native_log = device_native:log_step(1)
+            assert(cartesi.machine:verify_step(before, device_native_log, 1) == device_native:get_root_hash())
+            local device_uarch_log = device_uarch:log_step_uarch(1 << 20)
+            assert(device_uarch:read_reg("uarch_halt") ~= 0)
+            assert(cartesi.machine:verify_step_uarch(before, device_uarch_log, 1 << 20) == device_uarch:get_root_hash())
+            device_uarch:reset_uarch()
+            assert(device_native:get_root_hash() == device_uarch:get_root_hash(), "device PMA roots differ")
+            device_cases = device_cases + 1
+        end
+    end
+end
+print(string.format("PMA devices: %d native/uarch/record/replay root comparisons passed", device_cases))

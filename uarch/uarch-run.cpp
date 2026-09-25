@@ -19,7 +19,7 @@
 
 #include "compiler-defines.hpp"
 #include "interpret.hpp"
-#include "mock-address-range.hpp"
+#include "uarch-address-range.hpp"
 #include "uarch-bridge-state-access.hpp"
 #include "uarch-ecall.h"
 
@@ -38,7 +38,7 @@ extern template interpreter_break_reason interpret(uarch_bridge_state_access a, 
 /// \return This function never returns
 extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
     // Let the state accessor be on static memory storage to speed up uarch initialization
-    static mock_address_ranges ars;
+    static uarch_address_ranges ars;
     const uarch_bridge_state_access a(ars);
     const uint64_t mcycle_end = a.read_mcycle() + 1;
     interpret(a, mcycle_end);

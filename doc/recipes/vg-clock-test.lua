@@ -4,26 +4,49 @@ local vgu = require("vgu")
 local run_with_server = require("vg-test-server")
 local hash = cartesi.keccak256("clock fixture")
 
+local function empty_response()
+    return {}
+end
+local empty_handlers = {
+    __index = function()
+        return empty_response
+    end,
+}
+
 -- The immediate player never pays for the other player's delay. The delayed
 -- player carries its spent allowance into every subsequent requested move.
 -- Like PRT, the deadline is start + allowance. The response budget discounts the
 -- charge for an accepted answer, never extends its deadline. Expiry eliminates the
 -- player. Delays 2, 2, 0, 2 leave 3, 2, 2, then expire at the deadline.
 for delayed_index = 1, 2 do
+    local clients = {}
+    local claims = { hash, cartesi.keccak256("other claim") }
+    local referee = vg.new_referee(hash, {})
+    local delayed, immediate
     run_with_server(vgu.protocol, function(server, run_client, wait_connections)
-        local players = {}
         for index = 1, 2 do
-            local client = { label = "same label", block = 0, delay = 0, event_handler = {} }
-            function client.event_handler:commit_final_hash()
-                self.requested_at = self.block
-                self.requests = (self.requests or 0) + 1
-                if self.delay == 0 then
-                    return hash
+            local sender
+            local client = {
+                label = "same label",
+                block = 0,
+                requested_at = {},
+                allowances = {},
+                event_handler = setmetatable({}, empty_handlers),
+            }
+            local function offer(self)
+                local round = #self.requested_at + 1
+                assert(round <= 4, "requested another hash after elimination")
+                self.requested_at[round] = self.block
+                self.allowances[round] = referee.players[sender].allowance
+                local delay = index == delayed_index and ({ 2, 2, 0, 2 })[round] or 0
+                if delay == 0 then
+                    return claims[index]
                 end
-                return vgu.schedule_response(self, self.block + self.delay, function()
-                    return hash
+                return vgu.schedule_response(self, self.block + delay, function()
+                    return claims[index]
                 end)
             end
+            client.event_handler.commit_final_hash, client.event_handler.commit_bisection = offer, offer
             run_client(nil, function(wire, line)
                 if wire.operation == "advance_time" then
                     client.block = wire.arguments[1]
@@ -31,33 +54,21 @@ for delayed_index = 1, 2 do
                 return vgu.answer_event(client, line)
             end, true)
             wait_connections(index)
-            players[server:get_players()[index]] = { client = client, allowance = 4 }
+            sender = server:get_players()[index]
+            clients[index] = client
         end
-        local addresses = vg.addresses(players)
-        local delayed_sender, immediate_sender = addresses[delayed_index], addresses[3 - delayed_index]
-        local delayed, immediate = players[delayed_sender], players[immediate_sender]
-        for round, delay in ipairs({ 2, 2, 0, 2 }) do
-            delayed.client.delay = delay
-            local replies = vg.request_hashes(server, players, vgu.EVENTS.commit_final_hash, {})
-            assert(delayed.client.requested_at == immediate.client.requested_at, "hash requests were serialized")
-            assert(
-                replies[immediate_sender] == hash and immediate.allowance == 4,
-                "opponent delay charged immediate player"
-            )
-            if round < 4 then
-                assert(delayed.allowance == ({ 3, 2, 2 })[round])
-            else
-                assert(
-                    players[delayed_sender] == nil and players[immediate_sender] == immediate,
-                    "expired player was not removed"
-                )
-            end
-            assert((replies[delayed_sender] ~= nil) == (round < 4), "deadline is not exclusive")
-        end
-        local replies = vg.request_hashes(server, players, vgu.EVENTS.commit_final_hash, {})
-        assert(replies[immediate_sender] == hash and not replies[delayed_sender])
-        assert(delayed.client.requests == 4 and immediate.client.requests == 5)
+        local senders = server:get_players()
+        delayed, immediate = senders[delayed_index], senders[3 - delayed_index]
+        referee:run(server)
     end)
+    for round = 1, 4 do
+        assert(clients[1].requested_at[round] == clients[2].requested_at[round], "hash requests were serialized")
+        assert(clients[delayed_index].allowances[round] == ({ 4, 3, 2, 2 })[round])
+        assert(clients[3 - delayed_index].allowances[round] == 4, "opponent delay charged immediate player")
+    end
+    assert(#clients[1].requested_at == 4 and #clients[2].requested_at == 4)
+    assert(not referee.players[delayed] and referee.players[immediate] == referee.winner, "deadline is not exclusive")
+    assert(referee.final_hash == claims[3 - delayed_index] and referee.winner.allowance == 4)
 end
 
 for _, behavior in ipairs({ "skip", "quit", "malformed" }) do
@@ -86,14 +97,6 @@ end
 
 -- Both players receive every midpoint request, including the last midpoint of
 -- each coordinate. Both survivors must then offer their transition proofs.
-local function empty_response()
-    return {}
-end
-local empty_handlers = {
-    __index = function()
-        return empty_response
-    end,
-}
 for _, failed_round in ipairs({ 1, 16, 17, 64, 65, 84, 85, 86 }) do
     for failed_player = 0, (failed_round <= 84 and 2 or 0) do
         local rounds, proofs = { 0, 0 }, 0

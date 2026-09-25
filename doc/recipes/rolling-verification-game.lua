@@ -506,34 +506,6 @@ local function accept_hash(hash)
     return type(hash) == "string" and #hash == 32 and hash
 end
 
--- Each player answers the same request on its own clock.
-local function request_hashes(server, players, event, arguments)
-    local hashes, requests = {}, {}
-    for _, sender in ipairs(addresses(players)) do
-        local player = players[sender]
-        requests[#requests + 1] = function()
-            local started_at = server:get_time()
-            local response <close> = server:request_from_player(sender, event, arguments, function(hash, label)
-                if accept_hash(hash) then
-                    player.label = label
-                    return hash
-                end
-            end)
-            local hash = response:wait(started_at + player.allowance)
-            if hash then
-                local elapsed = response.accepted_at - started_at
-                player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
-                hashes[sender] = hash
-            else
-                players[sender] = nil
-            end
-        end
-    end
-    local pending <close> = server:run_all(requests)
-    pending:wait()
-    return next(hashes) and hashes or nil
-end
-
 -- Return a representative if all surviving players support the same final claim.
 local function single_claim_remains(players)
     local first
@@ -560,8 +532,9 @@ end
 
 -- Bisect the inclusive range of resulting-state indices. The agreed predecessor
 -- is not one of its leaves. Any disagreement selects the earlier half.
-local function bisect_level(server, players, level, count, bisection)
+local function bisect_level(referee, server, level, count, bisection)
     phase("bisect_" .. level)
+    local players = referee.players
     local interval = {
         level = level,
         lo = 0,
@@ -570,14 +543,36 @@ local function bisect_level(server, players, level, count, bisection)
         mcycle_offset = bisection.mcycle_offset,
     }
     while interval.lo < interval.hi do
-        local hashes = request_hashes(server, players, EVENTS.commit_bisection, { interval })
-        if not hashes then
+        local started_at = server:get_time()
+        local deadline = fold(players, started_at, function(latest, player)
+            return math.max(latest, started_at + player.allowance)
+        end)
+        local survivors <close> = server:request_all(
+            addresses(players),
+            EVENTS.commit_bisection,
+            { interval },
+            function(hash, _label, sender, received_at)
+                local player = players[sender]
+                assert(received_at < started_at + player.allowance, "late midpoint hash")
+                assert(accept_hash(hash), "invalid midpoint hash")
+                local elapsed = received_at - started_at
+                player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
+                player.midpoint_hash = hash
+                return sender
+            end
+        )
+        players = select_keys(players, survivors:wait(deadline))
+        referee.players = players
+        if not next(players) then
             return nil
         end
         local winner = single_claim_remains(players)
         if winner then
             return nil, winner
         end
+        local hashes = map(players, function(player)
+            return player.midpoint_hash
+        end)
         local mid = midpoint(interval)
         if hashes_disagree(hashes) then
             interval.hi, bisection.hashes_after = mid, hashes
@@ -590,7 +585,8 @@ local function bisect_level(server, players, level, count, bisection)
 end
 
 -- Every surviving player must prove its own committed endpoint.
-local function request_transition_proofs(referee, server, players, input, mcycle_offset, uarch_cycle, bisection)
+local function request_transition_proofs(referee, server, input, mcycle_offset, uarch_cycle, bisection)
+    local players = referee.players
     local started_at = server:get_time()
     local deadline = fold(players, started_at, function(latest, player)
         return math.max(latest, started_at + player.allowance)
@@ -620,36 +616,35 @@ local function request_transition_proofs(referee, server, players, input, mcycle
     return select_keys(players, survivors:wait(deadline))
 end
 
-local function settle_dispute(referee, server, players)
-    while next(players) do
-        local winner = single_claim_remains(players)
+local function settle_dispute(referee, server)
+    while next(referee.players) do
+        local winner = single_claim_remains(referee.players)
         if winner then
             return winner
         end
         local bisection = {
             last_agreed_hash = referee.initial_hash,
-            hashes_after = map(players, function(player)
+            hashes_after = map(referee.players, function(player)
                 return player.final_hash
             end),
         }
-        local input, winner_input = bisect_level(server, players, "input", INPUTS_PER_EPOCH, bisection)
+        local input, winner_input = bisect_level(referee, server, "input", INPUTS_PER_EPOCH, bisection)
         if not input then
             return winner_input
         end
         bisection.input = input
-        local mcycle_offset, winner_mcycle = bisect_level(server, players, "mcycle", MCYCLES_PER_INPUT, bisection)
+        local mcycle_offset, winner_mcycle = bisect_level(referee, server, "mcycle", MCYCLES_PER_INPUT, bisection)
         if not mcycle_offset then
             return winner_mcycle
         end
         bisection.mcycle_offset = mcycle_offset
         -- UARCH_CYCLE_MAX names the last cycle. Its outgoing transition includes reset.
         local uarch_cycle, winner_uarch_cycle =
-            bisect_level(server, players, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
+            bisect_level(referee, server, "uarch_cycle", UARCH_CYCLES_PER_MCYCLE, bisection)
         if not uarch_cycle then
             return winner_uarch_cycle
         end
-        players = request_transition_proofs(referee, server, players, input, mcycle_offset, uarch_cycle, bisection)
-        referee.players = players
+        referee.players = request_transition_proofs(referee, server, input, mcycle_offset, uarch_cycle, bisection)
     end
 end
 
@@ -708,18 +703,38 @@ function referee_meta.__index:run(server)
         sealed:wait()
     end
     phase("claims")
-    local hashes = request_hashes(server, players, EVENTS.commit_final_hash, {})
-    if not hashes then
+    do
+        local started_at = server:get_time()
+        local deadline = fold(players, started_at, function(latest, player)
+            return math.max(latest, started_at + player.allowance)
+        end)
+        local survivors <close> = server:request_all(
+            addresses(players),
+            EVENTS.commit_final_hash,
+            {},
+            function(hash, label, sender, received_at)
+                local player = players[sender]
+                assert(received_at < started_at + player.allowance, "late final hash")
+                assert(accept_hash(hash), "invalid final hash")
+                local elapsed = received_at - started_at
+                player.allowance = player.allowance - math.max(elapsed - RESPONSE_BUDGET, 0)
+                player.label, player.final_hash = label, hash
+                return sender
+            end
+        )
+        players = select_keys(players, survivors:wait(deadline))
+        self.players = players
+    end
+    if not next(players) then
         phase("verdict")
         eventf("No players remain.")
         return
     end
     for _, sender in ipairs(addresses(players)) do
         local player = players[sender]
-        player.final_hash = hashes[sender]
         eventf("Player %s claimed %s.", player.label or player.index, short_hash(player.final_hash))
     end
-    local winner = settle_dispute(self, server, players)
+    local winner = settle_dispute(self, server)
     self.winner = winner
     phase("verdict")
     if not winner then
@@ -748,7 +763,6 @@ local vg = {
     usaturating_add = usaturating_add,
     load_cmio_input = load_cmio_input,
     verify_state_transition = verify_state_transition,
-    request_hashes = request_hashes,
 }
 if ... == "rolling-verification-game" then
     return vg

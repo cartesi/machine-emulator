@@ -182,7 +182,7 @@ void remove_file(const std::string &filename) {
 
 void change_writable(const std::string &pathname, bool writable) {
     // Open the path
-    const auto fd = open(pathname.c_str(), O_RDONLY | O_BINARY); // NOLINT(misc-redundant-expression)
+    const auto fd = open(pathname.c_str(), O_RDONLY | O_BINARY | O_CLOEXEC); // NOLINT(misc-redundant-expression)
     if (fd < 0) {
         throw make_path_system_error(errno, "unable to change write perms of path"s, pathname, "open() failed"s);
     }
@@ -214,7 +214,8 @@ void change_writable(const std::string &pathname, bool writable) {
     // Flush the file while it can still be opened for writing. Once the
     // read-only attribute is set, FlushFileBuffers() cannot be used on it.
     if (!writable && new_mode != st.st_mode) {
-        const auto sync_file_fd = open(pathname.c_str(), O_RDWR | O_BINARY); // NOLINT(misc-redundant-expression)
+        const auto sync_file_fd =
+            open(pathname.c_str(), O_RDWR | O_BINARY | O_CLOEXEC); // NOLINT(misc-redundant-expression)
         if (sync_file_fd < 0) {
             throw make_path_system_error(errno, "unable to change write perms of path"s, pathname,
                 "open() for sync failed"s);
@@ -246,7 +247,8 @@ void change_writable(const std::string &pathname, bool writable) {
 
 void truncate_file(const std::string &filename, uint64_t size, bool create) {
     // Determine flags based on whether we should create the file
-    const int flags = O_WRONLY | O_BINARY | (create ? (O_CREAT | O_EXCL) : 0); // NOLINT(misc-redundant-expression)
+    const int flags =
+        O_WRONLY | O_BINARY | O_CLOEXEC | (create ? (O_CREAT | O_EXCL) : 0); // NOLINT(misc-redundant-expression)
     const mode_t mode = create ? S_CREATE_FILE : 0;
 
     // Open the file
@@ -282,7 +284,7 @@ void truncate_file(const std::string &filename, uint64_t size, bool create) {
 
 std::pair<std::unique_ptr<uint8_t[]>, std::span<uint8_t>> read_file(const std::string &filename) {
     // Open file
-    const auto fd = open(filename.c_str(), O_RDONLY | O_BINARY); // NOLINT(misc-redundant-expression)
+    const auto fd = open(filename.c_str(), O_RDONLY | O_BINARY | O_CLOEXEC); // NOLINT(misc-redundant-expression)
     if (fd < 0) {
         throw make_path_system_error(errno, "unable to read file"s, filename, "open() failed"s);
     }
@@ -329,7 +331,7 @@ std::pair<std::unique_ptr<uint8_t[]>, std::span<uint8_t>> read_file(const std::s
 
 void create_file(const std::string &filename, std::span<const uint8_t> data) {
     // Create file
-    const auto fd = open(filename.c_str(), O_WRONLY | O_BINARY | O_CREAT | O_EXCL,
+    const auto fd = open(filename.c_str(), O_WRONLY | O_BINARY | O_CREAT | O_EXCL | O_CLOEXEC,
         S_CREATE_FILE); // NOLINT(misc-redundant-expression)
     if (fd < 0) {
         throw make_path_system_error(errno, "unable to create file"s, filename, "open() failed"s);
@@ -378,7 +380,7 @@ void create_file(const std::string &filename, std::span<const uint8_t> data) {
 
 void copy_file(const std::string &from, const std::string &to, uint64_t size) {
     // Open source file
-    const auto from_fd = open(from.c_str(), O_RDONLY | O_BINARY); // NOLINT(misc-redundant-expression)
+    const auto from_fd = open(from.c_str(), O_RDONLY | O_BINARY | O_CLOEXEC); // NOLINT(misc-redundant-expression)
     if (from_fd < 0) {
         throw make_copy_path_system_error(errno, "unable to copy file"s, from, to, "open() failed"s);
     }
@@ -404,7 +406,7 @@ void copy_file(const std::string &from, const std::string &to, uint64_t size) {
     const size_t copy_size = std::min<size_t>(st.st_size, size);
 
     // Create destination file
-    const auto to_fd = open(to.c_str(), O_WRONLY | O_BINARY | O_CREAT | O_EXCL,
+    const auto to_fd = open(to.c_str(), O_WRONLY | O_BINARY | O_CREAT | O_EXCL | O_CLOEXEC,
         st.st_mode & S_ACCESS_ALL); // NOLINT(misc-redundant-expression)
     if (to_fd < 0) {
         throw make_copy_path_system_error(errno, "unable to copy file"s, from, to, "open() failed"s);
@@ -499,7 +501,7 @@ void hardlink_file(const std::string &from, const std::string &to) {
 void reflink_file(const std::string &from, const std::string &to) {
 #if defined(HAVE_FICLONE) // Linux
     // Open source file
-    const auto from_fd = open(from.c_str(), O_RDONLY | O_BINARY); // NOLINT(misc-redundant-expression)
+    const auto from_fd = open(from.c_str(), O_RDONLY | O_BINARY | O_CLOEXEC); // NOLINT(misc-redundant-expression)
     if (from_fd < 0) {
         throw make_copy_path_system_error(errno, "unable to create reference link"s, from, to, "open() failed"s);
     }
@@ -519,7 +521,7 @@ void reflink_file(const std::string &from, const std::string &to) {
     }
 
     // Create destination file
-    const auto to_fd = open(to.c_str(), O_WRONLY | O_BINARY | O_CREAT | O_EXCL,
+    const auto to_fd = open(to.c_str(), O_WRONLY | O_BINARY | O_CREAT | O_EXCL | O_CLOEXEC,
         st.st_mode & ACCESSPERMS); // NOLINT(misc-redundant-expression)
     if (to_fd < 0) {
         throw make_copy_path_system_error(errno, "unable to create reference link"s, from, to, "open() failed"s);
@@ -556,7 +558,7 @@ void reflink_file(const std::string &from, const std::string &to) {
 
 void clone_file(const std::string &from, const std::string &to) {
     // Open source file
-    const auto from_fd = open(from.c_str(), O_RDONLY | O_BINARY); // NOLINT(misc-redundant-expression)
+    const auto from_fd = open(from.c_str(), O_RDONLY | O_BINARY | O_CLOEXEC); // NOLINT(misc-redundant-expression)
     if (from_fd < 0) {
         throw make_copy_path_system_error(errno, "unable to clone file"s, from, to, "open() failed"s);
     }
@@ -630,9 +632,9 @@ void sync_file(const std::string &filename) {
 #ifdef _WIN32
     // On Windows, FlushFileBuffers() requires a handle with write access,
     // so the file must be opened for read-write
-    constexpr int open_flags = O_RDWR | O_BINARY; // NOLINT(misc-redundant-expression)
+    constexpr int open_flags = O_RDWR | O_BINARY | O_CLOEXEC; // NOLINT(misc-redundant-expression)
 #else
-    constexpr int open_flags = O_RDONLY | O_BINARY; // NOLINT(misc-redundant-expression)
+    constexpr int open_flags = O_RDONLY | O_BINARY | O_CLOEXEC; // NOLINT(misc-redundant-expression)
 #endif
     const auto fd = open(filename.c_str(), open_flags);
     if (fd < 0) {
@@ -669,7 +671,7 @@ void sync_file(const std::string &filename) {
 void sync_directory(const std::string &dirname) {
 #ifndef _WIN32
     // Open the directory
-    const auto fd = open(dirname.c_str(), O_RDONLY | O_DIRECTORY);
+    const auto fd = open(dirname.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (fd < 0) {
         throw make_path_system_error(errno, "unable to sync directory"s, dirname, "open() failed"s);
     }
